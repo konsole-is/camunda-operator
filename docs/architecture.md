@@ -26,11 +26,12 @@ The operator labels every resource that it creates:
 | --- | --- |
 | `camunda.io/cluster` | the name of the owning `CamundaCluster` |
 | `camunda.io/elasticsearch-cluster` | the name of the owning `ElasticsearchCluster` |
+| `camunda.io/database-server` | the name of the owning `DatabaseServer` |
 | `camunda.io/database` | the name of the owning `Database` |
 | `camunda.io/component` | the role of the resource, for example `zeebe`, `gateway`, `elasticsearch` |
 | `app.kubernetes.io/managed-by` | `camunda-operator` |
 
-One label key per owning kind keeps two owners of different kinds with the same name apart. Pods and volumes that another operator runs from a template of this operator, for example the Elasticsearch pods that ECK runs, carry the owner and component labels but not the `managed-by` label.
+One label key per owning kind keeps two owners of different kinds with the same name apart. Pods and volumes that another operator runs from a template of this operator, for example the Elasticsearch pods that ECK runs and the PostgreSQL pods that CloudNativePG runs, carry the owner and component labels but not the `managed-by` label.
 A feature finds the workloads of a cluster through these labels, or reads the cluster directly through `clusterRef`.
 
 When a feature needs to call the cluster, it reads `status.management` of the `CamundaCluster`. That field publishes the address of the management API, so the feature does not rebuild Service names and ports.
@@ -152,4 +153,4 @@ The CRD types under `api/` are the Go module `github.com/konsole-is/camunda-oper
 
 - **Camunda 8.9 and later.** The operator targets the unified orchestration cluster that Camunda 8.9 introduced. It does not render earlier topologies.
 - **Minor releases are the test matrix.** The operator is tested against Camunda minor releases. A feature that lands in a patch release is treated as part of the next minor.
-- **Elasticsearch through ECK, PostgreSQL for databases.** `ElasticsearchCluster` requires the ECK operator. `Database` bootstraps PostgreSQL servers.
+- **Elasticsearch through ECK, PostgreSQL through CloudNativePG.** `ElasticsearchCluster` requires the ECK operator. `DatabaseServer` requires the CloudNativePG operator, and its archive also requires the Barman Cloud plugin and cert-manager. `Database` bootstraps a logical database on any PostgreSQL server, whether a `DatabaseServer` runs it or you do.

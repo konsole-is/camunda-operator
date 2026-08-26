@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: postgres
+    camunda.io/database-server: my-cluster-db
+    release: prometheus
+  name: my-cluster-db-metrics
+  namespace: my-cluster-ns
+spec:
+  namespaceSelector: {}
+  podMetricsEndpoints:
+  - interval: 30s
+    port: metrics
+  selector:
+    matchLabels:
+      cnpg.io/cluster: my-cluster-db

@@ -1,0 +1,21 @@
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: test-object
+  namespace: test-ns
+spec:
+  configuration:
+    data:
+      compression: gzip
+    destinationPath: s3://test-bucket/databaseserver/test-ns/test-server-9b1c7f04/
+    endpointURL: https://s3.eu-west-1.amazonaws.com
+    s3Credentials:
+      accessKeyId:
+        key: accessKeyId
+        name: test-archive
+      secretAccessKey:
+        key: secretAccessKey
+        name: test-archive
+    wal:
+      compression: gzip
+  retentionPolicy: 30d

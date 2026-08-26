@@ -124,7 +124,7 @@ func oidcPlatformConfig() *v1.CamundaPlatformConfig {
 	}
 }
 
-var _ = Describe("CamundaCluster with OIDC", Ordered, Label(labelCamundaClusterOIDC), func() {
+var _ = Describe("CamundaCluster with OIDC", Ordered, Label(utils.LabelCamundaClusterOIDC), func() {
 	var (
 		elasticsearch = &v1.ElasticsearchCluster{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "ElasticsearchCluster"},

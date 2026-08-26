@@ -546,7 +546,16 @@ func (in *ObjectStorageConfig) BasePath() string {
 // the contract cannot make them delete an unrelated object at the same key.
 // It is empty when the declared block is not set.
 func (in *ObjectStorageConfig) Location() string {
-	base := in.BasePath()
+	return in.LocationOf("")
+}
+
+// LocationOf returns Location for the objects under path, which is read as
+// relative to the base path of the contract. A consumer that owns one tree of
+// objects rather than the whole contract pins this instead, so a retarget of
+// the contract shows as a move of that tree and not only of the bucket. An
+// empty path yields Location itself.
+func (in *ObjectStorageConfig) LocationOf(path string) string {
+	base := strings.Trim(in.BasePath()+"/"+strings.Trim(path, "/"), "/")
 	switch in.Spec.Type {
 	case ObjectStorageTypeS3:
 		if in.Spec.S3 == nil {

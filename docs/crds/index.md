@@ -17,7 +17,11 @@ Each page opens with what the kind is and a minimal manifest, then covers one to
 | --- | --- | --- |
 | [ElasticsearchCluster](elasticsearchcluster.md) | Namespaced | An Elasticsearch cluster run by ECK, published as a `SecondaryStorageConfig`. |
 | [ElasticsearchClusterPreset](elasticsearchclusterpreset.md) | Cluster | A baseline spec that Elasticsearch clusters inherit. No controller. |
-| [Database](database.md) | Cluster | A logical database and its users on an existing PostgreSQL server, published as a `DatabaseConfig`. |
+| [DatabaseServer](databaseserver.md) | Namespaced | A PostgreSQL server run by CloudNativePG, archived to a bucket, published as a `DatabaseServerConfig`. |
+| [DatabaseServerPreset](databaseserverpreset.md) | Cluster | A baseline spec that database servers inherit. No controller. |
+| [Database](database.md) | Namespaced | A logical database and its users on an existing PostgreSQL server, published as a `DatabaseConfig`. |
+
+Each backend kind needs an operator that this operator does not install. `ElasticsearchCluster` needs the ECK operator. `DatabaseServer` needs the CloudNativePG operator, and `spec.archive` also needs the Barman Cloud plugin and cert-manager. Install what you use, then restart the manager. See [Installation](../installation.md#requirements).
 
 ## Contracts
 
@@ -27,7 +31,7 @@ A contract carries connection details and credential references. The operator va
 | --- | --- | --- |
 | [SecondaryStorageConfig](secondarystorageconfig.md) | Namespaced | The secondary storage of a cluster: Elasticsearch or a relational database. |
 | [ObjectStorageConfig](objectstorageconfig.md) | Cluster | One bucket on S3, GCS, or Azure Blob, and how to authenticate. |
-| [DatabaseServerConfig](databaseserverconfig.md) | Cluster | A database server, its admin credentials, and its point-in-time-recovery capability. |
+| [DatabaseServerConfig](databaseserverconfig.md) | Namespaced | A database server, its admin credentials, and its point-in-time-recovery capability. |
 | [DatabaseConfig](databaseconfig.md) | Namespaced | One logical database and its credentials. |
 | [ManagementAuthConfig](managementauthconfig.md) | Cluster | The OIDC configuration of Management Identity. `CamundaOptimize` reads it. |
 
@@ -69,6 +73,8 @@ graph LR
     PFC[CamundaPlatformConfig]
     ESCP[ElasticsearchClusterPreset]
     ESC[ElasticsearchCluster]
+    DBS[DatabaseServer]
+    DBSP[DatabaseServerPreset]
     DB[Database]
     DBSC[DatabaseServerConfig]
     DBC[DatabaseConfig]
@@ -87,6 +93,9 @@ graph LR
     ESC -.->|presetRef| ESCP
     ESC -->|creates| SSC
     ESC -.->|snapshotStorageRef| OSC
+    DBS -.->|presetRef| DBSP
+    DBS -.->|archive.objectStorageRef| OSC
+    DBS -->|creates| DBSC
     DB -->|creates| DBC
     DB -->|"creates (optional)"| SSC
     DB -.->|serverRef| DBSC

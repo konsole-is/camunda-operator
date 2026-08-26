@@ -15,20 +15,40 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # Two jobs per supported Camunda minor, so the management plane flows
-      # and the rest of the suite get a verdict each. Both entries of a pair
-      # name the same file test/e2e/matrix/<minor>.env, which holds the image
-      # versions of the minor. Each entry holds the Ginkgo label filter that
-      # selects its flows. Adopting a new minor adds the file and a pair of
-      # entries.
+      # Three jobs per supported Camunda minor: one for each storage
+      # backend of the orchestration cluster, and one for the management
+      # plane. All three name the same file test/e2e/matrix/<minor>.env,
+      # which holds the image versions of the minor, and each holds the
+      # Ginkgo label filter that selects its flows. Adopting a new minor adds
+      # the file and three entries.
+      #
+      # The split keeps one storage operator off each job. One kind node
+      # carries a whole job, and no flow needs both ECK and CloudNativePG.
+      # eckInstallSkip and cnpgInstallSkip say which operator a job installs.
+      # The management plane job fills its node with Keycloak, Management
+      # Identity, Console, and two Web Modeler processes, so it installs
+      # neither CloudNativePG nor the Barman Cloud plugin.
+      #
+      # Every label of the suite belongs to exactly one entry. The test
+      # TestWorkflowJobsClaimEveryLabel in test/utils reads this file and
+      # fails when a label has no job, or more than one.
       matrix:
         include:
           - minor: "8.9"
-            suffix: ""
-            labels: "!management-keycloak && !management-oidc"
+            suffix: " elasticsearch"
+            labels: "manager || camundacluster || camundacluster-oidc || elasticsearchcluster || camundaoptimize"
+            eckInstallSkip: "false"
+            cnpgInstallSkip: "true"
+          - minor: "8.9"
+            suffix: " postgres"
+            labels: "camundacluster-rdbms || database || databaseserver"
+            eckInstallSkip: "true"
+            cnpgInstallSkip: "false"
           - minor: "8.9"
             suffix: " management"
             labels: "management-keycloak || management-oidc"
+            eckInstallSkip: "false"
+            cnpgInstallSkip: "true"
     steps:
       - name: Clone the code
         uses: actions/checkout@v7
@@ -52,7 +72,59 @@ jobs:
       - name: Raise vm.max_map_count for Elasticsearch
         run: sudo sysctl -w vm.max_map_count=262144
 
+      # The management job has twice lost its runner in the middle of the
+      # suite, with no Ginkgo failure and no dump of the cluster. The sampler
+      # runs inside this step and writes one [node] line every 30 seconds to
+      # the job log, which GitHub receives live and keeps when the runner goes.
+      # The full detail goes to a file, which the upload below keeps whenever
+      # the runner survives. The trap takes the sampler down with the step.
       - name: Running Test e2e
+        env:
+          ECK_INSTALL_SKIP: ${{ matrix.eckInstallSkip }}
+          CNPG_INSTALL_SKIP: ${{ matrix.cnpgInstallSkip }}
         run: |
+          cat > "${RUNNER_TEMP}/sample-node-pressure.sh" <<'SAMPLER'
+          #!/usr/bin/env bash
+          while true; do
+            {
+              echo "=== $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              free -m
+              df -h /
+              ps -eo rss,comm --sort=-rss | head -15
+              docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}' || true
+            } >> "${RUNNER_TEMP}/node-pressure.log" 2>&1
+            memory=$(free -m | awk '/^Mem:/ {print "free=" $4 "MiB avail=" $7 "MiB"}')
+            top=$(ps -eo rss=,comm= --sort=-rss | head -5 | awk '{printf "%s=%dMiB ", $2, $1 / 1024}')
+            busiest=$(docker stats --no-stream --format '{{.Name}}={{.MemUsage}}' 2>/dev/null | tr '\n' ' ')
+            echo "[node] $(date -u +%H:%M:%SZ) ${memory} | top: ${top}| docker: ${busiest}"
+            sleep 30
+          done
+          SAMPLER
+          chmod +x "${RUNNER_TEMP}/sample-node-pressure.sh"
+          setsid "${RUNNER_TEMP}/sample-node-pressure.sh" &
+          sampler=$!
+          trap 'kill -- -"${sampler}" 2>/dev/null || true' EXIT
+
           make tidy
           make test-e2e E2E_CAMUNDA_MINOR=${{ matrix.minor }} E2E_LABEL_FILTER='${{ matrix.labels }}'
+
+      # Both reads fail when the API server is gone, which is one of the
+      # answers this step is here to record. The output goes to the job log as
+      # well, so it is there without the artifact.
+      - name: Read the cluster into the node pressure sample
+        if: always()
+        run: |
+          {
+            echo "=== pods"
+            kubectl get pods -A -o wide || true
+            echo "=== nodes"
+            kubectl describe nodes || true
+          } 2>&1 | tee -a "${RUNNER_TEMP}/node-pressure.log"
+
+      - name: Upload the node pressure sample
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-pressure-${{ matrix.minor }}${{ matrix.suffix }}
+          path: ${{ runner.temp }}/node-pressure.log
+          retention-days: 7

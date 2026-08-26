@@ -12,15 +12,25 @@ spec:
     listKind: DatabaseList
     plural: databases
     singular: database
-  scope: Cluster
+  scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
     schema:
       openAPIV3Schema:
         description: |-
           Database bootstraps a logical database and its users on an existing
           PostgreSQL server over plain SQL and publishes the result as a
-          DatabaseConfig — and optionally a SecondaryStorageConfig — in its target
+          DatabaseConfig — and optionally a SecondaryStorageConfig — in its own
           namespace. Deletion garbage-collects the published bindings and Secrets
           through owner references but never drops the logical database or the SQL
           users.
@@ -55,11 +65,6 @@ spec:
                       SecretName is the name of the credentials Secret. Each controller
                       documents its kind-specific default derived from the CR name.
                     type: string
-                  secretNamespace:
-                    description: |-
-                      SecretNamespace is the namespace for the credentials Secret. Defaults
-                      to the CR's target namespace.
-                    type: string
                 type: object
               backupCredentials:
                 description: |-
@@ -76,68 +81,61 @@ spec:
                       SecretName is the name of the credentials Secret. Each controller
                       documents its kind-specific default derived from the CR name.
                     type: string
-                  secretNamespace:
-                    description: |-
-                      SecretNamespace is the namespace for the credentials Secret. Defaults
-                      to the CR's target namespace.
-                    type: string
                 type: object
               databaseConfig:
                 description: |-
-                  DatabaseConfig names the DatabaseConfig the operator creates in
-                  targetNamespace. Defaults to the CR name.
+                  DatabaseConfig names the DatabaseConfig the operator creates in the
+                  namespace of this Database. Defaults to the CR name.
                 maxLength: 253
                 pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                 type: string
               databaseName:
                 description: |-
                   DatabaseName is the name of the logical database to create, a valid
-                  PostgreSQL identifier. It must be unique per server: the controller
-                  rejects a Database whose serverRef and databaseName collide with an
-                  existing one.
+                  PostgreSQL identifier. It must be unique per server, and the server is
+                  the PostgreSQL instance that the contract reaches, not the contract:
+                  the controller rejects a Database whose databaseName collides with a
+                  Database of any namespace on the same instance.
                 pattern: ^[a-z_][a-z0-9_]{0,62}$
                 type: string
               secondaryStorageConfig:
                 description: |-
                   SecondaryStorageConfig, when set, makes the operator also create a
-                  SecondaryStorageConfig of type rdbms with this name in targetNamespace,
-                  wired to the DatabaseConfig. Omit it for databases not used as Camunda
-                  secondary storage (Keycloak, Identity, Web Modeler).
+                  SecondaryStorageConfig of type rdbms with this name in the namespace of
+                  this Database, wired to the DatabaseConfig. Omit it for databases not
+                  used as Camunda secondary storage (Keycloak, Identity, Web Modeler).
                 maxLength: 253
                 pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                 type: string
               serverRef:
                 description: |-
-                  ServerRef names the cluster-scoped DatabaseServerConfig describing the
-                  server to create the database in.
+                  ServerRef names the DatabaseServerConfig of this namespace describing
+                  the server to create the database in.
                 minLength: 1
-                type: string
-              targetNamespace:
-                description: |-
-                  TargetNamespace is the namespace where the created DatabaseConfig,
-                  SecondaryStorageConfig, and credential Secrets are placed (each
-                  Secret's namespace can be overridden per Secret). Set it to the
-                  consuming cluster's namespace, since consumers resolve the bindings by
-                  name in their own namespace; for that reason the field is required with
-                  no default.
-                maxLength: 63
-                minLength: 1
-                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                 type: string
             required:
             - databaseName
             - serverRef
-            - targetNamespace
             type: object
           status:
             description: status defines the observed state of Database
             properties:
+              collisionKey:
+                description: |-
+                  CollisionKey is the claim that this Database won or contested: the
+                  system identifier of the server and the logical database name. The
+                  operator records it once it resolves the server, and the uniqueness
+                  rule runs over the recorded keys of every namespace. The operator never
+                  clears it, so a Database whose server or contract is gone keeps its
+                  claim and goes on contesting the name. Delete such a Database to
+                  release it.
+                type: string
               conditions:
                 description: |-
                   Conditions represent the current state. Ready carries a pre-check
-                  reason (InvalidReference, MissingSecret, ConnectionFailed), or it takes
-                  the status and the reason of the BindingsReady component condition,
-                  which also appears here.
+                  reason (InvalidReference, MissingSecret, ServerIdentityUnknown,
+                  ConnectionFailed), or it takes the status and the reason of the
+                  BindingsReady component condition, which also appears here.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

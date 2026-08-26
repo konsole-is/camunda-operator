@@ -56,18 +56,17 @@ const (
 	sscResource      = "secondarystorageconfigs.core.camunda.io"
 )
 
-var _ = Describe("Database", Ordered, Label(labelDatabase), func() {
+var _ = Describe("Database", Ordered, Label(utils.LabelDatabase), func() {
 	var (
 		server = &v1.DatabaseServerConfig{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "DatabaseServerConfig"},
-			ObjectMeta: metav1.ObjectMeta{Name: dbServer},
+			ObjectMeta: metav1.ObjectMeta{Name: dbServer, Namespace: dbNamespace},
 			Spec: v1.DatabaseServerConfigSpec{
 				Engine: v1.DatabaseEnginePostgres,
 				Host:   postgresService + "." + dbNamespace + ".svc",
 				Port:   5432,
-				AdminCredentialsSecretRef: v1.CredentialsSecretRef{
+				AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
 					Name:        postgresAdminSecret,
-					Namespace:   dbNamespace,
 					UsernameKey: "username",
 					PasswordKey: "password",
 				},
@@ -75,11 +74,10 @@ var _ = Describe("Database", Ordered, Label(labelDatabase), func() {
 		}
 		database = &v1.Database{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "Database"},
-			ObjectMeta: metav1.ObjectMeta{Name: dbName},
+			ObjectMeta: metav1.ObjectMeta{Name: dbName, Namespace: dbNamespace},
 			Spec: v1.DatabaseSpec{
 				ServerRef:              dbServer,
 				DatabaseName:           dbDatabaseName,
-				TargetNamespace:        dbNamespace,
 				SecondaryStorageConfig: dbStorageConfig,
 			},
 		}
@@ -106,8 +104,7 @@ var _ = Describe("Database", Ordered, Label(labelDatabase), func() {
 	})
 
 	AfterAll(func() {
-		By("removing the server description and the test namespace")
-		_, _ = utils.Kubectl("delete", dbServerResource, dbServer, "--ignore-not-found")
+		By("removing the test namespace, which holds the whole chain")
 		_, _ = utils.Kubectl("delete", "ns", dbNamespace, "--wait=false")
 	})
 
@@ -115,13 +112,20 @@ var _ = Describe("Database", Ordered, Label(labelDatabase), func() {
 		dumpDiagnostics(dbNamespace)
 	})
 
-	It("reaches Ready Healthy and publishes its bindings in the target namespace", func() {
+	It("reaches Ready Healthy and publishes its bindings in its own namespace", func() {
+		By("waiting for the contract to publish the identity of the server")
+		Eventually(func(g Gomega) {
+			var contract v1.DatabaseServerConfig
+			g.Expect(utils.Get(dbServerResource, dbServer, dbNamespace, &contract)).To(Succeed())
+			g.Expect(contract.Status.SystemIdentifier).NotTo(BeEmpty())
+		}, 3*time.Minute).Should(Succeed())
+
 		By("creating the Database")
 		Expect(apply(database)).To(Succeed())
 
 		By("waiting for Ready Healthy")
 		Eventually(func(g Gomega) {
-			expectReady(g, dbResource, dbName, "", v1.ReasonHealthy)
+			expectReady(g, dbResource, dbName, dbNamespace, v1.ReasonHealthy)
 		}, 3*time.Minute).Should(Succeed())
 
 		By("reading the DatabaseConfig")
@@ -173,12 +177,12 @@ var _ = Describe("Database", Ordered, Label(labelDatabase), func() {
 	})
 
 	It("garbage-collects the bindings on deletion and keeps the logical database", func() {
-		_, err := utils.Kubectl("delete", dbResource, dbName, "--wait=false")
+		_, err := utils.Kubectl("delete", dbResource, dbName, "-n", dbNamespace, "--wait=false")
 		Expect(err).NotTo(HaveOccurred())
 
 		By("waiting for the bindings to be gone")
 		Eventually(func(g Gomega) {
-			expectGone(g, dbResource, dbName, "")
+			expectGone(g, dbResource, dbName, dbNamespace)
 			expectGone(g, dbConfigResource, dbName, dbNamespace)
 			expectGone(g, sscResource, dbStorageConfig, dbNamespace)
 			expectGone(g, "secret", config.Spec.CredentialsSecretRef.Name, dbNamespace)

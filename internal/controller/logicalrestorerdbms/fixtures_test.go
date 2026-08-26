@@ -93,13 +93,13 @@ func newWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	suffix := utilrand.String(6)
 
 	w.server = &v1.DatabaseServerConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "dbsc-" + suffix},
+		ObjectMeta: metav1.ObjectMeta{Name: "dbsc-" + suffix, Namespace: w.namespace},
 		Spec: v1.DatabaseServerConfigSpec{
 			Engine: v1.DatabaseEnginePostgres,
 			Host:   "postgres.databases.svc",
 			Port:   5432,
-			AdminCredentialsSecretRef: v1.CredentialsSecretRef{
-				Name: "admin", Namespace: w.namespace, UsernameKey: "username", PasswordKey: "password",
+			AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
+				Name: "admin", UsernameKey: "username", PasswordKey: "password",
 			},
 		},
 	}

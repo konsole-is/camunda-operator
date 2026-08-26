@@ -47,17 +47,21 @@ var (
 	shouldCleanupCertManager = false
 	// shouldCleanupECK tracks whether the ECK operator was installed by this suite.
 	shouldCleanupECK = false
+	// shouldCleanupCNPG tracks whether CloudNativePG and the Barman Cloud
+	// plugin were installed by this suite.
+	shouldCleanupCNPG = false
 	// shouldCleanupKeycloakCRDs tracks whether the Keycloak CRDs were
 	// installed by this suite.
 	shouldCleanupKeycloakCRDs = false
 )
 
 // TestE2E runs the e2e test suite to validate the solution in an isolated environment.
-// The default setup requires Kind, CertManager, the ECK operator, and the
-// Keycloak Operator. The suite installs all three when the cluster does not
-// serve them.
+// The default setup requires Kind, CertManager, CloudNativePG with the Barman
+// Cloud plugin, the ECK operator, and the Keycloak Operator. The suite
+// installs all of them when the cluster does not serve them.
 //
 // To skip CertManager installation, set: CERT_MANAGER_INSTALL_SKIP=true
+// To skip the CloudNativePG and Barman Cloud plugin installation, set: CNPG_INSTALL_SKIP=true
 // To skip ECK installation, set: ECK_INSTALL_SKIP=true
 // To install a different ECK release, set: ECK_VERSION=<version>
 // To skip the Keycloak CRD and Keycloak Operator installation, set: KEYCLOAK_OPERATOR_INSTALL_SKIP=true
@@ -73,7 +77,7 @@ func TestE2E(t *testing.T) {
 	// matrix entry.
 	suiteConfig, reporterConfig := GinkgoConfiguration()
 	if suiteConfig.LabelFilter == "" {
-		filter, err := utils.LabelFilter(os.Getenv(envLabels), allLabels)
+		filter, err := utils.LabelFilter(os.Getenv(envLabels), utils.AllLabels)
 		require.NoError(t, err, envLabels)
 		suiteConfig.LabelFilter = filter
 	}
@@ -81,12 +85,15 @@ func TestE2E(t *testing.T) {
 	RunSpecs(t, "e2e suite", suiteConfig, reporterConfig)
 }
 
-// The suite deploys the manager once, after ECK and the Keycloak CRDs. The
-// CRDs of both must be present before the manager starts: the
-// ElasticsearchCluster controller watches the ECK Elasticsearch kind, and the
-// CamundaManagementCluster controller probes the Keycloak kind once at
-// startup. The Keycloak Operator itself is installed by the flow that creates
-// a Keycloak, because it reserves CPU for as long as it runs.
+// The suite deploys the manager once, after CloudNativePG, ECK, and the
+// Keycloak CRDs. Each controller attaches its watch on the kind it finds at
+// startup: the DatabaseServer controller on the CloudNativePG Cluster and the
+// ObjectStore kinds, the ElasticsearchCluster controller on the ECK
+// Elasticsearch kind, and the CamundaManagementCluster controller on the
+// Keycloak kind. A run that skips one of these installs runs no flow of that
+// kind, and the controller reports the kind as not installed. The Keycloak
+// Operator itself is installed by the flow that creates a Keycloak, because
+// it reserves CPU for as long as it runs.
 var _ = BeforeSuite(func() {
 	By("checking the image versions of the run")
 	for _, name := range versionEnv {
@@ -118,6 +125,7 @@ var _ = BeforeSuite(func() {
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the camunda-operator-cli image into Kind")
 
 	setupCertManager()
+	setupCNPG()
 	setupECK()
 	setupKeycloakCRDs()
 	deployManager()
@@ -129,6 +137,7 @@ var _ = AfterSuite(func() {
 	undeployManager()
 	teardownKeycloakCRDs()
 	teardownECK()
+	teardownCNPG()
 	teardownCertManager()
 })
 
@@ -249,6 +258,43 @@ func teardownCertManager() {
 
 	By("uninstalling CertManager")
 	utils.UninstallCertManager()
+}
+
+// setupCNPG installs CloudNativePG and the Barman Cloud plugin that the
+// DatabaseServer flow drives. Skips installation if CNPG_INSTALL_SKIP=true or
+// if already present. It runs after CertManager, which issues the certificate
+// the plugin serves its CNPG-I endpoint with.
+func setupCNPG() {
+	if os.Getenv("CNPG_INSTALL_SKIP") == "true" {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping CloudNativePG installation (CNPG_INSTALL_SKIP=true)\n")
+		return
+	}
+
+	By("checking if CloudNativePG and the Barman Cloud plugin are already installed")
+	if utils.IsCNPGInstalled() {
+		_, _ = fmt.Fprintf(GinkgoWriter, "CloudNativePG is already installed. Skipping installation.\n")
+		return
+	}
+
+	shouldCleanupCNPG = true
+
+	By(fmt.Sprintf("installing CloudNativePG %s", utils.CNPGVersion()))
+	Expect(utils.InstallCNPG()).To(Succeed(), "Failed to install CloudNativePG")
+
+	By(fmt.Sprintf("installing the Barman Cloud plugin %s", utils.BarmanPluginVersion()))
+	Expect(utils.InstallBarmanPlugin()).To(Succeed(), "Failed to install the Barman Cloud plugin")
+}
+
+// teardownCNPG uninstalls CloudNativePG and the Barman Cloud plugin if
+// setupCNPG installed them.
+func teardownCNPG() {
+	if !shouldCleanupCNPG {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping CloudNativePG cleanup (not installed by this suite)\n")
+		return
+	}
+
+	By("uninstalling CloudNativePG and the Barman Cloud plugin")
+	utils.UninstallCNPG()
 }
 
 // setupECK installs the ECK operator that the ElasticsearchCluster flow

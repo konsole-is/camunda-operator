@@ -97,9 +97,14 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
-# CertManager and the ECK operator are installed by default; skip with:
+# CertManager, CloudNativePG with the Barman Cloud plugin, and the ECK
+# operator are installed by default; skip with:
 # - CERT_MANAGER_INSTALL_SKIP=true
+# - CNPG_INSTALL_SKIP=true
 # - ECK_INSTALL_SKIP=true
+# CNPG_VERSION and BARMAN_PLUGIN_VERSION pin the two CloudNativePG releases.
+# They live in test/e2e/matrix/<minor>.env, which the test-e2e recipe exports,
+# so they need no variable here.
 # The suite runs an Elasticsearch node through ECK. The node needs
 # vm.max_map_count of at least 262144 on the kind host.
 KIND_CLUSTER ?= camunda-operator-test-e2e
@@ -113,14 +118,15 @@ ECK_VERSION ?= 3.5.0
 # E2E_CAMUNDA_MINOR selects the Camunda minor the suite runs against. Each
 # supported minor has a file test/e2e/matrix/<minor>.env with the image
 # versions of that minor and the list of spec flows that run for it. The
-# recipe exports the file to the suite. The e2e workflow runs two jobs per
+# recipe exports the file to the suite. The e2e workflow runs three jobs per
 # file, each with an E2E_LABEL_FILTER of its own.
 E2E_CAMUNDA_MINOR ?= 8.9
 
 # E2E_LABEL_FILTER is a Ginkgo label filter for one run of the suite. It wins
 # over the E2E_LABELS list of the matrix entry. The e2e workflow runs each
-# minor as two jobs with a filter each: one for the management plane flows,
-# one for the rest. Empty runs the flows that the matrix entry names.
+# minor as three jobs with a filter each. The filters select the
+# Elasticsearch flows, the Postgres flows, and the management plane flows.
+# Empty runs the flows that the matrix entry names.
 E2E_LABEL_FILTER ?=
 
 # E2E_TIMEOUT bounds one `go test` run of the e2e suite. The suite pulls the

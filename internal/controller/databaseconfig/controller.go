@@ -88,10 +88,12 @@ func (r *DatabaseConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 // reference first, then each credentials Secret. It returns the first failure
 // as the Ready condition.
 func (r *DatabaseConfigReconciler) validate(ctx context.Context, cfg *v1.DatabaseConfig) (metav1.Condition, error) {
+	serverKey := types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.Spec.ServerRef}
+
 	var server v1.DatabaseServerConfig
-	if err := r.Get(ctx, types.NamespacedName{Name: cfg.Spec.ServerRef}, &server); err != nil {
+	if err := r.Get(ctx, serverKey, &server); err != nil {
 		if apierrors.IsNotFound(err) {
-			msg := fmt.Sprintf("DatabaseServerConfig %q not found", cfg.Spec.ServerRef)
+			msg := fmt.Sprintf("DatabaseServerConfig %s not found", serverKey)
 			return conditions.Ready(metav1.ConditionFalse, v1.ReasonInvalidReference, msg, cfg.Generation), nil
 		}
 		return metav1.Condition{}, err
@@ -148,7 +150,8 @@ func (r *DatabaseConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.DatabaseConfig{},
 		databaseConfigServerRefField, func(o client.Object) []string {
-			return []string{o.(*v1.DatabaseConfig).Spec.ServerRef}
+			cfg := o.(*v1.DatabaseConfig)
+			return []string{refindex.NamespacedKey(cfg.Namespace, cfg.Spec.ServerRef)}
 		},
 	); err != nil {
 		return err
@@ -168,7 +171,7 @@ func (r *DatabaseConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&v1.DatabaseServerConfig{},
 			refindex.Enqueue(
 				mgr.GetClient(), &v1.DatabaseConfigList{},
-				databaseConfigServerRefField, refindex.ObjectName,
+				databaseConfigServerRefField, refindex.ObjectNamespacedName,
 			),
 		).
 		Named("databaseconfig").

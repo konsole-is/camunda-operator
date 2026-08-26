@@ -317,7 +317,8 @@ func dumpDiagnostics(testNamespace string) {
 		"events": {"get", "events", "-n", testNamespace, "--sort-by=.lastTimestamp"},
 		"resources": {
 			"get",
-			"all,pvc,secrets,elasticsearchclusters,databases,databaseconfigs,secondarystorageconfigs," +
+			"all,pvc,secrets,elasticsearchclusters,databaseservers,databaseserverconfigs," +
+				"databases,databaseconfigs,secondarystorageconfigs," +
 				"camundaclusters,camundamanagementclusters,camundaoptimizes," +
 				"logicalbackupelasticsearches,logicalbackuprdbmses,backupschedules," +
 				"logicalrestoreelasticsearches,logicalrestorerdbmses,pointintimerestores",
@@ -348,6 +349,16 @@ func dumpDiagnostics(testNamespace string) {
 		// absent when the suite skipped the Keycloak Operator.
 		"keycloak of the Keycloak Operator": {
 			"get", "keycloaks.k8s.keycloak.org", "-n", testNamespace, "-o", "yaml",
+		},
+		// CloudNativePG and the Barman Cloud plugin own these. The Cluster
+		// carries the phase and the instance list that no resource of this
+		// operator reports, and the Backup objects say whether a base backup
+		// of the archive completed, which is what holds ArchiveReady False.
+		// They are absent when the suite skipped CloudNativePG.
+		"postgres of CloudNativePG": {
+			"get", "clusters.postgresql.cnpg.io,scheduledbackups.postgresql.cnpg.io," +
+				"backups.postgresql.cnpg.io,objectstores.barmancloud.cnpg.io",
+			"-n", testNamespace, "-o", "yaml",
 		},
 		"pods": {"describe", "pods", "-n", testNamespace},
 		"workload logs": {
@@ -506,6 +517,8 @@ func containerPortNumber(container corev1.Container, port intstr.IntOrString) in
 // restores that read them.
 var customResourceKinds = []string{
 	"elasticsearchclusters",
+	"databaseservers",
+	"databaseserverconfigs",
 	"secondarystorageconfigs",
 	"databaseconfigs",
 	"camundaclusters",

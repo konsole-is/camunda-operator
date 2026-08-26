@@ -9,8 +9,27 @@ The manager never runs the CLI itself. The Jobs that the operator creates run it
 - Kubernetes 1.30 or later.
 - Helm 3.8 or later, for the OCI registry.
 - The [ECK operator](https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html), version 3.5 or later, if you use `ElasticsearchCluster`. The manager looks for the ECK CRDs when it starts. If it does not find them, every `ElasticsearchCluster` reports `Ready=False` with reason `ECKNotInstalled`. If you install ECK after the manager, restart the manager.
-- A PostgreSQL server that a `DatabaseServerConfig` describes, if you use `Database`. The operator does not run PostgreSQL.
+- The [CloudNativePG operator](https://cloudnative-pg.io/documentation/current/installation_upgrade/), version 1.26 or later, if you use `DatabaseServer`. Use 1.27 or later with the Barman Cloud plugin. The manager looks for the CloudNativePG CRDs when it starts. If it does not find them, every `DatabaseServer` reports `Ready=False` with reason `CNPGNotInstalled`. If you install CloudNativePG after the manager, restart the manager.
+- The [Barman Cloud plugin](https://cloudnative-pg.io/plugin-barman-cloud/docs/installation/), version 0.14 or later, and [cert-manager](https://cert-manager.io/docs/installation/), if you use `DatabaseServer` with `spec.archive`. Both install into the namespace of the CloudNativePG operator. Without the plugin, a `DatabaseServer` with an archive reports `Ready=False` with reason `BarmanPluginNotInstalled`. If you install the plugin after the manager, restart the manager.
+- A PostgreSQL server that a `DatabaseServerConfig` describes, if you use `Database` without a `DatabaseServer`. The operator runs PostgreSQL only through `DatabaseServer`.
 - The [Keycloak Operator](https://www.keycloak.org/operator/installation), if you use `CamundaManagementCluster` with `spec.identityProvider.keycloak`. The manager looks for the Keycloak CRDs when it starts. If it does not find them, every `CamundaManagementCluster` in that mode reports `Ready=False` with reason `KeycloakOperatorNotInstalled`. If you install the Keycloak Operator after the manager, restart the manager. Install the Keycloak Operator release that matches `spec.identityProvider.keycloak.version`, which stays below 26.7.0 for Camunda 8.9. See [The operator runs Keycloak](crds/camundamanagementcluster.md#the-operator-runs-keycloak). The other two identity provider modes do not need it. Camunda documents the same prerequisite in [Keycloak deployment](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/#keycloak-deployment).
+
+The end-to-end suite of each release runs against ECK 3.5.0, CloudNativePG 1.30.0, and the Barman Cloud plugin 0.14.0. These are the versions the release is tested with. Newer patch releases of each line work the same way.
+
+### Install CloudNativePG and the Barman Cloud plugin
+
+Install cert-manager first. The plugin serves its endpoint over a certificate that cert-manager issues.
+
+```bash
+kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.30/releases/cnpg-1.30.0.yaml
+kubectl apply --server-side -f https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.14.0/manifest.yaml
+kubectl rollout status deployment/cnpg-controller-manager -n cnpg-system
+kubectl rollout status deployment/barman-cloud -n cnpg-system
+```
+
+Both manifests install into the namespace `cnpg-system`. Use `--server-side`: each manifest carries a CRD larger than the annotation that client-side apply writes.
+
+Skip the plugin when no `DatabaseServer` uses `spec.archive`. A server without an archive runs on CloudNativePG alone, and no point-in-time restore can reach it.
 
 ## Install with Helm
 

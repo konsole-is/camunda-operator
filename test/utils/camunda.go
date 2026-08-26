@@ -237,3 +237,16 @@ func SecretEnv(envName, name, key string) corev1.EnvVar {
 		},
 	}
 }
+
+// ParseCheckpointTime reads a checkpointTimestamp of the Zeebe backup runtime
+// state endpoint. The endpoint writes the zone as "Z" or as "+0000", and only
+// the first of those two is RFC 3339.
+func ParseCheckpointTime(value string) (time.Time, error) {
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.999999999Z0700"} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed, nil
+		}
+	}
+
+	return time.Time{}, fmt.Errorf("reading the checkpoint timestamp %q", value)
+}

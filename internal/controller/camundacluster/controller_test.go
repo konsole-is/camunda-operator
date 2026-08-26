@@ -688,9 +688,9 @@ var _ = Describe("CamundaCluster controller", func() {
 			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(Equal(int32(1)))
 			g.Expect(*fetchDeployment(gatewayKey).Spec.Replicas).To(Equal(int32(1)))
 		}, timeout, interval).Should(Succeed())
-		// ocf keeps the True status of a resumed condition and reports
-		// Updating until the workload is healthy again.
-		expectReady(cluster, metav1.ConditionTrue, Equal(string(component.AliveUpdating)), Not(BeEmpty()))
+		// The cluster does not claim readiness again until the workloads it
+		// brought back are healthy.
+		expectReady(cluster, metav1.ConditionFalse, Equal(string(component.AliveUpdating)), Not(BeEmpty()))
 		stampStatefulSetReady(zeebeKey)
 		stampDeploymentReady(gatewayKey)
 		expectReady(cluster, metav1.ConditionTrue, Equal(v1.ReasonHealthy), Not(BeEmpty()))
@@ -892,7 +892,7 @@ var _ = Describe("CamundaCluster controller", func() {
 
 	It("rolls an RDBMS cluster when its DatabaseServerConfig or DatabaseConfig changes", func() {
 		ns := newNamespace()
-		server := fixtures.DatabaseServerConfig()
+		server := fixtures.DatabaseServerConfig(ns)
 		Expect(k8sClient.Create(ctx, server)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
 		dbConfig := fixtures.DatabaseConfig()

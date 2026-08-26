@@ -515,7 +515,7 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 		It("warns on dangling dump credentials instead of parking the cluster", func() {
 			ns := newNamespace()
 
-			server := fixtures.DatabaseServerConfig()
+			server := fixtures.DatabaseServerConfig(ns)
 			Expect(k8sClient.Create(ctx, server)).To(Succeed())
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
 
@@ -586,7 +586,7 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			ns := newNamespace()
 			remote := newNamespace()
 
-			server := fixtures.DatabaseServerConfig()
+			server := fixtures.DatabaseServerConfig(ns)
 			Expect(k8sClient.Create(ctx, server)).To(Succeed())
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
 

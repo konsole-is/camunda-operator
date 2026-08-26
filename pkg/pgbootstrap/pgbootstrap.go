@@ -82,6 +82,11 @@ type Bootstrapper interface {
 	// A dump must run client tools of at least the major of the server. The
 	// contract therefore publishes it for the consumers that pick those tools.
 	ServerVersion(ctx context.Context) (string, error)
+	// SystemIdentifier reads the system identifier of the server, a decimal
+	// string. initdb generates it, so it names the physical server and not
+	// the endpoint: two contracts that reach one server under different
+	// hosts read one value.
+	SystemIdentifier(ctx context.Context) (string, error)
 	// Close releases the admin connection.
 	Close()
 }
@@ -418,6 +423,17 @@ func majorVersion(num string) (string, error) {
 	}
 
 	return "", fmt.Errorf("unexpected server_version_num %q", num)
+}
+
+func (b *bootstrapper) SystemIdentifier(ctx context.Context) (string, error) {
+	var id string
+	if err := b.admin.QueryRow(
+		ctx, "SELECT system_identifier::text FROM pg_control_system()",
+	).Scan(&id); err != nil {
+		return "", fmt.Errorf("reading the system identifier: %w", err)
+	}
+
+	return id, nil
 }
 
 func (b *bootstrapper) Close() {

@@ -1,0 +1,44 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  annotations:
+    cnpg.io/hibernation: "off"
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: postgres
+    camunda.io/database-server: my-cluster-db
+  name: my-cluster-db
+  namespace: my-cluster-ns
+spec:
+  affinity: {}
+  enableSuperuserAccess: true
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  inheritedMetadata:
+    labels:
+      azure.workload.identity/use: "true"
+      camunda.io/component: postgres
+      camunda.io/database-server: my-cluster-db
+  instances: 2
+  plugins:
+  - isWALArchiver: true
+    name: barman-cloud.cloudnative-pg.io
+    parameters:
+      barmanObjectName: my-cluster-db
+      serverName: my-cluster-db
+  postgresql:
+    syncReplicaElectionConstraint:
+      enabled: false
+  resources: {}
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        azure.workload.identity/client-id: 00000000-0000-0000-0000-000000000000
+  storage:
+    size: 64Gi
+status:
+  certificates: {}
+  configMapResourceVersion: {}
+  managedRolesStatus: {}
+  secretsResourceVersion: {}
+  switchReplicaClusterStatus: {}
+  topology: {}

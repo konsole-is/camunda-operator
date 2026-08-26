@@ -19,9 +19,13 @@ limitations under the License.
 
 package e2e
 
+import (
+	"github.com/konsole-is/camunda-operator/test/utils"
+)
+
 // The environment of one matrix entry: the file test/e2e/matrix/<minor>.env
-// that make test-e2e exports before it runs the suite. The image versions
-// are required, and the suite fails at start when one is unset. The label
+// that make test-e2e exports before it runs the suite. The versions are
+// required, and the suite fails at start when one is unset. The label
 // list is optional. It names the spec flows that run for the minor in the
 // syntax of utils.LabelFilter, and an empty or absent list runs them all.
 const (
@@ -36,7 +40,8 @@ const (
 	envLabels               = "E2E_LABELS"
 )
 
-// versionEnv is every image version variable of a matrix entry.
+// versionEnv is every version variable of a matrix entry: the images of the
+// Camunda minor, and the third-party operator releases the suite installs.
 var versionEnv = []string{
 	envCamundaVersion,
 	envConnectorsVersion,
@@ -46,33 +51,6 @@ var versionEnv = []string{
 	envConsoleVersion,
 	envWebModelerVersion,
 	envKeycloakVersion,
-}
-
-// The label of each top-level container of the suite. E2E_LABELS selects
-// flows by these names. A container without one never runs under a label
-// filter, which the report check of the suite catches.
-const (
-	labelManager              = "manager"
-	labelCamundaCluster       = "camundacluster"
-	labelCamundaClusterRDBMS  = "camundacluster-rdbms"
-	labelCamundaClusterOIDC   = "camundacluster-oidc"
-	labelCamundaOptimize      = "camundaoptimize"
-	labelElasticsearchCluster = "elasticsearchcluster"
-	labelDatabase             = "database"
-	labelManagementKeycloak   = "management-keycloak"
-	labelManagementOIDC       = "management-oidc"
-)
-
-// allLabels is every label above. An E2E_LABELS entry outside it is an
-// error.
-var allLabels = []string{
-	labelManager,
-	labelCamundaCluster,
-	labelCamundaClusterRDBMS,
-	labelCamundaClusterOIDC,
-	labelCamundaOptimize,
-	labelElasticsearchCluster,
-	labelDatabase,
-	labelManagementKeycloak,
-	labelManagementOIDC,
+	utils.EnvCNPGVersion,
+	utils.EnvBarmanPluginVersion,
 }

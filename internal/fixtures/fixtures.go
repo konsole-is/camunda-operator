@@ -40,17 +40,18 @@ const (
 )
 
 // DatabaseServerConfig returns the minimal example of the CRD doc with a
-// unique name.
-func DatabaseServerConfig() *v1.DatabaseServerConfig {
+// unique name in namespace. Its admin credentials Secret is admin-creds of
+// the same namespace, with the keys username and password. The caller creates
+// that Secret.
+func DatabaseServerConfig(namespace string) *v1.DatabaseServerConfig {
 	return &v1.DatabaseServerConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "dbsc-" + utilrand.String(8)},
+		ObjectMeta: metav1.ObjectMeta{Name: "dbsc-" + utilrand.String(8), Namespace: namespace},
 		Spec: v1.DatabaseServerConfigSpec{
 			Engine: v1.DatabaseEnginePostgres,
 			Host:   "postgres.camunda-system.svc.cluster.local",
 			Port:   5432,
-			AdminCredentialsSecretRef: v1.CredentialsSecretRef{
-				Name: "admin-creds", Namespace: "camunda-system",
-				UsernameKey: "username", PasswordKey: "password",
+			AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
+				Name: "admin-creds", UsernameKey: "username", PasswordKey: "password",
 			},
 		},
 	}

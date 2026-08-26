@@ -481,23 +481,23 @@ func (r *LogicalBackupRDBMSReconciler) resolveServer(
 	dbConfig *v1.DatabaseConfig,
 ) (*v1.DatabaseServerConfig, *conditions.PreCheckFailure, error) {
 	var server v1.DatabaseServerConfig
-	key := types.NamespacedName{Name: dbConfig.Spec.ServerRef}
+	key := types.NamespacedName{Namespace: dbConfig.Namespace, Name: dbConfig.Spec.ServerRef}
 	if err := r.APIReader.Get(ctx, key, &server); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, logicalbackup.InvalidReference(
-				"DatabaseServerConfig %q does not exist", key.Name,
+				"DatabaseServerConfig %s does not exist", key,
 			), nil
 		}
 
-		return nil, nil, fmt.Errorf("reading DatabaseServerConfig %q: %w", key.Name, err)
+		return nil, nil, fmt.Errorf("reading DatabaseServerConfig %s: %w", key, err)
 	}
 
 	if !serverProbedForCurrentSpec(&server) {
 		return nil, logicalbackup.InvalidReference(
-			"DatabaseServerConfig %q has not been probed for its current spec: its controller "+
+			"DatabaseServerConfig %s has not been probed for its current spec: its controller "+
 				"publishes status.serverVersion once it reaches the server as declared, and the "+
 				"dump needs it to run matching client tools",
-			key.Name,
+			key,
 		), nil
 	}
 

@@ -270,4 +270,4 @@ spec:
 - [DatabaseConfig](databaseconfig.md): resolved for the logical database. Its `credentialsSecretRef` holds the application role that `pg_restore` connects as.
 - [DatabaseServerConfig](databaseserverconfig.md): resolved for the endpoint and the probed major version of the server.
 - [ObjectStorageConfig](objectstorageconfig.md): the bucket that the backup wrote its dump to. The target must back up through the same one.
-- [PointInTimeRestore](pointintimerestore.md): the alternative without a backup resource, for a database that you already restored to a point in time.
+- [PointInTimeRestore](pointintimerestore.md): the alternative without a backup resource, which rolls the cluster back to a point in time.

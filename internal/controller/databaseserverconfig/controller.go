@@ -62,8 +62,8 @@ const (
 
 // DatabaseServerConfigReconciler validates DatabaseServerConfig contracts. It
 // checks the admin credentials Secret reference, reaches the server with those
-// credentials, and publishes the major version that the server reports. It
-// never provisions anything.
+// credentials, and publishes the major version and the system identifier that
+// the server reports. It never provisions anything.
 type DatabaseServerConfigReconciler struct {
 	client.Client
 	// APIReader reads directly from the API server and bypasses the cache.
@@ -71,9 +71,11 @@ type DatabaseServerConfigReconciler struct {
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 
-	// probe reaches the server and reads its major version. Nil means
-	// probeServer. The tests count and stub it.
-	probe func(ctx context.Context, cfg *v1.DatabaseServerConfig, user, password string) (string, error)
+	// probe reaches the server and reads its major version and its system
+	// identifier. Nil means probeServer. The tests count and stub it.
+	probe func(
+		ctx context.Context, cfg *v1.DatabaseServerConfig, user, password string,
+	) (version, systemIdentifier string, err error)
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseserverconfigs,verbs=get;list;watch
@@ -86,6 +88,11 @@ type DatabaseServerConfigReconciler struct {
 // new. The status update is then a no-op on the server and wakes no watch.
 // The requeue sets the probe cadence, not a status-write loop.
 func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	// Cached, not live. The freshness of the last probe is the one thing this
+	// controller reads back from its own status write, and a stale copy only
+	// costs a probe it could have skipped. Nothing terminal hangs on it, a
+	// lost status write is taken again on the probe timer, and the controller
+	// records no event that a second look repeats.
 	var cfg v1.DatabaseServerConfig
 	if err := r.Get(ctx, req.NamespacedName, &cfg); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -115,8 +122,8 @@ func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl
 // condition and the time until the next check. If the admin credentials do
 // not resolve, the reason is MissingSecret. If the server does not answer
 // them, the reason is ConnectionFailed and the next check is after
-// connectionRetryInterval. When the server reports its version, the reason
-// is Healthy and validate records the version on cfg. If the probe is still
+// connectionRetryInterval. When the server answers, the reason is Healthy and
+// validate records the version and the system identifier on cfg. If the probe is still
 // fresh for the current spec and Secret, validate does not repeat it. The
 // recorded Ready stands and the requeue is the remaining part of the
 // interval. It returns an error only for transient API failures.
@@ -124,12 +131,34 @@ func (r *DatabaseServerConfigReconciler) validate(
 	ctx context.Context,
 	cfg *v1.DatabaseServerConfig,
 ) (metav1.Condition, time.Duration, error) {
+	// A spec that names another server describes another server until the next
+	// probe says otherwise. The recorded version and identity belong to the
+	// server the old spec named, and a consumer that keyed on the identity
+	// would place the database on a server nothing reached. The whole record
+	// of the probe goes, so status reads as no probe for this spec rather than
+	// a probe of a server this contract no longer describes.
+	//
+	// The test is the endpoint and the admin credentials, not the generation.
+	// Every field of this spec is writable, and the ones that carry a recovery
+	// request and its answer are written on a live contract while a rollback
+	// runs. Clearing the identity for those takes the contract, and every
+	// Database on it, out of Ready for a write that cannot move the server.
+	if probedAnotherServer(cfg) {
+		cfg.Status.ServerVersion = ""
+		cfg.Status.SystemIdentifier = ""
+		cfg.Status.ProbedAt = nil
+		cfg.Status.ProbedEndpoint = ""
+		cfg.Status.ProbedSecretName = ""
+		cfg.Status.ProbedSecretKeys = ""
+		cfg.Status.ProbedSecretVersion = ""
+	}
+
 	ref := cfg.Spec.AdminCredentialsSecretRef
 
 	secret, msg, err := secretref.Get(
 		ctx, r.APIReader,
 		types.NamespacedName{
-			Namespace: ref.Namespace,
+			Namespace: cfg.Namespace,
 			Name:      ref.Name,
 		},
 		ref.UsernameKey, ref.PasswordKey,
@@ -142,10 +171,17 @@ func (r *DatabaseServerConfigReconciler) validate(
 	}
 
 	if fresh, remaining := probeIsFresh(cfg, secret.ResourceVersion, time.Now()); fresh {
-		return *meta.FindStatusCondition(cfg.Status.Conditions, v1.ConditionReady), remaining, nil
+		// The recorded answer stands for this spec too, so it is re-stated for
+		// the generation of this spec. A consumer that waits on Ready reads
+		// the generation to tell an answer about the spec it holds from an
+		// answer about the one before it.
+		stands := *meta.FindStatusCondition(cfg.Status.Conditions, v1.ConditionReady)
+		stands.ObservedGeneration = cfg.Generation
+
+		return stands, remaining, nil
 	}
 
-	major, err := r.probeServer(
+	major, systemIdentifier, err := r.probeServer(
 		ctx, cfg, string(secret.Data[ref.UsernameKey]), string(secret.Data[ref.PasswordKey]),
 	)
 	if err != nil {
@@ -159,7 +195,11 @@ func (r *DatabaseServerConfigReconciler) validate(
 
 	now := metav1.Now()
 	cfg.Status.ServerVersion = major
+	cfg.Status.SystemIdentifier = systemIdentifier
 	cfg.Status.ProbedAt = &now
+	cfg.Status.ProbedEndpoint = probedEndpoint(cfg)
+	cfg.Status.ProbedSecretName = ref.Name
+	cfg.Status.ProbedSecretKeys = probedSecretKeys(cfg)
 	cfg.Status.ProbedSecretVersion = secret.ResourceVersion
 
 	return conditions.Ready(
@@ -170,19 +210,40 @@ func (r *DatabaseServerConfigReconciler) validate(
 	), probeInterval, nil
 }
 
+// probedAnotherServer reports whether the record of the last probe describes a
+// server, or a user on it, that this spec no longer names. A contract that has
+// never been probed has nothing to clear.
+func probedAnotherServer(cfg *v1.DatabaseServerConfig) bool {
+	return cfg.Status.ProbedAt != nil && !cfg.ProbedForCurrentSpec()
+}
+
+// probedEndpoint renders the endpoint of the spec as status records it.
+func probedEndpoint(cfg *v1.DatabaseServerConfig) string {
+	return fmt.Sprintf("%s:%d", cfg.Spec.Host, cfg.Spec.Port)
+}
+
+// probedSecretKeys renders the credential keys of the spec as status records
+// them. One Secret can hold the credentials of more than one user, so a spec
+// that reads other keys of one Secret reads another user.
+func probedSecretKeys(cfg *v1.DatabaseServerConfig) string {
+	ref := cfg.Spec.AdminCredentialsSecretRef
+
+	return ref.UsernameKey + "/" + ref.PasswordKey
+}
+
 // probeIsFresh reports whether the recorded probe still stands for cfg as it
 // is now, and for how long. A probe stands when it succeeded within the
-// interval for the current spec generation and the current Secret. In every
-// other case the controller probes the server again. That is the case when
-// there is no probe yet, or the last probe failed (a failed probe records no
-// ProbedAt). It is also the case when the probe is stale, the spec changed
-// since the last reconcile (ObservedGeneration lags), or the Secret changed.
+// interval, against the endpoint and the Secret that the spec names now. In
+// every other case the controller probes the server again. That is the case
+// when there is no probe yet, or the last probe failed (a failed probe records
+// no ProbedAt). It is also the case when the probe is stale, the spec names
+// another server or another user, or the Secret changed.
 func probeIsFresh(cfg *v1.DatabaseServerConfig, secretVersion string, now time.Time) (bool, time.Duration) {
 	ready := meta.FindStatusCondition(cfg.Status.Conditions, v1.ConditionReady)
 	if cfg.Status.ProbedAt == nil || ready == nil || ready.Status != metav1.ConditionTrue {
 		return false, 0
 	}
-	if cfg.Status.ObservedGeneration != cfg.Generation || ready.ObservedGeneration != cfg.Generation {
+	if probedAnotherServer(cfg) {
 		return false, 0
 	}
 	if cfg.Status.ProbedSecretVersion != secretVersion {
@@ -199,7 +260,7 @@ func probeIsFresh(cfg *v1.DatabaseServerConfig, secretVersion string, now time.T
 // probeServer reaches the server through the injected probe, or the default.
 func (r *DatabaseServerConfigReconciler) probeServer(
 	ctx context.Context, cfg *v1.DatabaseServerConfig, user, password string,
-) (string, error) {
+) (version, systemIdentifier string, err error) {
 	if r.probe != nil {
 		return r.probe(ctx, cfg, user, password)
 	}
@@ -208,21 +269,23 @@ func (r *DatabaseServerConfigReconciler) probeServer(
 }
 
 // probe opens the admin connection to the server that cfg describes and reads
-// the major version that it reports. Any failure means that the server, as
-// declared, is not usable with these credentials. The whole probe ends
-// within probeTimeout.
-func probe(ctx context.Context, cfg *v1.DatabaseServerConfig, user, password string) (string, error) {
+// the major version and the system identifier that it reports. Any failure
+// means that the server, as declared, is not usable with these credentials.
+// The whole probe ends within probeTimeout.
+func probe(
+	ctx context.Context, cfg *v1.DatabaseServerConfig, user, password string,
+) (version, systemIdentifier string, err error) {
 	return probeWithin(ctx, probeTimeout, cfg, user, password)
 }
 
 // probeWithin is probe with an explicit deadline for the connection and the
-// query together.
+// queries together.
 func probeWithin(
 	ctx context.Context,
 	timeout time.Duration,
 	cfg *v1.DatabaseServerConfig,
 	user, password string,
-) (string, error) {
+) (version, systemIdentifier string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -233,11 +296,21 @@ func probeWithin(
 		Password: password,
 	})
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer admin.Close()
 
-	return admin.ServerVersion(ctx)
+	version, err = admin.ServerVersion(ctx)
+	if err != nil {
+		return "", "", err
+	}
+
+	systemIdentifier, err = admin.SystemIdentifier(ctx)
+	if err != nil {
+		return "", "", err
+	}
+
+	return version, systemIdentifier, nil
 }
 
 // SetupWithManager registers the controller, an index of CRs by referenced
@@ -246,8 +319,10 @@ func (r *DatabaseServerConfigReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.DatabaseServerConfig{},
 		databaseServerConfigSecretRefsField, func(o client.Object) []string {
-			ref := o.(*v1.DatabaseServerConfig).Spec.AdminCredentialsSecretRef
-			return []string{refindex.NamespacedKey(ref.Namespace, ref.Name)}
+			cfg := o.(*v1.DatabaseServerConfig)
+			return []string{
+				refindex.NamespacedKey(cfg.Namespace, cfg.Spec.AdminCredentialsSecretRef.Name),
+			}
 		},
 	); err != nil {
 		return err

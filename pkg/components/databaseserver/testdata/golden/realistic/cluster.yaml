@@ -1,0 +1,54 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  annotations:
+    cnpg.io/hibernation: "off"
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: postgres
+    camunda.io/database-server: my-cluster-db
+  name: my-cluster-db
+  namespace: my-cluster-ns
+spec:
+  affinity:
+    tolerations:
+    - effect: NoSchedule
+      key: dedicated
+      operator: Equal
+      value: postgres
+  enableSuperuserAccess: true
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  inheritedMetadata:
+    annotations:
+      prometheus.io/scrape: "true"
+    labels:
+      camunda.io/component: postgres
+      camunda.io/database-server: my-cluster-db
+      team: platform
+  instances: 3
+  postgresql:
+    syncReplicaElectionConstraint:
+      enabled: false
+  resources:
+    limits:
+      memory: 4Gi
+    requests:
+      cpu: "2"
+      memory: 4Gi
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/my-archive-role
+  storage:
+    size: 128Gi
+    storageClass: ssd
+  walStorage:
+    size: 16Gi
+    storageClass: ssd
+status:
+  certificates: {}
+  configMapResourceVersion: {}
+  managedRolesStatus: {}
+  secretsResourceVersion: {}
+  switchReplicaClusterStatus: {}
+  topology: {}

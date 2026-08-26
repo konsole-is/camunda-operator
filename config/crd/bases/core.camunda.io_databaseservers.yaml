@@ -1,0 +1,1302 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: databaseservers.core.camunda.io
+spec:
+  group: core.camunda.io
+  names:
+    kind: DatabaseServer
+    listKind: DatabaseServerList
+    plural: databaseservers
+    singular: databaseserver
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      type: string
+    - jsonPath: .spec.version
+      name: Version
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          DatabaseServer runs one PostgreSQL instance through the external
+          CloudNativePG operator, archives it continuously to an object storage
+          bucket, and publishes the connection details as a DatabaseServerConfig that
+          a Database and a PointInTimeRestore consume. One or more orchestration
+          clusters use the instance, each through a Database of its own.
+
+          A PointInTimeRestore rolls the whole instance back, so it needs a server
+          that holds the database of its cluster and nothing else.
+
+          The name of the CR names the CloudNativePG cluster, so admission holds it to
+          a DNS-1035 label of at most 46 characters: the 50 that CloudNativePG accepts
+          for a cluster name, less the four of the "-r99" that a rollback appends. A
+          name inside that bound reaches the cluster of a rollback whole while the
+          recovery index stays below 100, and is shortened to a head and a hash above
+          that. The index counts the archive records of the server, so a rollback, an
+          archive the spec re-enables, and a change of bucket each add one.
+
+          The rule runs on create only. A name never changes on update. If the rule
+          runs there too, it rejects an edit of another field on an object that
+          predates it, and nothing more.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of DatabaseServer
+            properties:
+              archive:
+                description: |-
+                  Archive points the server at the bucket that holds its continuous
+                  archive. Without it the server takes no part in point-in-time restore.
+                properties:
+                  baseBackupSchedule:
+                    default: 0 0 2 * * *
+                    description: |-
+                      BaseBackupSchedule is when a base backup is taken, as the six-field
+                      cron of CloudNativePG (seconds first, in UTC), or as one of the
+                      descriptors @yearly, @annually, @monthly, @weekly, @daily, @midnight,
+                      @hourly and @every. The first base backup runs as soon as the server is
+                      up, whatever the schedule says, because the archive can be recovered
+                      from only after it completes.
+
+                      The five-field cron of a Kubernetes CronJob is refused. CloudNativePG
+                      reads the first field as seconds, so a five-field value runs at a
+                      different time from the one its author meant.
+
+                      Each field is bounded to what CloudNativePG takes there: 0-59 for
+                      seconds and minutes, 0-23 for hours, 1-31 for the day of the month,
+                      1-12 or JAN-DEC for the month, and 0-6 or SUN-SAT for the day of the
+                      week. A range whose first value is above its second, such as FRI-MON,
+                      cannot be caught by a pattern. The operator refuses it instead, and
+                      Ready reports InvalidReference before anything is applied.
+
+                      A step takes at most three digits and an @every number at most six
+                      digits on each side of the point. Both are stricter than the parser of
+                      CloudNativePG, which reads a longer number and then overflows on it and
+                      stops taking base backups.
+                    pattern: ^(\s*([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d{0,2})?(,([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d{0,2})?)*\s+([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d{0,2})?(,([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d{0,2})?)*\s+([*?]|([01]?\d|2[0-3])(-([01]?\d|2[0-3]))?)(/[1-9]\d{0,2})?(,([*?]|([01]?\d|2[0-3])(-([01]?\d|2[0-3]))?)(/[1-9]\d{0,2})?)*\s+([*?]|([1-9]|[12]\d|3[01])(-([1-9]|[12]\d|3[01]))?)(/[1-9]\d{0,2})?(,([*?]|([1-9]|[12]\d|3[01])(-([1-9]|[12]\d|3[01]))?)(/[1-9]\d{0,2})?)*\s+([*?]|([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc])(-([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc]))?)(/[1-9]\d{0,2})?(,([*?]|([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc])(-([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc]))?)(/[1-9]\d{0,2})?)*\s+([*?]|([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii])(-([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii]))?)(/[1-9]\d{0,2})?(,([*?]|([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii])(-([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii]))?)(/[1-9]\d{0,2})?)*\s*|@((year|annual|month|week|dai|hour)ly|midnight|every
+                      (\d{1,6}(\.\d{1,6})?[hms])+))$
+                    type: string
+                  objectStorageRef:
+                    description: |-
+                      ObjectStorageRef names a cluster-scoped ObjectStorageConfig. The
+                      operator writes the archive under a prefix of that bucket that holds
+                      this server alone.
+                    maxLength: 253
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                  retentionPeriodDays:
+                    description: |-
+                      RetentionPeriodDays is how far into the past a restore can reach. It is
+                      what the operator enforces on the bucket and what the contract of this
+                      server publishes, so the declared value and the enforced value are one.
+
+                      The maximum is 36500 days, which is a hundred years. The operator counts
+                      the reachable window in nanoseconds, and a longer period overflows that
+                      count and puts the oldest reachable point in the future, which makes
+                      every request unreachable.
+                    format: int32
+                    maximum: 36500
+                    minimum: 1
+                    type: integer
+                required:
+                - objectStorageRef
+                - retentionPeriodDays
+                type: object
+              databaseServerConfig:
+                description: |-
+                  DatabaseServerConfig names the DatabaseServerConfig the operator
+                  publishes in this CR's own namespace with the endpoint, the admin
+                  credentials, and the point-in-time-recovery capability of the server.
+                  Required on a DatabaseServer, forbidden in a preset.
+                maxLength: 253
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
+              instances:
+                description: |-
+                  Instances is the number of PostgreSQL instances. One instance has no
+                  failover: a node that goes away takes the server with it until the
+                  volume is reattached. Defaults to 1.
+                format: int32
+                minimum: 1
+                type: integer
+              monitoring:
+                description: Monitoring configures the Prometheus scraping integration.
+                properties:
+                  podMonitor:
+                    description: PodMonitor configures the Prometheus PodMonitor over
+                      the instance pods.
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: Annotations are extra annotations applied to
+                          the PodMonitor.
+                        type: object
+                      enabled:
+                        description: Enabled creates the PodMonitor when true. Defaults
+                          to false.
+                        type: boolean
+                      interval:
+                        description: |-
+                          Interval is how often Prometheus scrapes the pods, as a Prometheus
+                          duration such as 30s. Empty leaves the interval to the Prometheus
+                          configuration.
+                        pattern: ^(0|(([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?)$
+                        type: string
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: Labels are extra labels applied to the PodMonitor.
+                        type: object
+                    type: object
+                type: object
+              platformConfigRef:
+                description: |-
+                  PlatformConfigRef names a cluster-scoped CamundaPlatformConfig. Only
+                  its image settings are read: spec.imageRegistry and
+                  spec.images.postgres decide where the PostgreSQL image is pulled from,
+                  which is what an air-gapped cluster needs. Empty leaves the image at
+                  its default repository.
+                maxLength: 253
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
+              podAnnotations:
+                additionalProperties:
+                  type: string
+                description: PodAnnotations are extra annotations applied to the instance
+                  pods.
+                type: object
+              podLabels:
+                additionalProperties:
+                  type: string
+                description: PodLabels are extra labels applied to the instance pods.
+                type: object
+              presetRef:
+                description: |-
+                  PresetRef names a cluster-scoped DatabaseServerPreset used as the
+                  configuration baseline; fields set inline override the preset's value
+                  for that field wholesale.
+                type: string
+              resources:
+                description: Resources are the CPU and memory of each instance.
+                properties:
+                  claims:
+                    description: |-
+                      Claims lists the names of resources, defined in spec.resourceClaims,
+                      that are used by this container.
+
+                      This field depends on the
+                      DynamicResourceAllocation feature gate.
+
+                      This field is immutable. It can only be set for containers.
+                    items:
+                      description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                      properties:
+                        name:
+                          description: |-
+                            Name must match the name of one entry in pod.spec.resourceClaims of
+                            the Pod where this field is used. It makes that resource available
+                            inside a container.
+                          type: string
+                        request:
+                          description: |-
+                            Request is the name chosen for a request in the referenced claim.
+                            If empty, everything from the claim is made available, otherwise
+                            only the result of this request.
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  limits:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: |-
+                      Limits describes the maximum amount of compute resources allowed.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                    type: object
+                  requests:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: |-
+                      Requests describes the minimum amount of compute resources required.
+                      If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                      otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                    type: object
+                type: object
+              scheduling:
+                description: |-
+                  Scheduling constraints for the instance pods; when set, it replaces the
+                  preset's scheduling block entirely (no merge).
+                properties:
+                  nodeAffinity:
+                    description: NodeAffinity rules for the pods.
+                    properties:
+                      preferredDuringSchedulingIgnoredDuringExecution:
+                        description: |-
+                          The scheduler will prefer to schedule pods to nodes that satisfy
+                          the affinity expressions specified by this field, but it may choose
+                          a node that violates one or more of the expressions. The node that is
+                          most preferred is the one with the greatest sum of weights, i.e.
+                          for each node that meets all of the scheduling requirements (resource
+                          request, requiredDuringScheduling affinity expressions, etc.),
+                          compute a sum by iterating through the elements of this field and adding
+                          "weight" to the sum if the node matches the corresponding matchExpressions; the
+                          node(s) with the highest sum are the most preferred.
+                        items:
+                          description: |-
+                            An empty preferred scheduling term matches all objects with implicit weight 0
+                            (i.e. it's a no-op). A null preferred scheduling term matches no objects (i.e. is also a no-op).
+                          properties:
+                            preference:
+                              description: A node selector term, associated with the
+                                corresponding weight.
+                              properties:
+                                matchExpressions:
+                                  description: A list of node selector requirements
+                                    by node's labels.
+                                  items:
+                                    description: |-
+                                      A node selector requirement is a selector that contains values, a key, and an operator
+                                      that relates the key and values.
+                                    properties:
+                                      key:
+                                        description: The label key that the selector
+                                          applies to.
+                                        type: string
+                                      operator:
+                                        description: |-
+                                          Represents a key's relationship to a set of values.
+                                          Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                                        type: string
+                                      values:
+                                        description: |-
+                                          An array of string values. If the operator is In or NotIn,
+                                          the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                          the values array must be empty. If the operator is Gt or Lt, the values
+                                          array must have a single element, which will be interpreted as an integer.
+                                          This array is replaced during a strategic merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                                matchFields:
+                                  description: A list of node selector requirements
+                                    by node's fields.
+                                  items:
+                                    description: |-
+                                      A node selector requirement is a selector that contains values, a key, and an operator
+                                      that relates the key and values.
+                                    properties:
+                                      key:
+                                        description: The label key that the selector
+                                          applies to.
+                                        type: string
+                                      operator:
+                                        description: |-
+                                          Represents a key's relationship to a set of values.
+                                          Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                                        type: string
+                                      values:
+                                        description: |-
+                                          An array of string values. If the operator is In or NotIn,
+                                          the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                          the values array must be empty. If the operator is Gt or Lt, the values
+                                          array must have a single element, which will be interpreted as an integer.
+                                          This array is replaced during a strategic merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            weight:
+                              description: Weight associated with matching the corresponding
+                                nodeSelectorTerm, in the range 1-100.
+                              format: int32
+                              type: integer
+                          required:
+                          - preference
+                          - weight
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      requiredDuringSchedulingIgnoredDuringExecution:
+                        description: |-
+                          If the affinity requirements specified by this field are not met at
+                          scheduling time, the pod will not be scheduled onto the node.
+                          If the affinity requirements specified by this field cease to be met
+                          at some point during pod execution (e.g. due to an update), the system
+                          may or may not try to eventually evict the pod from its node.
+                        properties:
+                          nodeSelectorTerms:
+                            description: Required. A list of node selector terms.
+                              The terms are ORed.
+                            items:
+                              description: |-
+                                A null or empty node selector term matches no objects. The requirements of
+                                them are ANDed.
+                                The TopologySelectorTerm type implements a subset of the NodeSelectorTerm.
+                              properties:
+                                matchExpressions:
+                                  description: A list of node selector requirements
+                                    by node's labels.
+                                  items:
+                                    description: |-
+                                      A node selector requirement is a selector that contains values, a key, and an operator
+                                      that relates the key and values.
+                                    properties:
+                                      key:
+                                        description: The label key that the selector
+                                          applies to.
+                                        type: string
+                                      operator:
+                                        description: |-
+                                          Represents a key's relationship to a set of values.
+                                          Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                                        type: string
+                                      values:
+                                        description: |-
+                                          An array of string values. If the operator is In or NotIn,
+                                          the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                          the values array must be empty. If the operator is Gt or Lt, the values
+                                          array must have a single element, which will be interpreted as an integer.
+                                          This array is replaced during a strategic merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                                matchFields:
+                                  description: A list of node selector requirements
+                                    by node's fields.
+                                  items:
+                                    description: |-
+                                      A node selector requirement is a selector that contains values, a key, and an operator
+                                      that relates the key and values.
+                                    properties:
+                                      key:
+                                        description: The label key that the selector
+                                          applies to.
+                                        type: string
+                                      operator:
+                                        description: |-
+                                          Represents a key's relationship to a set of values.
+                                          Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                                        type: string
+                                      values:
+                                        description: |-
+                                          An array of string values. If the operator is In or NotIn,
+                                          the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                          the values array must be empty. If the operator is Gt or Lt, the values
+                                          array must have a single element, which will be interpreted as an integer.
+                                          This array is replaced during a strategic merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            type: array
+                            x-kubernetes-list-type: atomic
+                        required:
+                        - nodeSelectorTerms
+                        type: object
+                        x-kubernetes-map-type: atomic
+                    type: object
+                  podAffinity:
+                    description: PodAffinity rules for the pods.
+                    properties:
+                      preferredDuringSchedulingIgnoredDuringExecution:
+                        description: |-
+                          The scheduler will prefer to schedule pods to nodes that satisfy
+                          the affinity expressions specified by this field, but it may choose
+                          a node that violates one or more of the expressions. The node that is
+                          most preferred is the one with the greatest sum of weights, i.e.
+                          for each node that meets all of the scheduling requirements (resource
+                          request, requiredDuringScheduling affinity expressions, etc.),
+                          compute a sum by iterating through the elements of this field and adding
+                          "weight" to the sum if the node has pods which matches the corresponding podAffinityTerm; the
+                          node(s) with the highest sum are the most preferred.
+                        items:
+                          description: The weights of all of the matched WeightedPodAffinityTerm
+                            fields are added per-node to find the most preferred node(s)
+                          properties:
+                            podAffinityTerm:
+                              description: Required. A pod affinity term, associated
+                                with the corresponding weight.
+                              properties:
+                                labelSelector:
+                                  description: |-
+                                    A label query over a set of resources, in this case pods.
+                                    If it's null, this PodAffinityTerm matches with no Pods.
+                                  properties:
+                                    matchExpressions:
+                                      description: matchExpressions is a list of label
+                                        selector requirements. The requirements are
+                                        ANDed.
+                                      items:
+                                        description: |-
+                                          A label selector requirement is a selector that contains values, a key, and an operator that
+                                          relates the key and values.
+                                        properties:
+                                          key:
+                                            description: key is the label key that
+                                              the selector applies to.
+                                            type: string
+                                          operator:
+                                            description: |-
+                                              operator represents a key's relationship to a set of values.
+                                              Valid operators are In, NotIn, Exists and DoesNotExist.
+                                            type: string
+                                          values:
+                                            description: |-
+                                              values is an array of string values. If the operator is In or NotIn,
+                                              the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                              the values array must be empty. This array is replaced during a strategic
+                                              merge patch.
+                                            items:
+                                              type: string
+                                            type: array
+                                            x-kubernetes-list-type: atomic
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                      x-kubernetes-list-type: atomic
+                                    matchLabels:
+                                      additionalProperties:
+                                        type: string
+                                      description: |-
+                                        matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                        map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                        operator is "In", and the values array contains only "value". The requirements are ANDed.
+                                      type: object
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                                matchLabelKeys:
+                                  description: |-
+                                    MatchLabelKeys is a set of pod label keys to select which pods will
+                                    be taken into consideration. The keys are used to lookup values from the
+                                    incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
+                                    to select the group of existing pods which pods will be taken into consideration
+                                    for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
+                                    pod labels will be ignored. The default value is empty.
+                                    The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                    Also, matchLabelKeys cannot be set when labelSelector isn't set.
+                                  items:
+                                    type: string
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                                mismatchLabelKeys:
+                                  description: |-
+                                    MismatchLabelKeys is a set of pod label keys to select which pods will
+                                    be taken into consideration. The keys are used to lookup values from the
+                                    incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
+                                    to select the group of existing pods which pods will be taken into consideration
+                                    for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
+                                    pod labels will be ignored. The default value is empty.
+                                    The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                    Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
+                                  items:
+                                    type: string
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                                namespaceSelector:
+                                  description: |-
+                                    A label query over the set of namespaces that the term applies to.
+                                    The term is applied to the union of the namespaces selected by this field
+                                    and the ones listed in the namespaces field.
+                                    null selector and null or empty namespaces list means "this pod's namespace".
+                                    An empty selector ({}) matches all namespaces.
+                                  properties:
+                                    matchExpressions:
+                                      description: matchExpressions is a list of label
+                                        selector requirements. The requirements are
+                                        ANDed.
+                                      items:
+                                        description: |-
+                                          A label selector requirement is a selector that contains values, a key, and an operator that
+                                          relates the key and values.
+                                        properties:
+                                          key:
+                                            description: key is the label key that
+                                              the selector applies to.
+                                            type: string
+                                          operator:
+                                            description: |-
+                                              operator represents a key's relationship to a set of values.
+                                              Valid operators are In, NotIn, Exists and DoesNotExist.
+                                            type: string
+                                          values:
+                                            description: |-
+                                              values is an array of string values. If the operator is In or NotIn,
+                                              the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                              the values array must be empty. This array is replaced during a strategic
+                                              merge patch.
+                                            items:
+                                              type: string
+                                            type: array
+                                            x-kubernetes-list-type: atomic
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                      x-kubernetes-list-type: atomic
+                                    matchLabels:
+                                      additionalProperties:
+                                        type: string
+                                      description: |-
+                                        matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                        map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                        operator is "In", and the values array contains only "value". The requirements are ANDed.
+                                      type: object
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                                namespaces:
+                                  description: |-
+                                    namespaces specifies a static list of namespace names that the term applies to.
+                                    The term is applied to the union of the namespaces listed in this field
+                                    and the ones selected by namespaceSelector.
+                                    null or empty namespaces list and null namespaceSelector means "this pod's namespace".
+                                  items:
+                                    type: string
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                                topologyKey:
+                                  description: |-
+                                    This pod should be co-located (affinity) or not co-located (anti-affinity) with the pods matching
+                                    the labelSelector in the specified namespaces, where co-located is defined as running on a node
+                                    whose value of the label with key topologyKey matches that of any node on which any of the
+                                    selected pods is running.
+                                    Empty topologyKey is not allowed.
+                                  type: string
+                              required:
+                              - topologyKey
+                              type: object
+                            weight:
+                              description: |-
+                                weight associated with matching the corresponding podAffinityTerm,
+                                in the range 1-100.
+                              format: int32
+                              type: integer
+                          required:
+                          - podAffinityTerm
+                          - weight
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      requiredDuringSchedulingIgnoredDuringExecution:
+                        description: |-
+                          If the affinity requirements specified by this field are not met at
+                          scheduling time, the pod will not be scheduled onto the node.
+                          If the affinity requirements specified by this field cease to be met
+                          at some point during pod execution (e.g. due to a pod label update), the
+                          system may or may not try to eventually evict the pod from its node.
+                          When there are multiple elements, the lists of nodes corresponding to each
+                          podAffinityTerm are intersected, i.e. all terms must be satisfied.
+                        items:
+                          description: |-
+                            Defines a set of pods (namely those matching the labelSelector
+                            relative to the given namespace(s)) that this pod should be
+                            co-located (affinity) or not co-located (anti-affinity) with,
+                            where co-located is defined as running on a node whose value of
+                            the label with key <topologyKey> matches that of any node on which
+                            a pod of the set of pods is running
+                          properties:
+                            labelSelector:
+                              description: |-
+                                A label query over a set of resources, in this case pods.
+                                If it's null, this PodAffinityTerm matches with no Pods.
+                              properties:
+                                matchExpressions:
+                                  description: matchExpressions is a list of label
+                                    selector requirements. The requirements are ANDed.
+                                  items:
+                                    description: |-
+                                      A label selector requirement is a selector that contains values, a key, and an operator that
+                                      relates the key and values.
+                                    properties:
+                                      key:
+                                        description: key is the label key that the
+                                          selector applies to.
+                                        type: string
+                                      operator:
+                                        description: |-
+                                          operator represents a key's relationship to a set of values.
+                                          Valid operators are In, NotIn, Exists and DoesNotExist.
+                                        type: string
+                                      values:
+                                        description: |-
+                                          values is an array of string values. If the operator is In or NotIn,
+                                          the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                          the values array must be empty. This array is replaced during a strategic
+                                          merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                                matchLabels:
+                                  additionalProperties:
+                                    type: string
+                                  description: |-
+                                    matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                    map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                    operator is "In", and the values array contains only "value". The requirements are ANDed.
+                                  type: object
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            matchLabelKeys:
+                              description: |-
+                                MatchLabelKeys is a set of pod label keys to select which pods will
+                                be taken into consideration. The keys are used to lookup values from the
+                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
+                                to select the group of existing pods which pods will be taken into consideration
+                                for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
+                                pod labels will be ignored. The default value is empty.
+                                The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                Also, matchLabelKeys cannot be set when labelSelector isn't set.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            mismatchLabelKeys:
+                              description: |-
+                                MismatchLabelKeys is a set of pod label keys to select which pods will
+                                be taken into consideration. The keys are used to lookup values from the
+                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
+                                to select the group of existing pods which pods will be taken into consideration
+                                for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
+                                pod labels will be ignored. The default value is empty.
+                                The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            namespaceSelector:
+                              description: |-
+                                A label query over the set of namespaces that the term applies to.
+                                The term is applied to the union of the namespaces selected by this field
+                                and the ones listed in the namespaces field.
+                                null selector and null or empty namespaces list means "this pod's namespace".
+                                An empty selector ({}) matches all namespaces.
+                              properties:
+                                matchExpressions:
+                                  description: matchExpressions is a list of label
+                                    selector requirements. The requirements are ANDed.
+                                  items:
+                                    description: |-
+                                      A label selector requirement is a selector that contains values, a key, and an operator that
+                                      relates the key and values.
+                                    properties:
+                                      key:
+                                        description: key is the label key that the
+                                          selector applies to.
+                                        type: string
+                                      operator:
+                                        description: |-
+                                          operator represents a key's relationship to a set of values.
+                                          Valid operators are In, NotIn, Exists and DoesNotExist.
+                                        type: string
+                                      values:
+                                        description: |-
+                                          values is an array of string values. If the operator is In or NotIn,
+                                          the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                          the values array must be empty. This array is replaced during a strategic
+                                          merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                                matchLabels:
+                                  additionalProperties:
+                                    type: string
+                                  description: |-
+                                    matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                    map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                    operator is "In", and the values array contains only "value". The requirements are ANDed.
+                                  type: object
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            namespaces:
+                              description: |-
+                                namespaces specifies a static list of namespace names that the term applies to.
+                                The term is applied to the union of the namespaces listed in this field
+                                and the ones selected by namespaceSelector.
+                                null or empty namespaces list and null namespaceSelector means "this pod's namespace".
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            topologyKey:
+                              description: |-
+                                This pod should be co-located (affinity) or not co-located (anti-affinity) with the pods matching
+                                the labelSelector in the specified namespaces, where co-located is defined as running on a node
+                                whose value of the label with key topologyKey matches that of any node on which any of the
+                                selected pods is running.
+                                Empty topologyKey is not allowed.
+                              type: string
+                          required:
+                          - topologyKey
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
+                    type: object
+                  tolerations:
+                    description: Tolerations for the pods.
+                    items:
+                      description: |-
+                        The pod this Toleration is attached to tolerates any taint that matches
+                        the triple <key,value,effect> using the matching operator <operator>.
+                      properties:
+                        effect:
+                          description: |-
+                            Effect indicates the taint effect to match. Empty means match all taint effects.
+                            When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                          type: string
+                        key:
+                          description: |-
+                            Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                            If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                          type: string
+                        operator:
+                          description: |-
+                            Operator represents a key's relationship to the value.
+                            Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                            Exists is equivalent to wildcard for value, so that a pod can
+                            tolerate all taints of a particular category.
+                            Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                          type: string
+                        tolerationSeconds:
+                          description: |-
+                            TolerationSeconds represents the period of time the toleration (which must be
+                            of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                            it is not set, which means tolerate the taint forever (do not evict). Zero and
+                            negative values will be treated as 0 (evict immediately) by the system.
+                          format: int64
+                          type: integer
+                        value:
+                          description: |-
+                            Value is the taint value the toleration matches to.
+                            If the operator is Exists, the value should be empty, otherwise just a regular string.
+                          type: string
+                      type: object
+                    type: array
+                type: object
+              serviceAccount:
+                description: ServiceAccount configures the ServiceAccount of the instance
+                  pods.
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      Annotations to set on the ServiceAccount, typically workload-identity
+                      annotations (IRSA, GCP Workload Identity, and more) that grant the
+                      instance pods access to cloud resources.
+                    type: object
+                type: object
+              storageClassName:
+                description: |-
+                  StorageClassName is the StorageClass of the data volumes. Defaults to
+                  the cluster's default StorageClass.
+                type: string
+              storageSize:
+                anyOf:
+                - type: integer
+                - type: string
+                description: |-
+                  StorageSize is the size of the data volume of each instance. It cannot
+                  shrink, because PostgreSQL data volumes cannot be reduced in place.
+                  Admission rejects a lower inline value on a DatabaseServer through a
+                  CEL transition rule. That rule does not bind this shared field, so a
+                  preset baseline can be lowered: a server that already applied a larger
+                  size keeps it and records a StorageShrinkIgnored event. Required unless
+                  the resolved preset provides it.
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
+              suspend:
+                description: |-
+                  Suspend stops the PostgreSQL instances and keeps their data volumes.
+                  The operator hibernates the CloudNativePG cluster: the instance pods
+                  are removed, the volumes stay, and setting the field back to false
+                  brings the instances back on the same volumes. Defaults to false.
+                type: boolean
+              version:
+                description: |-
+                  Version is the PostgreSQL major version to run, as a bare number such
+                  as "17". It selects the image tag. Camunda 8.9 supports PostgreSQL 14
+                  and later; the floor is enforced by the controller on the
+                  preset-merged result. Required unless the resolved preset provides it.
+
+                  The major of a running server cannot change. A value that names another
+                  major, higher or lower, is refused on the Ready condition with reason
+                  VersionChangeRefused, and the server keeps running the major it has. A
+                  preset can raise it the same way and is refused the same way. To run
+                  another major, create a server on it and move the data over.
+                pattern: ^\d+$
+                type: string
+              walStorageSize:
+                anyOf:
+                - type: integer
+                - type: string
+                description: |-
+                  WALStorageSize puts the write-ahead log on a volume of its own, of this
+                  size. Unset keeps the log on the data volume. It cannot shrink, for the
+                  same reason storageSize cannot, and a lowered preset baseline is
+                  ignored the same way.
+
+                  It can be added to a running server, and it cannot be taken away again:
+                  CloudNativePG refuses a cluster that gives up the volume. A cleared
+                  field, inline or from a preset, keeps the volume at the size it has and
+                  records a WALStorageKept event.
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
+            type: object
+            x-kubernetes-validations:
+            - message: databaseServerConfig is required
+              rule: has(self.databaseServerConfig)
+            - message: storageSize may not be shrunk
+              rule: '!has(oldSelf.storageSize) || !has(self.storageSize) || !quantity(string(self.storageSize)).isLessThan(quantity(string(oldSelf.storageSize)))'
+            - message: walStorageSize may not be shrunk
+              rule: '!has(oldSelf.walStorageSize) || !has(self.walStorageSize) ||
+                !quantity(string(self.walStorageSize)).isLessThan(quantity(string(oldSelf.walStorageSize)))'
+          status:
+            description: status defines the observed state of DatabaseServer
+            properties:
+              archive:
+                description: |-
+                  Archive is the observed state of the continuous archive of the server.
+                  It is unset until the server has written one. Removing spec.archive
+                  does not clear it: the bucket still holds what the server wrote, and a
+                  server that archives again can recover from it.
+                properties:
+                  boundary:
+                    description: |-
+                      Boundary is the last move of the archive that no record holds yet:
+                      spec.archive was re-enabled on another location, or the location moved
+                      again before a base backup opened a record. It is what keeps a base
+                      backup of the location the server left from opening the interval of the
+                      one it moved to. It is cleared when that interval opens.
+                    properties:
+                      at:
+                        description: At is when the server moved.
+                        format: date-time
+                        type: string
+                      location:
+                        description: |-
+                          Location is the location it moved to, in the form ArchiveRecord.Location
+                          takes. The boundary is spent once the archive of that location opens a
+                          record, and it moves again when the location moves again.
+                        type: string
+                      objectStorageRef:
+                        description: |-
+                          ObjectStorageRef is the ObjectStorageConfig of that location, for the
+                          reader.
+                        type: string
+                    required:
+                    - at
+                    - location
+                    type: object
+                  history:
+                    description: |-
+                      History lists every archive the server has written, oldest first. A
+                      recovery picks the record whose interval holds the requested point.
+                      Records are never removed, so a restore can reach back across an
+                      earlier recovery for as long as the bucket keeps the objects. Removing
+                      spec.archive closes the record that is open and keeps the list, and
+                      asking for an archive again opens a record of its own. Pointing
+                      spec.archive at another bucket does the same. The window with no
+                      archive therefore lies inside no interval, and no restore can reach a
+                      point in it.
+                    items:
+                      description: |-
+                        ArchiveRecord is one continuous archive that a server has written. A
+                        recovery replays it from a base backup up to the requested point, so only a
+                        point inside the interval of a record can be reached.
+                      properties:
+                        from:
+                          description: |-
+                            From is the earliest point this archive can be recovered to: when its
+                            first base backup completed.
+                          format: date-time
+                          type: string
+                        location:
+                          description: |-
+                            Location is where in object storage this archive was written: the
+                            provider, the bucket, and the path, as one URL. It is what decides
+                            whether two intervals hold the same archive. An ObjectStorageConfig can
+                            be edited in place or removed and created again under its name, so the
+                            name alone does not say that. A record written before this field
+                            existed carries none, and takes the location of the server on first
+                            sight.
+                          type: string
+                        objectStorageRef:
+                          description: |-
+                            ObjectStorageRef is the cluster-scoped ObjectStorageConfig that holds
+                            this archive. A server that is pointed at another bucket closes this
+                            record and opens one of its own, so every interval names the bucket a
+                            restore of that interval has to read.
+                          type: string
+                        serverName:
+                          description: |-
+                            ServerName is the archive directory in the bucket, equal to the name of
+                            the CloudNativePG cluster that wrote it.
+                          type: string
+                        to:
+                          description: |-
+                            To is the latest point this archive can be recovered to. It is unset
+                            while the archive is the one the server writes to now.
+                          format: date-time
+                          type: string
+                      required:
+                      - from
+                      - serverName
+                      type: object
+                    type: array
+                  reachableFrom:
+                    description: |-
+                      ReachableFrom is the oldest point the objects in the bucket still go
+                      back to. The retention period prunes the bucket as it runs, and a
+                      raised retention period does not bring back what a shorter one already
+                      pruned. The window grows to the new retention period only as the
+                      archive writes past this point, and a rollback to a point before it is
+                      refused. It is unset on a server that archived before this field
+                      existed, and the retention period alone bounds that one.
+                    format: date-time
+                    type: string
+                type: object
+              cluster:
+                description: |-
+                  Cluster is the CloudNativePG cluster that the published contract points
+                  at. It is the name of the server until a recovery replaces it.
+                type: string
+              conditions:
+                description: |-
+                  Conditions represent the current state. Ready carries a pre-check
+                  reason (InvalidReference, MissingSecret, CNPGNotInstalled,
+                  BarmanPluginNotInstalled), or it is derived from the cluster, the
+                  contract, and the archive of a server that asks for one. The
+                  per-component conditions (ClusterReady, ArchiveReady, ContractReady,
+                  MonitoringReady) also appear here. MonitoringReady, and ArchiveReady
+                  without spec.archive, are reported on their own and never on Ready. A
+                  PodMonitor observes the server rather than runs it, so a broken one
+                  never makes the server not ready.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the last generation reconciled
+                  by the operator.
+                format: int64
+                type: integer
+              recovery:
+                description: |-
+                  Recovery is the recovery request that the server works on now, or the
+                  last one it answered. The answer itself is published on the contract,
+                  in spec.pitr.lastRecovery.
+                properties:
+                  archive:
+                    description: |-
+                      Archive is the archive that the recovery reads. It is recorded before
+                      the recovery builds anything and read on every look after that, so a
+                      spec that names another bucket in the middle does not move a recovery
+                      that is already running.
+                    properties:
+                      baseBackupSchedule:
+                        description: |-
+                          BaseBackupSchedule is spec.archive.baseBackupSchedule as it stood when
+                          the rollback started.
+                        type: string
+                      identity:
+                        description: |-
+                          Identity is the workload identity of that bucket when the rollback
+                          started. It is held with the archive, so the pods keep presenting the
+                          identity of the bucket they read. It is unset for a bucket that holds
+                          static credentials, and for one that names no identity.
+                        properties:
+                          annotations:
+                            additionalProperties:
+                              type: string
+                            description: Annotations are the annotations of the ServiceAccount
+                              of the pods.
+                            type: object
+                          podLabels:
+                            additionalProperties:
+                              type: string
+                            description: PodLabels are the labels the pods themselves
+                              need. Only Azure has one.
+                            type: object
+                        type: object
+                      location:
+                        description: |-
+                          Location is where in object storage the archive lives, in the form
+                          ArchiveRecord.Location takes. A running recovery keeps reading the
+                          location it recorded, so an ObjectStorageConfig edited in the middle
+                          does not move it.
+                        type: string
+                      objectStorageRef:
+                        description: |-
+                          ObjectStorageRef is the cluster-scoped ObjectStorageConfig that the
+                          archive lives in.
+                        type: string
+                      retentionPeriodDays:
+                        description: |-
+                          RetentionPeriodDays is spec.archive.retentionPeriodDays as it stood
+                          when the rollback started.
+                        format: int32
+                        type: integer
+                      serverName:
+                        description: |-
+                          ServerName is the archive directory, equal to the name of the
+                          CloudNativePG cluster that wrote it.
+                        type: string
+                    required:
+                    - objectStorageRef
+                    - serverName
+                    type: object
+                  cluster:
+                    description: |-
+                      Cluster is the CloudNativePG cluster that the recovery builds. It is
+                      empty for a request that the server refused, whether or not it had built
+                      one by then.
+                    type: string
+                  completedAt:
+                    description: |-
+                      CompletedAt is when the server answered the request. It is unset while
+                      the recovery runs.
+                    format: date-time
+                    type: string
+                  contract:
+                    description: |-
+                      Contract is the DatabaseServerConfig that carried the request. The
+                      server answers on that contract, and it does not change the contract it
+                      publishes while the request is unanswered.
+                    type: string
+                  message:
+                    description: Message is the message the server published with
+                      Result.
+                    type: string
+                  previousCluster:
+                    description: |-
+                      PreviousCluster is the cluster that the contract pointed at before the
+                      recovery moved it. A recovery that fails after the move puts the
+                      contract back on it, because that cluster still holds the data.
+                    type: string
+                  requestID:
+                    description: RequestID is the requestID of the request, as the
+                      contract carries it.
+                    type: string
+                  requestedBy:
+                    description: |-
+                      RequestedBy is the requestedBy of the request, as the contract carries
+                      it.
+                    type: string
+                  result:
+                    description: |-
+                      Result is the result the server published for the request. It is unset
+                      while the recovery runs.
+                    enum:
+                    - Completed
+                    - Failed
+                    - Unavailable
+                    type: string
+                  targetTime:
+                    description: TargetTime is the targetTime of the request, as the
+                      contract carries it.
+                    type: string
+                required:
+                - contract
+                - requestID
+                - requestedBy
+                - targetTime
+                type: object
+              systemIdentifier:
+                description: |-
+                  SystemIdentifier is the identity of the PostgreSQL instance that runs
+                  behind the contract, as CloudNativePG reports it. A recovery restores
+                  the pg_control of the base backup it reads, so the recovered instance
+                  reports the identity it recovered from and this value stays. The
+                  endpoint of the contract is what a recovery replaces.
+                type: string
+              volumes:
+                description: |-
+                  Volumes lists the bound PersistentVolumeClaims of the current cluster
+                  and the capacity that each one reports, sorted by name. A server with a
+                  write-ahead log volume reports that claim here too. A server that does
+                  not own the cluster of the name it derives reports none: those claims
+                  belong to the cluster that holds the name.
+                items:
+                  description: |-
+                    VolumeStatus is the observed size of one data PersistentVolumeClaim of a
+                    cluster. A status lists one entry per bound claim, sorted by name, so a
+                    resize of a single claim outside the spec, for example by an auto-resize
+                    controller, shows here.
+                  properties:
+                    capacity:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: Capacity is the storage capacity that the bound
+                        claim reports.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    name:
+                      description: Name is the name of the PersistentVolumeClaim.
+                      type: string
+                  required:
+                  - capacity
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+            type: object
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: metadata.name must be a DNS-1035 label of at most 46 characters,
+            because it names the CloudNativePG cluster of the server
+          optionalOldSelf: true
+          rule: oldSelf.hasValue() || (self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')
+            && self.metadata.name.size() <= 46)
+    served: true
+    storage: true
+    subresources:
+      status: {}

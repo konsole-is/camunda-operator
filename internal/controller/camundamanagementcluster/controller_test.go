@@ -427,14 +427,13 @@ func createDatabase(namespace string) string {
 	credentials := "db-credentials-" + utilrand.String(8)
 
 	server := &v1.DatabaseServerConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "dbsc-" + utilrand.String(8)},
+		ObjectMeta: metav1.ObjectMeta{Name: "dbsc-" + utilrand.String(8), Namespace: namespace},
 		Spec: v1.DatabaseServerConfigSpec{
 			Engine: v1.DatabaseEnginePostgres,
 			Host:   "postgres." + namespace + ".svc",
 			Port:   5432,
-			AdminCredentialsSecretRef: v1.CredentialsSecretRef{
-				Name: credentials, Namespace: namespace,
-				UsernameKey: "username", PasswordKey: "password",
+			AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
+				Name: credentials, UsernameKey: "username", PasswordKey: "password",
 			},
 		},
 	}

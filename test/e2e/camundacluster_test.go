@@ -158,7 +158,7 @@ func basicPlatform(name string) *v1.CamundaPlatformConfig {
 	}
 }
 
-var _ = Describe("CamundaCluster", Ordered, Label(labelCamundaCluster), func() {
+var _ = Describe("CamundaCluster", Ordered, Label(utils.LabelCamundaCluster), func() {
 	var (
 		elasticsearch = &v1.ElasticsearchCluster{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "ElasticsearchCluster"},
@@ -497,18 +497,17 @@ var _ = Describe("CamundaCluster", Ordered, Label(labelCamundaCluster), func() {
 	})
 })
 
-var _ = Describe("CamundaCluster on RDBMS", Ordered, Label(labelCamundaClusterRDBMS), func() {
+var _ = Describe("CamundaCluster on RDBMS", Ordered, Label(utils.LabelCamundaClusterRDBMS), func() {
 	var (
 		server = &v1.DatabaseServerConfig{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "DatabaseServerConfig"},
-			ObjectMeta: metav1.ObjectMeta{Name: ccRDBMSServer},
+			ObjectMeta: metav1.ObjectMeta{Name: ccRDBMSServer, Namespace: ccRDBMSNamespace},
 			Spec: v1.DatabaseServerConfigSpec{
 				Engine: v1.DatabaseEnginePostgres,
 				Host:   postgresService + "." + ccRDBMSNamespace + ".svc",
 				Port:   5432,
-				AdminCredentialsSecretRef: v1.CredentialsSecretRef{
+				AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
 					Name:        postgresAdminSecret,
-					Namespace:   ccRDBMSNamespace,
 					UsernameKey: "username",
 					PasswordKey: "password",
 				},
@@ -516,11 +515,10 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, Label(labelCamundaClusterRD
 		}
 		database = &v1.Database{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "Database"},
-			ObjectMeta: metav1.ObjectMeta{Name: ccRDBMSDatabase},
+			ObjectMeta: metav1.ObjectMeta{Name: ccRDBMSDatabase, Namespace: ccRDBMSNamespace},
 			Spec: v1.DatabaseSpec{
 				ServerRef:              ccRDBMSServer,
 				DatabaseName:           dbDatabaseName,
-				TargetNamespace:        ccRDBMSNamespace,
 				SecondaryStorageConfig: ccRDBMSStorageConfig,
 			},
 		}
@@ -544,7 +542,7 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, Label(labelCamundaClusterRD
 		Expect(apply(server)).To(Succeed())
 		Expect(apply(database)).To(Succeed())
 		Eventually(func(g Gomega) {
-			expectReady(g, dbResource, ccRDBMSDatabase, "", v1.ReasonHealthy)
+			expectReady(g, dbResource, ccRDBMSDatabase, ccRDBMSNamespace, v1.ReasonHealthy)
 			expectReady(g, sscResource, ccRDBMSStorageConfig, ccRDBMSNamespace, v1.ReasonHealthy)
 		}, 3*time.Minute).Should(Succeed())
 
@@ -571,8 +569,12 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, Label(labelCamundaClusterRD
 			"-n", ccRDBMSNamespace, "--ignore-not-found", "--wait=false",
 		)
 		_, _ = utils.Kubectl("delete", ccResource, ccName, "-n", ccRDBMSNamespace, "--ignore-not-found", "--wait=false")
-		_, _ = utils.Kubectl("delete", dbResource, ccRDBMSDatabase, "--ignore-not-found")
-		_, _ = utils.Kubectl("delete", dbServerResource, ccRDBMSServer, "--ignore-not-found")
+		_, _ = utils.Kubectl(
+			"delete", dbResource, ccRDBMSDatabase, "-n", ccRDBMSNamespace, "--ignore-not-found",
+		)
+		_, _ = utils.Kubectl(
+			"delete", dbServerResource, ccRDBMSServer, "-n", ccRDBMSNamespace, "--ignore-not-found",
+		)
 		_, _ = utils.Kubectl("delete", ccPlatformResource, ccRDBMSPlatform, "--ignore-not-found")
 		_, _ = utils.Kubectl("delete", "ns", ccRDBMSNamespace, "--wait=false")
 	})
@@ -731,6 +733,27 @@ func expectInstanceExported(cluster *v1.CamundaCluster, key string) {
 		g.Expect(result.Items).To(HaveLen(1), resp.Body)
 		g.Expect(result.Items[0].ProcessInstanceKey).To(Equal(key), resp.Body)
 	}, ccAPITimeout).Should(Succeed())
+}
+
+// expectInstanceGone asserts that the process instance search returns no
+// instance with key. It is written for Eventually and for Consistently: an
+// instance that a point-in-time restore left on the far side of the point has
+// to stay gone while the exporter works through the log again.
+func expectInstanceGone(g Gomega, cluster *v1.CamundaCluster, key string) {
+	var result struct {
+		Items []struct {
+			ProcessInstanceKey string `json:"processInstanceKey"`
+		} `json:"items"`
+	}
+
+	resp, err := camundaREST(
+		cluster, "search-gone", http.MethodPost, pathInstanceSearch, nil,
+		"-H", "Content-Type: application/json", "-d", `{"filter":{"processInstanceKey":"`+key+`"}}`,
+	)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(resp.Status).To(Equal(http.StatusOK), resp.Body)
+	g.Expect(json.Unmarshal([]byte(resp.Body), &result)).To(Succeed(), resp.Body)
+	g.Expect(result.Items).To(BeEmpty(), resp.Body)
 }
 
 // camundaREST calls path on the gateway Service of cluster with the

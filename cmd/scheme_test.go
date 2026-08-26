@@ -19,6 +19,7 @@ package main
 import (
 	"testing"
 
+	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/stretchr/testify/assert"
@@ -26,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 )
 
@@ -42,6 +44,10 @@ func TestSchemeRecognizesEveryKindTheManagerReconciles(t *testing.T) {
 		esv1.GroupVersion.WithKind("Elasticsearch"),
 		monitoringv1.SchemeGroupVersion.WithKind(monitoringv1.PodMonitorsKind),
 		keycloak.GroupVersion.WithKind("Keycloak"),
+		cnpgv1.SchemeGroupVersion.WithKind(cnpgv1.ClusterKind),
+		cnpgv1.SchemeGroupVersion.WithKind("ScheduledBackup"),
+		cnpgv1.SchemeGroupVersion.WithKind(cnpgv1.BackupKind),
+		barmanobjectstore.GroupVersion.WithKind("ObjectStore"),
 	} {
 		assert.True(t, scheme.Recognizes(gvk), "scheme does not recognize %s", gvk)
 	}

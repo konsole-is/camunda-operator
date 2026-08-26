@@ -11,6 +11,5 @@ spec:
   port: 5432
   adminCredentialsSecretRef:
     name: databaseserverconfig-sample-admin-credentials
-    namespace: default
     usernameKey: username
     passwordKey: password

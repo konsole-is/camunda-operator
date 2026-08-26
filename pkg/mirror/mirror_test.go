@@ -133,7 +133,7 @@ func TestCheckLocalSecret(t *testing.T) {
 		assert.Equal(t, v1.ReasonMissingSecret, failure.Reason)
 		assert.Equal(
 			t,
-			`Secret "cluster-ns/db-credentials" is missing key "password". The CamundaCluster `+
+			`Secret cluster-ns/db-credentials is missing key "password". The CamundaCluster `+
 				"controller keeps the local copy of database credentials that live outside the "+
 				"cluster namespace",
 			failure.Message,
@@ -150,7 +150,7 @@ func TestCheckLocalSecret(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, failure)
 		assert.Equal(t, v1.ReasonMissingCredentials, failure.Reason)
-		assert.Contains(t, failure.Message, `Secret "cluster-ns/cluster-camunda-backup-credentials" not found`)
+		assert.Contains(t, failure.Message, `Secret cluster-ns/cluster-camunda-backup-credentials not found`)
 		assert.Contains(t, failure.Message, "the local copy of bucket credentials")
 	})
 }

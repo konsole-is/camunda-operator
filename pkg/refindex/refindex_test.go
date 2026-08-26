@@ -52,13 +52,14 @@ func TestObjectName(t *testing.T) {
 	assert.Equal(t, "server", ObjectName(cfg))
 }
 
-// databaseServerConfigReferencing returns a cluster-scoped CR whose admin
-// credentials Secret lives at namespace/name.
+// databaseServerConfigReferencing returns a DatabaseServerConfig named crName
+// in namespace, whose admin credentials Secret reference is name in that same
+// namespace.
 func databaseServerConfigReferencing(crName, namespace, name string) *v1.DatabaseServerConfig {
 	return &v1.DatabaseServerConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: crName},
+		ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: namespace},
 		Spec: v1.DatabaseServerConfigSpec{
-			AdminCredentialsSecretRef: v1.CredentialsSecretRef{Name: name, Namespace: namespace},
+			AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{Name: name},
 		},
 	}
 }
@@ -81,8 +82,8 @@ func TestEnqueue(t *testing.T) {
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithIndex(&v1.DatabaseServerConfig{}, testSecretRefsField, func(o client.Object) []string {
-			ref := o.(*v1.DatabaseServerConfig).Spec.AdminCredentialsSecretRef
-			return []string{NamespacedKey(ref.Namespace, ref.Name)}
+			cfg := o.(*v1.DatabaseServerConfig)
+			return []string{NamespacedKey(cfg.Namespace, cfg.Spec.AdminCredentialsSecretRef.Name)}
 		}).
 		WithObjects(
 			databaseServerConfigReferencing("matching-a", "ns", "s"),
@@ -106,8 +107,8 @@ func TestEnqueue(t *testing.T) {
 
 		assert.ElementsMatch(
 			t, []reconcile.Request{
-				{NamespacedName: types.NamespacedName{Name: "matching-a"}},
-				{NamespacedName: types.NamespacedName{Name: "matching-b"}},
+				{NamespacedName: types.NamespacedName{Namespace: "ns", Name: "matching-a"}},
+				{NamespacedName: types.NamespacedName{Namespace: "ns", Name: "matching-b"}},
 			}, drain(q),
 		)
 	})

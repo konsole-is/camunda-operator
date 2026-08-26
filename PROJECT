@@ -55,6 +55,7 @@ resources:
   version: v1
 - api:
     crdVersion: v1
+    namespaced: true
   controller: true
   domain: camunda.io
   group: core
@@ -63,6 +64,7 @@ resources:
   version: v1
 - api:
     crdVersion: v1
+    namespaced: true
   controller: true
   domain: camunda.io
   group: core
@@ -173,6 +175,22 @@ resources:
   domain: camunda.io
   group: core
   kind: LogicalRestoreRDBMS
+  path: github.com/konsole-is/camunda-operator/api/v1
+  version: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: camunda.io
+  group: core
+  kind: DatabaseServer
+  path: github.com/konsole-is/camunda-operator/api/v1
+  version: v1
+- api:
+    crdVersion: v1
+  domain: camunda.io
+  group: core
+  kind: DatabaseServerPreset
   path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 version: "3"

@@ -96,6 +96,8 @@ nav:
       - Storage backends:
           - ElasticsearchCluster: crds/elasticsearchcluster.md
           - ElasticsearchClusterPreset: crds/elasticsearchclusterpreset.md
+          - DatabaseServer: crds/databaseserver.md
+          - DatabaseServerPreset: crds/databaseserverpreset.md
           - Database: crds/database.md
       - Contracts:
           - SecondaryStorageConfig: crds/secondarystorageconfig.md

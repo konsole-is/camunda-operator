@@ -95,7 +95,7 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 
 			expectSecondaryStorageReady(
 				secondaryStorage, metav1.ConditionFalse, v1.ReasonMissingSecret,
-				fmt.Sprintf("Secret \"%s/%s\" not found", secret.Namespace, secret.Name),
+				fmt.Sprintf("Secret %s/%s not found", secret.Namespace, secret.Name),
 			)
 		})
 
@@ -103,7 +103,7 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 			createSecondaryStorageConfig(secondaryStorage)
 			expectSecondaryStorageReady(
 				secondaryStorage, metav1.ConditionFalse, v1.ReasonMissingSecret,
-				fmt.Sprintf("Secret \"%s/%s\" not found", secret.Namespace, secret.Name),
+				fmt.Sprintf("Secret %s/%s not found", secret.Namespace, secret.Name),
 			)
 
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -122,7 +122,7 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 
 			expectSecondaryStorageReady(
 				secondaryStorage, metav1.ConditionFalse, v1.ReasonMissingSecret,
-				fmt.Sprintf("Secret \"%s/es-ca\" not found", secret.Namespace),
+				fmt.Sprintf("Secret %s/es-ca not found", secret.Namespace),
 			)
 
 			caSecret := &corev1.Secret{
@@ -147,7 +147,7 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 
 			expectSecondaryStorageReady(
 				secondaryStorage, metav1.ConditionFalse, v1.ReasonMissingSecret,
-				fmt.Sprintf("Secret \"%s/%s\" not found", secret.Namespace, secret.Name),
+				fmt.Sprintf("Secret %s/%s not found", secret.Namespace, secret.Name),
 			)
 		})
 	})

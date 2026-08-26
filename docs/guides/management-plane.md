@@ -38,13 +38,13 @@ apiVersion: core.camunda.io/v1
 kind: Database
 metadata:
   name: my-identity-db
+  namespace: my-management-ns
 spec:
   serverRef: "my-db-server"
   databaseName: "identity"
-  targetNamespace: "my-management-ns"
 ```
 
-Repeat it for `my-keycloak-db` and `my-web-modeler-db`, with a `databaseName` of its own each time. Each `Database` publishes a `DatabaseConfig` of the same name in `targetNamespace`, and that name is what the `CamundaManagementCluster` references.
+Repeat it for `my-keycloak-db` and `my-web-modeler-db`, with a `databaseName` of its own each time. Each `Database` publishes a `DatabaseConfig` of the same name in its own namespace, and that name is what the `CamundaManagementCluster` references. The `DatabaseServerConfig` that `serverRef` names lives in the management namespace too.
 
 Set no `secondaryStorageConfig` on these three. That field is for a database an orchestration cluster stores its data in.
 

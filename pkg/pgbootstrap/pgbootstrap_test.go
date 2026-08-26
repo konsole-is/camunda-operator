@@ -152,6 +152,66 @@ func TestServerVersionReportsTheMajor(t *testing.T) {
 	assert.Equal(t, "17", major)
 }
 
+// TestSystemIdentifierMatchesPgControlSystem pins the identity that the
+// collision rule keys on: the value the server itself reports, read again
+// through a second connection.
+func TestSystemIdentifierMatchesPgControlSystem(t *testing.T) {
+	b := connect(t)
+
+	id, err := b.SystemIdentifier(t.Context())
+	require.NoError(t, err)
+	assert.Regexp(t, `^\d{15,20}$`, id)
+
+	conn := mustConnectAs(t, adminConn.User, adminConn.Password, "postgres")
+	var want string
+	require.NoError(
+		t,
+		conn.QueryRow(t.Context(), "SELECT system_identifier::text FROM pg_control_system()").Scan(&want),
+	)
+	assert.Equal(t, want, id)
+}
+
+// TestSystemIdentifierNeedsNoSuperuser pins that the admin user the contract
+// documents can read the identity. That user has LOGIN, CREATEDB, and
+// CREATEROLE, and never SUPERUSER, so a control-data function that needed
+// more would make the contract undeployable as documented.
+func TestSystemIdentifierNeedsNoSuperuser(t *testing.T) {
+	admin := connect(t)
+	ctx := t.Context()
+
+	conn := mustConnectAs(t, adminConn.User, adminConn.Password, "postgres")
+	_, err := conn.Exec(
+		ctx, "CREATE ROLE least_privilege LOGIN PASSWORD 'pw' CREATEDB CREATEROLE",
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = conn.Exec(context.Background(), "DROP ROLE IF EXISTS least_privilege")
+	})
+
+	var superuser bool
+	require.NoError(t, conn.QueryRow(
+		ctx, "SELECT rolsuper FROM pg_roles WHERE rolname = 'least_privilege'",
+	).Scan(&superuser))
+	require.False(t, superuser, "the fixture must not be a superuser")
+
+	limited, err := Connect(ctx, Connection{
+		Host:     adminConn.Host,
+		Port:     adminConn.Port,
+		User:     "least_privilege",
+		Password: "pw",
+		SSLMode:  "disable",
+	})
+	require.NoError(t, err)
+	t.Cleanup(limited.Close)
+
+	id, err := limited.SystemIdentifier(ctx)
+	require.NoError(t, err, "pg_control_system() must be readable without SUPERUSER")
+
+	want, err := admin.SystemIdentifier(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, want, id)
+}
+
 func TestMajorVersionParsesServerVersionNum(t *testing.T) {
 	t.Parallel()
 

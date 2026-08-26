@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -41,18 +42,57 @@ import (
 // registers its deletion.
 func newDatabaseNamespace() string {
 	GinkgoHelper()
+	return newDatabaseNamespacePrefixed("db-ns")
+}
+
+// newDatabaseNamespacePrefixed is newDatabaseNamespace with a caller-chosen
+// prefix. A spec whose two Databases are created within one second needs its
+// two namespaces to sort in a known order, because Kubernetes records a
+// creationTimestamp to the second and the collision rule then falls back to
+// "<namespace>/<name>".
+func newDatabaseNamespacePrefixed(prefix string) string {
+	GinkgoHelper()
 	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: "db-ns-" + utilrand.String(8)},
+		ObjectMeta: metav1.ObjectMeta{Name: prefix + "-" + utilrand.String(8)},
 	}
 	Expect(k8sClient.Create(ctx, ns)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
 	return ns.Name
 }
 
-// createDatabaseServer creates a DatabaseServerConfig that points at the
-// shared PostgreSQL container, with its admin credentials Secret in namespace.
-// It registers deletion of both and returns the name of the server.
+// createDatabaseServer creates a DatabaseServerConfig in namespace that
+// points at the shared PostgreSQL container under its own host, with its
+// admin credentials Secret beside it. It registers deletion of both and
+// returns the name of the contract.
 func createDatabaseServer(namespace string) string {
+	GinkgoHelper()
+
+	pg, err := testPostgres()
+	Expect(err).NotTo(HaveOccurred())
+
+	return createDatabaseServerAt(namespace, pg.Host)
+}
+
+// createDatabaseServerAt is createDatabaseServer with an explicit host.
+func createDatabaseServerAt(namespace, host string) string {
+	GinkgoHelper()
+
+	return probedServer(namespace, createAdminSecret(namespace), host).Name
+}
+
+// testPostgresHost is the host of the shared PostgreSQL container.
+func testPostgresHost() string {
+	GinkgoHelper()
+
+	pg, err := testPostgres()
+	Expect(err).NotTo(HaveOccurred())
+
+	return pg.Host
+}
+
+// createAdminSecret writes the admin credentials of the shared container into
+// namespace and returns the name of the Secret.
+func createAdminSecret(namespace string) string {
 	GinkgoHelper()
 
 	pg, err := testPostgres()
@@ -68,25 +108,88 @@ func createDatabaseServer(namespace string) string {
 	Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
 
-	server := fixtures.DatabaseServerConfig()
-	server.Spec.Host = pg.Host
+	return secret.Name
+}
+
+// probedServer is unprobedServer with the record of a probe published,
+// because the DatabaseServerConfig controller does not run in this suite and
+// the identity of the server is what the collision rule keys on.
+func probedServer(namespace, secretName, host string) *v1.DatabaseServerConfig {
+	GinkgoHelper()
+
+	server := unprobedServer(namespace, secretName, host)
+	publishProbe(server)
+
+	return server
+}
+
+// publishProbe records a probe of the endpoint and the admin credentials that
+// the spec of server names now, with the identity of the shared container. It
+// refreshes server from the API, so a caller can go on updating it.
+func publishProbe(server *v1.DatabaseServerConfig) {
+	GinkgoHelper()
+
+	identifier := serverSystemIdentifier()
+
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), server)).To(Succeed())
+		ref := server.Spec.AdminCredentialsSecretRef
+		server.Status.SystemIdentifier = identifier
+		server.Status.ProbedAt = &metav1.Time{Time: time.Now()}
+		server.Status.ProbedEndpoint = fmt.Sprintf("%s:%d", server.Spec.Host, server.Spec.Port)
+		server.Status.ProbedSecretName = ref.Name
+		server.Status.ProbedSecretKeys = ref.UsernameKey + "/" + ref.PasswordKey
+		g.Expect(k8sClient.Status().Update(ctx, server)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// unprobedServer creates a DatabaseServerConfig in namespace that reaches the
+// shared PostgreSQL container at host, with its admin credentials Secret
+// secretName beside it. Its status stays empty, so it is a contract that has
+// not reached its server yet.
+func unprobedServer(namespace, secretName, host string) *v1.DatabaseServerConfig {
+	GinkgoHelper()
+
+	pg, err := testPostgres()
+	Expect(err).NotTo(HaveOccurred())
+
+	server := fixtures.DatabaseServerConfig(namespace)
+	server.Spec.Host = host
 	server.Spec.Port = pg.Port
-	server.Spec.AdminCredentialsSecretRef = v1.CredentialsSecretRef{
-		Name: secret.Name, Namespace: namespace,
-		UsernameKey: "username", PasswordKey: "password",
+	server.Spec.AdminCredentialsSecretRef = v1.LocalCredentialsSecretRef{
+		Name: secretName, UsernameKey: "username", PasswordKey: "password",
 	}
 	Expect(k8sClient.Create(ctx, server)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
 
-	return server.Name
+	return server
 }
 
-// databaseFor returns a Database that is bound to server, publishes into
-// namespace, and claims a unique logical database name.
+// serverSystemIdentifier reads the system identifier of the shared container.
+func serverSystemIdentifier() string {
+	GinkgoHelper()
+
+	pg, err := testPostgres()
+	Expect(err).NotTo(HaveOccurred())
+	conn, err := pgConnect(ctx, pg.AdminUser, pg.AdminPassword, "postgres")
+	Expect(err).NotTo(HaveOccurred())
+	defer func() { _ = conn.Close(context.Background()) }()
+
+	var id string
+	Expect(
+		conn.QueryRow(ctx, "SELECT system_identifier::text FROM pg_control_system()").Scan(&id),
+	).To(Succeed())
+	Expect(id).NotTo(BeEmpty())
+
+	return id
+}
+
+// databaseFor returns a Database of namespace that is bound to server and
+// claims a unique logical database name.
 func databaseFor(server, namespace string) *v1.Database {
 	db := validDatabase()
+	db.Namespace = namespace
 	db.Spec.ServerRef = server
-	db.Spec.TargetNamespace = namespace
 	db.Spec.DatabaseName = "db_" + utilrand.String(8)
 	return db
 }
@@ -193,7 +296,7 @@ var _ = Describe("Database controller", func() {
 		Expect(sqlRoleExists(db.Spec.DatabaseName)).To(BeTrue())
 		Expect(sqlRoleExists(db.Spec.DatabaseName + "_backup")).To(BeTrue())
 
-		By("publishing owner-referenced credential Secrets in targetNamespace")
+		By("publishing owner-referenced credential Secrets in the namespace of the Database")
 		var appSecret corev1.Secret
 		appKey := types.NamespacedName{Namespace: namespace, Name: db.Name + "-credentials"}
 		Expect(k8sClient.Get(ctx, appKey, &appSecret)).To(Succeed())
@@ -301,7 +404,7 @@ var _ = Describe("Database controller", func() {
 
 		expectDatabaseReady(
 			db, metav1.ConditionFalse, v1.ReasonInvalidReference,
-			`DatabaseServerConfig "no-such-server" not found`,
+			fmt.Sprintf("DatabaseServerConfig %s/no-such-server not found", namespace),
 		)
 	})
 
@@ -315,21 +418,80 @@ var _ = Describe("Database controller", func() {
 		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
 
-		server := fixtures.DatabaseServerConfig()
-		server.Spec.AdminCredentialsSecretRef = v1.CredentialsSecretRef{
-			Name: secret.Name, Namespace: namespace,
-			UsernameKey: "username", PasswordKey: "password",
-		}
-		Expect(k8sClient.Create(ctx, server)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
+		server := probedServer(namespace, secret.Name, testPostgresHost())
 
 		db := databaseFor(server.Name, namespace)
 		createDatabase(db)
 
 		expectDatabaseReady(
 			db, metav1.ConditionFalse, v1.ReasonMissingSecret,
-			fmt.Sprintf(`Secret "%s/%s" is missing key "password"`, namespace, secret.Name),
+			fmt.Sprintf("Secret %s/%s is missing key \"password\"", namespace, secret.Name),
 		)
+	})
+
+	// The identity of the server is the key of the uniqueness rule. Until the
+	// contract publishes it, the operator cannot tell which instance the
+	// endpoint reaches, so it claims nothing and touches no server.
+	It("waits with ServerIdentityUnknown while the contract publishes no identity", func() {
+		namespace := newDatabaseNamespace()
+
+		server := unprobedServer(namespace, createAdminSecret(namespace), testPostgresHost())
+
+		db := databaseFor(server.Name, namespace)
+		createDatabase(db)
+
+		expectDatabaseReady(
+			db, metav1.ConditionFalse, v1.ReasonServerIdentityUnknown,
+			fmt.Sprintf(
+				"DatabaseServerConfig %s/%s has not published its system identifier yet. Wait "+
+					"until it reports Ready",
+				namespace, server.Name,
+			),
+		)
+
+		Consistently(func() bool {
+			return sqlDatabaseExists(db.Spec.DatabaseName)
+		}, "3s", interval).Should(BeFalse(), "a Database that claims nothing must run no SQL")
+	})
+
+	// A contract keeps the identity it published while its spec moves to
+	// another endpoint, until the operator reaches that endpoint. The Database
+	// keys its claim on the identity and connects to the endpoint of the spec,
+	// so the two must describe one server before it acts.
+	It("waits with ServerIdentityUnknown while the identity belongs to the endpoint before a move", func() {
+		namespace := newDatabaseNamespace()
+
+		host := testPostgresHost()
+		previous := "127.0.0.1"
+		if host == previous {
+			previous = "localhost"
+		}
+		server := probedServer(namespace, createAdminSecret(namespace), previous)
+
+		By("moving the endpoint of the contract with no probe of the new one")
+		server.Spec.Host = host
+		Expect(k8sClient.Update(ctx, server)).To(Succeed())
+
+		db := databaseFor(server.Name, namespace)
+		createDatabase(db)
+
+		expectDatabaseReady(
+			db, metav1.ConditionFalse, v1.ReasonServerIdentityUnknown,
+			fmt.Sprintf(
+				"DatabaseServerConfig %s/%s has not reached the server its spec names now",
+				namespace, server.Name,
+			),
+		)
+
+		Consistently(func() bool {
+			return sqlDatabaseExists(db.Spec.DatabaseName)
+		}, "3s", interval).Should(BeFalse(), "a Database that cannot key its claim must run no SQL")
+
+		By("recording a probe of the endpoint the spec names now")
+		publishProbe(server)
+
+		expectDatabaseReady(db, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+		Expect(sqlDatabaseExists(db.Spec.DatabaseName)).To(BeTrue())
 	})
 
 	It("reports ConnectionFailed for an unreachable server", func() {
@@ -342,22 +504,17 @@ var _ = Describe("Database controller", func() {
 		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
 
-		server := fixtures.DatabaseServerConfig()
-		server.Spec.Host = "127.0.0.1"
+		server := unprobedServer(namespace, secret.Name, "127.0.0.1")
 		server.Spec.Port = 1
-		server.Spec.AdminCredentialsSecretRef = v1.CredentialsSecretRef{
-			Name: secret.Name, Namespace: namespace,
-			UsernameKey: "username", PasswordKey: "password",
-		}
-		Expect(k8sClient.Create(ctx, server)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
+		Expect(k8sClient.Update(ctx, server)).To(Succeed())
+		publishProbe(server)
 
 		db := databaseFor(server.Name, namespace)
 		createDatabase(db)
 
 		expectDatabaseReady(
 			db, metav1.ConditionFalse, v1.ReasonConnectionFailed,
-			fmt.Sprintf("Connecting to DatabaseServerConfig %q", server.Name),
+			fmt.Sprintf("Connecting to DatabaseServerConfig %s/%s", namespace, server.Name),
 		)
 	})
 
@@ -417,8 +574,241 @@ var _ = Describe("Database controller", func() {
 
 		expectDatabaseReady(
 			loser, metav1.ConditionFalse, v1.ReasonInvalidReference,
-			fmt.Sprintf("Database %q already claims database %q", winner.Name, winner.Spec.DatabaseName),
+			fmt.Sprintf(
+				"Database %s/%s already claims database %q",
+				namespace, winner.Name, winner.Spec.DatabaseName,
+			),
 		)
+	})
+
+	// A Database can win its claim, publish, and lose it later, when the
+	// contract of an older claimant reaches its server for the first time.
+	// The winner owns the logical database and resets the shared role
+	// password, so the credentials the loser published open nothing. It must
+	// withdraw them rather than leave a Secret that authenticates nowhere.
+	It("withdraws the bindings of a Database that loses its claim", func() {
+		pg, err := testPostgres()
+		Expect(err).NotTo(HaveOccurred())
+
+		// The older claimant is created first and sorts first, so it wins on
+		// age and on the tiebreak alike.
+		older := newDatabaseNamespacePrefixed("db-ns-a")
+		olderServer := unprobedServer(older, createAdminSecret(older), pg.Host)
+		olderDB := databaseFor(olderServer.Name, older)
+		olderDB.Name = "losta-" + utilrand.String(8)
+		createDatabase(olderDB)
+		expectDatabaseReady(
+			olderDB, metav1.ConditionFalse, v1.ReasonServerIdentityUnknown, "system identifier",
+		)
+
+		publisher := newDatabaseNamespacePrefixed("db-ns-z")
+		publisherServer := createDatabaseServerAt(publisher, pg.Host)
+		publisherDB := databaseFor(publisherServer, publisher)
+		publisherDB.Name = "lostz-" + utilrand.String(8)
+		publisherDB.Spec.DatabaseName = olderDB.Spec.DatabaseName
+		publisherDB.Spec.SecondaryStorageConfig = "lost-storage"
+		createDatabase(publisherDB)
+		expectDatabaseReady(
+			publisherDB, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.",
+		)
+
+		By("publishing the bindings while it holds the claim")
+		appKey := types.NamespacedName{Namespace: publisher, Name: publisherDB.Name + "-credentials"}
+		Expect(k8sClient.Get(ctx, appKey, &corev1.Secret{})).To(Succeed())
+
+		By("giving the older contract its identity, which hands it the claim")
+		publishProbe(olderServer)
+
+		expectDatabaseReady(
+			publisherDB, metav1.ConditionFalse, v1.ReasonInvalidReference,
+			fmt.Sprintf(
+				"Database %s/%s already claims database %q",
+				older, olderDB.Name, olderDB.Spec.DatabaseName,
+			),
+		)
+
+		By("withdrawing every binding it published")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, appKey, &corev1.Secret{})).To(
+				MatchError(ContainSubstring("not found")),
+			)
+			g.Expect(k8sClient.Get(
+				ctx, types.NamespacedName{
+					Namespace: publisher, Name: publisherDB.Name + "-backup-credentials",
+				}, &corev1.Secret{},
+			)).To(MatchError(ContainSubstring("not found")))
+			g.Expect(k8sClient.Get(
+				ctx, types.NamespacedName{
+					Namespace: publisher, Name: publisherDB.Name,
+				}, &v1.DatabaseConfig{},
+			)).To(MatchError(ContainSubstring("not found")))
+			g.Expect(k8sClient.Get(
+				ctx, types.NamespacedName{
+					Namespace: publisher, Name: "lost-storage",
+				}, &v1.SecondaryStorageConfig{},
+			)).To(MatchError(ContainSubstring("not found")))
+		}, timeout, interval).Should(Succeed())
+
+		By("owning the BindingsReady condition of the loser")
+		var latest v1.Database
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(publisherDB), &latest)).To(Succeed())
+		bindings := meta.FindStatusCondition(latest.Status.Conditions, string(components.ConditionBindings))
+		Expect(bindings).NotTo(BeNil())
+		Expect(bindings.Reason).To(Equal("Disabled"))
+	})
+
+	// Two contracts that describe one PostgreSQL instance under different
+	// hosts are one server. The claim follows the instance, so the second
+	// Database loses it even though it names another contract in another
+	// namespace.
+	It("rejects a Database of another namespace claiming the same logical database", func() {
+		pg, err := testPostgres()
+		Expect(err).NotTo(HaveOccurred())
+
+		first := newDatabaseNamespacePrefixed("db-ns-a")
+		firstServer := createDatabaseServerAt(first, pg.Host)
+
+		second := newDatabaseNamespacePrefixed("db-ns-z")
+		otherHost := "127.0.0.1"
+		if pg.Host == otherHost {
+			otherHost = "localhost"
+		}
+		secondServer := createDatabaseServerAt(second, otherHost)
+
+		winner := databaseFor(firstServer, first)
+		winner.Name = "xnsa-" + utilrand.String(8)
+		createDatabase(winner)
+		expectDatabaseReady(winner, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+
+		loser := databaseFor(secondServer, second)
+		loser.Name = "xnsb-" + utilrand.String(8)
+		loser.Spec.DatabaseName = winner.Spec.DatabaseName
+		createDatabase(loser)
+
+		expectDatabaseReady(
+			loser, metav1.ConditionFalse, v1.ReasonInvalidReference,
+			fmt.Sprintf(
+				"Database %s/%s already claims database %q",
+				first, winner.Name, winner.Spec.DatabaseName,
+			),
+		)
+
+		By("publishing no bindings for the Database that lost the claim")
+		Consistently(func() error {
+			return k8sClient.Get(
+				ctx,
+				types.NamespacedName{Namespace: second, Name: loser.Name},
+				&v1.DatabaseConfig{},
+			)
+		}, "3s", interval).Should(MatchError(ContainSubstring("not found")))
+	})
+
+	// First creation wins even when the older Database resolves its server
+	// last. Its claim reaches the index only with the flush that ends the
+	// reconcile which resolved the server, so on that reconcile it asks the
+	// index a question its own claim is missing from.
+	It("hands the claim to the older Database that resolved its server last", func() {
+		pg, err := testPostgres()
+		Expect(err).NotTo(HaveOccurred())
+
+		// The older namespace sorts first, so age and the tiebreak agree.
+		older := newDatabaseNamespacePrefixed("db-ns-a")
+		olderServer := unprobedServer(older, createAdminSecret(older), pg.Host)
+		olderDB := databaseFor(olderServer.Name, older)
+		olderDB.Name = "lateta-" + utilrand.String(8)
+		createDatabase(olderDB)
+		expectDatabaseReady(
+			olderDB, metav1.ConditionFalse, v1.ReasonServerIdentityUnknown, "system identifier",
+		)
+
+		By("letting the newer Database claim and record while the older one waits")
+		newer := newDatabaseNamespacePrefixed("db-ns-z")
+		newerServer := createDatabaseServerAt(newer, pg.Host)
+		newerDB := databaseFor(newerServer, newer)
+		newerDB.Name = "latetz-" + utilrand.String(8)
+		newerDB.Spec.DatabaseName = olderDB.Spec.DatabaseName
+		createDatabase(newerDB)
+		expectDatabaseReady(newerDB, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+
+		var recorded v1.Database
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(newerDB), &recorded)).To(Succeed())
+		Expect(recorded.Status.CollisionKey).NotTo(BeEmpty())
+
+		By("giving the older contract its identity")
+		publishProbe(olderServer)
+
+		By("handing the claim to the older Database")
+		expectDatabaseReady(olderDB, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+		expectDatabaseReady(
+			newerDB, metav1.ConditionFalse, v1.ReasonInvalidReference,
+			fmt.Sprintf(
+				"Database %s/%s already claims database %q",
+				older, olderDB.Name, olderDB.Spec.DatabaseName,
+			),
+		)
+
+		By("withdrawing the bindings of the Database that lost")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(
+				ctx, types.NamespacedName{
+					Namespace: newer, Name: newerDB.Name,
+				}, &v1.DatabaseConfig{},
+			)).To(MatchError(ContainSubstring("not found")))
+			g.Expect(k8sClient.Get(
+				ctx, types.NamespacedName{
+					Namespace: newer, Name: newerDB.Name + "-credentials",
+				}, &corev1.Secret{},
+			)).To(MatchError(ContainSubstring("not found")))
+		}, timeout, interval).Should(Succeed())
+
+		By("keeping the bindings of the Database that won")
+		Expect(k8sClient.Get(
+			ctx, types.NamespacedName{
+				Namespace: older, Name: olderDB.Name,
+			}, &v1.DatabaseConfig{},
+		)).To(Succeed())
+	})
+
+	// Two Databases of one namespace can name one DatabaseConfig explicitly.
+	// Only the one that owns it may delete it, so the loser withdraws its own
+	// Secrets and leaves the contract of the winner where it is.
+	It("leaves a binding it does not own in place when it withdraws", func() {
+		namespace := newDatabaseNamespace()
+		server := createDatabaseServer(namespace)
+		shared := "shared-config-" + utilrand.String(6)
+
+		holder := databaseFor(server, namespace)
+		holder.Name = "ownera-" + utilrand.String(8)
+		holder.Spec.DatabaseConfig = shared
+		createDatabase(holder)
+		expectDatabaseReady(holder, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+
+		sharedKey := types.NamespacedName{Namespace: namespace, Name: shared}
+		var owned v1.DatabaseConfig
+		Expect(k8sClient.Get(ctx, sharedKey, &owned)).To(Succeed())
+		Expect(metav1.GetControllerOf(&owned).Name).To(Equal(holder.Name))
+
+		By("creating a later Database that names the same DatabaseConfig and loses the claim")
+		loser := databaseFor(server, namespace)
+		loser.Name = "ownerz-" + utilrand.String(8)
+		loser.Spec.DatabaseName = holder.Spec.DatabaseName
+		loser.Spec.DatabaseConfig = shared
+		createDatabase(loser)
+
+		expectDatabaseReady(
+			loser, metav1.ConditionFalse, v1.ReasonInvalidReference,
+			"These bindings belong to another Database and stay in place: "+sharedKey.String(),
+		)
+
+		By("keeping the DatabaseConfig of the holder, with its owner reference intact")
+		Consistently(func(g Gomega) {
+			var still v1.DatabaseConfig
+			g.Expect(k8sClient.Get(ctx, sharedKey, &still)).To(Succeed())
+			g.Expect(metav1.GetControllerOf(&still).Name).To(Equal(holder.Name))
+		}, "3s", interval).Should(Succeed())
+
+		By("keeping the holder Ready on its own bindings")
+		expectDatabaseReady(holder, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
 	})
 
 	It("deletes without a finalizer, leaving the SQL database and users intact", func() {
