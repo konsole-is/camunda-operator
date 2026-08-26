@@ -145,6 +145,13 @@ type serverComponents struct {
 	// observes the server rather than runs it. ElasticsearchCluster keeps its
 	// metrics exporter out of Ready for the same reason.
 	ready []*component.Component
+	// systemIdentifier holds the PostgreSQL system identifier once the cluster
+	// component has reconciled, and the reconcile mirrors it to status.
+	systemIdentifier *concepts.Data[string]
+	// archiveDestination holds the bucket URL of the ObjectStore that the
+	// archive component applied, and is unset when that apply did not happen:
+	// see components.ArchiveComponent.
+	archiveDestination *concepts.Data[string]
 }
 
 // all returns the components in reconcile order. FlushStatus owns every one of
@@ -347,7 +354,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	resolved.clusterTaken = derived.taken
 	resolved.clusterBlocked = clusterGuardReason(&server, derived)
 
-	built, systemIdentifier, err := r.buildComponents(&server, resolved, archiveStart)
+	built, err := r.buildComponents(&server, resolved, archiveStart)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -359,7 +366,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, errors.Join(reconcileErr, err)
 	}
 
-	if identifier, ok := systemIdentifier.Get(); ok && identifier != "" {
+	if identifier, ok := built.systemIdentifier.Get(); ok && identifier != "" {
 		server.Status.SystemIdentifier = identifier
 	}
 	// The clock is read here, after the ObjectStore of the new location is
@@ -383,7 +390,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		advanceArchiveFloor(&server, resolved.merged, now)
 		reconcileArchiveHistory(
 			&server, resolved.merged, built.archive, archiveStart,
-			resolved.archiveLocation, moved, now,
+			resolved.archiveLocation, moved, built.archiveDestination.IsSet(), now,
 		)
 	}
 
@@ -1367,14 +1374,12 @@ func closedArchiveEnd(server *v1.DatabaseServer) *metav1.Time {
 // buildComponents builds the four components in dependency order: cluster,
 // archive, contract, monitoring, and records which of them take part in Ready.
 // components.Archiving decides both the gate of the archive component and its
-// part in Ready, so the two can never disagree. The returned data cell
-// holds the PostgreSQL system identifier once the cluster component has
-// reconciled.
+// part in Ready, so the two can never disagree.
 func (r *DatabaseServerReconciler) buildComponents(
 	server *v1.DatabaseServer,
 	resolved resolvedSpec,
 	archiveStart *metav1.Time,
-) (serverComponents, *concepts.Data[string], error) {
+) (serverComponents, error) {
 	merged := resolved.merged
 	var built serverComponents
 
@@ -1383,30 +1388,33 @@ func (r *DatabaseServerReconciler) buildComponents(
 		resolved.platform, resolved.clusterBlocked,
 	)
 	if err != nil {
-		return built, nil, fmt.Errorf("building cluster component: %w", err)
+		return built, fmt.Errorf("building cluster component: %w", err)
 	}
 	built.cluster = cluster
+	built.systemIdentifier = systemIdentifier
 
-	built.archive, err = components.ArchiveComponent(
+	archive, destination, err := components.ArchiveComponent(
 		server, merged, resolved.archive, archiveStart,
 		resolved.clusterTaken, resolved.archiveTaken,
 	)
 	if err != nil {
-		return built, nil, fmt.Errorf("building archive component: %w", err)
+		return built, fmt.Errorf("building archive component: %w", err)
 	}
+	built.archive = archive
+	built.archiveDestination = destination
 
 	built.contract, err = components.ContractComponent(
 		server, merged, resolved.clusterTaken, resolved.contractTaken, resolved.archiveTaken,
 	)
 	if err != nil {
-		return built, nil, fmt.Errorf("building contract component: %w", err)
+		return built, fmt.Errorf("building contract component: %w", err)
 	}
 
 	built.monitoring, err = components.MonitoringComponent(
 		server, merged, r.podMonitorSupported(), resolved.clusterTaken,
 	)
 	if err != nil {
-		return built, nil, fmt.Errorf("building monitoring component: %w", err)
+		return built, fmt.Errorf("building monitoring component: %w", err)
 	}
 
 	built.ready = []*component.Component{built.cluster, built.contract}
@@ -1414,7 +1422,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 		built.ready = append(built.ready, built.archive)
 	}
 
-	return built, systemIdentifier, nil
+	return built, nil
 }
 
 // reconcileComponents reconciles comps in order. It continues past a failing
@@ -1570,10 +1578,17 @@ func advanceArchiveFloor(server *v1.DatabaseServer, merged v1.DatabaseServerSpec
 // stays outside every interval and no restore can ask for a point in it.
 //
 // A spec that moves the archive to another location closes the open record the
-// same way, at the moment it moves. Each record therefore names one location,
-// and a restore of that interval knows where to read it. With no record open,
-// the move is recorded as status.archive.boundary instead, and the next record
-// opens after it.
+// same way, at the moment the archive arrives there. Each record therefore
+// names one location, and a restore of that interval knows where to read it.
+// With no record open, the move is recorded as status.archive.boundary
+// instead, and the next record opens after it.
+//
+// applied says that the ObjectStore of the new location reached the API
+// server. Until it does, the plugin still writes to the location the server
+// came from, so the record stays open and no boundary is written: a base
+// backup that completes in that window belongs to the archive that is still
+// being written. The move is found again on every reconcile until one of them
+// applies it.
 //
 // A recovery closes the record of the cluster it replaces itself, at the
 // moment the contract moves. What is left here is the record of an archive
@@ -1586,6 +1601,7 @@ func reconcileArchiveHistory(
 	archiveStart *metav1.Time,
 	location string,
 	moved bool,
+	applied bool,
 	now metav1.Time,
 ) {
 	if merged.Archive == nil {
@@ -1611,6 +1627,10 @@ func reconcileArchiveHistory(
 	}
 
 	if moved {
+		if !applied {
+			return
+		}
+
 		// The interval of the location the server leaves ends here, at the
 		// same now that archiveBoundary already gave the guard. The record of
 		// the new location opens on a later look, once a base backup of it has

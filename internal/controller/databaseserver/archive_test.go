@@ -270,7 +270,7 @@ func TestReconcileArchiveHistoryRecordsAMoveAtTheGivenInstant(t *testing.T) {
 
 	// A base backup that completed before the ObjectStore moved. The move wins
 	// over it: the component is never consulted, which a nil one shows.
-	reconcileArchiveHistory(server, merged, nil, &started, locationB, true, appliedAt)
+	reconcileArchiveHistory(server, merged, nil, &started, locationB, true, true, appliedAt)
 
 	history := server.Status.Archive.History
 	require.Len(t, history, 1, "a move opens no record")
@@ -282,6 +282,28 @@ func TestReconcileArchiveHistoryRecordsAMoveAtTheGivenInstant(t *testing.T) {
 	assert.True(t, boundary.At.Equal(&appliedAt), boundary.At)
 	assert.Equal(t, locationB, boundary.Location)
 	assert.Equal(t, "bucket", boundary.ObjectStorageRef)
+}
+
+// The ObjectStore of the new location is what moves the archive. Until that
+// apply lands, the objects still go where they went, so the record stays open
+// and no boundary is written. The move is found again on the next reconcile.
+func TestReconcileArchiveHistoryHoldsAMoveTheApplyDidNotReach(t *testing.T) {
+	t.Parallel()
+
+	now := metav1.NewTime(archiveOpenedAt.Add(2 * time.Hour))
+	started := metav1.NewTime(archiveOpenedAt.Add(time.Hour))
+	merged := v1.DatabaseServerSpec{
+		Archive: &v1.DatabaseServerArchiveSpec{ObjectStorageRef: "bucket", RetentionPeriodDays: 30},
+	}
+
+	server := archivingServerWith([]v1.ArchiveRecord{archiveRecord(nil)}, nil)
+
+	reconcileArchiveHistory(server, merged, nil, &started, locationB, true, false, now)
+
+	history := server.Status.Archive.History
+	require.Len(t, history, 1)
+	assert.Nil(t, history[0].To, "the archive is where it was, so its record is still open")
+	assert.Nil(t, server.Status.Archive.Boundary)
 }
 
 // The floor is the point the highest retention period ever in force pruned

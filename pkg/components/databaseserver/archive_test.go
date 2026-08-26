@@ -352,7 +352,7 @@ func previewKinds(
 ) []string {
 	t.Helper()
 
-	comp, err := ArchiveComponent(server, merged, archive, nil, "", archiveTaken)
+	comp, _, err := ArchiveComponent(server, merged, archive, nil, "", archiveTaken)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()

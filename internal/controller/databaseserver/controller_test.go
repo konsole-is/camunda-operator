@@ -1733,6 +1733,75 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// The ObjectStore is what puts the archive in the new place. Until the
+	// apply of it lands, the plugin writes where it wrote before, so a record
+	// closed at the move would credit the objects of the old bucket to the new
+	// one and a restore of that window would read a bucket that holds nothing.
+	It("closes no record while the ObjectStore of the new bucket cannot be applied", func() {
+		first := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    first.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000030")
+		completeBaseBackup(server, "first", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].ObjectStorageRef).To(Equal(first.Name))
+		}, timeout, interval).Should(Succeed())
+
+		By("moving the bucket while every ObjectStore apply fails")
+		objectStoreApplies.refuse(server.Namespace)
+		DeferCleanup(func() { objectStoreApplies.allow(server.Namespace) })
+
+		second := archiveBucket()
+		setArchive(server, &v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    second.Name,
+			RetentionPeriodDays: 30,
+		})
+
+		// A base backup that completes in this window writes to the bucket the
+		// ObjectStore still names, which is the one the open record holds.
+		completeBaseBackup(server, "during", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
+
+		Consistently(func(g Gomega) {
+			archive := reconciledServer(server).Status.Archive
+			g.Expect(archive).NotTo(BeNil())
+			g.Expect(archive.History).To(HaveLen(1))
+			g.Expect(archive.History[0].ObjectStorageRef).To(Equal(first.Name))
+			g.Expect(archive.History[0].To).To(BeNil())
+			g.Expect(archive.Boundary).To(BeNil())
+		}, 3*time.Second, interval).Should(Succeed())
+
+		var store barmanobjectstore.ObjectStore
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &store,
+		)).To(Succeed())
+		Expect(store.Spec.Configuration.DestinationPath).To(ContainSubstring("s3://" + first.Name + "/"))
+
+		By("closing the record once the apply lands")
+		objectStoreApplies.allow(server.Namespace)
+		reconcileAgain(server, 1)
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &store,
+			)).To(Succeed())
+			g.Expect(store.Spec.Configuration.DestinationPath).
+				To(ContainSubstring("s3://" + second.Name + "/"))
+
+			archive := reconciledServer(server).Status.Archive
+			g.Expect(archive.History).To(HaveLen(1))
+			g.Expect(archive.History[0].To).NotTo(BeNil())
+			g.Expect(archive.Boundary).NotTo(BeNil())
+			g.Expect(archive.Boundary.ObjectStorageRef).To(Equal(second.Name))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// Removing spec.archive closes every record, so a re-enable elsewhere finds
 	// nothing open to close. The move has nowhere to live but
 	// status.archive.boundary, and without it the server accepts any backup

@@ -181,6 +181,12 @@ func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
 // archiveTaken is set while the ObjectStore of that name belongs to somebody
 // else. The cluster then carries no archive plugin, so the schedule has no
 // object storage to write a base backup to and is removed with it.
+//
+// The returned data cell holds the bucket URL of the ObjectStore that this
+// reconcile applied. It is unset when the apply did not happen: the component
+// is disabled, an earlier resource of it failed, a guard blocked it, or the
+// apply itself was rejected. The archive of the server is then still where it
+// was, whatever the spec asks for, so the caller records no move.
 func ArchiveComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
@@ -188,22 +194,31 @@ func ArchiveComponent(
 	archiveStart *metav1.Time,
 	clusterTaken string,
 	archiveTaken string,
-) (*component.Component, error) {
+) (*component.Component, *concepts.Data[string], error) {
 	resolved := archive.resolveOrNil(server)
 
 	settings, err := secret.NewBuilder(archiveSecret(server, resolved)).Build()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	store, err := barmanobjectstore.NewBuilder(objectStore(server, merged, resolved)).Build()
+	destination := concepts.NewData[string]("archive-destination-path")
+	storeBuilder := barmanobjectstore.NewBuilder(objectStore(server, merged, resolved))
+	barmanobjectstore.ExtractInto(
+		storeBuilder, destination,
+		func(o barmanobjectstore.ObjectStore) (string, error) {
+			return o.Spec.Configuration.DestinationPath, nil
+		},
+	)
+
+	store, err := storeBuilder.Build()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	baseBackup, err := cnpgscheduledbackup.NewBuilder(scheduledBackup(server, merged)).Build()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// The cluster is read here, never applied: it is the object the archive
@@ -216,10 +231,10 @@ func ArchiveComponent(
 		WithGuard(baseBackupGuard(server, archiveStart, merged.Suspend)).
 		Build()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return component.NewComponentBuilder().
+	comp, err := component.NewComponentBuilder().
 		WithName("archive").
 		WithConditionType(v1.ConditionArchiveReady).
 		WithFeatureGate(feature.NewBooleanGate(Archiving(merged))).
@@ -236,6 +251,11 @@ func ArchiveComponent(
 		).
 		WithResource(recoverable, component.ReadOnly(), component.Auxiliary()).
 		Build()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return comp, destination, nil
 }
 
 // baseBackupGuard blocks the archive until a base backup of the archive the
