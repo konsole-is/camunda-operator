@@ -66,7 +66,7 @@ func TestWrappersApplyAgainstTheCRDs(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "apply-archive", Namespace: "default"},
 		Spec: barmanobjectstore.ObjectStoreSpec{
 			Configuration: barmanobjectstore.BarmanObjectStoreConfiguration{
-				DestinationPath: "s3://apply-bucket/databaseserver/default/apply-server/",
+				DestinationPath: "s3://apply-bucket/databaseserver/default/apply-server-6c2f81ba/",
 				EndpointURL:     "http://minio.default.svc:9000",
 				S3Credentials: &barmanobjectstore.S3Credentials{
 					AccessKeyID: &barmanobjectstore.SecretKeySelector{Name: "apply-archive", Key: "accessKeyId"},

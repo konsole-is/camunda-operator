@@ -33,10 +33,18 @@ import (
 // recoveredClusterName is the cluster a server runs after one recovery.
 const recoveredClusterName = "my-cluster-db-r1"
 
+// archiveServerUID is the UID of archiveServer. The bucket directory of a
+// server is derived from it, so the archive cases need one that does not move.
+const archiveServerUID = "3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e"
+
 // archiveServer is the server that the archive cases render for.
 func archiveServer() *v1.DatabaseServer {
 	return &v1.DatabaseServer{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-db", Namespace: "my-cluster-ns"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-cluster-db",
+			Namespace: "my-cluster-ns",
+			UID:       archiveServerUID,
+		},
 	}
 }
 
@@ -56,7 +64,7 @@ func TestDestinationPath(t *testing.T) {
 					S3:   &v1.S3Storage{BucketName: "backups", BasePath: "clusters", Region: "eu-west-1"},
 				},
 			}},
-			want: "s3://backups/clusters/databaseserver/my-cluster-ns/my-cluster-db",
+			want: "s3://backups/clusters/databaseserver/my-cluster-ns/" + ArchiveSegment(archiveServer()),
 		},
 		{
 			name: "s3 at the bucket root",
@@ -66,7 +74,7 @@ func TestDestinationPath(t *testing.T) {
 					S3:   &v1.S3Storage{BucketName: "backups", Region: "eu-west-1"},
 				},
 			}},
-			want: "s3://backups/databaseserver/my-cluster-ns/my-cluster-db",
+			want: "s3://backups/databaseserver/my-cluster-ns/" + ArchiveSegment(archiveServer()),
 		},
 		{
 			name: "gcs",
@@ -76,7 +84,7 @@ func TestDestinationPath(t *testing.T) {
 					GCS:  &v1.GCSStorage{BucketName: "backups", BasePath: "clusters"},
 				},
 			}},
-			want: "gs://backups/clusters/databaseserver/my-cluster-ns/my-cluster-db",
+			want: "gs://backups/clusters/databaseserver/my-cluster-ns/" + ArchiveSegment(archiveServer()),
 		},
 		{
 			name: "azure through the service endpoint of the account",
@@ -88,7 +96,8 @@ func TestDestinationPath(t *testing.T) {
 					},
 				},
 			}},
-			want: "https://backups.blob.core.windows.net/archive/clusters/databaseserver/my-cluster-ns/my-cluster-db",
+			want: "https://backups.blob.core.windows.net/archive/clusters/databaseserver/my-cluster-ns/" +
+				ArchiveSegment(archiveServer()),
 		},
 		{
 			name:    "no bucket",
@@ -111,6 +120,39 @@ func TestDestinationPath(t *testing.T) {
 			assert.Equal(t, tt.want, destinationPath(tt.archive.resolveOrNil(archiveServer())))
 		})
 	}
+}
+
+// The objects of a deleted server stay in the bucket, and the Barman Cloud
+// plugin refuses a fresh cluster whose archive is not empty. A server created
+// again under the same name therefore has to write somewhere else.
+func TestArchiveSegmentSeparatesIncarnations(t *testing.T) {
+	t.Parallel()
+
+	bucket := &ArchiveStorage{Config: &v1.ObjectStorageConfig{
+		Spec: v1.ObjectStorageConfigSpec{
+			Type: v1.ObjectStorageTypeS3,
+			S3:   &v1.S3Storage{BucketName: "backups", BasePath: "clusters", Region: "eu-west-1"},
+		},
+	}}
+
+	first, second := archiveServer(), archiveServer()
+	second.UID = "8c7d6e5f-4a3b-4291-8071-1a2b3c4d5e6f"
+
+	assert.NotEqual(t, ArchiveSegment(first), ArchiveSegment(second))
+	assert.NotEqual(
+		t,
+		destinationPath(bucket.resolveOrNil(first)),
+		destinationPath(bucket.resolveOrNil(second)),
+	)
+	assert.NotEqual(t, bucket.ArchiveLocation(first), bucket.ArchiveLocation(second))
+}
+
+// The directory of a server must never move: the archive it already wrote is
+// there. The literal pins the rule against a later change of the hash.
+func TestArchiveSegmentIsStableForOneUID(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "my-cluster-db-a0d468fa", ArchiveSegment(archiveServer()))
 }
 
 // The pre-check answers with the same resolution the renderers use, so a
@@ -264,7 +306,7 @@ func TestArchiveLocationSeparatesTheService(t *testing.T) {
 	}
 
 	server := archiveServer()
-	prefix := "s3://backups/clusters/databaseserver/my-cluster-ns/my-cluster-db"
+	prefix := "s3://backups/clusters/databaseserver/my-cluster-ns/" + ArchiveSegment(server)
 
 	first := s3("http://minio.a.svc:9000", "eu-west-1")
 	second := s3("http://minio.b.svc:9000", "eu-west-1")

@@ -13,7 +13,7 @@ spec:
       inheritFromAzureAD: true
     data:
       compression: gzip
-    destinationPath: https://camundabackups.blob.core.windows.net/archive/clusters/databaseserver/my-cluster-ns/my-cluster-db
+    destinationPath: https://camundabackups.blob.core.windows.net/archive/clusters/databaseserver/my-cluster-ns/my-cluster-db-eec0942b
     wal:
       compression: gzip
   retentionPolicy: 30d

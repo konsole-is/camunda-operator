@@ -7,7 +7,7 @@ spec:
   configuration:
     data:
       compression: gzip
-    destinationPath: s3://test-bucket/databaseserver/test-ns/test-server/
+    destinationPath: s3://test-bucket/databaseserver/test-ns/test-server-9b1c7f04/
     endpointURL: https://s3.eu-west-1.amazonaws.com
     s3Credentials:
       accessKeyId:

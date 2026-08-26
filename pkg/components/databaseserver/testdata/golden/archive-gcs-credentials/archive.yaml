@@ -24,7 +24,7 @@ spec:
   configuration:
     data:
       compression: gzip
-    destinationPath: gs://camunda-backups/clusters/databaseserver/my-cluster-ns/my-cluster-db
+    destinationPath: gs://camunda-backups/clusters/databaseserver/my-cluster-ns/my-cluster-db-eec0942b
     googleCredentials:
       applicationCredentials:
         key: credentials.json
