@@ -347,11 +347,10 @@ func instances(merged v1.DatabaseServerSpec) int {
 // The guard of the cluster and the ClusterReady condition of the server both
 // read it, so the reason a user acts on is written once.
 //
-// A cluster with no controller is refused, where a contract of the same shape
-// is adopted. A contract holds a name and an endpoint, so taking it over costs
-// its holder nothing. A CloudNativePG cluster holds a database, the apply
-// rewrites its spec and makes it a child of this server, and deleting the
-// server then deletes data the server never built.
+// A cluster with no controller is refused, the way a contract of the same
+// shape is. The cluster holds a database, the apply rewrites its spec and
+// makes it a child of this server, and deleting the server then deletes data
+// the server never built.
 func ClusterTakenMessage(name string, holder *metav1.OwnerReference) string {
 	controller := "no owner controls it"
 	if holder != nil {

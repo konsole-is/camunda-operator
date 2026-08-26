@@ -1,6 +1,6 @@
 # DatabaseServer
 
-`DatabaseServer` is a namespaced kind that runs one PostgreSQL server for one orchestration cluster. You create it. The operator runs the server through a CloudNativePG cluster and publishes its connection details as a [DatabaseServerConfig](databaseserverconfig.md). With `spec.archive` it also keeps a continuous archive of the server in an object storage bucket.
+`DatabaseServer` is a namespaced kind that runs one PostgreSQL instance, which one or more orchestration clusters use through `Database` resources. You create it. The operator runs the server through a CloudNativePG cluster and publishes its connection details as a [DatabaseServerConfig](databaseserverconfig.md). With `spec.archive` it also keeps a continuous archive of the server in an object storage bucket.
 
 The server is the relational secondary storage of a cluster. A [Database](database.md) creates the logical database and its users on the published contract, and a `CamundaCluster` reaches it from there. With an archive, the contract declares `pitr.enabled: true`, which a [PointInTimeRestore](pointintimerestore.md) requires.
 
@@ -150,6 +150,8 @@ Run both on one cluster. The logical backups give you a restore of the Camunda d
 
 The server rolls itself back to any point that one of its archives holds. Its contract declares this with `pitr.recovery: operator`, so a [PointInTimeRestore](pointintimerestore.md) asks for the rollback itself and you prepare nothing.
 
+For a Camunda cluster, the safe action is a [PointInTimeRestore](pointintimerestore.md). It suspends the cluster, asks for the rollback, and restores the primary storage in order. A request that you write by hand rolls the database back alone. It is for a consumer outside the operator. That consumer stops every writer first, then brings its own state back in line.
+
 Ask for it by hand by writing `spec.recovery` on the published contract:
 
 ```yaml
@@ -184,7 +186,7 @@ Everything outside `spec.archive` still applies while a rollback runs. Only the 
 
 The contract that asked stays. It is the only place the answer is published, so whoever asked can still read `spec.pitr.lastRecovery` on it. It goes when the next rollback answers on another contract.
 
-**CAUTION: A rollback erases everything the server wrote after `targetTime`.** It rolls back every logical database on the server, not one of them. Run one server per cluster.
+**CAUTION: A rollback erases everything the server wrote after `targetTime`.** It rolls back every logical database on the server, not one of them. A [PointInTimeRestore](pointintimerestore.md) therefore needs the server to itself, and it holds while more than one `Database` uses the server.
 
 A suspended server refuses the request with `result: Failed`. Unsuspend it, then ask again. A point that no archive of the server holds is refused with `result: Unavailable`, and the message names the windows the server does hold. A point that an archive of an earlier bucket holds is refused the same way, and the message names both buckets. A point in the future, and a point older than `spec.archive.retentionPeriodDays`, are refused the same way, because the bucket holds no copy of either. A point that a shorter `retentionPeriodDays` pruned before you raised it is refused the same way, and the message names the oldest point the bucket still goes back to.
 

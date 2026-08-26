@@ -866,8 +866,8 @@ type derivedCluster struct {
 // read before that is the name of the cluster the server is leaving, and the
 // answer then guards the wrong object for a whole pass.
 //
-// A cluster with no controller counts as taken, where a contract of the same
-// shape is adopted: see components.ClusterTakenMessage.
+// A cluster with no controller counts as taken, the way a contract of the
+// same shape does: see components.ClusterTakenMessage.
 //
 // The read is live. A cached read that has not seen the cluster of the other
 // owner yet lets this server apply over it, which is the write the guard
