@@ -29,7 +29,6 @@ import (
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -470,8 +469,11 @@ func TestRecoveryClusterNeedsTheRecordFirst(t *testing.T) {
 	assert.Contains(t, err.Error(), "records no recovery cluster")
 }
 
-// The outcome patch states one field. Everything else on the contract belongs
-// to the component that publishes it, or to the consumer that asks.
+// The outcome patch states one field, and the identity of the object it was
+// read from. Everything else on the contract belongs to the component that
+// publishes it, or to the consumer that asks. The uid is what keeps the answer
+// off a contract that was deleted and created again under one name: the API
+// server refuses an apply that names another object.
 func TestRecoveryOutcomePatchStatesOneField(t *testing.T) {
 	t.Parallel()
 
@@ -486,15 +488,18 @@ func TestRecoveryOutcomePatchStatesOneField(t *testing.T) {
 		atTime("2026-08-20T15:02:11Z"),
 	)
 
-	patch, err := RecoveryOutcomePatch(
-		types.NamespacedName{Namespace: "camunda", Name: "my-database-server"}, outcome,
-	)
+	patch, err := RecoveryOutcomePatch(&v1.DatabaseServerConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "camunda", Name: "my-database-server", UID: "contract-uid",
+		},
+	}, outcome)
 	require.NoError(t, err)
 
 	assert.Equal(t, "DatabaseServerConfig", patch.GetKind())
 	assert.Equal(t, v1.GroupVersion.String(), patch.GetAPIVersion())
 	assert.Equal(t, "camunda", patch.GetNamespace())
 	assert.Equal(t, "my-database-server", patch.GetName())
+	assert.EqualValues(t, "contract-uid", patch.GetUID())
 
 	pitr, found, err := unstructured.NestedMap(patch.Object, "spec", "pitr")
 	require.NoError(t, err)

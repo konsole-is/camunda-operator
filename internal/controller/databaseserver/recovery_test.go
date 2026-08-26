@@ -1942,7 +1942,72 @@ var _ = Describe("DatabaseServer recovery", func() {
 		outcome := expectLastRecovery(server, v1.RecoveryResultFailed)
 		Expect(outcome.Message).To(ContainSubstring("suspended"))
 	})
+
+	// The contract is read from the cache, so the object under that name can
+	// have been deleted and created again by the time the answer is written.
+	// An answer on the replacement answers a request that nobody made on it,
+	// and the replacement can belong to another server.
+	It("answers a recovery only on the contract it read", func() {
+		contract := &v1.DatabaseServerConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "dbsc-" + utilrand.String(8), Namespace: "default",
+			},
+			Spec: v1.DatabaseServerConfigSpec{
+				Engine:                    v1.DatabaseEnginePostgres,
+				Host:                      "camunda-rw.default.svc",
+				Port:                      5432,
+				AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{Name: "superuser"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, contract)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, contract) })
+
+		outcome := components.RecoveryOutcomeFor(
+			v1.RecoveryRequest{
+				RequestID:   uuid.NewString(),
+				RequestedBy: "camunda-ns/pitr-1",
+				TargetTime:  "2026-08-20T14:30:00Z",
+			},
+			v1.RecoveryResultCompleted, "", metav1.Now(),
+		)
+		reconciler := &DatabaseServerReconciler{Client: k8sClient}
+
+		By("answering on the contract that was read")
+		Expect(reconciler.publishRecoveryOutcome(ctx, contract, outcome)).To(Succeed())
+		Expect(publishedRecovery(contract)).NotTo(BeNil())
+
+		By("replacing it under its name")
+		replacement := contract.DeepCopy()
+		replacement.ObjectMeta = metav1.ObjectMeta{
+			Name: contract.Name, Namespace: contract.Namespace,
+		}
+		Expect(k8sClient.Delete(ctx, contract)).To(Succeed())
+		Expect(k8sClient.Create(ctx, replacement)).To(Succeed())
+		Expect(replacement.UID).NotTo(Equal(contract.UID))
+
+		// The read the server holds is the one from before the replacement.
+		Expect(reconciler.publishRecoveryOutcome(ctx, contract, outcome)).To(Succeed())
+		Expect(publishedRecovery(replacement)).To(BeNil())
+
+		By("answering on the replacement once it is read")
+		Expect(reconciler.publishRecoveryOutcome(ctx, replacement, outcome)).To(Succeed())
+		Expect(publishedRecovery(replacement)).NotTo(BeNil())
+	})
 })
+
+// publishedRecovery is the answer that the contract carries now, read back
+// from the API server.
+func publishedRecovery(contract *v1.DatabaseServerConfig) *v1.RecoveryOutcome {
+	GinkgoHelper()
+
+	var current v1.DatabaseServerConfig
+	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(contract), &current)).To(Succeed())
+	if current.Spec.PITR == nil {
+		return nil
+	}
+
+	return current.Spec.PITR.LastRecovery
+}
 
 // Every bound is read against the now the caller passes, so the cases are
 // written against one fixed instant.
