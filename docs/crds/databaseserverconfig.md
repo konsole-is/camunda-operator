@@ -113,7 +113,7 @@ spec:
   # ... the rest of your contract
 ```
 
-`targetTime` is RFC 3339 with a zone. A timestamp without a zone is rejected. `targetTime` must name a point in the past that is still inside the retention period of the archive. `requestedBy` names the resource that asks, as `<namespace>/<name>`. `requestID` is a UUID that belongs to this request alone: a `PointInTimeRestore` writes its own `metadata.uid`, and a request you write by hand carries any UUID, for example from `uuidgen`.
+`targetTime` is RFC 3339 with a zone. A timestamp without a zone is rejected. `targetTime` must name a point in the past that is still inside the retention period of the archive. A retention period that was raised reaches the older points only as the archive writes past what the shorter one pruned. `requestedBy` names the resource that asks, as `<namespace>/<name>`. `requestID` is a UUID that belongs to this request alone: a `PointInTimeRestore` writes its own `metadata.uid`, and a request you write by hand carries any UUID, for example from `uuidgen`.
 
 The answer comes back in `pitr.lastRecovery`, and it repeats the request it answers:
 
@@ -225,7 +225,7 @@ spec:
 - `spec.host` must not be empty.
 - `spec.adminCredentialsSecretRef.name` must not be empty.
 - `spec.port` must be from 1 to 65535.
-- If `spec.pitr.enabled` is `true`, `spec.pitr.retentionPeriodDays` must be set and at least 1.
+- If `spec.pitr.enabled` is `true`, `spec.pitr.retentionPeriodDays` must be set and from 1 to 36500. The upper bound is a hundred years.
 - If `spec.pitr.recovery` is `operator`, `spec.pitr.enabled` must be `true`.
 - `spec.recovery.targetTime` must be RFC 3339 with a zone, for example `2026-08-20T14:30:00Z`.
 - `spec.recovery.requestedBy` must name a namespace and a name, separated by `/`.

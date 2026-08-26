@@ -84,7 +84,13 @@ type DatabaseServerArchiveSpec struct {
 	// RetentionPeriodDays is how far into the past a restore can reach. It is
 	// what the operator enforces on the bucket and what the contract of this
 	// server publishes, so the declared value and the enforced value are one.
+	//
+	// The maximum is 36500 days, which is a hundred years. The operator counts
+	// the reachable window in nanoseconds, and a longer period overflows that
+	// count and puts the oldest reachable point in the future, which makes
+	// every request unreachable.
 	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=36500
 	RetentionPeriodDays int32 `json:"retentionPeriodDays"`
 	// BaseBackupSchedule is when a base backup is taken, as the six-field
 	// cron of CloudNativePG (seconds first, in UTC), or as one of the
@@ -344,6 +350,15 @@ type DatabaseServerArchiveStatus struct {
 	// one it moved to. It is cleared when that interval opens.
 	// +optional
 	Boundary *ArchiveBoundary `json:"boundary,omitempty"`
+	// ReachableFrom is the oldest point the objects in the bucket still go
+	// back to. The retention period prunes the bucket as it runs, and a
+	// raised retention period does not bring back what a shorter one already
+	// pruned. The window grows to the new retention period only as the
+	// archive writes past this point, and a rollback to a point before it is
+	// refused. It is unset on a server that archived before this field
+	// existed, and the retention period alone bounds that one.
+	// +optional
+	ReachableFrom *metav1.Time `json:"reachableFrom,omitempty"`
 }
 
 // RecoveryArchiveRef names the archive that a recovery reads: the directory in

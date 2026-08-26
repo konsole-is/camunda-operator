@@ -191,6 +191,22 @@ var _ = Describe("DatabaseServer schema", func() {
 				o.Spec.Archive.RetentionPeriodDays = 0
 			}, "retentionPeriodDays",
 		),
+		// The operator counts the reachable window in nanoseconds, which holds
+		// 106751 days. A longer period overflows that count and puts the
+		// oldest reachable point in the future, so every rollback request
+		// reads as unreachable.
+		Entry(
+			"accepts a retention period of a hundred years",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.RetentionPeriodDays = 36500
+			}, "",
+		),
+		Entry(
+			"rejects a retention period above a hundred years",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.RetentionPeriodDays = 36501
+			}, "retentionPeriodDays",
+		),
 		Entry(
 			"rejects an archive without an objectStorageRef",
 			realisticDatabaseServer, func(o *v1.DatabaseServer) {

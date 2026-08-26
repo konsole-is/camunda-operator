@@ -100,6 +100,20 @@ var _ = Describe("DatabaseServerConfig schema", func() {
 				o.Spec.PITR = &v1.PITRCapability{Enabled: true, RetentionPeriodDays: new(int32(0))}
 			}, "retentionPeriodDays",
 		),
+		// A reader counts the reachable window in nanoseconds, which holds
+		// 106751 days. A longer period overflows that count and puts the
+		// oldest reachable point in the future, so every restore reads as
+		// unreachable.
+		Entry(
+			"accepts pitr retention of a hundred years", func(o *v1.DatabaseServerConfig) {
+				o.Spec.PITR = &v1.PITRCapability{Enabled: true, RetentionPeriodDays: new(int32(36500))}
+			}, "",
+		),
+		Entry(
+			"rejects pitr retention above a hundred years", func(o *v1.DatabaseServerConfig) {
+				o.Spec.PITR = &v1.PITRCapability{Enabled: true, RetentionPeriodDays: new(int32(36501))}
+			}, "retentionPeriodDays",
+		),
 		Entry(
 			"accepts operator recovery on a server that archives", func(o *v1.DatabaseServerConfig) {
 				o.Spec.PITR = &v1.PITRCapability{

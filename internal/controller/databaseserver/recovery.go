@@ -571,7 +571,12 @@ func recoverySource(
 		retention = recorded.Archive.RetentionPeriodDays
 	}
 
-	if refusal := outOfReach(target, retention); refusal != nil {
+	var reachableFrom *metav1.Time
+	if server.Status.Archive != nil {
+		reachableFrom = server.Status.Archive.ReachableFrom
+	}
+
+	if refusal := outOfReach(time.Now(), target, retention, reachableFrom); refusal != nil {
 		return v1.ArchiveRecord{}, refusal
 	}
 
@@ -606,10 +611,16 @@ func recoverySource(
 // archive wrote a point. It does not say that the objects of that point are
 // still there: the record that is open has no end, and the bucket drops
 // everything older than the retention period.
-func outOfReach(target time.Time, retentionDays int32) *recoveryRefusal {
-	// The clock is the reason these two are not schema rules on the request.
-	now := time.Now()
-
+//
+// reachableFrom is status.archive.reachableFrom, the floor that the prunes of
+// a shorter retention period left. It is nil for a server that archived before
+// that field existed, and the retention period alone bounds that one.
+func outOfReach(
+	now, target time.Time,
+	retentionDays int32,
+	reachableFrom *metav1.Time,
+) *recoveryRefusal {
+	// The clock is the reason these rules are not schema rules on the request.
 	if target.After(now) {
 		return &recoveryRefusal{
 			result: v1.RecoveryResultUnavailable,
@@ -627,6 +638,19 @@ func outOfReach(target time.Time, retentionDays int32) *recoveryRefusal {
 				"targetTime %s is older than the retention period of the archive, which is %d "+
 					"days. The bucket keeps nothing of that point any more",
 				target.UTC().Format(time.RFC3339), retentionDays,
+			),
+		}
+	}
+
+	if reachableFrom != nil && target.Before(reachableFrom.Time) {
+		return &recoveryRefusal{
+			result: v1.RecoveryResultUnavailable,
+			message: fmt.Sprintf(
+				"targetTime %s is inside the retention period of %d days, but a shorter one "+
+					"pruned the archive to %s before that. The archive reaches further back only "+
+					"as it writes past that point",
+				target.UTC().Format(time.RFC3339), retentionDays,
+				reachableFrom.UTC().Format(time.RFC3339),
 			),
 		}
 	}

@@ -132,6 +132,12 @@ type PITRCapability struct {
 	Enabled bool `json:"enabled,omitempty"`
 	// RetentionPeriodDays is how many days into the past a point-in-time
 	// restore can target. Required when enabled is true.
+	//
+	// The maximum is 36500 days, which is a hundred years. A reader counts the
+	// reachable window in nanoseconds, and a longer period overflows that
+	// count and puts the oldest reachable point in the future, which makes
+	// every restore unreachable.
+	// +kubebuilder:validation:Maximum=36500
 	// +optional
 	RetentionPeriodDays *int32 `json:"retentionPeriodDays,omitempty"`
 	// Recovery says who rolls the server back to a point in time. operator
