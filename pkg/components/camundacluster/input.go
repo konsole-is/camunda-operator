@@ -59,7 +59,7 @@ type RDBMSStorage struct {
 	// Database is the databaseName of the DatabaseConfig.
 	Database string
 	// Credentials is the credentialsSecretRef of the DatabaseConfig.
-	Credentials v1.CredentialsSecretRef
+	Credentials v1.LocalCredentialsSecretRef
 }
 
 // Input is everything the pure package needs to render one cluster.
@@ -173,7 +173,13 @@ func ResolveAuth(in Input) EffectiveAuth {
 			oidc.Audience = override.Audience
 		}
 		if override.ClientSecretRef != nil {
-			oidc.ClientSecretRef = *override.ClientSecretRef
+			// The cluster resolves its own reference in its own namespace.
+			// The platform config, which is cluster-scoped, names one.
+			oidc.ClientSecretRef = v1.SecretKeyRef{
+				Name:      override.ClientSecretRef.Name,
+				Namespace: in.Cluster.Namespace,
+				Key:       override.ClientSecretRef.Key,
+			}
 		}
 		auth.Admin = override.Admin
 	}

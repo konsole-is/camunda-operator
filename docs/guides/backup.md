@@ -14,7 +14,7 @@ Run both on a cluster that has an archived server. The logical backups give you 
 
 ### The bucket
 
-Create an `ObjectStorageConfig`. It describes the bucket and how the cluster authenticates to it. The operator never creates the bucket. You create it, or another tool creates it for you.
+Create an `ObjectStorageConfig` in the namespace of the cluster. It describes the bucket and how the cluster authenticates to it. The operator never creates the bucket. You create it, or another tool creates it for you.
 
 An S3 bucket with workload identity:
 
@@ -23,6 +23,7 @@ apiVersion: core.camunda.io/v1
 kind: ObjectStorageConfig
 metadata:
   name: my-backup-bucket
+  namespace: my-cluster-ns
 spec:
   type: S3
   s3:
@@ -37,7 +38,7 @@ spec:
 
 The [ObjectStorageConfig reference](../crds/objectstorageconfig.md) has examples for GCS, Azure Blob, and static credentials (MinIO, Ceph).
 
-`basePath` is a key prefix inside the bucket, without leading or trailing slashes. Every backup of a cluster lands under `<basePath>/<namespace>/<cluster>/`. Two clusters can share one bucket and never share one prefix. Azure Blob is the exception: the Zeebe backup store writes into the whole container. On Azure, create one container and one `ObjectStorageConfig` per cluster. The secondary storage contract belongs to one cluster, see [one cluster per contract](./secondary-storage.md#one-cluster-per-contract).
+`basePath` is a key prefix inside the bucket, without leading or trailing slashes. Every backup of a cluster lands under `<basePath>/<namespace>/<cluster>/`. Two clusters can share one bucket and never share one prefix. A cluster reads the contract in its own namespace, so a cluster in another namespace needs a contract of its own. Azure Blob is the exception: the Zeebe backup store writes into the whole container. On Azure, create one container and one `ObjectStorageConfig` per cluster. The secondary storage contract belongs to one cluster, see [one cluster per contract](./secondary-storage.md#one-cluster-per-contract).
 
 ### Point the cluster at it
 
@@ -126,7 +127,6 @@ spec:
   # ... serverRef, databaseName, credentialsSecretRef
   backupCredentialsSecretRef:
     name: my-camunda-db-backup-credentials
-    namespace: my-cluster-ns
     usernameKey: username
     passwordKey: password
 ```

@@ -109,7 +109,7 @@ spec:
         interval: "30s"
     # object. Optional. The continuous archive. See DatabaseServer.
     archive:
-      # string. Required in this block. Name of a cluster-scoped ObjectStorageConfig.
+      # string. Required in this block. Name of an ObjectStorageConfig in the namespace of each server.
       objectStorageRef: my-backup-bucket
       # integer. Required in this block. How many days into the past a restore can reach, at least 1.
       retentionPeriodDays: 30

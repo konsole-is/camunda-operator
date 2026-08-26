@@ -205,8 +205,9 @@ type ElasticsearchClusterSpec struct {
 	// the preset's scheduling block entirely (no merge).
 	// +optional
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
-	// SnapshotStorageRef names a cluster-scoped ObjectStorageConfig that holds
-	// the bucket of the snapshot repository of this cluster. When it is set,
+	// SnapshotStorageRef names an ObjectStorageConfig, in the namespace of
+	// this cluster, that holds the bucket of the snapshot repository of this
+	// cluster. When it is set,
 	// the operator owns the whole Elasticsearch side of that bucket: it gives
 	// the nodes their credentials, registers the repository, and publishes the
 	// repository name in the SecondaryStorageConfig it produces. Backups of a

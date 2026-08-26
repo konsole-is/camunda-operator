@@ -97,7 +97,6 @@ func s3Credentials() v1.S3StorageAuth {
 		Credentials: &v1.S3Credentials{
 			SecretRef: v1.S3CredentialsSecretRef{
 				Name:               "minio-credentials",
-				Namespace:          "camunda",
 				AccessKeyIDKey:     "accessKeyId",
 				SecretAccessKeyKey: "secretAccessKey",
 			},
@@ -174,10 +173,9 @@ func TestJobGoldenGCSCredentials(t *testing.T) {
 				Auth: v1.GCSStorageAuth{
 					Type: v1.ObjectStorageAuthTypeCredentials,
 					Credentials: &v1.GCSCredentials{
-						SecretRef: v1.SecretKeyRef{
-							Name:      "gcs-key",
-							Namespace: "camunda",
-							Key:       "key.json",
+						SecretRef: v1.LocalSecretKeyRef{
+							Name: "gcs-key",
+							Key:  "key.json",
 						},
 					},
 				},
@@ -206,10 +204,9 @@ func TestJobGoldenAzureCredentials(t *testing.T) {
 				Auth: v1.AzureBlobStorageAuth{
 					Type: v1.ObjectStorageAuthTypeCredentials,
 					Credentials: &v1.AzureBlobCredentials{
-						SecretRef: v1.SecretKeyRef{
-							Name:      "azure-key",
-							Namespace: "camunda",
-							Key:       "accountKey",
+						SecretRef: v1.LocalSecretKeyRef{
+							Name: "azure-key",
+							Key:  "accountKey",
 						},
 					},
 				},

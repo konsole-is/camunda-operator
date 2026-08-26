@@ -30,12 +30,9 @@ import (
 )
 
 // resolveObjectStorage reads the ObjectStorageConfigs that
-// spec.backupStorageRef and spec.documentStorageRef name. The backup bucket
-// enters the input with its credentials reference pointed at the copy in the
-// cluster namespace, so the renderer only ever names local Secrets. Both
-// buckets contribute their workload identity to the ServiceAccount
-// annotations; two identities of one cloud are rejected, because a pod has
-// one ServiceAccount.
+// spec.backupStorageRef and spec.documentStorageRef name. Both buckets
+// contribute their workload identity to the ServiceAccount annotations; two
+// identities of one cloud are rejected, because a pod has one ServiceAccount.
 //
 // An Elasticsearch cluster that takes backups also needs the snapshot
 // repository of its storage contract: without it the web applications have
@@ -61,10 +58,7 @@ func (res *resolver) resolveObjectStorage(ctx context.Context, in *components.In
 		if err := res.rejectSharedAzureContainer(ctx, backup); err != nil {
 			return err
 		}
-		// The credentials rewrite works on a copy: the resolver hands the
-		// render input rewritten references, never a mutated read.
-		backup = backup.DeepCopy()
-		if err := res.localizeBucketCredentials(ctx, backup); err != nil {
+		if err := res.checkBucketCredentials(ctx, backup); err != nil {
 			return err
 		}
 		in.Backup = backup
@@ -115,7 +109,7 @@ func (res *resolver) rejectSharedAzureContainer(ctx context.Context, bucket *v1.
 	}
 
 	var clusters v1.CamundaClusterList
-	if err := res.reader.List(ctx, &clusters); err != nil {
+	if err := res.reader.List(ctx, &clusters, client.InNamespace(bucket.Namespace)); err != nil {
 		return fmt.Errorf("listing clusters that share ObjectStorageConfig %q: %w", bucket.Name, err)
 	}
 
@@ -149,56 +143,36 @@ func olderThan(a, b *v1.CamundaCluster) bool {
 	return a.Name < b.Name
 }
 
-// objectStorage reads the ObjectStorageConfig that ref names, or returns nil
-// when the reference is empty.
+// objectStorage reads the ObjectStorageConfig that ref names in the namespace
+// of the cluster, or returns nil when the reference is empty.
 func (res *resolver) objectStorage(ctx context.Context, ref string) (*v1.ObjectStorageConfig, error) {
 	if ref == "" {
 		return nil, nil
 	}
 
+	key := client.ObjectKey{Namespace: res.cluster.Namespace, Name: ref}
+
 	var config v1.ObjectStorageConfig
-	if err := res.get(ctx, client.ObjectKey{Name: ref}, &config); err != nil {
+	if err := res.get(ctx, key, &config); err != nil {
 		return nil, err
 	}
 
 	return &config, nil
 }
 
-// localizeBucketCredentials checks the static credentials of bucket and
-// rewrites its reference to the copy in the cluster namespace. The lookup
-// goes through CredentialsSecret, so only the rewrite still switches over the
-// storage types: the contract exposes no setter, and the three references are
-// three different types. A bucket that authenticates with workload identity
-// references no Secret and is left alone.
-func (res *resolver) localizeBucketCredentials(ctx context.Context, bucket *v1.ObjectStorageConfig) error {
+// checkBucketCredentials checks the static credentials of bucket and records
+// the resource version of their Secret as a render input, so a rotated key
+// rolls the pods. The bucket lives in the namespace of the cluster and names
+// its Secret there, so the pods mount the Secret the contract names. A bucket
+// that authenticates with workload identity references no Secret and is left
+// alone.
+func (res *resolver) checkBucketCredentials(ctx context.Context, bucket *v1.ObjectStorageConfig) error {
 	creds := bucket.CredentialsSecret()
 	if creds == nil {
 		return nil
 	}
 
-	local, err := res.secret(
-		ctx,
-		client.ObjectKey{Namespace: creds.Namespace, Name: creds.Name},
-		components.MirrorPurposeBackupCredentials,
-		creds.Keys...,
-	)
-	if err != nil {
-		return err
-	}
-
-	switch spec := &bucket.Spec; {
-	case spec.S3 != nil && spec.S3.Auth.Credentials != nil:
-		spec.S3.Auth.Credentials.SecretRef.Name = local.Name
-		spec.S3.Auth.Credentials.SecretRef.Namespace = local.Namespace
-	case spec.GCS != nil && spec.GCS.Auth.Credentials != nil:
-		spec.GCS.Auth.Credentials.SecretRef.Name = local.Name
-		spec.GCS.Auth.Credentials.SecretRef.Namespace = local.Namespace
-	case spec.AzureBlob != nil && spec.AzureBlob.Auth.Credentials != nil:
-		spec.AzureBlob.Auth.Credentials.SecretRef.Name = local.Name
-		spec.AzureBlob.Auth.Credentials.SecretRef.Namespace = local.Namespace
-	}
-
-	return nil
+	return res.checkLocalSecret(ctx, creds.Name, creds.Keys...)
 }
 
 // requireSnapshotRepository rejects an Elasticsearch cluster that takes

@@ -10,6 +10,5 @@ spec:
   databaseName: camunda
   credentialsSecretRef:
     name: databaseconfig-sample-credentials
-    namespace: default
     usernameKey: username
     passwordKey: password

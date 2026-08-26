@@ -35,7 +35,7 @@ func fullPreset() *v1.CamundaClusterPresetSpec {
 		Auth: &v1.ClusterAuthSpec{
 			ClientID:        "preset-client",
 			Audience:        "preset-audience",
-			ClientSecretRef: &v1.SecretKeyRef{Name: "p", Namespace: "camunda-system", Key: "s"},
+			ClientSecretRef: &v1.LocalSecretKeyRef{Name: "p", Key: "s"},
 		},
 		ExtraEnv: []corev1.EnvVar{{Name: "TZ", Value: "UTC"}, {Name: "KEEP", Value: "preset"}},
 		ExtraEnvFrom: []corev1.EnvFromSource{{

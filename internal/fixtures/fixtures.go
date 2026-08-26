@@ -65,9 +65,8 @@ func DatabaseConfig() *v1.DatabaseConfig {
 		Spec: v1.DatabaseConfigSpec{
 			ServerRef:    "my-db-server",
 			DatabaseName: "camunda",
-			CredentialsSecretRef: v1.CredentialsSecretRef{
-				Name: "my-camunda-db-credentials", Namespace: "my-cluster-ns",
-				UsernameKey: "username", PasswordKey: "password",
+			CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+				Name: "my-camunda-db-credentials", UsernameKey: "username", PasswordKey: "password",
 			},
 		},
 	}
@@ -85,9 +84,8 @@ func SecondaryStorageConfigElasticsearch(namespace string) *v1.SecondaryStorageC
 			Type: v1.SecondaryStorageTypeElasticsearch,
 			Elasticsearch: &v1.ElasticsearchStorage{
 				Endpoint: "https://" + name + "-es-http." + namespace + ".svc:9200",
-				CredentialsSecretRef: v1.CredentialsSecretRef{
-					Name: name + "-credentials", Namespace: namespace,
-					UsernameKey: "username", PasswordKey: "password",
+				CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+					Name: name + "-credentials", UsernameKey: "username", PasswordKey: "password",
 				},
 			},
 		},

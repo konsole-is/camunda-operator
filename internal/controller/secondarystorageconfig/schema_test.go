@@ -36,8 +36,8 @@ func validSecondaryStorageConfigES() *v1.SecondaryStorageConfig {
 			Type: v1.SecondaryStorageTypeElasticsearch,
 			Elasticsearch: &v1.ElasticsearchStorage{
 				Endpoint: "https://my-cluster-es:9200",
-				CredentialsSecretRef: v1.CredentialsSecretRef{
-					Name: "my-cluster-es-credentials", Namespace: "my-cluster-ns",
+				CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+					Name:        "my-cluster-es-credentials",
 					UsernameKey: "username", PasswordKey: "password",
 				},
 			},
@@ -140,16 +140,16 @@ var _ = Describe("SecondaryStorageConfig schema", func() {
 			"rejects caSecretRef with an http endpoint",
 			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
 				o.Spec.Elasticsearch.Endpoint = "http://my-cluster-es:9200"
-				o.Spec.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
-					Name: "my-cluster-es-http-certs-public", Namespace: "my-cluster-ns", Key: "ca.crt",
+				o.Spec.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
+					Name: "my-cluster-es-http-certs-public", Key: "ca.crt",
 				}
 			}, "caSecretRef requires an https endpoint",
 		),
 		Entry(
 			"rejects caSecretRef with empty key",
 			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
-				o.Spec.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
-					Name: "my-cluster-es-http-certs-public", Namespace: "my-cluster-ns", Key: "",
+				o.Spec.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
+					Name: "my-cluster-es-http-certs-public", Key: "",
 				}
 			}, "key",
 		),
@@ -158,8 +158,8 @@ var _ = Describe("SecondaryStorageConfig schema", func() {
 	It("round-trips caSecretRef", func() {
 		obj := validSecondaryStorageConfigES()
 		obj.Namespace = fixtures.SchemaTestNamespace
-		obj.Spec.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
-			Name: "my-cluster-es-http-certs-public", Namespace: "my-cluster-ns", Key: "ca.crt",
+		obj.Spec.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
+			Name: "my-cluster-es-http-certs-public", Key: "ca.crt",
 		}
 
 		Expect(k8sClient.Create(ctx, obj)).To(Succeed())

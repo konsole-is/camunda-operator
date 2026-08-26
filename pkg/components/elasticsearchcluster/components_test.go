@@ -288,7 +288,6 @@ func TestElasticsearchClusterGoldenSnapshotCredentials(t *testing.T) {
 			Credentials: &v1.S3Credentials{
 				SecretRef: v1.S3CredentialsSecretRef{
 					Name:               "minio-credentials",
-					Namespace:          "camunda",
 					AccessKeyIDKey:     "accessKeyId",
 					SecretAccessKeyKey: "secretAccessKey",
 				},
@@ -525,7 +524,7 @@ func TestElasticsearchClusterGoldenSnapshotGCSCredentials(t *testing.T) {
 	config := gcsBucket(v1.GCSStorageAuth{
 		Type: v1.ObjectStorageAuthTypeCredentials,
 		Credentials: &v1.GCSCredentials{
-			SecretRef: v1.SecretKeyRef{Name: "gcs-key", Namespace: "camunda", Key: "key.json"},
+			SecretRef: v1.LocalSecretKeyRef{Name: "gcs-key", Key: "key.json"},
 		},
 	})
 	config.Name = goldenBucketName
@@ -552,7 +551,7 @@ func TestElasticsearchClusterGoldenSnapshotAzureCredentials(t *testing.T) {
 	config := azureBucket(v1.AzureBlobStorageAuth{
 		Type: v1.ObjectStorageAuthTypeCredentials,
 		Credentials: &v1.AzureBlobCredentials{
-			SecretRef: v1.SecretKeyRef{Name: "azure-key", Namespace: "camunda", Key: "accountKey"},
+			SecretRef: v1.LocalSecretKeyRef{Name: "azure-key", Key: "accountKey"},
 		},
 	}, "")
 	config.Name = goldenBucketName

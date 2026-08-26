@@ -31,16 +31,16 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
-// databaseConfigSecret builds a Secret at ref that holds a placeholder value
-// for each key.
-func databaseConfigSecret(ref v1.CredentialsSecretRef, keys ...string) *corev1.Secret {
+// databaseConfigSecret builds a Secret at ref, in namespace, that holds a
+// placeholder value for each key.
+func databaseConfigSecret(namespace string, ref v1.LocalCredentialsSecretRef, keys ...string) *corev1.Secret {
 	data := make(map[string][]byte, len(keys))
 	for _, key := range keys {
 		data[key] = []byte("value")
 	}
 
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: ref.Name, Namespace: ref.Namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: ref.Name, Namespace: namespace},
 		Data:       data,
 	}
 }
@@ -81,8 +81,8 @@ var _ = Describe("DatabaseConfig controller", func() {
 		dbConfig = fixtures.DatabaseConfig()
 		dbConfig.Namespace = ns
 		dbConfig.Spec.ServerRef = server.Name
-		dbConfig.Spec.CredentialsSecretRef = v1.CredentialsSecretRef{
-			Name: "app-creds", Namespace: ns,
+		dbConfig.Spec.CredentialsSecretRef = v1.LocalCredentialsSecretRef{
+			Name:        "app-creds",
 			UsernameKey: "username", PasswordKey: "password",
 		}
 	})
@@ -119,19 +119,19 @@ var _ = Describe("DatabaseConfig controller", func() {
 			fmt.Sprintf("Secret %s not found", ns+"/app-creds"),
 		)
 
-		create(databaseConfigSecret(dbConfig.Spec.CredentialsSecretRef, "username", "password"))
+		create(databaseConfigSecret(ns, dbConfig.Spec.CredentialsSecretRef, "username", "password"))
 
 		expectDatabaseConfigReady(dbConfig, metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed")
 	})
 
 	It("reports Healthy when the server and all Secrets exist", func() {
-		dbConfig.Spec.BackupCredentialsSecretRef = &v1.CredentialsSecretRef{
-			Name: "backup-creds", Namespace: ns,
+		dbConfig.Spec.BackupCredentialsSecretRef = &v1.LocalCredentialsSecretRef{
+			Name:        "backup-creds",
 			UsernameKey: "username", PasswordKey: "password",
 		}
 		create(server)
-		create(databaseConfigSecret(dbConfig.Spec.CredentialsSecretRef, "username", "password"))
-		create(databaseConfigSecret(*dbConfig.Spec.BackupCredentialsSecretRef, "username", "password"))
+		create(databaseConfigSecret(ns, dbConfig.Spec.CredentialsSecretRef, "username", "password"))
+		create(databaseConfigSecret(ns, *dbConfig.Spec.BackupCredentialsSecretRef, "username", "password"))
 		create(dbConfig)
 
 		expectDatabaseConfigReady(dbConfig, metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed")
@@ -139,7 +139,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 
 	It("flips a Healthy contract to InvalidReference when the server is deleted", func() {
 		create(server)
-		create(databaseConfigSecret(dbConfig.Spec.CredentialsSecretRef, "username", "password"))
+		create(databaseConfigSecret(ns, dbConfig.Spec.CredentialsSecretRef, "username", "password"))
 		create(dbConfig)
 		expectDatabaseConfigReady(dbConfig, metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed")
 
@@ -153,7 +153,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 
 	It("names the app Secret and key when a key is missing", func() {
 		create(server)
-		create(databaseConfigSecret(dbConfig.Spec.CredentialsSecretRef, "username"))
+		create(databaseConfigSecret(ns, dbConfig.Spec.CredentialsSecretRef, "username"))
 		create(dbConfig)
 
 		expectDatabaseConfigReady(
@@ -163,12 +163,12 @@ var _ = Describe("DatabaseConfig controller", func() {
 	})
 
 	It("names the backup Secret when it is missing", func() {
-		dbConfig.Spec.BackupCredentialsSecretRef = &v1.CredentialsSecretRef{
-			Name: "backup-creds", Namespace: ns,
+		dbConfig.Spec.BackupCredentialsSecretRef = &v1.LocalCredentialsSecretRef{
+			Name:        "backup-creds",
 			UsernameKey: "username", PasswordKey: "password",
 		}
 		create(server)
-		create(databaseConfigSecret(dbConfig.Spec.CredentialsSecretRef, "username", "password"))
+		create(databaseConfigSecret(ns, dbConfig.Spec.CredentialsSecretRef, "username", "password"))
 		create(dbConfig)
 
 		expectDatabaseConfigReady(
@@ -179,7 +179,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 
 	It("stamps observedGeneration after a spec update", func() {
 		create(server)
-		create(databaseConfigSecret(dbConfig.Spec.CredentialsSecretRef, "username", "password"))
+		create(databaseConfigSecret(ns, dbConfig.Spec.CredentialsSecretRef, "username", "password"))
 		create(dbConfig)
 		expectDatabaseConfigReady(dbConfig, metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed")
 

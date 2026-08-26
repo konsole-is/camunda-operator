@@ -45,15 +45,14 @@ func esScheme(t *testing.T) *runtime.Scheme {
 func esContract(ca bool) *v1.SecondaryStorageConfig {
 	es := &v1.ElasticsearchStorage{
 		Endpoint: "https://es.my-ns.svc:9200",
-		CredentialsSecretRef: v1.CredentialsSecretRef{
+		CredentialsSecretRef: v1.LocalCredentialsSecretRef{
 			Name:        "es-user",
-			Namespace:   "my-ns",
 			UsernameKey: "username",
 			PasswordKey: "password",
 		},
 	}
 	if ca {
-		es.CASecretRef = &v1.SecretKeyRef{Name: "es-ca", Namespace: "my-ns", Key: "ca.crt"}
+		es.CASecretRef = &v1.LocalSecretKeyRef{Name: "es-ca", Key: "ca.crt"}
 	}
 
 	return &v1.SecondaryStorageConfig{

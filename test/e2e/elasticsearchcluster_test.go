@@ -139,13 +139,22 @@ var _ = Describe("ElasticsearchCluster", Ordered, Label(utils.LabelElasticsearch
 			)
 		}, 2*time.Minute).Should(Succeed())
 
+		// Ready Healthy does not mean that the published endpoint answers.
+		// ECK reads the health from a pod that runs, through a headless
+		// Service that publishes the addresses of pods that are not ready.
+		// The published endpoint is the -es-http Service, and that one
+		// publishes ready addresses only. It holds no address until the
+		// readiness probe of the pod passes, so one call can find a closed
+		// port and curl gives up.
 		By("reading the cluster health with the published credentials and CA")
-		out, err := curlElasticsearch(&contract, "health", "/_cluster/health")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(out).To(ContainSubstring(`"status":"green"`))
+		Eventually(func(g Gomega) {
+			out, err := curlElasticsearch(&contract, "health", "/_cluster/health")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(out).To(ContainSubstring(`"status":"green"`))
+		}, 5*time.Minute, 5*time.Second).Should(Succeed())
 
 		By("indexing a document")
-		_, err = curlElasticsearch(
+		_, err := curlElasticsearch(
 			&contract, "index", "/"+esIndex,
 			"-X", "PUT", "-H", "Content-Type: application/json", "-d", `{"settings":{"number_of_replicas":0}}`,
 		)

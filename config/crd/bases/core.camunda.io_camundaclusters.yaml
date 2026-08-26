@@ -1091,14 +1091,9 @@ spec:
                         description: Name of the Secret holding the value.
                         minLength: 1
                         type: string
-                      namespace:
-                        description: Namespace of the Secret.
-                        minLength: 1
-                        type: string
                     required:
                     - key
                     - name
-                    - namespace
                     type: object
                 type: object
               backup:
@@ -2127,8 +2122,8 @@ spec:
                 type: object
               backupStorageRef:
                 description: |-
-                  BackupStorageRef names a cluster-scoped ObjectStorageConfig for
-                  backups.
+                  BackupStorageRef names an ObjectStorageConfig, in the namespace of
+                  this cluster, for backups.
                 type: string
               connectors:
                 description: Connectors configures the connectors runtime.
@@ -3055,8 +3050,8 @@ spec:
                 type: object
               documentStorageRef:
                 description: |-
-                  DocumentStorageRef names a cluster-scoped ObjectStorageConfig for
-                  document storage.
+                  DocumentStorageRef names an ObjectStorageConfig, in the namespace of
+                  this cluster, for document storage.
                 type: string
               externalUrl:
                 description: |-
@@ -7892,25 +7887,20 @@ spec:
                             description: Name of the Secret holding the credentials.
                             minLength: 1
                             type: string
-                          namespace:
-                            description: Namespace of the Secret.
-                            minLength: 1
-                            type: string
                           passwordKey:
+                            default: password
                             description: PasswordKey is the key in the Secret holding
                               the plaintext password.
                             minLength: 1
                             type: string
                           usernameKey:
+                            default: username
                             description: UsernameKey is the key in the Secret holding
                               the plaintext username.
                             minLength: 1
                             type: string
                         required:
                         - name
-                        - namespace
-                        - passwordKey
-                        - usernameKey
                         type: object
                       method:
                         description: |-

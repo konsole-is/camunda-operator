@@ -172,7 +172,7 @@ func (r *LogicalBackupRDBMSReconciler) pinnedBucket(
 
 	var bucket v1.ObjectStorageConfig
 	if err := r.APIReader.Get(
-		ctx, types.NamespacedName{Name: backup.Status.BucketRef}, &bucket,
+		ctx, types.NamespacedName{Namespace: cluster.Namespace, Name: backup.Status.BucketRef}, &bucket,
 	); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, logicalbackup.InvalidReference(

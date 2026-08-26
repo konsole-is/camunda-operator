@@ -359,7 +359,7 @@ func webModelerDatabaseEnv(db *Database) []corev1.EnvVar {
 
 // webModelerMailEnv renders the SMTP server. The user and the password are
 // left out for a server that needs no credentials.
-func webModelerMailEnv(mail v1.WebModelerMailSpec, ref *v1.CredentialsSecretRef) []corev1.EnvVar {
+func webModelerMailEnv(mail v1.WebModelerMailSpec, ref *v1.LocalCredentialsSecretRef) []corev1.EnvVar {
 	env := []corev1.EnvVar{
 		{Name: webModelerEnvMailHost, Value: mail.SMTPHost},
 		{Name: webModelerEnvMailPort, Value: strconv.Itoa(int(mail.SMTPPort))},

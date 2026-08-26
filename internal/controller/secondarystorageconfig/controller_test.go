@@ -80,7 +80,6 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 			namespace := newSecondaryStorageNamespace()
 			secondaryStorage = validSecondaryStorageConfigES()
 			secondaryStorage.Namespace = namespace
-			secondaryStorage.Spec.Elasticsearch.CredentialsSecretRef.Namespace = namespace
 			secret = &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      secondaryStorage.Spec.Elasticsearch.CredentialsSecretRef.Name,
@@ -115,8 +114,8 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 
 		It("validates the CA Secret when caSecretRef is set", func() {
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
-			secondaryStorage.Spec.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
-				Name: "es-ca", Namespace: secret.Namespace, Key: "ca.crt",
+			secondaryStorage.Spec.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
+				Name: "es-ca", Key: "ca.crt",
 			}
 			createSecondaryStorageConfig(secondaryStorage)
 

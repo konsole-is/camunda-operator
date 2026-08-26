@@ -445,8 +445,8 @@ func createDatabase(namespace string) string {
 		Spec: v1.DatabaseConfigSpec{
 			ServerRef:    server.Name,
 			DatabaseName: "identity",
-			CredentialsSecretRef: v1.CredentialsSecretRef{
-				Name: credentials, Namespace: namespace,
+			CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+				Name:        credentials,
 				UsernameKey: "username", PasswordKey: "password",
 			},
 		},

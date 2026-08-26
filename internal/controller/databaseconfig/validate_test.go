@@ -50,15 +50,15 @@ func TestDatabaseConfigValidate(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "app-creds", Namespace: "ns"},
 		Data:       map[string][]byte{"username": []byte("u")},
 	}
-	backupRef := &v1.CredentialsSecretRef{
-		Name: "backup-creds", Namespace: "ns",
+	backupRef := &v1.LocalCredentialsSecretRef{
+		Name:        "backup-creds",
 		UsernameKey: "username", PasswordKey: "password",
 	}
 
 	tests := []struct {
 		name        string
 		objects     []client.Object
-		backupRef   *v1.CredentialsSecretRef
+		backupRef   *v1.LocalCredentialsSecretRef
 		wantStatus  metav1.ConditionStatus
 		wantReason  string
 		wantMessage string
@@ -127,8 +127,8 @@ func TestDatabaseConfigValidate(t *testing.T) {
 				Spec: v1.DatabaseConfigSpec{
 					ServerRef:    "server",
 					DatabaseName: "camunda",
-					CredentialsSecretRef: v1.CredentialsSecretRef{
-						Name: "app-creds", Namespace: "ns",
+					CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+						Name:        "app-creds",
 						UsernameKey: "username", PasswordKey: "password",
 					},
 					BackupCredentialsSecretRef: tt.backupRef,

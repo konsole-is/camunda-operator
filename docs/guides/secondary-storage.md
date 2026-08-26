@@ -332,13 +332,11 @@ spec:
     endpoint: "https://elasticsearch.example.com:9200"
     credentialsSecretRef:
       name: my-elasticsearch-credentials
-      namespace: my-cluster-ns
       usernameKey: username
       passwordKey: password
     # Only when the certificate of the endpoint is not trusted by default.
     caSecretRef:
       name: my-elasticsearch-ca
-      namespace: my-cluster-ns
       key: ca.crt
 ```
 
@@ -355,7 +353,6 @@ spec:
   databaseName: camunda
   credentialsSecretRef:
     name: my-camunda-db-credentials
-    namespace: my-cluster-ns
     usernameKey: username
     passwordKey: password
 ---

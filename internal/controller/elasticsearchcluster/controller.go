@@ -293,7 +293,7 @@ func (r *ElasticsearchClusterReconciler) preCheck(
 		return merged, nil, err
 	}
 
-	storage, err := r.resolveSnapshotStorage(ctx, merged)
+	storage, err := r.resolveSnapshotStorage(ctx, cluster.Namespace, merged)
 	if err != nil {
 		return merged, nil, err
 	}

@@ -83,6 +83,17 @@ func serverNamed(
 	return server
 }
 
+// serverInBucketNamespace creates the minimal DatabaseServer that archives to
+// bucket, in the namespace bucket lives in. A server resolves
+// spec.archive.objectStorageRef in its own namespace, so the two must match.
+func serverInBucketNamespace(
+	bucket *v1.ObjectStorageConfig, archive *v1.DatabaseServerArchiveSpec,
+) *v1.DatabaseServer {
+	GinkgoHelper()
+
+	return serverNamed(bucket.Namespace, "camunda", "camunda", archive)
+}
+
 // externalContract creates the DatabaseServerConfig that a person writes for a
 // PostgreSQL server the operator does not run. Nothing controls it, and a
 // DatabaseServer of that name derives it.
@@ -500,16 +511,30 @@ func expectCondition(
 	return conditionOf(server, conditionType)
 }
 
-// archiveBucket creates a cluster-scoped bucket contract with static
-// credentials and the Secret those credentials live in. Each contract names a
-// bucket of its own, so two of them describe two locations, which is what the
-// archive history compares.
+// archiveBucket creates a namespace of its own and a bucket contract in it. A
+// server archives to a bucket contract of its own namespace, so a caller puts
+// its server there too, for example with serverInBucketNamespace.
 func archiveBucket() *v1.ObjectStorageConfig {
+	GinkgoHelper()
+
+	namespace := "dbs-" + utilrand.String(8)
+	Expect(k8sClient.Create(ctx, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: namespace},
+	})).To(Succeed())
+
+	return bucketInNamespace(namespace)
+}
+
+// bucketInNamespace creates a bucket contract with static credentials, and
+// the Secret those credentials live in, in a namespace that exists already.
+// Each contract names a bucket of its own, so two of them describe two
+// locations, which is what the archive history compares.
+func bucketInNamespace(namespace string) *v1.ObjectStorageConfig {
 	GinkgoHelper()
 
 	name := "bucket-" + utilrand.String(8)
 	Expect(k8sClient.Create(ctx, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 		Data: map[string][]byte{
 			"accessKeyId":     []byte("minio-root"),
 			"secretAccessKey": []byte("minio-secret"),
@@ -517,7 +542,7 @@ func archiveBucket() *v1.ObjectStorageConfig {
 	})).To(Succeed())
 
 	bucket := &v1.ObjectStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{
@@ -529,7 +554,6 @@ func archiveBucket() *v1.ObjectStorageConfig {
 					Credentials: &v1.S3Credentials{
 						SecretRef: v1.S3CredentialsSecretRef{
 							Name:               name,
-							Namespace:          "default",
 							AccessKeyIDKey:     "accessKeyId",
 							SecretAccessKeyKey: "secretAccessKey",
 						},
@@ -625,7 +649,7 @@ var _ = Describe("DatabaseServer controller", func() {
 
 	It("archives to a bucket and reports the archive ready after the first base backup", func() {
 		bucket := archiveBucket()
-		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+		server := serverInBucketNamespace(bucket, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    bucket.Name,
 			RetentionPeriodDays: 30,
 			BaseBackupSchedule:  components.DefaultBaseBackupSchedule,
@@ -703,7 +727,7 @@ var _ = Describe("DatabaseServer controller", func() {
 
 	It("holds the archive until a base backup of the archive plugin completes", func() {
 		bucket := archiveBucket()
-		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+		server := serverInBucketNamespace(bucket, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    bucket.Name,
 			RetentionPeriodDays: 30,
 			BaseBackupSchedule:  components.DefaultBaseBackupSchedule,
@@ -748,7 +772,7 @@ var _ = Describe("DatabaseServer controller", func() {
 
 	It("closes the archive record when the archive block is removed", func() {
 		bucket := archiveBucket()
-		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+		server := serverInBucketNamespace(bucket, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    bucket.Name,
 			RetentionPeriodDays: 30,
 		})
@@ -802,7 +826,7 @@ var _ = Describe("DatabaseServer controller", func() {
 
 	It("keeps the archive on the cluster while the server is suspended", func() {
 		bucket := archiveBucket()
-		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+		server := serverInBucketNamespace(bucket, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    bucket.Name,
 			RetentionPeriodDays: 30,
 		})
@@ -862,7 +886,7 @@ var _ = Describe("DatabaseServer controller", func() {
 	// that claims otherwise.
 	It("reports a bucket that goes away before the instances are down", func() {
 		bucket := archiveBucket()
-		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+		server := serverInBucketNamespace(bucket, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    bucket.Name,
 			RetentionPeriodDays: 30,
 		})
@@ -884,7 +908,7 @@ var _ = Describe("DatabaseServer controller", func() {
 
 	It("keeps Suspended when the bucket goes away after the instances are down", func() {
 		bucket := archiveBucket()
-		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+		server := serverInBucketNamespace(bucket, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    bucket.Name,
 			RetentionPeriodDays: 30,
 		})
@@ -919,7 +943,7 @@ var _ = Describe("DatabaseServer controller", func() {
 			ObjectStorageRef:    bucket.Name,
 			RetentionPeriodDays: 30,
 		}
-		server := serverInNamespace(archive)
+		server := serverInBucketNamespace(bucket, archive)
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000007")
 		completeBaseBackup(server, "first", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
@@ -1229,7 +1253,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		}
 		Expect(k8sClient.Create(ctx, occupant)).To(Succeed())
 
-		bucket := archiveBucket()
+		bucket := bucketInNamespace(namespace)
 		server := serverNamed(namespace, "camunda", "camunda", &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    bucket.Name,
 			RetentionPeriodDays: 30,
@@ -1423,7 +1447,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		}
 		Expect(k8sClient.Create(ctx, occupant)).To(Succeed())
 
-		bucket := archiveBucket()
+		bucket := bucketInNamespace(namespace)
 		server := serverNamed(namespace, "camunda", "camunda", &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    bucket.Name,
 			RetentionPeriodDays: 30,
@@ -1497,7 +1521,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		}
 		Expect(k8sClient.Create(ctx, occupant)).To(Succeed())
 
-		bucket := archiveBucket()
+		bucket := bucketInNamespace(namespace)
 		server := serverNamed(namespace, "camunda", "camunda", &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    bucket.Name,
 			RetentionPeriodDays: 30,
@@ -1564,7 +1588,7 @@ var _ = Describe("DatabaseServer controller", func() {
 
 	It("starts a new archive record when the bucket changes", func() {
 		first := archiveBucket()
-		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+		server := serverInBucketNamespace(first, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    first.Name,
 			RetentionPeriodDays: 30,
 		})
@@ -1579,7 +1603,9 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(history[0].ObjectStorageRef).To(Equal(first.Name))
 		}, timeout, interval).Should(Succeed())
 
-		second := archiveBucket()
+		// The second contract must live where the server resolves it: its own
+		// namespace, the same one the first contract lives in.
+		second := bucketInNamespace(server.Namespace)
 		setArchive(server, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    second.Name,
 			RetentionPeriodDays: 30,
@@ -1640,7 +1666,7 @@ var _ = Describe("DatabaseServer controller", func() {
 	// that ready with it.
 	It("blocks the new archive while only the bucket it left holds a base backup", func() {
 		first := archiveBucket()
-		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+		server := serverInBucketNamespace(first, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    first.Name,
 			RetentionPeriodDays: 30,
 		})
@@ -1650,7 +1676,7 @@ var _ = Describe("DatabaseServer controller", func() {
 
 		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
 
-		second := archiveBucket()
+		second := bucketInNamespace(server.Namespace)
 		setArchive(server, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    second.Name,
 			RetentionPeriodDays: 30,
@@ -1677,7 +1703,7 @@ var _ = Describe("DatabaseServer controller", func() {
 	// The interval is compared by the location it was written to.
 	It("closes the record when the bucket moves under one ObjectStorageConfig", func() {
 		bucket := archiveBucket()
-		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+		server := serverInBucketNamespace(bucket, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    bucket.Name,
 			RetentionPeriodDays: 30,
 		})
@@ -1740,7 +1766,7 @@ var _ = Describe("DatabaseServer controller", func() {
 	// location it left.
 	It("keeps the boundary of an archive re-enabled on another location", func() {
 		first := archiveBucket()
-		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+		server := serverInBucketNamespace(first, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    first.Name,
 			RetentionPeriodDays: 30,
 		})
@@ -1765,7 +1791,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		time.Sleep(1500 * time.Millisecond)
 
 		By("recording the move when the archive comes back on another location")
-		second := archiveBucket()
+		second := bucketInNamespace(server.Namespace)
 		setArchive(server, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    second.Name,
 			RetentionPeriodDays: 30,
@@ -1813,7 +1839,7 @@ var _ = Describe("DatabaseServer controller", func() {
 	// backup counts by its end rather than being left out for good.
 	It("opens the first archive record on a backup that recorded no start", func() {
 		bucket := archiveBucket()
-		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+		server := serverInBucketNamespace(bucket, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    bucket.Name,
 			RetentionPeriodDays: 30,
 		})
@@ -1861,7 +1887,7 @@ var _ = Describe("DatabaseServer controller", func() {
 	// goes on advertising point-in-time recovery.
 	It("reports InvalidReference for a base backup schedule that CloudNativePG refuses", func() {
 		bucket := archiveBucket()
-		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+		server := serverInBucketNamespace(bucket, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    bucket.Name,
 			RetentionPeriodDays: 30,
 			BaseBackupSchedule:  "0 0 2 * * FRI-MON",

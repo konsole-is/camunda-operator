@@ -508,7 +508,7 @@ func (r *DatabaseServerReconciler) preCheck(
 		}
 	}
 
-	archive, err := r.resolveArchiveStorage(ctx, resolved.merged)
+	archive, err := r.resolveArchiveStorage(ctx, server.Namespace, resolved.merged)
 	var failure *conditions.PreCheckFailure
 	switch {
 	case err == nil:
@@ -760,31 +760,35 @@ func (r *DatabaseServerReconciler) resolvePlatform(
 
 // resolveArchiveStorage resolves the archive bucket of the merged spec into
 // the contract and, for a contract with static credentials, the keys of its
-// Secret. It returns nil when the spec names no bucket, which means the server
-// has no archive.
+// Secret. The bucket is read from namespace, the namespace of the server. It
+// returns nil when the spec names no bucket, which means the server has no
+// archive.
 //
 // A reference that does not resolve is a pre-check failure, not an error: the
 // contract, or the Secret it names, can appear later, and both are watched.
 func (r *DatabaseServerReconciler) resolveArchiveStorage(
 	ctx context.Context,
+	namespace string,
 	merged v1.DatabaseServerSpec,
 ) (*components.ArchiveStorage, error) {
 	if merged.Archive == nil {
 		return nil, nil
 	}
 
+	bucketKey := types.NamespacedName{Namespace: namespace, Name: merged.Archive.ObjectStorageRef}
+
 	// The cached client: the type is watched, so the cache is current, and
 	// every bucket event lands here again anyway.
 	var config v1.ObjectStorageConfig
-	if err := r.Get(ctx, types.NamespacedName{Name: merged.Archive.ObjectStorageRef}, &config); err != nil {
+	if err := r.Get(ctx, bucketKey, &config); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, &conditions.PreCheckFailure{
 				Reason:  v1.ReasonInvalidReference,
-				Message: fmt.Sprintf("ObjectStorageConfig %q not found", merged.Archive.ObjectStorageRef),
+				Message: fmt.Sprintf("ObjectStorageConfig %s not found", bucketKey),
 			}
 		}
 
-		return nil, fmt.Errorf("resolving archive storage %q: %w", merged.Archive.ObjectStorageRef, err)
+		return nil, fmt.Errorf("resolving archive storage %s: %w", bucketKey, err)
 	}
 
 	if err := components.ValidateArchiveStorage(&config); err != nil {

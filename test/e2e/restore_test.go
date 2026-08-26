@@ -326,7 +326,7 @@ func itRestoresTheRelationalCluster(cluster *v1.CamundaCluster) {
 		backup v1.LogicalBackupRDBMS
 		// credentials are the application credentials of the logical database,
 		// the role that owns the database and every object in it.
-		credentials v1.CredentialsSecretRef
+		credentials v1.LocalCredentialsSecretRef
 		// claims are the broker volumes as they were bound before the wipe.
 		claims map[string]corev1.PersistentVolumeClaim
 	)
@@ -1023,7 +1023,7 @@ func latestBackups(cluster *v1.CamundaCluster) (map[int]time.Time, error) {
 // database of the cluster, resolved through the storage chain the way the
 // operator resolves it: the contract of the cluster names the DatabaseConfig,
 // and the DatabaseConfig names the Secret.
-func applicationCredentials(cluster *v1.CamundaCluster) v1.CredentialsSecretRef {
+func applicationCredentials(cluster *v1.CamundaCluster) v1.LocalCredentialsSecretRef {
 	var contract v1.SecondaryStorageConfig
 	Expect(utils.Get(sscResource, cluster.Spec.StorageRef, cluster.Namespace, &contract)).To(Succeed())
 	Expect(contract.Spec.RDBMS).NotTo(BeNil())

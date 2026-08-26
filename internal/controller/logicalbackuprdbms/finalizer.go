@@ -33,10 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalbackuprdbms"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
-	"github.com/konsole-is/camunda-operator/pkg/mirror"
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 )
 
@@ -199,7 +197,7 @@ func (r *LogicalBackupRDBMSReconciler) deleteObject(
 
 	var bucket v1.ObjectStorageConfig
 	if err := r.APIReader.Get(
-		ctx, types.NamespacedName{Name: backup.Status.BucketRef}, &bucket,
+		ctx, types.NamespacedName{Namespace: backup.Namespace, Name: backup.Status.BucketRef}, &bucket,
 	); err != nil {
 		if apierrors.IsNotFound(err) {
 			return fmt.Sprintf(
@@ -232,17 +230,9 @@ func (r *LogicalBackupRDBMSReconciler) deleteObject(
 
 	var creds *objectstore.Credentials
 	{
-		// The finalizer applies the same mirrored-Secret rule that the Job
-		// applied, so it reads exactly the credentials that the upload used.
-		local := types.NamespacedName{
-			Namespace: cluster.Namespace,
-			Name: mirror.LocalSecretName(
-				&cluster,
-				credentials.Namespace,
-				credentials.Name,
-				camundacluster.MirrorPurposeBackupCredentials,
-			),
-		}
+		// The finalizer reads the Secret the Job read, so it deletes with
+		// exactly the credentials that the upload used.
+		local := types.NamespacedName{Namespace: cluster.Namespace, Name: credentials.Name}
 		var secret corev1.Secret
 		if err := r.APIReader.Get(ctx, local, &secret); err != nil {
 			if apierrors.IsNotFound(err) {

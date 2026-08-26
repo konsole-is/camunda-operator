@@ -150,8 +150,8 @@ func createWorldIn(namespace string, mutate ...func(*world)) *world {
 		Spec: v1.DatabaseConfigSpec{
 			ServerRef:    w.server.Name,
 			DatabaseName: "camunda_" + suffix,
-			CredentialsSecretRef: v1.CredentialsSecretRef{
-				Name: "app-user", Namespace: namespace,
+			CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+				Name:        "app-user",
 				UsernameKey: "username", PasswordKey: "password",
 			},
 		},
@@ -676,8 +676,8 @@ var _ = Describe("PointInTimeRestore admission", func() {
 			w.storage.Spec.RDBMS = nil
 			w.storage.Spec.Elasticsearch = &v1.ElasticsearchStorage{
 				Endpoint: "http://elasticsearch.es.svc:9200",
-				CredentialsSecretRef: v1.CredentialsSecretRef{
-					Name: "es", Namespace: w.namespace,
+				CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+					Name:        "es",
 					UsernameKey: "username", PasswordKey: "password",
 				},
 			}

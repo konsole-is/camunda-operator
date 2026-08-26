@@ -73,7 +73,7 @@ func NewClient(
 		secret, message, err := secretref.Get(
 			ctx,
 			reader,
-			types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name},
+			types.NamespacedName{Namespace: cluster.Namespace, Name: ref.Name},
 			ref.UsernameKey,
 			ref.PasswordKey,
 		)

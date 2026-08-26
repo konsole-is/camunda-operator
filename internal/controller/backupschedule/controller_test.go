@@ -67,8 +67,8 @@ func createWorld(storageType v1.SecondaryStorageType, mutate ...func(*v1.Camunda
 	case v1.SecondaryStorageTypeElasticsearch:
 		storage.Spec.Elasticsearch = &v1.ElasticsearchStorage{
 			Endpoint: "http://elasticsearch.elastic.svc:9200",
-			CredentialsSecretRef: v1.CredentialsSecretRef{
-				Name: "es-user", Namespace: namespace,
+			CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+				Name:        "es-user",
 				UsernameKey: "username", PasswordKey: "password",
 			},
 		}
@@ -78,7 +78,7 @@ func createWorld(storageType v1.SecondaryStorageType, mutate ...func(*v1.Camunda
 	Expect(k8sClient.Create(ctx, storage)).To(Succeed())
 
 	bucket := &v1.ObjectStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + suffix},
+		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + suffix, Namespace: namespace},
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{
@@ -88,7 +88,7 @@ func createWorld(storageType v1.SecondaryStorageType, mutate ...func(*v1.Camunda
 					Type: v1.ObjectStorageAuthTypeCredentials,
 					Credentials: &v1.S3Credentials{
 						SecretRef: v1.S3CredentialsSecretRef{
-							Name: "minio-credentials", Namespace: namespace,
+							Name:           "minio-credentials",
 							AccessKeyIDKey: "accessKeyId", SecretAccessKeyKey: "secretAccessKey",
 						},
 					},

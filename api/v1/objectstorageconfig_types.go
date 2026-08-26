@@ -58,16 +58,12 @@ type S3WorkloadIdentity struct {
 	RoleARN string `json:"roleArn,omitempty"`
 }
 
-// S3CredentialsSecretRef references an access-key pair stored in a Secret.
-// Namespace is required so that references stay uniform and explicit across
-// all contract kinds.
+// S3CredentialsSecretRef references an access-key pair stored in a Secret of
+// the namespace of the contract.
 type S3CredentialsSecretRef struct {
 	// Name of the Secret holding the keys.
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
-	// Namespace of the Secret.
-	// +kubebuilder:validation:MinLength=1
-	Namespace string `json:"namespace"`
 	// AccessKeyIDKey is the key in the Secret holding the access key ID.
 	// +kubebuilder:validation:MinLength=1
 	AccessKeyIDKey string `json:"accessKeyIdKey"`
@@ -192,7 +188,7 @@ type GCSWorkloadIdentity struct {
 type GCSCredentials struct {
 	// SecretRef names the Secret key that holds the service-account JSON
 	// key.
-	SecretRef SecretKeyRef `json:"secretRef"`
+	SecretRef LocalSecretKeyRef `json:"secretRef"`
 }
 
 // GCSStorageAuth selects how consumers authenticate against a GCS bucket.
@@ -245,7 +241,7 @@ type AzureBlobWorkloadIdentity struct {
 // AzureBlobCredentials holds the static key of an Azure storage account.
 type AzureBlobCredentials struct {
 	// SecretRef names the Secret key that holds the storage account key.
-	SecretRef SecretKeyRef `json:"secretRef"`
+	SecretRef LocalSecretKeyRef `json:"secretRef"`
 }
 
 // AzureBlobStorageAuth selects how consumers authenticate against an Azure
@@ -344,7 +340,7 @@ type ObjectStorageConfigStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:resource:scope=Namespaced
 
 // ObjectStorageConfig is the contract CRD that describes a bucket — for
 // backups or document storage — and how consumers authenticate against it:
@@ -430,7 +426,7 @@ func (in *ObjectStorageConfig) active() *activeBlock {
 			ref := credentials.SecretRef
 			block.credentials = &ObjectStorageCredentialsSecret{
 				Name:      ref.Name,
-				Namespace: ref.Namespace,
+				Namespace: in.Namespace,
 				Keys:      []string{ref.AccessKeyIDKey, ref.SecretAccessKeyKey},
 			}
 		}
@@ -448,7 +444,7 @@ func (in *ObjectStorageConfig) active() *activeBlock {
 			ref := credentials.SecretRef
 			block.credentials = &ObjectStorageCredentialsSecret{
 				Name:      ref.Name,
-				Namespace: ref.Namespace,
+				Namespace: in.Namespace,
 				Keys:      []string{ref.Key},
 			}
 		}
@@ -466,7 +462,7 @@ func (in *ObjectStorageConfig) active() *activeBlock {
 			ref := credentials.SecretRef
 			block.credentials = &ObjectStorageCredentialsSecret{
 				Name:      ref.Name,
-				Namespace: ref.Namespace,
+				Namespace: in.Namespace,
 				Keys:      []string{ref.Key},
 			}
 		}

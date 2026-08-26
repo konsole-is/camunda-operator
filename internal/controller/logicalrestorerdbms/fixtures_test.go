@@ -127,12 +127,12 @@ func newWorld(mutate ...func(*v1.CamundaCluster)) *world {
 		Spec: v1.DatabaseConfigSpec{
 			ServerRef:    w.server.Name,
 			DatabaseName: "camunda",
-			CredentialsSecretRef: v1.CredentialsSecretRef{
-				Name: appUser.Name, Namespace: w.namespace,
+			CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+				Name:        appUser.Name,
 				UsernameKey: "username", PasswordKey: "password",
 			},
-			BackupCredentialsSecretRef: &v1.CredentialsSecretRef{
-				Name: backupUser.Name, Namespace: w.namespace,
+			BackupCredentialsSecretRef: &v1.LocalCredentialsSecretRef{
+				Name:        backupUser.Name,
 				UsernameKey: "username", PasswordKey: "password",
 			},
 		},
@@ -159,7 +159,7 @@ func (w *world) finish(mutate ...func(*v1.CamundaCluster)) {
 	GinkgoHelper()
 
 	w.bucket = &v1.ObjectStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(6)},
+		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(6), Namespace: w.namespace},
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{

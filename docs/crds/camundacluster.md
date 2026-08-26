@@ -230,7 +230,7 @@ When `spec.monitoring.serviceMonitor.enabled` is true, the operator creates one 
 
 ## Changes and referenced Secrets
 
-A change to the cluster, to a referenced resource, or to a referenced Secret rolls out to the pods on its own. A referenced Secret in another namespace is copied into the namespace of the cluster, and the copy follows the source.
+A change to the cluster, to a referenced resource, or to a referenced Secret rolls out to the pods on its own. The [CamundaPlatformConfig](camundaplatformconfig.md) is cluster-scoped, so the Secrets it names are copied into the namespace of the cluster, and each copy follows its source.
 
 The operator checks every reference at reconcile time, not at admission, so you can create the resources in any order. A missing `CamundaPlatformConfig`, `CamundaClusterPreset`, `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` sets `Ready` to `False` with reason `InvalidReference`. A missing Secret or key sets reason `MissingSecret`.
 
@@ -262,7 +262,7 @@ Deleting the cluster removes every resource that the operator created for it. Th
 | `AdminSecretReady` | `ConnectionFailed` | An update of the `admin` user, of its password or of its email, is not applied yet: the cluster did not answer. The Secret keeps the active password, and `email-applied` the address the cluster holds; `email` already shows the address you asked for. | The operator retries. It clears when the user API of the gateway answers again. |
 | `AdminSecretReady` | `InvalidCredentials` | An update of the `admin` user is not applied yet: the cluster refused the password that the Secret publishes. The Secret keeps the active password, and `email-applied` the address the cluster holds. | The operator retries. Set the password from the Secret on the `admin` user in the Admin web application. |
 | `AdminSecretReady` | `Rejected` | An update of the `admin` user is not applied yet: the cluster accepted the password and refused the call itself. The Secret keeps the active password, and `email-applied` the address the cluster holds. | The operator retries. Read the condition message, which names the reason. |
-| `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a referenced Secret from another namespace is applied, or no such Secret exists. | Nothing. |
+| `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a Secret that the [CamundaPlatformConfig](camundaplatformconfig.md) names is applied, or no such Secret exists. | Nothing. |
 | `Ready` | `Healthy` | Every component that the cluster needs is healthy. | Nothing. |
 | `Ready` | `Creating` / `Updating` / `Scaling` | A component rolls out or scales. | Wait. The message names the component. |
 | `Ready` | `Failing` | A component has replicas that do not become ready. | Read the pods of the named component. |
@@ -344,8 +344,6 @@ spec:
     clientSecretRef:
       # string. Required. Name of the Secret.
       name: "my-cluster-oidc-secret"
-      # string. Required. Namespace of the Secret. It never defaults.
-      namespace: "my-cluster-ns"
       # string. Required. Key in the Secret.
       key: "client-secret"
     # object. Optional. Identities that get the admin role. Applies under OIDC only. Basic authentication ignores it.
@@ -485,9 +483,9 @@ spec:
   scheduling: {}
   # string. Required. Name of the SecondaryStorageConfig in the namespace of this cluster.
   storageRef: "my-storage-config"
-  # string. Optional. Name of a cluster-scoped ObjectStorageConfig for backups.
+  # string. Optional. Name of an ObjectStorageConfig in this namespace, for backups.
   backupStorageRef: "my-backup-bucket"
-  # string. Optional. Name of a cluster-scoped ObjectStorageConfig for document storage. Only its workload identity is wired.
+  # string. Optional. Name of an ObjectStorageConfig in this namespace, for document storage. Only its workload identity is wired.
   documentStorageRef: "my-document-bucket"
   # object. Optional. How backups of this cluster behave. Allowed in a preset. Applies to an RDBMS cluster with a backupStorageRef.
   backup:

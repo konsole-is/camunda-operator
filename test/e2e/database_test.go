@@ -137,11 +137,11 @@ var _ = Describe("Database", Ordered, Label(utils.LabelDatabase), func() {
 
 		By("reading the credential Secrets")
 		app := config.Spec.CredentialsSecretRef
-		username, err := utils.SecretValue(app.Namespace, app.Name, app.UsernameKey)
+		username, err := utils.SecretValue(dbNamespace, app.Name, app.UsernameKey)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(username).To(Equal(dbDatabaseName))
 		backup := config.Spec.BackupCredentialsSecretRef
-		username, err = utils.SecretValue(backup.Namespace, backup.Name, backup.UsernameKey)
+		username, err = utils.SecretValue(dbNamespace, backup.Name, backup.UsernameKey)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(username).To(Equal(dbDatabaseName + "_backup"))
 
@@ -193,7 +193,7 @@ var _ = Describe("Database", Ordered, Label(utils.LabelDatabase), func() {
 		out, err := psql(
 			dbNamespace,
 			"admin",
-			v1.CredentialsSecretRef{Name: postgresAdminSecret, UsernameKey: "username", PasswordKey: "password"},
+			v1.LocalCredentialsSecretRef{Name: postgresAdminSecret, UsernameKey: "username", PasswordKey: "password"},
 			"SELECT count(*) FROM "+dbTable,
 		)
 		Expect(err).NotTo(HaveOccurred())
