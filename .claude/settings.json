@@ -4,7 +4,7 @@
       "source": {
         "source": "github",
         "repo": "sourcehawk/operator-component-framework",
-        "ref": "v0.20.0"
+        "ref": "v0.21.0"
       }
     },
     "simple-english": {
