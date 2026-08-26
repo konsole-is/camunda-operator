@@ -160,11 +160,10 @@ func (res *resolver) resolvePlatform(ctx context.Context, out *resolved) error {
 //
 // The externalKeycloak mode names the Secret of the management namespace, so
 // a missing one is a MissingSecret the user must correct. The keycloak mode
-// reads the
-// Secret that the Keycloak Operator writes next to the Keycloak; that one is
-// absent until the Keycloak Operator has acted, and refusing the reconcile
-// over it would stop the very apply that creates the Keycloak, so it only
-// contributes a hash input while it exists.
+// reads the Secret that the Keycloak Operator writes next to the Keycloak.
+// That one is absent until the Keycloak Operator has acted, and refusing the
+// reconcile over it would stop the very apply that creates the Keycloak, so
+// it only contributes a hash input while it exists.
 //
 // Management Identity is the one component that signs in with the
 // administrator, in either mode, so the input is its own.
