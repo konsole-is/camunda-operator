@@ -437,7 +437,8 @@ CloudNativePG derives: 50 plus `-any` is well inside a DNS label of 63. The rule
 that runs there rejects an edit of another field on an object that predates it, and nothing more.
 
 Validation: `databaseServerConfig` required; `storageSize` and `walStorageSize` may not shrink,
-one CEL rule each; `archive` requires `retentionPeriodDays >= 1`; `version` matches `^\d+$` and is
+one CEL rule each; `archive` requires `retentionPeriodDays` from 1 to 36500 (a hundred years, under the
+106751 days that overflow the `time.Duration` the reachable window is counted in); `version` matches `^\d+$` and is
 floored at the oldest major Camunda 8.9 supports (verified with the `camunda-docs` MCP during
 implementation).
 

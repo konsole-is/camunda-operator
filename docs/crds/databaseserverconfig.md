@@ -225,7 +225,7 @@ spec:
 - `spec.host` must not be empty.
 - `spec.adminCredentialsSecretRef.name` must not be empty.
 - `spec.port` must be from 1 to 65535.
-- If `spec.pitr.enabled` is `true`, `spec.pitr.retentionPeriodDays` must be set and at least 1.
+- If `spec.pitr.enabled` is `true`, `spec.pitr.retentionPeriodDays` must be set and from 1 to 36500. The upper bound is a hundred years.
 - If `spec.pitr.recovery` is `operator`, `spec.pitr.enabled` must be `true`.
 - `spec.recovery.targetTime` must be RFC 3339 with a zone, for example `2026-08-20T14:30:00Z`.
 - `spec.recovery.requestedBy` must name a namespace and a name, separated by `/`.

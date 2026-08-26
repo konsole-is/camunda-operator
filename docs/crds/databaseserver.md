@@ -440,7 +440,7 @@ spec:
 - `walStorageSize` cannot be cleared once the server has a write-ahead log volume. The operator keeps the volume and records the Warning event `WALStorageKept`.
 - `version` is a bare major, such as `17`. Anything below 14 is rejected on the `Ready` condition with reason `InvalidReference`, because Camunda 8.9 supports PostgreSQL 14 and later. See the [RDBMS version support policy](https://docs.camunda.io/docs/self-managed/concepts/databases/relational-db/rdbms-support-policy/).
 - `version` cannot move to another major once the server runs. See [The PostgreSQL version](#the-postgresql-version).
-- `archive.retentionPeriodDays` must be at least 1.
+- `archive.retentionPeriodDays` must be from 1 to 36500. The upper bound is a hundred years, which is longer than any archive a bucket holds.
 - `archive.baseBackupSchedule` must be a six-field cron or a descriptor. See [The archive](#the-archive).
 - `version` and `storageSize` must be present after the preset merge. A missing field is reported on `Ready` with reason `InvalidReference`.
 

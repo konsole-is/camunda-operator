@@ -84,7 +84,13 @@ type DatabaseServerArchiveSpec struct {
 	// RetentionPeriodDays is how far into the past a restore can reach. It is
 	// what the operator enforces on the bucket and what the contract of this
 	// server publishes, so the declared value and the enforced value are one.
+	//
+	// The maximum is 36500 days, which is a hundred years. The operator counts
+	// the reachable window in nanoseconds, and a longer period overflows that
+	// count and puts the oldest reachable point in the future, which makes
+	// every request unreachable.
 	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=36500
 	RetentionPeriodDays int32 `json:"retentionPeriodDays"`
 	// BaseBackupSchedule is when a base backup is taken, as the six-field
 	// cron of CloudNativePG (seconds first, in UTC), or as one of the
