@@ -101,10 +101,9 @@ func ArchiveSecretName(server *v1.DatabaseServer) string {
 }
 
 // ArchiveSegment returns the directory in the bucket that holds the archive of
-// this server: its name, and eight hex characters of the SHA-256 of its UID.
-// A server created again under the same name gets a directory of its own,
-// because the objects of the first one stay in the bucket and the Barman Cloud
-// plugin refuses a fresh cluster whose archive is not empty.
+// this server: its name, a dash, and the first eight hex characters of the
+// SHA-256 of its UID. Two servers of one name and different UIDs get different
+// directories.
 func ArchiveSegment(server *v1.DatabaseServer) string {
 	sum := sha256.Sum256([]byte(server.UID))
 

@@ -114,7 +114,7 @@ Admission checks each field against the values CloudNativePG takes there: 0-59 f
 
 The first base backup runs as soon as the server is up, whatever the schedule says. `ArchiveReady` is `False` until that first base backup completes: an archive that holds write-ahead log and no base backup cannot be recovered to any point.
 
-The archive lives under a prefix of the bucket that holds this server alone: `<basePath>/databaseserver/<namespace>/<name>-<id>`. The `<id>` is eight hex characters of the UID that Kubernetes gave the server. A server that you delete and create again under the same name gets a prefix of its own. The Barman Cloud plugin refuses a new cluster whose prefix already holds an archive. One bucket can serve a whole fleet.
+The archive lives under a prefix of the bucket that holds this server alone: `<basePath>/databaseserver/<namespace>/<name>-<id>`. The `<id>` is the first eight hex characters of the SHA-256 of the UID that Kubernetes gave the server. A server that you delete and create again under the same name gets a prefix of its own. The Barman Cloud plugin refuses a new cluster whose prefix already holds an archive. One bucket can serve a whole fleet.
 
 ### The archive history
 
