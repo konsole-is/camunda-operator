@@ -367,6 +367,23 @@ func (r *DatabaseReconciler) preCheck(ctx context.Context, database *v1.Database
 			),
 		}
 	}
+
+	// The identity of an endpoint the contract no longer names is the identity
+	// of another server. The claim would key on that one while the connection
+	// below reaches the endpoint of the spec, so the Database could take a
+	// logical database another Database already holds on the endpoint it
+	// connects to.
+	if !server.ProbedForCurrentSpec() {
+		return nil, &conditions.PreCheckFailure{
+			Reason: v1.ReasonServerIdentityUnknown,
+			Message: fmt.Sprintf(
+				"DatabaseServerConfig %s has not reached the server its spec names now, so its "+
+					"system identifier belongs to the server before that change. Wait until it "+
+					"reports Ready", client.ObjectKeyFromObject(server),
+			),
+		}
+	}
+
 	database.Status.CollisionKey = components.CollisionKey(
 		server.Status.SystemIdentifier, database.Spec.DatabaseName,
 	)

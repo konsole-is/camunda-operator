@@ -214,13 +214,7 @@ func (r *DatabaseServerConfigReconciler) validate(
 // server, or a user on it, that this spec no longer names. A contract that has
 // never been probed has nothing to clear.
 func probedAnotherServer(cfg *v1.DatabaseServerConfig) bool {
-	if cfg.Status.ProbedAt == nil {
-		return false
-	}
-
-	return cfg.Status.ProbedEndpoint != probedEndpoint(cfg) ||
-		cfg.Status.ProbedSecretName != cfg.Spec.AdminCredentialsSecretRef.Name ||
-		cfg.Status.ProbedSecretKeys != probedSecretKeys(cfg)
+	return cfg.Status.ProbedAt != nil && !cfg.ProbedForCurrentSpec()
 }
 
 // probedEndpoint renders the endpoint of the spec as status records it.
