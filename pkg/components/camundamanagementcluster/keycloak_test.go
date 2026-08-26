@@ -252,11 +252,10 @@ func TestIdentityEnvWithoutAnOptimizeRendersNoPreset(t *testing.T) {
 }
 
 // The operator writes the login callbacks through the Keycloak administration
-// API on every reconcile, so a new Optimize reaches the realm without a
+// API on every reconcile, so a second Optimize reaches the realm without a
 // restart. Rolling Management Identity for it would sign every user out for
-// nothing, so the URL list stays out of the config hash. The client secret
-// stays in it: a rotated credential has to reach the container.
-func TestConfigHashIgnoresTheOptimizeURLs(t *testing.T) {
+// nothing, so a longer URL list alone leaves the config hash where it is.
+func TestConfigHashIgnoresASecondOptimizeURL(t *testing.T) {
 	t.Parallel()
 
 	one := newKeycloakInput(t, true, nil)
@@ -267,7 +266,26 @@ func TestConfigHashIgnoresTheOptimizeURLs(t *testing.T) {
 	})
 
 	assert.Equal(t, ConfigHash(one, ComponentIdentity), ConfigHash(many, ComponentIdentity))
+}
 
+// The optimize preset is what creates the client, so the first Optimize has to
+// reach a restarted Management Identity. The presence of the variable is
+// therefore part of the hash even though its value is not.
+func TestConfigHashFollowsTheFirstOptimizeURL(t *testing.T) {
+	t.Parallel()
+
+	none := newKeycloakInput(t, true, func(in *Input) { in.Cluster.Spec.Optimize = nil })
+	one := newKeycloakInput(t, true, nil)
+
+	assert.NotEqual(t, ConfigHash(none, ComponentIdentity), ConfigHash(one, ComponentIdentity))
+}
+
+// A rotated client secret has to reach the container, so that credential is
+// hashed by value.
+func TestConfigHashFollowsTheOptimizeClientSecret(t *testing.T) {
+	t.Parallel()
+
+	one := newKeycloakInput(t, true, nil)
 	rotated := newKeycloakInput(t, true, func(in *Input) {
 		in.Secrets.OptimizeClient = "another-optimize-client"
 	})

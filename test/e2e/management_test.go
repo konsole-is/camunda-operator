@@ -109,6 +109,12 @@ const (
 	// mcOptimizeName is the CamundaOptimize that attaches through the
 	// contract.
 	mcOptimizeName = "camunda-management-optimize"
+	// mcForeignOptimizeURL is what spec.optimize of the management cluster
+	// names: an Optimize outside this operator. Nothing serves it, and nothing
+	// dials it. It is here so that Management Identity creates the optimize
+	// client of the realm before the CamundaOptimize of the flow exists, and
+	// so that the callback of that CamundaOptimize is a second entry.
+	mcForeignOptimizeURL = "http://optimize-elsewhere.example.com"
 
 	// The client that the orchestration cluster of the keycloak flow
 	// authenticates with. Management Identity creates a client for every
@@ -315,6 +321,7 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 				v1.ConditionConsoleReady,
 				v1.ConditionWebModelerReady,
 				v1.ConditionManagementAuthReady,
+				v1.ConditionOptimizeCallbacksReady,
 			} {
 				expectCondition(g, mcResource, mcKeycloakName, mcKeycloakNamespace, condition, v1.ReasonHealthy)
 			}
@@ -432,6 +439,35 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 	It("runs Optimize against the contract of the management plane", func() {
 		By("creating the CamundaOptimize")
 		Expect(apply(managementOptimize())).To(Succeed())
+
+		By("registering its login callback on the Optimize client of the realm")
+		Eventually(func(g Gomega) {
+			var status v1.CamundaManagementCluster
+			g.Expect(utils.Get(mcResource, mcKeycloakName, mcKeycloakNamespace, &status)).To(Succeed())
+			g.Expect(status.Status.Optimize).To(ContainElement(v1.AttachedOptimizeStatus{
+				Namespace:   mcKeycloakNamespace,
+				Name:        mcOptimizeName,
+				ExternalURL: optimizeWebappURL(),
+			}))
+
+			expectCondition(
+				g, mcResource, mcKeycloakName, mcKeycloakNamespace,
+				v1.ConditionOptimizeCallbacksReady, v1.ReasonHealthy,
+			)
+
+			// The realm is the proof. The first callback comes from the
+			// rendered environment of Management Identity, and the second one
+			// only from the operator: the URL list is hashed as set or unset,
+			// so the CamundaOptimize rolled no pod.
+			client, err := realmOptimizeClient(mc)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(client).To(ContainSubstring(
+				mcForeignOptimizeURL + components.OptimizeCallbackPath,
+			))
+			g.Expect(client).To(ContainSubstring(
+				optimizeWebappURL() + components.OptimizeCallbackPath,
+			))
+		}, mcReadyTimeout, 10*time.Second).Should(Succeed())
 
 		By("waiting for Ready Healthy")
 		Eventually(func(g Gomega) {
@@ -631,7 +667,7 @@ func keycloakManagementCluster() *v1.CamundaManagementCluster {
 			Admin:             v1.IdentityAdminSpec{Username: mcAdminUsername, Email: mcAdminEmail},
 			WorkloadSpec:      v1.WorkloadSpec{Resources: capped("150m", "512Mi", "1280Mi")},
 		},
-		Optimize: &v1.ManagementOptimizeSpec{ExternalURL: optimizeWebappURL()},
+		Optimize: &v1.ManagementOptimizeSpec{ExternalURL: mcForeignOptimizeURL},
 		Console: &v1.ConsoleSpec{
 			Version:      os.Getenv(envConsoleVersion),
 			ExternalURL:  components.ConsoleServiceURL(mc),
@@ -729,8 +765,10 @@ func webModelerWebsocketsURL(mc *v1.CamundaManagementCluster) string {
 	)
 }
 
-// optimizeWebappURL is the address that Management Identity builds the
-// redirect URI of the optimize client from.
+// optimizeWebappURL is the address that a browser reaches the Optimize of
+// this flow at, and the one that spec.externalUrl of its CamundaOptimize
+// carries. The management plane finds it there and registers the login
+// callback under it.
 func optimizeWebappURL() string {
 	optimize := &v1.CamundaOptimize{ObjectMeta: metav1.ObjectMeta{Name: mcOptimizeName}}
 
@@ -761,6 +799,7 @@ func managementOptimize() *v1.CamundaOptimize {
 		Spec: v1.CamundaOptimizeSpec{
 			Version:           os.Getenv(envOptimizeVersion),
 			ManagementAuthRef: mcKeycloakName,
+			ExternalURL:       optimizeWebappURL(),
 			ClusterRef:        v1.ClusterRef{Name: ccName},
 			Webapp: &v1.WorkloadSpec{
 				Resources: capped("150m", "768Mi", "1280Mi"),
@@ -947,6 +986,46 @@ func registerRealmClient(mc *v1.CamundaManagementCluster, representation string)
 
 	return err
 }
+
+// realmOptimizeClient returns the JSON representation of the optimize client
+// of the realm of mc, read through the Keycloak admin API as the administrator
+// that the Keycloak Operator published next to the Keycloak.
+func realmOptimizeClient(mc *v1.CamundaManagementCluster) (string, error) {
+	adminSecret := components.KeycloakInitialAdminSecretName(mc)
+
+	return utils.RunPod(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "keycloak-read-" + utilrand.String(5),
+			Namespace: mc.Namespace,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Name:    "curl",
+				Image:   utils.CurlImage,
+				Command: []string{"sh"},
+				Args:    []string{"-ec", readClientScript},
+				Env: []corev1.EnvVar{
+					{Name: "KC_URL", Value: keycloakServiceURL(mc)},
+					{Name: "KC_REALM", Value: mcRealm},
+					{Name: "KC_CLIENT_ID", Value: "optimize"},
+					utils.SecretEnv("KC_USER", adminSecret, components.KeycloakAdminUsernameKey),
+					utils.SecretEnv("KC_PASSWORD", adminSecret, components.KeycloakAdminPasswordKey),
+				},
+			}},
+		},
+	}, podTimeout)
+}
+
+// readClientScript reads an administrator token from the master realm and
+// prints the clients of the realm whose client id is KC_CLIENT_ID.
+const readClientScript = `KC_TOKEN=$(curl -sS ` +
+	`-d grant_type=password -d client_id=admin-cli ` +
+	`--data-urlencode "username=$KC_USER" --data-urlencode "password=$KC_PASSWORD" ` +
+	`"$KC_URL/realms/master/protocol/openid-connect/token" | ` +
+	`sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+if [ -z "$KC_TOKEN" ]; then echo "no access_token from $KC_URL" >&2; exit 1; fi
+curl -sS -f -H "Authorization: Bearer $KC_TOKEN" ` +
+	`"$KC_URL/admin/realms/$KC_REALM/clients?clientId=$KC_CLIENT_ID"`
 
 // registerClientScript reads an administrator token from the master realm and
 // posts one client to the realm. The curl image carries no jq, so the token
