@@ -260,6 +260,28 @@ func TestClaimReleases(t *testing.T) {
 		assert.False(t, controllerutil.ContainsFinalizer(held, ClaimFinalizer))
 	})
 
+	t.Run("a holder that recorded no claim gives the Lease back", func(t *testing.T) {
+		t.Parallel()
+
+		database := unclaimed("alpha", "only", base)
+		r := claimReconciler(t, database)
+
+		held := staged(database)
+		controllerutil.AddFinalizer(held, ClaimFinalizer)
+		require.NoError(t, r.Update(ctx, held))
+		require.NoError(t, r.claim(ctx, held))
+
+		// The status flush that records the claim never reached the cluster,
+		// so the deleted object carries no key. The holder annotations of the
+		// Lease are the only record of what it holds.
+		deleted := held.DeepCopy()
+		deleted.Status.CollisionKey = ""
+		require.NoError(t, r.finalize(ctx, deleted))
+
+		_, found := leaseOf(t, r)
+		assert.False(t, found)
+	})
+
 	t.Run("a Database that claims another key gives the old Lease back", func(t *testing.T) {
 		t.Parallel()
 

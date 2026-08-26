@@ -38,9 +38,10 @@ import (
 )
 
 // ClaimFinalizer holds a Database that can own a claim Lease. The reconcile
-// adds it before the first claim attempt, and the deletion releases the Lease
-// under it. A Database that never got as far as a claim never carries it and
-// deletes without a wait.
+// adds it before the first claim attempt, which is before it knows whether
+// there is a claim to take, so every Database carries it. The deletion
+// releases the Leases under it. A Database that took no claim releases
+// nothing and goes away at once.
 const ClaimFinalizer = "core.camunda.io/database-claim"
 
 // claimLeasePrefix starts the name of every claim Lease.
@@ -297,7 +298,7 @@ func (r *DatabaseReconciler) releaseStaleClaim(ctx context.Context, database *v1
 	return r.dropClaim(ctx, recorded, selfHolder(database))
 }
 
-// finalize releases the claim of a deleted Database and removes the claim
+// finalize releases the claims of a deleted Database and removes the claim
 // finalizer.
 //
 // The release goes first. Once the removal of the finalizer is durable the
@@ -308,7 +309,7 @@ func (r *DatabaseReconciler) finalize(ctx context.Context, database *v1.Database
 		return nil
 	}
 
-	if err := r.dropClaim(ctx, database.Status.CollisionKey, selfHolder(database)); err != nil {
+	if err := r.releaseHeldClaims(ctx, selfHolder(database)); err != nil {
 		return err
 	}
 
@@ -320,10 +321,43 @@ func (r *DatabaseReconciler) finalize(ctx context.Context, database *v1.Database
 	return nil
 }
 
+// releaseHeldClaims deletes every claim Lease of the namespace of the
+// operator that still names holder. A release by key reads
+// status.collisionKey, and a Database that took a claim but never flushed its
+// status carries no key: its Lease would then stay until a later claimant
+// took it over. The sweep reads the holder annotations instead, so the
+// deletion of a Database always gives back what it holds.
+//
+// The label selector is the one that newClaimLease writes, so the list covers
+// the claims of this Database alone. The holder annotations then tell a Lease
+// of a later Database of the same name apart from one of this Database.
+func (r *DatabaseReconciler) releaseHeldClaims(ctx context.Context, holder claimHolder) error {
+	var leases coordinationv1.LeaseList
+	err := r.APIReader.List(
+		ctx, &leases,
+		client.InNamespace(r.ClaimNamespace),
+		client.MatchingLabels(labels.Managed(labels.Database(holder.Name), claimComponent)),
+	)
+	if err != nil {
+		return fmt.Errorf("listing the claim Leases of %s: %w", holder.NamespacedName, err)
+	}
+
+	for i := range leases.Items {
+		lease := &leases.Items[i]
+		if recorded, ours := holderOf(lease); !ours || recorded != holder {
+			continue
+		}
+		if err := r.deleteClaim(ctx, lease); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // dropClaim deletes the claim Lease of key while its annotations still name
-// holder. The delete carries the UID and the resourceVersion of the Lease as
-// preconditions, both read live. A Lease that is gone, that another Database
-// holds, or that changed in between is left alone.
+// holder. A Lease that is gone, or that another Database holds, is left
+// alone.
 func (r *DatabaseReconciler) dropClaim(ctx context.Context, key string, holder claimHolder) error {
 	if key == "" {
 		return nil
@@ -338,11 +372,19 @@ func (r *DatabaseReconciler) dropClaim(ctx context.Context, key string, holder c
 		return nil
 	}
 
-	err = r.Delete(ctx, lease, client.Preconditions{
+	return r.deleteClaim(ctx, lease)
+}
+
+// deleteClaim deletes lease under the UID and the resourceVersion that it was
+// read with. A Lease that is gone, or that changed in between, is left alone.
+func (r *DatabaseReconciler) deleteClaim(ctx context.Context, lease *coordinationv1.Lease) error {
+	err := r.Delete(ctx, lease, client.Preconditions{
 		UID: &lease.UID, ResourceVersion: &lease.ResourceVersion,
 	})
 	if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
-		return fmt.Errorf("deleting the claim Lease of %q: %w", key, err)
+		return fmt.Errorf(
+			"deleting the claim Lease %s: %w", client.ObjectKeyFromObject(lease), err,
+		)
 	}
 
 	return nil
