@@ -146,6 +146,16 @@ func requests(cpu, memory string) *corev1.ResourceRequirements {
 	}
 }
 
+// capped adds a memory limit to the requests of a workload. A process that
+// sizes its heap from the container reads this limit. The same process reads
+// the memory of the whole node when the container carries no limit.
+func capped(cpu, memory, memoryLimit string) *corev1.ResourceRequirements {
+	res := requests(cpu, memory)
+	res.Limits = corev1.ResourceList{corev1.ResourceMemory: resource.MustParse(memoryLimit)}
+
+	return res
+}
+
 // basicPlatform returns a platform config with basic authentication and no
 // license: the cluster then runs in non-production mode.
 func basicPlatform(name string) *v1.CamundaPlatformConfig {
