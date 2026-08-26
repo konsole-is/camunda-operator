@@ -58,12 +58,11 @@ const (
 // ArchiveOutageGracePeriod is how long the write-ahead log uploads of a server
 // must have been failing before ArchiveReady reports them.
 //
-// PostgreSQL retries a segment it could not archive, and it falls back to one
-// attempt a minute while the failures continue, so a minute is the shortest
-// period that can tell a retried upload from a stopped archive. Five of them
-// keep a bucket that answers slowly, a rotated credential, and a restarted
-// gateway off the condition, and still report an outage long before the
-// retention period of any archive matters.
+// A minute is the floor. PostgreSQL retries the segment it could not archive
+// at one attempt a minute once the failures continue, so anything shorter
+// cannot separate a retry from a stopped archive. Five carry a slow bucket, a
+// rotated credential, and a restarted gateway, and still report long before
+// any retention period matters.
 const ArchiveOutageGracePeriod = 5 * time.Minute
 
 // The keys of the archive Secret. The Barman Cloud plugin reads every bucket
