@@ -599,8 +599,9 @@ the derived name comes back once the number of archives comes back. A cluster of
 this server does not own abandons the rollback with `Failed`, and the server runs from the previous
 cluster again.
 
-Every object the server derives a name for is registered with ocf
-`BlockOnForeignController`. ocf reads the live object before each apply and blocks the resource
+Every object the server applies under a derived name is registered with ocf
+`BlockOnForeignController`; the two read-only registrations, the superuser Secret and the
+recoverable cluster, are never applied and cannot carry it. ocf reads the live object before each apply and blocks the resource
 while another owner controls it, so a name the server derives is never enough to write on somebody
 else's object. The block covers the delete and the suspension too: a foreign object is neither
 scaled down nor removed when the server withdraws its own.
