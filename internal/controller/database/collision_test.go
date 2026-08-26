@@ -96,7 +96,7 @@ func TestCheckCollisionCountsTheDatabaseItRunsFor(t *testing.T) {
 		older := claimant("alpha", "older", base)
 		r := collisionReconciler(t, newer)
 
-		assert.NoError(t, r.checkCollision(context.Background(), older))
+		assert.NoError(t, r.checkCollision(context.Background(), older, claimKey))
 	})
 
 	t.Run("the newer Database still loses before its own claim is indexed", func(t *testing.T) {
@@ -106,7 +106,7 @@ func TestCheckCollisionCountsTheDatabaseItRunsFor(t *testing.T) {
 		newer := claimant("beta", "newer", base.Add(time.Hour))
 		r := collisionReconciler(t, older)
 
-		err := r.checkCollision(context.Background(), newer)
+		err := r.checkCollision(context.Background(), newer, claimKey)
 		require.ErrorIs(t, err, errClaimLost)
 
 		var failure *conditions.PreCheckFailure
@@ -122,8 +122,8 @@ func TestCheckCollisionCountsTheDatabaseItRunsFor(t *testing.T) {
 		newer := claimant("beta", "newer", base.Add(time.Hour))
 		r := collisionReconciler(t, older, newer)
 
-		assert.NoError(t, r.checkCollision(context.Background(), older))
-		require.ErrorIs(t, r.checkCollision(context.Background(), newer), errClaimLost)
+		assert.NoError(t, r.checkCollision(context.Background(), older, claimKey))
+		require.ErrorIs(t, r.checkCollision(context.Background(), newer, claimKey), errClaimLost)
 	})
 
 	t.Run("the only claimant wins", func(t *testing.T) {
@@ -132,6 +132,6 @@ func TestCheckCollisionCountsTheDatabaseItRunsFor(t *testing.T) {
 		only := claimant("alpha", "only", base)
 		r := collisionReconciler(t)
 
-		assert.NoError(t, r.checkCollision(context.Background(), only))
+		assert.NoError(t, r.checkCollision(context.Background(), only, claimKey))
 	})
 }

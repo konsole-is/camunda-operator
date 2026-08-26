@@ -174,6 +174,15 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 				return ctrl.Result{}, withdrawErr
 			}
 
+			// The withdrawal leaves nothing that names the logical database
+			// this Database recorded before, so it gives that claim back. A
+			// Database that kept it would hold a name it no longer uses.
+			if dropErr := r.dropClaim(
+				ctx, database.Status.CollisionKey, selfHolder(&database),
+			); dropErr != nil {
+				return ctrl.Result{}, dropErr
+			}
+
 			return ctrl.Result{RequeueAfter: claimRetryInterval}, nil
 		}
 
@@ -361,9 +370,10 @@ func bootstrapSQL(ctx context.Context, b pgbootstrap.Bootstrapper, name string, 
 
 // preCheck runs the documented pre-checks in order: server reference, server
 // identity, admin credentials Secret, claim, connection. It records the claim
-// of the Database in status.collisionKey as soon as the identity is known,
-// and gives up a claim it recorded under another key. It returns the
-// connected Bootstrapper, which the caller closes.
+// of the Database in status.collisionKey once the Database holds it and the
+// server answers, and gives up a claim it recorded under another key at the
+// same point. It returns the connected Bootstrapper, which the caller
+// closes.
 //
 // A failed check returns an error carrying a *conditions.PreCheckFailure with
 // its Ready reason, and a lost claim wraps errClaimLost beside it. Any other
@@ -409,21 +419,33 @@ func (r *DatabaseReconciler) preCheck(ctx context.Context, database *v1.Database
 	}
 
 	key := components.CollisionKey(server.Status.SystemIdentifier, database.Spec.DatabaseName)
-	if err := r.releaseStaleClaim(ctx, database, key); err != nil {
-		return nil, err
-	}
-	database.Status.CollisionKey = key
 
 	user, password, err := r.adminCredentials(ctx, server)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := r.claim(ctx, database); err != nil {
+	if err := r.claim(ctx, database, key); err != nil {
 		return nil, err
 	}
 
-	return connect(ctx, server, user, password)
+	bootstrapper, err := connect(ctx, server, user, password)
+	if err != nil {
+		return nil, err
+	}
+
+	// The Database holds the logical database it names now, and the server
+	// answers for it. The one it named before is free to go. A release before
+	// this point leaves the bindings of this Database on a logical database
+	// that another Database can take and rotate the roles of.
+	if err := r.releaseStaleClaim(ctx, database, key); err != nil {
+		bootstrapper.Close()
+
+		return nil, err
+	}
+	database.Status.CollisionKey = key
+
+	return bootstrapper, nil
 }
 
 // resolveServer fetches the DatabaseServerConfig that spec.serverRef names in

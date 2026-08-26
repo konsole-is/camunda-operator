@@ -87,43 +87,52 @@ type claimHolder struct {
 	UID types.UID
 }
 
-// claim takes the claim on the logical database that status.collisionKey
-// names. It runs in two steps. The cached rule of checkCollision decides who
-// tries first, and the Lease that takeClaim creates decides who holds the
-// claim. A Database that holds the claim already skips both steps. The rule
-// answers from an index that lags behind, and neither it nor a later claimant
-// may take a claim away from the Database that holds it.
+// claim takes the claim on the logical database that key names. The Lease
+// decides it, and the cached rule of checkCollision never overrules the
+// Lease. A Lease that exists names the holder, and the rule answers from an
+// index that lags behind: it would name the oldest claimant, which is a
+// Database that lost the race as often as it is the holder. The rule runs
+// only while no Lease exists, where it decides which claimant tries first.
 //
 // A claim that another Database holds returns an error that wraps
 // errClaimLost, so the reconcile withdraws the bindings and reports the
 // holder.
-func (r *DatabaseReconciler) claim(ctx context.Context, database *v1.Database) error {
-	holds, err := r.holdsClaim(ctx, database)
-	if err != nil || holds {
+func (r *DatabaseReconciler) claim(ctx context.Context, database *v1.Database, key string) error {
+	lease, found, err := r.readClaim(ctx, key)
+	if err != nil {
 		return err
 	}
 
-	if err := r.checkCollision(ctx, database); err != nil {
-		return err
+	if !found {
+		if err := r.checkCollision(ctx, database, key); err != nil {
+			return err
+		}
+
+		return r.takeClaim(ctx, database, key)
 	}
 
-	return r.takeClaim(ctx, database)
+	if holder, ours := holderOf(lease); ours && holder.UID == database.UID {
+		return nil
+	}
+
+	return r.takeClaim(ctx, database, key)
 }
 
-// checkCollision orders the claimants of the logical database that this CR
-// claims by first creation. The claim belongs to the PostgreSQL instance, so
-// the list covers every namespace: an older Database that reaches the same
+// checkCollision orders the claimants of the logical database that key names
+// by first creation. The claim belongs to the PostgreSQL instance, so the
+// list covers every namespace: an older Database that reaches the same
 // instance through another contract goes first, and the failure names it. A
 // lost claim wraps errClaimLost, which the reconcile answers by withdrawing
 // the bindings.
 //
 // The list comes from the cache, and a claimant reaches it only after the
 // status flush that records its key. The rule therefore decides who tries the
-// claim first, never who holds it. takeClaim decides that, and a claim that
-// is held stays with its holder.
-func (r *DatabaseReconciler) checkCollision(ctx context.Context, database *v1.Database) error {
-	key := database.Status.CollisionKey
-
+// claim first, never who holds it. Its caller runs it only while no Lease
+// exists, so it never names a claimant as the holder of a claim that another
+// Database took.
+func (r *DatabaseReconciler) checkCollision(
+	ctx context.Context, database *v1.Database, key string,
+) error {
 	var list v1.DatabaseList
 	if err := r.List(ctx, &list, client.MatchingFields{databaseCollisionField: key}); err != nil {
 		return fmt.Errorf("listing databases claiming %q: %w", key, err)
@@ -161,21 +170,6 @@ func withSelf(claimants []v1.Database, database *v1.Database) []v1.Database {
 	return append(claimants, *database)
 }
 
-// holdsClaim reports whether database holds the claim that its
-// status.collisionKey names. A holder skips the cached rule of
-// checkCollision: it already owns the logical database, and a rule that
-// answers from a lagging index must never take that away from it.
-func (r *DatabaseReconciler) holdsClaim(ctx context.Context, database *v1.Database) (bool, error) {
-	lease, found, err := r.readClaim(ctx, database.Status.CollisionKey)
-	if err != nil || !found {
-		return false, err
-	}
-
-	holder, ours := holderOf(lease)
-
-	return ours && holder.UID == database.UID, nil
-}
-
 // takeClaim creates the claim Lease of the logical database. The API server
 // serializes the create, so of two Databases that reach this together exactly
 // one holds the claim, whatever the cached rule answered them.
@@ -184,8 +178,8 @@ func (r *DatabaseReconciler) holdsClaim(ctx context.Context, database *v1.Databa
 // another Database holds returns an error that wraps errClaimLost. Only a
 // holder that is gone, or that a later Database replaced under the same name,
 // is taken over.
-func (r *DatabaseReconciler) takeClaim(ctx context.Context, database *v1.Database) error {
-	holder, err := r.createClaim(ctx, database)
+func (r *DatabaseReconciler) takeClaim(ctx context.Context, database *v1.Database, key string) error {
+	holder, err := r.createClaim(ctx, database, key)
 	if err != nil || holder == nil {
 		return err
 	}
@@ -195,10 +189,10 @@ func (r *DatabaseReconciler) takeClaim(ctx context.Context, database *v1.Databas
 		return err
 	}
 	if !keeps {
-		if err := r.dropClaim(ctx, database.Status.CollisionKey, *holder); err != nil {
+		if err := r.dropClaim(ctx, key, *holder); err != nil {
 			return err
 		}
-		if holder, err = r.createClaim(ctx, database); err != nil || holder == nil {
+		if holder, err = r.createClaim(ctx, database, key); err != nil || holder == nil {
 			return err
 		}
 	}
@@ -219,9 +213,9 @@ func (r *DatabaseReconciler) takeClaim(ctx context.Context, database *v1.Databas
 //
 // A Lease that carries no holder annotations is not one of ours. It blocks
 // without a takeover, and the error names it.
-func (r *DatabaseReconciler) createClaim(ctx context.Context, database *v1.Database) (*claimHolder, error) {
-	key := database.Status.CollisionKey
-
+func (r *DatabaseReconciler) createClaim(
+	ctx context.Context, database *v1.Database, key string,
+) (*claimHolder, error) {
 	// The Lease can go away between the create and the read, when a release
 	// or a takeover races this claimant. The second pass then creates it.
 	for range 2 {
@@ -286,9 +280,14 @@ func (r *DatabaseReconciler) holderKeeps(ctx context.Context, holder claimHolder
 }
 
 // releaseStaleClaim gives up the claim that database recorded before, when it
-// now claims another logical database or another server. The recorded claim
-// is the one in status.collisionKey, and key is the one the pre-checks
-// resolved this time.
+// now names another logical database or another server. The recorded claim is
+// the one in status.collisionKey, and key is the one the pre-checks resolved
+// this time.
+//
+// The caller runs it only once database holds key and nothing it published
+// names the recorded claim any more. A Database that gave the old claim up
+// earlier would leave its published bindings on a logical database that
+// another Database could take and rotate the roles of.
 func (r *DatabaseReconciler) releaseStaleClaim(ctx context.Context, database *v1.Database, key string) error {
 	recorded := database.Status.CollisionKey
 	if recorded == "" || recorded == key {

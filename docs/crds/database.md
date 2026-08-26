@@ -53,20 +53,20 @@ While no `Database` holds the name, the operator prefers the older `Database`. O
 
 A claim stays with its holder. An older `Database` whose contract reaches the same server later does not take the logical database from the `Database` that runs on it. The holder owns the SQL roles, and the passwords in its Secrets are the ones the server accepts.
 
-A `Database` gives its claim back when you delete it. It also gives it back when you point it at another logical database or at another server. Another `Database` can take the name then.
+A `Database` gives its claim back when you delete it. It also gives it back when you point it at another logical database or at another server, once it reaches the new one. Until then it keeps the name it had. A `Database` that waits for a missing server, or for one that does not answer, therefore keeps its old name. Another `Database` can take that name once it is given back.
 
 A `Database` can lose a claim after it published under it. That happens when you point `spec.databaseName` at a logical database that another `Database` holds. The holder owns that database and resets the role passwords, so the credentials of the loser open nothing. The loser therefore withdraws what it published: the `DatabaseConfig`, the `SecondaryStorageConfig`, and both credential Secrets are deleted, and `BindingsReady` reads `Disabled`.
 
 It withdraws only what it owns. Two `Database` resources can name one `databaseConfig` or one credential Secret, and the loser leaves an object that belongs to the winner in place. The `Ready` message then names what stayed.
 
-`status.collisionKey` shows the claim of a `Database`, as the system identifier and the database name:
+`status.collisionKey` shows the logical database that a `Database` names, as the system identifier and the database name:
 
 ```yaml
 status:
   collisionKey: 7412345678901234567/camunda
 ```
 
-The operator never clears this field. A `Database` whose server or contract is gone keeps the logical database. Delete the `Database` to release it.
+Every claimant records this field, so it shows the logical database a `Database` asks for and not always one it owns. The `Ready` condition says whether this `Database` is the owner. The operator never clears the field. An owner whose server or contract is gone keeps the logical database. Delete that `Database` to release the name.
 
 ## Changes
 

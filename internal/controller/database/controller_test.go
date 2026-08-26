@@ -684,6 +684,58 @@ var _ = Describe("Database controller", func() {
 		)
 	})
 
+	// A Database that moves to another logical database keeps the one it has
+	// until it reaches the new one. A release before that point leaves the
+	// bindings it published on a logical database that another Database can
+	// take and rotate the roles of.
+	It("keeps its claim when the move to another logical database fails", func() {
+		namespace := newDatabaseNamespace()
+		secret := createAdminSecret(namespace)
+		server := probedServer(namespace, secret, testPostgresHost())
+
+		db := databaseFor(server.Name, namespace)
+		createDatabase(db)
+		expectDatabaseReady(
+			db, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.",
+		)
+
+		held := types.NamespacedName{
+			Namespace: testClaimNamespace,
+			Name: claimLeaseName(
+				components.CollisionKey(serverSystemIdentifier(), db.Spec.DatabaseName),
+			),
+		}
+		Eventually(func() error {
+			var lease coordinationv1.Lease
+			return k8sClient.Get(ctx, held, &lease)
+		}, timeout, interval).Should(Succeed())
+
+		By("moving it to another logical database that it cannot reach")
+		var credentials corev1.Secret
+		Expect(k8sClient.Get(
+			ctx, types.NamespacedName{Namespace: namespace, Name: secret}, &credentials,
+		)).To(Succeed())
+		delete(credentials.Data, "password")
+		Expect(k8sClient.Update(ctx, &credentials)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			var current v1.Database
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(db), &current)).To(Succeed())
+			current.Spec.DatabaseName = current.Spec.DatabaseName + "_moved"
+			g.Expect(k8sClient.Update(ctx, &current)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		expectDatabaseReady(
+			db, metav1.ConditionFalse, v1.ReasonMissingSecret, "is missing key \"password\"",
+		)
+
+		By("keeping the claim of the logical database its bindings still name")
+		Consistently(func() error {
+			var lease coordinationv1.Lease
+			return k8sClient.Get(ctx, held, &lease)
+		}, "2s", 200*time.Millisecond).Should(Succeed())
+	})
+
 	// A Database can lose a claim after it published under it, when its spec
 	// names a logical database that another Database already holds. The
 	// holder owns that logical database and resets the shared role password,

@@ -123,9 +123,9 @@ func TestClaimSerializesTwoFirstReconciles(t *testing.T) {
 		newer := unclaimed("beta", "newer", base.Add(time.Hour))
 		r := claimReconciler(t, older, newer)
 
-		require.NoError(t, r.claim(ctx, staged(older)))
+		require.NoError(t, r.claim(ctx, staged(older), claimKey))
 
-		err := r.claim(ctx, staged(newer))
+		err := r.claim(ctx, staged(newer), claimKey)
 		require.ErrorIs(t, err, errClaimLost)
 
 		var failure *conditions.PreCheckFailure
@@ -141,18 +141,20 @@ func TestClaimSerializesTwoFirstReconciles(t *testing.T) {
 		newer := unclaimed("beta", "newer", base.Add(time.Hour))
 		r := claimReconciler(t, older, newer)
 
-		require.NoError(t, r.claim(ctx, staged(newer)))
+		require.NoError(t, r.claim(ctx, staged(newer), claimKey))
 
-		err := r.claim(ctx, staged(older))
+		err := r.claim(ctx, staged(older), claimKey)
 		require.ErrorIs(t, err, errClaimLost)
 
 		var failure *conditions.PreCheckFailure
 		require.ErrorAs(t, err, &failure)
 		assert.Contains(t, failure.Message, "beta/newer")
 
-		holds, err := r.holdsClaim(ctx, staged(newer))
-		require.NoError(t, err)
-		assert.True(t, holds, "the Lease must stay with its holder")
+		lease, found := leaseOf(t, r)
+		require.True(t, found)
+		holder, ours := holderOf(lease)
+		require.True(t, ours)
+		assert.Equal(t, "beta/newer", holder.String(), "the Lease must stay with its holder")
 	})
 
 	t.Run("the rule takes no claim away from its holder", func(t *testing.T) {
@@ -163,7 +165,7 @@ func TestClaimSerializesTwoFirstReconciles(t *testing.T) {
 		r := claimReconciler(t, newer, older)
 
 		held := staged(newer)
-		require.NoError(t, r.claim(ctx, held))
+		require.NoError(t, r.claim(ctx, held, claimKey))
 
 		// The older claimant records its claim and reaches the index. Only
 		// its own takeover may hand it the logical database. Until then the
@@ -171,8 +173,38 @@ func TestClaimSerializesTwoFirstReconciles(t *testing.T) {
 		older.Status.CollisionKey = claimKey
 		require.NoError(t, r.Update(ctx, older))
 
-		assert.NoError(t, r.claim(ctx, held))
+		assert.NoError(t, r.claim(ctx, held, claimKey))
 	})
+}
+
+// TestClaimNamesTheHolderNotTheOldest pins which Database a lost claim names.
+// The cached rule orders claimants by creation, so it would name an older
+// Database that lost the race, and a reader who deletes the name it gives
+// frees nothing. The Lease names the holder.
+func TestClaimNamesTheHolderNotTheOldest(t *testing.T) {
+	t.Parallel()
+
+	base := time.Date(2026, 8, 25, 9, 0, 0, 0, time.UTC)
+	ctx := context.Background()
+
+	oldest := unclaimed("alpha", "oldest", base)
+	holder := unclaimed("beta", "holder", base.Add(time.Hour))
+	latest := unclaimed("gamma", "latest", base.Add(2*time.Hour))
+	r := claimReconciler(t, oldest, holder, latest)
+
+	// The newer Database takes the claim, and the older one records the same
+	// key without holding anything. The cached rule now prefers a loser.
+	require.NoError(t, r.claim(ctx, staged(holder), claimKey))
+	oldest.Status.CollisionKey = claimKey
+	require.NoError(t, r.Update(ctx, oldest))
+
+	err := r.claim(ctx, staged(latest), claimKey)
+	require.ErrorIs(t, err, errClaimLost)
+
+	var failure *conditions.PreCheckFailure
+	require.ErrorAs(t, err, &failure)
+	assert.Contains(t, failure.Message, "beta/holder")
+	assert.NotContains(t, failure.Message, "alpha/oldest")
 }
 
 // TestClaimTakesOverAHolderThatIsGone covers the crash between a claim and its
@@ -187,7 +219,7 @@ func TestClaimTakesOverAHolderThatIsGone(t *testing.T) {
 	next := unclaimed("beta", "next", base.Add(time.Hour))
 	r := claimReconciler(t, gone, next)
 
-	require.NoError(t, r.claim(ctx, staged(gone)))
+	require.NoError(t, r.claim(ctx, staged(gone), claimKey))
 
 	// The holder goes without its finalizer running, as it does when the
 	// operator crashes between the claim and the release.
@@ -197,7 +229,7 @@ func TestClaimTakesOverAHolderThatIsGone(t *testing.T) {
 	require.NoError(t, r.Update(ctx, &stored))
 	require.NoError(t, r.Delete(ctx, &stored))
 
-	require.NoError(t, r.claim(ctx, staged(next)))
+	require.NoError(t, r.claim(ctx, staged(next), claimKey))
 
 	lease, found := leaseOf(t, r)
 	require.True(t, found)
@@ -223,7 +255,7 @@ func TestClaimBlocksOnAForeignLease(t *testing.T) {
 		},
 	}))
 
-	err := r.claim(ctx, staged(database))
+	err := r.claim(ctx, staged(database), claimKey)
 	require.ErrorIs(t, err, errClaimLost)
 
 	var failure *conditions.PreCheckFailure
@@ -251,7 +283,7 @@ func TestClaimReleases(t *testing.T) {
 		held := staged(database)
 		controllerutil.AddFinalizer(held, ClaimFinalizer)
 		require.NoError(t, r.Update(ctx, held))
-		require.NoError(t, r.claim(ctx, held))
+		require.NoError(t, r.claim(ctx, held, claimKey))
 
 		require.NoError(t, r.finalize(ctx, held))
 
@@ -269,7 +301,7 @@ func TestClaimReleases(t *testing.T) {
 		held := staged(database)
 		controllerutil.AddFinalizer(held, ClaimFinalizer)
 		require.NoError(t, r.Update(ctx, held))
-		require.NoError(t, r.claim(ctx, held))
+		require.NoError(t, r.claim(ctx, held, claimKey))
 
 		// The status flush that records the claim never reached the cluster,
 		// so the deleted object carries no key. The holder annotations of the
@@ -289,7 +321,7 @@ func TestClaimReleases(t *testing.T) {
 		r := claimReconciler(t, database)
 
 		held := staged(database)
-		require.NoError(t, r.claim(ctx, held))
+		require.NoError(t, r.claim(ctx, held, claimKey))
 
 		require.NoError(t, r.releaseStaleClaim(ctx, held, "7000000000000000001/other"))
 
@@ -303,7 +335,7 @@ func TestClaimReleases(t *testing.T) {
 		holder := unclaimed("alpha", "holder", base)
 		other := unclaimed("beta", "other", base.Add(time.Hour))
 		r := claimReconciler(t, holder, other)
-		require.NoError(t, r.claim(ctx, staged(holder)))
+		require.NoError(t, r.claim(ctx, staged(holder), claimKey))
 
 		deleted := staged(other)
 		controllerutil.AddFinalizer(deleted, ClaimFinalizer)
