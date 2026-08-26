@@ -32,6 +32,7 @@ jobs:
       - name: Check that the observability artifacts are rendered
         run: |
           make observability
+          git add --intent-to-add config/prometheus/observability
           git diff --exit-code -- config/prometheus/observability
 
       # Renovate's validator is an npm package. The runner's default Node is

@@ -49,7 +49,7 @@ kubectl apply -n monitoring -k .
 
 Apply this directory once per cluster. If you run the operator in two namespaces, both installs share the one copy: every rule tells the installs apart by their scrape job. The two `ocf-*` rule sets are shared by every operator that is built on the same framework. If two of these operators run in one cluster, keep one copy of the `ocf-*` rules. A second copy in another namespace fires every shared alert twice, once from each copy.
 
-The dashboards are Grafana JSON. Without the sidecar, import the two files under [`config/prometheus/observability/dashboards`](https://github.com/konsole-is/camunda-operator/tree/main/config/prometheus/observability/dashboards) through the Grafana UI.
+The dashboards are Grafana JSON. Without the sidecar, import the two files under [`config/prometheus/observability/dashboards`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/prometheus/observability/dashboards) through the Grafana UI.
 
 ## Dashboards
 
