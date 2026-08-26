@@ -117,7 +117,9 @@ func (r *Reconciler) syncOptimizeCallbacks(
 		return nil, nil
 	}
 	if failure != nil {
-		return stageCallbackFailure(mc, failure), nil
+		stageCallbacks(mc, metav1.ConditionFalse, failure.Reason, failure.Message)
+
+		return failure, nil
 	}
 
 	stageCallbacks(
@@ -225,20 +227,6 @@ func (r *Reconciler) keycloakAdmin(
 		string(secret.Data[ref.UsernameKey]),
 		string(secret.Data[ref.PasswordKey]),
 	), nil, nil
-}
-
-// stageCallbackFailure stages failure on OptimizeCallbacksReady and returns
-// it, so that a caller can report and return in one line.
-func stageCallbackFailure(
-	mc *v1.CamundaManagementCluster,
-	failure *conditions.PreCheckFailure,
-) *conditions.PreCheckFailure {
-	if failure == nil {
-		return nil
-	}
-	stageCallbacks(mc, metav1.ConditionFalse, failure.Reason, failure.Message)
-
-	return failure
 }
 
 // stageCallbacks sets OptimizeCallbacksReady on the in-memory CR. The deferred
