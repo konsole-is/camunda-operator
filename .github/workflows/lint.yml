@@ -27,6 +27,13 @@ jobs:
       - name: Run linter
         run: make lint
 
+      # The rendered files are the output of the ocf version in go.mod. A bump
+      # that changes a template must re-render them in the same change.
+      - name: Check that the observability artifacts are rendered
+        run: |
+          make observability
+          git diff --exit-code -- config/prometheus/observability
+
       # Renovate's validator is an npm package. The runner's default Node is
       # older than the one Renovate supports, which is a warning today and a
       # refusal later.

@@ -1,0 +1,24 @@
+# The alert rules and the dashboards that the operator ships for its metrics.
+# `make observability` renders the files under alerts/ and dashboards/ from
+# the framework templates. Do not edit them by hand.
+#
+# This directory carries no namespace. Apply it into the namespace that your
+# Prometheus Operator and Grafana sidecar watch:
+#
+#   kubectl apply -n monitoring -k config/prometheus/observability
+resources:
+- alerts/crd_conditions.yaml
+- alerts/managed_resources.yaml
+- alerts/controller_runtime.yaml
+
+# The Grafana sidecar of kube-prometheus-stack loads every ConfigMap that
+# carries the grafana_dashboard label.
+configMapGenerator:
+- name: camunda-operator-dashboards
+  files:
+  - dashboards/ocf_operator.json
+  - dashboards/crd_conditions_browser.json
+  options:
+    disableNameSuffixHash: true
+    labels:
+      grafana_dashboard: "1"
