@@ -63,7 +63,7 @@ func TestEveryControllerRecordsMetricsUnderItsControllerName(t *testing.T) {
 				t,
 				distinct(w.names),
 				1,
-				"Named, GetEventRecorder, and observability.Recorder must take one name: %v",
+				"Named, observability.Recorder, and GetEventRecorder where present must take one name: %v",
 				w.names,
 			)
 		})
