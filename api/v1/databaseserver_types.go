@@ -262,8 +262,9 @@ const ReasonContractTaken = "ContractTaken"
 // derives the name of an existing CloudNativePG cluster it does not control.
 // The server writes nothing on that cluster and runs nothing itself, so the
 // database of whoever holds the name is left whole. It publishes no contract
-// and advertises no archive either. The message names the holder. Remove that
-// cluster, or give this server a name of its own.
+// and takes no base backup of that cluster; the archive it wrote before and
+// its history stay. The message names the holder, or says that no owner
+// controls it. Remove that cluster, or give this server a name of its own.
 const ReasonClusterTaken = "ClusterTaken"
 
 // ReasonVersionChangeRefused is the Ready reason of a DatabaseServer whose
