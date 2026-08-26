@@ -79,7 +79,11 @@ var indexers = map[string]client.IndexerFunc{
 	},
 	objectStorageRefsField: func(o client.Object) []string {
 		cluster := o.(*v1.CamundaCluster)
-		return nonEmpty(cluster.Spec.BackupStorageRef, cluster.Spec.DocumentStorageRef)
+		refs := nonEmpty(cluster.Spec.BackupStorageRef, cluster.Spec.DocumentStorageRef)
+		for i, ref := range refs {
+			refs[i] = refindex.NamespacedKey(cluster.Namespace, ref)
+		}
+		return refs
 	},
 	secretRefsField: func(o client.Object) []string {
 		cluster := o.(*v1.CamundaCluster)
@@ -153,7 +157,9 @@ func (r *CamundaClusterReconciler) enqueueForSecret() handler.EventHandler {
 		for _, bucket := range listByIndex[v1.ObjectStorageConfigList](
 			ctx, r.Client, refindex.ObjectStorageConfigSecretField, key,
 		).Items {
-			set.addList(ctx, r.Client, client.MatchingFields{objectStorageRefsField: bucket.Name})
+			set.addList(ctx, r.Client, client.MatchingFields{
+				objectStorageRefsField: refindex.NamespacedKey(bucket.Namespace, bucket.Name),
+			})
 		}
 
 		return set.requests()
@@ -344,7 +350,7 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		).
 		Watches(
 			&v1.ObjectStorageConfig{},
-			refindex.Enqueue(cached, clusters, objectStorageRefsField, refindex.ObjectName),
+			refindex.Enqueue(cached, clusters, objectStorageRefsField, refindex.ObjectNamespacedName),
 		).
 		Watches(&v1.DatabaseConfig{}, r.enqueueInNamespace()).
 		Watches(&v1.DatabaseServerConfig{}, r.enqueueAll()).

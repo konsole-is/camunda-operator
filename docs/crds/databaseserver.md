@@ -434,7 +434,7 @@ spec:
   databaseServerConfig: my-db-server
   # object. Optional. The continuous archive of the server. Without it no point-in-time restore can reach the server.
   archive:
-    # string. Required in this block. Name of a cluster-scoped ObjectStorageConfig.
+    # string. Required in this block. Name of an ObjectStorageConfig in this namespace.
     objectStorageRef: my-backup-bucket
     # integer. Required in this block. How many days into the past a restore can reach, at least 1.
     retentionPeriodDays: 30

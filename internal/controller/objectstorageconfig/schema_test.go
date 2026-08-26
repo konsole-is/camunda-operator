@@ -33,7 +33,7 @@ const minioEndpoint = "http://minio.minio.svc:9000"
 // a unique name: a cloud bucket accessed through workload identity.
 func validObjectStorageConfig() *v1.ObjectStorageConfig {
 	return &v1.ObjectStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(8)},
+		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(8), Namespace: "default"},
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{

@@ -1,6 +1,6 @@
 # ObjectStorageConfig
 
-`ObjectStorageConfig` is a cluster-scoped contract kind that describes one bucket, for backups or for document storage, and how consumers authenticate to it. You create it, or another tool creates it for you.
+`ObjectStorageConfig` is a namespaced contract kind that describes one bucket, for backups or for document storage, and how consumers authenticate to it. You create it, or another tool creates it for you.
 
 Orchestration clusters write backups and documents to a bucket, but the operator never creates cloud infrastructure. This kind carries the location of the bucket and the authentication choice. The thing that provisions the bucket and the thing that writes to it do not need to know each other. The operator only validates the contract and reports the result on `Ready`. It never provisions anything from it.
 
@@ -8,6 +8,8 @@ Orchestration clusters write backups and documents to a bucket, but the operator
 | --- | --- |
 | Producers | You, by hand, or another tool that provisions the bucket and creates the contract for you |
 | Consumers | [CamundaCluster](camundacluster.md) (through `backupStorageRef` and `documentStorageRef`), [ElasticsearchCluster](elasticsearchcluster.md) (through `snapshotStorageRef`), [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) (through the `backupStorageRef` of the cluster they back up) |
+
+A consumer names the contract and reads it in its own namespace. A `CamundaCluster` in `my-cluster-ns` with `backupStorageRef: my-backup-bucket` reads the contract `my-backup-bucket` of `my-cluster-ns`. A contract of the same name in another namespace is a different bucket. Two consumers in one namespace can share one contract. A consumer in another namespace needs a contract of its own, even when both point at one bucket.
 
 `spec.type` selects the storage API of the bucket. Exactly the block with the same name carries its fields: `s3`, `gcs`, or `azureBlob`. Each block has its own `auth` block, because the three storage types authenticate in different ways.
 
@@ -18,6 +20,7 @@ apiVersion: core.camunda.io/v1
 kind: ObjectStorageConfig
 metadata:
   name: my-backup-bucket
+  namespace: my-cluster-ns
 spec:
   type: S3
   s3:
@@ -84,9 +87,9 @@ Every field, with its type, whether it is required, and its default:
 ```yaml
 apiVersion: core.camunda.io/v1
 kind: ObjectStorageConfig
-# Cluster-scoped: metadata has no namespace.
 metadata:
   name: my-backup-bucket
+  namespace: my-cluster-ns
 spec:
   # string enum: S3 | GCS | AzureBlob. Required. Storage API of the bucket. Exactly the block of the same name must be set.
   type: S3
@@ -197,6 +200,7 @@ apiVersion: core.camunda.io/v1
 kind: ObjectStorageConfig
 metadata:
   name: my-backup-bucket
+  namespace: my-cluster-ns
 spec:
   type: S3
   s3:
@@ -215,6 +219,7 @@ apiVersion: core.camunda.io/v1
 kind: ObjectStorageConfig
 metadata:
   name: my-backup-bucket
+  namespace: my-cluster-ns
 spec:
   type: S3
   s3:
@@ -241,6 +246,7 @@ apiVersion: core.camunda.io/v1
 kind: ObjectStorageConfig
 metadata:
   name: my-document-bucket
+  namespace: my-cluster-ns
 spec:
   type: GCS
   gcs:

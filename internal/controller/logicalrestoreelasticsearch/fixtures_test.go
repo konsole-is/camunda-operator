@@ -162,7 +162,7 @@ func (w *world) finish(mutate ...func(*v1.CamundaCluster)) {
 	GinkgoHelper()
 
 	w.bucket = &v1.ObjectStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(6)},
+		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(6), Namespace: w.namespace},
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{

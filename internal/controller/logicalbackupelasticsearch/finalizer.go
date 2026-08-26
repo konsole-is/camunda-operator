@@ -476,7 +476,7 @@ func (r *Reconciler) sweepPinnedSnapshots(ctx context.Context, backup *v1.Logica
 	if err := pinnedStorageMatches(backup, storage); err != nil {
 		return err
 	}
-	if err := r.pinnedBucketLocationCurrent(ctx, pinned); err != nil {
+	if err := r.pinnedBucketLocationCurrent(ctx, backup.Namespace, pinned); err != nil {
 		return err
 	}
 	es, failure, err := secondarystorageconfig.ElasticsearchAdmin(ctx, r.APIReader, storage)

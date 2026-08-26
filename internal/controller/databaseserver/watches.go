@@ -148,11 +148,12 @@ func (r *DatabaseServerReconciler) enqueueForPlatformConfig() handler.EventHandl
 	})
 }
 
-// enqueueForArchiveStorage maps a bucket event to every server whose effective
-// archive names it, preset-provided archives included.
+// enqueueForArchiveStorage maps a bucket event to every server of the bucket
+// namespace whose effective archive names it, preset-provided archives
+// included.
 func (r *DatabaseServerReconciler) enqueueForArchiveStorage() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-		return r.serversMatching(ctx, "", func(server *v1.DatabaseServer) bool {
+		return r.serversMatching(ctx, o.GetNamespace(), func(server *v1.DatabaseServer) bool {
 			return archiveRef(r.effectiveSpec(ctx, server)) == o.GetName()
 		})
 	})
@@ -179,13 +180,14 @@ func (r *DatabaseServerReconciler) enqueueForBucketSecret() handler.EventHandler
 			return nil
 		}
 
-		names := make(map[string]bool, len(buckets.Items))
+		named := make(map[string]bool, len(buckets.Items))
 		for i := range buckets.Items {
-			names[buckets.Items[i].Name] = true
+			named[refindex.ObjectNamespacedName(&buckets.Items[i])] = true
 		}
 
 		return r.serversMatching(ctx, "", func(server *v1.DatabaseServer) bool {
-			return names[archiveRef(r.effectiveSpec(ctx, server))]
+			ref := archiveRef(r.effectiveSpec(ctx, server))
+			return ref != "" && named[refindex.NamespacedKey(server.Namespace, ref)]
 		})
 	})
 }

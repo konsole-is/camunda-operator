@@ -130,7 +130,7 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	Expect(k8sClient.Create(ctx, storage)).To(Succeed())
 
 	bucket := &v1.ObjectStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + suffix},
+		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + suffix, Namespace: namespace},
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{
@@ -1284,8 +1284,15 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 	// published account, because the cluster renders it. The narrower rule
 	// that this controller used to rebuild is gone.
 	It("runs the Job under the account that only the document bucket binds", func() {
+		// The cluster resolves the contract in its own namespace, so the name
+		// comes first and the contract follows the cluster.
+		name := "docs-" + utilrand.String(6)
+		w := createWorld(func(cluster *v1.CamundaCluster) {
+			cluster.Spec.DocumentStorageRef = name
+		})
+
 		documents := &v1.ObjectStorageConfig{
-			ObjectMeta: metav1.ObjectMeta{Name: "docs-" + utilrand.String(6)},
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: w.namespace},
 			Spec: v1.ObjectStorageConfigSpec{
 				Type: v1.ObjectStorageTypeS3,
 				S3: &v1.S3Storage{
@@ -1297,10 +1304,6 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}
 		Expect(k8sClient.Create(ctx, documents)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, documents) })
-
-		w := createWorld(func(cluster *v1.CamundaCluster) {
-			cluster.Spec.DocumentStorageRef = documents.Name
-		})
 		publishServiceAccount(w.cluster, w.cluster.Name+"-camunda")
 		backup := createBackup(w)
 
@@ -1731,7 +1734,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		jobOf(backup, w)
 
 		other := w.bucket.DeepCopy()
-		other.ObjectMeta = metav1.ObjectMeta{Name: w.bucket.Name + "-other"}
+		other.ObjectMeta = metav1.ObjectMeta{Name: w.bucket.Name + "-other", Namespace: w.namespace}
 		other.Spec.S3.BucketName = "the-other-bucket"
 		Expect(k8sClient.Create(ctx, other)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, other) })

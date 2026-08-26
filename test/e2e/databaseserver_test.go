@@ -112,6 +112,8 @@ var _ = Describe("DatabaseServer", Ordered, Label(utils.LabelDatabaseServer), fu
 		_, err := utils.Kubectl("create", "ns", dsNamespace)
 		Expect(err).NotTo(HaveOccurred())
 
+		createBackupStorage(dsNamespace)
+
 		By("creating the DatabaseServer")
 		Expect(apply(server)).To(Succeed())
 

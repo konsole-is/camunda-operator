@@ -115,7 +115,7 @@ func (res *resolver) rejectSharedAzureContainer(ctx context.Context, bucket *v1.
 	}
 
 	var clusters v1.CamundaClusterList
-	if err := res.reader.List(ctx, &clusters); err != nil {
+	if err := res.reader.List(ctx, &clusters, client.InNamespace(bucket.Namespace)); err != nil {
 		return fmt.Errorf("listing clusters that share ObjectStorageConfig %q: %w", bucket.Name, err)
 	}
 
@@ -149,15 +149,17 @@ func olderThan(a, b *v1.CamundaCluster) bool {
 	return a.Name < b.Name
 }
 
-// objectStorage reads the ObjectStorageConfig that ref names, or returns nil
-// when the reference is empty.
+// objectStorage reads the ObjectStorageConfig that ref names in the namespace
+// of the cluster, or returns nil when the reference is empty.
 func (res *resolver) objectStorage(ctx context.Context, ref string) (*v1.ObjectStorageConfig, error) {
 	if ref == "" {
 		return nil, nil
 	}
 
+	key := client.ObjectKey{Namespace: res.cluster.Namespace, Name: ref}
+
 	var config v1.ObjectStorageConfig
-	if err := res.get(ctx, client.ObjectKey{Name: ref}, &config); err != nil {
+	if err := res.get(ctx, key, &config); err != nil {
 		return nil, err
 	}
 

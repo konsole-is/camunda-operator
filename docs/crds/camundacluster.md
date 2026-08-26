@@ -485,9 +485,9 @@ spec:
   scheduling: {}
   # string. Required. Name of the SecondaryStorageConfig in the namespace of this cluster.
   storageRef: "my-storage-config"
-  # string. Optional. Name of a cluster-scoped ObjectStorageConfig for backups.
+  # string. Optional. Name of an ObjectStorageConfig in this namespace, for backups.
   backupStorageRef: "my-backup-bucket"
-  # string. Optional. Name of a cluster-scoped ObjectStorageConfig for document storage. Only its workload identity is wired.
+  # string. Optional. Name of an ObjectStorageConfig in this namespace, for document storage. Only its workload identity is wired.
   documentStorageRef: "my-document-bucket"
   # object. Optional. How backups of this cluster behave. Allowed in a preset. Applies to an RDBMS cluster with a backupStorageRef.
   backup:

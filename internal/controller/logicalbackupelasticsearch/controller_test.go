@@ -113,7 +113,7 @@ func newRig() *rig {
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, platform) })
 
 	bucket := &v1.ObjectStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "bucket-" + utilrand.String(8)},
+		ObjectMeta: metav1.ObjectMeta{Name: "bucket-" + utilrand.String(8), Namespace: r.namespace},
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{
@@ -1220,7 +1220,8 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		By("retargeting the bucket contract, then deleting the cluster with nothing in its place")
 		Eventually(func(g Gomega) {
 			var bucket v1.ObjectStorageConfig
-			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: r.cluster.Spec.BackupStorageRef}, &bucket)).To(Succeed())
+			key := client.ObjectKey{Namespace: r.namespace, Name: r.cluster.Spec.BackupStorageRef}
+			g.Expect(k8sClient.Get(ctx, key, &bucket)).To(Succeed())
 			bucket.Spec.S3.BucketName = "backups-moved"
 			g.Expect(k8sClient.Update(ctx, &bucket)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
@@ -1848,7 +1849,9 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 			Eventually(func(g Gomega) {
 				var bucket v1.ObjectStorageConfig
 				g.Expect(k8sClient.Get(
-					ctx, client.ObjectKey{Name: r.cluster.Spec.BackupStorageRef}, &bucket,
+					ctx,
+					client.ObjectKey{Namespace: r.namespace, Name: r.cluster.Spec.BackupStorageRef},
+					&bucket,
 				)).To(Succeed())
 				bucket.Spec.S3.BucketName = bucketName
 				g.Expect(k8sClient.Update(ctx, &bucket)).To(Succeed())
@@ -1894,7 +1897,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		By("pointing the cluster at another contract")
 		other := &v1.ObjectStorageConfig{
-			ObjectMeta: metav1.ObjectMeta{Name: "bucket-other-" + utilrand.String(8)},
+			ObjectMeta: metav1.ObjectMeta{Name: "bucket-other-" + utilrand.String(8), Namespace: r.namespace},
 			Spec: v1.ObjectStorageConfigSpec{
 				Type: v1.ObjectStorageTypeS3,
 				S3: &v1.S3Storage{

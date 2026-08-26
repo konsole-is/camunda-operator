@@ -316,7 +316,7 @@ func (r *Reconciler) resolveDatabase(
 		return nil, failure, err
 	}
 
-	bucket, failure, err := r.backupBucket(ctx, resolved.backup.Bucket)
+	bucket, failure, err := r.backupBucket(ctx, resolved.cluster.Namespace, resolved.backup.Bucket)
 	if err != nil || failure != nil {
 		return nil, failure, err
 	}
@@ -405,11 +405,11 @@ func (r *Reconciler) databaseServer(
 }
 
 // backupBucket reads the ObjectStorageConfig that the backup wrote its dump
-// to. The compatibility check already proved that the target backs up through
-// the same contract.
+// to, from namespace, the namespace of the target cluster. The compatibility
+// check already proved that the target backs up through the same contract.
 func (r *Reconciler) backupBucket(
 	ctx context.Context,
-	name string,
+	namespace, name string,
 ) (*v1.ObjectStorageConfig, *conditions.PreCheckFailure, error) {
 	if name == "" {
 		return nil, logicalbackup.InvalidReference(
@@ -417,15 +417,17 @@ func (r *Reconciler) backupBucket(
 		), nil
 	}
 
+	key := types.NamespacedName{Namespace: namespace, Name: name}
+
 	var bucket v1.ObjectStorageConfig
-	if err := r.APIReader.Get(ctx, types.NamespacedName{Name: name}, &bucket); err != nil {
+	if err := r.APIReader.Get(ctx, key, &bucket); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, logicalbackup.InvalidReference(
-				"ObjectStorageConfig %q does not exist", name,
+				"ObjectStorageConfig %s does not exist", key,
 			), nil
 		}
 
-		return nil, nil, fmt.Errorf("reading ObjectStorageConfig %q: %w", name, err)
+		return nil, nil, fmt.Errorf("reading ObjectStorageConfig %s: %w", key, err)
 	}
 
 	return &bucket, nil, nil

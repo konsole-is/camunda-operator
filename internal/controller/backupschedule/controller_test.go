@@ -78,7 +78,7 @@ func createWorld(storageType v1.SecondaryStorageType, mutate ...func(*v1.Camunda
 	Expect(k8sClient.Create(ctx, storage)).To(Succeed())
 
 	bucket := &v1.ObjectStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + suffix},
+		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + suffix, Namespace: namespace},
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{

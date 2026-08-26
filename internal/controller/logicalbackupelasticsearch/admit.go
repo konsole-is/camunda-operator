@@ -449,19 +449,26 @@ func (r *Reconciler) pinnedBucketCurrent(
 		)
 	}
 
-	return r.pinnedBucketLocationCurrent(ctx, pinned)
+	return r.pinnedBucketLocationCurrent(ctx, backup.Namespace, pinned)
 }
 
 // pinnedBucketLocationCurrent verifies that the pinned ObjectStorageConfig
 // still points at the pinned location. It is the part of pinnedBucketCurrent
-// that needs no cluster, so the sweep of a gone cluster verifies it too. It
-// returns an error that wraps errBucketMoved when the contract points
-// elsewhere. It returns a NotFound when the contract is gone. Any other read
-// error comes back as it is.
-func (r *Reconciler) pinnedBucketLocationCurrent(ctx context.Context, pinned *v1.PinnedStorage) error {
+// that needs no cluster, so the sweep of a gone cluster verifies it too. The
+// contract is read from namespace, the namespace of the backup. It returns an
+// error that wraps errBucketMoved when the contract points elsewhere. It
+// returns a NotFound when the contract is gone. Any other read error comes
+// back as it is.
+func (r *Reconciler) pinnedBucketLocationCurrent(
+	ctx context.Context,
+	namespace string,
+	pinned *v1.PinnedStorage,
+) error {
+	key := types.NamespacedName{Namespace: namespace, Name: pinned.BucketRef}
+
 	var bucket v1.ObjectStorageConfig
-	if err := r.APIReader.Get(ctx, types.NamespacedName{Name: pinned.BucketRef}, &bucket); err != nil {
-		return fmt.Errorf("reading the pinned ObjectStorageConfig %q: %w", pinned.BucketRef, err)
+	if err := r.APIReader.Get(ctx, key, &bucket); err != nil {
+		return fmt.Errorf("reading the pinned ObjectStorageConfig %s: %w", key, err)
 	}
 	if location := bucket.Location(); location != pinned.BucketLocation {
 		return fmt.Errorf(

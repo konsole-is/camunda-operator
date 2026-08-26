@@ -285,15 +285,16 @@ func azureBucketSpec(endpoint string, credentials *v1.AzureBlobCredentials) v1.O
 	}
 }
 
-// servingClusterWithBucket creates a cluster that references the bucket and
-// whose ECK Secrets are in place, so the reconciler reaches the registration.
-func servingClusterWithBucket(bucket string) *v1.ElasticsearchCluster {
+// servingClusterWithBucket creates a cluster in namespace that references the
+// bucket and whose ECK Secrets are in place, so the reconciler reaches the
+// registration.
+func servingClusterWithBucket(namespace, bucket string) *v1.ElasticsearchCluster {
 	GinkgoHelper()
 	preset := createElasticsearchClusterPreset(smallClusterSpec())
 	cluster := validElasticsearchCluster()
 	cluster.Spec.PresetRef = preset.Name
 	cluster.Spec.SnapshotStorageRef = bucket
-	cluster.Namespace = newElasticsearchClusterNamespace()
+	cluster.Namespace = namespace
 	createECKSecrets(cluster)
 	createElasticsearchCluster(cluster)
 
@@ -316,12 +317,12 @@ func expectRepositoryRegistered(cluster *v1.ElasticsearchCluster) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// createObjectStorageConfig creates a cluster-scoped bucket contract and
+// createObjectStorageConfig creates a bucket contract in namespace and
 // removes it after the test.
-func createObjectStorageConfig(spec v1.ObjectStorageConfigSpec) *v1.ObjectStorageConfig {
+func createObjectStorageConfig(namespace string, spec v1.ObjectStorageConfigSpec) *v1.ObjectStorageConfig {
 	GinkgoHelper()
 	config := &v1.ObjectStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "bucket-" + utilrand.String(8)},
+		ObjectMeta: metav1.ObjectMeta{Name: "bucket-" + utilrand.String(8), Namespace: namespace},
 		Spec:       spec,
 	}
 	Expect(k8sClient.Create(ctx, config)).To(Succeed())
@@ -486,13 +487,15 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 	// against the public endpoint of the account, which is a different store
 	// than the contract names.
 	It("reports InvalidReference for an azure endpoint that is not a suffix", func() {
-		bucket := createObjectStorageConfig(azureBucketSpec(
+		namespace := newElasticsearchClusterNamespace()
+		bucket := createObjectStorageConfig(namespace, azureBucketSpec(
 			"http://azurite.azurite.svc:10000/devstoreaccount1", nil,
 		))
 		preset := createElasticsearchClusterPreset(smallClusterSpec())
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
 		cluster.Spec.SnapshotStorageRef = bucket.Name
+		cluster.Namespace = namespace
 		createElasticsearchCluster(cluster)
 
 		expectElasticsearchClusterReady(
@@ -502,7 +505,8 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 	})
 
 	It("reports MissingSecret when the snapshot bucket names a Secret that does not exist", func() {
-		bucket := createObjectStorageConfig(s3BucketSpec(&v1.S3Credentials{
+		namespace := newElasticsearchClusterNamespace()
+		bucket := createObjectStorageConfig(namespace, s3BucketSpec(&v1.S3Credentials{
 			SecretRef: v1.S3CredentialsSecretRef{
 				Name:               "absent-" + utilrand.String(8),
 				Namespace:          "default",
@@ -514,6 +518,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
 		cluster.Spec.SnapshotStorageRef = bucket.Name
+		cluster.Namespace = namespace
 		createElasticsearchCluster(cluster)
 
 		expectElasticsearchClusterReady(
@@ -547,11 +552,13 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 	// serviceAccount.annotations, and the ServiceAccount is rendered even
 	// though the spec asks for none.
 	It("derives the workload-identity annotation of the bucket onto the ServiceAccount", func() {
-		bucket := createObjectStorageConfig(s3BucketSpec(nil))
+		namespace := newElasticsearchClusterNamespace()
+		bucket := createObjectStorageConfig(namespace, s3BucketSpec(nil))
 		preset := createElasticsearchClusterPreset(smallClusterSpec())
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
 		cluster.Spec.SnapshotStorageRef = bucket.Name
+		cluster.Namespace = namespace
 		createElasticsearchCluster(cluster)
 
 		var account corev1.ServiceAccount
@@ -568,12 +575,13 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 	// a consumer reading an earlier name would snapshot against a repository
 	// that does not exist.
 	It("publishes the repository name once registration converges, not before", func() {
-		bucket := createObjectStorageConfig(s3BucketSpec(nil))
+		namespace := newElasticsearchClusterNamespace()
+		bucket := createObjectStorageConfig(namespace, s3BucketSpec(nil))
 		preset := createElasticsearchClusterPreset(smallClusterSpec())
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
 		cluster.Spec.SnapshotStorageRef = bucket.Name
-		cluster.Namespace = newElasticsearchClusterNamespace()
+		cluster.Namespace = namespace
 		createElasticsearchCluster(cluster)
 
 		// Without the Secrets that ECK publishes, registration cannot run and
@@ -603,12 +611,13 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 	// for itself, or the cluster stays not ready until something unrelated
 	// happens to write its status.
 	It("registers again after a registration that could not reach the cluster", func() {
-		bucket := createObjectStorageConfig(s3BucketSpec(nil))
+		namespace := newElasticsearchClusterNamespace()
+		bucket := createObjectStorageConfig(namespace, s3BucketSpec(nil))
 		preset := createElasticsearchClusterPreset(smallClusterSpec())
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
 		cluster.Spec.SnapshotStorageRef = bucket.Name
-		cluster.Namespace = newElasticsearchClusterNamespace()
+		cluster.Namespace = namespace
 		createECKSecrets(cluster)
 		createElasticsearchCluster(cluster)
 
@@ -631,7 +640,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		By("changing the bucket once, so the next reconcile really registers")
 		Eventually(func(g Gomega) {
 			var changed v1.ObjectStorageConfig
-			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: bucket.Name}, &changed)).To(Succeed())
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(bucket), &changed)).To(Succeed())
 			changed.Spec.S3.Endpoint = "http://minio.minio.svc:9000"
 			changed.Spec.S3.ForcePathStyle = true
 			g.Expect(k8sClient.Update(ctx, &changed)).To(Succeed())
@@ -657,12 +666,13 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 	})
 
 	It("registers the snapshot repository and converges it idempotently", func() {
-		bucket := createObjectStorageConfig(s3BucketSpec(nil))
+		namespace := newElasticsearchClusterNamespace()
+		bucket := createObjectStorageConfig(namespace, s3BucketSpec(nil))
 		preset := createElasticsearchClusterPreset(smallClusterSpec())
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
 		cluster.Spec.SnapshotStorageRef = bucket.Name
-		cluster.Namespace = newElasticsearchClusterNamespace()
+		cluster.Namespace = namespace
 		createECKSecrets(cluster)
 		createElasticsearchCluster(cluster)
 
@@ -721,7 +731,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		// A changed bucket re-registers: the fingerprint no longer matches.
 		Eventually(func(g Gomega) {
 			var changed v1.ObjectStorageConfig
-			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: bucket.Name}, &changed)).To(Succeed())
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(bucket), &changed)).To(Succeed())
 			changed.Spec.S3.Endpoint = "http://minio.minio.svc:9000"
 			changed.Spec.S3.ForcePathStyle = true
 			g.Expect(k8sClient.Update(ctx, &changed)).To(Succeed())
@@ -739,8 +749,9 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 	// prefix. Its credentials never appear in the settings: Elasticsearch
 	// reads them from the node keystore alone, whatever the type.
 	It("registers a gcs repository for a gcs bucket", func() {
-		bucket := createObjectStorageConfig(gcsBucketSpec(nil))
-		cluster := servingClusterWithBucket(bucket.Name)
+		namespace := newElasticsearchClusterNamespace()
+		bucket := createObjectStorageConfig(namespace, gcsBucketSpec(nil))
+		cluster := servingClusterWithBucket(namespace, bucket.Name)
 
 		expectRepositoryRegistered(cluster)
 
@@ -756,8 +767,9 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 	// An azure repository addresses the blob container, and names it under
 	// the container setting rather than bucket.
 	It("registers an azure repository for an azure container", func() {
-		bucket := createObjectStorageConfig(azureBucketSpec("", nil))
-		cluster := servingClusterWithBucket(bucket.Name)
+		namespace := newElasticsearchClusterNamespace()
+		bucket := createObjectStorageConfig(namespace, azureBucketSpec("", nil))
+		cluster := servingClusterWithBucket(namespace, bucket.Name)
 
 		expectRepositoryRegistered(cluster)
 
@@ -788,7 +800,8 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		Expect(k8sClient.Create(ctx, credentials)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, credentials) })
 
-		bucket := createObjectStorageConfig(s3BucketSpec(&v1.S3Credentials{
+		namespace := newElasticsearchClusterNamespace()
+		bucket := createObjectStorageConfig(namespace, s3BucketSpec(&v1.S3Credentials{
 			SecretRef: v1.S3CredentialsSecretRef{
 				Name:               credentials.Name,
 				Namespace:          credentials.Namespace,
@@ -800,7 +813,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
 		cluster.Spec.SnapshotStorageRef = bucket.Name
-		cluster.Namespace = newElasticsearchClusterNamespace()
+		cluster.Namespace = namespace
 		createECKSecrets(cluster)
 		createElasticsearchCluster(cluster)
 
@@ -829,12 +842,14 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 	// nothing to assert; a failure condition would drag Ready false, and
 	// suspension is a Ready=True state by design.
 	It("reports no repository condition while suspended, even with a bucket", func() {
-		bucket := createObjectStorageConfig(s3BucketSpec(nil))
+		namespace := newElasticsearchClusterNamespace()
+		bucket := createObjectStorageConfig(namespace, s3BucketSpec(nil))
 		preset := createElasticsearchClusterPreset(smallClusterSpec())
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
 		cluster.Spec.SnapshotStorageRef = bucket.Name
 		cluster.Spec.Suspend = true
+		cluster.Namespace = namespace
 		createElasticsearchCluster(cluster)
 
 		Eventually(func(g Gomega) {
@@ -848,12 +863,13 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 	})
 
 	It("drops the repository condition when the bucket reference is removed", func() {
-		bucket := createObjectStorageConfig(s3BucketSpec(nil))
+		namespace := newElasticsearchClusterNamespace()
+		bucket := createObjectStorageConfig(namespace, s3BucketSpec(nil))
 		preset := createElasticsearchClusterPreset(smallClusterSpec())
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
 		cluster.Spec.SnapshotStorageRef = bucket.Name
-		cluster.Namespace = newElasticsearchClusterNamespace()
+		cluster.Namespace = namespace
 		createECKSecrets(cluster)
 		createElasticsearchCluster(cluster)
 
@@ -896,7 +912,8 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		}
 		Expect(k8sClient.Create(ctx, credentials)).To(Succeed())
 
-		bucket := createObjectStorageConfig(s3BucketSpec(&v1.S3Credentials{
+		namespace := newElasticsearchClusterNamespace()
+		bucket := createObjectStorageConfig(namespace, s3BucketSpec(&v1.S3Credentials{
 			SecretRef: v1.S3CredentialsSecretRef{
 				Name:               credentials.Name,
 				Namespace:          credentials.Namespace,
@@ -909,6 +926,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		cluster.Spec.PresetRef = preset.Name
 		cluster.Spec.SnapshotStorageRef = bucket.Name
 		cluster.Spec.Suspend = true
+		cluster.Namespace = namespace
 		createElasticsearchCluster(cluster)
 
 		expectElasticsearchClusterReady(
@@ -930,12 +948,13 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 	// A True repository condition must not survive the loss of the bucket it
 	// asserts: status would claim a registered repository nobody can verify.
 	It("drops the repository condition when the bucket contract is deleted", func() {
-		bucket := createObjectStorageConfig(s3BucketSpec(nil))
+		namespace := newElasticsearchClusterNamespace()
+		bucket := createObjectStorageConfig(namespace, s3BucketSpec(nil))
 		preset := createElasticsearchClusterPreset(smallClusterSpec())
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
 		cluster.Spec.SnapshotStorageRef = bucket.Name
-		cluster.Namespace = newElasticsearchClusterNamespace()
+		cluster.Namespace = namespace
 		createECKSecrets(cluster)
 		createElasticsearchCluster(cluster)
 
@@ -979,7 +998,8 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		Expect(k8sClient.Create(ctx, credentials)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, credentials) })
 
-		bucket := createObjectStorageConfig(s3BucketSpec(&v1.S3Credentials{
+		namespace := newElasticsearchClusterNamespace()
+		bucket := createObjectStorageConfig(namespace, s3BucketSpec(&v1.S3Credentials{
 			SecretRef: v1.S3CredentialsSecretRef{
 				Name:               credentials.Name,
 				Namespace:          credentials.Namespace,
@@ -994,7 +1014,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
-		cluster.Namespace = newElasticsearchClusterNamespace()
+		cluster.Namespace = namespace
 		createECKSecrets(cluster)
 		createElasticsearchCluster(cluster)
 
@@ -1066,7 +1086,8 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 	// name on the cloud side. The documented principal must exist and be
 	// referenced even though there is nothing to annotate onto it.
 	It("renders and references the ServiceAccount for an annotation-less identity", func() {
-		bucket := createObjectStorageConfig(v1.ObjectStorageConfigSpec{
+		namespace := newElasticsearchClusterNamespace()
+		bucket := createObjectStorageConfig(namespace, v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{
 				BucketName: "camunda-backups",
@@ -1078,7 +1099,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
 		cluster.Spec.SnapshotStorageRef = bucket.Name
-		cluster.Namespace = newElasticsearchClusterNamespace()
+		cluster.Namespace = namespace
 		createECKSecrets(cluster)
 		createElasticsearchCluster(cluster)
 
