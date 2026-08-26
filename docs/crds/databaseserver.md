@@ -24,6 +24,8 @@ The name of the server names the CloudNativePG cluster and every address that co
 
 The name must also be free. If a CloudNativePG cluster of that name is already there, and this server does not own it, the server runs nothing. `ClusterReady` reports `ClusterTaken`. The message names the owner, or says that no owner controls it. The server also withdraws the contract, the base backup schedule, and the `PodMonitor`, because all three name the cluster of that name. See [Status](#status).
 
+Every other object the server derives a name for is left alone the same way. If another owner controls the `ObjectStore`, the archive Secret, the base backup schedule, or the `PodMonitor` under one of those names, the server neither writes on it nor removes it, and `ArchiveReady` or `MonitoringReady` reads `False` with a message that names the owner.
+
 A rollback builds its cluster under the name of the server plus that suffix. The number in the suffix counts the archive records in `status.archive.history`. A rollback, an archive you re-enable, and a change of bucket each add one. A name inside the bound reaches the new cluster whole while that number stays below 100. Above it, the operator shortens the name to a head and a hash.
 
 ```mermaid

@@ -1212,6 +1212,76 @@ var _ = Describe("DatabaseServer controller", func() {
 		Expect(archiveHistory(server)).To(Equal(history))
 	})
 
+	It("leaves a base backup schedule that another owner controls alone", func() {
+		namespace := "dbs-" + utilrand.String(8)
+		Expect(k8sClient.Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		})).To(Succeed())
+
+		// The schedule takes the name of the cluster, and the cluster takes the
+		// name of the server, so a second server of that name derives a name
+		// that already belongs to somebody. The cluster name itself is free
+		// here: nothing but the block on the schedule keeps this server off it.
+		holder := serverNamed(namespace, "holder", "holder", nil)
+		occupant := &cnpgv1.ScheduledBackup{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "camunda",
+				Namespace: namespace,
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: v1.GroupVersion.String(),
+					Kind:       "DatabaseServer",
+					Name:       holder.Name,
+					UID:        reconciledServer(holder).UID,
+					Controller: new(true),
+				}},
+			},
+			Spec: cnpgv1.ScheduledBackupSpec{
+				Schedule: "0 0 5 * * *",
+				Cluster:  cnpgv1.LocalObjectReference{Name: "holder"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, occupant)).To(Succeed())
+
+		bucket := archiveBucket()
+		server := serverNamed(namespace, "camunda", "camunda", &v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+
+		blocked := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
+		Expect(blocked.Reason).To(Equal(string(component.GuardBlocked)), blocked.Message)
+		Expect(blocked.Message).To(ContainSubstring("controlled by DatabaseServer holder"))
+
+		key := client.ObjectKey{Namespace: namespace, Name: "camunda"}
+		Consistently(func(g Gomega) {
+			// The apply rewrites the schedule and the cluster it names together
+			// with the owner reference, so a write of this server shows in any
+			// of the three.
+			var live cnpgv1.ScheduledBackup
+			g.Expect(k8sClient.Get(ctx, key, &live)).To(Succeed())
+			g.Expect(live.Spec.Schedule).To(Equal("0 0 5 * * *"))
+			g.Expect(live.Spec.Cluster.Name).To(Equal("holder"))
+			g.Expect(metav1.IsControlledBy(&live, reconciledServer(holder))).To(BeTrue())
+		}, 3*time.Second, interval).Should(Succeed())
+
+		// Dropping the archive turns the component gate off, which removes
+		// every object the component manages. The ObjectStore is this server's
+		// and goes; the schedule of the other owner stays.
+		By("removing the archive")
+		setArchive(server, nil)
+
+		disabled := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+		Expect(disabled.Reason).To(Equal("Disabled"))
+		expectGone(key, &barmanobjectstore.ObjectStore{})
+
+		Consistently(func(g Gomega) {
+			var live cnpgv1.ScheduledBackup
+			g.Expect(k8sClient.Get(ctx, key, &live)).To(Succeed())
+			g.Expect(metav1.IsControlledBy(&live, reconciledServer(holder))).To(BeTrue())
+		}, 3*time.Second, interval).Should(Succeed())
+	})
+
 	It("starts a new archive record when the bucket changes", func() {
 		first := archiveBucket()
 		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{

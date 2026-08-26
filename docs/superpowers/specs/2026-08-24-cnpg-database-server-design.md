@@ -599,18 +599,24 @@ the derived name comes back once the number of archives comes back. A cluster of
 this server does not own abandons the rollback with `Failed`, and the server runs from the previous
 cluster again.
 
-One contract name belongs to one server. The reconcile reads the `DatabaseServerConfig` that the
-merged spec names before it publishes. A guard on the contract blocks the apply while another owner
-controls that object, and `ContractReady` reports `ContractTaken` with the owner in the message.
-The first server to publish a name therefore keeps it. The second one publishes nothing until the
-owner and its contract are gone. Without the guard both servers apply, because the apply is
-server-side under a field manager that carries no server name, and the owner reference, the label,
-and `spec.host` move between them on every reconcile.
+Every object the server derives a name for is registered with ocf
+`BlockOnForeignController`. ocf reads the live object before each apply and blocks the resource
+while another owner controls it, so a name the server derives is never enough to write on somebody
+else's object. The block covers the delete and the suspension too: a foreign object is neither
+scaled down nor removed when the server withdraws its own.
 
-The name of the `Cluster` is guarded the same way, and more strictly: a `Cluster` with no
-controller at all is refused rather than adopted, because it holds a database this server did not
-build. Withholding the apply is not enough on its own, because a server that owned the cluster and
-lost it has already published objects that name it. The contract and the monitoring components gate
+One contract name belongs to one server. The block is what keeps it: the first server to publish a
+name keeps it, and the second one publishes nothing until the owner and its contract are gone. The
+reconcile also reads the `DatabaseServerConfig` that the merged spec names, and `ContractReady`
+reports `ContractTaken` with the owner in the message. That read is the report and not the
+protection. It stays because the contract is registered behind the superuser Secret, and a blocked
+resource stops every resource after it, so a server still waiting for that Secret would report the
+wait and never the holder.
+
+The name of the `Cluster` carries a guard of its own as well, for the case ocf does not cover: a
+`Cluster` with no controller at all is refused rather than adopted, because it holds a database
+this server did not build. Withholding the apply is not enough on its own, because a server that
+owned the cluster and lost it has already published objects that name it. The contract and the monitoring components gate
 themselves off while the name is held, so ocf removes the `DatabaseServerConfig` and the
 `PodMonitor`, and the archive component withdraws the `ScheduledBackup` and keeps the `ObjectStore`.
 `status.archive.history` and `status.recovery` are untouched, so the server comes back whole once

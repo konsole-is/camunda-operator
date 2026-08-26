@@ -128,6 +128,11 @@ func SuperuserSecretName(server *v1.DatabaseServer) string {
 // ClusterTakenMessage, and it is empty when the name is free or the cluster is
 // the server's own. A guard blocks the apply while it is set. The caller reads
 // the holder and reports v1.ReasonClusterTaken.
+//
+// The registration also blocks on a foreign controller, which reaches the
+// paths a guard does not: a suspended component evaluates no guard, so the
+// option is what keeps a suspended server from hibernating the cluster of
+// another owner.
 func ClusterComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
@@ -139,7 +144,7 @@ func ClusterComponent(
 
 	builder := cnpgcluster.NewBuilder(cluster(server, merged, platform)).
 		WithMutation(clusterMutations(server, merged, archive)...).
-		WithGuard(takenGuard[cnpgv1.Cluster](taken))
+		WithGuard(takenGuard(taken))
 	cnpgcluster.ExtractInto(builder, systemIdentifier, func(c cnpgv1.Cluster) (string, error) {
 		return c.Status.SystemID, nil
 	})
@@ -152,7 +157,7 @@ func ClusterComponent(
 	comp, err := component.NewComponentBuilder().
 		WithName("cluster").
 		WithConditionType(v1.ConditionClusterReady).
-		WithResource(postgres).
+		WithResource(postgres, component.BlockOnForeignController()).
 		Suspend(merged.Suspend).
 		Build()
 	if err != nil {
@@ -355,16 +360,17 @@ func ClusterTakenMessage(name string, holder *metav1.OwnerReference) string {
 	)
 }
 
-// takenGuard blocks a resource while another owner holds the name that the
-// server derives for it. reason says who holds it, and it is empty when the
-// name is the server's to write.
+// takenGuard blocks the cluster while a CloudNativePG cluster of the name the
+// server derives is not the server's to write. reason is the
+// ClusterTakenMessage, and it is empty when the name is free or the cluster is
+// the server's own.
 //
-// Every apply is server-side with forced ownership under a field manager that
-// carries no server name, so an apply that reaches an object of somebody else
-// rewrites it and takes its owner reference. The guard is what keeps the
-// derived name from being enough to do that.
-func takenGuard[T any](reason string) func(T) (concepts.GuardStatusWithReason, error) {
-	return func(T) (concepts.GuardStatusWithReason, error) {
+// component.BlockOnForeignController covers the cluster that another owner
+// controls. This covers the one it does not: a cluster that nothing controls
+// at all, which still holds somebody's database and which the apply would
+// otherwise rewrite and adopt.
+func takenGuard(reason string) func(cnpgv1.Cluster) (concepts.GuardStatusWithReason, error) {
+	return func(cnpgv1.Cluster) (concepts.GuardStatusWithReason, error) {
 		if reason == "" {
 			return concepts.GuardStatusWithReason{Status: concepts.GuardStatusUnblocked}, nil
 		}

@@ -138,6 +138,11 @@ func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
 // archive the server re-enabled starts again from nil, because the backups of
 // the archive it wrote before reach no point in the new one.
 //
+// Each of the three objects the component applies is derived by name and
+// blocks on a foreign controller, so a Secret, an ObjectStore, or a
+// ScheduledBackup that another owner already controls under one of those names
+// is neither rewritten nor removed, and ArchiveReady names that owner.
+//
 // clusterTaken is set while a CloudNativePG cluster of the name the server
 // derives belongs to somebody else. The schedule names that cluster, so it is
 // removed while the name is held, and base backups of the other database stop
@@ -185,9 +190,17 @@ func ArchiveComponent(
 		WithName("archive").
 		WithConditionType(v1.ConditionArchiveReady).
 		WithFeatureGate(feature.NewBooleanGate(Archiving(merged))).
-		WithResource(settings, component.GatedBy(feature.NewBooleanGate(len(archiveSecretData(resolved)) > 0))).
-		WithResource(store).
-		WithResource(baseBackup, component.DeleteWhen(clusterTaken != "")).
+		WithResource(
+			settings,
+			component.GatedBy(feature.NewBooleanGate(len(archiveSecretData(resolved)) > 0)),
+			component.BlockOnForeignController(),
+		).
+		WithResource(store, component.BlockOnForeignController()).
+		WithResource(
+			baseBackup,
+			component.DeleteWhen(clusterTaken != ""),
+			component.BlockOnForeignController(),
+		).
 		WithResource(recoverable, component.ReadOnly(), component.Auxiliary()).
 		Build()
 }

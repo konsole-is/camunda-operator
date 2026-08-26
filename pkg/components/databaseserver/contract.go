@@ -20,7 +20,6 @@ import (
 	"fmt"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
-	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/secret"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,10 +43,11 @@ import (
 // consumer writes the first and the server answers in the second, each under
 // a field manager of its own, so neither is removed by this apply.
 //
-// holder is the owner that controls the contract of that name already, and it
-// is nil when the contract is free or belongs to this server. A guard blocks
-// the apply while it is set, so the first server to publish a name keeps it.
-// The caller reads the holder and reports v1.ReasonContractTaken.
+// The contract blocks on a foreign controller, so the first server to publish
+// a name keeps it: a second server applies nothing while that owner holds the
+// name, and a contract with no controller is adopted the way the apply always
+// did. The caller reports v1.ReasonContractTaken over the block, because the
+// framework names the owner and not the remedy.
 //
 // clusterTaken is the ClusterTaken message while a CloudNativePG cluster of
 // the name the server derives is controlled by another owner, and empty
@@ -58,7 +58,6 @@ import (
 func ContractComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
-	holder *metav1.OwnerReference,
 	clusterTaken string,
 ) (*component.Component, error) {
 	superuser, err := secret.NewBuilder(superuserSecretRef(server)).Build()
@@ -83,9 +82,7 @@ func ContractComponent(
 			},
 			PITR: pitrCapability(merged),
 		},
-	}).
-		WithGuard(contractGuard(merged.DatabaseServerConfig, holder)).
-		Build()
+	}).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +92,7 @@ func ContractComponent(
 		WithConditionType(v1.ConditionContractReady).
 		WithFeatureGate(feature.NewBooleanGate(clusterTaken == "")).
 		WithResource(superuser, component.ReadOnly(), component.BlockOnAbsence(), component.Auxiliary()).
-		WithResource(contract).
+		WithResource(contract, component.BlockOnForeignController()).
 		Build()
 }
 
@@ -115,31 +112,9 @@ func pitrCapability(merged v1.DatabaseServerSpec) *v1.PITRCapability {
 	}
 }
 
-// contractGuard blocks the contract while another owner controls the object
-// of that name. The apply is server-side with forced ownership and the field
-// manager is the same for every server, so a second server that publishes the
-// name takes the owner reference, the label, and the endpoint away from the
-// first one. Two servers on one name then rewrite it in turn, and a consumer
-// reads an endpoint that moves under it.
-//
-// The test is the controller reference alone. A contract with our reference
-// and a missing label is ours to repair, and a contract with no controller at
-// all is adopted, which is what the apply did before this guard.
-func contractGuard(
-	name string,
-	holder *metav1.OwnerReference,
-) func(v1.DatabaseServerConfig) (concepts.GuardStatusWithReason, error) {
-	if holder == nil {
-		return takenGuard[v1.DatabaseServerConfig]("")
-	}
-
-	return takenGuard[v1.DatabaseServerConfig](ContractTakenMessage(name, holder))
-}
-
 // ContractTakenMessage says that another owner holds the contract name, and
-// what to do about it. The guard of the contract and the ContractReady
-// condition of the server both read it, so the reason a user acts on is
-// written once.
+// what to do about it. ocf blocks the apply and names the owner alone, so this
+// is what the ContractReady condition carries instead.
 func ContractTakenMessage(name string, holder *metav1.OwnerReference) string {
 	return fmt.Sprintf(
 		"DatabaseServerConfig %q belongs to %s %q. This server publishes no contract while that "+

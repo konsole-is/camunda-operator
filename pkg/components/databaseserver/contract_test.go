@@ -19,7 +19,6 @@ package databaseserver
 import (
 	"testing"
 
-	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -73,7 +72,6 @@ func TestContractWaitsForTheSuperuserSecret(t *testing.T) {
 	comp, err := ContractComponent(
 		archiveServer(),
 		v1.DatabaseServerSpec{DatabaseServerConfig: "my-database-server"},
-		nil,
 		"",
 	)
 	require.NoError(t, err)
@@ -96,19 +94,15 @@ func TestContractWaitsForTheSuperuserSecret(t *testing.T) {
 
 // A contract name that another owner holds is not this server's to write. Two
 // servers that both publish it rewrite the endpoint in turn, and a consumer
-// reads one that moves under it.
-func TestContractGuardBlocksAHeldName(t *testing.T) {
+// reads one that moves under it. ocf blocks the apply and names the owner. The
+// message the condition carries names the remedy as well.
+func TestContractTakenMessageNamesTheHolderAndTheRemedy(t *testing.T) {
 	t.Parallel()
 
-	free, err := contractGuard("my-database-server", nil)(v1.DatabaseServerConfig{})
-	require.NoError(t, err)
-	assert.Equal(t, concepts.GuardStatusUnblocked, free.Status)
-
-	taken, err := contractGuard("my-database-server", &metav1.OwnerReference{
+	message := ContractTakenMessage("my-database-server", &metav1.OwnerReference{
 		Kind: "DatabaseServer", Name: "other",
-	})(v1.DatabaseServerConfig{})
-	require.NoError(t, err)
-	assert.Equal(t, concepts.GuardStatusBlocked, taken.Status)
-	assert.Contains(t, taken.Reason, `DatabaseServerConfig "my-database-server"`)
-	assert.Contains(t, taken.Reason, `DatabaseServer "other"`)
+	})
+	assert.Contains(t, message, `DatabaseServerConfig "my-database-server"`)
+	assert.Contains(t, message, `DatabaseServer "other"`)
+	assert.Contains(t, message, "spec.databaseServerConfig")
 }

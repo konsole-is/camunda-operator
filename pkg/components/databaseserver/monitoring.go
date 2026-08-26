@@ -51,6 +51,10 @@ func MonitoringEnabled(merged v1.DatabaseServerSpec) bool {
 // PodMonitor and reports Disabled. podMonitorSupported reports whether the
 // cluster serves the PodMonitor kind. When it is false the resource is left
 // out, and the component reports ready with nothing to do.
+//
+// The PodMonitor is derived by name and blocks on a foreign controller, so one
+// that another owner already controls under that name is neither rewritten nor
+// removed, and MonitoringReady names that owner.
 func MonitoringComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
@@ -69,7 +73,11 @@ func MonitoringComponent(
 		WithName("monitoring").
 		WithConditionType(v1.ConditionMonitoringReady).
 		WithFeatureGate(feature.NewBooleanGate(MonitoringEnabled(merged) && clusterTaken == "")).
-		IncludeWhen(podMonitorSupported, func() component.Resource { return monitor }).
+		IncludeWhen(
+			podMonitorSupported,
+			func() component.Resource { return monitor },
+			component.BlockOnForeignController(),
+		).
 		Suspend(merged.Suspend).
 		Build()
 }
