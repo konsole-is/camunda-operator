@@ -193,7 +193,7 @@ func TestFindClientCarriesTheRefusalOfKeycloak(t *testing.T) {
 		FindClient(context.Background(), "optimize")
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "403")
+	assert.Contains(t, err.Error(), "status 403 from Keycloak")
 	assert.Contains(t, err.Error(), "unknown_error")
 }
 
@@ -210,7 +210,7 @@ func TestSignInCarriesTheRefusalOfKeycloak(t *testing.T) {
 		FindClient(context.Background(), "optimize")
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "401")
+	assert.Contains(t, err.Error(), "status 401 from Keycloak")
 	assert.Contains(t, err.Error(), "invalid_grant")
 }
 

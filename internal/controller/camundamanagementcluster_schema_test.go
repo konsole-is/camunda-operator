@@ -72,9 +72,6 @@ func realisticManagementCluster() *v1.CamundaManagementCluster {
 				DatabaseConfigRef: "identity-db",
 				Admin:             v1.IdentityAdminSpec{Username: "admin", Email: "admin@example.com"},
 			},
-			Optimize: &v1.ManagementOptimizeSpec{
-				ExternalURL: "https://optimize.example.com",
-			},
 			Console: &v1.ConsoleSpec{
 				Version:     "8.9.0",
 				ExternalURL: "https://console.example.com",
@@ -116,9 +113,6 @@ func externalKeycloakManagementCluster() *v1.CamundaManagementCluster {
 				ExternalURL:       "https://identity.example.com",
 				DatabaseConfigRef: "identity-db",
 				Admin:             v1.IdentityAdminSpec{Username: "admin"},
-			},
-			Optimize: &v1.ManagementOptimizeSpec{
-				ExternalURL: "https://optimize.example.com",
 			},
 		},
 	}
@@ -378,9 +372,11 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			}, "claimName must not hold an equals sign",
 		),
 		Entry(
-			"accepts a keycloak mode without an optimize block",
+			"accepts a keycloak mode with an optimize block",
 			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
-				o.Spec.Optimize = nil
+				o.Spec.Optimize = &v1.ManagementOptimizeSpec{
+					ExternalURL: "https://optimize.elsewhere.example.com",
+				}
 			}, "",
 		),
 		Entry(
@@ -394,13 +390,15 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 		Entry(
 			"rejects an optimize externalUrl with a comma",
 			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
-				o.Spec.Optimize.ExternalURL = "https://one.example.com,https://two.example.com"
+				o.Spec.Optimize = &v1.ManagementOptimizeSpec{
+					ExternalURL: "https://one.example.com,https://two.example.com",
+				}
 			}, "externalUrl must carry no comma",
 		),
 		Entry(
 			"rejects an optimize externalUrl without a scheme",
 			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
-				o.Spec.Optimize.ExternalURL = "optimize.example.com"
+				o.Spec.Optimize = &v1.ManagementOptimizeSpec{ExternalURL: "optimize.example.com"}
 			}, "externalUrl must be a valid http or https URL",
 		),
 		Entry(

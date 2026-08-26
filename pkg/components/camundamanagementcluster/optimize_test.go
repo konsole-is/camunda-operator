@@ -143,11 +143,13 @@ func TestOptimizeCallbacks(t *testing.T) {
 		"https://three.example.com/optimize",
 	}}
 
-	assert.Equal(t, []string{
-		"https://one.example.com/api/authentication/callback",
-		"https://two.example.com//api/authentication/callback",
-		"https://three.example.com/optimize/api/authentication/callback",
-	}, OptimizeCallbacks(in))
+	assert.Equal(
+		t, []string{
+			"https://one.example.com/api/authentication/callback",
+			"https://two.example.com//api/authentication/callback",
+			"https://three.example.com/optimize/api/authentication/callback",
+		}, OptimizeCallbacks(in),
+	)
 }
 
 func TestOptimizeCallbacksWithoutURLs(t *testing.T) {

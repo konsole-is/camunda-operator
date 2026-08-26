@@ -27,6 +27,7 @@ package keycloakadmin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -113,7 +114,7 @@ func (c *Client) FindClient(ctx context.Context, clientID string) (Representatio
 func (c *Client) UpdateClient(ctx context.Context, rep Representation) error {
 	id := rep.ID()
 	if id == "" {
-		return fmt.Errorf("the client representation carries no id")
+		return errors.New("the client representation carries no id")
 	}
 
 	body, err := json.Marshal(rep)
@@ -211,7 +212,7 @@ func (c *Client) signIn(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("reading the sign-in answer: %w", err)
 	}
 	if answer.AccessToken == "" {
-		return "", fmt.Errorf("Keycloak returned no access token")
+		return "", errors.New("no access token in the answer of Keycloak")
 	}
 
 	return answer.AccessToken, nil
@@ -229,8 +230,8 @@ func statusError(status int, body []byte) error {
 		text = text[:maxErrorBody]
 	}
 	if text == "" {
-		return fmt.Errorf("Keycloak answered %d", status)
+		return fmt.Errorf("status %d from Keycloak", status)
 	}
 
-	return fmt.Errorf("Keycloak answered %d: %s", status, text)
+	return fmt.Errorf("status %d from Keycloak: %s", status, text)
 }

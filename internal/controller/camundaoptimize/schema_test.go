@@ -48,6 +48,7 @@ func minimalCamundaOptimize() *v1.CamundaOptimize {
 // a unique name in the schema test namespace.
 func realisticCamundaOptimize() *v1.CamundaOptimize {
 	optimize := minimalCamundaOptimize()
+	optimize.Spec.ExternalURL = "https://optimize.example.com"
 	optimize.Spec.Webapp = &v1.WorkloadSpec{
 		Replicas: new(int32(2)),
 		Resources: &corev1.ResourceRequirements{

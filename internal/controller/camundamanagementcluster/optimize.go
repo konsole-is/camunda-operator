@@ -86,8 +86,10 @@ func (r *Reconciler) syncOptimizeCallbacks(
 ) (*conditions.PreCheckFailure, error) {
 	provider := res.Input.Provider
 	if provider.Mode == components.ModeOIDC {
-		stageCallbacks(mc, metav1.ConditionTrue, string(component.Disabled),
-			"The identity provider of the platform config holds the callback URLs of Optimize")
+		stageCallbacks(
+			mc, metav1.ConditionTrue, string(component.Disabled),
+			"The identity provider of the platform config holds the callback URLs of Optimize",
+		)
 
 		return nil, nil
 	}
@@ -106,9 +108,11 @@ func (r *Reconciler) syncOptimizeCallbacks(
 	// holds nothing back. The condition therefore reports the resting state
 	// rather than a failure, and Ready is free of it.
 	if len(desired) == 0 {
-		stageCallbacks(mc, metav1.ConditionTrue, v1.ReasonNoCallbacks,
+		stageCallbacks(
+			mc, metav1.ConditionTrue, v1.ReasonNoCallbacks,
 			"No Optimize behind this management plane names a URL, so no login callback of this "+
-				"operator is registered in the realm")
+				"operator is registered in the realm",
+		)
 
 		return nil, nil
 	}
@@ -116,9 +120,13 @@ func (r *Reconciler) syncOptimizeCallbacks(
 		return stageCallbackFailure(mc, failure), nil
 	}
 
-	stageCallbacks(mc, metav1.ConditionTrue, v1.ReasonHealthy,
-		fmt.Sprintf("Client %q of realm %q carries the login callback of every Optimize (%d)",
-			clientID, provider.Realm, len(desired)))
+	stageCallbacks(
+		mc, metav1.ConditionTrue, v1.ReasonHealthy,
+		fmt.Sprintf(
+			"Client %q of realm %q carries the login callback of every Optimize (%d)",
+			clientID, provider.Realm, len(desired),
+		),
+	)
 
 	return nil, nil
 }
