@@ -328,7 +328,7 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		repointed := newNamedCluster("cc-a-", ns, createPlatformConfig(), own)
 		createCluster(repointed)
 		expectClaimedBy(own, repointed)
-		Expect(zeebeContainer(repointed).Image).To(HaveSuffix(":8.9.9"))
+		Expect(zeebeContainer(repointed).Image).To(HaveSuffix(":" + runningVersion))
 
 		held := createBinding(ns, true)
 		holder := newNamedCluster("cc-b-", ns, createPlatformConfig(), held)
@@ -342,7 +342,7 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		})
 		expectParked(repointed, holder)
 		Consistently(func() string { return zeebeContainer(repointed).Image }, "2s", interval).Should(
-			HaveSuffix(":8.9.9"),
+			HaveSuffix(":"+runningVersion),
 			"the parking keeps the running image. A lower image means the parking applied it",
 		)
 		Consistently(func(g Gomega) {
@@ -354,10 +354,10 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		expectReady(
 			repointed, metav1.ConditionFalse,
 			Equal(v1.ReasonVersionDowngradeRefused),
-			ContainSubstring("8.9.8 is below the running version 8.9.9"),
+			ContainSubstring(lowerVersion+" is below the running version "+runningVersion),
 		)
 		expectEvent(repointed, v1.ReasonVersionDowngradeRefused, corev1.EventTypeWarning)
-		Expect(zeebeContainer(repointed).Image).To(HaveSuffix(":8.9.9"))
+		Expect(zeebeContainer(repointed).Image).To(HaveSuffix(":" + runningVersion))
 
 		By("setting the version forward again")
 		updateCluster(repointed, func(c *v1.CamundaCluster) { c.Spec.Version = runningVersion })
