@@ -1595,9 +1595,11 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		// The archive then waits on its first base backup, which is where
-		// every archiving server starts.
-		blocked := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
-		Expect(blocked.Reason).To(Equal(string(component.GuardBlocked)), blocked.Message)
+		// every archiving server starts. ArchiveReady is False on both sides
+		// of that move, so the reason is what the wait reads.
+		blocked := expectReason(
+			server, v1.ConditionArchiveReady, metav1.ConditionFalse, string(component.GuardBlocked),
+		)
 		Expect(blocked.Message).To(ContainSubstring("base backup"))
 
 		makeClusterHealthy(server, "7000000000000000003")
