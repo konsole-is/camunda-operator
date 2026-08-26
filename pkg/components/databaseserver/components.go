@@ -151,7 +151,7 @@ func ClusterComponent(
 
 	builder := cnpgcluster.NewBuilder(cluster(server, merged, platform)).
 		WithMutation(clusterMutations(server, merged, archive)...).
-		WithGuard(takenGuard(blocked))
+		WithGuard(takenGuard[cnpgv1.Cluster](blocked))
 	cnpgcluster.ExtractInto(builder, systemIdentifier, func(c cnpgv1.Cluster) (string, error) {
 		return c.Status.SystemID, nil
 	})
@@ -384,17 +384,16 @@ func RecoveryHoldsClusterMessage(name string) string {
 	)
 }
 
-// takenGuard blocks the cluster while a CloudNativePG cluster of the name the
-// server derives is not this component's to apply. reason says why, and it is
-// empty when the name is the component's.
+// takenGuard blocks a resource while the object of the name the server derives
+// is not this component's to apply. reason says why, and it is empty when the
+// name is the component's.
 //
-// component.BlockOnForeignController covers the cluster that another owner
-// controls. This covers the two it does not: a cluster that nothing controls
-// at all, which still holds somebody's database and which the apply would
-// otherwise rewrite and adopt, and a cluster that a running rollback has cut
-// over to and that is no longer there.
-func takenGuard(reason string) func(cnpgv1.Cluster) (concepts.GuardStatusWithReason, error) {
-	return func(cnpgv1.Cluster) (concepts.GuardStatusWithReason, error) {
+// component.BlockOnForeignController covers an object that another owner
+// controls. This covers the ones it does not: an object that nothing controls
+// at all, which the apply would otherwise rewrite and adopt, and a cluster
+// that a running rollback has cut over to and that is no longer there.
+func takenGuard[T any](reason string) func(T) (concepts.GuardStatusWithReason, error) {
+	return func(T) (concepts.GuardStatusWithReason, error) {
 		if reason == "" {
 			return concepts.GuardStatusWithReason{Status: concepts.GuardStatusUnblocked}, nil
 		}

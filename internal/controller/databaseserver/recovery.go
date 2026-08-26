@@ -282,6 +282,14 @@ func publishedOutcome(contract *v1.DatabaseServerConfig) *v1.RecoveryOutcome {
 // recordPublishedOutcome writes the published answer into the record. The name
 // of the cluster the recovery built is kept when the record already names one:
 // it is the only place that holds it, and the cleanup reads it.
+//
+// A completed answer also ends the archive of the cluster the recovery
+// replaced. completeRecovery closes that record and publishes the outcome in
+// one pass, and the outcome is written first, so a status write that is lost
+// there leaves the answer published and the record open. This is the only
+// reconcile left that reads the answer, and nothing else ever ends that
+// interval: the archive of that cluster stopped when the contract moved off
+// it, which is the moment the outcome carries.
 func (r *DatabaseServerReconciler) recordPublishedOutcome(
 	ctx context.Context,
 	server *v1.DatabaseServer,
@@ -317,6 +325,8 @@ func (r *DatabaseServerReconciler) recordPublishedOutcome(
 			server.Status.Cluster = current
 			answered.Cluster = current
 		}
+
+		closeArchiveRecord(server, answered.PreviousCluster, published.CompletedAt)
 	}
 
 	server.Status.Recovery = answered

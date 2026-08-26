@@ -101,8 +101,15 @@ func (r *DatabaseServerReconciler) runningCluster(
 	contractName string,
 ) (*cnpgv1.Cluster, error) {
 	cluster, err := r.clusterOrNil(ctx, server.Namespace, components.ClusterName(server))
-	if err != nil || cluster != nil {
-		return cluster, err
+	if err != nil {
+		return nil, err
+	}
+	// A cluster of that name this server does not own holds the data
+	// directory of somebody else, and the guard keeps the server off it, so
+	// its major is not the major this server runs. Passing over it leaves the
+	// contracts below to name the cluster the server does run.
+	if cluster != nil && ownedByServer(server, cluster) {
+		return cluster, nil
 	}
 
 	var contracts v1.DatabaseServerConfigList

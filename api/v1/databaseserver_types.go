@@ -256,12 +256,13 @@ const ReasonCNPGNotInstalled = "CNPGNotInstalled"
 const ReasonBarmanPluginNotInstalled = "BarmanPluginNotInstalled"
 
 // ReasonContractTaken is the ContractReady reason of a DatabaseServer whose
-// merged spec.databaseServerConfig names a DatabaseServerConfig that another
-// owner controls. The first server to publish a contract name keeps it. A
-// second server that names it publishes nothing on it, so the endpoint and
-// the credentials that its consumers read stay those of the owner. The
-// message names the owner. Give the second server a name of its own, or
-// remove the owner and the contract with it.
+// merged spec.databaseServerConfig names a DatabaseServerConfig that already
+// exists and that this server did not publish. The server publishes nothing on
+// it, so the endpoint and the credentials that its consumers read stay what
+// they are. A contract with no owner is refused too: it is the
+// bring-your-own-server API, so a person wrote it for a server the operator
+// does not run. The message names the owner, or says that no owner controls
+// it. Give this server a name of its own, or remove that contract.
 const ReasonContractTaken = "ContractTaken"
 
 // ReasonClusterTaken is the ClusterReady reason of a DatabaseServer that
@@ -486,7 +487,9 @@ type DatabaseServerStatus struct {
 	Recovery *DatabaseServerRecoveryStatus `json:"recovery,omitempty"`
 	// Volumes lists the bound PersistentVolumeClaims of the current cluster
 	// and the capacity that each one reports, sorted by name. A server with a
-	// write-ahead log volume reports that claim here too.
+	// write-ahead log volume reports that claim here too. A server that does
+	// not own the cluster of the name it derives reports none: those claims
+	// belong to the cluster that holds the name.
 	// +listType=map
 	// +listMapKey=name
 	// +optional

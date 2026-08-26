@@ -1426,6 +1426,45 @@ var _ = Describe("DatabaseServer recovery", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// The cutover closes the archive of the cluster it replaces and publishes
+	// the outcome on the contract in one pass, and the contract is written
+	// first. A status write that is lost there leaves the answer published and
+	// the record open, and the archive of that cluster ended all the same. The
+	// pass that reads the answer back off the contract is what closes it.
+	It("closes the archive it replaced when the status write of the cutover is lost", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+
+		bringRecoveryClusterUp(server, "camunda-r1")
+		probeContract(server)
+		outcome := expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].To).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		By("losing the status write of the pass that answered")
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			latest.Status.Recovery.CompletedAt = nil
+			latest.Status.Recovery.Result = ""
+			latest.Status.Archive.History[0].To = nil
+			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		// The record closes at the moment the outcome carries, which is when
+		// the contract moved off that cluster.
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].ServerName).To(Equal("camunda"))
+			g.Expect(history[0].To).To(Equal(&outcome.CompletedAt))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("keeps the archive of the cluster it built open when the base backup lands first", func() {
 		server, from := archivingServer()
 		askForRecovery(server, from.Add(time.Hour))
