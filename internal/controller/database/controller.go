@@ -379,13 +379,15 @@ func (r *DatabaseReconciler) preCheck(ctx context.Context, database *v1.Database
 			Message: fmt.Sprintf(
 				"DatabaseServerConfig %s has not reached the server its spec names now, so its "+
 					"system identifier belongs to the server before that change: the record was "+
-					"probed at %s with Secret %q, and the spec names %s with Secret %q. Wait "+
-					"until the contract is probed again for the endpoint and the credentials it "+
-					"names now",
+					"probed at %s with Secret %q and keys %s, and the spec names %s with Secret "+
+					"%q and keys %s. Wait until the contract is probed again for the endpoint and "+
+					"the credentials it names now",
 				client.ObjectKeyFromObject(server),
 				server.Status.ProbedEndpoint, server.Status.ProbedSecretName,
+				server.Status.ProbedSecretKeys,
 				fmt.Sprintf("%s:%d", server.Spec.Host, server.Spec.Port),
 				server.Spec.AdminCredentialsSecretRef.Name,
+				server.Spec.AdminCredentialsSecretRef.UsernameKey+"/"+server.Spec.AdminCredentialsSecretRef.PasswordKey,
 			),
 		}
 	}

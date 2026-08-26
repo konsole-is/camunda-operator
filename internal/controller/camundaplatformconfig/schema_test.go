@@ -190,6 +190,18 @@ var _ = Describe("CamundaPlatformConfig schema", func() {
 			}, "spec.images.optimize",
 		),
 		Entry(
+			"accepts a postgres override on a registry with a port",
+			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
+				o.Spec.Images = &v1.ImagesSpec{Postgres: "registry:5000/postgres"}
+			}, "",
+		),
+		Entry(
+			"rejects a bare registry with a port on the postgres override",
+			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
+				o.Spec.Images = &v1.ImagesSpec{Postgres: "registry:5000"}
+			}, "spec.images.postgres",
+		),
+		Entry(
 			"rejects a registry with a port and an empty path",
 			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
 				o.Spec.Images = &v1.ImagesSpec{Optimize: "registry:5000/"}

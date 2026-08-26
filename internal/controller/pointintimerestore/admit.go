@@ -57,7 +57,8 @@ type chainPin int
 
 const (
 	// pinExact binds every field of the pinned chain. It also requires that
-	// the contract publishes an identity at all.
+	// the contract publishes an identity, and that the record which published
+	// it describes the endpoint and the admin user that the spec names now.
 	pinExact chainPin = iota
 	// pinAcrossRecovery binds every field except the endpoint. That is the
 	// one a rollback of the server replaces, and the phase that asked for the
@@ -300,6 +301,27 @@ func (r *Reconciler) resolve(
 			serverKey,
 		), nil
 	}
+	// The identity of an endpoint the contract no longer names is the identity
+	// of another server. Every rule below reads the instance from it, and the
+	// restore reaches the endpoint of the spec, so a record that belongs to the
+	// server before the change validates one instance and rolls back another.
+	if pin == pinExact && !server.ProbedForCurrentSpec() {
+		return nil, logicalbackup.InvalidReference(
+			"DatabaseServerConfig %s has not reached the server that its spec names now, so its "+
+				"system identifier belongs to the server before that change: the record was "+
+				"probed at %s with Secret %q and keys %s, and the spec names %s with Secret %q "+
+				"and keys %s. Point-in-time recovery rolls back the whole instance behind the "+
+				"endpoint. Wait until the contract is probed again for the endpoint and the "+
+				"credentials it names now",
+			serverKey,
+			server.Status.ProbedEndpoint,
+			server.Status.ProbedSecretName,
+			server.Status.ProbedSecretKeys,
+			fmt.Sprintf("%s:%d", server.Spec.Host, server.Spec.Port),
+			server.Spec.AdminCredentialsSecretRef.Name,
+			server.Spec.AdminCredentialsSecretRef.UsernameKey+"/"+server.Spec.AdminCredentialsSecretRef.PasswordKey,
+		), nil
+	}
 
 	if err := pinnedChainCurrent(pitr, &storage, &dbConfig, &server, pin); err != nil {
 		return nil, nil, err
@@ -512,11 +534,25 @@ func pitrAvailable(server *v1.DatabaseServerConfig, want time.Time) *conditions.
 // therefore reads the Database resources of every namespace whose contract
 // reports the system identifier of this one. Two contracts that name one
 // instance under different hosts are one server here, and a Database whose
-// contract reports no identity at all cannot be placed on either side.
+// contract reports no identity for the spec it has now cannot be placed on
+// either side.
 //
 // The one Database that remains must hold the logical database of dbConfig. A
 // hand-written DatabaseConfig can name a database that no Database resource
 // declares, and the single claimant on the instance is then somebody else's.
+// contractIdentity is what one listed DatabaseServerConfig says about the
+// PostgreSQL instance behind it.
+type contractIdentity struct {
+	// systemIdentifier is the instance that the last probe reached. It is
+	// empty until the contract reaches its server.
+	systemIdentifier string
+	// probedForSpec is false while the record describes an endpoint or an
+	// admin user that the spec of the contract no longer names. The identity
+	// then belongs to the server before that change, and so does the claim
+	// that a Database recorded against it.
+	probedForSpec bool
+}
+
 func (r *Reconciler) dedicatedServer(
 	ctx context.Context,
 	server *v1.DatabaseServerConfig,
@@ -539,9 +575,13 @@ func (r *Reconciler) dedicatedServer(
 		return nil, fmt.Errorf("listing the database server contracts: %w", err)
 	}
 
-	identities := make(map[types.NamespacedName]string, len(contracts.Items))
+	identities := make(map[types.NamespacedName]contractIdentity, len(contracts.Items))
 	for i := range contracts.Items {
-		identities[client.ObjectKeyFromObject(&contracts.Items[i])] = contracts.Items[i].Status.SystemIdentifier
+		contract := &contracts.Items[i]
+		identities[client.ObjectKeyFromObject(contract)] = contractIdentity{
+			systemIdentifier: contract.Status.SystemIdentifier,
+			probedForSpec:    contract.ProbedForCurrentSpec(),
+		}
 	}
 
 	var placed []*v1.Database
@@ -577,17 +617,18 @@ func (r *Reconciler) dedicatedServer(
 		}, nil
 	}
 
-	// A Database whose contract publishes no identity can be on this server or
-	// on another one, and nothing here can tell which. Recovery rolls back the
-	// whole server, so a database that cannot be ruled out is a database this
-	// restore can destroy.
+	// A Database whose contract publishes no identity for the spec it has now
+	// can be on this server or on another one, and nothing here can tell
+	// which. Recovery rolls back the whole server, so a database that cannot
+	// be ruled out is a database this restore can destroy.
 	if len(unplaced) > 0 {
 		return logicalbackup.InvalidReference(
-			"the DatabaseServerConfig of the Database resources %s publishes no system identifier, "+
-				"so the operator cannot tell whether they live on the server that %s describes. "+
-				"Point-in-time recovery rolls back the whole server. Wait until every "+
-				"DatabaseServerConfig reports Ready, or remove the Database resources whose server "+
-				"no longer exists",
+			"the DatabaseServerConfig of the Database resources %s publishes no system identifier "+
+				"that the operator can trust for the endpoint and the credentials its spec names "+
+				"now, so the operator cannot tell whether they live on the server that %s "+
+				"describes. Point-in-time recovery rolls back the whole server. Wait until every "+
+				"DatabaseServerConfig is probed for the spec it has now, or remove the Database "+
+				"resources whose server no longer exists",
 			strings.Join(unplaced, ", "), key,
 		), nil
 	}
@@ -627,17 +668,23 @@ func (r *Reconciler) dedicatedServer(
 }
 
 // databaseIdentity returns the PostgreSQL instance that database resolves to,
-// or the empty string when nothing places it. The contract answers while it is
-// probed. A contract that is momentarily unprobed falls back to the claim in
-// status.collisionKey, which the Database controller recorded the last time it
-// resolved the server and never clears.
-func databaseIdentity(database *v1.Database, identities map[types.NamespacedName]string) string {
+// or the empty string when nothing places it. A listed contract answers, and
+// only while its record describes the spec it has now: a record of the server
+// before a move places the database on that server, and the claim in
+// status.collisionKey was recorded against the same record. A contract that
+// no longer exists falls back to that claim, which the Database controller
+// recorded the last time it resolved the server and never clears.
+func databaseIdentity(database *v1.Database, identities map[types.NamespacedName]contractIdentity) string {
 	ref := types.NamespacedName{Namespace: database.Namespace, Name: database.Spec.ServerRef}
-	if identity := identities[ref]; identity != "" {
-		return identity
+	contract, listed := identities[ref]
+	if !listed {
+		return databasecomponents.CollisionIdentity(database.Status.CollisionKey)
+	}
+	if !contract.probedForSpec {
+		return ""
 	}
 
-	return databasecomponents.CollisionIdentity(database.Status.CollisionKey)
+	return contract.systemIdentifier
 }
 
 // credentials reads the application credentials of the logical database. They
