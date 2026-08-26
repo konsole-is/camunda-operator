@@ -127,6 +127,11 @@ type resolvedSpec struct {
 	// and it also covers the cluster that a running rollback cut over to and
 	// that is gone: see clusterGuardReason.
 	clusterBlocked string
+	// archiveOutage is the stop in the write-ahead log uploads that the server
+	// reports on, or nil when it reports on none. It blocks the archive
+	// component, it reports ArchiveFailing, and it marks the open archive
+	// record: see reportedArchiveOutage.
+	archiveOutage *components.ArchiveOutage
 }
 
 // serverComponents are the components of one reconcile, in the order they
@@ -353,6 +358,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	resolved.clusterTaken = derived.taken
 	resolved.clusterBlocked = clusterGuardReason(&server, derived)
+	resolved.archiveOutage = reportedArchiveOutage(derived.outage, resolved.merged)
 
 	built, err := r.buildComponents(&server, resolved, archiveStart)
 	if err != nil {
@@ -392,12 +398,16 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			&server, resolved.merged, built.archive, archiveStart,
 			resolved.archiveLocation, moved, built.archiveDestination.IsSet(), now,
 		)
+		markArchiveOutage(&server, resolved.archiveOutage)
 	}
 
 	server.Status.Volumes = volumes.all()
 
 	// Before the aggregate below, which reads the component conditions off
-	// the server.
+	// the server. A taken name goes last of the two: an ObjectStore that
+	// belongs to somebody else takes the archive off the cluster, so there are
+	// no uploads of this server to report on.
+	stageArchiveOutage(&server, resolved.archiveOutage)
 	stageTakenNames(&server, resolved)
 
 	conditions.Stage(&server, conditions.Aggregate(&server, built.ready...))
@@ -431,7 +441,12 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// ObjectStore name asks for a look of its own for the same reason: the
 	// object belongs to somebody else, and its deletion reaches no watch of
 	// this controller either.
+	//
+	// Failing write-ahead log uploads ask for one too. CloudNativePG writes
+	// that condition once and leaves it, so nothing reports that the grace
+	// period of the outage passed.
 	if recovering || resolved.clusterTaken != "" || resolved.archiveTaken != "" ||
+		pendingArchiveOutage(derived.outage, resolved.merged) ||
 		!meta.IsStatusConditionTrue(server.Status.Conditions, v1.ConditionContractReady) {
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
@@ -928,6 +943,11 @@ type derivedCluster struct {
 	taken string
 	// absent says that no object of that name exists.
 	absent bool
+	// outage is what CloudNativePG reports about the write-ahead log uploads
+	// of that cluster, or nil when it reports nothing wrong. A cluster that
+	// belongs to somebody else carries none: its uploads are not this
+	// server's archive.
+	outage *components.ArchiveOutage
 }
 
 // readDerivedCluster reads the CloudNativePG cluster of the name the server
@@ -965,7 +985,7 @@ func (r *DatabaseServerReconciler) readDerivedCluster(
 
 	controller := metav1.GetControllerOf(&cluster)
 	if controller != nil && controller.UID == server.UID {
-		return derivedCluster{}, nil
+		return derivedCluster{outage: components.ArchiveOutageOf(&cluster, time.Now())}, nil
 	}
 
 	return derivedCluster{taken: components.ClusterTakenMessage(name, controller)}, nil
@@ -987,6 +1007,36 @@ func clusterGuardReason(server *v1.DatabaseServer, derived derivedCluster) strin
 	}
 
 	return components.RecoveryHoldsClusterMessage(components.ClusterName(server))
+}
+
+// reportedArchiveOutage returns the stop in the write-ahead log uploads that
+// the server reports on ArchiveReady and on its open archive record, or nil
+// when it reports on none.
+//
+// An unconfirmed outage is none of them. CloudNativePG raises its condition on
+// one failed upload, and the plugin uploads the segment again, so a reported
+// outage waits for the grace period of components.ArchiveOutageGracePeriod.
+//
+// A suspended server reports on none either. Its instances are gone, so it
+// writes no write-ahead log to lose, and what CloudNativePG left on the
+// condition describes the server that ran before the suspension.
+func reportedArchiveOutage(
+	outage *components.ArchiveOutage,
+	merged v1.DatabaseServerSpec,
+) *components.ArchiveOutage {
+	if outage == nil || !outage.Confirmed || merged.Suspend {
+		return nil
+	}
+
+	return outage
+}
+
+// pendingArchiveOutage reports whether the write-ahead log uploads of the
+// server are failing and the grace period has not passed yet. Nothing wakes
+// the reconcile when it does: CloudNativePG writes that condition once and
+// leaves it standing.
+func pendingArchiveOutage(outage *components.ArchiveOutage, merged v1.DatabaseServerSpec) bool {
+	return outage != nil && !outage.Confirmed && !merged.Suspend
 }
 
 // serverVolumes are the volumes of the current cluster: one entry per
@@ -1394,7 +1444,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 	built.systemIdentifier = systemIdentifier
 
 	archive, destination, err := components.ArchiveComponent(
-		server, merged, resolved.archive, archiveStart,
+		server, merged, resolved.archive, archiveStart, resolved.archiveOutage,
 		resolved.clusterTaken, resolved.archiveTaken,
 	)
 	if err != nil {
@@ -1504,6 +1554,22 @@ func (r *DatabaseServerReconciler) removeSupersededContracts(
 	return nil
 }
 
+// stageArchiveOutage reports on ArchiveReady that the write-ahead log of the
+// server stopped reaching the bucket. The guard on the archive blocks on the
+// same outage, and ocf reports that as Blocked, which reads the same as the
+// wait for the first base backup. This names what CloudNativePG reports and
+// what the archive still holds.
+func stageArchiveOutage(server *v1.DatabaseServer, outage *components.ArchiveOutage) {
+	if outage == nil {
+		return
+	}
+
+	stageFailure(
+		server, v1.ConditionArchiveReady, v1.ReasonArchiveFailing,
+		components.ArchiveFailingMessage(outage),
+	)
+}
+
 // stageTakenNames reports every derived name of the server that somebody else
 // holds, on the condition of the component that writes that object.
 func stageTakenNames(server *v1.DatabaseServer, resolved resolvedSpec) {
@@ -1519,17 +1585,17 @@ func stageTakenNames(server *v1.DatabaseServer, resolved resolvedSpec) {
 
 	for _, held := range taken {
 		if held.message != "" {
-			stageTaken(server, held.conditionType, held.reason, held.message)
+			stageFailure(server, held.conditionType, held.reason, held.message)
 		}
 	}
 }
 
-// stageTaken reports an object of a derived name that another owner holds.
-// ocf blocks the apply and reports Blocked with "controlled by <Kind> <name>",
-// which reads the same as the wait for the superuser Secret and carries no
-// remedy. This names the holder and what to do about it, which is what the
-// user acts on.
-func stageTaken(server *v1.DatabaseServer, conditionType, reason, message string) {
+// stageFailure puts a reason and a remedy on the condition of one component,
+// over whatever ocf reported there. ocf answers a blocked apply with Blocked
+// and the object it stopped at, which carries no remedy and reads the same as
+// every other wait. The callers here name what happened and what to do about
+// it, which is what the user acts on.
+func stageFailure(server *v1.DatabaseServer, conditionType, reason, message string) {
 	meta.SetStatusCondition(&server.Status.Conditions, metav1.Condition{
 		Type:               conditionType,
 		Status:             metav1.ConditionFalse,
@@ -1683,6 +1749,25 @@ func markArchiveBoundary(server *v1.DatabaseServer, now metav1.Time, location, b
 		Location:         location,
 		ObjectStorageRef: bucket,
 	}
+}
+
+// markArchiveOutage records on the open archive record the point from which
+// the archive can be missing write-ahead log, and clears the point once the
+// uploads run again. The plugin uploads the segments it held back then, so
+// every point of the interval can be reached again.
+func markArchiveOutage(server *v1.DatabaseServer, outage *components.ArchiveOutage) {
+	open := openArchiveRecord(server)
+	if open == nil {
+		return
+	}
+
+	if outage == nil {
+		open.UnverifiedFrom = nil
+
+		return
+	}
+
+	open.UnverifiedFrom = &outage.Since
 }
 
 // openArchiveRecord returns the archive the server writes now, or nil when it

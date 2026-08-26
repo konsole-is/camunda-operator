@@ -1028,6 +1028,16 @@ spec:
                             while the archive is the one the server writes to now.
                           format: date-time
                           type: string
+                        unverifiedFrom:
+                          description: |-
+                            UnverifiedFrom is the point from which this archive can be missing
+                            write-ahead log. It is set while CloudNativePG reports that the uploads
+                            of the server are failing, and a restore to a point after it can reach
+                            nothing. The plugin uploads the segments it held back once the uploads
+                            run again, so the field is cleared then and the whole interval can be
+                            reached again. Only the record the server writes to now carries it.
+                          format: date-time
+                          type: string
                       required:
                       - from
                       - serverName

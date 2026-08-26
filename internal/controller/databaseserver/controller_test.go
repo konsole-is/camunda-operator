@@ -500,6 +500,53 @@ func expectCondition(
 	return conditionOf(server, conditionType)
 }
 
+// expectReason waits until the named condition of the server carries the given
+// status and reason, and returns it. A condition that is already False for
+// another reason is why the status alone is not enough to wait on.
+func expectReason(
+	server *v1.DatabaseServer,
+	conditionType string,
+	status metav1.ConditionStatus,
+	reason string,
+) *metav1.Condition {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		condition := conditionOf(server, conditionType)
+		g.Expect(condition).NotTo(BeNil(), conditionType)
+		g.Expect(condition.Status).To(Equal(status), conditionType+": "+condition.Message)
+		g.Expect(condition.Reason).To(Equal(reason), conditionType+": "+condition.Message)
+	}, timeout, interval).Should(Succeed())
+
+	return conditionOf(server, conditionType)
+}
+
+// reportArchiving writes the ContinuousArchiving condition that CloudNativePG
+// reports about the write-ahead log uploads of the cluster, as it has stood
+// since the given moment.
+func reportArchiving(server *v1.DatabaseServer, status metav1.ConditionStatus, since metav1.Time) {
+	GinkgoHelper()
+
+	key := client.ObjectKey{Namespace: server.Namespace, Name: components.ClusterName(server)}
+	Eventually(func(g Gomega) {
+		var cluster cnpgv1.Cluster
+		g.Expect(k8sClient.Get(ctx, key, &cluster)).To(Succeed())
+		meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+			Type:    string(cnpgv1.ConditionContinuousArchiving),
+			Status:  status,
+			Reason:  "ContinuousArchivingFailing",
+			Message: "unexpected failure invoking barman-cloud-wal-archive",
+		})
+		// CloudNativePG stamps the moment the uploads changed. A spec cannot
+		// wait out the grace period, so it writes that moment itself.
+		condition := meta.FindStatusCondition(
+			cluster.Status.Conditions, string(cnpgv1.ConditionContinuousArchiving),
+		)
+		condition.LastTransitionTime = since
+		g.Expect(k8sClient.Status().Update(ctx, &cluster)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
 // archiveBucket creates a cluster-scoped bucket contract with static
 // credentials and the Secret those credentials live in. Each contract names a
 // bucket of its own, so two of them describe two locations, which is what the
@@ -1560,6 +1607,84 @@ var _ = Describe("DatabaseServer controller", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(publishedContract(server).Spec.PITR.Enabled).To(BeTrue())
 		}, timeout, interval).Should(Succeed())
+	})
+
+	// The archive keeps every point it received, and it reaches none after the
+	// uploads stopped. A server that reports Healthy while the write-ahead log
+	// goes nowhere is a server whose recent points are gone.
+	It("turns the archive False while the write-ahead log uploads fail", func() {
+		bucket := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000031")
+		completeBaseBackup(server, "first", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+		expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
+
+		By("failing the uploads for longer than the grace period")
+		stoppedAt := metav1.NewTime(
+			metav1.Now().Rfc3339Copy().Add(-2 * components.ArchiveOutageGracePeriod),
+		)
+		reportArchiving(server, metav1.ConditionFalse, stoppedAt)
+
+		failing := expectReason(
+			server, v1.ConditionArchiveReady, metav1.ConditionFalse, v1.ReasonArchiveFailing,
+		)
+		Expect(failing.Message).To(ContainSubstring("ContinuousArchivingFailing"))
+		Expect(failing.Message).To(ContainSubstring("barman-cloud-wal-archive"))
+
+		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
+		Expect(ready.Reason).To(Equal(v1.ReasonArchiveFailing), ready.Message)
+
+		// The open record stops advertising the points the archive never
+		// received.
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].UnverifiedFrom).NotTo(BeNil())
+			g.Expect(history[0].UnverifiedFrom.Time).To(BeTemporally("==", stoppedAt.Time))
+		}, timeout, interval).Should(Succeed())
+
+		By("running the uploads again")
+		reportArchiving(server, metav1.ConditionTrue, metav1.Now())
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+		expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
+
+		// The plugin uploads the segments it held back, so the whole interval
+		// can be reached again.
+		Eventually(func(g Gomega) {
+			g.Expect(archiveHistory(server)[0].UnverifiedFrom).To(BeNil())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// CloudNativePG reports the condition on the first upload that fails, and
+	// the plugin uploads that segment again. A server that reported every one
+	// of them would report an archive that is running.
+	It("keeps the archive True while a failed upload is inside the grace period", func() {
+		bucket := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000032")
+		completeBaseBackup(server, "first", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+
+		reportArchiving(server, metav1.ConditionFalse, metav1.Now())
+
+		Consistently(func(g Gomega) {
+			condition := conditionOf(server, v1.ConditionArchiveReady)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue), condition.Message)
+			g.Expect(archiveHistory(server)[0].UnverifiedFrom).To(BeNil())
+		}, 3*time.Second, interval).Should(Succeed())
 	})
 
 	It("starts a new archive record when the bucket changes", func() {

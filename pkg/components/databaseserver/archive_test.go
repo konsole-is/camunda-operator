@@ -239,25 +239,80 @@ func TestArchiveEndpointAndPlaceholderRegion(t *testing.T) {
 func TestBaseBackupGuardHoldsTheArchiveUntilTheFirstBackup(t *testing.T) {
 	t.Parallel()
 
-	guard := baseBackupGuard(archiveServer(), nil, false)
+	guard := archiveGuard(archiveServer(), nil, nil, false)
 	status, err := guard(cnpgv1.Cluster{})
 	require.NoError(t, err)
 	assert.Equal(t, concepts.GuardStatusBlocked, status.Status)
 	assert.Contains(t, status.Reason, `the first base backup of "my-cluster-db" is not complete yet`)
 
 	completed := metav1.NewTime(time.Date(2026, 8, 24, 10, 0, 0, 0, time.UTC))
-	guard = baseBackupGuard(archiveServer(), &completed, false)
+	guard = archiveGuard(archiveServer(), &completed, nil, false)
 	status, err = guard(cnpgv1.Cluster{})
 	require.NoError(t, err)
 	assert.Equal(t, concepts.GuardStatusUnblocked, status.Status)
 
 	// A suspended server has nothing to wait on: its schedule is suspended
 	// with it, so no base backup can ever complete.
-	guard = baseBackupGuard(archiveServer(), nil, true)
+	guard = archiveGuard(archiveServer(), nil, nil, true)
 	status, err = guard(cnpgv1.Cluster{})
 	require.NoError(t, err)
 	assert.Equal(t, concepts.GuardStatusUnblocked, status.Status)
 	assert.Contains(t, status.Reason, "suspended")
+}
+
+// An archive that stopped receiving write-ahead log reaches no point after the
+// last segment that arrived, whatever base backup it holds. The uploads
+// therefore win over the base backup that is already there.
+func TestArchiveGuardHoldsTheArchiveWhileTheUploadsFail(t *testing.T) {
+	t.Parallel()
+
+	completed := metav1.NewTime(time.Date(2026, 8, 24, 10, 0, 0, 0, time.UTC))
+	since := metav1.NewTime(time.Date(2026, 8, 24, 11, 0, 0, 0, time.UTC))
+	outage := &ArchiveOutage{
+		Reason:    "ContinuousArchivingFailing",
+		Message:   "unexpected failure invoking barman-cloud-wal-archive",
+		Since:     since,
+		Confirmed: true,
+	}
+
+	guard := archiveGuard(archiveServer(), &completed, outage, false)
+	status, err := guard(cnpgv1.Cluster{})
+	require.NoError(t, err)
+	assert.Equal(t, concepts.GuardStatusBlocked, status.Status)
+	assert.Contains(t, status.Reason, "ContinuousArchivingFailing")
+	assert.Contains(t, status.Reason, "2026-08-24T11:00:00Z")
+}
+
+// The condition of CloudNativePG flips on one failed upload that the plugin
+// uploads again, so the server waits out the grace period before it reports
+// the uploads. A suspended server writes no write-ahead log at all, so what
+// the condition holds describes the server that ran before the suspension.
+func TestArchiveOutageOf(t *testing.T) {
+	t.Parallel()
+
+	since := time.Date(2026, 8, 24, 11, 0, 0, 0, time.UTC)
+	failing := func(status metav1.ConditionStatus) *cnpgv1.Cluster {
+		return &cnpgv1.Cluster{Status: cnpgv1.ClusterStatus{Conditions: []metav1.Condition{{
+			Type:               string(cnpgv1.ConditionContinuousArchiving),
+			Status:             status,
+			Reason:             "ContinuousArchivingFailing",
+			Message:            "unexpected failure invoking barman-cloud-wal-archive",
+			LastTransitionTime: metav1.NewTime(since),
+		}}}}
+	}
+
+	assert.Nil(t, ArchiveOutageOf(&cnpgv1.Cluster{}, since))
+	assert.Nil(t, ArchiveOutageOf(failing(metav1.ConditionTrue), since))
+
+	held := ArchiveOutageOf(failing(metav1.ConditionFalse), since.Add(ArchiveOutageGracePeriod-time.Second))
+	require.NotNil(t, held)
+	assert.False(t, held.Confirmed)
+	assert.Equal(t, "ContinuousArchivingFailing", held.Reason)
+
+	confirmed := ArchiveOutageOf(failing(metav1.ConditionFalse), since.Add(ArchiveOutageGracePeriod))
+	require.NotNil(t, confirmed)
+	assert.True(t, confirmed.Confirmed)
+	assert.True(t, confirmed.Since.Equal(&metav1.Time{Time: since}))
 }
 
 // The retention the operator enforces on the bucket is the number the contract
@@ -352,7 +407,7 @@ func previewKinds(
 ) []string {
 	t.Helper()
 
-	comp, _, err := ArchiveComponent(server, merged, archive, nil, "", archiveTaken)
+	comp, _, err := ArchiveComponent(server, merged, archive, nil, nil, "", archiveTaken)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
