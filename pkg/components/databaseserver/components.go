@@ -348,8 +348,9 @@ func ClusterTakenMessage(name string, holder *metav1.OwnerReference) string {
 
 	return fmt.Sprintf(
 		"CloudNativePG cluster %q already exists and %s. It holds a database this server did "+
-			"not build, so the server writes nothing on it, publishes no contract, and "+
-			"advertises no archive. Remove that cluster, or give this server a name of its own.",
+			"not build, so the server writes nothing on it, publishes no contract, and takes "+
+			"no base backup of it. The archive the server wrote before and its history stay. "+
+			"Remove that cluster, or give this server a name of its own.",
 		name, controller,
 	)
 }
