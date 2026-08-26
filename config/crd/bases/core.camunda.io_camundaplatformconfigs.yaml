@@ -397,7 +397,7 @@ spec:
                       Postgres is the image of the PostgreSQL that a DatabaseServer runs.
                       Defaults to ghcr.io/cloudnative-pg/postgresql. The tag is the major
                       version of the server, so a replacement must publish the same tags.
-                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)*/?$
+                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+(/[a-z0-9]+([._-][a-z0-9]+)*)+|(/[a-z0-9]+([._-][a-z0-9]+)*)*)/?$
                     type: string
                   webModelerRestapi:
                     description: |-

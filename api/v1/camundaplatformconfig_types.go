@@ -261,7 +261,7 @@ type ImagesSpec struct {
 	// Postgres is the image of the PostgreSQL that a DatabaseServer runs.
 	// Defaults to ghcr.io/cloudnative-pg/postgresql. The tag is the major
 	// version of the server, so a replacement must publish the same tags.
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)*/?$`
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+(/[a-z0-9]+([._-][a-z0-9]+)*)+|(/[a-z0-9]+([._-][a-z0-9]+)*)*)/?$`
 	// +optional
 	Postgres string `json:"postgres,omitempty"`
 }
