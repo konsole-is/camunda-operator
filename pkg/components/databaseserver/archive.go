@@ -89,19 +89,11 @@ type ArchiveStorage struct {
 // serverName parameter of the cluster is what separates them.
 func ObjectStoreName(server *v1.DatabaseServer) string { return server.Name }
 
-// ArchiveTakenMessage says that the ObjectStore of the name the server derives
-// is not the server's to write, and what to do about it. holder is the owner
-// that controls it, and the ArchiveReady condition of the server reads the
-// message.
-//
-// It takes the holder by value, where the message of a cluster and the message
-// of a contract take a pointer. Those two refuse an object that nothing
-// controls. An ObjectStore that nothing controls is adopted instead, which is
-// what the apply does with it: component.BlockOnForeignController blocks on a
-// controller of somebody else alone. The object says where an archive is
-// written and how the plugin reaches it, and the bucket behind it is described
-// by an ObjectStorageConfig that this server resolves for itself, so the
-// server takes no data of anybody by writing that name.
+// ArchiveTakenMessage returns the ArchiveReady message for an ObjectStore of
+// the name the server derives that another owner controls: who holds it, and
+// what to do about it. holder is that owner's controller reference. An
+// ObjectStore that nothing controls is adopted, not reported, so there is no
+// message for it; the design spec says why.
 func ArchiveTakenMessage(name string, holder metav1.OwnerReference) string {
 	return fmt.Sprintf(
 		"Barman Cloud ObjectStore %q already exists and %s %q controls it. It describes the "+
