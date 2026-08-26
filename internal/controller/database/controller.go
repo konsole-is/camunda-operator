@@ -133,7 +133,12 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	// look, and the controller records no event that a second look repeats.
 	var database v1.Database
 	if err := r.Get(ctx, req.NamespacedName, &database); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			observability.Forget(r.Metrics, new(v1.Database).GetKind(), req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	rec := component.ReconcileContext{

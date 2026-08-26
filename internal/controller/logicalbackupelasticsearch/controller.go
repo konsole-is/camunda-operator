@@ -165,7 +165,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// ID again and orphans artifacts. Its own object is always read live.
 	var backup v1.LogicalBackupElasticsearch
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &backup); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			observability.Forget(r.Metrics, new(v1.LogicalBackupElasticsearch).GetKind(), req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	if !backup.DeletionTimestamp.IsZero() {

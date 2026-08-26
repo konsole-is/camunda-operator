@@ -8,7 +8,7 @@ Every series carries a `controller` label. Its value is the lower-cased kind of 
 
 | Metric | What it reports |
 | --- | --- |
-| `camunda_operator_controller_condition` | One series per condition of every custom resource. The value is the `lastTransitionTime` of the condition as a Unix timestamp. Labels: `kind`, `name`, `namespace` (`exported_namespace` after a scrape, see below), `condition`, `status`, `reason`, `id`. |
+| `camunda_operator_controller_condition` | One series per condition of every custom resource. The value is the `lastTransitionTime` of the condition as a Unix timestamp. The series of a deleted custom resource disappear with it. Labels: `kind`, `name`, `namespace` (`exported_namespace` after a scrape, see below), `condition`, `status`, `reason`, `id`. |
 | `ocf_resource_apply_total` | Counter of the resources that the operator applied, by `owner_kind`, `component`, `resource`, `kind`, and `operation`. The operation is `none` when the apply changed nothing. |
 | `ocf_resource_apply_errors_total` | Counter of the applies that failed, with the same labels without `operation`. |
 | `controller_runtime_*`, `workqueue_*`, `rest_client_*`, `process_*` | The standard series of every controller-runtime operator. |

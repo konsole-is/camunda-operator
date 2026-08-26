@@ -55,6 +55,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
@@ -186,7 +187,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// this controller erase data.
 	var lrr v1.LogicalRestoreRDBMS
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &lrr); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			observability.Forget(r.Metrics, new(v1.LogicalRestoreRDBMS).GetKind(), req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	// The Jobs of a restore carry a controller reference to it, so the garbage

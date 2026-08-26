@@ -243,7 +243,12 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// marker re-enters a step whose side effect already ran.
 	var server v1.DatabaseServer
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &server); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			observability.Forget(r.Metrics, new(v1.DatabaseServer).GetKind(), req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	recCtx := component.ReconcileContext{

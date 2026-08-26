@@ -73,7 +73,12 @@ type SecondaryStorageConfigReconciler struct {
 func (r *SecondaryStorageConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var cfg v1.SecondaryStorageConfig
 	if err := r.Get(ctx, req.NamespacedName, &cfg); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			observability.Forget(r.Metrics, new(v1.SecondaryStorageConfig).GetKind(), req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	cond, err := r.validate(ctx, &cfg)

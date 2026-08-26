@@ -165,7 +165,12 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
 	var mc v1.CamundaManagementCluster
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &mc); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			observability.Forget(r.Metrics, new(v1.CamundaManagementCluster).GetKind(), req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	if !mc.DeletionTimestamp.IsZero() {

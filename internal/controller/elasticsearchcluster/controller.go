@@ -158,7 +158,12 @@ type ElasticsearchClusterReconciler struct {
 func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
 	var cluster v1.ElasticsearchCluster
 	if err := r.Get(ctx, req.NamespacedName, &cluster); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			observability.Forget(r.Metrics, new(v1.ElasticsearchCluster).GetKind(), req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	recCtx := component.ReconcileContext{

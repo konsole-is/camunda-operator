@@ -22,7 +22,10 @@ package observability
 
 import (
 	ocm "github.com/sourcehawk/go-crd-condition-metrics/pkg/crd-condition-metrics"
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/metrics"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
@@ -31,6 +34,12 @@ import (
 // config/prometheus are rendered for this value; `make observability`
 // re-renders them.
 const MetricNamespace = "camunda_operator"
+
+// conditionRemover is the part of a recorder that drops the condition series
+// of one owner. *metrics.Recorder implements it.
+type conditionRemover interface {
+	RemoveConditionsFor(kind string, object ocm.ObjectLike) int
+}
 
 var (
 	conditions = ocm.NewOperatorConditionsGauge(MetricNamespace)
@@ -48,4 +57,17 @@ func init() {
 // framework's series with the reconcile series of the same controller.
 func Recorder(controller string) *metrics.Recorder {
 	return metrics.NewRecorder(controller, conditions, collectors)
+}
+
+// Forget removes every condition series that rec recorded for the owner of
+// the given kind and key. Call it when the owner is gone, so its last
+// conditions do not stay on /metrics until the manager restarts. It is a
+// no-op when rec is nil or cannot remove series.
+func Forget(rec component.MetricsRecorder, kind string, key types.NamespacedName) {
+	remover, ok := rec.(conditionRemover)
+	if !ok {
+		return
+	}
+
+	remover.RemoveConditionsFor(kind, &metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace})
 }

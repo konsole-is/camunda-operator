@@ -32,8 +32,10 @@ import (
 // A controller that builds a ReconcileContext without Metrics records no
 // condition gauge and no apply counter, and nothing at runtime reports that.
 // A controller whose recorder name differs from its controller-runtime name
-// records series the dashboards cannot join. Both are invisible in a cluster,
-// so this test reads the source of every controller package instead.
+// records series the dashboards cannot join. A controller that never calls
+// Forget leaves the series of a deleted owner on /metrics. All three are
+// invisible in a cluster, so this test reads the source of every controller
+// package instead.
 func TestEveryControllerRecordsMetricsUnderItsControllerName(t *testing.T) {
 	t.Parallel()
 
@@ -55,6 +57,7 @@ func TestEveryControllerRecordsMetricsUnderItsControllerName(t *testing.T) {
 			}
 
 			assert.NotEmpty(t, w.names["Recorder"], "no observability.Recorder call found")
+			assert.True(t, w.forgets, "no observability.Forget call found: a deleted owner keeps its series")
 			assert.NotEmpty(t, w.names["Named"], "no Named call found")
 			assert.Len(
 				t,
@@ -71,6 +74,7 @@ func TestEveryControllerRecordsMetricsUnderItsControllerName(t *testing.T) {
 type wiring struct {
 	contexts               []string
 	contextsWithoutMetrics []string
+	forgets                bool
 	// names maps a call name to the source text of its first argument, one
 	// entry per call site.
 	names map[string][]string
@@ -103,6 +107,9 @@ func parseControllerPackage(t *testing.T, dir string) wiring {
 					}
 				}
 			case *ast.CallExpr:
+				if isSelector(node.Fun, "observability", "Forget") {
+					w.forgets = true
+				}
 				name, ok := wiringCall(node)
 				if ok && len(node.Args) > 0 {
 					w.names[name] = append(w.names[name], sourceOf(t, path, fset, node.Args[0]))

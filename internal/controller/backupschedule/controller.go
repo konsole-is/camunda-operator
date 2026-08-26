@@ -126,7 +126,12 @@ func (r *BackupScheduleReconciler) Reconcile(
 ) (_ ctrl.Result, err error) {
 	var schedule v1.BackupSchedule
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &schedule); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			observability.Forget(r.Metrics, new(v1.BackupSchedule).GetKind(), req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	// The schedule holds no finalizer: its backups deliberately outlive it,
