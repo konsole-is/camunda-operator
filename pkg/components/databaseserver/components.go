@@ -126,13 +126,11 @@ func SuperuserSecretName(server *v1.DatabaseServer) string {
 //
 // taken is why a cluster of that name is not this server's to write, from
 // ClusterTakenMessage, and it is empty when the name is free or the cluster is
-// the server's own. A guard blocks the apply while it is set. The caller reads
-// the holder and reports v1.ReasonClusterTaken.
-//
-// The registration also blocks on a foreign controller, which reaches the
-// paths a guard does not: a suspended component evaluates no guard, so the
-// option is what keeps a suspended server from hibernating the cluster of
-// another owner.
+// the server's own. While the component runs, a guard blocks the apply when
+// taken is set, and the caller reports v1.ReasonClusterTaken. A suspended
+// component evaluates no guard, so the resource is also registered with
+// BlockOnForeignController, which keeps a suspended server from hibernating
+// the cluster of another owner.
 func ClusterComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
