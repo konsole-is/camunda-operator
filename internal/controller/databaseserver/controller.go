@@ -428,6 +428,8 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, reconcileErr
 	}
 
+	var waits []time.Duration
+
 	// Nothing reports that the superuser Secret appeared: CloudNativePG owns
 	// it, and this controller watches only what it owns itself. Every other
 	// condition of this CR is backed by a watch. A running recovery waits on
@@ -442,16 +444,27 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// object belongs to somebody else, and its deletion reaches no watch of
 	// this controller either.
 	//
-	// Failing write-ahead log uploads ask for one too. CloudNativePG writes
-	// that condition once and leaves it, so nothing reports that the grace
-	// period of the outage passed.
+	// Each of these repeats: nothing carries the moment the thing it waits for
+	// arrives, so the look runs again until it does.
 	if recovering || resolved.clusterTaken != "" || resolved.archiveTaken != "" ||
-		pendingArchiveOutage(derived.outage, resolved.merged) ||
 		!meta.IsStatusConditionTrue(server.Status.Conditions, v1.ConditionContractReady) {
-		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+		waits = append(waits, r.retryInterval())
 	}
 
-	return ctrl.Result{}, nil
+	// Failing write-ahead log uploads ask for one look, when the grace period
+	// of the outage ends. CloudNativePG writes that condition once and leaves
+	// it, so nothing carries that moment either. Uploads that run again before
+	// it comes rewrite the condition on the cluster, which this controller
+	// owns, so that arrives on a watch and needs no look of its own.
+	if wait := pendingArchiveOutageWait(derived.outage, resolved.merged, time.Now()); wait > 0 {
+		waits = append(waits, wait)
+	}
+
+	if len(waits) == 0 {
+		return ctrl.Result{}, nil
+	}
+
+	return ctrl.Result{RequeueAfter: slices.Min(waits)}, nil
 }
 
 // preCheck resolves the preset, validates the merged spec, and resolves the
@@ -1037,12 +1050,22 @@ func reportedArchiveOutage(
 	return outage
 }
 
-// pendingArchiveOutage reports whether the write-ahead log uploads of the
-// server are failing and the grace period has not passed yet. Nothing wakes
-// the reconcile when it does: CloudNativePG writes that condition once and
-// leaves it standing.
-func pendingArchiveOutage(outage *components.ArchiveOutage, merged v1.DatabaseServerSpec) bool {
-	return outage != nil && !outage.Confirmed && !merged.Suspend && components.Archiving(merged)
+// pendingArchiveOutageWait returns what is left of the grace period of a stop
+// in the write-ahead log uploads that the server does not report on yet, or
+// zero when it has none to wait out.
+func pendingArchiveOutageWait(
+	outage *components.ArchiveOutage,
+	merged v1.DatabaseServerSpec,
+	now time.Time,
+) time.Duration {
+	if outage == nil || outage.Confirmed || merged.Suspend || !components.Archiving(merged) {
+		return 0
+	}
+
+	// The deadline can pass between the read of the cluster, which decided
+	// Confirmed, and this call. The look is then due at once, and a zero here
+	// would mean no look at all.
+	return max(outage.Since.Add(components.ArchiveOutageGracePeriod).Sub(now), time.Millisecond)
 }
 
 // serverVolumes are the volumes of the current cluster: one entry per

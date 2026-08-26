@@ -311,7 +311,7 @@ func TestReconcileArchiveHistoryHoldsAMoveTheApplyDidNotReach(t *testing.T) {
 // suspended server writes no write-ahead log, and a server that asks for no
 // archive writes none either, so what CloudNativePG left on its cluster
 // describes neither of them. An outage inside the grace period is reported by
-// nobody and looked at again.
+// nobody, and it asks for one look, at the moment that period ends.
 func TestReportedAndPendingArchiveOutage(t *testing.T) {
 	t.Parallel()
 
@@ -319,8 +319,11 @@ func TestReportedAndPendingArchiveOutage(t *testing.T) {
 		Archive: &v1.DatabaseServerArchiveSpec{ObjectStorageRef: "bucket", RetentionPeriodDays: 30},
 	}
 	suspended := v1.DatabaseServerSpec{Archive: archiving.Archive, Suspend: true}
-	confirmed := &components.ArchiveOutage{Reason: "ContinuousArchivingFailing", Confirmed: true}
-	held := &components.ArchiveOutage{Reason: "ContinuousArchivingFailing"}
+	stoppedAt := metav1.NewTime(archiveOpenedAt.Time)
+	confirmed := &components.ArchiveOutage{
+		Reason: "ContinuousArchivingFailing", Since: stoppedAt, Confirmed: true,
+	}
+	held := &components.ArchiveOutage{Reason: "ContinuousArchivingFailing", Since: stoppedAt}
 
 	assert.Same(t, confirmed, reportedArchiveOutage(confirmed, archiving))
 	assert.Nil(t, reportedArchiveOutage(held, archiving))
@@ -328,11 +331,21 @@ func TestReportedAndPendingArchiveOutage(t *testing.T) {
 	assert.Nil(t, reportedArchiveOutage(confirmed, v1.DatabaseServerSpec{}))
 	assert.Nil(t, reportedArchiveOutage(nil, archiving))
 
-	assert.True(t, pendingArchiveOutage(held, archiving))
-	assert.False(t, pendingArchiveOutage(confirmed, archiving))
-	assert.False(t, pendingArchiveOutage(held, suspended))
-	assert.False(t, pendingArchiveOutage(held, v1.DatabaseServerSpec{}))
-	assert.False(t, pendingArchiveOutage(nil, archiving))
+	minuteIn := stoppedAt.Add(time.Minute)
+	assert.Equal(
+		t,
+		components.ArchiveOutageGracePeriod-time.Minute,
+		pendingArchiveOutageWait(held, archiving, minuteIn),
+	)
+
+	// A deadline that passed while the reconcile ran is due at once, not never.
+	past := stoppedAt.Add(components.ArchiveOutageGracePeriod + time.Second)
+	assert.Equal(t, time.Millisecond, pendingArchiveOutageWait(held, archiving, past))
+
+	assert.Zero(t, pendingArchiveOutageWait(confirmed, archiving, minuteIn))
+	assert.Zero(t, pendingArchiveOutageWait(held, suspended, minuteIn))
+	assert.Zero(t, pendingArchiveOutageWait(held, v1.DatabaseServerSpec{}, minuteIn))
+	assert.Zero(t, pendingArchiveOutageWait(nil, archiving, minuteIn))
 }
 
 // unverifiedFrom says what the archive the server writes now is missing. The
