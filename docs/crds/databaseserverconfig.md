@@ -113,7 +113,7 @@ spec:
   # ... the rest of your contract
 ```
 
-`targetTime` is RFC 3339 with a zone. A timestamp without a zone is rejected. `targetTime` must name a point in the past that is still inside the retention period of the archive. `requestedBy` names the resource that asks, as `<namespace>/<name>`. `requestID` is a UUID that belongs to this request alone: a `PointInTimeRestore` writes its own `metadata.uid`, and a request you write by hand carries any UUID, for example from `uuidgen`.
+`targetTime` is RFC 3339 with a zone. A timestamp without a zone is rejected. `targetTime` must name a point in the past that is still inside the retention period of the archive. A retention period that was raised reaches the older points only as the archive writes past what the shorter one pruned. `requestedBy` names the resource that asks, as `<namespace>/<name>`. `requestID` is a UUID that belongs to this request alone: a `PointInTimeRestore` writes its own `metadata.uid`, and a request you write by hand carries any UUID, for example from `uuidgen`.
 
 The answer comes back in `pitr.lastRecovery`, and it repeats the request it answers:
 

@@ -246,6 +246,14 @@ objects are still there, so a target after now, or older than `retentionPeriodDa
 same way before the pick. Old archives stay in the bucket; the docs say the user
 prunes them.
 
+The plugin prunes by the retention period in force when it runs, so a raised `retentionPeriodDays`
+brings back nothing that a shorter one already dropped. `status.archive.reachableFrom` carries the
+highest floor any past period pruned to: every reconcile that writes an archive raises it to
+`now - retentionPeriodDays` and never lowers it. A target before it is refused with `Unavailable`
+even when the current period reaches further, and the floor ages out once
+`now - retentionPeriodDays` passes it. A record written before that field existed carries none, and
+the retention period alone bounds it.
+
 `location`, the canonical location of the bucket contract narrowed to the prefix of the server
 (`ObjectStorageConfig.LocationOf`), is what makes an interval readable. `objectStorageRef` names it
 for the reader. It is the canonical location rather than the URL the plugin is given, because the
@@ -564,8 +572,9 @@ the target and continues unchanged.
 The reconcile reads the contract it owns and sees `spec.recovery` that differs from
 `pitr.lastRecovery` and from `status.recovery`, and:
 
-1. Refuses a `targetTime` after now, or older than the retention period of the archive, with
-   `result: Unavailable` and a message that names the bound it broke. The retention is the one
+1. Refuses a `targetTime` after now, older than the retention period of the archive, or before
+   `status.archive.reachableFrom`, with `result: Unavailable` and a message that names the bound it
+   broke. The retention is the one
    `status.recovery.archive` pins while a recovery runs, and the merged spec otherwise. Then picks
    the archive from `status.archive.history[]` whose interval holds `targetTime`. None:
    applies `lastRecovery` with `result: Unavailable` and a message that names the covered

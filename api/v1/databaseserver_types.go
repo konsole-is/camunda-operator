@@ -350,6 +350,15 @@ type DatabaseServerArchiveStatus struct {
 	// one it moved to. It is cleared when that interval opens.
 	// +optional
 	Boundary *ArchiveBoundary `json:"boundary,omitempty"`
+	// ReachableFrom is the oldest point the objects in the bucket still go
+	// back to. The retention period prunes the bucket as it runs, and a
+	// raised retention period does not bring back what a shorter one already
+	// pruned. The window grows to the new retention period only as the
+	// archive writes past this point, and a rollback to a point before it is
+	// refused. It is unset on a server that archived before this field
+	// existed, and the retention period alone bounds that one.
+	// +optional
+	ReachableFrom *metav1.Time `json:"reachableFrom,omitempty"`
 }
 
 // RecoveryArchiveRef names the archive that a recovery reads: the directory in

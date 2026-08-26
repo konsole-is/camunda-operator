@@ -284,6 +284,88 @@ func TestReconcileArchiveHistoryRecordsAMoveAtTheGivenInstant(t *testing.T) {
 	assert.Equal(t, "bucket", boundary.ObjectStorageRef)
 }
 
+// The floor is the point the highest retention period ever in force pruned
+// the bucket to. A raise leaves it where it is, and the clock moves it again
+// only once now minus the retention period passes it.
+func TestAdvanceArchiveFloor(t *testing.T) {
+	t.Parallel()
+
+	floorAt := func(d time.Duration) *metav1.Time {
+		point := metav1.NewTime(archiveOpenedAt.Add(d))
+
+		return &point
+	}
+
+	tests := []struct {
+		name   string
+		spec   *v1.DatabaseServerArchiveSpec
+		status *v1.DatabaseServerArchiveStatus
+		now    metav1.Time
+		want   *metav1.Time
+	}{
+		{
+			name: "records the floor of an archive that carries none",
+			spec: &v1.DatabaseServerArchiveSpec{ObjectStorageRef: "bucket", RetentionPeriodDays: 7},
+			now:  archiveOpenedAt,
+			want: floorAt(-7 * day),
+		},
+		{
+			name:   "moves the floor with the clock",
+			spec:   &v1.DatabaseServerArchiveSpec{ObjectStorageRef: "bucket", RetentionPeriodDays: 7},
+			status: &v1.DatabaseServerArchiveStatus{ReachableFrom: floorAt(-7 * day)},
+			now:    metav1.NewTime(archiveOpenedAt.Add(day)),
+			want:   floorAt(-6 * day),
+		},
+		{
+			name:   "keeps the floor when the retention period is raised",
+			spec:   &v1.DatabaseServerArchiveSpec{ObjectStorageRef: "bucket", RetentionPeriodDays: 30},
+			status: &v1.DatabaseServerArchiveStatus{ReachableFrom: floorAt(-7 * day)},
+			now:    archiveOpenedAt,
+			want:   floorAt(-7 * day),
+		},
+		{
+			name:   "moves the floor up when the retention period is lowered",
+			spec:   &v1.DatabaseServerArchiveSpec{ObjectStorageRef: "bucket", RetentionPeriodDays: 7},
+			status: &v1.DatabaseServerArchiveStatus{ReachableFrom: floorAt(-30 * day)},
+			now:    archiveOpenedAt,
+			want:   floorAt(-7 * day),
+		},
+		{
+			name:   "leaves the floor of a server that archives nothing",
+			status: &v1.DatabaseServerArchiveStatus{ReachableFrom: floorAt(-7 * day)},
+			now:    metav1.NewTime(archiveOpenedAt.Add(30 * day)),
+			want:   floorAt(-7 * day),
+		},
+		{
+			name: "writes no floor for a server that archives nothing",
+			now:  archiveOpenedAt,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := &v1.DatabaseServer{Status: v1.DatabaseServerStatus{Archive: tt.status}}
+
+			advanceArchiveFloor(server, v1.DatabaseServerSpec{Archive: tt.spec}, tt.now)
+
+			if tt.want == nil {
+				assert.Nil(t, server.Status.Archive)
+
+				return
+			}
+
+			require.NotNil(t, server.Status.Archive)
+			require.NotNil(t, server.Status.Archive.ReachableFrom)
+			assert.True(
+				t, server.Status.Archive.ReachableFrom.Equal(tt.want),
+				server.Status.Archive.ReachableFrom,
+			)
+		})
+	}
+}
+
 func TestHeldArchive(t *testing.T) {
 	recorded := &v1.RecoveryArchiveRef{
 		ServerName:          "camunda",

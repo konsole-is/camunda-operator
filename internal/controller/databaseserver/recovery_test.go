@@ -677,6 +677,64 @@ var _ = Describe("DatabaseServer recovery", func() {
 		)).To(MatchError(apierrors.IsNotFound, "not found"))
 	})
 
+	It("reaches a raised retention period only as the archive writes past the prune", func() {
+		bucket := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 7,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000001")
+
+		// The interval opens 30 days back, so every point this spec asks for
+		// lies inside it. What the bucket still holds is the only question.
+		from := metav1.NewTime(time.Now().Add(-30 * day).Truncate(time.Second))
+		completeBaseBackup(server, "base-1", from)
+		Eventually(func() []v1.ArchiveRecord {
+			return archiveHistory(server)
+		}, timeout, interval).Should(HaveLen(1))
+
+		By("recording the floor that a retention period of 7 days prunes to")
+		Eventually(func(g Gomega) {
+			archive := reconciledServer(server).Status.Archive
+			g.Expect(archive).NotTo(BeNil())
+			g.Expect(archive.ReachableFrom).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		By("raising the retention period to 30 days")
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			latest.Spec.Archive.RetentionPeriodDays = 30
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			pitr := publishedContract(server).Spec.PITR
+			g.Expect(pitr).NotTo(BeNil())
+			g.Expect(pitr.RetentionPeriodDays).To(HaveValue(BeEquivalentTo(30)))
+		}, timeout, interval).Should(Succeed())
+
+		By("refusing a point of 20 days ago, which the shorter period pruned")
+		request := askForRecovery(server, time.Now().Add(-20*day))
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultUnavailable)
+		Expect(outcome.RequestID).To(Equal(request.RequestID))
+		Expect(outcome.Message).To(ContainSubstring("pruned the archive to"))
+
+		// The floor stops moving under the longer period, so the point the
+		// message names is the one the server holds now.
+		latest := reconciledServer(server)
+		Expect(latest.Status.Archive.ReachableFrom).NotTo(BeNil())
+		Expect(outcome.Message).To(ContainSubstring(
+			latest.Status.Archive.ReachableFrom.UTC().Format(time.RFC3339),
+		))
+		Expect(latest.Status.Recovery.Cluster).To(BeEmpty())
+
+		By("recovering to a point of 3 days ago, which the archive still holds")
+		askForRecovery(server, time.Now().Add(-3*day))
+		expectRecoveryCluster(server)
+	})
+
 	It("keeps waiting while CloudNativePG reports a plugin phase it retries", func() {
 		server, from := archivingServer()
 		askForRecovery(server, from.Add(time.Hour))
@@ -1789,38 +1847,85 @@ var _ = Describe("DatabaseServer recovery", func() {
 	})
 })
 
-// Both bounds move with the clock, so every case is written against the
-// moment the test runs. The two that pass sit a minute inside the retention
-// period, which keeps them off the edge that the clock crosses while the test
-// runs.
+// Every bound is read against the now the caller passes, so the cases are
+// written against one fixed instant.
 func TestOutOfReach(t *testing.T) {
 	t.Parallel()
 
-	const retentionDays = 7
-	retention := retentionDays * day
+	now := time.Date(2026, 8, 25, 10, 0, 0, 0, time.UTC)
+	// The floor that a retention period of 7 days left behind when it was
+	// raised to 30 at now.
+	pruned := metav1.NewTime(now.Add(-7 * day))
 
 	tests := []struct {
-		name    string
-		target  time.Time
-		message string
+		name          string
+		now           time.Time
+		target        time.Time
+		retentionDays int32
+		reachableFrom *metav1.Time
+		message       string
 	}{
 		{
-			name:    "a point that has not happened yet",
-			target:  time.Now().Add(time.Hour),
-			message: "lies in the future",
+			name:          "a point that has not happened yet",
+			now:           now,
+			target:        now.Add(time.Hour),
+			retentionDays: 7,
+			message:       "lies in the future",
 		},
 		{
-			name:    "a point older than the retention period",
-			target:  time.Now().Add(-retention - time.Minute),
-			message: "older than the retention period",
+			name:          "a point older than the retention period",
+			now:           now,
+			target:        now.Add(-7*day - time.Minute),
+			retentionDays: 7,
+			message:       "older than the retention period",
 		},
 		{
-			name:   "a point just inside the retention period",
-			target: time.Now().Add(-retention + time.Minute),
+			name:          "a point just inside the retention period",
+			now:           now,
+			target:        now.Add(-7*day + time.Minute),
+			retentionDays: 7,
 		},
 		{
-			name:   "a point in the middle of the retention period",
-			target: time.Now().Add(-time.Hour),
+			name:          "a point in the middle of the retention period",
+			now:           now,
+			target:        now.Add(-time.Hour),
+			retentionDays: 7,
+		},
+		// The raise from 7 days to 30 at now. The bucket was pruned to the
+		// floor while the shorter period was in force, and a raise brings
+		// none of those points back.
+		{
+			name:          "a point that the shorter retention period pruned",
+			now:           now,
+			target:        now.Add(-8 * day),
+			retentionDays: 30,
+			reachableFrom: &pruned,
+			message:       "pruned the archive to",
+		},
+		{
+			name:          "that same point twenty days after the raise",
+			now:           now.Add(20 * day),
+			target:        now.Add(-8 * day),
+			retentionDays: 30,
+			reachableFrom: &pruned,
+			message:       "pruned the archive to",
+		},
+		{
+			name:          "a point of eight days ago once the archive wrote past the floor",
+			now:           now.Add(20 * day),
+			target:        now.Add(12 * day),
+			retentionDays: 30,
+			reachableFrom: &pruned,
+		},
+		// The floor ages out: forty days on, the retention period of 30 days
+		// reaches nothing that old either, and it is what the message names.
+		{
+			name:          "a point the retention period passed the floor on",
+			now:           now.Add(40 * day),
+			target:        now.Add(-8 * day),
+			retentionDays: 30,
+			reachableFrom: &pruned,
+			message:       "older than the retention period",
 		},
 	}
 
@@ -1828,7 +1933,7 @@ func TestOutOfReach(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			refusal := outOfReach(tt.target, retentionDays)
+			refusal := outOfReach(tt.now, tt.target, tt.retentionDays, tt.reachableFrom)
 
 			if tt.message == "" {
 				assert.Nil(t, refusal)

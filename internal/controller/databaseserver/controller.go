@@ -356,9 +356,11 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// read counts by, so a record here calls somebody else's archive an
 	// archive of this server.
 	if !resolved.holdArchive && resolved.clusterTaken == "" {
+		now := metav1.Now()
+		advanceArchiveFloor(&server, resolved.merged, now)
 		reconcileArchiveHistory(
 			&server, resolved.merged, built.archive, archiveStart,
-			resolved.archiveLocation, moved, metav1.Now(),
+			resolved.archiveLocation, moved, now,
 		)
 	}
 
@@ -1369,6 +1371,30 @@ func stageTaken(server *v1.DatabaseServer, conditionType, reason, message string
 		Message:            conditions.BoundMessage(message),
 		ObservedGeneration: server.Generation,
 	})
+}
+
+// advanceArchiveFloor raises status.archive.reachableFrom to the point the
+// retention period prunes the bucket to at now. A server that writes no
+// archive prunes nothing, so its floor stands still.
+func advanceArchiveFloor(server *v1.DatabaseServer, merged v1.DatabaseServerSpec, now metav1.Time) {
+	if merged.Archive == nil {
+		return
+	}
+
+	floor := metav1.NewTime(now.Add(-time.Duration(merged.Archive.RetentionPeriodDays) * day))
+	if server.Status.Archive == nil {
+		server.Status.Archive = &v1.DatabaseServerArchiveStatus{}
+	}
+
+	// The plugin prunes by the retention period that is in force when it runs,
+	// and what it removes is gone. A raised period therefore lowers nothing.
+	// The floor stays at the highest point any past period pruned to, and the
+	// window widens to the new period only as the archive writes past it.
+	if reached := server.Status.Archive.ReachableFrom; reached != nil && !floor.After(reached.Time) {
+		return
+	}
+
+	server.Status.Archive.ReachableFrom = &floor
 }
 
 // reconcileArchiveHistory keeps status.archive.history in step with the spec.
