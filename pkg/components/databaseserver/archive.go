@@ -330,7 +330,8 @@ func ArchiveComponent(
 // things block it: no base backup of the archive the server writes now has
 // completed, and the write-ahead log of the server stopped reaching the
 // bucket. archiveStart is when the earliest such backup completed, or nil when
-// none has, and outage is the confirmed stop in the uploads, or nil.
+// none has, and outage is the stop in the uploads that the caller reports on,
+// or nil. The guard blocks on every outage it is given.
 //
 // The uploads come first. An archive that stopped receiving write-ahead log
 // takes no base backup either, so the failing uploads are what the reader acts
