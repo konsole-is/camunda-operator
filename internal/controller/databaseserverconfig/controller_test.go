@@ -89,9 +89,13 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &got)).To(Succeed())
 			cond := meta.FindStatusCondition(got.Status.Conditions, v1.ConditionReady)
 			g.Expect(cond).NotTo(BeNil())
-			g.Expect(cond.Status).To(Equal(status))
-			g.Expect(cond.Reason).To(Equal(reason))
-			g.Expect(cond.Message).To(Equal(message))
+			// The first assertion that fails ends the poll, so a timeout on
+			// the status alone would hide the reason the condition carried.
+			// The description puts the whole condition in every failure.
+			recorded := fmt.Sprintf("Ready is %s/%s: %s", cond.Status, cond.Reason, cond.Message)
+			g.Expect(cond.Status).To(Equal(status), recorded)
+			g.Expect(cond.Reason).To(Equal(reason), recorded)
+			g.Expect(cond.Message).To(Equal(message), recorded)
 		}, timeout, interval).Should(Succeed())
 	}
 

@@ -73,7 +73,8 @@ const (
 type DatabaseServerConfigReconciler struct {
 	client.Client
 	// APIReader reads directly from the API server and bypasses the cache.
-	// Secret data needs it, because Secrets are watched metadata-only.
+	// The contract and the Secret data both need it: Secrets are watched
+	// metadata-only, and a status write from a cached contract conflicts.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 	// Metrics records the condition gauge and the apply counters of the
@@ -97,13 +98,16 @@ type DatabaseServerConfigReconciler struct {
 // new. The status update is then a no-op on the server and wakes no watch.
 // The requeue sets the probe cadence, not a status-write loop.
 func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	// Cached, not live. The freshness of the last probe is the one thing this
-	// controller reads back from its own status write, and a stale copy only
-	// costs a probe it could have skipped. Nothing terminal hangs on it, a
-	// lost status write is taken again on the probe timer, and the controller
-	// records no event that a second look repeats.
+	// Live, not cached. The status write carries the resourceVersion of the
+	// copy this read returns. A copy from before the last write carries a
+	// resourceVersion the server has moved past, so the write is refused with
+	// a conflict. The contract declares no components, so FlushStatus does not
+	// own its Ready condition. It repairs a conflict with the Ready of the
+	// server, which drops the one this pass staged. Nothing stages it again:
+	// the watch drops status-only updates and the requeue is the probe
+	// interval.
 	var cfg v1.DatabaseServerConfig
-	if err := r.Get(ctx, req.NamespacedName, &cfg); err != nil {
+	if err := r.APIReader.Get(ctx, req.NamespacedName, &cfg); err != nil {
 		if apierrors.IsNotFound(err) {
 			observability.Forget(r.Metrics, new(v1.DatabaseServerConfig).GetKind(), req.NamespacedName)
 			return ctrl.Result{}, nil
@@ -119,8 +123,7 @@ func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl
 
 	conditions.Stage(&cfg, cond)
 
-	// The contract owns no components, so its Ready condition follows the
-	// server on a conflict and is staged again on the next reconcile.
+	// The contract runs no components, so this flush owns no condition type.
 	if err := component.FlushStatus(
 		ctx,
 		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Metrics: r.Metrics, Owner: &cfg},
