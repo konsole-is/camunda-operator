@@ -308,7 +308,6 @@ spec:
       fromAddress: "noreply@example.com"
       credentialsSecretRef:
         name: "my-smtp-credentials"
-        namespace: "my-management-ns"
         usernameKey: "username"
         passwordKey: "password"
   # ... the rest of your management cluster
