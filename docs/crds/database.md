@@ -41,7 +41,7 @@ The operator generates each password once and keeps it. To rotate one, delete it
 
 ## Missing references
 
-If `spec.serverRef` names no `DatabaseServerConfig` in this namespace, `Ready` is `False` with reason `InvalidReference`. If that contract has not published `status.systemIdentifier` yet, the reason is `ServerIdentityUnknown`, and the `Database` claims nothing and runs no SQL until it does. If the admin credentials Secret of the server is missing or lacks a key, the reason is `MissingSecret`. If the server does not answer or rejects the admin credentials, the reason is `ConnectionFailed` and the operator retries every 30 seconds.
+If `spec.serverRef` names no `DatabaseServerConfig` in this namespace, `Ready` is `False` with reason `InvalidReference`. If that contract has not published `status.systemIdentifier` yet, the reason is `ServerIdentityUnknown`, and the `Database` claims nothing and runs no SQL until it does. A contract whose `status.probedEndpoint` names an endpoint that its spec no longer names reads the same way, because that identity belongs to the server before the change. If the admin credentials Secret of the server is missing or lacks a key, the reason is `MissingSecret`. If the server does not answer or rejects the admin credentials, the reason is `ConnectionFailed` and the operator retries every 30 seconds.
 
 ## Uniqueness
 
@@ -75,7 +75,7 @@ Deletion removes the `DatabaseConfig`, the `SecondaryStorageConfig`, and the cre
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `InvalidReference` | `spec.serverRef` names no `DatabaseServerConfig` in this namespace. Or another `Database`, named in the message as `<namespace>/<name>`, already claims the same logical database name on the same server. | Create the `DatabaseServerConfig`, or change `databaseName`, or delete the duplicate. |
-| `Ready` | `ServerIdentityUnknown` | The `DatabaseServerConfig` has not published `status.systemIdentifier` yet. The operator cannot tell which server the contract reaches, so it claims nothing and runs no SQL. | Wait until the `DatabaseServerConfig` reports `Ready`. It publishes the identity as soon as it reaches the server. |
+| `Ready` | `ServerIdentityUnknown` | The `DatabaseServerConfig` has not published `status.systemIdentifier` yet, or it published one for an endpoint that its spec no longer names. The operator cannot tell which server the contract reaches, so it claims nothing and runs no SQL. | Wait until the `DatabaseServerConfig` is probed again for the endpoint and the credentials its spec names now. It publishes the identity as soon as it reaches the server. |
 | `Ready` | `MissingSecret` | The admin credentials Secret of the server is missing or lacks a key. | Create the Secret with the keys that the `DatabaseServerConfig` names. |
 | `Ready` | `ConnectionFailed` | The server does not answer, or it rejects the admin credentials. The operator retries every 30 seconds. | Make sure that the operator can reach the server and that the admin credentials are correct. |
 | `Ready` | component status | The pre-checks passed. `Ready` takes the status and reason of `BindingsReady`, for example `Healthy`, `Creating`, `Updating`, `Failing`, or `Error`. | Wait while the reason is `Creating` or `Updating`. For other reasons, read the message of `BindingsReady`. |

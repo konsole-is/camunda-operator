@@ -17,6 +17,8 @@ limitations under the License.
 package v1
 
 import (
+	"fmt"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -277,6 +279,25 @@ type DatabaseServerConfig struct {
 // writes spec.recovery, and the producer reads it before it takes one.
 func (in *DatabaseServerConfig) OperatorRecovers() bool {
 	return in.Spec.PITR != nil && in.Spec.PITR.Recovery == RecoveryModeOperator
+}
+
+// ProbedForCurrentSpec reports whether the record of the last probe describes
+// the server that the spec names now. After a change of host, port, or admin
+// Secret, the record stays as it was until the contract controller notices
+// the change and clears it, and it stays empty until the next probe succeeds.
+// In both windows ServerVersion and SystemIdentifier do not describe the
+// server the spec names. A consumer that keys on either one waits until this
+// reports true.
+func (in *DatabaseServerConfig) ProbedForCurrentSpec() bool {
+	if in.Status.ProbedAt == nil {
+		return false
+	}
+
+	ref := in.Spec.AdminCredentialsSecretRef
+
+	return in.Status.ProbedEndpoint == fmt.Sprintf("%s:%d", in.Spec.Host, in.Spec.Port) &&
+		in.Status.ProbedSecretName == ref.Name &&
+		in.Status.ProbedSecretKeys == ref.UsernameKey+"/"+ref.PasswordKey
 }
 
 // GetStatusConditions returns a pointer to the status conditions. The

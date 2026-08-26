@@ -99,6 +99,8 @@ spec:
 
 `spec.recovery` asks for the rollback. A [PointInTimeRestore](pointintimerestore.md) writes it on a contract that declares `pitr.recovery: operator`, and never on one that declares `external`. You can write it by hand against a contract that a `DatabaseServer` publishes.
 
+For a Camunda cluster, the safe action is a [PointInTimeRestore](pointintimerestore.md). It suspends the cluster, asks for the rollback, and restores the primary storage in order. A request that you write by hand rolls the database back alone. It is for a consumer outside the operator. That consumer stops every writer first, then brings its own state back in line.
+
 ```yaml
 apiVersion: core.camunda.io/v1
 kind: DatabaseServerConfig

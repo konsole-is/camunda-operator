@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -110,17 +111,36 @@ func createAdminSecret(namespace string) string {
 	return secret.Name
 }
 
-// probedServer is unprobedServer with the identity of the container
-// published, because the DatabaseServerConfig controller does not run in this
-// suite and the identity of the server is what the collision rule keys on.
+// probedServer is unprobedServer with the record of a probe published,
+// because the DatabaseServerConfig controller does not run in this suite and
+// the identity of the server is what the collision rule keys on.
 func probedServer(namespace, secretName, host string) *v1.DatabaseServerConfig {
 	GinkgoHelper()
 
 	server := unprobedServer(namespace, secretName, host)
-	server.Status.SystemIdentifier = serverSystemIdentifier()
-	Expect(k8sClient.Status().Update(ctx, server)).To(Succeed())
+	publishProbe(server)
 
 	return server
+}
+
+// publishProbe records a probe of the endpoint and the admin credentials that
+// the spec of server names now, with the identity of the shared container. It
+// refreshes server from the API, so a caller can go on updating it.
+func publishProbe(server *v1.DatabaseServerConfig) {
+	GinkgoHelper()
+
+	identifier := serverSystemIdentifier()
+
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), server)).To(Succeed())
+		ref := server.Spec.AdminCredentialsSecretRef
+		server.Status.SystemIdentifier = identifier
+		server.Status.ProbedAt = &metav1.Time{Time: time.Now()}
+		server.Status.ProbedEndpoint = fmt.Sprintf("%s:%d", server.Spec.Host, server.Spec.Port)
+		server.Status.ProbedSecretName = ref.Name
+		server.Status.ProbedSecretKeys = ref.UsernameKey + "/" + ref.PasswordKey
+		g.Expect(k8sClient.Status().Update(ctx, server)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 }
 
 // unprobedServer creates a DatabaseServerConfig in namespace that reaches the
@@ -434,6 +454,46 @@ var _ = Describe("Database controller", func() {
 		}, "3s", interval).Should(BeFalse(), "a Database that claims nothing must run no SQL")
 	})
 
+	// A contract keeps the identity it published while its spec moves to
+	// another endpoint, until the operator reaches that endpoint. The Database
+	// keys its claim on the identity and connects to the endpoint of the spec,
+	// so the two must describe one server before it acts.
+	It("waits with ServerIdentityUnknown while the identity belongs to the endpoint before a move", func() {
+		namespace := newDatabaseNamespace()
+
+		host := testPostgresHost()
+		previous := "127.0.0.1"
+		if host == previous {
+			previous = "localhost"
+		}
+		server := probedServer(namespace, createAdminSecret(namespace), previous)
+
+		By("moving the endpoint of the contract with no probe of the new one")
+		server.Spec.Host = host
+		Expect(k8sClient.Update(ctx, server)).To(Succeed())
+
+		db := databaseFor(server.Name, namespace)
+		createDatabase(db)
+
+		expectDatabaseReady(
+			db, metav1.ConditionFalse, v1.ReasonServerIdentityUnknown,
+			fmt.Sprintf(
+				"DatabaseServerConfig %s/%s has not reached the server its spec names now",
+				namespace, server.Name,
+			),
+		)
+
+		Consistently(func() bool {
+			return sqlDatabaseExists(db.Spec.DatabaseName)
+		}, "3s", interval).Should(BeFalse(), "a Database that cannot key its claim must run no SQL")
+
+		By("recording a probe of the endpoint the spec names now")
+		publishProbe(server)
+
+		expectDatabaseReady(db, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+		Expect(sqlDatabaseExists(db.Spec.DatabaseName)).To(BeTrue())
+	})
+
 	It("reports ConnectionFailed for an unreachable server", func() {
 		namespace := newDatabaseNamespace()
 
@@ -444,9 +504,10 @@ var _ = Describe("Database controller", func() {
 		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
 
-		server := probedServer(namespace, secret.Name, "127.0.0.1")
+		server := unprobedServer(namespace, secret.Name, "127.0.0.1")
 		server.Spec.Port = 1
 		Expect(k8sClient.Update(ctx, server)).To(Succeed())
+		publishProbe(server)
 
 		db := databaseFor(server.Name, namespace)
 		createDatabase(db)
@@ -556,12 +617,7 @@ var _ = Describe("Database controller", func() {
 		Expect(k8sClient.Get(ctx, appKey, &corev1.Secret{})).To(Succeed())
 
 		By("giving the older contract its identity, which hands it the claim")
-		Eventually(func(g Gomega) {
-			var contract v1.DatabaseServerConfig
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(olderServer), &contract)).To(Succeed())
-			contract.Status.SystemIdentifier = serverSystemIdentifier()
-			g.Expect(k8sClient.Status().Update(ctx, &contract)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		publishProbe(olderServer)
 
 		expectDatabaseReady(
 			publisherDB, metav1.ConditionFalse, v1.ReasonInvalidReference,
@@ -679,12 +735,7 @@ var _ = Describe("Database controller", func() {
 		Expect(recorded.Status.CollisionKey).NotTo(BeEmpty())
 
 		By("giving the older contract its identity")
-		Eventually(func(g Gomega) {
-			var contract v1.DatabaseServerConfig
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(olderServer), &contract)).To(Succeed())
-			contract.Status.SystemIdentifier = serverSystemIdentifier()
-			g.Expect(k8sClient.Status().Update(ctx, &contract)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		publishProbe(olderServer)
 
 		By("handing the claim to the older Database")
 		expectDatabaseReady(olderDB, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
