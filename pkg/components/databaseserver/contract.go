@@ -48,15 +48,16 @@ import (
 // name. The caller reports v1.ReasonContractTaken over the block, because the
 // framework names the owner and not the remedy.
 //
-// taken is the ContractTakenMessage while a DatabaseServerConfig of that name
-// exists that this server did not publish, and empty otherwise. A guard blocks
-// the apply while it is set. It covers the contract that nothing controls,
-// which the framework leaves to be adopted: a person writes that one for a
-// PostgreSQL server the operator does not run, and the apply would rewrite its
-// endpoint and its credentials.
+// The contractTaken message is the ContractTakenMessage while a
+// DatabaseServerConfig of that name exists that this server did not publish,
+// and empty otherwise. A guard blocks the apply while it is set. It covers the
+// contract that nothing controls, which the framework leaves to be adopted: a
+// person writes that one for a PostgreSQL server the operator does not run,
+// and the apply would rewrite its endpoint and its credentials.
 //
-// clusterTaken is the ClusterTaken message while a CloudNativePG cluster of
-// the name the server derives is not this server's, and empty otherwise. When
+// The clusterTaken message is the ClusterTaken message while a CloudNativePG
+// cluster of the name the server derives is not this server's, and empty
+// otherwise. When
 // it is set, the feature gate is off and the framework removes the published
 // contract, because the contract names the endpoint and the superuser Secret
 // of a database this server does not own. A consumer then reads
@@ -67,7 +68,7 @@ func ContractComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
 	clusterTaken string,
-	taken string,
+	contractTaken string,
 ) (*component.Component, error) {
 	superuser, err := secret.NewBuilder(superuserSecretRef(server)).Build()
 	if err != nil {
@@ -91,7 +92,7 @@ func ContractComponent(
 			},
 			PITR: pitrCapability(merged),
 		},
-	}).WithGuard(takenGuard[v1.DatabaseServerConfig](taken)).Build()
+	}).WithGuard(takenGuard[v1.DatabaseServerConfig](contractTaken)).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +100,7 @@ func ContractComponent(
 	return component.NewComponentBuilder().
 		WithName("contract").
 		WithConditionType(v1.ConditionContractReady).
-		WithFeatureGate(feature.NewBooleanGate(clusterTaken == "" || taken != "")).
+		WithFeatureGate(feature.NewBooleanGate(clusterTaken == "" || contractTaken != "")).
 		WithResource(superuser, component.ReadOnly(), component.BlockOnAbsence(), component.Auxiliary()).
 		WithResource(contract, component.BlockOnForeignController()).
 		Build()
