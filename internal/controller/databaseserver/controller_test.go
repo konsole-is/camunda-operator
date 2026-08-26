@@ -38,6 +38,7 @@ import (
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/cnpgcluster"
 )
 
 // presetStorageSize is the data volume that serverOnPreset puts on the preset.
@@ -1146,6 +1147,55 @@ var _ = Describe("DatabaseServer controller", func() {
 		makeClusterHealthy(server, "7000000000000000001")
 		expectCondition(server, v1.ConditionClusterReady, metav1.ConditionTrue)
 		expectCondition(server, v1.ConditionContractReady, metav1.ConditionTrue)
+	})
+
+	It("leaves a cluster nothing controls alone while the server is suspended", func() {
+		namespace := "dbs-" + utilrand.String(8)
+		Expect(k8sClient.Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		})).To(Succeed())
+
+		// A cluster that nothing controls holds a database all the same, and the
+		// guard refuses it while the server runs. A suspended component
+		// evaluates no guard, and ocf blocks only on a controller of somebody
+		// else, so this is the one the server has to be kept off by declining
+		// the suspension itself.
+		occupant := &cnpgv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: namespace},
+			Spec: cnpgv1.ClusterSpec{
+				Instances:            3,
+				StorageConfiguration: cnpgv1.StorageConfiguration{Size: "8Gi"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, occupant)).To(Succeed())
+
+		server := &v1.DatabaseServer{
+			ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: namespace},
+			Spec: v1.DatabaseServerSpec{
+				Version:              "17",
+				Instances:            new(int32(1)),
+				StorageSize:          new(resource.MustParse("1Gi")),
+				DatabaseServerConfig: "camunda",
+				Suspend:              true,
+			},
+		}
+		Expect(k8sClient.Create(ctx, server)).To(Succeed())
+
+		taken := expectCondition(server, v1.ConditionClusterReady, metav1.ConditionFalse)
+		Expect(taken.Reason).To(Equal(v1.ReasonClusterTaken))
+		Expect(taken.Message).To(ContainSubstring("no owner controls it"))
+
+		// The suspension writes the hibernation annotation and the running apply
+		// writes it off, so either one shows on the object of the other owner.
+		key := client.ObjectKey{Namespace: namespace, Name: "camunda"}
+		Consistently(func(g Gomega) {
+			var live cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, key, &live)).To(Succeed())
+			g.Expect(live.Annotations).NotTo(HaveKey(cnpgcluster.HibernationAnnotation))
+			g.Expect(live.Spec.Instances).To(Equal(3))
+			g.Expect(live.Spec.StorageConfiguration.Size).To(Equal("8Gi"))
+			g.Expect(metav1.GetControllerOf(&live)).To(BeNil())
+		}, 2*time.Second, interval).Should(Succeed())
 	})
 
 	It("withdraws what it published when another owner takes its cluster", func() {

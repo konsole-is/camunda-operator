@@ -126,11 +126,20 @@ func SuperuserSecretName(server *v1.DatabaseServer) string {
 //
 // blocked is why a cluster of that name is not this component's to apply, from
 // ClusterTakenMessage or RecoveryHoldsClusterMessage, and it is empty when the
-// name is the component's. While the component runs, a guard blocks the apply
-// when blocked is set, and a taken name is reported by the caller as
-// v1.ReasonClusterTaken. A suspended component evaluates no guard, so the
-// resource is also registered with BlockOnForeignController, which keeps a
-// suspended server from hibernating the cluster of another owner.
+// name is the component's. A guard blocks the apply while it is set, and a
+// taken name is reported by the caller as v1.ReasonClusterTaken.
+//
+// A blocked component is never suspended, whatever spec.suspend says. ocf
+// decides suspension before it reaches any guard, and a suspended component
+// applies the hibernation of every resource it holds, so a server suspended on
+// a name it does not own would stop the database behind that name. Staying on
+// the running path is what puts the guard in front of the apply, and
+// ClusterReady then names the holder rather than reporting Suspended, which is
+// the truth: the server suspended nothing, because the cluster is not its.
+//
+// BlockOnForeignController covers the same ground on the suspension path, but
+// only for a cluster another owner controls. The guard is what covers a
+// cluster that nothing controls, and a rollback whose cluster is gone.
 func ClusterComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
@@ -156,7 +165,7 @@ func ClusterComponent(
 		WithName("cluster").
 		WithConditionType(v1.ConditionClusterReady).
 		WithResource(postgres, component.BlockOnForeignController()).
-		Suspend(merged.Suspend).
+		Suspend(merged.Suspend && blocked == "").
 		Build()
 	if err != nil {
 		return nil, nil, err
