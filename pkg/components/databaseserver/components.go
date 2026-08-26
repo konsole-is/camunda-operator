@@ -124,22 +124,34 @@ func SuperuserSecretName(server *v1.DatabaseServer) string {
 // CloudNativePG reports, empty until it has detected one. It is set after the
 // component reconciles, and the controller mirrors it to status.
 //
-// taken is why a cluster of that name is not this server's to write, from
-// ClusterTakenMessage, and it is empty when the name is free or the cluster is
-// the server's own. A guard blocks the apply while it is set. The caller reads
-// the holder and reports v1.ReasonClusterTaken.
+// blocked is why a cluster of that name is not this component's to apply, from
+// ClusterTakenMessage or RecoveryHoldsClusterMessage, and it is empty when the
+// name is the component's. A guard blocks the apply while it is set, and a
+// taken name is reported by the caller as v1.ReasonClusterTaken.
+//
+// A blocked component is never suspended, whatever spec.suspend says. ocf
+// decides suspension before it reaches any guard, and a suspended component
+// applies the hibernation of every resource it holds, so a server suspended on
+// a name it does not own would stop the database behind that name. Staying on
+// the running path is what puts the guard in front of the apply, and
+// ClusterReady then names the holder rather than reporting Suspended, which is
+// the truth: the server suspended nothing, because the cluster is not its.
+//
+// BlockOnForeignController covers the same ground on the suspension path, but
+// only for a cluster another owner controls. The guard is what covers a
+// cluster that nothing controls, and a rollback whose cluster is gone.
 func ClusterComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
 	archive *ArchiveStorage,
 	platform *v1.CamundaPlatformConfigSpec,
-	taken string,
+	blocked string,
 ) (*component.Component, *concepts.Data[string], error) {
 	systemIdentifier := concepts.NewData[string]("postgres-system-identifier")
 
 	builder := cnpgcluster.NewBuilder(cluster(server, merged, platform)).
 		WithMutation(clusterMutations(server, merged, archive)...).
-		WithGuard(takenGuard[cnpgv1.Cluster](taken))
+		WithGuard(takenGuard(blocked))
 	cnpgcluster.ExtractInto(builder, systemIdentifier, func(c cnpgv1.Cluster) (string, error) {
 		return c.Status.SystemID, nil
 	})
@@ -152,8 +164,8 @@ func ClusterComponent(
 	comp, err := component.NewComponentBuilder().
 		WithName("cluster").
 		WithConditionType(v1.ConditionClusterReady).
-		WithResource(postgres).
-		Suspend(merged.Suspend).
+		WithResource(postgres, component.BlockOnForeignController()).
+		Suspend(merged.Suspend && blocked == "").
 		Build()
 	if err != nil {
 		return nil, nil, err
@@ -355,16 +367,34 @@ func ClusterTakenMessage(name string, holder *metav1.OwnerReference) string {
 	)
 }
 
-// takenGuard blocks a resource while another owner holds the name that the
-// server derives for it. reason says who holds it, and it is empty when the
-// name is the server's to write.
+// RecoveryHoldsClusterMessage says that the cluster the server cut over to is
+// gone and that the rollback, not this component, decides what happens next.
 //
-// Every apply is server-side with forced ownership under a field manager that
-// carries no server name, so an apply that reaches an object of somebody else
-// rewrites it and takes its owner reference. The guard is what keeps the
-// derived name from being enough to do that.
-func takenGuard[T any](reason string) func(T) (concepts.GuardStatusWithReason, error) {
-	return func(T) (concepts.GuardStatusWithReason, error) {
+// The component renders the same name once status.cluster carries it. An apply
+// that creates the object again makes the removal invisible: the next look
+// reads the cluster the component just built, waits for a probe of a database
+// nothing recovered, and the rollback never ends. The object it builds carries
+// no bootstrap either, so it is an empty database under the recovered name.
+func RecoveryHoldsClusterMessage(name string) string {
+	return fmt.Sprintf(
+		"CloudNativePG cluster %q is gone and a rollback of this server was running on it. "+
+			"The rollback is abandoned on the next look, and the server goes back to the "+
+			"cluster it came from.",
+		name,
+	)
+}
+
+// takenGuard blocks the cluster while a CloudNativePG cluster of the name the
+// server derives is not this component's to apply. reason says why, and it is
+// empty when the name is the component's.
+//
+// component.BlockOnForeignController covers the cluster that another owner
+// controls. This covers the two it does not: a cluster that nothing controls
+// at all, which still holds somebody's database and which the apply would
+// otherwise rewrite and adopt, and a cluster that a running rollback has cut
+// over to and that is no longer there.
+func takenGuard(reason string) func(cnpgv1.Cluster) (concepts.GuardStatusWithReason, error) {
+	return func(cnpgv1.Cluster) (concepts.GuardStatusWithReason, error) {
 		if reason == "" {
 			return concepts.GuardStatusWithReason{Status: concepts.GuardStatusUnblocked}, nil
 		}

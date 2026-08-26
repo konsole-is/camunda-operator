@@ -104,9 +104,9 @@ type resolvedSpec struct {
 	// recoveryHoldsLocation.
 	holdArchive bool
 	// contractHolder is the owner that controls the DatabaseServerConfig the
-	// merged spec names, when that owner is not this server. The contract
-	// component then publishes nothing and ContractReady reports
-	// ContractTaken: see contractHolder.
+	// merged spec names, when that owner is not this server. ContractReady
+	// then reports ContractTaken over the block that ocf raises: see
+	// contractHolder.
 	contractHolder *metav1.OwnerReference
 	// clusterTaken says why a CloudNativePG cluster of the name the server
 	// derives is not this server's to write, and it is empty when the name is
@@ -115,6 +115,11 @@ type resolvedSpec struct {
 	// ClusterTaken. The recovery decides the name, so this is filled in after
 	// the recovery and not by preCheck: see clusterTaken.
 	clusterTaken string
+	// clusterBlocked is why the cluster component must not apply the cluster of
+	// the name the server derives. It is clusterTaken while the name is held,
+	// and it also covers the cluster that a running rollback cut over to and
+	// that is gone: see clusterGuardReason.
+	clusterBlocked string
 }
 
 // serverComponents are the components of one reconcile, in the order they
@@ -295,16 +300,6 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	// After the recovery, because the recovery is what moves status.cluster:
-	// it moves onto the cluster it built at the cutover, and back onto the
-	// previous one when it abandons that cluster. The name every component
-	// below renders is the name that has to be free, so the read is here and
-	// not in preCheck.
-	resolved.clusterTaken, err = r.clusterTaken(ctx, &server)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
 	// The move is decided before the components build, and a reconcile that
 	// finds one reads no backups at all: the ObjectStore it is about to apply
 	// is what puts the archive in the new place, and every backup that exists
@@ -327,6 +322,23 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, err
 		}
 	}
+
+	// After the recovery, because the recovery is what moves status.cluster:
+	// it moves onto the cluster it built at the cutover, and back onto the
+	// previous one when it abandons that cluster. The name every component
+	// below renders is the name that has to be free, so the read is here and
+	// not in preCheck.
+	//
+	// It is the last read before the apply. Between the two, an object of that
+	// name that goes is built again by the apply, which is what the guard on a
+	// rollback that cut over exists to stop, so nothing that reads the API
+	// server belongs in between.
+	derived, err := r.readDerivedCluster(ctx, &server)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	resolved.clusterTaken = derived.taken
+	resolved.clusterBlocked = clusterGuardReason(&server, derived)
 
 	built, systemIdentifier, err := r.buildComponents(&server, resolved, archiveStart)
 	if err != nil {
@@ -793,12 +805,13 @@ func (r *DatabaseServerReconciler) resolveArchiveStorage(
 // contractHolder returns the owner that controls the DatabaseServerConfig the
 // merged spec names. It returns nil when that object does not exist, has no
 // controller, or is controlled by this server, which are the three cases the
-// server publishes in. The contract component blocks on the answer, so the
-// first server to publish a name keeps it.
+// server publishes in.
 //
-// The read is live. A cached read that has not seen the contract of the other
-// server yet lets this one publish over it, which is the write the guard
-// exists to stop.
+// The read decides the reason the condition carries, not the apply: the
+// contract blocks on a foreign controller in ocf, which reads the object again
+// immediately before every apply. This read reaches the holder even on a pass
+// where the block never fires, because the contract sits behind the superuser
+// Secret and a blocked resource stops every resource after it.
 func (r *DatabaseServerReconciler) contractHolder(
 	ctx context.Context,
 	server *v1.DatabaseServer,
@@ -830,10 +843,22 @@ func (r *DatabaseServerReconciler) contractHolder(
 	return holder, nil
 }
 
-// clusterTaken returns why the CloudNativePG cluster of the name the server
-// derives is not this server's to write, or the empty string when it is. The
-// cluster component blocks the apply on the answer, and the other three
-// withdraw every object of theirs that names that cluster.
+// derivedCluster is what a live read of the CloudNativePG cluster of the name
+// the server derives found.
+type derivedCluster struct {
+	// taken says why that cluster is not this server's to write, and it is
+	// empty when the name is free or the cluster is the server's own.
+	taken string
+	// absent says that no object of that name exists.
+	absent bool
+}
+
+// readDerivedCluster reads the CloudNativePG cluster of the name the server
+// derives. Its taken message drives two things: the cluster component blocks
+// the apply on it, and the other three withdraw every object of theirs that
+// names that cluster. That withdrawal is a decision above one resource, and it
+// is made before anything renders, so this read stays even though ocf reads
+// the cluster again before each apply.
 //
 // The caller reads it once the recovery has settled status.cluster. A name
 // read before that is the name of the cluster the server is leaving, and the
@@ -845,28 +870,46 @@ func (r *DatabaseServerReconciler) contractHolder(
 // The read is live. A cached read that has not seen the cluster of the other
 // owner yet lets this server apply over it, which is the write the guard
 // exists to stop.
-func (r *DatabaseServerReconciler) clusterTaken(
+func (r *DatabaseServerReconciler) readDerivedCluster(
 	ctx context.Context,
 	server *v1.DatabaseServer,
-) (string, error) {
+) (derivedCluster, error) {
 	name := components.ClusterName(server)
 	key := types.NamespacedName{Namespace: server.Namespace, Name: name}
 
 	var cluster cnpgv1.Cluster
 	if err := r.APIReader.Get(ctx, key, &cluster); err != nil {
 		if apierrors.IsNotFound(err) {
-			return "", nil
+			return derivedCluster{absent: true}, nil
 		}
 
-		return "", fmt.Errorf("reading the CloudNativePG cluster %s: %w", key, err)
+		return derivedCluster{}, fmt.Errorf("reading the CloudNativePG cluster %s: %w", key, err)
 	}
 
 	controller := metav1.GetControllerOf(&cluster)
 	if controller != nil && controller.UID == server.UID {
-		return "", nil
+		return derivedCluster{}, nil
 	}
 
-	return components.ClusterTakenMessage(name, controller), nil
+	return derivedCluster{taken: components.ClusterTakenMessage(name, controller)}, nil
+}
+
+// clusterGuardReason returns why the cluster component must not apply the
+// cluster of the name the server derives, or the empty string when it may.
+//
+// A rollback that cut over owns that name until it is answered, so a cluster
+// that is gone under it stops the component instead of being built again. The
+// component renders no bootstrap, so the apply would put an empty database
+// under the recovered name, and completeRecovery would read the object the
+// component had just built and wait for a probe that cannot come. Blocking
+// leaves the name absent for the next look, which abandons the rollback and
+// puts the server back on the cluster it came from.
+func clusterGuardReason(server *v1.DatabaseServer, derived derivedCluster) string {
+	if derived.taken != "" || !derived.absent || !cutOver(server) {
+		return derived.taken
+	}
+
+	return components.RecoveryHoldsClusterMessage(components.ClusterName(server))
 }
 
 // serverVolumes are the volumes of the current cluster: one entry per
@@ -1244,7 +1287,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 	var built serverComponents
 
 	cluster, systemIdentifier, err := components.ClusterComponent(
-		server, merged, resolved.archive, resolved.platform, resolved.clusterTaken,
+		server, merged, resolved.archive, resolved.platform, resolved.clusterBlocked,
 	)
 	if err != nil {
 		return built, nil, fmt.Errorf("building cluster component: %w", err)
@@ -1258,9 +1301,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 		return built, nil, fmt.Errorf("building archive component: %w", err)
 	}
 
-	built.contract, err = components.ContractComponent(
-		server, merged, resolved.contractHolder, resolved.clusterTaken,
-	)
+	built.contract, err = components.ContractComponent(server, merged, resolved.clusterTaken)
 	if err != nil {
 		return built, nil, fmt.Errorf("building contract component: %w", err)
 	}
@@ -1359,10 +1400,11 @@ func (r *DatabaseServerReconciler) removeSupersededContracts(
 	return nil
 }
 
-// stageTaken reports an object of a derived name that another owner holds. A
-// guard blocks the apply, and ocf reports every blocked guard as Blocked,
-// which reads the same as the wait for the superuser Secret. This names the
-// holder instead, which is what the user acts on.
+// stageTaken reports an object of a derived name that another owner holds.
+// ocf blocks the apply and reports Blocked with "controlled by <Kind> <name>",
+// which reads the same as the wait for the superuser Secret and carries no
+// remedy. This names the holder and what to do about it, which is what the
+// user acts on.
 func stageTaken(server *v1.DatabaseServer, conditionType, reason, message string) {
 	meta.SetStatusCondition(&server.Status.Conditions, metav1.Condition{
 		Type:               conditionType,

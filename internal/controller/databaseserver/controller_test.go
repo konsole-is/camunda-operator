@@ -38,6 +38,7 @@ import (
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/cnpgcluster"
 )
 
 // presetStorageSize is the data volume that serverOnPreset puts on the preset.
@@ -1149,6 +1150,55 @@ var _ = Describe("DatabaseServer controller", func() {
 		expectCondition(server, v1.ConditionContractReady, metav1.ConditionTrue)
 	})
 
+	It("leaves a cluster nothing controls alone while the server is suspended", func() {
+		namespace := "dbs-" + utilrand.String(8)
+		Expect(k8sClient.Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		})).To(Succeed())
+
+		// A cluster that nothing controls holds a database all the same, and the
+		// guard refuses it while the server runs. A suspended component
+		// evaluates no guard, and ocf blocks only on a controller of somebody
+		// else, so this is the one the server has to be kept off by declining
+		// the suspension itself.
+		occupant := &cnpgv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: namespace},
+			Spec: cnpgv1.ClusterSpec{
+				Instances:            3,
+				StorageConfiguration: cnpgv1.StorageConfiguration{Size: "8Gi"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, occupant)).To(Succeed())
+
+		server := &v1.DatabaseServer{
+			ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: namespace},
+			Spec: v1.DatabaseServerSpec{
+				Version:              "17",
+				Instances:            new(int32(1)),
+				StorageSize:          new(resource.MustParse("1Gi")),
+				DatabaseServerConfig: "camunda",
+				Suspend:              true,
+			},
+		}
+		Expect(k8sClient.Create(ctx, server)).To(Succeed())
+
+		taken := expectCondition(server, v1.ConditionClusterReady, metav1.ConditionFalse)
+		Expect(taken.Reason).To(Equal(v1.ReasonClusterTaken))
+		Expect(taken.Message).To(ContainSubstring("no owner controls it"))
+
+		// The suspension writes the hibernation annotation and the running apply
+		// writes it off, so either one shows on the object of the other owner.
+		key := client.ObjectKey{Namespace: namespace, Name: "camunda"}
+		Consistently(func(g Gomega) {
+			var live cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, key, &live)).To(Succeed())
+			g.Expect(live.Annotations).NotTo(HaveKey(cnpgcluster.HibernationAnnotation))
+			g.Expect(live.Spec.Instances).To(Equal(3))
+			g.Expect(live.Spec.StorageConfiguration.Size).To(Equal("8Gi"))
+			g.Expect(metav1.GetControllerOf(&live)).To(BeNil())
+		}, 2*time.Second, interval).Should(Succeed())
+	})
+
 	It("withdraws what it published when another owner takes its cluster", func() {
 		server, _ := archivingServer()
 
@@ -1211,6 +1261,76 @@ var _ = Describe("DatabaseServer controller", func() {
 			return k8sClient.Get(ctx, key, &cnpgv1.ScheduledBackup{})
 		}, timeout, interval).Should(Succeed())
 		Expect(archiveHistory(server)).To(Equal(history))
+	})
+
+	It("leaves a base backup schedule that another owner controls alone", func() {
+		namespace := "dbs-" + utilrand.String(8)
+		Expect(k8sClient.Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		})).To(Succeed())
+
+		// The schedule takes the name of the cluster, and the cluster takes the
+		// name of the server, so a second server of that name derives a name
+		// that already belongs to somebody. The cluster name itself is free
+		// here: nothing but the block on the schedule keeps this server off it.
+		holder := serverNamed(namespace, "holder", "holder", nil)
+		occupant := &cnpgv1.ScheduledBackup{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "camunda",
+				Namespace: namespace,
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: v1.GroupVersion.String(),
+					Kind:       "DatabaseServer",
+					Name:       holder.Name,
+					UID:        reconciledServer(holder).UID,
+					Controller: new(true),
+				}},
+			},
+			Spec: cnpgv1.ScheduledBackupSpec{
+				Schedule: "0 0 5 * * *",
+				Cluster:  cnpgv1.LocalObjectReference{Name: "holder"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, occupant)).To(Succeed())
+
+		bucket := archiveBucket()
+		server := serverNamed(namespace, "camunda", "camunda", &v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+
+		blocked := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
+		Expect(blocked.Reason).To(Equal(string(component.GuardBlocked)), blocked.Message)
+		Expect(blocked.Message).To(ContainSubstring("controlled by DatabaseServer holder"))
+
+		key := client.ObjectKey{Namespace: namespace, Name: "camunda"}
+		Consistently(func(g Gomega) {
+			// The apply rewrites the schedule and the cluster it names together
+			// with the owner reference, so a write of this server shows in any
+			// of the three.
+			var live cnpgv1.ScheduledBackup
+			g.Expect(k8sClient.Get(ctx, key, &live)).To(Succeed())
+			g.Expect(live.Spec.Schedule).To(Equal("0 0 5 * * *"))
+			g.Expect(live.Spec.Cluster.Name).To(Equal("holder"))
+			g.Expect(metav1.IsControlledBy(&live, reconciledServer(holder))).To(BeTrue())
+		}, 3*time.Second, interval).Should(Succeed())
+
+		// Dropping the archive turns the component gate off, which removes
+		// every object the component manages. The ObjectStore is this server's
+		// and goes; the schedule of the other owner stays.
+		By("removing the archive")
+		setArchive(server, nil)
+
+		disabled := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+		Expect(disabled.Reason).To(Equal("Disabled"))
+		expectGone(key, &barmanobjectstore.ObjectStore{})
+
+		Consistently(func(g Gomega) {
+			var live cnpgv1.ScheduledBackup
+			g.Expect(k8sClient.Get(ctx, key, &live)).To(Succeed())
+			g.Expect(metav1.IsControlledBy(&live, reconciledServer(holder))).To(BeTrue())
+		}, 3*time.Second, interval).Should(Succeed())
 	})
 
 	It("starts a new archive record when the bucket changes", func() {

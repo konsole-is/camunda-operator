@@ -175,7 +175,7 @@ func assertDatabaseServerGoldens(
 		)
 	}
 
-	contract, err := ContractComponent(server, merged, nil, "")
+	contract, err := ContractComponent(server, merged, "")
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "contract.yaml"), contract,
@@ -412,7 +412,7 @@ func TestSuspensionKeepsTheDeclaredState(t *testing.T) {
 
 		clusterComp, _, err := ClusterComponent(server, merged, archive, nil, "")
 		require.NoError(t, err)
-		contractComp, err := ContractComponent(server, merged, nil, "")
+		contractComp, err := ContractComponent(server, merged, "")
 		require.NoError(t, err)
 		archiveComp, err := ArchiveComponent(server, merged, archive, nil, "")
 		require.NoError(t, err)
@@ -498,19 +498,20 @@ func TestClusterImageComesFromThePlatformConfig(t *testing.T) {
 }
 
 // A CloudNativePG cluster of the name a server derives holds a database when
-// somebody else built it. The apply is server-side with forced ownership, so
-// nothing but the guard keeps this server off it.
+// somebody else built it. ocf blocks the apply while another owner controls
+// it, and this guard covers the case it does not: a cluster that nothing
+// controls at all.
 func TestClusterGuardBlocksAHeldName(t *testing.T) {
 	t.Parallel()
 
-	free, err := takenGuard[cnpgv1.Cluster]("")(cnpgv1.Cluster{})
+	free, err := takenGuard("")(cnpgv1.Cluster{})
 	require.NoError(t, err)
 	assert.Equal(t, concepts.GuardStatusUnblocked, free.Status)
 
 	held := ClusterTakenMessage("camunda", &metav1.OwnerReference{
 		Kind: "DatabaseServer", Name: "other",
 	})
-	taken, err := takenGuard[cnpgv1.Cluster](held)(cnpgv1.Cluster{})
+	taken, err := takenGuard(held)(cnpgv1.Cluster{})
 	require.NoError(t, err)
 	assert.Equal(t, concepts.GuardStatusBlocked, taken.Status)
 	assert.Contains(t, taken.Reason, `CloudNativePG cluster "camunda"`)
