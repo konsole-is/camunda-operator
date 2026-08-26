@@ -57,13 +57,12 @@ import (
 //
 // The clusterTaken message is the ClusterTaken message while a CloudNativePG
 // cluster of the name the server derives is not this server's, and empty
-// otherwise. When
-// it is set, the feature gate is off and the framework removes the published
-// contract, because the contract names the endpoint and the superuser Secret
-// of a database this server does not own. A consumer then reads
-// InvalidReference instead of the endpoint of another database. A contract the
-// server never published is not removed by that gate, because the object under
-// the name is not the one the server published.
+// otherwise. When it is set, the feature gate is off and the framework removes
+// the published contract, because the contract names the endpoint and the
+// superuser Secret of a database this server does not own. A consumer then
+// reads InvalidReference instead of the endpoint of another database. A
+// contract the server never published is not removed by that gate, because
+// the object under the name is not the one the server published.
 func ContractComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
