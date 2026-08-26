@@ -25,6 +25,7 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -1967,7 +1968,15 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		suspend(server)
 		hibernate(server)
-		expectCondition(server, v1.ConditionClusterReady, metav1.ConditionTrue)
+
+		// The reason, not the status: a suspension that is still running
+		// reports PendingSuspension or Suspending, and both of those are True
+		// as well. The hold below is entered on the suspension the server
+		// reached, so a bucket removed before it reads as a plain dangling
+		// reference and the request is never answered.
+		expectReason(
+			server, v1.ConditionClusterReady, metav1.ConditionTrue, string(component.Suspended),
+		)
 
 		// A suspended server whose bucket stops resolving holds its whole
 		// reconcile. The answer to a request has to come out from in front of

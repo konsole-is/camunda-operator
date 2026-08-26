@@ -964,8 +964,13 @@ var _ = Describe("DatabaseServer controller", func() {
 
 		suspend(server)
 		hibernate(server)
-		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
-		Expect(ready.Reason).To(Equal(string(component.Suspended)))
+
+		// The reason, not the status: a suspension that is still running
+		// reports PendingSuspension or Suspending, and both of those are True
+		// as well. This spec is about the bucket going away after the
+		// instances are down, so it waits for the suspension the server
+		// reached rather than reading the reason once and asserting on it.
+		expectReason(server, v1.ConditionReady, metav1.ConditionTrue, string(component.Suspended))
 
 		Expect(k8sClient.Delete(ctx, bucket)).To(Succeed())
 
