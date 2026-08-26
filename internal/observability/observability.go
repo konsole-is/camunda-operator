@@ -31,7 +31,7 @@ import (
 
 // MetricNamespace prefixes the condition gauge, so it is served as
 // camunda_operator_controller_condition. The dashboards and alert rules under
-// config/prometheus are rendered for this value; `make observability`
+// config/prometheus/observability are rendered for this value. `make observability`
 // re-renders them.
 const MetricNamespace = "camunda_operator"
 
