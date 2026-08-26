@@ -902,8 +902,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		By("removing the archive while the rollback is unanswered")
 		setArchive(server, nil)
 
-		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
-		Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+		ready := expectConditionReason(server, v1.ConditionReady, metav1.ConditionFalse, v1.ReasonInvalidReference)
 		Expect(ready.Message).To(ContainSubstring("Put spec.archive back"))
 
 		// The rollback recovers out of this archive, so the removal reaches
@@ -1220,8 +1219,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 			g.Expect(recorded.Message).To(ContainSubstring("was removed"))
 		}, timeout, interval).Should(Succeed())
 
-		taken := expectCondition(server, v1.ConditionClusterReady, metav1.ConditionFalse)
-		Expect(taken.Reason).To(Equal(v1.ReasonClusterTaken))
+		taken := expectConditionReason(server, v1.ConditionClusterReady, metav1.ConditionFalse, v1.ReasonClusterTaken)
 		Expect(taken.Message).To(ContainSubstring(`CloudNativePG cluster "camunda"`))
 
 		Consistently(func(g Gomega) {
@@ -1558,8 +1556,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		By("moving the bucket under the name the rollback recorded")
 		moveBucket(&bucket, bucket.Name+"-moved")
 
-		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
-		Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+		ready := expectConditionReason(server, v1.ConditionReady, metav1.ConditionFalse, v1.ReasonInvalidReference)
 		Expect(ready.Message).To(ContainSubstring(recorded.Location))
 		Expect(ready.Message).To(ContainSubstring("-moved"))
 
@@ -1628,8 +1625,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		moveBucket(&bucket, bucket.Name+"-moved")
 		setBucketRole(&bucket, after)
 
-		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
-		Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+		expectConditionReason(server, v1.ConditionReady, metav1.ConditionFalse, v1.ReasonInvalidReference)
 
 		// The identity of the bucket the contract names now opens nothing in
 		// the bucket the rollback reads. The cluster that runs writes its
