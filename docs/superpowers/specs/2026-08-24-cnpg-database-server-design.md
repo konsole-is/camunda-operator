@@ -461,6 +461,12 @@ that exists, taken from the data and write-ahead log claims and from the sizes t
 CloudNativePG cluster asks for, and records the `StorageShrinkIgnored` Warning event. This mirrors
 `keepAppliedStorageSize` of `ElasticsearchCluster`.
 
+Both sources are read only from a `Cluster` this server owns. The name is derived, and CloudNativePG
+labels the claims of a cluster with that name, so a foreign cluster under it answers the same
+selector and would clamp this server to the volumes of a database it never built. A name with no
+cluster at all still reads the claims, because a retain policy leaves them behind and the clamp is
+what keeps the server from coming back smaller than them.
+
 The same clamp keeps a write-ahead log volume that the merged spec no longer asks for.
 CloudNativePG refuses a cluster that removes `spec.walStorage` once it applied it
 (`walStorage cannot be disabled once configured`), and it accepts one that adds it, so the CEL

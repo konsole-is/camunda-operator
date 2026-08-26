@@ -938,19 +938,46 @@ func (v serverVolumes) all() []v1.VolumeStatus {
 // every claim of a cluster with the cluster name, and it names the write-ahead
 // log claim of an instance after the data claim of that instance, with the
 // suffix -wal.
+//
+// It returns nothing at all for a cluster of that name this server does not
+// own. status.Volumes and the clamp of keepAppliedStorageSize are the two
+// readers, and neither has anything to say about the volumes of somebody
+// else's database.
 func (r *DatabaseServerReconciler) volumeClaims(
 	ctx context.Context,
 	server *v1.DatabaseServer,
 ) (serverVolumes, error) {
+	key := types.NamespacedName{Namespace: server.Namespace, Name: components.ClusterName(server)}
+
+	var cluster cnpgv1.Cluster
+	applied := true
+	if err := r.Get(ctx, key, &cluster); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return serverVolumes{}, fmt.Errorf("reading the applied cluster %s: %w", key, err)
+		}
+
+		applied = false
+	}
+
+	// The name is derived, so a cluster under it can hold the database of
+	// somebody else. Its claims carry the label this list selects by, so both
+	// the claims and the sizes it applies belong to that database, and the
+	// clamp would render this server on them.
+	//
+	// A name with no cluster is read as before. The claims of the cluster that
+	// was there outlive it under a retain policy, and a server that must not
+	// come back smaller than them is what the clamp exists for.
+	if applied && !ownedByServer(server, &cluster) {
+		return serverVolumes{}, nil
+	}
+
 	var claims corev1.PersistentVolumeClaimList
 	if err := r.List(
 		ctx, &claims,
 		client.InNamespace(server.Namespace),
-		client.MatchingLabels{components.CNPGClusterNameLabel: components.ClusterName(server)},
+		client.MatchingLabels{components.CNPGClusterNameLabel: key.Name},
 	); err != nil {
-		return serverVolumes{}, fmt.Errorf(
-			"listing the volume claims of %q: %w", components.ClusterName(server), err,
-		)
+		return serverVolumes{}, fmt.Errorf("listing the volume claims of %q: %w", key.Name, err)
 	}
 
 	var volumes serverVolumes
@@ -968,15 +995,10 @@ func (r *DatabaseServerReconciler) volumeClaims(
 		volumes.data = append(volumes.data, status)
 	}
 
-	var cluster cnpgv1.Cluster
-	key := types.NamespacedName{Namespace: server.Namespace, Name: components.ClusterName(server)}
-	if err := r.Get(ctx, key, &cluster); err != nil {
-		if apierrors.IsNotFound(err) {
-			return volumes, nil
-		}
-
-		return serverVolumes{}, fmt.Errorf("reading the applied cluster %s: %w", key, err)
+	if !applied {
+		return volumes, nil
 	}
+
 	volumes.appliedData = parsedSize(cluster.Spec.StorageConfiguration.Size)
 	if cluster.Spec.WalStorage != nil {
 		volumes.appliedWAL = parsedSize(cluster.Spec.WalStorage.Size)

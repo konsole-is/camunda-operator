@@ -86,7 +86,7 @@ Neither volume size can shrink. Admission rejects a lower inline value. If a pre
 
 The write-ahead log volume cannot be removed either. You can add `walStorageSize` to a server that runs without one. If you clear it, or a preset clears it, the operator keeps the volume at the size it has and records a Warning event with reason `WALStorageKept`. To run the log on the data volume again, delete and recreate the server.
 
-`status.volumes` lists every bound volume of the cluster the contract points at, and the capacity each one reports. A server with a write-ahead log volume reports that one here too, under the name of its data volume with the suffix `-wal`.
+`status.volumes` lists every bound volume of the cluster the contract points at, and the capacity each one reports. A server with a write-ahead log volume reports that one here too, under the name of its data volume with the suffix `-wal`. A server that reports `ClusterReady` `ClusterTaken` lists none of them, and no size of that cluster reaches its own spec. The volumes under a held name belong to the cluster that holds it.
 
 ## The archive
 

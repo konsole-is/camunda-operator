@@ -107,6 +107,33 @@ func externalContract(namespace string) *v1.DatabaseServerConfig {
 	return contract
 }
 
+// boundClaim creates a PersistentVolumeClaim of the CloudNativePG cluster
+// "camunda" that reports a capacity, as a claim bound to a volume does. The
+// reconcile reads the claims of a cluster by the label that CloudNativePG puts
+// on them.
+func boundClaim(namespace, name, capacity string) {
+	GinkgoHelper()
+
+	claim := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    map[string]string{components.CNPGClusterNameLabel: "camunda"},
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(capacity)},
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, claim)).To(Succeed())
+
+	claim.Status.Phase = corev1.ClaimBound
+	claim.Status.Capacity = corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(capacity)}
+	Expect(k8sClient.Status().Update(ctx, claim)).To(Succeed())
+}
+
 // serverOnPreset creates a namespace, a cluster-scoped preset that holds the
 // version, a data volume of presetStorageSize, and the write-ahead log volume,
 // and a DatabaseServer that inherits them. An empty walStorageSize leaves the
@@ -1983,11 +2010,13 @@ var _ = Describe("DatabaseServer controller", func() {
 	})
 
 	// The name of the cluster is derived, so a cluster under it can hold the
-	// data directory of somebody else. A server that reads the major off that
-	// one is pinned to a version it never ran, and Ready tells the reader the
-	// version was refused where the name being held is what they have to act
-	// on.
-	It("reads no major off a cluster of the derived name it does not own", func() {
+	// data directory of somebody else. Everything the reconcile reads off that
+	// one describes a database this server never built: the major it runs, the
+	// sizes it applies, and the claims behind it. A server that reads them is
+	// pinned to a version it never ran and clamped to volumes it never asked
+	// for, and Ready tells the reader the version was refused where the name
+	// being held is what they have to act on.
+	It("reads nothing off a cluster of the derived name it does not own", func() {
 		namespace := "dbs-" + utilrand.String(8)
 		Expect(k8sClient.Create(ctx, &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: namespace},
@@ -2002,6 +2031,7 @@ var _ = Describe("DatabaseServer controller", func() {
 			Spec: cnpgv1.ClusterSpec{
 				Instances:            3,
 				StorageConfiguration: cnpgv1.StorageConfiguration{Size: "8Gi"},
+				WalStorage:           &cnpgv1.StorageConfiguration{Size: "4Gi"},
 			},
 		}
 		Expect(k8sClient.Create(ctx, occupant)).To(Succeed())
@@ -2012,7 +2042,12 @@ var _ = Describe("DatabaseServer controller", func() {
 		}
 		Expect(k8sClient.Status().Update(ctx, occupant)).To(Succeed())
 
-		// The server asks for 17, which is the major it would run itself.
+		// CloudNativePG puts the cluster name on every claim of the occupant,
+		// so the claims answer the same selector this server lists by.
+		boundClaim(namespace, "camunda-1", "8Gi")
+		boundClaim(namespace, "camunda-1-wal", "4Gi")
+
+		// The server asks for 17 and 1Gi, and for no write-ahead log volume.
 		server := serverNamed(namespace, "camunda", "camunda", nil)
 
 		Eventually(func(g Gomega) {
@@ -2027,13 +2062,20 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(ready.Reason).To(Equal(v1.ReasonClusterTaken))
 		}, 2*time.Second, interval).Should(Succeed())
 
-		// A pin records the refusal as an event of its own, so the event says
-		// whether the major of the occupant reached the merged spec at all.
+		// The volumes of the occupant are not this server's to report.
+		Expect(reconciledServer(server).Status.Volumes).To(BeEmpty())
+
+		// Each of the three reads records an event of its own when it takes a
+		// value off the occupant, so the events say whether anything of that
+		// cluster reached the merged spec. The clamp raises storageSize to
+		// 8Gi and keeps a 4Gi write-ahead log volume the spec never asked for.
 		var recorded corev1.EventList
 		Expect(k8sClient.List(ctx, &recorded, client.InNamespace(namespace))).To(Succeed())
-		Expect(recorded.Items).NotTo(ContainElement(
+		Expect(recorded.Items).NotTo(ContainElement(SatisfyAny(
 			HaveField("Reason", v1.ReasonVersionChangeRefused),
-		))
+			HaveField("Reason", eventReasonStorageShrinkIgnored),
+			HaveField("Reason", eventReasonWALStorageKept),
+		)))
 	})
 
 	// A refusal must not stop the server. A rollback in flight has to finish on

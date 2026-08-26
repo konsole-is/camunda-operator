@@ -487,7 +487,9 @@ type DatabaseServerStatus struct {
 	Recovery *DatabaseServerRecoveryStatus `json:"recovery,omitempty"`
 	// Volumes lists the bound PersistentVolumeClaims of the current cluster
 	// and the capacity that each one reports, sorted by name. A server with a
-	// write-ahead log volume reports that claim here too.
+	// write-ahead log volume reports that claim here too. A server that does
+	// not own the cluster of the name it derives reports none: those claims
+	// belong to the cluster that holds the name.
 	// +listType=map
 	// +listMapKey=name
 	// +optional
