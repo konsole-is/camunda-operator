@@ -1192,15 +1192,23 @@ var _ = Describe("DatabaseServer recovery", func() {
 		// The server goes back to the previous cluster in the same pass that
 		// abandons the rollback, so that pass is the one that has to read the
 		// name it goes back to.
-		By("removing the cluster the rollback built")
-		Expect(k8sClient.Delete(ctx, &cnpgv1.Cluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "camunda-r1", Namespace: server.Namespace},
-		})).To(Succeed())
-
+		//
+		// The cluster component applies a cluster of that name on every look
+		// once status.cluster names it, and a delete that lands inside a look
+		// is put back by the same look. Deleting on every poll leaves the read
+		// that abandons the rollback the one that wins.
+		//
 		// The answer is read off the record, not off the contract. The server
 		// goes back to a name it does not own, and it withdraws the contract
 		// with everything else that names that cluster.
+		By("removing the cluster the rollback built until the server reads it gone")
+		recovered := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}
 		Eventually(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			if err := k8sClient.Get(ctx, recovered, &cluster); err == nil {
+				g.Expect(k8sClient.Delete(ctx, &cluster)).To(Succeed())
+			}
+
 			recorded := reconciledServer(server).Status.Recovery
 			g.Expect(recorded).NotTo(BeNil())
 			g.Expect(recorded.CompletedAt).NotTo(BeNil())
