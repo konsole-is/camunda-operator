@@ -2,8 +2,10 @@
 # `make observability` renders the files under alerts/ and dashboards/ from
 # the framework templates. Do not edit them by hand.
 #
-# This directory carries no namespace. Apply it into the namespace that your
-# Prometheus Operator and Grafana sidecar watch:
+# This directory is not part of ../kustomization.yaml: the namePrefix of
+# config/default would rename the two shared ocf-* rule sets per install, and
+# a cluster keeps one copy of them. It carries no namespace. Apply it into the
+# namespace that your Prometheus Operator and Grafana sidecar watch:
 #
 #   kubectl apply -n monitoring -k config/prometheus/observability
 resources:
