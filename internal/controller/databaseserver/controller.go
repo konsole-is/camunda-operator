@@ -1769,7 +1769,7 @@ func markArchiveOutage(server *v1.DatabaseServer, outage *components.ArchiveOuta
 		return
 	}
 
-	open.UnverifiedFrom = &outage.Since
+	open.UnverifiedFrom = outage.Since.DeepCopy()
 }
 
 // openArchiveRecord returns the archive the server writes now, or nil when it
