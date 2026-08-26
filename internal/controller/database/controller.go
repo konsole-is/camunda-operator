@@ -378,8 +378,11 @@ func (r *DatabaseReconciler) preCheck(ctx context.Context, database *v1.Database
 			Reason: v1.ReasonServerIdentityUnknown,
 			Message: fmt.Sprintf(
 				"DatabaseServerConfig %s has not reached the server its spec names now, so its "+
-					"system identifier belongs to the server before that change. Wait until it "+
-					"reports Ready", client.ObjectKeyFromObject(server),
+					"system identifier belongs to the server before that change: the record was "+
+					"probed at %s and the spec names %s. Wait until the contract is probed again "+
+					"for the endpoint it names now",
+				client.ObjectKeyFromObject(server), server.Status.ProbedEndpoint,
+				fmt.Sprintf("%s:%d", server.Spec.Host, server.Spec.Port),
 			),
 		}
 	}
