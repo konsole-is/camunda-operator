@@ -140,8 +140,8 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // timer. An effective version below the one the brokers run is refused
 // before anything is applied, unless the annotation
 // camunda.io/allow-version-downgrade names it. A cluster that is parked on a
-// held contract is not refused: it renders at zero on the running version,
-// and the refusal waits for the release. The annotation is removed once
+// held contract renders at zero on the running version first, and the
+// refusal is reported once the holder releases. The annotation is removed once
 // the brokers carry that version, and as soon as it names a version the
 // cluster is not asked to run. The running version is stamped on the bound
 // broker claims, so it survives a delete with retained volumes and the rule
