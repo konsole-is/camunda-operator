@@ -17,6 +17,7 @@ limitations under the License.
 package databaseserver
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -1882,25 +1884,55 @@ var _ = Describe("DatabaseServer recovery", func() {
 		)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, &superuser)).To(Succeed())
 
+		// Nothing reconciles the server for the deleted Secret: the move of
+		// the endpoint is what triggers the next look, and that look can still
+		// read the Secret from a cache that lags the delete and publish the
+		// endpoint of this server over the foreign one. The move is repeated
+		// until a look reports the Secret gone, which no later look reads
+		// back. The endpoint that stands then is the one every later look
+		// reads.
+		foreign := "camunda-r9-rw." + server.Namespace + ".svc"
 		Eventually(func(g Gomega) {
 			var contract v1.DatabaseServerConfig
 			g.Expect(k8sClient.Get(ctx, contractKey(server), &contract)).To(Succeed())
-			contract.Spec.Host = "camunda-r9-rw." + server.Namespace + ".svc"
-			g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
+			if contract.Spec.Host != foreign {
+				contract.Spec.Host = foreign
+				g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
+			}
+
+			blocked := conditionOf(server, v1.ConditionContractReady)
+			g.Expect(blocked).NotTo(BeNil())
+			g.Expect(blocked.Status).To(Equal(metav1.ConditionFalse), blocked.Message)
+			g.Expect(blocked.Reason).To(Equal(string(component.GuardBlocked)), blocked.Message)
+			g.Expect(publishedContract(server).Spec.Host).To(Equal(foreign))
 		}, timeout, interval).Should(Succeed())
 
 		Consistently(func() string {
 			return publishedContract(server).Spec.Host
-		}, "1s", interval).Should(Equal("camunda-r9-rw." + server.Namespace + ".svc"))
+		}, "1s", interval).Should(Equal(foreign))
 
 		// The endpoint is read back only on a look that finds the record
 		// missing, so the record goes last, once that endpoint is the one
-		// every look reads.
+		// every look reads. A status write of the operator that lands on a
+		// conflict carries the record it staged, so the record is removed
+		// again until the look it is removed for has happened.
+		//
+		// The refusal is its own reason. A reader of kubectl describe learns
+		// that two servers are writing one contract, which is not what a
+		// refused rollback means.
 		Eventually(func(g Gomega) {
+			if slices.Contains(recoveryEventReasons(server), "RecoveryClusterNotOwned") {
+				return
+			}
+
 			var latest v1.DatabaseServer
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
-			latest.Status.Recovery = nil
-			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+			if latest.Status.Recovery != nil {
+				latest.Status.Recovery = nil
+				g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+			}
+
+			g.Expect(recoveryEventReasons(server)).To(ContainElement("RecoveryClusterNotOwned"))
 		}, timeout, interval).Should(Succeed())
 
 		Consistently(func(g Gomega) {
@@ -1911,13 +1943,6 @@ var _ = Describe("DatabaseServer recovery", func() {
 				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
 			)).To(Succeed())
 		}, "3s", interval).Should(Succeed())
-
-		// The refusal is its own reason. A reader of kubectl describe learns
-		// that two servers are writing one contract, which is not what a
-		// refused rollback means.
-		Eventually(func() []string {
-			return recoveryEventReasons(server)
-		}, timeout, interval).Should(ContainElement("RecoveryClusterNotOwned"))
 	})
 
 	It("answers a request while the server is suspended and its bucket is gone", func() {
