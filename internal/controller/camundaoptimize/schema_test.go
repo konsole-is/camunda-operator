@@ -145,6 +145,18 @@ var _ = Describe("CamundaOptimize schema", func() {
 		)
 	})
 
+	// The login callback is appended to the URL, and Keycloak matches a
+	// redirect URI literally, so a trailing slash would register a callback
+	// that no browser sends.
+	It("rejects an externalUrl that ends with a slash", func() {
+		optimize := minimalCamundaOptimize()
+		optimize.Spec.ExternalURL = "https://optimize.example.com/"
+
+		Expect(k8sClient.Create(ctx, optimize)).To(
+			MatchError(ContainSubstring("externalUrl must not end with a slash")),
+		)
+	})
+
 	// Management Identity reads the root URLs of the optimize preset as one
 	// comma-separated list, so a comma inside one URL would register two
 	// callbacks of nonsense.

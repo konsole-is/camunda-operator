@@ -29,33 +29,11 @@ import (
 // first 64 bits of the SHA-256 digest.
 const configHashLength = 16
 
-// presenceHashedEnv are the rendered environment entries that ConfigHash folds
-// in as set or unset rather than by their value, so that a new value alone
-// does not roll the pods.
-//
-// The Optimize root URLs are the whole list of Optimize instances. The
-// operator writes the login callback of each one onto the optimize client
-// through the Keycloak administration API on every reconcile, so a second
-// Optimize reaches Keycloak without a restart, and rolling Management Identity
-// for it would sign every user out for nothing. Whether the variable is there
-// at all still counts: Management Identity processes the optimize preset only
-// for an environment that names it, and that preset is what creates the
-// client, the resource server, and the Optimize role. The first Optimize
-// therefore rolls Identity and the ones after it do not.
-//
-// KEYCLOAK_INIT_OPTIMIZE_SECRET is hashed by value. It is a credential, and a
-// rotated one has to reach the container.
-var presenceHashedEnv = map[string]bool{keycloakEnvInitOptimizeRootURL: true}
-
-// presenceValue is what ConfigHash writes for an entry of presenceHashedEnv.
-const presenceValue = "<set>"
-
 // ConfigHash hashes the rendered environment of one component (names, values,
 // and Secret references, never Secret data) together with in.HashInputs and
 // the hash inputs of that component alone. It is stable across reconciles for
 // the same input, so the pods roll only when a value rendered for that
-// component or a referenced object changes. The entries of presenceHashedEnv
-// count as set or unset, so a new value of one of them alone rolls nothing.
+// component or a referenced object changes.
 //
 // The environment alone is not enough. Every credential arrives through a
 // Secret reference, and the reference does not change when the data behind it
@@ -66,11 +44,7 @@ func ConfigHash(in Input, comp string) string {
 	var b strings.Builder
 	b.WriteString("component=" + comp + "\n")
 	for _, e := range componentEnv(in, comp) {
-		value := envValue(e)
-		if presenceHashedEnv[e.Name] {
-			value = presenceValue
-		}
-		b.WriteString(e.Name + "=" + value + "\n")
+		b.WriteString(e.Name + "=" + envValue(e) + "\n")
 	}
 
 	inputs := slices.Concat(in.HashInputs, componentInputs(in, comp))

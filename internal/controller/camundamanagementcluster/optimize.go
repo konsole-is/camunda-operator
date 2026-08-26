@@ -41,6 +41,34 @@ const (
 	eventActionRegister          = "Register"
 )
 
+// discoverOptimizes finds the Optimize instances that this management plane
+// serves, records them in status.optimize, and puts their URLs in the render
+// input.
+//
+// The oidc mode discovers none. The identity provider of the platform config
+// holds the callback URLs there, so spec.externalUrl of a CamundaOptimize has
+// no effect and a row would say the management plane did something with it.
+func (r *Reconciler) discoverOptimizes(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	res *resolved,
+) error {
+	if res.Input.Provider.Mode == components.ModeOIDC {
+		mc.Status.Optimize = nil
+
+		return nil
+	}
+
+	optimizes, err := r.listOptimizes(ctx, res.ContractName)
+	if err != nil {
+		return err
+	}
+	mc.Status.Optimize = components.AttachedOptimizes(optimizes)
+	res.Input.OptimizeURLs = components.OptimizeURLs(mc, mc.Status.Optimize)
+
+	return nil
+}
+
 // listOptimizes reads every CamundaOptimize of the Kubernetes cluster that
 // names contract in its spec.managementAuthRef.
 //
@@ -76,14 +104,20 @@ func (r *Reconciler) listOptimizes(ctx context.Context, contract string) ([]v1.C
 // Identity that restarts writes the list of its last roll, and this step puts
 // the rest back on the reconcile that the restart triggers.
 //
-// A returned *conditions.PreCheckFailure is already staged on the condition.
-// The caller folds it into Ready and comes back on the retry interval. Only a
-// failure of the Kubernetes API comes back as an error.
+// The failure it returns is already staged on the condition, and the caller
+// folds it into Ready. The second result asks the caller to come back on the
+// retry interval. Only a failure of the Kubernetes API comes back as an error.
+//
+// A management plane that serves no Optimize is never held back by the realm,
+// because nobody can sign in to it either way. It still comes back while a
+// callback it registered before is waiting to be withdrawn, and it stops
+// calling Keycloak altogether once the condition reports that nothing of this
+// operator is registered.
 func (r *Reconciler) syncOptimizeCallbacks(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	res resolved,
-) (*conditions.PreCheckFailure, error) {
+) (*conditions.PreCheckFailure, bool, error) {
 	provider := res.Input.Provider
 	if provider.Mode == components.ModeOIDC {
 		stageCallbacks(
@@ -91,35 +125,46 @@ func (r *Reconciler) syncOptimizeCallbacks(
 			"The identity provider of the platform config holds the callback URLs of Optimize",
 		)
 
-		return nil, nil
+		return nil, false, nil
+	}
+	// A suspended management plane runs no Keycloak in the keycloak mode and
+	// serves nobody in either, so the realm is left as it is. Dialing a
+	// Keycloak that is scaled to zero would report ConnectionFailed on a
+	// resource whose desired state is exactly this.
+	if res.Input.Suspended {
+		stageCallbacks(
+			mc, metav1.ConditionTrue, string(component.Suspended),
+			"The management plane is suspended, so the realm is left as it is",
+		)
+
+		return nil, false, nil
 	}
 
 	desired := components.OptimizeCallbacks(res.Input)
 	clientID := provider.Clients.Optimize.ID
+	if len(desired) == 0 && nothingRegistered(mc) {
+		stageNoCallbacks(mc)
+
+		return nil, false, nil
+	}
 
 	failure, err := r.convergeOptimizeCallbacks(ctx, mc, provider, clientID, desired)
 	if err != nil {
-		return nil, err
-	}
-
-	// A management plane that serves no Optimize registers nothing. Its
-	// rendered environment carries no Optimize preset, so Management Identity
-	// creates no Optimize client, and a Keycloak this operator cannot reach
-	// holds nothing back. The condition therefore reports the resting state
-	// rather than a failure, and Ready is free of it.
-	if len(desired) == 0 {
-		stageCallbacks(
-			mc, metav1.ConditionTrue, v1.ReasonNoCallbacks,
-			"No Optimize behind this management plane names a URL, so no login callback of this "+
-				"operator is registered in the realm",
-		)
-
-		return nil, nil
+		return nil, false, err
 	}
 	if failure != nil {
 		stageCallbacks(mc, metav1.ConditionFalse, failure.Reason, failure.Message)
+		if len(desired) == 0 {
+			return nil, true, nil
+		}
 
-		return failure, nil
+		return failure, true, nil
+	}
+
+	if len(desired) == 0 {
+		stageNoCallbacks(mc)
+
+		return nil, false, nil
 	}
 
 	stageCallbacks(
@@ -130,7 +175,28 @@ func (r *Reconciler) syncOptimizeCallbacks(
 		),
 	)
 
-	return nil, nil
+	return nil, false, nil
+}
+
+// nothingRegistered reports whether the last reconcile already found no login
+// callback of this operator in the realm. A management plane that rests there
+// makes no call to Keycloak at all.
+func nothingRegistered(mc *v1.CamundaManagementCluster) bool {
+	condition := meta.FindStatusCondition(
+		mc.Status.Conditions, v1.ConditionOptimizeCallbacksReady,
+	)
+
+	return condition != nil && condition.Reason == v1.ReasonNoCallbacks
+}
+
+// stageNoCallbacks reports a realm that holds no login callback of this
+// management plane.
+func stageNoCallbacks(mc *v1.CamundaManagementCluster) {
+	stageCallbacks(
+		mc, metav1.ConditionTrue, v1.ReasonNoCallbacks,
+		"No Optimize behind this management plane names a URL, so no login callback of this "+
+			"operator is registered in the realm",
+	)
 }
 
 // convergeOptimizeCallbacks reads the client that clientID names and writes

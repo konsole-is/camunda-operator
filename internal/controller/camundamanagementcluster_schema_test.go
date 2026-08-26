@@ -388,6 +388,14 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			}, "optimize applies to the keycloak modes only",
 		),
 		Entry(
+			"rejects an optimize externalUrl that ends with a slash",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Optimize = &v1.ManagementOptimizeSpec{
+					ExternalURL: "https://optimize.elsewhere.example.com/",
+				}
+			}, "externalUrl must not end with a slash",
+		),
+		Entry(
 			"rejects an optimize externalUrl with a comma",
 			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
 				o.Spec.Optimize = &v1.ManagementOptimizeSpec{

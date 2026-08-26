@@ -132,21 +132,19 @@ func TestOptimizeURLs(t *testing.T) {
 }
 
 // The callback is the URL and the path, with nothing removed and nothing
-// added. Management Identity concatenates the two the same way, so a URL that
-// ends in a slash gives one entry on both sides and not two.
+// added, in the order of the URL list. Management Identity concatenates the
+// two the same way, so both writers produce the same entry.
 func TestOptimizeCallbacks(t *testing.T) {
 	t.Parallel()
 
 	in := Input{OptimizeURLs: []string{
 		"https://one.example.com",
-		"https://two.example.com/",
 		"https://three.example.com/optimize",
 	}}
 
 	assert.Equal(
 		t, []string{
 			"https://one.example.com/api/authentication/callback",
-			"https://two.example.com//api/authentication/callback",
 			"https://three.example.com/optimize/api/authentication/callback",
 		}, OptimizeCallbacks(in),
 	)

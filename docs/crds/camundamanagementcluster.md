@@ -479,9 +479,9 @@ status:
 
 The `OptimizeCallbacksReady` condition reports the realm. It reads `Healthy` while the `optimize` client carries the callback of every row above. See [Status](#status).
 
-The first Optimize of a management plane restarts Management Identity, which signs everybody out once. The ones after it change nothing about the workloads.
+The operator owns the login callbacks of the addresses above and nothing else on that client. It adds the ones that are missing and removes the ones of an Optimize that went away. A redirect URI of another shape stays where it is. A login callback you register by hand does not: it has the shape the operator owns, so the next reconcile removes it. Give the Optimize a `spec.externalUrl` instead.
 
-The operator owns only the login callbacks of the addresses above. It adds the ones that are missing from the `optimize` client and removes the ones of an Optimize that went away. Every other redirect URI on that client stays, the ones you registered by hand included.
+Adding or removing an Optimize changes the configuration of Management Identity, so its pods roll, as they do for any other change to it.
 
 `spec.optimize.externalUrl` names one more address: an Optimize that this operator does not run, so no `CamundaOptimize` reports it. Set it for that alone, and leave it unset otherwise. An address that a `CamundaOptimize` also names is registered once:
 
@@ -557,6 +557,8 @@ Deletion keeps:
 
 A condition reads `True` under the reasons `Healthy`, `Disabled`, `Suspended`, and `NoCallbacks`, and `False` under every other reason in the table.
 
+`OptimizeCallbacksReady` holds `Ready` back only while this management plane serves an Optimize. A plane that serves none reports what it found in the realm and stays ready, because nobody can sign in to an Optimize that does not exist.
+
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a Secret that the [CamundaPlatformConfig](camundaplatformconfig.md) names is applied, or no such Secret exists. | Nothing. |
@@ -579,10 +581,11 @@ A condition reads `True` under the reasons `Healthy`, `Disabled`, `Suspended`, a
 | `OptimizeCallbacksReady` | `Healthy` | The `optimize` client of the realm carries the login callback of every row of `status.optimize` and of `spec.optimize`. | Nothing. |
 | `OptimizeCallbacksReady` | `NoCallbacks` | No Optimize behind this management plane names an address, so there is no login callback to register. | Nothing, until you run an Optimize. Then set `spec.externalUrl` on it. See [Optimize](#optimize). |
 | `OptimizeCallbacksReady` | `OptimizeClientMissing` | The realm holds no `optimize` client yet. Management Identity creates it on its first start against Keycloak. | Wait. If it stays, read the pods of `my-management-identity`. |
-| `OptimizeCallbacksReady` | `ConnectionFailed` | Keycloak did not answer the operator, or it refused the administrator. The message carries what Keycloak said. | Read the message. Make sure that Keycloak answers and that the administrator Secret holds valid credentials. |
+| `OptimizeCallbacksReady` | `ConnectionFailed` | Keycloak did not answer the operator, or it refused the administrator. The message carries what Keycloak said. | Read the message. Make sure that Keycloak answers, that the administrator Secret holds valid credentials, and that the operator trusts the certificate of an `https` Keycloak. |
 | `OptimizeCallbacksReady` | `MissingSecret` | The Secret with the Keycloak administrator does not exist or lacks a key. The message names both. | In the `keycloak` mode, wait for the Keycloak Operator to write it. In the `externalKeycloak` mode, correct `adminCredentialsSecretRef`. |
 | `OptimizeCallbacksReady` | `WriteFailed` | Keycloak refused the change to the `optimize` client. The message carries what Keycloak said. | Read the message. Make sure that the administrator can change clients of the realm. |
 | `OptimizeCallbacksReady` | `Disabled` | The mode is `oidc`, so your provider holds the callback URLs. | Nothing. |
+| `OptimizeCallbacksReady` | `Suspended` | `spec.suspend` is `true`, so the realm is left as it is. | Nothing. |
 | `Ready` | `Healthy` | Every condition that takes part is healthy, the contract is written, and the callbacks are registered. | Nothing. |
 | `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Suspending` / `PendingSuspension` / `PrerequisiteNotMet` | The reason of the governing condition. The message names it. | Read the row of that condition. |
 | `Ready` | `ImmutableAfterStart` | `spec.identity.admin` asks for an administrator claim that Management Identity did not start with. | Read the `IdentityReady` row. |
@@ -769,7 +772,7 @@ spec:
       replicas: 1
   # object. Optional, forbidden in the oidc mode. One more Optimize that this management plane serves: one that this operator does not run.
   optimize:
-    # string. Required. The URL a browser reaches that Optimize at. It carries no comma.
+    # string. Required. The URL a browser reaches that Optimize at. It carries no comma and does not end with a slash.
     externalUrl: "https://optimize.elsewhere.example.com"
 ```
 
@@ -784,7 +787,7 @@ The API server refuses an apply that breaks one of these:
 - `spec.identity.admin.email` is required when `spec.webModeler` is set in one of the two Keycloak modes.
 - `spec.identity.admin.claimName` holds no equals sign.
 - `spec.optimize` is forbidden in the `oidc` mode.
-- `spec.optimize.externalUrl` carries no comma.
+- `spec.optimize.externalUrl` carries no comma and does not end with a slash.
 - Every `externalUrl`, `websocketsExternalUrl`, and `url` is an `http` or `https` URL. `spec.identityProvider.keycloak.externalUrl` must carry the `/auth` path.
 - `spec.identityProvider.keycloak.externalUrl` and `spec.identityProvider.externalKeycloak.url` carry no query and no fragment.
 - `spec.identityProvider.externalKeycloak.realm` holds letters, digits, dots, hyphens, and underscores. It starts and ends with a letter or a digit.

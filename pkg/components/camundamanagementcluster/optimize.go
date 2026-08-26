@@ -93,9 +93,9 @@ func OptimizeCallbacks(in Input) []string {
 	for _, url := range in.OptimizeURLs {
 		// Plain concatenation, because Management Identity concatenates too
 		// and never trims the root URL (ClientInitializationService.java,
-		// generateRedirectUrls). A URL that ends with a slash therefore gives
-		// the same entry on both sides, and the two writers never add two
-		// entries for one Optimize.
+		// generateRedirectUrls). Both writers therefore produce the same
+		// entry. The API server refuses a URL that ends with a slash, so
+		// neither of them can produce a doubled one.
 		callbacks = append(callbacks, url+OptimizeCallbackPath)
 	}
 

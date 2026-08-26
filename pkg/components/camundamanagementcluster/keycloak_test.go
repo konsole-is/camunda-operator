@@ -251,11 +251,11 @@ func TestIdentityEnvWithoutAnOptimizeRendersNoPreset(t *testing.T) {
 	assert.NotContains(t, env, "KEYCLOAK_USERS_0_ROLES_1")
 }
 
-// The operator writes the login callbacks through the Keycloak administration
-// API on every reconcile, so a second Optimize reaches the realm without a
-// restart. Rolling Management Identity for it would sign every user out for
-// nothing, so a longer URL list alone leaves the config hash where it is.
-func TestConfigHashIgnoresASecondOptimizeURL(t *testing.T) {
+// A new Optimize changes the rendered environment of Management Identity, so
+// it changes the config hash and rolls the pods, the same as any other change
+// to that environment. The restarted Identity writes the whole list onto the
+// optimize client, and the operator keeps it there between restarts.
+func TestConfigHashFollowsTheOptimizeURLs(t *testing.T) {
 	t.Parallel()
 
 	one := newKeycloakInput(t, true, nil)
@@ -264,33 +264,10 @@ func TestConfigHashIgnoresASecondOptimizeURL(t *testing.T) {
 			{Namespace: "blue", Name: "a", ExternalURL: fixtureOptimizeBlue},
 		})
 	})
-
-	assert.Equal(t, ConfigHash(one, ComponentIdentity), ConfigHash(many, ComponentIdentity))
-}
-
-// The optimize preset is what creates the client, so the first Optimize has to
-// reach a restarted Management Identity. The presence of the variable is
-// therefore part of the hash even though its value is not.
-func TestConfigHashFollowsTheFirstOptimizeURL(t *testing.T) {
-	t.Parallel()
-
 	none := newKeycloakInput(t, true, func(in *Input) { in.Cluster.Spec.Optimize = nil })
-	one := newKeycloakInput(t, true, nil)
 
-	assert.NotEqual(t, ConfigHash(none, ComponentIdentity), ConfigHash(one, ComponentIdentity))
-}
-
-// A rotated client secret has to reach the container, so that credential is
-// hashed by value.
-func TestConfigHashFollowsTheOptimizeClientSecret(t *testing.T) {
-	t.Parallel()
-
-	one := newKeycloakInput(t, true, nil)
-	rotated := newKeycloakInput(t, true, func(in *Input) {
-		in.Secrets.OptimizeClient = "another-optimize-client"
-	})
-
-	assert.NotEqual(t, ConfigHash(one, ComponentIdentity), ConfigHash(rotated, ComponentIdentity))
+	assert.NotEqual(t, ConfigHash(one, ComponentIdentity), ConfigHash(many, ComponentIdentity))
+	assert.NotEqual(t, ConfigHash(one, ComponentIdentity), ConfigHash(none, ComponentIdentity))
 }
 
 // The initial claim belongs to the oidc mode. In a Keycloak mode the first

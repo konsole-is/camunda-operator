@@ -455,10 +455,9 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 				v1.ConditionOptimizeCallbacksReady, v1.ReasonHealthy,
 			)
 
-			// The realm is the proof. The first callback comes from the
-			// rendered environment of Management Identity, and the second one
-			// only from the operator: the URL list is hashed as set or unset,
-			// so the CamundaOptimize rolled no pod.
+			// The realm is the proof: the client carries the callback of the
+			// Optimize outside this operator and the callback of the
+			// CamundaOptimize that the management plane found.
 			client, err := realmOptimizeClient(mc)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(client).To(ContainSubstring(

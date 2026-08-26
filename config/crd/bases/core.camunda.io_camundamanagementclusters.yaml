@@ -2916,6 +2916,9 @@ spec:
                     - message: 'externalUrl must carry no comma: Management Identity
                         reads the callback list as comma-separated'
                       rule: '!self.contains('','')'
+                    - message: 'externalUrl must not end with a slash: the login callback
+                        is appended to it'
+                      rule: '!self.endsWith(''/'')'
                 required:
                 - externalUrl
                 type: object

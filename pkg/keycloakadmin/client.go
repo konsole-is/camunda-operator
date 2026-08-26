@@ -25,6 +25,7 @@ limitations under the License.
 package keycloakadmin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -34,6 +35,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // DefaultTimeout bounds one call to Keycloak. The reconcile has no other
@@ -123,7 +125,7 @@ func (c *Client) UpdateClient(ctx context.Context, rep Representation) error {
 	}
 
 	req, err := http.NewRequestWithContext(
-		ctx, http.MethodPut, c.clientsURL()+"/"+url.PathEscape(id), strings.NewReader(string(body)),
+		ctx, http.MethodPut, c.clientsURL()+"/"+url.PathEscape(id), bytes.NewReader(body),
 	)
 	if err != nil {
 		return fmt.Errorf("building the client update request: %w", err)
@@ -145,31 +147,62 @@ func (c *Client) clientsURL() string {
 // do signs in if needed, sends req with the access token, and returns the
 // body of a 2xx answer. Any other status becomes an error that carries the
 // status and the start of the body.
+//
+// A refused token is exchanged once and the request is sent again, so a token
+// that expired between two calls of the same Client does not surface as a
+// failure of the call that met it.
 func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
+	body, status, err := c.send(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if status == http.StatusUnauthorized {
+		c.token = ""
+		body, status, err = c.send(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if status < 200 || status > 299 {
+		return nil, statusError(status, body)
+	}
+
+	return body, nil
+}
+
+// send signs in if needed, sends req with the access token, and returns the
+// body and the status of the answer. It rewinds the body of req, so a caller
+// can send the same request twice.
+func (c *Client) send(ctx context.Context, req *http.Request) ([]byte, int, error) {
 	if c.token == "" {
 		token, err := c.signIn(ctx)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		c.token = token
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
+	if req.GetBody != nil {
+		rewound, err := req.GetBody()
+		if err != nil {
+			return nil, 0, fmt.Errorf("rewinding the request body: %w", err)
+		}
+		req.Body = rewound
+	}
+
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("reading the answer: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, statusError(resp.StatusCode, body)
+		return nil, 0, fmt.Errorf("reading the answer: %w", err)
 	}
 
-	return body, nil
+	return body, resp.StatusCode, nil
 }
 
 // signIn exchanges the administrator credentials for an access token through
@@ -228,6 +261,9 @@ func statusError(status int, body []byte) error {
 	text := strings.TrimSpace(string(body))
 	if len(text) > maxErrorBody {
 		text = text[:maxErrorBody]
+		for !utf8.ValidString(text) {
+			text = text[:len(text)-1]
+		}
 	}
 	if text == "" {
 		return fmt.Errorf("status %d from Keycloak", status)

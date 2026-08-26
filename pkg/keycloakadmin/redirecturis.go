@@ -67,9 +67,10 @@ func (r Representation) SetRedirectURIs(uris []string) {
 // desired and keeps every entry of current that this operator does not own.
 //
 // An entry of current is dropped only when it ends with suffix and desired
-// does not hold it. Ownership is that narrow because the client is shared: a
-// person can register a redirect URI on it by hand, and another writer can
-// register one of a shape this operator has never rendered. Both survive.
+// does not hold it. Everything else survives, so a redirect URI of another
+// shape stays whoever wrote it. An entry that does end with suffix is treated
+// as one of the caller's, so a caller that shares suffix with another writer
+// takes that writer's entries away.
 //
 // The kept entries stay in the order of current, and the new ones follow in
 // the order of desired, so a list that needs no change compares equal to

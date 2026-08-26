@@ -225,12 +225,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	res.Input.Clusters = attached
 	mc.Status.Clusters = rows
 
-	optimizes, err := r.listOptimizes(ctx, res.ContractName)
-	if err != nil {
+	if err := r.discoverOptimizes(ctx, &mc, &res); err != nil {
 		return ctrl.Result{}, err
 	}
-	mc.Status.Optimize = components.AttachedOptimizes(optimizes)
-	res.Input.OptimizeURLs = components.OptimizeURLs(&mc, mc.Status.Optimize)
 
 	// A renamed contract leaves the old name behind until the new contract is
 	// written, so the status keeps naming the old one until then.
@@ -267,18 +264,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			contractErr = err
 		}
 	}
-	callbackFailure, callbackErr := r.syncOptimizeCallbacks(ctx, &mc, res)
+	callbackFailure, callbackRetry, callbackErr := r.syncOptimizeCallbacks(ctx, &mc, res)
 	conditions.Stage(&mc, readyCondition(&mc, built.Ready, contractErr, callbackFailure))
 
 	// Nothing watches the user API of a cluster or the Optimize client of the
 	// realm, so the controller comes back on its own: soon when a cluster or
 	// Keycloak refused the call, and on the converge interval to find a user
-	// that somebody removed on the cluster.
+	// or a login callback that somebody removed there.
 	var result ctrl.Result
 	switch {
-	case anyRow(rows, v1.ReasonBasicAuthUserFailed), callbackFailure != nil:
+	case anyRow(rows, v1.ReasonBasicAuthUserFailed), callbackRetry:
 		result.RequeueAfter = r.retryInterval()
-	case convergesUsers(&mc, attached):
+	case convergesUsers(&mc, attached), len(res.Input.OptimizeURLs) > 0:
 		result.RequeueAfter = r.convergeInterval()
 	}
 
@@ -506,11 +503,16 @@ func anyRow(rows []v1.AttachedClusterStatus, reason string) bool {
 }
 
 // readyCondition derives Ready from the components, the contract write, and
-// the registration of the Optimize callbacks. Neither of the two writes is a
-// component, and neither of them is a ready management plane when it fails:
-// the ManagementAuthConfig is the only thing a CamundaOptimize reads from this
+// the registration of the Optimize callbacks. Neither write is a component,
+// and neither is a ready management plane when it fails: the
+// ManagementAuthConfig is the only thing a CamundaOptimize reads from this
 // resource, and an Optimize whose callback is missing from the realm cannot
 // complete a login.
+//
+// A component that is not True yet decides Ready before the callbacks do. The
+// realm is bootstrapped by Management Identity against Keycloak, so a plane
+// that is still starting cannot register anything, and reporting that instead
+// of the component that is starting would name the symptom over the cause.
 func readyCondition(
 	mc *v1.CamundaManagementCluster,
 	comps []*component.Component,
@@ -523,11 +525,13 @@ func readyCondition(
 			Message: contractErr.Error(),
 		})
 	}
-	if callbackFailure != nil {
+
+	ready := conditions.Aggregate(mc, comps...)
+	if ready.Status == metav1.ConditionTrue && callbackFailure != nil {
 		return conditions.Failed(mc, callbackFailure)
 	}
 
-	return conditions.Aggregate(mc, comps...)
+	return ready
 }
 
 // SetupWithManager registers the controller, the reference indexes, and the
