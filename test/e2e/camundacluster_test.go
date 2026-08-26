@@ -146,6 +146,18 @@ func requests(cpu, memory string) *corev1.ResourceRequirements {
 	}
 }
 
+// capped adds a memory limit to the requests of a workload. A JVM reads the
+// memory limit of its container to size the heap. A container with no limit
+// reads the memory of the whole node instead, so on the 16 GB runner each
+// Java process of a flow takes a heap of gigabytes and the node runs out of
+// memory.
+func capped(cpu, memory, memoryLimit string) *corev1.ResourceRequirements {
+	res := requests(cpu, memory)
+	res.Limits = corev1.ResourceList{corev1.ResourceMemory: resource.MustParse(memoryLimit)}
+
+	return res
+}
+
 // basicPlatform returns a platform config with basic authentication and no
 // license: the cluster then runs in non-production mode.
 func basicPlatform(name string) *v1.CamundaPlatformConfig {

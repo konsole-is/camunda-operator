@@ -165,10 +165,15 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "ElasticsearchCluster"},
 			ObjectMeta: metav1.ObjectMeta{Name: esName, Namespace: mcKeycloakNamespace},
 			Spec: v1.ElasticsearchClusterSpec{
-				Version:                os.Getenv(envElasticsearchVersion),
-				Replicas:               new(int32(1)),
-				StorageSize:            new(resource.MustParse(esStorageSize)),
-				Resources:              requests("500m", "1Gi"),
+				Version:     os.Getenv(envElasticsearchVersion),
+				Replicas:    new(int32(1)),
+				StorageSize: new(resource.MustParse(esStorageSize)),
+				Resources:   capped("200m", "1Gi", "1536Mi"),
+				// Elasticsearch gives the heap half of the memory it sees.
+				// ECK reads the memory limit above for that half, but only
+				// while ES_JAVA_OPTS names no heap. The flow exports the
+				// records of one process instance, so 512 MB is enough.
+				ExtraEnv:               []corev1.EnvVar{{Name: "ES_JAVA_OPTS", Value: "-Xms512m -Xmx512m"}},
 				SecondaryStorageConfig: mcKeycloakStorage,
 			},
 		}
@@ -182,11 +187,12 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 
 	// The flows run one at a time on one node, so what a flow reserves has to
 	// fit beside the system pods, the manager, and the operators on a
-	// four-vCPU runner. The requests below are scheduling room, not a
-	// performance setting, and the Keycloak Operator adds 300m of its own.
-	cluster.Spec.Zeebe.Resources = requests("500m", "1Gi")
-	cluster.Spec.Gateway.Resources = requests("200m", "512Mi")
-	elasticsearch.Spec.Resources = requests("300m", "1Gi")
+	// four-vCPU runner. A CPU request is scheduling room, and it is also the
+	// share a container gets when every process asks for the CPU at once.
+	// The kind control plane keeps a larger share when the flow asks for
+	// less. The Keycloak Operator adds 300m of its own.
+	cluster.Spec.Zeebe.Resources = capped("400m", "1Gi", "2Gi")
+	cluster.Spec.Gateway.Resources = capped("150m", "512Mi", "1280Mi")
 
 	BeforeAll(func() {
 		By("creating the namespace of the flow")
@@ -439,8 +445,8 @@ var _ = Describe("CamundaManagementCluster with OIDC", Ordered, Label(utils.Labe
 	)
 
 	// The same four-vCPU room as the Keycloak flow.
-	cluster.Spec.Zeebe.Resources = requests("500m", "1Gi")
-	cluster.Spec.Gateway.Resources = requests("200m", "512Mi")
+	cluster.Spec.Zeebe.Resources = capped("400m", "1Gi", "2Gi")
+	cluster.Spec.Gateway.Resources = capped("150m", "512Mi", "1280Mi")
 
 	BeforeAll(func() {
 		By("creating the test namespace")
@@ -613,7 +619,7 @@ func keycloakManagementCluster() *v1.CamundaManagementCluster {
 				ExternalURL:       keycloakServiceURL(mc),
 				DatabaseConfigRef: mcKeycloakDatabase,
 				Replicas:          new(int32(1)),
-				Resources:         requests("200m", "768Mi"),
+				Resources:         capped("150m", "512Mi", "1280Mi"),
 			},
 		},
 		Identity: v1.IdentitySpec{
@@ -621,13 +627,13 @@ func keycloakManagementCluster() *v1.CamundaManagementCluster {
 			ExternalURL:       components.IdentityServiceURL(mc),
 			DatabaseConfigRef: mcKeycloakIdentityDB,
 			Admin:             v1.IdentityAdminSpec{Username: mcAdminUsername, Email: mcAdminEmail},
-			WorkloadSpec:      v1.WorkloadSpec{Resources: requests("200m", "1Gi")},
+			WorkloadSpec:      v1.WorkloadSpec{Resources: capped("150m", "512Mi", "1280Mi")},
 		},
 		Optimize: &v1.ManagementOptimizeSpec{ExternalURL: optimizeWebappURL()},
 		Console: &v1.ConsoleSpec{
 			Version:      os.Getenv(envConsoleVersion),
 			ExternalURL:  components.ConsoleServiceURL(mc),
-			WorkloadSpec: v1.WorkloadSpec{Resources: requests("50m", "256Mi")},
+			WorkloadSpec: v1.WorkloadSpec{Resources: capped("50m", "64Mi", "256Mi")},
 		},
 		WebModeler: webModelerSpec(mc, mcKeycloakWebModelerDB),
 	}
@@ -658,7 +664,7 @@ func oidcManagementCluster() *v1.CamundaManagementCluster {
 				ClaimName:  mcOIDCAdminClaimName,
 				ClaimValue: mcOIDCAdminClaimValue,
 			},
-			WorkloadSpec: v1.WorkloadSpec{Resources: requests("200m", "1Gi")},
+			WorkloadSpec: v1.WorkloadSpec{Resources: capped("150m", "512Mi", "1280Mi")},
 		},
 		WebModeler: webModelerSpec(mc, mcOIDCWebModelerDB),
 	}
@@ -682,8 +688,8 @@ func webModelerSpec(mc *v1.CamundaManagementCluster, databaseRef string) *v1.Web
 			// The SMTP sink speaks no STARTTLS.
 			TLS: new(false),
 		},
-		Restapi:    &v1.WorkloadSpec{Resources: requests("200m", "1Gi")},
-		Websockets: &v1.WorkloadSpec{Resources: requests("50m", "256Mi")},
+		Restapi:    &v1.WorkloadSpec{Resources: capped("150m", "512Mi", "1280Mi")},
+		Websockets: &v1.WorkloadSpec{Resources: capped("50m", "128Mi", "256Mi")},
 	}
 }
 
@@ -736,6 +742,17 @@ func optimizeWebappURL() string {
 // managementOptimize returns the CamundaOptimize that authenticates through
 // the contract of the management plane, sized for a kind node.
 func managementOptimize() *v1.CamundaOptimize {
+	// Optimize starts last, when the node already carries Keycloak,
+	// Management Identity, Console, both Web Modeler processes, the
+	// orchestration cluster, and an Elasticsearch. optimize-startup.sh of
+	// camunda/camunda 8.9.9 starts each process with -Xms1024m -Xmx1024m
+	// -XX:MetaspaceSize=256m -XX:MaxMetaspaceSize=256m when
+	// OPTIMIZE_JAVA_OPTS is unset, and it reads no container limit, so this
+	// variable is the only way to make the heap smaller.
+	javaOpts := []corev1.EnvVar{
+		{Name: "OPTIMIZE_JAVA_OPTS", Value: "-Xms256m -Xmx512m -XX:MaxMetaspaceSize=256m"},
+	}
+
 	return &v1.CamundaOptimize{
 		TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaOptimize"},
 		ObjectMeta: metav1.ObjectMeta{Name: mcOptimizeName, Namespace: mcKeycloakNamespace},
@@ -743,8 +760,14 @@ func managementOptimize() *v1.CamundaOptimize {
 			Version:           os.Getenv(envOptimizeVersion),
 			ManagementAuthRef: mcKeycloakName,
 			ClusterRef:        v1.ClusterRef{Name: ccName},
-			Webapp:            &v1.WorkloadSpec{Resources: requests("150m", "1Gi")},
-			Importer:          &v1.WorkloadSpec{Resources: requests("150m", "1Gi")},
+			Webapp: &v1.WorkloadSpec{
+				Resources: capped("150m", "768Mi", "1280Mi"),
+				ExtraEnv:  javaOpts,
+			},
+			Importer: &v1.WorkloadSpec{
+				Resources: capped("150m", "768Mi", "1280Mi"),
+				ExtraEnv:  javaOpts,
+			},
 		},
 	}
 }
