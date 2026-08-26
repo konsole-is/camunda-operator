@@ -282,10 +282,12 @@ func (in *DatabaseServerConfig) OperatorRecovers() bool {
 }
 
 // ProbedForCurrentSpec reports whether the record of the last probe describes
-// the server that the spec names now. The record survives a spec change until
-// the operator reaches the new endpoint, so ServerVersion and SystemIdentifier
-// can still describe the server the contract came from. A consumer that keys
-// on either one waits until this reports true.
+// the server that the spec names now. After a change of host, port, or admin
+// Secret, the record stays as it was until the contract controller notices
+// the change and clears it, and it stays empty until the next probe succeeds.
+// In both windows ServerVersion and SystemIdentifier do not describe the
+// server the spec names. A consumer that keys on either one waits until this
+// reports true.
 func (in *DatabaseServerConfig) ProbedForCurrentSpec() bool {
 	if in.Status.ProbedAt == nil {
 		return false
