@@ -53,10 +53,10 @@ const (
 	// point this flow restores to is minutes old, so one day is enough, and a
 	// short retention keeps the bucket small.
 	dsRetentionDays = 1
-	// dsArchiveSegment separates the archives of a DatabaseServer from the
+	// dsArchivePathSegment separates the archives of a DatabaseServer from the
 	// backup layout inside one bucket. The operator writes the archive under
-	// <basePath>/<segment>/<namespace>/<server>/<cluster>.
-	dsArchiveSegment = "databaseserver"
+	// <basePath>/<segment>/<namespace>/<ArchiveSegment>/<cluster>.
+	dsArchivePathSegment = "databaseserver"
 
 	dsResource = "databaseservers.core.camunda.io"
 
@@ -193,7 +193,8 @@ var _ = Describe("DatabaseServer", Ordered, Label(utils.LabelDatabaseServer), fu
 		Expect(utils.Get(dsResource, dsServer, dsNamespace, &current)).To(Succeed())
 
 		prefix := strings.Join([]string{
-			backupBasePath, dsArchiveSegment, dsNamespace, dsServer, dscomponents.ClusterName(&current), "base",
+			backupBasePath, dsArchivePathSegment, dsNamespace,
+			dscomponents.ArchiveSegment(&current), dscomponents.ClusterName(&current), "base",
 		}, "/") + "/"
 
 		objects, err := utils.MinIOObjectsWithPrefix(minioNamespace, prefix, storeTimeout)

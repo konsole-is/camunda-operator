@@ -114,7 +114,7 @@ Admission checks each field against the values CloudNativePG takes there: 0-59 f
 
 The first base backup runs as soon as the server is up, whatever the schedule says. `ArchiveReady` is `False` until that first base backup completes: an archive that holds write-ahead log and no base backup cannot be recovered to any point.
 
-The archive lives under a prefix of the bucket that holds this server alone: `<basePath>/databaseserver/<namespace>/<name>`. One bucket can serve a whole fleet.
+The archive lives under a prefix of the bucket that holds this server alone: `<basePath>/databaseserver/<namespace>/<name>-<id>`. The `<id>` is the first eight hex characters of the SHA-256 of the UID that Kubernetes gave the server. A server that you delete and create again under the same name gets a prefix of its own. The Barman Cloud plugin refuses a new cluster whose prefix already holds an archive. One bucket can serve a whole fleet.
 
 ### The archive history
 
@@ -283,7 +283,7 @@ The version of the server is the tag, so the repository you name must publish th
 
 Deleting a `DatabaseServer` removes the CloudNativePG cluster, the published contract, and the archive settings. CloudNativePG removes the data volumes with its cluster.
 
-The objects already in the bucket stay. Remove them yourself when you no longer need them.
+The objects already in the bucket stay. Remove them yourself when you no longer need them. A server that you create again under the same name writes to a prefix of its own, and reads nothing that the first one left.
 
 ## Status
 
@@ -296,7 +296,7 @@ status:
     history:
       - serverName: my-db
         objectStorageRef: my-backup-bucket
-        location: s3://my-backup-bucket/clusters/databaseserver/my-cluster-ns/my-db (region eu-west-1)
+        location: s3://my-backup-bucket/clusters/databaseserver/my-cluster-ns/my-db-4c2a9f1e (region eu-west-1)
         from: "2026-08-01T10:00:00Z"
   recovery:
     requestID: 3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e

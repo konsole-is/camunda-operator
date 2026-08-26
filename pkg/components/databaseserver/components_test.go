@@ -60,11 +60,19 @@ func goldenScheme(t *testing.T) *runtime.Scheme {
 	return scheme
 }
 
+// goldenServerUID is the UID of every golden fixture. The bucket directory of
+// a server is derived from it, so the goldens need one that does not move.
+const goldenServerUID = "b7e4d2a1-3c58-4f60-9a1d-2e5f8c0b4d71"
+
 // goldenMinimalDatabaseServer is the minimal example of the CRD doc with a
 // deterministic name, resolved against the "standard" preset of the doc.
 func goldenMinimalDatabaseServer() (*v1.DatabaseServer, *v1.DatabaseServerPresetSpec) {
 	server := &v1.DatabaseServer{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-db", Namespace: "my-cluster-ns"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-cluster-db",
+			Namespace: "my-cluster-ns",
+			UID:       goldenServerUID,
+		},
 		Spec: v1.DatabaseServerSpec{
 			PresetRef:            "standard",
 			DatabaseServerConfig: "my-database-server",
@@ -86,7 +94,11 @@ func goldenMinimalDatabaseServer() (*v1.DatabaseServer, *v1.DatabaseServerPreset
 // pin all of them.
 func goldenRealisticDatabaseServer() *v1.DatabaseServer {
 	return &v1.DatabaseServer{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-db", Namespace: "my-cluster-ns"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-cluster-db",
+			Namespace: "my-cluster-ns",
+			UID:       goldenServerUID,
+		},
 		Spec: v1.DatabaseServerSpec{
 			Version:   "17",
 			Instances: new(int32(3)),

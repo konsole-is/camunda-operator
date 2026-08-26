@@ -17,6 +17,8 @@ limitations under the License.
 package databaseserver
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strconv"
@@ -96,6 +98,16 @@ func BaseBackupName(server *v1.DatabaseServer) string { return ClusterName(serve
 // archive into the Barman Cloud plugin.
 func ArchiveSecretName(server *v1.DatabaseServer) string {
 	return server.Name + archiveSecretSuffix
+}
+
+// ArchiveSegment returns the directory in the bucket that holds the archive of
+// this server: its name, a dash, and the first eight hex characters of the
+// SHA-256 of its UID. Two servers of one name and different UIDs get different
+// directories.
+func ArchiveSegment(server *v1.DatabaseServer) string {
+	sum := sha256.Sum256([]byte(server.UID))
+
+	return server.Name + "-" + hex.EncodeToString(sum[:4])
 }
 
 // Archiving reports whether the merged spec asks for an archive. It is the one
@@ -311,7 +323,7 @@ func (a *ArchiveStorage) ArchiveLocation(server *v1.DatabaseServer) string {
 		return ""
 	}
 
-	return a.Config.LocationOf(archivePathSegment + "/" + server.Namespace + "/" + server.Name)
+	return a.Config.LocationOf(archivePathSegment + "/" + server.Namespace + "/" + ArchiveSegment(server))
 }
 
 // destinationPath returns the bucket URL that holds the archives of the
@@ -558,7 +570,7 @@ func (a *ArchiveStorage) setDestinationPath(
 	if base := a.Config.BasePath(); base != "" {
 		segments = append(segments, base)
 	}
-	segments = append(segments, archivePathSegment, server.Namespace, server.Name)
+	segments = append(segments, archivePathSegment, server.Namespace, ArchiveSegment(server))
 	resolved.destinationPath = strings.Join(segments, "/")
 }
 

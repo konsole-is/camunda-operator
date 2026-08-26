@@ -588,7 +588,8 @@ var _ = Describe("DatabaseServer controller", func() {
 			)
 		}, timeout, interval).Should(Succeed())
 		Expect(store.Spec.Configuration.DestinationPath).To(Equal(
-			"s3://" + bucket.Name + "/clusters/databaseserver/" + server.Namespace + "/camunda",
+			"s3://" + bucket.Name + "/clusters/databaseserver/" + server.Namespace + "/" +
+				components.ArchiveSegment(server),
 		))
 		Expect(store.Spec.RetentionPolicy).To(Equal("30d"))
 

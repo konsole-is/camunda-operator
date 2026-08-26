@@ -24,7 +24,7 @@ spec:
   configuration:
     data:
       compression: gzip
-    destinationPath: s3://camunda-backups/clusters/databaseserver/my-cluster-ns/my-cluster-db
+    destinationPath: s3://camunda-backups/clusters/databaseserver/my-cluster-ns/my-cluster-db-eec0942b
     s3Credentials:
       inheritFromIAMRole: true
       region:

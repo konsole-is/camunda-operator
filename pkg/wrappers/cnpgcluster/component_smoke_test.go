@@ -147,7 +147,7 @@ func objectStoreResource(t *testing.T) *barmanobjectstore.Resource {
 		ObjectMeta: metav1.ObjectMeta{Name: "my-archive", Namespace: "my-server-ns"},
 		Spec: barmanobjectstore.ObjectStoreSpec{
 			Configuration: barmanobjectstore.BarmanObjectStoreConfiguration{
-				DestinationPath: "s3://my-bucket/databaseserver/my-server-ns/my-server/",
+				DestinationPath: "s3://my-bucket/databaseserver/my-server-ns/my-server-3d5e7a12/",
 				EndpointURL:     "https://s3.eu-west-1.amazonaws.com",
 				S3Credentials: &barmanobjectstore.S3Credentials{
 					AccessKeyID:     &barmanobjectstore.SecretKeySelector{Name: "my-archive", Key: "accessKeyId"},

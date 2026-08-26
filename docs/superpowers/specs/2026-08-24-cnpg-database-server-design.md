@@ -69,6 +69,11 @@ writes it.
   source overwrites the source archive. A safety check in the plugin refuses to archive into a
   path that another server already uses.
   https://cloudnative-pg.io/docs/devel/recovery
+- The same check blocks a `DatabaseServer` created again under an old name. The objects of the
+  first one stay in the bucket, and the rollbacks of the new one number from zero again, so every
+  path collides. The directory of a server in the bucket therefore carries eight hex characters of
+  the SHA-256 of its UID (`ArchiveSegment`), and `ArchiveLocation` carries the same directory, so a
+  server created again is a new location in `status.archive.history`.
 
 ### Identity and monitoring
 

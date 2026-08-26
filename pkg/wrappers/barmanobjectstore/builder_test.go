@@ -17,7 +17,7 @@ func testObject() *ObjectStore {
 		ObjectMeta: metav1.ObjectMeta{Name: "test-object", Namespace: "test-ns"},
 		Spec: ObjectStoreSpec{
 			Configuration: BarmanObjectStoreConfiguration{
-				DestinationPath: "s3://test-bucket/databaseserver/test-ns/test-server/",
+				DestinationPath: "s3://test-bucket/databaseserver/test-ns/test-server-9b1c7f04/",
 				EndpointURL:     "https://s3.eu-west-1.amazonaws.com",
 				S3Credentials: &S3Credentials{
 					AccessKeyID:     &SecretKeySelector{Name: "test-archive", Key: "accessKeyId"},
@@ -44,7 +44,11 @@ func TestBuilderPreviewsTheObjectStore(t *testing.T) {
 
 	store, ok := preview.(*ObjectStore)
 	require.True(t, ok)
-	assert.Equal(t, "s3://test-bucket/databaseserver/test-ns/test-server/", store.Spec.Configuration.DestinationPath)
+	assert.Equal(
+		t,
+		"s3://test-bucket/databaseserver/test-ns/test-server-9b1c7f04/",
+		store.Spec.Configuration.DestinationPath,
+	)
 	assert.Equal(t, "30d", store.Spec.RetentionPolicy)
 	require.NotNil(t, store.Spec.Configuration.S3Credentials)
 	assert.Equal(t, "test-archive", store.Spec.Configuration.S3Credentials.AccessKeyID.Name)
