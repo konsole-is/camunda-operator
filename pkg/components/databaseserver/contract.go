@@ -21,6 +21,7 @@ import (
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
+	"github.com/sourcehawk/operator-component-framework/pkg/feature"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/secret"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -47,10 +48,18 @@ import (
 // is nil when the contract is free or belongs to this server. A guard blocks
 // the apply while it is set, so the first server to publish a name keeps it.
 // The caller reads the holder and reports v1.ReasonContractTaken.
+//
+// clusterTaken is the ClusterTaken message while a CloudNativePG cluster of
+// the name the server derives is controlled by another owner, and empty
+// otherwise. When it is set, the feature gate is off and the framework removes
+// the published contract, because the contract names the endpoint and the
+// superuser Secret of a database this server does not own. A consumer then
+// reads InvalidReference instead of the endpoint of another database.
 func ContractComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
 	holder *metav1.OwnerReference,
+	clusterTaken string,
 ) (*component.Component, error) {
 	superuser, err := secret.NewBuilder(superuserSecretRef(server)).Build()
 	if err != nil {
@@ -84,6 +93,7 @@ func ContractComponent(
 	return component.NewComponentBuilder().
 		WithName("contract").
 		WithConditionType(v1.ConditionContractReady).
+		WithFeatureGate(feature.NewBooleanGate(clusterTaken == "")).
 		WithResource(superuser, component.ReadOnly(), component.BlockOnAbsence(), component.Auxiliary()).
 		WithResource(contract).
 		Build()
@@ -119,16 +129,11 @@ func contractGuard(
 	name string,
 	holder *metav1.OwnerReference,
 ) func(v1.DatabaseServerConfig) (concepts.GuardStatusWithReason, error) {
-	return func(v1.DatabaseServerConfig) (concepts.GuardStatusWithReason, error) {
-		if holder == nil {
-			return concepts.GuardStatusWithReason{Status: concepts.GuardStatusUnblocked}, nil
-		}
-
-		return concepts.GuardStatusWithReason{
-			Status: concepts.GuardStatusBlocked,
-			Reason: ContractTakenMessage(name, holder),
-		}, nil
+	if holder == nil {
+		return takenGuard[v1.DatabaseServerConfig]("")
 	}
+
+	return takenGuard[v1.DatabaseServerConfig](ContractTakenMessage(name, holder))
 }
 
 // ContractTakenMessage says that another owner holds the contract name, and

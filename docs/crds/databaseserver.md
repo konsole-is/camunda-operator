@@ -22,6 +22,8 @@ spec:
 
 The name of the server names the CloudNativePG cluster and every address that comes off it. It must start with a lowercase letter, hold only lowercase letters, digits, and `-`, and be 46 characters or shorter. CloudNativePG takes 50, and a rollback adds a suffix of up to four characters, `-r99`.
 
+The name must also be free. If a CloudNativePG cluster of that name is already there, and this server does not own it, the server runs nothing. `ClusterReady` reports `ClusterTaken`. The message names the owner, or says that no owner controls it. The server also withdraws the contract, the base backup schedule, and the `PodMonitor`, because all three name the cluster of that name. See [Status](#status).
+
 A rollback builds its cluster under the name of the server plus that suffix. The number in the suffix counts the archive records in `status.archive.history`. A rollback, an archive you re-enable, and a change of bucket each add one. A name inside the bound reaches the new cluster whole while that number stays below 100. Above it, the operator shortens the name to a head and a hash.
 
 ```mermaid
@@ -161,6 +163,8 @@ spec:
 The answer arrives in `spec.pitr.lastRecovery` on the same contract. [DatabaseServerConfig](databaseserverconfig.md) documents the request and the three results.
 
 A rollback replaces the server. The operator builds a second CloudNativePG cluster from the archive that holds `targetTime`. Its name is the name of the server, `-r`, and the number of archives the server has written, so the first rollback of a server that only ever wrote one archive builds `my-db-r1`. A server that stopped and started its archive counts those too and recovers into a higher number. `status.recovery.cluster` names the cluster the rollback builds, and `status.cluster` names the one the contract points at.
+
+The operator never writes to a cluster of that name that the server does not own. It refuses the rollback with `result: Failed`, and the message names the cluster. A cluster that somebody replaces under that name after the contract has moved to it is refused the same way. The server then runs from the cluster it came from again, and the replacement is left alone.
 
 The operator points the contract at the new cluster once CloudNativePG reports it healthy, and it then removes the old cluster and its data volumes. Every consumer of the contract reads the new `host` and the superuser Secret of the new cluster. A `CamundaCluster` rolls its pods to pick them up.
 
@@ -339,11 +343,13 @@ status:
 | `ClusterReady` | `Creating`, `Updating` | CloudNativePG is converging the instances. | Wait. |
 | `ClusterReady` | `Healthy` | Every instance the spec asks for is ready. | Nothing. |
 | `ClusterReady` | `AliveFailing` | CloudNativePG reports a phase it cannot leave on its own. The message names the phase. | Read the CloudNativePG cluster for the reason. |
+| `ClusterReady` | `ClusterTaken` | A CloudNativePG cluster of the name this server derives already exists, and this server does not own it. The message names the owner, or says that no owner controls it. The server writes nothing on that cluster. It also removes the contract, the base backup schedule, and the `PodMonitor`, because all three name the cluster of that name. The bucket settings and `status.archive.history` stay, so the server comes back when the name is free. | Remove that cluster, or give this server a name of its own. |
 | `ArchiveReady` | `Disabled` | The server has no `archive` block. | Nothing. |
 | `ArchiveReady` | `Blocked` | The archive the server writes now holds no base backup yet. A new server and a server that asked for an archive again both start here. A suspended server never does. | Wait. If it never completes, read the CloudNativePG backup for the reason. |
 | `ArchiveReady` | `Healthy` | The archive holds a base backup and takes the write-ahead log. | Nothing. |
 | `ContractReady` | `Blocked` | The superuser Secret does not exist yet. | Wait for the instances to start. |
 | `ContractReady` | `ContractTaken` | Another owner controls the `DatabaseServerConfig` that `spec.databaseServerConfig` names. The message names that owner. | Give this server a contract name of its own, or delete the owner. |
+| `ContractReady` | `Disabled` | The name of the cluster is taken, so the server withdrew the contract. `ClusterReady` says who holds the name. | Read `ClusterReady`. |
 | `ContractReady` | `Healthy` | The contract is published. | Nothing. |
 | `MonitoringReady` | `Disabled` | Scraping is off. | Nothing. |
 | `MonitoringReady` | `Healthy` | The `PodMonitor` is applied. | Nothing. |

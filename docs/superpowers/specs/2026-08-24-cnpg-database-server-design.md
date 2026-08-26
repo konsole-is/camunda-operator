@@ -465,7 +465,7 @@ Conditions and components, one component per condition:
 
 | Condition | Component owns | True when |
 | --- | --- | --- |
-| `ClusterReady` | `Cluster` | the Cluster the contract points at is Healthy |
+| `ClusterReady` | `Cluster` | the Cluster the contract points at is Healthy. `ClusterTaken` when a Cluster of that name exists that this server does not control |
 | `ArchiveReady` | `ObjectStore`, `ScheduledBackup` | absent `archive` block, or the first base backup of the current archive completed |
 | `ContractReady` | `DatabaseServerConfig` | the contract is published and the superuser Secret exists (the contract's own Ready is the probe's business; a hibernated server keeps a published contract). `ContractTaken` when another owner controls the name |
 | `MonitoringReady` | `PodMonitor` | monitoring disabled, or the PodMonitor is applied |
@@ -594,6 +594,10 @@ The reconcile reads the contract it owns and sees `spec.recovery` that differs f
 Each step is idempotent and keyed on what exists, so a restart in the middle resumes. The
 previous `Cluster` is deleted only after the contract points at the new one, so a failure before
 step 4 leaves the old server intact and the restore reports `Failed` without data loss.
+The ownership of the recovery `Cluster` is tested again on the live object at the cutover, because
+the derived name comes back once the number of archives comes back. A cluster of that name that
+this server does not own abandons the rollback with `Failed`, and the server runs from the previous
+cluster again.
 
 One contract name belongs to one server. The reconcile reads the `DatabaseServerConfig` that the
 merged spec names before it publishes. A guard on the contract blocks the apply while another owner
@@ -602,6 +606,15 @@ The first server to publish a name therefore keeps it. The second one publishes 
 owner and its contract are gone. Without the guard both servers apply, because the apply is
 server-side under a field manager that carries no server name, and the owner reference, the label,
 and `spec.host` move between them on every reconcile.
+
+The name of the `Cluster` is guarded the same way, and more strictly: a `Cluster` with no
+controller at all is refused rather than adopted, because it holds a database this server did not
+build. Withholding the apply is not enough on its own, because a server that owned the cluster and
+lost it has already published objects that name it. The contract and the monitoring components gate
+themselves off while the name is held, so ocf removes the `DatabaseServerConfig` and the
+`PodMonitor`, and the archive component withdraws the `ScheduledBackup` and keeps the `ObjectStore`.
+`status.archive.history` and `status.recovery` are untouched, so the server comes back whole once
+the name is free. `ClusterReady` reports `ClusterTaken` with the holder in the message.
 
 `spec.databaseServerConfig` is mutable. The reconcile sweeps every `DatabaseServerConfig` it owns
 under the `camunda.io/database-server` label of the server and deletes the ones it no longer

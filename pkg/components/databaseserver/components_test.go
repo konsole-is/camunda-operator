@@ -26,6 +26,7 @@ import (
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	"github.com/sourcehawk/operator-component-framework/pkg/testing/golden"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -143,7 +144,7 @@ func assertDatabaseServerGoldens(
 	scheme := goldenScheme(t)
 	base := filepath.Join("testdata", "golden", dir)
 
-	cluster, _, err := ClusterComponent(server, merged, archive, nil)
+	cluster, _, err := ClusterComponent(server, merged, archive, nil, "")
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "cluster.yaml"), cluster,
@@ -154,7 +155,7 @@ func assertDatabaseServerGoldens(
 	// so a server without an archive would pin an ObjectStore that the
 	// component only ever deletes.
 	if merged.Archive != nil {
-		archiveComp, err := ArchiveComponent(server, merged, archive, nil)
+		archiveComp, err := ArchiveComponent(server, merged, archive, nil, "")
 		require.NoError(t, err)
 		golden.AssertComponentYAML(
 			t, filepath.Join(base, "archive.yaml"), archiveComp,
@@ -162,7 +163,7 @@ func assertDatabaseServerGoldens(
 		)
 	}
 
-	contract, err := ContractComponent(server, merged, nil)
+	contract, err := ContractComponent(server, merged, nil, "")
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "contract.yaml"), contract,
@@ -170,7 +171,7 @@ func assertDatabaseServerGoldens(
 	)
 
 	if MonitoringEnabled(merged) {
-		monitoring, err := MonitoringComponent(server, merged, true)
+		monitoring, err := MonitoringComponent(server, merged, true, "")
 		require.NoError(t, err)
 		golden.AssertComponentYAML(
 			t, filepath.Join(base, "monitoring.yaml"), monitoring,
@@ -397,11 +398,11 @@ func TestSuspensionKeepsTheDeclaredState(t *testing.T) {
 		server.Spec.Suspend = suspend
 		merged := MergePreset(server.Spec, preset)
 
-		clusterComp, _, err := ClusterComponent(server, merged, archive, nil)
+		clusterComp, _, err := ClusterComponent(server, merged, archive, nil, "")
 		require.NoError(t, err)
-		contractComp, err := ContractComponent(server, merged, nil)
+		contractComp, err := ContractComponent(server, merged, nil, "")
 		require.NoError(t, err)
-		archiveComp, err := ArchiveComponent(server, merged, archive, nil)
+		archiveComp, err := ArchiveComponent(server, merged, archive, nil, "")
 		require.NoError(t, err)
 
 		return renderComponent(t, clusterComp),
@@ -434,7 +435,7 @@ func TestMonitoringComponentOmitsUnsupportedPodMonitor(t *testing.T) {
 
 	server := goldenRealisticDatabaseServer()
 
-	comp, err := MonitoringComponent(server, server.Spec, false)
+	comp, err := MonitoringComponent(server, server.Spec, false, "")
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
@@ -454,7 +455,7 @@ func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
 		"team":                       "platform",
 	}
 
-	comp, _, err := ClusterComponent(server, server.Spec, nil, nil)
+	comp, _, err := ClusterComponent(server, server.Spec, nil, nil, "")
 	require.NoError(t, err)
 
 	cluster := previewCluster(t, comp)
@@ -472,16 +473,41 @@ func TestClusterImageComesFromThePlatformConfig(t *testing.T) {
 	server, preset := goldenMinimalDatabaseServer()
 	merged := MergePreset(server.Spec, preset)
 
-	comp, _, err := ClusterComponent(server, merged, nil, nil)
+	comp, _, err := ClusterComponent(server, merged, nil, nil, "")
 	require.NoError(t, err)
 	assert.Equal(t, "ghcr.io/cloudnative-pg/postgresql:17", previewCluster(t, comp).Spec.ImageName)
 
 	platform := &v1.CamundaPlatformConfigSpec{
 		Images: &v1.ImagesSpec{Postgres: "mirror.example.com/postgresql"},
 	}
-	comp, _, err = ClusterComponent(server, merged, nil, platform)
+	comp, _, err = ClusterComponent(server, merged, nil, platform, "")
 	require.NoError(t, err)
 	assert.Equal(t, "mirror.example.com/postgresql:17", previewCluster(t, comp).Spec.ImageName)
+}
+
+// A CloudNativePG cluster of the name a server derives holds a database when
+// somebody else built it. The apply is server-side with forced ownership, so
+// nothing but the guard keeps this server off it.
+func TestClusterGuardBlocksAHeldName(t *testing.T) {
+	t.Parallel()
+
+	free, err := takenGuard[cnpgv1.Cluster]("")(cnpgv1.Cluster{})
+	require.NoError(t, err)
+	assert.Equal(t, concepts.GuardStatusUnblocked, free.Status)
+
+	held := ClusterTakenMessage("camunda", &metav1.OwnerReference{
+		Kind: "DatabaseServer", Name: "other",
+	})
+	taken, err := takenGuard[cnpgv1.Cluster](held)(cnpgv1.Cluster{})
+	require.NoError(t, err)
+	assert.Equal(t, concepts.GuardStatusBlocked, taken.Status)
+	assert.Contains(t, taken.Reason, `CloudNativePG cluster "camunda"`)
+	assert.Contains(t, taken.Reason, `DatabaseServer "other"`)
+
+	// A cluster that nothing controls is refused too. It holds a database
+	// that no operator is minding, and the apply would make it a child of
+	// this server.
+	assert.Contains(t, ClusterTakenMessage("camunda", nil), "no owner controls it")
 }
 
 // previewCluster renders comp and returns the single CloudNativePG cluster in

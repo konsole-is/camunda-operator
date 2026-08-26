@@ -55,6 +55,7 @@ func MonitoringComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
 	podMonitorSupported bool,
+	clusterTaken string,
 ) (*component.Component, error) {
 	monitor, err := podmonitor.NewBuilder(podMonitor(server, merged)).Build()
 	if err != nil {
@@ -67,7 +68,7 @@ func MonitoringComponent(
 	return component.NewComponentBuilder().
 		WithName("monitoring").
 		WithConditionType(v1.ConditionMonitoringReady).
-		WithFeatureGate(feature.NewBooleanGate(MonitoringEnabled(merged))).
+		WithFeatureGate(feature.NewBooleanGate(MonitoringEnabled(merged) && clusterTaken == "")).
 		IncludeWhen(podMonitorSupported, func() component.Resource { return monitor }).
 		Suspend(merged.Suspend).
 		Build()
