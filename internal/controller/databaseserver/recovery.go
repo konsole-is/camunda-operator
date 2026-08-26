@@ -691,7 +691,7 @@ func (r *DatabaseServerReconciler) advanceRecovery(
 	var recovered cnpgv1.Cluster
 	if err := r.APIReader.Get(ctx, key, &recovered); err != nil {
 		if apierrors.IsNotFound(err) {
-			return true, r.applyRecoveryCluster(ctx, server, resolved, source, request.TargetTime)
+			return true, r.createRecoveryCluster(ctx, server, resolved, source, request.TargetTime)
 		}
 
 		return false, fmt.Errorf("reading the recovery cluster %s: %w", key, err)
@@ -867,10 +867,17 @@ func (r *DatabaseServerReconciler) abandonRecovery(
 	)
 }
 
-// applyRecoveryCluster applies the cluster that recovers the server to the
+// createRecoveryCluster creates the cluster that recovers the server to the
 // requested point. It carries the owner reference of the server, so the
 // recovery of a server that is deleted goes with it.
-func (r *DatabaseServerReconciler) applyRecoveryCluster(
+//
+// The caller read the name and found it free. A create is what keeps that
+// answer true: the name is derived, so anybody can take it in between, and an
+// apply of this cluster would write the recovery over the database that the
+// other object holds and take it over. A name that was taken in between is
+// therefore not an error of this look. The next look reads the object and the
+// ownership test in advanceRecovery decides what it is.
+func (r *DatabaseServerReconciler) createRecoveryCluster(
 	ctx context.Context,
 	server *v1.DatabaseServer,
 	resolved resolvedSpec,
@@ -888,11 +895,12 @@ func (r *DatabaseServerReconciler) applyRecoveryCluster(
 		return fmt.Errorf("setting the owner of the recovery cluster %q: %w", recovered.Name, err)
 	}
 
-	//nolint:staticcheck // the operator applies through the deprecated client.Apply patch
-	if err := r.Patch(
-		ctx, recovered, client.Apply, components.RecoveryFieldManager, client.ForceOwnership,
-	); err != nil {
-		return fmt.Errorf("applying the recovery cluster %q: %w", recovered.Name, err)
+	if err := r.Create(ctx, recovered, components.RecoveryFieldManager); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return nil
+		}
+
+		return fmt.Errorf("creating the recovery cluster %q: %w", recovered.Name, err)
 	}
 
 	return nil
