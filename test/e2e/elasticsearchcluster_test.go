@@ -151,7 +151,7 @@ var _ = Describe("ElasticsearchCluster", Ordered, Label(utils.LabelElasticsearch
 			out, err := curlElasticsearch(&contract, "health", "/_cluster/health")
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(out).To(ContainSubstring(`"status":"green"`))
-		}, 5*time.Minute).Should(Succeed())
+		}, 5*time.Minute, 5*time.Second).Should(Succeed())
 
 		By("indexing a document")
 		_, err := curlElasticsearch(
