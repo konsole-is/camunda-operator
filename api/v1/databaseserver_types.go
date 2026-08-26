@@ -518,10 +518,14 @@ type DatabaseServerStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:validation:XValidation:rule="oldSelf.hasValue() || (self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$') && self.metadata.name.size() <= 46)",message="metadata.name must be a DNS-1035 label of at most 46 characters, because it names the CloudNativePG cluster of the server",optionalOldSelf=true
 
-// DatabaseServer runs a PostgreSQL server for one orchestration cluster
-// through the external CloudNativePG operator, archives it continuously to an
-// object storage bucket, and publishes the connection details as a
-// DatabaseServerConfig that a Database and a PointInTimeRestore consume.
+// DatabaseServer runs one PostgreSQL instance through the external
+// CloudNativePG operator, archives it continuously to an object storage
+// bucket, and publishes the connection details as a DatabaseServerConfig that
+// a Database and a PointInTimeRestore consume. One or more orchestration
+// clusters use the instance, each through a Database of its own.
+//
+// A PointInTimeRestore rolls the whole instance back, so it needs a server
+// that holds the database of its cluster and nothing else.
 //
 // The name of the CR names the CloudNativePG cluster, so admission holds it to
 // a DNS-1035 label of at most 46 characters: the 50 that CloudNativePG accepts
