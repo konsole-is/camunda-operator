@@ -130,9 +130,8 @@ func newInput(t *testing.T, mutate func(in *Input)) Input {
 			Host: "postgres.camunda.svc",
 			Port: 5432,
 			Name: "identity",
-			Credentials: v1.CredentialsSecretRef{
+			Credentials: v1.LocalCredentialsSecretRef{
 				Name:        "identity-db-credentials",
-				Namespace:   fixtureNamespace,
 				UsernameKey: "username",
 				PasswordKey: "password",
 			},
@@ -184,11 +183,9 @@ func withEveryOverride(in *Input) {
 			Key:       "identity-client-secret",
 		}
 	})
-	in.Databases.Identity.Credentials.Name = MirroredSecretName(in.Cluster, MirrorPurposeIdentityDB)
 	in.Mirrors = map[MirrorPurpose]map[string][]byte{
 		MirrorPurposeLicense:        {"license": []byte("golden-license")},
 		MirrorPurposeIdentityClient: {"identity-client-secret": []byte("golden-client-secret")},
-		MirrorPurposeIdentityDB:     {"username": []byte("identity"), "password": []byte("golden-password")},
 	}
 	in.HashInputs = []string{"Secret/platform/oidc-credentials=42"}
 	in.Cluster.Spec.Identity.WorkloadSpec = v1.WorkloadSpec{
@@ -271,9 +268,8 @@ func newKeycloakCluster(managed bool, mutate func(mc *v1.CamundaManagementCluste
 			mc.Spec.IdentityProvider = v1.IdentityProviderSpec{
 				ExternalKeycloak: &v1.ExternalKeycloakSpec{
 					URL: fixtureKeycloak,
-					AdminCredentialsSecretRef: v1.CredentialsSecretRef{
+					AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
 						Name:        "keycloak-admin",
-						Namespace:   "platform",
 						UsernameKey: "username",
 						PasswordKey: "password",
 					},
@@ -308,17 +304,10 @@ func newKeycloakInput(t *testing.T, managed bool, mutate func(in *Input)) Input 
 				Host: "postgres.camunda.svc",
 				Port: 5432,
 				Name: "keycloak",
-				Credentials: v1.CredentialsSecretRef{
+				Credentials: v1.LocalCredentialsSecretRef{
 					Name:        "keycloak-db-credentials",
-					Namespace:   fixtureNamespace,
 					UsernameKey: "username",
 					PasswordKey: "password",
-				},
-			}
-		} else {
-			in.Mirrors = map[MirrorPurpose]map[string][]byte{
-				MirrorPurposeKeycloakAdmin: {
-					"username": []byte("admin"), "password": []byte("golden-keycloak-admin"),
 				},
 			}
 		}
@@ -339,8 +328,8 @@ func fixtureKeycloakRealistic(t *testing.T, managed bool) Input {
 	return newKeycloakInput(t, managed, func(in *Input) {
 		withKeycloakApps(in)
 		in.Cluster.Spec.Identity.Admin.Email = "admin@example.com"
-		in.Cluster.Spec.Identity.Admin.PasswordSecretRef = &v1.SecretKeyRef{
-			Name: "admin-password", Namespace: fixtureNamespace, Key: "password",
+		in.Cluster.Spec.Identity.Admin.PasswordSecretRef = &v1.LocalSecretKeyRef{
+			Name: "admin-password", Key: "password",
 		}
 		in.Secrets.IdentityAdmin = ""
 		delete(in.Secrets.Values, IdentityAdminSecretName(in.Cluster))

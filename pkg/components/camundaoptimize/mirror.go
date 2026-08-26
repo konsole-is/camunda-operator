@@ -43,10 +43,8 @@ type MirrorPurpose string
 // is nearly always a mirrored one: ManagementAuthConfig is cluster-scoped, so
 // one contract serves every namespace and its reference can name only one.
 const (
-	MirrorPurposeLicense       MirrorPurpose = "license"
-	MirrorPurposeAuthClient    MirrorPurpose = "auth-client"
-	MirrorPurposeESCredentials MirrorPurpose = "es-credentials"
-	MirrorPurposeESCA          MirrorPurpose = "es-ca"
+	MirrorPurposeLicense    MirrorPurpose = "license"
+	MirrorPurposeAuthClient MirrorPurpose = "auth-client"
 )
 
 // MirrorPurposes is the closed set of purposes that the component renders, in
@@ -54,8 +52,6 @@ const (
 var MirrorPurposes = []MirrorPurpose{
 	MirrorPurposeLicense,
 	MirrorPurposeAuthClient,
-	MirrorPurposeESCredentials,
-	MirrorPurposeESCA,
 }
 
 // mirroredComponentName is the ocf name of the mirrored Secrets component.

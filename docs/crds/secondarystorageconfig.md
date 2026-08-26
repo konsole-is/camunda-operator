@@ -37,7 +37,6 @@ spec:
     endpoint: "https://my-cluster-es:9200"
     credentialsSecretRef:
       name: my-cluster-es-credentials
-      namespace: my-cluster-ns
       usernameKey: username
       passwordKey: password
 ```
@@ -97,18 +96,14 @@ spec:
     credentialsSecretRef:
       # string. Required. Name of the Secret that holds the credentials.
       name: my-cluster-es-credentials
-      # string. Required. Namespace of the Secret. It never defaults to the namespace of this contract.
-      namespace: my-cluster-ns
-      # string. Required. Key in the Secret that holds the username.
+      # string. Optional, default: username. Key in the Secret that holds the username.
       usernameKey: username
-      # string. Required. Key in the Secret that holds the password.
+      # string. Optional, default: password. Key in the Secret that holds the password.
       passwordKey: password
     # object. Optional. CA bundle that consumers use to verify the TLS certificate of the endpoint. Set it when the certificate is not signed by a well-known CA, for example the self-signed certificate of an ECK cluster.
     caSecretRef:
       # string. Required. Name of the Secret that holds the CA bundle.
       name: my-cluster-es-http-certs-public
-      # string. Required. Namespace of the Secret. It never defaults to the namespace of this contract.
-      namespace: my-cluster-ns
       # string. Required. Key in the Secret that holds the CA bundle.
       key: ca.crt
     # string. Optional. Name of the snapshot repository, registered in this Elasticsearch cluster, that backups write to. An ElasticsearchCluster with a snapshotStorageRef fills it. Set it by hand for an Elasticsearch cluster the operator does not manage. A cluster that takes backups needs it.
@@ -145,12 +140,10 @@ spec:
     endpoint: "https://my-cluster-es-http.my-cluster-ns.svc:9200"
     credentialsSecretRef:
       name: my-cluster-es-user
-      namespace: my-cluster-ns
       usernameKey: username
       passwordKey: password
     caSecretRef:
       name: my-cluster-es-http-certs-public
-      namespace: my-cluster-ns
       key: ca.crt
     snapshotRepository: my-cluster-es
 ```

@@ -122,10 +122,8 @@ func goldenMirrors(fixture string) map[MirrorPurpose]map[string][]byte {
 	}
 
 	return map[MirrorPurpose]map[string][]byte{
-		MirrorPurposeLicense:       {"license": []byte("golden-license")},
-		MirrorPurposeAuthClient:    {"client-secret": []byte("golden-client-secret")},
-		MirrorPurposeESCredentials: {"username": []byte("elastic"), "password": []byte("golden-password")},
-		MirrorPurposeESCA:          {"ca.crt": []byte("golden-ca")},
+		MirrorPurposeLicense:    {"license": []byte("golden-license")},
+		MirrorPurposeAuthClient: {"client-secret": []byte("golden-client-secret")},
 	}
 }
 

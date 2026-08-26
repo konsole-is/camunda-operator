@@ -32,7 +32,7 @@ spec:
         - name: UPLOAD_STORAGE_NAME
           value: my-backup-config
         - name: UPLOAD_STORAGE_SPEC
-          value: '{"type":"AzureBlob","azureBlob":{"accountName":"camundabackups","container":"backups","basePath":"clusters","auth":{"type":"credentials","credentials":{"secretRef":{"name":"azure-key","namespace":"camunda","key":"accountKey"}}}}}'
+          value: '{"type":"AzureBlob","azureBlob":{"accountName":"camundabackups","container":"backups","basePath":"clusters","auth":{"type":"credentials","credentials":{"secretRef":{"name":"azure-key","key":"accountKey"}}}}}'
         - name: UPLOAD_CREDENTIAL_KEYS
           value: accountKey
         - name: UPLOAD_CREDENTIAL_0

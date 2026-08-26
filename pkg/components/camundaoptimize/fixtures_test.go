@@ -52,9 +52,8 @@ func newInput(t *testing.T, mutate func(in *Input)) Input {
 		Partitions:  1,
 		Storage: v1.ElasticsearchStorage{
 			Endpoint: "http://elasticsearch.camunda.svc:9200",
-			CredentialsSecretRef: v1.CredentialsSecretRef{
+			CredentialsSecretRef: v1.LocalCredentialsSecretRef{
 				Name:        "es-credentials",
-				Namespace:   fixtureNamespace,
 				UsernameKey: "username",
 				PasswordKey: "password",
 			},
@@ -105,10 +104,9 @@ func fixtureRealistic(t *testing.T) Input {
 			LicenseSecretRef: &v1.SecretKeyRef{Name: "camunda-license", Namespace: fixtureNamespace, Key: "license"},
 		}
 		in.Storage.Endpoint = "https://elasticsearch.camunda.svc:9200"
-		in.Storage.CASecretRef = &v1.SecretKeyRef{
-			Name:      "es-ca",
-			Namespace: fixtureNamespace,
-			Key:       "ca.crt",
+		in.Storage.CASecretRef = &v1.LocalSecretKeyRef{
+			Name: "es-ca",
+			Key:  "ca.crt",
 		}
 		in.Auth.Spec.IssuerBackendURL = "http://identity.camunda.svc:8080/realms/camunda"
 		in.Optimize.Spec.Webapp = &v1.WorkloadSpec{

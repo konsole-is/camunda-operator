@@ -148,21 +148,23 @@ func (r *DatabaseServerReconciler) enqueueForPlatformConfig() handler.EventHandl
 	})
 }
 
-// enqueueForArchiveStorage maps a bucket event to every server whose effective
-// archive names it, preset-provided archives included.
+// enqueueForArchiveStorage maps a bucket event to every server of the bucket
+// namespace whose effective archive names it, preset-provided archives
+// included.
 func (r *DatabaseServerReconciler) enqueueForArchiveStorage() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-		return r.serversMatching(ctx, "", func(server *v1.DatabaseServer) bool {
+		return r.serversMatching(ctx, o.GetNamespace(), func(server *v1.DatabaseServer) bool {
 			return archiveRef(r.effectiveSpec(ctx, server)) == o.GetName()
 		})
 	})
 }
 
-// enqueueForBucketSecret maps a Secret event to every server whose effective
-// bucket holds its static credentials in that Secret. The bucket's Secret
-// carries no owner reference to any server, so without this watch a rotated
-// credential reaches the archive only when something unrelated triggers a
-// reconcile.
+// enqueueForBucketSecret maps a Secret event to every server of the Secret
+// namespace whose effective bucket holds its static credentials in that
+// Secret. A bucket names a Secret of its own namespace, so no server of
+// another namespace can match. The bucket's Secret carries no owner reference
+// to any server, so without this watch a rotated credential reaches the
+// archive only when something unrelated triggers a reconcile.
 func (r *DatabaseServerReconciler) enqueueForBucketSecret() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
 		key := refindex.ObjectNamespacedName(o)
@@ -179,13 +181,14 @@ func (r *DatabaseServerReconciler) enqueueForBucketSecret() handler.EventHandler
 			return nil
 		}
 
-		names := make(map[string]bool, len(buckets.Items))
+		named := make(map[string]bool, len(buckets.Items))
 		for i := range buckets.Items {
-			names[buckets.Items[i].Name] = true
+			named[refindex.ObjectNamespacedName(&buckets.Items[i])] = true
 		}
 
-		return r.serversMatching(ctx, "", func(server *v1.DatabaseServer) bool {
-			return names[archiveRef(r.effectiveSpec(ctx, server))]
+		return r.serversMatching(ctx, o.GetNamespace(), func(server *v1.DatabaseServer) bool {
+			ref := archiveRef(r.effectiveSpec(ctx, server))
+			return ref != "" && named[refindex.NamespacedKey(server.Namespace, ref)]
 		})
 	})
 }

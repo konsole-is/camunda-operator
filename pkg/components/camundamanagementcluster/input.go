@@ -51,10 +51,9 @@ type Input struct {
 	// controller reads them back from the generated Secret, or generates
 	// them. They are empty while spec.webModeler is unset.
 	Pusher PusherCredentials
-	// WebModelerMail names the SMTP credentials of Web Modeler, already
-	// pointed at their copy in the management namespace. It is nil for an
-	// SMTP server that needs none.
-	WebModelerMail *v1.CredentialsSecretRef
+	// WebModelerMail names the SMTP credentials of Web Modeler, in the
+	// management namespace. It is nil for an SMTP server that needs none.
+	WebModelerMail *v1.LocalCredentialsSecretRef
 	// Mirrors are the copies of the referenced Secrets that live outside the
 	// management namespace, by purpose. A pod mounts a Secret only from its
 	// own namespace.
@@ -131,7 +130,7 @@ type IdentityProvider struct {
 	// Management Identity signs in with to create the realm, the clients, and
 	// the initial administrator. It is nil in the oidc mode, which bootstraps
 	// nothing.
-	AdminCredentials *v1.CredentialsSecretRef
+	AdminCredentials *v1.LocalCredentialsSecretRef
 	// Clients is the provider client of each component.
 	Clients ProviderClients
 }
@@ -182,7 +181,7 @@ type Database struct {
 	Name string
 	// Credentials names the Secret with the user and the password, in the
 	// management namespace.
-	Credentials v1.CredentialsSecretRef
+	Credentials v1.LocalCredentialsSecretRef
 }
 
 // Databases holds the database of each component that needs one. Keycloak and
@@ -295,25 +294,22 @@ func resolveManagedKeycloak(in Input) IdentityProvider {
 		KeycloakServiceName(in.Cluster), in.Cluster.Namespace, KeycloakServicePort, keycloakBasePath,
 	)
 
-	return keycloakProvider(in, ModeKeycloak, service, spec.ExternalURL, keycloakDefaultRealm, &v1.CredentialsSecretRef{
+	admin := &v1.LocalCredentialsSecretRef{
 		Name:        KeycloakInitialAdminSecretName(in.Cluster),
-		Namespace:   in.Cluster.Namespace,
 		UsernameKey: KeycloakAdminUsernameKey,
 		PasswordKey: KeycloakAdminPasswordKey,
-	})
+	}
+
+	return keycloakProvider(in, ModeKeycloak, service, spec.ExternalURL, keycloakDefaultRealm, admin)
 }
 
 // resolveExternalKeycloak reads the Keycloak that the user runs. One URL
 // serves browsers and containers alike, so the front-channel and the
 // back-channel issuer are the same. The administrator comes from
-// adminCredentialsSecretRef, through its copy in the management namespace.
+// adminCredentialsSecretRef, in the management namespace.
 func resolveExternalKeycloak(in Input) IdentityProvider {
 	spec := in.Cluster.Spec.IdentityProvider.ExternalKeycloak
 	admin := spec.AdminCredentialsSecretRef.DeepCopy()
-	admin.Name = LocalSecretName(
-		in.Cluster, admin.Namespace, admin.Name, MirrorPurposeKeycloakAdmin,
-	)
-	admin.Namespace = in.Cluster.Namespace
 
 	return keycloakProvider(
 		in, ModeExternalKeycloak, spec.URL, spec.URL, cmp.Or(spec.Realm, keycloakDefaultRealm), admin,
@@ -328,7 +324,7 @@ func keycloakProvider(
 	in Input,
 	mode ProviderMode,
 	backendURL, publicURL, realm string,
-	admin *v1.CredentialsSecretRef,
+	admin *v1.LocalCredentialsSecretRef,
 ) IdentityProvider {
 	// Every URL below appends a path, so a URL that ends in a slash would
 	// build "//realms", which Keycloak serves under no such address.

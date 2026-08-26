@@ -22,8 +22,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -35,7 +35,7 @@ var _ = Describe("ObjectStorageConfig controller", func() {
 	// g until status.observedGeneration matches metadata.generation.
 	readyCondition := func(g Gomega) *metav1.Condition {
 		fetched := &v1.ObjectStorageConfig{}
-		g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: storageConfig.Name}, fetched)).To(Succeed())
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(storageConfig), fetched)).To(Succeed())
 		g.Expect(fetched.Status.ObservedGeneration).To(Equal(fetched.Generation))
 		return meta.FindStatusCondition(fetched.Status.Conditions, v1.ConditionReady)
 	}
@@ -73,7 +73,7 @@ var _ = Describe("ObjectStorageConfig controller", func() {
 				g.Expect(readyCondition(g)).NotTo(BeNil())
 			}, timeout, interval).Should(Succeed())
 
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: storageConfig.Name}, storageConfig)).To(Succeed())
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(storageConfig), storageConfig)).To(Succeed())
 			storageConfig.Spec.S3.BasePath = "backups"
 			Expect(k8sClient.Update(ctx, storageConfig)).To(Succeed())
 			Expect(storageConfig.Generation).To(BeNumerically(">", 1))
@@ -112,7 +112,6 @@ var _ = Describe("ObjectStorageConfig controller", func() {
 				Credentials: &v1.S3Credentials{
 					SecretRef: v1.S3CredentialsSecretRef{
 						Name:               secret.Name,
-						Namespace:          secret.Namespace,
 						AccessKeyIDKey:     "accessKeyId",
 						SecretAccessKeyKey: "secretAccessKey",
 					},

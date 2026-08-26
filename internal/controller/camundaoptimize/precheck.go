@@ -33,7 +33,6 @@ import (
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
-	"github.com/konsole-is/camunda-operator/pkg/mirror"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
@@ -171,7 +170,7 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 		return out, err
 	}
 
-	if err := res.resolveElasticsearch(ctx, &cluster, binding, &out); err != nil {
+	if err := res.resolveElasticsearch(ctx, binding, &out); err != nil {
 		return out, err
 	}
 
@@ -323,41 +322,29 @@ func (res *resolver) resolvePlatform(ctx context.Context, cluster *v1.CamundaClu
 }
 
 // resolveElasticsearch fills both storage views: the one the Optimize pods
-// read, with every Secret reference pointed at its local copy, and the one the
-// exporter patch carries, with the credentials reference pointed at the copy
-// that the cluster's own controller makes.
+// read and the one the exporter patch carries. The binding lives in the
+// namespace of the Optimize instance and of its cluster, so both views name
+// the Secrets of that namespace and the two agree.
 func (res *resolver) resolveElasticsearch(
 	ctx context.Context,
-	cluster *v1.CamundaCluster,
 	binding *v1.SecondaryStorageConfig,
 	out *resolved,
 ) error {
 	storage := binding.Spec.Elasticsearch.DeepCopy()
-	creds := storage.CredentialsSecretRef
 
-	if err := res.localizeCredentials(
-		ctx,
-		&storage.CredentialsSecretRef,
-		components.MirrorPurposeESCredentials,
+	credentials := storage.CredentialsSecretRef
+	if err := res.checkLocalSecret(
+		ctx, credentials.Name, credentials.UsernameKey, credentials.PasswordKey,
 	); err != nil {
 		return err
 	}
-	if storage.CASecretRef != nil {
-		if err := res.localize(ctx, storage.CASecretRef, components.MirrorPurposeESCA); err != nil {
+	if ca := storage.CASecretRef; ca != nil {
+		if err := res.checkLocalSecret(ctx, ca.Name, ca.Key); err != nil {
 			return err
 		}
 	}
 	out.Input.Storage = *storage
-
-	// The broker reads the same credentials for its own secondary storage, so
-	// the cluster's controller has already put a copy in the cluster namespace
-	// under its own name when the contract names another namespace.
-	exporter := *binding.Spec.Elasticsearch.DeepCopy()
-	exporter.CredentialsSecretRef.Name = mirror.LocalSecretName(
-		cluster, creds.Namespace, creds.Name, clustercomponents.MirrorPurposeESCredentials,
-	)
-	exporter.CredentialsSecretRef.Namespace = cluster.Namespace
-	out.ExporterStorage = exporter
+	out.ExporterStorage = *storage
 
 	return nil
 }
@@ -445,22 +432,14 @@ func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose
 	return nil
 }
 
-// localizeCredentials is localize for a username and password reference.
-func (res *resolver) localizeCredentials(
-	ctx context.Context,
-	ref *v1.CredentialsSecretRef,
-	purpose components.MirrorPurpose,
-) error {
-	local, err := res.secret(
-		ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, purpose,
-		ref.UsernameKey, ref.PasswordKey,
-	)
-	if err != nil {
-		return err
-	}
-	ref.Name, ref.Namespace = local.Name, local.Namespace
+// checkLocalSecret checks that the Secret named name in the namespace of the
+// Optimize instance carries keys, and records its resource version as a render
+// input. Every reference of a namespaced kind resolves here, so no copy is
+// involved.
+func (res *resolver) checkLocalSecret(ctx context.Context, name string, keys ...string) error {
+	_, err := res.secret(ctx, client.ObjectKey{Namespace: res.optimize.Namespace, Name: name}, "", keys...)
 
-	return nil
+	return err
 }
 
 // secret checks that the Secret at key carries every one of keys. When the

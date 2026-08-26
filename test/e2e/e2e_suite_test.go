@@ -24,14 +24,12 @@ import (
 	"os"
 	"os/exec"
 	"testing"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/onsi/ginkgo/v2/types"
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/require"
 
-	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/test/utils"
 )
 
@@ -200,9 +198,8 @@ func undeployManager() {
 	_, _ = utils.Run(cmd)
 }
 
-// setupMinIO deploys the object store of the backup flows and creates the
-// bucket contract that they write through. It runs after the manager, so the
-// CRD of the contract is installed.
+// setupMinIO deploys the object store of the backup flows. Each flow creates
+// the bucket contract in its own namespace with createBackupStorage.
 func setupMinIO() {
 	By("creating the MinIO namespace")
 	_, err := utils.Kubectl("create", "ns", minioNamespace)
@@ -210,20 +207,11 @@ func setupMinIO() {
 
 	By("deploying MinIO and creating the bucket")
 	Expect(utils.InstallMinIO(minioNamespace)).To(Succeed(), "Failed to install MinIO")
-
-	By("creating the ObjectStorageConfig of the backup flows")
-	Expect(apply(backupObjectStorage())).To(Succeed(), "Failed to create the ObjectStorageConfig")
-	Eventually(func(g Gomega) {
-		expectReady(g, oscResource, backupStorage, "", v1.ReasonHealthy)
-	}, 2*time.Minute).Should(Succeed())
 }
 
-// teardownMinIO removes the bucket contract and the MinIO namespace. It runs
-// before the manager is undeployed, so the contract is removed while its CRD
-// is still served.
+// teardownMinIO removes the MinIO namespace.
 func teardownMinIO() {
-	By("removing the ObjectStorageConfig and the MinIO namespace")
-	_, _ = utils.Kubectl("delete", oscResource, backupStorage, "--ignore-not-found")
+	By("removing the MinIO namespace")
 	_, _ = utils.Kubectl("delete", "ns", minioNamespace, "--wait=false")
 }
 

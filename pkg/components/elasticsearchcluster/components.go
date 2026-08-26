@@ -375,16 +375,14 @@ func StorageContractComponent(
 			Type: v1.SecondaryStorageTypeElasticsearch,
 			Elasticsearch: &v1.ElasticsearchStorage{
 				Endpoint: HTTPEndpoint(cluster),
-				CredentialsSecretRef: v1.CredentialsSecretRef{
+				CredentialsSecretRef: v1.LocalCredentialsSecretRef{
 					Name:        UserSecretName(cluster),
-					Namespace:   cluster.Namespace,
 					UsernameKey: usernameKey,
 					PasswordKey: PasswordKey,
 				},
-				CASecretRef: &v1.SecretKeyRef{
-					Name:      CACertSecretName(cluster),
-					Namespace: cluster.Namespace,
-					Key:       CACertKey,
+				CASecretRef: &v1.LocalSecretKeyRef{
+					Name: CACertSecretName(cluster),
+					Key:  CACertKey,
 				},
 				SnapshotRepository: publishedRepositoryName(cluster, storage, registered, suspended),
 			},

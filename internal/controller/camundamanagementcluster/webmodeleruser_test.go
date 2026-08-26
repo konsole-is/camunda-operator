@@ -664,8 +664,8 @@ func withWebModeler(f *fixture) {
 func createWebModelerDatabase(namespace string) string {
 	GinkgoHelper()
 
-	credentials := v1.CredentialsSecretRef{
-		Name: "db-credentials-" + utilrand.String(8), Namespace: namespace,
+	credentials := v1.LocalCredentialsSecretRef{
+		Name:        "db-credentials-" + utilrand.String(8),
 		UsernameKey: "username", PasswordKey: "password",
 	}
 

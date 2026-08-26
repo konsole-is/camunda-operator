@@ -80,10 +80,9 @@ spec:
       clientId: "medium-clusters"
       # string. Optional, default: the clientId. Audience that access tokens must carry.
       audience: "medium-clusters"
-      # object. Optional. Secret key that holds the default client secret. The namespace is required.
+      # object. Optional. Secret key that holds the default client secret. Each cluster reads the Secret in its own namespace.
       clientSecretRef:
         name: "medium-clusters-oidc-secret"
-        namespace: "camunda-system"
         key: "client-secret"
       # object. Optional. Default administrators. A cluster that sets its own admin block replaces this block entirely.
       admin:

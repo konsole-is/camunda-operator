@@ -277,7 +277,6 @@ func TestCredentialsFrom(t *testing.T) {
 					Credentials: &v1.S3Credentials{
 						SecretRef: v1.S3CredentialsSecretRef{
 							Name:               "minio",
-							Namespace:          "camunda",
 							AccessKeyIDKey:     "accessKeyId",
 							SecretAccessKeyKey: "secretAccessKey",
 						},
@@ -302,7 +301,7 @@ func TestCredentialsFrom(t *testing.T) {
 // name: the whole point of the mapping is that the user chose the key names.
 func TestCredentialsFromReportsTheMissingKey(t *testing.T) {
 	cfg := &v1.ObjectStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-bucket"},
+		ObjectMeta: metav1.ObjectMeta{Name: "my-bucket", Namespace: "camunda"},
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeGCS,
 			GCS: &v1.GCSStorage{
@@ -310,7 +309,7 @@ func TestCredentialsFromReportsTheMissingKey(t *testing.T) {
 				Auth: v1.GCSStorageAuth{
 					Type: v1.ObjectStorageAuthTypeCredentials,
 					Credentials: &v1.GCSCredentials{
-						SecretRef: v1.SecretKeyRef{Name: "gcs", Namespace: "camunda", Key: "key.json"},
+						SecretRef: v1.LocalSecretKeyRef{Name: "gcs", Key: "key.json"},
 					},
 				},
 			},

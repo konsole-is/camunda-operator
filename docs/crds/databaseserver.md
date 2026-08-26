@@ -202,7 +202,7 @@ A suspended server refuses the request with `result: Failed`. Unsuspend it, then
 
 ## Authentication to the bucket
 
-An `ObjectStorageConfig` that holds static credentials names a Secret, and that Secret can live in another namespace. The Barman Cloud plugin reads a Secret in the namespace of the server only, so the operator copies the keys into the Secret `my-db-archive` next to the server. Anyone who can read Secrets in that namespace can then read the bucket credentials. Use workload identity where you want to keep them out.
+An `ObjectStorageConfig` that holds static credentials names a Secret of its own namespace, which is the namespace of the server. The Barman Cloud plugin reads its own Secret, so the operator copies the keys into the Secret `my-db-archive` next to the server. Anyone who can read Secrets in that namespace can then read the bucket credentials. Use workload identity where you want to keep them out.
 
 An `ObjectStorageConfig` that uses workload identity binds the ServiceAccount that CloudNativePG creates for the instance pods. The operator puts the annotation of the bucket on that ServiceAccount. Add your own annotations with `spec.serviceAccount.annotations`. A value you set wins over the derived one on the same key.
 
@@ -444,7 +444,7 @@ spec:
   databaseServerConfig: my-db-server
   # object. Optional. The continuous archive of the server. Without it no point-in-time restore can reach the server.
   archive:
-    # string. Required in this block. Name of a cluster-scoped ObjectStorageConfig.
+    # string. Required in this block. Name of an ObjectStorageConfig in this namespace.
     objectStorageRef: my-backup-bucket
     # integer. Required in this block. How many days into the past a restore can reach, at least 1.
     retentionPeriodDays: 30

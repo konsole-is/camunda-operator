@@ -60,15 +60,15 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 		Type: v1.SecondaryStorageTypeElasticsearch,
 		Elasticsearch: &v1.ElasticsearchStorage{
 			Endpoint: "https://es:9200",
-			CredentialsSecretRef: v1.CredentialsSecretRef{
-				Name: "es-credentials", Namespace: "camunda",
+			CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+				Name:        "es-credentials",
 				UsernameKey: "username", PasswordKey: "password",
 			},
 		},
 	}
 	elasticsearchWithCA := *elasticsearch.DeepCopy()
-	elasticsearchWithCA.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
-		Name: "es-ca", Namespace: "camunda", Key: "ca.crt",
+	elasticsearchWithCA.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
+		Name: "es-ca", Key: "ca.crt",
 	}
 	rdbms := v1.SecondaryStorageConfigSpec{
 		Type:  v1.SecondaryStorageTypeRDBMS,

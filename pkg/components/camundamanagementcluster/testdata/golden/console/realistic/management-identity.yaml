@@ -17,7 +17,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 67687cce6653ef8e
+        camunda.io/config-hash: 94257d46eeacfb84
         prometheus.io/scrape: "true"
       labels:
         camunda.io/component: management-identity
@@ -72,12 +72,12 @@ spec:
           valueFrom:
             secretKeyRef:
               key: username
-              name: my-management-management-identity-db
+              name: identity-db-credentials
         - name: IDENTITY_DATABASE_PASSWORD
           valueFrom:
             secretKeyRef:
               key: password
-              name: my-management-management-identity-db
+              name: identity-db-credentials
         - name: CAMUNDA_LICENSE_KEY
           valueFrom:
             secretKeyRef:

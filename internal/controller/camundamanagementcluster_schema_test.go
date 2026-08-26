@@ -104,9 +104,8 @@ func externalKeycloakManagementCluster() *v1.CamundaManagementCluster {
 				ExternalKeycloak: &v1.ExternalKeycloakSpec{
 					URL:   "https://keycloak.example.com/auth",
 					Realm: "camunda-platform",
-					AdminCredentialsSecretRef: v1.CredentialsSecretRef{
+					AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
 						Name:        "keycloak-admin",
-						Namespace:   "camunda-system",
 						UsernameKey: "username",
 						PasswordKey: "password",
 					},
@@ -234,16 +233,16 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 		Entry(
 			"accepts an admin passwordSecretRef in the keycloak mode",
 			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
-				o.Spec.Identity.Admin.PasswordSecretRef = &v1.SecretKeyRef{
-					Name: "admin-credentials", Namespace: "camunda-system", Key: "password",
+				o.Spec.Identity.Admin.PasswordSecretRef = &v1.LocalSecretKeyRef{
+					Name: "admin-credentials", Key: "password",
 				}
 			}, "",
 		),
 		Entry(
 			"rejects an admin passwordSecretRef in the oidc mode",
 			validManagementCluster, func(o *v1.CamundaManagementCluster) {
-				o.Spec.Identity.Admin.PasswordSecretRef = &v1.SecretKeyRef{
-					Name: "admin-credentials", Namespace: "camunda-system", Key: "password",
+				o.Spec.Identity.Admin.PasswordSecretRef = &v1.LocalSecretKeyRef{
+					Name: "admin-credentials", Key: "password",
 				}
 			}, "identity.admin.passwordSecretRef applies to the keycloak modes only",
 		),

@@ -214,7 +214,7 @@ type ManagementAuth struct {
 	// CredentialsSecretRef names the username and password of the management
 	// port. It is set only when Method is basic.
 	// +optional
-	CredentialsSecretRef *CredentialsSecretRef `json:"credentialsSecretRef,omitempty"`
+	CredentialsSecretRef *LocalCredentialsSecretRef `json:"credentialsSecretRef,omitempty"`
 }
 
 // ManagementBinding is the published address of the management API of one

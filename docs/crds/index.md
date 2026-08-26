@@ -30,7 +30,7 @@ A contract carries connection details and credential references. The operator va
 | Kind | Scope | What it carries |
 | --- | --- | --- |
 | [SecondaryStorageConfig](secondarystorageconfig.md) | Namespaced | The secondary storage of a cluster: Elasticsearch or a relational database. |
-| [ObjectStorageConfig](objectstorageconfig.md) | Cluster | One bucket on S3, GCS, or Azure Blob, and how to authenticate. |
+| [ObjectStorageConfig](objectstorageconfig.md) | Namespaced | One bucket on S3, GCS, or Azure Blob, and how to authenticate. |
 | [DatabaseServerConfig](databaseserverconfig.md) | Namespaced | A database server, its admin credentials, and its point-in-time-recovery capability. |
 | [DatabaseConfig](databaseconfig.md) | Namespaced | One logical database and its credentials. |
 | [ManagementAuthConfig](managementauthconfig.md) | Cluster | The OIDC configuration of Management Identity. `CamundaOptimize` reads it. |

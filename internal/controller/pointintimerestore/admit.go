@@ -695,7 +695,7 @@ func (r *Reconciler) credentials(
 	dbConfig *v1.DatabaseConfig,
 ) (user, password string, failure *conditions.PreCheckFailure, err error) {
 	ref := dbConfig.Spec.CredentialsSecretRef
-	key := types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}
+	key := types.NamespacedName{Namespace: dbConfig.Namespace, Name: ref.Name}
 
 	secret, message, err := secretref.Get(ctx, r.APIReader, key, ref.UsernameKey, ref.PasswordKey)
 	if err != nil {

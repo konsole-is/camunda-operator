@@ -18,6 +18,7 @@ package camundacluster
 
 import (
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -35,13 +36,15 @@ import (
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 )
 
-// createBucket creates an S3 ObjectStorageConfig with workload identity and
-// registers its deletion. The role is unique per bucket unless roleARN is
-// given, so a second bucket can be made to conflict.
-func createBucket(roleARN string) *v1.ObjectStorageConfig {
+// createBucket creates an S3 ObjectStorageConfig with workload identity in
+// namespace and registers its deletion. A cluster resolves the reference in
+// its own namespace, so the contract belongs next to the cluster. The role is
+// unique per bucket unless roleARN is given, so a second bucket can be made to
+// conflict.
+func createBucket(namespace, roleARN string) *v1.ObjectStorageConfig {
 	GinkgoHelper()
 	bucket := &v1.ObjectStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(8)},
+		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(8), Namespace: namespace},
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{
@@ -59,14 +62,14 @@ func createBucket(roleARN string) *v1.ObjectStorageConfig {
 	return bucket
 }
 
-// createStaticBucket creates an S3 ObjectStorageConfig that authenticates
-// with the static keys of the named Secret, and registers its deletion. The
-// keys reach the pods in a Secret, so a cluster on this bucket carries no
-// cloud identity.
-func createStaticBucket(secretNamespace, secretName string) *v1.ObjectStorageConfig {
+// createStaticBucket creates an S3 ObjectStorageConfig in namespace that
+// authenticates with the static keys of the named Secret, and registers its
+// deletion. The Secret resolves in the same namespace as the bucket, so a
+// cluster on this bucket carries no cloud identity.
+func createStaticBucket(namespace, secretName string) *v1.ObjectStorageConfig {
 	GinkgoHelper()
 	bucket := &v1.ObjectStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(8)},
+		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(8), Namespace: namespace},
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{
@@ -76,7 +79,6 @@ func createStaticBucket(secretNamespace, secretName string) *v1.ObjectStorageCon
 					Type: v1.ObjectStorageAuthTypeCredentials,
 					Credentials: &v1.S3Credentials{SecretRef: v1.S3CredentialsSecretRef{
 						Name:               secretName,
-						Namespace:          secretNamespace,
 						AccessKeyIDKey:     "accessKeyId",
 						SecretAccessKeyKey: "secretAccessKey",
 					}},
@@ -212,7 +214,7 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			binding := createBinding(ns, true)
 			setSnapshotRepository(binding, "repository-of-this-contract")
 			cluster := newCluster(ns, createPlatformConfig(), binding)
-			cluster.Spec.BackupStorageRef = createBucket("arn:aws:iam::123456789012:role/camunda").Name
+			cluster.Spec.BackupStorageRef = createBucket(ns, "arn:aws:iam::123456789012:role/camunda").Name
 			createCluster(cluster)
 
 			expectBinding(cluster, func(g Gomega, published *v1.ManagementBinding) {
@@ -244,7 +246,7 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			binding := createBinding(ns, true)
 			setSnapshotRepository(binding, "my-repository")
 			cluster := newCluster(ns, createPlatformConfig(), binding)
-			cluster.Spec.BackupStorageRef = createBucket("arn:aws:iam::123456789012:role/camunda").Name
+			cluster.Spec.BackupStorageRef = createBucket(ns, "arn:aws:iam::123456789012:role/camunda").Name
 			createCluster(cluster)
 
 			expectPublishedAccount(cluster, cluster.Name+"-camunda")
@@ -296,7 +298,7 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 		It("rejects an Elasticsearch cluster whose contract has no snapshot repository", func() {
 			ns := newNamespace()
 			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
-			cluster.Spec.BackupStorageRef = createBucket("arn:aws:iam::123456789012:role/camunda").Name
+			cluster.Spec.BackupStorageRef = createBucket(ns, "arn:aws:iam::123456789012:role/camunda").Name
 			createCluster(cluster)
 
 			expectReady(
@@ -304,6 +306,26 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				metav1.ConditionFalse,
 				Equal(v1.ReasonInvalidReference),
 				ContainSubstring("elasticsearch.snapshotRepository"),
+			)
+		})
+
+		// A cluster reads its bucket contract in its own namespace. A
+		// contract of the same name next door belongs to another tenant.
+		It("does not resolve a bucket of another namespace", func() {
+			ns := newNamespace()
+			binding := createBinding(ns, true)
+			setSnapshotRepository(binding, "my-repository")
+			elsewhere := createBucket(newNamespace(), "arn:aws:iam::123456789012:role/camunda")
+
+			cluster := newCluster(ns, createPlatformConfig(), binding)
+			cluster.Spec.BackupStorageRef = elsewhere.Name
+			createCluster(cluster)
+
+			expectReady(
+				cluster,
+				metav1.ConditionFalse,
+				Equal(v1.ReasonInvalidReference),
+				ContainSubstring(elsewhere.Name),
 			)
 		})
 
@@ -315,8 +337,8 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			binding := createBinding(ns, true)
 			setSnapshotRepository(binding, "my-repository")
 			cluster := newCluster(ns, createPlatformConfig(), binding)
-			cluster.Spec.BackupStorageRef = createBucket("arn:aws:iam::123456789012:role/backup").Name
-			cluster.Spec.DocumentStorageRef = createBucket("arn:aws:iam::123456789012:role/documents").Name
+			cluster.Spec.BackupStorageRef = createBucket(ns, "arn:aws:iam::123456789012:role/backup").Name
+			cluster.Spec.DocumentStorageRef = createBucket(ns, "arn:aws:iam::123456789012:role/documents").Name
 			createCluster(cluster)
 
 			expectReady(
@@ -334,7 +356,7 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 		It("rejects a second cluster on one Azure contract, oldest wins", func() {
 			ns := newNamespace()
 			bucket := &v1.ObjectStorageConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(8)},
+				ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(8), Namespace: ns},
 				Spec: v1.ObjectStorageConfigSpec{
 					Type: v1.ObjectStorageTypeAzureBlob,
 					AzureBlob: &v1.AzureBlobStorage{
@@ -385,8 +407,8 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			setSnapshotRepository(binding, "my-repository")
 			cluster := newCluster(ns, createPlatformConfig(), binding)
 			role := "arn:aws:iam::123456789012:role/camunda"
-			cluster.Spec.BackupStorageRef = createBucket(role).Name
-			cluster.Spec.DocumentStorageRef = createBucket(role).Name
+			cluster.Spec.BackupStorageRef = createBucket(ns, role).Name
+			cluster.Spec.DocumentStorageRef = createBucket(ns, role).Name
 			createCluster(cluster)
 
 			expectBinding(cluster, func(g Gomega, published *v1.ManagementBinding) {
@@ -444,7 +466,7 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			setSnapshotRepository(binding, "my-repository")
 			cluster := newCluster(ns, createPlatformConfig(), binding)
 			cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "camunda-prod"}
-			cluster.Spec.BackupStorageRef = createBucket("arn:aws:iam::123456789012:role/camunda").Name
+			cluster.Spec.BackupStorageRef = createBucket(ns, "arn:aws:iam::123456789012:role/camunda").Name
 			createCluster(cluster)
 
 			Eventually(func(g Gomega) {
@@ -463,7 +485,7 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			binding := createBinding(ns, true)
 			setSnapshotRepository(binding, "my-repository")
 			cluster := newCluster(ns, createPlatformConfig(), binding)
-			cluster.Spec.BackupStorageRef = createBucket("arn:aws:iam::123456789012:role/camunda").Name
+			cluster.Spec.BackupStorageRef = createBucket(ns, "arn:aws:iam::123456789012:role/camunda").Name
 			createCluster(cluster)
 
 			Eventually(func(g Gomega) {
@@ -480,33 +502,24 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			}, timeout, interval).Should(Succeed())
 		})
 
-		// Static keys may live anywhere, and a pod reads only Secrets of its
-		// own namespace, so the copy is what the workloads reference.
-		It("copies the static credentials of a bucket into the cluster namespace", func() {
+		// Static keys reach the pods directly: a bucket resolves its
+		// credentials Secret in its own namespace, which is the cluster
+		// namespace, so no copy is involved.
+		It("resolves the static credentials of a bucket in the cluster namespace", func() {
 			ns := newNamespace()
 			binding := createBinding(ns, true)
 			setSnapshotRepository(binding, "my-repository")
-			createSecret("default", "minio-keys", map[string]string{
+			createSecret(ns, "minio-keys", map[string]string{
 				"accessKeyId": "minio", "secretAccessKey": "minio123",
 			})
 
 			cluster := newCluster(ns, createPlatformConfig(), binding)
-			cluster.Spec.BackupStorageRef = createStaticBucket("default", "minio-keys").Name
+			cluster.Spec.BackupStorageRef = createStaticBucket(ns, "minio-keys").Name
 			createCluster(cluster)
 
-			Eventually(func(g Gomega) {
-				var copied corev1.Secret
-				key := client.ObjectKey{
-					Namespace: cluster.Namespace,
-					Name: components.MirroredSecretName(
-						cluster,
-						components.MirrorPurposeBackupCredentials,
-					),
-				}
-				g.Expect(k8sClient.Get(ctx, key, &copied)).To(Succeed())
-				g.Expect(copied.Data).To(HaveKeyWithValue("accessKeyId", []byte("minio")))
-				g.Expect(copied.Data).To(HaveKeyWithValue("secretAccessKey", []byte("minio123")))
-			}, timeout, interval).Should(Succeed())
+			stampStatefulSetReady(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"})
+			stampDeploymentReady(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-gateway"})
+			expectReady(cluster, metav1.ConditionTrue, Equal(v1.ReasonHealthy), Not(BeEmpty()))
 		})
 
 		// Only dump Jobs consume the backup user of the database, so a
@@ -526,12 +539,12 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			dbConfig := fixtures.DatabaseConfig()
 			dbConfig.Namespace = ns
 			dbConfig.Spec.ServerRef = server.Name
-			dbConfig.Spec.CredentialsSecretRef = v1.CredentialsSecretRef{
-				Name: "app-user", Namespace: ns,
+			dbConfig.Spec.CredentialsSecretRef = v1.LocalCredentialsSecretRef{
+				Name:        "app-user",
 				UsernameKey: "username", PasswordKey: "password",
 			}
-			dbConfig.Spec.BackupCredentialsSecretRef = &v1.CredentialsSecretRef{
-				Name: "gone-user", Namespace: ns,
+			dbConfig.Spec.BackupCredentialsSecretRef = &v1.LocalCredentialsSecretRef{
+				Name:        "gone-user",
 				UsernameKey: "username", PasswordKey: "password",
 			}
 			Expect(k8sClient.Create(ctx, dbConfig)).To(Succeed())
@@ -566,25 +579,13 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				}
 				g.Expect(reasons).To(ContainElement("DumpCredentialsUnresolved"))
 			}, timeout, interval).Should(Succeed())
-
-			By("keeping no mirror for the unresolved reference")
-			var copied corev1.Secret
-			Expect(k8sClient.Get(
-				ctx, client.ObjectKey{
-					Namespace: ns,
-					Name: components.MirroredSecretName(
-						cluster, components.MirrorPurposeDumpCredentials,
-					),
-				}, &copied,
-			)).NotTo(Succeed())
 		})
 
 		// The dump Job of a LogicalBackupRDBMS mounts the backup user of the
-		// database from the cluster namespace. A Secret elsewhere therefore
-		// needs the same local copy that the other credentials get.
-		It("copies cross-namespace dump credentials into the cluster namespace", func() {
+		// database from its own namespace, so a Secret there resolves
+		// directly and raises no warning.
+		It("resolves local dump credentials with no warning", func() {
 			ns := newNamespace()
-			remote := newNamespace()
 
 			server := fixtures.DatabaseServerConfig(ns)
 			Expect(k8sClient.Create(ctx, server)).To(Succeed())
@@ -593,19 +594,19 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			createSecret(ns, "app-user", map[string]string{
 				"username": "camunda", "password": "app-secret",
 			})
-			createSecret(remote, "backup-user", map[string]string{
+			createSecret(ns, "backup-user", map[string]string{
 				"username": "backup", "password": "dump-secret",
 			})
 
 			dbConfig := fixtures.DatabaseConfig()
 			dbConfig.Namespace = ns
 			dbConfig.Spec.ServerRef = server.Name
-			dbConfig.Spec.CredentialsSecretRef = v1.CredentialsSecretRef{
-				Name: "app-user", Namespace: ns,
+			dbConfig.Spec.CredentialsSecretRef = v1.LocalCredentialsSecretRef{
+				Name:        "app-user",
 				UsernameKey: "username", PasswordKey: "password",
 			}
-			dbConfig.Spec.BackupCredentialsSecretRef = &v1.CredentialsSecretRef{
-				Name: "backup-user", Namespace: remote,
+			dbConfig.Spec.BackupCredentialsSecretRef = &v1.LocalCredentialsSecretRef{
+				Name:        "backup-user",
 				UsernameKey: "username", PasswordKey: "password",
 			}
 			Expect(k8sClient.Create(ctx, dbConfig)).To(Succeed())
@@ -622,18 +623,19 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			cluster := newCluster(ns, createPlatformConfig(), storage)
 			createCluster(cluster)
 
-			Eventually(func(g Gomega) {
-				var copied corev1.Secret
-				key := client.ObjectKey{
-					Namespace: ns,
-					Name: components.MirroredSecretName(
-						cluster, components.MirrorPurposeDumpCredentials,
-					),
+			stampStatefulSetReady(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"})
+			stampDeploymentReady(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-gateway"})
+			expectReady(cluster, metav1.ConditionTrue, Equal(v1.ReasonHealthy), Not(BeEmpty()))
+
+			Consistently(func(g Gomega) {
+				var events eventsv1.EventList
+				g.Expect(k8sClient.List(ctx, &events, client.InNamespace(ns))).To(Succeed())
+				reasons := make([]string, 0, len(events.Items))
+				for _, event := range events.Items {
+					reasons = append(reasons, event.Reason)
 				}
-				g.Expect(k8sClient.Get(ctx, key, &copied)).To(Succeed())
-				g.Expect(copied.Data).To(HaveKeyWithValue("username", []byte("backup")))
-				g.Expect(copied.Data).To(HaveKeyWithValue("password", []byte("dump-secret")))
-			}, timeout, interval).Should(Succeed())
+				g.Expect(reasons).NotTo(ContainElement("DumpCredentialsUnresolved"))
+			}, 2*time.Second, interval).Should(Succeed())
 		})
 
 		It("reports MissingSecret when the credentials of the bucket are absent", func() {
@@ -642,7 +644,7 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			setSnapshotRepository(binding, "my-repository")
 
 			bucket := &v1.ObjectStorageConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(8)},
+				ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(8), Namespace: ns},
 				Spec: v1.ObjectStorageConfigSpec{
 					Type: v1.ObjectStorageTypeS3,
 					S3: &v1.S3Storage{
@@ -652,7 +654,6 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 							Type: v1.ObjectStorageAuthTypeCredentials,
 							Credentials: &v1.S3Credentials{SecretRef: v1.S3CredentialsSecretRef{
 								Name:               "absent-keys",
-								Namespace:          ns,
 								AccessKeyIDKey:     "accessKeyId",
 								SecretAccessKeyKey: "secretAccessKey",
 							}},

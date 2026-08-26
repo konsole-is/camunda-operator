@@ -11,6 +11,5 @@ spec:
     endpoint: "https://elasticsearchcluster-sample-es-http:9200"
     credentialsSecretRef:
       name: secondarystorageconfig-sample-credentials
-      namespace: default
       usernameKey: username
       passwordKey: password

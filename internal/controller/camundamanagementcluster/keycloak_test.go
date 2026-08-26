@@ -178,9 +178,8 @@ var _ = Describe("CamundaManagementCluster controller in the Keycloak modes", fu
 				latest.Spec.IdentityProvider = v1.IdentityProviderSpec{
 					ExternalKeycloak: &v1.ExternalKeycloakSpec{
 						URL: keycloakExternalURL,
-						AdminCredentialsSecretRef: v1.CredentialsSecretRef{
+						AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
 							Name:        keycloakAdminSecret,
-							Namespace:   s.namespace,
 							UsernameKey: "username",
 							PasswordKey: "password",
 						},
@@ -332,9 +331,8 @@ func withExternalKeycloak(f *fixture) {
 	f.mc.Spec.IdentityProvider = v1.IdentityProviderSpec{
 		ExternalKeycloak: &v1.ExternalKeycloakSpec{
 			URL: keycloakExternalURL,
-			AdminCredentialsSecretRef: v1.CredentialsSecretRef{
+			AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
 				Name:        keycloakAdminSecret,
-				Namespace:   f.mc.Namespace,
 				UsernameKey: "username",
 				PasswordKey: "password",
 			},

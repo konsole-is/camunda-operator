@@ -75,9 +75,9 @@ type DatabaseServerMonitoringSpec struct {
 // The archive is not the backup model of the operator. BackupSchedule and
 // LogicalBackupRDBMS take logical dumps and never see these base backups.
 type DatabaseServerArchiveSpec struct {
-	// ObjectStorageRef names a cluster-scoped ObjectStorageConfig. The
-	// operator writes the archive under a prefix of that bucket that holds
-	// this server alone.
+	// ObjectStorageRef names an ObjectStorageConfig in the namespace of this
+	// server. The operator writes the archive under a prefix of that bucket
+	// that holds this server alone.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=253
 	ObjectStorageRef string `json:"objectStorageRef"`
@@ -310,8 +310,8 @@ type ArchiveRecord struct {
 	// ServerName is the archive directory in the bucket, equal to the name of
 	// the CloudNativePG cluster that wrote it.
 	ServerName string `json:"serverName"`
-	// ObjectStorageRef is the cluster-scoped ObjectStorageConfig that holds
-	// this archive. A server that is pointed at another bucket closes this
+	// ObjectStorageRef is the ObjectStorageConfig, in the namespace of this
+	// server, that holds this archive. A server that is pointed at another bucket closes this
 	// record and opens one of its own, so every interval names the bucket a
 	// restore of that interval has to read.
 	// +optional
@@ -401,8 +401,8 @@ type RecoveryArchiveRef struct {
 	// ServerName is the archive directory, equal to the name of the
 	// CloudNativePG cluster that wrote it.
 	ServerName string `json:"serverName"`
-	// ObjectStorageRef is the cluster-scoped ObjectStorageConfig that the
-	// archive lives in.
+	// ObjectStorageRef is the ObjectStorageConfig, in the namespace of this
+	// server, that the archive lives in.
 	ObjectStorageRef string `json:"objectStorageRef"`
 	// Location is where in object storage the archive lives, in the form
 	// ArchiveRecord.Location takes. A running recovery keeps reading the

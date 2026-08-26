@@ -490,7 +490,6 @@ func TestArchiveIdentity(t *testing.T) {
 				Type: v1.ObjectStorageAuthTypeCredentials,
 				Credentials: &v1.S3Credentials{SecretRef: v1.S3CredentialsSecretRef{
 					Name:               "keys",
-					Namespace:          "camunda",
 					AccessKeyIDKey:     "accessKeyId",
 					SecretAccessKeyKey: "secretAccessKey",
 				}},

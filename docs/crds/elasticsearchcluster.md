@@ -110,7 +110,7 @@ spec:
   storageSize: "64Gi"
   # string. Optional, default: the default StorageClass of the Kubernetes cluster. StorageClass of the data volumes.
   storageClassName: "ssd"
-  # string. Optional. Name of a cluster-scoped ObjectStorageConfig that holds the snapshot bucket. Set it to take part in backups. It must be the bucket that the CamundaCluster references.
+  # string. Optional. Name of an ObjectStorageConfig in this namespace that holds the snapshot bucket. Set it to take part in backups. It must be the bucket that the CamundaCluster references.
   snapshotStorageRef: "my-backup-bucket"
   # object. Optional. ServiceAccount of the Elasticsearch pods. The operator creates one when this block is set, or when the snapshot bucket uses workload identity.
   serviceAccount:

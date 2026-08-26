@@ -247,7 +247,7 @@ type ClusterAuthSpec struct {
 	// ClientSecretRef names the Secret that holds the OIDC client secret of
 	// this cluster.
 	// +optional
-	ClientSecretRef *SecretKeyRef `json:"clientSecretRef,omitempty"`
+	ClientSecretRef *LocalSecretKeyRef `json:"clientSecretRef,omitempty"`
 	// Admin holds the identities that get the admin role of this cluster. It
 	// applies under OIDC only. Basic authentication seeds its own
 	// administrator and ignores this block.
@@ -471,12 +471,12 @@ type CamundaClusterSpec struct {
 	// until that cluster releases it.
 	// +optional
 	StorageRef string `json:"storageRef,omitempty"`
-	// BackupStorageRef names a cluster-scoped ObjectStorageConfig for
-	// backups.
+	// BackupStorageRef names an ObjectStorageConfig, in the namespace of
+	// this cluster, for backups.
 	// +optional
 	BackupStorageRef string `json:"backupStorageRef,omitempty"`
-	// DocumentStorageRef names a cluster-scoped ObjectStorageConfig for
-	// document storage.
+	// DocumentStorageRef names an ObjectStorageConfig, in the namespace of
+	// this cluster, for document storage.
 	// +optional
 	DocumentStorageRef string `json:"documentStorageRef,omitempty"`
 	// Backup configures how backups of this cluster behave: the schedule and

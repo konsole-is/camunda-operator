@@ -60,31 +60,35 @@ const (
 
 // resolveSnapshotStorage resolves the snapshot bucket of the merged spec into
 // the contract and, for a contract with static credentials, the keys of its
-// Secret. It returns nil when the spec names no bucket, which means the
-// cluster takes no part in backups.
+// Secret. The bucket is read from namespace, the namespace of the cluster. It
+// returns nil when the spec names no bucket, which means the cluster takes no
+// part in backups.
 //
 // A reference that does not resolve is a pre-check failure, not an error: the
 // contract, or the Secret it names, can appear later, and both are watched.
 func (r *ElasticsearchClusterReconciler) resolveSnapshotStorage(
 	ctx context.Context,
+	namespace string,
 	merged v1.ElasticsearchClusterSpec,
 ) (*components.SnapshotStorage, error) {
 	if merged.SnapshotStorageRef == "" {
 		return nil, nil
 	}
 
+	bucketKey := types.NamespacedName{Namespace: namespace, Name: merged.SnapshotStorageRef}
+
 	// The cached client: the type is watched, so the cache is current, and
 	// every bucket event lands here again anyway.
 	var config v1.ObjectStorageConfig
-	if err := r.Get(ctx, types.NamespacedName{Name: merged.SnapshotStorageRef}, &config); err != nil {
+	if err := r.Get(ctx, bucketKey, &config); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, &conditions.PreCheckFailure{
 				Reason:  v1.ReasonInvalidReference,
-				Message: fmt.Sprintf("ObjectStorageConfig %q not found", merged.SnapshotStorageRef),
+				Message: fmt.Sprintf("ObjectStorageConfig %s not found", bucketKey),
 			}
 		}
 
-		return nil, fmt.Errorf("resolving snapshot storage %q: %w", merged.SnapshotStorageRef, err)
+		return nil, fmt.Errorf("resolving snapshot storage %s: %w", bucketKey, err)
 	}
 
 	// Elasticsearch registers a repository per storage type, and the operator
@@ -319,16 +323,21 @@ func (r *ElasticsearchClusterReconciler) effectiveSnapshotStorageRef(
 	return preset.Spec.Cluster.SnapshotStorageRef
 }
 
-// enqueueForSnapshotStorage maps a bucket event to every cluster whose
-// effective reference names it, preset-provided references included.
+// enqueueForSnapshotStorage maps a bucket event to every cluster of the bucket
+// namespace whose effective reference names it, preset-provided references
+// included.
 func (r *ElasticsearchClusterReconciler) enqueueForSnapshotStorage() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-		return r.clustersReferencingBuckets(ctx, map[string]bool{o.GetName(): true})
+		return r.clustersReferencingBuckets(
+			ctx, o.GetNamespace(), map[string]bool{refindex.ObjectNamespacedName(o): true},
+		)
 	})
 }
 
-// enqueueForBucketSecret maps a Secret event to every cluster whose effective
-// bucket holds its static credentials in that Secret. The bucket's Secret
+// enqueueForBucketSecret maps a Secret event to every cluster of the Secret
+// namespace whose effective bucket holds its static credentials in that
+// Secret. A bucket names a Secret of its own namespace, so no cluster of
+// another namespace can match. The bucket's Secret
 // carries no owner reference to any cluster, so without this watch a rotated
 // credential reaches the node keystore only when something unrelated triggers
 // a reconcile.
@@ -348,25 +357,29 @@ func (r *ElasticsearchClusterReconciler) enqueueForBucketSecret() handler.EventH
 			return nil
 		}
 
-		names := make(map[string]bool, len(buckets.Items))
+		named := make(map[string]bool, len(buckets.Items))
 		for i := range buckets.Items {
-			names[buckets.Items[i].Name] = true
+			named[refindex.ObjectNamespacedName(&buckets.Items[i])] = true
 		}
 
-		return r.clustersReferencingBuckets(ctx, names)
+		return r.clustersReferencingBuckets(ctx, o.GetNamespace(), named)
 	})
 }
 
-// clustersReferencingBuckets returns a request for every cluster whose
-// effective bucket reference is one of buckets. The clusters are listed in
-// full, because the effective reference can come from a preset and a field
-// index cannot resolve one; fleets are small enough for that.
+// clustersReferencingBuckets returns a request for every cluster of namespace
+// whose effective bucket reference is one of buckets, keyed
+// "<namespace>/<name>". A cluster resolves its bucket in its own namespace, so
+// every key of buckets carries the one namespace, and no cluster outside it
+// can match. The clusters of that namespace are listed in full, because the
+// effective reference can come from a preset and a field index cannot resolve
+// one. Fleets are small enough for that.
 func (r *ElasticsearchClusterReconciler) clustersReferencingBuckets(
 	ctx context.Context,
+	namespace string,
 	buckets map[string]bool,
 ) []reconcile.Request {
 	var clusters v1.ElasticsearchClusterList
-	if err := r.List(ctx, &clusters); err != nil {
+	if err := r.List(ctx, &clusters, client.InNamespace(namespace)); err != nil {
 		logf.FromContext(ctx).Error(err, "Could not list clusters for a bucket event")
 		return nil
 	}
@@ -374,7 +387,8 @@ func (r *ElasticsearchClusterReconciler) clustersReferencingBuckets(
 	var requests []reconcile.Request
 	for i := range clusters.Items {
 		cluster := &clusters.Items[i]
-		if buckets[r.effectiveSnapshotStorageRef(ctx, cluster)] {
+		ref := r.effectiveSnapshotStorageRef(ctx, cluster)
+		if ref != "" && buckets[refindex.NamespacedKey(cluster.Namespace, ref)] {
 			requests = append(requests, reconcile.Request{
 				NamespacedName: client.ObjectKeyFromObject(cluster),
 			})

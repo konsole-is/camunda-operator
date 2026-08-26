@@ -35,7 +35,6 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
-	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
@@ -81,16 +80,14 @@ func createSecret(namespace, name string, data map[string]string) {
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
 }
 
-// createBinding creates an Elasticsearch binding with its credentials Secret.
-// secretNamespace holds that Secret, which is the binding namespace in the
-// normal case and another namespace when the test exercises the copies.
-func createBinding(namespace, secretNamespace string) *v1.SecondaryStorageConfig {
+// createBinding creates an Elasticsearch binding in namespace, with its
+// credentials Secret. The binding resolves the Secret in its own namespace.
+func createBinding(namespace string) *v1.SecondaryStorageConfig {
 	GinkgoHelper()
 	binding := fixtures.SecondaryStorageConfigElasticsearch(namespace)
-	binding.Spec.Elasticsearch.CredentialsSecretRef.Namespace = secretNamespace
 	Expect(k8sClient.Create(ctx, binding)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, binding) })
-	createSecret(secretNamespace, binding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{
+	createSecret(namespace, binding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{
 		"username": "camunda", "password": "es-password",
 	})
 
@@ -364,7 +361,7 @@ func deleteOptimize(optimize *v1.CamundaOptimize) error {
 func newScenario(version string) scenario {
 	GinkgoHelper()
 	ns := newNamespace()
-	binding := createBinding(ns, ns)
+	binding := createBinding(ns)
 	cluster := createCluster(ns, binding)
 	auth := createAuth(ns, true)
 
@@ -382,7 +379,7 @@ func newScenario(version string) scenario {
 func newAttachedPair(version string) (scenario, *v1.CamundaOptimize) {
 	GinkgoHelper()
 	ns := newNamespace()
-	binding := createBinding(ns, ns)
+	binding := createBinding(ns)
 	cluster := createCluster(ns, binding)
 	auth := createAuth(ns, true)
 
@@ -672,7 +669,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 
 		It("scales to zero when another cluster holds the storage contract of its cluster", func() {
 			ns := newNamespace()
-			binding := createBinding(ns, ns)
+			binding := createBinding(ns)
 			auth := createAuth(ns, true)
 			holder := createCluster(ns, binding)
 
@@ -815,7 +812,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 		// the importer Deployment of the old one is gone.
 		It("waits for the importer of the previous holder before it renders", func() {
 			ns := newNamespace()
-			cluster := createCluster(ns, createBinding(ns, ns))
+			cluster := createCluster(ns, createBinding(ns))
 			auth := createAuth(ns, true)
 			previous := createDanglingOptimize("co-previous", ns)
 			foreign := stageForeignImporter(previous, cluster.Name)
@@ -853,28 +850,27 @@ var _ = Describe("CamundaOptimize controller", func() {
 		})
 	})
 
-	Context("with Secrets in another namespace", func() {
-		It("copies them into its own namespace and points the pods at the copies", func() {
+	// ManagementAuthConfig is cluster-scoped, so its clientSecretRef can name
+	// a Secret of any namespace and needs a copy in each consuming namespace.
+	// The Elasticsearch binding is namespaced, so its credentials always
+	// resolve in the namespace of the Optimize instance, with no copy.
+	Context("with the auth Secret in another namespace", func() {
+		It("copies the auth Secret, and resolves the ES credentials directly", func() {
 			source := newNamespace()
 			ns := newNamespace()
-			binding := createBinding(ns, source)
+			binding := createBinding(ns)
 			cluster := createCluster(ns, binding)
 			auth := createAuth(source, true)
 			optimize := createOptimize(ns, cluster, auth, "8.9.4")
 
-			By("applying one copy per referenced Secret")
-			esCopy := fetchSecret(client.ObjectKey{
-				Namespace: ns,
-				Name:      components.MirroredSecretName(optimize, components.MirrorPurposeESCredentials),
-			})
-			Expect(esCopy.Data).To(HaveKeyWithValue("password", []byte("es-password")))
+			By("applying a copy of the auth Secret alone")
 			authCopy := fetchSecret(client.ObjectKey{
 				Namespace: ns,
 				Name:      components.MirroredSecretName(optimize, components.MirrorPurposeAuthClient),
 			})
 			Expect(authCopy.Data).To(HaveKeyWithValue("client-secret", []byte("s3cret")))
 
-			By("naming the copies on the pods, never the Secret of the other namespace")
+			By("naming the ES Secret directly, and the copy for auth")
 			webapp := fetchDeployment(client.ObjectKey{
 				Namespace: ns,
 				Name:      components.WorkloadName(optimize, components.ComponentWebapp),
@@ -886,14 +882,15 @@ var _ = Describe("CamundaOptimize controller", func() {
 				}
 			}
 			Expect(sources).To(HaveKeyWithValue(
-				"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_PASSWORD", esCopy.Name,
+				"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_PASSWORD",
+				binding.Spec.Elasticsearch.CredentialsSecretRef.Name,
 			))
 			Expect(sources).To(HaveKeyWithValue("CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET", authCopy.Name))
 
 			By("taking part in Ready while a copy exists")
 			expectCondition(optimize, v1.ConditionMirroredSecretsReady, Equal("Healthy"))
 
-			By("pointing the exporter at the copy that the cluster controller makes")
+			By("naming the ES Secret directly on the exporter patch too")
 			expectClusterEnv(
 				cluster,
 				ContainElement("CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD"),
@@ -903,7 +900,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 			for _, env := range latest.Spec.Zeebe.ExtraEnv {
 				if env.Name == "CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD" {
 					Expect(env.ValueFrom.SecretKeyRef.Name).To(Equal(
-						clustercomponents.MirroredSecretName(cluster, clustercomponents.MirrorPurposeESCredentials),
+						binding.Spec.Elasticsearch.CredentialsSecretRef.Name,
 					))
 				}
 			}
@@ -973,7 +970,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 		// is what lets it through without this check.
 		It("reports InvalidReference when the cluster is below the version floor", func() {
 			ns := newNamespace()
-			cluster := createCluster(ns, createBinding(ns, ns))
+			cluster := createCluster(ns, createBinding(ns))
 			Expect(retry.RetryOnConflict(retry.DefaultRetry, func() error {
 				var latest v1.CamundaCluster
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest); err != nil {
@@ -989,7 +986,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 
 		It("reports MissingSecret when the client Secret is absent", func() {
 			ns := newNamespace()
-			cluster := createCluster(ns, createBinding(ns, ns))
+			cluster := createCluster(ns, createBinding(ns))
 			optimize := createOptimize(ns, cluster, createAuth(ns, false), "8.9.4")
 
 			expectNotReady(optimize, v1.ReasonMissingSecret)
@@ -997,7 +994,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 
 		It("reports ExporterConflict when a user entry supplies the other kind of value", func() {
 			ns := newNamespace()
-			cluster := createCluster(ns, createBinding(ns, ns))
+			cluster := createCluster(ns, createBinding(ns))
 
 			// The operator sets this one from a Secret, so a literal on the
 			// same name would merge into an entry with both.
@@ -1036,7 +1033,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 	Context("with a cluster that goes while the exporter patch is in flight", func() {
 		It("does not put the cluster back", func() {
 			ns := newNamespace()
-			cluster := createCluster(ns, createBinding(ns, ns))
+			cluster := createCluster(ns, createBinding(ns))
 			key := client.ObjectKeyFromObject(cluster)
 			staleUID := cluster.UID
 
@@ -1057,7 +1054,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 
 		It("treats the lost cluster as nothing left to withdraw", func() {
 			ns := newNamespace()
-			cluster := createCluster(ns, createBinding(ns, ns))
+			cluster := createCluster(ns, createBinding(ns))
 			key := client.ObjectKeyFromObject(cluster)
 
 			Expect(k8sClient.Delete(ctx, cluster)).To(Succeed())

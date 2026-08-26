@@ -18,30 +18,10 @@ package v1
 
 import "k8s.io/apimachinery/pkg/api/resource"
 
-// CredentialsSecretRef references a username/password pair stored in a Secret.
-// Namespace is required so that references stay uniform and explicit across
-// all contract kinds, cluster-scoped and namespaced alike. The reference may
-// name a Secret in any namespace; RBAC on the kinds embedding it governs who
-// may create the referencing objects.
-type CredentialsSecretRef struct {
-	// Name of the Secret holding the credentials.
-	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
-	// Namespace of the Secret.
-	// +kubebuilder:validation:MinLength=1
-	Namespace string `json:"namespace"`
-	// UsernameKey is the key in the Secret holding the plaintext username.
-	// +kubebuilder:validation:MinLength=1
-	UsernameKey string `json:"usernameKey"`
-	// PasswordKey is the key in the Secret holding the plaintext password.
-	// +kubebuilder:validation:MinLength=1
-	PasswordKey string `json:"passwordKey"`
-}
-
 // LocalCredentialsSecretRef references a username/password pair stored in a
-// Secret of the namespace of the object that holds the reference. A namespaced
-// kind whose Secret belongs to its own tenant uses it, so a reference can
-// never reach the credentials of another namespace.
+// Secret of the namespace of the object that holds the reference. Every
+// namespaced kind uses it, so a reference can never reach the credentials of
+// another namespace.
 type LocalCredentialsSecretRef struct {
 	// Name of the Secret holding the credentials.
 	// +kubebuilder:validation:MinLength=1
@@ -58,11 +38,21 @@ type LocalCredentialsSecretRef struct {
 	PasswordKey string `json:"passwordKey,omitempty"`
 }
 
-// SecretKeyRef references a single value inside a Secret.
-// Namespace is required so that references stay uniform and explicit across
-// all contract kinds, cluster-scoped and namespaced alike. The reference may
-// name a Secret in any namespace; RBAC on the kinds embedding it governs who
-// may create the referencing objects.
+// LocalSecretKeyRef references a single value inside a Secret of the namespace
+// of the object that holds the reference. Every namespaced kind uses it, so a
+// reference can never reach the Secrets of another namespace.
+type LocalSecretKeyRef struct {
+	// Name of the Secret holding the value.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+	// Key in the Secret holding the value.
+	// +kubebuilder:validation:MinLength=1
+	Key string `json:"key"`
+}
+
+// SecretKeyRef references a single value inside a Secret of a named namespace.
+// A cluster-scoped kind uses it, because it has no namespace of its own to
+// resolve a reference in. A namespaced kind uses LocalSecretKeyRef instead.
 type SecretKeyRef struct {
 	// Name of the Secret holding the value.
 	// +kubebuilder:validation:MinLength=1
