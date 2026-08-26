@@ -80,6 +80,7 @@ nav:
   - Installation: installation.md
   - Use the API types from Go: go-api.md
   - Architecture: architecture.md
+  - Observability: observability.md
   - Guides:
       - Presets: guides/presets.md
       - Secondary storage: guides/secondary-storage.md

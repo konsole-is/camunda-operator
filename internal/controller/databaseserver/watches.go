@@ -103,7 +103,7 @@ func (r *DatabaseServerReconciler) watches(mgr ctrl.Manager) error {
 		Watches(&v1.ObjectStorageConfig{}, r.enqueueForArchiveStorage()).
 		Watches(&corev1.Secret{}, r.enqueueForBucketSecret(), builder.OnlyMetadata).
 		Watches(&corev1.PersistentVolumeClaim{}, r.enqueueForDataClaim()).
-		Named("databaseserver").
+		Named(controllerName).
 		Complete(r)
 }
 
