@@ -328,6 +328,24 @@ func expectLastRecovery(server *v1.DatabaseServer, result v1.RecoveryResult) *v1
 	return publishedContract(server).Spec.PITR.LastRecovery
 }
 
+// expectAnsweredRecovery waits until the status of the server records the
+// answer to the given request, and returns that record. The outcome reaches
+// the contract before the status of the server is written, so a spec that
+// waited on the contract alone can read a status from before the answer.
+func expectAnsweredRecovery(server *v1.DatabaseServer, requestID string) *v1.DatabaseServerRecoveryStatus {
+	GinkgoHelper()
+
+	var recovery *v1.DatabaseServerRecoveryStatus
+	Eventually(func(g Gomega) {
+		recovery = reconciledServer(server).Status.Recovery
+		g.Expect(recovery).NotTo(BeNil())
+		g.Expect(recovery.RequestID).To(Equal(requestID))
+		g.Expect(recovery.CompletedAt).NotTo(BeNil())
+	}, timeout, interval).Should(Succeed())
+
+	return recovery
+}
+
 // recoveryCluster is the CloudNativePG cluster that the recorded recovery
 // builds.
 func recoveryCluster(server *v1.DatabaseServer) string {
@@ -627,7 +645,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(outcome.Message).To(ContainSubstring("lies in none of those windows"))
 
 		// Nothing was built, so nothing has to be cleaned up.
-		Expect(reconciledServer(server).Status.Recovery.Cluster).To(BeEmpty())
+		Expect(expectAnsweredRecovery(server, request.RequestID).Cluster).To(BeEmpty())
 		Expect(k8sClient.Get(
 			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
 		)).To(MatchError(apierrors.IsNotFound, "not found"))
@@ -645,7 +663,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(outcome.RequestID).To(Equal(request.RequestID))
 		Expect(outcome.Message).To(ContainSubstring("lies in the future"))
 
-		Expect(reconciledServer(server).Status.Recovery.Cluster).To(BeEmpty())
+		Expect(expectAnsweredRecovery(server, request.RequestID).Cluster).To(BeEmpty())
 		Expect(k8sClient.Get(
 			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
 		)).To(MatchError(apierrors.IsNotFound, "not found"))
@@ -675,7 +693,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(outcome.Message).To(ContainSubstring("older than the retention period"))
 		Expect(outcome.Message).To(ContainSubstring("7 days"))
 
-		Expect(reconciledServer(server).Status.Recovery.Cluster).To(BeEmpty())
+		Expect(expectAnsweredRecovery(server, request.RequestID).Cluster).To(BeEmpty())
 		Expect(k8sClient.Get(
 			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
 		)).To(MatchError(apierrors.IsNotFound, "not found"))
