@@ -22,6 +22,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -212,6 +214,48 @@ func TestSignInCarriesTheRefusalOfKeycloak(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "status 401 from Keycloak")
 	assert.Contains(t, err.Error(), "invalid_grant")
+}
+
+// A token that Keycloak refuses is exchanged once and the request is sent
+// again, body and method intact.
+func TestUpdateClientRetriesOnceAfterARefusedToken(t *testing.T) {
+	t.Parallel()
+
+	tokens := 0
+	refused := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/protocol/openid-connect/token") {
+			tokens++
+			_, _ = w.Write([]byte(`{"access_token":"token-` + strconv.Itoa(tokens) + `"}`))
+
+			return
+		}
+		if !refused {
+			refused = true
+			w.WriteHeader(http.StatusUnauthorized)
+
+			return
+		}
+
+		raw, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.Equal(t, http.MethodPut, r.Method)
+		assert.Equal(t, "Bearer token-2", r.Header.Get("Authorization"))
+
+		var sent map[string]any
+		require.NoError(t, json.Unmarshal(raw, &sent))
+		assert.Equal(t, []any{"https://a/cb"}, sent["redirectUris"])
+
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+
+	rep := Representation{"id": "6c4c", "clientId": "optimize"}
+	rep.SetRedirectURIs([]string{"https://a/cb"})
+
+	require.NoError(t, New(server.URL, "camunda-platform", "admin", "secret").
+		UpdateClient(context.Background(), rep))
+	assert.Equal(t, 2, tokens)
 }
 
 func TestUpdateClientWithoutAnID(t *testing.T) {

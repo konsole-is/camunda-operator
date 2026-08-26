@@ -2891,37 +2891,6 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
-              optimize:
-                description: |-
-                  Optimize names one more Optimize that this management plane serves: one
-                  that this operator does not run, so no CamundaOptimize carries its URL.
-                  Set it in the two Keycloak modes only. In the oidc mode the platform
-                  config declares the Optimize client and the identity provider holds its
-                  callback URLs.
-
-                  The operator deploys no Optimize from this block. Every CamundaOptimize
-                  that names the ManagementAuthConfig of this management cluster and sets
-                  spec.externalUrl is served too, and status.optimize lists them.
-                properties:
-                  externalUrl:
-                    description: |-
-                      ExternalURL is the URL that browsers reach that Optimize at. The
-                      management plane registers the login callback under it on the Optimize
-                      client of the realm, first in the list of callbacks.
-                    type: string
-                    x-kubernetes-validations:
-                    - message: externalUrl must be a valid http or https URL
-                      rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
-                        == 'https') && url(self).getHostname() != ''
-                    - message: 'externalUrl must carry no comma: Management Identity
-                        reads the callback list as comma-separated'
-                      rule: '!self.contains('','')'
-                    - message: 'externalUrl must not end with a slash: the login callback
-                        is appended to it'
-                      rule: '!self.endsWith(''/'')'
-                required:
-                - externalUrl
-                type: object
               platformConfigRef:
                 description: |-
                   PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that
@@ -4886,9 +4855,6 @@ spec:
             - message: identity.admin.passwordSecretRef applies to the keycloak modes
                 only
               rule: '!has(self.identityProvider.oidc) || !has(self.identity.admin.passwordSecretRef)'
-            - message: optimize applies to the keycloak modes only; in the oidc mode
-                the platform config declares the Optimize client
-              rule: '!has(self.identityProvider.oidc) || !has(self.optimize)'
             - message: identity.admin.email is required when webModeler is set in
                 a keycloak mode
               rule: '!has(self.webModeler) || has(self.identityProvider.oidc) || has(self.identity.admin.email)'
@@ -5023,8 +4989,7 @@ spec:
                   each one on the Optimize client of the realm.
 
                   The list holds no row in the oidc mode, where the identity provider of
-                  the platform config holds the callback URLs, and no row for
-                  spec.optimize, which names an Optimize outside this operator.
+                  the platform config holds the callback URLs.
                 items:
                   description: |-
                     AttachedOptimizeStatus is one CamundaOptimize whose login callback this

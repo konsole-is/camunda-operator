@@ -279,7 +279,6 @@ func newKeycloakCluster(managed bool, mutate func(mc *v1.CamundaManagementCluste
 			}
 		}
 		mc.Spec.Identity.Admin = v1.IdentityAdminSpec{Username: fixtureAdmin}
-		mc.Spec.Optimize = &v1.ManagementOptimizeSpec{ExternalURL: fixtureOptimize}
 		if mutate != nil {
 			mutate(mc)
 		}
@@ -316,10 +315,12 @@ func newKeycloakInput(t *testing.T, managed bool, mutate func(in *Input)) Input 
 		if mutate != nil {
 			mutate(in)
 		}
-		// spec.optimize alone, unless a mutator discovered more. The
-		// controller builds the list through the same function.
+		// One discovered Optimize, unless a mutator found more. The controller
+		// builds the list through the same function.
 		if in.OptimizeURLs == nil {
-			in.OptimizeURLs = OptimizeURLs(in.Cluster, nil)
+			in.OptimizeURLs = OptimizeURLs([]v1.AttachedOptimizeStatus{
+				{Namespace: fixtureNamespace, Name: "cluster-optimize", ExternalURL: fixtureOptimize},
+			})
 		}
 	})
 }
@@ -358,15 +359,14 @@ func fixtureKeycloakRealistic(t *testing.T, managed bool) Input {
 	})
 }
 
-// fixtureKeycloakManyOptimize serves three Optimize instances: the one that
-// spec.optimize names, which this operator does not run, and two
-// CamundaOptimize resources that the management plane found behind its
-// contract.
+// fixtureKeycloakManyOptimize serves three CamundaOptimize resources that the
+// management plane found behind its contract.
 func fixtureKeycloakManyOptimize(t *testing.T) Input {
 	t.Helper()
 
 	return newKeycloakInput(t, true, func(in *Input) {
-		in.OptimizeURLs = OptimizeURLs(in.Cluster, []v1.AttachedOptimizeStatus{
+		in.OptimizeURLs = OptimizeURLs([]v1.AttachedOptimizeStatus{
+			{Namespace: fixtureNamespace, Name: "cluster-optimize", ExternalURL: fixtureOptimize},
 			{Namespace: "blue", Name: "cluster-optimize", ExternalURL: fixtureOptimizeBlue},
 			{Namespace: "green", Name: "cluster-optimize", ExternalURL: fixtureOptimizeGreen},
 		})

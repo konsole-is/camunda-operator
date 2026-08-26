@@ -109,12 +109,6 @@ const (
 	// mcOptimizeName is the CamundaOptimize that attaches through the
 	// contract.
 	mcOptimizeName = "camunda-management-optimize"
-	// mcForeignOptimizeURL is what spec.optimize of the management cluster
-	// names: an Optimize outside this operator. Nothing serves it, and nothing
-	// dials it. It is here so that Management Identity creates the optimize
-	// client of the realm before the CamundaOptimize of the flow exists, and
-	// so that the callback of that CamundaOptimize is a second entry.
-	mcForeignOptimizeURL = "http://optimize-elsewhere.example.com"
 
 	// The client that the orchestration cluster of the keycloak flow
 	// authenticates with. Management Identity creates a client for every
@@ -321,10 +315,15 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 				v1.ConditionConsoleReady,
 				v1.ConditionWebModelerReady,
 				v1.ConditionManagementAuthReady,
-				v1.ConditionOptimizeCallbacksReady,
 			} {
 				expectCondition(g, mcResource, mcKeycloakName, mcKeycloakNamespace, condition, v1.ReasonHealthy)
 			}
+			// No CamundaOptimize exists yet, so the realm holds no login
+			// callback of this operator and none is missing.
+			expectCondition(
+				g, mcResource, mcKeycloakName, mcKeycloakNamespace,
+				v1.ConditionOptimizeCallbacksReady, v1.ReasonNoCallbacks,
+			)
 			expectReady(g, mcResource, mcKeycloakName, mcKeycloakNamespace, v1.ReasonHealthy)
 		}, mcReadyTimeout, 10*time.Second).Should(Succeed())
 
@@ -455,14 +454,11 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 				v1.ConditionOptimizeCallbacksReady, v1.ReasonHealthy,
 			)
 
-			// The realm is the proof: the client carries the callback of the
-			// Optimize outside this operator and the callback of the
-			// CamundaOptimize that the management plane found.
+			// The realm is the proof: Management Identity created the client
+			// from the URL the management plane discovered, and the client
+			// carries the login callback under it.
 			client, err := realmOptimizeClient(mc)
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(client).To(ContainSubstring(
-				mcForeignOptimizeURL + components.OptimizeCallbackPath,
-			))
 			g.Expect(client).To(ContainSubstring(
 				optimizeWebappURL() + components.OptimizeCallbackPath,
 			))
@@ -666,7 +662,6 @@ func keycloakManagementCluster() *v1.CamundaManagementCluster {
 			Admin:             v1.IdentityAdminSpec{Username: mcAdminUsername, Email: mcAdminEmail},
 			WorkloadSpec:      v1.WorkloadSpec{Resources: capped("150m", "512Mi", "1280Mi")},
 		},
-		Optimize: &v1.ManagementOptimizeSpec{ExternalURL: mcForeignOptimizeURL},
 		Console: &v1.ConsoleSpec{
 			Version:      os.Getenv(envConsoleVersion),
 			ExternalURL:  components.ConsoleServiceURL(mc),

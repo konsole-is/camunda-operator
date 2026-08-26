@@ -47,9 +47,9 @@ const (
 	ConditionSecretsReady = "SecretsReady"
 	// ConditionOptimizeCallbacksReady reports whether the Optimize client of
 	// the realm carries the login callback of every Optimize in
-	// status.optimize and of spec.optimize. It reads Disabled in the oidc
-	// mode, where the identity provider of the platform config holds the
-	// callback URLs and the operator administers nothing.
+	// status.optimize. It reads Disabled in the oidc mode, where the identity
+	// provider of the platform config holds the callback URLs and the operator
+	// administers nothing.
 	ConditionOptimizeCallbacksReady = "OptimizeCallbacksReady"
 
 	// ReasonKeycloakOperatorNotInstalled means that spec.identityProvider
@@ -98,7 +98,7 @@ const (
 	ReasonOptimizeClientMissing = "OptimizeClientMissing"
 	// ReasonNoCallbacks means that no Optimize behind this management plane
 	// names a URL, so there is no login callback to register. Give a
-	// CamundaOptimize a spec.externalUrl, or set spec.optimize.
+	// CamundaOptimize that names this management plane a spec.externalUrl.
 	ReasonNoCallbacks = "NoCallbacks"
 )
 
@@ -106,7 +106,6 @@ const (
 // Identity, its identity provider, and optionally Console and Web Modeler.
 // +kubebuilder:validation:XValidation:rule="has(self.identityProvider.oidc) ? has(self.identity.admin.claimName) : has(self.identity.admin.username)",message="identity.admin: set claimName and claimValue in oidc mode, username in the keycloak modes"
 // +kubebuilder:validation:XValidation:rule="!has(self.identityProvider.oidc) || !has(self.identity.admin.passwordSecretRef)",message="identity.admin.passwordSecretRef applies to the keycloak modes only"
-// +kubebuilder:validation:XValidation:rule="!has(self.identityProvider.oidc) || !has(self.optimize)",message="optimize applies to the keycloak modes only; in the oidc mode the platform config declares the Optimize client"
 // +kubebuilder:validation:XValidation:rule="!has(self.webModeler) || has(self.identityProvider.oidc) || has(self.identity.admin.email)",message="identity.admin.email is required when webModeler is set in a keycloak mode"
 type CamundaManagementClusterSpec struct {
 	// PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that
@@ -153,29 +152,6 @@ type CamundaManagementClusterSpec struct {
 	// this is unset.
 	// +optional
 	WebModeler *WebModelerSpec `json:"webModeler,omitempty"`
-	// Optimize names one more Optimize that this management plane serves: one
-	// that this operator does not run, so no CamundaOptimize carries its URL.
-	// Set it in the two Keycloak modes only. In the oidc mode the platform
-	// config declares the Optimize client and the identity provider holds its
-	// callback URLs.
-	//
-	// The operator deploys no Optimize from this block. Every CamundaOptimize
-	// that names the ManagementAuthConfig of this management cluster and sets
-	// spec.externalUrl is served too, and status.optimize lists them.
-	// +optional
-	Optimize *ManagementOptimizeSpec `json:"optimize,omitempty"`
-}
-
-// ManagementOptimizeSpec names one Optimize outside this operator that a
-// management plane serves.
-type ManagementOptimizeSpec struct {
-	// ExternalURL is the URL that browsers reach that Optimize at. The
-	// management plane registers the login callback under it on the Optimize
-	// client of the realm, first in the list of callbacks.
-	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
-	// +kubebuilder:validation:XValidation:rule="!self.contains(',')",message="externalUrl must carry no comma: Management Identity reads the callback list as comma-separated"
-	// +kubebuilder:validation:XValidation:rule="!self.endsWith('/')",message="externalUrl must not end with a slash: the login callback is appended to it"
-	ExternalURL string `json:"externalUrl"`
 }
 
 // IdentityProviderSpec holds one of the three identity provider modes.
@@ -423,8 +399,7 @@ type CamundaManagementClusterStatus struct {
 	// each one on the Optimize client of the realm.
 	//
 	// The list holds no row in the oidc mode, where the identity provider of
-	// the platform config holds the callback URLs, and no row for
-	// spec.optimize, which names an Optimize outside this operator.
+	// the platform config holds the callback URLs.
 	// +listType=map
 	// +listMapKey=namespace
 	// +listMapKey=name

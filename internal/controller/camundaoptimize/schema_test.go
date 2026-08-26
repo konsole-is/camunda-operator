@@ -157,6 +157,20 @@ var _ = Describe("CamundaOptimize schema", func() {
 		)
 	})
 
+	It("rejects an externalUrl with a query or a fragment", func() {
+		for _, url := range []string{
+			"https://optimize.example.com?tenant=a",
+			"https://optimize.example.com#ui",
+		} {
+			optimize := minimalCamundaOptimize()
+			optimize.Spec.ExternalURL = url
+
+			Expect(k8sClient.Create(ctx, optimize)).To(
+				MatchError(ContainSubstring("externalUrl must carry no query and no fragment")),
+			)
+		}
+	})
+
 	// Management Identity reads the root URLs of the optimize preset as one
 	// comma-separated list, so a comma inside one URL would register two
 	// callbacks of nonsense.

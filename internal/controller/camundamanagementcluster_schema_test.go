@@ -372,44 +372,6 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			}, "claimName must not hold an equals sign",
 		),
 		Entry(
-			"accepts a keycloak mode with an optimize block",
-			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
-				o.Spec.Optimize = &v1.ManagementOptimizeSpec{
-					ExternalURL: "https://optimize.elsewhere.example.com",
-				}
-			}, "",
-		),
-		Entry(
-			"rejects an optimize block in the oidc mode",
-			validManagementCluster, func(o *v1.CamundaManagementCluster) {
-				o.Spec.Optimize = &v1.ManagementOptimizeSpec{
-					ExternalURL: "https://optimize.example.com",
-				}
-			}, "optimize applies to the keycloak modes only",
-		),
-		Entry(
-			"rejects an optimize externalUrl that ends with a slash",
-			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
-				o.Spec.Optimize = &v1.ManagementOptimizeSpec{
-					ExternalURL: "https://optimize.elsewhere.example.com/",
-				}
-			}, "externalUrl must not end with a slash",
-		),
-		Entry(
-			"rejects an optimize externalUrl with a comma",
-			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
-				o.Spec.Optimize = &v1.ManagementOptimizeSpec{
-					ExternalURL: "https://one.example.com,https://two.example.com",
-				}
-			}, "externalUrl must carry no comma",
-		),
-		Entry(
-			"rejects an optimize externalUrl without a scheme",
-			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
-				o.Spec.Optimize = &v1.ManagementOptimizeSpec{ExternalURL: "optimize.example.com"}
-			}, "externalUrl must be a valid http or https URL",
-		),
-		Entry(
 			"rejects an empty platformConfigRef",
 			validManagementCluster, func(o *v1.CamundaManagementCluster) {
 				o.Spec.PlatformConfigRef = ""

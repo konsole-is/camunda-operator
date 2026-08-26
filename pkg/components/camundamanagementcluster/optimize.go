@@ -32,7 +32,7 @@ import (
 // generateRedirectUrls).
 const OptimizeCallbackPath = "/api/authentication/callback"
 
-// AttachedOptimizes returns one status row per CamundaOptimize of discovered
+// AttachedOptimizes returns one status row per discovered CamundaOptimize
 // that names a URL, ordered by namespace and name. A CamundaOptimize with no
 // spec.externalUrl has no callback to register, so it gets no row.
 //
@@ -62,19 +62,14 @@ func AttachedOptimizes(discovered []v1.CamundaOptimize) []v1.AttachedOptimizeSta
 }
 
 // OptimizeURLs returns the URL of every Optimize that this management plane
-// serves: spec.optimize first, then the discovered rows, without duplicates.
-// The result is what Input.OptimizeURLs carries.
+// serves, in the order of the rows and without duplicates. The result is what
+// Input.OptimizeURLs carries.
 //
-// spec.optimize comes first because it names an Optimize outside this
-// operator, which no row can report.
-func OptimizeURLs(
-	mc *v1.CamundaManagementCluster,
-	rows []v1.AttachedOptimizeStatus,
-) []string {
+// Two CamundaOptimize resources can name one address, so the list is
+// deduplicated: Management Identity would otherwise register the same login
+// callback twice.
+func OptimizeURLs(rows []v1.AttachedOptimizeStatus) []string {
 	var urls []string
-	if optimize := mc.Spec.Optimize; optimize != nil {
-		urls = append(urls, optimize.ExternalURL)
-	}
 	for _, row := range rows {
 		if !slices.Contains(urls, row.ExternalURL) {
 			urls = append(urls, row.ExternalURL)

@@ -36,12 +36,11 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/keycloakadmin"
 )
 
-// The two Optimize addresses of this file: the one that spec.optimize names,
-// which is outside this operator and reported by no CamundaOptimize, and the
-// one that the CamundaOptimize resources of the specs carry.
+// The two Optimize addresses of this file. Each one belongs to a
+// CamundaOptimize that names the contract of the management plane.
 const (
-	specOptimizeURL       = "https://optimize.example.com"
-	discoveredOptimizeURL = "https://optimize.blue.example.com"
+	blueOptimizeURL  = "https://optimize.blue.example.com"
+	greenOptimizeURL = "https://optimize.green.example.com"
 )
 
 var _ = Describe("CamundaManagementCluster controller and the Optimize instances behind it", func() {
@@ -49,18 +48,18 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		keycloak := startFakeKeycloak(withOptimizeClient())
 		s := newScenario(withFakeKeycloak(keycloak))
 
-		createOptimize(s.namespace, s.mc.Name)
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
 
 		Eventually(func(g Gomega) {
 			rows := readManagementCluster(g, s.mc).Status.Optimize
 			g.Expect(rows).To(HaveLen(1))
 			g.Expect(rows[0].Namespace).To(Equal(s.namespace))
-			g.Expect(rows[0].ExternalURL).To(Equal(discoveredOptimizeURL))
+			g.Expect(rows[0].ExternalURL).To(Equal(blueOptimizeURL))
 		}, timeout, interval).Should(Succeed())
 
 		Eventually(func(g Gomega) {
 			g.Expect(identityEnv(g, s)["KEYCLOAK_INIT_OPTIMIZE_ROOT_URL"]).To(
-				Equal(specOptimizeURL + "," + discoveredOptimizeURL),
+				Equal(blueOptimizeURL),
 			)
 		}, timeout, interval).Should(Succeed())
 	})
@@ -69,7 +68,7 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		keycloak := startFakeKeycloak(withOptimizeClient())
 		s := newScenario(withFakeKeycloak(keycloak))
 
-		optimize := createOptimize(s.namespace, s.mc.Name)
+		optimize := createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
 
 		Eventually(func(g Gomega) {
 			g.Expect(readManagementCluster(g, s.mc).Status.Optimize).To(HaveLen(1))
@@ -79,23 +78,26 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 
 		Eventually(func(g Gomega) {
 			g.Expect(readManagementCluster(g, s.mc).Status.Optimize).To(BeEmpty())
-			g.Expect(identityEnv(g, s)["KEYCLOAK_INIT_OPTIMIZE_ROOT_URL"]).To(Equal(specOptimizeURL))
+			g.Expect(identityEnv(g, s)).NotTo(HaveKey("KEYCLOAK_INIT_OPTIMIZE_ROOT_URL"))
 		}, timeout, interval).Should(Succeed())
 	})
 
-	It("adds the missing callback to the Optimize client of the realm", func() {
+	It("adds the missing callback of a second Optimize", func() {
 		keycloak := startFakeKeycloak(withOptimizeClient(
-			specOptimizeURL + components.OptimizeCallbackPath,
+			blueOptimizeURL + components.OptimizeCallbackPath,
 		))
 		s := newScenario(withFakeKeycloak(keycloak))
 
-		createOptimize(s.namespace, s.mc.Name)
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+		createOptimize(s.namespace, s.mc.Name, greenOptimizeURL)
 
 		Eventually(func(g Gomega) {
-			g.Expect(keycloak.redirectURIs()).To(Equal([]string{
-				specOptimizeURL + components.OptimizeCallbackPath,
-				discoveredOptimizeURL + components.OptimizeCallbackPath,
-			}))
+			stampIdentityReady(g, s)
+
+			g.Expect(keycloak.redirectURIs()).To(ConsistOf(
+				blueOptimizeURL+components.OptimizeCallbackPath,
+				greenOptimizeURL+components.OptimizeCallbackPath,
+			))
 
 			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
 			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
@@ -107,12 +109,16 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 	// login path of Optimize, so the operator leaves it where it is.
 	It("keeps a redirect URI that this operator does not own", func() {
 		keycloak := startFakeKeycloak(withOptimizeClient("https://legacy.example.com/*"))
-		newScenario(withFakeKeycloak(keycloak))
+		s := newScenario(withFakeKeycloak(keycloak))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
 
 		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
 			g.Expect(keycloak.redirectURIs()).To(Equal([]string{
 				"https://legacy.example.com/*",
-				specOptimizeURL + components.OptimizeCallbackPath,
+				blueOptimizeURL + components.OptimizeCallbackPath,
 			}))
 		}, timeout, interval).Should(Succeed())
 	})
@@ -124,9 +130,10 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		keycloak := startFakeKeycloak(nil)
 		s := newScenario(withFakeKeycloak(keycloak))
 
-		identity := client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
 		Eventually(func(g Gomega) {
-			stampDeploymentReady(g, identity)
+			stampIdentityReady(g, s)
 
 			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
 			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
@@ -138,27 +145,13 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}, timeout, interval).Should(Succeed())
 	})
 
-	// A component that is still starting is the cause, and the realm it has
-	// not bootstrapped yet is the symptom. Ready names the cause.
-	It("lets a starting component decide Ready before the callbacks do", func() {
-		keycloak := startFakeKeycloak(nil)
+	It("reports NoCallbacks while no Optimize names a URL", func() {
+		keycloak := startFakeKeycloak(withOptimizeClient())
 		s := newScenario(withFakeKeycloak(keycloak))
 
 		Eventually(func(g Gomega) {
-			g.Expect(conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady).Reason).To(
-				Equal(v1.ReasonOptimizeClientMissing),
-			)
-			g.Expect(conditionOf(g, s.mc, v1.ConditionReady).Reason).NotTo(
-				Equal(v1.ReasonOptimizeClientMissing),
-			)
-		}, timeout, interval).Should(Succeed())
-	})
+			stampIdentityReady(g, s)
 
-	It("reports NoCallbacks while no Optimize names a URL", func() {
-		keycloak := startFakeKeycloak(withOptimizeClient())
-		s := newScenario(withFakeKeycloakOnly(keycloak))
-
-		Eventually(func(g Gomega) {
 			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
 			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
 			g.Expect(condition.Reason).To(Equal(v1.ReasonNoCallbacks))
@@ -179,23 +172,81 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 	// Optimize preset, so Management Identity never rewrites the client.
 	It("withdraws the callback of the last Optimize and then rests", func() {
 		keycloak := startFakeKeycloak(withOptimizeClient())
-		s := newScenario(withFakeKeycloakOnly(keycloak))
+		s := newScenario(withFakeKeycloak(keycloak))
 
-		optimize := createOptimize(s.namespace, s.mc.Name)
+		optimize := createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
 
 		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
 			g.Expect(keycloak.redirectURIs()).To(Equal([]string{
-				discoveredOptimizeURL + components.OptimizeCallbackPath,
+				blueOptimizeURL + components.OptimizeCallbackPath,
 			}))
 		}, timeout, interval).Should(Succeed())
 
 		Expect(k8sClient.Delete(ctx, optimize)).To(Succeed())
 
 		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
 			g.Expect(keycloak.redirectURIs()).To(BeEmpty())
 
 			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
 			g.Expect(condition.Reason).To(Equal(v1.ReasonNoCallbacks))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// Management Identity writes the whole client while it starts, and this
+	// step writes the same object back, so the two must not overlap.
+	It("waits for Management Identity before it touches the client", func() {
+		keycloak := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(keycloak))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(condition.Reason).To(Equal(string(component.PrerequisiteNotMet)))
+		}, timeout, interval).Should(Succeed())
+
+		Expect(keycloak.redirectURIs()).To(BeEmpty())
+
+		// The component that is still starting is the cause, so Ready names it
+		// and not the realm it has not bootstrapped yet.
+		Expect(conditionOf(Default, s.mc, v1.ConditionReady).Reason).NotTo(
+			Equal(string(component.PrerequisiteNotMet)),
+		)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(keycloak.redirectURIs()).To(Equal([]string{
+				blueOptimizeURL + components.OptimizeCallbackPath,
+			}))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// A Keycloak that the user runs outlives this resource, so a callback left
+	// behind would point at an Optimize that is gone.
+	It("withdraws the callbacks when the management cluster is deleted", func() {
+		keycloak := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(keycloak))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(keycloak.redirectURIs()).To(Equal([]string{
+				blueOptimizeURL + components.OptimizeCallbackPath,
+			}))
+		}, timeout, interval).Should(Succeed())
+
+		Expect(deleteManagementCluster(s.mc)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(keycloak.redirectURIs()).To(BeEmpty())
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -205,7 +256,7 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 	It("discovers no Optimize in the oidc mode", func() {
 		s := newScenario()
 
-		createOptimize(s.namespace, s.mc.Name)
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
 
 		Eventually(func(g Gomega) {
 			g.Expect(conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady).Reason).To(
@@ -223,7 +274,11 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		keycloak.refuse = true
 		s := newScenario(withFakeKeycloak(keycloak))
 
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
 		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
 			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
 			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(condition.Reason).To(Equal(v1.ReasonConnectionFailed))
@@ -243,9 +298,9 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 	})
 })
 
-// createOptimize creates a CamundaOptimize at discoveredOptimizeURL that names
-// contract, and registers its deletion.
-func createOptimize(namespace, contract string) *v1.CamundaOptimize {
+// createOptimize creates a CamundaOptimize at externalURL that names contract,
+// and registers its deletion.
+func createOptimize(namespace, contract, externalURL string) *v1.CamundaOptimize {
 	GinkgoHelper()
 
 	optimize := &v1.CamundaOptimize{
@@ -256,7 +311,7 @@ func createOptimize(namespace, contract string) *v1.CamundaOptimize {
 		Spec: v1.CamundaOptimizeSpec{
 			Version:           "8.9.4",
 			ManagementAuthRef: contract,
-			ExternalURL:       discoveredOptimizeURL,
+			ExternalURL:       externalURL,
 			ClusterRef:        v1.ClusterRef{Name: "my-cluster"},
 		},
 	}
@@ -264,6 +319,16 @@ func createOptimize(namespace, contract string) *v1.CamundaOptimize {
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, optimize) })
 
 	return optimize
+}
+
+// stampIdentityReady reports the Management Identity Deployment as ready. The
+// callback step waits for it, because Management Identity owns the Optimize
+// client while it starts. A re-render moves the generation, so every polling
+// loop stamps again.
+func stampIdentityReady(g Gomega, s scenario) {
+	stampDeploymentReady(
+		g, client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)},
+	)
 }
 
 // identityEnv returns the rendered environment of the Management Identity
@@ -287,16 +352,6 @@ func identityEnv(g Gomega, s scenario) map[string]string {
 // so the base URL of the administration API is the URL of the spec and no test
 // hook is needed.
 func withFakeKeycloak(keycloak *fakeKeycloak) func(f *fixture) {
-	return func(f *fixture) {
-		withFakeKeycloakOnly(keycloak)(f)
-		f.mc.Spec.Optimize = &v1.ManagementOptimizeSpec{ExternalURL: specOptimizeURL}
-	}
-}
-
-// withFakeKeycloakOnly is withFakeKeycloak without spec.optimize, for a
-// management plane that serves whatever the CamundaOptimize resources name and
-// nothing else.
-func withFakeKeycloakOnly(keycloak *fakeKeycloak) func(f *fixture) {
 	return func(f *fixture) {
 		withExternalKeycloak(f)
 		f.mc.Spec.IdentityProvider.ExternalKeycloak.URL = keycloak.url

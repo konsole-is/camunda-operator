@@ -83,38 +83,29 @@ func TestAttachedOptimizes(t *testing.T) {
 func TestOptimizeURLs(t *testing.T) {
 	t.Parallel()
 
-	rows := []v1.AttachedOptimizeStatus{
-		{Namespace: "blue", Name: "a", ExternalURL: "https://blue.example.com"},
-		{Namespace: "green", Name: "a", ExternalURL: "https://green.example.com"},
-	}
-
 	tests := []struct {
 		name string
-		spec *v1.ManagementOptimizeSpec
 		rows []v1.AttachedOptimizeStatus
 		want []string
 	}{
 		{
-			name: "the spec entry comes first",
-			spec: &v1.ManagementOptimizeSpec{ExternalURL: "https://spec.example.com"},
-			rows: rows,
-			want: []string{
-				"https://spec.example.com", "https://blue.example.com", "https://green.example.com",
+			name: "the rows keep their order",
+			rows: []v1.AttachedOptimizeStatus{
+				{Namespace: "blue", Name: "a", ExternalURL: "https://blue.example.com"},
+				{Namespace: "green", Name: "a", ExternalURL: "https://green.example.com"},
 			},
-		},
-		{
-			name: "a row that repeats the spec entry is dropped",
-			spec: &v1.ManagementOptimizeSpec{ExternalURL: "https://blue.example.com"},
-			rows: rows,
 			want: []string{"https://blue.example.com", "https://green.example.com"},
 		},
 		{
-			name: "an unset spec entry leaves the rows alone",
-			rows: rows,
-			want: []string{"https://blue.example.com", "https://green.example.com"},
+			name: "two rows that name one address give one URL",
+			rows: []v1.AttachedOptimizeStatus{
+				{Namespace: "blue", Name: "a", ExternalURL: "https://one.example.com"},
+				{Namespace: "green", Name: "a", ExternalURL: "https://one.example.com"},
+			},
+			want: []string{"https://one.example.com"},
 		},
 		{
-			name: "no spec entry and no row is no URL",
+			name: "no row is no URL",
 		},
 	}
 
@@ -122,11 +113,7 @@ func TestOptimizeURLs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			mc := &v1.CamundaManagementCluster{
-				Spec: v1.CamundaManagementClusterSpec{Optimize: tt.spec},
-			}
-
-			assert.Equal(t, tt.want, OptimizeURLs(mc, tt.rows))
+			assert.Equal(t, tt.want, OptimizeURLs(tt.rows))
 		})
 	}
 }

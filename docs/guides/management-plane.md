@@ -252,7 +252,7 @@ spec:
     externalUrl: "https://console.camunda.example.com"
 ```
 
-There is no `spec.optimize` in this mode, and `spec.externalUrl` on a `CamundaOptimize` has no effect. The platform config declares the Optimize client, and you registered its redirect URIs at your provider.
+`spec.externalUrl` on a `CamundaOptimize` has no effect in this mode. The platform config declares the Optimize client, and you registered its redirect URIs at your provider.
 
 `spec.identity.admin` names a token claim instead of a user. Sign in to your provider once and decode the access token. Then read the value of the claim you want to use. Camunda explains how in [JWT token claims](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/authentication-and-authorization/jwt-token-claims/).
 

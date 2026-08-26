@@ -220,7 +220,8 @@ func TestIdentityEnvJoinsTheOptimizeURLs(t *testing.T) {
 	t.Parallel()
 
 	env := renderedEnv(newKeycloakInput(t, true, func(in *Input) {
-		in.OptimizeURLs = OptimizeURLs(in.Cluster, []v1.AttachedOptimizeStatus{
+		in.OptimizeURLs = OptimizeURLs([]v1.AttachedOptimizeStatus{
+			{Namespace: fixtureNamespace, Name: "a", ExternalURL: fixtureOptimize},
 			{Namespace: "blue", Name: "a", ExternalURL: fixtureOptimizeBlue},
 			{Namespace: "green", Name: "a", ExternalURL: fixtureOptimizeGreen},
 		})
@@ -242,7 +243,7 @@ func TestIdentityEnvWithoutAnOptimizeRendersNoPreset(t *testing.T) {
 	t.Parallel()
 
 	env := renderedEnv(newKeycloakInput(t, true, func(in *Input) {
-		in.Cluster.Spec.Optimize = nil
+		in.OptimizeURLs = []string{}
 	}), ComponentIdentity)
 
 	assert.NotContains(t, env, "KEYCLOAK_INIT_OPTIMIZE_ROOT_URL")
@@ -260,11 +261,12 @@ func TestConfigHashFollowsTheOptimizeURLs(t *testing.T) {
 
 	one := newKeycloakInput(t, true, nil)
 	many := newKeycloakInput(t, true, func(in *Input) {
-		in.OptimizeURLs = OptimizeURLs(in.Cluster, []v1.AttachedOptimizeStatus{
+		in.OptimizeURLs = OptimizeURLs([]v1.AttachedOptimizeStatus{
+			{Namespace: fixtureNamespace, Name: "a", ExternalURL: fixtureOptimize},
 			{Namespace: "blue", Name: "a", ExternalURL: fixtureOptimizeBlue},
 		})
 	})
-	none := newKeycloakInput(t, true, func(in *Input) { in.Cluster.Spec.Optimize = nil })
+	none := newKeycloakInput(t, true, func(in *Input) { in.OptimizeURLs = []string{} })
 
 	assert.NotEqual(t, ConfigHash(one, ComponentIdentity), ConfigHash(many, ComponentIdentity))
 	assert.NotEqual(t, ConfigHash(one, ComponentIdentity), ConfigHash(none, ComponentIdentity))

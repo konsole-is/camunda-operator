@@ -240,7 +240,7 @@ spec:
   version: "8.9.0"
   # string. Required. Name of the cluster-scoped ManagementAuthConfig that Optimize signs in against.
   managementAuthRef: management-auth
-  # string. Optional. The URL a browser reaches this Optimize at. It carries no comma and does not end with a slash. In the two Keycloak modes the management plane registers the login callback under it. Unused in the oidc mode.
+  # string. Optional. The URL a browser reaches this Optimize at. It carries no comma, no query, and no fragment, and it does not end with a slash. In the two Keycloak modes the management plane registers the login callback under it. Unused in the oidc mode.
   externalUrl: "https://optimize.camunda.example.com"
   # object. Required. The CamundaCluster this Optimize instance attaches to. Immutable.
   clusterRef:
@@ -308,7 +308,7 @@ The API server enforces these at admission:
 
 - `spec.version` must be a full semantic version such as `8.9.0`. A two-segment version is rejected.
 - `spec.managementAuthRef` and `spec.clusterRef.name` must not be empty.
-- `spec.externalUrl` must be an `http` or `https` URL. It carries no comma and does not end with a slash.
+- `spec.externalUrl` must be an `http` or `https` URL. It carries no comma, no query, and no fragment, and it does not end with a slash.
 - `spec.importer.replicas` must be `0` or `1`. Optimize supports one active importer, and more than one makes the analytics data inconsistent.
 - `spec.clusterRef` is immutable.
 

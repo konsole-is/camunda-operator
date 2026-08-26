@@ -89,6 +89,9 @@ spec:
                 - message: 'externalUrl must not end with a slash: the login callback
                     is appended to it'
                   rule: '!self.endsWith(''/'')'
+                - message: 'externalUrl must carry no query and no fragment: the login
+                    callback is appended to it'
+                  rule: '!self.contains(''?'') && !self.contains(''#'')'
               importer:
                 description: |-
                   Importer configures the Deployment that imports the exported cluster

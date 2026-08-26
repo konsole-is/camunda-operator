@@ -64,7 +64,7 @@ func (r *Reconciler) discoverOptimizes(
 		return err
 	}
 	mc.Status.Optimize = components.AttachedOptimizes(optimizes)
-	res.Input.OptimizeURLs = components.OptimizeURLs(mc, mc.Status.Optimize)
+	res.Input.OptimizeURLs = components.OptimizeURLs(mc.Status.Optimize)
 
 	return nil
 }
@@ -149,6 +149,19 @@ func (r *Reconciler) syncOptimizeCallbacks(
 
 		return nil, false, nil
 	}
+	// Management Identity writes the whole client representation while it
+	// starts. This step reads that representation and writes it back with the
+	// redirect URIs replaced, so a write of its own between the two calls would
+	// revert what Identity just wrote. Waiting for the workload keeps the two
+	// writers apart: Identity is done with the realm by the time it is ready.
+	if !identityReady(mc) {
+		stageCallbacks(
+			mc, metav1.ConditionFalse, string(component.PrerequisiteNotMet),
+			"Management Identity is not ready, and it owns the Optimize client while it starts",
+		)
+
+		return nil, true, nil
+	}
 
 	failure, err := r.convergeOptimizeCallbacks(ctx, mc, provider, clientID, desired)
 	if err != nil {
@@ -178,6 +191,12 @@ func (r *Reconciler) syncOptimizeCallbacks(
 	)
 
 	return nil, false, nil
+}
+
+// identityReady reports whether the Management Identity workload is ready. The
+// condition is staged by its component earlier in the same reconcile.
+func identityReady(mc *v1.CamundaManagementCluster) bool {
+	return meta.IsStatusConditionTrue(mc.Status.Conditions, v1.ConditionIdentityReady)
 }
 
 // nothingRegistered reports whether the last reconcile already found no login

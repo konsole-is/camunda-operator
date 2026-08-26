@@ -150,7 +150,7 @@ spec:
 
 The platform config must set `spec.auth.method: oidc`, and it must carry `authUrl`, `tokenUrl`, and `jwksUrl` under `spec.auth.oidc`. Those three are optional for an orchestration cluster, which reads them from the discovery document of your provider. The [ManagementAuthConfig](managementauthconfig.md) carries all three, and the operator asks your provider for nothing. Read them from the discovery document and set them on the platform config.
 
-`spec.optimize` is forbidden in this mode, and `spec.externalUrl` on a [CamundaOptimize](camundaoptimize.md) has no effect. The platform config declares the Optimize client, and your provider holds its callback URLs.
+`spec.externalUrl` on a [CamundaOptimize](camundaoptimize.md) has no effect in this mode. The platform config declares the Optimize client, and your provider holds its callback URLs.
 
 The redirect URI of each component is the one Camunda documents in [component-specific configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/#component-specific-configuration). Register it at your provider before the component starts.
 
@@ -481,23 +481,13 @@ The `OptimizeCallbacksReady` condition reports the realm. It reads `Healthy` whi
 
 The operator owns the login callbacks of the addresses above and nothing else on that client. It adds the ones that are missing and removes the ones of an Optimize that went away. A redirect URI of another shape stays where it is. A login callback you register by hand does not: it has the shape the operator owns, so the next reconcile removes it. Give the Optimize a `spec.externalUrl` instead.
 
-Adding or removing an Optimize changes the configuration of Management Identity, so its pods roll, as they do for any other change to it.
+Adding or removing an Optimize changes the configuration of Management Identity, so its pods roll, as they do for any other change to it. The operator waits for Management Identity to be ready before it writes to the realm, because Management Identity writes the whole client while it starts.
 
-`spec.optimize.externalUrl` names one more address: an Optimize that this operator does not run, so no `CamundaOptimize` reports it. Set it for that alone, and leave it unset otherwise. An address that a `CamundaOptimize` also names is registered once:
+Deleting this resource removes those callbacks from the realm. A Keycloak that does not answer at that moment keeps them, and the deletion goes through anyway, so the orchestration clusters this plane holds are always freed.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: CamundaManagementCluster
-metadata:
-  name: my-management
-  namespace: my-management-ns
-spec:
-  optimize:
-    externalUrl: "https://optimize.elsewhere.example.com"
-  # ... the rest of your management cluster
-```
+This resource carries no Optimize address of its own. Every address comes from a `CamundaOptimize`, so an Optimize that this operator does not run is one you register at Keycloak yourself.
 
-The `oidc` mode registers nothing. Your provider holds the callback URLs, so both fields are out of use there and `OptimizeCallbacksReady` reads `Disabled`. One application at your provider serves every Optimize of the management plane, so add the callback of each one to that application yourself.
+The `oidc` mode registers nothing. Your provider holds the callback URLs, so `spec.externalUrl` is out of use there and `OptimizeCallbacksReady` reads `Disabled`. One application at your provider serves every Optimize of the management plane, so add the callback of each one to that application yourself.
 
 ## The contract that Optimize reads
 
@@ -578,7 +568,7 @@ A condition reads `True` under the reasons `Healthy`, `Disabled`, `Suspended`, a
 | `KeycloakReady` | `PendingSuspension` | `spec.suspend` is `true` and the `Keycloak` resource does not ask for zero instances yet. | Wait. |
 | `ManagementAuthReady` | `Healthy` | The `ManagementAuthConfig` is up to date. | Nothing. |
 | `ManagementAuthReady` | `WriteFailed` | The operator could not write the `ManagementAuthConfig`. The message carries the answer of the API server. | Read the message. The operator tries again. |
-| `OptimizeCallbacksReady` | `Healthy` | The `optimize` client of the realm carries the login callback of every row of `status.optimize` and of `spec.optimize`. | Nothing. |
+| `OptimizeCallbacksReady` | `Healthy` | The `optimize` client of the realm carries the login callback of every row of `status.optimize`. | Nothing. |
 | `OptimizeCallbacksReady` | `NoCallbacks` | No Optimize behind this management plane names an address, so there is no login callback to register. | Nothing, until you run an Optimize. Then set `spec.externalUrl` on it. See [Optimize](#optimize). |
 | `OptimizeCallbacksReady` | `OptimizeClientMissing` | The realm holds no `optimize` client yet. Management Identity creates it on its first start against Keycloak. | Wait. If it stays, read the pods of `my-management-identity`. |
 | `OptimizeCallbacksReady` | `ConnectionFailed` | Keycloak did not answer the operator, or it refused the administrator. The message carries what Keycloak said. | Read the message. Make sure that Keycloak answers, that the administrator Secret holds valid credentials, and that the operator trusts the certificate of an `https` Keycloak. |
@@ -586,6 +576,7 @@ A condition reads `True` under the reasons `Healthy`, `Disabled`, `Suspended`, a
 | `OptimizeCallbacksReady` | `WriteFailed` | Keycloak refused the change to the `optimize` client. The message carries what Keycloak said. | Read the message. Make sure that the administrator can change clients of the realm. |
 | `OptimizeCallbacksReady` | `Disabled` | The mode is `oidc`, so your provider holds the callback URLs. | Nothing. |
 | `OptimizeCallbacksReady` | `Suspended` | `spec.suspend` is `true`, so the realm is left as it is. | Nothing. |
+| `OptimizeCallbacksReady` | `PrerequisiteNotMet` | Management Identity is not ready. It owns the Optimize client while it starts, so the operator waits for it. | Read the `IdentityReady` row. It clears when Management Identity is ready. |
 | `Ready` | `Healthy` | Every condition that takes part is healthy, the contract is written, and the callbacks are registered. | Nothing. |
 | `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Suspending` / `PendingSuspension` / `PrerequisiteNotMet` | The reason of the governing condition. The message names it. | Read the row of that condition. |
 | `Ready` | `ImmutableAfterStart` | `spec.identity.admin` asks for an administrator claim that Management Identity did not start with. | Read the `IdentityReady` row. |
@@ -770,10 +761,6 @@ spec:
     websockets:
       # integer. Optional, default: 1. Number of replicas.
       replicas: 1
-  # object. Optional, forbidden in the oidc mode. One more Optimize that this management plane serves: one that this operator does not run.
-  optimize:
-    # string. Required. The URL a browser reaches that Optimize at. It carries no comma and does not end with a slash.
-    externalUrl: "https://optimize.elsewhere.example.com"
 ```
 
 ### Validation rules
@@ -786,8 +773,6 @@ The API server refuses an apply that breaks one of these:
 - `spec.identity.admin.passwordSecretRef` is forbidden in the `oidc` mode.
 - `spec.identity.admin.email` is required when `spec.webModeler` is set in one of the two Keycloak modes.
 - `spec.identity.admin.claimName` holds no equals sign.
-- `spec.optimize` is forbidden in the `oidc` mode.
-- `spec.optimize.externalUrl` carries no comma and does not end with a slash.
 - Every `externalUrl`, `websocketsExternalUrl`, and `url` is an `http` or `https` URL. `spec.identityProvider.keycloak.externalUrl` must carry the `/auth` path.
 - `spec.identityProvider.keycloak.externalUrl` and `spec.identityProvider.externalKeycloak.url` carry no query and no fragment.
 - `spec.identityProvider.externalKeycloak.realm` holds letters, digits, dots, hyphens, and underscores. It starts and ends with a letter or a digit.
