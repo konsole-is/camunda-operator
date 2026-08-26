@@ -1054,6 +1054,53 @@ var _ = Describe("DatabaseServer recovery", func() {
 		}, "2s", interval).Should(Succeed())
 	})
 
+	It("abandons a rollback whose cluster is on its way out after the cutover", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+		bringRecoveryClusterUp(server, "camunda-r1")
+
+		By("waiting until the contract points at the recovered cluster")
+		host := "camunda-r1-rw." + server.Namespace + ".svc"
+		Eventually(func(g Gomega) {
+			g.Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda-r1"))
+			g.Expect(publishedContract(server).Spec.Host).To(Equal(host))
+		}, timeout, interval).Should(Succeed())
+
+		// A cluster that is going keeps the phase it last reached, and that
+		// phase is healthy here. Publishing it and removing what it replaced
+		// leaves the server with no cluster at all.
+		By("removing the recovered cluster while it still reports a healthy phase")
+		holdRecoveryCluster(server, "camunda-r1")
+		Expect(k8sClient.Delete(ctx, &cnpgv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "camunda-r1", Namespace: server.Namespace},
+		})).To(Succeed())
+		expectTerminating(server, "camunda-r1")
+
+		// The probe is the last thing the server waits for before it declares
+		// a rollback complete, so writing it leaves the deletion stamp as the
+		// only thing that can stop the cutover.
+		probeAnyEndpoint(server)
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultFailed)
+		Expect(outcome.Message).To(ContainSubstring("is being removed"))
+
+		By("running from the cluster it came from again")
+		Eventually(func(g Gomega) {
+			g.Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda"))
+			g.Expect(publishedContract(server).Spec.Host).
+				To(Equal("camunda-rw." + server.Namespace + ".svc"))
+		}, timeout, interval).Should(Succeed())
+
+		// The cluster that holds the data of this server is still there.
+		Consistently(func() error {
+			return k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &cnpgv1.Cluster{},
+			)
+		}, "2s", interval).Should(Succeed())
+
+		releaseRecoveryCluster(server, "camunda-r1")
+	})
+
 	It("refuses the cluster it goes back to when another owner took that one", func() {
 		server, from := archivingServer()
 		askForRecovery(server, from.Add(time.Hour))

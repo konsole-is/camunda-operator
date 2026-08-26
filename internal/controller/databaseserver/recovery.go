@@ -727,7 +727,17 @@ func (r *DatabaseServerReconciler) completeRecovery(
 		// this name, and nothing here can build one: a recovery reads an
 		// archive, and the point it read is gone.
 		return false, r.abandonRecovery(
-			ctx, server, contract, request, fmt.Sprintf("%s was removed", key),
+			ctx, server, contract, request, fmt.Sprintf("CloudNativePG cluster %s was removed", key),
+		)
+	}
+
+	// A cluster that carries a finalizer keeps reporting the phase it last
+	// reached while it goes, and that phase can be healthy. Completing on it
+	// publishes a cluster that is on its way out and deletes the one the
+	// server came from, which leaves the server with no cluster at all.
+	if !recovered.DeletionTimestamp.IsZero() {
+		return false, r.abandonRecovery(
+			ctx, server, contract, request, fmt.Sprintf("CloudNativePG cluster %s is being removed", key),
 		)
 	}
 
