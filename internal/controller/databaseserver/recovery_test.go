@@ -1986,8 +1986,38 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(replacement.UID).NotTo(Equal(contract.UID))
 
 		// The read the server holds is the one from before the replacement.
-		Expect(reconciler.publishRecoveryOutcome(ctx, contract, outcome)).To(Succeed())
+		Expect(reconciler.publishRecoveryOutcome(ctx, contract, outcome)).NotTo(Succeed())
 		Expect(publishedRecovery(replacement)).To(BeNil())
+
+		// An answer that reached no contract must leave no record behind
+		// either. A record that says answered stops the server from asking
+		// again, and it releases the cleanup of the clusters the recovery
+		// replaced.
+		By("recording nothing while no contract carries the answer")
+		server := &v1.DatabaseServer{
+			ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: contract.Namespace},
+			Status: v1.DatabaseServerStatus{
+				Recovery: &v1.DatabaseServerRecoveryStatus{
+					RequestID:   outcome.RequestID,
+					Contract:    contract.Name,
+					RequestedBy: outcome.RequestedBy,
+					TargetTime:  outcome.TargetTime,
+					Cluster:     "camunda-r1",
+				},
+			},
+		}
+		request := v1.RecoveryRequest{
+			RequestID:   outcome.RequestID,
+			RequestedBy: outcome.RequestedBy,
+			TargetTime:  outcome.TargetTime,
+		}
+
+		err := reconciler.answerRecovery(
+			ctx, server, contract, request, v1.RecoveryResultCompleted, "",
+		)
+		Expect(err).To(HaveOccurred())
+		Expect(server.Status.Recovery.CompletedAt).To(BeNil())
+		Expect(server.Status.Recovery.Cluster).To(Equal("camunda-r1"))
 
 		By("answering on the replacement once it is read")
 		Expect(reconciler.publishRecoveryOutcome(ctx, replacement, outcome)).To(Succeed())

@@ -18,7 +18,6 @@ package databaseserver
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -29,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
@@ -1019,12 +1017,10 @@ func (r *DatabaseServerReconciler) answerRecovery(
 // The apply states spec.pitr.lastRecovery and nothing else, so it declares no
 // field that the contract component or the consumer owns.
 //
-// The read of the contract is cached, so the object under that name can have
-// been deleted and created again since. The patch carries the uid that was
-// read, and the API server refuses it when another object holds the name now.
-// A refusal is not an error of this look: whether this server publishes on
-// what is there now is decided by the ownership test of recoveryContract, on
-// the next look, from a read of the object that is there.
+// It returns an error whenever the answer did not reach the contract, and the
+// caller records nothing when it does. The record of the server says answered
+// only after a contract carries the answer, which is what lets a later look
+// read the answer back from either place.
 func (r *DatabaseServerReconciler) publishRecoveryOutcome(
 	ctx context.Context,
 	contract *v1.DatabaseServerConfig,
@@ -1037,44 +1033,19 @@ func (r *DatabaseServerReconciler) publishRecoveryOutcome(
 		return err
 	}
 
+	// The patch names the uid of the contract that was read, so an object
+	// created under that name since is refused rather than answered. The
+	// refusal comes back as an error, and the next look reads the object that
+	// is there: recoveryContract publishes on it when this server owns it, and
+	// leaves it alone when it does not.
 	//nolint:staticcheck // the operator applies through the deprecated client.Apply patch
 	if err := r.Patch(
 		ctx, patch, client.Apply, components.RecoveryFieldManager, client.ForceOwnership,
 	); err != nil {
-		if replacedUnderItsName(err) {
-			log.FromContext(ctx).Error(
-				err, "Recovery outcome was not published", "contract", key.String(),
-			)
-
-			return nil
-		}
-
 		return fmt.Errorf("publishing the recovery outcome on DatabaseServerConfig %s: %w", key, err)
 	}
 
 	return nil
-}
-
-// replacedUnderItsName reports whether the API server refused a write because
-// the object of that name is not the object the uid names. It answers both
-// shapes of that refusal: a conflict when no object holds the name any more,
-// and an invalid metadata.uid when another object holds it.
-func replacedUnderItsName(err error) bool {
-	if apierrors.IsConflict(err) {
-		return true
-	}
-
-	var status apierrors.APIStatus
-	if !errors.As(err, &status) || status.Status().Details == nil {
-		return false
-	}
-	for _, cause := range status.Status().Details.Causes {
-		if cause.Field == "metadata.uid" {
-			return true
-		}
-	}
-
-	return false
 }
 
 // recordRecoveryOutcome publishes the outcome of request as an event on the
