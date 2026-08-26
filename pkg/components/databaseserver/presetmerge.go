@@ -33,8 +33,9 @@ import (
 const MinimumPostgresMajor = 14
 
 // baseBackupScheduleParser reads a base backup schedule with the field set
-// that CloudNativePG gives its own parser: six fields with the seconds first,
-// a day of the week that may be left out, and the @ descriptors.
+// that CloudNativePG gives its own parser: seconds, minutes, hours, day of
+// month, month, and day of week, where the parser also takes a value without
+// the last field, plus the @ descriptors.
 var baseBackupScheduleParser = cron.NewParser(
 	cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.DowOptional |
 		cron.Descriptor,
