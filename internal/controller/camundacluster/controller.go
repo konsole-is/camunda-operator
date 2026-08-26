@@ -139,7 +139,9 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // StorageAlreadyAttached instead of the aggregate, and looks again on a
 // timer. An effective version below the one the brokers run is refused
 // before anything is applied, unless the annotation
-// camunda.io/allow-version-downgrade names it. The annotation is removed once
+// camunda.io/allow-version-downgrade names it. A cluster that is parked on a
+// held contract is not refused: it renders at zero on the running version,
+// and the refusal waits for the release. The annotation is removed once
 // the brokers carry that version, and as soon as it names a version the
 // cluster is not asked to run. The running version is stamped on the bound
 // broker claims, so it survives a delete with retained volumes and the rule
@@ -244,12 +246,18 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// A refused downgrade re-enqueues through the watches on the cluster, the
 	// preset, and the owned StatefulSet, so no timer is needed.
-	if failure := refuseDowngrade(&cluster, in, storage); failure != nil {
+	if failure := refuseDowngrade(&cluster, in, storage); failure != nil && in.Storage.Holder == nil {
 		refused := conditions.Failed(&cluster, failure)
 		r.recordRefusedDowngrade(&cluster, refused)
 		conditions.Stage(&cluster, refused)
 
 		return ctrl.Result{}, nil
+	} else if failure != nil {
+		// A parked cluster must stop, refused or not: its brokers write the
+		// contract it left, which the next cluster can claim. The guard reads
+		// its baseline from the applied image, so the parking renders the
+		// running version and the refusal stands when the holder releases.
+		in.Effective.Version = storage.runningVersion()
 	}
 	// Only a reconcile that reached the check and found no downgrade drops
 	// the cluster out of the memo, so a refusal that comes back is recorded
