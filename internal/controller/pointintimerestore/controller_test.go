@@ -431,8 +431,7 @@ func createRestore(w *world, mutate ...func(*v1.PointInTimeRestore)) *v1.PointIn
 
 // readRestore returns the live restore. A caller inside an Eventually or a
 // Consistently passes the Gomega of that poll, so a failed read is polled
-// again instead of ending the spec. Every read helper of this suite takes its
-// Gomega for that reason.
+// again instead of ending the spec. A caller at spec level passes Default.
 func readRestore(g Gomega, pitr *v1.PointInTimeRestore) *v1.PointInTimeRestore {
 	GinkgoHelper()
 	var current v1.PointInTimeRestore
