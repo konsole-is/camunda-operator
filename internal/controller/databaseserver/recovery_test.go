@@ -312,7 +312,7 @@ func reconciledServer(server *v1.DatabaseServer) *v1.DatabaseServer {
 }
 
 // expectLastRecovery waits until the contract publishes an outcome with the
-// given result, and returns it.
+// given result and the server records it, and returns the outcome.
 func expectLastRecovery(server *v1.DatabaseServer, result v1.RecoveryResult) *v1.RecoveryOutcome {
 	GinkgoHelper()
 
@@ -321,6 +321,14 @@ func expectLastRecovery(server *v1.DatabaseServer, result v1.RecoveryResult) *v1
 		g.Expect(contract.Spec.PITR).NotTo(BeNil())
 		g.Expect(contract.Spec.PITR.LastRecovery).NotTo(BeNil())
 		g.Expect(contract.Spec.PITR.LastRecovery.Result).To(Equal(result))
+
+		// The answer reaches the contract before it reaches the server: the
+		// operator publishes it first, so a status write that is lost leaves
+		// the answer published. Every caller reads status.recovery next, so
+		// the record is waited on here.
+		recorded := reconciledServer(server).Status.Recovery
+		g.Expect(recorded).NotTo(BeNil())
+		g.Expect(recorded.RequestID).To(Equal(contract.Spec.PITR.LastRecovery.RequestID))
 	}, timeout, interval).Should(Succeed())
 
 	return publishedContract(server).Spec.PITR.LastRecovery
