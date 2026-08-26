@@ -1925,12 +1925,22 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		// The endpoint is read back only on a look that finds the record
 		// missing, so the record goes last, once that endpoint is the one
-		// every look reads.
+		// every look reads. A look that was already running writes the status
+		// it holds back over this one, record and all, so the record is
+		// removed until the refusal that follows it is recorded.
+		//
+		// The refusal is its own reason. A reader of kubectl describe learns
+		// that two servers are writing one contract, which is not what a
+		// refused rollback means.
 		Eventually(func(g Gomega) {
 			var latest v1.DatabaseServer
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
-			latest.Status.Recovery = nil
-			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+			if latest.Status.Recovery != nil {
+				latest.Status.Recovery = nil
+				g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+			}
+
+			g.Expect(recoveryEventReasons(server)).To(ContainElement("RecoveryClusterNotOwned"))
 		}, timeout, interval).Should(Succeed())
 
 		Consistently(func(g Gomega) {
@@ -1941,13 +1951,6 @@ var _ = Describe("DatabaseServer recovery", func() {
 				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
 			)).To(Succeed())
 		}, "3s", interval).Should(Succeed())
-
-		// The refusal is its own reason. A reader of kubectl describe learns
-		// that two servers are writing one contract, which is not what a
-		// refused rollback means.
-		Eventually(func() []string {
-			return recoveryEventReasons(server)
-		}, timeout, interval).Should(ContainElement("RecoveryClusterNotOwned"))
 	})
 
 	It("answers a request while the server is suspended and its bucket is gone", func() {
