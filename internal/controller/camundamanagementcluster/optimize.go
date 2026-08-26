@@ -102,7 +102,9 @@ func (r *Reconciler) listOptimizes(ctx context.Context, contract string) ([]v1.C
 // yet and removes the callback of an Optimize that went away. The
 // KEYCLOAK_INIT_OPTIMIZE_ROOT_URL of the rendered environment is the floor: an
 // Identity that restarts writes the list of its last roll, and this step puts
-// the rest back on the reconcile that the restart triggers.
+// the rest back. The reconcile that the Deployment status of the restart
+// brings usually does it at once, and the converge requeue of the caller
+// bounds how long any other drift in the realm lasts.
 //
 // The failure it returns is already staged on the condition, and the caller
 // folds it into Ready. The second result asks the caller to come back on the

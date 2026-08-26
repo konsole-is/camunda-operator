@@ -73,8 +73,8 @@ spec:
                   In the two Keycloak modes the management plane behind managementAuthRef
                   registers <externalUrl>/api/authentication/callback on the optimize
                   client of the realm, so a person who signs in here comes back here. An
-                  Optimize that sets no URL registers no callback, and its login ends at
-                  the Optimize the management plane knows about instead.
+                  Optimize that sets no URL registers no callback, so Keycloak refuses the
+                  return and nobody signs in to it.
 
                   In the oidc mode the field has no effect. The identity provider of the
                   platform config holds the callback URLs, so add this one there.
