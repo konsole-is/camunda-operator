@@ -140,17 +140,24 @@ func SuperuserSecretName(server *v1.DatabaseServer) string {
 // BlockOnForeignController covers the same ground on the suspension path, but
 // only for a cluster another owner controls. The guard is what covers a
 // cluster that nothing controls, and a rollback whose cluster is gone.
+//
+// archiveTaken is why the ObjectStore that describes the archive is not this
+// server's, from ArchiveTakenMessage, and it is empty when that name is the
+// server's. The cluster then carries no archive plugin: the entry names that
+// ObjectStore, and a cluster that keeps it writes its write-ahead log into the
+// bucket of whoever holds the name.
 func ClusterComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
 	archive *ArchiveStorage,
+	archiveTaken string,
 	platform *v1.CamundaPlatformConfigSpec,
 	blocked string,
 ) (*component.Component, *concepts.Data[string], error) {
 	systemIdentifier := concepts.NewData[string]("postgres-system-identifier")
 
 	builder := cnpgcluster.NewBuilder(cluster(server, merged, platform)).
-		WithMutation(clusterMutations(server, merged, archive)...).
+		WithMutation(clusterMutations(server, merged, archive, archiveTaken)...).
 		WithGuard(takenGuard[cnpgv1.Cluster](blocked))
 	cnpgcluster.ExtractInto(builder, systemIdentifier, func(c cnpgv1.Cluster) (string, error) {
 		return c.Status.SystemID, nil
@@ -218,6 +225,7 @@ func clusterMutations(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
 	archive *ArchiveStorage,
+	archiveTaken string,
 ) []cnpgcluster.Mutation {
 	serviceAccountAnnotations := serviceAccountAnnotations(merged, archive)
 
@@ -277,8 +285,13 @@ func clusterMutations(
 			// The gate reads the spec, not the resolved bucket. The entry
 			// needs neither, and a bucket that stops resolving under a
 			// suspended server must not take the archive off the cluster.
+			//
+			// An ObjectStore of that name that another owner controls does
+			// take it off. The entry carries that name, so a cluster that
+			// keeps it archives into the bucket, and under the credentials,
+			// of whoever holds the name.
 			Name:    "ContinuousArchive",
-			Feature: feature.NewBooleanGate(merged.Archive != nil),
+			Feature: feature.NewBooleanGate(merged.Archive != nil && archiveTaken == ""),
 			Mutate: func(m *cnpgcluster.Mutator) error {
 				m.Edit(func(c *cnpgv1.Cluster) error {
 					c.Spec.Plugins = []cnpgv1.PluginConfiguration{archivePlugin(server)}

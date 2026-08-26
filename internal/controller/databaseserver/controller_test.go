@@ -1463,6 +1463,105 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, 3*time.Second, interval).Should(Succeed())
 	})
 
+	It("keeps the cluster off an archive store that another owner controls", func() {
+		namespace := "dbs-" + utilrand.String(8)
+		Expect(k8sClient.Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		})).To(Succeed())
+
+		// The ObjectStore takes the name of the server, so a second server of
+		// that name derives an object somebody already holds. The cluster name
+		// is free here. The block on the apply keeps the object whole, and
+		// nothing but this read keeps the cluster of this server off it: the
+		// archive plugin entry names the ObjectStore, and CloudNativePG writes
+		// the write-ahead log through whatever object holds the name.
+		holder := serverNamed(namespace, "holder", "holder", nil)
+		occupant := &barmanobjectstore.ObjectStore{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "camunda",
+				Namespace: namespace,
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: v1.GroupVersion.String(),
+					Kind:       "DatabaseServer",
+					Name:       holder.Name,
+					UID:        reconciledServer(holder).UID,
+					Controller: new(true),
+				}},
+			},
+			Spec: barmanobjectstore.ObjectStoreSpec{
+				Configuration: barmanobjectstore.BarmanObjectStoreConfiguration{
+					DestinationPath: "s3://holder-bucket/holder",
+				},
+				RetentionPolicy: "7d",
+			},
+		}
+		Expect(k8sClient.Create(ctx, occupant)).To(Succeed())
+
+		bucket := archiveBucket()
+		server := serverNamed(namespace, "camunda", "camunda", &v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+
+		taken := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
+		Expect(taken.Reason).To(Equal(v1.ReasonArchiveTaken), taken.Message)
+		Expect(taken.Message).To(ContainSubstring(`DatabaseServer "holder"`))
+		Expect(conditionOf(server, v1.ConditionReady).Status).To(Equal(metav1.ConditionFalse))
+
+		key := client.ObjectKey{Namespace: namespace, Name: "camunda"}
+		Consistently(func(g Gomega) {
+			// No plugin entry, so no write-ahead log of this server reaches
+			// the bucket of the holder.
+			g.Expect(mustCluster(g, key).Spec.Plugins).To(BeEmpty())
+
+			// The schedule takes its base backups through that same entry, so
+			// it goes with it.
+			g.Expect(k8sClient.Get(ctx, key, &cnpgv1.ScheduledBackup{})).
+				To(MatchError(apierrors.IsNotFound, "not found"))
+
+			// The contract stands. The endpoint and the credentials are this
+			// server's own, and the server declares no point to roll back to.
+			pitr := publishedContract(server).Spec.PITR
+			g.Expect(pitr).NotTo(BeNil())
+			g.Expect(pitr.Enabled).To(BeFalse())
+			g.Expect(pitr.Recovery).To(Equal(v1.RecoveryModeExternal))
+
+			// The apply rewrites the destination and the retention together
+			// with the owner reference, so a write of this server shows in any
+			// of the three.
+			var live barmanobjectstore.ObjectStore
+			g.Expect(k8sClient.Get(ctx, key, &live)).To(Succeed())
+			g.Expect(live.Spec.Configuration.DestinationPath).To(Equal("s3://holder-bucket/holder"))
+			g.Expect(live.Spec.RetentionPolicy).To(Equal("7d"))
+			g.Expect(metav1.IsControlledBy(&live, reconciledServer(holder))).To(BeTrue())
+		}, 3*time.Second, interval).Should(Succeed())
+
+		By("removing the ObjectStore that holds the name")
+		Expect(k8sClient.Delete(ctx, occupant)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			plugins := mustCluster(g, key).Spec.Plugins
+			g.Expect(plugins).To(HaveLen(1))
+			g.Expect(plugins[0].Parameters).To(HaveKeyWithValue("barmanObjectName", "camunda"))
+			g.Expect(k8sClient.Get(ctx, key, &cnpgv1.ScheduledBackup{})).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		// The archive then waits on its first base backup, which is where
+		// every archiving server starts.
+		blocked := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
+		Expect(blocked.Reason).To(Equal(string(component.GuardBlocked)), blocked.Message)
+		Expect(blocked.Message).To(ContainSubstring("base backup"))
+
+		makeClusterHealthy(server, "7000000000000000003")
+		completeBaseBackup(server, "base-1", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			g.Expect(publishedContract(server).Spec.PITR.Enabled).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("starts a new archive record when the bucket changes", func() {
 		first := archiveBucket()
 		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{

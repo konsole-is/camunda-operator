@@ -156,7 +156,7 @@ func assertDatabaseServerGoldens(
 	scheme := goldenScheme(t)
 	base := filepath.Join("testdata", "golden", dir)
 
-	cluster, _, err := ClusterComponent(server, merged, archive, nil, "")
+	cluster, _, err := ClusterComponent(server, merged, archive, "", nil, "")
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "cluster.yaml"), cluster,
@@ -167,7 +167,7 @@ func assertDatabaseServerGoldens(
 	// so a server without an archive would pin an ObjectStore that the
 	// component only ever deletes.
 	if merged.Archive != nil {
-		archiveComp, err := ArchiveComponent(server, merged, archive, nil, "")
+		archiveComp, err := ArchiveComponent(server, merged, archive, nil, "", "")
 		require.NoError(t, err)
 		golden.AssertComponentYAML(
 			t, filepath.Join(base, "archive.yaml"), archiveComp,
@@ -175,7 +175,7 @@ func assertDatabaseServerGoldens(
 		)
 	}
 
-	contract, err := ContractComponent(server, merged, "", "")
+	contract, err := ContractComponent(server, merged, "", "", "")
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "contract.yaml"), contract,
@@ -410,11 +410,11 @@ func TestSuspensionKeepsTheDeclaredState(t *testing.T) {
 		server.Spec.Suspend = suspend
 		merged := MergePreset(server.Spec, preset)
 
-		clusterComp, _, err := ClusterComponent(server, merged, archive, nil, "")
+		clusterComp, _, err := ClusterComponent(server, merged, archive, "", nil, "")
 		require.NoError(t, err)
-		contractComp, err := ContractComponent(server, merged, "", "")
+		contractComp, err := ContractComponent(server, merged, "", "", "")
 		require.NoError(t, err)
-		archiveComp, err := ArchiveComponent(server, merged, archive, nil, "")
+		archiveComp, err := ArchiveComponent(server, merged, archive, nil, "", "")
 		require.NoError(t, err)
 
 		return renderComponent(t, clusterComp),
@@ -467,7 +467,7 @@ func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
 		"team":                       "platform",
 	}
 
-	comp, _, err := ClusterComponent(server, server.Spec, nil, nil, "")
+	comp, _, err := ClusterComponent(server, server.Spec, nil, "", nil, "")
 	require.NoError(t, err)
 
 	cluster := previewCluster(t, comp)
@@ -485,14 +485,14 @@ func TestClusterImageComesFromThePlatformConfig(t *testing.T) {
 	server, preset := goldenMinimalDatabaseServer()
 	merged := MergePreset(server.Spec, preset)
 
-	comp, _, err := ClusterComponent(server, merged, nil, nil, "")
+	comp, _, err := ClusterComponent(server, merged, nil, "", nil, "")
 	require.NoError(t, err)
 	assert.Equal(t, "ghcr.io/cloudnative-pg/postgresql:17", previewCluster(t, comp).Spec.ImageName)
 
 	platform := &v1.CamundaPlatformConfigSpec{
 		Images: &v1.ImagesSpec{Postgres: "mirror.example.com/postgresql"},
 	}
-	comp, _, err = ClusterComponent(server, merged, nil, platform, "")
+	comp, _, err = ClusterComponent(server, merged, nil, "", platform, "")
 	require.NoError(t, err)
 	assert.Equal(t, "mirror.example.com/postgresql:17", previewCluster(t, comp).Spec.ImageName)
 }

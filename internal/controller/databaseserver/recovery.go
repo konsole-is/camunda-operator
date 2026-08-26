@@ -536,7 +536,9 @@ func recoveryMatches(recorded *v1.DatabaseServerRecoveryStatus, request v1.Recov
 //
 // It is answered again on every look, so a server that is suspended while a
 // recovery runs refuses the request it was working on. That is the honest
-// answer: hibernation takes the instances away, and a recovery needs one.
+// answer: hibernation takes the instances away, and a recovery needs one. A
+// server whose ObjectStore another owner takes mid-recovery refuses the same
+// way, because the recovered cluster reads the archive that object describes.
 func recoverySource(
 	server *v1.DatabaseServer,
 	resolved resolvedSpec,
@@ -563,6 +565,17 @@ func recoverySource(
 		return v1.ArchiveRecord{}, &recoveryRefusal{
 			result:  v1.RecoveryResultUnavailable,
 			message: "The server writes no archive, so it holds no point to roll back to",
+		}
+
+	// The recovered cluster reads the archive through the one ObjectStore of
+	// the server, and that object belongs to somebody else. Recovering from it
+	// puts the database of another server under this name.
+	case resolved.archiveTaken != "":
+		return v1.ArchiveRecord{}, &recoveryRefusal{
+			result: v1.RecoveryResultUnavailable,
+			message: "A Barman Cloud ObjectStore that another owner controls holds the name of " +
+				"the archive of this server, so the server reads no archive of its own. " +
+				"ArchiveReady names the holder",
 		}
 	}
 
@@ -882,7 +895,8 @@ func (r *DatabaseServerReconciler) createRecoveryCluster(
 	target string,
 ) error {
 	recovered, err := components.RecoveryCluster(
-		server, resolved.merged, resolved.archive, resolved.platform, source, target,
+		server, resolved.merged, resolved.archive, resolved.archiveTaken,
+		resolved.platform, source, target,
 	)
 	if err != nil {
 		return err

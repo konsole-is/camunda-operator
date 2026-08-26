@@ -408,7 +408,7 @@ func TestRecoveryClusterGolden(t *testing.T) {
 	source := server.Status.Archive.History[0]
 
 	recovered, err := RecoveryCluster(
-		server, MergePreset(server.Spec, preset), archive, nil, source, "2026-08-20T14:30:00Z",
+		server, MergePreset(server.Spec, preset), archive, "", nil, source, "2026-08-20T14:30:00Z",
 	)
 	require.NoError(t, err)
 
@@ -463,7 +463,7 @@ func TestRecoveryClusterNeedsTheRecordFirst(t *testing.T) {
 	server.Status.Recovery = nil
 
 	_, err := RecoveryCluster(
-		server, MergePreset(server.Spec, preset), archive, nil, source, "2026-08-20T14:30:00Z",
+		server, MergePreset(server.Spec, preset), archive, "", nil, source, "2026-08-20T14:30:00Z",
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "records no recovery cluster")
@@ -547,7 +547,7 @@ func TestHeldIdentityStaysOnBothClusters(t *testing.T) {
 		},
 	}
 
-	clusterComp, _, err := ClusterComponent(server, merged, archive, nil, "")
+	clusterComp, _, err := ClusterComponent(server, merged, archive, "", nil, "")
 	require.NoError(t, err)
 	objects, err := clusterComp.Preview()
 	require.NoError(t, err)
@@ -556,7 +556,7 @@ func TestHeldIdentityStaysOnBothClusters(t *testing.T) {
 	require.True(t, ok)
 
 	recovered, err := RecoveryCluster(
-		server, merged, archive, nil, source, "2026-08-20T14:30:00Z",
+		server, merged, archive, "", nil, source, "2026-08-20T14:30:00Z",
 	)
 	require.NoError(t, err)
 

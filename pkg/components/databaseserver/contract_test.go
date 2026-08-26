@@ -49,18 +49,31 @@ func TestPublishedNamesFollowTheCluster(t *testing.T) {
 func TestPITRCapabilityFollowsTheArchive(t *testing.T) {
 	t.Parallel()
 
-	without := pitrCapability(v1.DatabaseServerSpec{})
+	without := pitrCapability(v1.DatabaseServerSpec{}, "")
 	require.NotNil(t, without)
 	assert.False(t, without.Enabled)
 	assert.Nil(t, without.RetentionPeriodDays)
 
-	with := pitrCapability(v1.DatabaseServerSpec{
+	archiving := v1.DatabaseServerSpec{
 		Archive: &v1.DatabaseServerArchiveSpec{RetentionPeriodDays: 30},
-	})
+	}
+
+	with := pitrCapability(archiving, "")
 	require.NotNil(t, with)
 	assert.True(t, with.Enabled)
 	require.NotNil(t, with.RetentionPeriodDays)
 	assert.Equal(t, int32(30), *with.RetentionPeriodDays)
+
+	// A server whose ObjectStore another owner holds archives nothing, so it
+	// declares nothing a restore can reach. A capability here sends a restore
+	// to the archive that the other owner writes.
+	taken := pitrCapability(archiving, ArchiveTakenMessage("my-cluster-db", metav1.OwnerReference{
+		Kind: "DatabaseServer", Name: "other",
+	}))
+	require.NotNil(t, taken)
+	assert.False(t, taken.Enabled)
+	assert.Nil(t, taken.RetentionPeriodDays)
+	assert.Equal(t, v1.RecoveryModeExternal, taken.Recovery)
 }
 
 // The contract must not be published before CloudNativePG has written the
@@ -72,6 +85,7 @@ func TestContractWaitsForTheSuperuserSecret(t *testing.T) {
 	comp, err := ContractComponent(
 		archiveServer(),
 		v1.DatabaseServerSpec{DatabaseServerConfig: "my-database-server"},
+		"",
 		"",
 		"",
 	)

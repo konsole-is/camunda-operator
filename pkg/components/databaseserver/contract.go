@@ -63,11 +63,17 @@ import (
 // reads InvalidReference instead of the endpoint of another database. A
 // contract the server never published is not removed by that gate, because
 // the object under the name is not the one the server published.
+//
+// The archiveTaken message is the ArchiveTaken message while the ObjectStore
+// of the name the server derives belongs to somebody else, and empty
+// otherwise. The published contract then declares no point-in-time-recovery
+// capability, because the server archives nothing while that name is held.
 func ContractComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
 	clusterTaken string,
 	contractTaken string,
+	archiveTaken string,
 ) (*component.Component, error) {
 	superuser, err := secret.NewBuilder(superuserSecretRef(server)).Build()
 	if err != nil {
@@ -89,7 +95,7 @@ func ContractComponent(
 				UsernameKey: SuperuserUsernameKey,
 				PasswordKey: SuperuserPasswordKey,
 			},
-			PITR: pitrCapability(merged),
+			PITR: pitrCapability(merged, archiveTaken),
 		},
 	}).WithGuard(takenGuard[v1.DatabaseServerConfig](contractTaken)).Build()
 	if err != nil {
@@ -109,8 +115,13 @@ func ContractComponent(
 // publishes. A server with an archive declares the retention its bucket
 // enforces, and that the operator rolls it back on request. A server without
 // one declares that no restore can reach it, and that nobody rolls it back.
-func pitrCapability(merged v1.DatabaseServerSpec) *v1.PITRCapability {
-	if merged.Archive == nil {
+//
+// A server whose ObjectStore another owner holds declares the same as a server
+// without an archive. It archives nothing while the name is held, and a
+// rollback reads the archive of that ObjectStore, so a capability here sends a
+// restore to the archive of another server.
+func pitrCapability(merged v1.DatabaseServerSpec, archiveTaken string) *v1.PITRCapability {
+	if merged.Archive == nil || archiveTaken != "" {
 		return &v1.PITRCapability{Enabled: false, Recovery: v1.RecoveryModeExternal}
 	}
 
