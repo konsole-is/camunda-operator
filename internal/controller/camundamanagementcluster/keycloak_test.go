@@ -342,11 +342,11 @@ func withExternalKeycloak(f *fixture) {
 }
 
 // withKeycloakAdministrator replaces the initial claim of the oidc mode with
-// the first Keycloak user, and declares the Optimize that the realm carries a
-// client for.
+// the first Keycloak user. It declares no Optimize: a management plane that
+// serves none registers no login callback, so nothing in these specs has to
+// reach Keycloak. The specs of the Optimize instances declare their own.
 func withKeycloakAdministrator(f *fixture) {
 	f.mc.Spec.Identity.Admin = v1.IdentityAdminSpec{Username: "platform-admin"}
-	f.mc.Spec.Optimize = &v1.ManagementOptimizeSpec{ExternalURL: "https://optimize.example.com"}
 }
 
 // stampKeycloakReady writes the status that the Keycloak Operator would write

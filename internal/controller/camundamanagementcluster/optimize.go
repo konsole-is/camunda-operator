@@ -71,7 +71,7 @@ func (r *Reconciler) listOptimizes(ctx context.Context, contract string) ([]v1.C
 // Management Identity owns that client. It writes the whole representation
 // again on every start, with the redirect URIs of its own environment, so this
 // step adds what the environment of the running Identity pods does not carry
-// yet and removes the callbacks of an Optimize that went away. The
+// yet and removes the callback of an Optimize that went away. The
 // KEYCLOAK_INIT_OPTIMIZE_ROOT_URL of the rendered environment is the floor: an
 // Identity that restarts writes the list of its last roll, and this step puts
 // the rest back on the reconcile that the restart triggers.
@@ -92,59 +92,91 @@ func (r *Reconciler) syncOptimizeCallbacks(
 		return nil, nil
 	}
 
-	admin, failure, err := r.keycloakAdmin(ctx, mc, provider)
-	if err != nil || failure != nil {
-		return stageCallbackFailure(mc, failure), err
-	}
-
 	desired := components.OptimizeCallbacks(res.Input)
 	clientID := provider.Clients.Optimize.ID
 
-	stored, err := admin.FindClient(ctx, clientID)
+	failure, err := r.convergeOptimizeCallbacks(ctx, mc, provider, clientID, desired)
 	if err != nil {
-		return stageCallbackFailure(mc, &conditions.PreCheckFailure{
-			Reason:  v1.ReasonConnectionFailed,
-			Message: conditions.BoundMessage(err.Error()),
-		}), nil
-	}
-	if stored == nil {
-		return reportNoClient(mc, clientID, desired), nil
+		return nil, err
 	}
 
-	current := stored.RedirectURIs()
-	merged := keycloakadmin.MergeRedirectURIs(current, desired, components.OptimizeCallbackPath)
-	if !slices.Equal(current, merged) {
-		stored.SetRedirectURIs(merged)
-		if err := admin.UpdateClient(ctx, stored); err != nil {
-			return stageCallbackFailure(mc, &conditions.PreCheckFailure{
-				Reason:  v1.ReasonWriteFailed,
-				Message: conditions.BoundMessage(err.Error()),
-			}), nil
-		}
-		r.EventRecorder.Eventf(
-			mc,
-			nil,
-			corev1.EventTypeNormal,
-			eventReasonOptimizeCallbacks,
-			eventActionRegister,
-			"Client %q of realm %q now carries %d redirect URIs",
-			clientID,
-			provider.Realm,
-			len(merged),
-		)
-	}
-
+	// A management plane that serves no Optimize registers nothing. Its
+	// rendered environment carries no Optimize preset, so Management Identity
+	// creates no Optimize client, and a Keycloak this operator cannot reach
+	// holds nothing back. The condition therefore reports the resting state
+	// rather than a failure, and Ready is free of it.
 	if len(desired) == 0 {
 		stageCallbacks(mc, metav1.ConditionTrue, v1.ReasonNoCallbacks,
-			fmt.Sprintf("No Optimize behind this management plane names a URL, so client %q carries "+
-				"no login callback of this operator", clientID))
+			"No Optimize behind this management plane names a URL, so no login callback of this "+
+				"operator is registered in the realm")
 
 		return nil, nil
+	}
+	if failure != nil {
+		return stageCallbackFailure(mc, failure), nil
 	}
 
 	stageCallbacks(mc, metav1.ConditionTrue, v1.ReasonHealthy,
 		fmt.Sprintf("Client %q of realm %q carries the login callback of every Optimize (%d)",
 			clientID, provider.Realm, len(desired)))
+
+	return nil, nil
+}
+
+// convergeOptimizeCallbacks reads the client that clientID names and writes
+// the merged redirect URIs back when they differ from the stored ones. It
+// stages no condition; the caller decides what a failure means.
+func (r *Reconciler) convergeOptimizeCallbacks(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	provider components.IdentityProvider,
+	clientID string,
+	desired []string,
+) (*conditions.PreCheckFailure, error) {
+	admin, failure, err := r.keycloakAdmin(ctx, mc, provider)
+	if err != nil || failure != nil {
+		return failure, err
+	}
+
+	stored, err := admin.FindClient(ctx, clientID)
+	if err != nil {
+		return &conditions.PreCheckFailure{
+			Reason:  v1.ReasonConnectionFailed,
+			Message: conditions.BoundMessage(err.Error()),
+		}, nil
+	}
+	if stored == nil {
+		return &conditions.PreCheckFailure{
+			Reason: v1.ReasonOptimizeClientMissing,
+			Message: fmt.Sprintf("The realm holds no %q client yet; Management Identity creates it "+
+				"on its first start against Keycloak", clientID),
+		}, nil
+	}
+
+	current := stored.RedirectURIs()
+	merged := keycloakadmin.MergeRedirectURIs(current, desired, components.OptimizeCallbackPath)
+	if slices.Equal(current, merged) {
+		return nil, nil
+	}
+
+	stored.SetRedirectURIs(merged)
+	if err := admin.UpdateClient(ctx, stored); err != nil {
+		return &conditions.PreCheckFailure{
+			Reason:  v1.ReasonWriteFailed,
+			Message: conditions.BoundMessage(err.Error()),
+		}, nil
+	}
+	r.EventRecorder.Eventf(
+		mc,
+		nil,
+		corev1.EventTypeNormal,
+		eventReasonOptimizeCallbacks,
+		eventActionRegister,
+		"Client %q of realm %q now carries %d redirect URIs",
+		clientID,
+		provider.Realm,
+		len(merged),
+	)
 
 	return nil, nil
 }
@@ -185,30 +217,6 @@ func (r *Reconciler) keycloakAdmin(
 		string(secret.Data[ref.UsernameKey]),
 		string(secret.Data[ref.PasswordKey]),
 	), nil, nil
-}
-
-// reportNoClient reports a realm that holds no Optimize client. Management
-// Identity creates the client from its optimize preset on its first start
-// against Keycloak, and it renders that preset only for a management plane
-// that serves at least one Optimize.
-func reportNoClient(
-	mc *v1.CamundaManagementCluster,
-	clientID string,
-	desired []string,
-) *conditions.PreCheckFailure {
-	if len(desired) == 0 {
-		stageCallbacks(mc, metav1.ConditionTrue, v1.ReasonNoCallbacks,
-			fmt.Sprintf("No Optimize behind this management plane names a URL, so realm %q holds no "+
-				"%q client", mc.Name, clientID))
-
-		return nil
-	}
-
-	return stageCallbackFailure(mc, &conditions.PreCheckFailure{
-		Reason: v1.ReasonOptimizeClientMissing,
-		Message: fmt.Sprintf("The realm holds no %q client yet; Management Identity creates it on its "+
-			"first start against Keycloak", clientID),
-	})
 }
 
 // stageCallbackFailure stages failure on OptimizeCallbacksReady and returns
