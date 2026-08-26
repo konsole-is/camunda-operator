@@ -183,7 +183,7 @@ func createWorldIn(namespace string, mutate ...func(*world)) *world {
 	Expect(k8sClient.Create(ctx, w.credentials)).To(Succeed())
 	Expect(k8sClient.Create(ctx, w.server)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, w.server) })
-	publishSystemIdentifier(w.server, worldSystemIdentifier)
+	publishProbe(w.server, worldSystemIdentifier)
 	Expect(k8sClient.Create(ctx, w.database)).To(Succeed())
 	// The dedicated-server rule reads the Database resources of every
 	// namespace, so a claimant left behind reaches every later spec.
@@ -199,16 +199,40 @@ func createWorldIn(namespace string, mutate ...func(*world)) *world {
 	return w
 }
 
-// publishSystemIdentifier records the identity of the PostgreSQL instance
-// that a contract reaches, as its controller does after a probe. The
-// DatabaseServerConfig controller does not run in this suite, and the
-// dedicated-server rule counts by that identity.
-func publishSystemIdentifier(server *v1.DatabaseServerConfig, identifier string) {
+// publishProbe records a probe of the endpoint and the admin credentials that
+// the spec of server names now, with identifier as the identity of the
+// PostgreSQL instance behind it, as the contract controller does after a
+// probe. The DatabaseServerConfig controller does not run in this suite, and
+// every rule of the restore reads the server from that record.
+func publishProbe(server *v1.DatabaseServerConfig, identifier string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		var current v1.DatabaseServerConfig
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &current)).To(Succeed())
+		ref := current.Spec.AdminCredentialsSecretRef
+		now := metav1.Now()
 		current.Status.SystemIdentifier = identifier
+		current.Status.ProbedAt = &now
+		current.Status.ProbedEndpoint = fmt.Sprintf("%s:%d", current.Spec.Host, current.Spec.Port)
+		current.Status.ProbedSecretName = ref.Name
+		current.Status.ProbedSecretKeys = ref.UsernameKey + "/" + ref.PasswordKey
+		g.Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// clearProbe removes the whole record of the last probe, as the contract
+// controller does once it notices that the spec names another server. The
+// contract then reads as one that has never reached its server.
+func clearProbe(server *v1.DatabaseServerConfig) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var current v1.DatabaseServerConfig
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &current)).To(Succeed())
+		current.Status.SystemIdentifier = ""
+		current.Status.ProbedAt = nil
+		current.Status.ProbedEndpoint = ""
+		current.Status.ProbedSecretName = ""
+		current.Status.ProbedSecretKeys = ""
 		g.Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }
@@ -236,10 +260,23 @@ func createServerFor(namespace, host, identifier string) *v1.DatabaseServerConfi
 	Expect(k8sClient.Create(ctx, server)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
 	if identifier != "" {
-		publishSystemIdentifier(server, identifier)
+		publishProbe(server, identifier)
 	}
 
 	return server
+}
+
+// moveHost points the spec of server at another host and leaves the record of
+// the last probe as it is. That is how a contract reads between the write that
+// moves it and the next probe of its controller.
+func moveHost(server *v1.DatabaseServerConfig, host string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var current v1.DatabaseServerConfig
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &current)).To(Succeed())
+		current.Spec.Host = host
+		g.Expect(k8sClient.Update(ctx, &current)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 }
 
 // createBrokers creates the broker StatefulSet of the world and the data
@@ -941,6 +978,32 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		expectClaimsUntouched(w)
 	})
 
+	// A contract that was moved onto this instance still reports the instance
+	// it reached before the move. The Database behind it is about to live on
+	// this server, so a rule that reads the stale identity places it on the
+	// other one and lets the rollback destroy it.
+	It("holds a Database whose contract was moved onto this server", func() {
+		w := createWorld()
+		other := newNamespace()
+		otherServer := createServerFor(other, "postgres.other.svc", "7000000000000000009")
+		second := &v1.Database{
+			ObjectMeta: metav1.ObjectMeta{Name: "moved-" + w.database.Name, Namespace: other},
+			Spec: v1.DatabaseSpec{
+				ServerRef:    otherServer.Name,
+				DatabaseName: "other_database",
+			},
+		}
+		Expect(k8sClient.Create(ctx, second)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, second) })
+		moveHost(otherServer, w.server.Spec.Host)
+		pitr := createRestore(w)
+
+		message := expectHeld(pitr, v1.ReasonInvalidReference)
+		Expect(message).To(ContainSubstring(other + "/" + second.Name))
+		Expect(message).To(ContainSubstring("no system identifier"))
+		expectClaimsUntouched(w)
+	})
+
 	// A Database whose contract was deleted still names it. Nothing resolves
 	// that reference, so the Database cannot be placed either.
 	It("holds a Database whose contract is gone", func() {
@@ -1004,12 +1067,31 @@ var _ = Describe("PointInTimeRestore admission", func() {
 	// other database on it cannot run.
 	It("holds a contract that has not published its system identifier", func() {
 		w := createWorld()
-		publishSystemIdentifier(w.server, "")
+		clearProbe(w.server)
 		pitr := createRestore(w)
 
 		message := expectHeld(pitr, v1.ReasonInvalidReference)
 		Expect(message).To(ContainSubstring("system identifier"))
 		expectClaimsUntouched(w)
+	})
+
+	// The record of a probe stands until the contract controller notices that
+	// the spec names another endpoint. Until the next probe the identity
+	// belongs to the server before the move, and the restore reaches the
+	// endpoint of the spec, so it validates one instance and rolls back
+	// another.
+	It("holds a contract whose spec was moved to another endpoint", func() {
+		w := createWorld()
+		moveHost(w.server, "postgres.moved.svc")
+		pitr := createRestore(w)
+
+		message := expectHeld(pitr, v1.ReasonInvalidReference)
+		Expect(message).To(ContainSubstring("postgres.databases.svc:5432"))
+		Expect(message).To(ContainSubstring("postgres.moved.svc:5432"))
+		expectClaimsUntouched(w)
+
+		publishProbe(w.server, worldSystemIdentifier)
+		expectAdmitted(pitr, w)
 	})
 
 	It("admits a suspended cluster on a dedicated server", func() {
@@ -1382,7 +1464,7 @@ var _ = Describe("PointInTimeRestore storage identity", func() {
 		expectHeld(pitr, v1.ReasonDatabaseNotRestored)
 
 		const replacement = "7000000000000000042"
-		publishSystemIdentifier(w.server, replacement)
+		publishProbe(w.server, replacement)
 
 		Eventually(func(g Gomega) {
 			current := readRestore(pitr)
