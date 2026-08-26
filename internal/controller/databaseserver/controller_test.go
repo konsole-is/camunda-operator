@@ -502,13 +502,14 @@ func expectCondition(
 ) *metav1.Condition {
 	GinkgoHelper()
 
+	var condition *metav1.Condition
 	Eventually(func(g Gomega) {
-		condition := conditionOf(server, conditionType)
+		condition = conditionOf(server, conditionType)
 		g.Expect(condition).NotTo(BeNil(), conditionType)
 		g.Expect(condition.Status).To(Equal(status), conditionType+": "+condition.Message)
 	}, timeout, interval).Should(Succeed())
 
-	return conditionOf(server, conditionType)
+	return condition
 }
 
 // expectConditionReason waits until the condition carries the given status
@@ -524,14 +525,15 @@ func expectConditionReason(
 ) *metav1.Condition {
 	GinkgoHelper()
 
+	var condition *metav1.Condition
 	Eventually(func(g Gomega) {
-		condition := conditionOf(server, conditionType)
+		condition = conditionOf(server, conditionType)
 		g.Expect(condition).NotTo(BeNil(), conditionType)
 		g.Expect(condition.Status).To(Equal(status), conditionType+": "+condition.Message)
 		g.Expect(condition.Reason).To(Equal(reason), conditionType+": "+condition.Message)
 	}, timeout, interval).Should(Succeed())
 
-	return conditionOf(server, conditionType)
+	return condition
 }
 
 // archiveBucket creates a namespace of its own and a bucket contract in it. A
