@@ -117,7 +117,6 @@ func TestWorkloadIdentityAnnotations(t *testing.T) {
 						Credentials: &v1.S3Credentials{
 							SecretRef: v1.S3CredentialsSecretRef{
 								Name:               "minio",
-								Namespace:          "camunda",
 								AccessKeyIDKey:     "accessKeyId",
 								SecretAccessKeyKey: "secretAccessKey",
 							},
@@ -152,7 +151,7 @@ func TestHelpersDispatchOnTheDeclaredType(t *testing.T) {
 			BasePath:   "clusters",
 			Auth: v1.GCSStorageAuth{
 				Type:        v1.ObjectStorageAuthTypeCredentials,
-				Credentials: &v1.GCSCredentials{SecretRef: v1.SecretKeyRef{Name: "k", Namespace: "n", Key: "key.json"}},
+				Credentials: &v1.GCSCredentials{SecretRef: v1.LocalSecretKeyRef{Name: "k", Key: "key.json"}},
 			},
 		},
 	}}
@@ -202,7 +201,7 @@ func TestWorkloadIdentityPodLabels(t *testing.T) {
 
 	azure.Spec.AzureBlob.Auth = v1.AzureBlobStorageAuth{
 		Type:        v1.ObjectStorageAuthTypeCredentials,
-		Credentials: &v1.AzureBlobCredentials{SecretRef: v1.SecretKeyRef{Name: "k", Namespace: "n", Key: "accountKey"}},
+		Credentials: &v1.AzureBlobCredentials{SecretRef: v1.LocalSecretKeyRef{Name: "k", Key: "accountKey"}},
 	}
 	assert.Nil(t, azure.WorkloadIdentityPodLabels(), "static credentials need no identity label")
 
@@ -268,7 +267,7 @@ func TestLocationPinsWhereObjectsLive(t *testing.T) {
 	rotated.Spec.S3.Auth = v1.S3StorageAuth{
 		Type: v1.ObjectStorageAuthTypeCredentials,
 		Credentials: &v1.S3Credentials{SecretRef: v1.S3CredentialsSecretRef{
-			Name: "keys", Namespace: "ns", AccessKeyIDKey: "id", SecretAccessKeyKey: "key",
+			Name: "keys", AccessKeyIDKey: "id", SecretAccessKeyKey: "key",
 		}},
 	}
 	assert.Equal(t, s3.Location(), rotated.Location(), "auth changes do not move the objects")

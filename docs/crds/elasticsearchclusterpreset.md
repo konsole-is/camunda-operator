@@ -73,7 +73,7 @@ spec:
     storageSize: "64Gi"
     # string. Optional, default: the default StorageClass of the Kubernetes cluster. StorageClass of the data volumes.
     storageClassName: "ssd"
-    # string. Optional. Name of a cluster-scoped ObjectStorageConfig that holds the snapshot bucket. See ElasticsearchCluster.
+    # string. Optional. Name of an ObjectStorageConfig in the namespace of each cluster that holds the snapshot bucket. See ElasticsearchCluster.
     snapshotStorageRef: "my-backup-bucket"
     # list of objects. Optional. Secrets that ECK loads into the keystore of every node. See ElasticsearchCluster.
     secureSettings: []

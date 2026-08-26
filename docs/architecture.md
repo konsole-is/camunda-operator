@@ -114,6 +114,10 @@ graph LR
 Solid arrows mean "creates". Dotted arrows mean "references".
 `CamundaOptimize` consumes `ManagementAuthConfig`. The [CRD reference](crds/index.md) lists every kind.
 
+A reference by name points into the namespace of the resource that holds it. A `CamundaCluster` in `my-cluster-ns` reads the `SecondaryStorageConfig` of `storageRef` and the `ObjectStorageConfig` of `backupStorageRef` in `my-cluster-ns`. A cluster-scoped kind has no namespace of its own, so a reference to one carries a plain name. `CamundaPlatformConfig`, `ManagementAuthConfig`, and the three preset kinds are cluster-scoped.
+
+The same rule holds for Secrets. A namespaced kind reads its Secrets from its own namespace only, so its `secretRef` blocks name a Secret and its keys, and never a namespace. A cluster-scoped kind names the namespace, because it has none of its own. Only `CamundaPlatformConfig` and `ManagementAuthConfig` do that, and the operator copies the Secrets they name into each namespace that reads them. A preset is cluster-scoped too, and it names no namespace. A `secretRef` on a preset resolves in the namespace of each cluster that inherits it.
+
 The management plane is the one place where a resource reaches across namespaces. A `CamundaManagementCluster` selects `CamundaClusters` across namespaces, bounded by its `namespaceSelector`, and annotates the ones it serves. The rule still holds in the direction that matters: a `CamundaCluster` never references a management plane, and it behaves the same whether one serves it or not.
 
 ## Status conventions

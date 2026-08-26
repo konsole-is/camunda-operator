@@ -317,7 +317,6 @@ var _ = Describe("Database controller", func() {
 		Expect(dbConfig.Spec.ServerRef).To(Equal(server))
 		Expect(dbConfig.Spec.DatabaseName).To(Equal(db.Spec.DatabaseName))
 		Expect(dbConfig.Spec.CredentialsSecretRef.Name).To(Equal(appKey.Name))
-		Expect(dbConfig.Spec.CredentialsSecretRef.Namespace).To(Equal(namespace))
 		Expect(dbConfig.Spec.BackupCredentialsSecretRef).NotTo(BeNil())
 		Expect(dbConfig.Spec.BackupCredentialsSecretRef.Name).To(Equal(backupKey.Name))
 		expectOwnedByDatabase(&dbConfig, db)

@@ -144,7 +144,7 @@ spec:
         key: client-secret
 ```
 
-The Secret can live in any namespace. If it is not in the namespace of a cluster, the operator copies the key into that namespace as the Secret `<name>-camunda-oidc-client`. The operator watches the source Secret. When you change the client secret there, the operator updates the copy and rolls the pods that read it. You do not restart anything.
+The platform config is cluster-scoped, so this Secret can live in any namespace. If it is not in the namespace of a cluster, the operator copies the key into that namespace as the Secret `<name>-camunda-oidc-client`. The operator watches the source Secret. When you change the client secret there, the operator updates the copy and rolls the pods that read it. You do not restart anything.
 
 ### How a token becomes a person or a client
 
@@ -226,7 +226,6 @@ spec:
     audience: "camunda-my-cluster"
     clientSecretRef:
       name: my-cluster-oidc
-      namespace: my-cluster-ns
       key: client-secret
 ```
 
@@ -346,7 +345,6 @@ The identity provider has one confidential client `camunda` with the secret in t
         clientId: "camunda-payments"
         clientSecretRef:
           name: payments-oidc
-          namespace: payments
           key: client-secret
         admin:
           users:

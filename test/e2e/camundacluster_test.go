@@ -193,6 +193,8 @@ var _ = Describe("CamundaCluster", Ordered, Label(utils.LabelCamundaCluster), fu
 		_, err := utils.Kubectl("create", "ns", ccNamespace)
 		Expect(err).NotTo(HaveOccurred())
 
+		createBackupStorage(ccNamespace)
+
 		By("creating the ElasticsearchCluster and waiting for Ready Healthy")
 		Expect(apply(elasticsearch)).To(Succeed())
 		Eventually(func(g Gomega) {
@@ -539,6 +541,8 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, Label(utils.LabelCamundaClu
 		By("creating the test namespace")
 		_, err := utils.Kubectl("create", "ns", ccRDBMSNamespace)
 		Expect(err).NotTo(HaveOccurred())
+
+		createBackupStorage(ccRDBMSNamespace)
 
 		By("deploying PostgreSQL")
 		_, err = utils.Kubectl("apply", "-n", ccRDBMSNamespace, "-f", "test/e2e/testdata/postgres.yaml")

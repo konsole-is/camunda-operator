@@ -39,27 +39,15 @@ import (
 // this type must appear there.
 type MirrorPurpose string
 
-// The purposes of the mirrored Secrets. The license and the identity provider
-// clients are nearly always mirrored ones: CamundaPlatformConfig is
-// cluster-scoped, so one platform config serves every namespace and its
-// references can name only one.
+// The purposes of the mirrored Secrets. Both come from the
+// CamundaPlatformConfig, which is cluster-scoped and names the namespace of
+// its Secrets. Every other reference of a management cluster resolves in the
+// management namespace, so it needs no copy.
 const (
 	// MirrorPurposeLicense names the copy of the Camunda license Secret.
 	MirrorPurposeLicense MirrorPurpose = "license"
 	// MirrorPurposeIdentityClient names the copy of the Management Identity OIDC client secret.
 	MirrorPurposeIdentityClient MirrorPurpose = "identity-client"
-	// MirrorPurposeIdentityDB names the copy of the Management Identity database credentials Secret.
-	MirrorPurposeIdentityDB MirrorPurpose = "identity-db"
-	// MirrorPurposeIdentityAdmin names the copy of the Secret with the password of the first administrator.
-	MirrorPurposeIdentityAdmin MirrorPurpose = "identity-admin"
-	// MirrorPurposeKeycloakAdmin names the copy of the administrator credentials of an external Keycloak.
-	MirrorPurposeKeycloakAdmin MirrorPurpose = "keycloak-admin"
-	// MirrorPurposeKeycloakDB names the copy of the Keycloak database credentials Secret.
-	MirrorPurposeKeycloakDB MirrorPurpose = "keycloak-db"
-	// MirrorPurposeWebModelerDB names the copy of the Web Modeler database credentials Secret.
-	MirrorPurposeWebModelerDB MirrorPurpose = "web-modeler-db"
-	// MirrorPurposeWebModelerMail names the copy of the Web Modeler SMTP credentials Secret.
-	MirrorPurposeWebModelerMail MirrorPurpose = "web-modeler-mail"
 )
 
 // MirrorPurposes is the closed set of purposes that the component renders, in
@@ -67,12 +55,6 @@ const (
 var MirrorPurposes = []MirrorPurpose{
 	MirrorPurposeLicense,
 	MirrorPurposeIdentityClient,
-	MirrorPurposeIdentityDB,
-	MirrorPurposeIdentityAdmin,
-	MirrorPurposeKeycloakAdmin,
-	MirrorPurposeKeycloakDB,
-	MirrorPurposeWebModelerDB,
-	MirrorPurposeWebModelerMail,
 }
 
 // MirroredSecretName returns the name of the copy of a referenced Secret in

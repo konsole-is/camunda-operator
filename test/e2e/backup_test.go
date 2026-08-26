@@ -41,13 +41,14 @@ import (
 
 const (
 	// minioNamespace holds the object store of the backup flows. It is a
-	// namespace of its own: the bucket contract is cluster-scoped, and both
-	// flows write into the one store from their own namespaces, which is how
-	// an installation places a store next to several clusters.
+	// namespace of its own, so every flow reaches one store from a namespace
+	// of its own, which is how an installation places a store next to several
+	// clusters.
 	minioNamespace = "minio-e2e"
-	// backupStorage is the ObjectStorageConfig that both flows write
+	// backupStorage is the ObjectStorageConfig that every flow writes
 	// through: a MinIO bucket addressed with an endpoint, path-style
-	// addressing, and static credentials.
+	// addressing, and static credentials. The kind is namespaced, so each
+	// flow gets a contract of this name in its own namespace.
 	backupStorage = "camunda-backup-e2e"
 	// backupBasePath is the key prefix of the contract. The operator writes
 	// every artifact under <basePath>/<namespace>/<cluster>, so a non-empty
@@ -75,13 +76,40 @@ const (
 // exporting resumed.
 const exporterPhaseRunning = "EXPORTING"
 
-// backupObjectStorage returns the bucket contract of the backup flows. It is
-// the shape that an S3-compatible store needs: the endpoint of the store,
+// createBackupStorage creates the access-key pair and the bucket contract in
+// namespace, and waits for the contract to report Ready. Every cluster that
+// writes to the store needs both of its own: the kind is namespaced, and it
+// names its Secret in its own namespace.
+func createBackupStorage(namespace string) {
+	By("creating the bucket credentials and the ObjectStorageConfig of " + namespace)
+	Expect(apply(minioCredentials(namespace))).To(Succeed(), "Failed to create the bucket credentials")
+	Expect(apply(backupObjectStorage(namespace))).To(Succeed(), "Failed to create the ObjectStorageConfig")
+	Eventually(func(g Gomega) {
+		expectReady(g, oscResource, backupStorage, namespace, v1.ReasonHealthy)
+	}, 2*time.Minute).Should(Succeed())
+}
+
+// minioCredentials returns the access-key pair of the store, in namespace. It
+// holds the same values as the pair that testdata/minio.yaml creates for the
+// server itself.
+func minioCredentials(namespace string) *corev1.Secret {
+	return &corev1.Secret{
+		TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
+		ObjectMeta: metav1.ObjectMeta{Name: utils.MinIOCredentialsSecret, Namespace: namespace},
+		StringData: map[string]string{
+			utils.MinIOAccessKeyIDKey:     utils.MinIOAccessKeyID,
+			utils.MinIOSecretAccessKeyKey: utils.MinIOSecretAccessKey,
+		},
+	}
+}
+
+// backupObjectStorage returns the bucket contract of namespace. It is the
+// shape that an S3-compatible store needs: the endpoint of the store,
 // path-style addressing, and an access-key pair in a Secret.
-func backupObjectStorage() *v1.ObjectStorageConfig {
+func backupObjectStorage(namespace string) *v1.ObjectStorageConfig {
 	return &v1.ObjectStorageConfig{
 		TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "ObjectStorageConfig"},
-		ObjectMeta: metav1.ObjectMeta{Name: backupStorage},
+		ObjectMeta: metav1.ObjectMeta{Name: backupStorage, Namespace: namespace},
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{
@@ -94,7 +122,6 @@ func backupObjectStorage() *v1.ObjectStorageConfig {
 					Credentials: &v1.S3Credentials{
 						SecretRef: v1.S3CredentialsSecretRef{
 							Name:               utils.MinIOCredentialsSecret,
-							Namespace:          minioNamespace,
 							AccessKeyIDKey:     utils.MinIOAccessKeyIDKey,
 							SecretAccessKeyKey: utils.MinIOSecretAccessKeyKey,
 						},

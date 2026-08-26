@@ -138,13 +138,12 @@ func newWorld(mutate ...func(*v1.CamundaCluster)) *world {
 			Type: v1.SecondaryStorageTypeElasticsearch,
 			Elasticsearch: &v1.ElasticsearchStorage{
 				Endpoint: w.search.URL(),
-				CredentialsSecretRef: v1.CredentialsSecretRef{
+				CredentialsSecretRef: v1.LocalCredentialsSecretRef{
 					Name:        credentials.Name,
-					Namespace:   w.namespace,
 					UsernameKey: "username",
 					PasswordKey: "password",
 				},
-				CASecretRef: &v1.SecretKeyRef{Name: ca.Name, Namespace: w.namespace, Key: "ca.crt"},
+				CASecretRef: &v1.LocalSecretKeyRef{Name: ca.Name, Key: "ca.crt"},
 			},
 		},
 	}
@@ -162,7 +161,7 @@ func (w *world) finish(mutate ...func(*v1.CamundaCluster)) {
 	GinkgoHelper()
 
 	w.bucket = &v1.ObjectStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(6)},
+		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(6), Namespace: w.namespace},
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{

@@ -56,9 +56,11 @@ const (
 	// secretRefsField lists the Secrets that the cluster references on its
 	// own: spec.auth.clientSecretRef.
 	secretRefsField = "camundacluster.spec.secretRefs"
-	// presetSecretRefsField lists the Secrets that a preset references:
-	// spec.cluster.auth.clientSecretRef. No other controller reads presets,
-	// so this controller owns the index.
+	// presetSecretRefsField lists the Secret names that a preset references:
+	// spec.cluster.auth.clientSecretRef. A preset is cluster-scoped and its
+	// reference resolves in the namespace of each cluster that inherits it,
+	// so the key is the name alone. No other controller reads presets, so
+	// this controller owns the index.
 	presetSecretRefsField = "camundaclusterpreset.spec.secretRefs"
 )
 
@@ -79,25 +81,30 @@ var indexers = map[string]client.IndexerFunc{
 	},
 	objectStorageRefsField: func(o client.Object) []string {
 		cluster := o.(*v1.CamundaCluster)
-		return nonEmpty(cluster.Spec.BackupStorageRef, cluster.Spec.DocumentStorageRef)
+		refs := nonEmpty(cluster.Spec.BackupStorageRef, cluster.Spec.DocumentStorageRef)
+		for i, ref := range refs {
+			refs[i] = refindex.NamespacedKey(cluster.Namespace, ref)
+		}
+		return refs
 	},
 	secretRefsField: func(o client.Object) []string {
 		cluster := o.(*v1.CamundaCluster)
 		if cluster.Spec.Auth == nil || cluster.Spec.Auth.ClientSecretRef == nil {
 			return nil
 		}
-		ref := cluster.Spec.Auth.ClientSecretRef
-		return []string{refindex.NamespacedKey(ref.Namespace, ref.Name)}
+		return []string{refindex.NamespacedKey(cluster.Namespace, cluster.Spec.Auth.ClientSecretRef.Name)}
 	},
 }
 
-// presetSecretRefs is the index function of presetSecretRefsField.
+// presetSecretRefs is the index function of presetSecretRefsField. A preset is
+// cluster-scoped and its reference resolves in the namespace of each cluster
+// that inherits it, so the key is the Secret name alone.
 func presetSecretRefs(o client.Object) []string {
 	auth := o.(*v1.CamundaClusterPreset).Spec.Cluster.Auth
 	if auth == nil || auth.ClientSecretRef == nil {
 		return nil
 	}
-	return []string{refindex.NamespacedKey(auth.ClientSecretRef.Namespace, auth.ClientSecretRef.Name)}
+	return []string{auth.ClientSecretRef.Name}
 }
 
 // nonEmpty returns the non-empty values.
@@ -132,8 +139,14 @@ func (r *CamundaClusterReconciler) enqueueForSecret() handler.EventHandler {
 			set.addList(ctx, r.Client, client.MatchingFields{PlatformConfigRefField: cfg.Name})
 		}
 
-		for _, preset := range listByIndex[v1.CamundaClusterPresetList](ctx, r.Client, presetSecretRefsField, key).Items {
-			set.addList(ctx, r.Client, client.MatchingFields{PresetRefField: preset.Name})
+		for _, preset := range listByIndex[v1.CamundaClusterPresetList](
+			ctx, r.Client, presetSecretRefsField, o.GetName(),
+		).Items {
+			set.addList(
+				ctx, r.Client,
+				client.InNamespace(o.GetNamespace()),
+				client.MatchingFields{PresetRefField: preset.Name},
+			)
 		}
 
 		for _, binding := range listByIndex[v1.SecondaryStorageConfigList](
@@ -153,7 +166,9 @@ func (r *CamundaClusterReconciler) enqueueForSecret() handler.EventHandler {
 		for _, bucket := range listByIndex[v1.ObjectStorageConfigList](
 			ctx, r.Client, refindex.ObjectStorageConfigSecretField, key,
 		).Items {
-			set.addList(ctx, r.Client, client.MatchingFields{objectStorageRefsField: bucket.Name})
+			set.addList(ctx, r.Client, client.MatchingFields{
+				objectStorageRefsField: refindex.NamespacedKey(bucket.Namespace, bucket.Name),
+			})
 		}
 
 		return set.requests()
@@ -344,7 +359,7 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		).
 		Watches(
 			&v1.ObjectStorageConfig{},
-			refindex.Enqueue(cached, clusters, objectStorageRefsField, refindex.ObjectName),
+			refindex.Enqueue(cached, clusters, objectStorageRefsField, refindex.ObjectNamespacedName),
 		).
 		Watches(&v1.DatabaseConfig{}, r.enqueueInNamespace()).
 		Watches(&v1.DatabaseServerConfig{}, r.enqueueAll()).

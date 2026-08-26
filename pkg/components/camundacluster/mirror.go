@@ -39,21 +39,13 @@ import (
 // Secret, so every constant of this type must appear there.
 type MirrorPurpose string
 
-// The purposes of the mirrored Secrets.
+// The purposes of the mirrored Secrets. Both come from the
+// CamundaPlatformConfig, which is cluster-scoped and names the namespace of
+// its Secrets. Every other reference of a cluster resolves in the cluster
+// namespace, so it needs no copy.
 const (
-	MirrorPurposeLicense       MirrorPurpose = "license"
-	MirrorPurposeOIDCClient    MirrorPurpose = "oidc-client"
-	MirrorPurposeAuthClient    MirrorPurpose = "auth-client"
-	MirrorPurposeESCredentials MirrorPurpose = "es-credentials"
-	MirrorPurposeESCA          MirrorPurpose = "es-ca"
-	MirrorPurposeDBCredentials MirrorPurpose = "db-credentials"
-	// MirrorPurposeBackupCredentials is the static credentials of the backup
-	// bucket, for a contract that authenticates with keys instead of a
-	// workload identity.
-	MirrorPurposeBackupCredentials MirrorPurpose = "backup-credentials"
-	// MirrorPurposeDumpCredentials is the backup user of the logical
-	// database, which the dump Job of a LogicalBackupRDBMS mounts.
-	MirrorPurposeDumpCredentials MirrorPurpose = "dump-credentials"
+	MirrorPurposeLicense    MirrorPurpose = "license"
+	MirrorPurposeOIDCClient MirrorPurpose = "oidc-client"
 )
 
 // MirrorPurposes is the closed set of purposes that the component renders, in
@@ -61,12 +53,6 @@ const (
 var MirrorPurposes = []MirrorPurpose{
 	MirrorPurposeLicense,
 	MirrorPurposeOIDCClient,
-	MirrorPurposeAuthClient,
-	MirrorPurposeESCredentials,
-	MirrorPurposeESCA,
-	MirrorPurposeDBCredentials,
-	MirrorPurposeBackupCredentials,
-	MirrorPurposeDumpCredentials,
 }
 
 // mirroredComponentName is the ocf name of the mirrored Secrets component.

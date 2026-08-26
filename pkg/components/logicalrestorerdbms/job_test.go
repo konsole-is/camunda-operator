@@ -99,7 +99,6 @@ func s3Credentials() v1.S3StorageAuth {
 		Credentials: &v1.S3Credentials{
 			SecretRef: v1.S3CredentialsSecretRef{
 				Name:               "minio-credentials",
-				Namespace:          "camunda",
 				AccessKeyIDKey:     "accessKeyId",
 				SecretAccessKeyKey: "secretAccessKey",
 			},

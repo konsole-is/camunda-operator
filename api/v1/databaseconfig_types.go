@@ -32,11 +32,11 @@ type DatabaseConfigSpec struct {
 	DatabaseName string `json:"databaseName"`
 	// CredentialsSecretRef names an application user with read/write access to
 	// the database.
-	CredentialsSecretRef CredentialsSecretRef `json:"credentialsSecretRef"`
+	CredentialsSecretRef LocalCredentialsSecretRef `json:"credentialsSecretRef"`
 	// BackupCredentialsSecretRef names a separate user with dump/restore
 	// privileges, used by the backup and restore controllers.
 	// +optional
-	BackupCredentialsSecretRef *CredentialsSecretRef `json:"backupCredentialsSecretRef,omitempty"`
+	BackupCredentialsSecretRef *LocalCredentialsSecretRef `json:"backupCredentialsSecretRef,omitempty"`
 }
 
 // DatabaseConfigStatus is the observed validation state of the contract.

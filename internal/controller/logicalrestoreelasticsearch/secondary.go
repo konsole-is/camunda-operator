@@ -207,7 +207,7 @@ func (r *Reconciler) ensureRepository(
 		return repository, nil, nil
 	}
 
-	bucket, failure, err := r.backupBucket(ctx, resolved.backup.Bucket)
+	bucket, failure, err := r.backupBucket(ctx, resolved.cluster.Namespace, resolved.backup.Bucket)
 	if err != nil || failure != nil {
 		return "", failure, err
 	}

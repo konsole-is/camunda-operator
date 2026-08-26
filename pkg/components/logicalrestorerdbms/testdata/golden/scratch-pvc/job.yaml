@@ -71,7 +71,7 @@ spec:
         - name: UPLOAD_STORAGE_NAME
           value: my-backup-config
         - name: UPLOAD_STORAGE_SPEC
-          value: '{"type":"S3","s3":{"bucketName":"camunda-backups","basePath":"clusters","region":"eu-west-1","endpoint":"http://minio.minio.svc:9000","auth":{"type":"credentials","credentials":{"secretRef":{"name":"minio-credentials","namespace":"camunda","accessKeyIdKey":"accessKeyId","secretAccessKeyKey":"secretAccessKey"}}}}}'
+          value: '{"type":"S3","s3":{"bucketName":"camunda-backups","basePath":"clusters","region":"eu-west-1","endpoint":"http://minio.minio.svc:9000","auth":{"type":"credentials","credentials":{"secretRef":{"name":"minio-credentials","accessKeyIdKey":"accessKeyId","secretAccessKeyKey":"secretAccessKey"}}}}}'
         - name: UPLOAD_CREDENTIAL_KEYS
           value: accessKeyId,secretAccessKey
         - name: UPLOAD_CREDENTIAL_0

@@ -61,7 +61,7 @@ func ElasticsearchAdmin(
 	secret, message, err := secretref.Get(
 		ctx,
 		reader,
-		types.NamespacedName{Namespace: creds.Namespace, Name: creds.Name},
+		types.NamespacedName{Namespace: storage.Namespace, Name: creds.Name},
 		creds.UsernameKey,
 		creds.PasswordKey,
 	)
@@ -77,7 +77,7 @@ func ElasticsearchAdmin(
 		caSecret, message, err := secretref.Get(
 			ctx,
 			reader,
-			types.NamespacedName{Namespace: es.CASecretRef.Namespace, Name: es.CASecretRef.Name},
+			types.NamespacedName{Namespace: storage.Namespace, Name: es.CASecretRef.Name},
 			es.CASecretRef.Key,
 		)
 		if err != nil {
@@ -103,7 +103,7 @@ func ElasticsearchAdmin(
 			Reason: v1.ReasonInvalidReference,
 			Message: fmt.Sprintf(
 				"Secret %s/%s key %q of SecondaryStorageConfig %s/%s is not a usable CA bundle: %v",
-				es.CASecretRef.Namespace, es.CASecretRef.Name, es.CASecretRef.Key,
+				storage.Namespace, es.CASecretRef.Name, es.CASecretRef.Key,
 				storage.Namespace, storage.Name, err,
 			),
 		}, nil

@@ -117,7 +117,6 @@ spec:
       realm: "camunda-platform"
       adminCredentialsSecretRef:
         name: "my-keycloak-admin"
-        namespace: "my-management-ns"
         usernameKey: "username"
         passwordKey: "password"
   optimize:
@@ -129,7 +128,7 @@ spec:
 
 `realm` defaults to `camunda-platform`. The realm lands in the issuer, the token, and the JWKS path that Management Identity builds. It holds letters, digits, dots, hyphens, and underscores only, and it starts and ends with a letter or a digit.
 
-`adminCredentialsSecretRef` names the Keycloak administrator that Management Identity bootstraps the realm with. The Secret can live in any namespace. A pod reads a Secret of its own namespace only, so the operator copies it into the namespace of this resource.
+`adminCredentialsSecretRef` names the Keycloak administrator that Management Identity bootstraps the realm with. The Secret lives in the namespace of this resource.
 
 ### Your own OIDC provider
 
@@ -315,7 +314,6 @@ spec:
       fromName: "Camunda"
       credentialsSecretRef:
         name: "my-smtp-credentials"
-        namespace: "my-management-ns"
         usernameKey: "username"
         passwordKey: "password"
   # ... the rest of your management cluster
@@ -512,7 +510,7 @@ Deletion keeps:
 
 - The PostgreSQL databases of Management Identity, Keycloak, and Web Modeler, and everything in them. They belong to the [DatabaseConfig](databaseconfig.md) resources, not to this one.
 - Every user, group, and client in Keycloak, including the first administrator. Deleting the `Keycloak` resource removes the pods, not the database behind them.
-- The Secrets that you referenced. Only the copies in the management namespace go.
+- The Secrets that you referenced. Only the copies of the Secrets that the [CamundaPlatformConfig](camundaplatformconfig.md) names go.
 - The orchestration clusters themselves. They keep running, and nothing else about them changes. They roll their pods once, when the Console settings go.
 
 ## Status
@@ -523,7 +521,7 @@ A condition reads `True` under the reasons `Healthy`, `Disabled`, and `Suspended
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
-| `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a referenced Secret from another namespace is applied, or no such Secret exists. | Nothing. |
+| `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a Secret that the [CamundaPlatformConfig](camundaplatformconfig.md) names is applied, or no such Secret exists. | Nothing. |
 | `SecretsReady` | `Healthy` / `Disabled` | The generated Secrets are applied, or the mode generates none (`oidc`). | Nothing. |
 | `KeycloakReady` | `Healthy` | The Keycloak Operator reports the Keycloak ready. | Nothing. |
 | `KeycloakReady` | absent | The Kubernetes cluster does not serve the `Keycloak` kind, in any mode. | Install the Keycloak Operator if you use the `keycloak` mode; nothing otherwise. |
@@ -629,11 +627,9 @@ spec:
       adminCredentialsSecretRef:
         # string. Required. Name of the Secret.
         name: "my-keycloak-admin"
-        # string. Required. Namespace of the Secret. Any namespace is allowed.
-        namespace: "my-management-ns"
-        # string. Required. Key that holds the user name.
+        # string. Optional, default: username. Key that holds the user name.
         usernameKey: "username"
-        # string. Required. Key that holds the password.
+        # string. Optional, default: password. Key that holds the password.
         passwordKey: "password"
     # object. Optional. Connect to the identity provider of the referenced CamundaPlatformConfig. It carries no fields.
     oidc: {}
@@ -657,7 +653,6 @@ spec:
       # object. Optional, forbidden in the oidc mode. Secret key with the password of the first Keycloak user. Unset means a generated password.
       passwordSecretRef:
         name: "my-identity-admin"
-        namespace: "my-management-ns"
         key: "password"
       # string. Optional, required with spec.webModeler in the keycloak modes. Email address of the first Keycloak user.
       # Web Modeler needs one for every person who signs in.
@@ -713,7 +708,6 @@ spec:
       # object. Optional. Secret with the user and the password of the SMTP server. Unset means a server that needs no credentials.
       credentialsSecretRef:
         name: "my-smtp-credentials"
-        namespace: "my-management-ns"
         usernameKey: "username"
         passwordKey: "password"
     # object. Optional. Workload fields of the application process. It takes
@@ -810,7 +804,6 @@ spec:
       fromName: "Camunda"
       credentialsSecretRef:
         name: "my-smtp-credentials"
-        namespace: "my-management-ns"
         usernameKey: "username"
         passwordKey: "password"
   optimize:

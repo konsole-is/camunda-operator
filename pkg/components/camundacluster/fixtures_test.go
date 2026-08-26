@@ -35,8 +35,8 @@ func mediumPreset() *v1.CamundaClusterPresetSpec {
 		Auth: &v1.ClusterAuthSpec{
 			ClientID: "medium-clusters",
 			Audience: "medium-clusters",
-			ClientSecretRef: &v1.SecretKeyRef{
-				Name: "medium-clusters-oidc-secret", Namespace: "camunda-system", Key: "client-secret",
+			ClientSecretRef: &v1.LocalSecretKeyRef{
+				Name: "medium-clusters-oidc-secret", Key: "client-secret",
 			},
 		},
 		ExtraEnv:       []corev1.EnvVar{{Name: "TZ", Value: "UTC"}},
@@ -132,8 +132,8 @@ func fixtureDefault(t *testing.T) Input {
 			LicenseSecretRef: &v1.SecretKeyRef{Name: "camunda-license", Namespace: "camunda-system", Key: "key"},
 			ImageRegistry:    "registry.example.com",
 		}
-		in.Storage.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
-			Name: "my-cluster-es-es-http-certs-public", Namespace: "my-cluster-ns", Key: "ca.crt",
+		in.Storage.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
+			Name: "my-cluster-es-es-http-certs-public", Key: "ca.crt",
 		}
 		in.HashInputs = []string{
 			"Secret/my-cluster-ns/es-user=12",
@@ -175,8 +175,8 @@ func fixtureRDBMS(t *testing.T) Input {
 				Host:     "my-db-rw.my-cluster-ns.svc",
 				Port:     5432,
 				Database: "camunda",
-				Credentials: v1.CredentialsSecretRef{
-					Name: "camunda-db-user", Namespace: "my-cluster-ns", UsernameKey: "username", PasswordKey: "password",
+				Credentials: v1.LocalCredentialsSecretRef{
+					Name: "camunda-db-user", UsernameKey: "username", PasswordKey: "password",
 				},
 			},
 		}
@@ -195,10 +195,9 @@ func fixtureOIDC(t *testing.T) Input {
 		in.Cluster.Spec.ExternalURL = "https://my-cluster.camunda.example.com"
 		in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{
 			ClientID: "my-cluster-client",
-			ClientSecretRef: &v1.SecretKeyRef{
-				Name:      "my-cluster-oidc-secret",
-				Namespace: "my-cluster-ns",
-				Key:       "client-secret",
+			ClientSecretRef: &v1.LocalSecretKeyRef{
+				Name: "my-cluster-oidc-secret",
+				Key:  "client-secret",
 			},
 			Admin: &v1.ClusterAdminSpec{
 				Users:   []string{"ada@example.com"},
@@ -268,8 +267,8 @@ func fixtureBackupRDBMS(t *testing.T) Input {
 				Host:     "my-db-rw.my-cluster-ns.svc",
 				Port:     5432,
 				Database: "camunda",
-				Credentials: v1.CredentialsSecretRef{
-					Name: "camunda-db-user", Namespace: "my-cluster-ns", UsernameKey: "username", PasswordKey: "password",
+				Credentials: v1.LocalCredentialsSecretRef{
+					Name: "camunda-db-user", UsernameKey: "username", PasswordKey: "password",
 				},
 			},
 		}

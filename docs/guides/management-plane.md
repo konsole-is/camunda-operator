@@ -164,7 +164,6 @@ spec:
       realm: "camunda-platform"
       adminCredentialsSecretRef:
         name: "my-keycloak-admin"
-        namespace: "my-management-ns"
         usernameKey: "username"
         passwordKey: "password"
   identity:
@@ -309,7 +308,6 @@ spec:
       fromAddress: "noreply@example.com"
       credentialsSecretRef:
         name: "my-smtp-credentials"
-        namespace: "my-management-ns"
         usernameKey: "username"
         passwordKey: "password"
   # ... the rest of your management cluster

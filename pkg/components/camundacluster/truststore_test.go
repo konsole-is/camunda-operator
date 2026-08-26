@@ -72,8 +72,8 @@ func TestTrustStoreFollowsTheCASecretRef(t *testing.T) {
 
 	in := newInput(t, func(in *Input) {
 		in.Storage.Elasticsearch.Endpoint = "https://es.example.com:9200"
-		in.Storage.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
-			Name: "corporate-ca", Namespace: "my-cluster-ns", Key: "bundle.pem",
+		in.Storage.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
+			Name: "corporate-ca", Key: "bundle.pem",
 		}
 	})
 
@@ -115,8 +115,8 @@ func TestTrustStoreOptionsSurviveAUserOverride(t *testing.T) {
 	t.Parallel()
 
 	in := newInput(t, func(in *Input) {
-		in.Storage.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
-			Name: "es-ca", Namespace: "my-cluster-ns", Key: "ca.crt",
+		in.Storage.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
+			Name: "es-ca", Key: "ca.crt",
 		}
 		in.Cluster.Spec.ExtraEnv = []corev1.EnvVar{{Name: "JAVA_TOOL_OPTIONS", Value: "-Xmx6g"}}
 		in.Effective = NewEffective(in.Cluster.Spec)
@@ -136,8 +136,8 @@ func TestTrustStoreOptionsYieldToAUserTrustStore(t *testing.T) {
 
 	own := "-Djavax.net.ssl.trustStore=/my/own.jks -Djavax.net.ssl.trustStorePassword=hunter2"
 	in := newInput(t, func(in *Input) {
-		in.Storage.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
-			Name: "es-ca", Namespace: "my-cluster-ns", Key: "ca.crt",
+		in.Storage.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
+			Name: "es-ca", Key: "ca.crt",
 		}
 		in.Cluster.Spec.ExtraEnv = []corev1.EnvVar{{Name: "JAVA_TOOL_OPTIONS", Value: own}}
 		in.Effective = NewEffective(in.Cluster.Spec)
@@ -157,8 +157,8 @@ func TestTrustStoreOptionsIgnoreAPasswordOnItsOwn(t *testing.T) {
 	t.Parallel()
 
 	in := newInput(t, func(in *Input) {
-		in.Storage.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
-			Name: "es-ca", Namespace: "my-cluster-ns", Key: "ca.crt",
+		in.Storage.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
+			Name: "es-ca", Key: "ca.crt",
 		}
 		in.Cluster.Spec.ExtraEnv = []corev1.EnvVar{
 			{Name: "JAVA_TOOL_OPTIONS", Value: "-Djavax.net.ssl.trustStorePassword=hunter2"},
@@ -178,8 +178,8 @@ func TestReferencedJavaToolOptionsNamesEveryProcess(t *testing.T) {
 	t.Parallel()
 
 	in := newInput(t, func(in *Input) {
-		in.Storage.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
-			Name: "es-ca", Namespace: "my-cluster-ns", Key: "ca.crt",
+		in.Storage.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
+			Name: "es-ca", Key: "ca.crt",
 		}
 		in.Cluster.Spec.ExtraEnv = []corev1.EnvVar{{
 			Name: "JAVA_TOOL_OPTIONS",
@@ -211,8 +211,8 @@ func TestReferencedJavaToolOptionsIsEmptyWhenTheOptionsLand(t *testing.T) {
 	t.Parallel()
 
 	withCA := newInput(t, func(in *Input) {
-		in.Storage.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
-			Name: "es-ca", Namespace: "my-cluster-ns", Key: "ca.crt",
+		in.Storage.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
+			Name: "es-ca", Key: "ca.crt",
 		}
 		in.Cluster.Spec.ExtraEnv = []corev1.EnvVar{{Name: "JAVA_TOOL_OPTIONS", Value: "-Xmx6g"}}
 		in.Effective = NewEffective(in.Cluster.Spec)
@@ -229,8 +229,8 @@ func TestReferencedJavaToolOptionsFollowsTheLastEntry(t *testing.T) {
 	t.Parallel()
 
 	in := newInput(t, func(in *Input) {
-		in.Storage.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
-			Name: "es-ca", Namespace: "my-cluster-ns", Key: "ca.crt",
+		in.Storage.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
+			Name: "es-ca", Key: "ca.crt",
 		}
 		in.Cluster.Spec.ExtraEnv = []corev1.EnvVar{{
 			Name: "JAVA_TOOL_OPTIONS",

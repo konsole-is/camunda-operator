@@ -40,14 +40,14 @@ type ElasticsearchStorage struct {
 	Endpoint string `json:"endpoint"`
 	// CredentialsSecretRef names a basic-auth user with read/write access to
 	// the Camunda indices.
-	CredentialsSecretRef CredentialsSecretRef `json:"credentialsSecretRef"`
+	CredentialsSecretRef LocalCredentialsSecretRef `json:"credentialsSecretRef"`
 	// CASecretRef names the CA bundle consumers use to verify the endpoint's
 	// TLS certificate. Set it when the endpoint serves a certificate not
 	// signed by a well-known CA, such as the self-signed certificate of an
 	// ECK-managed cluster. Omit it for publicly trusted endpoints; it is only
 	// valid with an https endpoint.
 	// +optional
-	CASecretRef *SecretKeyRef `json:"caSecretRef,omitempty"`
+	CASecretRef *LocalSecretKeyRef `json:"caSecretRef,omitempty"`
 	// SnapshotRepository names the snapshot repository, registered in this
 	// Elasticsearch cluster, that backups write to. An ElasticsearchCluster
 	// with a snapshotStorageRef registers the repository and fills this field

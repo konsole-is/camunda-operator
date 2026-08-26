@@ -107,9 +107,9 @@ spec:
                     type: string
                   objectStorageRef:
                     description: |-
-                      ObjectStorageRef names a cluster-scoped ObjectStorageConfig. The
-                      operator writes the archive under a prefix of that bucket that holds
-                      this server alone.
+                      ObjectStorageRef names an ObjectStorageConfig in the namespace of this
+                      server. The operator writes the archive under a prefix of that bucket
+                      that holds this server alone.
                     maxLength: 253
                     pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                     type: string
@@ -1012,8 +1012,8 @@ spec:
                           type: string
                         objectStorageRef:
                           description: |-
-                            ObjectStorageRef is the cluster-scoped ObjectStorageConfig that holds
-                            this archive. A server that is pointed at another bucket closes this
+                            ObjectStorageRef is the ObjectStorageConfig, in the namespace of this
+                            server, that holds this archive. A server that is pointed at another bucket closes this
                             record and opens one of its own, so every interval names the bucket a
                             restore of that interval has to read.
                           type: string
@@ -1171,8 +1171,8 @@ spec:
                         type: string
                       objectStorageRef:
                         description: |-
-                          ObjectStorageRef is the cluster-scoped ObjectStorageConfig that the
-                          archive lives in.
+                          ObjectStorageRef is the ObjectStorageConfig, in the namespace of this
+                          server, that the archive lives in.
                         type: string
                       retentionPeriodDays:
                         description: |-
