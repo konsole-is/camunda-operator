@@ -240,9 +240,9 @@ func RecoveryCluster(
 	}
 
 	recovered := rendered.(*cnpgv1.Cluster)
-	// A render carries no kind, and a server-side apply is refused without
-	// one. The components apply through the framework, which fills it in;
-	// this one is applied by the controller itself.
+	// A render carries no kind. The components go through the framework,
+	// which fills the kind in on the way out; the controller writes this one
+	// itself, and every reader of it reads a whole object.
 	recovered.TypeMeta = metav1.TypeMeta{
 		APIVersion: cnpgv1.SchemeGroupVersion.String(),
 		Kind:       "Cluster",

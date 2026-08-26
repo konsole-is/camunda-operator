@@ -873,12 +873,9 @@ func (r *DatabaseServerReconciler) abandonRecovery(
 // requested point. It carries the owner reference of the server, so the
 // recovery of a server that is deleted goes with it.
 //
-// The caller read the name and found it free. A create is what keeps that
-// answer true: the name is derived, so anybody can take it in between, and an
-// apply of this cluster would write the recovery over the database that the
-// other object holds and take it over. A name that was taken in between is
-// therefore not an error of this look. The next look reads the object and the
-// ownership test in advanceRecovery decides what it is.
+// A name that another object already holds is not an error of this look. The
+// next look reads that object, and the ownership test in advanceRecovery
+// decides what it is.
 func (r *DatabaseServerReconciler) createRecoveryCluster(
 	ctx context.Context,
 	server *v1.DatabaseServer,
@@ -897,6 +894,10 @@ func (r *DatabaseServerReconciler) createRecoveryCluster(
 		return fmt.Errorf("setting the owner of the recovery cluster %q: %w", recovered.Name, err)
 	}
 
+	// A create, not an apply. The caller read this name and found it free, and
+	// the name is derived, so anybody can take it in between. A forced apply
+	// would write the recovery over the database the other object holds, and
+	// take the object over as well.
 	if err := r.Create(ctx, recovered, components.RecoveryFieldManager); err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			return nil
