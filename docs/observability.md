@@ -1,6 +1,6 @@
 # Observability
 
-The manager serves Prometheus metrics on `/metrics`. Two dashboards and three sets of alert rules ship with the operator. Together they answer the two questions of the person on call: is the operator healthy, and which custom resource is not `Ready`.
+The manager serves Prometheus metrics on `/metrics`. Two dashboards and three sets of alert rules ship with the operator. Together they answer the two questions of the person on call: is the operator healthy, and which custom resources are not `Ready`.
 
 ## Metrics
 
