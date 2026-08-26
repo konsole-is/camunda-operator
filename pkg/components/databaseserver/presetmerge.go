@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/robfig/cron/v3"
+
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
@@ -29,6 +31,14 @@ import (
 // until the vendor ends support
 // (https://docs.camunda.io/docs/self-managed/concepts/databases/relational-db/rdbms-support-policy/).
 const MinimumPostgresMajor = 14
+
+// baseBackupScheduleParser reads a base backup schedule with the field set
+// that CloudNativePG gives its own parser: six fields with the seconds first,
+// a day of the week that may be left out, and the @ descriptors.
+var baseBackupScheduleParser = cron.NewParser(
+	cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.DowOptional |
+		cron.Descriptor,
+)
 
 // MergePreset resolves a DatabaseServer spec against its preset baseline. A
 // field set inline overrides the value of the preset for that field
@@ -99,10 +109,12 @@ func MergePreset(spec v1.DatabaseServerSpec, preset *v1.DatabaseServerPresetSpec
 
 // ValidateMerged checks the preset-merged spec for the rules that admission
 // cannot enforce. Version, storageSize, and databaseServerConfig must be
-// present, and the version must meet the Camunda 8.9 floor. Admission cannot
-// see version and storageSize because a preset may supply them, and it cannot
-// range-check a version because the pattern only fixes the shape. The error
-// names every missing field and, when set, the rejected version.
+// present, the version must meet the Camunda 8.9 floor, and the base backup
+// schedule must be one CloudNativePG can read. Admission cannot see version
+// and storageSize because a preset may supply them, it cannot range-check a
+// version because the pattern only fixes the shape, and it cannot compare the
+// two ends of a range in a schedule. The error names every missing field and,
+// when set, the rejected version and the rejected schedule.
 func ValidateMerged(spec v1.DatabaseServerSpec) error {
 	var problems []string
 
@@ -126,8 +138,33 @@ func ValidateMerged(spec v1.DatabaseServerSpec) error {
 		}
 	}
 
+	if spec.Archive != nil && spec.Archive.BaseBackupSchedule != "" {
+		if err := checkBaseBackupSchedule(spec.Archive.BaseBackupSchedule); err != nil {
+			problems = append(problems, err.Error())
+		}
+	}
+
 	if len(problems) > 0 {
 		return fmt.Errorf("%s", strings.Join(problems, "; "))
+	}
+
+	return nil
+}
+
+// checkBaseBackupSchedule rejects a schedule that CloudNativePG cannot read.
+//
+// The pattern on the field bounds every field of the schedule, and a pattern
+// cannot compare the two ends of a range. A range that reads downward, such as
+// FRI-MON or 23-1, therefore passes admission. CloudNativePG refuses it when
+// it reads the ScheduledBackup, so base backups stop while the server goes on
+// offering point-in-time recovery. Reading it here puts the refusal on Ready,
+// before anything is applied.
+func checkBaseBackupSchedule(schedule string) error {
+	if _, err := baseBackupScheduleParser.Parse(schedule); err != nil {
+		return fmt.Errorf(
+			"archive.baseBackupSchedule %q is not a schedule CloudNativePG can read: %w",
+			schedule, err,
+		)
 	}
 
 	return nil

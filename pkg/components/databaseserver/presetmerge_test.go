@@ -142,6 +142,18 @@ func TestMergePresetWithoutAPresetReturnsTheSpec(t *testing.T) {
 	assert.Equal(t, spec, MergePreset(spec, nil))
 }
 
+// scheduled sets the archive of the spec to one that takes its base backups
+// on schedule.
+func scheduled(schedule string) func(*v1.DatabaseServerSpec) {
+	return func(s *v1.DatabaseServerSpec) {
+		s.Archive = &v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    "bucket",
+			RetentionPeriodDays: 30,
+			BaseBackupSchedule:  schedule,
+		}
+	}
+}
+
 func TestValidateMerged(t *testing.T) {
 	t.Parallel()
 
@@ -188,6 +200,25 @@ func TestValidateMerged(t *testing.T) {
 		},
 		{name: "the oldest supported major", mutate: func(s *v1.DatabaseServerSpec) { s.Version = "14" }},
 		{name: "a major newer than this operator knows", mutate: func(s *v1.DatabaseServerSpec) { s.Version = "19" }},
+
+		// The pattern on the field cannot compare the two ends of a range, so
+		// a range that reads downward reaches here. CloudNativePG refuses it,
+		// and base backups stop while the server offers point-in-time
+		// recovery from an archive nothing writes a base backup to.
+		{
+			name:    "a day of the week range that reads downward",
+			mutate:  scheduled("0 0 2 * * FRI-MON"),
+			wantErr: `archive.baseBackupSchedule "0 0 2 * * FRI-MON" is not a schedule CloudNativePG can read`,
+		},
+		{
+			name:    "an hour range that reads downward",
+			mutate:  scheduled("0 0 23-1 * * *"),
+			wantErr: `archive.baseBackupSchedule "0 0 23-1 * * *" is not a schedule CloudNativePG can read`,
+		},
+		{name: "the same range read upward", mutate: scheduled("0 0 2 * * MON-FRI")},
+		{name: "the shipped default", mutate: scheduled("0 0 2 * * *")},
+		{name: "a descriptor", mutate: scheduled("@every 6h")},
+		{name: "no archive at all", mutate: func(s *v1.DatabaseServerSpec) { s.Archive = nil }},
 	}
 
 	for _, tt := range tests {

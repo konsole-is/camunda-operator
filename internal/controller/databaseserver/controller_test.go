@@ -1756,6 +1756,35 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// The pattern on the field cannot compare the two ends of a range, so a
+	// range that reads downward passes admission. CloudNativePG refuses the
+	// ScheduledBackup it reaches, which stops base backups while the contract
+	// goes on advertising point-in-time recovery.
+	It("reports InvalidReference for a base backup schedule that CloudNativePG refuses", func() {
+		bucket := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 30,
+			BaseBackupSchedule:  "0 0 2 * * FRI-MON",
+		})
+
+		Eventually(func(g Gomega) {
+			ready := conditionOf(server, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+			g.Expect(ready.Message).To(ContainSubstring("0 0 2 * * FRI-MON"))
+		}, timeout, interval).Should(Succeed())
+
+		// The refusal comes before anything is applied, so no schedule of that
+		// server reaches the cluster at all.
+		key := client.ObjectKey{Namespace: server.Namespace, Name: server.Name}
+		Consistently(func(g Gomega) {
+			err := k8sClient.Get(ctx, key, &cnpgv1.ScheduledBackup{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the schedule was applied")
+		}, "1s", interval).Should(Succeed())
+	})
+
 	It("reports InvalidReference for a preset that does not exist", func() {
 		server := serverInNamespace(nil)
 
