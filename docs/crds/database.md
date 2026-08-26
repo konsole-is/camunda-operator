@@ -47,7 +47,9 @@ If `spec.serverRef` names no `DatabaseServerConfig` in this namespace, `Ready` i
 
 One `Database` owns one logical database name on one PostgreSQL server. The server is the instance that the contract reaches, not the contract itself: two `DatabaseServerConfig` objects that describe one instance under different hosts are one server here. The operator reads the identity of the instance from `status.systemIdentifier` of the contract.
 
-The claim therefore crosses namespaces. The first `Database` to claim a logical database name on an instance owns it. A `Database` of any namespace that claims the same name after that reports `InvalidReference`, names the holder, and runs no SQL. The creation time decides only while no `Database` holds the name yet. Between two `Database` resources that both wait for it, the older one goes first. On an equal creation timestamp, the first `<namespace>/<name>` in alphabetical order goes first.
+The claim therefore crosses namespaces. The first `Database` to claim a logical database name on an instance owns it. A `Database` of any namespace that claims the same name after that reports `InvalidReference`, names the holder, and runs no SQL.
+
+While no `Database` holds the name, the operator prefers the older `Database`. On an equal creation timestamp it prefers the first `<namespace>/<name>` in alphabetical order. This is a preference, not a guarantee. Two `Database` resources that reach a free name at the same moment can take it in either order. Give each `Database` its own `databaseName` when you need a known owner.
 
 A claim stays with its holder. An older `Database` whose contract reaches the same server later does not take the logical database from the `Database` that runs on it. The holder owns the SQL roles, and the passwords in its Secrets are the ones the server accepts.
 

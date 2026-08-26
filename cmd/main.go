@@ -442,7 +442,10 @@ func main() {
 }
 
 // podNamespace reads the namespace of the Pod that the manager runs in. It
-// returns the empty string outside a cluster, where the file is absent.
+// returns the empty string when it cannot read the file. That covers a
+// manager outside a cluster, where the file is absent, and a file that the
+// manager may not read. The caller then asks for the flag or the environment
+// variable.
 func podNamespace() string {
 	content, err := os.ReadFile(serviceAccountNamespaceFile)
 	if err != nil {
