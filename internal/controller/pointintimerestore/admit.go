@@ -622,10 +622,11 @@ func (r *Reconciler) dedicatedServer(
 	if len(unplaced) > 0 {
 		return logicalbackup.InvalidReference(
 			"the DatabaseServerConfig of the Database resources %s publishes no system identifier "+
-				"for the endpoint that its spec names now, so the operator cannot tell whether "+
-				"they live on the server that %s describes. Point-in-time recovery rolls back the "+
-				"whole server. Wait until every DatabaseServerConfig reports Ready, or remove the "+
-				"Database resources whose server no longer exists",
+				"that the operator can trust for the endpoint and the credentials its spec names "+
+				"now, so the operator cannot tell whether they live on the server that %s "+
+				"describes. Point-in-time recovery rolls back the whole server. Wait until every "+
+				"DatabaseServerConfig is probed for the spec it has now, or remove the Database "+
+				"resources whose server no longer exists",
 			strings.Join(unplaced, ", "), key,
 		), nil
 	}
