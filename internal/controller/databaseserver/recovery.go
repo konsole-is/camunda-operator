@@ -731,6 +731,16 @@ func (r *DatabaseServerReconciler) completeRecovery(
 		)
 	}
 
+	// A cluster that carries a finalizer keeps reporting the phase it last
+	// reached while it goes, and that phase can be healthy. Completing on it
+	// publishes a cluster that is on its way out and deletes the one the
+	// server came from, which leaves the server with no cluster at all.
+	if !recovered.DeletionTimestamp.IsZero() {
+		return false, r.abandonRecovery(
+			ctx, server, contract, request, fmt.Sprintf("%s is being removed", key),
+		)
+	}
+
 	// The ownership was tested when the cluster was built, and the name is
 	// derived, so it is tested again on what is there now. A cluster that
 	// somebody removed and created again under this name holds a database of
