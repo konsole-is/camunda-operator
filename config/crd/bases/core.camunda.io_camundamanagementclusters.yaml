@@ -2893,30 +2893,29 @@ spec:
                 x-kubernetes-map-type: atomic
               optimize:
                 description: |-
-                  Optimize describes the Optimize that this management plane serves. Set
-                  it in the two Keycloak modes, where Management Identity creates the
-                  Optimize client and needs the URL of Optimize to register the redirect
-                  URI of that client. Leave it unset in the oidc mode, where the platform
-                  config declares the Optimize client.
+                  Optimize names one more Optimize that this management plane serves: one
+                  that this operator does not run, so no CamundaOptimize carries its URL.
+                  Set it in the two Keycloak modes only. In the oidc mode the platform
+                  config declares the Optimize client and the identity provider holds its
+                  callback URLs.
 
-                  The operator deploys no Optimize from this block. A CamundaOptimize is
-                  its own resource, and it reads the ManagementAuthConfig that this
-                  management cluster writes.
+                  The operator deploys no Optimize from this block. Every CamundaOptimize
+                  that names the ManagementAuthConfig of this management cluster and sets
+                  spec.externalUrl is served too, and status.optimize lists them.
                 properties:
                   externalUrl:
                     description: |-
-                      ExternalURL is the URL that browsers reach Optimize at. Management
-                      Identity registers the login callback under it as the redirect URI of
-                      the Optimize client.
-
-                      One management plane bootstraps one Optimize client with one URL. Run a
-                      second Optimize against this management plane only if you add its
-                      callback URL to the Optimize client in Keycloak yourself.
+                      ExternalURL is the URL that browsers reach that Optimize at. The
+                      management plane registers the login callback under it on the Optimize
+                      client of the realm, first in the list of callbacks.
                     type: string
                     x-kubernetes-validations:
                     - message: externalUrl must be a valid http or https URL
                       rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
                         == 'https') && url(self).getHostname() != ''
+                    - message: 'externalUrl must carry no comma: Management Identity
+                        reads the callback list as comma-separated'
+                      rule: '!self.contains('','')'
                 required:
                 - externalUrl
                 type: object
@@ -4884,10 +4883,9 @@ spec:
             - message: identity.admin.passwordSecretRef applies to the keycloak modes
                 only
               rule: '!has(self.identityProvider.oidc) || !has(self.identity.admin.passwordSecretRef)'
-            - message: set optimize in the keycloak modes, where Management Identity
-                creates the Optimize client; in the oidc mode the platform config
-                declares it
-              rule: has(self.identityProvider.oidc) != has(self.optimize)
+            - message: optimize applies to the keycloak modes only; in the oidc mode
+                the platform config declares the Optimize client
+              rule: '!has(self.identityProvider.oidc) || !has(self.optimize)'
             - message: identity.admin.email is required when webModeler is set in
                 a keycloak mode
               rule: '!has(self.webModeler) || has(self.identityProvider.oidc) || has(self.identity.admin.email)'
@@ -4944,7 +4942,7 @@ spec:
                   reason, or it is derived from the conditions of the deployed components.
                   The per-component conditions (KeycloakReady, IdentityReady,
                   ConsoleReady, WebModelerReady, ManagementAuthReady, SecretsReady,
-                  MirroredSecretsReady) also appear here.
+                  MirroredSecretsReady) and OptimizeCallbacksReady also appear here.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -5014,6 +5012,42 @@ spec:
                   by the operator.
                 format: int64
                 type: integer
+              optimize:
+                description: |-
+                  Optimize lists every CamundaOptimize that names the ManagementAuthConfig
+                  of this management cluster and sets spec.externalUrl, ordered by
+                  namespace and name. The management plane registers the login callback of
+                  each one on the Optimize client of the realm.
+
+                  The list holds no row in the oidc mode, where the identity provider of
+                  the platform config holds the callback URLs, and no row for
+                  spec.optimize, which names an Optimize outside this operator.
+                items:
+                  description: |-
+                    AttachedOptimizeStatus is one CamundaOptimize whose login callback this
+                    management plane registers.
+                  properties:
+                    externalUrl:
+                      description: |-
+                        ExternalURL is spec.externalUrl of that CamundaOptimize. The registered
+                        callback is this URL plus the login path of Optimize.
+                      type: string
+                    name:
+                      description: Name is the name of the CamundaOptimize.
+                      type: string
+                    namespace:
+                      description: Namespace is the namespace of the CamundaOptimize.
+                      type: string
+                  required:
+                  - externalUrl
+                  - name
+                  - namespace
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - namespace
+                - name
+                x-kubernetes-list-type: map
             type: object
         required:
         - spec

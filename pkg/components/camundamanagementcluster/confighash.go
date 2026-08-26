@@ -29,11 +29,28 @@ import (
 // first 64 bits of the SHA-256 digest.
 const configHashLength = 16
 
+// unhashedEnv are the rendered environment entries that ConfigHash leaves out,
+// so that a change to them alone does not roll the pods.
+//
+// The Optimize root URLs are the whole list. Management Identity reads them on
+// its first start against Keycloak and writes the callbacks of the list onto
+// the optimize client, and the operator writes the same callbacks through the
+// administration API on every reconcile. A new Optimize therefore reaches
+// Keycloak without a restart of Management Identity, and rolling Identity for
+// it would sign every user out for nothing. The variable stays in the rendered
+// environment, because a Management Identity that starts for another reason
+// must find the whole list there.
+//
+// KEYCLOAK_INIT_OPTIMIZE_SECRET stays in the hash. It is a credential, and a
+// rotated one has to reach the container.
+var unhashedEnv = map[string]bool{keycloakEnvInitOptimizeRootURL: true}
+
 // ConfigHash hashes the rendered environment of one component (names, values,
 // and Secret references, never Secret data) together with in.HashInputs and
 // the hash inputs of that component alone. It is stable across reconciles for
 // the same input, so the pods roll only when a value rendered for that
-// component or a referenced object changes.
+// component or a referenced object changes. The entries of unhashedEnv are
+// left out, so a change to one of them alone rolls nothing.
 //
 // The environment alone is not enough. Every credential arrives through a
 // Secret reference, and the reference does not change when the data behind it
@@ -44,6 +61,9 @@ func ConfigHash(in Input, comp string) string {
 	var b strings.Builder
 	b.WriteString("component=" + comp + "\n")
 	for _, e := range componentEnv(in, comp) {
+		if unhashedEnv[e.Name] {
+			continue
+		}
 		b.WriteString(e.Name + "=" + envValue(e) + "\n")
 	}
 

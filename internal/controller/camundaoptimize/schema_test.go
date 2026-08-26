@@ -126,4 +126,33 @@ var _ = Describe("CamundaOptimize schema", func() {
 
 		Expect(k8sClient.Create(ctx, optimize)).To(MatchError(ContainSubstring("clusterRef")))
 	})
+
+	It("accepts an externalUrl", func() {
+		optimize := minimalCamundaOptimize()
+		optimize.Spec.ExternalURL = "https://optimize.example.com"
+
+		Expect(k8sClient.Create(ctx, optimize)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, optimize) })
+	})
+
+	It("rejects an externalUrl without a scheme", func() {
+		optimize := minimalCamundaOptimize()
+		optimize.Spec.ExternalURL = "optimize.example.com"
+
+		Expect(k8sClient.Create(ctx, optimize)).To(
+			MatchError(ContainSubstring("externalUrl must be a valid http or https URL")),
+		)
+	})
+
+	// Management Identity reads the root URLs of the optimize preset as one
+	// comma-separated list, so a comma inside one URL would register two
+	// callbacks of nonsense.
+	It("rejects an externalUrl with a comma", func() {
+		optimize := minimalCamundaOptimize()
+		optimize.Spec.ExternalURL = "https://one.example.com,https://two.example.com"
+
+		Expect(k8sClient.Create(ctx, optimize)).To(
+			MatchError(ContainSubstring("externalUrl must carry no comma")),
+		)
+	})
 })

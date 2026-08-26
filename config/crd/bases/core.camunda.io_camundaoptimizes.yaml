@@ -66,6 +66,26 @@ spec:
                 - message: 'clusterRef is immutable: delete this CamundaOptimize and
                     create a new one to attach it to another cluster'
                   rule: self == oldSelf
+              externalUrl:
+                description: |-
+                  ExternalURL is the URL that browsers reach this Optimize at.
+
+                  In the two Keycloak modes the management plane behind managementAuthRef
+                  registers <externalUrl>/api/authentication/callback on the optimize
+                  client of the realm, so a person who signs in here comes back here. An
+                  Optimize that sets no URL registers no callback, and its login ends at
+                  the Optimize the management plane knows about instead.
+
+                  In the oidc mode the field has no effect. The identity provider of the
+                  platform config holds the callback URLs, so add this one there.
+                type: string
+                x-kubernetes-validations:
+                - message: externalUrl must be a valid http or https URL
+                  rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
+                    == 'https') && url(self).getHostname() != ''
+                - message: 'externalUrl must carry no comma: Management Identity reads
+                    the callback list as comma-separated'
+                  rule: '!self.contains('','')'
               importer:
                 description: |-
                   Importer configures the Deployment that imports the exported cluster

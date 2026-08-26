@@ -18,6 +18,7 @@ package camundamanagementcluster
 
 import (
 	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -86,13 +87,16 @@ const (
 	// configuration file in Spring, so the documented name is the one that
 	// reaches keycloak.init.optimize.secret.
 	keycloakEnvInitOptimizeSecret = "KEYCLOAK_INIT_OPTIMIZE_SECRET"
-	// keycloakEnvInitOptimizeRootURL is the URL that browsers reach Optimize
-	// at. Management Identity builds the redirect URI of the optimize client
-	// from it, and it re-applies the whole client on every start, so a change
-	// here reaches Keycloak on the next roll of Management Identity
-	// (https://github.com/camunda/camunda/issues/59963). One preset carries
-	// one root URL, so a second Optimize needs its callback URL added to the
-	// client by hand.
+	// keycloakEnvInitOptimizeRootURL is the comma-separated list of URLs that
+	// browsers reach the Optimize instances at. Management Identity splits it
+	// on commas, drops the blank entries, and registers the login callback
+	// under each one as a redirect URI of the optimize client
+	// (ClientInitializationService.java, generateRedirectUrls). It re-applies
+	// the whole client on every start, so what this variable carries is the
+	// floor of the list and never less
+	// (https://github.com/camunda/camunda/issues/59963). The operator adds the
+	// Optimize instances it found after that write through the Keycloak
+	// administration API.
 	keycloakEnvInitOptimizeRootURL = "KEYCLOAK_INIT_OPTIMIZE_ROOT_URL"
 	// keycloakEnvInitConsoleRootURL is the URL that browsers reach Console
 	// at. The configuration-variables page names OPERATE, OPTIMIZE, TASKLIST,
@@ -211,24 +215,35 @@ func keycloakProviderEnv(in Input) []corev1.EnvVar {
 }
 
 // keycloakPresetEnv selects the client preset of each component that
-// authenticates through this management plane. Optimize is always one of
-// them: the ManagementAuthConfig carries its client, so the client must exist
-// even though no Optimize is deployed from this resource.
+// authenticates through this management plane.
+//
+// A management plane that serves no Optimize renders no KEYCLOAK_INIT_OPTIMIZE
+// variable at all. Management Identity processes a preset only for the
+// components its environment names (KeycloakPresetInitializer.java, which
+// iterates the keys of keycloak.init), and it shuts itself down when a preset
+// that is not machine-to-machine carries a blank root URL
+// (ClientInitializationService.java, validateClientRootUrl). Leaving the
+// variables out is therefore what keeps Identity running. The realm then holds
+// no optimize client, and the ManagementAuthConfig names a client that nothing
+// created yet; the client arrives with the first Optimize that names a URL.
 func keycloakPresetEnv(in Input) []corev1.EnvVar {
 	spec := in.Cluster.Spec
 
 	var env []corev1.EnvVar
-	if optimize := spec.Optimize; optimize != nil {
-		env = append(env, corev1.EnvVar{
-			Name:  keycloakEnvInitOptimizeRootURL,
-			Value: optimize.ExternalURL,
-		})
-	}
-	if ref := in.Provider.Clients.Optimize.SecretRef; ref != nil {
-		env = append(env, corev1.EnvVar{
-			Name:      keycloakEnvInitOptimizeSecret,
-			ValueFrom: secretSource(ref.Name, ref.Key),
-		})
+	if len(in.OptimizeURLs) > 0 {
+		env = append(
+			env,
+			corev1.EnvVar{
+				Name:  keycloakEnvInitOptimizeRootURL,
+				Value: strings.Join(in.OptimizeURLs, ","),
+			},
+		)
+		if ref := in.Provider.Clients.Optimize.SecretRef; ref != nil {
+			env = append(env, corev1.EnvVar{
+				Name:      keycloakEnvInitOptimizeSecret,
+				ValueFrom: secretSource(ref.Name, ref.Key),
+			})
+		}
 	}
 	if console := spec.Console; console != nil {
 		env = append(env, corev1.EnvVar{
@@ -279,14 +294,15 @@ func keycloakFirstUserEnv(in Input) []corev1.EnvVar {
 }
 
 // keycloakAdminRoles returns the roles of the first user: Management Identity
-// always, and one per component the management plane runs. Identity creates a
-// role together with the client of its component, so a role of a component
-// that is not deployed would not exist.
+// always, and one per component the management plane serves. Identity creates a
+// role together with the preset of its component, so a role of a component
+// with no preset would not exist. A management plane that serves no Optimize
+// renders no Optimize preset, so the Optimize role is left out too.
 func keycloakAdminRoles(in Input) []string {
 	spec := in.Cluster.Spec
 
 	roles := []string{keycloakRoleIdentity}
-	if spec.Optimize != nil {
+	if len(in.OptimizeURLs) > 0 {
 		roles = append(roles, keycloakRoleOptimize)
 	}
 	if spec.Console != nil {

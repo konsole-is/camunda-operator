@@ -213,6 +213,68 @@ func TestIdentityEnvInTheKeycloakModes(t *testing.T) {
 	)
 }
 
+// Management Identity splits the root URL of the optimize preset on commas
+// and registers the login callback under each entry, so the whole list of
+// Optimize instances travels in one variable.
+func TestIdentityEnvJoinsTheOptimizeURLs(t *testing.T) {
+	t.Parallel()
+
+	env := renderedEnv(newKeycloakInput(t, true, func(in *Input) {
+		in.OptimizeURLs = OptimizeURLs(in.Cluster, []v1.AttachedOptimizeStatus{
+			{Namespace: "blue", Name: "a", ExternalURL: fixtureOptimizeBlue},
+			{Namespace: "green", Name: "a", ExternalURL: fixtureOptimizeGreen},
+		})
+	}), ComponentIdentity)
+
+	assert.Equal(
+		t,
+		fixtureOptimize+","+fixtureOptimizeBlue+","+fixtureOptimizeGreen,
+		env["KEYCLOAK_INIT_OPTIMIZE_ROOT_URL"],
+	)
+}
+
+// Management Identity processes the preset of a component only when its
+// environment names that component, and it shuts down over a preset that
+// carries a blank root URL. A management plane that serves no Optimize
+// therefore renders no Optimize variable, and the first user gets no Optimize
+// role, because no preset creates that role.
+func TestIdentityEnvWithoutAnOptimizeRendersNoPreset(t *testing.T) {
+	t.Parallel()
+
+	env := renderedEnv(newKeycloakInput(t, true, func(in *Input) {
+		in.Cluster.Spec.Optimize = nil
+	}), ComponentIdentity)
+
+	assert.NotContains(t, env, "KEYCLOAK_INIT_OPTIMIZE_ROOT_URL")
+	assert.NotContains(t, env, "KEYCLOAK_INIT_OPTIMIZE_SECRET")
+	assert.Equal(t, "ManagementIdentity", env["KEYCLOAK_USERS_0_ROLES_0"])
+	assert.NotContains(t, env, "KEYCLOAK_USERS_0_ROLES_1")
+}
+
+// The operator writes the login callbacks through the Keycloak administration
+// API on every reconcile, so a new Optimize reaches the realm without a
+// restart. Rolling Management Identity for it would sign every user out for
+// nothing, so the URL list stays out of the config hash. The client secret
+// stays in it: a rotated credential has to reach the container.
+func TestConfigHashIgnoresTheOptimizeURLs(t *testing.T) {
+	t.Parallel()
+
+	one := newKeycloakInput(t, true, nil)
+	many := newKeycloakInput(t, true, func(in *Input) {
+		in.OptimizeURLs = OptimizeURLs(in.Cluster, []v1.AttachedOptimizeStatus{
+			{Namespace: "blue", Name: "a", ExternalURL: fixtureOptimizeBlue},
+		})
+	})
+
+	assert.Equal(t, ConfigHash(one, ComponentIdentity), ConfigHash(many, ComponentIdentity))
+
+	rotated := newKeycloakInput(t, true, func(in *Input) {
+		in.Secrets.OptimizeClient = "another-optimize-client"
+	})
+
+	assert.NotEqual(t, ConfigHash(one, ComponentIdentity), ConfigHash(rotated, ComponentIdentity))
+}
+
 // The initial claim belongs to the oidc mode. In a Keycloak mode the first
 // administrator is a Keycloak user, so a rendered claim would name a setting
 // that Management Identity never reads.

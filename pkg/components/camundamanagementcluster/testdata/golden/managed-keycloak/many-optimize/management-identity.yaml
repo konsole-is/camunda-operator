@@ -17,7 +17,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 8048848c8c4b1d2c
+        camunda.io/config-hash: fd0305058d99772a
       labels:
         camunda.io/component: management-identity
         camunda.io/management-cluster: my-management
@@ -31,31 +31,31 @@ spec:
         - name: CAMUNDA_IDENTITY_AUDIENCE
           value: camunda-identity-resource-server
         - name: KEYCLOAK_URL
-          value: https://keycloak.example.com/auth
+          value: http://my-management-keycloak-service.camunda.svc:8080/auth
         - name: KEYCLOAK_REALM
           value: camunda-platform
         - name: IDENTITY_AUTH_PROVIDER_ISSUER_URL
           value: https://keycloak.example.com/auth/realms/camunda-platform
         - name: IDENTITY_AUTH_PROVIDER_BACKEND_URL
-          value: https://keycloak.example.com/auth/realms/camunda-platform
+          value: http://my-management-keycloak-service.camunda.svc:8080/auth/realms/camunda-platform
         - name: IDENTITY_CLIENT_ID
           value: camunda-identity
         - name: KEYCLOAK_SETUP_USER
           valueFrom:
             secretKeyRef:
               key: username
-              name: keycloak-admin
+              name: my-management-keycloak-initial-admin
         - name: KEYCLOAK_SETUP_PASSWORD
           valueFrom:
             secretKeyRef:
               key: password
-              name: keycloak-admin
+              name: my-management-keycloak-initial-admin
         - name: KEYCLOAK_SETUP_REALM
           value: master
         - name: KEYCLOAK_SETUP_CLIENT_ID
           value: admin-cli
         - name: KEYCLOAK_INIT_OPTIMIZE_ROOT_URL
-          value: https://optimize.example.com
+          value: https://optimize.example.com,https://optimize.blue.example.com,https://optimize.green.example.com
         - name: KEYCLOAK_INIT_OPTIMIZE_SECRET
           valueFrom:
             secretKeyRef:

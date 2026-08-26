@@ -92,7 +92,8 @@ var indexers = map[string]client.IndexerFunc{
 // above, the database servers through the DatabaseConfigs that name them, and
 // Secrets (metadata only) through the namespace and the contracts that reach
 // them. The orchestration clusters are watched too, because the claim follows
-// their labels.
+// their labels, and the CamundaOptimizes, because the login callbacks of the
+// realm follow their URLs.
 func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
 	for field, indexer := range indexers {
 		if err := mgr.GetFieldIndexer().IndexField(
@@ -137,12 +138,30 @@ func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
 			&v1.ManagementAuthConfig{},
 			refindex.Enqueue(cached, list, ContractNameField, refindex.ObjectName),
 		).
+		Watches(
+			&v1.CamundaOptimize{},
+			refindex.Enqueue(cached, list, ContractNameField, optimizeContractName),
+		).
 		Watches(&v1.DatabaseServerConfig{}, r.enqueueForDatabaseServer()).
 		Watches(&v1.CamundaCluster{}, r.enqueueForCluster()).
 		Watches(&corev1.Namespace{}, r.enqueueForNamespace(), builder.OnlyMetadata).
 		Watches(&corev1.Secret{}, r.enqueueForSecret(), builder.OnlyMetadata).
 		Named("camundamanagementcluster").
 		Complete(r)
+}
+
+// optimizeContractName keys a CamundaOptimize by the ManagementAuthConfig it
+// names, which is the key of the ContractNameField index. An event on a
+// CamundaOptimize therefore reaches the management cluster that writes that
+// contract, and its login callback is registered or withdrawn on the reconcile
+// that follows.
+func optimizeContractName(o client.Object) string {
+	optimize, ok := o.(*v1.CamundaOptimize)
+	if !ok {
+		return ""
+	}
+
+	return optimize.Spec.ManagementAuthRef
 }
 
 // secretRefs returns every Secret that a management cluster names itself, as

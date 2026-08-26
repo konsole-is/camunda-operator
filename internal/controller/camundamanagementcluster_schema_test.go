@@ -378,10 +378,10 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			}, "claimName must not hold an equals sign",
 		),
 		Entry(
-			"rejects a keycloak mode without an optimize block",
+			"accepts a keycloak mode without an optimize block",
 			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
 				o.Spec.Optimize = nil
-			}, "set optimize in the keycloak modes",
+			}, "",
 		),
 		Entry(
 			"rejects an optimize block in the oidc mode",
@@ -389,7 +389,13 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 				o.Spec.Optimize = &v1.ManagementOptimizeSpec{
 					ExternalURL: "https://optimize.example.com",
 				}
-			}, "set optimize in the keycloak modes",
+			}, "optimize applies to the keycloak modes only",
+		),
+		Entry(
+			"rejects an optimize externalUrl with a comma",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Optimize.ExternalURL = "https://one.example.com,https://two.example.com"
+			}, "externalUrl must carry no comma",
 		),
 		Entry(
 			"rejects an optimize externalUrl without a scheme",

@@ -61,6 +61,11 @@ type Input struct {
 	// Clusters are the orchestration clusters that the management plane
 	// serves, ordered by namespace and name.
 	Clusters []AttachedCluster
+	// OptimizeURLs are the URLs that browsers reach the Optimize instances of
+	// this management plane at, without duplicates. Build them with
+	// OptimizeURLs. The list is empty in the oidc mode, where the identity
+	// provider of the platform config holds the callback URLs.
+	OptimizeURLs []string
 	// Suspended is spec.suspend. It scales every workload of the management
 	// plane to zero.
 	Suspended bool
