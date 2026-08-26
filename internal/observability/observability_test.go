@@ -38,7 +38,9 @@ func TestForgetRemovesTheSeriesOfOneOwnerOnly(t *testing.T) {
 	Forget(rec, "TestKind", types.NamespacedName{Namespace: "ns", Name: "gone"})
 
 	assert.Equal(t, 1, testutil.CollectAndCount(conditions))
+
 	Forget(rec, "TestKind", types.NamespacedName{Namespace: "ns", Name: "kept"})
+	assert.Equal(t, 0, testutil.CollectAndCount(conditions))
 }
 
 func TestForgetToleratesANilRecorder(t *testing.T) {
