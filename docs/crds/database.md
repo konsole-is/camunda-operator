@@ -47,9 +47,13 @@ If `spec.serverRef` names no `DatabaseServerConfig` in this namespace, `Ready` i
 
 One `Database` owns one logical database name on one PostgreSQL server. The server is the instance that the contract reaches, not the contract itself: two `DatabaseServerConfig` objects that describe one instance under different hosts are one server here. The operator reads the identity of the instance from `status.systemIdentifier` of the contract.
 
-The claim therefore crosses namespaces. If a second `Database` of any namespace claims the same logical database name on the same instance, the oldest one wins. On an equal creation timestamp, the smaller `<namespace>/<name>` wins. The loser reports `InvalidReference`, names the winner, and runs no SQL.
+The claim therefore crosses namespaces. The first `Database` to claim a logical database name on an instance owns it. A `Database` of any namespace that claims the same name after that reports `InvalidReference`, names the holder, and runs no SQL. The creation time decides only while no `Database` holds the name yet. Between two `Database` resources that both wait for it, the older one goes first. On an equal creation timestamp, the first `<namespace>/<name>` in alphabetical order goes first.
 
-A `Database` can also lose a claim it once held, when the contract of an older claimant reaches its server for the first time. The winner owns the logical database and resets the role passwords, so the credentials of the loser open nothing. The loser therefore withdraws what it published: the `DatabaseConfig`, the `SecondaryStorageConfig`, and both credential Secrets are deleted, and `BindingsReady` reads `Disabled`.
+A claim stays with its holder. An older `Database` whose contract reaches the same server later does not take the logical database from the `Database` that runs on it. The holder owns the SQL roles, and the passwords in its Secrets are the ones the server accepts.
+
+A `Database` gives its claim back when you delete it. It also gives it back when you point it at another logical database or at another server. Another `Database` can take the name then.
+
+A `Database` can lose a claim after it published under it. That happens when you point `spec.databaseName` at a logical database that another `Database` holds. The holder owns that database and resets the role passwords, so the credentials of the loser open nothing. The loser therefore withdraws what it published: the `DatabaseConfig`, the `SecondaryStorageConfig`, and both credential Secrets are deleted, and `BindingsReady` reads `Disabled`.
 
 It withdraws only what it owns. Two `Database` resources can name one `databaseConfig` or one credential Secret, and the loser leaves an object that belongs to the winner in place. The `Ready` message then names what stayed.
 
@@ -60,7 +64,7 @@ status:
   collisionKey: 7412345678901234567/camunda
 ```
 
-The operator never clears this field. A `Database` whose server or contract is gone keeps its claim and goes on contesting the name. Delete the `Database` to release it.
+The operator never clears this field. A `Database` whose server or contract is gone keeps the logical database. Delete the `Database` to release it.
 
 ## Changes
 
@@ -68,13 +72,13 @@ All SQL is idempotent, so every reconcile can run it again. If you clear `spec.s
 
 ## Deletion
 
-Deletion removes the `DatabaseConfig`, the `SecondaryStorageConfig`, and the credential Secrets. The operator never drops the logical database or the SQL users. Data removal is a manual act on the server.
+Deletion removes the `DatabaseConfig`, the `SecondaryStorageConfig`, and the credential Secrets. It also releases the claim, so another `Database` can take the logical database name. The operator never drops the logical database or the SQL users. Data removal is a manual act on the server.
 
 ## Status
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
-| `Ready` | `InvalidReference` | `spec.serverRef` names no `DatabaseServerConfig` in this namespace. Or another `Database`, named in the message as `<namespace>/<name>`, already claims the same logical database name on the same server. | Create the `DatabaseServerConfig`, or change `databaseName`, or delete the duplicate. |
+| `Ready` | `InvalidReference` | `spec.serverRef` names no `DatabaseServerConfig` in this namespace. Or another `Database`, named in the message as `<namespace>/<name>`, holds the same logical database name on the same server. | Create the `DatabaseServerConfig`, or change `databaseName`, or delete the `Database` that holds the name. |
 | `Ready` | `ServerIdentityUnknown` | The `DatabaseServerConfig` has not published `status.systemIdentifier` yet, or it published one for an endpoint that its spec no longer names. The operator cannot tell which server the contract reaches, so it claims nothing and runs no SQL. | Wait until the `DatabaseServerConfig` is probed again for the endpoint and the credentials its spec names now. It publishes the identity as soon as it reaches the server. |
 | `Ready` | `MissingSecret` | The admin credentials Secret of the server is missing or lacks a key. | Create the Secret with the keys that the `DatabaseServerConfig` names. |
 | `Ready` | `ConnectionFailed` | The server does not answer, or it rejects the admin credentials. The operator retries every 30 seconds. | Make sure that the operator can reach the server and that the admin credentials are correct. |

@@ -26,6 +26,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -279,6 +280,36 @@ func publishedPassword(key types.NamespacedName) string {
 	Expect(k8sClient.Get(ctx, key, &secret)).To(Succeed())
 	Expect(secret.Data).To(HaveKey("password"))
 	return string(secret.Data["password"])
+}
+
+// publishedAnyBinding reports whether the Database published anything of its
+// own: the DatabaseConfig, or the credentials Secret that it writes first. Any
+// other error than a missing object fails the caller.
+func publishedAnyBinding(g Gomega, namespace, name string) bool {
+	published := false
+	for _, get := range []func() error{
+		func() error {
+			return k8sClient.Get(
+				ctx, types.NamespacedName{Namespace: namespace, Name: name}, &v1.DatabaseConfig{},
+			)
+		},
+		func() error {
+			return k8sClient.Get(
+				ctx,
+				types.NamespacedName{Namespace: namespace, Name: name + "-credentials"},
+				&corev1.Secret{},
+			)
+		},
+	} {
+		err := get()
+		if err == nil {
+			published = true
+			continue
+		}
+		g.Expect(err).To(MatchError(ContainSubstring("not found")))
+	}
+
+	return published
 }
 
 var _ = Describe("Database controller", func() {
@@ -581,49 +612,115 @@ var _ = Describe("Database controller", func() {
 		)
 	})
 
-	// A Database can win its claim, publish, and lose it later, when the
-	// contract of an older claimant reaches its server for the first time.
-	// The winner owns the logical database and resets the shared role
-	// password, so the credentials the loser published open nothing. It must
-	// withdraw them rather than leave a Secret that authenticates nowhere.
-	It("withdraws the bindings of a Database that loses its claim", func() {
-		pg, err := testPostgres()
-		Expect(err).NotTo(HaveOccurred())
+	// Two Databases that name one logical database on one server can reach
+	// their first reconcile together, before either has recorded a claim.
+	// The cached index answers both with an empty list, so the rule alone
+	// lets both of them bootstrap. The claim that the API server serializes
+	// is what decides between them.
+	It("serializes the claim of two Databases that reconcile together", func() {
+		namespace := newDatabaseNamespace()
+		server := unprobedServer(namespace, createAdminSecret(namespace), testPostgresHost())
 
-		// The older claimant is created first and sorts first, so it wins on
-		// age and on the tiebreak alike.
-		older := newDatabaseNamespacePrefixed("db-ns-a")
-		olderServer := unprobedServer(older, createAdminSecret(older), pg.Host)
-		olderDB := databaseFor(olderServer.Name, older)
-		olderDB.Name = "losta-" + utilrand.String(8)
-		createDatabase(olderDB)
+		first := databaseFor(server.Name, namespace)
+		first.Name = "racea-" + utilrand.String(8)
+		createDatabase(first)
+
+		second := databaseFor(server.Name, namespace)
+		second.Name = "racez-" + utilrand.String(8)
+		second.Spec.DatabaseName = first.Spec.DatabaseName
+		createDatabase(second)
+
+		// Neither can key a claim while the contract has no identity, so the
+		// probe below enqueues both of them at once with an empty index.
 		expectDatabaseReady(
-			olderDB, metav1.ConditionFalse, v1.ReasonServerIdentityUnknown, "system identifier",
+			first, metav1.ConditionFalse, v1.ReasonServerIdentityUnknown, "system identifier",
+		)
+		expectDatabaseReady(
+			second, metav1.ConditionFalse, v1.ReasonServerIdentityUnknown, "system identifier",
 		)
 
-		publisher := newDatabaseNamespacePrefixed("db-ns-z")
-		publisherServer := createDatabaseServerAt(publisher, pg.Host)
-		publisherDB := databaseFor(publisherServer, publisher)
-		publisherDB.Name = "lostz-" + utilrand.String(8)
-		publisherDB.Spec.DatabaseName = olderDB.Spec.DatabaseName
-		publisherDB.Spec.SecondaryStorageConfig = "lost-storage"
-		createDatabase(publisherDB)
+		publishProbe(server)
+
+		By("publishing no second set of bindings, from the first reconcile on")
+		Consistently(func(g Gomega) {
+			published := 0
+			for _, db := range []*v1.Database{first, second} {
+				if publishedAnyBinding(g, namespace, db.Name) {
+					published++
+				}
+			}
+			g.Expect(published).To(
+				BeNumerically("<=", 1), "only the holder of the claim may publish bindings",
+			)
+		}, "5s", 100*time.Millisecond).Should(Succeed())
+
+		// Which of the two holds the claim is the order in which they reached
+		// the API server, and nothing here depends on it. The Lease names the
+		// holder, and the other one reports it.
+		By("leaving one holder of the claim Lease")
+		var lease coordinationv1.Lease
+		leaseKey := types.NamespacedName{
+			Namespace: testClaimNamespace,
+			Name: claimLeaseName(
+				components.CollisionKey(serverSystemIdentifier(), first.Spec.DatabaseName),
+			),
+		}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, leaseKey, &lease)
+		}, timeout, interval).Should(Succeed())
+
+		winner, loser := first, second
+		if lease.Annotations[claimHolderNameAnnotation] == second.Name {
+			winner, loser = second, first
+		}
+
+		expectDatabaseReady(winner, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
 		expectDatabaseReady(
-			publisherDB, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.",
-		)
-
-		By("publishing the bindings while it holds the claim")
-		appKey := types.NamespacedName{Namespace: publisher, Name: publisherDB.Name + "-credentials"}
-		Expect(k8sClient.Get(ctx, appKey, &corev1.Secret{})).To(Succeed())
-
-		By("giving the older contract its identity, which hands it the claim")
-		publishProbe(olderServer)
-
-		expectDatabaseReady(
-			publisherDB, metav1.ConditionFalse, v1.ReasonInvalidReference,
+			loser, metav1.ConditionFalse, v1.ReasonInvalidReference,
 			fmt.Sprintf(
 				"Database %s/%s already claims database %q",
-				older, olderDB.Name, olderDB.Spec.DatabaseName,
+				namespace, winner.Name, winner.Spec.DatabaseName,
+			),
+		)
+	})
+
+	// A Database can lose a claim after it published under it, when its spec
+	// names a logical database that another Database already holds. The
+	// holder owns that logical database and resets the shared role password,
+	// so the credentials the loser published open nothing. It must withdraw
+	// them rather than leave a Secret that authenticates nowhere.
+	It("withdraws the bindings of a Database that loses its claim", func() {
+		namespace := newDatabaseNamespace()
+		server := createDatabaseServer(namespace)
+
+		holder := databaseFor(server, namespace)
+		holder.Name = "losta-" + utilrand.String(8)
+		createDatabase(holder)
+		expectDatabaseReady(holder, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+
+		mover := databaseFor(server, namespace)
+		mover.Name = "lostz-" + utilrand.String(8)
+		mover.Spec.SecondaryStorageConfig = "lost-storage"
+		createDatabase(mover)
+		expectDatabaseReady(mover, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+
+		By("publishing the bindings while it holds a claim of its own")
+		appKey := types.NamespacedName{Namespace: namespace, Name: mover.Name + "-credentials"}
+		Expect(k8sClient.Get(ctx, appKey, &corev1.Secret{})).To(Succeed())
+
+		By("pointing it at the logical database that the other one holds")
+		Eventually(func(g Gomega) {
+			var latest v1.Database
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mover), &latest)).To(Succeed())
+			latest.Spec.DatabaseName = holder.Spec.DatabaseName
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		expectDatabaseReady(
+			mover, metav1.ConditionFalse, v1.ReasonInvalidReference,
+			fmt.Sprintf(
+				"Database %s/%s already claims database %q",
+				namespace, holder.Name, holder.Spec.DatabaseName,
 			),
 		)
 
@@ -634,27 +731,32 @@ var _ = Describe("Database controller", func() {
 			)
 			g.Expect(k8sClient.Get(
 				ctx, types.NamespacedName{
-					Namespace: publisher, Name: publisherDB.Name + "-backup-credentials",
+					Namespace: namespace, Name: mover.Name + "-backup-credentials",
 				}, &corev1.Secret{},
 			)).To(MatchError(ContainSubstring("not found")))
 			g.Expect(k8sClient.Get(
 				ctx, types.NamespacedName{
-					Namespace: publisher, Name: publisherDB.Name,
+					Namespace: namespace, Name: mover.Name,
 				}, &v1.DatabaseConfig{},
 			)).To(MatchError(ContainSubstring("not found")))
 			g.Expect(k8sClient.Get(
 				ctx, types.NamespacedName{
-					Namespace: publisher, Name: "lost-storage",
+					Namespace: namespace, Name: "lost-storage",
 				}, &v1.SecondaryStorageConfig{},
 			)).To(MatchError(ContainSubstring("not found")))
 		}, timeout, interval).Should(Succeed())
 
 		By("owning the BindingsReady condition of the loser")
 		var latest v1.Database
-		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(publisherDB), &latest)).To(Succeed())
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mover), &latest)).To(Succeed())
 		bindings := meta.FindStatusCondition(latest.Status.Conditions, string(components.ConditionBindings))
 		Expect(bindings).NotTo(BeNil())
 		Expect(bindings.Reason).To(Equal("Disabled"))
+
+		By("keeping the bindings of the Database that holds the claim")
+		Expect(k8sClient.Get(
+			ctx, types.NamespacedName{Namespace: namespace, Name: holder.Name}, &v1.DatabaseConfig{},
+		)).To(Succeed())
 	})
 
 	// Two contracts that describe one PostgreSQL instance under different
@@ -703,15 +805,14 @@ var _ = Describe("Database controller", func() {
 		}, "3s", interval).Should(MatchError(ContainSubstring("not found")))
 	})
 
-	// First creation wins even when the older Database resolves its server
-	// last. Its claim reaches the index only with the flush that ends the
-	// reconcile which resolved the server, so on that reconcile it asks the
-	// index a question its own claim is missing from.
-	It("hands the claim to the older Database that resolved its server last", func() {
+	// A claim stays with the Database that took it. An older Database whose
+	// contract reaches its server later meets a logical database that is in
+	// use, with published Secrets that carry the passwords of its holder. To
+	// hand it on would reset those passwords under a running cluster.
+	It("keeps the claim with the Database that took it first", func() {
 		pg, err := testPostgres()
 		Expect(err).NotTo(HaveOccurred())
 
-		// The older namespace sorts first, so age and the tiebreak agree.
 		older := newDatabaseNamespacePrefixed("db-ns-a")
 		olderServer := unprobedServer(older, createAdminSecret(older), pg.Host)
 		olderDB := databaseFor(olderServer.Name, older)
@@ -721,7 +822,7 @@ var _ = Describe("Database controller", func() {
 			olderDB, metav1.ConditionFalse, v1.ReasonServerIdentityUnknown, "system identifier",
 		)
 
-		By("letting the newer Database claim and record while the older one waits")
+		By("letting the newer Database claim while the older one waits")
 		newer := newDatabaseNamespacePrefixed("db-ns-z")
 		newerServer := createDatabaseServerAt(newer, pg.Host)
 		newerDB := databaseFor(newerServer, newer)
@@ -730,42 +831,29 @@ var _ = Describe("Database controller", func() {
 		createDatabase(newerDB)
 		expectDatabaseReady(newerDB, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
 
-		var recorded v1.Database
-		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(newerDB), &recorded)).To(Succeed())
-		Expect(recorded.Status.CollisionKey).NotTo(BeEmpty())
-
 		By("giving the older contract its identity")
 		publishProbe(olderServer)
 
-		By("handing the claim to the older Database")
-		expectDatabaseReady(olderDB, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+		By("leaving the claim with the Database that holds it")
 		expectDatabaseReady(
-			newerDB, metav1.ConditionFalse, v1.ReasonInvalidReference,
+			olderDB, metav1.ConditionFalse, v1.ReasonInvalidReference,
 			fmt.Sprintf(
 				"Database %s/%s already claims database %q",
-				older, olderDB.Name, olderDB.Spec.DatabaseName,
+				newer, newerDB.Name, newerDB.Spec.DatabaseName,
 			),
 		)
+		expectDatabaseReady(newerDB, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
 
-		By("withdrawing the bindings of the Database that lost")
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(
-				ctx, types.NamespacedName{
-					Namespace: newer, Name: newerDB.Name,
-				}, &v1.DatabaseConfig{},
-			)).To(MatchError(ContainSubstring("not found")))
-			g.Expect(k8sClient.Get(
-				ctx, types.NamespacedName{
-					Namespace: newer, Name: newerDB.Name + "-credentials",
-				}, &corev1.Secret{},
-			)).To(MatchError(ContainSubstring("not found")))
-		}, timeout, interval).Should(Succeed())
+		By("publishing no bindings for the Database that lost the claim")
+		Consistently(func() error {
+			return k8sClient.Get(
+				ctx, types.NamespacedName{Namespace: older, Name: olderDB.Name}, &v1.DatabaseConfig{},
+			)
+		}, "3s", interval).Should(MatchError(ContainSubstring("not found")))
 
-		By("keeping the bindings of the Database that won")
+		By("keeping the bindings of the Database that holds the claim")
 		Expect(k8sClient.Get(
-			ctx, types.NamespacedName{
-				Namespace: older, Name: olderDB.Name,
-			}, &v1.DatabaseConfig{},
+			ctx, types.NamespacedName{Namespace: newer, Name: newerDB.Name}, &v1.DatabaseConfig{},
 		)).To(Succeed())
 	})
 
@@ -811,7 +899,7 @@ var _ = Describe("Database controller", func() {
 		expectDatabaseReady(holder, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
 	})
 
-	It("deletes without a finalizer, leaving the SQL database and users intact", func() {
+	It("gives its claim back on deletion, leaving the SQL database and users intact", func() {
 		namespace := newDatabaseNamespace()
 		server := createDatabaseServer(namespace)
 		db := databaseFor(server, namespace)
@@ -819,13 +907,26 @@ var _ = Describe("Database controller", func() {
 
 		expectDatabaseReady(db, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
 
+		By("holding the claim Lease of the logical database")
+		var claimed v1.Database
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(db), &claimed)).To(Succeed())
+		lease := types.NamespacedName{
+			Namespace: testClaimNamespace, Name: claimLeaseName(claimed.Status.CollisionKey),
+		}
+		Expect(k8sClient.Get(ctx, lease, &coordinationv1.Lease{})).To(Succeed())
+
 		Expect(k8sClient.Delete(ctx, db)).To(Succeed())
 		Eventually(func() error {
 			return k8sClient.Get(ctx, client.ObjectKeyFromObject(db), &v1.Database{})
 		}, timeout, interval).Should(
 			MatchError(ContainSubstring("not found")),
-			"deletion must complete without a finalizer holding the CR",
+			"the claim finalizer must release the CR",
 		)
+
+		By("giving the claim back, so the logical database is free again")
+		Eventually(func() error {
+			return k8sClient.Get(ctx, lease, &coordinationv1.Lease{})
+		}, timeout, interval).Should(MatchError(ContainSubstring("not found")))
 
 		Expect(sqlDatabaseExists(db.Spec.DatabaseName)).To(
 			BeTrue(),

@@ -37,6 +37,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -56,24 +57,10 @@ import (
 // reference it.
 const databaseServerRefField = "database.spec.serverRef"
 
-// databaseCollisionField indexes Database CRs by the claim they recorded in
-// status.collisionKey. The collision rule can then list every claimant of one
-// logical database on one PostgreSQL instance, across all namespaces, with
-// one field-indexed query.
-const databaseCollisionField = "database.status.collisionKey"
-
 // connectionRetryInterval is the wait before the controller retries a server
 // whose connection pre-check failed. The controller cannot watch the external
 // server, so a timed requeue is the only trigger.
 const connectionRetryInterval = 30 * time.Second
-
-// errClaimLost reports that another Database holds the claim to the logical
-// database of this one. It is the single pre-check failure that withdraws the
-// bindings: every other one leaves a server unreachable or a reference
-// unresolved, and the published bindings stay valid. A lost claim does not.
-// The winner owns the logical database and rotates the role passwords, so the
-// credentials of the loser open nothing.
-var errClaimLost = errors.New("another Database holds the claim")
 
 // DatabaseReconciler bootstraps a logical database and its users on an
 // existing PostgreSQL server over plain SQL. It publishes the credential
@@ -88,6 +75,11 @@ type DatabaseReconciler struct {
 	// EventRecorder publishes the resource events of the component framework.
 	// SetupWithManager sets it to the recorder of the manager when it is nil.
 	EventRecorder events.EventRecorder
+	// ClaimNamespace holds the claim Leases of every logical database. One
+	// claim crosses namespaces, so every claimant meets on a Lease of this
+	// one namespace. It is the namespace of the operator, and
+	// SetupWithManager refuses an empty one.
+	ClaimNamespace string
 
 	// componentClient is the uncached client that the bindings component
 	// reconciles with. It keeps the published credential Secrets out of the
@@ -104,12 +96,13 @@ type DatabaseReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile converges a Database. The pre-checks resolve the server, its
-// identity, its admin credentials, the collision rule, and the connection. A
-// failed pre-check stops the reconcile and reports its documented Ready
-// reason. The SQL bootstrap then converges the logical database, the roles,
-// and the grants.
+// identity, its admin credentials, the claim, and the connection. A failed
+// pre-check stops the reconcile and reports its documented Ready reason. The
+// SQL bootstrap then converges the logical database, the roles, and the
+// grants.
 // This step always runs before the bindings component publishes the
 // credential Secrets. A published Secret then never names a password that the
 // server does not know.
@@ -126,6 +119,27 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	var database v1.Database
 	if err := r.Get(ctx, req.NamespacedName, &database); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	// A deleted Database publishes no status. Its bindings go with the owner
+	// references, and the finalizer gives the claim back.
+	if !database.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, r.finalize(ctx, &database)
+	}
+
+	// The finalizer must exist before the first claim. A deletion between the
+	// claim and the next write would leave a logical database claimed by an
+	// owner that is gone.
+	if controllerutil.AddFinalizer(&database, ClaimFinalizer) {
+		if err := r.Update(ctx, &database); err != nil {
+			// A deletion that races this write is fine. The deletion path owns
+			// the object from here.
+			if apierrors.IsNotFound(err) {
+				return ctrl.Result{}, nil
+			}
+
+			return ctrl.Result{}, fmt.Errorf("adding the claim finalizer: %w", err)
+		}
 	}
 
 	rec := component.ReconcileContext{
@@ -156,8 +170,11 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 				)
 			}
 			conditions.Stage(&database, conditions.Failed(&database, failure))
+			if withdrawErr != nil {
+				return ctrl.Result{}, withdrawErr
+			}
 
-			return ctrl.Result{}, withdrawErr
+			return ctrl.Result{RequeueAfter: claimRetryInterval}, nil
 		}
 
 		conditions.Stage(&database, conditions.Failed(&database, failure))
@@ -343,11 +360,10 @@ func bootstrapSQL(ctx context.Context, b pgbootstrap.Bootstrapper, name string, 
 }
 
 // preCheck runs the documented pre-checks in order: server reference, server
-// identity, admin credentials Secret, collision rule, connection. It records
-// the claim of the Database in status.collisionKey as soon as the identity is
-// known, so the index that the collision rule lists over is served from what
-// the operator resolved. It returns the connected Bootstrapper, which the
-// caller closes.
+// identity, admin credentials Secret, claim, connection. It records the claim
+// of the Database in status.collisionKey as soon as the identity is known,
+// and gives up a claim it recorded under another key. It returns the
+// connected Bootstrapper, which the caller closes.
 //
 // A failed check returns an error carrying a *conditions.PreCheckFailure with
 // its Ready reason, and a lost claim wraps errClaimLost beside it. Any other
@@ -392,16 +408,18 @@ func (r *DatabaseReconciler) preCheck(ctx context.Context, database *v1.Database
 		}
 	}
 
-	database.Status.CollisionKey = components.CollisionKey(
-		server.Status.SystemIdentifier, database.Spec.DatabaseName,
-	)
+	key := components.CollisionKey(server.Status.SystemIdentifier, database.Spec.DatabaseName)
+	if err := r.releaseStaleClaim(ctx, database, key); err != nil {
+		return nil, err
+	}
+	database.Status.CollisionKey = key
 
 	user, password, err := r.adminCredentials(ctx, server)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := r.checkCollision(ctx, database); err != nil {
+	if err := r.claim(ctx, database); err != nil {
 		return nil, err
 	}
 
@@ -453,52 +471,6 @@ func (r *DatabaseReconciler) adminCredentials(
 	}
 
 	return string(secret.Data[ref.UsernameKey]), string(secret.Data[ref.PasswordKey]), nil
-}
-
-// checkCollision applies the first-creation-wins rule to the logical database
-// that this CR claims. The claim belongs to the PostgreSQL instance, so the
-// list covers every namespace: an older Database that reaches the same
-// instance through another contract wins, and the failure names it. A lost
-// claim wraps errClaimLost, which the reconcile answers by withdrawing the
-// bindings.
-func (r *DatabaseReconciler) checkCollision(ctx context.Context, database *v1.Database) error {
-	key := database.Status.CollisionKey
-
-	var list v1.DatabaseList
-	if err := r.List(ctx, &list, client.MatchingFields{databaseCollisionField: key}); err != nil {
-		return fmt.Errorf("listing databases claiming %q: %w", key, err)
-	}
-
-	winner := components.CollisionWinner(withSelf(list.Items, database))
-	if winner == nil ||
-		(winner.Namespace == database.Namespace && winner.Name == database.Name) {
-		return nil
-	}
-
-	return fmt.Errorf("%w: %w", errClaimLost, &conditions.PreCheckFailure{
-		Reason: v1.ReasonInvalidReference,
-		Message: fmt.Sprintf(
-			"Database %s already claims database %q on the same server",
-			client.ObjectKeyFromObject(winner), database.Spec.DatabaseName,
-		),
-	})
-}
-
-// withSelf adds database to the claimants of its own key, unless the list
-// already holds it. The index is served from status.collisionKey, so a
-// Database that resolved its server for the first time is not in the list it
-// just asked for: its claim is staged in memory and reaches the cluster only
-// with the flush at the end of this reconcile. Without it the winner rule sees
-// a single newer claimant, hands it the claim, and the older Database loses a
-// claim that first-creation-wins gives it.
-func withSelf(claimants []v1.Database, database *v1.Database) []v1.Database {
-	for i := range claimants {
-		if claimants[i].Namespace == database.Namespace && claimants[i].Name == database.Name {
-			return claimants
-		}
-	}
-
-	return append(claimants, *database)
 }
 
 // connect opens the admin connection to server and pings it. Any failure maps
@@ -566,12 +538,17 @@ func (r *DatabaseReconciler) enqueueForAdminSecret() handler.EventHandler {
 }
 
 // SetupWithManager registers the controller, the serverRef and collision field
-// indexes, and the watches that trigger a reconcile. The watches cover the
-// owned bindings, the referenced DatabaseServerConfig, its admin credentials
-// Secret (metadata-only), and sibling Databases that contest the same claim.
-// It also sets EventRecorder to the recorder of the manager and builds the
-// uncached client for the bindings component.
+// indexes, and the watches that trigger a reconcile. It refuses a reconciler
+// without a namespace for the claim Leases. The watches cover the owned
+// bindings, the referenced DatabaseServerConfig, its admin credentials Secret
+// (metadata-only), and sibling Databases that contest the same claim. It also
+// sets EventRecorder to the recorder of the manager and builds the uncached
+// client for the bindings component.
 func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.ClaimNamespace == "" {
+		return errors.New("the namespace of the claim Leases is required")
+	}
+
 	if r.EventRecorder == nil {
 		r.EventRecorder = mgr.GetEventRecorder("database")
 	}
