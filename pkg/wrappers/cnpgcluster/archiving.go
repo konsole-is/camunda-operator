@@ -23,14 +23,10 @@ import (
 )
 
 // ContinuousArchiving returns what CloudNativePG reports about the write-ahead
-// log uploads of the cluster, or nil when it reports nothing yet. A cluster
-// that archives nowhere never carries the condition, and neither does one that
-// has not uploaded a segment yet.
-//
-// A False condition names one failed upload. CloudNativePG raises it on the
-// first failure and clears it on the first upload that follows, so a reader
-// that acts on the archive of a server waits for the condition to stand before
-// it acts. LastTransitionTime is when the uploads stopped arriving.
+// log uploads of the cluster, or nil when it reports nothing. A cluster that
+// archives nowhere carries no condition, and neither does one that has not
+// uploaded a segment yet. A False condition names one failed upload, not a
+// stopped archive. LastTransitionTime is when the uploads stopped arriving.
 func ContinuousArchiving(cluster *cnpgv1.Cluster) *metav1.Condition {
 	return meta.FindStatusCondition(
 		cluster.Status.Conditions, string(cnpgv1.ConditionContinuousArchiving),
