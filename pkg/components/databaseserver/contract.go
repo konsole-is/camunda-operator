@@ -49,12 +49,12 @@ import (
 // the apply while it is set, so the first server to publish a name keeps it.
 // The caller reads the holder and reports v1.ReasonContractTaken.
 //
-// clusterTaken is set while a CloudNativePG cluster of the name the server
-// derives belongs to somebody else. The contract then names the endpoint and
-// the superuser Secret of that other database, so the feature gate goes off
-// and the published contract is removed. A consumer that reads
-// InvalidReference is told the truth. One that keeps the endpoint of a
-// stranger is not.
+// clusterTaken is the ClusterTaken message while a CloudNativePG cluster of
+// the name the server derives is controlled by another owner, and empty
+// otherwise. When it is set, the feature gate is off and the framework removes
+// the published contract, because the contract names the endpoint and the
+// superuser Secret of a database this server does not own. A consumer then
+// reads InvalidReference instead of the endpoint of another database.
 func ContractComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
