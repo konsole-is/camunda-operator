@@ -169,10 +169,12 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 				Replicas:    new(int32(1)),
 				StorageSize: new(resource.MustParse(esStorageSize)),
 				Resources:   capped("200m", "1Gi", "1536Mi"),
-				// Elasticsearch gives the heap half of the memory it sees.
-				// ECK reads the memory limit above for that half, but only
-				// while ES_JAVA_OPTS names no heap. The flow exports the
-				// records of one process instance, so 512 MB is enough.
+				// ES_JAVA_OPTS fixes the heap, and the limit above bounds
+				// what Elasticsearch adds around it. With neither,
+				// Elasticsearch gives the heap half of the memory it sees,
+				// and it sees the whole node: that heap was the largest
+				// single claim on the runner. The flow exports the records
+				// of one process instance, so 512 MB is enough.
 				ExtraEnv:               []corev1.EnvVar{{Name: "ES_JAVA_OPTS", Value: "-Xms512m -Xmx512m"}},
 				SecondaryStorageConfig: mcKeycloakStorage,
 			},
