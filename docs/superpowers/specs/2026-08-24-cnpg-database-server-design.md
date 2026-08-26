@@ -598,7 +598,10 @@ The reconcile reads the contract it owns and sees `spec.recovery` that differs f
 4. Deletes the previous `Cluster` and its base-backup schedule. Closes the archive interval of
    that previous cluster, and no other, at whichever comes first: the cutover, when the contract
    moves to the new cluster, or the first base backup of the new cluster. The old archive's WAL
-   ends when the old cluster goes away, so the record states what the archive holds. Points
+   ends when the old cluster goes away, so the record states what the archive holds. The outcome
+   reaches the contract before the status of that pass is written, so a lost status write leaves
+   the record open, and the pass that reads the answer back off the contract closes it at the
+   `completedAt` the outcome carries. Points
    between that close and the new archive's first base backup are honestly unavailable.
    The new record opens at that first base backup, which CloudNativePG can
    take before the cutover finishes, so the record of the new cluster is sometimes open already
