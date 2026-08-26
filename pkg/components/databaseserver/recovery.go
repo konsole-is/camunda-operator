@@ -300,10 +300,9 @@ func recoveryMutation(
 }
 
 // RecoveryOutcomePatch renders the server-side apply that publishes outcome on
-// contract. It carries spec.pitr.lastRecovery, no other spec field, and the UID
-// of the contract it was read from, so the apply
-// states the answer without touching a field that the contract component or
-// the consumer owns.
+// contract. It carries spec.pitr.lastRecovery and no other spec field, so the
+// apply states the answer without touching a field that the contract component
+// or the consumer owns.
 //
 // It also carries the uid of contract. A name is taken again by whatever is
 // created under it next, and the API server refuses an apply whose uid is not
