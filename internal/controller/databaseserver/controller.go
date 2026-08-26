@@ -108,6 +108,13 @@ type resolvedSpec struct {
 	// the contract is the server's own. The contract component blocks the
 	// apply on it and ContractReady reports ContractTaken: see contractTaken.
 	contractTaken string
+	// archiveTaken says why the Barman Cloud ObjectStore of the name the
+	// server derives is not this server's to write, and it is empty when the
+	// name is free or the ObjectStore is the server's own. The cluster then
+	// carries no archive plugin, the base backup schedule goes, the contract
+	// publishes no point-in-time-recovery capability, a rollback is refused,
+	// and ArchiveReady reports ArchiveTaken: see archiveTaken.
+	archiveTaken string
 	// clusterTaken says why a CloudNativePG cluster of the name the server
 	// derives is not this server's to write, and it is empty when the name is
 	// free or the cluster is the server's own. Every component reads it and
@@ -367,7 +374,11 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// whoever holds the cluster, and its base backups carry the label this
 	// read counts by, so a record here calls somebody else's archive an
 	// archive of this server.
-	if !resolved.holdArchive && resolved.clusterTaken == "" {
+	//
+	// A taken ObjectStore writes none for the same reason. The server takes
+	// the archive off the cluster while that name is held, so nothing of this
+	// server reaches the bucket that a record here names.
+	if !resolved.holdArchive && resolved.clusterTaken == "" && resolved.archiveTaken == "" {
 		now := metav1.Now()
 		advanceArchiveFloor(&server, resolved.merged, now)
 		reconcileArchiveHistory(
@@ -380,12 +391,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// Before the aggregate below, which reads the component conditions off
 	// the server.
-	if resolved.contractTaken != "" {
-		stageTaken(&server, v1.ConditionContractReady, v1.ReasonContractTaken, resolved.contractTaken)
-	}
-	if resolved.clusterTaken != "" {
-		stageTaken(&server, v1.ConditionClusterReady, v1.ReasonClusterTaken, resolved.clusterTaken)
-	}
+	stageTakenNames(&server, resolved)
 
 	conditions.Stage(&server, conditions.Aggregate(&server, built.ready...))
 
@@ -414,8 +420,11 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// same reason: the object of that name belongs to somebody else, so no
 	// watch of this controller carries its deletion. ContractReady is True
 	// while the name is held, because the component withdrew the contract on
-	// purpose, so the test above cannot stand in for this one.
-	if recovering || resolved.clusterTaken != "" ||
+	// purpose, so the test above cannot stand in for this one. A taken
+	// ObjectStore name asks for a look of its own for the same reason: the
+	// object belongs to somebody else, and its deletion reaches no watch of
+	// this controller either.
+	if recovering || resolved.clusterTaken != "" || resolved.archiveTaken != "" ||
 		!meta.IsStatusConditionTrue(server.Status.Conditions, v1.ConditionContractReady) {
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
@@ -546,6 +555,18 @@ func (r *DatabaseServerReconciler) preCheck(
 		return resolved, err
 	}
 	resolved.contractTaken = taken
+
+	// Here rather than beside the read of the cluster, which waits for the
+	// recovery to settle status.cluster. The ObjectStore is named after the
+	// server, and no recovery moves that name, so the answer is the same on
+	// either side of the recovery. The recovery is what needs it first: a
+	// rollback reads the archive that this ObjectStore describes, so it is
+	// refused while the object belongs to somebody else.
+	archiveTaken, err := r.archiveTaken(ctx, server, resolved.merged)
+	if err != nil {
+		return resolved, err
+	}
+	resolved.archiveTaken = archiveTaken
 
 	return resolved, nil
 }
@@ -843,6 +864,53 @@ func (r *DatabaseServerReconciler) contractTaken(
 	}
 
 	return components.ContractTakenMessage(merged.DatabaseServerConfig, holder), nil
+}
+
+// archiveTaken says why the Barman Cloud ObjectStore of the name the server
+// derives is not this server's to write, and returns the empty string when it
+// is: the spec asks for no archive, no object of that name exists, nothing
+// controls it, or this server controls it.
+//
+// An ObjectStore that nothing controls is adopted, where a contract and a
+// CloudNativePG cluster of the same shape are refused. It carries the location
+// of an archive and the way the plugin reaches it, both of which this server
+// resolves from its own ObjectStorageConfig, so the apply takes no data of
+// anybody. It is also what component.BlockOnForeignController does with one,
+// so a message here names a holder that the apply then writes over on the
+// same pass.
+//
+// The read is what keeps the cluster off the bucket of another owner. The
+// archive plugin entry of the cluster names this ObjectStore, so the apply of
+// the cluster runs before the block on the ObjectStore is ever reached, and
+// CloudNativePG writes the write-ahead log of this server through whatever
+// object holds the name.
+func (r *DatabaseServerReconciler) archiveTaken(
+	ctx context.Context,
+	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
+) (string, error) {
+	if !components.Archiving(merged) {
+		return "", nil
+	}
+
+	name := components.ObjectStoreName(server)
+	key := types.NamespacedName{Namespace: server.Namespace, Name: name}
+
+	var store barmanobjectstore.ObjectStore
+	if err := r.APIReader.Get(ctx, key, &store); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("reading the Barman Cloud ObjectStore %s: %w", key, err)
+	}
+
+	holder := metav1.GetControllerOf(&store)
+	if holder == nil || holder.UID == server.UID {
+		return "", nil
+	}
+
+	return components.ArchiveTakenMessage(name, *holder), nil
 }
 
 // derivedCluster is what a live read of the CloudNativePG cluster of the name
@@ -1311,7 +1379,8 @@ func (r *DatabaseServerReconciler) buildComponents(
 	var built serverComponents
 
 	cluster, systemIdentifier, err := components.ClusterComponent(
-		server, merged, resolved.archive, resolved.platform, resolved.clusterBlocked,
+		server, merged, resolved.archive, resolved.archiveTaken,
+		resolved.platform, resolved.clusterBlocked,
 	)
 	if err != nil {
 		return built, nil, fmt.Errorf("building cluster component: %w", err)
@@ -1319,14 +1388,15 @@ func (r *DatabaseServerReconciler) buildComponents(
 	built.cluster = cluster
 
 	built.archive, err = components.ArchiveComponent(
-		server, merged, resolved.archive, archiveStart, resolved.clusterTaken,
+		server, merged, resolved.archive, archiveStart,
+		resolved.clusterTaken, resolved.archiveTaken,
 	)
 	if err != nil {
 		return built, nil, fmt.Errorf("building archive component: %w", err)
 	}
 
 	built.contract, err = components.ContractComponent(
-		server, merged, resolved.clusterTaken, resolved.contractTaken,
+		server, merged, resolved.clusterTaken, resolved.contractTaken, resolved.archiveTaken,
 	)
 	if err != nil {
 		return built, nil, fmt.Errorf("building contract component: %w", err)
@@ -1424,6 +1494,26 @@ func (r *DatabaseServerReconciler) removeSupersededContracts(
 	}
 
 	return nil
+}
+
+// stageTakenNames reports every derived name of the server that somebody else
+// holds, on the condition of the component that writes that object.
+func stageTakenNames(server *v1.DatabaseServer, resolved resolvedSpec) {
+	taken := []struct {
+		conditionType string
+		reason        string
+		message       string
+	}{
+		{v1.ConditionContractReady, v1.ReasonContractTaken, resolved.contractTaken},
+		{v1.ConditionClusterReady, v1.ReasonClusterTaken, resolved.clusterTaken},
+		{v1.ConditionArchiveReady, v1.ReasonArchiveTaken, resolved.archiveTaken},
+	}
+
+	for _, held := range taken {
+		if held.message != "" {
+			stageTaken(server, held.conditionType, held.reason, held.message)
+		}
+	}
 }
 
 // stageTaken reports an object of a derived name that another owner holds.

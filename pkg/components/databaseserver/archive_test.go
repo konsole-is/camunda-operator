@@ -17,6 +17,7 @@ limitations under the License.
 package databaseserver
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -284,6 +286,84 @@ func TestArchivePluginNamesTheClusterAsTheArchiveServer(t *testing.T) {
 	assert.True(t, *plugin.IsWALArchiver)
 	assert.Equal(t, "my-cluster-db", plugin.Parameters["barmanObjectName"])
 	assert.Equal(t, recoveredClusterName, plugin.Parameters["serverName"])
+}
+
+// The plugin entry names the ObjectStore by name, so a cluster that keeps it
+// while another owner holds that name writes its write-ahead log into the
+// bucket, and under the credentials, of that owner. A taken name therefore
+// takes the archive off the cluster and the base backup schedule with it.
+func TestATakenObjectStoreTakesTheArchiveOffTheCluster(t *testing.T) {
+	t.Parallel()
+
+	server := archiveServer()
+	merged := v1.DatabaseServerSpec{
+		Version:     "17",
+		StorageSize: new(resource.MustParse("1Gi")),
+		Archive: &v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef: "backups", RetentionPeriodDays: 30,
+		},
+	}
+	archive := &ArchiveStorage{Config: &v1.ObjectStorageConfig{
+		Spec: v1.ObjectStorageConfigSpec{
+			Type: v1.ObjectStorageTypeS3,
+			S3:   &v1.S3Storage{BucketName: "backups", Region: "eu-west-1"},
+		},
+	}}
+	taken := ArchiveTakenMessage(ObjectStoreName(server), metav1.OwnerReference{
+		Kind: "DatabaseServer", Name: "other",
+	})
+
+	free, _, err := ClusterComponent(server, merged, archive, "", nil, "")
+	require.NoError(t, err)
+	plugins := previewCluster(t, free).Spec.Plugins
+	require.Len(t, plugins, 1)
+	assert.Equal(t, ObjectStoreName(server), plugins[0].Parameters["barmanObjectName"])
+
+	held, _, err := ClusterComponent(server, merged, archive, taken, nil, "")
+	require.NoError(t, err)
+	assert.Empty(t, previewCluster(t, held).Spec.Plugins)
+
+	// The schedule takes its base backups through that same plugin entry, so
+	// a cluster without one has nothing to write a base backup with. The
+	// schedule is registered for deletion instead, and Preview renders no
+	// resource registered that way.
+	//
+	// The ObjectStore and the Secret stay registered. They describe the
+	// bucket, and the archive that the server wrote before is in it.
+	assert.Equal(
+		t, []string{"*v1.Secret", "*barmanobjectstore.ObjectStore", "*v1.ScheduledBackup"},
+		previewKinds(t, server, merged, archive, ""),
+	)
+	assert.Equal(
+		t, []string{"*v1.Secret", "*barmanobjectstore.ObjectStore"},
+		previewKinds(t, server, merged, archive, taken),
+	)
+}
+
+// previewKinds renders the archive component of a server and returns the Go
+// type of every object it applies, in registration order. A render carries no
+// TypeMeta, so the Go type is what names the object here.
+func previewKinds(
+	t *testing.T,
+	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
+	archive *ArchiveStorage,
+	archiveTaken string,
+) []string {
+	t.Helper()
+
+	comp, err := ArchiveComponent(server, merged, archive, nil, "", archiveTaken)
+	require.NoError(t, err)
+
+	objects, err := comp.Preview()
+	require.NoError(t, err)
+
+	kinds := make([]string, 0, len(objects))
+	for _, object := range objects {
+		kinds = append(kinds, fmt.Sprintf("%T", object))
+	}
+
+	return kinds
 }
 
 // The location is what an archive interval is compared by, so it has to change

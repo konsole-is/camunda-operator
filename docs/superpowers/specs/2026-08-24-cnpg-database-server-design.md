@@ -487,7 +487,7 @@ Conditions and components, one component per condition:
 | Condition | Component owns | True when |
 | --- | --- | --- |
 | `ClusterReady` | `Cluster` | the Cluster the contract points at is Healthy. `ClusterTaken` when a Cluster of that name exists that this server does not control |
-| `ArchiveReady` | `ObjectStore`, `ScheduledBackup` | absent `archive` block, or the first base backup of the current archive completed |
+| `ArchiveReady` | `ObjectStore`, `ScheduledBackup` | absent `archive` block, or the first base backup of the current archive completed. `ArchiveTaken` when an `ObjectStore` of that name exists that another owner controls |
 | `ContractReady` | `DatabaseServerConfig` | the contract is published and the superuser Secret exists (the contract's own Ready is the probe's business; a hibernated server keeps a published contract). `ContractTaken` when a contract of that name exists that this server did not publish |
 | `MonitoringReady` | `PodMonitor` | monitoring disabled, or the PodMonitor is applied |
 
@@ -655,6 +655,25 @@ themselves off while the name is held, so ocf removes the `DatabaseServerConfig`
 `PodMonitor`, and the archive component withdraws the `ScheduledBackup` and keeps the `ObjectStore`.
 `status.archive.history` and `status.recovery` are untouched, so the server comes back whole once
 the name is free. `ClusterReady` reports `ClusterTaken` with the holder in the message.
+
+The `ObjectStore` is read live for the same reason, next to the read of the contract, and before
+the recovery runs. `BlockOnForeignController` keeps the object whole, but it fires on the apply,
+and the cluster is applied first and carries the archive plugin entry that names that object. The
+plugin therefore sends the write-ahead log of this server into the bucket, and under the
+credentials, of whoever holds the name, while `ArchiveReady` reports a conflict about an object the
+cluster is already writing through. A taken name takes the plugin entry off the cluster, removes
+the `ScheduledBackup` with it, publishes the contract with no `pitr` capability, and refuses a
+rollback with `Unavailable`. `ArchiveReady` reports `ArchiveTaken` with the holder in the message,
+and `status.archive.history` is held whole the way a taken cluster holds it. The open record
+therefore spans the window the name was held, and the bucket holds no write-ahead log of it. That
+is the same hole a taken cluster leaves, and closing the record on a name conflict is a question
+for both of them at once.
+
+An `ObjectStore` with no controller is adopted rather than refused, where a contract and a
+`Cluster` of the same shape are refused. It carries the location of an archive and the way the
+plugin reaches it, both of which this server resolves from its own `ObjectStorageConfig`, so the
+apply takes no data of anybody. It is also what `BlockOnForeignController` does with one, so a
+message here names a holder that the apply then writes over on the same pass.
 
 `spec.databaseServerConfig` is mutable. The reconcile sweeps every `DatabaseServerConfig` it owns
 under the `camunda.io/database-server` label of the server and deletes the ones it no longer

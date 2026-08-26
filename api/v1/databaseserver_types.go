@@ -274,6 +274,16 @@ const ReasonContractTaken = "ContractTaken"
 // controls it. Remove that cluster, or give this server a name of its own.
 const ReasonClusterTaken = "ClusterTaken"
 
+// ReasonArchiveTaken is the ArchiveReady reason of a DatabaseServer that
+// derives the name of a Barman Cloud ObjectStore that another owner controls.
+// The cluster archives its write-ahead log through the ObjectStore of that
+// name, so the server takes the archive off the cluster. It archives no
+// write-ahead log, takes no base backup, publishes no point-in-time-recovery
+// capability on its contract, and refuses a rollback. The archive it wrote
+// before and its history stay. The message names the holder. Remove that
+// ObjectStore, or give this server a name of its own.
+const ReasonArchiveTaken = "ArchiveTaken"
+
 // ReasonVersionChangeRefused is the Ready reason of a DatabaseServer whose
 // merged version names a PostgreSQL major other than the one its data
 // directory runs. The server keeps running the major it has: everything the

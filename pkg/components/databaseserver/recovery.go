@@ -214,6 +214,7 @@ func RecoveryCluster(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
 	archive *ArchiveStorage,
+	archiveTaken string,
 	platform *v1.CamundaPlatformConfigSpec,
 	source v1.ArchiveRecord,
 	target string,
@@ -227,7 +228,7 @@ func RecoveryCluster(
 	baseline.Name = name
 
 	resource, err := cnpgcluster.NewBuilder(baseline).
-		WithMutation(clusterMutations(server, merged, archive)...).
+		WithMutation(clusterMutations(server, merged, archive, archiveTaken)...).
 		WithMutation(recoveryMutation(server, name, source, target)).
 		Build()
 	if err != nil {
