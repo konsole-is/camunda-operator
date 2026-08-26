@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 )
 
 const (
@@ -304,6 +305,34 @@ func TestReconcileArchiveHistoryHoldsAMoveTheApplyDidNotReach(t *testing.T) {
 	require.Len(t, history, 1)
 	assert.Nil(t, history[0].To, "the archive is where it was, so its record is still open")
 	assert.Nil(t, server.Status.Archive.Boundary)
+}
+
+// ArchiveReady reports the uploads of the archive the server writes now. A
+// suspended server writes no write-ahead log, and a server that asks for no
+// archive writes none either, so what CloudNativePG left on its cluster
+// describes neither of them. An outage inside the grace period is reported by
+// nobody and looked at again.
+func TestReportedAndPendingArchiveOutage(t *testing.T) {
+	t.Parallel()
+
+	archiving := v1.DatabaseServerSpec{
+		Archive: &v1.DatabaseServerArchiveSpec{ObjectStorageRef: "bucket", RetentionPeriodDays: 30},
+	}
+	suspended := v1.DatabaseServerSpec{Archive: archiving.Archive, Suspend: true}
+	confirmed := &components.ArchiveOutage{Reason: "ContinuousArchivingFailing", Confirmed: true}
+	held := &components.ArchiveOutage{Reason: "ContinuousArchivingFailing"}
+
+	assert.Same(t, confirmed, reportedArchiveOutage(confirmed, archiving))
+	assert.Nil(t, reportedArchiveOutage(held, archiving))
+	assert.Nil(t, reportedArchiveOutage(confirmed, suspended))
+	assert.Nil(t, reportedArchiveOutage(confirmed, v1.DatabaseServerSpec{}))
+	assert.Nil(t, reportedArchiveOutage(nil, archiving))
+
+	assert.True(t, pendingArchiveOutage(held, archiving))
+	assert.False(t, pendingArchiveOutage(confirmed, archiving))
+	assert.False(t, pendingArchiveOutage(held, suspended))
+	assert.False(t, pendingArchiveOutage(held, v1.DatabaseServerSpec{}))
+	assert.False(t, pendingArchiveOutage(nil, archiving))
 }
 
 // The floor is the point the highest retention period ever in force pruned

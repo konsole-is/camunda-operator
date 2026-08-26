@@ -1019,12 +1019,14 @@ func clusterGuardReason(server *v1.DatabaseServer, derived derivedCluster) strin
 //
 // A suspended server reports on none either. Its instances are gone, so it
 // writes no write-ahead log to lose, and what CloudNativePG left on the
-// condition describes the server that ran before the suspension.
+// condition describes the server that ran before the suspension. A server that
+// asks for no archive is the same case: the cluster carries no archive plugin,
+// and what stands on the condition is what the server archived before.
 func reportedArchiveOutage(
 	outage *components.ArchiveOutage,
 	merged v1.DatabaseServerSpec,
 ) *components.ArchiveOutage {
-	if outage == nil || !outage.Confirmed || merged.Suspend {
+	if outage == nil || !outage.Confirmed || merged.Suspend || !components.Archiving(merged) {
 		return nil
 	}
 
@@ -1036,7 +1038,7 @@ func reportedArchiveOutage(
 // the reconcile when it does: CloudNativePG writes that condition once and
 // leaves it standing.
 func pendingArchiveOutage(outage *components.ArchiveOutage, merged v1.DatabaseServerSpec) bool {
-	return outage != nil && !outage.Confirmed && !merged.Suspend
+	return outage != nil && !outage.Confirmed && !merged.Suspend && components.Archiving(merged)
 }
 
 // serverVolumes are the volumes of the current cluster: one entry per
