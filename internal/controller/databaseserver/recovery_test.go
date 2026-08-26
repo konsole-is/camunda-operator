@@ -1729,18 +1729,27 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		// Somebody removed it after the contract moved to it. Reading a
 		// missing cluster as an error holds the request for ever.
-		var recovered cnpgv1.Cluster
+		//
+		// The cluster component applies a cluster of this name on every look
+		// once status.cluster names it, and it reads that name after
+		// completeRecovery has already read the live object. A delete that lands
+		// between the two is put back by the same look, and the removal is never
+		// seen again, because a spec deletes once. Removing it on every poll
+		// leaves the read that abandons the rollback the one that wins.
+		By("removing the recovered cluster until the server reads it gone")
 		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}
-		Expect(k8sClient.Get(ctx, key, &recovered)).To(Succeed())
-		Expect(k8sClient.Delete(ctx, &recovered)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var recovered cnpgv1.Cluster
+			if err := k8sClient.Get(ctx, key, &recovered); err == nil {
+				g.Expect(k8sClient.Delete(ctx, &recovered)).To(Succeed())
+			}
+
+			g.Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda"))
+		}, timeout, interval).Should(Succeed())
 
 		outcome := expectLastRecovery(server, v1.RecoveryResultFailed)
 		Expect(outcome.Message).To(ContainSubstring("was removed"))
 		Expect(outcome.Message).To(ContainSubstring("runs from \"camunda\" again"))
-
-		Eventually(func() string {
-			return reconciledServer(server).Status.Cluster
-		}, timeout, interval).Should(Equal("camunda"))
 	})
 
 	It("keeps running from its own cluster when the contract names one it does not own", func() {
