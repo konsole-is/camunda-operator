@@ -335,6 +335,47 @@ func TestReportedAndPendingArchiveOutage(t *testing.T) {
 	assert.False(t, pendingArchiveOutage(nil, archiving))
 }
 
+// unverifiedFrom says what the archive the server writes now is missing. The
+// plugin fills the gap once the uploads run again, so a record that closed
+// while they were failing must not keep the mark and turn it into history. The
+// closers of a record run before this one in the same reconcile.
+func TestMarkArchiveOutageClearsTheMarkOffClosedRecords(t *testing.T) {
+	t.Parallel()
+
+	closedAt := metav1.NewTime(archiveOpenedAt.Add(time.Hour))
+	stoppedAt := metav1.NewTime(archiveOpenedAt.Add(30 * time.Minute))
+	outage := &components.ArchiveOutage{Since: stoppedAt, Confirmed: true}
+
+	closed := archiveRecord(&closedAt)
+	closed.UnverifiedFrom = &stoppedAt
+	server := archivingServerWith([]v1.ArchiveRecord{closed}, nil)
+
+	// The drop of spec.archive closes the record and reports on no outage.
+	markArchiveOutage(server, nil)
+	assert.Nil(t, server.Status.Archive.History[0].UnverifiedFrom)
+
+	// A record that closes while the uploads are still failing loses it too.
+	// The outage belongs to the archive the server writes now, and there is
+	// none.
+	closed = archiveRecord(&closedAt)
+	closed.UnverifiedFrom = &stoppedAt
+	server = archivingServerWith([]v1.ArchiveRecord{closed}, nil)
+
+	markArchiveOutage(server, outage)
+	assert.Nil(t, server.Status.Archive.History[0].UnverifiedFrom)
+
+	// The open record still takes it, and the closed one beside it does not.
+	server = archivingServerWith(
+		[]v1.ArchiveRecord{archiveRecord(&closedAt), archiveRecord(nil)}, nil,
+	)
+	server.Status.Archive.History[0].UnverifiedFrom = &stoppedAt
+
+	markArchiveOutage(server, outage)
+	assert.Nil(t, server.Status.Archive.History[0].UnverifiedFrom)
+	require.NotNil(t, server.Status.Archive.History[1].UnverifiedFrom)
+	assert.True(t, server.Status.Archive.History[1].UnverifiedFrom.Equal(&stoppedAt))
+}
+
 // The floor is the point the highest retention period ever in force pruned
 // the bucket to. A raise leaves it where it is, and the clock moves it again
 // only once now minus the retention period passes it.

@@ -1757,7 +1757,22 @@ func markArchiveBoundary(server *v1.DatabaseServer, now metav1.Time, location, b
 // the archive can be missing write-ahead log, and clears the point once the
 // uploads run again. The plugin uploads the segments it held back then, so
 // every point of the interval can be reached again.
+//
+// The mark states what the archive the server writes now is missing, and it is
+// never history. A record that was closed while the uploads were failing loses
+// it here, whichever of the closers ended it.
 func markArchiveOutage(server *v1.DatabaseServer, outage *components.ArchiveOutage) {
+	if server.Status.Archive == nil {
+		return
+	}
+
+	for i := range server.Status.Archive.History {
+		record := &server.Status.Archive.History[i]
+		if record.To != nil {
+			record.UnverifiedFrom = nil
+		}
+	}
+
 	open := openArchiveRecord(server)
 	if open == nil {
 		return
