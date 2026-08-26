@@ -162,7 +162,7 @@ func expectRecovering(pitr *v1.PointInTimeRestore, substrings ...string) {
 	GinkgoHelper()
 
 	Eventually(func(g Gomega) {
-		current := readRestore(pitr)
+		current := readRestore(g, pitr)
 		g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
 		condition := ready(current)
 		g.Expect(condition).NotTo(BeNil())
@@ -179,7 +179,7 @@ func expectFailed(pitr *v1.PointInTimeRestore, reason string) string {
 
 	var message string
 	Eventually(func(g Gomega) {
-		current := readRestore(pitr)
+		current := readRestore(g, pitr)
 		g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 		condition := ready(current)
 		g.Expect(condition).NotTo(BeNil())
@@ -198,7 +198,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		expectRecovering(pitr, w.namespace+"/"+w.server.Name, w.namespace+"/"+pitr.Name)
 
 		request := expectRecoveryRequest(w)
-		Expect(request.RequestID).To(Equal(string(readRestore(pitr).UID)))
+		Expect(request.RequestID).To(Equal(string(readRestore(Default, pitr).UID)))
 		Expect(request.RequestedBy).To(Equal(w.namespace + "/" + pitr.Name))
 		Expect(request.TargetTime).To(Equal(restorePoint().UTC().Format(time.RFC3339)))
 	})
@@ -212,7 +212,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 
 		// The request carries the point the resource holds, whatever was
 		// written into it.
-		stored := readRestore(pitr).Spec.Timestamp
+		stored := readRestore(Default, pitr).Spec.Timestamp
 		request := expectRecoveryRequest(w)
 		Expect(request.TargetTime).To(Equal(stored.UTC().Format(time.RFC3339Nano)))
 	})
@@ -259,7 +259,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		Eventually(func(g Gomega) {
 			request := expectRecoveryRequest(w)
 			g.Expect(request.RequestID).NotTo(Equal(answered.RequestID))
-			g.Expect(request.RequestID).To(Equal(string(readRestore(second).UID)))
+			g.Expect(request.RequestID).To(Equal(string(readRestore(g, second).UID)))
 			g.Expect(request.TargetTime).To(Equal(answered.TargetTime))
 		}, timeout, interval).Should(Succeed())
 	})
@@ -274,7 +274,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		publishContractReady(w, recoveredIdentifier)
 
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestoreRestoringDatabase))
 			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestoreFailed))
 			g.Expect(current.Status.Storage).NotTo(BeNil())
@@ -297,7 +297,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		publishContractReady(w, replacedIdentifier)
 
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 			g.Expect(current.Status.FailureMessage).To(ContainSubstring(worldSystemIdentifier))
 			g.Expect(current.Status.FailureMessage).To(ContainSubstring(replacedIdentifier))
@@ -317,14 +317,14 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		// between reads no identity at all. That states nothing about the
 		// instance, so the pin of the restore holds instead of ending it.
 		publishContractReady(w, "")
-		Consistently(func() v1.PointInTimeRestorePhase {
-			return readRestore(pitr).Status.Phase
+		Consistently(func(g Gomega) v1.PointInTimeRestorePhase {
+			return readRestore(g, pitr).Status.Phase
 		}, "2s", interval).Should(Equal(v1.PointInTimeRestoreRestoringDatabase))
 
 		publishContractReady(w, recoveredIdentifier)
 
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestoreRestoringDatabase))
 			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestoreFailed))
 		}, timeout, interval).Should(Succeed())
@@ -344,14 +344,14 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		// A Ready that answers the spec of before the endpoint moved says
 		// nothing about the server the contract names now.
 		publishStaleContractReady(w, worldSystemIdentifier)
-		Consistently(func() v1.PointInTimeRestorePhase {
-			return readRestore(pitr).Status.Phase
+		Consistently(func(g Gomega) v1.PointInTimeRestorePhase {
+			return readRestore(g, pitr).Status.Phase
 		}, "2s", interval).Should(Equal(v1.PointInTimeRestoreRestoringDatabase))
 
 		publishContractReady(w, recoveredIdentifier)
 
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestoreRestoringDatabase))
 			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestoreFailed))
 		}, timeout, interval).Should(Succeed())
@@ -384,7 +384,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		pitr := createRestore(w)
 
 		expectAdmitted(pitr, w)
-		Expect(readRestore(pitr).Status.Phase).NotTo(Equal(v1.PointInTimeRestoreRestoringDatabase))
+		Expect(readRestore(Default, pitr).Status.Phase).NotTo(Equal(v1.PointInTimeRestoreRestoringDatabase))
 
 		var contract v1.DatabaseServerConfig
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), &contract)).To(Succeed())
