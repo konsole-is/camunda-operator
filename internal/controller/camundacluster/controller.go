@@ -259,9 +259,9 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// running version and the refusal stands when the holder releases.
 		in.Effective.Version = storage.runningVersion()
 	}
-	// Only a reconcile that reached the check and did not refuse drops the
-	// cluster out of the memo, so a refusal that comes back, or one that a
-	// parked cluster meets on release, is recorded again. An earlier return
+	// Only a reconcile that reached the check and did not report a refusal
+	// drops the cluster out of the memo, so a refusal that comes back, or
+	// one that a parked cluster meets on release, is recorded again. An earlier return
 	// leaves the memo as it is: the refusal may still stand, and the staged
 	// Ready condition cannot tell, because a flush that conflicts drops it.
 	r.refusals.forget(req.NamespacedName)
