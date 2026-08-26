@@ -94,13 +94,12 @@ func newRig() *rig {
 			Type: v1.SecondaryStorageTypeElasticsearch,
 			Elasticsearch: &v1.ElasticsearchStorage{
 				Endpoint: r.search.URL(),
-				CredentialsSecretRef: v1.CredentialsSecretRef{
+				CredentialsSecretRef: v1.LocalCredentialsSecretRef{
 					Name:        credentials.Name,
-					Namespace:   r.namespace,
 					UsernameKey: "username",
 					PasswordKey: "password",
 				},
-				CASecretRef: &v1.SecretKeyRef{Name: ca.Name, Namespace: r.namespace, Key: "ca.crt"},
+				CASecretRef: &v1.LocalSecretKeyRef{Name: ca.Name, Key: "ca.crt"},
 			},
 		},
 	}
@@ -183,9 +182,8 @@ func (r *rig) publishBrokenBinding() {
 			Endpoint: r.management.URL(),
 			Auth: v1.ManagementAuth{
 				Method: v1.ManagementAuthMethodBasic,
-				CredentialsSecretRef: &v1.CredentialsSecretRef{
+				CredentialsSecretRef: &v1.LocalCredentialsSecretRef{
 					Name:        "management-credentials-gone",
-					Namespace:   r.namespace,
 					UsernameKey: "username",
 					PasswordKey: "password",
 				},

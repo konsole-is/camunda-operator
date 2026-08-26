@@ -17,7 +17,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 393825f6b9eea482
+        camunda.io/config-hash: 21af6cfc040cf537
       labels:
         camunda.io/component: management-identity
         camunda.io/management-cluster: my-management
@@ -44,12 +44,12 @@ spec:
           valueFrom:
             secretKeyRef:
               key: username
-              name: my-management-management-keycloak-admin
+              name: keycloak-admin
         - name: KEYCLOAK_SETUP_PASSWORD
           valueFrom:
             secretKeyRef:
               key: password
-              name: my-management-management-keycloak-admin
+              name: keycloak-admin
         - name: KEYCLOAK_SETUP_REALM
           value: master
         - name: KEYCLOAK_SETUP_CLIENT_ID

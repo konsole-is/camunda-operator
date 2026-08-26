@@ -230,7 +230,7 @@ func bindingsComponent(
 		Spec: v1.DatabaseConfigSpec{
 			ServerRef:            db.Spec.ServerRef,
 			DatabaseName:         db.Spec.DatabaseName,
-			CredentialsSecretRef: credentialsSecretRef(rb.AppSecret),
+			CredentialsSecretRef: credentialsSecretRef(rb.AppSecret.Name),
 		},
 	}).WithMutation(backupCredentialsRefMutation(rb)).Build()
 	if err != nil {
@@ -309,10 +309,11 @@ func credentialSecret(
 }
 
 // credentialsSecretRef points a contract at a published credential Secret.
-func credentialsSecretRef(key types.NamespacedName) v1.CredentialsSecretRef {
-	return v1.CredentialsSecretRef{
-		Name:        key.Name,
-		Namespace:   key.Namespace,
+// The contract and the Secret share the namespace of the Database, so the
+// reference carries the name alone.
+func credentialsSecretRef(name string) v1.LocalCredentialsSecretRef {
+	return v1.LocalCredentialsSecretRef{
+		Name:        name,
 		UsernameKey: CredentialUsernameKey,
 		PasswordKey: CredentialPasswordKey,
 	}
@@ -326,7 +327,7 @@ func backupCredentialsRefMutation(rb Bindings) databaseconfig.Mutation {
 		Feature: feature.NewBooleanGate(rb.BackupEnabled),
 		Mutate: func(m *databaseconfig.Mutator) error {
 			m.Edit(func(cfg *v1.DatabaseConfig) error {
-				ref := credentialsSecretRef(rb.BackupSecret)
+				ref := credentialsSecretRef(rb.BackupSecret.Name)
 				cfg.Spec.BackupCredentialsSecretRef = &ref
 				return nil
 			})

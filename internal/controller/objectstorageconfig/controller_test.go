@@ -112,7 +112,6 @@ var _ = Describe("ObjectStorageConfig controller", func() {
 				Credentials: &v1.S3Credentials{
 					SecretRef: v1.S3CredentialsSecretRef{
 						Name:               secret.Name,
-						Namespace:          secret.Namespace,
 						AccessKeyIDKey:     "accessKeyId",
 						SecretAccessKeyKey: "secretAccessKey",
 					},

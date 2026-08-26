@@ -271,7 +271,6 @@ func TestDatabaseServerGoldenArchiveCredentials(t *testing.T) {
 			Credentials: &v1.S3Credentials{
 				SecretRef: v1.S3CredentialsSecretRef{
 					Name:               "minio-credentials",
-					Namespace:          "camunda",
 					AccessKeyIDKey:     "accessKeyId",
 					SecretAccessKeyKey: "secretAccessKey",
 				},
@@ -303,7 +302,7 @@ func TestDatabaseServerGoldenArchiveGCSCredentials(t *testing.T) {
 					Auth: v1.GCSStorageAuth{
 						Type: v1.ObjectStorageAuthTypeCredentials,
 						Credentials: &v1.GCSCredentials{
-							SecretRef: v1.SecretKeyRef{Name: "gcs-key", Namespace: "camunda", Key: "key.json"},
+							SecretRef: v1.LocalSecretKeyRef{Name: "gcs-key", Key: "key.json"},
 						},
 					},
 				},

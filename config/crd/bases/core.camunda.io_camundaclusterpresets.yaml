@@ -1111,14 +1111,9 @@ spec:
                             description: Name of the Secret holding the value.
                             minLength: 1
                             type: string
-                          namespace:
-                            description: Namespace of the Secret.
-                            minLength: 1
-                            type: string
                         required:
                         - key
                         - name
-                        - namespace
                         type: object
                     type: object
                   backup:

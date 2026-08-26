@@ -276,7 +276,7 @@ func (r *Reconciler) databaseJob(
 type databaseResolution struct {
 	config       *v1.DatabaseConfig
 	server       *v1.DatabaseServerConfig
-	credentials  v1.CredentialsSecretRef
+	credentials  v1.LocalCredentialsSecretRef
 	bucket       *v1.ObjectStorageConfig
 	bucketSecret string
 	pod          *v1.DumpPodSpec
@@ -321,7 +321,7 @@ func (r *Reconciler) resolveDatabase(
 		return nil, failure, err
 	}
 
-	credentials, bucketSecret, failure, err := r.jobCredentials(
+	bucketSecret, failure, err := r.jobCredentials(
 		ctx, resolved.cluster, bucket, config.Spec.CredentialsSecretRef,
 	)
 	if err != nil || failure != nil {
@@ -336,7 +336,7 @@ func (r *Reconciler) resolveDatabase(
 	return &databaseResolution{
 		config:       config,
 		server:       server,
-		credentials:  credentials,
+		credentials:  config.Spec.CredentialsSecretRef,
 		bucket:       bucket,
 		bucketSecret: bucketSecret,
 		pod:          pod,
@@ -433,44 +433,38 @@ func (r *Reconciler) backupBucket(
 	return &bucket, nil, nil
 }
 
-// jobCredentials locates the two Secrets that the Job mounts, as reachable
-// from the namespace of the cluster. It applies the mirrored-Secret rule of
-// pkg/mirror to both. The bucket name is empty for workload identity.
+// jobCredentials checks the two Secrets that the Job mounts. Both contracts
+// live in the namespace of the cluster and name their Secrets there, so the
+// Job mounts them where they are. The bucket name is empty for workload
+// identity.
 func (r *Reconciler) jobCredentials(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 	bucket *v1.ObjectStorageConfig,
-	database v1.CredentialsSecretRef,
-) (v1.CredentialsSecretRef, string, *conditions.PreCheckFailure, error) {
-	local := mirror.LocalSecretName(
-		cluster, database.Namespace, database.Name, camundacluster.MirrorPurposeDBCredentials,
-	)
-	database.Name, database.Namespace = local, cluster.Namespace
+	database v1.LocalCredentialsSecretRef,
+) (string, *conditions.PreCheckFailure, error) {
 	failure, err := mirror.CheckLocalSecret(
-		ctx, r.APIReader, cluster.Namespace, local, v1.ReasonMissingSecret, "database",
+		ctx, r.APIReader, cluster.Namespace, database.Name, v1.ReasonMissingSecret, "database",
 		database.UsernameKey, database.PasswordKey,
 	)
 	if err != nil || failure != nil {
-		return database, "", failure, err
+		return "", failure, err
 	}
 
 	credentials := bucket.CredentialsSecret()
 	if credentials == nil {
-		return database, "", nil, nil
+		return "", nil, nil
 	}
 
-	bucketSecret := mirror.LocalSecretName(
-		cluster, credentials.Namespace, credentials.Name, camundacluster.MirrorPurposeBackupCredentials,
-	)
 	failure, err = mirror.CheckLocalSecret(
-		ctx, r.APIReader, cluster.Namespace, bucketSecret, v1.ReasonMissingCredentials, "bucket",
+		ctx, r.APIReader, cluster.Namespace, credentials.Name, v1.ReasonMissingCredentials, "bucket",
 		credentials.Keys...,
 	)
 	if err != nil || failure != nil {
-		return database, "", failure, err
+		return "", failure, err
 	}
 
-	return database, bucketSecret, nil, nil
+	return credentials.Name, nil, nil
 }
 
 // dumpBlock resolves the pod settings and the postgres image of the Job from

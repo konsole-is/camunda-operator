@@ -108,12 +108,12 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 		Spec: v1.DatabaseConfigSpec{
 			ServerRef:    server.Name,
 			DatabaseName: "camunda",
-			CredentialsSecretRef: v1.CredentialsSecretRef{
-				Name: "app-user", Namespace: namespace,
+			CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+				Name:        "app-user",
 				UsernameKey: "username", PasswordKey: "password",
 			},
-			BackupCredentialsSecretRef: &v1.CredentialsSecretRef{
-				Name: dbCredentials.Name, Namespace: namespace,
+			BackupCredentialsSecretRef: &v1.LocalCredentialsSecretRef{
+				Name:        dbCredentials.Name,
 				UsernameKey: "username", PasswordKey: "password",
 			},
 		},
@@ -141,7 +141,7 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 					Type: v1.ObjectStorageAuthTypeCredentials,
 					Credentials: &v1.S3Credentials{
 						SecretRef: v1.S3CredentialsSecretRef{
-							Name: "minio-credentials", Namespace: namespace,
+							Name:           "minio-credentials",
 							AccessKeyIDKey: "accessKeyId", SecretAccessKeyKey: "secretAccessKey",
 						},
 					},
@@ -714,8 +714,8 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 				Type: v1.SecondaryStorageTypeElasticsearch,
 				Elasticsearch: &v1.ElasticsearchStorage{
 					Endpoint: "https://es." + w.namespace + ".svc:9200",
-					CredentialsSecretRef: v1.CredentialsSecretRef{
-						Name: "es", Namespace: w.namespace,
+					CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+						Name:        "es",
 						UsernameKey: "username", PasswordKey: "password",
 					},
 				},
@@ -1477,51 +1477,19 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	It("reads credentials that live outside the cluster namespace through the cluster controller's copies", func() {
+	It("wires the Job to the Secrets the DatabaseConfig and bucket contracts name", func() {
 		w := createWorld()
-		remote := newNamespace()
-
-		By("moving both credential sources out of the cluster namespace")
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.bucket), w.bucket)).To(Succeed())
-			w.bucket.Spec.S3.Auth.Credentials.SecretRef.Namespace = remote
-			g.Expect(k8sClient.Update(ctx, w.bucket)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
-		Eventually(func(g Gomega) {
-			g.Expect(
-				k8sClient.Get(ctx, client.ObjectKeyFromObject(w.dbConfig), w.dbConfig),
-			).To(Succeed())
-			w.dbConfig.Spec.BackupCredentialsSecretRef.Namespace = remote
-			g.Expect(k8sClient.Update(ctx, w.dbConfig)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
-
-		By("standing in for the CamundaCluster controller's local copies")
-		bucketMirror := camundacluster.MirroredSecretName(
-			w.cluster, camundacluster.MirrorPurposeBackupCredentials,
-		)
-		Expect(k8sClient.Create(ctx, &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: bucketMirror, Namespace: w.namespace},
-			Data: map[string][]byte{
-				"accessKeyId": []byte("minio-root"), "secretAccessKey": []byte("minio-secret"),
-			},
-		})).To(Succeed())
-		dumpMirror := camundacluster.MirroredSecretName(
-			w.cluster, camundacluster.MirrorPurposeDumpCredentials,
-		)
-		Expect(k8sClient.Create(ctx, &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: dumpMirror, Namespace: w.namespace},
-			Data:       map[string][]byte{"username": []byte("backup"), "password": []byte("s3cr3t")},
-		})).To(Succeed())
-
 		backup := createBackup(w)
 		job := jobOf(backup, w)
 
-		By("wiring the Job to the copies, not the unreachable sources")
+		By("mounting the backup user's own Secret for the dump")
 		dump := job.Spec.Template.Spec.InitContainers[0]
-		Expect(secretNameOfEnv(dump, "PGUSER")).To(Equal(dumpMirror))
+		Expect(secretNameOfEnv(dump, "PGUSER")).To(Equal("backup-user"))
+
+		By("mounting the bucket's own Secret for the upload")
 		upload := job.Spec.Template.Spec.Containers[0]
 		Expect(secretNameOfEnv(upload, components.EnvUploadCredentialPrefix+"0")).To(
-			Equal(bucketMirror),
+			Equal("minio-credentials"),
 		)
 	})
 

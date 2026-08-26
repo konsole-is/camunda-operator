@@ -127,12 +127,12 @@ func newWorld(mutate ...func(*v1.CamundaCluster)) *world {
 		Spec: v1.DatabaseConfigSpec{
 			ServerRef:    w.server.Name,
 			DatabaseName: "camunda",
-			CredentialsSecretRef: v1.CredentialsSecretRef{
-				Name: appUser.Name, Namespace: w.namespace,
+			CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+				Name:        appUser.Name,
 				UsernameKey: "username", PasswordKey: "password",
 			},
-			BackupCredentialsSecretRef: &v1.CredentialsSecretRef{
-				Name: backupUser.Name, Namespace: w.namespace,
+			BackupCredentialsSecretRef: &v1.LocalCredentialsSecretRef{
+				Name:        backupUser.Name,
 				UsernameKey: "username", PasswordKey: "password",
 			},
 		},

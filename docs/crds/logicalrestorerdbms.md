@@ -133,7 +133,7 @@ The operator compares the backup against the target before the first destructive
 | --- | --- |
 | The target is the cluster the backup came from. | The restore application reads the primary-storage backup under the prefix of the cluster it runs as. A different name points it at a prefix that holds no backup of this cluster. |
 | The target stores its data in a relational database. | The dump holds relational data. An Elasticsearch target has nothing to read it with. |
-| The target backs up through the same `ObjectStorageConfig` as the backup. | The `pg_restore` Job reads the bucket of the backup with the credentials that the `CamundaCluster` controller copies into the namespace, and it copies them for the bucket of the target alone. |
+| The target backs up through the same `ObjectStorageConfig` as the backup. | The `pg_restore` Job reads the bucket of the backup with the credentials that the contract of the target names, in the namespace of the target. |
 | The target runs the same Camunda minor as the backup, or one minor newer. | Camunda migrates its own schema one minor at a time. The patch level is free. The restore moves the target to the version of the backup before this rule runs, so it holds by construction. |
 
 The brokers write the backup prefix of their own cluster into their configuration. The restore Jobs copy that configuration from the live broker StatefulSet, so the restore always reads the prefix of the target.
@@ -152,7 +152,7 @@ The operator applies one Job that rebuilds the logical database of the target. A
 
 **The Job connects as the application role of the target**, the role that `DatabaseConfig.spec.credentialsSecretRef` names. `pg_restore --clean` drops each object before it recreates it, and PostgreSQL lets only the owner of an object drop it. The application role owns the database and every object in it. The backup role that wrote the dump owns nothing: it holds USAGE and CREATE on the schema and DML on the tables. A restore that connected as the backup role would fail every DROP with "must be owner of table" and would restore no data.
 
-A credentials Secret outside the namespace of the target is read through the local copy that the `CamundaCluster` controller maintains. A Secret that is missing or lacks a key holds the restore with reason `MissingSecret` for the database credentials, or `MissingCredentials` for the bucket credentials.
+Every credentials Secret lives in the namespace of the target. A Secret that is missing or lacks a key holds the restore with reason `MissingSecret` for the database credentials, or `MissingCredentials` for the bucket credentials.
 
 The Job takes its pod settings and its postgres image from `spec.backup.dump` of the target cluster, through its preset when it names one. The Job runs under the ServiceAccount of the cluster, so the pod shape and the executable stay the choice of whoever owns the cluster. The restore resource carries no pod block of its own.
 

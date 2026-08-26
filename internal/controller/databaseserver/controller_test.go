@@ -554,7 +554,6 @@ func bucketInNamespace(namespace string) *v1.ObjectStorageConfig {
 					Credentials: &v1.S3Credentials{
 						SecretRef: v1.S3CredentialsSecretRef{
 							Name:               name,
-							Namespace:          namespace,
 							AccessKeyIDKey:     "accessKeyId",
 							SecretAccessKeyKey: "secretAccessKey",
 						},

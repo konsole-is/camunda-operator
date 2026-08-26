@@ -164,7 +164,6 @@ spec:
       realm: "camunda-platform"
       adminCredentialsSecretRef:
         name: "my-keycloak-admin"
-        namespace: "my-management-ns"
         usernameKey: "username"
         passwordKey: "password"
   identity:

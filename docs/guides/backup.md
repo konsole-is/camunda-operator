@@ -127,7 +127,6 @@ spec:
   # ... serverRef, databaseName, credentialsSecretRef
   backupCredentialsSecretRef:
     name: my-camunda-db-backup-credentials
-    namespace: my-cluster-ns
     usernameKey: username
     passwordKey: password
 ```

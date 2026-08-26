@@ -47,17 +47,16 @@ func TestKeycloakAdministratorRollsIdentityAlone(t *testing.T) {
 		Spec: v1.CamundaManagementClusterSpec{
 			IdentityProvider: v1.IdentityProviderSpec{ExternalKeycloak: &v1.ExternalKeycloakSpec{
 				URL: "https://keycloak.example.com/auth",
-				AdminCredentialsSecretRef: v1.CredentialsSecretRef{
+				AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
 					Name:        "keycloak-admin",
-					Namespace:   precheckNamespace,
 					UsernameKey: "username",
 					PasswordKey: "password",
 				},
 			}},
 			Identity: v1.IdentitySpec{Admin: v1.IdentityAdminSpec{
 				Username: "platform-admin",
-				PasswordSecretRef: &v1.SecretKeyRef{
-					Name: "admin-password", Namespace: precheckNamespace, Key: "password",
+				PasswordSecretRef: &v1.LocalSecretKeyRef{
+					Name: "admin-password", Key: "password",
 				},
 			}},
 		},

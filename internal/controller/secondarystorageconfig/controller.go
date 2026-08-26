@@ -99,7 +99,7 @@ func (r *SecondaryStorageConfigReconciler) validate(
 		ref := cfg.Spec.Elasticsearch.CredentialsSecretRef
 		msg, err := secretref.CheckKeys(
 			ctx, r.APIReader,
-			types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name},
+			types.NamespacedName{Namespace: cfg.Namespace, Name: ref.Name},
 			ref.UsernameKey, ref.PasswordKey,
 		)
 		if err != nil {
@@ -112,7 +112,7 @@ func (r *SecondaryStorageConfigReconciler) validate(
 		if ca := cfg.Spec.Elasticsearch.CASecretRef; ca != nil {
 			msg, err := secretref.CheckKeys(
 				ctx, r.APIReader,
-				types.NamespacedName{Namespace: ca.Namespace, Name: ca.Name}, ca.Key,
+				types.NamespacedName{Namespace: cfg.Namespace, Name: ca.Name}, ca.Key,
 			)
 			if err != nil {
 				return metav1.Condition{}, err
@@ -149,13 +149,14 @@ func (r *SecondaryStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) er
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.SecondaryStorageConfig{},
 		SecretRefsField, func(o client.Object) []string {
-			es := o.(*v1.SecondaryStorageConfig).Spec.Elasticsearch
+			cfg := o.(*v1.SecondaryStorageConfig)
+			es := cfg.Spec.Elasticsearch
 			if es == nil {
 				return nil
 			}
-			keys := []string{refindex.NamespacedKey(es.CredentialsSecretRef.Namespace, es.CredentialsSecretRef.Name)}
+			keys := []string{refindex.NamespacedKey(cfg.Namespace, es.CredentialsSecretRef.Name)}
 			if es.CASecretRef != nil {
-				keys = append(keys, refindex.NamespacedKey(es.CASecretRef.Namespace, es.CASecretRef.Name))
+				keys = append(keys, refindex.NamespacedKey(cfg.Namespace, es.CASecretRef.Name))
 			}
 			return keys
 		},

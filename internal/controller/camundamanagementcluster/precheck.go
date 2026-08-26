@@ -158,9 +158,9 @@ func (res *resolver) resolvePlatform(ctx context.Context, out *resolved) error {
 // resolveKeycloakAdmin reads the Keycloak administrator that Management
 // Identity bootstraps the realm with.
 //
-// The externalKeycloak mode names the Secret, so a missing one is a
-// MissingSecret the user must correct, and the copy in the management
-// namespace is what the Identity pods mount. The keycloak mode reads the
+// The externalKeycloak mode names the Secret of the management namespace, so
+// a missing one is a MissingSecret the user must correct. The keycloak mode
+// reads the
 // Secret that the Keycloak Operator writes next to the Keycloak; that one is
 // absent until the Keycloak Operator has acted, and refusing the reconcile
 // over it would stop the very apply that creates the Keycloak, so it only
@@ -171,13 +171,10 @@ func (res *resolver) resolvePlatform(ctx context.Context, out *resolved) error {
 func (res *resolver) resolveKeycloakAdmin(ctx context.Context) error {
 	switch components.Mode(res.mc) {
 	case components.ModeExternalKeycloak:
-		// The rewritten reference is dropped: the render package derives the
-		// same local name from LocalSecretName, so this call is here for the
-		// check, the copy, and the hash input.
-		ref := res.mc.Spec.IdentityProvider.ExternalKeycloak.AdminCredentialsSecretRef.DeepCopy()
+		ref := res.mc.Spec.IdentityProvider.ExternalKeycloak.AdminCredentialsSecretRef
 
 		return res.forComponent(components.ComponentIdentity, func() error {
-			return res.localizeCredentials(ctx, ref, components.MirrorPurposeKeycloakAdmin)
+			return res.checkLocalSecret(ctx, ref.Name, ref.UsernameKey, ref.PasswordKey)
 		})
 	case components.ModeKeycloak:
 		key := client.ObjectKey{
@@ -243,13 +240,8 @@ func (res *resolver) resolveGeneratedSecrets(ctx context.Context, out *resolved)
 	out.Input.Secrets = secrets
 
 	if ref := res.mc.Spec.Identity.Admin.PasswordSecretRef; ref != nil {
-		// The rewritten reference is dropped: the render package derives the
-		// same local name from LocalSecretName, so this call is here for the
-		// check, the copy, and the hash input.
-		local := ref.DeepCopy()
-
 		return res.forComponent(components.ComponentIdentity, func() error {
-			return res.localize(ctx, local, components.MirrorPurposeIdentityAdmin)
+			return res.checkLocalSecret(ctx, ref.Name, ref.Key)
 		})
 	}
 
@@ -298,18 +290,14 @@ func (res *resolver) resolveProvider(ctx context.Context, out *resolved) error {
 // Identity is always deployed, so its database is never optional. Web Modeler
 // reads its own database under its own component.
 func (res *resolver) resolveDatabases(ctx context.Context, out *resolved) error {
-	identity, err := res.resolveDatabase(
-		ctx, res.mc.Spec.Identity.DatabaseConfigRef, components.MirrorPurposeIdentityDB,
-	)
+	identity, err := res.resolveDatabase(ctx, res.mc.Spec.Identity.DatabaseConfigRef)
 	if err != nil {
 		return err
 	}
 	out.Input.Databases.Identity = identity
 
 	if keycloak := res.mc.Spec.IdentityProvider.Keycloak; keycloak != nil {
-		db, err := res.resolveDatabase(
-			ctx, keycloak.DatabaseConfigRef, components.MirrorPurposeKeycloakDB,
-		)
+		db, err := res.resolveDatabase(ctx, keycloak.DatabaseConfigRef)
 		if err != nil {
 			return err
 		}
@@ -334,9 +322,7 @@ func (res *resolver) resolveWebModeler(ctx context.Context, out *resolved) error
 	}
 
 	err := res.forComponent(components.ComponentWebModelerRestapi, func() error {
-		database, err := res.resolveDatabase(
-			ctx, webModeler.DatabaseConfigRef, components.MirrorPurposeWebModelerDB,
-		)
+		database, err := res.resolveDatabase(ctx, webModeler.DatabaseConfigRef)
 		if err != nil {
 			return err
 		}
@@ -346,12 +332,10 @@ func (res *resolver) resolveWebModeler(ctx context.Context, out *resolved) error
 		if ref == nil {
 			return nil
 		}
-
-		local := ref.DeepCopy()
-		if err := res.localizeCredentials(ctx, local, components.MirrorPurposeWebModelerMail); err != nil {
+		if err := res.checkLocalSecret(ctx, ref.Name, ref.UsernameKey, ref.PasswordKey); err != nil {
 			return err
 		}
-		out.Input.WebModelerMail = local
+		out.Input.WebModelerMail = ref
 
 		return nil
 	})
@@ -405,13 +389,11 @@ func (res *resolver) resolvePusher(ctx context.Context) (components.PusherCreden
 	return components.PusherCredentials{Key: appKey, Secret: appSecret}, nil
 }
 
-// resolveDatabase reads one DatabaseConfig of the management namespace and the
-// DatabaseServerConfig it names, and points its credentials at their local
-// copy.
+// resolveDatabase reads one DatabaseConfig of the management namespace, the
+// DatabaseServerConfig it names, and the credentials Secret it names.
 func (res *resolver) resolveDatabase(
 	ctx context.Context,
 	ref string,
-	purpose components.MirrorPurpose,
 ) (components.Database, error) {
 	var cfg v1.DatabaseConfig
 	if err := res.get(ctx, client.ObjectKey{Namespace: res.mc.Namespace, Name: ref}, &cfg); err != nil {
@@ -424,8 +406,10 @@ func (res *resolver) resolveDatabase(
 		return components.Database{}, err
 	}
 
-	secretRef := *cfg.Spec.CredentialsSecretRef.DeepCopy()
-	if err := res.localizeCredentials(ctx, &secretRef, purpose); err != nil {
+	secretRef := cfg.Spec.CredentialsSecretRef
+	if err := res.checkLocalSecret(
+		ctx, secretRef.Name, secretRef.UsernameKey, secretRef.PasswordKey,
+	); err != nil {
 		return components.Database{}, err
 	}
 
@@ -474,22 +458,13 @@ func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose
 	return nil
 }
 
-// localizeCredentials is localize for a username and password reference.
-func (res *resolver) localizeCredentials(
-	ctx context.Context,
-	ref *v1.CredentialsSecretRef,
-	purpose components.MirrorPurpose,
-) error {
-	local, err := res.secretFor(
-		ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, purpose,
-		ref.UsernameKey, ref.PasswordKey,
-	)
-	if err != nil {
-		return err
-	}
-	ref.Name, ref.Namespace = local.Name, local.Namespace
+// checkLocalSecret checks that the Secret named name in the management
+// namespace carries keys, and records its resource version as a hash input.
+// Every reference of a namespaced kind resolves here, so no copy is involved.
+func (res *resolver) checkLocalSecret(ctx context.Context, name string, keys ...string) error {
+	_, err := res.secret(ctx, client.ObjectKey{Namespace: res.mc.Namespace, Name: name}, keys...)
 
-	return nil
+	return err
 }
 
 // secretFor is secret, plus the copy that a Secret outside the management

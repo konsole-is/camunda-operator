@@ -12,10 +12,8 @@ spec:
     caSecretRef:
       key: ca.crt
       name: my-cluster-es-es-http-certs-public
-      namespace: my-cluster-ns
     credentialsSecretRef:
       name: my-cluster-es-es-user
-      namespace: my-cluster-ns
       passwordKey: password
       usernameKey: username
     endpoint: https://my-cluster-es-es-http.my-cluster-ns.svc:9200

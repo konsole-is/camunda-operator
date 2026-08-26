@@ -56,7 +56,7 @@ On `AzureBlob` with `workloadIdentity`, the consumer also puts the label `azure.
 
 An empty or absent `workloadIdentity` block means "trust the ServiceAccount chain, add nothing". Use it for mechanisms that need no annotation, for example EKS Pod Identity and GKE Workload Identity Federation. There the binding lives on the cloud side and names the ServiceAccount. The principal to bind is `system:serviceaccount:<namespace>:<serviceAccount name>` of the consuming resource. On a `CamundaCluster`, that ServiceAccount is named `<cluster-name>-camunda` by default.
 
-`credentials` names a Secret that holds a static key. Use it for S3-compatible storage such as MinIO or Ceph, and for a cloud bucket that you access with keys. The shape of the Secret differs per storage type. `S3` takes an access key pair, `GCS` a service-account JSON key, and `AzureBlob` an account key.
+`credentials` names a Secret of the namespace of the contract that holds a static key. Use it for S3-compatible storage such as MinIO or Ceph, and for a cloud bucket that you access with keys. The shape of the Secret differs per storage type. `S3` takes an access key pair, `GCS` a service-account JSON key, and `AzureBlob` an account key.
 
 ## Validation checks
 
@@ -69,7 +69,7 @@ If the Secret of `auth.credentials` or one of its keys is missing, `Ready` is `F
 
 When you edit the contract or the referenced Secret, the operator validates the contract again. Consumers read the contract by name and do not care who produced it.
 
-> **Note:** A Secret reference can name any namespace, and the status message says whether it exists. Grant write access to this kind with care.
+The Secret lives in the namespace of the contract. A contract can reach no Secret of another namespace.
 
 ## Status
 
@@ -119,8 +119,6 @@ spec:
         secretRef:
           # string. Required. Name of the Secret that holds the key pair.
           name: minio-credentials
-          # string. Required. Namespace of the Secret.
-          namespace: my-cluster-ns
           # string. Required. Key in the Secret that holds the access key ID.
           accessKeyIdKey: accessKeyId
           # string. Required. Key in the Secret that holds the secret access key.
@@ -145,8 +143,6 @@ spec:
         secretRef:
           # string. Required. Name of the Secret that holds the JSON key.
           name: gcs-key
-          # string. Required. Namespace of the Secret.
-          namespace: my-cluster-ns
           # string. Required. Key in the Secret that holds the JSON key.
           key: key.json
 
@@ -173,8 +169,6 @@ spec:
         secretRef:
           # string. Required. Name of the Secret that holds the account key.
           name: azure-key
-          # string. Required. Namespace of the Secret.
-          namespace: my-cluster-ns
           # string. Required. Key in the Secret that holds the account key.
           key: accountKey
 ```
@@ -232,7 +226,6 @@ spec:
       credentials:
         secretRef:
           name: minio-credentials
-          namespace: my-cluster-ns
           accessKeyIdKey: accessKeyId
           secretAccessKeyKey: secretAccessKey
 ```

@@ -410,12 +410,12 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		Expect(contract.Spec.Elasticsearch.Endpoint).To(Equal(
 			"https://" + cluster.Name + "-es-http." + cluster.Namespace + ".svc:9200",
 		))
-		Expect(contract.Spec.Elasticsearch.CredentialsSecretRef).To(Equal(v1.CredentialsSecretRef{
-			Name: cluster.Name + "-es-user", Namespace: cluster.Namespace,
+		Expect(contract.Spec.Elasticsearch.CredentialsSecretRef).To(Equal(v1.LocalCredentialsSecretRef{
+			Name:        cluster.Name + "-es-user",
 			UsernameKey: "username", PasswordKey: "password",
 		}))
-		Expect(contract.Spec.Elasticsearch.CASecretRef).To(Equal(&v1.SecretKeyRef{
-			Name: cluster.Name + "-es-http-certs-public", Namespace: cluster.Namespace, Key: "ca.crt",
+		Expect(contract.Spec.Elasticsearch.CASecretRef).To(Equal(&v1.LocalSecretKeyRef{
+			Name: cluster.Name + "-es-http-certs-public", Key: "ca.crt",
 		}))
 		expectControlledBy(&contract, cluster)
 
@@ -509,7 +509,6 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		bucket := createObjectStorageConfig(namespace, s3BucketSpec(&v1.S3Credentials{
 			SecretRef: v1.S3CredentialsSecretRef{
 				Name:               "absent-" + utilrand.String(8),
-				Namespace:          "default",
 				AccessKeyIDKey:     "accessKeyId",
 				SecretAccessKeyKey: "secretAccessKey",
 			},
@@ -788,9 +787,10 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 	// the controller back when it rotates; without one, the nodes keep the
 	// old keys until an unrelated event.
 	It("re-renders the keystore when the bucket credentials rotate", func() {
+		namespace := newElasticsearchClusterNamespace()
 		credentials := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "minio-credentials-" + utilrand.String(8), Namespace: "default",
+				Name: "minio-credentials-" + utilrand.String(8), Namespace: namespace,
 			},
 			Data: map[string][]byte{
 				"accessKeyId":     []byte("old-access"),
@@ -800,11 +800,9 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		Expect(k8sClient.Create(ctx, credentials)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, credentials) })
 
-		namespace := newElasticsearchClusterNamespace()
 		bucket := createObjectStorageConfig(namespace, s3BucketSpec(&v1.S3Credentials{
 			SecretRef: v1.S3CredentialsSecretRef{
 				Name:               credentials.Name,
-				Namespace:          credentials.Namespace,
 				AccessKeyIDKey:     "accessKeyId",
 				SecretAccessKeyKey: "secretAccessKey",
 			},
@@ -901,9 +899,10 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 	// Secret that disappears during the suspension must not flap Ready:
 	// suspension reports Ready=True by design.
 	It("stays Suspended when the bucket Secret disappears during suspension", func() {
+		namespace := newElasticsearchClusterNamespace()
 		credentials := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "minio-credentials-" + utilrand.String(8), Namespace: "default",
+				Name: "minio-credentials-" + utilrand.String(8), Namespace: namespace,
 			},
 			Data: map[string][]byte{
 				"accessKeyId":     []byte("access"),
@@ -912,11 +911,9 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		}
 		Expect(k8sClient.Create(ctx, credentials)).To(Succeed())
 
-		namespace := newElasticsearchClusterNamespace()
 		bucket := createObjectStorageConfig(namespace, s3BucketSpec(&v1.S3Credentials{
 			SecretRef: v1.S3CredentialsSecretRef{
 				Name:               credentials.Name,
-				Namespace:          credentials.Namespace,
 				AccessKeyIDKey:     "accessKeyId",
 				SecretAccessKeyKey: "secretAccessKey",
 			},
@@ -986,9 +983,10 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 	// A fleet cluster inherits its bucket from a preset, so the watches must
 	// see through the preset: the raw spec never names the bucket.
 	It("re-renders the keystore on rotation when the preset provides the bucket", func() {
+		namespace := newElasticsearchClusterNamespace()
 		credentials := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "minio-credentials-" + utilrand.String(8), Namespace: "default",
+				Name: "minio-credentials-" + utilrand.String(8), Namespace: namespace,
 			},
 			Data: map[string][]byte{
 				"accessKeyId":     []byte("old-access"),
@@ -998,11 +996,9 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		Expect(k8sClient.Create(ctx, credentials)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, credentials) })
 
-		namespace := newElasticsearchClusterNamespace()
 		bucket := createObjectStorageConfig(namespace, s3BucketSpec(&v1.S3Credentials{
 			SecretRef: v1.S3CredentialsSecretRef{
 				Name:               credentials.Name,
-				Namespace:          credentials.Namespace,
 				AccessKeyIDKey:     "accessKeyId",
 				SecretAccessKeyKey: "secretAccessKey",
 			},

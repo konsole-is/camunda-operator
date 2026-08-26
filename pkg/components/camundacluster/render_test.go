@@ -50,9 +50,8 @@ func newInput(t *testing.T, mutate func(*Input)) Input {
 			Type: v1.SecondaryStorageTypeElasticsearch,
 			Elasticsearch: &v1.ElasticsearchStorage{
 				Endpoint: "https://es-http.my-cluster-ns.svc:9200",
-				CredentialsSecretRef: v1.CredentialsSecretRef{
+				CredentialsSecretRef: v1.LocalCredentialsSecretRef{
 					Name:        "es-user",
-					Namespace:   "my-cluster-ns",
 					UsernameKey: "username",
 					PasswordKey: "password",
 				},
@@ -224,8 +223,8 @@ func TestRenderElasticsearchWithCA(t *testing.T) {
 	t.Parallel()
 
 	in := newInput(t, func(in *Input) {
-		in.Storage.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
-			Name: "es-http-certs-public", Namespace: "my-cluster-ns", Key: "ca.crt",
+		in.Storage.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
+			Name: "es-http-certs-public", Key: "ca.crt",
 		}
 	})
 	r := render(in, process(t, in, ComponentGateway))
@@ -260,8 +259,8 @@ func TestRenderRDBMS(t *testing.T) {
 				Host:     "pg.ns.svc",
 				Port:     5432,
 				Database: "camunda",
-				Credentials: v1.CredentialsSecretRef{
-					Name: "camunda-db", Namespace: "my-cluster-ns", UsernameKey: "user", PasswordKey: "pass",
+				Credentials: v1.LocalCredentialsSecretRef{
+					Name: "camunda-db", UsernameKey: "user", PasswordKey: "pass",
 				},
 			},
 		}
@@ -374,8 +373,8 @@ func TestRenderOIDCClusterAuthWins(t *testing.T) {
 			Cluster: v1.CamundaClusterSpec{Auth: &v1.ClusterAuthSpec{
 				ClientID: "preset-client",
 				Audience: "preset-audience",
-				ClientSecretRef: &v1.SecretKeyRef{
-					Name: "preset-oidc", Namespace: "camunda-system", Key: "secret",
+				ClientSecretRef: &v1.LocalSecretKeyRef{
+					Name: "preset-oidc", Key: "secret",
 				},
 			}},
 		}))
@@ -408,7 +407,7 @@ func TestResolveAuth(t *testing.T) {
 		in.Platform = oidcPlatform()
 		in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{
 			ClientID:        "cluster-client",
-			ClientSecretRef: &v1.SecretKeyRef{Name: "cluster-oidc", Namespace: "my-cluster-ns", Key: "secret"},
+			ClientSecretRef: &v1.LocalSecretKeyRef{Name: "cluster-oidc", Key: "secret"},
 		}
 		in.Effective = NewEffective(in.Cluster.Spec)
 	})

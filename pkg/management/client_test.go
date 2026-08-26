@@ -114,9 +114,8 @@ func TestNewClientReportsAMissingCredentialsSecret(t *testing.T) {
 			Version:  "8.9.9",
 			Auth: v1.ManagementAuth{
 				Method: v1.ManagementAuthMethodBasic,
-				CredentialsSecretRef: &v1.CredentialsSecretRef{
+				CredentialsSecretRef: &v1.LocalCredentialsSecretRef{
 					Name:        "management-auth",
-					Namespace:   "my-ns",
 					UsernameKey: "username",
 					PasswordKey: "password",
 				},
@@ -148,9 +147,8 @@ func TestNewClientResolvesBasicAuth(t *testing.T) {
 			Version:  "8.9.9",
 			Auth: v1.ManagementAuth{
 				Method: v1.ManagementAuthMethodBasic,
-				CredentialsSecretRef: &v1.CredentialsSecretRef{
+				CredentialsSecretRef: &v1.LocalCredentialsSecretRef{
 					Name:        "management-auth",
-					Namespace:   "my-ns",
 					UsernameKey: "username",
 					PasswordKey: "password",
 				},

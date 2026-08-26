@@ -109,7 +109,7 @@ Pods that are already ordered to stop can run for their termination grace period
 
 `spec.managementAuthRef` names a [ManagementAuthConfig](managementauthconfig.md), which is cluster-scoped. Its `clientSecretRef` names one Secret in one namespace, for every consumer.
 
-A pod reads a Secret of its own namespace only. When a referenced Secret lives in another namespace, the operator copies it into the namespace of the `CamundaOptimize` and points the pods at the copy. `MirroredSecretsReady` reports on those copies.
+A pod reads a Secret of its own namespace only. The contract is cluster-scoped, so the operator copies the Secret it names into the namespace of the `CamundaOptimize` and points the pods at the copy. It does the same for the license Secret of the [CamundaPlatformConfig](camundaplatformconfig.md). Every other Secret already lives in the namespace of the `CamundaOptimize`. `MirroredSecretsReady` reports on the copies.
 
 Optimize connects its Identity SDK to `spec.baseUrl` of the contract. The SDK reads tenants and users from the API of Management Identity, so `baseUrl` is the root of that service. It is not the Identity URL of the orchestration cluster.
 
@@ -189,7 +189,7 @@ A `CamundaOptimize` that never held the attachment removes nothing from the clus
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
-| `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a referenced Secret from another namespace is applied, or no such Secret exists. | Nothing. |
+| `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a Secret that a cluster-scoped resource names is applied, or no such Secret exists. | Nothing. |
 | `WebappReady` | `Healthy` | Every webapp replica is ready. | Nothing. |
 | `ImporterReady` | `Healthy` | The importer replica is ready, or `spec.importer.replicas` is `0`. | Nothing. |
 | `WebappReady` / `ImporterReady` | `Creating` / `Updating` / `Scaling` | The Deployment rolls out or scales. | Wait. |

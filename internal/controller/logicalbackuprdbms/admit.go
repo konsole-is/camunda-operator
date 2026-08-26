@@ -387,7 +387,7 @@ type dumpResolution struct {
 	image        string
 	account      string
 	bucketSecret string
-	dbSecret     v1.CredentialsSecretRef
+	dbSecret     v1.LocalCredentialsSecretRef
 	server       *v1.DatabaseServerConfig
 	dbConfig     *v1.DatabaseConfig
 }
@@ -416,7 +416,7 @@ func (r *LogicalBackupRDBMSReconciler) resolveDump(
 		return nil, failure, err
 	}
 
-	dbSecret, bucketSecret, failure, err := r.resolveCredentials(
+	bucketSecret, failure, err := r.resolveCredentials(
 		ctx, precheck.Cluster, precheck.Bucket, *dbConfig.Spec.BackupCredentialsSecretRef,
 	)
 	if err != nil || failure != nil {
@@ -436,7 +436,7 @@ func (r *LogicalBackupRDBMSReconciler) resolveDump(
 		image:        pod.image,
 		account:      pod.account,
 		bucketSecret: bucketSecret,
-		dbSecret:     dbSecret,
+		dbSecret:     *dbConfig.Spec.BackupCredentialsSecretRef,
 		server:       server,
 		dbConfig:     dbConfig,
 	}, nil, nil
@@ -521,45 +521,38 @@ func serverProbedForCurrentSpec(server *v1.DatabaseServerConfig) bool {
 		ready.ObservedGeneration == server.Generation
 }
 
-// resolveCredentials locates the two Secrets that the Job mounts, as reachable
-// from the cluster namespace. It applies the mirrored-Secret rule of pkg/mirror
-// to both. resolveCredentials returns the dump credentials reference rewritten
-// to the local location, and the local name of the bucket credentials. That
-// name is empty for workload identity.
+// resolveCredentials checks the two Secrets that the Job mounts. Both
+// contracts live in the namespace of the cluster and name their Secrets
+// there, so the Job mounts them where they are. It returns the name of the
+// bucket credentials Secret, which is empty for workload identity.
 func (r *LogicalBackupRDBMSReconciler) resolveCredentials(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 	bucket *v1.ObjectStorageConfig,
-	dbSecret v1.CredentialsSecretRef,
-) (v1.CredentialsSecretRef, string, *conditions.PreCheckFailure, error) {
-	local := mirror.LocalSecretName(
-		cluster, dbSecret.Namespace, dbSecret.Name, camundacluster.MirrorPurposeDumpCredentials,
-	)
-	dbSecret.Name, dbSecret.Namespace = local, cluster.Namespace
+	dbSecret v1.LocalCredentialsSecretRef,
+) (string, *conditions.PreCheckFailure, error) {
 	failure, err := mirror.CheckLocalSecret(
-		ctx, r.APIReader, cluster.Namespace, local, v1.ReasonMissingSecret, "dump",
+		ctx, r.APIReader, cluster.Namespace, dbSecret.Name, v1.ReasonMissingSecret, "dump",
 		dbSecret.UsernameKey, dbSecret.PasswordKey,
 	)
 	if err != nil || failure != nil {
-		return dbSecret, "", failure, err
+		return "", failure, err
 	}
 
 	credentials := bucket.CredentialsSecret()
 	if credentials == nil {
-		return dbSecret, "", nil, nil
+		return "", nil, nil
 	}
-	bucketSecret := mirror.LocalSecretName(
-		cluster, credentials.Namespace, credentials.Name, camundacluster.MirrorPurposeBackupCredentials,
-	)
+
 	failure, err = mirror.CheckLocalSecret(
-		ctx, r.APIReader, cluster.Namespace, bucketSecret, v1.ReasonMissingCredentials, "bucket",
+		ctx, r.APIReader, cluster.Namespace, credentials.Name, v1.ReasonMissingCredentials, "bucket",
 		credentials.Keys...,
 	)
 	if err != nil || failure != nil {
-		return dbSecret, "", failure, err
+		return "", failure, err
 	}
 
-	return dbSecret, bucketSecret, nil, nil
+	return credentials.Name, nil, nil
 }
 
 // podResolution is what resolvePod produces: the pod settings, the image, and

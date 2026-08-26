@@ -59,7 +59,7 @@ Before the operator deletes anything, it compares the backup against the target.
 - The target stores its data in Elasticsearch. Use a `LogicalRestoreRDBMS` for a relational cluster.
 - The target is the cluster that the backup was taken from, which the backup names in `spec.clusterRef`. The restore application reads the partition backup under the prefix of the cluster it runs as. No other cluster reads that prefix.
 - The partition count of the target is the partition count that the backup recorded in `status.partitionsCount`.
-- The `spec.backupStorageRef` of the target names the same `ObjectStorageConfig` that the backup wrote to. The operator reads the artifacts through the bucket of the target, and the `CamundaCluster` controller copies the credentials of that bucket alone into the namespace.
+- The `spec.backupStorageRef` of the target names the same `ObjectStorageConfig` that the backup wrote to. The operator reads the artifacts through the bucket of the target, with the credentials that its contract names in the namespace of the target.
 - The target runs the exact Camunda version that the backup recorded in `status.version`. An Elasticsearch backup carries that version in the name of every snapshot, so a target one patch release newer cannot read it. The restore moves the target to that version before this rule runs, so a version that differs is a wait and not a failure. Only a backup that recorded no version, or that recorded a value which is not of the form `x.y.z`, fails this rule: the operator cannot write such a value.
 
 ## The restore prepares the target

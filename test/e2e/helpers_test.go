@@ -268,7 +268,7 @@ func brokerClaims(cluster *v1.CamundaCluster) map[string]corev1.PersistentVolume
 // The pod name carries a random suffix. RunPod deletes its pod at the end and
 // swallows the error of that delete, so a fixed name makes the next create
 // fail with AlreadyExists.
-func psql(namespace, name string, ref v1.CredentialsSecretRef, sql string) (string, error) {
+func psql(namespace, name string, ref v1.LocalCredentialsSecretRef, sql string) (string, error) {
 	return utils.RunPod(&corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "psql-" + name + "-" + utilrand.String(5),

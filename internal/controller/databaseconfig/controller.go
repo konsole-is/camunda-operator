@@ -99,7 +99,7 @@ func (r *DatabaseConfigReconciler) validate(ctx context.Context, cfg *v1.Databas
 		return metav1.Condition{}, err
 	}
 
-	refs := []v1.CredentialsSecretRef{cfg.Spec.CredentialsSecretRef}
+	refs := []v1.LocalCredentialsSecretRef{cfg.Spec.CredentialsSecretRef}
 	if cfg.Spec.BackupCredentialsSecretRef != nil {
 		refs = append(refs, *cfg.Spec.BackupCredentialsSecretRef)
 	}
@@ -107,7 +107,7 @@ func (r *DatabaseConfigReconciler) validate(ctx context.Context, cfg *v1.Databas
 	for _, ref := range refs {
 		msg, err := secretref.CheckKeys(
 			ctx, r.APIReader,
-			types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name},
+			types.NamespacedName{Namespace: cfg.Namespace, Name: ref.Name},
 			ref.UsernameKey, ref.PasswordKey,
 		)
 		if err != nil {
@@ -128,18 +128,12 @@ func (r *DatabaseConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.DatabaseConfig{},
 		SecretRefsField, func(o client.Object) []string {
-			spec := o.(*v1.DatabaseConfig).Spec
+			cfg := o.(*v1.DatabaseConfig)
 			keys := []string{
-				refindex.NamespacedKey(spec.CredentialsSecretRef.Namespace, spec.CredentialsSecretRef.Name),
+				refindex.NamespacedKey(cfg.Namespace, cfg.Spec.CredentialsSecretRef.Name),
 			}
-			if spec.BackupCredentialsSecretRef != nil {
-				keys = append(
-					keys,
-					refindex.NamespacedKey(
-						spec.BackupCredentialsSecretRef.Namespace,
-						spec.BackupCredentialsSecretRef.Name,
-					),
-				)
+			if backup := cfg.Spec.BackupCredentialsSecretRef; backup != nil {
+				keys = append(keys, refindex.NamespacedKey(cfg.Namespace, backup.Name))
 			}
 			return keys
 		},

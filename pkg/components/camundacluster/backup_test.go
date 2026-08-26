@@ -67,7 +67,6 @@ func minioBucket() *v1.ObjectStorageConfig {
 		Type: v1.ObjectStorageAuthTypeCredentials,
 		Credentials: &v1.S3Credentials{SecretRef: v1.S3CredentialsSecretRef{
 			Name:               "my-cluster-camunda-backup-credentials",
-			Namespace:          "my-cluster-ns",
 			AccessKeyIDKey:     "accessKeyId",
 			SecretAccessKeyKey: "secretAccessKey",
 		}},
@@ -166,10 +165,9 @@ func TestBackupEnvMountsTheGoogleKeyAsAFile(t *testing.T) {
 					BasePath:   "clusters",
 					Auth: v1.GCSStorageAuth{
 						Type: v1.ObjectStorageAuthTypeCredentials,
-						Credentials: &v1.GCSCredentials{SecretRef: v1.SecretKeyRef{
-							Name:      "my-cluster-camunda-backup-credentials",
-							Namespace: "my-cluster-ns",
-							Key:       "key.json",
+						Credentials: &v1.GCSCredentials{SecretRef: v1.LocalSecretKeyRef{
+							Name: "my-cluster-camunda-backup-credentials",
+							Key:  "key.json",
 						}},
 					},
 				},
@@ -296,8 +294,8 @@ func rdbmsBackupInput(t *testing.T, backup *v1.ClusterBackupSpec) Input {
 			Type: v1.SecondaryStorageTypeRDBMS,
 			RDBMS: &RDBMSStorage{
 				Host: "postgres.my-cluster-ns.svc", Port: 5432, Database: "camunda",
-				Credentials: v1.CredentialsSecretRef{
-					Name: "db-user", Namespace: "my-cluster-ns", UsernameKey: "username", PasswordKey: "password",
+				Credentials: v1.LocalCredentialsSecretRef{
+					Name: "db-user", UsernameKey: "username", PasswordKey: "password",
 				},
 			},
 		}
@@ -606,8 +604,8 @@ func TestAzureCredentialsRenderTheAccountPair(t *testing.T) {
 				Container:   "backups",
 				Auth: v1.AzureBlobStorageAuth{
 					Type: v1.ObjectStorageAuthTypeCredentials,
-					Credentials: &v1.AzureBlobCredentials{SecretRef: v1.SecretKeyRef{
-						Name: "azure-key", Namespace: "my-cluster-ns", Key: "accountKey",
+					Credentials: &v1.AzureBlobCredentials{SecretRef: v1.LocalSecretKeyRef{
+						Name: "azure-key", Key: "accountKey",
 					}},
 				},
 			},
@@ -661,8 +659,8 @@ func TestGoogleKeyMountIsBrokerOnly(t *testing.T) {
 					BucketName: "camunda-backups",
 					Auth: v1.GCSStorageAuth{
 						Type: v1.ObjectStorageAuthTypeCredentials,
-						Credentials: &v1.GCSCredentials{SecretRef: v1.SecretKeyRef{
-							Name: "gcs-key", Namespace: "my-cluster-ns", Key: "key.json",
+						Credentials: &v1.GCSCredentials{SecretRef: v1.LocalSecretKeyRef{
+							Name: "gcs-key", Key: "key.json",
 						}},
 					},
 				},

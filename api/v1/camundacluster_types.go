@@ -247,7 +247,7 @@ type ClusterAuthSpec struct {
 	// ClientSecretRef names the Secret that holds the OIDC client secret of
 	// this cluster.
 	// +optional
-	ClientSecretRef *SecretKeyRef `json:"clientSecretRef,omitempty"`
+	ClientSecretRef *LocalSecretKeyRef `json:"clientSecretRef,omitempty"`
 	// Admin holds the identities that get the admin role of this cluster. It
 	// applies under OIDC only. Basic authentication seeds its own
 	// administrator and ignores this block.

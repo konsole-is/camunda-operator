@@ -898,7 +898,6 @@ var _ = Describe("CamundaCluster controller", func() {
 		dbConfig := fixtures.DatabaseConfig()
 		dbConfig.Namespace = ns
 		dbConfig.Spec.ServerRef = server.Name
-		dbConfig.Spec.CredentialsSecretRef.Namespace = ns
 		Expect(k8sClient.Create(ctx, dbConfig)).To(Succeed())
 		createSecret(ns, dbConfig.Spec.CredentialsSecretRef.Name, map[string]string{
 			"username": "camunda", "password": "db-password",
@@ -1070,11 +1069,14 @@ var _ = Describe("CamundaCluster controller", func() {
 		},
 	)
 
-	It("mirrors the OIDC client secret that a preset references and follows its changes", func() {
+	// A cluster reference to the client secret, whether set on the cluster or
+	// inherited from its preset, carries no namespace of its own: it resolves
+	// directly in the cluster namespace, with no copy.
+	It("resolves the OIDC client secret that a preset references, in the cluster namespace", func() {
 		ns := newNamespace()
 		sourceNamespace := newNamespace()
 		platformSecret := createSecret(sourceNamespace, "platform-oidc", map[string]string{"client-secret": "platform"})
-		presetSecret := createSecret(sourceNamespace, "preset-oidc", map[string]string{"client-secret": "preset-v1"})
+		presetSecret := createSecret(ns, "preset-oidc", map[string]string{"client-secret": "preset-v1"})
 		cfg := createPlatformConfig()
 		Eventually(func(g Gomega) {
 			var latest v1.CamundaPlatformConfig
@@ -1094,8 +1096,8 @@ var _ = Describe("CamundaCluster controller", func() {
 		preset := minimalPreset()
 		preset.Spec.Cluster.Auth = &v1.ClusterAuthSpec{
 			ClientID: "preset-client",
-			ClientSecretRef: &v1.SecretKeyRef{
-				Name: presetSecret.Name, Namespace: sourceNamespace, Key: "client-secret",
+			ClientSecretRef: &v1.LocalSecretKeyRef{
+				Name: presetSecret.Name, Key: "client-secret",
 			},
 		}
 		Expect(k8sClient.Create(ctx, preset)).To(Succeed())
@@ -1108,7 +1110,7 @@ var _ = Describe("CamundaCluster controller", func() {
 		Expect(envValue(container, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTID")).To(Equal("preset-client"))
 		ref := secretKeyRef(container, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTSECRET")
 		Expect(ref).NotTo(BeNil())
-		Expect(ref.Name).To(Equal(cluster.Name + "-camunda-auth-client"))
+		Expect(ref.Name).To(Equal(presetSecret.Name))
 		Expect(k8sClient.Get(
 			ctx, client.ObjectKey{Namespace: ns, Name: cluster.Name + "-camunda-admin"}, &corev1.Secret{},
 		)).NotTo(Succeed(), "no admin Secret under oidc")
@@ -1121,34 +1123,23 @@ var _ = Describe("CamundaCluster controller", func() {
 			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 		configHash(cluster, hash)
-		Eventually(func(g Gomega) {
-			var mirror corev1.Secret
-			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: ref.Name}, &mirror)).To(Succeed())
-			g.Expect(mirror.Data["client-secret"]).To(Equal([]byte("preset-v2")))
-		}, timeout, interval).Should(Succeed())
 	})
 
-	It("mirrors the credentials Secret of a binding from another namespace and follows its changes", func() {
+	// A binding resolves its credentials Secret in its own namespace, which
+	// is the cluster namespace, so the pods reference the Secret directly.
+	It("resolves the credentials Secret of a binding in the cluster namespace and follows its changes", func() {
 		ns := newNamespace()
-		sourceNamespace := newNamespace()
 		binding := fixtures.SecondaryStorageConfigElasticsearch(ns)
-		binding.Spec.Elasticsearch.CredentialsSecretRef.Namespace = sourceNamespace
 		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
-		source := createSecret(sourceNamespace, binding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{
+		source := createSecret(ns, binding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{
 			"username": "camunda", "password": "v1",
 		})
 		cluster := newCluster(ns, createPlatformConfig(), binding)
 		createCluster(cluster)
 
-		mirrorKey := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-camunda-es-credentials"}
-		Eventually(func(g Gomega) {
-			var mirror corev1.Secret
-			g.Expect(k8sClient.Get(ctx, mirrorKey, &mirror)).To(Succeed())
-			g.Expect(mirror.Data["password"]).To(Equal([]byte("v1")))
-		}, timeout, interval).Should(Succeed())
 		ref := secretKeyRef(zeebeContainer(cluster), "CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_PASSWORD")
 		Expect(ref).NotTo(BeNil())
-		Expect(ref.Name).To(Equal(mirrorKey.Name))
+		Expect(ref.Name).To(Equal(source.Name))
 		hash := configHash(cluster, "")
 
 		Eventually(func(g Gomega) {
@@ -1158,11 +1149,6 @@ var _ = Describe("CamundaCluster controller", func() {
 			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 		configHash(cluster, hash)
-		Eventually(func(g Gomega) {
-			var mirror corev1.Secret
-			g.Expect(k8sClient.Get(ctx, mirrorKey, &mirror)).To(Succeed())
-			g.Expect(mirror.Data["password"]).To(Equal([]byte("v2")))
-		}, timeout, interval).Should(Succeed())
 	})
 
 	// The legacy Zeebe Elasticsearch exporter carries no TLS setting of its
@@ -1172,8 +1158,8 @@ var _ = Describe("CamundaCluster controller", func() {
 	It("builds a JVM trust store when the binding names a certificate authority", func() {
 		ns := newNamespace()
 		binding := fixtures.SecondaryStorageConfigElasticsearch(ns)
-		binding.Spec.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
-			Name: "es-ca", Namespace: ns, Key: "ca.crt",
+		binding.Spec.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
+			Name: "es-ca", Key: "ca.crt",
 		}
 		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
 		createSecret(ns, binding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{
@@ -1216,8 +1202,8 @@ var _ = Describe("CamundaCluster controller", func() {
 	It("warns when a process reads JAVA_TOOL_OPTIONS from a reference", func() {
 		ns := newNamespace()
 		binding := fixtures.SecondaryStorageConfigElasticsearch(ns)
-		binding.Spec.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
-			Name: "es-ca", Namespace: ns, Key: "ca.crt",
+		binding.Spec.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
+			Name: "es-ca", Key: "ca.crt",
 		}
 		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
 		createSecret(ns, binding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{

@@ -32,7 +32,7 @@ spec:
         - name: UPLOAD_STORAGE_NAME
           value: my-backup-config
         - name: UPLOAD_STORAGE_SPEC
-          value: '{"type":"GCS","gcs":{"bucketName":"camunda-backups","basePath":"clusters","auth":{"type":"credentials","credentials":{"secretRef":{"name":"gcs-key","namespace":"camunda","key":"key.json"}}}}}'
+          value: '{"type":"GCS","gcs":{"bucketName":"camunda-backups","basePath":"clusters","auth":{"type":"credentials","credentials":{"secretRef":{"name":"gcs-key","key":"key.json"}}}}}'
         - name: UPLOAD_CREDENTIAL_KEYS
           value: key.json
         - name: UPLOAD_CREDENTIAL_0
