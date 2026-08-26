@@ -1879,6 +1879,60 @@ var _ = Describe("DatabaseServer controller", func() {
 		Expect(ready.Reason).To(Equal(v1.ReasonVersionChangeRefused))
 	})
 
+	// The name of the cluster is derived, so a cluster under it can hold the
+	// data directory of somebody else. A server that reads the major off that
+	// one is pinned to a version it never ran, and Ready tells the reader the
+	// version was refused where the name being held is what they have to act
+	// on.
+	It("reads no major off a cluster of the derived name it does not own", func() {
+		namespace := "dbs-" + utilrand.String(8)
+		Expect(k8sClient.Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		})).To(Succeed())
+
+		occupant := &cnpgv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "camunda",
+				Namespace: namespace,
+				Labels:    map[string]string{labels.DatabaseServerKey: "camunda"},
+			},
+			Spec: cnpgv1.ClusterSpec{
+				Instances:            3,
+				StorageConfiguration: cnpgv1.StorageConfiguration{Size: "8Gi"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, occupant)).To(Succeed())
+
+		occupant.Status.PGDataImageInfo = &cnpgv1.ImageInfo{
+			Image:        "ghcr.io/cloudnative-pg/postgresql:16",
+			MajorVersion: 16,
+		}
+		Expect(k8sClient.Status().Update(ctx, occupant)).To(Succeed())
+
+		// The server asks for 17, which is the major it would run itself.
+		server := serverNamed(namespace, "camunda", "camunda", nil)
+
+		Eventually(func(g Gomega) {
+			ready := conditionOf(server, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(v1.ReasonClusterTaken))
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			ready := conditionOf(server, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(v1.ReasonClusterTaken))
+		}, 2*time.Second, interval).Should(Succeed())
+
+		// A pin records the refusal as an event of its own, so the event says
+		// whether the major of the occupant reached the merged spec at all.
+		var recorded corev1.EventList
+		Expect(k8sClient.List(ctx, &recorded, client.InNamespace(namespace))).To(Succeed())
+		Expect(recorded.Items).NotTo(ContainElement(
+			HaveField("Reason", v1.ReasonVersionChangeRefused),
+		))
+	})
+
 	// A refusal must not stop the server. A rollback in flight has to finish on
 	// the major the archive holds, and whoever asked for it waits on the
 	// contract for the answer.
