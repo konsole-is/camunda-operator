@@ -1880,16 +1880,32 @@ var _ = Describe("DatabaseServer recovery", func() {
 		)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, &superuser)).To(Succeed())
 
+		strangerHost := "camunda-r9-rw." + server.Namespace + ".svc"
+
+		// Nothing tells the operator that the superuser Secret went:
+		// CloudNativePG owns that Secret, and no watch of this controller maps
+		// it. The write below is what wakes the next look. A look that read
+		// the Secret before it went can still publish the endpoint of this
+		// server over that write, so the endpoint is written until
+		// ContractReady reports the Secret gone. Every look after that one
+		// blocks on the same Secret.
 		Eventually(func(g Gomega) {
 			var contract v1.DatabaseServerConfig
 			g.Expect(k8sClient.Get(ctx, contractKey(server), &contract)).To(Succeed())
-			contract.Spec.Host = "camunda-r9-rw." + server.Namespace + ".svc"
-			g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
+			if contract.Spec.Host != strangerHost {
+				contract.Spec.Host = strangerHost
+				g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
+			}
+
+			ready := conditionOf(server, v1.ConditionContractReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse), ready.Message)
+			g.Expect(publishedContract(server).Spec.Host).To(Equal(strangerHost))
 		}, timeout, interval).Should(Succeed())
 
 		Consistently(func() string {
 			return publishedContract(server).Spec.Host
-		}, "1s", interval).Should(Equal("camunda-r9-rw." + server.Namespace + ".svc"))
+		}, "1s", interval).Should(Equal(strangerHost))
 
 		// The endpoint is read back only on a look that finds the record
 		// missing, so the record goes last, once that endpoint is the one
