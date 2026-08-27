@@ -42,6 +42,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/database"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
@@ -49,6 +50,10 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "database"
 
 // databaseServerRefField indexes Database CRs by the DatabaseServerConfig
 // they reference, keyed as "<namespace>/<serverRef>". Events for a
@@ -88,6 +93,9 @@ type DatabaseReconciler struct {
 	// EventRecorder publishes the resource events of the component framework.
 	// SetupWithManager sets it to the recorder of the manager when it is nil.
 	EventRecorder events.EventRecorder
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 
 	// componentClient is the uncached client that the bindings component
 	// reconciles with. It keeps the published credential Secrets out of the
@@ -125,13 +133,19 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	// look, and the controller records no event that a second look repeats.
 	var database v1.Database
 	if err := r.Get(ctx, req.NamespacedName, &database); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			observability.Forget(r.Metrics, new(v1.Database).GetKind(), req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	rec := component.ReconcileContext{
 		Client:        r.componentClient,
 		Scheme:        r.Scheme,
 		EventRecorder: r.EventRecorder,
+		Metrics:       r.Metrics,
 		APIReader:     r.APIReader,
 		Owner:         &database,
 	}
@@ -569,11 +583,14 @@ func (r *DatabaseReconciler) enqueueForAdminSecret() handler.EventHandler {
 // indexes, and the watches that trigger a reconcile. The watches cover the
 // owned bindings, the referenced DatabaseServerConfig, its admin credentials
 // Secret (metadata-only), and sibling Databases that contest the same claim.
-// It also sets EventRecorder to the recorder of the manager and builds the
+// It also sets EventRecorder and Metrics when they are nil, and builds the
 // uncached client for the bindings component.
 func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.EventRecorder == nil {
-		r.EventRecorder = mgr.GetEventRecorder("database")
+		r.EventRecorder = mgr.GetEventRecorder(controllerName)
+	}
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
 	}
 
 	if r.componentClient == nil {
@@ -634,6 +651,6 @@ func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				},
 			),
 		).
-		Named("database").
+		Named(controllerName).
 		Complete(r)
 }

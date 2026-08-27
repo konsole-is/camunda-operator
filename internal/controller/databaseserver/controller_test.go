@@ -502,19 +502,22 @@ func expectCondition(
 ) *metav1.Condition {
 	GinkgoHelper()
 
+	var condition *metav1.Condition
 	Eventually(func(g Gomega) {
-		condition := conditionOf(server, conditionType)
+		condition = conditionOf(server, conditionType)
 		g.Expect(condition).NotTo(BeNil(), conditionType)
 		g.Expect(condition.Status).To(Equal(status), conditionType+": "+condition.Message)
 	}, timeout, interval).Should(Succeed())
 
-	return conditionOf(server, conditionType)
+	return condition
 }
 
-// expectReason waits until the named condition of the server carries the given
-// status and reason, and returns it. A condition that is already False for
-// another reason is why the status alone is not enough to wait on.
-func expectReason(
+// expectConditionReason waits until the condition carries the given status
+// and reason, and returns it. A status alone is not enough when a condition
+// moves between two reasons of the same status: the resources of the new
+// reason are applied before the status is flushed, so a spec that saw them
+// can still read the old reason.
+func expectConditionReason(
 	server *v1.DatabaseServer,
 	conditionType string,
 	status metav1.ConditionStatus,
@@ -522,14 +525,15 @@ func expectReason(
 ) *metav1.Condition {
 	GinkgoHelper()
 
+	var condition *metav1.Condition
 	Eventually(func(g Gomega) {
-		condition := conditionOf(server, conditionType)
+		condition = conditionOf(server, conditionType)
 		g.Expect(condition).NotTo(BeNil(), conditionType)
 		g.Expect(condition.Status).To(Equal(status), conditionType+": "+condition.Message)
 		g.Expect(condition.Reason).To(Equal(reason), conditionType+": "+condition.Message)
 	}, timeout, interval).Should(Succeed())
 
-	return conditionOf(server, conditionType)
+	return condition
 }
 
 // reportArchiving writes the ContinuousArchiving condition that CloudNativePG
@@ -649,16 +653,13 @@ var _ = Describe("DatabaseServer controller", func() {
 
 		// A server with no archive block has nothing to archive, so the
 		// condition reports the component as disabled rather than failing.
-		archive := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
-		Expect(archive.Reason).To(Equal("Disabled"))
+		expectConditionReason(server, v1.ConditionArchiveReady, metav1.ConditionTrue, "Disabled")
 
 		// A part the spec switched off is reported on its own condition and
 		// never on Ready. The reason a reader sees for a server that runs is
 		// Healthy, whether or not it archives and whether or not it scrapes.
-		monitoring := expectCondition(server, v1.ConditionMonitoringReady, metav1.ConditionTrue)
-		Expect(monitoring.Reason).To(Equal("Disabled"))
-		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
-		Expect(ready.Reason).To(Equal(v1.ReasonHealthy), ready.Message)
+		expectConditionReason(server, v1.ConditionMonitoringReady, metav1.ConditionTrue, "Disabled")
+		expectConditionReason(server, v1.ConditionReady, metav1.ConditionTrue, v1.ReasonHealthy)
 
 		// A server with no archive takes no base backups, so reading them
 		// every reconcile would be a cluster-wide read for nothing.
@@ -682,8 +683,7 @@ var _ = Describe("DatabaseServer controller", func() {
 	It("holds the contract until CloudNativePG has written the superuser Secret", func() {
 		server := serverInNamespace(nil)
 
-		contract := expectCondition(server, v1.ConditionContractReady, metav1.ConditionFalse)
-		Expect(contract.Reason).To(Equal("Blocked"))
+		contract := expectConditionReason(server, v1.ConditionContractReady, metav1.ConditionFalse, "Blocked")
 		Expect(contract.Message).To(ContainSubstring("camunda-superuser"))
 
 		var published v1.DatabaseServerConfig
@@ -737,8 +737,7 @@ var _ = Describe("DatabaseServer controller", func() {
 
 		// An archive the spec asks for takes part in Ready, so a server that
 		// cannot be recovered to any point yet is not ready.
-		held := expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
-		Expect(held.Reason).To(Equal(string(component.GuardBlocked)), held.Message)
+		expectConditionReason(server, v1.ConditionReady, metav1.ConditionFalse, string(component.GuardBlocked))
 
 		completedAt := metav1.NewTime(metav1.Now().Rfc3339Copy().Time)
 		completeBaseBackup(server, "base", completedAt)
@@ -747,8 +746,7 @@ var _ = Describe("DatabaseServer controller", func() {
 
 		// Scraping is off here, and a part the spec switched off is reported
 		// on its own condition and never on Ready.
-		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
-		Expect(ready.Reason).To(Equal(v1.ReasonHealthy), ready.Message)
+		expectConditionReason(server, v1.ConditionReady, metav1.ConditionTrue, v1.ReasonHealthy)
 
 		var contract v1.DatabaseServerConfig
 		Expect(k8sClient.Get(
@@ -852,8 +850,7 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(latest.Status.Archive.History[0].To).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 
-		disabled := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
-		Expect(disabled.Reason).To(Equal("Disabled"))
+		expectConditionReason(server, v1.ConditionArchiveReady, metav1.ConditionTrue, "Disabled")
 
 		Eventually(func(g Gomega) {
 			var contract v1.DatabaseServerConfig
@@ -923,8 +920,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		// not ready for as long as the suspension lasts.
 		hibernate(server)
 		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
-		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
-		Expect(ready.Reason).To(Equal(string(component.Suspended)))
+		expectConditionReason(server, v1.ConditionReady, metav1.ConditionTrue, string(component.Suspended))
 	})
 
 	// The suspension a server reached is what makes its bucket stop mattering.
@@ -970,7 +966,9 @@ var _ = Describe("DatabaseServer controller", func() {
 		// as well. This spec is about the bucket going away after the
 		// instances are down, so it waits for the suspension the server
 		// reached rather than reading the reason once and asserting on it.
-		expectReason(server, v1.ConditionReady, metav1.ConditionTrue, string(component.Suspended))
+		expectConditionReason(
+			server, v1.ConditionReady, metav1.ConditionTrue, string(component.Suspended),
+		)
 
 		Expect(k8sClient.Delete(ctx, bucket)).To(Succeed())
 
@@ -1157,8 +1155,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		second := serverNamed(owner.Namespace, "second", "camunda", nil)
 		writeSuperuserSecret(second)
 
-		taken := expectCondition(second, v1.ConditionContractReady, metav1.ConditionFalse)
-		Expect(taken.Reason).To(Equal(v1.ReasonContractTaken))
+		taken := expectConditionReason(second, v1.ConditionContractReady, metav1.ConditionFalse, v1.ReasonContractTaken)
 		Expect(taken.Message).To(ContainSubstring(`DatabaseServer "camunda"`))
 		Expect(conditionOf(second, v1.ConditionReady).Status).To(Equal(metav1.ConditionFalse))
 
@@ -1212,8 +1209,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		// server reports the wait and never reaches the name at all.
 		writeSuperuserSecret(server)
 
-		taken := expectCondition(server, v1.ConditionContractReady, metav1.ConditionFalse)
-		Expect(taken.Reason).To(Equal(v1.ReasonContractTaken))
+		taken := expectConditionReason(server, v1.ConditionContractReady, metav1.ConditionFalse, v1.ReasonContractTaken)
 		Expect(taken.Message).To(ContainSubstring("no owner controls it"))
 
 		key := client.ObjectKeyFromObject(external)
@@ -1262,8 +1258,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		server := serverNamed(namespace, "camunda", "camunda", nil)
 		writeSuperuserSecret(server)
 
-		taken := expectCondition(server, v1.ConditionClusterReady, metav1.ConditionFalse)
-		Expect(taken.Reason).To(Equal(v1.ReasonClusterTaken))
+		expectConditionReason(server, v1.ConditionClusterReady, metav1.ConditionFalse, v1.ReasonClusterTaken)
 
 		Consistently(func(g Gomega) {
 			var live v1.DatabaseServerConfig
@@ -1314,8 +1309,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		// guard keeps the contract off the endpoint it belongs to.
 		writeSuperuserSecret(server)
 
-		taken := expectCondition(server, v1.ConditionClusterReady, metav1.ConditionFalse)
-		Expect(taken.Reason).To(Equal(v1.ReasonClusterTaken))
+		taken := expectConditionReason(server, v1.ConditionClusterReady, metav1.ConditionFalse, v1.ReasonClusterTaken)
 		Expect(taken.Message).To(ContainSubstring(`DatabaseServer "holder"`))
 		Expect(conditionOf(server, v1.ConditionReady).Status).To(Equal(metav1.ConditionFalse))
 
@@ -1388,8 +1382,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		}
 		Expect(k8sClient.Create(ctx, server)).To(Succeed())
 
-		taken := expectCondition(server, v1.ConditionClusterReady, metav1.ConditionFalse)
-		Expect(taken.Reason).To(Equal(v1.ReasonClusterTaken))
+		taken := expectConditionReason(server, v1.ConditionClusterReady, metav1.ConditionFalse, v1.ReasonClusterTaken)
 		Expect(taken.Message).To(ContainSubstring("no owner controls it"))
 
 		// The suspension writes the hibernation annotation and the running apply
@@ -1432,8 +1425,7 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
-		taken := expectCondition(server, v1.ConditionClusterReady, metav1.ConditionFalse)
-		Expect(taken.Reason).To(Equal(v1.ReasonClusterTaken))
+		taken := expectConditionReason(server, v1.ConditionClusterReady, metav1.ConditionFalse, v1.ReasonClusterTaken)
 		Expect(taken.Message).To(ContainSubstring(`DatabaseServer "stranger"`))
 
 		// Both name the cluster of that name. The contract sends consumers to
@@ -1506,8 +1498,12 @@ var _ = Describe("DatabaseServer controller", func() {
 		})
 		writeSuperuserSecret(server)
 
-		blocked := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
-		Expect(blocked.Reason).To(Equal(string(component.GuardBlocked)), blocked.Message)
+		blocked := expectConditionReason(
+			server,
+			v1.ConditionArchiveReady,
+			metav1.ConditionFalse,
+			string(component.GuardBlocked),
+		)
 		Expect(blocked.Message).To(ContainSubstring("controlled by DatabaseServer holder"))
 
 		key := client.ObjectKey{Namespace: namespace, Name: "camunda"}
@@ -1528,8 +1524,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		By("removing the archive")
 		setArchive(server, nil)
 
-		disabled := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
-		Expect(disabled.Reason).To(Equal("Disabled"))
+		expectConditionReason(server, v1.ConditionArchiveReady, metav1.ConditionTrue, "Disabled")
 		expectGone(key, &barmanobjectstore.ObjectStore{})
 
 		Consistently(func(g Gomega) {
@@ -1580,8 +1575,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		})
 		writeSuperuserSecret(server)
 
-		taken := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
-		Expect(taken.Reason).To(Equal(v1.ReasonArchiveTaken), taken.Message)
+		taken := expectConditionReason(server, v1.ConditionArchiveReady, metav1.ConditionFalse, v1.ReasonArchiveTaken)
 		Expect(taken.Message).To(ContainSubstring(`DatabaseServer "holder"`))
 		Expect(conditionOf(server, v1.ConditionReady).Status).To(Equal(metav1.ConditionFalse))
 
@@ -1626,8 +1620,11 @@ var _ = Describe("DatabaseServer controller", func() {
 		// The archive then waits on its first base backup, which is where
 		// every archiving server starts. ArchiveReady is False on both sides
 		// of that move, so the reason is what the wait reads.
-		blocked := expectReason(
-			server, v1.ConditionArchiveReady, metav1.ConditionFalse, string(component.GuardBlocked),
+		blocked := expectConditionReason(
+			server,
+			v1.ConditionArchiveReady,
+			metav1.ConditionFalse,
+			string(component.GuardBlocked),
 		)
 		Expect(blocked.Message).To(ContainSubstring("base backup"))
 
@@ -1662,7 +1659,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		)
 		reportArchiving(server, metav1.ConditionFalse, stoppedAt)
 
-		failing := expectReason(
+		failing := expectConditionReason(
 			server, v1.ConditionArchiveReady, metav1.ConditionFalse, v1.ReasonArchiveFailing,
 		)
 		Expect(failing.Message).To(ContainSubstring("ContinuousArchivingFailing"))
@@ -2539,8 +2536,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000004")
 
-		disabled := expectCondition(server, v1.ConditionMonitoringReady, metav1.ConditionTrue)
-		Expect(disabled.Reason).To(Equal("Disabled"))
+		expectConditionReason(server, v1.ConditionMonitoringReady, metav1.ConditionTrue, "Disabled")
 
 		Eventually(func(g Gomega) {
 			var latest v1.DatabaseServer

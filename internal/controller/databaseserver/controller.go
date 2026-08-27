@@ -45,6 +45,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -52,6 +53,10 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "databaseserver"
 
 // defaultRetryInterval is how long the controller waits before it looks again
 // at the superuser Secret. CloudNativePG owns that Secret, so no watch of this
@@ -197,6 +202,9 @@ type DatabaseServerReconciler struct {
 	// EventRecorder publishes the component lifecycle events. SetupWithManager
 	// sets it from the manager.
 	EventRecorder events.EventRecorder
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 
 	// RetryInterval overrides how long the controller waits on the superuser
 	// Secret. Zero means defaultRetryInterval; tests shorten it.
@@ -247,13 +255,19 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// marker re-enters a step whose side effect already ran.
 	var server v1.DatabaseServer
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &server); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			observability.Forget(r.Metrics, new(v1.DatabaseServer).GetKind(), req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	recCtx := component.ReconcileContext{
 		Client:        r.componentClient,
 		Scheme:        r.Scheme,
 		EventRecorder: r.EventRecorder,
+		Metrics:       r.Metrics,
 		APIReader:     r.APIReader,
 		Owner:         &server,
 	}
@@ -428,43 +442,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, reconcileErr
 	}
 
-	var waits []time.Duration
-
-	// Nothing reports that the superuser Secret appeared: CloudNativePG owns
-	// it, and this controller watches only what it owns itself. Every other
-	// condition of this CR is backed by a watch. A running recovery waits on
-	// that same Secret, one cluster further on.
-	//
-	// Nothing reports that a taken cluster name became free either, for the
-	// same reason: the object of that name belongs to somebody else, so no
-	// watch of this controller carries its deletion. ContractReady is True
-	// while the name is held, because the component withdrew the contract on
-	// purpose, so the test above cannot stand in for this one. A taken
-	// ObjectStore name asks for a look of its own for the same reason: the
-	// object belongs to somebody else, and its deletion reaches no watch of
-	// this controller either.
-	//
-	// Each of these repeats: nothing carries the moment the thing it waits for
-	// arrives, so the look runs again until it does.
-	if recovering || resolved.clusterTaken != "" || resolved.archiveTaken != "" ||
-		!meta.IsStatusConditionTrue(server.Status.Conditions, v1.ConditionContractReady) {
-		waits = append(waits, r.retryInterval())
-	}
-
-	// Failing write-ahead log uploads ask for one look, when the grace period
-	// of the outage ends. CloudNativePG writes that condition once and leaves
-	// it, so nothing carries that moment either. Uploads that run again before
-	// it comes rewrite the condition on the cluster, which this controller
-	// owns, so that arrives on a watch and needs no look of its own.
-	if wait := pendingArchiveOutageWait(derived.outage, resolved.merged, time.Now()); wait > 0 {
-		waits = append(waits, wait)
-	}
-
-	if len(waits) == 0 {
-		return ctrl.Result{}, nil
-	}
-
-	return ctrl.Result{RequeueAfter: slices.Min(waits)}, nil
+	return ctrl.Result{RequeueAfter: r.requeueAfter(&server, resolved, derived, recovering)}, nil
 }
 
 // preCheck resolves the preset, validates the merged spec, and resolves the
@@ -1048,6 +1026,53 @@ func reportedArchiveOutage(
 	}
 
 	return outage
+}
+
+// requeueAfter returns the shortest wait this reconcile asks for, or zero when
+// it asks for none.
+func (r *DatabaseServerReconciler) requeueAfter(
+	server *v1.DatabaseServer,
+	resolved resolvedSpec,
+	derived derivedCluster,
+	recovering bool,
+) time.Duration {
+	var waits []time.Duration
+
+	// Nothing reports that the superuser Secret appeared: CloudNativePG owns
+	// it, and this controller watches only what it owns itself. Every other
+	// condition of this CR is backed by a watch. A running recovery waits on
+	// that same Secret, one cluster further on.
+	//
+	// Nothing reports that a taken cluster name became free either, for the
+	// same reason: the object of that name belongs to somebody else, so no
+	// watch of this controller carries its deletion. ContractReady is True
+	// while the name is held, because the component withdrew the contract on
+	// purpose, so that test cannot stand in for this one. A taken ObjectStore
+	// name asks for a look of its own for the same reason: the object belongs
+	// to somebody else, and its deletion reaches no watch of this controller
+	// either.
+	//
+	// Each of these repeats: nothing carries the moment the thing it waits for
+	// arrives, so the look runs again until it does.
+	if recovering || resolved.clusterTaken != "" || resolved.archiveTaken != "" ||
+		!meta.IsStatusConditionTrue(server.Status.Conditions, v1.ConditionContractReady) {
+		waits = append(waits, r.retryInterval())
+	}
+
+	// Failing write-ahead log uploads ask for one look, when the grace period
+	// of the outage ends. CloudNativePG writes that condition once and leaves
+	// it, so nothing carries that moment either. Uploads that run again before
+	// it comes rewrite the condition on the cluster, which this controller
+	// owns, so that arrives on a watch and needs no look of its own.
+	if wait := pendingArchiveOutageWait(derived.outage, resolved.merged, time.Now()); wait > 0 {
+		waits = append(waits, wait)
+	}
+
+	if len(waits) == 0 {
+		return 0
+	}
+
+	return slices.Min(waits)
 }
 
 // pendingArchiveOutageWait returns what is left of the grace period of a stop
@@ -1912,7 +1937,10 @@ func (r *DatabaseServerReconciler) served(group, kind, version string) bool {
 // operator, then restart this one.
 func (r *DatabaseServerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.EventRecorder == nil {
-		r.EventRecorder = mgr.GetEventRecorder("databaseserver")
+		r.EventRecorder = mgr.GetEventRecorder(controllerName)
+	}
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
 	}
 	r.restMapper = mgr.GetRESTMapper()
 	r.cnpgInstalled = r.served(cnpgv1.SchemeGroupVersion.Group, "Cluster", cnpgv1.SchemeGroupVersion.Version)

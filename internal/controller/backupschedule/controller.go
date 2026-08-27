@@ -52,11 +52,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "backupschedule"
 
 const (
 	eventReasonTriggerSkipped  = "TriggerSkipped"
@@ -96,6 +101,9 @@ type BackupScheduleReconciler struct {
 	// EventRecorder publishes the trigger and pruning events.
 	// SetupWithManager sets it from the manager.
 	EventRecorder events.EventRecorder
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 
 	// opts is the construction-time configuration, defaults applied.
 	opts Options
@@ -118,7 +126,12 @@ func (r *BackupScheduleReconciler) Reconcile(
 ) (_ ctrl.Result, err error) {
 	var schedule v1.BackupSchedule
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &schedule); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			observability.Forget(r.Metrics, new(v1.BackupSchedule).GetKind(), req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	// The schedule holds no finalizer: its backups deliberately outlive it,
@@ -131,6 +144,7 @@ func (r *BackupScheduleReconciler) Reconcile(
 		Client:        r.Client,
 		Scheme:        r.Scheme,
 		EventRecorder: r.EventRecorder,
+		Metrics:       r.Metrics,
 		APIReader:     r.APIReader,
 		Owner:         &schedule,
 	}
@@ -494,7 +508,10 @@ func (r *BackupScheduleReconciler) warnRetentionWindow(
 func (r *BackupScheduleReconciler) SetupWithManager(mgr ctrl.Manager, opts Options) error {
 	r.opts = opts.withDefaults()
 	if r.EventRecorder == nil {
-		r.EventRecorder = mgr.GetEventRecorder("backupschedule")
+		r.EventRecorder = mgr.GetEventRecorder(controllerName)
+	}
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -509,7 +526,7 @@ func (r *BackupScheduleReconciler) SetupWithManager(mgr ctrl.Manager, opts Optio
 			enqueueSchedule(r.Client),
 			builder.WithPredicates(phaseChanged()),
 		).
-		Named("backupschedule").
+		Named(controllerName).
 		Complete(r)
 }
 

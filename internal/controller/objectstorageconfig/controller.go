@@ -23,6 +23,7 @@ import (
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -31,10 +32,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "objectstorageconfig"
 
 // ObjectStorageConfigReconciler validates ObjectStorageConfig contracts and
 // maintains their Ready condition.
@@ -44,6 +50,9 @@ type ObjectStorageConfigReconciler struct {
 	// Secret data needs it, because Secrets are watched metadata-only.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs,verbs=get;list;watch
@@ -56,7 +65,12 @@ type ObjectStorageConfigReconciler struct {
 func (r *ObjectStorageConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var cfg v1.ObjectStorageConfig
 	if err := r.Get(ctx, req.NamespacedName, &cfg); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			observability.Forget(r.Metrics, new(v1.ObjectStorageConfig).GetKind(), req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	cond, err := r.validate(ctx, &cfg)
@@ -70,7 +84,7 @@ func (r *ObjectStorageConfigReconciler) Reconcile(ctx context.Context, req ctrl.
 	// server on a conflict and is staged again on the next reconcile.
 	return ctrl.Result{}, component.FlushStatus(
 		ctx,
-		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Owner: &cfg},
+		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Metrics: r.Metrics, Owner: &cfg},
 		nil,
 	)
 }
@@ -104,6 +118,10 @@ func (r *ObjectStorageConfigReconciler) validate(
 // SetupWithManager registers the controller, an index of contracts by their
 // credentials Secret, and a metadata-only Secret watch.
 func (r *ObjectStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
+	}
+
 	if err := refindex.EnsureObjectStorageConfigSecretIndex(mgr); err != nil {
 		return err
 	}
@@ -118,6 +136,6 @@ func (r *ObjectStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) error
 			),
 			builder.OnlyMetadata,
 		).
-		Named("objectstorageconfig").
+		Named(controllerName).
 		Complete(r)
 }
