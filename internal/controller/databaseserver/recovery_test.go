@@ -997,9 +997,16 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(expectLastRecovery(server, v1.RecoveryResultFailed).Message).
 			To(ContainSubstring(cnpgv1.PhaseUnrecoverable))
 
-		// The cluster of the refused recovery stays gone. A look that read the
-		// record as unanswered builds it again under the same name.
+		// The refusal is answered before the cluster it abandons goes: the
+		// cleanup runs on the look that reads the answer back, not on the one
+		// that wrote it. So the removal is waited for, not assumed.
 		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, key, &cnpgv1.Cluster{})
+		}, timeout, interval).ShouldNot(Succeed())
+
+		// It stays gone. A look that read the record as unanswered builds it
+		// again under the same name.
 		Consistently(func() error {
 			return k8sClient.Get(ctx, key, &cnpgv1.Cluster{})
 		}, "2s", interval).ShouldNot(Succeed())
