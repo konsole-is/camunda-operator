@@ -179,12 +179,22 @@ func (r *Reconciler) syncOptimizeCallbacks(
 		return nil, false, err
 	}
 	if !rolledOut {
-		stageCallbacks(
-			mc, metav1.ConditionFalse, string(component.PrerequisiteNotMet),
-			"Management Identity is rolling out, and it owns the Optimize client while it starts",
-		)
+		const rollingOut = "Management Identity is rolling out, and it owns the Optimize client " +
+			"while it starts"
+		stageCallbacks(mc, metav1.ConditionFalse, string(component.PrerequisiteNotMet), rollingOut)
+		// A rollout that surges keeps IdentityReady True from the pod of the
+		// previous revision, so no component reports that the realm is behind.
+		// Ready would otherwise read Healthy over a callback that nobody can
+		// sign in through yet. A withdrawal is not held back the same way: the
+		// plane already serves every Optimize it has to serve.
+		if len(desired) == 0 {
+			return nil, true, nil
+		}
 
-		return nil, true, nil
+		return &conditions.PreCheckFailure{
+			Reason:  string(component.PrerequisiteNotMet),
+			Message: rollingOut,
+		}, true, nil
 	}
 
 	failure, err := r.convergeOptimizeCallbacks(ctx, mc, provider, clientID, desired)

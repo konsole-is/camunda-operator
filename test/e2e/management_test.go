@@ -33,6 +33,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8slabels "k8s.io/apimachinery/pkg/labels"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -540,6 +541,45 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 			expectIdentityRollState(g, mc, generation, template)
 		}, 30*time.Second, 10*time.Second).Should(Succeed())
 
+		// The running pods got the second callback from the operator. The
+		// ConfigMap is the floor for the pod that starts next, which registers
+		// the callbacks of KEYCLOAK_INIT_OPTIMIZE_ROOT_URL again while it
+		// starts. Deleting the pod restarts Management Identity without a
+		// second one beside it, so the node carries what it carried before.
+		By("restarting Management Identity")
+		before, err := identityPodNames(mc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(before).NotTo(BeEmpty(), "Management Identity runs no ready pod")
+
+		_, err = utils.Kubectl(
+			"delete", "pods", "-n", mcKeycloakNamespace, "-l", identityPodSelector(mc),
+		)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("keeping both login callbacks through the start that follows")
+		Eventually(func(g Gomega) {
+			after, err := identityPodNames(mc)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(after).NotTo(BeEmpty())
+			for _, name := range after {
+				g.Expect(before).NotTo(ContainElement(name), "the pod of the restart is not up yet")
+			}
+
+			expectCondition(
+				g, mcResource, mcKeycloakName, mcKeycloakNamespace,
+				v1.ConditionIdentityReady, v1.ReasonHealthy,
+			)
+			expectCondition(
+				g, mcResource, mcKeycloakName, mcKeycloakNamespace,
+				v1.ConditionOptimizeCallbacksReady, v1.ReasonHealthy,
+			)
+		}, 10*time.Minute, 10*time.Second).Should(Succeed())
+
+		client, err = realmOptimizeClient(mc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(client).To(ContainSubstring(optimizeWebappURL() + components.OptimizeCallbackPath))
+		Expect(client).To(ContainSubstring(secondOptimizeWebappURL() + components.OptimizeCallbackPath))
+
 		// The finalizer of the CamundaOptimize holds the object until it has
 		// released what it built, and the management plane withdraws the
 		// callback only once the object is gone. The assertion below waits for
@@ -950,6 +990,33 @@ func secondOptimizeWebappURL() string {
 		optimizecomponents.WorkloadName(optimize, optimizecomponents.ComponentWebapp),
 		mcKeycloakNamespace, optimizecomponents.PortHTTP,
 	)
+}
+
+// identityPodNames returns the names of the ready Management Identity pods.
+// The flow reads them before and after a restart, so that it waits for the pod
+// of the new start rather than for the one it replaced.
+func identityPodNames(mc *v1.CamundaManagementCluster) ([]string, error) {
+	var pods corev1.PodList
+	if err := utils.List("pods", mc.Namespace, identityPodSelector(mc), &pods); err != nil {
+		return nil, err
+	}
+
+	var ready []string
+	for _, pod := range pods.Items {
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+				ready = append(ready, pod.Name)
+			}
+		}
+	}
+
+	return ready, nil
+}
+
+// identityPodSelector returns the label selector of the Management Identity
+// pods.
+func identityPodSelector(mc *v1.CamundaManagementCluster) string {
+	return k8slabels.SelectorFromSet(components.IdentityPodLabels(mc)).String()
 }
 
 // expectIdentityRollState asserts that the Management Identity Deployment

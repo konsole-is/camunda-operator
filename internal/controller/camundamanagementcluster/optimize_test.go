@@ -415,6 +415,14 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 			g.Expect(conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady).Reason).To(
 				Equal(string(component.PrerequisiteNotMet)),
 			)
+
+			// No component reports the wait, because the pod of the previous
+			// revision satisfies IdentityReady. Ready therefore has to carry
+			// it, or it reads Healthy over a callback that nobody can sign in
+			// through yet.
+			ready := conditionOf(g, s.mc, v1.ConditionReady)
+			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(ready.Reason).To(Equal(string(component.PrerequisiteNotMet)))
 		}, timeout, interval).Should(Succeed())
 
 		Expect(keycloak.redirectURIs()).To(BeEmpty())
