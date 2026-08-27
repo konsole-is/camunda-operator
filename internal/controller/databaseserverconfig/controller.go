@@ -98,14 +98,10 @@ type DatabaseServerConfigReconciler struct {
 // new. The status update is then a no-op on the server and wakes no watch.
 // The requeue sets the probe cadence, not a status-write loop.
 func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	// Live, not cached. The status write carries the resourceVersion of the
-	// copy this read returns. A copy from before the last write carries a
-	// resourceVersion the server has moved past, so the write is refused with
-	// a conflict. The contract declares no components, so FlushStatus does not
-	// own its Ready condition. It repairs a conflict with the Ready of the
-	// server, which drops the one this pass staged. Nothing stages it again:
-	// the watch drops status-only updates and the requeue is the probe
-	// interval.
+	// Live, not cached. A cached copy carries a resourceVersion the server has
+	// moved past, so the status write is refused with a conflict, and the
+	// repair takes Ready from the server and drops the one this pass staged.
+	// The requeue below is the probe interval, so the drop stands until then.
 	var cfg v1.DatabaseServerConfig
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &cfg); err != nil {
 		if apierrors.IsNotFound(err) {
