@@ -22,6 +22,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -103,13 +104,32 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	return nil
 }
 
-// ownsContract reports whether this management plane holds the
-// ManagementAuthConfig it names. A plane that does not hold it never served
-// the Optimize instances behind it, so nothing in the realm is its to remove.
-// A read that fails answers no, because the deletion must never remove a
-// callback of another owner on a guess.
+// ownsContract reports whether a ManagementAuthConfig that this management
+// plane holds exists, under the name it writes now or the name its status
+// recorded. Only a plane that held one ever served an Optimize behind it, so
+// only that plane has a login callback in the realm to remove.
+//
+// An absent contract answers no. A plane that was deleted before it ever wrote
+// one registered nothing, and a read that fails answers no for the same
+// reason: the deletion must never remove a callback of another owner on a
+// guess.
 func (r *Reconciler) ownsContract(ctx context.Context, mc *v1.CamundaManagementCluster) bool {
-	return r.checkContractOwner(ctx, mc, components.ContractName(mc)) == nil
+	names := []string{components.ContractName(mc)}
+	if previous := mc.Status.ManagementAuthConfig; previous != "" {
+		names = append(names, previous)
+	}
+
+	for _, name := range names {
+		var existing v1.ManagementAuthConfig
+		if err := r.APIReader.Get(ctx, client.ObjectKey{Name: name}, &existing); err != nil {
+			continue
+		}
+		if ownedBy(&existing, mc) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // withdrawOptimizeCallbacks removes the login callbacks that this management

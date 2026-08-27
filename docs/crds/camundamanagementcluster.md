@@ -479,7 +479,7 @@ status:
 
 The `OptimizeCallbacksReady` condition reports the realm. It reads `Healthy` while the `optimize` client carries the callback of every row above. See [Status](#status).
 
-The operator owns the login callbacks of the addresses above and nothing else on that client. It adds the ones that are missing and removes the ones of an Optimize that went away. A redirect URI of another shape stays where it is. A login callback you register by hand does not: it has the shape the operator owns, so the next reconcile removes it. Give the Optimize a `spec.externalUrl` instead.
+The operator owns the login callbacks of the addresses above and nothing else on that client. It adds the ones that are missing and removes the ones of an Optimize that went away. A redirect URI of another shape stays where it is. A login callback you register by hand does not: it has the shape the operator owns, so the next reconcile that converges the realm removes it. Give the Optimize a `spec.externalUrl` instead.
 
 Adding or removing an Optimize changes the configuration of Management Identity, so its pods roll, as they do for any other change to it. The operator waits for Management Identity to be ready before it writes to the realm, because Management Identity writes the whole client while it starts.
 
@@ -487,7 +487,9 @@ Deleting this resource removes those callbacks from the realm, and only when thi
 
 This resource carries no Optimize address of its own. Every address comes from a `CamundaOptimize`, and the management plane owns the whole login callback list of the `optimize` client.
 
-An Optimize that this operator does not run therefore cannot sign in through this management plane in a Keycloak mode. Registering its callback by hand does not last, because the next reconcile removes it. Give that Optimize a realm of its own, or run it as a `CamundaOptimize`.
+An Optimize that this operator does not run therefore cannot sign in through this management plane in a Keycloak mode. Registering its callback by hand does not last: the next reconcile that converges the realm removes it. Give that Optimize a realm of its own, or run it as a `CamundaOptimize`.
+
+There is one window where a callback added by hand survives. While `OptimizeCallbacksReady` reads `NoCallbacks`, no Optimize behind this management plane names an address, and the plane stops reading the realm. A callback added in that state stays and works until the first `CamundaOptimize` with a `spec.externalUrl` appears, and the reconcile that finds it removes the callback again. Do not build on that window.
 
 The `oidc` mode registers nothing. Your provider holds the callback URLs, so `spec.externalUrl` is out of use there and `OptimizeCallbacksReady` reads `Disabled`. One application at your provider serves every Optimize of the management plane, so add the callback of each one to that application yourself.
 
@@ -579,7 +581,7 @@ A condition reads `True` under the reasons `Healthy`, `Disabled`, `Suspended`, a
 | `OptimizeCallbacksReady` | `Disabled` | The mode is `oidc`, so your provider holds the callback URLs. | Nothing. |
 | `OptimizeCallbacksReady` | `Suspended` | `spec.suspend` is `true`, so the realm is left as it is. | Nothing. |
 | `OptimizeCallbacksReady` | `PrerequisiteNotMet` | Management Identity is not ready. It owns the Optimize client while it starts, so the operator waits for it. | Read the `IdentityReady` row. It clears when Management Identity is ready. |
-| `Ready` | `Healthy` | Every condition that takes part is healthy, the contract is written, and the callbacks are registered. | Nothing. |
+| `Ready` | `Healthy` | Every condition that takes part is healthy and the contract is written. The callbacks are registered too while `status.optimize` holds a row; a plane that serves no Optimize reads `Healthy` whatever the realm says. | Nothing. |
 | `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Suspending` / `PendingSuspension` / `PrerequisiteNotMet` | The reason of the governing condition. The message names it. | Read the row of that condition. |
 | `Ready` | `ImmutableAfterStart` | `spec.identity.admin` asks for an administrator claim that Management Identity did not start with. | Read the `IdentityReady` row. |
 | `Ready` | `Suspended` | `spec.suspend` is `true` and every workload is at zero. `Ready` is `True`. | Nothing is wrong. Set `suspend` back to `false` to bring the management plane up. |

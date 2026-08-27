@@ -340,6 +340,31 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}))
 	})
 
+	// A plane that never wrote a contract never served an Optimize behind it,
+	// so an absent contract is no licence to clear the realm.
+	It("leaves the realm alone when a plane with no contract is deleted", func() {
+		keycloak := startFakeKeycloak(withOptimizeClient(
+			blueOptimizeURL + components.OptimizeCallbackPath,
+		))
+		s := newScenario(withFakeKeycloak(keycloak), func(f *fixture) {
+			// A dangling DatabaseConfig fails the pre-checks, so the reconcile
+			// stops before it ever writes the contract.
+			f.mc.Spec.Identity.DatabaseConfigRef = "dbc-does-not-exist"
+		})
+
+		Eventually(func(g Gomega) {
+			g.Expect(conditionOf(g, s.mc, v1.ConditionReady).Reason).To(
+				Equal(v1.ReasonInvalidReference),
+			)
+		}, timeout, interval).Should(Succeed())
+
+		Expect(deleteManagementCluster(s.mc)).To(Succeed())
+
+		Expect(keycloak.redirectURIs()).To(Equal([]string{
+			blueOptimizeURL + components.OptimizeCallbackPath,
+		}))
+	})
+
 	// A plane that does not hold the contract name does not know which
 	// Optimize instances are its own, so it writes nothing to the realm.
 	It("touches the realm only once the contract is written", func() {
