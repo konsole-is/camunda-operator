@@ -60,9 +60,7 @@ const (
 //
 // A minute is the floor. PostgreSQL retries the segment it could not archive
 // at one attempt a minute once the failures continue, so anything shorter
-// cannot separate a retry from a stopped archive. Five carry a slow bucket, a
-// rotated credential, and a restarted gateway, and still report long before
-// any retention period matters.
+// cannot separate a retry from a stopped archive.
 const ArchiveOutageGracePeriod = 5 * time.Minute
 
 // The keys of the archive Secret. The Barman Cloud plugin reads every bucket
