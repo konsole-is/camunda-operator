@@ -43,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/database"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
@@ -50,6 +51,10 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "database"
 
 // databaseServerRefField indexes Database CRs by the DatabaseServerConfig
 // they reference, keyed as "<namespace>/<serverRef>". Events for a
@@ -80,6 +85,9 @@ type DatabaseReconciler struct {
 	// one namespace. It is the namespace of the operator, and
 	// SetupWithManager refuses an empty one.
 	ClaimNamespace string
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 
 	// componentClient is the uncached client that the bindings component
 	// reconciles with. It keeps the published credential Secrets out of the
@@ -118,7 +126,12 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	// look, and the controller records no event that a second look repeats.
 	var database v1.Database
 	if err := r.Get(ctx, req.NamespacedName, &database); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			observability.Forget(r.Metrics, new(v1.Database).GetKind(), req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	// A deleted Database publishes no status. Its bindings go with the owner
@@ -146,6 +159,7 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 		Client:        r.componentClient,
 		Scheme:        r.Scheme,
 		EventRecorder: r.EventRecorder,
+		Metrics:       r.Metrics,
 		APIReader:     r.APIReader,
 		Owner:         &database,
 	}
@@ -161,6 +175,15 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	bootstrapper, err := r.preCheck(ctx, &database)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
+		// Nothing holds the logical database yet, so this Database has lost
+		// nothing. It keeps its bindings and every claim it holds, and looks
+		// again when the claimant that goes first has taken or left the name.
+		if errors.Is(err, errClaimNotFirst) {
+			conditions.Stage(&database, conditions.Failed(&database, failure))
+
+			return ctrl.Result{RequeueAfter: claimRetryInterval}, nil
+		}
+
 		if errors.Is(err, errClaimLost) {
 			kept, withdrawErr := r.withdrawBindings(ctx, rec, &database, &comps)
 			if len(kept) > 0 {
@@ -371,12 +394,13 @@ func bootstrapSQL(ctx context.Context, b pgbootstrap.Bootstrapper, name string, 
 // preCheck runs the documented pre-checks in order: server reference, server
 // identity, admin credentials Secret, claim, connection. It records the
 // logical database that the Database names in status.collisionKey as soon as
-// the identity is known, and gives back every claim it held under another key
-// once it holds this one and the server answers. It returns the connected
+// the identity is known, and gives back every other claim it holds once it
+// holds this one and the server answers. It returns the connected
 // Bootstrapper, which the caller closes.
 //
 // A failed check returns an error carrying a *conditions.PreCheckFailure with
-// its Ready reason, and a lost claim wraps errClaimLost beside it. Any other
+// its Ready reason. A lost claim wraps errClaimLost beside it, and a claim
+// that another Database goes first for wraps errClaimNotFirst. Any other
 // error is a transient API failure.
 func (r *DatabaseReconciler) preCheck(ctx context.Context, database *v1.Database) (pgbootstrap.Bootstrapper, error) {
 	server, err := r.resolveServer(ctx, database)
@@ -419,7 +443,6 @@ func (r *DatabaseReconciler) preCheck(ctx context.Context, database *v1.Database
 	}
 
 	key := components.CollisionKey(server.Status.SystemIdentifier, database.Spec.DatabaseName)
-	recorded := database.Status.CollisionKey
 	// The field says which logical database this Database names. Every
 	// claimant records it, the one that loses included, so the index that
 	// checkCollision reads lists a Database under the name it asks for now
@@ -441,10 +464,15 @@ func (r *DatabaseReconciler) preCheck(ctx context.Context, database *v1.Database
 	}
 
 	// The Database holds the logical database it names now, and the server
-	// answers for it. Everything it held before is free to go. A release
+	// answers for it. Everything else it holds is free to go. A release
 	// before this point leaves the bindings of this Database on a logical
 	// database that another Database can take and rotate the roles of.
-	if err := r.releaseStaleClaims(ctx, database, recorded, key); err != nil {
+	//
+	// The sweep runs on every pre-check that reaches here. status.collisionKey
+	// is written by the flush of this reconcile whether the sweep ran or not,
+	// so it is no record that the release happened, and a sweep that skipped
+	// on it would never run again after one failure.
+	if err := r.releaseHeldClaims(ctx, selfHolder(database), key); err != nil {
 		bootstrapper.Close()
 
 		return nil, err
@@ -569,7 +597,7 @@ func (r *DatabaseReconciler) enqueueForAdminSecret() handler.EventHandler {
 // without a namespace for the claim Leases. The watches cover the owned
 // bindings, the referenced DatabaseServerConfig, its admin credentials Secret
 // (metadata-only), and sibling Databases that contest the same claim. It also
-// sets EventRecorder to the recorder of the manager and builds the uncached
+// sets EventRecorder and Metrics when they are nil, and builds the uncached
 // client for the bindings component.
 func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.ClaimNamespace == "" {
@@ -577,7 +605,10 @@ func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	if r.EventRecorder == nil {
-		r.EventRecorder = mgr.GetEventRecorder("database")
+		r.EventRecorder = mgr.GetEventRecorder(controllerName)
+	}
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
 	}
 
 	if r.componentClient == nil {
@@ -638,6 +669,6 @@ func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				},
 			),
 		).
-		Named("database").
+		Named(controllerName).
 		Complete(r)
 }

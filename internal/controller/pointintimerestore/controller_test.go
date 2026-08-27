@@ -150,8 +150,8 @@ func createWorldIn(namespace string, mutate ...func(*world)) *world {
 		Spec: v1.DatabaseConfigSpec{
 			ServerRef:    w.server.Name,
 			DatabaseName: "camunda_" + suffix,
-			CredentialsSecretRef: v1.CredentialsSecretRef{
-				Name: "app-user", Namespace: namespace,
+			CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+				Name:        "app-user",
 				UsernameKey: "username", PasswordKey: "password",
 			},
 		},
@@ -429,10 +429,13 @@ func createRestore(w *world, mutate ...func(*v1.PointInTimeRestore)) *v1.PointIn
 	return pitr
 }
 
-func readRestore(pitr *v1.PointInTimeRestore) *v1.PointInTimeRestore {
+// readRestore returns the live restore. A caller inside an Eventually or a
+// Consistently passes the Gomega of that poll, so a failed read is polled
+// again instead of ending the spec. A caller at spec level passes Default.
+func readRestore(g Gomega, pitr *v1.PointInTimeRestore) *v1.PointInTimeRestore {
 	GinkgoHelper()
 	var current v1.PointInTimeRestore
-	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(pitr), &current)).To(Succeed())
+	g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(pitr), &current)).To(Succeed())
 
 	return &current
 }
@@ -461,7 +464,7 @@ func expectHeld(pitr *v1.PointInTimeRestore, reason string) string {
 	GinkgoHelper()
 	var message string
 	Eventually(func(g Gomega) {
-		current := readRestore(pitr)
+		current := readRestore(g, pitr)
 		g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestorePending))
 		condition := ready(current)
 		g.Expect(condition).NotTo(BeNil())
@@ -478,7 +481,7 @@ func expectHeld(pitr *v1.PointInTimeRestore, reason string) string {
 func expectAdmitted(pitr *v1.PointInTimeRestore, w *world) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
-		current := readRestore(pitr)
+		current := readRestore(g, pitr)
 		g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestorePending))
 		g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestoreFailed))
 		g.Expect(current.Status.TargetClusterUID).To(Equal(w.cluster.UID))
@@ -492,7 +495,7 @@ func expectStartedHold(pitr *v1.PointInTimeRestore, reason string) string {
 	GinkgoHelper()
 	var message string
 	Eventually(func(g Gomega) {
-		current := readRestore(pitr)
+		current := readRestore(g, pitr)
 		g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreValidatingDatabaseState))
 		condition := ready(current)
 		g.Expect(condition).NotTo(BeNil())
@@ -505,10 +508,10 @@ func expectStartedHold(pitr *v1.PointInTimeRestore, reason string) string {
 
 // jobsOf lists the restore Jobs of pitr, selected the way every consumer of
 // these Jobs must select them.
-func jobsOf(pitr *v1.PointInTimeRestore) []batchv1.Job {
+func jobsOf(g Gomega, pitr *v1.PointInTimeRestore) []batchv1.Job {
 	GinkgoHelper()
 	var jobs batchv1.JobList
-	Expect(k8sClient.List(
+	g.Expect(k8sClient.List(
 		ctx, &jobs,
 		client.InNamespace(pitr.Namespace),
 		client.MatchingLabels(restore.JobSelector(labels.PointInTimeRestore(pitr.Name))),
@@ -574,12 +577,12 @@ var _ = Describe("PointInTimeRestore admission", func() {
 			var cluster v1.CamundaCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
 			g.Expect(cluster.Spec.Suspend).To(BeTrue())
-			g.Expect(readRestore(pitr).Status.ClusterSuspended).To(BeTrue())
+			g.Expect(readRestore(g, pitr).Status.ClusterSuspended).To(BeTrue())
 		}, timeout, interval).Should(Succeed())
 
 		By("touching nothing while the brokers still run")
 		Consistently(func(g Gomega) {
-			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestorePending))
+			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestorePending))
 		}, time.Second, interval).Should(Succeed())
 		expectClaimsUntouched(w)
 
@@ -595,7 +598,7 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		pitr := createRestore(w)
 
 		expectAdmitted(pitr, w)
-		Expect(readRestore(pitr).Status.ClusterSuspended).To(BeFalse())
+		Expect(readRestore(Default, pitr).Status.ClusterSuspended).To(BeFalse())
 	})
 
 	It("holds a cluster whose brokers never stop, and touches nothing", func() {
@@ -635,7 +638,7 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		Expect(k8sClient.Create(ctx, replacement)).To(Succeed())
 
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestorePending))
 			g.Expect(current.Status.TargetClusterUID).To(Equal(replacement.UID))
 		}, watchWindow, interval).Should(Succeed())
@@ -673,8 +676,8 @@ var _ = Describe("PointInTimeRestore admission", func() {
 			w.storage.Spec.RDBMS = nil
 			w.storage.Spec.Elasticsearch = &v1.ElasticsearchStorage{
 				Endpoint: "http://elasticsearch.es.svc:9200",
-				CredentialsSecretRef: v1.CredentialsSecretRef{
-					Name: "es", Namespace: w.namespace,
+				CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+					Name:        "es",
 					UsernameKey: "username", PasswordKey: "password",
 				},
 			}
@@ -922,7 +925,7 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		Expect(k8sClient.Create(ctx, replacement)).To(Succeed())
 
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 			g.Expect(current.Status.FailureMessage).To(ContainSubstring("replaced"))
 		}, timeout, interval).Should(Succeed())
@@ -1127,7 +1130,7 @@ func holdCluster(w *world) *v1.LogicalBackupRDBMS {
 
 // claimHolder returns the identity that the claim Lease of the cluster
 // records, or "" when no Lease exists.
-func claimHolder(w *world) string {
+func claimHolder(g Gomega, w *world) string {
 	GinkgoHelper()
 	var lease coordinationv1.Lease
 	key := types.NamespacedName{
@@ -1137,7 +1140,7 @@ func claimHolder(w *world) string {
 	if apierrors.IsNotFound(err) {
 		return ""
 	}
-	Expect(err).NotTo(HaveOccurred())
+	g.Expect(err).NotTo(HaveOccurred())
 
 	annotations := lease.GetAnnotations()
 
@@ -1156,8 +1159,8 @@ var _ = Describe("PointInTimeRestore cluster claim", func() {
 		message := expectHeld(pitr, v1.ReasonClusterClaimed)
 		Expect(message).To(ContainSubstring(backup.Name))
 		expectClaimsUntouched(w)
-		Expect(jobsOf(pitr)).To(BeEmpty())
-		Expect(claimHolder(w)).To(Equal("LogicalBackupRDBMS/" + backup.Name))
+		Expect(jobsOf(Default, pitr)).To(BeEmpty())
+		Expect(claimHolder(Default, w)).To(Equal("LogicalBackupRDBMS/" + backup.Name))
 	})
 
 	// Nothing bounds the hold, and no spec change ends it. The restore takes
@@ -1176,8 +1179,8 @@ var _ = Describe("PointInTimeRestore cluster claim", func() {
 		}, timeout, interval).Should(Succeed())
 
 		expectAdmitted(pitr, w)
-		Eventually(func() string {
-			return claimHolder(w)
+		Eventually(func(g Gomega) string {
+			return claimHolder(g, w)
 		}, timeout, interval).Should(Equal("PointInTimeRestore/" + pitr.Name))
 	})
 
@@ -1196,8 +1199,8 @@ var _ = Describe("PointInTimeRestore cluster claim", func() {
 
 		By("reaching the terminal phase with every Job asked to go")
 		Eventually(func(g Gomega) {
-			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
-			jobs := jobsOf(pitr)
+			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
+			jobs := jobsOf(g, pitr)
 			g.Expect(jobs).To(HaveLen(brokerCount))
 			for _, job := range jobs {
 				g.Expect(job.DeletionTimestamp).NotTo(BeNil(), "Job %q", job.Name)
@@ -1205,14 +1208,14 @@ var _ = Describe("PointInTimeRestore cluster claim", func() {
 		}, timeout, interval).Should(Succeed())
 
 		By("holding the claim while the Jobs are still there")
-		Consistently(func() string {
-			return claimHolder(w)
+		Consistently(func(g Gomega) string {
+			return claimHolder(g, w)
 		}, time.Second, interval).Should(Equal("PointInTimeRestore/" + pitr.Name))
 
 		By("giving the claim back once the collector removed them")
 		collectDeletedJobs(w.namespace)
-		Eventually(func() string {
-			return claimHolder(w)
+		Eventually(func(g Gomega) string {
+			return claimHolder(g, w)
 		}, timeout, interval).Should(BeEmpty())
 	})
 
@@ -1221,15 +1224,15 @@ var _ = Describe("PointInTimeRestore cluster claim", func() {
 		collectDeletedJobs(w.namespace)
 		pitr := createRestore(w)
 		expectJobs(pitr)
-		Expect(claimHolder(w)).To(Equal("PointInTimeRestore/" + pitr.Name))
+		Expect(claimHolder(Default, w)).To(Equal("PointInTimeRestore/" + pitr.Name))
 
 		for ordinal := range int32(brokerCount) {
 			markJob(pitr, ordinal, batchv1.JobComplete)
 		}
 
 		Eventually(func(g Gomega) {
-			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
-			g.Expect(claimHolder(w)).To(BeEmpty())
+			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
+			g.Expect(claimHolder(g, w)).To(BeEmpty())
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -1241,8 +1244,8 @@ var _ = Describe("PointInTimeRestore cluster claim", func() {
 		markJob(pitr, 0, batchv1.JobFailed)
 
 		Eventually(func(g Gomega) {
-			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
-			g.Expect(claimHolder(w)).To(BeEmpty())
+			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(claimHolder(g, w)).To(BeEmpty())
 		}, timeout, interval).Should(Succeed())
 	})
 })
@@ -1254,7 +1257,7 @@ var _ = Describe("PointInTimeRestore suspension of its cluster", func() {
 		w := createWorld(func(w *world) { w.cluster.Spec.Suspend = false })
 		pitr := createRestore(w)
 		expectJobs(pitr)
-		Expect(readRestore(pitr).Status.ClusterSuspended).To(BeTrue())
+		Expect(readRestore(Default, pitr).Status.ClusterSuspended).To(BeTrue())
 
 		// envtest runs no garbage collector, so a Job that the collector
 		// deleted with foreground propagation keeps its finalizer for ever and
@@ -1266,7 +1269,7 @@ var _ = Describe("PointInTimeRestore suspension of its cluster", func() {
 		}
 
 		Eventually(func(g Gomega) {
-			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
+			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
 			var cluster v1.CamundaCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
 			g.Expect(cluster.Spec.Suspend).To(BeFalse())
@@ -1283,7 +1286,7 @@ var _ = Describe("PointInTimeRestore suspension of its cluster", func() {
 		markJob(pitr, 0, batchv1.JobFailed)
 
 		Eventually(func(g Gomega) {
-			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 		}, timeout, interval).Should(Succeed())
 
 		Consistently(func(g Gomega) {
@@ -1301,13 +1304,13 @@ var _ = Describe("PointInTimeRestore suspension of its cluster", func() {
 		w := createWorld(func(w *world) { w.cluster.Spec.Suspend = false })
 		failed := createRestore(w)
 		expectJobs(failed)
-		Expect(readRestore(failed).Status.ClusterSuspended).To(BeTrue())
+		Expect(readRestore(Default, failed).Status.ClusterSuspended).To(BeTrue())
 
 		By("failing the first restore, which leaves the cluster suspended")
 		markJob(failed, 0, batchv1.JobFailed)
 		Eventually(func(g Gomega) {
-			g.Expect(readRestore(failed).Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
-			g.Expect(claimHolder(w)).To(BeEmpty())
+			g.Expect(readRestore(g, failed).Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(claimHolder(g, w)).To(BeEmpty())
 			var cluster v1.CamundaCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
 			g.Expect(cluster.Spec.Suspend).To(BeTrue())
@@ -1317,7 +1320,7 @@ var _ = Describe("PointInTimeRestore suspension of its cluster", func() {
 		retry := createRestore(w)
 
 		Eventually(func(g Gomega) {
-			g.Expect(readRestore(retry).Status.ClusterSuspended).To(BeTrue())
+			g.Expect(readRestore(g, retry).Status.ClusterSuspended).To(BeTrue())
 		}, timeout, interval).Should(Succeed())
 
 		// envtest runs no garbage collector, so a Job that the collector
@@ -1330,7 +1333,7 @@ var _ = Describe("PointInTimeRestore suspension of its cluster", func() {
 		}
 
 		Eventually(func(g Gomega) {
-			g.Expect(readRestore(retry).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
+			g.Expect(readRestore(g, retry).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
 			var cluster v1.CamundaCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
 			g.Expect(cluster.Spec.Suspend).To(BeFalse(), "the retry left the cluster suspended")
@@ -1346,7 +1349,7 @@ var _ = Describe("PointInTimeRestore suspension of its cluster", func() {
 		w := createWorld(func(w *world) { w.cluster.Spec.Suspend = false })
 		pitr := createRestore(w)
 		expectJobs(pitr)
-		Expect(readRestore(pitr).Status.ClusterSuspended).To(BeTrue())
+		Expect(readRestore(Default, pitr).Status.ClusterSuspended).To(BeTrue())
 
 		for ordinal := range int32(brokerCount) {
 			markJob(pitr, ordinal, batchv1.JobComplete)
@@ -1354,7 +1357,7 @@ var _ = Describe("PointInTimeRestore suspension of its cluster", func() {
 
 		By("reaching Completed and asking for the Jobs with foreground propagation")
 		Eventually(func(g Gomega) {
-			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
+			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
 			for _, job := range expectJobs(pitr) {
 				g.Expect(job.DeletionTimestamp).NotTo(BeNil(), "the Job of %s was never asked for", job.Name)
 			}
@@ -1365,7 +1368,7 @@ var _ = Describe("PointInTimeRestore suspension of its cluster", func() {
 			var cluster v1.CamundaCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
 			g.Expect(cluster.Spec.Suspend).To(BeTrue(), "the brokers start over volumes the pods still hold")
-			g.Expect(claimHolder(w)).NotTo(BeEmpty(), "the claim went before the volumes were free")
+			g.Expect(claimHolder(g, w)).NotTo(BeEmpty(), "the claim went before the volumes were free")
 		}, "2s", interval).Should(Succeed())
 
 		By("unsuspending once the Jobs are gone")
@@ -1383,7 +1386,7 @@ var _ = Describe("PointInTimeRestore suspension of its cluster", func() {
 		w := createWorld()
 		pitr := createRestore(w)
 		expectJobs(pitr)
-		Expect(readRestore(pitr).Status.ClusterSuspended).To(BeFalse())
+		Expect(readRestore(Default, pitr).Status.ClusterSuspended).To(BeFalse())
 
 		// envtest runs no garbage collector, so a Job that the collector
 		// deleted with foreground propagation keeps its finalizer for ever and
@@ -1395,7 +1398,7 @@ var _ = Describe("PointInTimeRestore suspension of its cluster", func() {
 		}
 
 		Eventually(func(g Gomega) {
-			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
+			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
 		}, timeout, interval).Should(Succeed())
 
 		Consistently(func(g Gomega) {
@@ -1445,12 +1448,12 @@ var _ = Describe("PointInTimeRestore storage identity", func() {
 		}, timeout, interval).Should(Succeed())
 
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 			g.Expect(current.Status.FailureMessage).To(ContainSubstring("other-storage"))
 		}, timeout, interval).Should(Succeed())
 		expectClaimsUntouched(w)
-		Expect(jobsOf(pitr)).To(BeEmpty())
+		Expect(jobsOf(Default, pitr)).To(BeEmpty())
 	})
 
 	// The endpoint of a server can start reaching another PostgreSQL instance,
@@ -1467,13 +1470,13 @@ var _ = Describe("PointInTimeRestore storage identity", func() {
 		publishProbe(w.server, replacement)
 
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 			g.Expect(current.Status.FailureMessage).To(ContainSubstring(worldSystemIdentifier))
 			g.Expect(current.Status.FailureMessage).To(ContainSubstring(replacement))
 		}, timeout, interval).Should(Succeed())
 		expectClaimsUntouched(w)
-		Expect(jobsOf(pitr)).To(BeEmpty())
+		Expect(jobsOf(Default, pitr)).To(BeEmpty())
 	})
 
 	It("pins what it validated", func() {
@@ -1481,7 +1484,7 @@ var _ = Describe("PointInTimeRestore storage identity", func() {
 		pitr := createRestore(w)
 
 		Eventually(func(g Gomega) {
-			pinned := readRestore(pitr).Status.Storage
+			pinned := readRestore(g, pitr).Status.Storage
 			g.Expect(pinned).NotTo(BeNil())
 			g.Expect(pinned.SecondaryStorageConfig).To(Equal(w.storage.Name))
 			g.Expect(pinned.DatabaseConfig).To(Equal(w.dbConfig.Name))
@@ -1505,8 +1508,8 @@ var _ = Describe("PointInTimeRestore database-state check", func() {
 		message := expectHeld(pitr, v1.ReasonDatabaseNotRestored)
 		Expect(message).To(ContainSubstring("ahead"))
 		expectClaimsUntouched(w)
-		Expect(jobsOf(pitr)).To(BeEmpty())
-		Expect(readRestore(pitr).Status.ObservedPositions).To(HaveLen(partitionCount))
+		Expect(jobsOf(Default, pitr)).To(BeEmpty())
+		Expect(readRestore(Default, pitr).Status.ObservedPositions).To(HaveLen(partitionCount))
 	})
 
 	It("refuses a database that reports no position for a partition", func() {
@@ -1529,7 +1532,7 @@ var _ = Describe("PointInTimeRestore database-state check", func() {
 		exporter.set(w.dbConfig.Spec.DatabaseName, answer{positions: positionsBehind(time.Hour)})
 
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringPrimaryStorage))
 			g.Expect(current.Status.ObservedPositions).To(HaveLen(partitionCount))
 			g.Expect(current.Status.Brokers).To(Equal(int32(brokerCount)))
@@ -1547,7 +1550,7 @@ var _ = Describe("PointInTimeRestore database-state check", func() {
 		expectClaimsUntouched(w)
 
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 			g.Expect(current.Status.FailureMessage).To(ContainSubstring("did not recover"))
 		}, timeout, interval).Should(Succeed())
@@ -1635,7 +1638,7 @@ func expectRecreatedClaims(w *world, pitr *v1.PointInTimeRestore) []corev1.Persi
 			g.Expect(live.UID).NotTo(Equal(claim.UID), "the broker volume still holds its old data")
 			current[ordinal] = live
 		}
-		g.Expect(readRestore(pitr).Status.RecreatedClaims).To(HaveLen(brokerCount))
+		g.Expect(readRestore(g, pitr).Status.RecreatedClaims).To(HaveLen(brokerCount))
 	}, timeout, interval).Should(Succeed())
 
 	return current
@@ -1668,7 +1671,7 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 
 		By("recording the broker count of the live StatefulSet before it deletes anything")
 		Eventually(func(g Gomega) {
-			g.Expect(readRestore(pitr).Status.Brokers).To(Equal(int32(brokerCount)))
+			g.Expect(readRestore(g, pitr).Status.Brokers).To(Equal(int32(brokerCount)))
 		}, timeout, interval).Should(Succeed())
 
 		By("deleting and creating every broker volume, at the size of the claim template")
@@ -1685,7 +1688,7 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 				"the fields of a recreated volume carry the field manager of this kind",
 			)
 		}
-		Expect(readRestore(pitr).Status.RecreatedClaims).To(ConsistOf(claimName(w, 0), claimName(w, 1)))
+		Expect(readRestore(Default, pitr).Status.RecreatedClaims).To(ConsistOf(claimName(w, 0), claimName(w, 1)))
 
 		By("running the restore application once per broker, at the requested point")
 		jobs := expectJobs(pitr)
@@ -1707,7 +1710,7 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 				"the fields of a restore Job carry the field manager of this kind",
 			)
 		}
-		Expect(readRestore(pitr).Status.PrimaryJobNames).To(HaveLen(brokerCount))
+		Expect(readRestore(Default, pitr).Status.PrimaryJobNames).To(HaveLen(brokerCount))
 
 		By("keeping the volumes it created while the Jobs run")
 		Consistently(func(g Gomega) {
@@ -1723,7 +1726,7 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 			markJob(pitr, ordinal, batchv1.JobComplete)
 		}
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
 			g.Expect(current.Status.CompletionTime).NotTo(BeNil())
 			g.Expect(current.Status.TerminalReason).To(Equal(v1.ReasonCompleted))
@@ -1748,8 +1751,8 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 
 		By("asking for every recorded Job with foreground propagation")
 		Eventually(func(g Gomega) {
-			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
-			jobs := jobsOf(pitr)
+			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
+			jobs := jobsOf(g, pitr)
 			g.Expect(jobs).To(HaveLen(brokerCount))
 			for _, job := range jobs {
 				g.Expect(job.DeletionTimestamp).NotTo(BeNil(), "Job %q", job.Name)
@@ -1763,7 +1766,7 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		By("leaving no Job behind once the pods of the Jobs are gone")
 		collectDeletedJobs(pitr.Namespace)
 		Eventually(func(g Gomega) {
-			g.Expect(jobsOf(pitr)).To(BeEmpty())
+			g.Expect(jobsOf(g, pitr)).To(BeEmpty())
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -1778,11 +1781,11 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		markJob(pitr, 1, batchv1.JobFailed)
 
 		Eventually(func(g Gomega) {
-			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 		}, timeout, interval).Should(Succeed())
 
 		Consistently(func(g Gomega) {
-			jobs := jobsOf(pitr)
+			jobs := jobsOf(g, pitr)
 			g.Expect(jobs).To(HaveLen(brokerCount))
 			for _, job := range jobs {
 				g.Expect(job.DeletionTimestamp).To(BeNil(), "Job %q", job.Name)
@@ -1820,7 +1823,7 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		markJob(pitr, 1, batchv1.JobFailed)
 
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 			g.Expect(current.Status.FailureMessage).To(ContainSubstring("broker 1"))
 			// The terminal reason is recorded, so a write conflict on the
@@ -1844,7 +1847,7 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		markJob(pitr, 0, batchv1.JobFailed)
 
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 			g.Expect(current.Status.TerminalReason).To(Equal(v1.ReasonExporterPositionNotCovered))
 			g.Expect(current.Status.FailureMessage).To(ContainSubstring("No usable range found for partition 1"))
@@ -1867,7 +1870,7 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		markJob(pitr, 0, batchv1.JobFailed)
 
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 			g.Expect(current.Status.TerminalReason).To(Equal(v1.ReasonFailed))
 			g.Expect(current.Status.FailureMessage).To(ContainSubstring("broker 0"))
@@ -1883,7 +1886,7 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		markJob(pitr, 1, batchv1.JobFailed)
 
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 			g.Expect(current.Status.TerminalReason).To(Equal(v1.ReasonFailed))
 			g.Expect(current.Status.FailureMessage).To(ContainSubstring("broker 1"))
@@ -1903,7 +1906,7 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		}, timeout, interval).Should(Succeed())
 
 		Eventually(func(g Gomega) {
-			condition := ready(readRestore(pitr))
+			condition := ready(readRestore(g, pitr))
 			g.Expect(condition).NotTo(BeNil())
 			g.Expect(condition.Reason).To(Equal(v1.ReasonClusterNotSuspended))
 		}, timeout, interval).Should(Succeed())
@@ -1940,7 +1943,7 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		pitr := createRestore(w, func(p *v1.PointInTimeRestore) { p.Name = name })
 
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 			g.Expect(current.Status.FailureMessage).To(ContainSubstring(foreign.Name))
 		}, timeout, interval).Should(Succeed())
@@ -1982,7 +1985,7 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
 
 		Eventually(func(g Gomega) {
-			condition := ready(readRestore(pitr))
+			condition := ready(readRestore(g, pitr))
 			g.Expect(condition).NotTo(BeNil())
 			g.Expect(condition.Reason).To(Equal(v1.ReasonMissingSecret))
 			g.Expect(condition.Message).To(ContainSubstring(pod.Name))
@@ -1992,7 +1995,7 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		// terminal phase on the poll of the running phase alone, because the
 		// mid-run grace is a deadline that no watch can announce.
 		Eventually(func(g Gomega) {
-			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -2020,7 +2023,7 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		}
 
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
 			g.Expect(current.Status.PrimaryJobNames).To(HaveLen(brokerCount))
 			g.Expect(current.Status.Brokers).To(Equal(int32(brokerCount)))
@@ -2049,13 +2052,13 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		// applied again on every look, until the restore reports the mismatch.
 		const wrong = "not-the-name-of-this-job"
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			current := readRestore(g, pitr)
 			if current.Status.Phase != v1.PointInTimeRestoreFailed {
 				current.Status.PrimaryJobNames[0] = wrong
 				_ = k8sClient.Status().Update(ctx, current)
 			}
 
-			current = readRestore(pitr)
+			current = readRestore(g, pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 			g.Expect(current.Status.FailureMessage).To(ContainSubstring(wrong))
 		}, timeout, interval).Should(Succeed())
@@ -2070,6 +2073,12 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		pitr := createRestore(w)
 		expectHeld(pitr, v1.ReasonDatabaseNotRestored)
 
+		// Admission pins the count in the same status write that reports the
+		// hold, so this is the count of the cluster before the resize.
+		By("pinning the broker count of the cluster it was admitted against")
+		Expect(readRestore(Default, pitr).Status.Brokers).To(Equal(int32(brokerCount)))
+
+		By("resizing the cluster to one broker while the restore waits")
 		Eventually(func(g Gomega) {
 			var brokers appsv1.StatefulSet
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.brokers), &brokers)).To(Succeed())
@@ -2080,10 +2089,28 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 			g.Expect(k8sClient.Update(ctx, &brokers)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
+		By("letting the database reach the requested point")
 		exporter.set(w.dbConfig.Spec.DatabaseName, answer{positions: positionsBehind(time.Hour)})
 
+		// No watch carries the answer of a database, so only the retry timer
+		// ends this hold. That is a fixed two seconds of the ten that one
+		// assertion of this suite gets, and the phase never returns to Pending,
+		// so the wait belongs here and not in the assertions below.
+		By("leaving the admission hold on the retry timer")
 		Eventually(func(g Gomega) {
-			current := readRestore(pitr)
+			g.Expect(readRestore(g, pitr).Status.Phase).NotTo(Equal(v1.PointInTimeRestorePending))
+		}, timeout, interval).Should(Succeed())
+
+		// Both recorded brokers get an empty volume before any Job applies. Each
+		// delete, protection finalizer and apply is a write, and writes are what
+		// a loaded machine slows down, so they do not share a timeout with the
+		// outcome below.
+		By("emptying the volumes of the brokers it recorded")
+		expectRecreatedClaims(w, pitr)
+
+		By("failing on the Job of the broker that the cluster no longer runs")
+		Eventually(func(g Gomega) {
+			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 			g.Expect(current.Status.FailureMessage).To(ContainSubstring("resized"))
 			g.Expect(current.Status.Brokers).To(Equal(int32(brokerCount)))

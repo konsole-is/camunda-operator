@@ -24,7 +24,6 @@ spec:
   databaseName: camunda
   credentialsSecretRef:
     name: my-camunda-db-credentials
-    namespace: my-cluster-ns
     usernameKey: username
     passwordKey: password
 ```
@@ -85,21 +84,17 @@ spec:
   credentialsSecretRef:
     # string. Required. Name of the Secret that holds the application credentials.
     name: my-camunda-db-credentials
-    # string. Required. Namespace of the Secret. It never defaults to the namespace of this contract.
-    namespace: my-cluster-ns
-    # string. Required. Key in the Secret that holds the username.
+    # string. Optional, default: username. Key in the Secret that holds the username.
     usernameKey: username
-    # string. Required. Key in the Secret that holds the password.
+    # string. Optional, default: password. Key in the Secret that holds the password.
     passwordKey: password
   # object. Optional. Separate user with dump and restore privileges. A LogicalBackupRDBMS needs it.
   backupCredentialsSecretRef:
     # string. Required. Name of the Secret that holds the backup credentials.
     name: my-camunda-db-backup-credentials
-    # string. Required. Namespace of the Secret. It never defaults to the namespace of this contract.
-    namespace: my-cluster-ns
-    # string. Required. Key in the Secret that holds the username.
+    # string. Optional, default: username. Key in the Secret that holds the username.
     usernameKey: username
-    # string. Required. Key in the Secret that holds the password.
+    # string. Optional, default: password. Key in the Secret that holds the password.
     passwordKey: password
 ```
 
@@ -124,12 +119,10 @@ spec:
   databaseName: camunda
   credentialsSecretRef:
     name: my-camunda-db-credentials
-    namespace: my-cluster-ns
     usernameKey: username
     passwordKey: password
   backupCredentialsSecretRef:
     name: my-camunda-db-backup-credentials
-    namespace: my-cluster-ns
     usernameKey: username
     passwordKey: password
 ```

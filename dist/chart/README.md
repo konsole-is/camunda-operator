@@ -38,7 +38,7 @@ Full installation guide, including verification and the large-CRD install path:
 | `metrics.enable` | `true` | Expose the RBAC-protected `/metrics` endpoint. |
 | `metrics.port` | `8443` | Metrics server port. |
 | `certManager.enable` | `false` | Switches the `ServiceMonitor` to a cert-manager-backed TLS config expecting a `metrics-server-cert` secret. The chart does not provision that certificate — leave `false` unless you supply it yourself. |
-| `prometheus.enable` | `false` | Install a `ServiceMonitor`. Requires prometheus-operator CRDs. |
+| `prometheus.enable` | `false` | Install a `ServiceMonitor`. Requires prometheus-operator CRDs. The alert rules and dashboards are applied separately, see `docs/observability.md`. |
 | `nameOverride` | unset | Partially override the generated resource name. |
 | `fullnameOverride` | unset | Fully override the generated resource name. |
 

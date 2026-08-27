@@ -137,11 +137,12 @@ func PreCheck(ctx context.Context, req PreCheckRequest) (*PreCheckResult, error)
 	}
 
 	var bucket v1.ObjectStorageConfig
-	if err := req.Reader.Get(ctx, types.NamespacedName{Name: cluster.Spec.BackupStorageRef}, &bucket); err != nil {
+	bucketName := types.NamespacedName{Name: cluster.Spec.BackupStorageRef, Namespace: namespace}
+	if err := req.Reader.Get(ctx, bucketName, &bucket); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, InvalidReference("ObjectStorageConfig %q does not exist", cluster.Spec.BackupStorageRef)
+			return nil, InvalidReference("ObjectStorageConfig %s does not exist", bucketName)
 		}
-		return nil, fmt.Errorf("reading ObjectStorageConfig %q: %w", cluster.Spec.BackupStorageRef, err)
+		return nil, fmt.Errorf("reading ObjectStorageConfig %s: %w", bucketName, err)
 	}
 
 	running, err := req.InProgress(ctx)

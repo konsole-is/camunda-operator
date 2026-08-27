@@ -141,26 +141,27 @@ func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
 		Watches(&v1.CamundaCluster{}, r.enqueueForCluster()).
 		Watches(&corev1.Namespace{}, r.enqueueForNamespace(), builder.OnlyMetadata).
 		Watches(&corev1.Secret{}, r.enqueueForSecret(), builder.OnlyMetadata).
-		Named("camundamanagementcluster").
+		Named(controllerName).
 		Complete(r)
 }
 
 // secretRefs returns every Secret that a management cluster names itself, as
-// namespaced index keys. A Secret of another namespace is copied into the
-// management namespace, and the mounted copy follows the original, so an
-// event on any of them has to reach the management cluster that reads it.
+// namespaced index keys. Each one lives in the management namespace, so an
+// event on it has to reach the management cluster that reads it.
 func secretRefs(mc *v1.CamundaManagementCluster) []string {
 	var keys []string
 	if external := mc.Spec.IdentityProvider.ExternalKeycloak; external != nil {
-		ref := external.AdminCredentialsSecretRef
-		keys = append(keys, refindex.NamespacedKey(ref.Namespace, ref.Name))
+		keys = append(
+			keys,
+			refindex.NamespacedKey(mc.Namespace, external.AdminCredentialsSecretRef.Name),
+		)
 	}
 	if ref := mc.Spec.Identity.Admin.PasswordSecretRef; ref != nil {
-		keys = append(keys, refindex.NamespacedKey(ref.Namespace, ref.Name))
+		keys = append(keys, refindex.NamespacedKey(mc.Namespace, ref.Name))
 	}
 	if webModeler := mc.Spec.WebModeler; webModeler != nil {
 		if ref := webModeler.Mail.CredentialsSecretRef; ref != nil {
-			keys = append(keys, refindex.NamespacedKey(ref.Namespace, ref.Name))
+			keys = append(keys, refindex.NamespacedKey(mc.Namespace, ref.Name))
 		}
 	}
 

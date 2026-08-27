@@ -50,6 +50,11 @@ const (
 	MinIOCredentialsSecret  = "minio-credentials"
 	MinIOAccessKeyIDKey     = "accessKeyId"
 	MinIOSecretAccessKeyKey = "secretAccessKey"
+	// MinIOAccessKeyID and MinIOSecretAccessKey are the values of that pair.
+	// A bucket contract names a Secret of its own namespace, so each flow
+	// creates the pair next to its contract.
+	MinIOAccessKeyID     = "camundabackup"
+	MinIOSecretAccessKey = "camunda-backup-secret"
 	// minioBucketJob creates MinIOBucket once the server answers.
 	minioBucketJob = "minio-bucket"
 	// minioManifest is the manifest of all of the above, relative to the

@@ -74,6 +74,10 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 	cd api && "$(CONTROLLER_GEN)" object:headerFile="../hack/boilerplate.go.txt" paths="./..."
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
+.PHONY: observability
+observability: ## Render the dashboards and alert rules of the framework for the metric namespace of the operator.
+	go tool ocf observability render --metric-namespace camunda_operator --out config/prometheus/observability
+
 .PHONY: tidy
 tidy: ## Run go mod tidy in every module.
 	@for m in $(MODULES); do (cd $$m && go mod tidy) || exit 1; done

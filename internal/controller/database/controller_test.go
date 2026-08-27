@@ -348,7 +348,6 @@ var _ = Describe("Database controller", func() {
 		Expect(dbConfig.Spec.ServerRef).To(Equal(server))
 		Expect(dbConfig.Spec.DatabaseName).To(Equal(db.Spec.DatabaseName))
 		Expect(dbConfig.Spec.CredentialsSecretRef.Name).To(Equal(appKey.Name))
-		Expect(dbConfig.Spec.CredentialsSecretRef.Namespace).To(Equal(namespace))
 		Expect(dbConfig.Spec.BackupCredentialsSecretRef).NotTo(BeNil())
 		Expect(dbConfig.Spec.BackupCredentialsSecretRef.Name).To(Equal(backupKey.Name))
 		expectOwnedByDatabase(&dbConfig, db)
@@ -682,6 +681,68 @@ var _ = Describe("Database controller", func() {
 				namespace, winner.Name, winner.Spec.DatabaseName,
 			),
 		)
+	})
+
+	// The cached rule only orders claimants of a name that nobody holds. A
+	// Database that is told to wait its turn has lost nothing, so it keeps
+	// the logical database it runs on and the bindings it published for it.
+	It("keeps its bindings when another Database only goes first", func() {
+		namespace := newDatabaseNamespace()
+		host := testPostgresHost()
+
+		// The older claimant records the name it wants and never claims it,
+		// because its own admin credentials are incomplete.
+		broken := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "broken-creds", Namespace: namespace},
+			Data:       map[string][]byte{"username": []byte("postgres")},
+		}
+		Expect(k8sClient.Create(ctx, broken)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, broken) })
+
+		waiting := databaseFor(probedServer(namespace, broken.Name, host).Name, namespace)
+		createDatabase(waiting)
+		expectDatabaseReady(
+			waiting, metav1.ConditionFalse, v1.ReasonMissingSecret, "is missing key \"password\"",
+		)
+
+		runner := databaseFor(createDatabaseServerAt(namespace, host), namespace)
+		createDatabase(runner)
+		expectDatabaseReady(
+			runner, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.",
+		)
+
+		held := types.NamespacedName{
+			Namespace: testClaimNamespace,
+			Name: claimLeaseName(
+				components.CollisionKey(serverSystemIdentifier(), runner.Spec.DatabaseName),
+			),
+		}
+		Eventually(func() error {
+			var lease coordinationv1.Lease
+			return k8sClient.Get(ctx, held, &lease)
+		}, timeout, interval).Should(Succeed())
+
+		By("pointing it at a name that the older Database asked for first")
+		Eventually(func(g Gomega) {
+			var latest v1.Database
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(runner), &latest)).To(Succeed())
+			latest.Spec.DatabaseName = waiting.Spec.DatabaseName
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		expectDatabaseReady(
+			runner, metav1.ConditionFalse, v1.ReasonInvalidReference, "goes first for database",
+		)
+
+		By("keeping the bindings and the claim of the logical database it runs on")
+		Consistently(func(g Gomega) {
+			var lease coordinationv1.Lease
+			g.Expect(k8sClient.Get(ctx, held, &lease)).To(Succeed())
+			g.Expect(k8sClient.Get(
+				ctx, types.NamespacedName{Namespace: namespace, Name: runner.Name},
+				&v1.DatabaseConfig{},
+			)).To(Succeed())
+		}, "2s", 200*time.Millisecond).Should(Succeed())
 	})
 
 	// A Database that moves to another logical database keeps the one it has

@@ -107,9 +107,8 @@ func withWebModeler(mc *v1.CamundaManagementCluster) {
 func withWebModelerOverrides(spec *v1.WebModelerSpec) {
 	spec.Mail.FromName = "Camunda"
 	spec.Mail.TLS = new(false)
-	spec.Mail.CredentialsSecretRef = &v1.CredentialsSecretRef{
+	spec.Mail.CredentialsSecretRef = &v1.LocalCredentialsSecretRef{
 		Name:        "smtp-credentials",
-		Namespace:   fixtureNamespace,
 		UsernameKey: "username",
 		PasswordKey: "password",
 	}
@@ -147,9 +146,8 @@ func webModelerDatabase() *Database {
 		Host: "postgres.camunda.svc",
 		Port: 5432,
 		Name: "web-modeler",
-		Credentials: v1.CredentialsSecretRef{
+		Credentials: v1.LocalCredentialsSecretRef{
 			Name:        "modeler-db-credentials",
-			Namespace:   fixtureNamespace,
 			UsernameKey: "username",
 			PasswordKey: "password",
 		},

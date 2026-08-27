@@ -34,9 +34,8 @@ import (
 func exporterStorage() v1.ElasticsearchStorage {
 	return v1.ElasticsearchStorage{
 		Endpoint: "http://elasticsearch.camunda.svc:9200",
-		CredentialsSecretRef: v1.CredentialsSecretRef{
+		CredentialsSecretRef: v1.LocalCredentialsSecretRef{
 			Name:        "es-credentials",
-			Namespace:   "camunda",
 			UsernameKey: "username",
 			PasswordKey: "password",
 		},

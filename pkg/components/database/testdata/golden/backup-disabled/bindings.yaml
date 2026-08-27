@@ -24,7 +24,6 @@ metadata:
 spec:
   credentialsSecretRef:
     name: my-camunda-db-credentials
-    namespace: my-cluster-ns
     passwordKey: password
     usernameKey: username
   databaseName: camunda

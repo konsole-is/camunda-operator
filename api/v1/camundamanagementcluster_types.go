@@ -242,7 +242,7 @@ type ExternalKeycloakSpec struct {
 	// AdminCredentialsSecretRef names the Secret with the Keycloak
 	// administrator credentials. Management Identity uses them to create the
 	// realm, the clients, and the initial administrator.
-	AdminCredentialsSecretRef CredentialsSecretRef `json:"adminCredentialsSecretRef"`
+	AdminCredentialsSecretRef LocalCredentialsSecretRef `json:"adminCredentialsSecretRef"`
 }
 
 // ManagementOIDCSpec selects the identity provider of the referenced
@@ -306,7 +306,7 @@ type IdentityAdminSpec struct {
 	// first Keycloak user. The operator generates a password when this is
 	// unset.
 	// +optional
-	PasswordSecretRef *SecretKeyRef `json:"passwordSecretRef,omitempty"`
+	PasswordSecretRef *LocalSecretKeyRef `json:"passwordSecretRef,omitempty"`
 	// Email is the email address of the first Keycloak user. Web Modeler
 	// needs an address for every person who signs in, so it is required when
 	// webModeler is set in a Keycloak mode.
@@ -383,7 +383,7 @@ type WebModelerMailSpec struct {
 	// CredentialsSecretRef names the Secret with the user and the password of
 	// the SMTP server. Leave it unset for a server that needs no credentials.
 	// +optional
-	CredentialsSecretRef *CredentialsSecretRef `json:"credentialsSecretRef,omitempty"`
+	CredentialsSecretRef *LocalCredentialsSecretRef `json:"credentialsSecretRef,omitempty"`
 }
 
 // CamundaManagementClusterStatus is the observed state of a

@@ -33,10 +33,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "secondarystorageconfig"
 
 // SecretRefsField is the index field that lists bindings by the Secrets they
 // reference, keyed with refindex.NamespacedKey. Other controllers look
@@ -53,6 +58,9 @@ type SecondaryStorageConfigReconciler struct {
 	// Secret data needs it, because Secrets are watched metadata-only.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch
@@ -65,7 +73,12 @@ type SecondaryStorageConfigReconciler struct {
 func (r *SecondaryStorageConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var cfg v1.SecondaryStorageConfig
 	if err := r.Get(ctx, req.NamespacedName, &cfg); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			observability.Forget(r.Metrics, new(v1.SecondaryStorageConfig).GetKind(), req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	cond, err := r.validate(ctx, &cfg)
@@ -79,7 +92,7 @@ func (r *SecondaryStorageConfigReconciler) Reconcile(ctx context.Context, req ct
 	// server on a conflict and is staged again on the next reconcile.
 	return ctrl.Result{}, component.FlushStatus(
 		ctx,
-		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Owner: &cfg},
+		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Metrics: r.Metrics, Owner: &cfg},
 		nil,
 	)
 }
@@ -99,7 +112,7 @@ func (r *SecondaryStorageConfigReconciler) validate(
 		ref := cfg.Spec.Elasticsearch.CredentialsSecretRef
 		msg, err := secretref.CheckKeys(
 			ctx, r.APIReader,
-			types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name},
+			types.NamespacedName{Namespace: cfg.Namespace, Name: ref.Name},
 			ref.UsernameKey, ref.PasswordKey,
 		)
 		if err != nil {
@@ -112,7 +125,7 @@ func (r *SecondaryStorageConfigReconciler) validate(
 		if ca := cfg.Spec.Elasticsearch.CASecretRef; ca != nil {
 			msg, err := secretref.CheckKeys(
 				ctx, r.APIReader,
-				types.NamespacedName{Namespace: ca.Namespace, Name: ca.Name}, ca.Key,
+				types.NamespacedName{Namespace: cfg.Namespace, Name: ca.Name}, ca.Key,
 			)
 			if err != nil {
 				return metav1.Condition{}, err
@@ -146,16 +159,21 @@ func (r *SecondaryStorageConfigReconciler) validate(
 // referenced Secret, an index by same-namespace DatabaseConfig, a
 // metadata-only Secret watch, and a typed DatabaseConfig watch.
 func (r *SecondaryStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
+	}
+
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.SecondaryStorageConfig{},
 		SecretRefsField, func(o client.Object) []string {
-			es := o.(*v1.SecondaryStorageConfig).Spec.Elasticsearch
+			cfg := o.(*v1.SecondaryStorageConfig)
+			es := cfg.Spec.Elasticsearch
 			if es == nil {
 				return nil
 			}
-			keys := []string{refindex.NamespacedKey(es.CredentialsSecretRef.Namespace, es.CredentialsSecretRef.Name)}
+			keys := []string{refindex.NamespacedKey(cfg.Namespace, es.CredentialsSecretRef.Name)}
 			if es.CASecretRef != nil {
-				keys = append(keys, refindex.NamespacedKey(es.CASecretRef.Namespace, es.CASecretRef.Name))
+				keys = append(keys, refindex.NamespacedKey(cfg.Namespace, es.CASecretRef.Name))
 			}
 			return keys
 		},
@@ -193,6 +211,6 @@ func (r *SecondaryStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) er
 				secondaryStorageConfigDatabaseConfigRefField, refindex.ObjectNamespacedName,
 			),
 		).
-		Named("secondarystorageconfig").
+		Named(controllerName).
 		Complete(r)
 }

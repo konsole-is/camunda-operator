@@ -70,9 +70,8 @@ func TestResolveIdentityProviderSplitsTheURLsOfAManagedKeycloak(t *testing.T) {
 	)
 	assert.Equal(
 		t,
-		&v1.CredentialsSecretRef{
+		&v1.LocalCredentialsSecretRef{
 			Name:        "my-management-keycloak-initial-admin",
-			Namespace:   fixtureNamespace,
 			UsernameKey: "username",
 			PasswordKey: "password",
 		},
@@ -81,9 +80,9 @@ func TestResolveIdentityProviderSplitsTheURLsOfAManagedKeycloak(t *testing.T) {
 }
 
 // A Keycloak that the user runs answers on one address, so the front-channel
-// and the back-channel issuer are the same. The administrator comes from the
-// copy of the referenced Secret in the management namespace, because the
-// Identity pods mount it.
+// and the back-channel issuer are the same. The administrator comes straight
+// from the Secret that adminCredentialsSecretRef names, because it always
+// resolves in the management namespace.
 func TestResolveIdentityProviderReadsAnExistingKeycloak(t *testing.T) {
 	t.Parallel()
 
@@ -95,9 +94,8 @@ func TestResolveIdentityProviderReadsAnExistingKeycloak(t *testing.T) {
 	assert.Equal(t, fixtureKeycloak+"/realms/camunda-platform", provider.IssuerURL)
 	assert.Equal(
 		t,
-		&v1.CredentialsSecretRef{
-			Name:        MirroredSecretName(newKeycloakCluster(false, nil), MirrorPurposeKeycloakAdmin),
-			Namespace:   fixtureNamespace,
+		&v1.LocalCredentialsSecretRef{
+			Name:        "keycloak-admin",
 			UsernameKey: "username",
 			PasswordKey: "password",
 		},
@@ -304,25 +302,21 @@ func TestGeneratedSecretsRotateExceptTheAdministratorPassword(t *testing.T) {
 	)
 }
 
-// A pod mounts a Secret of its own namespace alone, so an administrator
-// password from another namespace is read from the copy the operator makes.
-func TestIdentityEnvReadsTheAdministratorPasswordFromItsCopy(t *testing.T) {
+// passwordSecretRef always resolves in the management namespace, so Identity
+// reads the administrator password straight from the Secret the spec names.
+func TestIdentityEnvReadsTheAdministratorPasswordFromItsSecret(t *testing.T) {
 	t.Parallel()
 
 	in := newKeycloakInput(t, true, func(in *Input) {
-		in.Cluster.Spec.Identity.Admin.PasswordSecretRef = &v1.SecretKeyRef{
-			Name: "admin-password", Namespace: "elsewhere", Key: "password",
+		in.Cluster.Spec.Identity.Admin.PasswordSecretRef = &v1.LocalSecretKeyRef{
+			Name: "admin-password", Key: "password",
 		}
 		in.Secrets.IdentityAdmin = ""
 	})
 
 	env := renderedEnv(in, ComponentIdentity)
 
-	assert.Equal(
-		t,
-		"secretKeyRef:"+MirroredSecretName(in.Cluster, MirrorPurposeIdentityAdmin)+"/password",
-		env["KEYCLOAK_USERS_0_PASSWORD"],
-	)
+	assert.Equal(t, "secretKeyRef:admin-password/password", env["KEYCLOAK_USERS_0_PASSWORD"])
 }
 
 // The ManagementAuthConfig is what a CamundaOptimize reads, and in the

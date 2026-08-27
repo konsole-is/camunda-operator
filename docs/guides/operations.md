@@ -313,7 +313,7 @@ A changed value rotates once. The operator generates a new password, sets it on 
 
 You do not edit the cluster to roll a configuration change. A change to the `CamundaPlatformConfig`, the `CamundaClusterPreset`, the `SecondaryStorageConfig` and its `DatabaseConfig` or `DatabaseServerConfig`, an `ObjectStorageConfig`, or any referenced Secret reaches the pods on its own. The pod templates carry the annotation `camunda.io/config-hash`, and a new hash rolls the pods.
 
-A referenced Secret in another namespace is copied into the namespace of the cluster as `<name>-camunda-<purpose>`, for example `my-cluster-camunda-license` or `my-cluster-camunda-oidc-client`. The pods read the copy. When the source Secret changes, the copy follows, and the pods roll. `MirroredSecretsReady` reports the copies.
+The [CamundaPlatformConfig](../crds/camundaplatformconfig.md) is cluster-scoped, so the Secrets it names are copied into the namespace of the cluster as `<name>-camunda-<purpose>`, for example `my-cluster-camunda-license` or `my-cluster-camunda-oidc-client`. The pods read the copy. When the source Secret changes, the copy follows, and the pods roll. `MirroredSecretsReady` reports the copies. Every other Secret a cluster reads already lives in its namespace.
 
 To add your own environment variables, use `extraEnv` and `extraEnvFrom`. The operator renders its own configuration first, then the top-level `extraEnv`, then the `extraEnv` of the embedded components that the process hosts, then the `extraEnv` of the process itself. A later entry with the same name wins, and an entry replaces an operator entry with the same name. For example, to set the heap of the brokers:
 

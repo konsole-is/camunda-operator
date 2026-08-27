@@ -51,7 +51,7 @@ The [chart README](https://github.com/konsole-is/camunda-operator/blob/main/dist
 | --- | --- | --- |
 | `manager.replicas` | `1` | Number of manager replicas. Leader election is on. |
 | `manager.cliImage.repository`, `manager.cliImage.tag` | the CLI image of the release | The image that the Jobs of the operator run. Point it at your mirror when you mirror the manager image. |
-| `prometheus.enable` | `false` | Install a `ServiceMonitor` for the manager. Needs the prometheus-operator CRDs. |
+| `prometheus.enable` | `false` | Install a `ServiceMonitor` for the manager. Needs the prometheus-operator CRDs. The alert rules and dashboards are applied separately, see [Observability](observability.md). |
 | `rbacHelpers.enable` | `false` | Install admin, editor, and viewer `ClusterRole`s for every custom resource. |
 | `crd.enable` | `true` | Install the CRDs with the chart. Set `false` to manage them yourself (below). |
 | `certManager.enable` | `false` | Use a cert-manager certificate for the metrics endpoint. The chart does not create the certificate. Leave it `false` unless you provide the Secret `metrics-server-cert`. |

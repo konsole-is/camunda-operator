@@ -89,9 +89,9 @@ spec:
                         type: string
                       objectStorageRef:
                         description: |-
-                          ObjectStorageRef names a cluster-scoped ObjectStorageConfig. The
-                          operator writes the archive under a prefix of that bucket that holds
-                          this server alone.
+                          ObjectStorageRef names an ObjectStorageConfig in the namespace of this
+                          server. The operator writes the archive under a prefix of that bucket
+                          that holds this server alone.
                         maxLength: 253
                         pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string

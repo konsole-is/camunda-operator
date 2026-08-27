@@ -87,6 +87,14 @@ const claimRetryInterval = 60 * time.Second
 // credentials of the loser open nothing.
 var errClaimLost = errors.New("another Database holds the claim")
 
+// errClaimNotFirst reports that another Database goes first for a logical
+// database that nobody holds yet. It is an order, not a loss. The reconcile
+// answers it with a wait: the bindings of this Database stay, and so does
+// every claim it holds. A Database that withdrew on this would give up a
+// logical database it still runs on because a claimant of another name is
+// older.
+var errClaimNotFirst = errors.New("another Database goes first for the claim")
+
 // claimHolder is the Database that a claim Lease records. The UID tells it
 // apart from a later Database of the same name.
 type claimHolder struct {
@@ -129,8 +137,9 @@ func (r *DatabaseReconciler) claim(ctx context.Context, database *v1.Database, k
 // by first creation. The claim belongs to the PostgreSQL instance, so the
 // list covers every namespace: an older Database that reaches the same
 // instance through another contract goes first, and the failure names it. A
-// lost claim wraps errClaimLost, which the reconcile answers by withdrawing
-// the bindings.
+// rejection wraps errClaimNotFirst, which the reconcile answers with a wait.
+// Nothing holds the logical database at this point, so this is an order and
+// not a loss, and the Database keeps its bindings and every claim it holds.
 //
 // The list comes from the cache, and a claimant reaches it only after the
 // status flush that records its key. The rule therefore decides who tries the
@@ -151,10 +160,11 @@ func (r *DatabaseReconciler) checkCollision(
 		return nil
 	}
 
-	return fmt.Errorf("%w: %w", errClaimLost, &conditions.PreCheckFailure{
+	return fmt.Errorf("%w: %w", errClaimNotFirst, &conditions.PreCheckFailure{
 		Reason: v1.ReasonInvalidReference,
 		Message: fmt.Sprintf(
-			"Database %s already claims database %q on the same server",
+			"Database %s goes first for database %q on the same server. Nothing holds that "+
+				"database yet",
 			client.ObjectKeyFromObject(winner), database.Spec.DatabaseName,
 		),
 	})
@@ -286,30 +296,6 @@ func (r *DatabaseReconciler) holderKeeps(ctx context.Context, holder claimHolder
 	return other.UID == holder.UID, nil
 }
 
-// releaseStaleClaims gives back every claim that database holds other than
-// key, which it holds now. It reads the holder annotations rather than
-// status.collisionKey: a Database that took a claim and stopped before the
-// status flush records none, and a release by the recorded key would leave
-// that one held until the Database is deleted.
-//
-// The caller runs it only once database holds key and nothing it published
-// names another logical database any more. A Database that gave an old claim
-// up earlier would leave its published bindings on a logical database that
-// another Database could take and rotate the roles of.
-//
-// recorded is the claim that status.collisionKey held before this reconcile.
-// A Database that already named this logical database has nothing to give
-// back, which is every reconcile after the first.
-func (r *DatabaseReconciler) releaseStaleClaims(
-	ctx context.Context, database *v1.Database, recorded, key string,
-) error {
-	if recorded == key {
-		return nil
-	}
-
-	return r.releaseHeldClaims(ctx, selfHolder(database), key)
-}
-
 // finalize releases the claims of a deleted Database and removes the claim
 // finalizer.
 //
@@ -400,12 +386,17 @@ func (r *DatabaseReconciler) dropClaim(ctx context.Context, key string, holder c
 }
 
 // deleteClaim deletes lease under the UID and the resourceVersion that it was
-// read with. A Lease that is gone, or that changed in between, is left alone.
+// read with. A Lease that is gone is left alone.
+//
+// A Lease that changed in between fails the preconditions, which means it was
+// not deleted. The error goes back to the caller, so a release keeps its
+// finalizer and reads the Lease again on the next look. To report a conflict
+// as a release would let the Database go while its claim stayed.
 func (r *DatabaseReconciler) deleteClaim(ctx context.Context, lease *coordinationv1.Lease) error {
 	err := r.Delete(ctx, lease, client.Preconditions{
 		UID: &lease.UID, ResourceVersion: &lease.ResourceVersion,
 	})
-	if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf(
 			"deleting the claim Lease %s: %w", client.ObjectKeyFromObject(lease), err,
 		)

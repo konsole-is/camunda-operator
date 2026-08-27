@@ -107,7 +107,12 @@ func TestCheckCollisionCountsTheDatabaseItRunsFor(t *testing.T) {
 		r := collisionReconciler(t, older)
 
 		err := r.checkCollision(context.Background(), newer, claimKey)
-		require.ErrorIs(t, err, errClaimLost)
+		require.ErrorIs(t, err, errClaimNotFirst)
+
+		// The rejection is an order, not a loss. Reconcile withdraws the
+		// bindings and gives back every claim on errClaimLost, and a Database
+		// that waits its turn for a name nobody holds keeps both.
+		require.NotErrorIs(t, err, errClaimLost)
 
 		var failure *conditions.PreCheckFailure
 		require.ErrorAs(t, err, &failure)
@@ -123,7 +128,9 @@ func TestCheckCollisionCountsTheDatabaseItRunsFor(t *testing.T) {
 		r := collisionReconciler(t, older, newer)
 
 		assert.NoError(t, r.checkCollision(context.Background(), older, claimKey))
-		require.ErrorIs(t, r.checkCollision(context.Background(), newer, claimKey), errClaimLost)
+		require.ErrorIs(
+			t, r.checkCollision(context.Background(), newer, claimKey), errClaimNotFirst,
+		)
 	})
 
 	t.Run("the only claimant wins", func(t *testing.T) {

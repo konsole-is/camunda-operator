@@ -323,8 +323,8 @@ func TestClaimReleases(t *testing.T) {
 		held := staged(database)
 		require.NoError(t, r.claim(ctx, held, claimKey))
 
-		require.NoError(t, r.releaseStaleClaims(
-			ctx, held, claimKey, "7000000000000000001/other",
+		require.NoError(t, r.releaseHeldClaims(
+			ctx, selfHolder(held), "7000000000000000001/other",
 		))
 
 		_, found := leaseOf(t, r)
@@ -343,8 +343,8 @@ func TestClaimReleases(t *testing.T) {
 		// another logical database. A release that reads the recorded key
 		// would leave the old one held until this Database is deleted.
 		moved := database.DeepCopy()
-		require.NoError(t, r.releaseStaleClaims(
-			ctx, moved, moved.Status.CollisionKey, "7000000000000000001/other",
+		require.NoError(t, r.releaseHeldClaims(
+			ctx, selfHolder(moved), "7000000000000000001/other",
 		))
 
 		_, found := leaseOf(t, r)

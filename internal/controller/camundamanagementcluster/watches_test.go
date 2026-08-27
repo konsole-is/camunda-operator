@@ -84,10 +84,9 @@ func TestEnqueueForCluster(t *testing.T) {
 	})
 }
 
-// A Secret that the spec names itself may live in any namespace. The
-// namespace enqueue never reaches one outside the management namespace, so
-// without this index a rotation of it refreshes neither the copy nor the pods
-// that read it.
+// Every Secret that the spec names itself lives in the management namespace.
+// Without this index, a rotation of one of them would refresh neither its
+// resource version input nor the pods that read it.
 func TestSecretRefsIndexesEveryReferenceOfTheSpec(t *testing.T) {
 	t.Parallel()
 
@@ -95,23 +94,25 @@ func TestSecretRefsIndexesEveryReferenceOfTheSpec(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "management", Namespace: enqueueNamespace},
 		Spec: v1.CamundaManagementClusterSpec{
 			IdentityProvider: v1.IdentityProviderSpec{ExternalKeycloak: &v1.ExternalKeycloakSpec{
-				AdminCredentialsSecretRef: v1.CredentialsSecretRef{
-					Name: "keycloak-admin", Namespace: "identity",
-				},
+				AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{Name: "keycloak-admin"},
 			}},
 			Identity: v1.IdentitySpec{Admin: v1.IdentityAdminSpec{
 				Username:          "admin",
-				PasswordSecretRef: &v1.SecretKeyRef{Name: "admin-password", Namespace: "secrets"},
+				PasswordSecretRef: &v1.LocalSecretKeyRef{Name: "admin-password"},
 			}},
 			WebModeler: &v1.WebModelerSpec{Mail: v1.WebModelerMailSpec{
-				CredentialsSecretRef: &v1.CredentialsSecretRef{Name: "smtp", Namespace: "mail"},
+				CredentialsSecretRef: &v1.LocalCredentialsSecretRef{Name: "smtp"},
 			}},
 		},
 	}
 
 	assert.Equal(
 		t,
-		[]string{"identity/keycloak-admin", "secrets/admin-password", "mail/smtp"},
+		[]string{
+			enqueueNamespace + "/keycloak-admin",
+			enqueueNamespace + "/admin-password",
+			enqueueNamespace + "/smtp",
+		},
 		secretRefs(mc),
 	)
 	assert.Empty(t, secretRefs(managementClusterWithSelector("bare", nil)))

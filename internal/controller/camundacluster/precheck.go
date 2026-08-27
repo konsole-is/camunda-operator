@@ -171,25 +171,19 @@ func (res *resolver) resolvePlatform(ctx context.Context, in *components.Input) 
 	return nil
 }
 
-// resolveAuth checks the client secret of the effective authentication and
-// points the reference at its local copy. It needs in.Effective and
-// in.Platform. Under oidc the effective client secret is the cluster one when
-// the cluster (or its preset) sets it, otherwise the platform one. Under basic
-// a cluster client secret reference is checked but not mirrored, because
-// nothing renders it.
+// resolveAuth checks the client secret of the effective authentication. It
+// needs in.Effective and in.Platform. Under oidc the effective client secret
+// is the cluster one when the cluster (or its preset) sets it, otherwise the
+// platform one. A cluster reference names a Secret of the cluster namespace.
+// The platform config is cluster-scoped, so its Secret gets a local copy.
 func (res *resolver) resolveAuth(ctx context.Context, in *components.Input) error {
-	clusterRef := in.Effective.Auth != nil && in.Effective.Auth.ClientSecretRef != nil
-
-	switch {
-	case components.ResolveAuth(*in).Method != v1.AuthenticationMethodOIDC:
-		if clusterRef {
-			ref := in.Effective.Auth.ClientSecretRef
-			_, err := res.secret(ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, "", ref.Key)
-			return err
-		}
-	case clusterRef:
-		return res.localize(ctx, in.Effective.Auth.ClientSecretRef, components.MirrorPurposeAuthClient)
-	case in.Platform.Auth != nil && in.Platform.Auth.OIDC != nil:
+	if auth := in.Effective.Auth; auth != nil && auth.ClientSecretRef != nil {
+		return res.checkLocalSecret(ctx, auth.ClientSecretRef.Name, auth.ClientSecretRef.Key)
+	}
+	if components.ResolveAuth(*in).Method != v1.AuthenticationMethodOIDC {
+		return nil
+	}
+	if in.Platform.Auth != nil && in.Platform.Auth.OIDC != nil {
 		return res.localize(ctx, &in.Platform.Auth.OIDC.ClientSecretRef, components.MirrorPurposeOIDCClient)
 	}
 
@@ -218,8 +212,7 @@ func (res *resolver) resolveStorage(ctx context.Context, in *components.Input) e
 }
 
 // resolveElasticsearchStorage sets in.Storage.Elasticsearch from the
-// elasticsearch block of binding, with the credentials and CA references
-// pointed at their local copies.
+// elasticsearch block of binding, after checking the Secrets it names.
 func (res *resolver) resolveElasticsearchStorage(
 	ctx context.Context,
 	in *components.Input,
@@ -233,15 +226,14 @@ func (res *resolver) resolveElasticsearchStorage(
 	}
 	es := binding.Spec.Elasticsearch.DeepCopy()
 
-	if err := res.localizeCredentials(
-		ctx,
-		&es.CredentialsSecretRef,
-		components.MirrorPurposeESCredentials,
+	credentials := es.CredentialsSecretRef
+	if err := res.checkLocalSecret(
+		ctx, credentials.Name, credentials.UsernameKey, credentials.PasswordKey,
 	); err != nil {
 		return err
 	}
-	if es.CASecretRef != nil {
-		if err := res.localize(ctx, es.CASecretRef, components.MirrorPurposeESCA); err != nil {
+	if ca := es.CASecretRef; ca != nil {
+		if err := res.checkLocalSecret(ctx, ca.Name, ca.Key); err != nil {
 			return err
 		}
 	}
@@ -252,8 +244,7 @@ func (res *resolver) resolveElasticsearchStorage(
 
 // resolveRDBMSStorage follows the rdbms block of binding through its
 // DatabaseConfig (same namespace as the binding) to the DatabaseServerConfig
-// and sets in.Storage.RDBMS, with the DatabaseConfig credentials pointed at
-// their local copy.
+// and sets in.Storage.RDBMS, after checking the credentials Secret.
 func (res *resolver) resolveRDBMSStorage(
 	ctx context.Context,
 	in *components.Input,
@@ -279,14 +270,11 @@ func (res *resolver) resolveRDBMSStorage(
 	}
 
 	creds := dbConfig.Spec.CredentialsSecretRef
-	if err := res.localizeCredentials(ctx, &creds, components.MirrorPurposeDBCredentials); err != nil {
+	if err := res.checkLocalSecret(ctx, creds.Name, creds.UsernameKey, creds.PasswordKey); err != nil {
 		return err
 	}
 
-	// The dump Job of a LogicalBackupRDBMS mounts the backup user of the
-	// database, so its credentials get a local copy in the same way. The
-	// backup controller consumes the copy and never writes one itself.
-	if err := res.mirrorDumpCredentials(ctx, dbConfig.Spec.BackupCredentialsSecretRef); err != nil {
+	if err := res.checkDumpCredentials(ctx, dbConfig.Spec.BackupCredentialsSecretRef); err != nil {
 		return err
 	}
 	in.Storage.RDBMS = &components.RDBMSStorage{
@@ -372,22 +360,21 @@ func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose
 	return nil
 }
 
-// mirrorDumpCredentials copies the backup user of the database into the
-// dump-credentials mirror when it lives outside the cluster namespace. Only
-// dump Jobs consume it, so the cluster neither parks nor rolls its pods on
-// it. A reference that does not resolve is a Warning event here and a
-// pre-check failure on the backup that needs it. The Secret is no hash
-// input. A nil reference means that the database takes no dumps.
-func (res *resolver) mirrorDumpCredentials(
+// checkDumpCredentials reports the backup user of the database as a Warning
+// event when it does not resolve. Only dump Jobs consume it, so the cluster
+// neither parks nor rolls its pods on it, and the backup that needs it fails
+// its own pre-check. The Secret is no hash input. A nil reference means that
+// the database takes no dumps.
+func (res *resolver) checkDumpCredentials(
 	ctx context.Context,
-	ref *v1.CredentialsSecretRef,
+	ref *v1.LocalCredentialsSecretRef,
 ) error {
 	if ref == nil {
 		return nil
 	}
 
-	key := client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}
-	secret, msg, err := secretref.Get(ctx, res.reader, key, ref.UsernameKey, ref.PasswordKey)
+	key := client.ObjectKey{Namespace: res.cluster.Namespace, Name: ref.Name}
+	msg, err := secretref.CheckKeys(ctx, res.reader, key, ref.UsernameKey, ref.PasswordKey)
 	if err != nil {
 		return fmt.Errorf("reading Secret %q: %w", key, err)
 	}
@@ -401,37 +388,18 @@ func (res *resolver) mirrorDumpCredentials(
 			"The dump credentials do not resolve, so backups of this cluster will park: %s",
 			msg,
 		)
-
-		return nil
-	}
-	if !mirror.Needed(res.cluster, key.Namespace) {
-		return nil
-	}
-
-	res.mirrors[components.MirrorPurposeDumpCredentials] = map[string][]byte{
-		ref.UsernameKey: secret.Data[ref.UsernameKey],
-		ref.PasswordKey: secret.Data[ref.PasswordKey],
 	}
 
 	return nil
 }
 
-// localizeCredentials is localize for a username/password reference.
-func (res *resolver) localizeCredentials(
-	ctx context.Context,
-	ref *v1.CredentialsSecretRef,
-	purpose components.MirrorPurpose,
-) error {
-	local, err := res.secret(
-		ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, purpose,
-		ref.UsernameKey, ref.PasswordKey,
-	)
-	if err != nil {
-		return err
-	}
-	ref.Name, ref.Namespace = local.Name, local.Namespace
+// checkLocalSecret checks that the Secret named name in the cluster namespace
+// carries keys, and records its resource version as a render input. Every
+// reference of a namespaced kind resolves here, so no copy is involved.
+func (res *resolver) checkLocalSecret(ctx context.Context, name string, keys ...string) error {
+	_, err := res.secret(ctx, client.ObjectKey{Namespace: res.cluster.Namespace, Name: name}, "", keys...)
 
-	return nil
+	return err
 }
 
 // secret checks that the Secret at key carries every one of keys and records

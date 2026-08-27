@@ -48,23 +48,23 @@ func TestLocalSecretName(t *testing.T) {
 		{
 			name:      "source in the cluster namespace is read where it is",
 			namespace: "cluster-ns",
-			source:    "db-credentials",
-			purpose:   camundacluster.MirrorPurposeDBCredentials,
-			want:      "db-credentials",
+			source:    "license",
+			purpose:   camundacluster.MirrorPurposeLicense,
+			want:      "license",
 		},
 		{
 			name:      "source in another namespace is read through its copy",
 			namespace: "elsewhere",
-			source:    "db-credentials",
-			purpose:   camundacluster.MirrorPurposeDBCredentials,
-			want:      "cluster-camunda-db-credentials",
+			source:    "license",
+			purpose:   camundacluster.MirrorPurposeLicense,
+			want:      "cluster-camunda-license",
 		},
 		{
 			name:      "the copy is named by the purpose, not by the source",
 			namespace: "elsewhere",
-			source:    "db-credentials",
-			purpose:   camundacluster.MirrorPurposeBackupCredentials,
-			want:      "cluster-camunda-backup-credentials",
+			source:    "license",
+			purpose:   camundacluster.MirrorPurposeOIDCClient,
+			want:      "cluster-camunda-oidc-client",
 		},
 	}
 
@@ -131,13 +131,7 @@ func TestCheckLocalSecret(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, failure)
 		assert.Equal(t, v1.ReasonMissingSecret, failure.Reason)
-		assert.Equal(
-			t,
-			`Secret cluster-ns/db-credentials is missing key "password". The CamundaCluster `+
-				"controller keeps the local copy of database credentials that live outside the "+
-				"cluster namespace",
-			failure.Message,
-		)
+		assert.Equal(t, `Secret cluster-ns/db-credentials is missing key "password"`, failure.Message)
 	})
 
 	t.Run("a missing Secret carries the reason of the caller", func(t *testing.T) {
@@ -150,7 +144,6 @@ func TestCheckLocalSecret(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, failure)
 		assert.Equal(t, v1.ReasonMissingCredentials, failure.Reason)
-		assert.Contains(t, failure.Message, `Secret cluster-ns/cluster-camunda-backup-credentials not found`)
-		assert.Contains(t, failure.Message, "the local copy of bucket credentials")
+		assert.Equal(t, "Secret cluster-ns/cluster-camunda-backup-credentials not found", failure.Message)
 	})
 }

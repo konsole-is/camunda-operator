@@ -72,14 +72,14 @@ func newAdmissionRig(t *testing.T, backups ...*v1.LogicalBackupElasticsearch) *a
 			Type: v1.SecondaryStorageTypeElasticsearch,
 			Elasticsearch: &v1.ElasticsearchStorage{
 				Endpoint: "http://127.0.0.1:1",
-				CredentialsSecretRef: v1.CredentialsSecretRef{
-					Name: "missing", Namespace: "ns", UsernameKey: "u", PasswordKey: "p",
+				CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+					Name: "missing", UsernameKey: "u", PasswordKey: "p",
 				},
 			},
 		},
 	}
 	bucket := &v1.ObjectStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "bucket"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "bucket"},
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{

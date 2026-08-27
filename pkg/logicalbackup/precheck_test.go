@@ -57,7 +57,11 @@ func storage(storageType v1.SecondaryStorageType) *v1.SecondaryStorageConfig {
 }
 
 func bucket() *v1.ObjectStorageConfig {
-	return &v1.ObjectStorageConfig{ObjectMeta: metav1.ObjectMeta{Name: "my-bucket"}}
+	return bucketIn(clusterNamespace)
+}
+
+func bucketIn(namespace string) *v1.ObjectStorageConfig {
+	return &v1.ObjectStorageConfig{ObjectMeta: metav1.ObjectMeta{Name: "my-bucket", Namespace: namespace}}
 }
 
 func newReader(t *testing.T, objects ...client.Object) client.Reader {
@@ -201,6 +205,14 @@ func TestPreCheckFailures(t *testing.T) {
 			objects: []client.Object{cluster(), storage(v1.SecondaryStorageTypeElasticsearch)},
 			reason:  v1.ReasonInvalidReference,
 			message: "my-bucket",
+		},
+		{
+			name: "the bucket exists only in another namespace",
+			objects: []client.Object{
+				cluster(), storage(v1.SecondaryStorageTypeElasticsearch), bucketIn("other-ns"),
+			},
+			reason:  v1.ReasonInvalidReference,
+			message: "my-ns/my-bucket",
 		},
 		{
 			name:    "another backup of the cluster runs",

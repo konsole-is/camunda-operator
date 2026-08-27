@@ -16,16 +16,16 @@ limitations under the License.
 
 // Package mirror is the reader side of the mirrored Secrets of a
 // CamundaCluster. A pod mounts a Secret only from its own namespace. The
-// CamundaCluster controller therefore copies every referenced Secret that
-// lives elsewhere into the namespace of the cluster, one copy for each
-// purpose. This package holds the rule that reads those copies back. A caller
-// reads a Secret of the cluster namespace where it is. A caller reads a Secret
-// of any other namespace through its purpose-named copy.
+// CamundaCluster controller therefore copies the Secrets that the
+// cluster-scoped CamundaPlatformConfig names into the namespace of the
+// cluster, one copy for each purpose. This package holds the rule that reads
+// those copies back. A caller reads a Secret of the cluster namespace where it
+// is. A caller reads a Secret of any other namespace through its purpose-named
+// copy.
 //
-// LogicalBackupRDBMS and LogicalRestoreRDBMS both mount these Secrets into a
-// Job, and both apply this rule. The writer side of the copies is
-// pkg/components/camundacluster, and the CamundaCluster controller decides
-// what to copy through Needed, so writer and reader share one rule.
+// The writer side of the copies is pkg/components/camundacluster, and the
+// CamundaCluster controller decides what to copy through Needed, so writer and
+// reader share one rule.
 package mirror
 
 import (
@@ -64,10 +64,9 @@ func Needed(cluster *v1.CamundaCluster, namespace string) bool {
 
 // CheckLocalSecret checks that the Secret at namespace/name carries keys. A
 // missing Secret or a missing key becomes a pre-check failure with the given
-// reason. purpose names the credentials in the message, and the message also
-// names the CamundaCluster controller as the keeper of a copy. Pass an
-// uncached reader, because a caller that admits a Job must not read stale
-// Secret data.
+// reason. purpose names the credentials in the message. Pass an uncached
+// reader, because a caller that admits a Job must not read stale Secret
+// data.
 func CheckLocalSecret(
 	ctx context.Context,
 	reader client.Reader,
@@ -84,12 +83,5 @@ func CheckLocalSecret(
 		return nil, nil
 	}
 
-	return &conditions.PreCheckFailure{
-		Reason: reason,
-		Message: fmt.Sprintf(
-			"%s. The CamundaCluster controller keeps the local copy of %s credentials that live "+
-				"outside the cluster namespace",
-			message, purpose,
-		),
-	}, nil
+	return &conditions.PreCheckFailure{Reason: reason, Message: message}, nil
 }
