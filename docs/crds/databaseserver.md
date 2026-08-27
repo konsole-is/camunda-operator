@@ -120,7 +120,7 @@ Admission checks each field against the values CloudNativePG takes there: 0-59 f
 
 The first base backup runs as soon as the server is up, whatever the schedule says. `ArchiveReady` is `False` until that first base backup completes: an archive that holds write-ahead log and no base backup cannot be recovered to any point.
 
-`ArchiveReady` reports the write-ahead log as well. CloudNativePG reports a failed upload on its cluster, and the operator waits five minutes before it acts on one. The plugin uploads a segment again after a failure, so a bucket that answers slowly moves nothing. Uploads that keep failing for those five minutes turn `ArchiveReady` `False` with reason `ArchiveFailing`, and `Ready` follows. The message says what CloudNativePG reports.
+`ArchiveReady` reports the write-ahead log as well. Uploads that keep failing for five minutes turn it `False` with reason `ArchiveFailing`, and `Ready` follows. An outage shorter than that moves neither condition. The message says what CloudNativePG reports.
 
 The archive still holds every point up to the last segment that arrived, and a restore to a later point reaches nothing. Repair the bucket, or the credentials of the bucket. The plugin uploads the segments it held back once the uploads run again, and both conditions go back to `True`.
 
