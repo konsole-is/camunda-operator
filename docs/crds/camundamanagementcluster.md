@@ -465,7 +465,7 @@ spec:
   # ... the rest of your Optimize
 ```
 
-An Optimize that names no address gets no callback, and nobody can sign in to it.
+An Optimize that names no address gets no callback from this management plane. Keycloak then refuses the return of a sign-in, unless somebody put that callback in the realm by hand.
 
 `status.optimize` lists what this management plane found, ordered by namespace and name. It is what the plane will register, not what the realm carries; the condition below reports that:
 

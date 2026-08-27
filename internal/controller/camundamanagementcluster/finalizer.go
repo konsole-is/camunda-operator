@@ -122,12 +122,28 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 // pod that is going away. The entry it leaves then names a realm client of a
 // management plane that no longer exists.
 func (r *Reconciler) stopIdentity(ctx context.Context, mc *v1.CamundaManagementCluster) error {
-	identity := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
-		Name:      components.IdentityName(mc),
-		Namespace: mc.Namespace,
-	}}
-	if err := r.Delete(ctx, identity); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("deleting Deployment %q: %w", client.ObjectKeyFromObject(identity), err)
+	key := client.ObjectKey{Namespace: mc.Namespace, Name: components.IdentityName(mc)}
+
+	var identity appsv1.Deployment
+	if err := r.APIReader.Get(ctx, key, &identity); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("reading Deployment %q: %w", key, err)
+	}
+	// The name is derived from the name of this management cluster, so another
+	// owner can hold it: a plane whose components never converged leaves it
+	// free for anybody. Only the owner reference tells the Management Identity
+	// of this plane from a workload that somebody else runs.
+	if !metav1.IsControlledBy(&identity, mc) {
+		return nil
+	}
+
+	// The UID is a precondition, so a Deployment that took the name between
+	// the read and this call is refused rather than deleted.
+	err := r.Delete(ctx, &identity, client.Preconditions{UID: &identity.UID})
+	if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+		return fmt.Errorf("deleting Deployment %q: %w", key, err)
 	}
 
 	return nil
