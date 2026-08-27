@@ -43,7 +43,8 @@ const (
 
 // finalize withdraws the Console ping settings and every claim, removes the
 // login callbacks from the realm, deletes the ManagementAuthConfig, and
-// releases the finalizer. The Deployments, the Services, and the copies of
+// releases the finalizer, in that order: the contract is the claim on the
+// realm, so it goes last. The Deployments, the Services, and the copies of
 // referenced Secrets carry an owner reference, so Kubernetes collects them;
 // what the management plane wrote on an orchestration cluster, what it wrote in
 // the realm, and the contract, are outside that chain.
@@ -72,16 +73,15 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	if err := r.withdrawClaims(ctx, mc, clusters); err != nil {
 		return err
 	}
-	// The contract decides whether the login callbacks in the realm are this
-	// management plane's to remove, so the answer is taken before
-	// withdrawContract deletes the object that carries it.
-	owned := r.ownsContract(ctx, mc)
-
+	// The contract is the claim on the realm, so it is held until the realm is
+	// tidy. Deleting it first would let a waiting management plane take the
+	// name and register its own callbacks while this withdrawal is still in
+	// flight, and this withdrawal would then take the new owner's away.
+	if r.ownsContract(ctx, mc) {
+		r.withdrawOptimizeCallbacks(ctx, mc)
+	}
 	if err := r.withdrawContract(ctx, mc); err != nil {
 		return err
-	}
-	if owned {
-		r.withdrawOptimizeCallbacks(ctx, mc)
 	}
 	r.EventRecorder.Eventf(
 		mc,

@@ -85,7 +85,17 @@ func New(baseURL, realm, username, password string) *Client {
 		realm:    realm,
 		username: username,
 		password: password,
-		http:     &http.Client{Timeout: DefaultTimeout},
+		http: &http.Client{
+			Timeout: DefaultTimeout,
+			// A Keycloak this operator does not run is on the other end. A
+			// 307 or a 308 makes Go replay the request body at the new host,
+			// and the body of the sign-in carries the administrator name and
+			// password. No administration endpoint of Keycloak redirects, so
+			// a redirect is refused rather than followed.
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 }
 

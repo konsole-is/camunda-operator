@@ -281,6 +281,32 @@ func TestFindClientRefusesAnOversizedAnswer(t *testing.T) {
 	assert.Contains(t, err.Error(), "longer than")
 }
 
+// A redirect on the sign-in would make Go replay the form body, which carries
+// the administrator name and password, at whatever host the answer names.
+func TestSignInRefusesToFollowARedirect(t *testing.T) {
+	t.Parallel()
+
+	leaked := false
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(raw), "password=secret") {
+			leaked = true
+		}
+	}))
+	t.Cleanup(elsewhere.Close)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Redirect(w, &http.Request{}, elsewhere.URL, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := New(server.URL, "camunda-platform", "admin", "secret").
+		FindClient(context.Background(), "optimize")
+
+	require.Error(t, err)
+	assert.False(t, leaked, "the administrator credentials were replayed at the redirect target")
+}
+
 func TestUpdateClientWithoutAnID(t *testing.T) {
 	t.Parallel()
 
