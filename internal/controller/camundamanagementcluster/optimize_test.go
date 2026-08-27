@@ -315,6 +315,27 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// A plane that does not hold the contract name does not know which
+	// Optimize instances are its own, so it writes nothing to the realm.
+	It("touches the realm only once the contract is written", func() {
+		keycloak := startFakeKeycloak(withOptimizeClient())
+		name := "mac-" + utilrand.String(8)
+		createForeignContract(name, map[string]string{"camunda.io/management-cluster": "elsewhere"})
+
+		s := newScenario(withFakeKeycloak(keycloak), func(f *fixture) {
+			f.mc.Spec.ManagementAuthConfigName = name
+		})
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			g.Expect(conditionOf(g, s.mc, v1.ConditionReady).Reason).To(Equal(v1.ReasonConflict))
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			g.Expect(keycloak.redirectURIs()).To(BeEmpty())
+		}, "2s", interval).Should(Succeed())
+	})
+
 	// The identity provider of the platform config holds the callback URLs of
 	// the oidc mode, so a CamundaOptimize there is none of this resource's
 	// business and gets no row.

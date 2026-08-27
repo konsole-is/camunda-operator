@@ -17,6 +17,7 @@ limitations under the License.
 package keycloakadmin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -256,6 +257,28 @@ func TestUpdateClientRetriesOnceAfterARefusedToken(t *testing.T) {
 	require.NoError(t, New(server.URL, "camunda-platform", "admin", "secret").
 		UpdateClient(context.Background(), rep))
 	assert.Equal(t, 2, tokens)
+}
+
+// A Keycloak that the operator does not run is on the other end, so an answer
+// that never stops must not grow the operator until it is killed.
+func TestFindClientRefusesAnOversizedAnswer(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeKeycloak{token: "an-access-token"}
+	fake.handler = func(w http.ResponseWriter, _ *http.Request, _ string) {
+		chunk := bytes.Repeat([]byte("a"), 1<<20)
+		for range 8 {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	}
+
+	_, err := New(fake.start(t), "camunda-platform", "admin", "secret").
+		FindClient(context.Background(), "optimize")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "longer than")
 }
 
 func TestUpdateClientWithoutAnID(t *testing.T) {

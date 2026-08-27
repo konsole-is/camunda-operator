@@ -264,7 +264,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			contractErr = err
 		}
 	}
-	callbackFailure, callbackRetry, callbackErr := r.syncOptimizeCallbacks(ctx, &mc, res)
+	callbackFailure, callbackRetry, callbackErr := r.syncOptimizeCallbacks(ctx, &mc, res, contractErr)
 	conditions.Stage(&mc, readyCondition(&mc, built.Ready, contractErr, callbackFailure))
 
 	// Nothing watches the user API of a cluster or the Optimize client of the

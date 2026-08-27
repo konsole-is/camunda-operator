@@ -120,7 +120,22 @@ func (r *Reconciler) syncOptimizeCallbacks(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	res resolved,
+	contractErr error,
 ) (*conditions.PreCheckFailure, bool, error) {
+	// The contract is what makes a CamundaOptimize one of this plane's. Until
+	// it is written, another plane can still be the one that owns the name, so
+	// a realm written from that discovery would carry callbacks of Optimize
+	// instances this plane does not serve.
+	if contractErr != nil {
+		stageCallbacks(
+			mc, metav1.ConditionFalse, string(component.PrerequisiteNotMet),
+			"The ManagementAuthConfig is not written, so the Optimize instances behind it are not "+
+				"settled",
+		)
+
+		return nil, false, nil
+	}
+
 	provider := res.Input.Provider
 	if provider.Mode == components.ModeOIDC {
 		stageCallbacks(
@@ -189,7 +204,7 @@ func (r *Reconciler) syncOptimizeCallbacks(
 	stageCallbacks(
 		mc, metav1.ConditionTrue, v1.ReasonHealthy,
 		fmt.Sprintf(
-			"Client %q of realm %q carries the login callback of every Optimize (%d)",
+			"Client %q of realm %q carries every login callback of this management plane (%d)",
 			clientID, provider.Realm, len(desired),
 		),
 	)

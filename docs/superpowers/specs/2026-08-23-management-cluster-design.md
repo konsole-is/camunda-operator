@@ -362,7 +362,8 @@ a component preset, Console included: the 8.9 chart carries a `console` preset
 (`charts/camunda-platform-8.9/templates/identity/configmap.yaml`, `keycloak.init.console.root-url`
 and the `component-presets.console` block), so the operator sets
 `KEYCLOAK_INIT_CONSOLE_ROOT_URL` = `console.externalUrl`,
-`KEYCLOAK_INIT_OPTIMIZE_ROOT_URL` = `optimize.externalUrl`, and
+`KEYCLOAK_INIT_OPTIMIZE_ROOT_URL` = the comma-separated `spec.externalUrl` of every discovered
+`CamundaOptimize` (see the #223 note under Risks and open items), and
 `KEYCLOAK_INIT_WEBMODELER_ROOT_URL` = `webModeler.externalUrl`. A preset also creates the
 resource server that the audience of the component names, which a hand-written
 `KEYCLOAK_CLIENTS_<n>_*` entry would not. `KEYCLOAK_SETUP_REALM` (`master`) and

@@ -485,7 +485,9 @@ Adding or removing an Optimize changes the configuration of Management Identity,
 
 Deleting this resource removes those callbacks from the realm. A Keycloak that does not answer at that moment keeps them, and the deletion goes through anyway, so the orchestration clusters this plane holds are always freed.
 
-This resource carries no Optimize address of its own. Every address comes from a `CamundaOptimize`, so an Optimize that this operator does not run is one you register at Keycloak yourself.
+This resource carries no Optimize address of its own. Every address comes from a `CamundaOptimize`, and the management plane owns the whole login callback list of the `optimize` client.
+
+An Optimize that this operator does not run therefore cannot sign in through this management plane in a Keycloak mode. Registering its callback by hand does not last, because the next reconcile removes it. Give that Optimize a realm of its own, or run it as a `CamundaOptimize`.
 
 The `oidc` mode registers nothing. Your provider holds the callback URLs, so `spec.externalUrl` is out of use there and `OptimizeCallbacksReady` reads `Disabled`. One application at your provider serves every Optimize of the management plane, so add the callback of each one to that application yourself.
 

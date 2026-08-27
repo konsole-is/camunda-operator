@@ -42,6 +42,12 @@ import (
 // deadline of its own, and a Keycloak that hangs must not hold the worker.
 const DefaultTimeout = 15 * time.Second
 
+// maxAnswerSize bounds how much of an answer this package reads. A Keycloak
+// that the operator does not run is on the other end, so a large or endless
+// answer must not grow the operator until it is killed. A client
+// representation is a few kilobytes, and the realm holds one.
+const maxAnswerSize = 4 << 20
+
 // adminRealm and adminClientID are where a Keycloak administrator signs in.
 // Every Keycloak serves the admin-cli client of the master realm, and the
 // Keycloak Operator writes its first administrator into that realm.
@@ -197,9 +203,9 @@ func (c *Client) send(ctx context.Context, req *http.Request) ([]byte, int, erro
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readAnswer(resp)
 	if err != nil {
-		return nil, 0, fmt.Errorf("reading the answer: %w", err)
+		return nil, 0, err
 	}
 
 	return body, resp.StatusCode, nil
@@ -230,9 +236,9 @@ func (c *Client) signIn(ctx context.Context) (string, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readAnswer(resp)
 	if err != nil {
-		return "", fmt.Errorf("reading the sign-in answer: %w", err)
+		return "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return "", fmt.Errorf("signing in at Keycloak: %w", statusError(resp.StatusCode, body))
@@ -249,6 +255,21 @@ func (c *Client) signIn(ctx context.Context) (string, error) {
 	}
 
 	return answer.AccessToken, nil
+}
+
+// readAnswer reads at most maxAnswerSize bytes of the body of resp, and
+// refuses an answer that reaches the bound rather than returning a body this
+// package never expects to see.
+func readAnswer(resp *http.Response) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAnswerSize+1))
+	if err != nil {
+		return nil, fmt.Errorf("reading the answer of Keycloak: %w", err)
+	}
+	if len(body) > maxAnswerSize {
+		return nil, fmt.Errorf("the answer of Keycloak is longer than %d bytes", maxAnswerSize)
+	}
+
+	return body, nil
 }
 
 // maxErrorBody is how much of a refused answer an error message carries. A
