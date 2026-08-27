@@ -74,14 +74,19 @@ func (r Representation) SetRedirectURIs(uris []string) {
 //
 // The kept entries stay in the order of current, and the new ones follow in
 // the order of desired, so a list that needs no change compares equal to
-// current.
+// current. An entry that does not end with suffix passes through exactly as it
+// is, a repeat of another writer's entry included, so this never rewrites a
+// list for a duplicate that is not the caller's.
 func MergeRedirectURIs(current, desired []string, suffix string) []string {
 	merged := make([]string, 0, len(current)+len(desired))
 	for _, uri := range current {
-		if strings.HasSuffix(uri, suffix) && !slices.Contains(desired, uri) {
+		if !strings.HasSuffix(uri, suffix) {
+			// Not the caller's to touch, not even to collapse a repeat of.
+			merged = append(merged, uri)
+
 			continue
 		}
-		if !slices.Contains(merged, uri) {
+		if slices.Contains(desired, uri) && !slices.Contains(merged, uri) {
 			merged = append(merged, uri)
 		}
 	}

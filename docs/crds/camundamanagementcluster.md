@@ -553,6 +553,8 @@ A condition reads `True` under the reasons `Healthy`, `Disabled`, `Suspended`, a
 
 `OptimizeCallbacksReady` holds `Ready` back only while this management plane serves an Optimize. A plane that serves none reports what it found in the realm and stays ready, because nobody can sign in to an Optimize that does not exist.
 
+A failed pre-check reports on `Ready` and stops, so every other condition keeps the value it last had. Read `Ready` first, and take the rest as of the last reconcile that got past the pre-checks.
+
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a Secret that the [CamundaPlatformConfig](camundaplatformconfig.md) names is applied, or no such Secret exists. | Nothing. |
@@ -576,11 +578,11 @@ A condition reads `True` under the reasons `Healthy`, `Disabled`, `Suspended`, a
 | `OptimizeCallbacksReady` | `NoCallbacks` | No Optimize behind this management plane names an address, so there is no login callback to register. The management plane stops reading the realm while this holds. | Nothing, until you run an Optimize. Then set `spec.externalUrl` on it. See [Optimize](#optimize). |
 | `OptimizeCallbacksReady` | `OptimizeClientMissing` | The realm holds no `optimize` client. Management Identity creates it while it starts. | Wait while Management Identity is starting. If it stays, restart Management Identity: it creates the client only while it starts, so a client removed after that comes back on the next restart. |
 | `OptimizeCallbacksReady` | `ConnectionFailed` | Keycloak did not answer the operator, or it refused the administrator. The message carries what Keycloak said. | Read the message. Make sure that Keycloak answers, that the administrator Secret holds valid credentials, and that the operator trusts the certificate of an `https` Keycloak. |
-| `OptimizeCallbacksReady` | `MissingSecret` | The Secret with the Keycloak administrator does not exist or lacks a key. The message names both. | In the `keycloak` mode, wait for the Keycloak Operator to write it. In the `externalKeycloak` mode, correct `adminCredentialsSecretRef`. |
+| `OptimizeCallbacksReady` | `MissingSecret` | The Secret that the Keycloak Operator writes with the first Keycloak administrator does not exist or lacks a key. | Wait for the Keycloak Operator to write it. In the `externalKeycloak` mode a missing `adminCredentialsSecretRef` Secret stops the reconcile earlier, so it reports on `Ready` instead and this condition keeps what it last read. |
 | `OptimizeCallbacksReady` | `WriteFailed` | Keycloak refused the change to the `optimize` client. The message carries what Keycloak said. | Read the message. Make sure that the administrator can change clients of the realm. |
 | `OptimizeCallbacksReady` | `Disabled` | The mode is `oidc`, so your provider holds the callback URLs. | Nothing. |
 | `OptimizeCallbacksReady` | `Suspended` | `spec.suspend` is `true`, so the realm is left as it is. | Nothing. |
-| `OptimizeCallbacksReady` | `PrerequisiteNotMet` | Management Identity is not ready. It owns the Optimize client while it starts, so the operator waits for it. | Read the `IdentityReady` row. It clears when Management Identity is ready. |
+| `OptimizeCallbacksReady` | `PrerequisiteNotMet` | The operator is waiting for something before it touches the realm: Management Identity, which owns the Optimize client while it starts, or the `ManagementAuthConfig`, which decides who this plane serves. The message names which one. | Read the `IdentityReady` row, or the `ManagementAuthReady` row, whichever the message names. |
 | `Ready` | `Healthy` | Every condition that takes part is healthy and the contract is written. The callbacks are registered too while `status.optimize` holds a row; a plane that serves no Optimize reads `Healthy` whatever the realm says. | Nothing. |
 | `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Suspending` / `PendingSuspension` / `PrerequisiteNotMet` | The reason of the governing condition. The message names it. | Read the row of that condition. |
 | `Ready` | `ImmutableAfterStart` | `spec.identity.admin` asks for an administrator claim that Management Identity did not start with. | Read the `IdentityReady` row. |

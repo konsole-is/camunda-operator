@@ -89,6 +89,20 @@ func TestMergeRedirectURIs(t *testing.T) {
 			},
 		},
 		{
+			name: "a repeated entry of another writer passes through as it is",
+			current: []string{
+				"https://legacy.example.com/*",
+				"https://legacy.example.com/*",
+				"https://a.example.com" + callbackSuffix,
+			},
+			desired: []string{"https://a.example.com" + callbackSuffix},
+			want: []string{
+				"https://legacy.example.com/*",
+				"https://legacy.example.com/*",
+				"https://a.example.com" + callbackSuffix,
+			},
+		},
+		{
 			name: "a duplicate of the stored list is written once",
 			current: []string{
 				"https://a.example.com" + callbackSuffix,

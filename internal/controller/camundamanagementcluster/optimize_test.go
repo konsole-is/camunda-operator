@@ -365,9 +365,9 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}))
 	})
 
-	// A plane that does not hold the contract name does not know which
+	// A plane parked on a name another owner holds does not know which
 	// Optimize instances are its own, so it writes nothing to the realm.
-	It("touches the realm only once the contract is written", func() {
+	It("writes nothing to the realm while another owner holds the contract", func() {
 		keycloak := startFakeKeycloak(withOptimizeClient())
 		name := "mac-" + utilrand.String(8)
 		createForeignContract(name, map[string]string{"camunda.io/management-cluster": "elsewhere"})
@@ -375,7 +375,7 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		s := newScenario(withFakeKeycloak(keycloak), func(f *fixture) {
 			f.mc.Spec.ManagementAuthConfigName = name
 		})
-		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+		createOptimize(s.namespace, name, blueOptimizeURL)
 
 		Eventually(func(g Gomega) {
 			g.Expect(conditionOf(g, s.mc, v1.ConditionReady).Reason).To(Equal(v1.ReasonConflict))
@@ -384,6 +384,74 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		Consistently(func(g Gomega) {
 			g.Expect(keycloak.redirectURIs()).To(BeEmpty())
 		}, "2s", interval).Should(Succeed())
+	})
+
+	// Nothing watches the Optimize client, so an entry removed in Keycloak
+	// itself is found by the next converge and by nothing else.
+	It("puts a callback back that somebody removed in Keycloak", func() {
+		keycloak := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(keycloak))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(keycloak.redirectURIs()).To(Equal([]string{
+				blueOptimizeURL + components.OptimizeCallbackPath,
+			}))
+		}, timeout, interval).Should(Succeed())
+
+		keycloak.setRedirectURIs(nil)
+
+		Eventually(func(g Gomega) {
+			g.Expect(keycloak.redirectURIs()).To(Equal([]string{
+				blueOptimizeURL + components.OptimizeCallbackPath,
+			}))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// A withdrawal that Keycloak refuses is reported and tried again, and it
+	// never holds Ready back: nobody can sign in to an Optimize that is gone.
+	It("retries a refused withdrawal without holding Ready back", func() {
+		keycloak := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(keycloak))
+
+		optimize := createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(keycloak.redirectURIs()).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+
+		keycloak.setRefuseUpdate(true)
+		Expect(k8sClient.Delete(ctx, optimize)).To(Succeed())
+
+		// Removing the last Optimize changes the environment of Management
+		// Identity, so its pods roll and the step waits for them again.
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(condition.Reason).To(Equal(v1.ReasonWriteFailed))
+
+			g.Expect(conditionOf(g, s.mc, v1.ConditionReady).Reason).NotTo(
+				Equal(v1.ReasonWriteFailed),
+			)
+		}, timeout, interval).Should(Succeed())
+
+		keycloak.setRefuseUpdate(false)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(keycloak.redirectURIs()).To(BeEmpty())
+			g.Expect(conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady).Reason).To(
+				Equal(v1.ReasonNoCallbacks),
+			)
+		}, timeout, interval).Should(Succeed())
 	})
 
 	// The identity provider of the platform config holds the callback URLs of
@@ -545,6 +613,23 @@ func (f *fakeKeycloak) redirectURIs() []string {
 	defer f.mu.Unlock()
 
 	return f.stored.RedirectURIs()
+}
+
+// setRedirectURIs replaces the redirect URIs of the stored Optimize client,
+// the way somebody editing the realm in Keycloak would.
+func (f *fakeKeycloak) setRedirectURIs(uris []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.stored.SetRedirectURIs(uris)
+}
+
+// setRefuseUpdate turns the refusal of the client update on and off.
+func (f *fakeKeycloak) setRefuseUpdate(refuse bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.refuseUpdate = refuse
 }
 
 // requests returns how many requests the fake Keycloak has answered.
