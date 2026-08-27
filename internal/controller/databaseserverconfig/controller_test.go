@@ -90,8 +90,8 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 			cond := meta.FindStatusCondition(got.Status.Conditions, v1.ConditionReady)
 			g.Expect(cond).NotTo(BeNil())
 			// The first assertion that fails ends the poll, so a timeout on
-			// the status alone would hide the reason the condition carried.
-			// The description puts the whole condition in every failure.
+			// the status alone would hide the reason and the message. The
+			// description carries all three into every failure.
 			recorded := fmt.Sprintf("Ready is %s/%s: %s", cond.Status, cond.Reason, cond.Message)
 			g.Expect(cond.Status).To(Equal(status), recorded)
 			g.Expect(cond.Reason).To(Equal(reason), recorded)
