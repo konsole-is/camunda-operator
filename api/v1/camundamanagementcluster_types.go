@@ -45,11 +45,15 @@ const (
 	// Disabled in the oidc mode, where the platform config names every client
 	// secret and the first administrator is a token claim.
 	ConditionSecretsReady = "SecretsReady"
-	// ConditionOptimizeCallbacksReady reports whether the Optimize client of
-	// the realm carries the login callback of every Optimize in
-	// status.optimize. It reads Disabled in the oidc mode, where the identity
-	// provider of the platform config holds the callback URLs and the operator
-	// administers nothing.
+	// ConditionOptimizeCallbacksReady reports what the operator did about the
+	// login callback of every Optimize in status.optimize. It reads Healthy
+	// once the Optimize client of the realm carries all of them.
+	//
+	// Two reasons read True without saying anything about the realm. Disabled
+	// is the oidc mode, where the identity provider of the platform config
+	// holds the callback URLs and the operator administers nothing. Suspended
+	// is a plane that spec.suspend scaled to zero, whose realm is left as it
+	// is and never read.
 	ConditionOptimizeCallbacksReady = "OptimizeCallbacksReady"
 
 	// ReasonKeycloakOperatorNotInstalled means that spec.identityProvider

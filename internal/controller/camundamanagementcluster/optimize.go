@@ -230,8 +230,9 @@ func (r *Reconciler) syncOptimizeCallbacks(
 	return nil, false, nil
 }
 
-// identityRolledOut reports whether every Management Identity pod is the
-// current one and ready.
+// identityRolledOut reports whether every pod of the Management Identity that
+// this management cluster owns is the current one and ready. A Deployment of
+// another owner at the same name answers no.
 //
 // A ready condition is not enough. It is satisfied while one pod of the
 // previous revision is still ready, and the pod of the new revision is running
@@ -250,6 +251,12 @@ func (r *Reconciler) identityRolledOut(
 			return false, nil
 		}
 		return false, fmt.Errorf("reading Deployment %q: %w", key, err)
+	}
+	// The name is derived from the name of this management cluster, so another
+	// owner can hold it while the components of this plane never converged.
+	// A workload of somebody else says nothing about who writes this realm.
+	if !metav1.IsControlledBy(&identity, mc) {
+		return false, nil
 	}
 
 	wanted := int32(1)
