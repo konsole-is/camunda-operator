@@ -20,6 +20,8 @@ limitations under the License.
 package e2e
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -109,6 +111,16 @@ const (
 	// mcOptimizeName is the CamundaOptimize that attaches through the
 	// contract.
 	mcOptimizeName = "camunda-management-optimize"
+	// mcSecondOptimizeName is the second CamundaOptimize behind the same
+	// contract: an Optimize whose cluster is still to come. Its clusterRef
+	// names mcSecondOptimizeCluster, which nothing creates, so it renders no
+	// workload and the node carries one Optimize. The management plane finds
+	// it all the same, because discovery reads spec.managementAuthRef and
+	// spec.externalUrl and nothing of the cluster.
+	mcSecondOptimizeName = "camunda-management-optimize-second"
+	// mcSecondOptimizeCluster is the CamundaCluster that
+	// mcSecondOptimizeName waits for.
+	mcSecondOptimizeCluster = "camunda-management-cluster-to-come"
 
 	// The client that the orchestration cluster of the keycloak flow
 	// authenticates with. Management Identity creates a client for every
@@ -253,9 +265,9 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 	})
 
 	AfterAll(func() {
-		By("removing the Optimize instance, the cluster, the management plane, and the cluster-scoped resources")
+		By("removing the Optimize instances, the cluster, the management plane, and the cluster-scoped resources")
 		_, _ = utils.Kubectl(
-			"delete", optimizeResource, mcOptimizeName, "-n", mcKeycloakNamespace,
+			"delete", optimizeResource, mcOptimizeName, mcSecondOptimizeName, "-n", mcKeycloakNamespace,
 			"--ignore-not-found", "--wait=false",
 		)
 		_, _ = utils.Kubectl(
@@ -476,6 +488,102 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 		Eventually(func(g Gomega) {
 			expectReady(g, optimizeResource, mcOptimizeName, mcKeycloakNamespace, v1.ReasonHealthy)
 		}, optimizeReadyTimeout, 10*time.Second).Should(Succeed())
+	})
+
+	It("registers a second Optimize and withdraws it again without rolling Management Identity", func() {
+		By("recording the generation and the pod template of Management Identity")
+		generation, template, err := identityRollState(mc)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("creating a second CamundaOptimize behind the same contract")
+		Expect(apply(secondManagementOptimize())).To(Succeed())
+
+		// status.optimize and OptimizeCallbacksReady are written by one
+		// FlushStatus of one reconcile, so a read that finds both rows and
+		// Healthy is a read of the reconcile that wrote the realm.
+		By("listing both Optimize instances and reporting the callbacks registered")
+		Eventually(func(g Gomega) {
+			var status v1.CamundaManagementCluster
+			g.Expect(utils.Get(mcResource, mcKeycloakName, mcKeycloakNamespace, &status)).To(Succeed())
+			g.Expect(status.Status.Optimize).To(Equal([]v1.AttachedOptimizeStatus{
+				{
+					Namespace:   mcKeycloakNamespace,
+					Name:        mcOptimizeName,
+					ExternalURL: optimizeWebappURL(),
+				},
+				{
+					Namespace:   mcKeycloakNamespace,
+					Name:        mcSecondOptimizeName,
+					ExternalURL: secondOptimizeWebappURL(),
+				},
+			}))
+
+			expectCondition(
+				g, mcResource, mcKeycloakName, mcKeycloakNamespace,
+				v1.ConditionOptimizeCallbacksReady, v1.ReasonHealthy,
+			)
+		}, 5*time.Minute, 5*time.Second).Should(Succeed())
+
+		By("carrying both login callbacks on the Optimize client of the realm")
+		client, err := realmOptimizeClient(mc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(client).To(ContainSubstring(optimizeWebappURL() + components.OptimizeCallbackPath))
+		Expect(client).To(ContainSubstring(secondOptimizeWebappURL() + components.OptimizeCallbackPath))
+
+		By("holding both URLs in the ConfigMap that Management Identity reads")
+		urls, err := optimizeRootURLs(mc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(urls).To(Equal(optimizeWebappURL() + "," + secondOptimizeWebappURL()))
+
+		By("leaving Management Identity as it was")
+		Consistently(func(g Gomega) {
+			expectIdentityRollState(g, mc, generation, template)
+		}, 30*time.Second, 10*time.Second).Should(Succeed())
+
+		// The finalizer of the CamundaOptimize holds the object until it has
+		// released what it built, and the management plane withdraws the
+		// callback only once the object is gone. The assertion below waits for
+		// both, so the delete call does not wait as well.
+		By("deleting the second CamundaOptimize")
+		_, err = utils.Kubectl(
+			"delete", optimizeResource, mcSecondOptimizeName, "-n", mcKeycloakNamespace, "--wait=false",
+		)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("listing the first Optimize alone and reporting the callbacks registered")
+		Eventually(func(g Gomega) {
+			var status v1.CamundaManagementCluster
+			g.Expect(utils.Get(mcResource, mcKeycloakName, mcKeycloakNamespace, &status)).To(Succeed())
+			g.Expect(status.Status.Optimize).To(Equal([]v1.AttachedOptimizeStatus{{
+				Namespace:   mcKeycloakNamespace,
+				Name:        mcOptimizeName,
+				ExternalURL: optimizeWebappURL(),
+			}}))
+
+			expectCondition(
+				g, mcResource, mcKeycloakName, mcKeycloakNamespace,
+				v1.ConditionOptimizeCallbacksReady, v1.ReasonHealthy,
+			)
+		}, 5*time.Minute, 5*time.Second).Should(Succeed())
+
+		By("withdrawing the second login callback from the Optimize client of the realm")
+		client, err = realmOptimizeClient(mc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(client).To(ContainSubstring(optimizeWebappURL() + components.OptimizeCallbackPath))
+		Expect(client).NotTo(ContainSubstring(secondOptimizeWebappURL() + components.OptimizeCallbackPath))
+
+		By("holding the first URL alone in the ConfigMap")
+		urls, err = optimizeRootURLs(mc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(urls).To(Equal(optimizeWebappURL()))
+
+		// The management plane still serves one Optimize, so the environment
+		// of Management Identity still names the preset and the pod template
+		// is the one it was. Only the first Optimize and the last one roll it.
+		By("leaving Management Identity as it was after the withdrawal")
+		Consistently(func(g Gomega) {
+			expectIdentityRollState(g, mc, generation, template)
+		}, 30*time.Second, 10*time.Second).Should(Succeed())
 	})
 })
 
@@ -813,6 +921,82 @@ func managementOptimize() *v1.CamundaOptimize {
 			},
 		},
 	}
+}
+
+// secondManagementOptimize returns the second CamundaOptimize of the flow: an
+// Optimize whose cluster is still to come. It names no workload override,
+// because a CamundaOptimize that finds no cluster renders no workload.
+func secondManagementOptimize() *v1.CamundaOptimize {
+	return &v1.CamundaOptimize{
+		TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaOptimize"},
+		ObjectMeta: metav1.ObjectMeta{Name: mcSecondOptimizeName, Namespace: mcKeycloakNamespace},
+		Spec: v1.CamundaOptimizeSpec{
+			Version:           os.Getenv(envOptimizeVersion),
+			ManagementAuthRef: mcKeycloakName,
+			ExternalURL:       secondOptimizeWebappURL(),
+			ClusterRef:        v1.ClusterRef{Name: mcSecondOptimizeCluster},
+		},
+	}
+}
+
+// secondOptimizeWebappURL is the address that a browser reaches the second
+// Optimize of this flow at, in the shape that optimizeWebappURL gives the
+// first one.
+func secondOptimizeWebappURL() string {
+	optimize := &v1.CamundaOptimize{ObjectMeta: metav1.ObjectMeta{Name: mcSecondOptimizeName}}
+
+	return fmt.Sprintf(
+		"http://%s.%s.svc:%d",
+		optimizecomponents.WorkloadName(optimize, optimizecomponents.ComponentWebapp),
+		mcKeycloakNamespace, optimizecomponents.PortHTTP,
+	)
+}
+
+// expectIdentityRollState asserts that the Management Identity Deployment
+// still carries generation and template. It is written for Consistently.
+func expectIdentityRollState(
+	g Gomega,
+	mc *v1.CamundaManagementCluster,
+	generation int64,
+	template string,
+) {
+	current, digest, err := identityRollState(mc)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(current).To(Equal(generation), "the spec of Management Identity was written")
+	g.Expect(digest).To(Equal(template), "the pod template of Management Identity changed")
+}
+
+// identityRollState returns the two values that a roll of Management Identity
+// moves: the generation, which the API server increments on every write of the
+// spec, and a digest of the pod template, which Kubernetes replaces the pods
+// on.
+func identityRollState(mc *v1.CamundaManagementCluster) (int64, string, error) {
+	name := components.IdentityName(mc)
+
+	var identity appsv1.Deployment
+	if err := utils.Get("deployment", name, mc.Namespace, &identity); err != nil {
+		return 0, "", err
+	}
+
+	template, err := json.Marshal(identity.Spec.Template)
+	if err != nil {
+		return 0, "", fmt.Errorf("encoding the pod template of Deployment %q: %w", name, err)
+	}
+
+	return identity.Generation, fmt.Sprintf("%x", sha256.Sum256(template)), nil
+}
+
+// optimizeRootURLs returns the comma-separated Optimize root URLs of the
+// ConfigMap that KEYCLOAK_INIT_OPTIMIZE_ROOT_URL of Management Identity reads.
+func optimizeRootURLs(mc *v1.CamundaManagementCluster) (string, error) {
+	var urls corev1.ConfigMap
+	if err := utils.Get(
+		"configmap", components.IdentityOptimizeURLsName(mc), mc.Namespace, &urls,
+	); err != nil {
+		return "", err
+	}
+
+	return urls.Data[components.OptimizeRootURLKey], nil
 }
 
 // databaseServer returns the DatabaseServerConfig of the PostgreSQL that
