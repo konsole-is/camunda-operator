@@ -238,6 +238,44 @@ func TestClaimTakesOverAHolderThatIsGone(t *testing.T) {
 	assert.Equal(t, "beta/next", holder.String())
 }
 
+// TestClaimTakesOverAReplacedHolder covers a holder that a later Database
+// replaced under its own name. The claim records the UID beside the name, so
+// a Database of the recorded name that is not the recorded one keeps nothing.
+// Without the UID the claim of a deleted Database would pass to whatever took
+// its name, and the logical database would never be free again.
+func TestClaimTakesOverAReplacedHolder(t *testing.T) {
+	t.Parallel()
+
+	base := time.Date(2026, 8, 25, 9, 0, 0, 0, time.UTC)
+	ctx := context.Background()
+
+	first := unclaimed("alpha", "same", base)
+	next := unclaimed("beta", "next", base.Add(time.Hour))
+	r := claimReconciler(t, first, next)
+
+	require.NoError(t, r.claim(ctx, staged(first), claimKey))
+
+	// The holder goes and a new Database takes its namespace and its name.
+	// The Lease still records the UID of the one that is gone.
+	var stored v1.Database
+	require.NoError(t, r.Get(ctx, client.ObjectKeyFromObject(first), &stored))
+	stored.Finalizers = nil
+	require.NoError(t, r.Update(ctx, &stored))
+	require.NoError(t, r.Delete(ctx, &stored))
+
+	replacement := unclaimed("alpha", "same", base.Add(2*time.Hour))
+	replacement.UID = "alpha-same-replacement"
+	require.NoError(t, r.Create(ctx, replacement))
+
+	require.NoError(t, r.claim(ctx, staged(next), claimKey))
+
+	lease, found := leaseOf(t, r)
+	require.True(t, found)
+	holder, ours := holderOf(lease)
+	require.True(t, ours)
+	assert.Equal(t, "beta/next", holder.String())
+}
+
 // TestClaimBlocksOnAForeignLease pins that the operator never takes over a
 // Lease that it did not write. A name collision with something else in the
 // namespace of the operator must not lose that object its Lease.
