@@ -111,7 +111,7 @@ func TestCollisionIdentityInvertsCollisionKey(t *testing.T) {
 	)
 }
 
-func TestCollisionWinner(t *testing.T) {
+func TestPreferredClaimant(t *testing.T) {
 	base := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {
@@ -169,11 +169,11 @@ func TestCollisionWinner(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			winner := CollisionWinner(tt.items)
-			require.NotNil(t, winner)
-			assert.Equal(t, tt.want, winner.Name)
+			first := PreferredClaimant(tt.items)
+			require.NotNil(t, first)
+			assert.Equal(t, tt.want, first.Name)
 		})
 	}
 
-	assert.Nil(t, CollisionWinner(nil), "no claimants means no winner")
+	assert.Nil(t, PreferredClaimant(nil), "no claimants means nobody goes first")
 }

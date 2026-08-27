@@ -73,18 +73,18 @@ const (
 // one field-indexed query.
 const databaseCollisionField = "database.status.collisionKey"
 
-// claimRetryInterval is the wait before a Database that lost the claim to
-// its logical database looks again. Nothing watches the claim Lease, and a
-// winner that moves to another logical database does not always wake the
-// Databases that wait for the one it left.
+// claimRetryInterval is the wait before a Database that lost the claim to its
+// logical database, or that waits its turn for one, looks again. Nothing
+// watches the claim Lease, and a holder that moves to another logical
+// database does not always wake the Databases that wait for the one it left.
 const claimRetryInterval = 60 * time.Second
 
 // errClaimLost reports that another Database holds the claim to the logical
 // database of this one. It is the single pre-check failure that withdraws the
 // bindings: every other one leaves a server unreachable or a reference
 // unresolved, and the published bindings stay valid. A lost claim does not.
-// The winner owns the logical database and rotates the role passwords, so the
-// credentials of the loser open nothing.
+// The holder owns the logical database and rotates the role passwords, so the
+// credentials of the Database that lost it open nothing.
 var errClaimLost = errors.New("another Database holds the claim")
 
 // errClaimNotFirst reports that another Database goes first for a logical
@@ -154,9 +154,9 @@ func (r *DatabaseReconciler) checkCollision(
 		return fmt.Errorf("listing databases claiming %q: %w", key, err)
 	}
 
-	winner := components.CollisionWinner(withSelf(list.Items, database))
-	if winner == nil ||
-		(winner.Namespace == database.Namespace && winner.Name == database.Name) {
+	first := components.PreferredClaimant(withSelf(list.Items, database))
+	if first == nil ||
+		(first.Namespace == database.Namespace && first.Name == database.Name) {
 		return nil
 	}
 
@@ -165,7 +165,7 @@ func (r *DatabaseReconciler) checkCollision(
 		Message: fmt.Sprintf(
 			"Database %s goes first for database %q on the same server. Nothing holds that "+
 				"database yet",
-			client.ObjectKeyFromObject(winner), database.Spec.DatabaseName,
+			client.ObjectKeyFromObject(first), database.Spec.DatabaseName,
 		),
 	})
 }
