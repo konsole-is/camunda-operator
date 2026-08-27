@@ -62,9 +62,10 @@ const (
 	// The message names the object. Set managementAuthConfigName to a free
 	// name, or remove the object.
 	ReasonConflict = "Conflict"
-	// ReasonWriteFailed means that the operator could not write the
-	// ManagementAuthConfig. The message carries what the API server
-	// answered. The operator tries again.
+	// ReasonWriteFailed means that a write of the operator was refused: the
+	// ManagementAuthConfig on Ready, and the Optimize client of the realm on
+	// OptimizeCallbacksReady. The message carries what the API server or
+	// Keycloak answered. The operator tries again.
 	ReasonWriteFailed = "WriteFailed"
 	// ReasonUnsupportedVersion means that a version in the spec is outside
 	// the range that the operator supports: below the floor of its component,

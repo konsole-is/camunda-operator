@@ -171,6 +171,24 @@ var _ = Describe("CamundaOptimize schema", func() {
 		}
 	})
 
+	// Management Identity deletes whitespace from every root URL it reads and
+	// the operator appends the callback path to the value as it stands, so a
+	// URL with a space would put two different callbacks on the client, and
+	// each writer would remove the one of the other.
+	It("rejects an externalUrl with whitespace", func() {
+		for _, url := range []string{
+			"https://optimize.example.com/optimize ui",
+			"https://optimize.example.com\t",
+		} {
+			optimize := minimalCamundaOptimize()
+			optimize.Spec.ExternalURL = url
+
+			Expect(k8sClient.Create(ctx, optimize)).To(
+				MatchError(ContainSubstring("externalUrl must carry no whitespace")),
+			)
+		}
+	})
+
 	// Management Identity reads the root URLs of the optimize preset as one
 	// comma-separated list, so a comma inside one URL would register two
 	// callbacks of nonsense.

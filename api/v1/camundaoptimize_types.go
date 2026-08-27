@@ -94,6 +94,7 @@ type CamundaOptimizeSpec struct {
 	// +kubebuilder:validation:XValidation:rule="!self.contains(',')",message="externalUrl must carry no comma: Management Identity reads the callback list as comma-separated"
 	// +kubebuilder:validation:XValidation:rule="!self.endsWith('/')",message="externalUrl must not end with a slash: the login callback is appended to it"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('?') && !self.contains('#')",message="externalUrl must carry no query and no fragment: the login callback is appended to it"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('[[:space:]]')",message="externalUrl must carry no whitespace: Management Identity deletes whitespace from every root URL and the operator does not, so the two would register different callbacks"
 	// +optional
 	ExternalURL string `json:"externalUrl,omitempty"`
 	// ClusterRef names the CamundaCluster that this Optimize instance reads.

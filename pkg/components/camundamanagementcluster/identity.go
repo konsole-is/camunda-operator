@@ -180,10 +180,13 @@ func identityComponents(in Input) (Built, error) {
 // generateRedirectUrls).
 //
 // The list lives in a ConfigMap rather than in the pod template so that adding
-// or removing an Optimize does not roll Management Identity. The container
-// refers to this key, and that reference does not change when the list behind
-// it does, so a new Optimize updates this object and no pod restarts. A pod
-// that starts later for any other reason reads the list as it is then.
+// or removing an Optimize does not roll Management Identity while the list
+// stays filled. The container refers to this key, and that reference does not
+// change when the list behind it does, so a new Optimize updates this object
+// and no pod restarts. A pod that starts later for any other reason reads the
+// list as it is then. The first URL and the last one are the exception: the
+// gate below adds and removes the reference itself, which is part of the pod
+// template.
 //
 // The content is deliberately absent from the config hash of Management
 // Identity. The pods that are already running get the new callback from the
