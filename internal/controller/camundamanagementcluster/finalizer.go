@@ -20,8 +20,10 @@ import (
 	"context"
 	"fmt"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -78,6 +80,9 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	// name and register its own callbacks while this withdrawal is still in
 	// flight, and this withdrawal would then take the new owner's away.
 	if r.ownsContract(ctx, mc) {
+		if err := r.stopIdentity(ctx, mc); err != nil {
+			return err
+		}
 		r.withdrawOptimizeCallbacks(ctx, mc)
 	}
 	if err := r.withdrawContract(ctx, mc); err != nil {
@@ -99,6 +104,30 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	controllerutil.RemoveFinalizer(mc, Finalizer)
 	if err := r.Update(ctx, mc); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("removing the finalizer: %w", err)
+	}
+
+	return nil
+}
+
+// stopIdentity deletes the Management Identity Deployment, so that no pod of
+// it starts after this point and writes the Optimize client again.
+//
+// Kubernetes collects that Deployment through its owner reference, but only
+// once the finalizer is gone, which is after the realm is tidied. Without this
+// the initializer of a pod that started moments ago could put the callbacks
+// back with nothing left to remove them.
+//
+// A pod that is already inside its initializer can still write, and the
+// deletion never waits for it: a management plane must not be held open by a
+// pod that is going away. The entry it leaves then names a realm client of a
+// management plane that no longer exists.
+func (r *Reconciler) stopIdentity(ctx context.Context, mc *v1.CamundaManagementCluster) error {
+	identity := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+		Name:      components.IdentityName(mc),
+		Namespace: mc.Namespace,
+	}}
+	if err := r.Delete(ctx, identity); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("deleting Deployment %q: %w", client.ObjectKeyFromObject(identity), err)
 	}
 
 	return nil

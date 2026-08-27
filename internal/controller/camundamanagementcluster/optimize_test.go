@@ -28,6 +28,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -357,11 +358,17 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 			}))
 		}, timeout, interval).Should(Succeed())
 
+		identity := client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
 		Expect(deleteManagementCluster(s.mc)).To(Succeed())
 
 		Eventually(func(g Gomega) {
 			g.Expect(keycloak.redirectURIs()).To(BeEmpty())
 		}, timeout, interval).Should(Succeed())
+
+		// The writer is stopped before the realm is tidied, so no pod of it
+		// starts afterwards and puts the callbacks back.
+		var workload appsv1.Deployment
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, identity, &workload))).To(BeTrue())
 	})
 
 	// Two planes can share one external Keycloak realm. A plane parked on a
