@@ -20,8 +20,9 @@ limitations under the License.
 // The operator administers one field of one client with it: the redirect URIs
 // of the Optimize client. Management Identity creates every client of the
 // realm and rewrites the whole representation from its own environment on
-// every start, so an update through this package is an addition on top of
-// what Identity wrote and never a replacement of it.
+// every start. An update through this package reads the stored
+// representation, replaces that one field, and writes the whole
+// representation back, so every other field that Identity wrote survives.
 package keycloakadmin
 
 import (

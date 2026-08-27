@@ -152,8 +152,10 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // converge, every attached cluster is pointed at Console, the
 // ManagementAuthConfig is applied, and the login callback of every discovered
 // Optimize is registered in the realm. Ready is True only when every component
-// that takes part in it is True, the contract is written, and the callbacks are
-// registered; a failed write reports WriteFailed.
+// that takes part in it is True and the contract is written; a failed write
+// reports WriteFailed. A plane that serves at least one Optimize also waits
+// for the login callbacks of the realm, and one that serves none reads Ready
+// whatever the realm says.
 //
 // Status is written once per reconcile: the components and conditions.Stage
 // stage conditions on the in-memory CR, and the deferred FlushStatus persists

@@ -92,10 +92,11 @@ const (
 	// cluster in status.clusters carries the message.
 	ReasonBasicAuthUserFailed = "BasicAuthUserFailed"
 	// ReasonOptimizeClientMissing means that the realm holds no Optimize
-	// client. Management Identity creates it while it starts, so the state
-	// clears on its own while Identity is still starting. A client that was
-	// removed after that comes back only when Management Identity starts
-	// again. The operator looks again on its retry interval.
+	// client and Management Identity has finished starting. Identity creates
+	// that client while it starts and never after, so the client comes back
+	// only when Management Identity starts again. While Identity is still
+	// rolling out the condition reports PrerequisiteNotMet instead. The
+	// operator looks again on its retry interval.
 	ReasonOptimizeClientMissing = "OptimizeClientMissing"
 	// ReasonNoCallbacks means that no Optimize behind this management plane
 	// names a URL, so there is no login callback to register. Give a
