@@ -22,7 +22,9 @@ import (
 	"slices"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -122,20 +124,9 @@ func (r *Reconciler) syncOptimizeCallbacks(
 	res resolved,
 	contractErr error,
 ) (*conditions.PreCheckFailure, bool, error) {
-	// The contract is what makes a CamundaOptimize one of this plane's. Until
-	// it is written, another plane can still be the one that owns the name, so
-	// a realm written from that discovery would carry callbacks of Optimize
-	// instances this plane does not serve.
-	if contractErr != nil {
-		stageCallbacks(
-			mc, metav1.ConditionFalse, string(component.PrerequisiteNotMet),
-			"The ManagementAuthConfig is not written, so the Optimize instances behind it are not "+
-				"settled",
-		)
-
-		return nil, false, nil
-	}
-
+	// The two states that register nothing at all answer first. A plane that
+	// administers no realm, and one whose desired state is to run nothing, are
+	// not waiting on anything, so neither reports a prerequisite.
 	provider := res.Input.Provider
 	if provider.Mode == components.ModeOIDC {
 		stageCallbacks(
@@ -157,6 +148,19 @@ func (r *Reconciler) syncOptimizeCallbacks(
 
 		return nil, false, nil
 	}
+	// The contract is what makes a CamundaOptimize one of this plane's. Until
+	// it is written, another plane can still be the one that owns the name, so
+	// a realm written from that discovery would carry callbacks of Optimize
+	// instances this plane does not serve.
+	if contractErr != nil {
+		stageCallbacks(
+			mc, metav1.ConditionFalse, string(component.PrerequisiteNotMet),
+			"The ManagementAuthConfig is not written, so the Optimize instances behind it are not "+
+				"settled",
+		)
+
+		return nil, false, nil
+	}
 
 	desired := components.OptimizeCallbacks(res.Input)
 	clientID := provider.Clients.Optimize.ID
@@ -170,10 +174,14 @@ func (r *Reconciler) syncOptimizeCallbacks(
 	// redirect URIs replaced, so a write of its own between the two calls would
 	// revert what Identity just wrote. Waiting for the workload keeps the two
 	// writers apart: Identity is done with the realm by the time it is ready.
-	if !identityReady(mc) {
+	rolledOut, err := r.identityRolledOut(ctx, mc)
+	if err != nil {
+		return nil, false, err
+	}
+	if !rolledOut {
 		stageCallbacks(
 			mc, metav1.ConditionFalse, string(component.PrerequisiteNotMet),
-			"Management Identity is not ready, and it owns the Optimize client while it starts",
+			"Management Identity is rolling out, and it owns the Optimize client while it starts",
 		)
 
 		return nil, true, nil
@@ -212,10 +220,38 @@ func (r *Reconciler) syncOptimizeCallbacks(
 	return nil, false, nil
 }
 
-// identityReady reports whether the Management Identity workload is ready. The
-// condition is staged by its component earlier in the same reconcile.
-func identityReady(mc *v1.CamundaManagementCluster) bool {
-	return meta.IsStatusConditionTrue(mc.Status.Conditions, v1.ConditionIdentityReady)
+// identityRolledOut reports whether every Management Identity pod is the
+// current one and ready.
+//
+// A ready condition is not enough. It is satisfied while one pod of the
+// previous revision is still ready, and the pod of the new revision is running
+// its initializer against the realm at exactly that moment. Only a rollout
+// with every replica updated, present and available leaves no Identity writing
+// to the client.
+func (r *Reconciler) identityRolledOut(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) (bool, error) {
+	key := client.ObjectKey{Namespace: mc.Namespace, Name: components.IdentityName(mc)}
+
+	var identity appsv1.Deployment
+	if err := r.APIReader.Get(ctx, key, &identity); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("reading Deployment %q: %w", key, err)
+	}
+
+	wanted := int32(1)
+	if identity.Spec.Replicas != nil {
+		wanted = *identity.Spec.Replicas
+	}
+	status := identity.Status
+
+	return identity.Generation == status.ObservedGeneration &&
+		status.UpdatedReplicas == wanted &&
+		status.Replicas == wanted &&
+		status.AvailableReplicas == wanted, nil
 }
 
 // nothingRegistered reports whether the last reconcile already found no login

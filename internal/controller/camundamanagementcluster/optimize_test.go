@@ -340,6 +340,38 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}))
 	})
 
+	// A Deployment whose old pod is still ready satisfies IdentityReady while
+	// the new pod runs its initializer against the realm. Only a finished
+	// rollout leaves no Management Identity writing to the client.
+	It("waits through a rollout that an old ready pod would hide", func() {
+		keycloak := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(keycloak))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		identity := client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
+		Eventually(func(g Gomega) {
+			stampMidRollout(g, identity)
+
+			g.Expect(conditionOf(g, s.mc, v1.ConditionIdentityReady).Status).To(
+				Equal(metav1.ConditionTrue),
+			)
+			g.Expect(conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady).Reason).To(
+				Equal(string(component.PrerequisiteNotMet)),
+			)
+		}, timeout, interval).Should(Succeed())
+
+		Expect(keycloak.redirectURIs()).To(BeEmpty())
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(keycloak.redirectURIs()).To(Equal([]string{
+				blueOptimizeURL + components.OptimizeCallbackPath,
+			}))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// A plane that never wrote a contract never served an Optimize behind it,
 	// so an absent contract is no licence to clear the realm.
 	It("leaves the realm alone when a plane with no contract is deleted", func() {
@@ -523,6 +555,21 @@ func createOptimize(namespace, contract, externalURL string) *v1.CamundaOptimize
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, optimize) })
 
 	return optimize
+}
+
+// stampMidRollout reports the Deployment the way Kubernetes does in the middle
+// of a rolling update: the old replica is ready, so the ocf handler reads the
+// workload as ready, while the updated replica is not there yet.
+func stampMidRollout(g Gomega, key client.ObjectKey) {
+	var workload appsv1.Deployment
+	g.Expect(k8sClient.Get(ctx, key, &workload)).To(Succeed())
+	replicas := *workload.Spec.Replicas
+	workload.Status.ObservedGeneration = workload.Generation
+	workload.Status.Replicas = replicas
+	workload.Status.ReadyReplicas = replicas
+	workload.Status.AvailableReplicas = replicas
+	workload.Status.UpdatedReplicas = 0
+	g.Expect(k8sClient.Status().Update(ctx, &workload)).To(Succeed())
 }
 
 // stampIdentityReady reports the Management Identity Deployment as ready. The
