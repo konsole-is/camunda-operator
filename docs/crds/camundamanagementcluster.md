@@ -485,6 +485,8 @@ Adding or removing an Optimize leaves Management Identity running. The addresses
 
 The operator waits for Management Identity to finish rolling out before it writes to the realm, because Management Identity writes the whole client while it starts.
 
+The first Optimize of a management plane brings the `Optimize` role into the realm with it. Management Identity gives the roles of the realm to the first administrator on its very first start and never again, so an administrator who was there before that first Optimize does not hold the role. Grant it to them in Management Identity, the way you grant a role to anybody else.
+
 Deleting this resource removes those callbacks from the realm, and only when this management plane holds the `ManagementAuthConfig` it names. A Keycloak that does not answer at that moment keeps them, and the deletion goes through anyway, so the orchestration clusters this plane holds are always freed.
 
 This resource carries no Optimize address of its own. Every address comes from a `CamundaOptimize`, and the management plane owns the whole login callback list of the `optimize` client.

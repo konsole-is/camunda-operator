@@ -307,6 +307,13 @@ func keycloakFirstUserEnv(in Input) []corev1.EnvVar {
 // role together with the preset of its component, so a role of a component
 // with no preset would not exist. A management plane that serves no Optimize
 // renders no Optimize preset, so the Optimize role is left out too.
+//
+// This list reaches the realm on the first start of Management Identity and
+// never again. KeycloakUserInitializer.java assigns roles only to a user it
+// has just created, and it creates none when one of that name exists, so a
+// component that arrives later leaves the first administrator without its
+// role. That administrator grants it to themselves in Management Identity,
+// which is how every other user gets a role anyway. The CRD page says so.
 func keycloakAdminRoles(in Input) []string {
 	spec := in.Cluster.Spec
 

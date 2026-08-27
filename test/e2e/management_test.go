@@ -462,6 +462,14 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 			g.Expect(client).To(ContainSubstring(
 				optimizeWebappURL() + components.OptimizeCallbackPath,
 			))
+
+			// The preset switched on with the first Optimize, so the realm
+			// carries the Optimize role too. Management Identity assigns it to
+			// the first administrator on its very first start only, so an
+			// administrator from before this point grants it to themselves.
+			roles, err := realmRoles(mc)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(roles).To(ContainSubstring(`"name":"Optimize"`))
 		}, mcReadyTimeout, 10*time.Second).Should(Succeed())
 
 		By("waiting for Ready Healthy")
@@ -1009,6 +1017,44 @@ func realmOptimizeClient(mc *v1.CamundaManagementCluster) (string, error) {
 		},
 	}, podTimeout)
 }
+
+// realmRoles returns the JSON list of the realm roles of mc, read through the
+// Keycloak admin API.
+func realmRoles(mc *v1.CamundaManagementCluster) (string, error) {
+	adminSecret := components.KeycloakInitialAdminSecretName(mc)
+
+	return utils.RunPod(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "keycloak-roles-" + utilrand.String(5),
+			Namespace: mc.Namespace,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Name:    "curl",
+				Image:   utils.CurlImage,
+				Command: []string{"sh"},
+				Args:    []string{"-ec", readRolesScript},
+				Env: []corev1.EnvVar{
+					{Name: "KC_URL", Value: keycloakServiceURL(mc)},
+					{Name: "KC_REALM", Value: mcRealm},
+					utils.SecretEnv("KC_USER", adminSecret, components.KeycloakAdminUsernameKey),
+					utils.SecretEnv("KC_PASSWORD", adminSecret, components.KeycloakAdminPasswordKey),
+				},
+			}},
+		},
+	}, podTimeout)
+}
+
+// readRolesScript reads an administrator token from the master realm and
+// prints the realm roles.
+const readRolesScript = `KC_TOKEN=$(curl -sS ` +
+	`-d grant_type=password -d client_id=admin-cli ` +
+	`--data-urlencode "username=$KC_USER" --data-urlencode "password=$KC_PASSWORD" ` +
+	`"$KC_URL/realms/master/protocol/openid-connect/token" | ` +
+	`sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+if [ -z "$KC_TOKEN" ]; then echo "no access_token from $KC_URL" >&2; exit 1; fi
+curl -sS -f -H "Authorization: Bearer $KC_TOKEN" ` +
+	`"$KC_URL/admin/realms/$KC_REALM/roles" | tr -d ' '`
 
 // readClientScript reads an administrator token from the master realm and
 // prints the clients of the realm whose client id is KC_CLIENT_ID.
