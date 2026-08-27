@@ -192,7 +192,7 @@ func TestIdentityEnvInTheKeycloakModes(t *testing.T) {
 			"KEYCLOAK_SETUP_PASSWORD":            "secretKeyRef:my-management-keycloak-initial-admin/password",
 			"KEYCLOAK_SETUP_REALM":               "master",
 			"KEYCLOAK_SETUP_CLIENT_ID":           "admin-cli",
-			"KEYCLOAK_INIT_OPTIMIZE_ROOT_URL":    fixtureOptimize,
+			"KEYCLOAK_INIT_OPTIMIZE_ROOT_URL":    "configMapKeyRef:my-management-identity-optimize-urls/rootUrl",
 			"KEYCLOAK_INIT_OPTIMIZE_SECRET":      "secretKeyRef:my-management-optimize-client/client-secret",
 			"KEYCLOAK_INIT_CONSOLE_ROOT_URL":     "https://console.example.com",
 			"KEYCLOAK_INIT_WEBMODELER_ROOT_URL":  "https://modeler.example.com",
@@ -213,25 +213,41 @@ func TestIdentityEnvInTheKeycloakModes(t *testing.T) {
 	)
 }
 
-// Management Identity splits the root URL of the optimize preset on commas
-// and registers the login callback under each entry, so the whole list of
-// Optimize instances travels in one variable.
-func TestIdentityEnvJoinsTheOptimizeURLs(t *testing.T) {
+// The container reads the root URLs from a ConfigMap, not from a literal, so
+// the pod template says the same thing whatever the list holds.
+func TestIdentityEnvReadsTheOptimizeURLsFromAConfigMap(t *testing.T) {
 	t.Parallel()
 
-	env := renderedEnv(newKeycloakInput(t, true, func(in *Input) {
+	in := newKeycloakInput(t, true, nil)
+	env := renderedEnv(in, ComponentIdentity)
+
+	assert.Equal(
+		t,
+		"configMapKeyRef:"+IdentityOptimizeURLsName(in.Cluster)+"/"+OptimizeRootURLKey,
+		env["KEYCLOAK_INIT_OPTIMIZE_ROOT_URL"],
+	)
+}
+
+// Management Identity splits the value on commas and registers the login
+// callback under each entry, so the whole list of Optimize instances travels
+// in one key.
+func TestIdentityOptimizeURLsJoinsTheList(t *testing.T) {
+	t.Parallel()
+
+	in := newKeycloakInput(t, true, func(in *Input) {
 		in.OptimizeURLs = OptimizeURLs([]v1.AttachedOptimizeStatus{
 			{Namespace: fixtureNamespace, Name: "a", ExternalURL: fixtureOptimize},
 			{Namespace: "blue", Name: "a", ExternalURL: fixtureOptimizeBlue},
 			{Namespace: "green", Name: "a", ExternalURL: fixtureOptimizeGreen},
 		})
-	}), ComponentIdentity)
+	})
 
 	assert.Equal(
 		t,
 		fixtureOptimize+","+fixtureOptimizeBlue+","+fixtureOptimizeGreen,
-		env["KEYCLOAK_INIT_OPTIMIZE_ROOT_URL"],
+		identityOptimizeURLs(in).Data[OptimizeRootURLKey],
 	)
+	assert.Equal(t, IdentityOptimizeURLsName(in.Cluster), identityOptimizeURLs(in).Name)
 }
 
 // Management Identity processes the preset of a component only when its
@@ -252,11 +268,10 @@ func TestIdentityEnvWithoutAnOptimizeRendersNoPreset(t *testing.T) {
 	assert.NotContains(t, env, "KEYCLOAK_USERS_0_ROLES_1")
 }
 
-// A new Optimize changes the rendered environment of Management Identity, so
-// it changes the config hash and rolls the pods, the same as any other change
-// to that environment. The restarted Identity writes the whole list onto the
-// optimize client, and the operator keeps it there between restarts.
-func TestConfigHashFollowsTheOptimizeURLs(t *testing.T) {
+// A second Optimize changes the ConfigMap and nothing the pod template says,
+// so the config hash holds and Management Identity keeps running. The operator
+// registers the new callback on the client itself.
+func TestConfigHashIgnoresASecondOptimizeURL(t *testing.T) {
 	t.Parallel()
 
 	one := newKeycloakInput(t, true, nil)
@@ -266,9 +281,28 @@ func TestConfigHashFollowsTheOptimizeURLs(t *testing.T) {
 			{Namespace: "blue", Name: "a", ExternalURL: fixtureOptimizeBlue},
 		})
 	})
+
+	assert.Equal(t, ConfigHash(one, ComponentIdentity), ConfigHash(many, ComponentIdentity))
+	assert.Equal(
+		t, identityDeployment(one).Spec.Template, identityDeployment(many).Spec.Template,
+	)
+	assert.NotEqual(
+		t,
+		identityOptimizeURLs(one).Data[OptimizeRootURLKey],
+		identityOptimizeURLs(many).Data[OptimizeRootURLKey],
+	)
+}
+
+// Whether the variable is there at all is still part of the pod template, and
+// it has to be: the preset creates the client, the resource server and the
+// Optimize role, and a blank root URL shuts Management Identity down. So the
+// first Optimize rolls the pods, and so does the last one going away.
+func TestConfigHashFollowsTheFirstAndTheLastOptimizeURL(t *testing.T) {
+	t.Parallel()
+
+	one := newKeycloakInput(t, true, nil)
 	none := newKeycloakInput(t, true, func(in *Input) { in.OptimizeURLs = []string{} })
 
-	assert.NotEqual(t, ConfigHash(one, ComponentIdentity), ConfigHash(many, ComponentIdentity))
 	assert.NotEqual(t, ConfigHash(one, ComponentIdentity), ConfigHash(none, ComponentIdentity))
 }
 

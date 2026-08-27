@@ -18,7 +18,6 @@ package camundamanagementcluster
 
 import (
 	"strconv"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -97,6 +96,14 @@ const (
 	// (https://github.com/camunda/camunda/issues/59963). The operator adds the
 	// Optimize instances it found after that write through the Keycloak
 	// administration API.
+	//
+	// The value is read from a ConfigMap rather than written into the pod
+	// template, because the pod template is what Kubernetes rolls on. A
+	// configMapKeyRef does not change when the list behind it does, so adding
+	// or removing an Optimize updates that object and restarts nothing.
+	// Whether the variable is rendered at all still moves the template, and
+	// that is the one roll this keeps: the first Optimize turns the preset on
+	// and the last one gone turns it off.
 	keycloakEnvInitOptimizeRootURL = "KEYCLOAK_INIT_OPTIMIZE_ROOT_URL"
 	// keycloakEnvInitConsoleRootURL is the URL that browsers reach Console
 	// at. The configuration-variables page names OPERATE, OPTIMIZE, TASKLIST,
@@ -234,8 +241,10 @@ func keycloakPresetEnv(in Input) []corev1.EnvVar {
 		env = append(
 			env,
 			corev1.EnvVar{
-				Name:  keycloakEnvInitOptimizeRootURL,
-				Value: strings.Join(in.OptimizeURLs, ","),
+				Name: keycloakEnvInitOptimizeRootURL,
+				ValueFrom: configMapSource(
+					IdentityOptimizeURLsName(in.Cluster), OptimizeRootURLKey,
+				),
 			},
 		)
 		if ref := in.Provider.Clients.Optimize.SecretRef; ref != nil {

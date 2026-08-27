@@ -85,8 +85,9 @@ var indexers = map[string]client.IndexerFunc{
 }
 
 // setupWatches registers the controller, the reference indexes, and the
-// watches. It owns the Deployments, the Services, and the Secrets it applies
-// (Secrets metadata only), and the Keycloak custom resource where the
+// watches. It owns the Deployments, the Services, the ConfigMaps, and the
+// Secrets it applies (Secrets metadata only), and the Keycloak custom resource
+// where the
 // Kubernetes cluster serves that kind. Every reference is watched: the
 // platform config, the DatabaseConfigs, and the contract through the indexes
 // above, the database servers through the DatabaseConfigs that name them, and
@@ -110,6 +111,7 @@ func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
 		For(&v1.CamundaManagementCluster{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
+		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Secret{}, builder.OnlyMetadata)
 	// A watch on a kind the Kubernetes cluster does not serve fails the
 	// manager at start, so the Keycloak is only watched where the Keycloak

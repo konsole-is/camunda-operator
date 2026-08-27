@@ -438,6 +438,8 @@ status:
       message: Client "optimize" of realm "camunda-platform" carries every login callback of this management plane (1)
 ```
 
+Adding this Optimize to a management plane that already serves one leaves Management Identity running. Only the first Optimize of a plane, and the removal of its last one, restart Management Identity.
+
 In the `oidc` mode the field has no effect. Register the callback at your provider yourself.
 
 ## Check the result

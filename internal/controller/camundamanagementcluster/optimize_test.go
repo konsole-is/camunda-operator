@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -57,10 +58,11 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 			g.Expect(rows[0].ExternalURL).To(Equal(blueOptimizeURL))
 		}, timeout, interval).Should(Succeed())
 
+		urls := client.ObjectKey{
+			Namespace: s.namespace, Name: components.IdentityOptimizeURLsName(s.mc),
+		}
 		Eventually(func(g Gomega) {
-			g.Expect(identityEnv(g, s)["KEYCLOAK_INIT_OPTIMIZE_ROOT_URL"]).To(
-				Equal(blueOptimizeURL),
-			)
+			g.Expect(readConfigMap(g, urls)).To(Equal(blueOptimizeURL))
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -80,6 +82,53 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 			g.Expect(readManagementCluster(g, s.mc).Status.Optimize).To(BeEmpty())
 			g.Expect(identityEnv(g, s)).NotTo(HaveKey("KEYCLOAK_INIT_OPTIMIZE_ROOT_URL"))
 		}, timeout, interval).Should(Succeed())
+	})
+
+	// The root URLs live in a ConfigMap that the container refers to, so a
+	// second Optimize changes that object and leaves the pod template alone.
+	// Nothing restarts, and the callback reaches the realm all the same.
+	It("adds a second Optimize without rolling Management Identity", func() {
+		keycloak := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(keycloak))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		identity := client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
+		urls := client.ObjectKey{
+			Namespace: s.namespace, Name: components.IdentityOptimizeURLsName(s.mc),
+		}
+
+		var before appsv1.Deployment
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(keycloak.redirectURIs()).To(Equal([]string{
+				blueOptimizeURL + components.OptimizeCallbackPath,
+			}))
+			g.Expect(k8sClient.Get(ctx, identity, &before)).To(Succeed())
+			g.Expect(readConfigMap(g, urls)).To(Equal(blueOptimizeURL))
+		}, timeout, interval).Should(Succeed())
+
+		createOptimize(s.namespace, s.mc.Name, greenOptimizeURL)
+
+		// The rows are ordered by namespace and name, and the names are
+		// generated, so the list holds both in whichever order that gives.
+		Eventually(func(g Gomega) {
+			g.Expect(strings.Split(readConfigMap(g, urls), ",")).To(ConsistOf(
+				blueOptimizeURL, greenOptimizeURL,
+			))
+			g.Expect(keycloak.redirectURIs()).To(ConsistOf(
+				blueOptimizeURL+components.OptimizeCallbackPath,
+				greenOptimizeURL+components.OptimizeCallbackPath,
+			))
+		}, timeout, interval).Should(Succeed())
+
+		// The pod template is what Kubernetes rolls on, so it must be the same
+		// object it was before the second Optimize arrived.
+		var after appsv1.Deployment
+		Expect(k8sClient.Get(ctx, identity, &after)).To(Succeed())
+		Expect(after.Spec.Template).To(Equal(before.Spec.Template))
+		Expect(after.Generation).To(Equal(before.Generation))
 	})
 
 	It("adds the missing callback of a second Optimize", func() {
@@ -555,6 +604,14 @@ func createOptimize(namespace, contract, externalURL string) *v1.CamundaOptimize
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, optimize) })
 
 	return optimize
+}
+
+// readConfigMap returns the Optimize root URLs that a ConfigMap holds.
+func readConfigMap(g Gomega, key client.ObjectKey) string {
+	var urls corev1.ConfigMap
+	g.Expect(k8sClient.Get(ctx, key, &urls)).To(Succeed())
+
+	return urls.Data[components.OptimizeRootURLKey]
 }
 
 // stampMidRollout reports the Deployment the way Kubernetes does in the middle

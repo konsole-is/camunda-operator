@@ -481,7 +481,9 @@ The `OptimizeCallbacksReady` condition reports the realm. It reads `Healthy` whi
 
 The operator owns the login callbacks of the addresses above and nothing else on that client. It adds the ones that are missing and removes the ones of an Optimize that went away. A redirect URI of another shape stays where it is. A login callback you register by hand does not: it has the shape the operator owns, so the next reconcile that converges the realm removes it. Give the Optimize a `spec.externalUrl` instead.
 
-Adding or removing an Optimize changes the configuration of Management Identity, so its pods roll, as they do for any other change to it. The operator waits for Management Identity to be ready before it writes to the realm, because Management Identity writes the whole client while it starts.
+Adding or removing an Optimize leaves Management Identity running. The addresses live in the ConfigMap `my-management-identity-optimize-urls`, which the Identity pods read the list from, so a change to the list does not restart them. Management Identity restarts twice in the life of a management plane over this: when the first Optimize arrives and when the last one goes, because that is when Management Identity starts or stops creating the Optimize client at all.
+
+The operator waits for Management Identity to finish rolling out before it writes to the realm, because Management Identity writes the whole client while it starts.
 
 Deleting this resource removes those callbacks from the realm, and only when this management plane holds the `ManagementAuthConfig` it names. A Keycloak that does not answer at that moment keeps them, and the deletion goes through anyway, so the orchestration clusters this plane holds are always freed.
 

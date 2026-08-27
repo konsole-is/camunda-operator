@@ -1,3 +1,15 @@
+apiVersion: v1
+data:
+  rootUrl: https://optimize.example.com,https://optimize.blue.example.com,https://optimize.green.example.com
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: management-identity
+    camunda.io/management-cluster: my-management
+  name: my-management-identity-optimize-urls
+  namespace: camunda
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,7 +29,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 4005e592691fb048
+        camunda.io/config-hash: ffafaf3118874639
       labels:
         camunda.io/component: management-identity
         camunda.io/management-cluster: my-management
@@ -55,7 +67,10 @@ spec:
         - name: KEYCLOAK_SETUP_CLIENT_ID
           value: admin-cli
         - name: KEYCLOAK_INIT_OPTIMIZE_ROOT_URL
-          value: https://optimize.example.com,https://optimize.blue.example.com,https://optimize.green.example.com
+          valueFrom:
+            configMapKeyRef:
+              key: rootUrl
+              name: my-management-identity-optimize-urls
         - name: KEYCLOAK_INIT_OPTIMIZE_SECRET
           valueFrom:
             secretKeyRef:

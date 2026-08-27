@@ -40,6 +40,13 @@ const configHashLength = 16
 // does. HashInputs carries the resource version of every Secret the
 // controller read, and componentInputs carries what one component alone
 // reads, the credentials that the operator generates itself included.
+//
+// The ConfigMap of the Optimize root URLs is the one referenced object that is
+// deliberately left out of both. Rolling Management Identity for a new
+// Optimize is what this whole arrangement exists to avoid: the operator
+// registers the login callback of that Optimize on the client itself, so the
+// pods that are already running need nothing, and the ConfigMap is only the
+// floor that the next start reads.
 func ConfigHash(in Input, comp string) string {
 	var b strings.Builder
 	b.WriteString("component=" + comp + "\n")
