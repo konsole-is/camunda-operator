@@ -315,6 +315,31 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// Two planes can share one external Keycloak realm. A plane parked on a
+	// name another owner holds never served those Optimize instances, so its
+	// deletion must not take the holder's callbacks with it.
+	It("leaves the realm alone when a plane that owns no contract is deleted", func() {
+		keycloak := startFakeKeycloak(withOptimizeClient(
+			blueOptimizeURL + components.OptimizeCallbackPath,
+		))
+		name := "mac-" + utilrand.String(8)
+		createForeignContract(name, map[string]string{"camunda.io/management-cluster": "elsewhere"})
+
+		s := newScenario(withFakeKeycloak(keycloak), func(f *fixture) {
+			f.mc.Spec.ManagementAuthConfigName = name
+		})
+
+		Eventually(func(g Gomega) {
+			g.Expect(conditionOf(g, s.mc, v1.ConditionReady).Reason).To(Equal(v1.ReasonConflict))
+		}, timeout, interval).Should(Succeed())
+
+		Expect(deleteManagementCluster(s.mc)).To(Succeed())
+
+		Expect(keycloak.redirectURIs()).To(Equal([]string{
+			blueOptimizeURL + components.OptimizeCallbackPath,
+		}))
+	})
+
 	// A plane that does not hold the contract name does not know which
 	// Optimize instances are its own, so it writes nothing to the realm.
 	It("touches the realm only once the contract is written", func() {

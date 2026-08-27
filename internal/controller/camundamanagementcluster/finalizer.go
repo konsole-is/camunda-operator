@@ -71,10 +71,17 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	if err := r.withdrawClaims(ctx, mc, clusters); err != nil {
 		return err
 	}
+	// The contract decides whether the login callbacks in the realm are this
+	// management plane's to remove, so the answer is taken before
+	// withdrawContract deletes the object that carries it.
+	owned := r.ownsContract(ctx, mc)
+
 	if err := r.withdrawContract(ctx, mc); err != nil {
 		return err
 	}
-	r.withdrawOptimizeCallbacks(ctx, mc)
+	if owned {
+		r.withdrawOptimizeCallbacks(ctx, mc)
+	}
 	r.EventRecorder.Eventf(
 		mc,
 		nil,
@@ -96,6 +103,15 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	return nil
 }
 
+// ownsContract reports whether this management plane holds the
+// ManagementAuthConfig it names. A plane that does not hold it never served
+// the Optimize instances behind it, so nothing in the realm is its to remove.
+// A read that fails answers no, because the deletion must never remove a
+// callback of another owner on a guess.
+func (r *Reconciler) ownsContract(ctx context.Context, mc *v1.CamundaManagementCluster) bool {
+	return r.checkContractOwner(ctx, mc, components.ContractName(mc)) == nil
+}
+
 // withdrawOptimizeCallbacks removes the login callbacks that this management
 // plane registered on the Optimize client of the realm.
 //
@@ -105,7 +121,10 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 // operator could not reach keeps the callbacks, and the log line says so.
 //
 // The oidc mode registered nothing, and a Keycloak that the operator ran goes
-// with this resource, so only a Keycloak that you run keeps anything.
+// with this resource, so only a Keycloak that you run keeps anything. The
+// caller decides whether this plane owns the contract; without that, a plane
+// parked on a name another owner holds would take the callbacks of the holder
+// with it.
 func (r *Reconciler) withdrawOptimizeCallbacks(ctx context.Context, mc *v1.CamundaManagementCluster) {
 	if components.Mode(mc) == components.ModeOIDC {
 		return

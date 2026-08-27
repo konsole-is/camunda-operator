@@ -483,7 +483,7 @@ The operator owns the login callbacks of the addresses above and nothing else on
 
 Adding or removing an Optimize changes the configuration of Management Identity, so its pods roll, as they do for any other change to it. The operator waits for Management Identity to be ready before it writes to the realm, because Management Identity writes the whole client while it starts.
 
-Deleting this resource removes those callbacks from the realm. A Keycloak that does not answer at that moment keeps them, and the deletion goes through anyway, so the orchestration clusters this plane holds are always freed.
+Deleting this resource removes those callbacks from the realm, and only when this management plane holds the `ManagementAuthConfig` it names. A Keycloak that does not answer at that moment keeps them, and the deletion goes through anyway, so the orchestration clusters this plane holds are always freed.
 
 This resource carries no Optimize address of its own. Every address comes from a `CamundaOptimize`, and the management plane owns the whole login callback list of the `optimize` client.
 
@@ -571,8 +571,8 @@ A condition reads `True` under the reasons `Healthy`, `Disabled`, `Suspended`, a
 | `ManagementAuthReady` | `Healthy` | The `ManagementAuthConfig` is up to date. | Nothing. |
 | `ManagementAuthReady` | `WriteFailed` | The operator could not write the `ManagementAuthConfig`. The message carries the answer of the API server. | Read the message. The operator tries again. |
 | `OptimizeCallbacksReady` | `Healthy` | The `optimize` client of the realm carries the login callback of every row of `status.optimize`. | Nothing. |
-| `OptimizeCallbacksReady` | `NoCallbacks` | No Optimize behind this management plane names an address, so there is no login callback to register. | Nothing, until you run an Optimize. Then set `spec.externalUrl` on it. See [Optimize](#optimize). |
-| `OptimizeCallbacksReady` | `OptimizeClientMissing` | The realm holds no `optimize` client yet. Management Identity creates it on its first start against Keycloak. | Wait. If it stays, read the pods of `my-management-identity`. |
+| `OptimizeCallbacksReady` | `NoCallbacks` | No Optimize behind this management plane names an address, so there is no login callback to register. The management plane stops reading the realm while this holds. | Nothing, until you run an Optimize. Then set `spec.externalUrl` on it. See [Optimize](#optimize). |
+| `OptimizeCallbacksReady` | `OptimizeClientMissing` | The realm holds no `optimize` client. Management Identity creates it while it starts. | Wait while Management Identity is starting. If it stays, restart Management Identity: it creates the client only while it starts, so a client removed after that comes back on the next restart. |
 | `OptimizeCallbacksReady` | `ConnectionFailed` | Keycloak did not answer the operator, or it refused the administrator. The message carries what Keycloak said. | Read the message. Make sure that Keycloak answers, that the administrator Secret holds valid credentials, and that the operator trusts the certificate of an `https` Keycloak. |
 | `OptimizeCallbacksReady` | `MissingSecret` | The Secret with the Keycloak administrator does not exist or lacks a key. The message names both. | In the `keycloak` mode, wait for the Keycloak Operator to write it. In the `externalKeycloak` mode, correct `adminCredentialsSecretRef`. |
 | `OptimizeCallbacksReady` | `WriteFailed` | Keycloak refused the change to the `optimize` client. The message carries what Keycloak said. | Read the message. Make sure that the administrator can change clients of the realm. |
@@ -591,7 +591,7 @@ A condition reads `True` under the reasons `Healthy`, `Disabled`, `Suspended`, a
 | `Ready` | `WriteFailed` | The `ManagementAuthConfig` could not be written, or Keycloak refused the change to the `optimize` client. | Read the `ManagementAuthReady` and `OptimizeCallbacksReady` rows. |
 | `Ready` | `OptimizeClientMissing` / `ConnectionFailed` | The login callbacks are not registered in the realm. | Read the `OptimizeCallbacksReady` row. |
 
-`Ready` is `True` only when every condition that takes part in it is `True`, the `ManagementAuthConfig` is written, and the login callbacks are registered.
+`Ready` is `True` only when every condition that takes part in it is `True` and the `ManagementAuthConfig` is written. The login callbacks hold it back only while this management plane serves an Optimize, as the paragraph above says.
 
 A condition that reads `Disabled` stays out of `Ready`. This is not an error.
 

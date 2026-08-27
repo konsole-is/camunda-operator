@@ -423,7 +423,7 @@ kubectl get camundamanagementcluster my-management -n my-management-ns \
 
 `externalUrl` is the URL a browser signs in at. Route it to the `my-cluster-optimize-webapp` Service.
 
-In the two Keycloak modes the management plane registers the login callback under that URL, and it does so for every `CamundaOptimize` behind it. Read what it registered on the `CamundaManagementCluster`:
+In the two Keycloak modes the management plane registers the login callback under that URL, and it does so for every `CamundaOptimize` behind it. Read what it found and whether the realm carries it, on the `CamundaManagementCluster`:
 
 ```yaml
 status:
@@ -435,7 +435,7 @@ status:
     - type: OptimizeCallbacksReady
       status: "True"
       reason: Healthy
-      message: Client "optimize" of realm "camunda-platform" carries the login callback of every Optimize (1)
+      message: Client "optimize" of realm "camunda-platform" carries every login callback of this management plane (1)
 ```
 
 In the `oidc` mode the field has no effect. Register the callback at your provider yourself.

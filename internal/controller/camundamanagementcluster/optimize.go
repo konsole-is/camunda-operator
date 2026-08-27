@@ -264,8 +264,9 @@ func (r *Reconciler) convergeOptimizeCallbacks(
 	if stored == nil {
 		return &conditions.PreCheckFailure{
 			Reason: v1.ReasonOptimizeClientMissing,
-			Message: fmt.Sprintf("The realm holds no %q client yet; Management Identity creates it "+
-				"on its first start against Keycloak", clientID),
+			Message: fmt.Sprintf("The realm holds no %q client; Management Identity creates it "+
+				"while it starts, so restart Management Identity to have it created again",
+				clientID),
 		}, nil
 	}
 
