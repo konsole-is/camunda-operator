@@ -93,7 +93,8 @@ type ArchiveStorage struct {
 
 // ArchiveOutage is the report of CloudNativePG that the write-ahead log of a
 // server is not reaching its archive. Reason and Message are what
-// CloudNativePG says, and Since is when the uploads stopped arriving.
+// CloudNativePG says, and Since is when it first reported the failing
+// uploads, which is the moment its condition changed.
 //
 // Confirmed says that the uploads have been failing for ArchiveOutageGracePeriod.
 // Only a confirmed outage reaches ArchiveReady: the condition of CloudNativePG
