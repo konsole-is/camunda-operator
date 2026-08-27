@@ -59,14 +59,14 @@ A `Database` can lose a claim after it published under it. That happens when you
 
 It withdraws only what it owns. Two `Database` resources can name one `databaseConfig` or one credential Secret, and the loser leaves an object that belongs to the winner in place. The `Ready` message then names what stayed.
 
-`status.collisionKey` shows the logical database that a `Database` names, as the system identifier and the database name:
+`status.collisionKey` shows the logical database that a `Database` last resolved, as the system identifier and the database name:
 
 ```yaml
 status:
   collisionKey: 7412345678901234567/camunda
 ```
 
-Every claimant records this field, the one that loses included, so it shows the logical database a `Database` asks for and not one it owns. A `Database` that reports `InvalidReference` and names another `Database` does not own the name it shows. The operator never clears the field. An owner whose server or contract is gone keeps the logical database. Delete that `Database` to release the name.
+Every claimant records this field, the one that loses included, so it shows the logical database a `Database` asked for and not one it owns. A `Database` that reports `InvalidReference` and names another `Database` does not own the name it shows. The operator resolves the key only after it reaches the server, so a `Database` that you point at a server which does not exist, or at one that the operator has not reached for the spec it has now, keeps the key from before until that server answers. The operator never clears the field. An owner whose server or contract is gone keeps the logical database. Delete that `Database` to release the name.
 
 ## Changes
 
@@ -89,7 +89,7 @@ Deletion removes the `DatabaseConfig`, the `SecondaryStorageConfig`, and the cre
 
 | Field | Meaning |
 | --- | --- |
-| `status.collisionKey` | The logical database that this `Database` names: the system identifier of the server and the database name. Every claimant records it, so it is not a record of ownership. The operator never clears it. |
+| `status.collisionKey` | The logical database that this `Database` last resolved: the system identifier of the server and the database name. Every claimant records it, so it is not a record of ownership, and it stays on the last one the operator resolved until a new server answers. The operator never clears it. |
 | `status.observedGeneration` | The last generation that the operator reconciled. |
 
 ## Spec reference

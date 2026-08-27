@@ -7,7 +7,9 @@ IMG ?= controller:latest
 CLI_IMG ?= ghcr.io/konsole-is/camunda-operator-cli:latest
 # The namespace that the manager runs in. It holds the Lease that serializes
 # the claim of a logical database. A manager in a cluster reads it from its
-# own Pod, so only `make run` needs this default.
+# own Pod, so only `make run` needs this default. `make run` creates the
+# namespace, because `make install` applies the CRDs alone and every claim
+# would fail against a namespace that is not there.
 OPERATOR_NAMESPACE ?= camunda-operator-system
 
 # Recipes below expand IMG in the shell (e.g. $${IMG%:*}), which reads the
@@ -211,6 +213,7 @@ build-cli: fmt vet ## Build the camunda-operator-cli binary.
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host. The backup Jobs it renders run CLI_IMG.
+	@"$(KUBECTL)" create namespace "$(OPERATOR_NAMESPACE)" --dry-run=client -o yaml | "$(KUBECTL)" apply -f -
 	go run ./cmd/main.go --camunda-operator-cli-image=${CLI_IMG} --namespace=${OPERATOR_NAMESPACE}
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.

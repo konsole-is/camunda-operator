@@ -699,13 +699,18 @@ var _ = Describe("Database controller", func() {
 		Expect(k8sClient.Create(ctx, broken)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, broken) })
 
+		// A creation timestamp has one second of resolution, so two Databases
+		// created together tie on age and the rule falls back to the name.
+		// The names pin which one goes first whatever the clock says.
 		waiting := databaseFor(probedServer(namespace, broken.Name, host).Name, namespace)
+		waiting.Name = "firsta-" + utilrand.String(8)
 		createDatabase(waiting)
 		expectDatabaseReady(
 			waiting, metav1.ConditionFalse, v1.ReasonMissingSecret, "is missing key \"password\"",
 		)
 
 		runner := databaseFor(createDatabaseServerAt(namespace, host), namespace)
+		runner.Name = "firstz-" + utilrand.String(8)
 		createDatabase(runner)
 		expectDatabaseReady(
 			runner, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.",
