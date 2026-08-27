@@ -308,7 +308,7 @@ The API server enforces these at admission:
 
 - `spec.version` must be a full semantic version such as `8.9.0`. A two-segment version is rejected.
 - `spec.managementAuthRef` and `spec.clusterRef.name` must not be empty.
-- `spec.externalUrl` must be an `http` or `https` URL. It carries no comma, no query, and no fragment, and it does not end with a slash.
+- `spec.externalUrl` must be an `http` or `https` URL. It carries no comma, no whitespace, no query, and no fragment, and it does not end with a slash.
 - `spec.importer.replicas` must be `0` or `1`. Optimize supports one active importer, and more than one makes the analytics data inconsistent.
 - `spec.clusterRef` is immutable.
 
