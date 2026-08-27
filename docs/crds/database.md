@@ -66,7 +66,7 @@ status:
   collisionKey: 7412345678901234567/camunda
 ```
 
-Every claimant records this field, so it shows the logical database a `Database` asks for and not always one it owns. The `Ready` condition says whether this `Database` is the owner. The operator never clears the field. An owner whose server or contract is gone keeps the logical database. Delete that `Database` to release the name.
+Every claimant records this field, the one that loses included, so it shows the logical database a `Database` asks for and not one it owns. A `Database` that reports `InvalidReference` and names another `Database` does not own the name it shows. The operator never clears the field. An owner whose server or contract is gone keeps the logical database. Delete that `Database` to release the name.
 
 ## Changes
 

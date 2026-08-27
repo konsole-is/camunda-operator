@@ -50,6 +50,13 @@ const claimLeasePrefix = "camunda-database-"
 // claimComponent is the component label value of a claim Lease.
 const claimComponent = "database-claim"
 
+// maxHolderIdentityLength bounds the holderIdentity field of a claim Lease.
+// The API server of Kubernetes 1.36 accepts a longer value. The field is a
+// display form for a reader, and a documented bound keeps it readable and
+// safe against a stricter server. The exact identity lives in the
+// annotations, which every decision about ownership reads.
+const maxHolderIdentityLength = 128
+
 // The annotations of a claim Lease name the Database that holds it, and the
 // claim it holds. Every decision about ownership reads them. A Lease without
 // all three holder annotations is not one of ours.
@@ -279,22 +286,28 @@ func (r *DatabaseReconciler) holderKeeps(ctx context.Context, holder claimHolder
 	return other.UID == holder.UID, nil
 }
 
-// releaseStaleClaim gives up the claim that database recorded before, when it
-// now names another logical database or another server. The recorded claim is
-// the one in status.collisionKey, and key is the one the pre-checks resolved
-// this time.
+// releaseStaleClaims gives back every claim that database holds other than
+// key, which it holds now. It reads the holder annotations rather than
+// status.collisionKey: a Database that took a claim and stopped before the
+// status flush records none, and a release by the recorded key would leave
+// that one held until the Database is deleted.
 //
 // The caller runs it only once database holds key and nothing it published
-// names the recorded claim any more. A Database that gave the old claim up
-// earlier would leave its published bindings on a logical database that
+// names another logical database any more. A Database that gave an old claim
+// up earlier would leave its published bindings on a logical database that
 // another Database could take and rotate the roles of.
-func (r *DatabaseReconciler) releaseStaleClaim(ctx context.Context, database *v1.Database, key string) error {
-	recorded := database.Status.CollisionKey
-	if recorded == "" || recorded == key {
+//
+// recorded is the claim that status.collisionKey held before this reconcile.
+// A Database that already named this logical database has nothing to give
+// back, which is every reconcile after the first.
+func (r *DatabaseReconciler) releaseStaleClaims(
+	ctx context.Context, database *v1.Database, recorded, key string,
+) error {
+	if recorded == key {
 		return nil
 	}
 
-	return r.dropClaim(ctx, recorded, selfHolder(database))
+	return r.releaseHeldClaims(ctx, selfHolder(database), key)
 }
 
 // finalize releases the claims of a deleted Database and removes the claim
@@ -308,7 +321,7 @@ func (r *DatabaseReconciler) finalize(ctx context.Context, database *v1.Database
 		return nil
 	}
 
-	if err := r.releaseHeldClaims(ctx, selfHolder(database)); err != nil {
+	if err := r.releaseHeldClaims(ctx, selfHolder(database), ""); err != nil {
 		return err
 	}
 
@@ -321,16 +334,20 @@ func (r *DatabaseReconciler) finalize(ctx context.Context, database *v1.Database
 }
 
 // releaseHeldClaims deletes every claim Lease of the namespace of the
-// operator that still names holder. A release by key reads
-// status.collisionKey, and a Database that took a claim but never flushed its
-// status carries no key: its Lease would then stay until a later claimant
-// took it over. The sweep reads the holder annotations instead, so the
-// deletion of a Database always gives back what it holds.
+// operator that still names holder, except the one that keep names. A release
+// by key reads status.collisionKey, and a Database that took a claim but
+// never flushed its status carries no key: its Lease would then stay until a
+// later claimant took it over. The sweep reads the holder annotations
+// instead, so a Database always gives back what it holds and no longer uses.
+//
+// An empty keep releases every claim of the holder.
 //
 // The label selector is the one that newClaimLease writes, so the list covers
 // the claims of this Database alone. The holder annotations then tell a Lease
 // of a later Database of the same name apart from one of this Database.
-func (r *DatabaseReconciler) releaseHeldClaims(ctx context.Context, holder claimHolder) error {
+func (r *DatabaseReconciler) releaseHeldClaims(
+	ctx context.Context, holder claimHolder, keep string,
+) error {
 	var leases coordinationv1.LeaseList
 	err := r.APIReader.List(
 		ctx, &leases,
@@ -341,8 +358,16 @@ func (r *DatabaseReconciler) releaseHeldClaims(ctx context.Context, holder claim
 		return fmt.Errorf("listing the claim Leases of %s: %w", holder.NamespacedName, err)
 	}
 
+	kept := ""
+	if keep != "" {
+		kept = claimLeaseName(keep)
+	}
+
 	for i := range leases.Items {
 		lease := &leases.Items[i]
+		if lease.Name == kept {
+			continue
+		}
 		if recorded, ours := holderOf(lease); !ours || recorded != holder {
 			continue
 		}
@@ -437,7 +462,9 @@ func selfHolder(database *v1.Database) claimHolder {
 
 // newClaimLease builds the claim Lease of key for database.
 func newClaimLease(namespace, key string, database *v1.Database) *coordinationv1.Lease {
-	holder := database.Namespace + "/" + database.Name
+	holder := labels.BoundedName(
+		database.Namespace+"/"+database.Name, maxHolderIdentityLength,
+	)
 	now := metav1.NowMicro()
 
 	return &coordinationv1.Lease{

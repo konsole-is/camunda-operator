@@ -85,12 +85,14 @@ type DatabaseStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// CollisionKey is the logical database that this Database names: the
 	// system identifier of the server and the database name. Every claimant
-	// records it, so the field says what a Database asks for and not what it
-	// owns. One logical database on one server has one owner across all
-	// namespaces, and the first Database to claim it owns it. The Ready
-	// condition says whether this Database is that owner. The operator never
-	// clears the field, so an owner whose server or contract is gone keeps
-	// the logical database. Delete that Database to release the name.
+	// records it, the one that loses included, so the field says what a
+	// Database asks for and not what it owns. One logical database on one
+	// server has one owner across all namespaces, and the first Database to
+	// claim it owns it. A Database whose Ready condition reports
+	// InvalidReference and names another Database does not own the name it
+	// shows here. The operator never clears the field, so an owner whose
+	// server or contract is gone keeps the logical database. Delete that
+	// Database to release the name.
 	// +optional
 	CollisionKey string `json:"collisionKey,omitempty"`
 	// Conditions represent the current state. Ready carries a pre-check

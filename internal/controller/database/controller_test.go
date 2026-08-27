@@ -809,6 +809,20 @@ var _ = Describe("Database controller", func() {
 		Expect(k8sClient.Get(
 			ctx, types.NamespacedName{Namespace: namespace, Name: holder.Name}, &v1.DatabaseConfig{},
 		)).To(Succeed())
+
+		// The loser gave its own logical database back. Its recorded claim
+		// moves with its spec, so the collision rule stops listing it as a
+		// claimant of the name it left. A Database that kept the old key
+		// there is older than every later claimant, and no one could take
+		// that name again.
+		By("letting another Database take the logical database it left")
+		taker := databaseFor(server, namespace)
+		taker.Name = "takez-" + utilrand.String(8)
+		taker.Spec.DatabaseName = mover.Spec.DatabaseName
+		createDatabase(taker)
+		expectDatabaseReady(
+			taker, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.",
+		)
 	})
 
 	// Two contracts that describe one PostgreSQL instance under different
