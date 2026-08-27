@@ -158,8 +158,9 @@ type serverComponents struct {
 	// systemIdentifier holds the PostgreSQL system identifier once the cluster
 	// component has reconciled, and the reconcile mirrors it to status.
 	systemIdentifier *concepts.Data[string]
-	// archiveDestination holds the bucket URL of the ObjectStore that the
-	// archive component applied, and is unset when that apply did not happen:
+	// archiveDestination is the destination path the archive component applied
+	// on its ObjectStore: the bucket URL that holds the archives of this
+	// server, prefix included. It is unset when that apply did not happen:
 	// see components.ArchiveComponent.
 	archiveDestination *concepts.Data[string]
 }
