@@ -148,7 +148,7 @@ spec:
   # ... the rest of your management cluster
 ```
 
-The Secret lives in the namespace of this resource. A key that holds no certificate in PEM form reports `InvalidCABundle`. A Secret that does not exist reports `MissingSecret`. The operator reads the Secret again when it changes, so a rotated authority needs no restart of anything.
+The Secret lives in the namespace of this resource. A key that holds no certificate in PEM form reports `InvalidCABundle`. A Secret that does not exist reports `MissingSecret`. The operator reads the Secret again when it changes, so a rotated authority needs no restart.
 
 The field is only valid with an `https` url, because the operator makes no handshake with an `http` one. In the `keycloak` mode the operator reaches the Keycloak it runs through the in-cluster Service, over `http`, so that mode carries no such field.
 
