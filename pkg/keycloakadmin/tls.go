@@ -51,14 +51,18 @@ func ParseCABundle(pem []byte) (*x509.CertPool, error) {
 func WithRootCAs(pool *x509.CertPool) Option {
 	return func(c *Client) {
 		transport := defaultTransport()
-		transport.TLSClientConfig = &tls.Config{RootCAs: pool}
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		}
+		transport.TLSClientConfig.RootCAs = pool
 		c.http.Transport = transport
 	}
 }
 
 // defaultTransport copies the transport that a client without an Option uses,
-// so the proxy settings and the connection limits of the operator stay the
-// same when only the certificate pool changes.
+// so the proxy settings, the connection limits, and every TLS setting of the
+// standard transport stay the same when only the certificate pool changes.
+// Clone copies the TLS settings too, so the copy is safe to write to.
 func defaultTransport() *http.Transport {
 	if standard, ok := http.DefaultTransport.(*http.Transport); ok {
 		return standard.Clone()
