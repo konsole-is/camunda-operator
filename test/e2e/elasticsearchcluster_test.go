@@ -63,12 +63,10 @@ var dataVolumeSelector = k8slabels.SelectorFromSet(
 	labels.Discovery(labels.ElasticsearchCluster(esName), "elasticsearch"),
 ).String()
 
-// esHeapEnv holds the heap of an Elasticsearch node at 512 MB. Elasticsearch
-// gives the heap half of the memory it sees, and a container with no memory
-// limit sees the whole node. That heap was the largest single claim on the
-// runner. Each flow indexes the records of one process instance, so 512 MB is
-// enough. The memory limit of the fixture bounds what Elasticsearch puts
-// around the heap.
+// esHeapEnv pins the heap of an Elasticsearch node at 512 MB. Elasticsearch
+// gives the heap half of the memory it sees, and a container with no limit
+// sees the whole node. A fixture pairs this helper with a memory limit that
+// leaves room above the heap.
 func esHeapEnv() []corev1.EnvVar {
 	return []corev1.EnvVar{{Name: "ES_JAVA_OPTS", Value: "-Xms512m -Xmx512m"}}
 }
