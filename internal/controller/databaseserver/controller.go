@@ -132,6 +132,11 @@ type resolvedSpec struct {
 	// and it also covers the cluster that a running rollback cut over to and
 	// that is gone: see clusterGuardReason.
 	clusterBlocked string
+	// archiveOutage is the stop in the write-ahead log uploads that the server
+	// reports on, or nil when it reports on none. It blocks the archive
+	// component, it reports ArchiveFailing, and it marks the open archive
+	// record: see reportedArchiveOutage.
+	archiveOutage *components.ArchiveOutage
 }
 
 // serverComponents are the components of one reconcile, in the order they
@@ -150,6 +155,14 @@ type serverComponents struct {
 	// observes the server rather than runs it. ElasticsearchCluster keeps its
 	// metrics exporter out of Ready for the same reason.
 	ready []*component.Component
+	// systemIdentifier holds the PostgreSQL system identifier once the cluster
+	// component has reconciled, and the reconcile mirrors it to status.
+	systemIdentifier *concepts.Data[string]
+	// archiveDestination is the destination path the archive component applied
+	// on its ObjectStore: the bucket URL that holds the archives of this
+	// server, prefix included. It is unset when that apply did not happen:
+	// see components.ArchiveComponent.
+	archiveDestination *concepts.Data[string]
 }
 
 // all returns the components in reconcile order. FlushStatus owns every one of
@@ -360,8 +373,9 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	resolved.clusterTaken = derived.taken
 	resolved.clusterBlocked = clusterGuardReason(&server, derived)
+	resolved.archiveOutage = reportedArchiveOutage(derived.outage, resolved.merged)
 
-	built, systemIdentifier, err := r.buildComponents(&server, resolved, archiveStart)
+	built, err := r.buildComponents(&server, resolved, archiveStart)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -373,7 +387,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, errors.Join(reconcileErr, err)
 	}
 
-	if identifier, ok := systemIdentifier.Get(); ok && identifier != "" {
+	if identifier, ok := built.systemIdentifier.Get(); ok && identifier != "" {
 		server.Status.SystemIdentifier = identifier
 	}
 	// The clock is read here, after the ObjectStore of the new location is
@@ -397,14 +411,18 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		advanceArchiveFloor(&server, resolved.merged, now)
 		reconcileArchiveHistory(
 			&server, resolved.merged, built.archive, archiveStart,
-			resolved.archiveLocation, moved, now,
+			resolved.archiveLocation, moved, built.archiveDestination.IsSet(), now,
 		)
+		markArchiveOutage(&server, resolved.archiveOutage)
 	}
 
 	server.Status.Volumes = volumes.all()
 
 	// Before the aggregate below, which reads the component conditions off
-	// the server.
+	// the server. A taken name goes last of the two: an ObjectStore that
+	// belongs to somebody else takes the archive off the cluster, so there are
+	// no uploads of this server to report on.
+	stageArchiveOutage(&server, resolved.archiveOutage)
 	stageTakenNames(&server, resolved)
 
 	conditions.Stage(&server, conditions.Aggregate(&server, built.ready...))
@@ -425,25 +443,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, reconcileErr
 	}
 
-	// Nothing reports that the superuser Secret appeared: CloudNativePG owns
-	// it, and this controller watches only what it owns itself. Every other
-	// condition of this CR is backed by a watch. A running recovery waits on
-	// that same Secret, one cluster further on.
-	//
-	// Nothing reports that a taken cluster name became free either, for the
-	// same reason: the object of that name belongs to somebody else, so no
-	// watch of this controller carries its deletion. ContractReady is True
-	// while the name is held, because the component withdrew the contract on
-	// purpose, so the test above cannot stand in for this one. A taken
-	// ObjectStore name asks for a look of its own for the same reason: the
-	// object belongs to somebody else, and its deletion reaches no watch of
-	// this controller either.
-	if recovering || resolved.clusterTaken != "" || resolved.archiveTaken != "" ||
-		!meta.IsStatusConditionTrue(server.Status.Conditions, v1.ConditionContractReady) {
-		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
-	}
-
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: r.requeueAfter(&server, resolved, derived, recovering)}, nil
 }
 
 // preCheck resolves the preset, validates the merged spec, and resolves the
@@ -939,6 +939,11 @@ type derivedCluster struct {
 	taken string
 	// absent says that no object of that name exists.
 	absent bool
+	// outage is what CloudNativePG reports about the write-ahead log uploads
+	// of that cluster, or nil when it reports nothing wrong. A cluster that
+	// belongs to somebody else carries none: its uploads are not this
+	// server's archive.
+	outage *components.ArchiveOutage
 }
 
 // readDerivedCluster reads the CloudNativePG cluster of the name the server
@@ -976,7 +981,7 @@ func (r *DatabaseServerReconciler) readDerivedCluster(
 
 	controller := metav1.GetControllerOf(&cluster)
 	if controller != nil && controller.UID == server.UID {
-		return derivedCluster{}, nil
+		return derivedCluster{outage: components.ArchiveOutageOf(&cluster, time.Now())}, nil
 	}
 
 	return derivedCluster{taken: components.ClusterTakenMessage(name, controller)}, nil
@@ -998,6 +1003,95 @@ func clusterGuardReason(server *v1.DatabaseServer, derived derivedCluster) strin
 	}
 
 	return components.RecoveryHoldsClusterMessage(components.ClusterName(server))
+}
+
+// reportedArchiveOutage returns the stop in the write-ahead log uploads that
+// the server reports on ArchiveReady and on its open archive record, or nil
+// when it reports on none.
+//
+// An unconfirmed outage is none of them. CloudNativePG raises its condition on
+// one failed upload, and the plugin uploads the segment again, so a reported
+// outage waits for the grace period of components.ArchiveOutageGracePeriod.
+//
+// A suspended server reports on none either. Its instances are gone, so it
+// writes no write-ahead log to lose, and what CloudNativePG left on the
+// condition describes the server that ran before the suspension. A server that
+// asks for no archive is the same case: the cluster carries no archive plugin,
+// and what stands on the condition is what the server archived before.
+func reportedArchiveOutage(
+	outage *components.ArchiveOutage,
+	merged v1.DatabaseServerSpec,
+) *components.ArchiveOutage {
+	if outage == nil || !outage.Confirmed || merged.Suspend || !components.Archiving(merged) {
+		return nil
+	}
+
+	return outage
+}
+
+// requeueAfter returns the shortest wait this reconcile asks for, or zero when
+// it asks for none.
+func (r *DatabaseServerReconciler) requeueAfter(
+	server *v1.DatabaseServer,
+	resolved resolvedSpec,
+	derived derivedCluster,
+	recovering bool,
+) time.Duration {
+	var waits []time.Duration
+
+	// Nothing reports that the superuser Secret appeared: CloudNativePG owns
+	// it, and this controller watches only what it owns itself. Every other
+	// condition of this CR is backed by a watch. A running recovery waits on
+	// that same Secret, one cluster further on.
+	//
+	// Nothing reports that a taken cluster name became free either, for the
+	// same reason: the object of that name belongs to somebody else, so no
+	// watch of this controller carries its deletion. ContractReady is True
+	// while the name is held, because the component withdrew the contract on
+	// purpose, so that test cannot stand in for this one. A taken ObjectStore
+	// name asks for a look of its own for the same reason: the object belongs
+	// to somebody else, and its deletion reaches no watch of this controller
+	// either.
+	//
+	// Each of these repeats: nothing carries the moment the thing it waits for
+	// arrives, so the look runs again until it does.
+	if recovering || resolved.clusterTaken != "" || resolved.archiveTaken != "" ||
+		!meta.IsStatusConditionTrue(server.Status.Conditions, v1.ConditionContractReady) {
+		waits = append(waits, r.retryInterval())
+	}
+
+	// Failing write-ahead log uploads ask for one look, when the grace period
+	// of the outage ends. CloudNativePG writes that condition once and leaves
+	// it, so nothing carries that moment either. Uploads that run again before
+	// it comes rewrite the condition on the cluster, which this controller
+	// owns, so that arrives on a watch and needs no look of its own.
+	if wait := pendingArchiveOutageWait(derived.outage, resolved.merged, time.Now()); wait > 0 {
+		waits = append(waits, wait)
+	}
+
+	if len(waits) == 0 {
+		return 0
+	}
+
+	return slices.Min(waits)
+}
+
+// pendingArchiveOutageWait returns what is left of the grace period of a stop
+// in the write-ahead log uploads that the server does not report on yet, or
+// zero when it has none to wait out.
+func pendingArchiveOutageWait(
+	outage *components.ArchiveOutage,
+	merged v1.DatabaseServerSpec,
+	now time.Time,
+) time.Duration {
+	if outage == nil || outage.Confirmed || merged.Suspend || !components.Archiving(merged) {
+		return 0
+	}
+
+	// The deadline can pass between the read of the cluster, which decided
+	// Confirmed, and this call. The look is then due at once, and a zero here
+	// would mean no look at all.
+	return max(outage.Since.Add(components.ArchiveOutageGracePeriod).Sub(now), time.Millisecond)
 }
 
 // serverVolumes are the volumes of the current cluster: one entry per
@@ -1385,14 +1479,12 @@ func closedArchiveEnd(server *v1.DatabaseServer) *metav1.Time {
 // buildComponents builds the four components in dependency order: cluster,
 // archive, contract, monitoring, and records which of them take part in Ready.
 // components.Archiving decides both the gate of the archive component and its
-// part in Ready, so the two can never disagree. The returned data cell
-// holds the PostgreSQL system identifier once the cluster component has
-// reconciled.
+// part in Ready, so the two can never disagree.
 func (r *DatabaseServerReconciler) buildComponents(
 	server *v1.DatabaseServer,
 	resolved resolvedSpec,
 	archiveStart *metav1.Time,
-) (serverComponents, *concepts.Data[string], error) {
+) (serverComponents, error) {
 	merged := resolved.merged
 	var built serverComponents
 
@@ -1401,30 +1493,33 @@ func (r *DatabaseServerReconciler) buildComponents(
 		resolved.platform, resolved.clusterBlocked,
 	)
 	if err != nil {
-		return built, nil, fmt.Errorf("building cluster component: %w", err)
+		return built, fmt.Errorf("building cluster component: %w", err)
 	}
 	built.cluster = cluster
+	built.systemIdentifier = systemIdentifier
 
-	built.archive, err = components.ArchiveComponent(
-		server, merged, resolved.archive, archiveStart,
+	archive, destination, err := components.ArchiveComponent(
+		server, merged, resolved.archive, archiveStart, resolved.archiveOutage,
 		resolved.clusterTaken, resolved.archiveTaken,
 	)
 	if err != nil {
-		return built, nil, fmt.Errorf("building archive component: %w", err)
+		return built, fmt.Errorf("building archive component: %w", err)
 	}
+	built.archive = archive
+	built.archiveDestination = destination
 
 	built.contract, err = components.ContractComponent(
 		server, merged, resolved.clusterTaken, resolved.contractTaken, resolved.archiveTaken,
 	)
 	if err != nil {
-		return built, nil, fmt.Errorf("building contract component: %w", err)
+		return built, fmt.Errorf("building contract component: %w", err)
 	}
 
 	built.monitoring, err = components.MonitoringComponent(
 		server, merged, r.podMonitorSupported(), resolved.clusterTaken,
 	)
 	if err != nil {
-		return built, nil, fmt.Errorf("building monitoring component: %w", err)
+		return built, fmt.Errorf("building monitoring component: %w", err)
 	}
 
 	built.ready = []*component.Component{built.cluster, built.contract}
@@ -1432,7 +1527,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 		built.ready = append(built.ready, built.archive)
 	}
 
-	return built, systemIdentifier, nil
+	return built, nil
 }
 
 // reconcileComponents reconciles comps in order. It continues past a failing
@@ -1514,6 +1609,22 @@ func (r *DatabaseServerReconciler) removeSupersededContracts(
 	return nil
 }
 
+// stageArchiveOutage reports on ArchiveReady that the write-ahead log of the
+// server stopped reaching the bucket. The guard on the archive blocks on the
+// same outage, and ocf reports that as Blocked, which reads the same as the
+// wait for the first base backup. This names what CloudNativePG reports and
+// what the archive still holds.
+func stageArchiveOutage(server *v1.DatabaseServer, outage *components.ArchiveOutage) {
+	if outage == nil {
+		return
+	}
+
+	stageFailure(
+		server, v1.ConditionArchiveReady, v1.ReasonArchiveFailing,
+		components.ArchiveFailingMessage(outage),
+	)
+}
+
 // stageTakenNames reports every derived name of the server that somebody else
 // holds, on the condition of the component that writes that object.
 func stageTakenNames(server *v1.DatabaseServer, resolved resolvedSpec) {
@@ -1529,17 +1640,17 @@ func stageTakenNames(server *v1.DatabaseServer, resolved resolvedSpec) {
 
 	for _, held := range taken {
 		if held.message != "" {
-			stageTaken(server, held.conditionType, held.reason, held.message)
+			stageFailure(server, held.conditionType, held.reason, held.message)
 		}
 	}
 }
 
-// stageTaken reports an object of a derived name that another owner holds.
-// ocf blocks the apply and reports Blocked with "controlled by <Kind> <name>",
-// which reads the same as the wait for the superuser Secret and carries no
-// remedy. This names the holder and what to do about it, which is what the
-// user acts on.
-func stageTaken(server *v1.DatabaseServer, conditionType, reason, message string) {
+// stageFailure puts a reason and a remedy on the condition of one component,
+// over whatever ocf reported there. ocf answers a blocked apply with Blocked
+// and the object it stopped at, which carries no remedy and reads the same as
+// every other wait. The callers here name what happened and what to do about
+// it, which is what the user acts on.
+func stageFailure(server *v1.DatabaseServer, conditionType, reason, message string) {
 	meta.SetStatusCondition(&server.Status.Conditions, metav1.Condition{
 		Type:               conditionType,
 		Status:             metav1.ConditionFalse,
@@ -1588,10 +1699,17 @@ func advanceArchiveFloor(server *v1.DatabaseServer, merged v1.DatabaseServerSpec
 // stays outside every interval and no restore can ask for a point in it.
 //
 // A spec that moves the archive to another location closes the open record the
-// same way, at the moment it moves. Each record therefore names one location,
-// and a restore of that interval knows where to read it. With no record open,
-// the move is recorded as status.archive.boundary instead, and the next record
-// opens after it.
+// same way, at the moment the archive arrives there. Each record therefore
+// names one location, and a restore of that interval knows where to read it.
+// With no record open, the move is recorded as status.archive.boundary
+// instead, and the next record opens after it.
+//
+// applied says that the ObjectStore of the new location reached the API
+// server. Until it does, the plugin still writes to the location the server
+// came from, so the record stays open and no boundary is written: a base
+// backup that completes in that window belongs to the archive that is still
+// being written. The move is found again on every reconcile until one of them
+// applies it.
 //
 // A recovery closes the record of the cluster it replaces itself, at the
 // moment the contract moves. What is left here is the record of an archive
@@ -1604,6 +1722,7 @@ func reconcileArchiveHistory(
 	archiveStart *metav1.Time,
 	location string,
 	moved bool,
+	applied bool,
 	now metav1.Time,
 ) {
 	if merged.Archive == nil {
@@ -1629,6 +1748,10 @@ func reconcileArchiveHistory(
 	}
 
 	if moved {
+		if !applied {
+			return
+		}
+
 		// The interval of the location the server leaves ends here, at the
 		// same now that archiveBoundary already gave the guard. The record of
 		// the new location opens on a later look, once a base backup of it has
@@ -1681,6 +1804,40 @@ func markArchiveBoundary(server *v1.DatabaseServer, now metav1.Time, location, b
 		Location:         location,
 		ObjectStorageRef: bucket,
 	}
+}
+
+// markArchiveOutage records on the open archive record the point from which
+// the archive can be missing write-ahead log, and clears the point once the
+// uploads run again. The plugin uploads the segments it held back then, so
+// every point of the interval can be reached again.
+//
+// The mark states what the archive the server writes now is missing, and it is
+// never history. A record that was closed while the uploads were failing loses
+// it here, whichever of the closers ended it.
+func markArchiveOutage(server *v1.DatabaseServer, outage *components.ArchiveOutage) {
+	if server.Status.Archive == nil {
+		return
+	}
+
+	for i := range server.Status.Archive.History {
+		record := &server.Status.Archive.History[i]
+		if record.To != nil {
+			record.UnverifiedFrom = nil
+		}
+	}
+
+	open := openArchiveRecord(server)
+	if open == nil {
+		return
+	}
+
+	if outage == nil {
+		open.UnverifiedFrom = nil
+
+		return
+	}
+
+	open.UnverifiedFrom = outage.Since.DeepCopy()
 }
 
 // openArchiveRecord returns the archive the server writes now, or nil when it

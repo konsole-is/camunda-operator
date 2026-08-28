@@ -18,6 +18,7 @@ package databaseserver
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -25,12 +26,14 @@ import (
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/konsole-is/camunda-operator/internal/testenv"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
 )
 
 // timeout and interval bound the Eventually polling of every envtest assertion.
@@ -47,7 +50,61 @@ var (
 	// backupLists counts the base backup reads of the reconciler, so a spec
 	// can show that a server without an archive pays for none.
 	backupLists *backupListCounter
+
+	// objectStoreApplies is the client the components apply through, with a
+	// switch that refuses the ObjectStore of one namespace.
+	objectStoreApplies *objectStoreApplyBlocker
 )
+
+// objectStoreApplyBlocker refuses the apply of a Barman Cloud ObjectStore in
+// the namespaces a spec named, and passes every other write on. It is how a
+// spec shows what the server records while the archive is still in the place
+// it was: a rejected apply leaves the ObjectStore describing the bucket the
+// server came from.
+type objectStoreApplyBlocker struct {
+	client.Client
+
+	mu       sync.Mutex
+	refusing map[string]bool
+}
+
+// Patch refuses the ObjectStore of a namespace the spec named.
+func (c *objectStoreApplyBlocker) Patch(
+	ctx context.Context,
+	obj client.Object,
+	patch client.Patch,
+	opts ...client.PatchOption,
+) error {
+	if _, ok := obj.(*barmanobjectstore.ObjectStore); ok && c.refuses(obj.GetNamespace()) {
+		return apierrors.NewInternalError(errors.New("the spec refuses this ObjectStore apply"))
+	}
+
+	return c.Client.Patch(ctx, obj, patch, opts...)
+}
+
+// refuse makes every later ObjectStore apply in namespace fail.
+func (c *objectStoreApplyBlocker) refuse(namespace string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.refusing[namespace] = true
+}
+
+// allow lets the ObjectStore applies of namespace through again.
+func (c *objectStoreApplyBlocker) allow(namespace string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	delete(c.refusing, namespace)
+}
+
+// refuses reports whether the ObjectStore applies of namespace fail.
+func (c *objectStoreApplyBlocker) refuses(namespace string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.refusing[namespace]
+}
 
 // backupListCounter is the client of the manager with a counter over the
 // CloudNativePG backup reads, keyed by the namespace each read is scoped to.
@@ -94,10 +151,22 @@ var _ = BeforeSuite(func() {
 	env = testenv.Start(func(mgr ctrl.Manager) error {
 		backupLists = &backupListCounter{Client: mgr.GetClient(), counts: map[string]int{}}
 
+		// Uncached, as SetupWithManager builds it: see the componentClient
+		// field. The spec keeps a handle on it to refuse one apply.
+		applies, err := client.New(mgr.GetConfig(), client.Options{
+			Scheme: mgr.GetScheme(),
+			Mapper: mgr.GetRESTMapper(),
+		})
+		if err != nil {
+			return err
+		}
+		objectStoreApplies = &objectStoreApplyBlocker{Client: applies, refusing: map[string]bool{}}
+
 		return (&DatabaseServerReconciler{
-			Client:    backupLists,
-			APIReader: mgr.GetAPIReader(),
-			Scheme:    mgr.GetScheme(),
+			Client:          backupLists,
+			APIReader:       mgr.GetAPIReader(),
+			Scheme:          mgr.GetScheme(),
+			componentClient: objectStoreApplies,
 			// Short, so the specs exercise the requeue that waits on the
 			// superuser Secret inside their timeout.
 			RetryInterval: 500 * time.Millisecond,

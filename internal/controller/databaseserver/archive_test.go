@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 )
 
 const (
@@ -270,7 +271,7 @@ func TestReconcileArchiveHistoryRecordsAMoveAtTheGivenInstant(t *testing.T) {
 
 	// A base backup that completed before the ObjectStore moved. The move wins
 	// over it: the component is never consulted, which a nil one shows.
-	reconcileArchiveHistory(server, merged, nil, &started, locationB, true, appliedAt)
+	reconcileArchiveHistory(server, merged, nil, &started, locationB, true, true, appliedAt)
 
 	history := server.Status.Archive.History
 	require.Len(t, history, 1, "a move opens no record")
@@ -282,6 +283,110 @@ func TestReconcileArchiveHistoryRecordsAMoveAtTheGivenInstant(t *testing.T) {
 	assert.True(t, boundary.At.Equal(&appliedAt), boundary.At)
 	assert.Equal(t, locationB, boundary.Location)
 	assert.Equal(t, "bucket", boundary.ObjectStorageRef)
+}
+
+// The ObjectStore of the new location is what moves the archive. Until that
+// apply lands, the objects still go where they went, so the record stays open
+// and no boundary is written. The move is found again on the next reconcile.
+func TestReconcileArchiveHistoryHoldsAMoveTheApplyDidNotReach(t *testing.T) {
+	t.Parallel()
+
+	now := metav1.NewTime(archiveOpenedAt.Add(2 * time.Hour))
+	started := metav1.NewTime(archiveOpenedAt.Add(time.Hour))
+	merged := v1.DatabaseServerSpec{
+		Archive: &v1.DatabaseServerArchiveSpec{ObjectStorageRef: "bucket", RetentionPeriodDays: 30},
+	}
+
+	server := archivingServerWith([]v1.ArchiveRecord{archiveRecord(nil)}, nil)
+
+	reconcileArchiveHistory(server, merged, nil, &started, locationB, true, false, now)
+
+	history := server.Status.Archive.History
+	require.Len(t, history, 1)
+	assert.Nil(t, history[0].To, "the archive is where it was, so its record is still open")
+	assert.Nil(t, server.Status.Archive.Boundary)
+}
+
+// ArchiveReady reports the uploads of the archive the server writes now. A
+// suspended server writes no write-ahead log, and a server that asks for no
+// archive writes none either, so what CloudNativePG left on its cluster
+// describes neither of them. An outage inside the grace period is reported by
+// nobody, and it asks for one look, at the moment that period ends.
+func TestReportedAndPendingArchiveOutage(t *testing.T) {
+	t.Parallel()
+
+	archiving := v1.DatabaseServerSpec{
+		Archive: &v1.DatabaseServerArchiveSpec{ObjectStorageRef: "bucket", RetentionPeriodDays: 30},
+	}
+	suspended := v1.DatabaseServerSpec{Archive: archiving.Archive, Suspend: true}
+	stoppedAt := metav1.NewTime(archiveOpenedAt.Time)
+	confirmed := &components.ArchiveOutage{
+		Reason: "ContinuousArchivingFailing", Since: stoppedAt, Confirmed: true,
+	}
+	held := &components.ArchiveOutage{Reason: "ContinuousArchivingFailing", Since: stoppedAt}
+
+	assert.Same(t, confirmed, reportedArchiveOutage(confirmed, archiving))
+	assert.Nil(t, reportedArchiveOutage(held, archiving))
+	assert.Nil(t, reportedArchiveOutage(confirmed, suspended))
+	assert.Nil(t, reportedArchiveOutage(confirmed, v1.DatabaseServerSpec{}))
+	assert.Nil(t, reportedArchiveOutage(nil, archiving))
+
+	minuteIn := stoppedAt.Add(time.Minute)
+	assert.Equal(
+		t,
+		components.ArchiveOutageGracePeriod-time.Minute,
+		pendingArchiveOutageWait(held, archiving, minuteIn),
+	)
+
+	// A deadline that passed while the reconcile ran is due at once, not never.
+	past := stoppedAt.Add(components.ArchiveOutageGracePeriod + time.Second)
+	assert.Equal(t, time.Millisecond, pendingArchiveOutageWait(held, archiving, past))
+
+	assert.Zero(t, pendingArchiveOutageWait(confirmed, archiving, minuteIn))
+	assert.Zero(t, pendingArchiveOutageWait(held, suspended, minuteIn))
+	assert.Zero(t, pendingArchiveOutageWait(held, v1.DatabaseServerSpec{}, minuteIn))
+	assert.Zero(t, pendingArchiveOutageWait(nil, archiving, minuteIn))
+}
+
+// unverifiedFrom says what the archive the server writes now is missing. The
+// plugin fills the gap once the uploads run again, so a record that closed
+// while they were failing must not keep the mark and turn it into history. The
+// closers of a record run before this one in the same reconcile.
+func TestMarkArchiveOutageClearsTheMarkOffClosedRecords(t *testing.T) {
+	t.Parallel()
+
+	closedAt := metav1.NewTime(archiveOpenedAt.Add(time.Hour))
+	stoppedAt := metav1.NewTime(archiveOpenedAt.Add(30 * time.Minute))
+	outage := &components.ArchiveOutage{Since: stoppedAt, Confirmed: true}
+
+	closed := archiveRecord(&closedAt)
+	closed.UnverifiedFrom = &stoppedAt
+	server := archivingServerWith([]v1.ArchiveRecord{closed}, nil)
+
+	// The drop of spec.archive closes the record and reports on no outage.
+	markArchiveOutage(server, nil)
+	assert.Nil(t, server.Status.Archive.History[0].UnverifiedFrom)
+
+	// A record that closes while the uploads are still failing loses it too.
+	// The outage belongs to the archive the server writes now, and there is
+	// none.
+	closed = archiveRecord(&closedAt)
+	closed.UnverifiedFrom = &stoppedAt
+	server = archivingServerWith([]v1.ArchiveRecord{closed}, nil)
+
+	markArchiveOutage(server, outage)
+	assert.Nil(t, server.Status.Archive.History[0].UnverifiedFrom)
+
+	// The open record still takes it, and the closed one beside it does not.
+	server = archivingServerWith(
+		[]v1.ArchiveRecord{archiveRecord(&closedAt), archiveRecord(nil)}, nil,
+	)
+	server.Status.Archive.History[0].UnverifiedFrom = &stoppedAt
+
+	markArchiveOutage(server, outage)
+	assert.Nil(t, server.Status.Archive.History[0].UnverifiedFrom)
+	require.NotNil(t, server.Status.Archive.History[1].UnverifiedFrom)
+	assert.True(t, server.Status.Archive.History[1].UnverifiedFrom.Equal(&stoppedAt))
 }
 
 // The floor is the point the highest retention period ever in force pruned

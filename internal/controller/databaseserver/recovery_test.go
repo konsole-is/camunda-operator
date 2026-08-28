@@ -25,6 +25,7 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -314,7 +315,7 @@ func reconciledServer(server *v1.DatabaseServer) *v1.DatabaseServer {
 }
 
 // expectLastRecovery waits until the contract publishes an outcome with the
-// given result, and returns it.
+// given result and the server records it, and returns the outcome.
 func expectLastRecovery(server *v1.DatabaseServer, result v1.RecoveryResult) *v1.RecoveryOutcome {
 	GinkgoHelper()
 
@@ -323,6 +324,14 @@ func expectLastRecovery(server *v1.DatabaseServer, result v1.RecoveryResult) *v1
 		g.Expect(contract.Spec.PITR).NotTo(BeNil())
 		g.Expect(contract.Spec.PITR.LastRecovery).NotTo(BeNil())
 		g.Expect(contract.Spec.PITR.LastRecovery.Result).To(Equal(result))
+
+		// The answer reaches the contract before it reaches the server: the
+		// operator publishes it first, so a status write that is lost leaves
+		// the answer published. Every caller reads status.recovery next, so
+		// the record is waited on here.
+		recorded := reconciledServer(server).Status.Recovery
+		g.Expect(recorded).NotTo(BeNil())
+		g.Expect(recorded.RequestID).To(Equal(contract.Spec.PITR.LastRecovery.RequestID))
 	}, timeout, interval).Should(Succeed())
 
 	return publishedContract(server).Spec.PITR.LastRecovery
@@ -988,9 +997,16 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(expectLastRecovery(server, v1.RecoveryResultFailed).Message).
 			To(ContainSubstring(cnpgv1.PhaseUnrecoverable))
 
-		// The cluster of the refused recovery stays gone. A look that read the
-		// record as unanswered builds it again under the same name.
+		// The refusal is answered before the cluster it abandons goes: the
+		// cleanup runs on the look that reads the answer back, not on the one
+		// that wrote it. So the removal is waited for, not assumed.
 		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, key, &cnpgv1.Cluster{})
+		}, timeout, interval).ShouldNot(Succeed())
+
+		// It stays gone. A look that read the record as unanswered builds it
+		// again under the same name.
 		Consistently(func() error {
 			return k8sClient.Get(ctx, key, &cnpgv1.Cluster{})
 		}, "2s", interval).ShouldNot(Succeed())
@@ -1203,15 +1219,23 @@ var _ = Describe("DatabaseServer recovery", func() {
 		// The server goes back to the previous cluster in the same pass that
 		// abandons the rollback, so that pass is the one that has to read the
 		// name it goes back to.
-		By("removing the cluster the rollback built")
-		Expect(k8sClient.Delete(ctx, &cnpgv1.Cluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "camunda-r1", Namespace: server.Namespace},
-		})).To(Succeed())
-
+		//
+		// The cluster component applies a cluster of that name on every look
+		// once status.cluster names it, and a delete that lands inside a look
+		// is put back by the same look. Deleting on every poll leaves the read
+		// that abandons the rollback the one that wins.
+		//
 		// The answer is read off the record, not off the contract. The server
 		// goes back to a name it does not own, and it withdraws the contract
 		// with everything else that names that cluster.
+		By("removing the cluster the rollback built until the server reads it gone")
+		recovered := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}
 		Eventually(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			if err := k8sClient.Get(ctx, recovered, &cluster); err == nil {
+				g.Expect(k8sClient.Delete(ctx, &cluster)).To(Succeed())
+			}
+
 			recorded := reconciledServer(server).Status.Recovery
 			g.Expect(recorded).NotTo(BeNil())
 			g.Expect(recorded.CompletedAt).NotTo(BeNil())
@@ -1896,25 +1920,51 @@ var _ = Describe("DatabaseServer recovery", func() {
 		)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, &superuser)).To(Succeed())
 
+		strangerHost := "camunda-r9-rw." + server.Namespace + ".svc"
+
+		// Nothing tells the operator that the superuser Secret went:
+		// CloudNativePG owns that Secret, and no watch of this controller maps
+		// it. The write below is what wakes the next look. A look that read
+		// the Secret before it went can still publish the endpoint of this
+		// server over that write, so the endpoint is written until
+		// ContractReady reports the Secret gone. Every look after that one
+		// blocks on the same Secret.
 		Eventually(func(g Gomega) {
 			var contract v1.DatabaseServerConfig
 			g.Expect(k8sClient.Get(ctx, contractKey(server), &contract)).To(Succeed())
-			contract.Spec.Host = "camunda-r9-rw." + server.Namespace + ".svc"
-			g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
+			if contract.Spec.Host != strangerHost {
+				contract.Spec.Host = strangerHost
+				g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
+			}
+
+			ready := conditionOf(server, v1.ConditionContractReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse), ready.Message)
+			g.Expect(publishedContract(server).Spec.Host).To(Equal(strangerHost))
 		}, timeout, interval).Should(Succeed())
 
 		Consistently(func() string {
 			return publishedContract(server).Spec.Host
-		}, "1s", interval).Should(Equal("camunda-r9-rw." + server.Namespace + ".svc"))
+		}, "1s", interval).Should(Equal(strangerHost))
 
 		// The endpoint is read back only on a look that finds the record
 		// missing, so the record goes last, once that endpoint is the one
-		// every look reads.
+		// every look reads. A look that was already running writes the status
+		// it holds back over this one, record and all, so the record is
+		// removed until the refusal that follows it is recorded.
+		//
+		// The refusal is its own reason. A reader of kubectl describe learns
+		// that two servers are writing one contract, which is not what a
+		// refused rollback means.
 		Eventually(func(g Gomega) {
 			var latest v1.DatabaseServer
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
-			latest.Status.Recovery = nil
-			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+			if latest.Status.Recovery != nil {
+				latest.Status.Recovery = nil
+				g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+			}
+
+			g.Expect(recoveryEventReasons(server)).To(ContainElement("RecoveryClusterNotOwned"))
 		}, timeout, interval).Should(Succeed())
 
 		Consistently(func(g Gomega) {
@@ -1925,13 +1975,6 @@ var _ = Describe("DatabaseServer recovery", func() {
 				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
 			)).To(Succeed())
 		}, "3s", interval).Should(Succeed())
-
-		// The refusal is its own reason. A reader of kubectl describe learns
-		// that two servers are writing one contract, which is not what a
-		// refused rollback means.
-		Eventually(func() []string {
-			return recoveryEventReasons(server)
-		}, timeout, interval).Should(ContainElement("RecoveryClusterNotOwned"))
 	})
 
 	It("answers a request while the server is suspended and its bucket is gone", func() {
@@ -1946,7 +1989,15 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		suspend(server)
 		hibernate(server)
-		expectCondition(server, v1.ConditionClusterReady, metav1.ConditionTrue)
+
+		// The reason, not the status: a suspension that is still running
+		// reports PendingSuspension or Suspending, and both of those are True
+		// as well. The hold below is entered on the suspension the server
+		// reached, so a bucket removed before it reads as a plain dangling
+		// reference and the request is never answered.
+		expectConditionReason(
+			server, v1.ConditionClusterReady, metav1.ConditionTrue, string(component.Suspended),
+		)
 
 		// A suspended server whose bucket stops resolving holds its whole
 		// reconcile. The answer to a request has to come out from in front of
