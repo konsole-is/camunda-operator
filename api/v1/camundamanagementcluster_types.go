@@ -71,6 +71,14 @@ const (
 	// OptimizeCallbacksReady. The message carries what the API server or
 	// Keycloak answered. The operator tries again.
 	ReasonWriteFailed = "WriteFailed"
+	// ReasonStepFailed means that a step of the reconcile did not finish. A
+	// step is work that the management plane does outside its workloads,
+	// almost always a call to the Kubernetes API. The message names the step
+	// and carries what went wrong. Ready is False for that pass even when
+	// every workload is healthy, because the operator did not get to the end
+	// of its work. Every other condition keeps the value it last had. The
+	// operator tries again.
+	ReasonStepFailed = "StepFailed"
 	// ReasonUnsupportedVersion means that a version in the spec is outside
 	// the range that the operator supports: below the floor of its component,
 	// or, for the Keycloak that the operator runs, at or above the ceiling.

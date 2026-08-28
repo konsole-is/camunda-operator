@@ -18,6 +18,8 @@ package camundamanagementcluster
 
 import (
 	"context"
+	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,6 +31,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
@@ -45,7 +48,46 @@ var (
 	env       *testenv.Env
 	ctx       context.Context
 	k8sClient client.Client
+	// clusterListFault sits in front of the APIReader of the reconciler that
+	// the manager runs, so a spec can refuse the CamundaCluster list of a
+	// reconcile step and read what the controller reports.
+	clusterListFault = &listFault{}
 )
+
+// errClusterListRefused is what the armed fault answers.
+var errClusterListRefused = errors.New("the fault reader refused the CamundaCluster list")
+
+// listFault is a client.Reader that refuses every CamundaCluster list while it
+// is armed and passes every other call through.
+type listFault struct {
+	client.Reader
+	armed atomic.Bool
+}
+
+// wrap puts the fault in front of reader and returns it.
+func (f *listFault) wrap(reader client.Reader) client.Reader {
+	f.Reader = reader
+
+	return f
+}
+
+// arm refuses every CamundaCluster list until the returned function runs. The
+// caller defers that function, so a failed assertion cannot leave the rest of
+// the suite with a refused list.
+func (f *listFault) arm() func() {
+	f.armed.Store(true)
+
+	return func() { f.armed.Store(false) }
+}
+
+// List refuses a CamundaCluster list while the fault is armed.
+func (f *listFault) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if _, ok := list.(*v1.CamundaClusterList); ok && f.armed.Load() {
+		return errClusterListRefused
+	}
+
+	return f.Reader.List(ctx, list, opts...)
+}
 
 func TestCamundaManagementClusterController(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -82,7 +124,7 @@ var _ = BeforeSuite(func() {
 			return err
 		}
 
-		r := New(mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme())
+		r := New(mgr.GetClient(), clusterListFault.wrap(mgr.GetAPIReader()), mgr.GetScheme())
 		// A refused user API is called again soon, so that a spec can watch
 		// the retry, and a cluster that holds the user is read again soon, so
 		// that a spec can watch the repair.
