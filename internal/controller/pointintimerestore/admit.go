@@ -530,29 +530,15 @@ func pitrAvailable(server *v1.DatabaseServerConfig, want time.Time) *conditions.
 // instance, not one logical database, so anything else on it is rolled back
 // too.
 //
-// The server is the instance, not the contract that describes it. The rule
-// therefore reads the Database resources of every namespace whose contract
-// reports the system identifier of this one. Two contracts that name one
-// instance under different hosts are one server here, and a Database whose
-// contract reports no identity for the spec it has now cannot be placed on
-// either side.
+// The server is the instance, not the contract that describes it. A Database
+// holds the claim Lease of every logical database it runs, and the key of a
+// claim names the instance, so the rule places a Database on the instances of
+// its claims and never on the server that its spec asks for. Two contracts
+// that name one instance under different hosts are one server here.
 //
 // The one Database that remains must hold the logical database of dbConfig. A
 // hand-written DatabaseConfig can name a database that no Database resource
 // declares, and the single claimant on the instance is then somebody else's.
-// contractIdentity is what one listed DatabaseServerConfig says about the
-// PostgreSQL instance behind it.
-type contractIdentity struct {
-	// systemIdentifier is the instance that the last probe reached. It is
-	// empty until the contract reaches its server.
-	systemIdentifier string
-	// probedForSpec is false while the record describes an endpoint or an
-	// admin user that the spec of the contract no longer names. The identity
-	// then belongs to the server before that change, and so does the claim
-	// that a Database recorded against it.
-	probedForSpec bool
-}
-
 func (r *Reconciler) dedicatedServer(
 	ctx context.Context,
 	server *v1.DatabaseServerConfig,
@@ -563,42 +549,42 @@ func (r *Reconciler) dedicatedServer(
 	// Both reads are live and unindexed, like every other read of this
 	// controller. A cached list can miss the Database that a sibling cluster
 	// created a moment ago, and the rule exists to protect that sibling. The
-	// contracts are read as one list rather than one Get per Database, so the
+	// claims are read as one list rather than one Get per Database, so the
 	// cost of the rule does not grow with the number of claimants.
 	var databases v1.DatabaseList
 	if err := r.APIReader.List(ctx, &databases); err != nil {
 		return nil, fmt.Errorf("listing the databases of DatabaseServerConfig %s: %w", key, err)
 	}
 
-	var contracts v1.DatabaseServerConfigList
-	if err := r.APIReader.List(ctx, &contracts); err != nil {
-		return nil, fmt.Errorf("listing the database server contracts: %w", err)
+	claims, err := databasecomponents.ListClaims(ctx, r.APIReader, r.ClaimNamespace)
+	if err != nil {
+		return nil, fmt.Errorf("listing the claims of DatabaseServerConfig %s: %w", key, err)
 	}
 
-	identities := make(map[types.NamespacedName]contractIdentity, len(contracts.Items))
-	for i := range contracts.Items {
-		contract := &contracts.Items[i]
-		identities[client.ObjectKeyFromObject(contract)] = contractIdentity{
-			systemIdentifier: contract.Status.SystemIdentifier,
-			probedForSpec:    contract.ProbedForCurrentSpec(),
-		}
+	held := make(map[databasecomponents.ClaimHolder][]string, len(claims))
+	for _, claim := range claims {
+		held[claim.Holder] = append(held[claim.Holder], claim.Key)
 	}
 
 	var placed []*v1.Database
-	var unplaced []string
+	var unclaimed []string
 	for i := range databases.Items {
 		database := &databases.Items[i]
-		switch databaseIdentity(database, identities) {
-		case server.Status.SystemIdentifier:
+		keys := held[databasecomponents.ClaimHolder{
+			NamespacedName: client.ObjectKeyFromObject(database),
+			UID:            database.UID,
+		}]
+		switch {
+		case len(keys) == 0:
+			unclaimed = append(unclaimed, database.Namespace+"/"+database.Name)
+		case slices.ContainsFunc(keys, onInstance(server.Status.SystemIdentifier)):
 			placed = append(placed, database)
-		case "":
-			unplaced = append(unplaced, database.Namespace+"/"+database.Name)
 		}
 	}
 	slices.SortFunc(placed, func(a, b *v1.Database) int {
 		return strings.Compare(a.Namespace+"/"+a.Name, b.Namespace+"/"+b.Name)
 	})
-	slices.Sort(unplaced)
+	slices.Sort(unclaimed)
 
 	if len(placed) > 1 {
 		names := make([]string, 0, len(placed))
@@ -617,32 +603,32 @@ func (r *Reconciler) dedicatedServer(
 		}, nil
 	}
 
-	// A Database whose contract publishes no identity for the spec it has now
-	// can be on this server or on another one, and nothing here can tell
-	// which. Recovery rolls back the whole server, so a database that cannot
-	// be ruled out is a database this restore can destroy.
-	if len(unplaced) > 0 {
+	// A Database that holds no claim can be on this server or on another one.
+	// It records the logical database it wants before it takes the claim of
+	// it, and a claim that somebody deleted by hand leaves the database it
+	// named in place. Recovery rolls back the whole server, so a database
+	// that cannot be ruled out is a database this restore can erase.
+	if len(unclaimed) > 0 {
 		return logicalbackup.InvalidReference(
-			"the DatabaseServerConfig of the Database resources %s publishes no system identifier "+
-				"that the operator can trust for the endpoint and the credentials its spec names "+
-				"now, so the operator cannot tell whether they live on the server that %s "+
-				"describes. Point-in-time recovery rolls back the whole server. Wait until every "+
-				"DatabaseServerConfig is probed for the spec it has now, or remove the Database "+
-				"resources whose server no longer exists",
-			strings.Join(unplaced, ", "), key,
+			"the Database resources %s claim no logical database, so the operator cannot tell "+
+				"whether they use the server that %s describes. A Database claims the database "+
+				"it runs when it reaches its server. Point-in-time recovery rolls back the whole "+
+				"server. Wait until every Database reports Ready, or remove the ones whose "+
+				"server no longer exists",
+			strings.Join(unclaimed, ", "), key,
 		), nil
 	}
 
-	// Zero is not one. A server that no Database resource names carries no
+	// Zero is not one. A server that no Database resource claims carries no
 	// evidence at all: the operator cannot tell whether it holds one database
 	// or ten, and point-in-time recovery rolls back all of them. On a path
 	// that deletes volumes, the absence of evidence holds the restore.
 	if len(placed) == 0 {
 		return logicalbackup.InvalidReference(
-			"no Database resource resolves to the server that DatabaseServerConfig %s describes, "+
-				"so the operator cannot tell which databases the server holds. Point-in-time "+
-				"recovery rolls back the whole server. Declare the database of the cluster as a "+
-				"Database resource on a server of its own",
+			"no Database resource claims a logical database on the server that "+
+				"DatabaseServerConfig %s describes, so the operator cannot tell which databases "+
+				"the server holds. Point-in-time recovery rolls back the whole server. Declare "+
+				"the database of the cluster as a Database resource on a server of its own",
 			key,
 		), nil
 	}
@@ -667,24 +653,12 @@ func (r *Reconciler) dedicatedServer(
 	return nil, nil
 }
 
-// databaseIdentity returns the PostgreSQL instance that database resolves to,
-// or the empty string when nothing places it. A listed contract answers, and
-// only while its record describes the spec it has now: a record of the server
-// before a move places the database on that server, and the claim in
-// status.collisionKey was recorded against the same record. A contract that
-// no longer exists falls back to that claim, which the Database controller
-// recorded the last time it resolved the server and never clears.
-func databaseIdentity(database *v1.Database, identities map[types.NamespacedName]contractIdentity) string {
-	ref := types.NamespacedName{Namespace: database.Namespace, Name: database.Spec.ServerRef}
-	contract, listed := identities[ref]
-	if !listed {
-		return databasecomponents.CollisionIdentity(database.Status.CollisionKey)
+// onInstance reports whether a claim key names the PostgreSQL instance that
+// identifier names.
+func onInstance(identifier string) func(key string) bool {
+	return func(key string) bool {
+		return databasecomponents.CollisionIdentity(key) == identifier
 	}
-	if !contract.probedForSpec {
-		return ""
-	}
-
-	return contract.systemIdentifier
 }
 
 // credentials reads the application credentials of the logical database. They

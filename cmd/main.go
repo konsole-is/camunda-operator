@@ -370,7 +370,8 @@ func main() {
 		os.Exit(1)
 	}
 	if err := pointintimerestore.New(
-		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), pointintimerestore.Options{},
+		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), operatorNamespace,
+		pointintimerestore.Options{},
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "PointInTimeRestore")
 		os.Exit(1)

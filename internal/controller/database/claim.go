@@ -18,15 +18,12 @@ package database
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -34,7 +31,6 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/database"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
-	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // ClaimFinalizer holds a Database that can own a claim Lease. The reconcile
@@ -43,29 +39,6 @@ import (
 // releases the Leases under it. A Database that took no claim releases
 // nothing and goes away at once.
 const ClaimFinalizer = "core.camunda.io/database-claim"
-
-// claimLeasePrefix starts the name of every claim Lease.
-const claimLeasePrefix = "camunda-database-"
-
-// claimComponent is the component label value of a claim Lease.
-const claimComponent = "database-claim"
-
-// maxHolderIdentityLength bounds the holderIdentity field of a claim Lease.
-// The API server of Kubernetes 1.36 accepts a longer value. The field is a
-// display form for a reader, and a documented bound keeps it readable and
-// safe against a stricter server. The exact identity lives in the
-// annotations, which every decision about ownership reads.
-const maxHolderIdentityLength = 128
-
-// The annotations of a claim Lease name the Database that holds it, and the
-// claim it holds. Every decision about ownership reads them. A Lease without
-// all three holder annotations is not one of ours.
-const (
-	claimHolderNamespaceAnnotation = "camunda.io/database-claim-holder-namespace"
-	claimHolderNameAnnotation      = "camunda.io/database-claim-holder-name"
-	claimHolderUIDAnnotation       = "camunda.io/database-claim-holder-uid"
-	claimKeyAnnotation             = "camunda.io/database-claim-key"
-)
 
 // databaseCollisionField indexes Database CRs by the claim they recorded in
 // status.collisionKey. The collision rule can then list every claimant of one
@@ -95,13 +68,6 @@ var errClaimLost = errors.New("another Database holds the claim")
 // older.
 var errClaimNotFirst = errors.New("another Database goes first for the claim")
 
-// claimHolder is the Database that a claim Lease records. The UID tells it
-// apart from a later Database of the same name.
-type claimHolder struct {
-	types.NamespacedName
-	UID types.UID
-}
-
 // claim takes the claim on the logical database that key names. The Lease
 // decides it, and the cached rule of checkCollision never overrules the
 // Lease. A Lease that exists names the holder, and the rule answers from an
@@ -126,7 +92,7 @@ func (r *DatabaseReconciler) claim(ctx context.Context, database *v1.Database, k
 		return r.takeClaim(ctx, database, key)
 	}
 
-	if holder, ours := holderOf(lease); ours && holder.UID == database.UID {
+	if holder, ours := components.ClaimHolderOf(lease); ours && holder.UID == database.UID {
 		return nil
 	}
 
@@ -232,11 +198,11 @@ func (r *DatabaseReconciler) takeClaim(ctx context.Context, database *v1.Databas
 // without a takeover, and the error names it.
 func (r *DatabaseReconciler) createClaim(
 	ctx context.Context, database *v1.Database, key string,
-) (*claimHolder, error) {
+) (*components.ClaimHolder, error) {
 	// The Lease can go away between the create and the read, when a release
 	// or a takeover races this claimant. The second pass then creates it.
 	for range 2 {
-		err := r.Create(ctx, newClaimLease(r.ClaimNamespace, key, database))
+		err := r.Create(ctx, components.NewClaimLease(r.ClaimNamespace, key, database))
 		if err == nil {
 			return nil, nil
 		}
@@ -252,7 +218,7 @@ func (r *DatabaseReconciler) createClaim(
 			continue
 		}
 
-		holder, ours := holderOf(lease)
+		holder, ours := components.ClaimHolderOf(lease)
 		if !ours {
 			return nil, fmt.Errorf("%w: %w", errClaimLost, &conditions.PreCheckFailure{
 				Reason: v1.ReasonInvalidReference,
@@ -283,7 +249,7 @@ func (r *DatabaseReconciler) createClaim(
 // an older one. The logical database it bootstrapped is in use, and its
 // passwords are the ones the published Secrets carry. To hand it on would
 // reset those passwords under a running cluster.
-func (r *DatabaseReconciler) holderKeeps(ctx context.Context, holder claimHolder) (bool, error) {
+func (r *DatabaseReconciler) holderKeeps(ctx context.Context, holder components.ClaimHolder) (bool, error) {
 	var other v1.Database
 	if err := r.APIReader.Get(ctx, holder.NamespacedName, &other); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -332,13 +298,13 @@ func (r *DatabaseReconciler) finalize(ctx context.Context, database *v1.Database
 // the claims of this Database alone. The holder annotations then tell a Lease
 // of a later Database of the same name apart from one of this Database.
 func (r *DatabaseReconciler) releaseHeldClaims(
-	ctx context.Context, holder claimHolder, keep string,
+	ctx context.Context, holder components.ClaimHolder, keep string,
 ) error {
 	var leases coordinationv1.LeaseList
 	err := r.APIReader.List(
 		ctx, &leases,
 		client.InNamespace(r.ClaimNamespace),
-		client.MatchingLabels(labels.Managed(labels.Database(holder.Name), claimComponent)),
+		client.MatchingLabels(components.ClaimLeaseLabels(holder.Name)),
 	)
 	if err != nil {
 		return fmt.Errorf("listing the claim Leases of %s: %w", holder.NamespacedName, err)
@@ -346,7 +312,7 @@ func (r *DatabaseReconciler) releaseHeldClaims(
 
 	kept := ""
 	if keep != "" {
-		kept = claimLeaseName(keep)
+		kept = components.ClaimLeaseName(keep)
 	}
 
 	for i := range leases.Items {
@@ -354,7 +320,7 @@ func (r *DatabaseReconciler) releaseHeldClaims(
 		if lease.Name == kept {
 			continue
 		}
-		if recorded, ours := holderOf(lease); !ours || recorded != holder {
+		if recorded, ours := components.ClaimHolderOf(lease); !ours || recorded != holder {
 			continue
 		}
 		if err := r.deleteClaim(ctx, lease); err != nil {
@@ -368,7 +334,7 @@ func (r *DatabaseReconciler) releaseHeldClaims(
 // dropClaim deletes the claim Lease of key while its annotations still name
 // holder. A Lease that is gone, or that another Database holds, is left
 // alone.
-func (r *DatabaseReconciler) dropClaim(ctx context.Context, key string, holder claimHolder) error {
+func (r *DatabaseReconciler) dropClaim(ctx context.Context, key string, holder components.ClaimHolder) error {
 	if key == "" {
 		return nil
 	}
@@ -378,7 +344,7 @@ func (r *DatabaseReconciler) dropClaim(ctx context.Context, key string, holder c
 		return err
 	}
 
-	if recorded, ours := holderOf(lease); !ours || recorded != holder {
+	if recorded, ours := components.ClaimHolderOf(lease); !ours || recorded != holder {
 		return nil
 	}
 
@@ -410,7 +376,7 @@ func (r *DatabaseReconciler) deleteClaim(ctx context.Context, lease *coordinatio
 func (r *DatabaseReconciler) readClaim(
 	ctx context.Context, key string,
 ) (*coordinationv1.Lease, bool, error) {
-	name := types.NamespacedName{Namespace: r.ClaimNamespace, Name: claimLeaseName(key)}
+	name := types.NamespacedName{Namespace: r.ClaimNamespace, Name: components.ClaimLeaseName(key)}
 
 	var lease coordinationv1.Lease
 	if err := r.APIReader.Get(ctx, name, &lease); err != nil {
@@ -424,63 +390,10 @@ func (r *DatabaseReconciler) readClaim(
 	return &lease, true, nil
 }
 
-// holderOf returns the Database that the annotations of the Lease name, and
-// whether all three of them are there. Only the annotations carry ownership.
-// The holderIdentity of the Lease is a display form for a reader.
-func holderOf(lease *coordinationv1.Lease) (claimHolder, bool) {
-	annotations := lease.GetAnnotations()
-	holder := claimHolder{
-		NamespacedName: types.NamespacedName{
-			Namespace: annotations[claimHolderNamespaceAnnotation],
-			Name:      annotations[claimHolderNameAnnotation],
-		},
-		UID: types.UID(annotations[claimHolderUIDAnnotation]),
-	}
-	if holder.Namespace == "" || holder.Name == "" || holder.UID == "" {
-		return claimHolder{}, false
-	}
-
-	return holder, true
-}
-
 // selfHolder is the holder identity of database.
-func selfHolder(database *v1.Database) claimHolder {
-	return claimHolder{
+func selfHolder(database *v1.Database) components.ClaimHolder {
+	return components.ClaimHolder{
 		NamespacedName: client.ObjectKeyFromObject(database),
 		UID:            database.UID,
 	}
-}
-
-// newClaimLease builds the claim Lease of key for database.
-func newClaimLease(namespace, key string, database *v1.Database) *coordinationv1.Lease {
-	holder := labels.BoundedName(
-		database.Namespace+"/"+database.Name, maxHolderIdentityLength,
-	)
-	now := metav1.NowMicro()
-
-	return &coordinationv1.Lease{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      claimLeaseName(key),
-			Labels:    labels.Managed(labels.Database(database.Name), claimComponent),
-			Annotations: map[string]string{
-				claimHolderNamespaceAnnotation: database.Namespace,
-				claimHolderNameAnnotation:      database.Name,
-				claimHolderUIDAnnotation:       string(database.UID),
-				claimKeyAnnotation:             key,
-			},
-		},
-		Spec: coordinationv1.LeaseSpec{HolderIdentity: &holder, AcquireTime: &now},
-	}
-}
-
-// claimLeaseName returns the name of the Lease that claims key:
-// "camunda-database-<hash of the key>". A claim key holds a system identifier
-// and a database name, which together are no DNS subdomain, so the name is
-// built from a hash of it. Every claimant of one logical database therefore
-// meets on one Lease, and the claim key annotation says which one that is.
-func claimLeaseName(key string) string {
-	sum := sha256.Sum256([]byte(key))
-
-	return claimLeasePrefix + hex.EncodeToString(sum[:])[:40]
 }
