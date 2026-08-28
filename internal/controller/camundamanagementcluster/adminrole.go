@@ -97,8 +97,8 @@ func (r *Reconciler) grantAdminOptimizeRole(
 	if err != nil {
 		return connectionFailed(err), nil
 	}
-	if slices.ContainsFunc(held, func(r keycloakadmin.RealmRole) bool {
-		return r.Name == optimizeRealmRole
+	if slices.ContainsFunc(held, func(held keycloakadmin.RealmRole) bool {
+		return held.Name == optimizeRealmRole
 	}) {
 		return nil, nil
 	}
@@ -124,7 +124,8 @@ func (r *Reconciler) grantAdminOptimizeRole(
 	return nil, nil
 }
 
-// connectionFailed reports a read of the realm that did not answer.
+// connectionFailed reports a read of the realm that failed: Keycloak did not
+// answer, or it refused the call. The message carries the answer.
 func connectionFailed(err error) *conditions.PreCheckFailure {
 	return &conditions.PreCheckFailure{
 		Reason:  v1.ReasonConnectionFailed,
