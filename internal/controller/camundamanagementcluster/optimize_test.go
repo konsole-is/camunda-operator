@@ -681,8 +681,9 @@ func withFakeKeycloak(keycloak *fakeKeycloak) func(f *fixture) {
 	}
 }
 
-// fakeKeycloak is a Keycloak that serves the token endpoint and the Optimize
-// client of one realm. It records the redirect URIs that the operator writes.
+// fakeKeycloak is a Keycloak that serves the token endpoint, the Optimize
+// client of one realm, and the users and realm roles of that realm. It records
+// the redirect URIs and the role mappings that the operator writes.
 type fakeKeycloak struct {
 	url string
 	// refuse answers every administration call with 401, the way a Keycloak
@@ -695,6 +696,13 @@ type fakeKeycloak struct {
 	mu       sync.Mutex
 	stored   keycloakadmin.Representation
 	answered int
+	// users maps the username of every user of the realm to the internal id
+	// that a role mapping is written by.
+	users map[string]string
+	// realmRoles maps the name of every realm role to its internal id.
+	realmRoles map[string]string
+	// granted maps the internal id of a user to the realm roles held by it.
+	granted map[string][]keycloakadmin.RealmRole
 }
 
 // withOptimizeClient returns the Optimize client that the fake Keycloak starts
@@ -715,15 +723,81 @@ func withOptimizeClient(redirectURIs ...string) keycloakadmin.Representation {
 
 // startFakeKeycloak runs a fake Keycloak that holds stored as its Optimize
 // client, or no client at all when stored is nil.
+//
+// The realm holds the first administrator from the start, the way one that
+// Management Identity bootstrapped does. It holds the Optimize role only
+// beside an Optimize client, because Management Identity creates the two in
+// the same preset, and it runs that preset only for a management plane that
+// serves an Optimize.
 func startFakeKeycloak(stored keycloakadmin.Representation) *fakeKeycloak {
 	GinkgoHelper()
 
-	fake := &fakeKeycloak{stored: stored}
+	fake := &fakeKeycloak{
+		stored:     stored,
+		users:      map[string]string{adminUsername: "9f2a"},
+		realmRoles: map[string]string{},
+		granted:    map[string][]keycloakadmin.RealmRole{},
+	}
+	if stored != nil {
+		fake.realmRoles[optimizeRealmRole] = "1b7c"
+	}
+
 	server := httptest.NewServer(http.HandlerFunc(fake.serve))
 	DeferCleanup(server.Close)
 	fake.url = server.URL
 
 	return fake
+}
+
+// runOptimizePreset creates the Optimize client and the Optimize role, the way
+// Management Identity does when it starts for a management plane that serves
+// its first Optimize.
+func (f *fakeKeycloak) runOptimizePreset() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.stored = withOptimizeClient()
+	f.realmRoles[optimizeRealmRole] = "1b7c"
+}
+
+// adminRealmRoles returns the names of the realm roles that the first
+// administrator holds.
+func (f *fakeKeycloak) adminRealmRoles() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	held := f.granted[f.users[adminUsername]]
+	names := make([]string, 0, len(held))
+	for _, role := range held {
+		names = append(names, role.Name)
+	}
+
+	return names
+}
+
+// revokeAdminRealmRoles takes every realm role away from the first
+// administrator, the way somebody editing the realm in Keycloak would.
+func (f *fakeKeycloak) revokeAdminRealmRoles() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	delete(f.granted, f.users[adminUsername])
+}
+
+// removeAdminUser takes the first administrator out of the realm.
+func (f *fakeKeycloak) removeAdminUser() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	delete(f.users, adminUsername)
+}
+
+// removeRealmRole takes the realm role out of the realm.
+func (f *fakeKeycloak) removeRealmRole(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	delete(f.realmRoles, name)
 }
 
 // redirectURIs returns the redirect URIs of the stored Optimize client.
@@ -780,6 +854,21 @@ func (f *fakeKeycloak) serve(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
+	switch {
+	case strings.HasSuffix(r.URL.Path, "/role-mappings/realm"):
+		f.serveRoleMappings(w, r)
+
+		return
+	case strings.Contains(r.URL.Path, "/roles/"):
+		f.serveRealmRole(w, r)
+
+		return
+	case strings.HasSuffix(r.URL.Path, "/users"):
+		f.serveUsers(w, r)
+
+		return
+	}
+
 	if r.Method == http.MethodGet {
 		found := []keycloakadmin.Representation{}
 		if f.stored != nil {
@@ -803,5 +892,56 @@ func (f *fakeKeycloak) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.stored = update
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// serveUsers answers the exact lookup of one user of the realm. The caller
+// holds the lock.
+func (f *fakeKeycloak) serveUsers(w http.ResponseWriter, r *http.Request) {
+	found := []map[string]string{}
+	if id, ok := f.users[r.URL.Query().Get("username")]; ok {
+		found = append(found, map[string]string{"id": id})
+	}
+	_ = json.NewEncoder(w).Encode(found)
+}
+
+// serveRealmRole answers the lookup of one realm role by name, with the 404
+// that Keycloak answers for a realm that holds no such role. The caller holds
+// the lock.
+func (f *fakeKeycloak) serveRealmRole(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Path[strings.LastIndex(r.URL.Path, "/roles/")+len("/roles/"):]
+
+	id, ok := f.realmRoles[name]
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+
+		return
+	}
+	_ = json.NewEncoder(w).Encode(keycloakadmin.RealmRole{ID: id, Name: name})
+}
+
+// serveRoleMappings reads and writes the realm roles of one user. The caller
+// holds the lock.
+func (f *fakeKeycloak) serveRoleMappings(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimSuffix(r.URL.Path, "/role-mappings/realm")
+	userID := path[strings.LastIndex(path, "/")+1:]
+
+	if r.Method == http.MethodGet {
+		held := f.granted[userID]
+		if held == nil {
+			held = []keycloakadmin.RealmRole{}
+		}
+		_ = json.NewEncoder(w).Encode(held)
+
+		return
+	}
+
+	var added []keycloakadmin.RealmRole
+	if err := json.NewDecoder(r.Body).Decode(&added); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+
+		return
+	}
+	f.granted[userID] = append(f.granted[userID], added...)
 	w.WriteHeader(http.StatusNoContent)
 }

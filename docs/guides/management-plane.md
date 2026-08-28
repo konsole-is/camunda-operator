@@ -440,6 +440,8 @@ status:
 
 Adding this Optimize to a management plane that already serves one leaves Management Identity running. Only the first Optimize of a plane, and the removal of its last one, restart Management Identity.
 
+The first Optimize also brings the `Optimize` role into the realm. In the two Keycloak modes the management plane gives that role to the user in `spec.identity.admin.username`, so the first administrator can open Optimize without a visit to Management Identity. Roles of every other user are yours to grant. Camunda documents them in [Manage roles](https://docs.camunda.io/docs/self-managed/components/management-identity/application-user-group-role-management/manage-roles/).
+
 In the `oidc` mode the field has no effect. Register the callback at your provider yourself.
 
 ## Check the result

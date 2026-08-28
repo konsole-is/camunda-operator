@@ -340,11 +340,15 @@ func withExternalKeycloak(f *fixture) {
 	withKeycloakAdministrator(f)
 }
 
+// adminUsername is the first administrator of a scenario in a Keycloak mode.
+// Management Identity creates that user in the realm on its first start.
+const adminUsername = "platform-admin"
+
 // withKeycloakAdministrator replaces the initial claim of the oidc mode with
 // the first Keycloak user. A scenario built from it serves no Optimize, so it
 // registers no login callback and nothing in these specs reaches Keycloak.
 func withKeycloakAdministrator(f *fixture) {
-	f.mc.Spec.Identity.Admin = v1.IdentityAdminSpec{Username: "platform-admin"}
+	f.mc.Spec.Identity.Admin = v1.IdentityAdminSpec{Username: adminUsername}
 }
 
 // stampKeycloakReady writes the status that the Keycloak Operator would write
