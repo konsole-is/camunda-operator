@@ -122,13 +122,17 @@ spec:
             properties:
               collisionKey:
                 description: |-
-                  CollisionKey is the claim that this Database won or contested: the
-                  system identifier of the server and the logical database name. The
-                  operator records it once it resolves the server, and the uniqueness
-                  rule runs over the recorded keys of every namespace. The operator never
-                  clears it, so a Database whose server or contract is gone keeps its
-                  claim and goes on contesting the name. Delete such a Database to
-                  release it.
+                  CollisionKey is the logical database that this Database last resolved:
+                  the system identifier of the server and the database name. Every
+                  claimant records it, the one that loses included, so the field says
+                  what a Database asked for and not what it owns. The operator resolves
+                  it only after it reaches the server, so a spec that names a server
+                  which is missing, or one that is not probed for the spec it has now,
+                  keeps the key from before until that server answers. A Database whose
+                  Ready condition reports InvalidReference and names another Database
+                  does not own the name it shows here. The operator never clears the
+                  field, so an owner whose server or contract is gone keeps the logical
+                  database. Delete that Database to release the name.
                 type: string
               conditions:
                 description: |-

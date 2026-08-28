@@ -38,6 +38,10 @@ const (
 	interval = testenv.Interval
 )
 
+// testClaimNamespace holds the claim Leases of this suite. In a cluster this
+// is the namespace of the operator, which always exists, like this one.
+const testClaimNamespace = "default"
+
 var (
 	env       *testenv.Env
 	ctx       context.Context
@@ -59,9 +63,10 @@ var _ = BeforeSuite(func() {
 
 	env = testenv.Start(func(mgr ctrl.Manager) error {
 		return (&DatabaseReconciler{
-			Client:    mgr.GetClient(),
-			APIReader: mgr.GetAPIReader(),
-			Scheme:    mgr.GetScheme(),
+			Client:         mgr.GetClient(),
+			APIReader:      mgr.GetAPIReader(),
+			Scheme:         mgr.GetScheme(),
+			ClaimNamespace: testClaimNamespace,
 		}).SetupWithManager(mgr)
 	})
 

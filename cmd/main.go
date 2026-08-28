@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"strings"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -84,9 +85,18 @@ func init() {
 // --camunda-operator-cli-image. The packaging sets it to the published image.
 const cliImageEnv = "CAMUNDA_OPERATOR_CLI_IMAGE"
 
+// namespaceEnv is the environment variable that defaults --namespace.
+const namespaceEnv = "CAMUNDA_OPERATOR_NAMESPACE"
+
+// serviceAccountNamespaceFile holds the namespace of the Pod that the manager
+// runs in. Kubernetes mounts it with the service account token, so a manager
+// in a cluster needs neither the flag nor the environment variable.
+const serviceAccountNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
 // nolint:gocyclo
 func main() {
 	var cliImage string
+	var operatorNamespace string
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string
@@ -125,6 +135,12 @@ func main() {
 		"The camunda-operator-cli image that the backup Jobs run for their upload container. "+
 			"Required. Defaults to the "+cliImageEnv+" environment variable.",
 	)
+	flag.StringVar(
+		&operatorNamespace, "namespace", os.Getenv(namespaceEnv),
+		"The namespace that the operator runs in. It holds the Lease that serializes the claim "+
+			"of a logical database, which crosses namespaces. Defaults to the "+namespaceEnv+
+			" environment variable, and then to the namespace of the Pod.",
+	)
 	opts := zap.Options{
 		Development: true,
 	}
@@ -141,6 +157,21 @@ func main() {
 			"The camunda-operator-cli image is required: set --camunda-operator-cli-image "+
 				"or the "+cliImageEnv+" environment variable to the published image, "+
 				"for example ghcr.io/konsole-is/camunda-operator-cli:<version>",
+		)
+		os.Exit(1)
+	}
+
+	if operatorNamespace == "" {
+		operatorNamespace = podNamespace()
+	}
+	// The Database controller serializes the claim of a logical database
+	// through a Lease of this namespace. Without one it cannot tell two
+	// claimants apart, so the manager refuses to start.
+	if operatorNamespace == "" {
+		setupLog.Error(
+			nil,
+			"The namespace of the operator is required: set --namespace or the "+
+				namespaceEnv+" environment variable",
 		)
 		os.Exit(1)
 	}
@@ -284,9 +315,10 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&database.DatabaseReconciler{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Scheme:    mgr.GetScheme(),
+		Client:         mgr.GetClient(),
+		APIReader:      mgr.GetAPIReader(),
+		Scheme:         mgr.GetScheme(),
+		ClaimNamespace: operatorNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "Database")
 		os.Exit(1)
@@ -407,4 +439,18 @@ func main() {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
 	}
+}
+
+// podNamespace reads the namespace of the Pod that the manager runs in. It
+// returns the empty string when it cannot read the file. That covers a
+// manager outside a cluster, where the file is absent, and a file that the
+// manager may not read. The caller then asks for the flag or the environment
+// variable.
+func podNamespace() string {
+	content, err := os.ReadFile(serviceAccountNamespaceFile)
+	if err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(string(content))
 }
