@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -315,6 +316,53 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		expectClaimedBy(binding, parked)
 		expectHolds(holder)
 		expectClaimedBy(other, holder)
+	})
+
+	// One edit that repoints a cluster to a held contract and lowers its
+	// version parks it on the version it runs. The refusal of the downgrade
+	// waits until the contract is released, so the parking never applies the
+	// lower image.
+	It("parks a repointed cluster whose version is also refused, and refuses it again once released", func() {
+		ns := newNamespace()
+		own := createBinding(ns, true)
+		repointed := newNamedCluster("cc-a-", ns, createPlatformConfig(), own)
+		createCluster(repointed)
+		expectClaimedBy(own, repointed)
+		Expect(zeebeContainer(repointed).Image).To(HaveSuffix(":" + runningVersion))
+
+		held := createBinding(ns, true)
+		holder := newNamedCluster("cc-b-", ns, createPlatformConfig(), held)
+		createCluster(holder)
+		expectClaimedBy(held, holder)
+
+		By("repointing to the held contract and lowering the version in one edit")
+		updateCluster(repointed, func(c *v1.CamundaCluster) {
+			c.Spec.StorageRef = held.Name
+			c.Spec.Version = lowerVersion
+		})
+		expectParked(repointed, holder)
+		Consistently(func() string { return zeebeContainer(repointed).Image }, "2s", interval).Should(
+			HaveSuffix(":"+runningVersion),
+			"the parking keeps the running image. A lower image means the parking applied it",
+		)
+		Consistently(func(g Gomega) {
+			g.Expect(countEvents(g, repointed, v1.ReasonVersionDowngradeRefused)).To(BeZero())
+		}, "2s", interval).Should(Succeed(), "a parked cluster does not report the refusal yet")
+
+		By("releasing the contract")
+		Expect(k8sClient.Delete(ctx, holder)).To(Succeed())
+		expectReady(
+			repointed, metav1.ConditionFalse,
+			Equal(v1.ReasonVersionDowngradeRefused),
+			ContainSubstring(lowerVersion+" is below the running version "+runningVersion),
+		)
+		expectEvent(repointed, v1.ReasonVersionDowngradeRefused, corev1.EventTypeWarning)
+		Expect(zeebeContainer(repointed).Image).To(HaveSuffix(":" + runningVersion))
+
+		By("setting the version forward again")
+		updateCluster(repointed, func(c *v1.CamundaCluster) { c.Spec.Version = runningVersion })
+		expectHolds(repointed)
+		expectClaimedBy(held, repointed)
 	})
 
 	// A claim whose holder never existed, or was deleted before the operator

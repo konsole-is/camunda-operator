@@ -87,6 +87,8 @@ The rule reads the effective version. Three edits therefore meet it the same way
 
 The running version is the version on the broker workload. After a version change it is the new version, even before the pods have rolled. The refusal message names it. The operator also stamps the highest version it asked each broker volume to run, as the annotation `camunda.io/broker-version`. A cluster recreated on retained volumes ([Storage](#storage)) reads its running version from that stamp, so the rule holds for it. A new cluster with new volumes has no running version, and the rule does not apply to it.
 
+A cluster whose storage contract another cluster holds is suspended before the rule applies, see [Secondary storage](#secondary-storage). One edit that repoints `spec.storageRef` to a held contract and lowers the version scales the workloads to zero on the running version. `Ready` reports `StorageAlreadyAttached`. When the holder releases the contract, the rule applies and the cluster reports `VersionDowngradeRefused`. It stays at zero until you set the version forward again or sanction the downgrade.
+
 A restore sanctions its own move to the version of its backup. The [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md#why-the-downgrade-is-safe-here) and [LogicalRestoreRDBMS](logicalrestorerdbms.md#why-the-downgrade-is-safe-here) pages explain why that move is safe.
 
 ### Downgrade on purpose

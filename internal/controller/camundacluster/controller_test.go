@@ -44,7 +44,10 @@ import (
 
 // lowerVersion is one patch below the version that newCluster sets, so a spec
 // can ask for a version that the brokers already run past.
-const lowerVersion = "8.9.8"
+const (
+	runningVersion = "8.9.9"
+	lowerVersion   = "8.9.8"
+)
 
 // newNamespace creates a uniquely named Namespace and registers its deletion.
 func newNamespace() string {
@@ -103,7 +106,7 @@ func newCluster(
 		ObjectMeta: metav1.ObjectMeta{Name: "cc-" + utilrand.String(8), Namespace: namespace},
 		Spec: v1.CamundaClusterSpec{
 			PlatformConfigRef: cfg.Name,
-			Version:           "8.9.9",
+			Version:           runningVersion,
 			StorageRef:        binding.Name,
 		},
 	}
@@ -777,7 +780,7 @@ var _ = Describe("CamundaCluster controller", func() {
 		Eventually(func(g Gomega) {
 			var latest corev1.PersistentVolumeClaim
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(claim), &latest)).To(Succeed())
-			g.Expect(latest.Annotations).To(HaveKeyWithValue(components.BrokerVersionAnnotation, "8.9.9"))
+			g.Expect(latest.Annotations).To(HaveKeyWithValue(components.BrokerVersionAnnotation, runningVersion))
 		}, timeout, interval).Should(Succeed())
 
 		By("deleting the cluster and its StatefulSet while the claims stay")
@@ -809,7 +812,7 @@ var _ = Describe("CamundaCluster controller", func() {
 	It("refuses a preset whose version is lowered under a running cluster", func() {
 		ns := newNamespace()
 		preset := minimalPreset()
-		preset.Spec.Cluster.Version = "8.9.9"
+		preset.Spec.Cluster.Version = runningVersion
 		Expect(k8sClient.Create(ctx, preset)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
 		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))

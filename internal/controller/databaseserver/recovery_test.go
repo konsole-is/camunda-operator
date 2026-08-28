@@ -1937,9 +1937,13 @@ var _ = Describe("DatabaseServer recovery", func() {
 				g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
 			}
 
+			// The reason, not the status alone: ContractReady is also False
+			// while the contract is still being published, and a look that
+			// exits here on that False leaves the endpoint able to move again.
 			ready := conditionOf(server, v1.ConditionContractReady)
 			g.Expect(ready).NotTo(BeNil())
 			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse), ready.Message)
+			g.Expect(ready.Reason).To(Equal(string(component.GuardBlocked)), ready.Message)
 			g.Expect(publishedContract(server).Spec.Host).To(Equal(strangerHost))
 		}, timeout, interval).Should(Succeed())
 
