@@ -136,6 +136,12 @@ type IdentityProvider struct {
 	// the initial administrator. It is nil in the oidc mode, which bootstraps
 	// nothing.
 	AdminCredentials *v1.LocalCredentialsSecretRef
+	// CABundle names the Secret key with the certificate authority of
+	// Keycloak, which the operator trusts when it signs in over https. It is
+	// nil when the spec names none, nil in the keycloak mode, whose Keycloak
+	// the operator reaches over http, and nil in the oidc mode, which it
+	// does not reach at all.
+	CABundle *v1.LocalSecretKeyRef
 	// Clients is the provider client of each component.
 	Clients ProviderClients
 }
@@ -291,7 +297,8 @@ func Mode(mc *v1.CamundaManagementCluster) ProviderMode {
 // issuer that every token carries.
 //
 // The administrator is the one the Keycloak Operator writes into
-// <keycloak>-initial-admin next to the Keycloak custom resource.
+// <keycloak>-initial-admin next to the Keycloak custom resource. That Service
+// serves http, so the provider carries no certificate authority.
 func resolveManagedKeycloak(in Input) IdentityProvider {
 	spec := in.Cluster.Spec.IdentityProvider.Keycloak
 	service := fmt.Sprintf(
@@ -305,7 +312,9 @@ func resolveManagedKeycloak(in Input) IdentityProvider {
 		PasswordKey: KeycloakAdminPasswordKey,
 	}
 
-	return keycloakProvider(in, ModeKeycloak, service, spec.ExternalURL, keycloakDefaultRealm, admin)
+	return keycloakProvider(
+		in, ModeKeycloak, service, spec.ExternalURL, keycloakDefaultRealm, admin, nil,
+	)
 }
 
 // resolveExternalKeycloak reads the Keycloak that the user runs. One URL
@@ -317,7 +326,13 @@ func resolveExternalKeycloak(in Input) IdentityProvider {
 	admin := spec.AdminCredentialsSecretRef.DeepCopy()
 
 	return keycloakProvider(
-		in, ModeExternalKeycloak, spec.URL, spec.URL, cmp.Or(spec.Realm, keycloakDefaultRealm), admin,
+		in,
+		ModeExternalKeycloak,
+		spec.URL,
+		spec.URL,
+		cmp.Or(spec.Realm, keycloakDefaultRealm),
+		admin,
+		spec.CABundleSecretRef.DeepCopy(),
 	)
 }
 
@@ -330,6 +345,7 @@ func keycloakProvider(
 	mode ProviderMode,
 	backendURL, publicURL, realm string,
 	admin *v1.LocalCredentialsSecretRef,
+	caBundle *v1.LocalSecretKeyRef,
 ) IdentityProvider {
 	// Every URL below appends a path, so a URL that ends in a slash would
 	// build "//realms", which Keycloak serves under no such address.
@@ -352,6 +368,7 @@ func keycloakProvider(
 		KeycloakPublicURL: publicURL,
 		Realm:             realm,
 		AdminCredentials:  admin,
+		CABundle:          caBundle,
 		Clients:           keycloakClients(in),
 	}
 }

@@ -18,6 +18,7 @@ package camundamanagementcluster
 
 import (
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -43,6 +44,13 @@ import (
 const (
 	blueOptimizeURL  = "https://optimize.blue.example.com"
 	greenOptimizeURL = "https://optimize.green.example.com"
+)
+
+// keycloakCASecret holds the certificate authority of a Keycloak that serves
+// https, and caBundleKey is the key it holds it under.
+const (
+	keycloakCASecret = "keycloak-ca"
+	caBundleKey      = "ca.crt"
 )
 
 var _ = Describe("CamundaManagementCluster controller and the Optimize instances behind it", func() {
@@ -585,6 +593,82 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// A Keycloak that you run can serve a certificate of an authority that
+	// the operator image does not carry. The bundle of the spec is what makes
+	// the handshake succeed.
+	It("registers the callbacks at a Keycloak behind a private authority", func() {
+		keycloak, bundle := startFakeKeycloakTLS(withOptimizeClient())
+		s := newScenario(withFakeKeycloakTLS(keycloak, string(bundle)))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(keycloak.redirectURIs()).To(Equal([]string{
+				blueOptimizeURL + components.OptimizeCallbackPath,
+			}))
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(condition.Reason).To(Equal(v1.ReasonHealthy))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("reports ConnectionFailed while it does not trust the certificate of Keycloak", func() {
+		keycloak, _ := startFakeKeycloakTLS(withOptimizeClient())
+		s := newScenario(withFakeKeycloakTLS(keycloak, ""))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(condition.Reason).To(Equal(v1.ReasonConnectionFailed))
+		}, timeout, interval).Should(Succeed())
+
+		Expect(keycloak.redirectURIs()).To(BeEmpty())
+	})
+
+	It("reports InvalidCABundle while the Secret holds no certificate", func() {
+		keycloak, _ := startFakeKeycloakTLS(withOptimizeClient())
+		s := newScenario(withFakeKeycloakTLS(keycloak, "not a certificate"))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(condition.Reason).To(Equal(v1.ReasonInvalidCABundle))
+			g.Expect(condition.Message).To(ContainSubstring(caBundleKey))
+		}, timeout, interval).Should(Succeed())
+
+		Expect(keycloak.redirectURIs()).To(BeEmpty())
+	})
+
+	It("reports MissingSecret while the bundle Secret is absent", func() {
+		keycloak, _ := startFakeKeycloakTLS(withOptimizeClient())
+		s := newScenario(withFakeKeycloakTLS(keycloak, ""), func(f *fixture) {
+			f.mc.Spec.IdentityProvider.ExternalKeycloak.CABundleSecretRef = &v1.LocalSecretKeyRef{
+				Name: keycloakCASecret, Key: caBundleKey,
+			}
+		})
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(condition.Reason).To(Equal(v1.ReasonMissingSecret))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// The identity provider of the platform config holds the callback URLs of
 	// the oidc mode, so the operator administers no client there.
 	It("reports Disabled in the oidc mode", func() {
@@ -681,6 +765,25 @@ func withFakeKeycloak(keycloak *fakeKeycloak) func(f *fixture) {
 	}
 }
 
+// withFakeKeycloakTLS turns a scenario into the externalKeycloak mode against
+// a fake Keycloak that serves https. bundle is what the Secret of
+// caBundleSecretRef holds, and an empty one names no Secret at all, so a spec
+// can leave the operator with the trust store of its image alone.
+func withFakeKeycloakTLS(keycloak *fakeKeycloak, bundle string) func(f *fixture) {
+	return func(f *fixture) {
+		withFakeKeycloak(keycloak)(f)
+		if bundle == "" {
+			return
+		}
+
+		createSecret(f.mc.Namespace, keycloakCASecret, map[string]string{caBundleKey: bundle})
+		f.mc.Spec.IdentityProvider.ExternalKeycloak.CABundleSecretRef = &v1.LocalSecretKeyRef{
+			Name: keycloakCASecret,
+			Key:  caBundleKey,
+		}
+	}
+}
+
 // fakeKeycloak is a Keycloak that serves the token endpoint and the Optimize
 // client of one realm. It records the redirect URIs that the operator writes.
 type fakeKeycloak struct {
@@ -724,6 +827,25 @@ func startFakeKeycloak(stored keycloakadmin.Representation) *fakeKeycloak {
 	fake.url = server.URL
 
 	return fake
+}
+
+// startFakeKeycloakTLS runs a fake Keycloak that serves https with a
+// certificate of its own. It returns the fake and that certificate as a PEM
+// bundle, which is what the certificate authority of a private Keycloak
+// reaches the operator as.
+func startFakeKeycloakTLS(stored keycloakadmin.Representation) (*fakeKeycloak, []byte) {
+	GinkgoHelper()
+
+	fake := &fakeKeycloak{stored: stored}
+	server := httptest.NewTLSServer(http.HandlerFunc(fake.serve))
+	DeferCleanup(server.Close)
+	fake.url = server.URL
+
+	bundle := pem.EncodeToMemory(
+		&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw},
+	)
+
+	return fake, bundle
 }
 
 // redirectURIs returns the redirect URIs of the stored Optimize client.

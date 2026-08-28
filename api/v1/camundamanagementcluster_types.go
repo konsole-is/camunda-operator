@@ -107,6 +107,11 @@ const (
 	// names a URL, so there is no login callback to register. Give a
 	// CamundaOptimize that names this management plane a spec.externalUrl.
 	ReasonNoCallbacks = "NoCallbacks"
+	// ReasonInvalidCABundle means that the key of caBundleSecretRef holds no
+	// certificate in PEM form, so the operator cannot verify the certificate
+	// of Keycloak. Put the certificate authority of Keycloak in that key, in
+	// PEM form.
+	ReasonInvalidCABundle = "InvalidCABundle"
 )
 
 // CamundaManagementClusterSpec describes one management plane: Management
@@ -218,6 +223,7 @@ type ManagedKeycloakSpec struct {
 
 // ExternalKeycloakSpec connects Management Identity to a Keycloak that you
 // run.
+// +kubebuilder:validation:XValidation:rule="!has(self.caBundleSecretRef) || !isURL(self.url) || url(self.url).getScheme() == 'https'",message="caBundleSecretRef requires an https url"
 type ExternalKeycloakSpec struct {
 	// URL is the URL of Keycloak, including the /auth path when it has one.
 	// Management Identity reaches this URL, so it must resolve from inside
@@ -239,6 +245,14 @@ type ExternalKeycloakSpec struct {
 	// administrator credentials. Management Identity uses them to create the
 	// realm, the clients, and the initial administrator.
 	AdminCredentialsSecretRef LocalCredentialsSecretRef `json:"adminCredentialsSecretRef"`
+	// CABundleSecretRef names the Secret key that holds the certificate
+	// authority of Keycloak, in PEM form. The operator trusts it in addition
+	// to the trust store of its own image when it signs in to Keycloak to
+	// register the login callbacks of Optimize. Set it when Keycloak serves a
+	// certificate that a public authority did not sign. It is only valid with
+	// an https url.
+	// +optional
+	CABundleSecretRef *LocalSecretKeyRef `json:"caBundleSecretRef,omitempty"`
 }
 
 // ManagementOIDCSpec selects the identity provider of the referenced
