@@ -294,9 +294,10 @@ func (r *DatabaseReconciler) finalize(ctx context.Context, database *v1.Database
 //
 // An empty keep releases every claim of the holder.
 //
-// The label selector is the one that newClaimLease writes, so the list covers
-// the claims of this Database alone. The holder annotations then tell a Lease
-// of a later Database of the same name apart from one of this Database.
+// The label selector is the one that NewClaimLease writes. It carries the
+// name of the Database alone. The list therefore also holds the claims of a
+// Database of another namespace with this name, and of a later Database. The
+// holder annotations tell them apart.
 func (r *DatabaseReconciler) releaseHeldClaims(
 	ctx context.Context, holder components.ClaimHolder, keep string,
 ) error {

@@ -105,9 +105,10 @@ func ClaimLeaseName(key string) string {
 	return claimLeasePrefix + hex.EncodeToString(sum[:])[:40]
 }
 
-// ClaimLeaseLabels returns the labels of the claim Leases of the Database
-// named name. They select the claims of that Database alone, so a release
-// reads no claim of another one.
+// ClaimLeaseLabels returns the labels of the claim Leases of the Databases
+// named name. They carry the name alone, so two Databases of two namespaces
+// that share a name share these labels. A caller reads ClaimHolderOf on a
+// listed Lease to learn which Database holds it.
 func ClaimLeaseLabels(name string) map[string]string {
 	return labels.Managed(labels.Database(name), ClaimComponent)
 }
