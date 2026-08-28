@@ -14,8 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package keycloakadmin reads and writes clients, users, and realm roles
-// through the administration API of a Keycloak realm.
+// Package keycloakadmin reads and writes clients and the realm roles of users
+// through the administration API of a Keycloak realm. It looks users up by
+// name and never creates, changes, or removes one.
 //
 // The operator administers two things with it. The first is one field of one
 // client: the redirect URIs of the Optimize client. Management Identity
