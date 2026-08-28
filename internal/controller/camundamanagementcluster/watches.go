@@ -176,6 +176,9 @@ func secretRefs(mc *v1.CamundaManagementCluster) []string {
 			keys,
 			refindex.NamespacedKey(mc.Namespace, external.AdminCredentialsSecretRef.Name),
 		)
+		if ref := external.CABundleSecretRef; ref != nil {
+			keys = append(keys, refindex.NamespacedKey(mc.Namespace, ref.Name))
+		}
 	}
 	if ref := mc.Spec.Identity.Admin.PasswordSecretRef; ref != nil {
 		keys = append(keys, refindex.NamespacedKey(mc.Namespace, ref.Name))

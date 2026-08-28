@@ -2077,6 +2077,27 @@ spec:
                         required:
                         - name
                         type: object
+                      caBundleSecretRef:
+                        description: |-
+                          CABundleSecretRef names the Secret key that holds the certificate
+                          authority of Keycloak, in PEM form. The operator trusts it in addition
+                          to the trust store of its own image when it signs in to Keycloak to
+                          register the login callbacks of Optimize. Set it when Keycloak serves a
+                          certificate that a public authority did not sign. It is only valid with
+                          an https url.
+                        properties:
+                          key:
+                            description: Key in the Secret holding the value.
+                            minLength: 1
+                            type: string
+                          name:
+                            description: Name of the Secret holding the value.
+                            minLength: 1
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
                       realm:
                         description: |-
                           Realm is the realm that Management Identity uses and creates. Empty
@@ -2109,6 +2130,10 @@ spec:
                     - adminCredentialsSecretRef
                     - url
                     type: object
+                    x-kubernetes-validations:
+                    - message: caBundleSecretRef requires an https url
+                      rule: '!has(self.caBundleSecretRef) || !isURL(self.url) || url(self.url).getScheme()
+                        == ''https'''
                   keycloak:
                     description: |-
                       Keycloak runs Keycloak through the Keycloak Operator. The Keycloak

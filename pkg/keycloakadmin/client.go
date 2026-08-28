@@ -80,8 +80,12 @@ type Client struct {
 // at, the base path included, for example http://keycloak.camunda.svc:8080/auth.
 // The user signs in through admin-cli of the master realm, so it is a
 // Keycloak administrator and not a user of realm.
-func New(baseURL, realm, username, password string) *Client {
-	return &Client{
+//
+// Without an Option the client verifies an https Keycloak against the trust
+// store of the operator image. Pass WithRootCAs for a Keycloak whose
+// certificate comes from an authority that store does not carry.
+func New(baseURL, realm, username, password string, opts ...Option) *Client {
+	c := &Client{
 		baseURL:  strings.TrimRight(baseURL, "/"),
 		realm:    realm,
 		username: username,
@@ -98,6 +102,11 @@ func New(baseURL, realm, username, password string) *Client {
 			},
 		},
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	return c
 }
 
 // FindClient returns the client of the realm whose client id is clientID, or
