@@ -39,7 +39,8 @@ import (
 
 // The event that the controller records when it writes the redirect URIs of
 // the Optimize client. One write can add a callback, remove one, or both, so
-// the vocabulary names the write and not a direction.
+// the vocabulary names the write and not a direction. Every other write to
+// the realm records the same action under a reason of its own.
 const (
 	eventReasonOptimizeCallbacks = "OptimizeCallbacksUpdated"
 	eventActionUpdate            = "Update"
@@ -97,8 +98,9 @@ func (r *Reconciler) listOptimizes(ctx context.Context, contract string) ([]v1.C
 }
 
 // syncOptimizeCallbacks gives the Optimize client of the realm the login
-// callback of every Optimize this management plane serves, and reports the
-// result on OptimizeCallbacksReady.
+// callback of every Optimize this management plane serves, gives the first
+// administrator the Optimize role, and reports the result on
+// OptimizeCallbacksReady.
 //
 // Management Identity owns that client. It writes the whole representation
 // again on every start, with the redirect URIs of its own environment, so this
@@ -218,6 +220,19 @@ func (r *Reconciler) syncOptimizeCallbacks(
 		}
 
 		return failure, true, nil
+	}
+
+	// The realm carries the callbacks, so the Optimize client is there and the
+	// Optimize role came with it. The first administrator can be one from
+	// before that role existed, and this is where they are given it.
+	grantFailure, err := r.grantAdminOptimizeRole(ctx, mc, provider)
+	if err != nil {
+		return nil, false, err
+	}
+	if grantFailure != nil {
+		stageCallbacks(mc, metav1.ConditionFalse, grantFailure.Reason, grantFailure.Message)
+
+		return grantFailure, true, nil
 	}
 
 	stageCallbacks(

@@ -14,15 +14,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package keycloakadmin reads and writes clients through the administration
-// API of a Keycloak realm.
+// Package keycloakadmin reads and writes clients and the realm roles of users
+// through the administration API of a Keycloak realm. It looks users up by
+// name and never creates, changes, or removes one.
 //
-// The operator administers one field of one client with it: the redirect URIs
-// of the Optimize client. Management Identity creates every client of the
-// realm and rewrites the whole representation from its own environment on
-// every start. An update through this package reads the stored
-// representation, replaces that one field, and writes the whole
-// representation back, so every other field that Identity wrote survives.
+// The operator administers two things with it. The first is one field of one
+// client: the redirect URIs of the Optimize client. Management Identity
+// creates every client of the realm and rewrites the whole representation
+// from its own environment on every start. An update through this package
+// reads the stored representation, replaces that one field, and writes the
+// whole representation back, so every other field that Identity wrote
+// survives. The second is the realm roles of the first administrator, which
+// this package adds to and never takes away.
 package keycloakadmin
 
 import (
@@ -173,27 +176,39 @@ func (c *Client) clientsURL() string {
 // do signs in if needed, sends req with the access token, and returns the
 // body of a 2xx answer. Any other status becomes an error that carries the
 // status and the start of the body.
-//
-// A refused token is exchanged once and the request is sent again, so a token
-// that expired between two calls of the same Client does not surface as a
-// failure of the call that met it.
 func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
-	body, status, err := c.send(ctx, req)
+	body, status, err := c.authorized(ctx, req)
 	if err != nil {
 		return nil, err
-	}
-	if status == http.StatusUnauthorized {
-		c.token = ""
-		body, status, err = c.send(ctx, req)
-		if err != nil {
-			return nil, err
-		}
 	}
 	if status < 200 || status > 299 {
 		return nil, statusError(status, body)
 	}
 
 	return body, nil
+}
+
+// authorized signs in if needed, sends req with the access token, and returns
+// the body and the status of the answer. Use it where a status that do refuses
+// carries a meaning of its own, and do everywhere else.
+//
+// A refused token is exchanged once and the request is sent again, so a token
+// that expired between two calls of the same Client does not surface as a
+// failure of the call that met it.
+func (c *Client) authorized(ctx context.Context, req *http.Request) ([]byte, int, error) {
+	body, status, err := c.send(ctx, req)
+	if err != nil {
+		return nil, 0, err
+	}
+	if status == http.StatusUnauthorized {
+		c.token = ""
+		body, status, err = c.send(ctx, req)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
+	return body, status, nil
 }
 
 // send signs in if needed, sends req with the access token, and returns the

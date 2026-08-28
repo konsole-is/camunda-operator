@@ -47,7 +47,8 @@ const (
 	ConditionSecretsReady = "SecretsReady"
 	// ConditionOptimizeCallbacksReady reports what the operator did about the
 	// login callback of every Optimize in status.optimize. It reads Healthy
-	// once the Optimize client of the realm carries all of them.
+	// once the Optimize client of the realm carries all of them and the first
+	// administrator holds the Optimize role of the realm.
 	//
 	// Two reasons read True without saying anything about the realm. Disabled
 	// is the oidc mode, where the identity provider of the platform config
@@ -115,6 +116,13 @@ const (
 	// names a URL, so there is no login callback to register. Give a
 	// CamundaOptimize that names this management plane a spec.externalUrl.
 	ReasonNoCallbacks = "NoCallbacks"
+	// ReasonAdminRoleGrantFailed means that the operator could not give the
+	// first administrator the Optimize role of the realm. The message says
+	// what stopped it: the realm holds no user of that name, it holds no
+	// Optimize role, or Keycloak refused the write. The operator tries again
+	// on its retry interval.
+	ReasonAdminRoleGrantFailed = "AdminRoleGrantFailed"
+
 	// ReasonInvalidCABundle means that the key of caBundleSecretRef holds no
 	// certificate in PEM form, so the operator cannot verify the certificate
 	// of Keycloak. Put the certificate authority of Keycloak in that key, in

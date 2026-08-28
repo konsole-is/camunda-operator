@@ -507,7 +507,7 @@ status:
       externalUrl: "https://optimize.camunda.example.com"
 ```
 
-The `OptimizeCallbacksReady` condition reports the realm. It reads `Healthy` while the `optimize` client carries the callback of every row above. See [Status](#status).
+The `OptimizeCallbacksReady` condition reports the realm. It reads `Healthy` while the `optimize` client carries the callback of every row above and the first administrator holds the `Optimize` role. See [Status](#status).
 
 The operator owns the login callbacks of the addresses above and nothing else on that client. It adds the ones that are missing and removes the ones of an Optimize that went away. A redirect URI of another shape stays where it is. A login callback you register by hand does not: it has the shape the operator owns, so the next reconcile that converges the realm removes it. Give the Optimize a `spec.externalUrl` instead.
 
@@ -515,7 +515,11 @@ Management Identity restarts when the first Optimize of a management plane arriv
 
 The operator waits for Management Identity to finish rolling out before it writes to the realm, because Management Identity writes the whole client while it starts.
 
-The first Optimize of a management plane brings the `Optimize` role into the realm with it. Management Identity gives the roles of the realm to the first administrator on its very first start and never again, so an administrator who was there before that first Optimize does not hold the role. Grant it to them in Management Identity, the way you grant a role to anybody else.
+The first Optimize of a management plane brings the `Optimize` role into the realm with it. Management Identity gives the roles of the realm to the first administrator on its very first start and never again, so an administrator who was there before that first Optimize does not hold the role. The management plane gives it to them: every time it converges the realm, it reads the user that `spec.identity.admin.username` names and adds the `Optimize` role when that user does not hold it. A role you take away in Keycloak comes back on the next converge.
+
+A role that the administrator holds through a group of the realm counts as held, so a group that carries the `Optimize` role keeps carrying it and the management plane writes nothing.
+
+This is the only role and the only user the management plane touches. Every other role of that administrator, and every other user of the realm, stays yours to manage in Management Identity. `OptimizeCallbacksReady` reads `AdminRoleGrantFailed` when the realm holds no user of that name, when it holds no `Optimize` role, or when Keycloak refused the grant. See [Status](#status).
 
 Deleting this resource removes those callbacks from the realm, and only when this management plane holds the `ManagementAuthConfig` it names. A Keycloak that does not answer at that moment keeps them, and the deletion goes through anyway, so the orchestration clusters this plane holds are always freed.
 
@@ -636,7 +640,7 @@ The `ManagementAuthConfig` is the one step that reads `WriteFailed` on `Ready` i
 | `KeycloakReady` | `PendingSuspension` | `spec.suspend` is `true` and the `Keycloak` resource does not ask for zero instances yet. | Wait. |
 | `ManagementAuthReady` | `Healthy` | The `ManagementAuthConfig` is up to date. | Nothing. |
 | `ManagementAuthReady` | `WriteFailed` | The operator could not write the `ManagementAuthConfig`. The message carries the answer of the API server. | Read the message. The operator tries again. |
-| `OptimizeCallbacksReady` | `Healthy` | The `optimize` client of the realm carries the login callback of every row of `status.optimize`. | Nothing. |
+| `OptimizeCallbacksReady` | `Healthy` | The `optimize` client of the realm carries the login callback of every row of `status.optimize`, and the first administrator holds the `Optimize` role. | Nothing. |
 | `OptimizeCallbacksReady` | `NoCallbacks` | No Optimize behind this management plane names an address, so there is no login callback to register. The management plane stops reading the realm while this holds. | Nothing, until you run an Optimize. Then set `spec.externalUrl` on it. See [Optimize](#optimize). |
 | `OptimizeCallbacksReady` | `OptimizeClientMissing` | The realm holds no `optimize` client and Management Identity has finished starting. Management Identity creates that client while it starts and never after. While it is still starting, this condition reads `PrerequisiteNotMet` instead. | Restart Management Identity. A client that was removed from the realm comes back on the next start. |
 | `OptimizeCallbacksReady` | `ConnectionFailed` | Keycloak did not answer the operator, or it refused the administrator. The message carries what Keycloak said. | Read the message. Make sure that Keycloak answers and that the administrator Secret holds valid credentials. If the message names a certificate, set `caBundleSecretRef`. See [Trust of an https Keycloak](#trust-of-an-https-keycloak). |
@@ -644,6 +648,7 @@ The `ManagementAuthConfig` is the one step that reads `WriteFailed` on `Ready` i
 | `OptimizeCallbacksReady` | `InvalidReference` | The identity provider names no Keycloak administrator, so the operator cannot sign in to the realm. | Read the identity provider block. Both Keycloak modes name an administrator, so this is a report worth an issue. |
 | `OptimizeCallbacksReady` | `MissingSecret` | The Secret that the Keycloak Operator writes with the first Keycloak administrator does not exist or lacks a key, or the Secret of `caBundleSecretRef` does not. The message names the Secret and the key. | Wait for the Keycloak Operator to write it, or create the Secret the message names. In the `externalKeycloak` mode a missing `adminCredentialsSecretRef` Secret reports on `Ready` instead, and this condition keeps what it last read. |
 | `OptimizeCallbacksReady` | `WriteFailed` | Keycloak refused the change to the `optimize` client. The message carries what Keycloak said. | Read the message. Make sure that the administrator can change clients of the realm. |
+| `OptimizeCallbacksReady` | `AdminRoleGrantFailed` | The first administrator did not get the `Optimize` role of the realm. The realm holds no user of that name, or it holds no `Optimize` role, or Keycloak refused the grant. The message names which. | Read the message. A missing user or a missing role is one somebody removed from the realm, so put it back, or correct `spec.identity.admin.username`. |
 | `OptimizeCallbacksReady` | `Disabled` | The mode is `oidc`, so your provider holds the callback URLs. | Nothing. |
 | `OptimizeCallbacksReady` | `Suspended` | `spec.suspend` is `true`, so the realm is left as it is. | Nothing. |
 | `OptimizeCallbacksReady` | `PrerequisiteNotMet` | The operator is waiting for something before it touches the realm: Management Identity, which owns the Optimize client while it starts, or the `ManagementAuthConfig`, which decides who this plane serves. The message names which one. | Read the `IdentityReady` row, or the `ManagementAuthReady` row, whichever the message names. |
@@ -658,7 +663,7 @@ The `ManagementAuthConfig` is the one step that reads `WriteFailed` on `Ready` i
 | `Ready` | `Conflict` | A `ManagementAuthConfig` of that name exists and belongs to another owner. The message names the holder. | Set `spec.managementAuthConfigName` to a free name, or remove the object. |
 | `Ready` | `WriteFailed` | The `ManagementAuthConfig` could not be written, or Keycloak refused the change to the `optimize` client. | Read the `ManagementAuthReady` and `OptimizeCallbacksReady` rows. |
 | `Ready` | `StepFailed` | A step did not finish, usually because the Kubernetes API refused a call. The message names what the operator could not do. | Read the message. The operator tries again. If the reason stays, correct what the message names. |
-| `Ready` | `OptimizeClientMissing` / `ConnectionFailed` | The login callbacks are not registered in the realm. | Read the `OptimizeCallbacksReady` row. |
+| `Ready` | `OptimizeClientMissing` / `ConnectionFailed` / `AdminRoleGrantFailed` | The realm is not in the state the management plane wants: the login callbacks are missing, or the first administrator holds no `Optimize` role. | Read the `OptimizeCallbacksReady` row. |
 
 `Ready` is `True` only when every condition that takes part in it is `True`, the `ManagementAuthConfig` is written, and every step of the pass went through. The login callbacks hold it back only while this management plane serves an Optimize, as the paragraph above says.
 

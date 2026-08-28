@@ -471,12 +471,18 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 			))
 
 			// The preset switched on with the first Optimize, so the realm
-			// carries the Optimize role too. Management Identity assigns it to
-			// the first administrator on its very first start only, so an
-			// administrator from before this point grants it to themselves.
+			// carries the Optimize role too.
 			roles, err := realmRoles(mc)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(roles).To(ContainSubstring(`"name":"Optimize"`))
+
+			// Management Identity gives the roles of the realm to the first
+			// administrator on its very first start only, and this
+			// administrator is from before the role existed. The management
+			// plane is what puts the role on them.
+			held, err := realmUserRoles(mc, mcAdminUsername)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(held).To(ContainSubstring(`"name":"Optimize"`))
 		}, mcReadyTimeout, 10*time.Second).Should(Succeed())
 
 		By("waiting for Ready Healthy")
@@ -1289,6 +1295,59 @@ func realmRoles(mc *v1.CamundaManagementCluster) (string, error) {
 		},
 	}, podTimeout)
 }
+
+// realmUserRoles returns the JSON list of the realm roles that username holds
+// in the realm of mc, read through the Keycloak admin API.
+func realmUserRoles(mc *v1.CamundaManagementCluster, username string) (string, error) {
+	adminSecret := components.KeycloakInitialAdminSecretName(mc)
+
+	return utils.RunPod(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "keycloak-user-roles-" + utilrand.String(5),
+			Namespace: mc.Namespace,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Name:    "curl",
+				Image:   utils.CurlImage,
+				Command: []string{"sh"},
+				Args:    []string{"-ec", readUserRolesScript},
+				Env: []corev1.EnvVar{
+					{Name: "KC_URL", Value: keycloakServiceURL(mc)},
+					{Name: "KC_REALM", Value: mcRealm},
+					{Name: "KC_USERNAME", Value: username},
+					utils.SecretEnv("KC_USER", adminSecret, components.KeycloakAdminUsernameKey),
+					utils.SecretEnv("KC_PASSWORD", adminSecret, components.KeycloakAdminPasswordKey),
+				},
+			}},
+		},
+	}, podTimeout)
+}
+
+// readUserRolesScript reads an administrator token from the master realm,
+// looks the user up by the exact name, and prints the realm roles that the
+// user holds. The read is the composite one, so a role of a group of the user
+// is in the answer, the way the operator reads it.
+//
+// The curl image carries no jq, so the token and the internal id of the user
+// are cut out with sed. The pattern for the id stops at the first object of
+// the list, which is the only one an exact lookup returns. The username goes
+// through --data-urlencode, so a name with a reserved character in it reaches
+// Keycloak whole.
+const readUserRolesScript = `KC_TOKEN=$(curl -sS ` +
+	`-d grant_type=password -d client_id=admin-cli ` +
+	`--data-urlencode "username=$KC_USER" --data-urlencode "password=$KC_PASSWORD" ` +
+	`"$KC_URL/realms/master/protocol/openid-connect/token" | ` +
+	`sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+if [ -z "$KC_TOKEN" ]; then echo "no access_token from $KC_URL" >&2; exit 1; fi
+KC_USER_ID=$(curl -sS -f -G -H "Authorization: Bearer $KC_TOKEN" ` +
+	`-d exact=true --data-urlencode "username=$KC_USERNAME" ` +
+	`"$KC_URL/admin/realms/$KC_REALM/users" | ` +
+	`sed -n 's/^[^{]*{[^}]*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+if [ -z "$KC_USER_ID" ]; then echo "no user $KC_USERNAME in realm $KC_REALM" >&2; exit 1; fi
+curl -sS -f -H "Authorization: Bearer $KC_TOKEN" ` +
+	`"$KC_URL/admin/realms/$KC_REALM/users/$KC_USER_ID/role-mappings/realm/composite" | ` +
+	`tr -d ' '`
 
 // readRolesScript reads an administrator token from the master realm and
 // prints the realm roles.
