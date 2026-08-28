@@ -44,6 +44,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	databasecomponents "github.com/konsole-is/camunda-operator/pkg/components/database"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
 )
@@ -56,14 +57,18 @@ const worldSystemIdentifier = "7000000000000000001"
 // cluster, its whole storage chain, the one Database that owns the server, and
 // the live broker StatefulSet with its data volumes.
 type world struct {
-	namespace   string
-	cluster     *v1.CamundaCluster
-	storage     *v1.SecondaryStorageConfig
-	dbConfig    *v1.DatabaseConfig
-	server      *v1.DatabaseServerConfig
-	database    *v1.Database
-	credentials *corev1.Secret
-	brokers     *appsv1.StatefulSet
+	namespace string
+	cluster   *v1.CamundaCluster
+	storage   *v1.SecondaryStorageConfig
+	dbConfig  *v1.DatabaseConfig
+	server    *v1.DatabaseServerConfig
+	database  *v1.Database
+	// claimIdentity is the PostgreSQL instance whose logical database the
+	// Database of the world claims. It is the instance of the contract,
+	// unless a spec moves the claim somewhere else.
+	claimIdentity string
+	credentials   *corev1.Secret
+	brokers       *appsv1.StatefulSet
 	// brokerEnv is added to the broker container of the world, so a spec can
 	// shape the environment that the restore reads its facts from.
 	brokerEnv []corev1.EnvVar
@@ -117,7 +122,7 @@ func createWorldIn(namespace string, mutate ...func(*world)) *world {
 	Expect(k8sClient.Create(ctx, platform)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, platform) })
 
-	w := &world{namespace: namespace}
+	w := &world{namespace: namespace, claimIdentity: worldSystemIdentifier}
 
 	w.credentials = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "app-user", Namespace: namespace},
@@ -188,6 +193,7 @@ func createWorldIn(namespace string, mutate ...func(*world)) *world {
 	// The dedicated-server rule reads the Database resources of every
 	// namespace, so a claimant left behind reaches every later spec.
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, w.database) })
+	holdClaim(w.database, w.claimIdentity)
 	Expect(k8sClient.Create(ctx, w.dbConfig)).To(Succeed())
 	Expect(k8sClient.Create(ctx, w.storage)).To(Succeed())
 	Expect(k8sClient.Create(ctx, w.cluster)).To(Succeed())
@@ -235,6 +241,32 @@ func clearProbe(server *v1.DatabaseServerConfig) {
 		current.Status.ProbedSecretKeys = ""
 		g.Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
+}
+
+// holdClaim creates the claim Lease of the logical database that database
+// names, on the PostgreSQL instance that identifier names. The Database
+// controller writes it when the Database reaches its server. That controller
+// does not run in this suite, and the dedicated-server rule reads those
+// Leases to learn which instance every Database occupies.
+func holdClaim(database *v1.Database, identifier string) {
+	GinkgoHelper()
+	key := databasecomponents.CollisionKey(identifier, database.Spec.DatabaseName)
+	lease := databasecomponents.NewClaimLease(testClaimNamespace, key, database)
+	Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, lease) })
+}
+
+// releaseClaim deletes the claim Lease that holdClaim created, the way a
+// Database gives a logical database back once it reached another server.
+func releaseClaim(database *v1.Database, identifier string) {
+	GinkgoHelper()
+	key := databasecomponents.CollisionKey(identifier, database.Spec.DatabaseName)
+	Expect(k8sClient.Delete(ctx, &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testClaimNamespace,
+			Name:      databasecomponents.ClaimLeaseName(key),
+		},
+	})).To(Succeed())
 }
 
 // createServerFor creates a second contract in namespace that describes the
@@ -878,11 +910,11 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		expectAdmitted(pitr, w)
 	})
 
-	// The Database resource is what proves that the server holds one database.
-	// Without it the operator can prove nothing, and point-in-time recovery
-	// rolls back the whole server, so it does not start.
-	It("holds a server that no Database references", func() {
-		w := createWorld(func(w *world) { w.database.Spec.ServerRef = "another-server" })
+	// The claim of a Database is what proves that the server holds one
+	// database. Without it the operator can prove nothing, and point-in-time
+	// recovery rolls back the whole server, so it does not start.
+	It("holds a server that no Database claims", func() {
+		w := createWorld(func(w *world) { w.claimIdentity = "7000000000000000009" })
 		pitr := createRestore(w)
 
 		message := expectHeld(pitr, v1.ReasonInvalidReference)
@@ -907,6 +939,7 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		}
 		Expect(k8sClient.Create(ctx, second)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, second) })
+		holdClaim(second, worldSystemIdentifier)
 		pitr := createRestore(w)
 		expectHeld(pitr, v1.ReasonSharedServer)
 
@@ -949,6 +982,7 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		}
 		Expect(k8sClient.Create(ctx, second)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, second) })
+		holdClaim(second, worldSystemIdentifier)
 		pitr := createRestore(w)
 
 		message := expectHeld(pitr, v1.ReasonSharedServer)
@@ -957,59 +991,10 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		expectClaimsUntouched(w)
 	})
 
-	// A Database whose contract publishes no identity can be on this server
-	// or on another one. The rule cannot rule it out, and recovery rolls back
-	// the whole server, so the restore waits rather than destroy it.
-	It("holds a Database whose contract publishes no identity", func() {
-		w := createWorld()
-		other := newNamespace()
-		otherServer := createServerFor(other, "postgres.unprobed.svc", "")
-		second := &v1.Database{
-			ObjectMeta: metav1.ObjectMeta{Name: "other-" + w.database.Name, Namespace: other},
-			Spec: v1.DatabaseSpec{
-				ServerRef:    otherServer.Name,
-				DatabaseName: "other_database",
-			},
-		}
-		Expect(k8sClient.Create(ctx, second)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, second) })
-		pitr := createRestore(w)
-
-		message := expectHeld(pitr, v1.ReasonInvalidReference)
-		Expect(message).To(ContainSubstring(other + "/" + second.Name))
-		Expect(message).To(ContainSubstring("no system identifier"))
-		expectClaimsUntouched(w)
-	})
-
-	// A contract that was moved onto this instance still reports the instance
-	// it reached before the move. The Database behind it is about to live on
-	// this server, so a rule that reads the stale identity places it on the
-	// other one and lets the rollback destroy it.
-	It("holds a Database whose contract was moved onto this server", func() {
-		w := createWorld()
-		other := newNamespace()
-		otherServer := createServerFor(other, "postgres.other.svc", "7000000000000000009")
-		second := &v1.Database{
-			ObjectMeta: metav1.ObjectMeta{Name: "moved-" + w.database.Name, Namespace: other},
-			Spec: v1.DatabaseSpec{
-				ServerRef:    otherServer.Name,
-				DatabaseName: "other_database",
-			},
-		}
-		Expect(k8sClient.Create(ctx, second)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, second) })
-		moveHost(otherServer, w.server.Spec.Host)
-		pitr := createRestore(w)
-
-		message := expectHeld(pitr, v1.ReasonInvalidReference)
-		Expect(message).To(ContainSubstring(other + "/" + second.Name))
-		Expect(message).To(ContainSubstring("no system identifier"))
-		expectClaimsUntouched(w)
-	})
-
-	// A Database whose contract was deleted still names it. Nothing resolves
-	// that reference, so the Database cannot be placed either.
-	It("holds a Database whose contract is gone", func() {
+	// A Database that holds no claim occupies a logical database that nothing
+	// names. It can be on this server, and recovery rolls back the whole
+	// server, so the restore waits rather than erase it.
+	It("holds a Database that claims no logical database", func() {
 		w := createWorld()
 		other := newNamespace()
 		second := &v1.Database{
@@ -1025,7 +1010,60 @@ var _ = Describe("PointInTimeRestore admission", func() {
 
 		message := expectHeld(pitr, v1.ReasonInvalidReference)
 		Expect(message).To(ContainSubstring(other + "/" + second.Name))
+		Expect(message).To(ContainSubstring("claim no logical database"))
 		expectClaimsUntouched(w)
+	})
+
+	// A Database that moves to another server keeps the claim of the logical
+	// database it runs on until it reaches the new one. Its spec names the
+	// server it asks for, and its claim names the server it uses. Recovery
+	// rolls back the server it uses.
+	It("holds a server that a Database still claims while its spec names another one", func() {
+		w := createWorld()
+		other := newNamespace()
+		otherServer := createServerFor(other, "postgres.other.svc", "7000000000000000009")
+		second := &v1.Database{
+			ObjectMeta: metav1.ObjectMeta{Name: "moving-" + w.database.Name, Namespace: other},
+			Spec: v1.DatabaseSpec{
+				ServerRef:    otherServer.Name,
+				DatabaseName: "other_database",
+			},
+		}
+		Expect(k8sClient.Create(ctx, second)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, second) })
+		holdClaim(second, worldSystemIdentifier)
+		pitr := createRestore(w)
+
+		message := expectHeld(pitr, v1.ReasonSharedServer)
+		Expect(message).To(ContainSubstring(other + "/" + second.Name))
+		expectClaimsUntouched(w)
+	})
+
+	// The same move, finished: the Database reached the server its spec names
+	// and gave the logical database of this server back. Nothing else runs on
+	// this server now, so the restore starts.
+	It("admits a server whose other claimant reached the server it asked for", func() {
+		w := createWorld()
+		other := newNamespace()
+		otherServer := createServerFor(other, "postgres.other.svc", "7000000000000000009")
+		second := &v1.Database{
+			ObjectMeta: metav1.ObjectMeta{Name: "moving-" + w.database.Name, Namespace: other},
+			Spec: v1.DatabaseSpec{
+				ServerRef:    otherServer.Name,
+				DatabaseName: "other_database",
+			},
+		}
+		Expect(k8sClient.Create(ctx, second)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, second) })
+		holdClaim(second, worldSystemIdentifier)
+		pitr := createRestore(w)
+		expectHeld(pitr, v1.ReasonSharedServer)
+
+		By("giving the claim of this server back for the one its spec names")
+		holdClaim(second, "7000000000000000009")
+		releaseClaim(second, worldSystemIdentifier)
+
+		expectAdmitted(pitr, w)
 	})
 
 	// One Database on the instance is not enough. A hand-written
@@ -1060,6 +1098,7 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		}
 		Expect(k8sClient.Create(ctx, second)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, second) })
+		holdClaim(second, "7000000000000000009")
 		pitr := createRestore(w)
 
 		expectAdmitted(pitr, w)

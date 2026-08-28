@@ -27,9 +27,10 @@ const (
 	// point-in-time recovery, or that spec.timestamp lies outside its
 	// retention period.
 	ReasonPitrUnavailable = "PitrUnavailable"
-	// ReasonSharedServer means that more than one Database references the
-	// database server. Engine-level point-in-time recovery rolls back the
-	// whole server, so a shared server rolls back unrelated databases too.
+	// ReasonSharedServer means that more than one Database runs a logical
+	// database on the database server. Engine-level point-in-time recovery
+	// rolls back the whole server, so a shared server rolls back unrelated
+	// databases too.
 	ReasonSharedServer = "SharedServer"
 	// ReasonDatabaseNotRestored means that the database is ahead of
 	// spec.timestamp, or that it reports no exporter position for a

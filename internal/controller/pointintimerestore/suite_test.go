@@ -42,6 +42,10 @@ const (
 	interval = testenv.Interval
 )
 
+// testClaimNamespace holds the claim Leases of this suite. In a cluster this
+// is the namespace of the operator.
+const testClaimNamespace = "default"
+
 // retryInterval paces a hold in Pending that no watch resolves. It is short
 // enough that a spec which waits for the timer finishes inside the test
 // timeout, and long enough that watchWindow can tell a watch from the timer.
@@ -132,7 +136,7 @@ var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	env = testenv.Start(func(mgr ctrl.Manager) error {
-		return New(mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), Options{
+		return New(mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), testClaimNamespace, Options{
 			// Short, so a poll of the restore and a hold that no watch
 			// resolves both fit inside the test timeout.
 			PollInterval:  100 * time.Millisecond,

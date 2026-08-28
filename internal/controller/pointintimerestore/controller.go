@@ -161,14 +161,31 @@ type Reconciler struct {
 	// Metrics records the condition gauge and the apply counters of the
 	// framework. SetupWithManager sets it when it is nil.
 	Metrics component.MetricsRecorder
+	// ClaimNamespace holds the claim Lease of every logical database. The
+	// dedicated-server rule reads them to learn which PostgreSQL instance
+	// each Database occupies. It is the namespace of the operator, and
+	// SetupWithManager refuses an empty one.
+	ClaimNamespace string
 
 	opts Options
 }
 
 // New returns a Reconciler with the given options, with every zero field
 // filled from the production configuration.
-func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options Options) *Reconciler {
-	return &Reconciler{Client: c, APIReader: reader, Scheme: scheme, opts: options.withDefaults()}
+func New(
+	c client.Client,
+	reader client.Reader,
+	scheme *runtime.Scheme,
+	claimNamespace string,
+	options Options,
+) *Reconciler {
+	return &Reconciler{
+		Client:         c,
+		APIReader:      reader,
+		Scheme:         scheme,
+		ClaimNamespace: claimNamespace,
+		opts:           options.withDefaults(),
+	}
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=pointintimerestores,verbs=get;list;watch;create;update;patch;delete
@@ -365,8 +382,13 @@ func (r *Reconciler) holdStarted(
 
 // SetupWithManager registers the controller, the field index, and the
 // watches: the restores, the Jobs they own, the pods of those Jobs, and the
-// clusters they name.
+// clusters they name. It refuses a reconciler without a namespace for the
+// claim Leases.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.ClaimNamespace == "" {
+		return errors.New("the namespace of the claim Leases is required")
+	}
+
 	if r.EventRecorder == nil {
 		r.EventRecorder = mgr.GetEventRecorder(controllerName)
 	}

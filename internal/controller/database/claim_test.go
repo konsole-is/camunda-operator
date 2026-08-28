@@ -33,8 +33,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/database"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
+
+// The specs of this package name the claim vocabulary of
+// pkg/components/database under its short form.
+const claimHolderNameAnnotation = components.ClaimHolderNameAnnotation
+
+func claimLeaseName(key string) string { return components.ClaimLeaseName(key) }
 
 // unclaimed returns a Database that has not recorded a claim yet, as it
 // stands on the cluster before the reconcile that resolves its server. The
@@ -152,7 +159,7 @@ func TestClaimSerializesTwoFirstReconciles(t *testing.T) {
 
 		lease, found := leaseOf(t, r)
 		require.True(t, found)
-		holder, ours := holderOf(lease)
+		holder, ours := components.ClaimHolderOf(lease)
 		require.True(t, ours)
 		assert.Equal(t, "beta/newer", holder.String(), "the Lease must stay with its holder")
 	})
@@ -233,7 +240,7 @@ func TestClaimTakesOverAHolderThatIsGone(t *testing.T) {
 
 	lease, found := leaseOf(t, r)
 	require.True(t, found)
-	holder, ours := holderOf(lease)
+	holder, ours := components.ClaimHolderOf(lease)
 	require.True(t, ours)
 	assert.Equal(t, "beta/next", holder.String())
 }
@@ -271,7 +278,7 @@ func TestClaimTakesOverAReplacedHolder(t *testing.T) {
 
 	lease, found := leaseOf(t, r)
 	require.True(t, found)
-	holder, ours := holderOf(lease)
+	holder, ours := components.ClaimHolderOf(lease)
 	require.True(t, ours)
 	assert.Equal(t, "beta/next", holder.String())
 }
