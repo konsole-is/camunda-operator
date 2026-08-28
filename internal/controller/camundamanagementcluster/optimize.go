@@ -18,6 +18,7 @@ package camundamanagementcluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -396,12 +397,63 @@ func (r *Reconciler) keycloakAdmin(
 		return nil, &conditions.PreCheckFailure{Reason: v1.ReasonMissingSecret, Message: msg}, nil
 	}
 
+	trust, failure, err := r.keycloakTrust(ctx, mc, provider)
+	if err != nil || failure != nil {
+		return nil, failure, err
+	}
+
 	return keycloakadmin.New(
 		provider.KeycloakURL,
 		provider.Realm,
 		string(secret.Data[ref.UsernameKey]),
 		string(secret.Data[ref.PasswordKey]),
+		trust...,
 	), nil, nil
+}
+
+// keycloakTrust reads the certificate authority that the identity provider
+// names and returns the options that make the administration client trust it.
+// A provider that names none returns no option, so the client verifies
+// Keycloak against the trust store of the operator image alone.
+//
+// The Secret is read live, the way the administrator credentials are, because
+// the controller watches Secrets metadata only.
+func (r *Reconciler) keycloakTrust(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	provider components.IdentityProvider,
+) ([]keycloakadmin.Option, *conditions.PreCheckFailure, error) {
+	ref := provider.CABundle
+	if ref == nil {
+		return nil, nil, nil
+	}
+
+	key := client.ObjectKey{Namespace: mc.Namespace, Name: ref.Name}
+	secret, msg, err := secretref.Get(ctx, r.APIReader, key, ref.Key)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading Secret %q: %w", key, err)
+	}
+	if msg != "" {
+		return nil, &conditions.PreCheckFailure{Reason: v1.ReasonMissingSecret, Message: msg}, nil
+	}
+
+	// Only the bundle is the user's to correct. A trust store of the operator
+	// image that cannot be read is a fault of the operator, so it comes back
+	// as an error and never as a state of this resource.
+	pool, err := keycloakadmin.ParseCABundle(secret.Data[ref.Key])
+	switch {
+	case errors.Is(err, keycloakadmin.ErrNoCertificates):
+		return nil, &conditions.PreCheckFailure{
+			Reason: v1.ReasonInvalidCABundle,
+			Message: conditions.BoundMessage(fmt.Sprintf(
+				"Key %q of Secret %s: %s", ref.Key, key, err,
+			)),
+		}, nil
+	case err != nil:
+		return nil, nil, fmt.Errorf("building the certificate pool of Secret %q: %w", key, err)
+	}
+
+	return []keycloakadmin.Option{keycloakadmin.WithRootCAs(pool)}, nil, nil
 }
 
 // stageCallbacks sets OptimizeCallbacksReady on the in-memory CR. The deferred

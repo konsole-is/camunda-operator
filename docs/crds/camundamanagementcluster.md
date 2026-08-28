@@ -124,6 +124,36 @@ spec:
 
 `adminCredentialsSecretRef` names the Keycloak administrator that Management Identity bootstraps the realm with. The Secret lives in the namespace of this resource.
 
+#### Trust of an https Keycloak
+
+The operator signs in to Keycloak itself, to register the login callback of every Optimize this management plane serves. It trusts the certificate authorities of its own image, which are the public ones. A Keycloak whose certificate comes from an authority of your own therefore fails the handshake, and `OptimizeCallbacksReady` reads `ConnectionFailed`.
+
+`caBundleSecretRef` names the key of a Secret that holds that authority, in PEM form. The operator then trusts it in addition to the authorities of its image:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaManagementCluster
+metadata:
+  name: my-management
+  namespace: my-management-ns
+spec:
+  identityProvider:
+    externalKeycloak:
+      url: "https://keycloak.example.com/auth"
+      adminCredentialsSecretRef:
+        name: "my-keycloak-admin"
+      caBundleSecretRef:
+        name: "my-keycloak-ca"
+        key: "ca.crt"
+  # ... the rest of your management cluster
+```
+
+The Secret lives in the namespace of this resource. A key that holds no certificate in PEM form reports `InvalidCABundle`. A Secret that does not exist reports `MissingSecret`. The operator reads the Secret again when it changes, so a rotated authority needs no restart.
+
+The field is only valid with an `https` url, because the operator makes no handshake with an `http` one. In the `keycloak` mode the operator reaches the Keycloak it runs through the in-cluster Service, over `http`, so that mode carries no such field.
+
+The field changes what the operator trusts. It does not reach the pods of Management Identity, Console, or Web Modeler.
+
 ### Your own OIDC provider
 
 `identityProvider.oidc` connects Management Identity to the identity provider of the referenced [CamundaPlatformConfig](camundaplatformconfig.md). Nothing is created for you here. You register one application per component at your provider, and the platform config names them.
@@ -587,9 +617,10 @@ A failed pre-check reports on `Ready` and stops, so every other condition keeps 
 | `OptimizeCallbacksReady` | `Healthy` | The `optimize` client of the realm carries the login callback of every row of `status.optimize`, and the first administrator holds the `Optimize` role. | Nothing. |
 | `OptimizeCallbacksReady` | `NoCallbacks` | No Optimize behind this management plane names an address, so there is no login callback to register. The management plane stops reading the realm while this holds. | Nothing, until you run an Optimize. Then set `spec.externalUrl` on it. See [Optimize](#optimize). |
 | `OptimizeCallbacksReady` | `OptimizeClientMissing` | The realm holds no `optimize` client and Management Identity has finished starting. Management Identity creates that client while it starts and never after. While it is still starting, this condition reads `PrerequisiteNotMet` instead. | Restart Management Identity. A client that was removed from the realm comes back on the next start. |
-| `OptimizeCallbacksReady` | `ConnectionFailed` | Keycloak did not answer the operator, or it refused the administrator. The message carries what Keycloak said. | Read the message. Make sure that Keycloak answers, that the administrator Secret holds valid credentials, and that the operator trusts the certificate of an `https` Keycloak. |
+| `OptimizeCallbacksReady` | `ConnectionFailed` | Keycloak did not answer the operator, or it refused the administrator. The message carries what Keycloak said. | Read the message. Make sure that Keycloak answers and that the administrator Secret holds valid credentials. If the message names a certificate, set `caBundleSecretRef`. See [Trust of an https Keycloak](#trust-of-an-https-keycloak). |
+| `OptimizeCallbacksReady` | `InvalidCABundle` | The key that `caBundleSecretRef` names holds no certificate in PEM form. | Put the certificate authority of Keycloak in that key, in PEM form. See [Trust of an https Keycloak](#trust-of-an-https-keycloak). |
 | `OptimizeCallbacksReady` | `InvalidReference` | The identity provider names no Keycloak administrator, so the operator cannot sign in to the realm. | Read the identity provider block. Both Keycloak modes name an administrator, so this is a report worth an issue. |
-| `OptimizeCallbacksReady` | `MissingSecret` | The Secret that the Keycloak Operator writes with the first Keycloak administrator does not exist or lacks a key. | Wait for the Keycloak Operator to write it. In the `externalKeycloak` mode a missing `adminCredentialsSecretRef` Secret stops the reconcile earlier, so it reports on `Ready` instead and this condition keeps what it last read. |
+| `OptimizeCallbacksReady` | `MissingSecret` | The Secret that the Keycloak Operator writes with the first Keycloak administrator does not exist or lacks a key, or the Secret of `caBundleSecretRef` does not. The message names the Secret and the key. | Wait for the Keycloak Operator to write it, or create the Secret the message names. In the `externalKeycloak` mode a missing `adminCredentialsSecretRef` Secret reports on `Ready` instead, and this condition keeps what it last read. |
 | `OptimizeCallbacksReady` | `WriteFailed` | Keycloak refused the change to the `optimize` client. The message carries what Keycloak said. | Read the message. Make sure that the administrator can change clients of the realm. |
 | `OptimizeCallbacksReady` | `AdminRoleGrantFailed` | The first administrator did not get the `Optimize` role of the realm. The realm holds no user of that name, or it holds no `Optimize` role, or Keycloak refused the grant. The message names which. | Read the message. A missing user or a missing role is one somebody removed from the realm, so put it back, or correct `spec.identity.admin.username`. |
 | `OptimizeCallbacksReady` | `Disabled` | The mode is `oidc`, so your provider holds the callback URLs. | Nothing. |
@@ -689,6 +720,13 @@ spec:
         usernameKey: "username"
         # string. Optional, default: password. Key that holds the password.
         passwordKey: "password"
+      # object. Optional. Secret key with the certificate authority of Keycloak, in PEM form. The operator trusts it
+      # in addition to the authorities of its own image. Only valid with an https url.
+      caBundleSecretRef:
+        # string. Required. Name of the Secret.
+        name: "my-keycloak-ca"
+        # string. Required. Key that holds the PEM bundle.
+        key: "ca.crt"
     # object. Optional. Connect to the identity provider of the referenced CamundaPlatformConfig. It carries no fields.
     oidc: {}
   # object. Required. Management Identity. It is always deployed.

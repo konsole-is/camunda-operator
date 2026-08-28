@@ -52,7 +52,18 @@ type fakeKeycloak struct {
 func (f *fakeKeycloak) start(t *testing.T) string {
 	t.Helper()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(f.serve(t))
+	t.Cleanup(server.Close)
+
+	return server.URL + "/auth"
+}
+
+// serve records every request, answers the token endpoint, and passes
+// everything else to handler.
+func (f *fakeKeycloak) serve(t *testing.T) http.HandlerFunc {
+	t.Helper()
+
+	return func(w http.ResponseWriter, r *http.Request) {
 		raw, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
 		f.calls = append(f.calls, call{
@@ -71,10 +82,7 @@ func (f *fakeKeycloak) start(t *testing.T) string {
 		}
 
 		f.handler(w, r, string(raw))
-	}))
-	t.Cleanup(server.Close)
-
-	return server.URL + "/auth"
+	}
 }
 
 func TestFindClient(t *testing.T) {

@@ -95,6 +95,7 @@ func TestSecretRefsIndexesEveryReferenceOfTheSpec(t *testing.T) {
 		Spec: v1.CamundaManagementClusterSpec{
 			IdentityProvider: v1.IdentityProviderSpec{ExternalKeycloak: &v1.ExternalKeycloakSpec{
 				AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{Name: "keycloak-admin"},
+				CABundleSecretRef:         &v1.LocalSecretKeyRef{Name: "keycloak-ca", Key: "ca.crt"},
 			}},
 			Identity: v1.IdentitySpec{Admin: v1.IdentityAdminSpec{
 				Username:          "admin",
@@ -110,6 +111,7 @@ func TestSecretRefsIndexesEveryReferenceOfTheSpec(t *testing.T) {
 		t,
 		[]string{
 			enqueueNamespace + "/keycloak-admin",
+			enqueueNamespace + "/keycloak-ca",
 			enqueueNamespace + "/admin-password",
 			enqueueNamespace + "/smtp",
 		},
