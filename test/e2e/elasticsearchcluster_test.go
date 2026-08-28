@@ -63,6 +63,16 @@ var dataVolumeSelector = k8slabels.SelectorFromSet(
 	labels.Discovery(labels.ElasticsearchCluster(esName), "elasticsearch"),
 ).String()
 
+// esHeapEnv holds the heap of an Elasticsearch node at 512 MB. Elasticsearch
+// gives the heap half of the memory it sees, and a container with no memory
+// limit sees the whole node. That heap was the largest single claim on the
+// runner. Each flow indexes the records of one process instance, so 512 MB is
+// enough. The memory limit of the fixture bounds what Elasticsearch puts
+// around the heap.
+func esHeapEnv() []corev1.EnvVar {
+	return []corev1.EnvVar{{Name: "ES_JAVA_OPTS", Value: "-Xms512m -Xmx512m"}}
+}
+
 var _ = Describe("ElasticsearchCluster", Ordered, Label(utils.LabelElasticsearchCluster), func() {
 	var (
 		cluster = &v1.ElasticsearchCluster{
@@ -72,13 +82,10 @@ var _ = Describe("ElasticsearchCluster", Ordered, Label(utils.LabelElasticsearch
 				Version:     os.Getenv(envElasticsearchVersion),
 				Replicas:    new(int32(1)),
 				StorageSize: new(resource.MustParse(esStorageSize)),
-				Resources: &corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("500m"),
-						corev1.ResourceMemory: resource.MustParse("1Gi"),
-					},
-					Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
-				},
+				// This flow runs Elasticsearch alone, and it indexes one
+				// document, so the limit stays at the request.
+				Resources:              capped("500m", "1Gi", "1Gi"),
+				ExtraEnv:               esHeapEnv(),
 				SecondaryStorageConfig: esStorageConfig,
 				Monitoring: &v1.MonitoringSpec{
 					ServiceMonitor: &v1.ServiceMonitorSpec{Enabled: true},
