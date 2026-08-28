@@ -134,6 +134,7 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundamanagementclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundamanagementclusters/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=camundaoptimizes,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters/status,verbs=get
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaplatformconfigs,verbs=get;list;watch
@@ -142,6 +143,7 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // +kubebuilder:rbac:groups=core.camunda.io,resources=managementauthconfigs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=k8s.keycloak.org,resources=keycloaks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=k8s.keycloak.org,resources=keycloaks/status,verbs=get
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=list
@@ -153,11 +155,15 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // finalizer is added before the first side effect, the pre-checks resolve every
 // reference into the render input, and a failed pre-check reports its Ready
 // reason, lets go of the clusters that the selectors no longer match, and
-// stops. Then the orchestration clusters are selected and claimed,
-// the components converge, every attached cluster is pointed at Console, and
-// the ManagementAuthConfig is applied. Ready is
-// True only when every component that takes part in it is True and the
-// contract is written; a failed write reports WriteFailed.
+// stops. Then the orchestration clusters are selected and claimed, the
+// CamundaOptimizes behind the contract are discovered, the components
+// converge, every attached cluster is pointed at Console, the
+// ManagementAuthConfig is applied, and the login callback of every discovered
+// Optimize is registered in the realm. Ready is True only when every component
+// that takes part in it is True and the contract is written; a failed write
+// reports WriteFailed. A plane that serves at least one Optimize also waits
+// for the login callbacks of the realm, and one that serves none reads Ready
+// whatever the realm says.
 //
 // Status is written once per reconcile: the components and conditions.Stage
 // stage conditions on the in-memory CR, and the deferred FlushStatus persists
@@ -235,6 +241,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 	res.Input.Clusters = attached
 	mc.Status.Clusters = rows
+
+	if err := r.discoverOptimizes(ctx, &mc, &res); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// A renamed contract leaves the old name behind until the new contract is
 	// written, so the status keeps naming the old one until then.
 	previousContract := mc.Status.ManagementAuthConfig
@@ -270,20 +281,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			contractErr = err
 		}
 	}
-	conditions.Stage(&mc, readyCondition(&mc, built.Ready, contractErr))
+	callbackFailure, callbackRetry, callbackErr := r.syncOptimizeCallbacks(ctx, &mc, res, contractErr)
+	conditions.Stage(&mc, readyCondition(&mc, built.Ready, contractErr, callbackFailure))
 
-	// Nothing watches the user API of a cluster, so the controller comes back
-	// on its own: soon when a cluster refused the call, and on the converge
-	// interval to find a user that somebody removed on the cluster.
+	// Nothing watches the user API of a cluster or the Optimize client of the
+	// realm, so the controller comes back on its own: soon when a cluster or
+	// Keycloak refused the call, and on the converge interval to find a user
+	// or a login callback that somebody removed there.
 	var result ctrl.Result
 	switch {
-	case anyRow(rows, v1.ReasonBasicAuthUserFailed):
+	case anyRow(rows, v1.ReasonBasicAuthUserFailed), callbackRetry:
 		result.RequeueAfter = r.retryInterval()
-	case convergesUsers(&mc, attached):
+	case convergesUsers(&mc, attached), len(res.Input.OptimizeURLs) > 0:
 		result.RequeueAfter = r.convergeInterval()
 	}
 
-	return result, errors.Join(reconcileErr, claimErr, userErr, pingErr, releaseErr, contractErr)
+	return result, errors.Join(
+		reconcileErr, claimErr, userErr, pingErr, releaseErr, contractErr, callbackErr,
+	)
 }
 
 // withdrawFromDeselected takes back what the management plane put on the
@@ -504,14 +519,22 @@ func anyRow(rows []v1.AttachedClusterStatus, reason string) bool {
 	return false
 }
 
-// readyCondition derives Ready from the components and the contract write. A
-// failed write is never a ready management plane: the ManagementAuthConfig is
-// the only thing a CamundaOptimize reads from this resource, and the
-// components know nothing about it.
+// readyCondition derives Ready from the components, the contract write, and
+// the registration of the Optimize callbacks. Neither write is a component,
+// and neither is a ready management plane when it fails: the
+// ManagementAuthConfig is the only thing a CamundaOptimize reads from this
+// resource, and an Optimize whose callback is missing from the realm cannot
+// complete a login.
+//
+// A component that is not True yet decides Ready before the callbacks do. The
+// realm is bootstrapped by Management Identity against Keycloak, so a plane
+// that is still starting cannot register anything, and reporting that instead
+// of the component that is starting would name the symptom over the cause.
 func readyCondition(
 	mc *v1.CamundaManagementCluster,
 	comps []*component.Component,
 	contractErr error,
+	callbackFailure *conditions.PreCheckFailure,
 ) metav1.Condition {
 	if contractErr != nil {
 		return conditions.Failed(mc, &conditions.PreCheckFailure{
@@ -520,7 +543,12 @@ func readyCondition(
 		})
 	}
 
-	return conditions.Aggregate(mc, comps...)
+	ready := conditions.Aggregate(mc, comps...)
+	if ready.Status == metav1.ConditionTrue && callbackFailure != nil {
+		return conditions.Failed(mc, callbackFailure)
+	}
+
+	return ready
 }
 
 // SetupWithManager registers the controller, the reference indexes, and the

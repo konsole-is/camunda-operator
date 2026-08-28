@@ -66,6 +66,37 @@ spec:
                 - message: 'clusterRef is immutable: delete this CamundaOptimize and
                     create a new one to attach it to another cluster'
                   rule: self == oldSelf
+              externalUrl:
+                description: |-
+                  ExternalURL is the URL that browsers reach this Optimize at.
+
+                  In the two Keycloak modes the management plane behind managementAuthRef
+                  registers <externalUrl>/api/authentication/callback on the optimize
+                  client of the realm, so a person who signs in here comes back here. An
+                  Optimize that sets no URL gets no callback from that plane, so Keycloak
+                  refuses the return, unless somebody put that callback in the realm by
+                  hand.
+
+                  In the oidc mode the field has no effect. The identity provider of the
+                  platform config holds the callback URLs, so add this one there.
+                type: string
+                x-kubernetes-validations:
+                - message: externalUrl must be a valid http or https URL
+                  rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
+                    == 'https') && url(self).getHostname() != ''
+                - message: 'externalUrl must carry no comma: Management Identity reads
+                    the callback list as comma-separated'
+                  rule: '!self.contains('','')'
+                - message: 'externalUrl must not end with a slash: the login callback
+                    is appended to it'
+                  rule: '!self.endsWith(''/'')'
+                - message: 'externalUrl must carry no query and no fragment: the login
+                    callback is appended to it'
+                  rule: '!self.contains(''?'') && !self.contains(''#'')'
+                - message: 'externalUrl must carry no whitespace: Management Identity
+                    deletes whitespace from every root URL and the operator does not,
+                    so the two would register different callbacks'
+                  rule: '!self.matches(''[[:space:]]'')'
               importer:
                 description: |-
                   Importer configures the Deployment that imports the exported cluster

@@ -108,6 +108,9 @@ const (
 	ClientSecretKey = "client-secret"
 	// PasswordKey holds the password of the first administrator.
 	PasswordKey = "password"
+	// OptimizeRootURLKey holds the comma-separated Optimize root URLs, in the
+	// ConfigMap that IdentityOptimizeURLsName names.
+	OptimizeRootURLKey = "rootUrl"
 	// KeycloakAdminUsernameKey and KeycloakAdminPasswordKey are the keys of
 	// the Secret that the Keycloak Operator writes for the first Keycloak
 	// administrator.
@@ -229,6 +232,7 @@ const (
 	webModelerRestapiSuffix     = "web-modeler-restapi"
 	webModelerWebsocketsSuffix  = "web-modeler-websockets"
 	optimizeClientSuffix        = "optimize-client"
+	optimizeURLsSuffix          = "identity-optimize-urls"
 	identityAdminSuffix         = "identity-admin"
 	pusherSuffix                = "web-modeler-pusher"
 	keycloakServiceSuffix       = "-service"
@@ -323,6 +327,13 @@ func KeycloakInitialAdminSecretName(mc *v1.CamundaManagementCluster) string {
 // modes only.
 func OptimizeClientSecretName(mc *v1.CamundaManagementCluster) string {
 	return suffixed(mc.Name, optimizeClientSuffix)
+}
+
+// IdentityOptimizeURLsName returns the name of the ConfigMap that holds the
+// Optimize root URLs of this management plane. Management Identity reads it
+// through KEYCLOAK_INIT_OPTIMIZE_ROOT_URL.
+func IdentityOptimizeURLsName(mc *v1.CamundaManagementCluster) string {
+	return suffixed(mc.Name, optimizeURLsSuffix)
 }
 
 // IdentityAdminSecretName returns the name of the generated Secret that holds

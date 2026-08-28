@@ -226,7 +226,6 @@ var _ = Describe("CamundaManagementCluster controller in the Keycloak modes", fu
 				latest.Spec.Identity.Admin = v1.IdentityAdminSpec{
 					ClaimName: "oid", ClaimValue: "admin-oid",
 				}
-				latest.Spec.Optimize = nil
 				g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
 			}, timeout, interval).Should(Succeed())
 
@@ -342,11 +341,10 @@ func withExternalKeycloak(f *fixture) {
 }
 
 // withKeycloakAdministrator replaces the initial claim of the oidc mode with
-// the first Keycloak user, and declares the Optimize that the realm carries a
-// client for.
+// the first Keycloak user. A scenario built from it serves no Optimize, so it
+// registers no login callback and nothing in these specs reaches Keycloak.
 func withKeycloakAdministrator(f *fixture) {
 	f.mc.Spec.Identity.Admin = v1.IdentityAdminSpec{Username: "platform-admin"}
-	f.mc.Spec.Optimize = &v1.ManagementOptimizeSpec{ExternalURL: "https://optimize.example.com"}
 }
 
 // stampKeycloakReady writes the status that the Keycloak Operator would write

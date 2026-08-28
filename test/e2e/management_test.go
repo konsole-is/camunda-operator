@@ -20,6 +20,8 @@ limitations under the License.
 package e2e
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -31,6 +33,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8slabels "k8s.io/apimachinery/pkg/labels"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -109,6 +112,16 @@ const (
 	// mcOptimizeName is the CamundaOptimize that attaches through the
 	// contract.
 	mcOptimizeName = "camunda-management-optimize"
+	// mcSecondOptimizeName is the second CamundaOptimize behind the same
+	// contract: an Optimize whose cluster is still to come. Its clusterRef
+	// names mcSecondOptimizeCluster, which nothing creates, so it renders no
+	// workload and the node carries one Optimize. The management plane finds
+	// it all the same, because discovery reads spec.managementAuthRef and
+	// spec.externalUrl and nothing of the cluster.
+	mcSecondOptimizeName = "camunda-management-optimize-second"
+	// mcSecondOptimizeCluster is the CamundaCluster that
+	// mcSecondOptimizeName waits for.
+	mcSecondOptimizeCluster = "camunda-management-cluster-to-come"
 
 	// The client that the orchestration cluster of the keycloak flow
 	// authenticates with. Management Identity creates a client for every
@@ -253,9 +266,9 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 	})
 
 	AfterAll(func() {
-		By("removing the Optimize instance, the cluster, the management plane, and the cluster-scoped resources")
+		By("removing the Optimize instances, the cluster, the management plane, and the cluster-scoped resources")
 		_, _ = utils.Kubectl(
-			"delete", optimizeResource, mcOptimizeName, "-n", mcKeycloakNamespace,
+			"delete", optimizeResource, mcOptimizeName, mcSecondOptimizeName, "-n", mcKeycloakNamespace,
 			"--ignore-not-found", "--wait=false",
 		)
 		_, _ = utils.Kubectl(
@@ -318,6 +331,12 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 			} {
 				expectCondition(g, mcResource, mcKeycloakName, mcKeycloakNamespace, condition, v1.ReasonHealthy)
 			}
+			// No CamundaOptimize exists yet, so the realm holds no login
+			// callback of this operator and none is missing.
+			expectCondition(
+				g, mcResource, mcKeycloakName, mcKeycloakNamespace,
+				v1.ConditionOptimizeCallbacksReady, v1.ReasonNoCallbacks,
+			)
 			expectReady(g, mcResource, mcKeycloakName, mcKeycloakNamespace, v1.ReasonHealthy)
 		}, mcReadyTimeout, 10*time.Second).Should(Succeed())
 
@@ -433,10 +452,178 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 		By("creating the CamundaOptimize")
 		Expect(apply(managementOptimize())).To(Succeed())
 
+		By("registering its login callback on the Optimize client of the realm")
+		Eventually(func(g Gomega) {
+			var status v1.CamundaManagementCluster
+			g.Expect(utils.Get(mcResource, mcKeycloakName, mcKeycloakNamespace, &status)).To(Succeed())
+			g.Expect(status.Status.Optimize).To(ContainElement(v1.AttachedOptimizeStatus{
+				Namespace:   mcKeycloakNamespace,
+				Name:        mcOptimizeName,
+				ExternalURL: optimizeWebappURL(),
+			}))
+
+			expectCondition(
+				g, mcResource, mcKeycloakName, mcKeycloakNamespace,
+				v1.ConditionOptimizeCallbacksReady, v1.ReasonHealthy,
+			)
+
+			// The realm is the proof: Management Identity created the client
+			// from the URL the management plane discovered, and the client
+			// carries the login callback under it.
+			client, err := realmOptimizeClient(mc)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(client).To(ContainSubstring(
+				optimizeWebappURL() + components.OptimizeCallbackPath,
+			))
+
+			// The preset switched on with the first Optimize, so the realm
+			// carries the Optimize role too. Management Identity assigns it to
+			// the first administrator on its very first start only, so an
+			// administrator from before this point grants it to themselves.
+			roles, err := realmRoles(mc)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(roles).To(ContainSubstring(`"name":"Optimize"`))
+		}, mcReadyTimeout, 10*time.Second).Should(Succeed())
+
 		By("waiting for Ready Healthy")
 		Eventually(func(g Gomega) {
 			expectReady(g, optimizeResource, mcOptimizeName, mcKeycloakNamespace, v1.ReasonHealthy)
 		}, optimizeReadyTimeout, 10*time.Second).Should(Succeed())
+	})
+
+	It("registers a second Optimize and withdraws it again without rolling Management Identity", func() {
+		By("recording the generation and the pod template of Management Identity")
+		generation, template, err := identityRollState(mc)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("creating a second CamundaOptimize behind the same contract")
+		Expect(apply(secondManagementOptimize())).To(Succeed())
+
+		// status.optimize and OptimizeCallbacksReady are written by one
+		// FlushStatus of one reconcile, so a read that finds both rows and
+		// Healthy is a read of the reconcile that wrote the realm.
+		By("listing both Optimize instances and reporting the callbacks registered")
+		Eventually(func(g Gomega) {
+			var status v1.CamundaManagementCluster
+			g.Expect(utils.Get(mcResource, mcKeycloakName, mcKeycloakNamespace, &status)).To(Succeed())
+			g.Expect(status.Status.Optimize).To(Equal([]v1.AttachedOptimizeStatus{
+				{
+					Namespace:   mcKeycloakNamespace,
+					Name:        mcOptimizeName,
+					ExternalURL: optimizeWebappURL(),
+				},
+				{
+					Namespace:   mcKeycloakNamespace,
+					Name:        mcSecondOptimizeName,
+					ExternalURL: secondOptimizeWebappURL(),
+				},
+			}))
+
+			expectCondition(
+				g, mcResource, mcKeycloakName, mcKeycloakNamespace,
+				v1.ConditionOptimizeCallbacksReady, v1.ReasonHealthy,
+			)
+		}, 5*time.Minute, 5*time.Second).Should(Succeed())
+
+		By("carrying both login callbacks on the Optimize client of the realm")
+		client, err := realmOptimizeClient(mc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(client).To(ContainSubstring(optimizeWebappURL() + components.OptimizeCallbackPath))
+		Expect(client).To(ContainSubstring(secondOptimizeWebappURL() + components.OptimizeCallbackPath))
+
+		By("holding both URLs in the ConfigMap that Management Identity reads")
+		urls, err := optimizeRootURLs(mc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(urls).To(Equal(optimizeWebappURL() + "," + secondOptimizeWebappURL()))
+
+		By("leaving Management Identity as it was")
+		Consistently(func(g Gomega) {
+			expectIdentityRollState(g, mc, generation, template)
+		}, 30*time.Second, 10*time.Second).Should(Succeed())
+
+		// The running pods got the second callback from the operator. The
+		// ConfigMap is the floor for the pod that starts next, which registers
+		// the callbacks of KEYCLOAK_INIT_OPTIMIZE_ROOT_URL again while it
+		// starts. Deleting the pod restarts Management Identity without a
+		// second one beside it, so the node carries what it carried before.
+		By("restarting Management Identity")
+		before, err := identityPodNames(mc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(before).NotTo(BeEmpty(), "Management Identity runs no ready pod")
+
+		_, err = utils.Kubectl(
+			"delete", "pods", "-n", mcKeycloakNamespace, "-l", identityPodSelector(mc),
+		)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("keeping both login callbacks through the start that follows")
+		Eventually(func(g Gomega) {
+			after, err := identityPodNames(mc)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(after).NotTo(BeEmpty())
+			for _, name := range after {
+				g.Expect(before).NotTo(ContainElement(name), "the pod of the restart is not up yet")
+			}
+
+			expectCondition(
+				g, mcResource, mcKeycloakName, mcKeycloakNamespace,
+				v1.ConditionIdentityReady, v1.ReasonHealthy,
+			)
+			expectCondition(
+				g, mcResource, mcKeycloakName, mcKeycloakNamespace,
+				v1.ConditionOptimizeCallbacksReady, v1.ReasonHealthy,
+			)
+		}, 10*time.Minute, 10*time.Second).Should(Succeed())
+
+		client, err = realmOptimizeClient(mc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(client).To(ContainSubstring(optimizeWebappURL() + components.OptimizeCallbackPath))
+		Expect(client).To(ContainSubstring(secondOptimizeWebappURL() + components.OptimizeCallbackPath))
+
+		// The finalizer of the CamundaOptimize holds the object until it has
+		// released what it built, and the management plane withdraws the
+		// callback only once the object is gone. The assertion below waits for
+		// both, so the delete call does not wait as well.
+		By("deleting the second CamundaOptimize")
+		_, err = utils.Kubectl(
+			"delete", optimizeResource, mcSecondOptimizeName, "-n", mcKeycloakNamespace, "--wait=false",
+		)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("listing the first Optimize alone and reporting the callbacks registered")
+		Eventually(func(g Gomega) {
+			var status v1.CamundaManagementCluster
+			g.Expect(utils.Get(mcResource, mcKeycloakName, mcKeycloakNamespace, &status)).To(Succeed())
+			g.Expect(status.Status.Optimize).To(Equal([]v1.AttachedOptimizeStatus{{
+				Namespace:   mcKeycloakNamespace,
+				Name:        mcOptimizeName,
+				ExternalURL: optimizeWebappURL(),
+			}}))
+
+			expectCondition(
+				g, mcResource, mcKeycloakName, mcKeycloakNamespace,
+				v1.ConditionOptimizeCallbacksReady, v1.ReasonHealthy,
+			)
+		}, 5*time.Minute, 5*time.Second).Should(Succeed())
+
+		By("withdrawing the second login callback from the Optimize client of the realm")
+		client, err = realmOptimizeClient(mc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(client).To(ContainSubstring(optimizeWebappURL() + components.OptimizeCallbackPath))
+		Expect(client).NotTo(ContainSubstring(secondOptimizeWebappURL() + components.OptimizeCallbackPath))
+
+		By("holding the first URL alone in the ConfigMap")
+		urls, err = optimizeRootURLs(mc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(urls).To(Equal(optimizeWebappURL()))
+
+		// The management plane still serves one Optimize, so the environment
+		// of Management Identity still names the preset and the pod template
+		// is the one it was. Only the first Optimize and the last one roll it.
+		By("leaving Management Identity as it was after the withdrawal")
+		Consistently(func(g Gomega) {
+			expectIdentityRollState(g, mc, generation, template)
+		}, 30*time.Second, 10*time.Second).Should(Succeed())
 	})
 })
 
@@ -631,7 +818,6 @@ func keycloakManagementCluster() *v1.CamundaManagementCluster {
 			Admin:             v1.IdentityAdminSpec{Username: mcAdminUsername, Email: mcAdminEmail},
 			WorkloadSpec:      v1.WorkloadSpec{Resources: capped("150m", "512Mi", "1280Mi")},
 		},
-		Optimize: &v1.ManagementOptimizeSpec{ExternalURL: optimizeWebappURL()},
 		Console: &v1.ConsoleSpec{
 			Version:      os.Getenv(envConsoleVersion),
 			ExternalURL:  components.ConsoleServiceURL(mc),
@@ -729,8 +915,10 @@ func webModelerWebsocketsURL(mc *v1.CamundaManagementCluster) string {
 	)
 }
 
-// optimizeWebappURL is the address that Management Identity builds the
-// redirect URI of the optimize client from.
+// optimizeWebappURL is the address that a browser reaches the Optimize of
+// this flow at, and the one that spec.externalUrl of its CamundaOptimize
+// carries. The management plane finds it there and registers the login
+// callback under it.
 func optimizeWebappURL() string {
 	optimize := &v1.CamundaOptimize{ObjectMeta: metav1.ObjectMeta{Name: mcOptimizeName}}
 
@@ -761,6 +949,7 @@ func managementOptimize() *v1.CamundaOptimize {
 		Spec: v1.CamundaOptimizeSpec{
 			Version:           os.Getenv(envOptimizeVersion),
 			ManagementAuthRef: mcKeycloakName,
+			ExternalURL:       optimizeWebappURL(),
 			ClusterRef:        v1.ClusterRef{Name: ccName},
 			Webapp: &v1.WorkloadSpec{
 				Resources: capped("150m", "768Mi", "1280Mi"),
@@ -772,6 +961,109 @@ func managementOptimize() *v1.CamundaOptimize {
 			},
 		},
 	}
+}
+
+// secondManagementOptimize returns the second CamundaOptimize of the flow: an
+// Optimize whose cluster is still to come. It names no workload override,
+// because a CamundaOptimize that finds no cluster renders no workload.
+func secondManagementOptimize() *v1.CamundaOptimize {
+	return &v1.CamundaOptimize{
+		TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaOptimize"},
+		ObjectMeta: metav1.ObjectMeta{Name: mcSecondOptimizeName, Namespace: mcKeycloakNamespace},
+		Spec: v1.CamundaOptimizeSpec{
+			Version:           os.Getenv(envOptimizeVersion),
+			ManagementAuthRef: mcKeycloakName,
+			ExternalURL:       secondOptimizeWebappURL(),
+			ClusterRef:        v1.ClusterRef{Name: mcSecondOptimizeCluster},
+		},
+	}
+}
+
+// secondOptimizeWebappURL is the address that a browser reaches the second
+// Optimize of this flow at, in the shape that optimizeWebappURL gives the
+// first one.
+func secondOptimizeWebappURL() string {
+	optimize := &v1.CamundaOptimize{ObjectMeta: metav1.ObjectMeta{Name: mcSecondOptimizeName}}
+
+	return fmt.Sprintf(
+		"http://%s.%s.svc:%d",
+		optimizecomponents.WorkloadName(optimize, optimizecomponents.ComponentWebapp),
+		mcKeycloakNamespace, optimizecomponents.PortHTTP,
+	)
+}
+
+// identityPodNames returns the names of the ready Management Identity pods.
+// The flow reads them before and after a restart, so that it waits for the pod
+// of the new start rather than for the one it replaced.
+func identityPodNames(mc *v1.CamundaManagementCluster) ([]string, error) {
+	var pods corev1.PodList
+	if err := utils.List("pods", mc.Namespace, identityPodSelector(mc), &pods); err != nil {
+		return nil, err
+	}
+
+	var ready []string
+	for _, pod := range pods.Items {
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+				ready = append(ready, pod.Name)
+			}
+		}
+	}
+
+	return ready, nil
+}
+
+// identityPodSelector returns the label selector of the Management Identity
+// pods.
+func identityPodSelector(mc *v1.CamundaManagementCluster) string {
+	return k8slabels.SelectorFromSet(components.IdentityPodLabels(mc)).String()
+}
+
+// expectIdentityRollState asserts that the Management Identity Deployment
+// still carries generation and template. It is written for Consistently.
+func expectIdentityRollState(
+	g Gomega,
+	mc *v1.CamundaManagementCluster,
+	generation int64,
+	template string,
+) {
+	current, digest, err := identityRollState(mc)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(current).To(Equal(generation), "the spec of Management Identity was written")
+	g.Expect(digest).To(Equal(template), "the pod template of Management Identity changed")
+}
+
+// identityRollState returns the two values that a roll of Management Identity
+// moves: the generation, which the API server increments on every write of the
+// spec, and a digest of the pod template, which Kubernetes replaces the pods
+// on.
+func identityRollState(mc *v1.CamundaManagementCluster) (int64, string, error) {
+	name := components.IdentityName(mc)
+
+	var identity appsv1.Deployment
+	if err := utils.Get("deployment", name, mc.Namespace, &identity); err != nil {
+		return 0, "", err
+	}
+
+	template, err := json.Marshal(identity.Spec.Template)
+	if err != nil {
+		return 0, "", fmt.Errorf("encoding the pod template of Deployment %q: %w", name, err)
+	}
+
+	return identity.Generation, fmt.Sprintf("%x", sha256.Sum256(template)), nil
+}
+
+// optimizeRootURLs returns the comma-separated Optimize root URLs of the
+// ConfigMap that KEYCLOAK_INIT_OPTIMIZE_ROOT_URL of Management Identity reads.
+func optimizeRootURLs(mc *v1.CamundaManagementCluster) (string, error) {
+	var urls corev1.ConfigMap
+	if err := utils.Get(
+		"configmap", components.IdentityOptimizeURLsName(mc), mc.Namespace, &urls,
+	); err != nil {
+		return "", err
+	}
+
+	return urls.Data[components.OptimizeRootURLKey], nil
 }
 
 // databaseServer returns the DatabaseServerConfig of the PostgreSQL that
@@ -947,6 +1239,84 @@ func registerRealmClient(mc *v1.CamundaManagementCluster, representation string)
 
 	return err
 }
+
+// realmOptimizeClient returns the JSON representation of the optimize client
+// of the realm of mc, read through the Keycloak admin API as the administrator
+// that the Keycloak Operator published next to the Keycloak.
+func realmOptimizeClient(mc *v1.CamundaManagementCluster) (string, error) {
+	adminSecret := components.KeycloakInitialAdminSecretName(mc)
+
+	return utils.RunPod(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "keycloak-read-" + utilrand.String(5),
+			Namespace: mc.Namespace,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Name:    "curl",
+				Image:   utils.CurlImage,
+				Command: []string{"sh"},
+				Args:    []string{"-ec", readClientScript},
+				Env: []corev1.EnvVar{
+					{Name: "KC_URL", Value: keycloakServiceURL(mc)},
+					{Name: "KC_REALM", Value: mcRealm},
+					{Name: "KC_CLIENT_ID", Value: "optimize"},
+					utils.SecretEnv("KC_USER", adminSecret, components.KeycloakAdminUsernameKey),
+					utils.SecretEnv("KC_PASSWORD", adminSecret, components.KeycloakAdminPasswordKey),
+				},
+			}},
+		},
+	}, podTimeout)
+}
+
+// realmRoles returns the JSON list of the realm roles of mc, read through the
+// Keycloak admin API.
+func realmRoles(mc *v1.CamundaManagementCluster) (string, error) {
+	adminSecret := components.KeycloakInitialAdminSecretName(mc)
+
+	return utils.RunPod(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "keycloak-roles-" + utilrand.String(5),
+			Namespace: mc.Namespace,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Name:    "curl",
+				Image:   utils.CurlImage,
+				Command: []string{"sh"},
+				Args:    []string{"-ec", readRolesScript},
+				Env: []corev1.EnvVar{
+					{Name: "KC_URL", Value: keycloakServiceURL(mc)},
+					{Name: "KC_REALM", Value: mcRealm},
+					utils.SecretEnv("KC_USER", adminSecret, components.KeycloakAdminUsernameKey),
+					utils.SecretEnv("KC_PASSWORD", adminSecret, components.KeycloakAdminPasswordKey),
+				},
+			}},
+		},
+	}, podTimeout)
+}
+
+// readRolesScript reads an administrator token from the master realm and
+// prints the realm roles.
+const readRolesScript = `KC_TOKEN=$(curl -sS ` +
+	`-d grant_type=password -d client_id=admin-cli ` +
+	`--data-urlencode "username=$KC_USER" --data-urlencode "password=$KC_PASSWORD" ` +
+	`"$KC_URL/realms/master/protocol/openid-connect/token" | ` +
+	`sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+if [ -z "$KC_TOKEN" ]; then echo "no access_token from $KC_URL" >&2; exit 1; fi
+curl -sS -f -H "Authorization: Bearer $KC_TOKEN" ` +
+	`"$KC_URL/admin/realms/$KC_REALM/roles" | tr -d ' '`
+
+// readClientScript reads an administrator token from the master realm and
+// prints the clients of the realm whose client id is KC_CLIENT_ID.
+const readClientScript = `KC_TOKEN=$(curl -sS ` +
+	`-d grant_type=password -d client_id=admin-cli ` +
+	`--data-urlencode "username=$KC_USER" --data-urlencode "password=$KC_PASSWORD" ` +
+	`"$KC_URL/realms/master/protocol/openid-connect/token" | ` +
+	`sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+if [ -z "$KC_TOKEN" ]; then echo "no access_token from $KC_URL" >&2; exit 1; fi
+curl -sS -f -H "Authorization: Bearer $KC_TOKEN" ` +
+	`"$KC_URL/admin/realms/$KC_REALM/clients?clientId=$KC_CLIENT_ID"`
 
 // registerClientScript reads an administrator token from the master realm and
 // posts one client to the realm. The curl image carries no jq, so the token

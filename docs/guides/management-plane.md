@@ -104,15 +104,12 @@ spec:
   console:
     version: "8.9.0"
     externalUrl: "https://console.camunda.example.com"
-  optimize:
-    externalUrl: "https://optimize.camunda.example.com"
 ```
 
-Three things about this manifest are easy to miss:
+Two things about this manifest are easy to miss:
 
 1. `identityProvider.keycloak.externalUrl` must carry the `/auth` path. Camunda publishes its Keycloak build under that path, and every token names this URL as its issuer.
 2. `clusterSelector: {}` selects every `CamundaCluster` of the Kubernetes cluster. An unset selector selects none. See [Step 4](#step-4-the-orchestration-clusters).
-3. `optimize.externalUrl` is required here even though this resource deploys no Optimize. Management Identity registers the login callback under it as the redirect URI of the Optimize client.
 
 Route the four URLs to the Service in front of each component: `my-management-keycloak-service` for `/auth`, `my-management-identity`, `my-management-console`, and later the Optimize webapp. The Keycloak Operator creates the first of those Services, and this operator creates the rest.
 
@@ -173,8 +170,6 @@ spec:
     admin:
       username: "admin"
       email: "admin@example.com"
-  optimize:
-    externalUrl: "https://optimize.camunda.example.com"
 ```
 
 One URL serves browsers and containers alike here, so `url` must resolve from inside the Kubernetes cluster as well as from a browser. Keycloak keeps no database reference on this resource, because you run it.
@@ -257,7 +252,7 @@ spec:
     externalUrl: "https://console.camunda.example.com"
 ```
 
-There is no `spec.optimize` in this mode. The platform config declares the Optimize client, and you registered its redirect URI at your provider.
+`spec.externalUrl` on a `CamundaOptimize` has no effect in this mode. The platform config declares the Optimize client, and you registered its redirect URIs at your provider.
 
 `spec.identity.admin` names a token claim instead of a user. Sign in to your provider once and decode the access token. Then read the value of the claim you want to use. Camunda explains how in [JWT token claims](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/authentication-and-authorization/jwt-token-claims/).
 
@@ -401,6 +396,7 @@ metadata:
 spec:
   version: "8.9.0"
   managementAuthRef: "my-management"
+  externalUrl: "https://optimize.camunda.example.com"
   clusterRef:
     name: my-cluster
 ```
@@ -425,7 +421,26 @@ kubectl get camundamanagementcluster my-management -n my-management-ns \
   -o jsonpath='{.status.managementAuthConfig}'
 ```
 
-Route the Optimize URL to the `my-cluster-optimize-webapp` Service. That is the URL a browser signs in at. In the two Keycloak modes it is `spec.optimize.externalUrl` of the `CamundaManagementCluster`, and Management Identity registers the login callback under it. The `oidc` mode has no such field, so register the callback at your provider yourself.
+`externalUrl` is the URL a browser signs in at. Route it to the `my-cluster-optimize-webapp` Service.
+
+In the two Keycloak modes the management plane registers the login callback under that URL, and it does so for every `CamundaOptimize` behind it. Read what it found and whether the realm carries it, on the `CamundaManagementCluster`:
+
+```yaml
+status:
+  optimize:
+    - namespace: my-cluster-ns
+      name: my-cluster-optimize
+      externalUrl: "https://optimize.camunda.example.com"
+  conditions:
+    - type: OptimizeCallbacksReady
+      status: "True"
+      reason: Healthy
+      message: Client "optimize" of realm "camunda-platform" carries every login callback of this management plane (1)
+```
+
+Adding this Optimize to a management plane that already serves one leaves Management Identity running. Only the first Optimize of a plane, and the removal of its last one, restart Management Identity.
+
+In the `oidc` mode the field has no effect. Register the callback at your provider yourself.
 
 ## Check the result
 

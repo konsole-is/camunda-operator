@@ -1,6 +1,6 @@
 apiVersion: v1
 data:
-  rootUrl: https://optimize.example.com
+  rootUrl: https://optimize.example.com,https://optimize.blue.example.com,https://optimize.green.example.com
 kind: ConfigMap
 metadata:
   labels:
@@ -29,7 +29,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: b2dc6a3f85bf9522
+        camunda.io/config-hash: ffafaf3118874639
       labels:
         camunda.io/component: management-identity
         camunda.io/management-cluster: my-management
@@ -43,25 +43,25 @@ spec:
         - name: CAMUNDA_IDENTITY_AUDIENCE
           value: camunda-identity-resource-server
         - name: KEYCLOAK_URL
-          value: https://keycloak.example.com/auth
+          value: http://my-management-keycloak-service.camunda.svc:8080/auth
         - name: KEYCLOAK_REALM
           value: camunda-platform
         - name: IDENTITY_AUTH_PROVIDER_ISSUER_URL
           value: https://keycloak.example.com/auth/realms/camunda-platform
         - name: IDENTITY_AUTH_PROVIDER_BACKEND_URL
-          value: https://keycloak.example.com/auth/realms/camunda-platform
+          value: http://my-management-keycloak-service.camunda.svc:8080/auth/realms/camunda-platform
         - name: IDENTITY_CLIENT_ID
           value: camunda-identity
         - name: KEYCLOAK_SETUP_USER
           valueFrom:
             secretKeyRef:
               key: username
-              name: keycloak-admin
+              name: my-management-keycloak-initial-admin
         - name: KEYCLOAK_SETUP_PASSWORD
           valueFrom:
             secretKeyRef:
               key: password
-              name: keycloak-admin
+              name: my-management-keycloak-initial-admin
         - name: KEYCLOAK_SETUP_REALM
           value: master
         - name: KEYCLOAK_SETUP_CLIENT_ID
@@ -76,29 +76,17 @@ spec:
             secretKeyRef:
               key: client-secret
               name: my-management-optimize-client
-        - name: KEYCLOAK_INIT_CONSOLE_ROOT_URL
-          value: https://console.example.com
-        - name: KEYCLOAK_INIT_WEBMODELER_ROOT_URL
-          value: https://modeler.example.com
         - name: KEYCLOAK_USERS_0_USERNAME
           value: platform-admin
         - name: KEYCLOAK_USERS_0_PASSWORD
           valueFrom:
             secretKeyRef:
               key: password
-              name: admin-password
-        - name: KEYCLOAK_USERS_0_EMAIL
-          value: admin@example.com
+              name: my-management-identity-admin
         - name: KEYCLOAK_USERS_0_ROLES_0
           value: ManagementIdentity
         - name: KEYCLOAK_USERS_0_ROLES_1
           value: Optimize
-        - name: KEYCLOAK_USERS_0_ROLES_2
-          value: Console
-        - name: KEYCLOAK_USERS_0_ROLES_3
-          value: Web Modeler
-        - name: KEYCLOAK_USERS_0_ROLES_4
-          value: Web Modeler Admin
         - name: IDENTITY_URL
           value: https://identity.example.com
         - name: IDENTITY_DATABASE_HOST
@@ -117,12 +105,7 @@ spec:
             secretKeyRef:
               key: password
               name: identity-db-credentials
-        - name: CAMUNDA_LICENSE_KEY
-          valueFrom:
-            secretKeyRef:
-              key: license
-              name: my-management-management-license
-        image: registry.example.com/mirror/camunda/identity:8.9.4
+        image: camunda/identity:8.9.4
         name: identity
         ports:
         - containerPort: 8080
