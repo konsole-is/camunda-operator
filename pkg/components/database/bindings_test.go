@@ -127,43 +127,50 @@ func previewNames(t *testing.T, comp *component.Component) []string {
 	return names
 }
 
-// TestWithdrawnBindingsComponentRegistersOnlyOwnedBindings pins which bindings
-// the withdrawal touches. A binding it does not own must not be registered at
-// all, because the component would otherwise delete an object that belongs to
-// the Database that won the claim.
-func TestWithdrawnBindingsComponentRegistersOnlyOwnedBindings(t *testing.T) {
+// TestWithdrawnBindingsComponentRegistersWhatWasPublished pins which objects
+// the withdrawal touches. It registers the names it is given and no other. One
+// edit can rename a binding, so the object on the cluster carries the name from
+// before the edit, and the names of the spec reach nothing. A binding this
+// Database does not own is not in the set at all, because the component would
+// otherwise delete an object that belongs to the Database that won the claim.
+func TestWithdrawnBindingsComponentRegistersWhatWasPublished(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name  string
-		owned OwnedBindings
-		want  []string
+		name      string
+		published PublishedBindings
+		want      []string
 	}{
 		{
-			name: "every binding owned",
-			owned: OwnedBindings{
-				AppSecret: true, BackupSecret: true, DatabaseConfig: true, SecondaryStorage: true,
+			name: "the names from before a rename, not the names of the spec",
+			published: PublishedBindings{
+				Secrets:                 []string{"old-app", "old-backup"},
+				DatabaseConfigs:         []string{"old-config"},
+				SecondaryStorageConfigs: []string{"old-storage"},
 			},
 			want: []string{
-				"DatabaseConfig/my-database-config",
-				"Secret/my-camunda-db-app",
-				"Secret/my-camunda-db-backup",
-				"SecondaryStorageConfig/" + goldenStorageConfigName,
+				"Secret/old-app",
+				"Secret/old-backup",
+				"DatabaseConfig/old-config",
+				"SecondaryStorageConfig/old-storage",
 			},
 		},
 		{
-			name:  "no binding owned",
-			owned: OwnedBindings{},
-			want:  []string{},
+			name:      "nothing published",
+			published: PublishedBindings{},
+			want:      []string{},
 		},
 		{
-			name:  "only the application Secret owned",
-			owned: OwnedBindings{AppSecret: true},
-			want:  []string{"Secret/my-camunda-db-app"},
+			name:      "only the application Secret",
+			published: PublishedBindings{Secrets: []string{"my-camunda-db-app"}},
+			want:      []string{"Secret/my-camunda-db-app"},
 		},
 		{
-			name:  "the contract of another Database is left out",
-			owned: OwnedBindings{AppSecret: true, BackupSecret: true, SecondaryStorage: true},
+			name: "the contract of another Database is left out",
+			published: PublishedBindings{
+				Secrets:                 []string{"my-camunda-db-app", "my-camunda-db-backup"},
+				SecondaryStorageConfigs: []string{goldenStorageConfigName},
+			},
 			want: []string{
 				"Secret/my-camunda-db-app",
 				"Secret/my-camunda-db-backup",
@@ -176,12 +183,29 @@ func TestWithdrawnBindingsComponentRegistersOnlyOwnedBindings(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			comp, err := WithdrawnBindingsComponent(goldenFullDatabase(), tt.owned)
+			comp, err := WithdrawnBindingsComponent(goldenFullDatabase(), tt.published)
 			require.NoError(t, err)
 
 			assert.ElementsMatch(t, tt.want, previewNames(t, comp))
 		})
 	}
+}
+
+// TestWithdrawnBindingsComponentKeepsTheNamespaceOfTheDatabase pins that the
+// withdrawal deletes in the namespace of the Database. Every binding lands
+// there, and a name alone reaches an object of any namespace.
+func TestWithdrawnBindingsComponentKeepsTheNamespaceOfTheDatabase(t *testing.T) {
+	t.Parallel()
+
+	comp, err := WithdrawnBindingsComponent(
+		goldenFullDatabase(), PublishedBindings{Secrets: []string{"old-app"}},
+	)
+	require.NoError(t, err)
+
+	objects, err := comp.Preview()
+	require.NoError(t, err)
+	require.Len(t, objects, 1)
+	assert.Equal(t, "my-cluster-ns", objects[0].GetNamespace())
 }
 
 func TestBackupUserName(t *testing.T) {

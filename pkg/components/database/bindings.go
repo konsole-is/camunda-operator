@@ -163,50 +163,6 @@ func BackupUserName(databaseName string) string {
 // All children land in the namespace of the Database. Each of them carries an
 // owner reference to it.
 func BindingsComponent(db *v1.Database, rb Bindings) (*component.Component, error) {
-	return bindingsComponent(db, rb, true, OwnedBindings{
-		AppSecret: true, BackupSecret: true, DatabaseConfig: true, SecondaryStorage: true,
-	})
-}
-
-// OwnedBindings selects which published bindings a Database may withdraw. The
-// controller sets a field only when the live object carries a controller owner
-// reference to that Database, so a Database that lost a contested claim never
-// deletes an object the winner owns. Two Databases can name one binding
-// explicitly, and only one of them ever owns it.
-type OwnedBindings struct {
-	// AppSecret is the application credentials Secret.
-	AppSecret bool
-	// BackupSecret is the backup credentials Secret.
-	BackupSecret bool
-	// DatabaseConfig is the published DatabaseConfig.
-	DatabaseConfig bool
-	// SecondaryStorage is the published SecondaryStorageConfig.
-	SecondaryStorage bool
-}
-
-// WithdrawnBindingsComponent assembles the bindings component with its feature
-// gate off, holding only the bindings that owned marks. The component deletes
-// those and reports BindingsReady with reason Disabled. A Database that lost
-// the claim to its logical database uses it: the winner owns that database and
-// rotates the role passwords, so the credentials this one published open
-// nothing.
-//
-// It resolves the binding names from db alone. The passwords are not needed to
-// delete a Secret, and the winner holds the current ones anyway.
-func WithdrawnBindingsComponent(db *v1.Database, owned OwnedBindings) (*component.Component, error) {
-	return bindingsComponent(db, ResolveBindings(db), false, owned)
-}
-
-// bindingsComponent builds the component behind both constructors. The holds
-// flag is the component feature gate: true applies the registered bindings,
-// and false withdraws them instead. A binding that owned leaves out is not
-// registered at all, so the component neither applies nor deletes it.
-func bindingsComponent(
-	db *v1.Database,
-	rb Bindings,
-	holds bool,
-	owned OwnedBindings,
-) (*component.Component, error) {
 	appSecret, err := secret.NewBuilder(
 		credentialSecret(db, rb.AppSecret, rb.AppUser, rb.AppPassword),
 	).Build()
@@ -222,11 +178,7 @@ func bindingsComponent(
 	}
 
 	dbConfig, err := databaseconfig.NewBuilder(&v1.DatabaseConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      rb.DatabaseConfigName,
-			Namespace: db.Namespace,
-			Labels:    bindingLabels(db),
-		},
+		ObjectMeta: bindingMeta(db, rb.DatabaseConfigName),
 		Spec: v1.DatabaseConfigSpec{
 			ServerRef:            db.Spec.ServerRef,
 			DatabaseName:         db.Spec.DatabaseName,
@@ -237,34 +189,18 @@ func bindingsComponent(
 		return nil, err
 	}
 
-	builder := component.NewComponentBuilder().
-		WithName("bindings").
-		WithConditionType(ConditionBindings).
-		WithFeatureGate(feature.NewBooleanGate(holds))
-
-	if owned.AppSecret {
-		builder = builder.WithResource(appSecret)
-	}
-	if owned.BackupSecret {
-		builder = builder.WithResource(
-			backupSecret, component.GatedBy(feature.NewBooleanGate(rb.BackupEnabled)),
-		)
-	}
-	if owned.DatabaseConfig {
-		builder = builder.WithResource(dbConfig)
-	}
+	builder := bindingsComponentBuilder().
+		WithResource(appSecret).
+		WithResource(backupSecret, component.GatedBy(feature.NewBooleanGate(rb.BackupEnabled))).
+		WithResource(dbConfig)
 
 	// The SecondaryStorageConfig has no name when the field is unset, so it is
 	// omitted rather than gated. If the field is cleared, the existing contract
 	// stays in place until the Database is deleted and owner-reference garbage
 	// collection removes it.
-	if db.Spec.SecondaryStorageConfig != "" && owned.SecondaryStorage {
+	if db.Spec.SecondaryStorageConfig != "" {
 		ssc, err := secondarystorageconfig.NewBuilder(&v1.SecondaryStorageConfig{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      db.Spec.SecondaryStorageConfig,
-				Namespace: db.Namespace,
-				Labels:    bindingLabels(db),
-			},
+			ObjectMeta: bindingMeta(db, db.Spec.SecondaryStorageConfig),
 			Spec: v1.SecondaryStorageConfigSpec{
 				Type:  v1.SecondaryStorageTypeRDBMS,
 				RDBMS: &v1.RDBMSStorage{DatabaseConfigRef: rb.DatabaseConfigName},
@@ -277,6 +213,94 @@ func bindingsComponent(
 	}
 
 	return builder.Build()
+}
+
+// PublishedBindings names the objects that a Database published and can
+// withdraw. Every name is a name in the namespace of that Database.
+//
+// The controller reads the names off the cluster rather than off the spec. One
+// edit can rename a binding and move the Database onto the logical database of
+// another at the same time, and the object then keeps the name from before that
+// edit.
+type PublishedBindings struct {
+	// Secrets names the published credential Secrets.
+	Secrets []string
+	// DatabaseConfigs names the published DatabaseConfigs.
+	DatabaseConfigs []string
+	// SecondaryStorageConfigs names the published SecondaryStorageConfigs.
+	SecondaryStorageConfigs []string
+}
+
+// WithdrawnBindingsComponent assembles the bindings component with its feature
+// gate off, holding the objects that published names. The component deletes
+// them and reports BindingsReady with reason Disabled. A Database that lost the
+// claim to its logical database uses it: the winner owns that database and
+// rotates the role passwords, so the credentials this one published open
+// nothing.
+//
+// It registers a name and a namespace and nothing else. A delete needs no
+// password and no spec, and the winner holds the current password anyway.
+func WithdrawnBindingsComponent(
+	db *v1.Database, published PublishedBindings,
+) (*component.Component, error) {
+	builder := bindingsComponentBuilder().WithFeatureGate(feature.NewBooleanGate(false))
+
+	for _, name := range published.Secrets {
+		res, err := secret.NewBuilder(&corev1.Secret{ObjectMeta: bindingMeta(db, name)}).Build()
+		if err != nil {
+			return nil, err
+		}
+		builder = builder.WithResource(res)
+	}
+
+	for _, name := range published.DatabaseConfigs {
+		res, err := databaseconfig.NewBuilder(
+			&v1.DatabaseConfig{ObjectMeta: bindingMeta(db, name)},
+		).Build()
+		if err != nil {
+			return nil, err
+		}
+		builder = builder.WithResource(res)
+	}
+
+	for _, name := range published.SecondaryStorageConfigs {
+		res, err := secondarystorageconfig.NewBuilder(
+			&v1.SecondaryStorageConfig{ObjectMeta: bindingMeta(db, name)},
+		).Build()
+		if err != nil {
+			return nil, err
+		}
+		builder = builder.WithResource(res)
+	}
+
+	return builder.Build()
+}
+
+// bindingsComponentBuilder returns the builder that both constructors start
+// from. The name and the condition type are the same for a Database that
+// publishes its bindings and for one that gives them back, so one condition
+// carries both states.
+func bindingsComponentBuilder() *component.Builder {
+	return component.NewComponentBuilder().
+		WithName("bindings").
+		WithConditionType(ConditionBindings)
+}
+
+// BindingSelector returns the labels that identify the bindings of db. It
+// selects them under any name, so a reader finds an object that db published
+// before an edit renamed it.
+func BindingSelector(db *v1.Database) map[string]string {
+	return labels.Discovery(labels.Database(db.Name), bindingsComponentLabel)
+}
+
+// bindingMeta locates a binding of db by name in the namespace of db, with the
+// labels that every binding carries.
+func bindingMeta(db *v1.Database, name string) metav1.ObjectMeta {
+	return metav1.ObjectMeta{
+		Name:      name,
+		Namespace: db.Namespace,
+		Labels:    bindingLabels(db),
+	}
 }
 
 // bindingLabels returns the labels of every binding that db publishes.
