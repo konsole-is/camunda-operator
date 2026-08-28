@@ -255,13 +255,15 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// A refused downgrade re-enqueues through the watches on the cluster, the
 	// preset, and the owned StatefulSet, so no timer is needed.
-	if failure := refuseDowngrade(&cluster, in, storage); failure != nil && in.Storage.Holder == nil {
-		refused := conditions.Failed(&cluster, failure)
-		r.recordRefusedDowngrade(&cluster, refused)
-		conditions.Stage(&cluster, refused)
+	if failure := refuseDowngrade(&cluster, in, storage); failure != nil {
+		if in.Storage.Holder == nil {
+			refused := conditions.Failed(&cluster, failure)
+			r.recordRefusedDowngrade(&cluster, refused)
+			conditions.Stage(&cluster, refused)
 
-		return ctrl.Result{}, nil
-	} else if failure != nil {
+			return ctrl.Result{}, nil
+		}
+
 		// A parked cluster must stop, refused or not: its brokers write the
 		// contract it left, which the next cluster can claim. The guard reads
 		// its baseline from the applied image, so the parking renders the
