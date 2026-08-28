@@ -296,9 +296,10 @@ func Mode(mc *v1.CamundaManagementCluster) ProviderMode {
 // the realm. Browsers use spec.externalUrl, and so does the front-channel
 // issuer that every token carries.
 //
-// The administrator is the one the Keycloak Operator writes into
-// <keycloak>-initial-admin next to the Keycloak custom resource. That Service
-// serves http, so the provider carries no certificate authority.
+// The Service serves http, so the provider carries no certificate authority
+// for the operator to trust. The administrator is the one the Keycloak
+// Operator writes into <keycloak>-initial-admin next to the Keycloak custom
+// resource.
 func resolveManagedKeycloak(in Input) IdentityProvider {
 	spec := in.Cluster.Spec.IdentityProvider.Keycloak
 	service := fmt.Sprintf(

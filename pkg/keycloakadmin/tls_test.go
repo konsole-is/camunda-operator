@@ -55,11 +55,13 @@ func TestNewRefusesAnUnknownAuthority(t *testing.T) {
 	assert.Contains(t, err.Error(), "certificate")
 }
 
+// The caller reports the empty bundle against the Secret of the user, so it
+// has to tell that failure from every other one.
 func TestParseCABundleRefusesTextThatHoldsNoCertificate(t *testing.T) {
 	_, err := ParseCABundle([]byte("not a certificate"))
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no certificate")
+	assert.ErrorIs(t, err, ErrNoCertificates)
 }
 
 // The pool answers for the certificates of the bundle and for the ones the

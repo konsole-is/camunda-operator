@@ -18,6 +18,7 @@ package camundamanagementcluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -421,14 +422,20 @@ func (r *Reconciler) keycloakTrust(
 		return nil, &conditions.PreCheckFailure{Reason: v1.ReasonMissingSecret, Message: msg}, nil
 	}
 
+	// Only the bundle is the user's to correct. A trust store of the operator
+	// image that cannot be read is a fault of the operator, so it comes back
+	// as an error and never as a state of this resource.
 	pool, err := keycloakadmin.ParseCABundle(secret.Data[ref.Key])
-	if err != nil {
+	switch {
+	case errors.Is(err, keycloakadmin.ErrNoCertificates):
 		return nil, &conditions.PreCheckFailure{
 			Reason: v1.ReasonInvalidCABundle,
 			Message: conditions.BoundMessage(fmt.Sprintf(
 				"Key %q of Secret %s: %s", ref.Key, key, err,
 			)),
 		}, nil
+	case err != nil:
+		return nil, nil, fmt.Errorf("building the certificate pool of Secret %q: %w", key, err)
 	}
 
 	return []keycloakadmin.Option{keycloakadmin.WithRootCAs(pool)}, nil, nil

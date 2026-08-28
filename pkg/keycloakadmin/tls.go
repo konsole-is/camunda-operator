@@ -28,18 +28,22 @@ import (
 // not safe to change after it has made a call.
 type Option func(*Client)
 
+// ErrNoCertificates says that a bundle holds no certificate in PEM form. It
+// is the one failure of ParseCABundle that the bundle itself causes, so a
+// caller reports it against the bundle and every other one against itself.
+var ErrNoCertificates = errors.New("the bundle holds no certificate in PEM form")
+
 // ParseCABundle returns the certificate pool that a Client verifies Keycloak
-// with: the trust store of the operator image, plus every certificate of pem.
-// A bundle that holds no certificate in PEM form is an error, so a caller can
-// name the empty bundle instead of reporting the failed handshake that comes
-// of it.
+// with: the trust store of the operator image, plus every certificate in pem.
+// An empty bundle comes back as ErrNoCertificates, so a caller can name it
+// instead of reporting the failed handshake that comes of it.
 func ParseCABundle(pem []byte) (*x509.CertPool, error) {
 	pool, err := x509.SystemCertPool()
 	if err != nil {
 		return nil, fmt.Errorf("reading the trust store of the operator image: %w", err)
 	}
 	if !pool.AppendCertsFromPEM(pem) {
-		return nil, errors.New("the bundle holds no certificate in PEM form")
+		return nil, ErrNoCertificates
 	}
 
 	return pool, nil
@@ -59,10 +63,14 @@ func WithRootCAs(pool *x509.CertPool) Option {
 	}
 }
 
-// defaultTransport copies the transport that a client without an Option uses,
-// so the proxy settings, the connection limits, and every TLS setting of the
-// standard transport stay the same when only the certificate pool changes.
-// Clone copies the TLS settings too, so the copy is safe to write to.
+// defaultTransport copies the standard transport of net/http, so a client
+// that changes the certificate pool keeps the proxy settings, the connection
+// limits, and the TLS settings of every other client of the operator. The
+// copy carries its own TLS settings, so a caller can write to them.
+//
+// A standard transport that another package replaced with an implementation
+// of its own cannot be copied. A plain transport answers for it, because a
+// type assertion that fails here would panic in a reconcile.
 func defaultTransport() *http.Transport {
 	if standard, ok := http.DefaultTransport.(*http.Transport); ok {
 		return standard.Clone()
