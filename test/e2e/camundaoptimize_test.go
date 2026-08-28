@@ -96,7 +96,8 @@ func optimizeElasticsearch() *v1.ElasticsearchCluster {
 			Version:                os.Getenv(envElasticsearchVersion),
 			Replicas:               new(int32(1)),
 			StorageSize:            new(resource.MustParse(esStorageSize)),
-			Resources:              requests("500m", "1Gi"),
+			Resources:              capped("500m", "1Gi", "1536Mi"),
+			ExtraEnv:               esHeapEnv(),
 			SecondaryStorageConfig: optimizeStorage,
 		},
 	}
