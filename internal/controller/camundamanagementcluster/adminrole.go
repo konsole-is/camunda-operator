@@ -44,7 +44,9 @@ const eventReasonAdminRoleGranted = "AdminOptimizeRoleGranted"
 // It converges rather than running once, so a role that somebody takes away in
 // Keycloak is given back by the next call. It serves the user that
 // spec.identity.admin.username names and nobody else, and it adds a role
-// without ever taking one away.
+// without ever taking one away. A role that the administrator holds through a
+// group of the realm counts as held, so a group that carries the role is left
+// to carry it.
 //
 // The failure it returns names the state on OptimizeCallbacksReady, which the
 // caller folds into Ready. Only a failure of the Kubernetes API comes back as

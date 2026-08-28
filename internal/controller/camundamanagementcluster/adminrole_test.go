@@ -98,6 +98,29 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize role of t
 		}, "3s", interval).Should(Succeed())
 	})
 
+	// A group of the realm carries the role to its members. The administrator
+	// holds it already, so a direct mapping of the same role adds nothing and
+	// the operator writes none.
+	It("leaves the realm alone while the administrator holds the role through a group", func() {
+		keycloak := startFakeKeycloak(withOptimizeClient())
+		keycloak.putAdminInAnOptimizeGroup()
+		s := newScenario(withFakeKeycloak(keycloak))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(condition.Reason).To(Equal(v1.ReasonHealthy))
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			g.Expect(keycloak.adminRealmRoles()).To(BeEmpty())
+		}, "3s", interval).Should(Succeed())
+	})
+
 	// Only Management Identity creates the first administrator. A realm
 	// without that user is one somebody edited, and the operator says so
 	// rather than granting the role to nobody.

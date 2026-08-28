@@ -112,7 +112,10 @@ func TestFindRealmRoleRefused(t *testing.T) {
 	assert.Contains(t, err.Error(), "status 403")
 }
 
-func TestUserRealmRoles(t *testing.T) {
+// The read is the composite one, so a role that the user holds through a group
+// or inside another role is in the list. A read of the direct mappings would
+// report a role the user holds as missing.
+func TestUserRealmRolesReadsTheRolesTheUserHolds(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeKeycloak{token: "an-access-token"}
@@ -128,7 +131,7 @@ func TestUserRealmRoles(t *testing.T) {
 	require.Len(t, fake.calls, 2)
 	assert.Equal(
 		t,
-		"/auth/admin/realms/camunda-platform/users/9f2a/role-mappings/realm",
+		"/auth/admin/realms/camunda-platform/users/9f2a/role-mappings/realm/composite",
 		fake.calls[1].path,
 	)
 }

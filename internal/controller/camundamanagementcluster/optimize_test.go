@@ -701,8 +701,12 @@ type fakeKeycloak struct {
 	users map[string]string
 	// realmRoles maps the name of every realm role to its internal id.
 	realmRoles map[string]string
-	// granted maps the internal id of a user to the realm roles held by it.
+	// granted maps the internal id of a user to the realm roles mapped to it
+	// directly.
 	granted map[string][]keycloakadmin.RealmRole
+	// inherited maps the internal id of a user to the realm roles that the
+	// user holds through a group. Only the composite read carries them.
+	inherited map[string][]keycloakadmin.RealmRole
 }
 
 // withOptimizeClient returns the Optimize client that the fake Keycloak starts
@@ -737,6 +741,7 @@ func startFakeKeycloak(stored keycloakadmin.Representation) *fakeKeycloak {
 		users:      map[string]string{adminUsername: "9f2a"},
 		realmRoles: map[string]string{},
 		granted:    map[string][]keycloakadmin.RealmRole{},
+		inherited:  map[string][]keycloakadmin.RealmRole{},
 	}
 	if stored != nil {
 		fake.realmRoles[optimizeRealmRole] = "1b7c"
@@ -760,8 +765,8 @@ func (f *fakeKeycloak) runOptimizePreset() {
 	f.realmRoles[optimizeRealmRole] = "1b7c"
 }
 
-// adminRealmRoles returns the names of the realm roles that the first
-// administrator holds.
+// adminRealmRoles returns the names of the realm roles that are mapped to the
+// first administrator directly, which is what this operator writes.
 func (f *fakeKeycloak) adminRealmRoles() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -773,6 +778,19 @@ func (f *fakeKeycloak) adminRealmRoles() []string {
 	}
 
 	return names
+}
+
+// putAdminInAnOptimizeGroup gives the first administrator the Optimize role
+// through a group, the way an administrator of the realm does for a team. The
+// user holds the role, and no realm role is mapped to the user directly.
+func (f *fakeKeycloak) putAdminInAnOptimizeGroup() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	id := f.users[adminUsername]
+	f.inherited[id] = append(f.inherited[id], keycloakadmin.RealmRole{
+		ID: f.realmRoles[optimizeRealmRole], Name: optimizeRealmRole,
+	})
 }
 
 // revokeAdminRealmRoles takes every realm role away from the first
@@ -855,7 +873,7 @@ func (f *fakeKeycloak) serve(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	switch {
-	case strings.HasSuffix(r.URL.Path, "/role-mappings/realm"):
+	case strings.Contains(r.URL.Path, "/role-mappings/realm"):
 		f.serveRoleMappings(w, r)
 
 		return
@@ -923,13 +941,17 @@ func (f *fakeKeycloak) serveRealmRole(w http.ResponseWriter, r *http.Request) {
 // serveRoleMappings reads and writes the realm roles of one user. The caller
 // holds the lock.
 func (f *fakeKeycloak) serveRoleMappings(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimSuffix(r.URL.Path, "/role-mappings/realm")
+	path := strings.TrimSuffix(r.URL.Path, "/composite")
+	path = strings.TrimSuffix(path, "/role-mappings/realm")
 	userID := path[strings.LastIndex(path, "/")+1:]
 
+	// The composite read is what a user holds, so it carries the roles of the
+	// groups of the user as well. The write below adds a direct mapping only.
 	if r.Method == http.MethodGet {
-		held := f.granted[userID]
-		if held == nil {
-			held = []keycloakadmin.RealmRole{}
+		held := []keycloakadmin.RealmRole{}
+		held = append(held, f.granted[userID]...)
+		if strings.HasSuffix(r.URL.Path, "/composite") {
+			held = append(held, f.inherited[userID]...)
 		}
 		_ = json.NewEncoder(w).Encode(held)
 

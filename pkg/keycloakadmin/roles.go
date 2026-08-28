@@ -101,11 +101,18 @@ func (c *Client) FindRealmRole(ctx context.Context, name string) (*RealmRole, er
 	return &role, nil
 }
 
-// UserRealmRoles returns the realm roles that are mapped to the user, which is
-// what a token of that user carries. A role that the user holds through a
-// group is not one of them.
+// UserRealmRoles returns every realm role that the user holds, which is what a
+// token of that user carries. A role that comes from a group of the user, and
+// a role inside a composite role of the user, are both in the list.
+//
+// The lookup is the composite role mappings of the administration API
+// (https://www.keycloak.org/docs-api/latest/rest-api/index.html). The list
+// beside it holds the roles that were mapped to the user directly, which is
+// less than the user holds.
 func (c *Client) UserRealmRoles(ctx context.Context, userID string) ([]RealmRole, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.roleMappingsURL(userID), nil)
+	endpoint := c.roleMappingsURL(userID) + "/composite"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("building the role mapping request: %w", err)
 	}
@@ -125,8 +132,8 @@ func (c *Client) UserRealmRoles(ctx context.Context, userID string) ([]RealmRole
 	return held, nil
 }
 
-// AddUserRealmRole maps role to the user. Every role the user already holds
-// stays, and a role the user holds already is accepted again.
+// AddUserRealmRole maps role to the user directly. Every role the user already
+// holds stays, and a role the user holds already is accepted again.
 func (c *Client) AddUserRealmRole(ctx context.Context, userID string, role RealmRole) error {
 	body, err := json.Marshal([]RealmRole{role})
 	if err != nil {

@@ -487,6 +487,8 @@ The operator waits for Management Identity to finish rolling out before it write
 
 The first Optimize of a management plane brings the `Optimize` role into the realm with it. Management Identity gives the roles of the realm to the first administrator on its very first start and never again, so an administrator who was there before that first Optimize does not hold the role. The management plane gives it to them: every time it converges the realm, it reads the user that `spec.identity.admin.username` names and adds the `Optimize` role when that user does not hold it. A role you take away in Keycloak comes back on the next converge.
 
+A role that the administrator holds through a group of the realm counts as held, so a group that carries the `Optimize` role keeps carrying it and the management plane writes nothing.
+
 This is the only role and the only user the management plane touches. Every other role of that administrator, and every other user of the realm, stays yours to manage in Management Identity. `OptimizeCallbacksReady` reads `AdminRoleGrantFailed` when the realm holds no user of that name, when it holds no `Optimize` role, or when Keycloak refused the grant. See [Status](#status).
 
 Deleting this resource removes those callbacks from the realm, and only when this management plane holds the `ManagementAuthConfig` it names. A Keycloak that does not answer at that moment keeps them, and the deletion goes through anyway, so the orchestration clusters this plane holds are always freed.
