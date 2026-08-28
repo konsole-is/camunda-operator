@@ -235,6 +235,29 @@ func expectOwnedByDatabase(obj client.Object, db *v1.Database) {
 	Expect(refs[0].Controller).To(HaveValue(BeTrue()))
 }
 
+// namespacedName locates an object of namespace by name.
+func namespacedName(namespace, name string) types.NamespacedName {
+	return types.NamespacedName{Namespace: namespace, Name: name}
+}
+
+// controllerRefTo returns the controller owner reference of db, in the shape
+// the bindings component writes it. A spec uses it to put an object under the
+// control of one Database while another names or labels it.
+func controllerRefTo(db *v1.Database) metav1.OwnerReference {
+	GinkgoHelper()
+
+	var latest v1.Database
+	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(db), &latest)).To(Succeed())
+
+	return metav1.OwnerReference{
+		APIVersion: "core.camunda.io/v1",
+		Kind:       "Database",
+		Name:       latest.Name,
+		UID:        latest.UID,
+		Controller: new(true),
+	}
+}
+
 // sqlDatabaseExists reports whether the logical database exists on the shared
 // server.
 func sqlDatabaseExists(name string) bool {
@@ -1029,6 +1052,159 @@ var _ = Describe("Database controller", func() {
 
 		By("keeping the holder Ready on its own bindings")
 		expectDatabaseReady(holder, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+	})
+
+	// One edit can move a Database onto the logical database of another and
+	// rename every binding at the same time. The objects it published keep the
+	// names from before that edit, and the names of the spec reach nothing. It
+	// must give back what it published, or the credentials of a logical
+	// database it no longer owns stay on the cluster under the old names and
+	// nothing deletes them.
+	It("withdraws the bindings it published when one edit renames them all", func() {
+		namespace := newDatabaseNamespace()
+		server := createDatabaseServer(namespace)
+
+		holder := databaseFor(server, namespace)
+		holder.Name = "renama-" + utilrand.String(8)
+		createDatabase(holder)
+		expectDatabaseReady(holder, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+
+		mover := databaseFor(server, namespace)
+		mover.Name = "renamz-" + utilrand.String(8)
+		mover.Spec.ApplicationCredentials = &v1.CredentialsSpec{SecretName: "app-old"}
+		mover.Spec.BackupCredentials = &v1.BackupCredentialsSpec{
+			CredentialsSpec: v1.CredentialsSpec{SecretName: "backup-old"},
+		}
+		mover.Spec.DatabaseConfig = "config-old"
+		mover.Spec.SecondaryStorageConfig = "storage-old"
+		createDatabase(mover)
+		expectDatabaseReady(mover, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+
+		By("publishing every binding under the name its spec gives it")
+		Expect(k8sClient.Get(ctx, namespacedName(namespace, "app-old"), &corev1.Secret{})).To(Succeed())
+		Expect(k8sClient.Get(ctx, namespacedName(namespace, "backup-old"), &corev1.Secret{})).To(Succeed())
+		Expect(k8sClient.Get(ctx, namespacedName(namespace, "config-old"), &v1.DatabaseConfig{})).To(Succeed())
+		Expect(
+			k8sClient.Get(ctx, namespacedName(namespace, "storage-old"), &v1.SecondaryStorageConfig{}),
+		).To(Succeed())
+
+		By("renaming every binding and moving it onto the logical database of the other one")
+		Eventually(func(g Gomega) {
+			var latest v1.Database
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mover), &latest)).To(Succeed())
+			latest.Spec.DatabaseName = holder.Spec.DatabaseName
+			latest.Spec.ApplicationCredentials.SecretName = "app-new"
+			latest.Spec.BackupCredentials.SecretName = "backup-new"
+			latest.Spec.DatabaseConfig = "config-new"
+			latest.Spec.SecondaryStorageConfig = "storage-new"
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		expectDatabaseReady(
+			mover, metav1.ConditionFalse, v1.ReasonInvalidReference,
+			fmt.Sprintf(
+				"Database %s/%s already claims database %q",
+				namespace, holder.Name, holder.Spec.DatabaseName,
+			),
+		)
+
+		By("deleting the objects it published under the old names")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, namespacedName(namespace, "app-old"), &corev1.Secret{})).To(
+				MatchError(ContainSubstring("not found")),
+			)
+			g.Expect(k8sClient.Get(ctx, namespacedName(namespace, "backup-old"), &corev1.Secret{})).To(
+				MatchError(ContainSubstring("not found")),
+			)
+			g.Expect(k8sClient.Get(ctx, namespacedName(namespace, "config-old"), &v1.DatabaseConfig{})).To(
+				MatchError(ContainSubstring("not found")),
+			)
+			g.Expect(k8sClient.Get(
+				ctx, namespacedName(namespace, "storage-old"), &v1.SecondaryStorageConfig{},
+			)).To(MatchError(ContainSubstring("not found")))
+		}, timeout, interval).Should(Succeed())
+
+		By("publishing nothing under the new names")
+		Expect(k8sClient.Get(ctx, namespacedName(namespace, "config-new"), &v1.DatabaseConfig{})).To(
+			MatchError(ContainSubstring("not found")),
+		)
+
+		By("keeping the bindings of the Database that holds the claim")
+		Expect(k8sClient.Get(
+			ctx, namespacedName(namespace, holder.Name), &v1.DatabaseConfig{},
+		)).To(Succeed())
+	})
+
+	// The labels of a binding say which Database published it, and the
+	// controller owner reference says who may delete it. An object that carries
+	// the labels of the loser under a name its spec no longer gives belongs to
+	// the Database that controls it. The loser leaves it where it is and names
+	// it, as it does with a binding of its spec that it does not own.
+	It("leaves an object of another Database under an old name in place", func() {
+		namespace := newDatabaseNamespace()
+		server := createDatabaseServer(namespace)
+
+		holder := databaseFor(server, namespace)
+		holder.Name = "olda-" + utilrand.String(8)
+		createDatabase(holder)
+		expectDatabaseReady(holder, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+
+		loser := databaseFor(server, namespace)
+		loser.Name = "oldz-" + utilrand.String(8)
+		createDatabase(loser)
+		expectDatabaseReady(loser, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+
+		By("leaving an object with the labels of the loser that the holder controls")
+		foreign := &v1.DatabaseConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "old-config-" + utilrand.String(6),
+				Namespace: namespace,
+				Labels: map[string]string{
+					"camunda.io/database":  loser.Name,
+					"camunda.io/component": "database",
+				},
+				OwnerReferences: []metav1.OwnerReference{controllerRefTo(holder)},
+			},
+			Spec: v1.DatabaseConfigSpec{
+				ServerRef:    server,
+				DatabaseName: holder.Spec.DatabaseName,
+				CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+					Name: holder.Name + "-credentials", UsernameKey: "username", PasswordKey: "password",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, foreign)).To(Succeed())
+		foreignKey := client.ObjectKeyFromObject(foreign)
+
+		By("pointing the loser at the logical database that the holder holds")
+		Eventually(func(g Gomega) {
+			var latest v1.Database
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(loser), &latest)).To(Succeed())
+			latest.Spec.DatabaseName = holder.Spec.DatabaseName
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		expectDatabaseReady(
+			loser, metav1.ConditionFalse, v1.ReasonInvalidReference,
+			"These bindings belong to another Database and stay in place: "+foreignKey.String(),
+		)
+
+		By("keeping the object, with its owner reference intact")
+		Consistently(func(g Gomega) {
+			var still v1.DatabaseConfig
+			g.Expect(k8sClient.Get(ctx, foreignKey, &still)).To(Succeed())
+			g.Expect(metav1.GetControllerOf(&still).Name).To(Equal(holder.Name))
+		}, "3s", interval).Should(Succeed())
+
+		By("withdrawing the bindings it does own")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(
+				ctx, namespacedName(namespace, loser.Name+"-credentials"), &corev1.Secret{},
+			)).To(MatchError(ContainSubstring("not found")))
+			g.Expect(k8sClient.Get(
+				ctx, namespacedName(namespace, loser.Name), &v1.DatabaseConfig{},
+			)).To(MatchError(ContainSubstring("not found")))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("gives its claim back on deletion, leaving the SQL database and users intact", func() {

@@ -30,6 +30,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -241,13 +242,14 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	return ctrl.Result{}, reconcileErr
 }
 
-// withdrawBindings deletes the bindings that database owns and sets comps to
-// the component that did it, so the one status flush of this reconcile owns
-// BindingsReady and reports it as Disabled. A Database that lost its claim
-// keeps neither the contracts nor the credential Secrets it published.
+// withdrawBindings deletes the bindings that database published and still
+// controls, and sets comps to the component that did it, so the one status
+// flush of this reconcile owns BindingsReady and reports it as Disabled. A
+// Database that lost its claim keeps neither the contracts nor the credential
+// Secrets it published.
 //
 // It returns the bindings it left in place. Two Databases can name one binding
-// explicitly, and only the one that owns it may delete it, so a loser that
+// explicitly, and only the one that controls it may delete it, so a loser that
 // names the winner's object withdraws everything else and reports that name.
 func (r *DatabaseReconciler) withdrawBindings(
 	ctx context.Context,
@@ -255,12 +257,12 @@ func (r *DatabaseReconciler) withdrawBindings(
 	database *v1.Database,
 	comps *[]*component.Component,
 ) ([]string, error) {
-	owned, kept, err := r.ownedBindings(ctx, database)
+	published, kept, err := r.publishedBindings(ctx, database)
 	if err != nil {
 		return nil, err
 	}
 
-	comp, err := components.WithdrawnBindingsComponent(database, owned)
+	comp, err := components.WithdrawnBindingsComponent(database, published)
 	if err != nil {
 		return kept, err
 	}
@@ -269,73 +271,141 @@ func (r *DatabaseReconciler) withdrawBindings(
 	return kept, comp.Reconcile(ctx, rec)
 }
 
-// ownedBindings reports which published bindings of database carry a
-// controller owner reference to it, and names the ones that do not.
-func (r *DatabaseReconciler) ownedBindings(
+// publishedBindings reports the objects that database published and still
+// controls, and names the ones another Database controls. It reads the live
+// objects, not the spec of database.
+//
+// One edit can rename a binding and move the Database onto the logical database
+// of another at the same time. The names of the spec then reach nothing, and
+// the objects stay under the names from before that edit.
+func (r *DatabaseReconciler) publishedBindings(
 	ctx context.Context, database *v1.Database,
-) (components.OwnedBindings, []string, error) {
+) (components.PublishedBindings, []string, error) {
 	rb := components.ResolveBindings(database)
+	var published components.PublishedBindings
 
-	// One entry per binding the component can register. The order decides
-	// only the order of the names in the message.
-	type binding struct {
-		key   types.NamespacedName
-		obj   client.Object
-		owned *bool
-	}
-
-	var owned components.OwnedBindings
-	bindings := []binding{
-		{rb.AppSecret, &corev1.Secret{}, &owned.AppSecret},
-		{rb.BackupSecret, &corev1.Secret{}, &owned.BackupSecret},
+	// One entry per binding kind. The order decides only the order of the names
+	// in the message.
+	kinds := []struct {
+		list  client.ObjectList
+		empty func() client.Object
+		named []string
+		into  *[]string
+	}{
 		{
-			types.NamespacedName{Namespace: database.Namespace, Name: rb.DatabaseConfigName},
-			&v1.DatabaseConfig{},
-			&owned.DatabaseConfig,
+			&corev1.SecretList{},
+			func() client.Object { return &corev1.Secret{} },
+			[]string{rb.AppSecret.Name, rb.BackupSecret.Name},
+			&published.Secrets,
 		},
-	}
-	if database.Spec.SecondaryStorageConfig != "" {
-		bindings = append(bindings, binding{
-			types.NamespacedName{
-				Namespace: database.Namespace, Name: database.Spec.SecondaryStorageConfig,
-			},
-			&v1.SecondaryStorageConfig{},
-			&owned.SecondaryStorage,
-		})
+		{
+			&v1.DatabaseConfigList{},
+			func() client.Object { return &v1.DatabaseConfig{} },
+			[]string{rb.DatabaseConfigName},
+			&published.DatabaseConfigs,
+		},
+		{
+			&v1.SecondaryStorageConfigList{},
+			func() client.Object { return &v1.SecondaryStorageConfig{} },
+			[]string{database.Spec.SecondaryStorageConfig},
+			&published.SecondaryStorageConfigs,
+		},
 	}
 
 	var kept []string
-	for _, b := range bindings {
-		mine, err := r.ownsBinding(ctx, database, b.key, b.obj)
+	for _, kind := range kinds {
+		withdraw, left, err := r.bindingsOfKind(ctx, database, kind.list, kind.empty, kind.named)
 		if err != nil {
-			return components.OwnedBindings{}, nil, err
+			return components.PublishedBindings{}, nil, err
 		}
-		*b.owned = mine
-		if !mine {
-			kept = append(kept, b.key.String())
-		}
+
+		*kind.into = withdraw
+		kept = append(kept, left...)
 	}
 
-	return owned, kept, nil
+	return published, kept, nil
 }
 
-// ownsBinding reports whether the live object at key carries a controller
-// owner reference to database. An object that does not exist is owned: there
-// is nothing of anybody else's to delete.
-func (r *DatabaseReconciler) ownsBinding(
-	ctx context.Context, database *v1.Database, key types.NamespacedName, obj client.Object,
-) (bool, error) {
-	if err := r.APIReader.Get(ctx, key, obj); err != nil {
-		if apierrors.IsNotFound(err) {
-			return true, nil
+// bindingsOfKind decides one kind of binding. It returns the names that
+// database may withdraw, and the names it must leave in place. empty returns an
+// object of that kind for a live read.
+//
+// It looks at two sets of objects. The labels find every object that database
+// published, under the name it carries now. The names of the spec find an
+// object that another Database published under a name this one asks for: such
+// an object carries the labels of its own Database, so nothing but the spec
+// points at it.
+func (r *DatabaseReconciler) bindingsOfKind(
+	ctx context.Context,
+	database *v1.Database,
+	list client.ObjectList,
+	empty func() client.Object,
+	named []string,
+) (withdraw, kept []string, err error) {
+	decide := func(obj client.Object) {
+		if controls(database, obj) {
+			withdraw = append(withdraw, obj.GetName())
+
+			return
 		}
 
-		return false, fmt.Errorf("reading the published binding %q: %w", key, err)
+		kept = append(kept, client.ObjectKeyFromObject(obj).String())
 	}
 
+	key := client.ObjectKeyFromObject(database)
+	if err := r.APIReader.List(
+		ctx, list,
+		client.InNamespace(database.Namespace),
+		client.MatchingLabels(components.BindingSelector(database)),
+	); err != nil {
+		return nil, nil, fmt.Errorf("listing the published bindings of %q: %w", key, err)
+	}
+
+	items, err := meta.ExtractList(list)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading the published bindings of %q: %w", key, err)
+	}
+
+	labelled := make(map[string]bool, len(items))
+	for _, item := range items {
+		obj, ok := item.(client.Object)
+		if !ok {
+			return nil, nil, fmt.Errorf("published binding of %q is no object: %T", key, item)
+		}
+
+		labelled[obj.GetName()] = true
+		decide(obj)
+	}
+
+	for _, name := range named {
+		if name == "" || labelled[name] {
+			continue
+		}
+
+		bindingKey := types.NamespacedName{Namespace: database.Namespace, Name: name}
+		obj := empty()
+		if err := r.APIReader.Get(ctx, bindingKey, obj); err != nil {
+			// Nothing under the name, so there is nothing to withdraw and
+			// nothing of anybody else's to report.
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+
+			return nil, nil, fmt.Errorf("reading the published binding %q: %w", bindingKey, err)
+		}
+
+		decide(obj)
+	}
+
+	return withdraw, kept, nil
+}
+
+// controls reports whether obj carries the controller owner reference of
+// database. Only the Database that controls an object may delete it.
+func controls(database *v1.Database, obj client.Object) bool {
 	owner := metav1.GetControllerOf(obj)
 
-	return owner != nil && owner.UID == database.UID, nil
+	return owner != nil && owner.UID == database.UID
 }
 
 // resolvePasswords fills the role passwords of rb. It reuses the password of

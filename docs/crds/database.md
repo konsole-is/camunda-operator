@@ -57,7 +57,9 @@ A `Database` gives its claim back when you delete it. It also gives it back when
 
 A `Database` can lose a claim after it published under it. That happens when you point `spec.databaseName` at a logical database that another `Database` holds. The holder owns that database and resets the role passwords, so the credentials of the loser open nothing. The loser therefore withdraws what it published: the `DatabaseConfig`, the `SecondaryStorageConfig`, and both credential Secrets are deleted, and `BindingsReady` reads `Disabled`.
 
-It withdraws only what it owns. Two `Database` resources can name one `databaseConfig` or one credential Secret, and the loser leaves an object that belongs to the winner in place. The `Ready` message then names what stayed.
+The loser gives back the objects it published, not the objects its spec names now. One edit can change `spec.databaseName` and the names of the bindings together. The names in the spec then point at nothing, and the operator still deletes the objects under the names from before that edit.
+
+It withdraws only what it owns. Two `Database` resources can name one `databaseConfig` or one credential Secret, and the loser leaves an object that belongs to the winner in place. An object of another `Database` stays in place under any name, whether the spec of the loser names it now or named it before. The `Ready` message then names what stayed.
 
 `status.collisionKey` shows the logical database that a `Database` last resolved, as the system identifier and the database name:
 
@@ -70,7 +72,7 @@ Every claimant records this field, the one that loses included, so it shows the 
 
 ## Changes
 
-All SQL is idempotent, so every reconcile can run it again. If you clear `spec.secondaryStorageConfig`, the existing `SecondaryStorageConfig` stays until you delete the `Database`.
+All SQL is idempotent, so every reconcile can run it again. If you rename a binding, the operator publishes the object under the new name and leaves the object under the old name in place. If you clear `spec.secondaryStorageConfig`, the existing `SecondaryStorageConfig` stays in the same way. Both objects stay until you delete the `Database`. A `Database` that loses its claim removes them sooner. See [Uniqueness](#uniqueness).
 
 ## Deletion
 
