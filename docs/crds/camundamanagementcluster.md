@@ -595,6 +595,32 @@ A condition reads `True` under the reasons `Healthy`, `Disabled`, `Suspended`, a
 
 A failed pre-check reports on `Ready` and stops, so every other condition keeps the value it last had. Read `Ready` first, and take the rest as of the last reconcile that got past the pre-checks.
 
+The management plane also does work that no workload condition reports. Each one of these is a step:
+
+- It finds the orchestration clusters and the Optimize instances behind the contract.
+- It claims the clusters that the selectors match, and releases the ones that left.
+- It gives Web Modeler a user on every basic-auth cluster.
+- It points the attached clusters at Console.
+- It writes the `ManagementAuthConfig`.
+- It registers the login callbacks of Optimize in the realm.
+
+A step fails when the Kubernetes API refuses the operator. What one orchestration cluster answers is not a step: a refused user or a refused ping is a row of that cluster in `status.clusters` and never holds `Ready` back. See [Clusters](#clusters). What Keycloak answers about the `optimize` client is not a step either. It reports on `OptimizeCallbacksReady`, and `Ready` takes the reason of that row.
+
+When a step fails, `Ready` reads `StepFailed`. The message names what the operator could not do:
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: StepFailed
+      message: 'Could not find the orchestration clusters: listing the CamundaClusters: etcdserver: request timed out'
+```
+
+`Ready` is never `True` in that pass, whatever the workloads report, because the operator did not get to the end of its work. Every other condition keeps the value it last had. The operator tries the step again on its own. `Ready` goes back to the state of the workloads once a pass runs to the end.
+
+The `ManagementAuthConfig` is the one step that reads `WriteFailed` on `Ready` instead of `StepFailed`. `ManagementAuthReady` carries the answer of the API server beside it.
+
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a Secret that the [CamundaPlatformConfig](camundaplatformconfig.md) names is applied, or no such Secret exists. | Nothing. |
@@ -636,9 +662,10 @@ A failed pre-check reports on `Ready` and stops, so every other condition keeps 
 | `Ready` | `MissingSecret` | A referenced Secret does not exist or lacks a key. The message names both. | Create the Secret with the named key. |
 | `Ready` | `Conflict` | A `ManagementAuthConfig` of that name exists and belongs to another owner. The message names the holder. | Set `spec.managementAuthConfigName` to a free name, or remove the object. |
 | `Ready` | `WriteFailed` | The `ManagementAuthConfig` could not be written, or Keycloak refused the change to the `optimize` client. | Read the `ManagementAuthReady` and `OptimizeCallbacksReady` rows. |
+| `Ready` | `StepFailed` | A step did not finish, usually because the Kubernetes API refused a call. The message names what the operator could not do. | Read the message. The operator tries again. If the reason stays, correct what the message names. |
 | `Ready` | `OptimizeClientMissing` / `ConnectionFailed` / `AdminRoleGrantFailed` | The realm is not in the state the management plane wants: the login callbacks are missing, or the first administrator holds no `Optimize` role. | Read the `OptimizeCallbacksReady` row. |
 
-`Ready` is `True` only when every condition that takes part in it is `True` and the `ManagementAuthConfig` is written. The login callbacks hold it back only while this management plane serves an Optimize, as the paragraph above says.
+`Ready` is `True` only when every condition that takes part in it is `True`, the `ManagementAuthConfig` is written, and every step of the pass went through. The login callbacks hold it back only while this management plane serves an Optimize, as the paragraph above says.
 
 A condition that reads `Disabled` stays out of `Ready`. This is not an error.
 
