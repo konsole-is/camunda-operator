@@ -29,14 +29,15 @@ import (
 type Option func(*Client)
 
 // ErrNoCertificates says that a bundle holds no certificate in PEM form. It
-// is the one failure of ParseCABundle that the bundle itself causes, so a
-// caller reports it against the bundle and every other one against itself.
+// is the only failure of ParseCABundle that the bundle itself causes, so a
+// caller that reports a bad bundle to a user matches on it.
 var ErrNoCertificates = errors.New("the bundle holds no certificate in PEM form")
 
 // ParseCABundle returns the certificate pool that a Client verifies Keycloak
 // with: the trust store of the operator image, plus every certificate in pem.
-// An empty bundle comes back as ErrNoCertificates, so a caller can name it
-// instead of reporting the failed handshake that comes of it.
+// A pem that yields no certificate at all, empty or not, comes back as
+// ErrNoCertificates, so a caller can name the bundle instead of reporting the
+// failed handshake that comes of it.
 func ParseCABundle(pem []byte) (*x509.CertPool, error) {
 	pool, err := x509.SystemCertPool()
 	if err != nil {
