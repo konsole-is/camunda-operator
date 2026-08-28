@@ -207,6 +207,36 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 			expectReadyReason(s.mc, v1.ReasonWriteFailed)
 		})
 
+		// A reconcile that could not run one of its steps did not do the work
+		// that keeps the management plane correct, so it must not leave Ready
+		// True beside the step it could not finish.
+		It("reports the step whose Kubernetes call failed and restores Ready afterwards", func() {
+			s := newScenario()
+
+			key := client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
+			expectReadyWhileStamping(s.mc, key)
+
+			disarm := clusterListFault.arm()
+			defer disarm()
+			nudge(s.mc)
+
+			Eventually(func(g Gomega) {
+				ready := conditionOf(g, s.mc, v1.ConditionReady)
+				g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(ready.Reason).To(Equal(v1.ReasonStepFailed))
+				g.Expect(ready.Message).To(ContainSubstring("Could not find the orchestration clusters"))
+				g.Expect(ready.Message).To(ContainSubstring(errClusterListRefused.Error()))
+			}, timeout, interval).Should(Succeed())
+
+			// The component conditions keep the state of the last full pass.
+			Expect(conditionOf(Default, s.mc, v1.ConditionIdentityReady).Status).
+				To(Equal(metav1.ConditionTrue))
+
+			disarm()
+
+			expectReadyWhileStamping(s.mc, key)
+		})
+
 		It("leaves a contract that another owner created in the meantime alone", func() {
 			// Two management clusters that ask for one free name at the same
 			// time both pass the pre-check. The API server creates the
@@ -530,6 +560,22 @@ func readManagementCluster(g Gomega, mc *v1.CamundaManagementCluster) *v1.Camund
 	g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), &latest)).To(Succeed())
 
 	return &latest
+}
+
+// nudge writes an annotation on the management cluster, so that the controller
+// reconciles it again. It leaves the spec alone, so the generation and every
+// rendered resource stay as they are.
+func nudge(mc *v1.CamundaManagementCluster) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		latest := readManagementCluster(g, mc)
+		if latest.Annotations == nil {
+			latest.Annotations = map[string]string{}
+		}
+		latest.Annotations["test.camunda.io/reconcile"] = utilrand.String(5)
+		g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 }
 
 // conditionOf reads one condition of the management cluster and asserts that

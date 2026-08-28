@@ -159,11 +159,16 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // CamundaOptimizes behind the contract are discovered, the components
 // converge, every attached cluster is pointed at Console, the
 // ManagementAuthConfig is applied, and the login callback of every discovered
-// Optimize is registered in the realm. Ready is True only when every component
-// that takes part in it is True and the contract is written; a failed write
-// reports WriteFailed. A plane that serves at least one Optimize also waits
-// for the login callbacks of the realm, and one that serves none reads Ready
-// whatever the realm says.
+// Optimize is registered in the realm. A plane that serves at least one
+// Optimize also waits for the login callbacks of the realm, and one that
+// serves none reads Ready whatever the realm says.
+//
+// Ready is True only when every component that takes part in it is True and
+// every step of the pass ran. A step is one of the calls above, which the
+// controller makes outside the components. A failed step reports StepFailed,
+// or WriteFailed for the contract, with the name of the step in the message,
+// and the first step that failed is the one Ready names. Every other condition
+// keeps the value of the last pass that ran to the end.
 //
 // Status is written once per reconcile: the components and conditions.Stage
 // stage conditions on the in-memory CR, and the deferred FlushStatus persists
@@ -222,28 +227,28 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, r.withdrawFromDeselected(ctx, &mc)
 	}
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, stepResolveReferences.stop(&mc, err)
 	}
 
 	clusters, err := r.listClusters(ctx)
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, stepFindClusters.stop(&mc, err)
 	}
 
 	namespaces, err := r.selectedNamespaces(ctx, &mc)
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, stepSelectNamespaces.stop(&mc, err)
 	}
 
 	attached, rows, err := r.attachedClusters(ctx, &mc, clusters, namespaces, res.Input.Provider)
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, stepClaimClusters.stop(&mc, err)
 	}
 	res.Input.Clusters = attached
 	mc.Status.Clusters = rows
 
 	if err := r.discoverOptimizes(ctx, &mc, &res); err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, stepDiscoverOptimize.stop(&mc, err)
 	}
 
 	// A renamed contract leaves the old name behind until the new contract is
@@ -253,7 +258,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	built, err := components.Build(res.Input)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("building the components: %w", err)
+		return ctrl.Result{}, stepBuildComponents.stop(&mc, err)
 	}
 	comps = built.Components
 
@@ -261,15 +266,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// recordInitialClaim overwrites IdentityReady, and readyCondition
 	// aggregates that condition. The refusal must therefore reach the CR
 	// before the aggregate, or Ready reads True beside it.
-	claimErr := r.recordInitialClaim(ctx, &mc, res.Input.Provider.Mode)
-	userErr := r.syncWebModelerUsers(ctx, &mc, clusters, attached, rows)
-	pingErr := r.syncPing(ctx, &mc, clusters, attached)
+	claimErr := stepRecordClaim.wrap(r.recordInitialClaim(ctx, &mc, res.Input.Provider.Mode))
+	userErr := stepWebModelerUsers.wrap(r.syncWebModelerUsers(ctx, &mc, clusters, attached, rows))
+	pingErr := stepPing.wrap(r.syncPing(ctx, &mc, clusters, attached))
 	// The claim of a cluster that left the selector goes last, once its user
 	// and its ping are gone, so that no other management plane adopts a user
 	// this one still has to remove.
 	var releaseErr error
 	if userErr == nil && pingErr == nil {
-		releaseErr = r.releaseClaims(ctx, &mc, clusters, namespaces)
+		releaseErr = stepReleaseClaims.wrap(r.releaseClaims(ctx, &mc, clusters, namespaces))
 	}
 	contractErr := r.writeContract(ctx, &mc, res)
 	if contractErr == nil && previousContract != "" && previousContract != res.ContractName {
@@ -282,7 +287,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		}
 	}
 	callbackFailure, callbackRetry, callbackErr := r.syncOptimizeCallbacks(ctx, &mc, res, contractErr)
-	conditions.Stage(&mc, readyCondition(&mc, built.Ready, contractErr, callbackFailure))
+	contractErr = stepWriteContract.wrapAs(v1.ReasonWriteFailed, contractErr)
+	callbackErr = stepOptimizeCallbacks.wrap(callbackErr)
+	conditions.Stage(&mc, readyCondition(
+		&mc,
+		built.Ready,
+		firstStep(claimErr, userErr, pingErr, releaseErr, contractErr, callbackErr),
+		callbackFailure,
+	))
 
 	// Nothing watches the user API of a cluster or the Optimize client of the
 	// realm, so the controller comes back on its own: soon when a cluster or
@@ -519,12 +531,17 @@ func anyRow(rows []v1.AttachedClusterStatus, reason string) bool {
 	return false
 }
 
-// readyCondition derives Ready from the components, the contract write, and
-// the registration of the Optimize callbacks. Neither write is a component,
-// and neither is a ready management plane when it fails: the
-// ManagementAuthConfig is the only thing a CamundaOptimize reads from this
-// resource, and an Optimize whose callback is missing from the realm cannot
-// complete a login.
+// readyCondition derives Ready from the steps of the reconcile, the
+// components, and the registration of the Optimize callbacks. Neither a step
+// nor the callbacks are a component, and neither is a ready management plane
+// when it fails: a step that did not run left a claim, a user, a ping, or the
+// contract behind, and an Optimize whose callback is missing from the realm
+// cannot complete a login.
+//
+// A failed step decides Ready first, because it reports nowhere else. failed
+// is the first step that failed in reconcile order, and it carries the reason
+// it reports: the contract write keeps the documented WriteFailed, every other
+// step reports StepFailed.
 //
 // A component that is not True yet decides Ready before the callbacks do. The
 // realm is bootstrapped by Management Identity against Keycloak, so a plane
@@ -533,14 +550,11 @@ func anyRow(rows []v1.AttachedClusterStatus, reason string) bool {
 func readyCondition(
 	mc *v1.CamundaManagementCluster,
 	comps []*component.Component,
-	contractErr error,
+	failed *stepError,
 	callbackFailure *conditions.PreCheckFailure,
 ) metav1.Condition {
-	if contractErr != nil {
-		return conditions.Failed(mc, &conditions.PreCheckFailure{
-			Reason:  v1.ReasonWriteFailed,
-			Message: contractErr.Error(),
-		})
+	if failed != nil {
+		return failed.condition(mc)
 	}
 
 	ready := conditions.Aggregate(mc, comps...)
