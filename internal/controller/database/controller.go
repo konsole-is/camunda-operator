@@ -37,11 +37,13 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/database"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
@@ -50,30 +52,20 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "database"
+
 // databaseServerRefField indexes Database CRs by the DatabaseServerConfig
 // they reference, keyed as "<namespace>/<serverRef>". Events for a
 // DatabaseServerConfig or its admin Secret map back to the Databases that
 // reference it.
 const databaseServerRefField = "database.spec.serverRef"
 
-// databaseCollisionField indexes Database CRs by the claim they recorded in
-// status.collisionKey. The collision rule can then list every claimant of one
-// logical database on one PostgreSQL instance, across all namespaces, with
-// one field-indexed query.
-const databaseCollisionField = "database.status.collisionKey"
-
 // connectionRetryInterval is the wait before the controller retries a server
 // whose connection pre-check failed. The controller cannot watch the external
 // server, so a timed requeue is the only trigger.
 const connectionRetryInterval = 30 * time.Second
-
-// errClaimLost reports that another Database holds the claim to the logical
-// database of this one. It is the single pre-check failure that withdraws the
-// bindings: every other one leaves a server unreachable or a reference
-// unresolved, and the published bindings stay valid. A lost claim does not.
-// The winner owns the logical database and rotates the role passwords, so the
-// credentials of the loser open nothing.
-var errClaimLost = errors.New("another Database holds the claim")
 
 // DatabaseReconciler bootstraps a logical database and its users on an
 // existing PostgreSQL server over plain SQL. It publishes the credential
@@ -88,6 +80,14 @@ type DatabaseReconciler struct {
 	// EventRecorder publishes the resource events of the component framework.
 	// SetupWithManager sets it to the recorder of the manager when it is nil.
 	EventRecorder events.EventRecorder
+	// ClaimNamespace holds the claim Leases of every logical database. One
+	// claim crosses namespaces, so every claimant meets on a Lease of this
+	// one namespace. It is the namespace of the operator, and
+	// SetupWithManager refuses an empty one.
+	ClaimNamespace string
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 
 	// componentClient is the uncached client that the bindings component
 	// reconciles with. It keeps the published credential Secrets out of the
@@ -104,12 +104,13 @@ type DatabaseReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile converges a Database. The pre-checks resolve the server, its
-// identity, its admin credentials, the collision rule, and the connection. A
-// failed pre-check stops the reconcile and reports its documented Ready
-// reason. The SQL bootstrap then converges the logical database, the roles,
-// and the grants.
+// identity, its admin credentials, the claim, and the connection. A failed
+// pre-check stops the reconcile and reports its documented Ready reason. The
+// SQL bootstrap then converges the logical database, the roles, and the
+// grants.
 // This step always runs before the bindings component publishes the
 // credential Secrets. A published Secret then never names a password that the
 // server does not know.
@@ -125,13 +126,40 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	// look, and the controller records no event that a second look repeats.
 	var database v1.Database
 	if err := r.Get(ctx, req.NamespacedName, &database); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			observability.Forget(r.Metrics, new(v1.Database).GetKind(), req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
+	}
+
+	// A deleted Database publishes no status. Its bindings go with the owner
+	// references, and the finalizer gives the claim back.
+	if !database.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, r.finalize(ctx, &database)
+	}
+
+	// The finalizer must exist before the first claim. A deletion between the
+	// claim and the next write would leave a logical database claimed by an
+	// owner that is gone.
+	if controllerutil.AddFinalizer(&database, ClaimFinalizer) {
+		if err := r.Update(ctx, &database); err != nil {
+			// A deletion that races this write is fine. The deletion path owns
+			// the object from here.
+			if apierrors.IsNotFound(err) {
+				return ctrl.Result{}, nil
+			}
+
+			return ctrl.Result{}, fmt.Errorf("adding the claim finalizer: %w", err)
+		}
 	}
 
 	rec := component.ReconcileContext{
 		Client:        r.componentClient,
 		Scheme:        r.Scheme,
 		EventRecorder: r.EventRecorder,
+		Metrics:       r.Metrics,
 		APIReader:     r.APIReader,
 		Owner:         &database,
 	}
@@ -147,6 +175,15 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	bootstrapper, err := r.preCheck(ctx, &database)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
+		// Nothing holds the logical database yet, so this Database has lost
+		// nothing. It keeps its bindings and every claim it holds, and looks
+		// again when the claimant that goes first has taken or left the name.
+		if errors.Is(err, errClaimNotFirst) {
+			conditions.Stage(&database, conditions.Failed(&database, failure))
+
+			return ctrl.Result{RequeueAfter: claimRetryInterval}, nil
+		}
+
 		if errors.Is(err, errClaimLost) {
 			kept, withdrawErr := r.withdrawBindings(ctx, rec, &database, &comps)
 			if len(kept) > 0 {
@@ -156,8 +193,20 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 				)
 			}
 			conditions.Stage(&database, conditions.Failed(&database, failure))
+			if withdrawErr != nil {
+				return ctrl.Result{}, withdrawErr
+			}
 
-			return ctrl.Result{}, withdrawErr
+			// The withdrawal leaves nothing that names a logical database of
+			// this Database, so it gives every claim it holds back. A
+			// Database that kept one would hold a name it no longer uses.
+			if dropErr := r.releaseHeldClaims(
+				ctx, selfHolder(&database), "",
+			); dropErr != nil {
+				return ctrl.Result{}, dropErr
+			}
+
+			return ctrl.Result{RequeueAfter: claimRetryInterval}, nil
 		}
 
 		conditions.Stage(&database, conditions.Failed(&database, failure))
@@ -343,14 +392,15 @@ func bootstrapSQL(ctx context.Context, b pgbootstrap.Bootstrapper, name string, 
 }
 
 // preCheck runs the documented pre-checks in order: server reference, server
-// identity, admin credentials Secret, collision rule, connection. It records
-// the claim of the Database in status.collisionKey as soon as the identity is
-// known, so the index that the collision rule lists over is served from what
-// the operator resolved. It returns the connected Bootstrapper, which the
-// caller closes.
+// identity, admin credentials Secret, claim, connection. It records the
+// logical database that the Database names in status.collisionKey as soon as
+// the identity is known, and gives back every other claim it holds once it
+// holds this one and the server answers. It returns the connected
+// Bootstrapper, which the caller closes.
 //
 // A failed check returns an error carrying a *conditions.PreCheckFailure with
-// its Ready reason, and a lost claim wraps errClaimLost beside it. Any other
+// its Ready reason. A lost claim wraps errClaimLost beside it, and a claim
+// that another Database goes first for wraps errClaimNotFirst. Any other
 // error is a transient API failure.
 func (r *DatabaseReconciler) preCheck(ctx context.Context, database *v1.Database) (pgbootstrap.Bootstrapper, error) {
 	server, err := r.resolveServer(ctx, database)
@@ -392,20 +442,43 @@ func (r *DatabaseReconciler) preCheck(ctx context.Context, database *v1.Database
 		}
 	}
 
-	database.Status.CollisionKey = components.CollisionKey(
-		server.Status.SystemIdentifier, database.Spec.DatabaseName,
-	)
+	key := components.CollisionKey(server.Status.SystemIdentifier, database.Spec.DatabaseName)
+	// The field says which logical database this Database names. Every
+	// claimant records it, the one that loses included, so the index that
+	// checkCollision reads lists a Database under the name it asks for now
+	// and under no name it gave up.
+	database.Status.CollisionKey = key
 
 	user, password, err := r.adminCredentials(ctx, server)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := r.checkCollision(ctx, database); err != nil {
+	if err := r.claim(ctx, database, key); err != nil {
 		return nil, err
 	}
 
-	return connect(ctx, server, user, password)
+	bootstrapper, err := connect(ctx, server, user, password)
+	if err != nil {
+		return nil, err
+	}
+
+	// The Database holds the logical database it names now, and the server
+	// answers for it. Everything else it holds is free to go. A release
+	// before this point leaves the bindings of this Database on a logical
+	// database that another Database can take and rotate the roles of.
+	//
+	// The sweep runs on every pre-check that reaches here. status.collisionKey
+	// is written by the flush of this reconcile whether the sweep ran or not,
+	// so it is no record that the release happened, and a sweep that skipped
+	// on it would never run again after one failure.
+	if err := r.releaseHeldClaims(ctx, selfHolder(database), key); err != nil {
+		bootstrapper.Close()
+
+		return nil, err
+	}
+
+	return bootstrapper, nil
 }
 
 // resolveServer fetches the DatabaseServerConfig that spec.serverRef names in
@@ -453,52 +526,6 @@ func (r *DatabaseReconciler) adminCredentials(
 	}
 
 	return string(secret.Data[ref.UsernameKey]), string(secret.Data[ref.PasswordKey]), nil
-}
-
-// checkCollision applies the first-creation-wins rule to the logical database
-// that this CR claims. The claim belongs to the PostgreSQL instance, so the
-// list covers every namespace: an older Database that reaches the same
-// instance through another contract wins, and the failure names it. A lost
-// claim wraps errClaimLost, which the reconcile answers by withdrawing the
-// bindings.
-func (r *DatabaseReconciler) checkCollision(ctx context.Context, database *v1.Database) error {
-	key := database.Status.CollisionKey
-
-	var list v1.DatabaseList
-	if err := r.List(ctx, &list, client.MatchingFields{databaseCollisionField: key}); err != nil {
-		return fmt.Errorf("listing databases claiming %q: %w", key, err)
-	}
-
-	winner := components.CollisionWinner(withSelf(list.Items, database))
-	if winner == nil ||
-		(winner.Namespace == database.Namespace && winner.Name == database.Name) {
-		return nil
-	}
-
-	return fmt.Errorf("%w: %w", errClaimLost, &conditions.PreCheckFailure{
-		Reason: v1.ReasonInvalidReference,
-		Message: fmt.Sprintf(
-			"Database %s already claims database %q on the same server",
-			client.ObjectKeyFromObject(winner), database.Spec.DatabaseName,
-		),
-	})
-}
-
-// withSelf adds database to the claimants of its own key, unless the list
-// already holds it. The index is served from status.collisionKey, so a
-// Database that resolved its server for the first time is not in the list it
-// just asked for: its claim is staged in memory and reaches the cluster only
-// with the flush at the end of this reconcile. Without it the winner rule sees
-// a single newer claimant, hands it the claim, and the older Database loses a
-// claim that first-creation-wins gives it.
-func withSelf(claimants []v1.Database, database *v1.Database) []v1.Database {
-	for i := range claimants {
-		if claimants[i].Namespace == database.Namespace && claimants[i].Name == database.Name {
-			return claimants
-		}
-	}
-
-	return append(claimants, *database)
 }
 
 // connect opens the admin connection to server and pings it. Any failure maps
@@ -566,14 +593,22 @@ func (r *DatabaseReconciler) enqueueForAdminSecret() handler.EventHandler {
 }
 
 // SetupWithManager registers the controller, the serverRef and collision field
-// indexes, and the watches that trigger a reconcile. The watches cover the
-// owned bindings, the referenced DatabaseServerConfig, its admin credentials
-// Secret (metadata-only), and sibling Databases that contest the same claim.
-// It also sets EventRecorder to the recorder of the manager and builds the
-// uncached client for the bindings component.
+// indexes, and the watches that trigger a reconcile. It refuses a reconciler
+// without a namespace for the claim Leases. The watches cover the owned
+// bindings, the referenced DatabaseServerConfig, its admin credentials Secret
+// (metadata-only), and sibling Databases that contest the same claim. It also
+// sets EventRecorder and Metrics when they are nil, and builds the uncached
+// client for the bindings component.
 func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.ClaimNamespace == "" {
+		return errors.New("the namespace of the claim Leases is required")
+	}
+
 	if r.EventRecorder == nil {
-		r.EventRecorder = mgr.GetEventRecorder("database")
+		r.EventRecorder = mgr.GetEventRecorder(controllerName)
+	}
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
 	}
 
 	if r.componentClient == nil {
@@ -634,6 +669,6 @@ func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				},
 			),
 		).
-		Named("database").
+		Named(controllerName).
 		Complete(r)
 }

@@ -39,26 +39,32 @@ func CollisionIdentity(key string) string {
 	return identifier
 }
 
-// CollisionWinner picks the Database that owns a contested claim. The oldest
-// creationTimestamp wins. The lexicographically smaller "<namespace>/<name>"
-// is the tiebreaker. It returns nil for an empty claimant list.
-func CollisionWinner(items []v1.Database) *v1.Database {
-	var winner *v1.Database
+// PreferredClaimant picks the Database that goes first for a contested
+// logical database. The oldest creationTimestamp goes first. The
+// lexicographically smaller "<namespace>/<name>" is the tiebreaker. It
+// returns nil for an empty claimant list.
+//
+// It decides an order, not an owner. A logical database is owned by the
+// Database that holds its claim Lease, and a holder keeps that against an
+// older claimant. Call this only while nothing holds the name, to pick which
+// claimant tries the Lease first.
+func PreferredClaimant(items []v1.Database) *v1.Database {
+	var first *v1.Database
 	for i := range items {
 		candidate := &items[i]
-		if winner == nil {
-			winner = candidate
+		if first == nil {
+			first = candidate
 			continue
 		}
 
 		switch {
-		case candidate.CreationTimestamp.Time.Before(winner.CreationTimestamp.Time):
-			winner = candidate
-		case winner.CreationTimestamp.Time.Before(candidate.CreationTimestamp.Time):
-		case candidate.Namespace+"/"+candidate.Name < winner.Namespace+"/"+winner.Name:
-			winner = candidate
+		case candidate.CreationTimestamp.Time.Before(first.CreationTimestamp.Time):
+			first = candidate
+		case first.CreationTimestamp.Time.Before(candidate.CreationTimestamp.Time):
+		case candidate.Namespace+"/"+candidate.Name < first.Namespace+"/"+first.Name:
+			first = candidate
 		}
 	}
 
-	return winner
+	return first
 }

@@ -263,9 +263,6 @@ spec:
       # username: admin                 # keycloak modes
       # email: admin@example.com        # keycloak modes
       # passwordSecretRef: {name: identity-admin, key: password}
-  optimize:                             # required in the keycloak modes
-    externalUrl: https://optimize.example.com
-    # WorkloadSpec: replicas, resources, extraEnv, extraEnvFrom, podLabels, podAnnotations, scheduling
   console:                              # the block enables Console; drop it to remove Console
     version: 8.9.88
     externalUrl: https://console.example.com
@@ -365,7 +362,8 @@ a component preset, Console included: the 8.9 chart carries a `console` preset
 (`charts/camunda-platform-8.9/templates/identity/configmap.yaml`, `keycloak.init.console.root-url`
 and the `component-presets.console` block), so the operator sets
 `KEYCLOAK_INIT_CONSOLE_ROOT_URL` = `console.externalUrl`,
-`KEYCLOAK_INIT_OPTIMIZE_ROOT_URL` = `optimize.externalUrl`, and
+`KEYCLOAK_INIT_OPTIMIZE_ROOT_URL` = the comma-separated `spec.externalUrl` of every discovered
+`CamundaOptimize` (see the #223 note under Risks and open items), and
 `KEYCLOAK_INIT_WEBMODELER_ROOT_URL` = `webModeler.externalUrl`. A preset also creates the
 resource server that the audience of the component names, which a hand-written
 `KEYCLOAK_CLIENTS_<n>_*` entry would not. `KEYCLOAK_SETUP_REALM` (`master`) and
@@ -623,14 +621,15 @@ it, and so is every Job image the backup and restore controllers render.
 
 ## Risks and open items
 
-- **Optimize redirect URIs in Keycloak modes.** *Answered in implementation.* Identity
+- **Optimize redirect URIs in Keycloak modes.** *Answered, then superseded by #223.* Identity
   re-applies the whole client representation on every start
   (https://github.com/camunda/camunda/issues/59963), so a changed root URL reaches Keycloak on
-  the next roll of Management Identity. One preset carries one root URL, and `CamundaOptimize`
-  carries no `externalUrl` of its own, so `spec.optimize.externalUrl` is required in both
-  Keycloak modes and names the single Optimize this management plane bootstraps. A second
-  Optimize needs its callback URL added to the `optimize` client by hand. A follow-up,
-  "one Keycloak client per CamundaOptimize", holds the multi-Optimize case.
+  the next roll of Management Identity. The first answer gave the management cluster a
+  `spec.optimize.externalUrl` and served one Optimize. #223 replaced it: `CamundaOptimize`
+  carries its own `spec.externalUrl`, the management plane discovers every one behind its
+  contract, renders them as the comma-separated root URL list of the preset, and keeps their
+  login callbacks on the `optimize` client through the Keycloak administration API.
+  `spec.optimize` is gone.
 - **Console discovery is experimental in 8.9.** If e2e shows a cluster does not appear, the
   fallback is a generated `console.configuration` block from the same attached-cluster data.
 - **8.10 renames.** Console becomes Hub, `camunda.console.ping` becomes `camunda.hub.ping`, the

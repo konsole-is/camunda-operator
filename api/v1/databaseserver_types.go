@@ -232,8 +232,9 @@ const (
 	// published contract points at is healthy.
 	ConditionClusterReady = "ClusterReady"
 	// ConditionArchiveReady reports whether the archive the server writes now
-	// can be recovered from, which it can once its first base backup
-	// completed. It reads Disabled on a server with no spec.archive.
+	// can be recovered from. Two things answer it: its first base backup
+	// completed, and the write-ahead log of the server still reaches the
+	// bucket. It reads Disabled on a server with no spec.archive.
 	ConditionArchiveReady = "ArchiveReady"
 	// ConditionContractReady reports whether the DatabaseServerConfig of the
 	// server is published and the superuser Secret behind it exists.
@@ -284,6 +285,16 @@ const ReasonClusterTaken = "ClusterTaken"
 // ObjectStore, or give this server a name of its own.
 const ReasonArchiveTaken = "ArchiveTaken"
 
+// ReasonArchiveFailing is the ArchiveReady reason of a DatabaseServer whose
+// write-ahead log stopped reaching the bucket. CloudNativePG reports the
+// failing uploads on its cluster, and the server waits a grace period before
+// it reports them, so a segment the plugin retries does not move the
+// condition. The archive holds every point up to the last segment that
+// arrived, and the open record of status.archive.history carries
+// unverifiedFrom from that point. The message says what CloudNativePG
+// reports. Repair the bucket or the credentials of the bucket.
+const ReasonArchiveFailing = "ArchiveFailing"
+
 // ReasonVersionChangeRefused is the Ready reason of a DatabaseServer whose
 // merged version names a PostgreSQL major other than the one its data
 // directory runs. The server keeps running the major it has: everything the
@@ -321,6 +332,14 @@ type ArchiveRecord struct {
 	// while the archive is the one the server writes to now.
 	// +optional
 	To *metav1.Time `json:"to,omitempty"`
+	// UnverifiedFrom is the point from which this archive can be missing
+	// write-ahead log. It is set while CloudNativePG reports that the uploads
+	// of the server are failing, and a restore to a point after it can reach
+	// nothing. The plugin uploads the segments it held back once the uploads
+	// run again, so the field is cleared then and the whole interval can be
+	// reached again. Only the record the server writes to now carries it.
+	// +optional
+	UnverifiedFrom *metav1.Time `json:"unverifiedFrom,omitempty"`
 }
 
 // ArchiveBoundary is the moment a server moved its archive to another

@@ -37,9 +37,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "camundacluster"
 
 // eventReasonPaused is recorded on every reconcile of a cluster with
 // spec.pause set. Nothing else happens on such a reconcile.
@@ -69,6 +74,9 @@ type CamundaClusterReconciler struct {
 	// this controller. SetupWithManager sets it from the manager when it is
 	// nil.
 	EventRecorder events.EventRecorder
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used
@@ -168,7 +176,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &cluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			r.refusals.forget(req.NamespacedName)
-
+			observability.Forget(r.Metrics, new(v1.CamundaCluster).GetKind(), req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
 
@@ -191,6 +199,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Client:        r.componentClient,
 		Scheme:        r.Scheme,
 		EventRecorder: r.EventRecorder,
+		Metrics:       r.Metrics,
 		APIReader:     r.APIReader,
 		Owner:         &cluster,
 	}

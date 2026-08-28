@@ -35,6 +35,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
@@ -296,11 +297,14 @@ func (s requestSet) requests() []reconcile.Request {
 // platform configs, the bindings, and the DatabaseConfigs. The pre-checks put the
 // resource versions of the Secrets and the generations of the CRs they read
 // into the config hash, so any of these events rolls the pods whose rendered
-// configuration changed. It also sets EventRecorder to the recorder of the
-// manager and builds the uncached component client when they are nil.
+// configuration changed. It also sets EventRecorder, Metrics, and the uncached
+// component client when they are nil.
 func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.EventRecorder == nil {
-		r.EventRecorder = mgr.GetEventRecorder("camundacluster")
+		r.EventRecorder = mgr.GetEventRecorder(controllerName)
+	}
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
 	}
 	r.restMapper = mgr.GetRESTMapper()
 
@@ -364,6 +368,6 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&v1.DatabaseConfig{}, r.enqueueInNamespace()).
 		Watches(&v1.DatabaseServerConfig{}, r.enqueueAll()).
 		Watches(&corev1.Secret{}, r.enqueueForSecret(), builder.OnlyMetadata).
-		Named("camundacluster").
+		Named(controllerName).
 		Complete(r)
 }

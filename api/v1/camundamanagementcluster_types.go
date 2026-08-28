@@ -45,6 +45,16 @@ const (
 	// Disabled in the oidc mode, where the platform config names every client
 	// secret and the first administrator is a token claim.
 	ConditionSecretsReady = "SecretsReady"
+	// ConditionOptimizeCallbacksReady reports what the operator did about the
+	// login callback of every Optimize in status.optimize. It reads Healthy
+	// once the Optimize client of the realm carries all of them.
+	//
+	// Two reasons read True without saying anything about the realm. Disabled
+	// is the oidc mode, where the identity provider of the platform config
+	// holds the callback URLs and the operator administers nothing. Suspended
+	// is a plane that spec.suspend scaled to zero, whose realm is left as it
+	// is and never read.
+	ConditionOptimizeCallbacksReady = "OptimizeCallbacksReady"
 
 	// ReasonKeycloakOperatorNotInstalled means that spec.identityProvider
 	// selects keycloak and that the Kubernetes cluster does not serve the
@@ -56,9 +66,10 @@ const (
 	// The message names the object. Set managementAuthConfigName to a free
 	// name, or remove the object.
 	ReasonConflict = "Conflict"
-	// ReasonWriteFailed means that the operator could not write the
-	// ManagementAuthConfig. The message carries what the API server
-	// answered. The operator tries again.
+	// ReasonWriteFailed means that a write of the operator was refused: the
+	// ManagementAuthConfig on Ready, and the Optimize client of the realm on
+	// OptimizeCallbacksReady. The message carries what the API server or
+	// Keycloak answered. The operator tries again.
 	ReasonWriteFailed = "WriteFailed"
 	// ReasonUnsupportedVersion means that a version in the spec is outside
 	// the range that the operator supports: below the floor of its component,
@@ -85,13 +96,23 @@ const (
 	// Web Modeler user on a basic-auth CamundaCluster. The row of that
 	// cluster in status.clusters carries the message.
 	ReasonBasicAuthUserFailed = "BasicAuthUserFailed"
+	// ReasonOptimizeClientMissing means that the realm holds no Optimize
+	// client and Management Identity has finished starting. Identity creates
+	// that client while it starts and never after, so the client comes back
+	// only when Management Identity starts again. While Identity is still
+	// rolling out the condition reports PrerequisiteNotMet instead. The
+	// operator looks again on its retry interval.
+	ReasonOptimizeClientMissing = "OptimizeClientMissing"
+	// ReasonNoCallbacks means that no Optimize behind this management plane
+	// names a URL, so there is no login callback to register. Give a
+	// CamundaOptimize that names this management plane a spec.externalUrl.
+	ReasonNoCallbacks = "NoCallbacks"
 )
 
 // CamundaManagementClusterSpec describes one management plane: Management
 // Identity, its identity provider, and optionally Console and Web Modeler.
 // +kubebuilder:validation:XValidation:rule="has(self.identityProvider.oidc) ? has(self.identity.admin.claimName) : has(self.identity.admin.username)",message="identity.admin: set claimName and claimValue in oidc mode, username in the keycloak modes"
 // +kubebuilder:validation:XValidation:rule="!has(self.identityProvider.oidc) || !has(self.identity.admin.passwordSecretRef)",message="identity.admin.passwordSecretRef applies to the keycloak modes only"
-// +kubebuilder:validation:XValidation:rule="has(self.identityProvider.oidc) != has(self.optimize)",message="set optimize in the keycloak modes, where Management Identity creates the Optimize client; in the oidc mode the platform config declares it"
 // +kubebuilder:validation:XValidation:rule="!has(self.webModeler) || has(self.identityProvider.oidc) || has(self.identity.admin.email)",message="identity.admin.email is required when webModeler is set in a keycloak mode"
 type CamundaManagementClusterSpec struct {
 	// PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that
@@ -138,31 +159,6 @@ type CamundaManagementClusterSpec struct {
 	// this is unset.
 	// +optional
 	WebModeler *WebModelerSpec `json:"webModeler,omitempty"`
-	// Optimize describes the Optimize that this management plane serves. Set
-	// it in the two Keycloak modes, where Management Identity creates the
-	// Optimize client and needs the URL of Optimize to register the redirect
-	// URI of that client. Leave it unset in the oidc mode, where the platform
-	// config declares the Optimize client.
-	//
-	// The operator deploys no Optimize from this block. A CamundaOptimize is
-	// its own resource, and it reads the ManagementAuthConfig that this
-	// management cluster writes.
-	// +optional
-	Optimize *ManagementOptimizeSpec `json:"optimize,omitempty"`
-}
-
-// ManagementOptimizeSpec describes the Optimize that a management plane
-// serves.
-type ManagementOptimizeSpec struct {
-	// ExternalURL is the URL that browsers reach Optimize at. Management
-	// Identity registers the login callback under it as the redirect URI of
-	// the Optimize client.
-	//
-	// One management plane bootstraps one Optimize client with one URL. Run a
-	// second Optimize against this management plane only if you add its
-	// callback URL to the Optimize client in Keycloak yourself.
-	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
-	ExternalURL string `json:"externalUrl"`
 }
 
 // IdentityProviderSpec holds one of the three identity provider modes.
@@ -404,11 +400,23 @@ type CamundaManagementClusterStatus struct {
 	// +listMapKey=name
 	// +optional
 	Clusters []AttachedClusterStatus `json:"clusters,omitempty"`
+	// Optimize lists every CamundaOptimize that names the ManagementAuthConfig
+	// of this management cluster and sets spec.externalUrl, ordered by
+	// namespace and name. The management plane registers the login callback of
+	// each one on the Optimize client of the realm.
+	//
+	// The list holds no row in the oidc mode, where the identity provider of
+	// the platform config holds the callback URLs.
+	// +listType=map
+	// +listMapKey=namespace
+	// +listMapKey=name
+	// +optional
+	Optimize []AttachedOptimizeStatus `json:"optimize,omitempty"`
 	// Conditions represent the current state. Ready carries a pre-check
 	// reason, or it is derived from the conditions of the deployed components.
 	// The per-component conditions (KeycloakReady, IdentityReady,
 	// ConsoleReady, WebModelerReady, ManagementAuthReady, SecretsReady,
-	// MirroredSecretsReady) also appear here.
+	// MirroredSecretsReady) and OptimizeCallbacksReady also appear here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -438,6 +446,18 @@ type AttachedClusterStatus struct {
 	// Message explains the reason in one sentence.
 	// +optional
 	Message string `json:"message,omitempty"`
+}
+
+// AttachedOptimizeStatus is one CamundaOptimize whose login callback this
+// management plane registers.
+type AttachedOptimizeStatus struct {
+	// Name is the name of the CamundaOptimize.
+	Name string `json:"name"`
+	// Namespace is the namespace of the CamundaOptimize.
+	Namespace string `json:"namespace"`
+	// ExternalURL is spec.externalUrl of that CamundaOptimize. The registered
+	// callback is this URL plus the login path of Optimize.
+	ExternalURL string `json:"externalUrl"`
 }
 
 // +kubebuilder:object:root=true

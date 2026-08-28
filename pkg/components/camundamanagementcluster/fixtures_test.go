@@ -41,6 +41,8 @@ const (
 	fixtureConsolePathURL = "https://camunda.example.com/console"
 	fixtureKeycloak       = "https://keycloak.example.com/auth"
 	fixtureOptimize       = "https://optimize.example.com"
+	fixtureOptimizeBlue   = "https://optimize.blue.example.com"
+	fixtureOptimizeGreen  = "https://optimize.green.example.com"
 	fixtureAdmin          = "platform-admin"
 )
 
@@ -277,7 +279,6 @@ func newKeycloakCluster(managed bool, mutate func(mc *v1.CamundaManagementCluste
 			}
 		}
 		mc.Spec.Identity.Admin = v1.IdentityAdminSpec{Username: fixtureAdmin}
-		mc.Spec.Optimize = &v1.ManagementOptimizeSpec{ExternalURL: fixtureOptimize}
 		if mutate != nil {
 			mutate(mc)
 		}
@@ -313,6 +314,13 @@ func newKeycloakInput(t *testing.T, managed bool, mutate func(in *Input)) Input 
 		}
 		if mutate != nil {
 			mutate(in)
+		}
+		// One discovered Optimize, unless a mutator found more. The controller
+		// builds the list through the same function.
+		if in.OptimizeURLs == nil {
+			in.OptimizeURLs = OptimizeURLs([]v1.AttachedOptimizeStatus{
+				{Namespace: fixtureNamespace, Name: "cluster-optimize", ExternalURL: fixtureOptimize},
+			})
 		}
 	})
 }
@@ -351,6 +359,20 @@ func fixtureKeycloakRealistic(t *testing.T, managed bool) Input {
 	})
 }
 
+// fixtureKeycloakManyOptimize serves three CamundaOptimize resources that the
+// management plane found behind its contract.
+func fixtureKeycloakManyOptimize(t *testing.T) Input {
+	t.Helper()
+
+	return newKeycloakInput(t, true, func(in *Input) {
+		in.OptimizeURLs = OptimizeURLs([]v1.AttachedOptimizeStatus{
+			{Namespace: fixtureNamespace, Name: "cluster-optimize", ExternalURL: fixtureOptimize},
+			{Namespace: "blue", Name: "cluster-optimize", ExternalURL: fixtureOptimizeBlue},
+			{Namespace: "green", Name: "cluster-optimize", ExternalURL: fixtureOptimizeGreen},
+		})
+	})
+}
+
 // withKeycloakApps deploys Console and Web Modeler on a Keycloak-mode
 // management cluster. Neither reads a client from the platform config there:
 // Management Identity creates both in the realm, from the root URLs that
@@ -375,16 +397,17 @@ func goldenFixtures(t *testing.T) map[string]Input {
 	t.Helper()
 
 	return map[string]Input{
-		"oidc/minimal":                fixtureMinimal(t),
-		"oidc/realistic":              fixtureRealistic(t),
-		"console/minimal":             fixtureConsoleMinimal(t),
-		"console/realistic":           fixtureConsoleRealistic(t),
-		"web-modeler/minimal":         fixtureWebModelerMinimal(t),
-		"web-modeler/realistic":       fixtureWebModelerRealistic(t),
-		"managed-keycloak/minimal":    newKeycloakInput(t, true, nil),
-		"managed-keycloak/realistic":  fixtureKeycloakRealistic(t, true),
-		"external-keycloak/minimal":   newKeycloakInput(t, false, nil),
-		"external-keycloak/realistic": fixtureKeycloakRealistic(t, false),
+		"oidc/minimal":                   fixtureMinimal(t),
+		"oidc/realistic":                 fixtureRealistic(t),
+		"console/minimal":                fixtureConsoleMinimal(t),
+		"console/realistic":              fixtureConsoleRealistic(t),
+		"web-modeler/minimal":            fixtureWebModelerMinimal(t),
+		"web-modeler/realistic":          fixtureWebModelerRealistic(t),
+		"managed-keycloak/minimal":       newKeycloakInput(t, true, nil),
+		"managed-keycloak/realistic":     fixtureKeycloakRealistic(t, true),
+		"managed-keycloak/many-optimize": fixtureKeycloakManyOptimize(t),
+		"external-keycloak/minimal":      newKeycloakInput(t, false, nil),
+		"external-keycloak/realistic":    fixtureKeycloakRealistic(t, false),
 	}
 }
 

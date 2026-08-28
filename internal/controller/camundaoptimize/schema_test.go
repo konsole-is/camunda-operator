@@ -48,6 +48,7 @@ func minimalCamundaOptimize() *v1.CamundaOptimize {
 // a unique name in the schema test namespace.
 func realisticCamundaOptimize() *v1.CamundaOptimize {
 	optimize := minimalCamundaOptimize()
+	optimize.Spec.ExternalURL = "https://optimize.example.com"
 	optimize.Spec.Webapp = &v1.WorkloadSpec{
 		Replicas: new(int32(2)),
 		Resources: &corev1.ResourceRequirements{
@@ -125,5 +126,78 @@ var _ = Describe("CamundaOptimize schema", func() {
 		optimize.Spec.ClusterRef.Name = ""
 
 		Expect(k8sClient.Create(ctx, optimize)).To(MatchError(ContainSubstring("clusterRef")))
+	})
+
+	It("accepts an externalUrl", func() {
+		optimize := minimalCamundaOptimize()
+		optimize.Spec.ExternalURL = "https://optimize.example.com"
+
+		Expect(k8sClient.Create(ctx, optimize)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, optimize) })
+	})
+
+	It("rejects an externalUrl without a scheme", func() {
+		optimize := minimalCamundaOptimize()
+		optimize.Spec.ExternalURL = "optimize.example.com"
+
+		Expect(k8sClient.Create(ctx, optimize)).To(
+			MatchError(ContainSubstring("externalUrl must be a valid http or https URL")),
+		)
+	})
+
+	// The login callback is appended to the URL, and Keycloak matches a
+	// redirect URI literally, so a trailing slash would register a callback
+	// that no browser sends.
+	It("rejects an externalUrl that ends with a slash", func() {
+		optimize := minimalCamundaOptimize()
+		optimize.Spec.ExternalURL = "https://optimize.example.com/"
+
+		Expect(k8sClient.Create(ctx, optimize)).To(
+			MatchError(ContainSubstring("externalUrl must not end with a slash")),
+		)
+	})
+
+	It("rejects an externalUrl with a query or a fragment", func() {
+		for _, url := range []string{
+			"https://optimize.example.com?tenant=a",
+			"https://optimize.example.com#ui",
+		} {
+			optimize := minimalCamundaOptimize()
+			optimize.Spec.ExternalURL = url
+
+			Expect(k8sClient.Create(ctx, optimize)).To(
+				MatchError(ContainSubstring("externalUrl must carry no query and no fragment")),
+			)
+		}
+	})
+
+	// Management Identity deletes whitespace from every root URL it reads and
+	// the operator appends the callback path to the value as it stands, so a
+	// URL with a space would put two different callbacks on the client, and
+	// each writer would remove the one of the other.
+	It("rejects an externalUrl with whitespace", func() {
+		for _, url := range []string{
+			"https://optimize.example.com/optimize ui",
+			"https://optimize.example.com\t",
+		} {
+			optimize := minimalCamundaOptimize()
+			optimize.Spec.ExternalURL = url
+
+			Expect(k8sClient.Create(ctx, optimize)).To(
+				MatchError(ContainSubstring("externalUrl must carry no whitespace")),
+			)
+		}
+	})
+
+	// Management Identity reads the root URLs of the optimize preset as one
+	// comma-separated list, so a comma inside one URL would register two
+	// callbacks of nonsense.
+	It("rejects an externalUrl with a comma", func() {
+		optimize := minimalCamundaOptimize()
+		optimize.Spec.ExternalURL = "https://one.example.com,https://two.example.com"
+
+		Expect(k8sClient.Create(ctx, optimize)).To(
+			MatchError(ContainSubstring("externalUrl must carry no comma")),
+		)
 	})
 })

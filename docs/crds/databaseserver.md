@@ -120,11 +120,17 @@ Admission checks each field against the values CloudNativePG takes there: 0-59 f
 
 The first base backup runs as soon as the server is up, whatever the schedule says. `ArchiveReady` is `False` until that first base backup completes: an archive that holds write-ahead log and no base backup cannot be recovered to any point.
 
+`ArchiveReady` reports the write-ahead log as well. Uploads that keep failing for five minutes turn it `False` with reason `ArchiveFailing`, and `Ready` follows. An outage shorter than that moves neither condition. The message says what CloudNativePG reports.
+
+The archive still holds every point up to the last segment that arrived, and a restore to a later point reaches nothing. Repair the bucket, or the credentials of the bucket. The plugin uploads the segments it held back once the uploads run again, and both conditions go back to `True`.
+
 The archive lives under a prefix of the bucket that holds this server alone: `<basePath>/databaseserver/<namespace>/<name>-<id>`. The `<id>` is the first eight hex characters of the SHA-256 of the UID that Kubernetes gave the server. A server that you delete and create again under the same name gets a prefix of its own. The Barman Cloud plugin refuses a new cluster whose prefix already holds an archive. One bucket can serve a whole fleet.
 
 ### The archive history
 
 `status.archive.history` records each archive the server has written. `serverName` is the directory in the bucket that holds it, `objectStorageRef` is the `ObjectStorageConfig` of that bucket, `location` is where in object storage it was written, which is the bucket, the path, and the endpoint or region that selects the service, `from` is the earliest point a restore can reach in it, and `to` is the latest. An open record, one without `to`, is the archive the server writes now.
+
+`unverifiedFrom` is on the open record while the uploads of the server are failing. It is the point from which the archive can be missing write-ahead log, so a restore to a point after it can reach nothing. It goes when the uploads run again, because the plugin uploads the segments it held back. `ArchiveReady` names the same outage.
 
 `status.archive.reachableFrom` is the oldest point the objects in the bucket still go back to. An interval says which archive wrote a point, and this says what the bucket kept. It moves forward with the retention period, and it stands still while a raised period widens the window.
 
@@ -134,9 +140,11 @@ Remove `spec.archive` and the open record closes at that moment. The list itself
 
 Ask for an archive again and the server opens a record of its own, starting at the first base backup of the new archive. `ArchiveReady` stays `False` until that backup completes, because the backups of the archive the server wrote before reach no point in the new one. The window between the two records lies inside no interval, so no restore can reach a point in it.
 
-If you ask for it again on another location, no record is open to close. The server records the move as `status.archive.boundary` and clears it when the new record opens. A base backup that was still running to the location the server left ends after the move, and the boundary keeps it from opening the new record.
+If you ask for it again on another location, no record is open to close. The server records the move as `status.archive.boundary` when the archive arrives there, and clears it when the new record opens. A base backup that was still running to the location the server left ends after the move, and the boundary keeps it from opening the new record.
 
-Change `spec.archive.objectStorageRef` and the same happens, as long as the new reference resolves to another location. Two references to one bucket and one prefix are one archive, and a change between them closes no record. The open record closes at the moment the location changes, and a record of the new location opens at its first base backup. A rollback reads the location the server archives to now, so a point inside a record of an earlier location is refused with `result: Unavailable`. The message names both the bucket contract and the location of each. Point `spec.archive.objectStorageRef` back at the earlier bucket only if you accept that the current interval closes as well.
+Change `spec.archive.objectStorageRef` and the same happens, as long as the new reference resolves to another location. Two references to one bucket and one prefix are one archive, and a change between them closes no record. The open record closes when the archive arrives at the new location, and a record of that location opens at its first base backup. A rollback reads the location the server archives to now, so a point inside a record of an earlier location is refused with `result: Unavailable`. The message names both the bucket contract and the location of each. Point `spec.archive.objectStorageRef` back at the earlier bucket only if you accept that the current interval closes as well.
+
+A move takes effect when the operator writes the new archive settings for the bucket. Until it can write them, the record stays open and the write-ahead log still goes to the location the server came from. `ArchiveReady` reports what holds the move up.
 
 Edit the [ObjectStorageConfig](objectstorageconfig.md) in place, or remove it and create it again on another bucket, and the same happens, unless a rollback is reading that archive. A rollback holds the archive where it recorded it: `Ready` goes `False` with reason `InvalidReference`, the message names both locations, and the operator leaves the archive settings as they are until you put the bucket back or the rollback ends. The operator holds the workload identity of the bucket together with those archive settings, so the pods keep the identity that reads the archive the rollback asked for. An identity or a credential that you change alone, without moving the bucket, reaches the server at once. The name of the contract stays, the location behind it changes, and the location is what the operator compares. A new endpoint or region counts as a new location, because the objects are then on another service. A rollback to a point in the interval before the move is refused the same way.
 
@@ -345,6 +353,7 @@ status:
 | --- | --- | --- | --- |
 | `Ready` | `Healthy` | Every part of the server is in its desired state. | Nothing. |
 | `Ready` | `Blocked` | The archive that the server asks for holds no base backup yet, so no restore can reach the server. | Wait. |
+| `Ready` | `ArchiveFailing` | The server asks for an archive, and its write-ahead log stopped reaching the bucket. `ArchiveReady` carries the same reason. | Read `ArchiveReady`. |
 | `Ready` | `Suspended` | `spec.suspend` is true and the instances are gone. | Nothing. |
 | `Ready` | `CNPGNotInstalled` | The Kubernetes cluster did not serve the CloudNativePG kinds when the operator started. | Install CloudNativePG, then restart the operator. |
 | `Ready` | `BarmanPluginNotInstalled` | The server asks for an archive, and the Kubernetes cluster did not serve the Barman Cloud plugin when the operator started. | Install the plugin, then restart the operator. |
@@ -357,6 +366,7 @@ status:
 | `ClusterReady` | `ClusterTaken` | A CloudNativePG cluster of the name this server derives already exists, and this server does not own it. The message names the owner, or says that no owner controls it. The server writes nothing on that cluster. It also removes the contract, the base backup schedule, and the `PodMonitor`, because all three name the cluster of that name. The bucket settings and `status.archive.history` stay, so the server comes back when the name is free. | Remove that cluster, or give this server a name of its own. |
 | `ArchiveReady` | `Disabled` | The server has no `archive` block. | Nothing. |
 | `ArchiveReady` | `Blocked` | The archive the server writes now holds no base backup yet. A new server and a server that asked for an archive again both start here. A suspended server never does. | Wait. If it never completes, read the CloudNativePG backup for the reason. |
+| `ArchiveReady` | `ArchiveFailing` | The write-ahead log of the server stopped reaching the bucket, and it has been failing for longer than five minutes. The message says what CloudNativePG reports. The archive holds every point up to the last segment that arrived, and the open record of `status.archive.history` carries `unverifiedFrom` from that point. | Repair the bucket, or the credentials of the bucket. The held-back segments arrive once the uploads run again. |
 | `ArchiveReady` | `ArchiveTaken` | A Barman Cloud `ObjectStore` of the name this server derives already exists, and another owner controls it. The message names the owner. The cluster of this server carries no archive plugin, so it writes no write-ahead log and takes no base backup. Its contract publishes `pitr.enabled: false`, and a rollback request is refused with `result: Unavailable`. The archive the server wrote before and `status.archive.history` stay, so the server archives again when the name is free. No rollback reaches a point inside the window the name was held, because the bucket holds no write-ahead log of it. | Remove that `ObjectStore`, or give this server a name of its own. |
 | `ArchiveReady` | `Healthy` | The archive holds a base backup and takes the write-ahead log. | Nothing. |
 | `ContractReady` | `Blocked` | The superuser Secret does not exist yet. | Wait for the instances to start. |

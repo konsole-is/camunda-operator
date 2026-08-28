@@ -22,6 +22,8 @@ import (
 	"strings"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"github.com/sourcehawk/operator-component-framework/pkg/feature"
+	"github.com/sourcehawk/operator-component-framework/pkg/primitives/configmap"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/deployment"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/service"
 	appsv1 "k8s.io/api/apps/v1"
@@ -122,6 +124,11 @@ const (
 // part in Ready. In the keycloak mode it waits for the Keycloak to become
 // ready.
 func identityComponents(in Input) (Built, error) {
+	urls, err := configmap.NewBuilder(identityOptimizeURLs(in)).Build()
+	if err != nil {
+		return Built{}, fmt.Errorf("building the %s component: %w", ComponentIdentity, err)
+	}
+
 	workload, err := deployment.NewBuilder(identityDeployment(in)).
 		WithMutation(workloadmutations.Mutations(in.workload(ComponentIdentity), identityContainer)...).
 		Build()
@@ -137,6 +144,12 @@ func identityComponents(in Input) (Built, error) {
 	builder := component.NewComponentBuilder().
 		WithName(ComponentIdentity).
 		WithConditionType(component.ConditionType(v1.ConditionIdentityReady)).
+		// The ConfigMap is applied before the Deployment, so a pod that the
+		// same reconcile starts already finds the list it refers to. A
+		// management plane that serves no Optimize renders no
+		// KEYCLOAK_INIT_OPTIMIZE_ROOT_URL, so the gate deletes the ConfigMap
+		// rather than leaving a list nothing reads.
+		WithResource(urls, component.GatedBy(feature.NewBooleanGate(len(in.OptimizeURLs) > 0))).
 		WithResource(workload).
 		WithResource(svc).
 		Suspend(in.Suspended)
@@ -157,6 +170,37 @@ func identityComponents(in Input) (Built, error) {
 	comps := []*component.Component{comp}
 
 	return Built{Components: comps, Ready: comps}, nil
+}
+
+// identityOptimizeURLs renders the ConfigMap that carries the Optimize root
+// URLs, comma-separated the way Management Identity reads them: it splits the
+// value of KEYCLOAK_INIT_OPTIMIZE_ROOT_URL on "," and registers the login
+// callback under each entry
+// (management-api/src/main/java/io/camunda/identity/impl/keycloak/initializer/service/ClientInitializationService.java,
+// generateRedirectUrls).
+//
+// The list lives in a ConfigMap rather than in the pod template so that adding
+// or removing an Optimize does not roll Management Identity while the list
+// stays filled. The container refers to this key, and that reference does not
+// change when the list behind it does, so a new Optimize updates this object
+// and no pod restarts. A pod that starts later for any other reason reads the
+// list as it is then. The first URL and the last one are the exception: the
+// gate below adds and removes the reference itself, which is part of the pod
+// template.
+//
+// The content is deliberately absent from the config hash of Management
+// Identity. The pods that are already running get the new callback from the
+// operator, which registers it on the Optimize client directly, and this
+// ConfigMap is the floor that the next start reads.
+func identityOptimizeURLs(in Input) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      IdentityOptimizeURLsName(in.Cluster),
+			Namespace: in.Cluster.Namespace,
+			Labels:    managedLabels(in, ComponentIdentity),
+		},
+		Data: map[string]string{OptimizeRootURLKey: strings.Join(in.OptimizeURLs, ",")},
+	}
 }
 
 // identityDeployment renders the base Deployment. workloadmutations.Mutations

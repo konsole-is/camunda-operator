@@ -96,7 +96,7 @@ func TestCheckCollisionCountsTheDatabaseItRunsFor(t *testing.T) {
 		older := claimant("alpha", "older", base)
 		r := collisionReconciler(t, newer)
 
-		assert.NoError(t, r.checkCollision(context.Background(), older))
+		assert.NoError(t, r.checkCollision(context.Background(), older, claimKey))
 	})
 
 	t.Run("the newer Database still loses before its own claim is indexed", func(t *testing.T) {
@@ -106,8 +106,13 @@ func TestCheckCollisionCountsTheDatabaseItRunsFor(t *testing.T) {
 		newer := claimant("beta", "newer", base.Add(time.Hour))
 		r := collisionReconciler(t, older)
 
-		err := r.checkCollision(context.Background(), newer)
-		require.ErrorIs(t, err, errClaimLost)
+		err := r.checkCollision(context.Background(), newer, claimKey)
+		require.ErrorIs(t, err, errClaimNotFirst)
+
+		// The rejection is an order, not a loss. Reconcile withdraws the
+		// bindings and gives back every claim on errClaimLost, and a Database
+		// that waits its turn for a name nobody holds keeps both.
+		require.NotErrorIs(t, err, errClaimLost)
 
 		var failure *conditions.PreCheckFailure
 		require.ErrorAs(t, err, &failure)
@@ -122,8 +127,10 @@ func TestCheckCollisionCountsTheDatabaseItRunsFor(t *testing.T) {
 		newer := claimant("beta", "newer", base.Add(time.Hour))
 		r := collisionReconciler(t, older, newer)
 
-		assert.NoError(t, r.checkCollision(context.Background(), older))
-		require.ErrorIs(t, r.checkCollision(context.Background(), newer), errClaimLost)
+		assert.NoError(t, r.checkCollision(context.Background(), older, claimKey))
+		require.ErrorIs(
+			t, r.checkCollision(context.Background(), newer, claimKey), errClaimNotFirst,
+		)
 	})
 
 	t.Run("the only claimant wins", func(t *testing.T) {
@@ -132,6 +139,6 @@ func TestCheckCollisionCountsTheDatabaseItRunsFor(t *testing.T) {
 		only := claimant("alpha", "only", base)
 		r := collisionReconciler(t)
 
-		assert.NoError(t, r.checkCollision(context.Background(), only))
+		assert.NoError(t, r.checkCollision(context.Background(), only, claimKey))
 	})
 }

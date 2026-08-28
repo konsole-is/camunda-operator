@@ -121,10 +121,22 @@ A person who opens the Optimize user interface is sent to the identity provider 
 
 Where you register it depends on who runs the identity provider:
 
-- A [CamundaManagementCluster](camundamanagementcluster.md) in one of the two Keycloak modes registers it for you. Set `spec.optimize.externalUrl` on that resource to the URL a browser reaches Optimize at. Management Identity then creates the `optimize` Keycloak client with the callback under it.
-- A `CamundaManagementCluster` in the `oidc` mode registers nothing. You created the Optimize application at your provider yourself, so add the callback there. Camunda names the exact path in [component-specific configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/#component-specific-configuration).
+- A [CamundaManagementCluster](camundamanagementcluster.md) in one of the two Keycloak modes registers it for you. Set `spec.externalUrl` to the URL a browser reaches this Optimize at, and the management plane puts the callback on the `optimize` Keycloak client. One management plane serves as many Optimize instances as you run, each with its own URL.
+- A `CamundaManagementCluster` in the `oidc` mode registers nothing, and `spec.externalUrl` has no effect. You created the Optimize application at your provider yourself, so add the callback of every Optimize there. Camunda names the exact path in [component-specific configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/#component-specific-configuration).
 
-One management plane bootstraps one Optimize client with one URL. To run a second `CamundaOptimize` against the same management plane, add its callback URL to that client yourself.
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaOptimize
+metadata:
+  name: my-cluster-optimize
+  namespace: my-cluster-ns
+spec:
+  managementAuthRef: management-auth
+  externalUrl: "https://optimize.camunda.example.com"
+  # ... the rest of your Optimize
+```
+
+`status.optimize` on the management plane lists the Optimize instances it found and the addresses it will register. Whether the realm carries them is the `OptimizeCallbacksReady` condition, so read that one for the result. See [Optimize](camundamanagementcluster.md#optimize).
 
 A callback URL that does not match is a failed sign-in. It does not change the status of this resource. `Ready` stays `Healthy`, and the identity provider shows the error in the browser.
 
@@ -228,6 +240,8 @@ spec:
   version: "8.9.0"
   # string. Required. Name of the cluster-scoped ManagementAuthConfig that Optimize signs in against.
   managementAuthRef: management-auth
+  # string. Optional. The URL a browser reaches this Optimize at. It carries no comma, no query, and no fragment, and it does not end with a slash. In the two Keycloak modes the management plane registers the login callback under it. Unused in the oidc mode.
+  externalUrl: "https://optimize.camunda.example.com"
   # object. Required. The CamundaCluster this Optimize instance attaches to. Immutable.
   clusterRef:
     # string. Required. Name of the CamundaCluster, in this namespace.
@@ -294,6 +308,7 @@ The API server enforces these at admission:
 
 - `spec.version` must be a full semantic version such as `8.9.0`. A two-segment version is rejected.
 - `spec.managementAuthRef` and `spec.clusterRef.name` must not be empty.
+- `spec.externalUrl` must be an `http` or `https` URL. It carries no comma, no whitespace, no query, and no fragment, and it does not end with a slash.
 - `spec.importer.replicas` must be `0` or `1`. Optimize supports one active importer, and more than one makes the analytics data inconsistent.
 - `spec.clusterRef` is immutable.
 
@@ -316,6 +331,7 @@ metadata:
 spec:
   version: "8.9.0"
   managementAuthRef: management-auth
+  externalUrl: "https://optimize.camunda.example.com"
   clusterRef:
     name: my-cluster
   webapp:

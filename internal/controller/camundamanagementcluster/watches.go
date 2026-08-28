@@ -85,14 +85,16 @@ var indexers = map[string]client.IndexerFunc{
 }
 
 // setupWatches registers the controller, the reference indexes, and the
-// watches. It owns the Deployments, the Services, and the Secrets it applies
-// (Secrets metadata only), and the Keycloak custom resource where the
+// watches. It owns the Deployments, the Services, the ConfigMaps, and the
+// Secrets it applies (Secrets metadata only), and the Keycloak custom resource
+// where the
 // Kubernetes cluster serves that kind. Every reference is watched: the
 // platform config, the DatabaseConfigs, and the contract through the indexes
 // above, the database servers through the DatabaseConfigs that name them, and
 // Secrets (metadata only) through the namespace and the contracts that reach
 // them. The orchestration clusters are watched too, because the claim follows
-// their labels.
+// their labels, and the CamundaOptimizes, because the login callbacks of the
+// realm follow their URLs.
 func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
 	for field, indexer := range indexers {
 		if err := mgr.GetFieldIndexer().IndexField(
@@ -109,6 +111,7 @@ func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
 		For(&v1.CamundaManagementCluster{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
+		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Secret{}, builder.OnlyMetadata)
 	// A watch on a kind the Kubernetes cluster does not serve fails the
 	// manager at start, so the Keycloak is only watched where the Keycloak
@@ -137,12 +140,30 @@ func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
 			&v1.ManagementAuthConfig{},
 			refindex.Enqueue(cached, list, ContractNameField, refindex.ObjectName),
 		).
+		Watches(
+			&v1.CamundaOptimize{},
+			refindex.Enqueue(cached, list, ContractNameField, optimizeContractName),
+		).
 		Watches(&v1.DatabaseServerConfig{}, r.enqueueForDatabaseServer()).
 		Watches(&v1.CamundaCluster{}, r.enqueueForCluster()).
 		Watches(&corev1.Namespace{}, r.enqueueForNamespace(), builder.OnlyMetadata).
 		Watches(&corev1.Secret{}, r.enqueueForSecret(), builder.OnlyMetadata).
-		Named("camundamanagementcluster").
+		Named(controllerName).
 		Complete(r)
+}
+
+// optimizeContractName keys a CamundaOptimize by the ManagementAuthConfig it
+// names, which is the key of the ContractNameField index. An event on a
+// CamundaOptimize therefore reaches the management cluster that writes that
+// contract, and its login callback is registered or withdrawn on the reconcile
+// that follows.
+func optimizeContractName(o client.Object) string {
+	optimize, ok := o.(*v1.CamundaOptimize)
+	if !ok {
+		return ""
+	}
+
+	return optimize.Spec.ManagementAuthRef
 }
 
 // secretRefs returns every Secret that a management cluster names itself, as

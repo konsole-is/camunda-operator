@@ -1,0 +1,153 @@
+apiVersion: v1
+data:
+  rootUrl: https://optimize.example.com,https://optimize.blue.example.com,https://optimize.green.example.com
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: management-identity
+    camunda.io/management-cluster: my-management
+  name: my-management-identity-optimize-urls
+  namespace: camunda
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: management-identity
+    camunda.io/management-cluster: my-management
+  name: my-management-identity
+  namespace: camunda
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      camunda.io/component: management-identity
+      camunda.io/management-cluster: my-management
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: ffafaf3118874639
+      labels:
+        camunda.io/component: management-identity
+        camunda.io/management-cluster: my-management
+    spec:
+      containers:
+      - env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: keycloak
+        - name: CAMUNDA_IDENTITY_TYPE
+          value: KEYCLOAK
+        - name: CAMUNDA_IDENTITY_AUDIENCE
+          value: camunda-identity-resource-server
+        - name: KEYCLOAK_URL
+          value: http://my-management-keycloak-service.camunda.svc:8080/auth
+        - name: KEYCLOAK_REALM
+          value: camunda-platform
+        - name: IDENTITY_AUTH_PROVIDER_ISSUER_URL
+          value: https://keycloak.example.com/auth/realms/camunda-platform
+        - name: IDENTITY_AUTH_PROVIDER_BACKEND_URL
+          value: http://my-management-keycloak-service.camunda.svc:8080/auth/realms/camunda-platform
+        - name: IDENTITY_CLIENT_ID
+          value: camunda-identity
+        - name: KEYCLOAK_SETUP_USER
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: my-management-keycloak-initial-admin
+        - name: KEYCLOAK_SETUP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: my-management-keycloak-initial-admin
+        - name: KEYCLOAK_SETUP_REALM
+          value: master
+        - name: KEYCLOAK_SETUP_CLIENT_ID
+          value: admin-cli
+        - name: KEYCLOAK_INIT_OPTIMIZE_ROOT_URL
+          valueFrom:
+            configMapKeyRef:
+              key: rootUrl
+              name: my-management-identity-optimize-urls
+        - name: KEYCLOAK_INIT_OPTIMIZE_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: client-secret
+              name: my-management-optimize-client
+        - name: KEYCLOAK_USERS_0_USERNAME
+          value: platform-admin
+        - name: KEYCLOAK_USERS_0_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: my-management-identity-admin
+        - name: KEYCLOAK_USERS_0_ROLES_0
+          value: ManagementIdentity
+        - name: KEYCLOAK_USERS_0_ROLES_1
+          value: Optimize
+        - name: IDENTITY_URL
+          value: https://identity.example.com
+        - name: IDENTITY_DATABASE_HOST
+          value: postgres.camunda.svc
+        - name: IDENTITY_DATABASE_PORT
+          value: "5432"
+        - name: IDENTITY_DATABASE_NAME
+          value: identity
+        - name: IDENTITY_DATABASE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: identity-db-credentials
+        - name: IDENTITY_DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: identity-db-credentials
+        image: camunda/identity:8.9.4
+        name: identity
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 8082
+          name: management
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: management
+          periodSeconds: 10
+        resources: {}
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /actuator/health
+            port: management
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: management-identity
+    camunda.io/management-cluster: my-management
+  name: my-management-identity
+  namespace: camunda
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: http
+  - name: management
+    port: 82
+    protocol: TCP
+    targetPort: management
+  selector:
+    camunda.io/component: management-identity
+    camunda.io/management-cluster: my-management
+status:
+  loadBalancer: {}

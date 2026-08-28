@@ -115,6 +115,15 @@ func secretSource(name, key string) *corev1.EnvVarSource {
 	}}
 }
 
+// configMapSource builds the source of an environment variable that reads one
+// key of a ConfigMap in the pod's namespace.
+func configMapSource(name, key string) *corev1.EnvVarSource {
+	return &corev1.EnvVarSource{ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+		LocalObjectReference: corev1.LocalObjectReference{Name: name},
+		Key:                  key,
+	}}
+}
+
 // parseURL reads an external URL of the spec. The CRD validates every one of
 // them as an http or https URL with a host, so a URL that does not parse
 // cannot reach the renderer. It yields the empty URL rather than an error the

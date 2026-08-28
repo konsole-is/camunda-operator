@@ -25,6 +25,7 @@ import (
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,11 +36,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/pgbootstrap"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "databaseserverconfig"
 
 const databaseServerConfigSecretRefsField = "databaseserverconfig.spec.secretRefs"
 
@@ -67,9 +73,13 @@ const (
 type DatabaseServerConfigReconciler struct {
 	client.Client
 	// APIReader reads directly from the API server and bypasses the cache.
-	// Secret data needs it, because Secrets are watched metadata-only.
+	// The contract and the Secret data both need it: Secrets are watched
+	// metadata-only, and a status write from a cached contract conflicts.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 
 	// probe reaches the server and reads its major version and its system
 	// identifier. Nil means probeServer. The tests count and stub it.
@@ -88,14 +98,18 @@ type DatabaseServerConfigReconciler struct {
 // new. The status update is then a no-op on the server and wakes no watch.
 // The requeue sets the probe cadence, not a status-write loop.
 func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	// Cached, not live. The freshness of the last probe is the one thing this
-	// controller reads back from its own status write, and a stale copy only
-	// costs a probe it could have skipped. Nothing terminal hangs on it, a
-	// lost status write is taken again on the probe timer, and the controller
-	// records no event that a second look repeats.
+	// Live, not cached. A cached copy carries a resourceVersion the server has
+	// moved past, so the status write is refused with a conflict, and the
+	// repair takes Ready from the server and drops the one this pass staged.
+	// The requeue below is the probe interval, so the drop stands until then.
 	var cfg v1.DatabaseServerConfig
-	if err := r.Get(ctx, req.NamespacedName, &cfg); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+	if err := r.APIReader.Get(ctx, req.NamespacedName, &cfg); err != nil {
+		if apierrors.IsNotFound(err) {
+			observability.Forget(r.Metrics, new(v1.DatabaseServerConfig).GetKind(), req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	cond, next, err := r.validate(ctx, &cfg)
@@ -105,11 +119,10 @@ func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl
 
 	conditions.Stage(&cfg, cond)
 
-	// The contract owns no components, so its Ready condition follows the
-	// server on a conflict and is staged again on the next reconcile.
+	// The contract runs no components, so this flush owns no condition type.
 	if err := component.FlushStatus(
 		ctx,
-		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Owner: &cfg},
+		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Metrics: r.Metrics, Owner: &cfg},
 		nil,
 	); err != nil {
 		return ctrl.Result{}, err
@@ -316,6 +329,10 @@ func probeWithin(
 // SetupWithManager registers the controller, an index of CRs by referenced
 // Secret, and a metadata-only Secret watch.
 func (r *DatabaseServerConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
+	}
+
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.DatabaseServerConfig{},
 		databaseServerConfigSecretRefsField, func(o client.Object) []string {
@@ -341,6 +358,6 @@ func (r *DatabaseServerConfigReconciler) SetupWithManager(mgr ctrl.Manager) erro
 			),
 			builder.OnlyMetadata,
 		).
-		Named("databaseserverconfig").
+		Named(controllerName).
 		Complete(r)
 }

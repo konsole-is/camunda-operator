@@ -55,6 +55,14 @@ const (
 	archiveSecretSuffix = "-archive"
 )
 
+// ArchiveOutageGracePeriod is how long the write-ahead log uploads of a server
+// must have been failing before ArchiveReady reports them.
+//
+// A minute is the floor. PostgreSQL retries the segment it could not archive
+// at one attempt a minute once the failures continue, so anything shorter
+// cannot separate a retry from a stopped archive.
+const ArchiveOutageGracePeriod = 5 * time.Minute
+
 // The keys of the archive Secret. The Barman Cloud plugin reads every bucket
 // setting from a Secret key, so each one it needs has a key here.
 const (
@@ -81,6 +89,52 @@ type ArchiveStorage struct {
 	// It wins over the identity of Config, which is the identity of wherever
 	// the contract points now.
 	HeldIdentity *v1.RecoveryArchiveIdentity
+}
+
+// ArchiveOutage is the report of CloudNativePG that the write-ahead log of a
+// server is not reaching its archive. Reason and Message are what
+// CloudNativePG says, and Since is when it first reported the failing
+// uploads, which is the moment its condition changed.
+//
+// Confirmed says that the uploads have been failing for ArchiveOutageGracePeriod.
+// Only a confirmed outage reaches ArchiveReady: the condition of CloudNativePG
+// flips on one failed upload, and the plugin retries.
+type ArchiveOutage struct {
+	Reason    string
+	Message   string
+	Since     metav1.Time
+	Confirmed bool
+}
+
+// ArchiveOutageOf returns what CloudNativePG reports about the write-ahead log
+// uploads of cluster at now, or nil when it reports nothing wrong. A cluster
+// that has not uploaded a segment yet reports nothing, and so does one that
+// archives nowhere.
+func ArchiveOutageOf(cluster *cnpgv1.Cluster, now time.Time) *ArchiveOutage {
+	condition := cnpgcluster.ContinuousArchiving(cluster)
+	if condition == nil || condition.Status != metav1.ConditionFalse {
+		return nil
+	}
+
+	return &ArchiveOutage{
+		Reason:    condition.Reason,
+		Message:   condition.Message,
+		Since:     condition.LastTransitionTime,
+		Confirmed: !now.Before(condition.LastTransitionTime.Add(ArchiveOutageGracePeriod)),
+	}
+}
+
+// ArchiveFailingMessage returns the ArchiveReady message of a server whose
+// write-ahead log stopped reaching the bucket: what CloudNativePG reports,
+// what the archive still holds, and what to do about it.
+func ArchiveFailingMessage(outage *ArchiveOutage) string {
+	return fmt.Sprintf(
+		"CloudNativePG reports %s on the write-ahead log uploads of this server since %s: %s. "+
+			"The archive holds every point up to the last segment that arrived, and a restore to "+
+			"a point after that reaches nothing. Repair the bucket or the credentials of the "+
+			"bucket. The segments that are held back arrive once the uploads run again.",
+		outage.Reason, outage.Since.UTC().Format(time.RFC3339), outage.Message,
+	)
 }
 
 // ObjectStoreName returns the name of the ObjectStore that describes the
@@ -166,6 +220,12 @@ func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
 // archive the server re-enabled starts again from nil, because the backups of
 // the archive it wrote before reach no point in the new one.
 //
+// outage is the stop in the write-ahead log uploads that the caller reports
+// on, or nil. The component reports Blocked while it stands: the archive keeps
+// the points it holds, and it reaches no point after the uploads stopped. The
+// caller decides which outage is worth reporting, so a server that suspended
+// its instances passes nil.
+//
 // Each of the three objects the component applies is derived by name and
 // blocks on a foreign controller, so a Secret, an ObjectStore, or a
 // ScheduledBackup that another owner already controls under one of those names
@@ -181,29 +241,47 @@ func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
 // archiveTaken is set while the ObjectStore of that name belongs to somebody
 // else. The cluster then carries no archive plugin, so the schedule has no
 // object storage to write a base backup to and is removed with it.
+//
+// The returned data cell holds the destination path that this reconcile
+// applied to the ObjectStore, which names the bucket and the prefix under it.
+// It is unset when that apply did not happen: the component is disabled,
+// another owner controls the Secret or the ObjectStore, an earlier resource of
+// it failed, or the apply itself was rejected. The archive of the server is
+// then still where it was, whatever the spec asks for, so the caller records
+// no move.
 func ArchiveComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
 	archive *ArchiveStorage,
 	archiveStart *metav1.Time,
+	outage *ArchiveOutage,
 	clusterTaken string,
 	archiveTaken string,
-) (*component.Component, error) {
+) (*component.Component, *concepts.Data[string], error) {
 	resolved := archive.resolveOrNil(server)
 
 	settings, err := secret.NewBuilder(archiveSecret(server, resolved)).Build()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	store, err := barmanobjectstore.NewBuilder(objectStore(server, merged, resolved)).Build()
+	destination := concepts.NewData[string]("archive-destination-path")
+	storeBuilder := barmanobjectstore.NewBuilder(objectStore(server, merged, resolved))
+	barmanobjectstore.ExtractInto(
+		storeBuilder, destination,
+		func(o barmanobjectstore.ObjectStore) (string, error) {
+			return o.Spec.Configuration.DestinationPath, nil
+		},
+	)
+
+	store, err := storeBuilder.Build()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	baseBackup, err := cnpgscheduledbackup.NewBuilder(scheduledBackup(server, merged)).Build()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// The cluster is read here, never applied: it is the object the archive
@@ -213,13 +291,13 @@ func ArchiveComponent(
 	recoverable, err := cnpgcluster.NewBuilder(&cnpgv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{Name: ClusterName(server), Namespace: server.Namespace},
 	}).
-		WithGuard(baseBackupGuard(server, archiveStart, merged.Suspend)).
+		WithGuard(archiveGuard(server, archiveStart, outage, merged.Suspend)).
 		Build()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return component.NewComponentBuilder().
+	comp, err := component.NewComponentBuilder().
 		WithName("archive").
 		WithConditionType(v1.ConditionArchiveReady).
 		WithFeatureGate(feature.NewBooleanGate(Archiving(merged))).
@@ -234,26 +312,51 @@ func ArchiveComponent(
 			component.DeleteWhen(clusterTaken != "" || archiveTaken != ""),
 			component.BlockOnForeignController(),
 		).
+		// Last, after the ObjectStore. ocf skips every resource that follows a
+		// blocked guard. A guard registered earlier would hold the apply that
+		// moves the archive, and no move would be recorded.
 		WithResource(recoverable, component.ReadOnly(), component.Auxiliary()).
 		Build()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return comp, destination, nil
 }
 
-// baseBackupGuard blocks the archive until a base backup of the archive the
-// server writes now has completed. archiveStart is when the earliest such
-// backup completed, or nil when none has.
+// archiveGuard blocks the archive while it cannot be recovered from. Two
+// things block it: no base backup of the archive the server writes now has
+// completed, and the write-ahead log of the server stopped reaching the
+// bucket. archiveStart is when the earliest such backup completed, or nil when
+// none has, and outage is the stop in the uploads that the caller reports on,
+// or nil. The guard blocks on every outage it is given.
 //
-// A suspended server is never blocked. Its schedule is suspended with it, so
-// no base backup can complete and there is nothing to wait on. Blocking there
-// would hold the archive of a server that was suspended before its first
-// backup at False for as long as the suspension lasts. The guard engages
-// again when the server comes back.
-func baseBackupGuard(
+// The uploads come first. An archive that stopped receiving write-ahead log
+// takes no base backup either, so the failing uploads are what the reader acts
+// on.
+//
+// A suspended server is never blocked by the base backup. Its schedule is
+// suspended with it, so no backup can complete and there is nothing to wait
+// on. Blocking there would hold the archive of a server that was suspended
+// before its first backup at False for as long as the suspension lasts. The
+// guard engages again when the server comes back.
+func archiveGuard(
 	server *v1.DatabaseServer,
 	archiveStart *metav1.Time,
+	outage *ArchiveOutage,
 	suspended bool,
 ) func(cnpgv1.Cluster) (concepts.GuardStatusWithReason, error) {
 	return func(cnpgv1.Cluster) (concepts.GuardStatusWithReason, error) {
 		switch {
+		case outage != nil:
+			return concepts.GuardStatusWithReason{
+				Status: concepts.GuardStatusBlocked,
+				Reason: fmt.Sprintf(
+					"CloudNativePG reports %s on the write-ahead log uploads of this server since %s",
+					outage.Reason, outage.Since.UTC().Format(time.RFC3339),
+				),
+			}, nil
+
 		case archiveStart != nil:
 			return concepts.GuardStatusWithReason{
 				Status: concepts.GuardStatusUnblocked,

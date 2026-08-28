@@ -36,6 +36,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
@@ -269,11 +270,13 @@ func (s requestSet) requests() []reconcile.Request {
 // CamundaOptimizes that wait for an attached cluster hear that the holder of
 // the attachment went. ServiceMonitors are not watched: the operator only
 // checks whether the Kubernetes cluster serves the kind. It also sets
-// EventRecorder to the recorder of the manager and builds the uncached
-// component client when they are nil.
+// EventRecorder, Metrics, and the uncached component client when they are nil.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.EventRecorder == nil {
-		r.EventRecorder = mgr.GetEventRecorder("camundaoptimize")
+		r.EventRecorder = mgr.GetEventRecorder(controllerName)
+	}
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
 	}
 	r.restMapper = mgr.GetRESTMapper()
 
@@ -331,6 +334,6 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 			})),
 		).
 		Watches(&corev1.Secret{}, r.enqueueForSecret(), builder.OnlyMetadata).
-		Named("camundaoptimize").
+		Named(controllerName).
 		Complete(r)
 }

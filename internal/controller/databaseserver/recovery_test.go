@@ -17,7 +17,6 @@ limitations under the License.
 package databaseserver
 
 import (
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -316,7 +315,7 @@ func reconciledServer(server *v1.DatabaseServer) *v1.DatabaseServer {
 }
 
 // expectLastRecovery waits until the contract publishes an outcome with the
-// given result, and returns it.
+// given result and the server records it, and returns the outcome.
 func expectLastRecovery(server *v1.DatabaseServer, result v1.RecoveryResult) *v1.RecoveryOutcome {
 	GinkgoHelper()
 
@@ -325,9 +324,35 @@ func expectLastRecovery(server *v1.DatabaseServer, result v1.RecoveryResult) *v1
 		g.Expect(contract.Spec.PITR).NotTo(BeNil())
 		g.Expect(contract.Spec.PITR.LastRecovery).NotTo(BeNil())
 		g.Expect(contract.Spec.PITR.LastRecovery.Result).To(Equal(result))
+
+		// The answer reaches the contract before it reaches the server: the
+		// operator publishes it first, so a status write that is lost leaves
+		// the answer published. Every caller reads status.recovery next, so
+		// the record is waited on here.
+		recorded := reconciledServer(server).Status.Recovery
+		g.Expect(recorded).NotTo(BeNil())
+		g.Expect(recorded.RequestID).To(Equal(contract.Spec.PITR.LastRecovery.RequestID))
 	}, timeout, interval).Should(Succeed())
 
 	return publishedContract(server).Spec.PITR.LastRecovery
+}
+
+// expectAnsweredRecovery waits until the status of the server records the
+// answer to the given request, and returns that record. The outcome reaches
+// the contract before the status of the server is written, so a spec that
+// waited on the contract alone can read a status from before the answer.
+func expectAnsweredRecovery(server *v1.DatabaseServer, requestID string) *v1.DatabaseServerRecoveryStatus {
+	GinkgoHelper()
+
+	var recovery *v1.DatabaseServerRecoveryStatus
+	Eventually(func(g Gomega) {
+		recovery = reconciledServer(server).Status.Recovery
+		g.Expect(recovery).NotTo(BeNil())
+		g.Expect(recovery.RequestID).To(Equal(requestID))
+		g.Expect(recovery.CompletedAt).NotTo(BeNil())
+	}, timeout, interval).Should(Succeed())
+
+	return recovery
 }
 
 // recoveryCluster is the CloudNativePG cluster that the recorded recovery
@@ -629,7 +654,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(outcome.Message).To(ContainSubstring("lies in none of those windows"))
 
 		// Nothing was built, so nothing has to be cleaned up.
-		Expect(reconciledServer(server).Status.Recovery.Cluster).To(BeEmpty())
+		Expect(expectAnsweredRecovery(server, request.RequestID).Cluster).To(BeEmpty())
 		Expect(k8sClient.Get(
 			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
 		)).To(MatchError(apierrors.IsNotFound, "not found"))
@@ -647,7 +672,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(outcome.RequestID).To(Equal(request.RequestID))
 		Expect(outcome.Message).To(ContainSubstring("lies in the future"))
 
-		Expect(reconciledServer(server).Status.Recovery.Cluster).To(BeEmpty())
+		Expect(expectAnsweredRecovery(server, request.RequestID).Cluster).To(BeEmpty())
 		Expect(k8sClient.Get(
 			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
 		)).To(MatchError(apierrors.IsNotFound, "not found"))
@@ -677,7 +702,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(outcome.Message).To(ContainSubstring("older than the retention period"))
 		Expect(outcome.Message).To(ContainSubstring("7 days"))
 
-		Expect(reconciledServer(server).Status.Recovery.Cluster).To(BeEmpty())
+		Expect(expectAnsweredRecovery(server, request.RequestID).Cluster).To(BeEmpty())
 		Expect(k8sClient.Get(
 			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
 		)).To(MatchError(apierrors.IsNotFound, "not found"))
@@ -886,8 +911,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		By("removing the archive while the rollback is unanswered")
 		setArchive(server, nil)
 
-		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
-		Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+		ready := expectConditionReason(server, v1.ConditionReady, metav1.ConditionFalse, v1.ReasonInvalidReference)
 		Expect(ready.Message).To(ContainSubstring("Put spec.archive back"))
 
 		// The rollback recovers out of this archive, so the removal reaches
@@ -973,9 +997,16 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(expectLastRecovery(server, v1.RecoveryResultFailed).Message).
 			To(ContainSubstring(cnpgv1.PhaseUnrecoverable))
 
-		// The cluster of the refused recovery stays gone. A look that read the
-		// record as unanswered builds it again under the same name.
+		// The refusal is answered before the cluster it abandons goes: the
+		// cleanup runs on the look that reads the answer back, not on the one
+		// that wrote it. So the removal is waited for, not assumed.
 		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, key, &cnpgv1.Cluster{})
+		}, timeout, interval).ShouldNot(Succeed())
+
+		// It stays gone. A look that read the record as unanswered builds it
+		// again under the same name.
 		Consistently(func() error {
 			return k8sClient.Get(ctx, key, &cnpgv1.Cluster{})
 		}, "2s", interval).ShouldNot(Succeed())
@@ -1188,15 +1219,23 @@ var _ = Describe("DatabaseServer recovery", func() {
 		// The server goes back to the previous cluster in the same pass that
 		// abandons the rollback, so that pass is the one that has to read the
 		// name it goes back to.
-		By("removing the cluster the rollback built")
-		Expect(k8sClient.Delete(ctx, &cnpgv1.Cluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "camunda-r1", Namespace: server.Namespace},
-		})).To(Succeed())
-
+		//
+		// The cluster component applies a cluster of that name on every look
+		// once status.cluster names it, and a delete that lands inside a look
+		// is put back by the same look. Deleting on every poll leaves the read
+		// that abandons the rollback the one that wins.
+		//
 		// The answer is read off the record, not off the contract. The server
 		// goes back to a name it does not own, and it withdraws the contract
 		// with everything else that names that cluster.
+		By("removing the cluster the rollback built until the server reads it gone")
+		recovered := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}
 		Eventually(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			if err := k8sClient.Get(ctx, recovered, &cluster); err == nil {
+				g.Expect(k8sClient.Delete(ctx, &cluster)).To(Succeed())
+			}
+
 			recorded := reconciledServer(server).Status.Recovery
 			g.Expect(recorded).NotTo(BeNil())
 			g.Expect(recorded.CompletedAt).NotTo(BeNil())
@@ -1204,8 +1243,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 			g.Expect(recorded.Message).To(ContainSubstring("was removed"))
 		}, timeout, interval).Should(Succeed())
 
-		taken := expectCondition(server, v1.ConditionClusterReady, metav1.ConditionFalse)
-		Expect(taken.Reason).To(Equal(v1.ReasonClusterTaken))
+		taken := expectConditionReason(server, v1.ConditionClusterReady, metav1.ConditionFalse, v1.ReasonClusterTaken)
 		Expect(taken.Message).To(ContainSubstring(`CloudNativePG cluster "camunda"`))
 
 		Consistently(func(g Gomega) {
@@ -1542,8 +1580,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		By("moving the bucket under the name the rollback recorded")
 		moveBucket(&bucket, bucket.Name+"-moved")
 
-		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
-		Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+		ready := expectConditionReason(server, v1.ConditionReady, metav1.ConditionFalse, v1.ReasonInvalidReference)
 		Expect(ready.Message).To(ContainSubstring(recorded.Location))
 		Expect(ready.Message).To(ContainSubstring("-moved"))
 
@@ -1612,8 +1649,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		moveBucket(&bucket, bucket.Name+"-moved")
 		setBucketRole(&bucket, after)
 
-		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
-		Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+		expectConditionReason(server, v1.ConditionReady, metav1.ConditionFalse, v1.ReasonInvalidReference)
 
 		// The identity of the bucket the contract names now opens nothing in
 		// the bucket the rollback reads. The cluster that runs writes its
@@ -1884,47 +1920,47 @@ var _ = Describe("DatabaseServer recovery", func() {
 		)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, &superuser)).To(Succeed())
 
-		// Nothing reconciles the server for the deleted Secret: the move of
-		// the endpoint is what triggers the next look, and that look can still
-		// read the Secret from a cache that lags the delete and publish the
-		// endpoint of this server over the foreign one. The move is repeated
-		// until a look reports the Secret gone, which no later look reads
-		// back. The endpoint that stands then is the one every later look
-		// reads.
-		foreign := "camunda-r9-rw." + server.Namespace + ".svc"
+		strangerHost := "camunda-r9-rw." + server.Namespace + ".svc"
+
+		// Nothing tells the operator that the superuser Secret went:
+		// CloudNativePG owns that Secret, and no watch of this controller maps
+		// it. The write below is what wakes the next look. A look that read
+		// the Secret before it went can still publish the endpoint of this
+		// server over that write, so the endpoint is written until
+		// ContractReady reports the Secret gone. Every look after that one
+		// blocks on the same Secret.
 		Eventually(func(g Gomega) {
 			var contract v1.DatabaseServerConfig
 			g.Expect(k8sClient.Get(ctx, contractKey(server), &contract)).To(Succeed())
-			if contract.Spec.Host != foreign {
-				contract.Spec.Host = foreign
+			if contract.Spec.Host != strangerHost {
+				contract.Spec.Host = strangerHost
 				g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
 			}
 
-			blocked := conditionOf(server, v1.ConditionContractReady)
-			g.Expect(blocked).NotTo(BeNil())
-			g.Expect(blocked.Status).To(Equal(metav1.ConditionFalse), blocked.Message)
-			g.Expect(blocked.Reason).To(Equal(string(component.GuardBlocked)), blocked.Message)
-			g.Expect(publishedContract(server).Spec.Host).To(Equal(foreign))
+			// The reason, not the status alone: ContractReady is also False
+			// while the contract is still being published, and a look that
+			// exits here on that False leaves the endpoint able to move again.
+			ready := conditionOf(server, v1.ConditionContractReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse), ready.Message)
+			g.Expect(ready.Reason).To(Equal(string(component.GuardBlocked)), ready.Message)
+			g.Expect(publishedContract(server).Spec.Host).To(Equal(strangerHost))
 		}, timeout, interval).Should(Succeed())
 
 		Consistently(func() string {
 			return publishedContract(server).Spec.Host
-		}, "1s", interval).Should(Equal(foreign))
+		}, "1s", interval).Should(Equal(strangerHost))
 
 		// The endpoint is read back only on a look that finds the record
 		// missing, so the record goes last, once that endpoint is the one
-		// every look reads. A status write of the operator that lands on a
-		// conflict carries the record it staged, so the record is removed
-		// again until the look it is removed for has happened.
+		// every look reads. A look that was already running writes the status
+		// it holds back over this one, record and all, so the record is
+		// removed until the refusal that follows it is recorded.
 		//
 		// The refusal is its own reason. A reader of kubectl describe learns
 		// that two servers are writing one contract, which is not what a
 		// refused rollback means.
 		Eventually(func(g Gomega) {
-			if slices.Contains(recoveryEventReasons(server), "RecoveryClusterNotOwned") {
-				return
-			}
-
 			var latest v1.DatabaseServer
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
 			if latest.Status.Recovery != nil {
@@ -1957,7 +1993,15 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		suspend(server)
 		hibernate(server)
-		expectCondition(server, v1.ConditionClusterReady, metav1.ConditionTrue)
+
+		// The reason, not the status: a suspension that is still running
+		// reports PendingSuspension or Suspending, and both of those are True
+		// as well. The hold below is entered on the suspension the server
+		// reached, so a bucket removed before it reads as a plain dangling
+		// reference and the request is never answered.
+		expectConditionReason(
+			server, v1.ConditionClusterReady, metav1.ConditionTrue, string(component.Suspended),
+		)
 
 		// A suspended server whose bucket stops resolving holds its whole
 		// reconcile. The answer to a request has to come out from in front of
