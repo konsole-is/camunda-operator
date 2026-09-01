@@ -1,0 +1,18 @@
+# Optimize for my-cluster. managementAuthRef names the cluster-scoped
+# ManagementAuthConfig that my-management publishes, so Optimize logs its
+# users in against the same Keycloak.
+#
+# externalUrl is where users reach Optimize. The management plane registers it
+# as the login callback of the Optimize client. It must carry no trailing
+# slash, no comma, no query, and no fragment.
+apiVersion: core.camunda.io/v1
+kind: CamundaOptimize
+metadata:
+  name: my-cluster-optimize
+  namespace: my-cluster-ns
+spec:
+  version: "8.9.17"
+  managementAuthRef: my-management
+  externalUrl: "https://optimize.camunda.example.com"
+  clusterRef:
+    name: my-cluster

@@ -1,0 +1,17 @@
+# The PostgreSQL server for the management plane. The operator publishes the
+# DatabaseServerConfig my-db-server from it. This mode runs no Keycloak, so
+# only Management Identity and Web Modeler need a database.
+apiVersion: core.camunda.io/v1
+kind: DatabaseServer
+metadata:
+  name: my-db
+  namespace: my-management-ns
+spec:
+  version: "17"
+  instances: 1
+  storageSize: 8Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  databaseServerConfig: my-db-server

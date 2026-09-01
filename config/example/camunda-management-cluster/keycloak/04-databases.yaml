@@ -1,0 +1,34 @@
+# One logical database for each component that stores state. Each publishes a
+# DatabaseConfig of its own name, which the management cluster names in a
+# databaseConfigRef.
+#
+# None of the three sets secondaryStorageConfig. That field is for the
+# secondary storage of an orchestration cluster, which these are not.
+# databaseName takes lowercase letters and underscores only, so Web Modeler
+# gets web_modeler.
+apiVersion: core.camunda.io/v1
+kind: Database
+metadata:
+  name: my-keycloak-db
+  namespace: my-management-ns
+spec:
+  serverRef: my-db-server
+  databaseName: keycloak
+---
+apiVersion: core.camunda.io/v1
+kind: Database
+metadata:
+  name: my-identity-db
+  namespace: my-management-ns
+spec:
+  serverRef: my-db-server
+  databaseName: identity
+---
+apiVersion: core.camunda.io/v1
+kind: Database
+metadata:
+  name: my-web-modeler-db
+  namespace: my-management-ns
+spec:
+  serverRef: my-db-server
+  databaseName: web_modeler

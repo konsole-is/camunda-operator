@@ -1,0 +1,95 @@
+# Management plane with your own OIDC provider
+
+A complete management plane that authenticates against an identity provider
+you run. The operator runs no Keycloak and issues no clients. You register the
+clients, and the platform configuration names them.
+
+The management plane is `my-management` in the namespace `my-management-ns`.
+The manifests use the names of
+[Management plane](https://konsole-is.github.io/camunda-operator/guides/management-plane/#step-3c-your-own-oidc-provider).
+
+## Before you start
+
+- Install the CloudNativePG operator and the Camunda operator. See
+  [Installation](https://konsole-is.github.io/camunda-operator/installation/).
+  This mode needs no Keycloak Operator.
+- Register six clients in your identity provider:
+
+    | Client | Kind | Used by |
+    | --- | --- | --- |
+    | `camunda-orchestration` | confidential | Every orchestration cluster |
+    | `camunda-identity` | confidential | Management Identity |
+    | `camunda-optimize` | confidential | Optimize |
+    | `camunda-console` | public | Console |
+    | `camunda-web-modeler` | public | Web Modeler |
+    | `camunda-web-modeler-api` | confidential | The Web Modeler API |
+
+- Replace the placeholder values in `02-secrets.yaml` with the secrets of the
+  four confidential clients, and the SMTP credentials of Web Modeler.
+- Replace `claimValue` in `06-management-cluster.yaml` with the value that
+  identifies your first administrator. The claim `oid` is an example. Use a
+  claim your provider puts in the token.
+- Replace the four `login.example.com` URLs with those of your provider, and
+  point the three `externalUrl` hostnames at your own domain.
+
+## Apply
+
+One command applies the whole inventory:
+
+```sh
+kubectl apply -k config/example/camunda-management-cluster/oidc
+```
+
+To see each resource become ready, apply the files in their number order:
+
+1. `01-namespace.yaml` creates the namespace `my-management-ns`.
+2. `02-secrets.yaml` creates the four client Secrets and the SMTP Secret.
+3. `03-database-server.yaml` creates the `DatabaseServer` `my-db`. Wait for it:
+
+    ```sh
+    kubectl wait databaseserver/my-db -n my-management-ns \
+      --for=condition=Ready --timeout=10m
+    ```
+
+4. `04-databases.yaml` creates the two `Database` resources.
+5. `05-platform-config.yaml` creates the cluster-scoped
+   `CamundaPlatformConfig` `my-platform-config`.
+6. `06-management-cluster.yaml` creates the `CamundaManagementCluster`
+   `my-management`. Wait for it:
+
+    ```sh
+    kubectl wait camundamanagementcluster/my-management -n my-management-ns \
+      --for=condition=Ready --timeout=15m
+    ```
+
+## What you get
+
+- `my-management` publishes the cluster-scoped `ManagementAuthConfig`
+  `my-management`. A `CamundaOptimize` names it in `spec.managementAuthRef`.
+- `my-management-identity`, `my-management-console`, and the Web Modeler
+  Services serve the three components.
+- The condition `SecretsReady` reports the reason `Disabled`. The operator
+  issues no credentials in this mode, so there is nothing for it to write.
+
+## Add an orchestration cluster
+
+This inventory holds no `CamundaCluster`. `clusterSelector` is empty, so the
+plane serves every cluster on the Kubernetes cluster. Add one with the
+[Camunda cluster on Elasticsearch](../../camunda-cluster/elasticsearch)
+inventory, and give it the same `platformConfigRef`.
+
+## Remove
+
+```sh
+kubectl delete camundamanagementcluster/my-management -n my-management-ns
+kubectl delete database --all -n my-management-ns
+kubectl delete databaseserver/my-db -n my-management-ns
+kubectl delete camundaplatformconfig/my-platform-config
+kubectl delete namespace my-management-ns
+```
+
+## Related
+
+- [Management plane](https://konsole-is.github.io/camunda-operator/guides/management-plane/#step-3c-your-own-oidc-provider)
+- [The clients of the management plane](https://konsole-is.github.io/camunda-operator/crds/camundaplatformconfig/#the-clients-of-the-management-plane)
+- [CamundaManagementCluster](https://konsole-is.github.io/camunda-operator/crds/camundamanagementcluster/)

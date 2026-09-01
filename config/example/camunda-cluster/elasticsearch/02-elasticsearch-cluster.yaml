@@ -1,0 +1,18 @@
+# The Elasticsearch cluster that holds the secondary storage of my-cluster.
+# The operator publishes the SecondaryStorageConfig my-storage-config from it,
+# with the endpoint and the generated credentials. Do not write that contract
+# by hand.
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchCluster
+metadata:
+  name: my-cluster-es
+  namespace: my-cluster-ns
+spec:
+  version: "9.2.8"
+  replicas: 1
+  storageSize: 1Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+  secondaryStorageConfig: my-storage-config

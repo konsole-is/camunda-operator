@@ -1,0 +1,22 @@
+# The orchestration cluster. storageRef names the SecondaryStorageConfig that
+# the ElasticsearchCluster publishes.
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  version: "8.9.17"
+  platformConfigRef: my-platform-config
+  storageRef: my-storage-config
+  zeebe:
+    storageSize: 1Gi
+    resources:
+      requests:
+        cpu: "1"
+        memory: 1.5Gi
+  gateway:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
