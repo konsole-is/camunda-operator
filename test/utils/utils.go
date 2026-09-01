@@ -85,7 +85,7 @@ func UninstallCertManager() {
 }
 
 // certManagerDeployments are the three Deployments the cert-manager bundle
-// creates, in the order InstallCertManager waits for them.
+// creates.
 var certManagerDeployments = []string{"cert-manager", "cert-manager-cainjector", "cert-manager-webhook"}
 
 // InstallCertManager installs the cert manager bundle and waits until every
@@ -97,25 +97,23 @@ func InstallCertManager() error {
 		return err
 	}
 
-	// The webhook Deployment answers Available from a plain HTTP health check
-	// that runs on a port separate from the one it admits requests on, so
-	// Available does not mean the webhook can admit a Certificate yet. The
-	// controller Deployment is what issues a Certificate once admitted, and
-	// the cainjector Deployment is what writes the CA bundle the webhook
-	// config needs before the API server trusts it.
+	// One kubectl wait call names all three Deployments so they share one
+	// 5-minute deadline instead of up to 5 minutes each. The webhook
+	// Deployment answers Available from a plain HTTP health check that runs
+	// on a port separate from the one it admits requests on, so Available
+	// does not mean the webhook can admit a Certificate yet. The controller
+	// Deployment is what issues a Certificate once admitted, and the
+	// cainjector Deployment is what writes the CA bundle the webhook config
+	// needs before the API server trusts it.
+	args := make([]string, 0, 7+len(certManagerDeployments))
+	args = append(args, "wait", "--for", "condition=Available", "--namespace", "cert-manager", "--timeout", "5m")
 	for _, deployment := range certManagerDeployments {
-		cmd := exec.Command(
-			"kubectl", "wait", "deployment.apps/"+deployment,
-			"--for", "condition=Available",
-			"--namespace", "cert-manager",
-			"--timeout", "5m",
-		)
-		if _, err := Run(cmd); err != nil {
-			return err
-		}
+		args = append(args, "deployment.apps/"+deployment)
 	}
 
-	return nil
+	_, err := Run(exec.Command("kubectl", args...))
+
+	return err
 }
 
 // IsCertManagerCRDsInstalled checks if any Cert Manager CRDs are installed
