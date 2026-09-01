@@ -127,10 +127,13 @@ func fixtureDefault(t *testing.T) Input {
 				Labels:  map[string]string{"release": "prometheus"},
 			}},
 		}
-		in.Effective = NewEffective(MergePreset(in.Cluster.Spec, mediumPreset()))
+		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, mediumPreset(), nil))
 		in.Platform = v1.CamundaPlatformConfigSpec{
 			LicenseSecretRef: &v1.SecretKeyRef{Name: "camunda-license", Namespace: "camunda-system", Key: "key"},
-			ImageRegistry:    "registry.example.com",
+			Images: &v1.ImagesSpec{
+				Camunda:    "registry.example.com/camunda/camunda",
+				Connectors: "registry.example.com/camunda/connectors-bundle",
+			},
 		}
 		in.Storage.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
 			Name: "my-cluster-es-es-http-certs-public", Key: "ca.crt",
@@ -222,7 +225,7 @@ func fixturePreset(t *testing.T) Input {
 			PresetRef:         "medium",
 			StorageRef:        "my-storage-config",
 		}
-		in.Effective = NewEffective(MergePreset(in.Cluster.Spec, mediumPreset()))
+		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, mediumPreset(), nil))
 	})
 }
 

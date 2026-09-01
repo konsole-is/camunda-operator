@@ -45,7 +45,7 @@ func newInput(t *testing.T, mutate func(*Input)) Input {
 	}
 	in := Input{
 		Cluster:   cluster,
-		Effective: NewEffective(MergePreset(cluster.Spec, nil)),
+		Effective: NewEffective(MergeSpec(cluster.Spec, nil, nil)),
 		Storage: Storage{
 			Type: v1.SecondaryStorageTypeElasticsearch,
 			Elasticsearch: &v1.ElasticsearchStorage{
@@ -369,7 +369,7 @@ func TestRenderOIDCClusterAuthWins(t *testing.T) {
 	in := newInput(t, func(in *Input) {
 		in.Platform = oidcPlatform()
 		in.Cluster.Spec.PresetRef = "medium"
-		in.Effective = NewEffective(MergePreset(in.Cluster.Spec, &v1.CamundaClusterPresetSpec{
+		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, &v1.CamundaClusterPresetSpec{
 			Cluster: v1.CamundaClusterSpec{Auth: &v1.ClusterAuthSpec{
 				ClientID: "preset-client",
 				Audience: "preset-audience",
@@ -377,7 +377,7 @@ func TestRenderOIDCClusterAuthWins(t *testing.T) {
 					Name: "preset-oidc", Key: "secret",
 				},
 			}},
-		}))
+		}, nil))
 	})
 	r := render(in, process(t, in, ComponentGateway))
 
@@ -386,9 +386,9 @@ func TestRenderOIDCClusterAuthWins(t *testing.T) {
 	assertSecretEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTSECRET", "preset-oidc", "secret")
 
 	in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{ClientID: "cluster-client"}
-	in.Effective = NewEffective(MergePreset(in.Cluster.Spec, &v1.CamundaClusterPresetSpec{
+	in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, &v1.CamundaClusterPresetSpec{
 		Cluster: v1.CamundaClusterSpec{Auth: &v1.ClusterAuthSpec{ClientID: "preset-client"}},
-	}))
+	}, nil))
 	r = render(in, process(t, in, ComponentGateway))
 
 	assertEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTID", "cluster-client")
@@ -430,7 +430,10 @@ func TestRenderLicenseAndRegistry(t *testing.T) {
 			Namespace: "camunda-system",
 			Key:       "key",
 		}
-		in.Platform.ImageRegistry = "registry.example.com/"
+		in.Platform.Images = &v1.ImagesSpec{
+			Camunda:    "registry.example.com/camunda/camunda/",
+			Connectors: "registry.example.com/camunda/connectors-bundle",
+		}
 		in.Cluster.Spec.Connectors = &v1.ConnectorsSpec{Enabled: new(true), Version: "8.9.7"}
 		in.Effective = NewEffective(in.Cluster.Spec)
 	})
@@ -444,8 +447,24 @@ func TestRenderLicenseAndRegistry(t *testing.T) {
 		Image(in, process(t, in, ComponentConnectors)),
 	)
 
-	in.Platform.ImageRegistry = ""
+	in.Platform.Images = nil
 	assert.Equal(t, "camunda/camunda:8.9.9", Image(in, process(t, in, ComponentGateway)))
+
+	in.Images = &v1.ReleaseImagesSpec{
+		Camunda:    "registry.example.com/camunda/camunda@sha256:" + strings.Repeat("a", 64),
+		Connectors: "registry.example.com/camunda/connectors-bundle:8.9.7-patched",
+	}
+	assert.Equal(
+		t,
+		"registry.example.com/camunda/camunda@sha256:"+strings.Repeat("a", 64),
+		Image(in, process(t, in, ComponentZeebe)),
+		"a pinned image is pulled as it is",
+	)
+	assert.Equal(
+		t,
+		"registry.example.com/camunda/connectors-bundle:8.9.7-patched",
+		Image(in, process(t, in, ComponentConnectors)),
+	)
 }
 
 func TestRenderExtraEnvWinsByName(t *testing.T) {

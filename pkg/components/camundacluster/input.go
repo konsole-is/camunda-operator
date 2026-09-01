@@ -68,8 +68,14 @@ type Input struct {
 	// namespace, and instance-bound spec fields (externalUrl, extraEnv) are
 	// read directly; the topology comes from Effective.
 	Cluster *v1.CamundaCluster
-	// Effective is the preset-merged spec with the defaults applied.
+	// Effective is the merged spec (preset, release, cluster) with the
+	// defaults applied.
 	Effective Effective
+	// Images are the image references that the release pins, or nil when
+	// the cluster names no release or the release pins none. A pinned
+	// reference is pulled as it is, and Effective.Version stays the version
+	// that the operator believes the process runs.
+	Images *v1.ReleaseImagesSpec
 	// Platform is the spec of the referenced CamundaPlatformConfig.
 	Platform v1.CamundaPlatformConfigSpec
 	// Storage is the resolved secondary storage binding.
@@ -191,16 +197,25 @@ func ResolveAuth(in Input) EffectiveAuth {
 	return auth
 }
 
-// Image returns the container image of a process: the unified image at
-// spec.version, or the connectors runtime at connectors.version. The platform
-// config governs the repository and the registry.
+// Image returns the container image of a process: the reference that the
+// release pins, or else the unified image at spec.version, or the connectors
+// runtime at connectors.version, in the repository that the platform config
+// names.
 func Image(in Input, p Process) string {
 	if p.Component == ComponentConnectors {
+		if in.Images != nil && in.Images.Connectors != "" {
+			return in.Images.Connectors
+		}
+
 		version := ""
 		if in.Effective.Connectors != nil {
 			version = in.Effective.Connectors.Version
 		}
 		return images.Resolve(&in.Platform, images.Connectors, version)
+	}
+
+	if in.Images != nil && in.Images.Camunda != "" {
+		return in.Images.Camunda
 	}
 
 	return images.Resolve(&in.Platform, images.Camunda, in.Effective.Version)

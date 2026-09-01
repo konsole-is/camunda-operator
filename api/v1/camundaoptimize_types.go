@@ -63,7 +63,7 @@ const (
 // attaches to one CamundaCluster and reads the data of that cluster from
 // Elasticsearch.
 //
-// The spec has no platformConfigRef. The image registry and the license come
+// The spec has no platformConfigRef. The image repository and the license come
 // from the CamundaPlatformConfig of the referenced cluster, so the two cannot
 // disagree.
 type CamundaOptimizeSpec struct {

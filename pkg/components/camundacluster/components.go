@@ -309,10 +309,13 @@ func zeebeStatefulSet(in Input, p Process) *appsv1.StatefulSet {
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        WorkloadName(in.Cluster, p.Component),
-			Namespace:   in.Cluster.Namespace,
-			Labels:      managedLabels(in.Cluster, p.Component),
-			Annotations: map[string]string{RequestedStorageSizeAnnotation: storageSize.String()},
+			Name:      WorkloadName(in.Cluster, p.Component),
+			Namespace: in.Cluster.Namespace,
+			Labels:    managedLabels(in.Cluster, p.Component),
+			Annotations: map[string]string{
+				RequestedStorageSizeAnnotation: storageSize.String(),
+				BrokerVersionAnnotation:        e.Version,
+			},
 		},
 		Spec: appsv1.StatefulSetSpec{
 			Replicas:            new(p.Replicas),

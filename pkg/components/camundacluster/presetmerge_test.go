@@ -76,7 +76,7 @@ func fullPreset() *v1.CamundaClusterPresetSpec {
 	}}
 }
 
-func TestMergePreset(t *testing.T) {
+func TestMergeSpec(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -304,7 +304,7 @@ func TestMergePreset(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.want(t, MergePreset(tt.spec, fullPreset()))
+			tt.want(t, MergeSpec(tt.spec, fullPreset(), nil))
 		})
 	}
 }
@@ -336,15 +336,15 @@ func TestMergeEnvKeepsEachNameOnce(t *testing.T) {
 	)
 }
 
-func TestMergePresetNilPresetReturnsSpecUnchanged(t *testing.T) {
+func TestMergeSpecNilPresetReturnsSpecUnchanged(t *testing.T) {
 	t.Parallel()
 
 	spec := v1.CamundaClusterSpec{Version: "8.9.1", StorageRef: "storage"}
 
-	assert.Equal(t, spec, MergePreset(spec, nil))
+	assert.Equal(t, spec, MergeSpec(spec, nil, nil))
 }
 
-func TestMergePresetSharesNoMemoryWithSpecOrPreset(t *testing.T) {
+func TestMergeSpecSharesNoMemoryWithSpecOrPreset(t *testing.T) {
 	t.Parallel()
 
 	preset := fullPreset()
@@ -352,7 +352,7 @@ func TestMergePresetSharesNoMemoryWithSpecOrPreset(t *testing.T) {
 		Tasklist:       &v1.WebAppSpec{WorkloadSpec: v1.WorkloadSpec{PodLabels: map[string]string{"own": "cluster"}}},
 		ServiceAccount: &v1.ServiceAccountSpec{Annotations: map[string]string{"a": "b"}},
 	}
-	merged := MergePreset(spec, preset)
+	merged := MergeSpec(spec, preset, nil)
 
 	const changed = "changed"
 	merged.PodLabels["team"] = changed
@@ -366,11 +366,11 @@ func TestMergePresetSharesNoMemoryWithSpecOrPreset(t *testing.T) {
 	assert.Equal(t, "b", spec.ServiceAccount.Annotations["a"])
 }
 
-func TestMergePresetNilPresetSharesNoMemoryWithSpec(t *testing.T) {
+func TestMergeSpecNilPresetSharesNoMemoryWithSpec(t *testing.T) {
 	t.Parallel()
 
 	spec := v1.CamundaClusterSpec{PodLabels: map[string]string{"own": "cluster"}}
-	merged := MergePreset(spec, nil)
+	merged := MergeSpec(spec, nil, nil)
 
 	merged.PodLabels["own"] = "changed"
 
@@ -463,7 +463,7 @@ func TestValidateMergedJoinsEveryProblem(t *testing.T) {
 
 // The admin block never merges per field: a cluster that sets it replaces the
 // block of the preset entirely, so one manifest names every administrator.
-func TestMergePresetAdminBlockReplacesWholesale(t *testing.T) {
+func TestMergeSpecAdminBlockReplacesWholesale(t *testing.T) {
 	t.Parallel()
 
 	preset := &v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{
@@ -476,15 +476,15 @@ func TestMergePresetAdminBlockReplacesWholesale(t *testing.T) {
 		},
 	}}
 
-	inherited := MergePreset(v1.CamundaClusterSpec{}, preset)
+	inherited := MergeSpec(v1.CamundaClusterSpec{}, preset, nil)
 	require.NotNil(t, inherited.Auth)
 	require.NotNil(t, inherited.Auth.Admin)
 	assert.Equal(t, []string{"platform-ops@example.com"}, inherited.Auth.Admin.Users)
 	assert.Equal(t, []string{"platform-ops"}, inherited.Auth.Admin.Clients)
 
-	replaced := MergePreset(v1.CamundaClusterSpec{
+	replaced := MergeSpec(v1.CamundaClusterSpec{
 		Auth: &v1.ClusterAuthSpec{Admin: &v1.ClusterAdminSpec{Users: []string{"team-a@example.com"}}},
-	}, preset)
+	}, preset, nil)
 	require.NotNil(t, replaced.Auth.Admin)
 	assert.Equal(t, []string{"team-a@example.com"}, replaced.Auth.Admin.Users)
 	assert.Empty(t, replaced.Auth.Admin.Clients, "the clients of the preset do not survive a cluster block")
@@ -494,7 +494,7 @@ func TestMergePresetAdminBlockReplacesWholesale(t *testing.T) {
 // The basic block never merges per field: a cluster that sets it replaces
 // the block of the preset entirely. A preset block still applies to every
 // cluster that sets none, so a fleet can rotate on one preset change.
-func TestMergePresetBasicBlockReplacesWholesale(t *testing.T) {
+func TestMergeSpecBasicBlockReplacesWholesale(t *testing.T) {
 	t.Parallel()
 
 	preset := &v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{
@@ -504,14 +504,14 @@ func TestMergePresetBasicBlockReplacesWholesale(t *testing.T) {
 		},
 	}}
 
-	inherited := MergePreset(v1.CamundaClusterSpec{}, preset)
+	inherited := MergeSpec(v1.CamundaClusterSpec{}, preset, nil)
 	require.NotNil(t, inherited.Auth)
 	require.NotNil(t, inherited.Auth.Basic)
 	assert.Equal(t, "fleet-2026-08", inherited.Auth.Basic.PasswordRotation)
 
-	replaced := MergePreset(v1.CamundaClusterSpec{
+	replaced := MergeSpec(v1.CamundaClusterSpec{
 		Auth: &v1.ClusterAuthSpec{Basic: &v1.BasicAuthSpec{PasswordRotation: "mine"}},
-	}, preset)
+	}, preset, nil)
 	require.NotNil(t, replaced.Auth.Basic)
 	assert.Equal(t, "mine", replaced.Auth.Basic.PasswordRotation)
 	assert.Equal(t, "preset-client", replaced.Auth.ClientID, "the other auth fields still merge per field")

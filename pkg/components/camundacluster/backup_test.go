@@ -300,7 +300,7 @@ func rdbmsBackupInput(t *testing.T, backup *v1.ClusterBackupSpec) Input {
 			},
 		}
 		in.Cluster.Spec.Backup = backup
-		in.Effective = NewEffective(MergePreset(in.Cluster.Spec, nil))
+		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, nil, nil))
 	})
 }
 
@@ -474,7 +474,7 @@ func TestServiceAccountNameIsOverridable(t *testing.T) {
 
 	in := newInput(t, func(in *Input) {
 		in.Cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "camunda-prod"}
-		in.Effective = NewEffective(MergePreset(in.Cluster.Spec, nil))
+		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, nil, nil))
 	})
 
 	assert.Equal(t, "camunda-prod", ServiceAccountName(in.Cluster, in.Effective))
@@ -496,7 +496,7 @@ func TestForeignServiceAccountIsReferencedNotRendered(t *testing.T) {
 			Name:   "platform-sa",
 			Create: new(false),
 		}
-		in.Effective = NewEffective(MergePreset(in.Cluster.Spec, nil))
+		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, nil, nil))
 	})
 
 	assert.True(t, usesServiceAccount(in))
@@ -516,7 +516,7 @@ func TestUserAnnotationsWinOverTheDerivedOne(t *testing.T) {
 		in.Cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{
 			Annotations: map[string]string{v1.IRSARoleARNAnnotation: "arn:explicit", "extra": "kept"},
 		}
-		in.Effective = NewEffective(MergePreset(in.Cluster.Spec, nil))
+		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, nil, nil))
 	})
 
 	annotations := serviceAccountFor(in).Annotations

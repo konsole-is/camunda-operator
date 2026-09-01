@@ -850,7 +850,7 @@ var _ = Describe("CamundaCluster controller", func() {
 		Eventually(func(g Gomega) {
 			var latest v1.CamundaPlatformConfig
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cfg), &latest)).To(Succeed())
-			latest.Spec.ImageRegistry = "registry.example.com"
+			latest.Spec.Images = &v1.ImagesSpec{Camunda: "registry.example.com/camunda/camunda"}
 			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 		hash = configHash(cluster, hash)

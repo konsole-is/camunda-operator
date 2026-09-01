@@ -56,7 +56,7 @@ func TestConfigHashStableAndSensitive(t *testing.T) {
 
 	envFrom := fixtureDefault(t)
 	envFrom.Cluster.Spec.ExtraEnvFrom = nil
-	envFrom.Effective = NewEffective(MergePreset(envFrom.Cluster.Spec, mediumPreset()))
+	envFrom.Effective = NewEffective(MergeSpec(envFrom.Cluster.Spec, mediumPreset(), nil))
 	assert.NotEqual(t, base, hash(envFrom), "an envFrom change rolls the pods")
 }
 

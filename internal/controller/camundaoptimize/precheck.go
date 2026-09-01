@@ -147,7 +147,7 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	out.ClusterUID = cluster.UID
 	// The Optimize workloads follow the suspension of the cluster they attach
 	// to, by spec.suspend or by the storage claim. spec.suspend is the
-	// cluster's own field: MergePreset carries it through unchanged, so no
+	// cluster's own field: MergeSpec carries it through unchanged, so no
 	// preset can set it.
 	out.Input.Suspended = cluster.Suspended()
 
@@ -235,7 +235,7 @@ func (res *resolver) resolveEffective(
 		preset = &obj.Spec
 	}
 
-	merged := clustercomponents.MergePreset(cluster.Spec, preset)
+	merged := clustercomponents.MergeSpec(cluster.Spec, preset, nil)
 	// The rules that admission cannot enforce, because a preset can supply the
 	// values, are checked by the cluster controller and not by the API server.
 	// A cluster below the version floor is therefore accepted by the API server

@@ -83,31 +83,21 @@ var hubRepositories = map[Image]string{
 }
 
 // Resolve returns the reference of img at version: the repository that
-// spec.images renames it to, or the spec.imageRegistry prefix in front of the
-// default repository, or the default repository. A rename wins over the
-// registry prefix. p can be nil, which resolves the default repository. A
-// default repository can change with the version, so a caller that resolves
-// one image for two versions can get two repositories.
+// spec.images renames it to, or the default repository, with version as the
+// tag. p can be nil, which resolves the default repository. A default
+// repository can change with the version, so a caller that resolves one image
+// for two versions can get two repositories.
 func Resolve(p *v1.CamundaPlatformConfigSpec, img Image, version string) string {
 	tag := version
 	if img == Keycloak {
 		tag = keycloakTagPrefix + version
 	}
 
-	// A mirror that keeps its own path cannot be reached by a prefix, so a
-	// rename replaces the registry prefix instead of stacking with it.
 	if repo := strings.TrimRight(override(p, img), "/"); repo != "" {
 		return repo + ":" + tag
 	}
 
-	repo := defaultRepository(img, version)
-	if p != nil {
-		if registry := strings.TrimRight(p.ImageRegistry, "/"); registry != "" {
-			return registry + "/" + repo + ":" + tag
-		}
-	}
-
-	return repo + ":" + tag
+	return defaultRepository(img, version) + ":" + tag
 }
 
 // override returns the repository that spec.images renames img to, or empty

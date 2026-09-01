@@ -71,7 +71,7 @@ type resolver struct {
 }
 
 // preCheck resolves every reference of cluster into the render input, in the
-// documented order: the preset and the merged spec, the platform config and
+// documented order: the preset, the release and the merged spec, the platform config and
 // its Secrets, the storage binding and its chain, the claim on the binding,
 // the object storage references. Every Secret is checked for its keys through
 // the uncached reader. A Secret outside the cluster namespace is copied into
@@ -117,9 +117,10 @@ func (r *CamundaClusterReconciler) preCheck(
 	return in, res.mirrors, nil
 }
 
-// resolveEffective reads the preset that spec.presetRef names, merges it
-// under the cluster spec, validates the result, and sets in.Effective. An
-// invalid merged spec maps to InvalidReference with the fields named.
+// resolveEffective reads the preset that spec.presetRef names and the
+// release that spec.releaseRef names, merges them under the cluster spec,
+// validates the result, and sets in.Effective and in.Images. An invalid
+// merged spec maps to InvalidReference with the fields named.
 func (res *resolver) resolveEffective(ctx context.Context, in *components.Input) error {
 	var preset *v1.CamundaClusterPresetSpec
 	if res.cluster.Spec.PresetRef != "" {
@@ -143,7 +144,17 @@ func (res *resolver) resolveEffective(ctx context.Context, in *components.Input)
 		preset = &obj.Spec
 	}
 
-	merged := components.MergePreset(res.cluster.Spec, preset)
+	var release *v1.CamundaReleaseSpec
+	if res.cluster.Spec.ReleaseRef != "" {
+		var obj v1.CamundaRelease
+		if err := res.get(ctx, client.ObjectKey{Name: res.cluster.Spec.ReleaseRef}, &obj); err != nil {
+			return err
+		}
+		release = &obj.Spec
+		in.Images = obj.Spec.Images
+	}
+
+	merged := components.MergeSpec(res.cluster.Spec, preset, release)
 	if err := components.ValidateMerged(merged); err != nil {
 		return &conditions.PreCheckFailure{
 			Reason:  v1.ReasonInvalidReference,

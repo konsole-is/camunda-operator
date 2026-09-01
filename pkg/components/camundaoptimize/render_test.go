@@ -184,7 +184,9 @@ func TestImageUsesRegistryPrefix(t *testing.T) {
 	assert.Equal(t, "registry.example.com/mirror/camunda/optimize:8.9.4", Image(fixtureRealistic(t)))
 
 	trailing := newInput(t, func(in *Input) {
-		in.Platform = v1.CamundaPlatformConfigSpec{ImageRegistry: "registry.example.com/"}
+		in.Platform = v1.CamundaPlatformConfigSpec{
+			Images: &v1.ImagesSpec{Optimize: "registry.example.com/camunda/optimize/"},
+		}
 	})
 	assert.Equal(t, "registry.example.com/camunda/optimize:8.9.4", Image(trailing))
 }
