@@ -35,6 +35,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/serviceaccount"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
@@ -218,13 +219,16 @@ func RepositoryName(cluster *v1.ElasticsearchCluster) string {
 
 // RepositoryBasePath returns the base path that the snapshot repository named
 // repository holds in the bucket whose base path is bucketPath, and reports
-// whether repository is a name that RepositoryName produced. A name that
-// somebody registered by hand answers false: it names a prefix that only its
+// whether repository can be a name that RepositoryName produced: a namespace
+// and a cluster name that Kubernetes itself accepts. A name that cannot be
+// one answers false. Such a name holds a prefix that only its own
 // registration knows, so a caller must read that registration instead of
 // writing one of its own.
 func RepositoryBasePath(bucketPath, repository string) (string, bool) {
 	namespace, name, found := strings.Cut(repository, repositorySeparator)
-	if !found || namespace == "" || name == "" {
+	if !found ||
+		len(validation.IsDNS1123Label(namespace)) > 0 ||
+		len(validation.IsDNS1123Subdomain(name)) > 0 {
 		return "", false
 	}
 

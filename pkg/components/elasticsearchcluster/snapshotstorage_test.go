@@ -241,8 +241,9 @@ func TestRepositoryNameReadsBackAsTheBasePathOfItsRegistration(t *testing.T) {
 
 // A namespace is a DNS-1123 label and holds no dot, so the first dot of a
 // repository name always splits it where RepositoryName joined it, even for a
-// cluster whose own name holds one. A name without a dot is one that somebody
-// registered by hand, and only that registration knows its prefix.
+// cluster whose own name holds one. A name whose halves are not a namespace
+// and a cluster name is one that somebody registered by hand, and only that
+// registration knows its prefix.
 func TestRepositoryBasePathReadsOnlyTheNamesThisOperatorRegisters(t *testing.T) {
 	t.Parallel()
 
@@ -254,7 +255,17 @@ func TestRepositoryBasePathReadsOnlyTheNamesThisOperatorRegisters(t *testing.T) 
 	assert.True(t, ok)
 	assert.Equal(t, "clusters/my-ns/my.cluster", path)
 
-	for _, name := range []string{"my-cluster", "", ".my-cluster", "my-ns."} {
+	handChosen := []string{
+		"my-cluster",
+		"",
+		".my-cluster",
+		"my-ns.",
+		"My-Ns.my-cluster",
+		"my_ns.my-cluster",
+		"my-ns.my_cluster",
+		"-my-ns.my-cluster",
+	}
+	for _, name := range handChosen {
 		_, ok := RepositoryBasePath("clusters", name)
 		assert.False(t, ok, name)
 	}
