@@ -31,7 +31,6 @@ import (
 // the overlay tests can prove per-field inheritance and override.
 func fullPreset() *v1.CamundaClusterPresetSpec {
 	return &v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{
-		Version: "8.9.0",
 		Auth: &v1.ClusterAuthSpec{
 			ClientID:        "preset-client",
 			Audience:        "preset-audience",
@@ -72,8 +71,35 @@ func fullPreset() *v1.CamundaClusterPresetSpec {
 			WorkloadSpec: v1.WorkloadSpec{Replicas: new(int32(2))},
 		},
 		Operate:    &v1.WebAppSpec{Mode: v1.ComponentModeStandalone},
-		Connectors: &v1.ConnectorsSpec{Enabled: new(true), Version: "8.9.7"},
+		Connectors: &v1.ConnectorsSpec{Enabled: new(true)},
 	}}
+}
+
+// fullRelease returns a release with every field represented, so the layer
+// tests can prove where each one lands.
+func fullRelease() *v1.CamundaReleaseSpec {
+	return &v1.CamundaReleaseSpec{
+		Version: "8.9.4",
+		Connectors: &v1.ReleaseConnectorsSpec{
+			Version: "8.9.7",
+			ReleaseEnvSpec: v1.ReleaseEnvSpec{
+				ExtraEnv: []corev1.EnvVar{{Name: "CONNECTORS_LOG_LEVEL", Value: "DEBUG"}},
+			},
+		},
+		Images: &v1.ReleaseImagesSpec{Camunda: "mirror.example.com/camunda@sha256:abc"},
+		ExtraEnv: []corev1.EnvVar{
+			{Name: "KEEP", Value: "release"},
+			{Name: "RELEASE_ONLY", Value: "release"},
+		},
+		ExtraEnvFrom: []corev1.EnvFromSource{{
+			ConfigMapRef: &corev1.ConfigMapEnvSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "release-cm"},
+			},
+		}},
+		Zeebe: &v1.ReleaseEnvSpec{
+			ExtraEnv: []corev1.EnvVar{{Name: "JAVA_OPTS", Value: "-Xmx8g"}},
+		},
+	}
 }
 
 func TestMergeSpec(t *testing.T) {
@@ -84,16 +110,6 @@ func TestMergeSpec(t *testing.T) {
 		spec v1.CamundaClusterSpec
 		want func(t *testing.T, got v1.CamundaClusterSpec)
 	}{
-		{
-			"scalar override: version",
-			v1.CamundaClusterSpec{Version: "8.9.1"},
-			func(t *testing.T, got v1.CamundaClusterSpec) { assert.Equal(t, "8.9.1", got.Version) },
-		},
-		{
-			"scalar inherit: version",
-			v1.CamundaClusterSpec{},
-			func(t *testing.T, got v1.CamundaClusterSpec) { assert.Equal(t, "8.9.0", got.Version) },
-		},
 		{
 			"auth fields override individually",
 			v1.CamundaClusterSpec{Auth: &v1.ClusterAuthSpec{ClientID: "mine"}},
@@ -263,12 +279,11 @@ func TestMergeSpec(t *testing.T) {
 			},
 		},
 		{
-			"connectors.enabled pointer override, version inherited",
+			"connectors.enabled pointer override",
 			v1.CamundaClusterSpec{Connectors: &v1.ConnectorsSpec{Enabled: new(false)}},
 			func(t *testing.T, got v1.CamundaClusterSpec) {
 				require.NotNil(t, got.Connectors)
 				assert.False(t, *got.Connectors.Enabled)
-				assert.Equal(t, "8.9.7", got.Connectors.Version)
 			},
 		},
 		{
@@ -276,6 +291,7 @@ func TestMergeSpec(t *testing.T) {
 			v1.CamundaClusterSpec{
 				PlatformConfigRef:  "pc",
 				PresetRef:          "medium",
+				ReleaseRef:         "camunda-8-9-4",
 				ExternalURL:        "https://example.com",
 				ServiceAccount:     &v1.ServiceAccountSpec{Annotations: map[string]string{"a": "b"}},
 				StorageRef:         "storage",
@@ -288,6 +304,7 @@ func TestMergeSpec(t *testing.T) {
 			func(t *testing.T, got v1.CamundaClusterSpec) {
 				assert.Equal(t, "pc", got.PlatformConfigRef)
 				assert.Equal(t, "medium", got.PresetRef)
+				assert.Equal(t, "camunda-8-9-4", got.ReleaseRef)
 				assert.Equal(t, "https://example.com", got.ExternalURL)
 				assert.Equal(t, map[string]string{"a": "b"}, got.ServiceAccount.Annotations)
 				assert.Equal(t, "storage", got.StorageRef)
@@ -307,6 +324,121 @@ func TestMergeSpec(t *testing.T) {
 			tt.want(t, MergeSpec(tt.spec, fullPreset(), nil))
 		})
 	}
+}
+
+func TestMergeSpecReleaseLayer(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		spec v1.CamundaClusterSpec
+		want func(t *testing.T, got v1.CamundaClusterSpec)
+	}{
+		{
+			"version comes from the release",
+			v1.CamundaClusterSpec{},
+			func(t *testing.T, got v1.CamundaClusterSpec) { assert.Equal(t, "8.9.4", got.Version) },
+		},
+		{
+			"cluster version wins over the release",
+			v1.CamundaClusterSpec{Version: "8.9.5"},
+			func(t *testing.T, got v1.CamundaClusterSpec) { assert.Equal(t, "8.9.5", got.Version) },
+		},
+		{
+			"connectors.version comes from the release, enabled from the preset",
+			v1.CamundaClusterSpec{},
+			func(t *testing.T, got v1.CamundaClusterSpec) {
+				require.NotNil(t, got.Connectors)
+				assert.Equal(t, "8.9.7", got.Connectors.Version)
+				assert.True(t, *got.Connectors.Enabled)
+			},
+		},
+		{
+			"extraEnv orders preset, release, cluster, later layers replace by name",
+			v1.CamundaClusterSpec{
+				ExtraEnv: []corev1.EnvVar{{Name: "RELEASE_ONLY", Value: "cluster"}},
+			},
+			func(t *testing.T, got v1.CamundaClusterSpec) {
+				assert.Equal(
+					t, []corev1.EnvVar{
+						{Name: "TZ", Value: "UTC"},
+						{Name: "KEEP", Value: "release"},
+						{Name: "RELEASE_ONLY", Value: "cluster"},
+					}, got.ExtraEnv,
+				)
+			},
+		},
+		{
+			"extraEnvFrom concatenates preset, release, cluster",
+			v1.CamundaClusterSpec{ExtraEnvFrom: []corev1.EnvFromSource{{
+				SecretRef: &corev1.SecretEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "cluster-secret"},
+				},
+			}}},
+			func(t *testing.T, got v1.CamundaClusterSpec) {
+				require.Len(t, got.ExtraEnvFrom, 3)
+				assert.Equal(t, "preset-cm", got.ExtraEnvFrom[0].ConfigMapRef.Name)
+				assert.Equal(t, "release-cm", got.ExtraEnvFrom[1].ConfigMapRef.Name)
+				assert.Equal(t, "cluster-secret", got.ExtraEnvFrom[2].SecretRef.Name)
+			},
+		},
+		{
+			"component extraEnv of the release merges into the preset block",
+			v1.CamundaClusterSpec{},
+			func(t *testing.T, got v1.CamundaClusterSpec) {
+				require.NotNil(t, got.Zeebe)
+				assert.Equal(t, []corev1.EnvVar{{Name: "JAVA_OPTS", Value: "-Xmx8g"}}, got.Zeebe.ExtraEnv)
+				assert.Equal(t, int32(3), *got.Zeebe.Replicas, "the sizing of the preset stays")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tt.want(t, MergeSpec(tt.spec, fullPreset(), fullRelease()))
+		})
+	}
+}
+
+// A release without a preset stands on its own, and a component block it
+// does not touch stays absent.
+func TestMergeSpecReleaseWithoutAPreset(t *testing.T) {
+	t.Parallel()
+
+	got := MergeSpec(v1.CamundaClusterSpec{StorageRef: "storage"}, nil, fullRelease())
+
+	assert.Equal(t, "8.9.4", got.Version)
+	assert.Equal(t, "8.9.7", got.Connectors.Version)
+	require.NotNil(t, got.Zeebe)
+	assert.Nil(t, got.Zeebe.Replicas)
+	assert.Nil(t, got.Gateway)
+	assert.Nil(t, got.Operate)
+	assert.Equal(t, "storage", got.StorageRef)
+}
+
+// The images of a release do not merge into the spec: they change only what
+// is pulled, through Input.Images, never which version the operator renders.
+func TestMergeSpecReleaseImagesStayOutOfTheSpec(t *testing.T) {
+	t.Parallel()
+
+	got := MergeSpec(v1.CamundaClusterSpec{}, nil, fullRelease())
+
+	assert.Equal(t, "8.9.4", got.Version)
+}
+
+func TestMergeSpecSharesNoMemoryWithTheRelease(t *testing.T) {
+	t.Parallel()
+
+	release := fullRelease()
+	got := MergeSpec(v1.CamundaClusterSpec{}, nil, release)
+
+	got.ExtraEnv[0].Value = "changed"
+	got.Zeebe.ExtraEnv[0].Value = "changed"
+
+	assert.Equal(t, "release", release.ExtraEnv[0].Value)
+	assert.Equal(t, "-Xmx8g", release.Zeebe.ExtraEnv[0].Value)
 }
 
 // mergeEnv is a pure function and states its own contract, so it holds that
@@ -395,7 +527,7 @@ func TestValidateMerged(t *testing.T) {
 		wantErr string
 	}{
 		{"valid spec", valid, ""},
-		{"missing version", v1.CamundaClusterSpec{}, "missing required fields after preset merge: version"},
+		{"missing version", v1.CamundaClusterSpec{}, "missing required fields after the preset and release merge: version"},
 		{
 			"version below floor",
 			v1.CamundaClusterSpec{Version: "8.8.0"},
@@ -454,7 +586,7 @@ func TestValidateMergedJoinsEveryProblem(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(
 		t,
-		"missing required fields after preset merge: version; "+
+		"missing required fields after the preset and release merge: version; "+
 			"zeebe.replicationFactor 3 exceeds zeebe.replicas 1; "+
 			"connectors.version is required when connectors are enabled",
 		err.Error(),

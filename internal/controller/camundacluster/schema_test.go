@@ -130,7 +130,6 @@ func minimalPreset() *v1.CamundaClusterPreset {
 	return &v1.CamundaClusterPreset{
 		ObjectMeta: metav1.ObjectMeta{Name: "ccp-" + utilrand.String(8)},
 		Spec: v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{
-			Version: "8.9.0",
 			Zeebe: &v1.ZeebeSpec{
 				WorkloadSpec:      v1.WorkloadSpec{Replicas: new(int32(1))},
 				Partitions:        new(int32(1)),
@@ -146,7 +145,6 @@ func minimalPreset() *v1.CamundaClusterPreset {
 func realisticPreset() *v1.CamundaClusterPreset {
 	preset := minimalPreset()
 	preset.Spec.Cluster = v1.CamundaClusterSpec{
-		Version:        "8.9.0",
 		PodLabels:      map[string]string{"company.com/team": "automation-ops"},
 		PodAnnotations: map[string]string{"company.com/cluster-preset": "medium"},
 		Zeebe: &v1.ZeebeSpec{
@@ -186,7 +184,6 @@ func realisticPreset() *v1.CamundaClusterPreset {
 		Admin:    &v1.WebAppSpec{Mode: v1.ComponentModeEmbedded},
 		Connectors: &v1.ConnectorsSpec{
 			Enabled: new(true),
-			Version: "8.9.7",
 			WorkloadSpec: v1.WorkloadSpec{
 				Replicas: new(int32(1)),
 				Resources: &corev1.ResourceRequirements{
@@ -432,6 +429,75 @@ var _ = Describe("CamundaCluster schema", func() {
 	})
 })
 
+// minimalRelease returns the minimal example of the release doc with a
+// unique name.
+func minimalRelease(version string) *v1.CamundaRelease {
+	return &v1.CamundaRelease{
+		ObjectMeta: metav1.ObjectMeta{Name: "cr-" + utilrand.String(8)},
+		Spec:       v1.CamundaReleaseSpec{Version: version},
+	}
+}
+
+var _ = Describe("CamundaRelease schema", func() {
+	DescribeTable(
+		"admission",
+		func(mutate func(*v1.CamundaRelease), wantErr string) {
+			obj := minimalRelease("8.9.4")
+			mutate(obj)
+			err := k8sClient.Create(ctx, obj)
+			if wantErr == "" {
+				Expect(err).NotTo(HaveOccurred())
+				DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+			} else {
+				Expect(err).To(MatchError(ContainSubstring(wantErr)))
+			}
+		},
+		Entry("accepts the minimal doc example", func(*v1.CamundaRelease) {}, ""),
+		Entry(
+			"accepts pinned images, per-component env, and a connectors version",
+			func(o *v1.CamundaRelease) {
+				o.Spec.Connectors = &v1.ReleaseConnectorsSpec{Version: "8.9.7"}
+				o.Spec.Images = &v1.ReleaseImagesSpec{
+					Camunda: "mirror.example.com/camunda/camunda@sha256:" +
+						"7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730",
+				}
+				o.Spec.Zeebe = &v1.ReleaseEnvSpec{
+					ExtraEnv: []corev1.EnvVar{{Name: "JAVA_OPTS", Value: "-Xmx8g"}},
+				}
+			},
+			"",
+		),
+		Entry(
+			"rejects a missing version",
+			func(o *v1.CamundaRelease) { o.Spec.Version = "" },
+			"spec.version",
+		),
+		Entry(
+			"rejects a version that is not x.y.z",
+			func(o *v1.CamundaRelease) { o.Spec.Version = "8.9" },
+			"spec.version",
+		),
+		Entry(
+			"rejects a connectors version that is not x.y.z",
+			func(o *v1.CamundaRelease) {
+				o.Spec.Connectors = &v1.ReleaseConnectorsSpec{Version: "latest"}
+			},
+			"spec.connectors.version",
+		),
+		Entry(
+			"rejects an extraEnv entry with value and valueFrom",
+			func(o *v1.CamundaRelease) {
+				o.Spec.ExtraEnv = []corev1.EnvVar{{
+					Name:      "BOTH",
+					Value:     "x",
+					ValueFrom: &corev1.EnvVarSource{},
+				}}
+			},
+			"value or valueFrom",
+		),
+	)
+})
+
 var _ = Describe("CamundaClusterPreset schema", func() {
 	const instanceBound = "instance-bound fields"
 
@@ -494,7 +560,31 @@ var _ = Describe("CamundaClusterPreset schema", func() {
 			minimalPreset, func(o *v1.CamundaClusterPreset) { o.Spec.Cluster.ExternalURL = "https://example.com" },
 			instanceBound,
 		),
+		Entry(
+			"rejects a releaseRef",
+			minimalPreset, func(o *v1.CamundaClusterPreset) { o.Spec.Cluster.ReleaseRef = "camunda-8-9-4" },
+			instanceBound,
+		),
+		Entry(
+			"rejects a version",
+			minimalPreset, func(o *v1.CamundaClusterPreset) { o.Spec.Cluster.Version = "8.9.0" },
+			"belong to a CamundaRelease",
+		),
+		Entry(
+			"rejects a connectors.version",
+			minimalPreset, func(o *v1.CamundaClusterPreset) {
+				o.Spec.Cluster.Connectors = &v1.ConnectorsSpec{Version: "8.9.7"}
+			},
+			"belong to a CamundaRelease",
+		),
 	)
+
+	It("accepts a connectors block without a version", func() {
+		obj := minimalPreset()
+		obj.Spec.Cluster.Connectors = &v1.ConnectorsSpec{Enabled: new(true)}
+		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+	})
 
 	It("does not bind the transition rules of the cluster to a preset", func() {
 		obj := realisticPreset()

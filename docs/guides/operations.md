@@ -311,7 +311,7 @@ A changed value rotates once. The operator generates a new password, sets it on 
 
 ## Change configuration and referenced Secrets
 
-You do not edit the cluster to roll a configuration change. A change to the `CamundaPlatformConfig`, the `CamundaClusterPreset`, the `SecondaryStorageConfig` and its `DatabaseConfig` or `DatabaseServerConfig`, an `ObjectStorageConfig`, or any referenced Secret reaches the pods on its own. The pod templates carry the annotation `camunda.io/config-hash`, and a new hash rolls the pods.
+You do not edit the cluster to roll a configuration change. A change to the `CamundaPlatformConfig`, the `CamundaClusterPreset`, the `CamundaRelease`, the `SecondaryStorageConfig` and its `DatabaseConfig` or `DatabaseServerConfig`, an `ObjectStorageConfig`, or any referenced Secret reaches the pods on its own. The pod templates carry the annotation `camunda.io/config-hash`, and a new hash rolls the pods.
 
 The [CamundaPlatformConfig](../crds/camundaplatformconfig.md) is cluster-scoped, so the Secrets it names are copied into the namespace of the cluster as `<name>-camunda-<purpose>`, for example `my-cluster-camunda-license` or `my-cluster-camunda-oidc-client`. The pods read the copy. When the source Secret changes, the copy follows, and the pods roll. `MirroredSecretsReady` reports the copies. Every other Secret a cluster reads already lives in its namespace.
 

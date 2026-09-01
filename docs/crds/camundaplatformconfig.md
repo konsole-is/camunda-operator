@@ -2,7 +2,7 @@
 
 `CamundaPlatformConfig` is a cluster-scoped resource that holds the settings every orchestration cluster of an environment shares. You create it, or another tool creates it for you.
 
-The settings that are the same for every orchestration cluster live here: how users and clients authenticate (basic or OIDC), the Camunda license, and the registry that images are pulled from. You create one per environment. Each [CamundaCluster](camundacluster.md) references it by name through `platformConfigRef`, so you define the settings once. A [CamundaManagementCluster](camundamanagementcluster.md) references it the same way.
+The settings that are the same for every orchestration cluster live here: how users and clients authenticate (basic or OIDC), the Camunda license, and the repositories that images are pulled from. You create one per environment. Each [CamundaCluster](camundacluster.md) references it by name through `platformConfigRef`, so you define the settings once. A [CamundaManagementCluster](camundamanagementcluster.md) references it the same way.
 
 The OIDC fields follow the OIDC discovery vocabulary. They work with Keycloak, Auth0, Entra ID, Okta, or any other OIDC-compliant identity provider.
 
@@ -104,21 +104,7 @@ A `CamundaManagementCluster` that finds no client for a component it deploys rep
 
 ## Images
 
-`spec.imageRegistry` puts a prefix in front of every Camunda repository, for a mirror that keeps the upstream paths:
-
-```yaml
-apiVersion: core.camunda.io/v1
-kind: CamundaPlatformConfig
-metadata:
-  name: my-platform-config
-spec:
-  imageRegistry: "registry.example.com"
-  # ... the rest of your platform config
-```
-
-An orchestration cluster of version `8.9.9` then pulls `registry.example.com/camunda/camunda:8.9.9`.
-
-`spec.images` renames one image, for a mirror that keeps a path of its own:
+`spec.images` renames the images that the operator pulls, one entry per image. Use it for a mirror:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -127,17 +113,21 @@ metadata:
   name: my-platform-config
 spec:
   images:
-    optimize: "mirror.example.com/team/optimize"
+    optimize: "mirror.example.com/camunda/optimize"
   # ... the rest of your platform config
 ```
 
-Three rules govern both fields:
+An Optimize instance of version `8.9.9` then pulls `mirror.example.com/camunda/optimize:8.9.9`.
 
-- A value is a repository only. It carries no tag and no digest. The tag always comes from the `version` field of the resource that runs the image.
-- A rename replaces both the default repository and the `imageRegistry` prefix for that image. The two never stack.
-- An image that `spec.images` does not name keeps its default repository, with the `imageRegistry` prefix in front of it.
+Three rules govern the field:
 
-A `spec.images` value that names a registry with a port needs a path after the port, as in `registry:5000/camunda/optimize`. The tag goes on the end of the value, so the bare `registry:5000` becomes the image `registry:5000:8.9.9`, which no runtime accepts. `imageRegistry` takes a bare host with a port, because the default repository follows it.
+- A value is a full repository, registry included. It carries no tag and no digest. The tag always comes from the `version` field of the resource that runs the image.
+- An image that `spec.images` does not name keeps its default repository.
+- A mirror is one entry per image that you rename.
+
+A value that names a registry with a port needs a path after the port, as in `registry:5000/camunda/optimize`. The tag goes on the end of the value, so the bare `registry:5000` becomes the image `registry:5000:8.9.9`, which no runtime accepts.
+
+To pin one exact reference, digest or patched tag included, for the clusters of one rollout, use `spec.images` on a [CamundaRelease](camundarelease.md) instead.
 
 The tag of the Keycloak image is `quay-optimized-<version>`, not the bare version. Camunda publishes its Keycloak build under that tag, as [Keycloak deployment](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/#keycloak-deployment) states.
 
@@ -246,9 +236,7 @@ spec:
     namespace: "camunda-system"
     # string. Required. Key in the Secret.
     key: "license-key"
-  # string. Optional, default: the upstream Camunda registry. Registry prefix of every Camunda image, for example registry.example.com/camunda/camunda:8.9.9.
-  imageRegistry: "registry.example.com"
-  # object. Optional. Renames one image. The value is a repository without a tag or a digest, and it replaces both the default repository and the imageRegistry prefix for that image. The tag always comes from the version field of the resource that runs the image.
+  # object. Optional. Renames one image. The value is a full repository with its registry and no tag or digest. The tag always comes from the version field of the resource that runs the image.
   # A registry with a port needs a path after it, as in registry:5000/camunda/optimize.
   images:
     # string. Optional, default: camunda/camunda. The orchestration cluster processes.
@@ -301,7 +289,9 @@ spec:
     name: "camunda-license"
     namespace: "camunda-system"
     key: "license-key"
-  imageRegistry: "registry.example.com"
+  images:
+    camunda: "registry.example.com/camunda/camunda"
+    optimize: "registry.example.com/camunda/optimize"
 ```
 
 ## Related

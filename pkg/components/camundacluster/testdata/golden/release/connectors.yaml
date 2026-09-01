@@ -8,7 +8,7 @@ metadata:
   name: my-cluster-connectors
   namespace: my-cluster-ns
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       camunda.io/cluster: my-cluster
@@ -18,13 +18,12 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: e2bd1e09fdaf68cd
+        camunda.io/config-hash: 2751ef9e76226d61
         company.com/cluster-preset: medium
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: connectors
         company.com/team: automation-ops
-        team: platform
     spec:
       containers:
       - env:
@@ -43,17 +42,9 @@ spec:
             secretKeyRef:
               key: password
               name: my-cluster-camunda-admin
-        - name: CAMUNDA_LICENSE_KEY
-          valueFrom:
-            secretKeyRef:
-              key: key
-              name: camunda-license
         - name: TZ
           value: UTC
-        envFrom:
-        - configMapRef:
-            name: overrides
-        image: 'registry.example.com/camunda/connectors-bundle:'
+        image: mirror.example.com/camunda/connectors-bundle:8.9.7-patched
         name: connectors
         ports:
         - containerPort: 8080
@@ -76,7 +67,6 @@ spec:
         runAsGroup: 1001
         runAsNonRoot: true
         runAsUser: 1001
-      serviceAccountName: my-cluster-camunda
 ---
 apiVersion: v1
 kind: Service
@@ -98,23 +88,3 @@ spec:
     camunda.io/component: connectors
 status:
   loadBalancer: {}
----
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  labels:
-    app.kubernetes.io/managed-by: camunda-operator
-    camunda.io/cluster: my-cluster
-    camunda.io/component: connectors
-    release: prometheus
-  name: my-cluster-connectors
-  namespace: my-cluster-ns
-spec:
-  endpoints:
-  - path: /actuator/prometheus
-    port: http
-  namespaceSelector: {}
-  selector:
-    matchLabels:
-      camunda.io/cluster: my-cluster
-      camunda.io/component: connectors

@@ -1,52 +1,48 @@
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
-  annotations:
-    camunda.io/broker-version: 8.9.9
-    camunda.io/requested-storage-size: 10Gi
   labels:
     app.kubernetes.io/managed-by: camunda-operator
     camunda.io/cluster: my-cluster
-    camunda.io/component: zeebe
-  name: my-cluster-zeebe
+    camunda.io/component: gateway
+  name: my-cluster-gateway
   namespace: my-cluster-ns
 spec:
-  persistentVolumeClaimRetentionPolicy:
-    whenDeleted: Delete
-    whenScaled: Retain
-  podManagementPolicy: Parallel
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       camunda.io/cluster: my-cluster
-      camunda.io/component: zeebe
-  serviceName: my-cluster-zeebe
+      camunda.io/component: gateway
+  strategy:
+    type: RollingUpdate
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: dd77d39fcb394052
+        camunda.io/config-hash: 374514e9c924ad42
+        company.com/cluster-preset: medium
       labels:
         camunda.io/cluster: my-cluster
-        camunda.io/component: zeebe
+        camunda.io/component: gateway
+        company.com/team: automation-ops
     spec:
       containers:
-      - command:
-        - bash
-        - -c
-        - export CAMUNDA_CLUSTER_NODEID=${HOSTNAME##*-}; exec /usr/local/camunda/bin/camunda
-        env:
+      - env:
         - name: CAMUNDA_CLUSTER_NAME
           value: my-cluster
         - name: CAMUNDA_CLUSTER_SIZE
-          value: "1"
+          value: "3"
         - name: CAMUNDA_CLUSTER_PARTITIONCOUNT
-          value: "1"
+          value: "3"
         - name: CAMUNDA_CLUSTER_REPLICATIONFACTOR
-          value: "1"
+          value: "3"
         - name: CAMUNDA_CLUSTER_INITIALCONTACTPOINTS
-          value: my-cluster-zeebe-0.my-cluster-zeebe.my-cluster-ns.svc:26502
+          value: my-cluster-zeebe-0.my-cluster-zeebe.my-cluster-ns.svc:26502,my-cluster-zeebe-1.my-cluster-zeebe.my-cluster-ns.svc:26502,my-cluster-zeebe-2.my-cluster-zeebe.my-cluster-ns.svc:26502
         - name: CAMUNDA_API_GRPC_ADDRESS
           value: 0.0.0.0
+        - name: CAMUNDA_CLUSTER_GATEWAYID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         - name: CAMUNDA_DATA_SECONDARYSTORAGE_TYPE
           value: elasticsearch
         - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_URL
@@ -80,12 +76,12 @@ spec:
         - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_USERS_0
           value: admin
         - name: SPRING_PROFILES_ACTIVE
-          value: admin,broker,consolidated-auth,operate,tasklist
+          value: admin,consolidated-auth,gateway,operate,tasklist
         - name: JAVA_TOOL_OPTIONS
           value: -XX:+ExitOnOutOfMemoryError
-        - name: ZEEBE_BROKER_GATEWAY_ENABLE
-          value: "true"
-        image: camunda/camunda:8.9.9
+        - name: TZ
+          value: UTC
+        image: mirror.example.com/camunda/camunda@sha256:7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730
         livenessProbe:
           httpGet:
             path: /actuator/health/liveness
@@ -99,12 +95,6 @@ spec:
         - containerPort: 8080
           name: http
           protocol: TCP
-        - containerPort: 26501
-          name: command
-          protocol: TCP
-        - containerPort: 26502
-          name: internal
-          protocol: TCP
         - containerPort: 9600
           name: management
           protocol: TCP
@@ -113,39 +103,21 @@ spec:
             path: /actuator/health/readiness
             port: management
           periodSeconds: 10
-        resources: {}
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
         startupProbe:
           failureThreshold: 60
           httpGet:
             path: /actuator/health/startup
             port: management
           periodSeconds: 5
-        volumeMounts:
-        - mountPath: /usr/local/camunda/data
-          name: data
       securityContext:
         fsGroup: 1001
         runAsGroup: 1001
         runAsNonRoot: true
         runAsUser: 1001
-  updateStrategy:
-    type: RollingUpdate
-  volumeClaimTemplates:
-  - metadata:
-      labels:
-        camunda.io/cluster: my-cluster
-        camunda.io/component: zeebe
-      name: data
-    spec:
-      accessModes:
-      - ReadWriteOnce
-      resources:
-        requests:
-          storage: 10Gi
-    status: {}
-status:
-  availableReplicas: 0
-  replicas: 0
 ---
 apiVersion: v1
 kind: Service
@@ -153,11 +125,10 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: camunda-operator
     camunda.io/cluster: my-cluster
-    camunda.io/component: zeebe
-  name: my-cluster-zeebe
+    camunda.io/component: gateway
+  name: my-cluster-gateway
   namespace: my-cluster-ns
 spec:
-  clusterIP: None
   ports:
   - name: grpc
     port: 26500
@@ -167,21 +138,12 @@ spec:
     port: 8080
     protocol: TCP
     targetPort: http
-  - name: command
-    port: 26501
-    protocol: TCP
-    targetPort: command
-  - name: internal
-    port: 26502
-    protocol: TCP
-    targetPort: internal
   - name: management
     port: 9600
     protocol: TCP
     targetPort: management
-  publishNotReadyAddresses: true
   selector:
     camunda.io/cluster: my-cluster
-    camunda.io/component: zeebe
+    camunda.io/component: gateway
 status:
   loadBalancer: {}

@@ -4,6 +4,11 @@ metadata:
   labels:
     app.kubernetes.io/name: camunda-operator
     app.kubernetes.io/managed-by: kustomize
-  name: camundarelease-sample
+  name: camunda-8-9-0
 spec:
-  # TODO(user): Add fields here
+  version: "8.9.0"
+  connectors:
+    version: "8.9.7"
+  extraEnv:
+    - name: CAMUNDA_FEATURE_FLAG
+      value: "true"

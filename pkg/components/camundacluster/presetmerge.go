@@ -31,9 +31,9 @@ import (
 // The problem messages of ValidateMerged. Tests and docs quote them, so each
 // one exists exactly once.
 const (
-	// msgMissingFields names the fields that neither the cluster nor the
-	// preset provides.
-	msgMissingFields = "missing required fields after preset merge: %s"
+	// msgMissingFields names the fields that no layer of the merge
+	// provides.
+	msgMissingFields = "missing required fields after the preset and release merge: %s"
 	// msgVersionBelowFloor rejects a Camunda version below 8.9.0.
 	msgVersionBelowFloor = "version %s is below the supported floor %s"
 	// msgVersionNotThreeSegments rejects a version that is not x.y.z.

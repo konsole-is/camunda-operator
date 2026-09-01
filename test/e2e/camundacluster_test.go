@@ -53,6 +53,11 @@ const (
 	ccName          = "camunda"
 	ccPlatform      = "camunda-e2e"
 	ccRDBMSPlatform = "camunda-rdbms-e2e"
+	// ccRDBMSPreset and ccRDBMSRelease split the RDBMS cluster into the
+	// shape and the versions, so the flow proves the preset and release
+	// layering end to end.
+	ccRDBMSPreset  = "camunda-rdbms-e2e"
+	ccRDBMSRelease = "camunda-rdbms-e2e"
 	// ccStorageConfig is the SecondaryStorageConfig of the Elasticsearch
 	// flow, published by its ElasticsearchCluster.
 	ccStorageConfig = "camunda-storage"
@@ -68,6 +73,8 @@ const (
 
 	ccResource         = "camundaclusters.core.camunda.io"
 	ccPlatformResource = "camundaplatformconfigs.core.camunda.io"
+	ccPresetResource   = "camundaclusterpresets.core.camunda.io"
+	ccReleaseResource  = "camundareleases.core.camunda.io"
 
 	// ccReadyTimeout covers the pulls of the Camunda images (about 2 GB) and
 	// the broker and gateway startup on a fresh kind node.
@@ -536,7 +543,31 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, Label(utils.LabelCamundaClu
 			},
 		}
 		cluster = newCluster(ccRDBMSNamespace, ccRDBMSPlatform, ccRDBMSStorageConfig, backupStorage, false)
+		// The sizing of the cluster moves into a preset and the version into
+		// a release, so this flow runs the layered configuration that a
+		// fleet uses.
+		preset = &v1.CamundaClusterPreset{
+			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaClusterPreset"},
+			ObjectMeta: metav1.ObjectMeta{Name: ccRDBMSPreset},
+			Spec: v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{
+				Zeebe:   cluster.Spec.Zeebe,
+				Gateway: cluster.Spec.Gateway,
+			}},
+		}
+		release = &v1.CamundaRelease{
+			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaRelease"},
+			ObjectMeta: metav1.ObjectMeta{Name: ccRDBMSRelease},
+			Spec:       v1.CamundaReleaseSpec{Version: cluster.Spec.Version},
+		}
 	)
+
+	// The cluster names the preset and the release instead of carrying the
+	// sizing and the version inline.
+	cluster.Spec.PresetRef = preset.Name
+	cluster.Spec.ReleaseRef = release.Name
+	cluster.Spec.Version = ""
+	cluster.Spec.Zeebe = nil
+	cluster.Spec.Gateway = nil
 
 	BeforeAll(func() {
 		By("creating the test namespace")
@@ -561,8 +592,10 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, Label(utils.LabelCamundaClu
 			expectReady(g, sscResource, ccRDBMSStorageConfig, ccRDBMSNamespace, v1.ReasonHealthy)
 		}, 3*time.Minute).Should(Succeed())
 
-		By("creating the platform config")
+		By("creating the platform config, the preset, and the release")
 		Expect(apply(basicPlatform(ccRDBMSPlatform))).To(Succeed())
+		Expect(apply(preset)).To(Succeed())
+		Expect(apply(release)).To(Succeed())
 	})
 
 	AfterAll(func() {
@@ -591,6 +624,8 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, Label(utils.LabelCamundaClu
 			"delete", dbServerResource, ccRDBMSServer, "-n", ccRDBMSNamespace, "--ignore-not-found",
 		)
 		_, _ = utils.Kubectl("delete", ccPlatformResource, ccRDBMSPlatform, "--ignore-not-found")
+		_, _ = utils.Kubectl("delete", ccPresetResource, ccRDBMSPreset, "--ignore-not-found")
+		_, _ = utils.Kubectl("delete", ccReleaseResource, ccRDBMSRelease, "--ignore-not-found")
 		_, _ = utils.Kubectl("delete", "ns", ccRDBMSNamespace, "--wait=false")
 	})
 
