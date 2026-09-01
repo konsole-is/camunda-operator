@@ -91,20 +91,18 @@ var certManagerDeployments = []string{"cert-manager", "cert-manager-cainjector",
 // InstallCertManager installs the cert manager bundle and waits until every
 // one of its Deployments is Available, which can take time if cert-manager
 // was re-installed after uninstalling on a cluster.
-//
-// The webhook Deployment answers Available from a plain HTTP health check
-// that runs on a port separate from the one it admits requests on, so
-// Available does not mean the webhook can admit a Certificate yet. The
-// controller Deployment is what issues a Certificate once admitted, and the
-// cainjector Deployment is what writes the CA bundle the webhook config
-// needs before the API server trusts it. Waiting for all three closes the
-// gap that the webhook-only wait left open.
 func InstallCertManager() error {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
 	if _, err := Run(exec.Command("kubectl", "apply", "-f", url)); err != nil {
 		return err
 	}
 
+	// The webhook Deployment answers Available from a plain HTTP health check
+	// that runs on a port separate from the one it admits requests on, so
+	// Available does not mean the webhook can admit a Certificate yet. The
+	// controller Deployment is what issues a Certificate once admitted, and
+	// the cainjector Deployment is what writes the CA bundle the webhook
+	// config needs before the API server trusts it.
 	for _, deployment := range certManagerDeployments {
 		cmd := exec.Command(
 			"kubectl", "wait", "deployment.apps/"+deployment,

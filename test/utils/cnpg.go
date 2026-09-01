@@ -228,7 +228,7 @@ func applyManifest(url string) error {
 }
 
 // waitForRollout waits until the named Deployment of cnpgNamespace is rolled
-// out. On a timeout it dumps the diagnostics of the pods that selector
+// out. On a failure it dumps the diagnostics of the pods that selector
 // matches before it returns the error.
 func waitForRollout(deployment, selector string) error {
 	_, err := Run(exec.Command(
@@ -244,7 +244,7 @@ func waitForRollout(deployment, selector string) error {
 }
 
 // waitForCertificates waits until every named cert-manager Certificate of
-// cnpgNamespace carries condition=Ready. On a timeout it dumps the
+// cnpgNamespace carries condition=Ready. On a failure it dumps the
 // diagnostics of the pods that selector matches before it returns the error.
 func waitForCertificates(selector string, names ...string) error {
 	args := make([]string, 0, 7+len(names))
@@ -262,13 +262,19 @@ func waitForCertificates(selector string, names ...string) error {
 }
 
 // dumpInstallDiagnostics writes the pod descriptions of selector and the
-// events of cnpgNamespace to the Ginkgo writer, so a timed-out install
-// explains itself instead of leaving only the timeout message.
+// events of cnpgNamespace to the Ginkgo writer, so a failed install explains
+// itself instead of leaving only the error message.
 func dumpInstallDiagnostics(selector string) {
-	pods, _ := Run(exec.Command("kubectl", "describe", "pod", "-n", cnpgNamespace, "-l", selector))
+	pods, err := Run(exec.Command("kubectl", "describe", "pod", "-n", cnpgNamespace, "-l", selector))
+	if err != nil {
+		pods = err.Error()
+	}
 	_, _ = fmt.Fprintf(GinkgoWriter, "pods matching %q in %s:\n%s\n", selector, cnpgNamespace, pods)
 
-	events, _ := Run(exec.Command("kubectl", "get", "events", "-n", cnpgNamespace, "--sort-by=.lastTimestamp"))
+	events, err := Run(exec.Command("kubectl", "get", "events", "-n", cnpgNamespace, "--sort-by=.lastTimestamp"))
+	if err != nil {
+		events = err.Error()
+	}
 	_, _ = fmt.Fprintf(GinkgoWriter, "events in %s:\n%s\n", cnpgNamespace, events)
 }
 
