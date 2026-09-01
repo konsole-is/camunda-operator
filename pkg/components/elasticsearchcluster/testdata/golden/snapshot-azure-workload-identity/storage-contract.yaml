@@ -17,5 +17,5 @@ spec:
       passwordKey: password
       usernameKey: username
     endpoint: https://my-cluster-es-es-http.my-cluster-ns.svc:9200
-    snapshotRepository: my-cluster-es
+    snapshotRepository: my-cluster-ns.my-cluster-es
   type: elasticsearch

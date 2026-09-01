@@ -336,15 +336,17 @@ func TestForeignServiceAccountIsNamedButNotRendered(t *testing.T) {
 func TestPublishedRepositoryName(t *testing.T) {
 	t.Parallel()
 
-	cluster := &v1.ElasticsearchCluster{ObjectMeta: metav1.ObjectMeta{Name: "my-es"}}
+	cluster := &v1.ElasticsearchCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-es", Namespace: "my-ns"},
+	}
 	storage := &SnapshotStorage{Config: snapshotBucket(v1.S3StorageAuth{
 		Type: v1.ObjectStorageAuthTypeWorkloadIdentity,
 	})}
 
 	assert.Empty(t, publishedRepositoryName(cluster, storage, false, false), "not yet registered")
-	assert.Equal(t, "my-es", publishedRepositoryName(cluster, storage, true, false))
+	assert.Equal(t, "my-ns.my-es", publishedRepositoryName(cluster, storage, true, false))
 	assert.Equal(
-		t, "my-es", publishedRepositoryName(cluster, nil, true, true),
+		t, "my-ns.my-es", publishedRepositoryName(cluster, nil, true, true),
 		"suspension resolves no bucket but keeps the registered name",
 	)
 	assert.Empty(

@@ -24,6 +24,7 @@ package elasticsearchcluster
 
 import (
 	"maps"
+	"strings"
 
 	commonv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/common/v1"
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
@@ -38,6 +39,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/eckelasticsearch"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
@@ -80,6 +82,11 @@ const (
 	// rolesSecretSuffix appended to the CR name yields the name of the Secret
 	// that holds the definition of the Camunda role.
 	rolesSecretSuffix = "-es-roles"
+	// repositorySeparator joins the namespace and the name of a cluster into
+	// the name of its snapshot repository. A Kubernetes namespace is a
+	// DNS-1123 label and holds no dot, so the first dot of a repository name
+	// splits it back into the two parts that give the base path.
+	repositorySeparator = "."
 	// rolesFileKey is the key that ECK reads role definitions from.
 	rolesFileKey = "roles.yml"
 	// usernameKey is the key of the username in the user Secret.
@@ -196,10 +203,32 @@ func RolesSecretName(cluster *v1.ElasticsearchCluster) string {
 }
 
 // RepositoryName returns the name of the snapshot repository that the operator
-// registers for the cluster. Consumers read it from the snapshotRepository
-// field of the published SecondaryStorageConfig rather than deriving it.
+// registers for the cluster: "<namespace>.<name>". Consumers read it from the
+// snapshotRepository field of the published SecondaryStorageConfig rather than
+// deriving it.
+//
+// A snapshot repository is a name on one Elasticsearch server, and two
+// clusters of one name in two namespaces can reach one server, so the name
+// carries the namespace. RepositoryBasePath reads it back: a registration
+// under this name therefore carries one base path, whichever controller
+// writes it.
 func RepositoryName(cluster *v1.ElasticsearchCluster) string {
-	return cluster.Name
+	return cluster.Namespace + repositorySeparator + cluster.Name
+}
+
+// RepositoryBasePath returns the base path that the snapshot repository named
+// repository holds in the bucket whose base path is bucketPath, and reports
+// whether repository is a name that RepositoryName produced. A name that
+// somebody registered by hand answers false: it names a prefix that only its
+// registration knows, so a caller must read that registration instead of
+// writing one of its own.
+func RepositoryBasePath(bucketPath, repository string) (string, bool) {
+	namespace, name, found := strings.Cut(repository, repositorySeparator)
+	if !found || namespace == "" || name == "" {
+		return "", false
+	}
+
+	return logicalbackup.ClusterPrefix(bucketPath, namespace, name), true
 }
 
 // publishedRepositoryName returns the repository name to publish in the

@@ -47,7 +47,7 @@ var _ = Describe("LogicalRestoreElasticsearch of secondary storage", func() {
 		Expect(repository.Type).To(Equal("s3"))
 		Expect(repository.Settings).To(HaveKeyWithValue("bucket", "camunda-backups"))
 		Expect(repository.Settings).To(HaveKeyWithValue(
-			"base_path", logicalbackup.ClusterPrefix("clusters", w.namespace, w.repository),
+			"base_path", logicalbackup.ClusterPrefix("clusters", w.esNamespace, w.esCluster),
 		))
 
 		By("deleting the Camunda indices of the target in one request, and keeping Optimize")
@@ -107,6 +107,26 @@ var _ = Describe("LogicalRestoreElasticsearch of secondary storage", func() {
 		Expect(w.search.Repository(w.repository).Settings).To(
 			HaveKeyWithValue("base_path", "someone-elses/prefix"),
 		)
+	})
+
+	// A repository name that this operator did not produce carries no prefix.
+	// Only the registration that somebody made by hand knows which prefix of
+	// the bucket it reads, so a restore that cannot find it says so instead of
+	// registering a prefix of its own over a name it does not own.
+	It("reports a repository that it neither registered nor found", func() {
+		w := newWorld()
+		w.repository = "backups"
+		backup := createBackup(w)
+		w.seedSnapshots(elasticsearchSnapshots...)
+		w.search.SetIndices(targetIndices...)
+
+		restore := createRestore(w, backup.Name)
+
+		held := expectReason(
+			restore, v1.LogicalRestoreRestoringSecondaryStorage, v1.ReasonInvalidReference,
+		)
+		Expect(readyMessage(held)).To(ContainSubstring(`"backups"`))
+		Expect(w.search.DeletedIndices()).To(BeEmpty(), "the destructive step never ran")
 	})
 
 	It("deletes the Optimize indices when the backup holds an Optimize snapshot", func() {

@@ -214,6 +214,52 @@ func TestRepositoryConfigOfEachStorageType(t *testing.T) {
 	)
 }
 
+// The name of a repository and the base path of its registration are two
+// views of one identity, so the name reads back as the prefix that the
+// registration under it carries. That is what keeps two ElasticsearchClusters
+// of one name off one registration: the name belongs to one namespace, and
+// every controller that writes that name writes that one prefix.
+func TestRepositoryNameReadsBackAsTheBasePathOfItsRegistration(t *testing.T) {
+	t.Parallel()
+
+	bucket := s3Bucket(v1.S3StorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity})
+	clusters := []*v1.ElasticsearchCluster{
+		{ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "first"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "second"}},
+	}
+
+	assert.NotEqual(t, RepositoryName(clusters[0]), RepositoryName(clusters[1]))
+
+	for _, cluster := range clusters {
+		registered := RepositoryConfig(cluster, &SnapshotStorage{Config: bucket})
+
+		read, ok := RepositoryBasePath(bucket.BasePath(), RepositoryName(cluster))
+		assert.True(t, ok, cluster.Namespace)
+		assert.Equal(t, registered.BasePath, read)
+	}
+}
+
+// A namespace is a DNS-1123 label and holds no dot, so the first dot of a
+// repository name always splits it where RepositoryName joined it, even for a
+// cluster whose own name holds one. A name without a dot is one that somebody
+// registered by hand, and only that registration knows its prefix.
+func TestRepositoryBasePathReadsOnlyTheNamesThisOperatorRegisters(t *testing.T) {
+	t.Parallel()
+
+	dotted := &v1.ElasticsearchCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "my.cluster", Namespace: "my-ns"},
+	}
+
+	path, ok := RepositoryBasePath("clusters", RepositoryName(dotted))
+	assert.True(t, ok)
+	assert.Equal(t, "clusters/my-ns/my.cluster", path)
+
+	for _, name := range []string{"my-cluster", "", ".my-cluster", "my-ns."} {
+		_, ok := RepositoryBasePath("clusters", name)
+		assert.False(t, ok, name)
+	}
+}
+
 // A bucket that the contract addresses by endpoint and gives no region of
 // its own is registered with the placeholder region, which is what the
 // broker and the CLI send for the same bucket. Elasticsearch signs each

@@ -156,14 +156,14 @@ func itBacksUpTheElasticsearchCluster(cluster *v1.CamundaCluster, elasticsearch,
 		var contract v1.SecondaryStorageConfig
 		Expect(utils.Get(sscResource, storageConfig, cluster.Namespace, &contract)).To(Succeed())
 		Expect(contract.Spec.Elasticsearch).NotTo(BeNil())
-		Expect(contract.Spec.Elasticsearch.SnapshotRepository).To(Equal(elasticsearch))
+		Expect(contract.Spec.Elasticsearch.SnapshotRepository).To(Equal(esRepository(cluster, elasticsearch)))
 
 		By("waiting for the cluster to publish the repository in its management binding")
 		Eventually(func(g Gomega) {
 			var got v1.CamundaCluster
 			g.Expect(utils.Get(ccResource, cluster.Name, cluster.Namespace, &got)).To(Succeed())
 			g.Expect(got.Status.Management).NotTo(BeNil())
-			g.Expect(got.Status.Management.BackupRepository).To(Equal(elasticsearch))
+			g.Expect(got.Status.Management.BackupRepository).To(Equal(esRepository(cluster, elasticsearch)))
 		}, ccAPITimeout, 5*time.Second).Should(Succeed())
 	})
 
@@ -189,7 +189,7 @@ func itBacksUpTheElasticsearchCluster(cluster *v1.CamundaCluster, elasticsearch,
 		Expect(utils.Get(lbesResource, esBackupName, cluster.Namespace, &backup)).To(Succeed())
 		Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupCompleted))
 		Expect(backup.Status.BackupID).NotTo(BeZero())
-		Expect(backup.Status.Repository).To(Equal(elasticsearch))
+		Expect(backup.Status.Repository).To(Equal(esRepository(cluster, elasticsearch)))
 		Expect(backup.Status.HistorySnapshots).NotTo(BeEmpty())
 		Expect(backup.Status.History.State).To(Equal(v1.BackupPartCompleted))
 		Expect(backup.Status.Records.State).To(Equal(v1.BackupPartCompleted))
@@ -313,6 +313,14 @@ func itBacksUpTheRelationalCluster(cluster *v1.CamundaCluster) {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(objects).To(BeEmpty())
 	})
+}
+
+// esRepository returns the snapshot repository that the ElasticsearchCluster
+// named elasticsearch registers. Both flows run their Elasticsearch in the
+// namespace of their cluster, and the repository name carries that namespace
+// so that two clusters of one name never meet on one registration.
+func esRepository(cluster *v1.CamundaCluster, elasticsearch string) string {
+	return cluster.Namespace + "." + elasticsearch
 }
 
 // runtimeBackupObjects returns the objects that the Zeebe backup of id wrote

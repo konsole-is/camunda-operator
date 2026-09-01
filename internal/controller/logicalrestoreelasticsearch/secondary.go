@@ -183,8 +183,10 @@ func (r *Reconciler) trackRestore(
 //
 // Only an absent repository is registered. Its settings come from the bucket
 // that the backup pinned, and its prefix is the prefix that the source
-// cluster wrote under. The snapshots lie under that prefix, whichever
-// Elasticsearch server the target reads through.
+// cluster wrote under, read back out of the repository name. The snapshots
+// lie under that prefix, whichever Elasticsearch server the target reads
+// through. A name that this operator did not produce carries no prefix, so
+// the restore reports it instead of guessing one.
 func (r *Reconciler) ensureRepository(
 	ctx context.Context,
 	resolved *resolution,
@@ -215,13 +217,22 @@ func (r *Reconciler) ensureRepository(
 		return "", logicalbackup.InvalidReference("%s", err.Error()), nil
 	}
 
+	basePath, ok := elasticsearch.RepositoryBasePath(bucket.BasePath(), repository)
+	if !ok {
+		return "", logicalbackup.InvalidReference(
+			"the Elasticsearch of the target holds no snapshot repository %q, and the name is not "+
+				"one that this operator registers, so the restore cannot tell which prefix of "+
+				"ObjectStorageConfig %q it reads. Register the repository on the target over the "+
+				"prefix that holds the snapshots of the backup",
+			repository, bucket.Name,
+		), nil
+	}
+
 	// The credentials are left out on purpose. Elasticsearch reads them from
 	// the node keystore, which the ElasticsearchCluster controller of the
 	// target fills for the same bucket.
 	storage := &elasticsearch.SnapshotStorage{Config: bucket}
-	config := elasticsearch.RepositoryConfigAt(storage, logicalbackup.ClusterPrefix(
-		bucket.BasePath(), resolved.backup.Namespace, repository,
-	))
+	config := elasticsearch.RepositoryConfigAt(storage, basePath)
 
 	if err := admin.EnsureSnapshotRepository(ctx, repository, config); err != nil {
 		return "", elasticsearchFailure(

@@ -200,7 +200,7 @@ func itRestoresTheElasticsearchCluster(cluster *v1.CamundaCluster, elasticsearch
 		By("reading the identity of the backup set")
 		Expect(utils.Get(lbesResource, esRestoreBackup, cluster.Namespace, &backup)).To(Succeed())
 		Expect(backup.Status.BackupID).NotTo(BeZero())
-		Expect(backup.Status.Repository).To(Equal(elasticsearch))
+		Expect(backup.Status.Repository).To(Equal(esRepository(cluster, elasticsearch)))
 		Expect(backup.Status.HistorySnapshots).NotTo(BeEmpty())
 	})
 
