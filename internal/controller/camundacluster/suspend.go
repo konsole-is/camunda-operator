@@ -119,18 +119,23 @@ func (r *CamundaClusterReconciler) scaleToZero(
 	obj client.Object,
 ) error {
 	patch := client.MergeFrom(obj.DeepCopyObject().(client.Object))
+	var kind string
 	switch workload := obj.(type) {
 	case *appsv1.StatefulSet:
+		kind = "StatefulSet"
 		workload.Spec.Replicas = new(int32(0))
 	case *appsv1.Deployment:
+		kind = "Deployment"
 		workload.Spec.Replicas = new(int32(0))
+	default:
+		return fmt.Errorf("cannot scale a %T to zero", obj)
 	}
 
 	if err := r.Patch(ctx, obj, patch); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return fmt.Errorf("scaling %s %q to zero: %w", obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName(), err)
+		return fmt.Errorf("scaling %s %s to zero: %w", kind, client.ObjectKeyFromObject(obj), err)
 	}
 
 	r.EventRecorder.Eventf(

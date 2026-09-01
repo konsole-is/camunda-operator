@@ -226,7 +226,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// the Ready reason, and the message says what happened to the
 		// workloads.
 		suspended, suspendErr := r.suspendWorkloads(ctx, &cluster)
-		if suspended {
+		if suspended && suspendErr == nil {
 			failure.Message += ". The workloads are scaled to zero, with the volumes kept, until the pre-check passes"
 		}
 		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
