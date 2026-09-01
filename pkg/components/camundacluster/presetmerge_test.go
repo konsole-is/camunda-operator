@@ -431,11 +431,12 @@ func TestMergeSpecReleaseImagesStayOutOfTheSpec(t *testing.T) {
 func TestMergeSpecSharesNoMemoryWithTheRelease(t *testing.T) {
 	t.Parallel()
 
+	const changed = "changed"
 	release := fullRelease()
 	got := MergeSpec(v1.CamundaClusterSpec{}, nil, release)
 
-	got.ExtraEnv[0].Value = "changed"
-	got.Zeebe.ExtraEnv[0].Value = "changed"
+	got.ExtraEnv[0].Value = changed
+	got.Zeebe.ExtraEnv[0].Value = changed
 
 	assert.Equal(t, "release", release.ExtraEnv[0].Value)
 	assert.Equal(t, "-Xmx8g", release.Zeebe.ExtraEnv[0].Value)
@@ -527,7 +528,11 @@ func TestValidateMerged(t *testing.T) {
 		wantErr string
 	}{
 		{"valid spec", valid, ""},
-		{"missing version", v1.CamundaClusterSpec{}, "missing required fields after the preset and release merge: version"},
+		{
+			"missing version",
+			v1.CamundaClusterSpec{},
+			"missing required fields after the preset and release merge: version",
+		},
 		{
 			"version below floor",
 			v1.CamundaClusterSpec{Version: "8.8.0"},

@@ -474,7 +474,7 @@ var _ = Describe("CamundaRelease schema", func() {
 		),
 		Entry(
 			"rejects a version that is not x.y.z",
-			func(o *v1.CamundaRelease) { o.Spec.Version = "8.9" },
+			func(o *v1.CamundaRelease) { o.Spec.Version = "8" },
 			"spec.version",
 		),
 		Entry(
