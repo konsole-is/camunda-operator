@@ -46,9 +46,10 @@ func RealmTarget(provider IdentityProvider) *v1.KeycloakRealmTarget {
 
 // RealmIdentity returns the name of the realm that target holds, as the URL of
 // its realm endpoint: the URL without its trailing slashes, then /realms/ and
-// the realm. Two targets of one identity are one realm, and the administrator
-// takes no part in it. The result is deterministic, so a name derived from it
-// (a hash, for example) identifies the realm across resources.
+// the realm. Two targets of one identity are one realm. The administrator and
+// the certificate authority take no part in it. The result is deterministic,
+// so a name derived from it (a hash, for example) identifies the realm across
+// resources.
 func RealmIdentity(target v1.KeycloakRealmTarget) string {
 	return strings.TrimRight(target.URL, "/") + keycloakRealmPath + target.Realm
 }

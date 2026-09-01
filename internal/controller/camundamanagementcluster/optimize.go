@@ -393,7 +393,7 @@ func (r *Reconciler) forgetCallbackRealm(
 		eventActionUpdate,
 		"Left the login callbacks of this management plane on client %q of realm %q of Keycloak %q, "+
 			"as the annotation %s asked",
-		keycloakClientOptimize(*recorded),
+		components.RealmProvider(*recorded).Clients.Optimize.ID,
 		recorded.Realm,
 		recorded.URL,
 		components.ForgetCallbackRealmAnnotation,
@@ -401,12 +401,6 @@ func (r *Reconciler) forgetCallbackRealm(
 	mc.Status.CallbackRealm = nil
 
 	return true, nil
-}
-
-// keycloakClientOptimize is the id of the Optimize client of a recorded
-// realm, which Management Identity creates under one name in every realm.
-func keycloakClientOptimize(recorded v1.KeycloakRealmTarget) string {
-	return components.RealmProvider(recorded).Clients.Optimize.ID
 }
 
 // identityRolledOut reports whether every pod of the Management Identity that

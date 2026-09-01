@@ -505,7 +505,8 @@ type AttachedOptimizeStatus struct {
 
 // KeycloakRealmTarget is one Keycloak realm and how the operator signs in to
 // it. Two targets name the same realm when their url and their realm are the
-// same, whichever administrator each of them carries.
+// same, whichever administrator and certificate authority each of them
+// carries.
 type KeycloakRealmTarget struct {
 	// URL is the URL of Keycloak that the operator reaches, the /auth path
 	// included when Keycloak serves one.
