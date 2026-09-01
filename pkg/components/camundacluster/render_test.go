@@ -369,7 +369,7 @@ func TestRenderOIDCClusterAuthWins(t *testing.T) {
 	in := newInput(t, func(in *Input) {
 		in.Platform = oidcPlatform()
 		in.Cluster.Spec.PresetRef = "medium"
-		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, &v1.CamundaClusterPresetSpec{
+		preset := &v1.CamundaClusterPresetSpec{
 			Cluster: v1.CamundaClusterSpec{Auth: &v1.ClusterAuthSpec{
 				ClientID: "preset-client",
 				Audience: "preset-audience",
@@ -377,7 +377,8 @@ func TestRenderOIDCClusterAuthWins(t *testing.T) {
 					Name: "preset-oidc", Key: "secret",
 				},
 			}},
-		}, nil))
+		}
+		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, preset, nil))
 	})
 	r := render(in, process(t, in, ComponentGateway))
 
@@ -386,9 +387,10 @@ func TestRenderOIDCClusterAuthWins(t *testing.T) {
 	assertSecretEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTSECRET", "preset-oidc", "secret")
 
 	in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{ClientID: "cluster-client"}
-	in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, &v1.CamundaClusterPresetSpec{
+	preset := &v1.CamundaClusterPresetSpec{
 		Cluster: v1.CamundaClusterSpec{Auth: &v1.ClusterAuthSpec{ClientID: "preset-client"}},
-	}, nil))
+	}
+	in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, preset, nil))
 	r = render(in, process(t, in, ComponentGateway))
 
 	assertEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTID", "cluster-client")
