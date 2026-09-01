@@ -53,14 +53,8 @@ const (
 	ReasonStorageTypeMismatch = "StorageTypeMismatch"
 	// ReasonWaitingForHandover means that this resource takes over a claim
 	// from a previous holder whose workloads still exist. It renders nothing
-	// until they are gone, so two holders never write one backend. The
-	// message names what it waits for. The state clears on its own.
-	//
-	// A CamundaOptimize waits for the importer Deployment of the previous
-	// holder. A pod that is already ordered to stop can outlive its
-	// Deployment for the length of the termination grace period, so two
-	// importers can overlap for that time. A CamundaCluster waits for the
-	// pods of the previous holder that write the contract, so the overlap
-	// is closed.
+	// until they are gone. The message names what it waits for. The state
+	// clears on its own. The CRD doc of each resource that reports it names
+	// the workloads it waits for.
 	ReasonWaitingForHandover = "WaitingForHandover"
 )

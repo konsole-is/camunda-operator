@@ -148,7 +148,7 @@ func discoveryLabels(cluster *v1.CamundaCluster, comp string) map[string]string 
 }
 
 // StoragePodLabels returns the labels that find every pod of the cluster
-// named cluster that writes the SecondaryStorageConfig named contract. The
+// named cluster that runs on the SecondaryStorageConfig named contract. The
 // pods carry them next to the discovery labels, and a cluster that takes the
 // contract over lists the pods of the previous holder by them. Both values
 // are bounded the way a label value demands.

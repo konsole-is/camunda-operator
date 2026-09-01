@@ -54,7 +54,7 @@ const (
 	// and namespace.
 	ClusterUIDKey = "camunda.io/cluster-uid"
 	// StorageContractKey names the SecondaryStorageConfig that a pod of a
-	// CamundaCluster writes. It is on the pod, never on the selector, so a
+	// CamundaCluster runs on. It is on the pod, never on the selector, so a
 	// repoint of the cluster rolls the pods and the new ones carry the new
 	// value.
 	StorageContractKey = "camunda.io/storage-contract"

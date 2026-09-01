@@ -40,7 +40,7 @@ const eventReasonStorageClaimed = "StorageClaimed"
 // claimStorage gives this cluster the storage contract, or records the
 // cluster that holds it. The first CamundaCluster that claims a contract
 // holds it. A claim whose holder is gone, or names another contract, is
-// stale and is taken over once no pod of that holder writes the contract.
+// stale and is taken over once no pod of that holder runs on the contract.
 // Until then the claim stays and the step fails with WaitingForHandover. A
 // live holder lands on in.Storage.Holder and the controller renders this
 // cluster suspended. It needs res.storage from resolveStorage. A conflict on
@@ -118,8 +118,9 @@ func (res *resolver) staleHolder(ctx context.Context, holder secondarystoragecon
 }
 
 // waitForHandover fails with WaitingForHandover while a pod of the stale
-// holder still writes the contract: a deleted holder leaves its pods to the
-// garbage collector, and a repointed one replaces them through a rollout.
+// holder still runs on the contract: a deleted holder leaves its pods to
+// the garbage collector, and a repointed one replaces them through a
+// rollout.
 // Nothing watches those pods for this cluster, so the failure is unwatched
 // and the controller looks again on its timer.
 func (res *resolver) waitForHandover(ctx context.Context, holder secondarystorageconfig.Holder) error {
@@ -134,7 +135,7 @@ func (res *resolver) waitForHandover(ctx context.Context, holder secondarystorag
 	return conditions.NewUnwatchedFailure(
 		v1.ReasonWaitingForHandover,
 		fmt.Sprintf(
-			"Pods of the previous holder CamundaCluster %q still write SecondaryStorageConfig %q: %s. "+
+			"Pods of the previous holder CamundaCluster %q still run on SecondaryStorageConfig %q: %s. "+
 				"This cluster starts when they are gone",
 			objectPath(holder.Cluster), objectPath(client.ObjectKeyFromObject(res.storage)),
 			strings.Join(pods, ", "),
