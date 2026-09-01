@@ -83,10 +83,11 @@ var hubRepositories = map[Image]string{
 }
 
 // Resolve returns the reference of img at version: the repository that
-// spec.images renames it to, or the default repository, with version as the
-// tag. p can be nil, which resolves the default repository. A default
-// repository can change with the version, so a caller that resolves one image
-// for two versions can get two repositories.
+// spec.images renames it to, or the default repository, with a tag derived
+// from version. The tag is version itself, except for Keycloak, whose tag is
+// quay-optimized-<version>. p can be nil, which resolves the default
+// repository. A default repository can change with the version, so a caller
+// that resolves one image for two versions can get two repositories.
 func Resolve(p *v1.CamundaPlatformConfigSpec, img Image, version string) string {
 	tag := version
 	if img == Keycloak {
