@@ -70,7 +70,9 @@ const Finalizer = "core.camunda.io/camundamanagementcluster-attachment"
 const keycloakKind = "Keycloak"
 
 // defaultRetryInterval is how long the controller waits before it calls a
-// cluster again whose user API refused the Web Modeler user.
+// cluster again whose user API refused the Web Modeler user, and before a
+// management plane parked on a realm that another one holds looks at the
+// claim again.
 const defaultRetryInterval = 30 * time.Second
 
 // retryInterval returns RetryInterval, or defaultRetryInterval when unset.
@@ -101,13 +103,20 @@ type Reconciler struct {
 	// framework. SetupWithManager sets it when it is nil.
 	Metrics component.MetricsRecorder
 	// RetryInterval overrides how long the controller waits before it calls a
-	// cluster again whose user API refused it. No watch reports the recovery
-	// of that API. Zero means defaultRetryInterval; tests shorten it.
+	// cluster again whose user API refused it, and before a management plane
+	// parked on a realm that another one holds looks at the claim again. No
+	// watch reports the recovery of that API, and no plane watches another.
+	// Zero means defaultRetryInterval; tests shorten it.
 	RetryInterval time.Duration
 	// ConvergeInterval overrides how long a cluster that holds the Web Modeler
 	// user is left alone before the controller reads it again. Zero means
 	// defaultConvergeInterval; tests shorten it.
 	ConvergeInterval time.Duration
+	// ClaimNamespace holds the claim Leases of every Keycloak realm. One
+	// realm can be named from any namespace, so every claimant meets on a
+	// Lease of this one namespace. It is the namespace of the operator, and
+	// SetupWithManager refuses an empty one.
+	ClaimNamespace string
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used
@@ -150,6 +159,7 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=replicasets,verbs=list
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile converges one management plane. A CR under deletion withdraws its
 // claims, deletes its contract, and releases the finalizer. Otherwise the
@@ -157,17 +167,19 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // reference into the render input, and a failed pre-check reports its Ready
 // reason, lets go of the clusters that the selectors no longer match,
 // withdraws from a realm that status.callbackRealm names and the spec does
-// not, and stops. Then the orchestration clusters are selected and claimed,
-// the CamundaOptimizes behind the contract are discovered, the login
-// callbacks are withdrawn from a realm that status.callbackRealm names and
-// the spec does not (a Keycloak-to-Keycloak move that cannot finish that
-// withdrawal stops here, so the components never move Management Identity to
-// a new realm while the old one still signs people in), the components
-// converge, every attached cluster is pointed at Console, the
-// ManagementAuthConfig is applied, and the login callback of every
-// discovered Optimize is registered in the realm. A plane that serves at least one
-// Optimize also waits for the login callbacks of the realm, and one that
-// serves none reads Ready whatever the realm says.
+// not, and stops. The Keycloak realm of the externalKeycloak mode is claimed
+// next, and a plane whose realm another plane holds parks the same way, under
+// RealmClaimedElsewhere, and looks again on the retry interval. Then the
+// orchestration clusters are selected and claimed, the CamundaOptimizes
+// behind the contract are discovered, the login callbacks are withdrawn from
+// a realm that status.callbackRealm names and the spec does not (a
+// Keycloak-to-Keycloak move that cannot finish that withdrawal stops here, so
+// the components never move Management Identity to a new realm while the old
+// one still signs people in), the components converge, every attached cluster
+// is pointed at Console, the ManagementAuthConfig is applied, and the login
+// callback of every discovered Optimize is registered in the realm. A plane
+// that serves at least one Optimize also waits for the login callbacks of the
+// realm, and one that serves none reads Ready whatever the realm says.
 //
 // Ready is True only when every component that takes part in it is True and
 // every step of the pass ran. A step is one of the calls above, which the
@@ -234,6 +246,29 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 	if err != nil {
 		return ctrl.Result{}, stepResolveReferences.stop(&mc, err)
+	}
+
+	// The realm goes before anything that would touch it: the components
+	// render the Management Identity that bootstraps it, and the callback
+	// step writes its Optimize client.
+	parked, err := r.claimRealm(ctx, &mc, res)
+	if err != nil {
+		return ctrl.Result{}, stepClaimRealm.stop(&mc, err)
+	}
+	if parked != nil {
+		conditions.Stage(&mc, conditions.Failed(&mc, parked))
+
+		// A parked plane that is leaving a recorded realm still tidies it,
+		// the way a failed pre-check does, so the old realm does not keep
+		// signing people in for as long as the park stands.
+		_, withdrawErr := r.withdrawStopped(
+			ctx, &mc, "the realm of the spec answers to another management plane",
+		)
+
+		// Nothing watches the Lease, and a plane never watches another plane,
+		// so a parked plane finds a released realm on its own.
+		return ctrl.Result{RequeueAfter: r.retryInterval()},
+			errors.Join(withdrawErr, r.withdrawFromDeselected(ctx, &mc))
 	}
 
 	clusters, err := r.listClusters(ctx)
@@ -370,7 +405,9 @@ func (r *Reconciler) reconcileUnresolved(
 ) (ctrl.Result, error) {
 	conditions.Stage(mc, conditions.Failed(mc, failure))
 
-	retry, withdrawErr := r.withdrawUnresolved(ctx, mc)
+	retry, withdrawErr := r.withdrawStopped(
+		ctx, mc, "the identity provider of the spec is not resolved",
+	)
 	callbackErr := stepWithdrawCallbacks.wrap(withdrawErr)
 	releaseErr := stepReleaseClaims.wrap(r.withdrawFromDeselected(ctx, mc))
 	// A step that failed says more than the pre-check it ran beside: the
@@ -667,10 +704,15 @@ func readyCondition(
 }
 
 // SetupWithManager registers the controller, the reference indexes, and the
-// watches. It also sets EventRecorder and Metrics when they are nil, builds
+// watches. It refuses a reconciler without a namespace for the realm claim
+// Leases. It also sets EventRecorder and Metrics when they are nil, builds
 // the uncached component client, and probes once whether the Kubernetes
 // cluster serves the Keycloak kind.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.ClaimNamespace == "" {
+		return errors.New("the namespace of the realm claim Leases is required")
+	}
+
 	if r.EventRecorder == nil {
 		r.EventRecorder = mgr.GetEventRecorder(controllerName)
 	}

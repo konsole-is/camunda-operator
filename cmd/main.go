@@ -392,9 +392,11 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaOptimize")
 		os.Exit(1)
 	}
-	if err := camundamanagementcluster.New(
+	managementCluster := camundamanagementcluster.New(
 		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(),
-	).SetupWithManager(mgr); err != nil {
+	)
+	managementCluster.ClaimNamespace = operatorNamespace
+	if err := managementCluster.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaManagementCluster")
 		os.Exit(1)
 	}

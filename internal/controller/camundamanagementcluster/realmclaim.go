@@ -1,0 +1,315 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package camundamanagementcluster
+
+import (
+	"context"
+	"fmt"
+
+	coordinationv1 "k8s.io/api/coordination/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
+)
+
+// claimRealm takes the claim on the Keycloak realm that the spec names, and
+// gives back every realm claim of this management plane that neither the spec
+// nor status.callbackRealm names any more.
+//
+// Only the externalKeycloak mode claims. The keycloak mode owns the Keycloak
+// it runs, and the oidc mode administers no realm. A suspended plane touches
+// no claim: the realm it holds stays held, and a realm the spec now names is
+// claimed on resume.
+//
+// The failure it returns is the parked state: another management cluster
+// holds the realm, and the message names it. The caller stages it on Ready,
+// renders nothing, and comes back on the retry interval. Only a failure of
+// the Kubernetes API comes back as an error.
+func (r *Reconciler) claimRealm(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	res resolved,
+) (*conditions.PreCheckFailure, error) {
+	if res.Input.Suspended {
+		return nil, nil
+	}
+
+	var current *v1.KeycloakRealmTarget
+	if res.Input.Provider.Mode == components.ModeExternalKeycloak {
+		current = components.RealmTarget(res.Input.Provider)
+	}
+	if current != nil {
+		parked, err := r.takeRealmClaim(ctx, mc, *current)
+		if err != nil || parked != nil {
+			return parked, err
+		}
+	}
+
+	// The recorded realm still carries the login callbacks of this plane.
+	// Its claim goes once the withdrawal has cleared the record, which the
+	// next pass reads from the persisted status. A claim released before that
+	// would let another plane register in a realm this one still tidies.
+	return nil, r.releaseRealmClaims(ctx, mc, current, mc.Status.CallbackRealm)
+}
+
+// takeRealmClaim creates the claim Lease of the realm that target names. The
+// API server serializes the create, so of two management clusters that reach
+// this together exactly one holds the realm.
+//
+// It returns nil when mc holds the claim after the call. A realm that another
+// management cluster holds returns the parked failure. Only a holder that is
+// gone, or that a later management cluster replaced under the same name, is
+// taken over.
+func (r *Reconciler) takeRealmClaim(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	target v1.KeycloakRealmTarget,
+) (*conditions.PreCheckFailure, error) {
+	holder, failure, err := r.createRealmClaim(ctx, mc, target)
+	if err != nil || failure != nil || holder == nil {
+		return failure, err
+	}
+
+	keeps, err := r.realmHolderKeeps(ctx, *holder)
+	if err != nil {
+		return nil, err
+	}
+	if !keeps {
+		if err := r.dropRealmClaim(ctx, target, *holder); err != nil {
+			return nil, err
+		}
+		holder, failure, err = r.createRealmClaim(ctx, mc, target)
+		if err != nil || failure != nil || holder == nil {
+			return failure, err
+		}
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonRealmClaimedElsewhere,
+		Message: fmt.Sprintf(
+			"CamundaManagementCluster %s holds realm %q of Keycloak %q. One realm answers to one "+
+				"management plane, so this one waits and runs nothing until that claim is "+
+				"released. Give it a realm of its own, or delete the holder",
+			holder.NamespacedName, target.Realm, target.URL,
+		),
+	}, nil
+}
+
+// createRealmClaim creates the claim Lease of target for mc. It returns no
+// holder and no failure when mc holds the claim after the call, which covers
+// the Lease it created and the one it held already. Otherwise it returns the
+// holder that the Lease records.
+//
+// A Lease that carries no holder annotations is not one of ours. It blocks
+// without a takeover, and the failure names it.
+func (r *Reconciler) createRealmClaim(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	target v1.KeycloakRealmTarget,
+) (*components.RealmClaimHolder, *conditions.PreCheckFailure, error) {
+	// The Lease can go away between the create and the read, when a release
+	// or a takeover races this claimant. The second pass then creates it.
+	for range 2 {
+		err := r.Create(ctx, components.NewRealmClaimLease(r.ClaimNamespace, target, mc))
+		if err == nil {
+			return nil, nil, nil
+		}
+		if !apierrors.IsAlreadyExists(err) {
+			return nil, nil, fmt.Errorf(
+				"creating the claim Lease of realm %q: %w", components.RealmIdentity(target), err,
+			)
+		}
+
+		lease, found, err := r.readRealmClaim(ctx, target)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !found {
+			continue
+		}
+
+		holder, ours := components.RealmClaimHolderOf(lease)
+		if !ours {
+			return nil, &conditions.PreCheckFailure{
+				Reason: v1.ReasonRealmClaimedElsewhere,
+				Message: fmt.Sprintf(
+					"Lease %s claims realm %q of Keycloak %q and names no CamundaManagementCluster. "+
+						"Delete it if nothing else uses it",
+					client.ObjectKeyFromObject(lease), target.Realm, target.URL,
+				),
+			}, nil
+		}
+		if holder.UID == mc.UID {
+			return nil, nil, nil
+		}
+
+		return &holder, nil, nil
+	}
+
+	return nil, nil, fmt.Errorf(
+		"the claim Lease of realm %q exists but is not readable yet", components.RealmIdentity(target),
+	)
+}
+
+// realmHolderKeeps reports whether the management cluster that the Lease
+// names still owns the claim. It does while it exists under the recorded UID.
+// A holder that is gone, or that a later management cluster replaced under
+// the same name, keeps nothing, so a crash between the claim and the release
+// never blocks the realm forever.
+//
+// A holder that is there keeps the claim against every other claimant. Its
+// Management Identity bootstrapped the clients of the realm and its Optimize
+// instances sign in through them. To hand the realm on would put a second
+// Identity on those clients.
+func (r *Reconciler) realmHolderKeeps(
+	ctx context.Context,
+	holder components.RealmClaimHolder,
+) (bool, error) {
+	var other v1.CamundaManagementCluster
+	if err := r.APIReader.Get(ctx, holder.NamespacedName, &other); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("reading the realm claim holder %s: %w", holder.NamespacedName, err)
+	}
+
+	return other.UID == holder.UID, nil
+}
+
+// releaseRealmClaims deletes every realm claim Lease of the namespace of the
+// operator that still names mc, except the ones of the realms that keep name.
+// A nil entry of keep names no realm. The finalizer passes none, so a deleted
+// management cluster gives back every realm it holds.
+//
+// The label selector is the one that NewRealmClaimLease writes. It carries the
+// name of the management cluster alone, so the list also holds the claims of
+// a management cluster of another namespace with this name, and of a later
+// one. The holder annotations tell them apart.
+func (r *Reconciler) releaseRealmClaims(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	keep ...*v1.KeycloakRealmTarget,
+) error {
+	var leases coordinationv1.LeaseList
+	err := r.APIReader.List(
+		ctx, &leases,
+		client.InNamespace(r.ClaimNamespace),
+		client.MatchingLabels(components.RealmClaimLeaseLabels(mc.Name)),
+	)
+	if err != nil {
+		return fmt.Errorf("listing the realm claim Leases of %s: %w", client.ObjectKeyFromObject(mc), err)
+	}
+
+	kept := make(map[string]bool, len(keep))
+	for _, target := range keep {
+		if target != nil {
+			kept[components.RealmClaimLeaseName(components.RealmIdentity(*target))] = true
+		}
+	}
+
+	self := realmClaimSelf(mc)
+	for i := range leases.Items {
+		lease := &leases.Items[i]
+		if kept[lease.Name] {
+			continue
+		}
+		if recorded, ours := components.RealmClaimHolderOf(lease); !ours || recorded != self {
+			continue
+		}
+		if err := r.deleteRealmClaim(ctx, lease); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// dropRealmClaim deletes the claim Lease of target while its annotations
+// still name holder. A Lease that is gone, or that another management cluster
+// holds, is left alone.
+func (r *Reconciler) dropRealmClaim(
+	ctx context.Context,
+	target v1.KeycloakRealmTarget,
+	holder components.RealmClaimHolder,
+) error {
+	lease, found, err := r.readRealmClaim(ctx, target)
+	if err != nil || !found {
+		return err
+	}
+
+	if recorded, ours := components.RealmClaimHolderOf(lease); !ours || recorded != holder {
+		return nil
+	}
+
+	return r.deleteRealmClaim(ctx, lease)
+}
+
+// deleteRealmClaim deletes lease under the UID and the resourceVersion that it
+// was read with. A Lease that is gone is left alone.
+//
+// A Lease that changed in between fails the preconditions, which means it was
+// not deleted. The error goes back to the caller, so a release keeps its
+// finalizer and reads the Lease again on the next look. To report a conflict
+// as a release would let the management cluster go while its claim stayed.
+func (r *Reconciler) deleteRealmClaim(ctx context.Context, lease *coordinationv1.Lease) error {
+	err := r.Delete(ctx, lease, client.Preconditions{
+		UID: &lease.UID, ResourceVersion: &lease.ResourceVersion,
+	})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf(
+			"deleting the realm claim Lease %s: %w", client.ObjectKeyFromObject(lease), err,
+		)
+	}
+
+	return nil
+}
+
+// readRealmClaim reads the claim Lease of target live. Every claim decision
+// reads the API server. A claim decided from a cache is no serialization.
+func (r *Reconciler) readRealmClaim(
+	ctx context.Context,
+	target v1.KeycloakRealmTarget,
+) (*coordinationv1.Lease, bool, error) {
+	name := types.NamespacedName{
+		Namespace: r.ClaimNamespace,
+		Name:      components.RealmClaimLeaseName(components.RealmIdentity(target)),
+	}
+
+	var lease coordinationv1.Lease
+	if err := r.APIReader.Get(ctx, name, &lease); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, false, nil
+		}
+
+		return nil, false, fmt.Errorf("reading the realm claim Lease %s: %w", name, err)
+	}
+
+	return &lease, true, nil
+}
+
+// realmClaimSelf is the holder identity of mc.
+func realmClaimSelf(mc *v1.CamundaManagementCluster) components.RealmClaimHolder {
+	return components.RealmClaimHolder{
+		NamespacedName: client.ObjectKeyFromObject(mc),
+		UID:            mc.UID,
+	}
+}

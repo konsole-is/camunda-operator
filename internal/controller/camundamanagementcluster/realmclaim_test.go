@@ -1,0 +1,245 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package camundamanagementcluster
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	appsv1 "k8s.io/api/apps/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
+)
+
+var _ = Describe("CamundaManagementCluster controller and the claim on the realm", func() {
+	It("parks the second plane that names the realm of the first, and frees it on deletion", func() {
+		first := newScenario(withExternalKeycloak)
+		expectReadyWhileStamping(first.mc, identityKey(first))
+		expectRealmClaimHolder(externalRealmTarget(), first.mc)
+
+		second := newScenario(withExternalKeycloak)
+
+		Eventually(func(g Gomega) {
+			ready := conditionOf(g, second.mc, v1.ConditionReady)
+			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(ready.Reason).To(Equal(v1.ReasonRealmClaimedElsewhere))
+			g.Expect(ready.Message).To(ContainSubstring(first.namespace + "/" + first.mc.Name))
+		}, timeout, interval).Should(Succeed())
+
+		By("rendering nothing that would touch the realm")
+		Consistently(func(g Gomega) {
+			var workload appsv1.Deployment
+			err := k8sClient.Get(ctx, identityKey(second), &workload)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, "2s", interval).Should(Succeed())
+
+		By("letting the parked plane proceed once the holder is deleted")
+		Expect(deleteManagementCluster(first.mc)).To(Succeed())
+
+		expectReadyWhileStamping(second.mc, identityKey(second))
+		expectRealmClaimHolder(externalRealmTarget(), second.mc)
+	})
+
+	// A crash between the claim and the release leaves a Lease whose holder
+	// is gone. It must not block the realm forever.
+	It("takes over the Lease of a holder that no longer exists", func() {
+		ghost := &v1.CamundaManagementCluster{ObjectMeta: metav1.ObjectMeta{
+			Namespace: "gone-ns", Name: "gone", UID: "gone-uid",
+		}}
+		stale := components.NewRealmClaimLease(testClaimNamespace, externalRealmTarget(), ghost)
+		Expect(k8sClient.Create(ctx, stale)).To(Succeed())
+		DeferCleanup(func() {
+			_ = client.IgnoreNotFound(k8sClient.Delete(ctx, stale))
+		})
+
+		s := newScenario(withExternalKeycloak)
+
+		expectReadyWhileStamping(s.mc, identityKey(s))
+		expectRealmClaimHolder(externalRealmTarget(), s.mc)
+	})
+
+	// The Lease of the old realm goes only after the callbacks left it. A
+	// release before that would let another plane register in a realm this
+	// one still tidies.
+	It("releases the realm it leaves only after the callbacks left it", func() {
+		first := startFakeKeycloak(withOptimizeClient())
+		second := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(first))
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
+			g.Expect(readManagementCluster(g, s.mc).Status.CallbackRealm).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		expectRealmClaimHolder(fakeRealmTarget(first), s.mc)
+
+		first.setRefuseUpdate(true)
+		retargetKeycloak(s.mc, second.url)
+
+		By("keeping the old claim while the old Keycloak refuses the withdrawal")
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(condition.Reason).To(Equal(v1.ReasonWriteFailed))
+		}, timeout, interval).Should(Succeed())
+		expectRealmClaimHolder(fakeRealmTarget(second), s.mc)
+		Consistently(func(g Gomega) {
+			var lease coordinationv1.Lease
+			g.Expect(k8sClient.Get(ctx, realmLeaseKey(fakeRealmTarget(first)), &lease)).To(Succeed())
+		}, "2s", interval).Should(Succeed())
+
+		By("releasing the old claim once the withdrawal went through")
+		first.setRefuseUpdate(false)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(BeEmpty())
+			var lease coordinationv1.Lease
+			err := k8sClient.Get(ctx, realmLeaseKey(fakeRealmTarget(first)), &lease)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+		expectRealmClaimHolder(fakeRealmTarget(second), s.mc)
+	})
+
+	// The oidc mode administers no realm, so a plane that moves there keeps
+	// no claim on the realm it administered before.
+	It("releases the realm when the spec moves to the oidc mode", func() {
+		s := newScenario(withExternalKeycloak)
+		expectReadyWhileStamping(s.mc, identityKey(s))
+		expectRealmClaimHolder(externalRealmTarget(), s.mc)
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.IdentityProvider = v1.IdentityProviderSpec{OIDC: &v1.ManagementOIDCSpec{}}
+			latest.Spec.Identity.Admin = v1.IdentityAdminSpec{
+				ClaimName: "oid", ClaimValue: "admin-oid",
+			}
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			var lease coordinationv1.Lease
+			err := k8sClient.Get(ctx, realmLeaseKey(externalRealmTarget()), &lease)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// A suspended plane touches no claim: the realm it holds stays held, and
+	// a realm the spec now names is claimed on resume.
+	It("keeps its claim and takes none while suspended", func() {
+		s := newScenario(withExternalKeycloak)
+		expectReadyWhileStamping(s.mc, identityKey(s))
+		expectRealmClaimHolder(externalRealmTarget(), s.mc)
+
+		retargeted := v1.KeycloakRealmTarget{
+			URL: "https://second.example.com/auth", Realm: "camunda-platform",
+		}
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.Suspend = true
+			latest.Spec.IdentityProvider.ExternalKeycloak.URL = retargeted.URL
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			// Envtest runs no Deployment controller, so the scale to zero is
+			// stamped the way a rollout is.
+			stampDeploymentReady(g, identityKey(s))
+
+			ready := conditionOf(g, s.mc, v1.ConditionReady)
+			g.Expect(ready.Reason).To(Equal(string(component.Suspended)))
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			var lease coordinationv1.Lease
+			g.Expect(k8sClient.Get(ctx, realmLeaseKey(externalRealmTarget()), &lease)).To(Succeed())
+			err := k8sClient.Get(ctx, realmLeaseKey(retargeted), &lease)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, "2s", interval).Should(Succeed())
+	})
+
+	// The keycloak mode owns the Keycloak it runs, and deletes it with the
+	// plane, so the realm needs no claim there.
+	It("claims no realm in the keycloak mode", func() {
+		s := newScenario(withManagedKeycloak)
+
+		Eventually(func(g Gomega) {
+			conditionOf(g, s.mc, v1.ConditionKeycloakReady)
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			var leases coordinationv1.LeaseList
+			g.Expect(k8sClient.List(
+				ctx, &leases,
+				client.InNamespace(testClaimNamespace),
+				client.MatchingLabels(components.RealmClaimLeaseLabels(s.mc.Name)),
+			)).To(Succeed())
+			g.Expect(leases.Items).To(BeEmpty())
+		}, "2s", interval).Should(Succeed())
+	})
+})
+
+// identityKey is the key of the Management Identity Deployment of a scenario.
+func identityKey(s scenario) client.ObjectKey {
+	return client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
+}
+
+// externalRealmTarget is the realm that withExternalKeycloak names. The realm
+// of the spec is empty and resolves to camunda-platform.
+func externalRealmTarget() v1.KeycloakRealmTarget {
+	return v1.KeycloakRealmTarget{URL: keycloakExternalURL, Realm: "camunda-platform"}
+}
+
+// fakeRealmTarget is the realm of a fake Keycloak.
+func fakeRealmTarget(keycloak *fakeKeycloak) v1.KeycloakRealmTarget {
+	return v1.KeycloakRealmTarget{URL: keycloak.url, Realm: "camunda-platform"}
+}
+
+// realmLeaseKey is the key of the Lease that claims target.
+func realmLeaseKey(target v1.KeycloakRealmTarget) client.ObjectKey {
+	return client.ObjectKey{
+		Namespace: testClaimNamespace,
+		Name:      components.RealmClaimLeaseName(components.RealmIdentity(target)),
+	}
+}
+
+// expectRealmClaimHolder polls until the Lease of target names mc as its
+// holder.
+func expectRealmClaimHolder(target v1.KeycloakRealmTarget, mc *v1.CamundaManagementCluster) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var lease coordinationv1.Lease
+		g.Expect(k8sClient.Get(ctx, realmLeaseKey(target), &lease)).To(Succeed())
+
+		holder, ours := components.RealmClaimHolderOf(&lease)
+		g.Expect(ours).To(BeTrue())
+		g.Expect(holder.Namespace).To(Equal(mc.Namespace))
+		g.Expect(holder.Name).To(Equal(mc.Name))
+		g.Expect(holder.UID).To(Equal(mc.UID))
+	}, timeout, interval).Should(Succeed())
+}

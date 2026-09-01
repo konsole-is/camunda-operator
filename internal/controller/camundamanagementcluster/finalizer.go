@@ -44,13 +44,15 @@ const (
 	eventReasonAttachmentRemoved = "AttachmentRemoved"
 )
 
-// finalize withdraws the Console ping settings and every claim, removes the
-// login callbacks from the realm, deletes the ManagementAuthConfig, and
-// releases the finalizer, in that order: the contract is the claim on the
-// realm, so it goes last. The Deployments, the Services, and the copies of
-// referenced Secrets carry an owner reference, so Kubernetes collects them;
-// what the management plane wrote on an orchestration cluster, what it wrote in
-// the realm, and the contract, are outside that chain.
+// finalize withdraws the Console ping settings and every claim on the
+// orchestration clusters, removes the login callbacks from the realm, deletes
+// the ManagementAuthConfig, releases the claim on every realm, and releases
+// the finalizer, in that order: the realm is tidied before anything that would
+// let another plane into it goes. The Deployments, the Services, and the
+// copies of referenced Secrets carry an owner reference, so Kubernetes
+// collects them; what the management plane wrote on an orchestration cluster,
+// what it wrote in the realm, the contract, and the realm claims are outside
+// that chain.
 //
 // The withdrawal goes first. Once the finalizer is gone the object is gone for
 // good, and no retry can free the orchestration clusters or remove a contract
@@ -89,6 +91,12 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	if err := r.withdrawContract(ctx, mc); err != nil {
 		return err
 	}
+	// The realm claim goes last of all. Once it is gone a plane parked on the
+	// realm claims it and runs its own Management Identity against clients
+	// this withdrawal may still be writing.
+	if err := r.releaseRealmClaims(ctx, mc); err != nil {
+		return err
+	}
 	r.EventRecorder.Eventf(
 		mc,
 		nil,
@@ -97,8 +105,8 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 		eventActionFinalize,
 		"Withdrew the claims and the Console ping settings on the orchestration clusters, "+
 			"tried to remove the Web Modeler users and the login callbacks of Optimize (a failed "+
-			"removal has a warning event or a log line of its own), and removed "+
-			"ManagementAuthConfig %q",
+			"removal has a warning event or a log line of its own), removed "+
+			"ManagementAuthConfig %q, and released the claim on the Keycloak realm",
 		components.ContractName(mc),
 	)
 

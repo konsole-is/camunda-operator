@@ -90,6 +90,13 @@ const (
 	// management plane, so this operator leaves the cluster untouched. The
 	// message names the holder.
 	ReasonClaimedElsewhere = "ClaimedElsewhere"
+	// ReasonRealmClaimedElsewhere means that another management cluster
+	// holds the Keycloak realm that spec.identityProvider.externalKeycloak
+	// names. One realm answers to one management plane, so this one renders
+	// nothing that would touch the realm and looks again on its retry
+	// interval. The message names the holder. Give this management cluster a
+	// realm of its own, or delete the holder.
+	ReasonRealmClaimedElsewhere = "RealmClaimedElsewhere"
 	// ReasonNotReady means that a selected CamundaCluster is not attached
 	// yet: it publishes no gateway endpoints, so Web Modeler cannot deploy to
 	// it, or it changed while the operator claimed it. The state clears when
