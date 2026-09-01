@@ -38,7 +38,7 @@ func TestRealmTargetRecordsWhereTheRealmIsAndHowToSignIn(t *testing.T) {
 		CABundle: &v1.LocalSecretKeyRef{Name: "keycloak-ca", Key: "ca.crt"},
 	}
 
-	assert.Equal(t, v1.KeycloakRealmTarget{
+	assert.Equal(t, &v1.KeycloakRealmTarget{
 		URL:   "https://keycloak.example.com/auth",
 		Realm: "camunda-platform",
 		AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
@@ -46,6 +46,13 @@ func TestRealmTargetRecordsWhereTheRealmIsAndHowToSignIn(t *testing.T) {
 		},
 		CABundleSecretRef: &v1.LocalSecretKeyRef{Name: "keycloak-ca", Key: "ca.crt"},
 	}, RealmTarget(provider))
+}
+
+// The oidc mode administers no realm, so there is nothing to record.
+func TestRealmTargetOfTheOIDCModeIsNil(t *testing.T) {
+	t.Parallel()
+
+	assert.Nil(t, RealmTarget(IdentityProvider{Mode: ModeOIDC, IssuerURL: "https://login.example.com"}))
 }
 
 // The record outlives the provider it came from, so it must not point into it.
@@ -63,6 +70,7 @@ func TestRealmTargetCopiesTheReferences(t *testing.T) {
 	target := RealmTarget(provider)
 	bundle.Name = "another-ca"
 
+	require.NotNil(t, target)
 	require.NotNil(t, target.CABundleSecretRef)
 	assert.Equal(t, "keycloak-ca", target.CABundleSecretRef.Name)
 }
@@ -71,10 +79,12 @@ func TestRealmTargetOfAKeycloakWithNoBundle(t *testing.T) {
 	t.Parallel()
 
 	target := RealmTarget(IdentityProvider{
+		Mode:        ModeKeycloak,
 		KeycloakURL: "http://my-management-keycloak.my-ns.svc:8080/auth",
 		Realm:       "camunda-platform",
 	})
 
+	require.NotNil(t, target)
 	assert.Nil(t, target.CABundleSecretRef)
 	assert.Equal(t, v1.LocalCredentialsSecretRef{}, target.AdminCredentialsSecretRef)
 }
@@ -208,5 +218,7 @@ func TestRealmProviderKeepsTheIdentityOfTheRecord(t *testing.T) {
 		AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{Name: "keycloak-admin"},
 	}
 
-	assert.True(t, SameRealm(target, RealmTarget(RealmProvider(target))))
+	recorded := RealmTarget(RealmProvider(target))
+	require.NotNil(t, recorded)
+	assert.True(t, SameRealm(target, *recorded))
 }

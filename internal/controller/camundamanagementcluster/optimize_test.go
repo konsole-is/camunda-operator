@@ -494,6 +494,66 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// A Keycloak that is gone for good never answers, and the record is then
+	// what keeps the new realm waiting. The annotation is the way to let go of
+	// it, and the callbacks stay where they are.
+	It("lets go of a realm the annotation names and registers in the new one", func() {
+		first := startFakeKeycloak(withOptimizeClient())
+		second := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(first))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+
+		first.setRefuseUpdate(true)
+		retargetKeycloak(s.mc, second.url)
+
+		var recorded v1.KeycloakRealmTarget
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(condition.Message).To(ContainSubstring(components.ForgetCallbackRealmAnnotation))
+
+			latest := readManagementCluster(g, s.mc)
+			g.Expect(latest.Status.CallbackRealm).NotTo(BeNil())
+			recorded = *latest.Status.CallbackRealm
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			metav1.SetMetaDataAnnotation(
+				&latest.ObjectMeta, components.ForgetCallbackRealmAnnotation, components.RealmIdentity(recorded),
+			)
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(second.redirectURIs()).To(Equal([]string{
+				blueOptimizeURL + components.OptimizeCallbackPath,
+			}))
+
+			latest := readManagementCluster(g, s.mc)
+			g.Expect(latest.Annotations).NotTo(HaveKey(components.ForgetCallbackRealmAnnotation))
+			g.Expect(latest.Status.CallbackRealm).NotTo(BeNil())
+			g.Expect(latest.Status.CallbackRealm.URL).To(Equal(second.url))
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Reason).To(Equal(v1.ReasonHealthy))
+		}, timeout, interval).Should(Succeed())
+
+		// The old realm keeps what the annotation asked to leave there.
+		Expect(first.redirectURIs()).To(HaveLen(1))
+	})
+
 	// A suspended management plane leaves every realm as it is, so a spec that
 	// is retargeted while it sleeps still has the old realm to tidy on
 	// deletion.

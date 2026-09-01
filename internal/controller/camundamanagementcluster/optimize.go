@@ -44,6 +44,10 @@ import (
 const (
 	eventReasonOptimizeCallbacks = "OptimizeCallbacksUpdated"
 	eventActionUpdate            = "Update"
+	// eventReasonCallbacksLeftBehind is recorded when the annotation
+	// ForgetCallbackRealmAnnotation lets go of a realm that still carries
+	// the login callbacks of this management plane.
+	eventReasonCallbacksLeftBehind = "OptimizeCallbacksLeftBehind"
 )
 
 // rollingOut is what the condition says while Management Identity starts. It
@@ -259,7 +263,7 @@ func (r *Reconciler) syncOptimizeCallbacks(
 	// recorded: the Keycloak that the operator runs is deleted by the same
 	// change, and its realm goes with it.
 	if provider.Mode == components.ModeExternalKeycloak {
-		mc.Status.CallbackRealm = new(components.RealmTarget(provider))
+		mc.Status.CallbackRealm = components.RealmTarget(provider)
 	}
 
 	// The Optimize client is there and the Optimize role came with it. The
@@ -308,10 +312,13 @@ func (r *Reconciler) withdrawRetargeted(
 		return nil, nil
 	}
 
-	provider := res.Input.Provider
-	if provider.Mode != components.ModeOIDC &&
-		components.SameRealm(*recorded, components.RealmTarget(provider)) {
+	if target := components.RealmTarget(res.Input.Provider); target != nil &&
+		components.SameRealm(*recorded, *target) {
 		return nil, nil
+	}
+	forgotten, err := r.forgetCallbackRealm(ctx, mc)
+	if err != nil || forgotten {
+		return nil, err
 	}
 	// The pods of the revision before the change still write the recorded
 	// realm while they start, so a withdrawal that overlaps one of them is put
@@ -339,14 +346,62 @@ func (r *Reconciler) withdrawRetargeted(
 			Reason: failure.Reason,
 			Message: fmt.Sprintf(
 				"Realm %q of Keycloak %q still carries the login callbacks of this management plane, "+
-					"and this operator could not remove them: %s",
+					"and this operator could not remove them: %s. If that Keycloak is gone for good, "+
+					"set the annotation %s=%q on this resource to leave them there",
 				recorded.Realm, recorded.URL, failure.Message,
+				components.ForgetCallbackRealmAnnotation, components.RealmIdentity(*recorded),
 			),
 		}, nil
 	}
 	mc.Status.CallbackRealm = nil
 
 	return nil, nil
+}
+
+// forgetCallbackRealm lets go of the realm that status.callbackRealm records
+// when the ForgetCallbackRealmAnnotation names it, with the login callbacks
+// still in it, and removes the annotation. It reports whether the record is
+// gone. The caller has found that the spec no longer names the recorded
+// realm, so an annotation that names another realm stays where it is: it
+// says nothing about the realm the plane is leaving now.
+//
+// The Warning event is the one trace of the callbacks that stay behind. A
+// Keycloak that is gone for good has nothing to withdraw from, and one that
+// is only down comes back with the callbacks still on its Optimize client.
+func (r *Reconciler) forgetCallbackRealm(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) (bool, error) {
+	recorded := mc.Status.CallbackRealm
+	named, ok := mc.Annotations[components.ForgetCallbackRealmAnnotation]
+	if !ok || named != components.RealmIdentity(*recorded) {
+		return false, nil
+	}
+	if err := r.removeAnnotation(ctx, mc, components.ForgetCallbackRealmAnnotation); err != nil {
+		return false, err
+	}
+	r.EventRecorder.Eventf(
+		mc,
+		nil,
+		corev1.EventTypeWarning,
+		eventReasonCallbacksLeftBehind,
+		eventActionUpdate,
+		"Left the login callbacks of this management plane on client %q of realm %q of Keycloak %q, "+
+			"as the annotation %s asked",
+		keycloakClientOptimize(*recorded),
+		recorded.Realm,
+		recorded.URL,
+		components.ForgetCallbackRealmAnnotation,
+	)
+	mc.Status.CallbackRealm = nil
+
+	return true, nil
+}
+
+// keycloakClientOptimize is the id of the Optimize client of a recorded
+// realm, which Management Identity creates under one name in every realm.
+func keycloakClientOptimize(recorded v1.KeycloakRealmTarget) string {
+	return components.RealmProvider(recorded).Clients.Optimize.ID
 }
 
 // identityRolledOut reports whether every pod of the Management Identity that

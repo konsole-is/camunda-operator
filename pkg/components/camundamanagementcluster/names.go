@@ -76,6 +76,15 @@ const (
 	// Identity reads the claim on its first start only and stores the result
 	// in its database, so the operator keeps rendering the recorded value.
 	InitialClaimAnnotation = "camunda.io/identity-initial-claim"
+	// ForgetCallbackRealmAnnotation is the annotation of a
+	// CamundaManagementCluster that lets go of the realm that
+	// status.callbackRealm records, with the login callbacks of Optimize
+	// still in it. The value is the identity of that realm, as RealmIdentity
+	// returns it, so a stale annotation cannot let go of another realm. The
+	// controller reads it when the spec no longer names the recorded realm,
+	// and removes it once it has let go of the realm. Set it when the
+	// Keycloak of that realm is gone for good.
+	ForgetCallbackRealmAnnotation = "camunda.io/forget-callback-realm"
 	// FieldManager owns every resource of the management cluster itself, the
 	// ManagementAuthConfig included.
 	FieldManager = "camunda-operator/camundamanagementcluster"

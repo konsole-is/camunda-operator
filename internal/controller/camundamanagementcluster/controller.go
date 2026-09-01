@@ -494,6 +494,29 @@ func (r *Reconciler) recordAnnotation(
 	return nil
 }
 
+// removeAnnotation takes one annotation off the CR, through a copy for the
+// reason recordAnnotation gives. The patch carries the resource version, so a
+// concurrent write conflicts and the reconcile retries instead of writing
+// back an annotation somebody just set.
+func (r *Reconciler) removeAnnotation(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	key string,
+) error {
+	patched := mc.DeepCopy()
+	delete(patched.Annotations, key)
+	patch := client.MergeFromWithOptions(mc, client.MergeFromWithOptimisticLock{})
+	if err := r.Patch(ctx, patched, patch); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("removing the %s annotation: %w", key, err)
+	}
+	mc.ObjectMeta = patched.ObjectMeta
+
+	return nil
+}
+
 // writeContract applies the ManagementAuthConfig and reports the write on
 // ManagementAuthReady.
 func (r *Reconciler) writeContract(

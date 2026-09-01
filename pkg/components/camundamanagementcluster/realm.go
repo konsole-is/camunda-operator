@@ -26,10 +26,13 @@ import (
 // the operator signs in to it with. It is what status.callbackRealm holds
 // after the login callbacks of Optimize are registered there.
 //
-// Pass a provider of a Keycloak mode. The oidc mode administers no realm, so
-// its provider records a target that names nothing.
-func RealmTarget(provider IdentityProvider) v1.KeycloakRealmTarget {
-	target := v1.KeycloakRealmTarget{
+// The oidc mode administers no realm, so its provider records nil.
+func RealmTarget(provider IdentityProvider) *v1.KeycloakRealmTarget {
+	if provider.Mode == ModeOIDC {
+		return nil
+	}
+
+	target := &v1.KeycloakRealmTarget{
 		URL:               provider.KeycloakURL,
 		Realm:             provider.Realm,
 		CABundleSecretRef: provider.CABundle.DeepCopy(),
@@ -42,8 +45,10 @@ func RealmTarget(provider IdentityProvider) v1.KeycloakRealmTarget {
 }
 
 // RealmIdentity returns the name of the realm that target holds, as the URL of
-// its realm endpoint. Two targets of one identity are one realm, and the
-// administrator takes no part in it.
+// its realm endpoint: the URL without its trailing slashes, then /realms/ and
+// the realm. Two targets of one identity are one realm, and the administrator
+// takes no part in it. The result is deterministic, so a name derived from it
+// (a hash, for example) identifies the realm across resources.
 func RealmIdentity(target v1.KeycloakRealmTarget) string {
 	return strings.TrimRight(target.URL, "/") + keycloakRealmPath + target.Realm
 }
