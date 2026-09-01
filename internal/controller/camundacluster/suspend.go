@@ -54,9 +54,10 @@ var processConditions = map[string]string{
 // on their last configuration can write a backend the cluster no longer
 // resolves, so they stop until the pre-check passes. The per-process
 // condition of each workload reports the suspension the way a component
-// does: Suspending while replicas stop, Suspended at zero. It returns
-// whether the cluster has workloads. The reconcile comes back through the
-// watch on the workloads, so the conditions converge without a timer.
+// does: Suspending while replicas stop, Suspended at zero. It reports
+// whether it found a workload that the cluster controls. The reconcile comes
+// back through the watch on the workloads, so the conditions converge
+// without a timer.
 func (r *CamundaClusterReconciler) suspendWorkloads(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
