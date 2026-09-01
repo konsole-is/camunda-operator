@@ -19,9 +19,3 @@ rules:
   - camundareleases
   verbs:
   - '*'
-- apiGroups:
-  - core.camunda.io
-  resources:
-  - camundareleases/status
-  verbs:
-  - get
