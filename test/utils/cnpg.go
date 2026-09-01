@@ -21,6 +21,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	. "github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
 )
 
 const (
@@ -64,6 +66,17 @@ const (
 	// be served before the manager starts.
 	cnpgClusterCRD       = "clusters.postgresql.cnpg.io"
 	barmanObjectStoreCRD = "objectstores.barmancloud.cnpg.io"
+	// cnpgDeploymentSelector and barmanPluginSelector select the pod of
+	// cnpgDeployment and barmanPluginDeployment. A rollout that times out
+	// dumps the pods these match, for the diagnostics dump.
+	cnpgDeploymentSelector = "app.kubernetes.io/name=cloudnative-pg"
+	barmanPluginSelector   = "app=barman-cloud"
+	// barmanClientCertificate and barmanServerCertificate are the two
+	// cert-manager Certificates the plugin manifest issues from a
+	// self-signed Issuer in the same apply, and that its Deployment mounts
+	// as Secrets.
+	barmanClientCertificate = "barman-cloud-client"
+	barmanServerCertificate = "barman-cloud-server"
 )
 
 // CNPGCRDPath returns the directory of the vendored CloudNativePG CRDs, for
@@ -138,14 +151,14 @@ func InstallCNPG() error {
 		return err
 	}
 
-	return waitForRollout(cnpgDeployment)
+	return waitForRollout(cnpgDeployment, cnpgDeploymentSelector)
 }
 
 // InstallBarmanPlugin installs the Barman Cloud plugin of
 // BarmanPluginVersion and waits until its Deployment is rolled out. It runs
 // after InstallCNPG, whose manifest creates the namespace the two share, and
-// after cert-manager, which issues the certificate the plugin serves its
-// CNPG-I endpoint with.
+// after cert-manager, which issues the two certificates the plugin serves
+// its CNPG-I endpoint with.
 func InstallBarmanPlugin() error {
 	version := BarmanPluginVersion()
 	if version == "" {
@@ -156,7 +169,16 @@ func InstallBarmanPlugin() error {
 		return err
 	}
 
-	return waitForRollout(barmanPluginDeployment)
+	// The plugin Deployment mounts these as Secrets that only exist once
+	// cert-manager issues them. Waiting on the Certificates first turns a
+	// stuck issuance into its own clear failure instead of the "0 of 1
+	// replicas available" a Deployment rollout timeout reports for it.
+	certs := []string{barmanClientCertificate, barmanServerCertificate}
+	if err := waitForCertificates(barmanPluginSelector, certs...); err != nil {
+		return err
+	}
+
+	return waitForRollout(barmanPluginDeployment, barmanPluginSelector)
 }
 
 // UninstallCNPG removes the Barman Cloud plugin and the CloudNativePG
@@ -206,15 +228,48 @@ func applyManifest(url string) error {
 }
 
 // waitForRollout waits until the named Deployment of cnpgNamespace is rolled
-// out.
-func waitForRollout(deployment string) error {
+// out. On a timeout it dumps the diagnostics of the pods that selector
+// matches before it returns the error.
+func waitForRollout(deployment, selector string) error {
 	_, err := Run(exec.Command(
 		"kubectl", "rollout", "status", "deployment/"+deployment,
 		"--namespace", cnpgNamespace,
 		"--timeout", "5m",
 	))
+	if err != nil {
+		dumpInstallDiagnostics(selector)
+	}
 
 	return err
+}
+
+// waitForCertificates waits until every named cert-manager Certificate of
+// cnpgNamespace carries condition=Ready. On a timeout it dumps the
+// diagnostics of the pods that selector matches before it returns the error.
+func waitForCertificates(selector string, names ...string) error {
+	args := make([]string, 0, 7+len(names))
+	args = append(args, "wait", "--for", "condition=Ready", "--namespace", cnpgNamespace, "--timeout", "2m")
+	for _, name := range names {
+		args = append(args, "certificate/"+name)
+	}
+
+	if _, err := Run(exec.Command("kubectl", args...)); err != nil {
+		dumpInstallDiagnostics(selector)
+		return err
+	}
+
+	return nil
+}
+
+// dumpInstallDiagnostics writes the pod descriptions of selector and the
+// events of cnpgNamespace to the Ginkgo writer, so a timed-out install
+// explains itself instead of leaving only the timeout message.
+func dumpInstallDiagnostics(selector string) {
+	pods, _ := Run(exec.Command("kubectl", "describe", "pod", "-n", cnpgNamespace, "-l", selector))
+	_, _ = fmt.Fprintf(GinkgoWriter, "pods matching %q in %s:\n%s\n", selector, cnpgNamespace, pods)
+
+	events, _ := Run(exec.Command("kubectl", "get", "events", "-n", cnpgNamespace, "--sort-by=.lastTimestamp"))
+	_, _ = fmt.Fprintf(GinkgoWriter, "events in %s:\n%s\n", cnpgNamespace, events)
 }
 
 // deleteManifest removes what applyManifest applied and warns instead of

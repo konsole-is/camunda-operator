@@ -84,24 +84,40 @@ func UninstallCertManager() {
 	}
 }
 
-// InstallCertManager installs the cert manager bundle.
+// certManagerDeployments are the three Deployments the cert-manager bundle
+// creates, in the order InstallCertManager waits for them.
+var certManagerDeployments = []string{"cert-manager", "cert-manager-cainjector", "cert-manager-webhook"}
+
+// InstallCertManager installs the cert manager bundle and waits until every
+// one of its Deployments is Available, which can take time if cert-manager
+// was re-installed after uninstalling on a cluster.
+//
+// The webhook Deployment answers Available from a plain HTTP health check
+// that runs on a port separate from the one it admits requests on, so
+// Available does not mean the webhook can admit a Certificate yet. The
+// controller Deployment is what issues a Certificate once admitted, and the
+// cainjector Deployment is what writes the CA bundle the webhook config
+// needs before the API server trusts it. Waiting for all three closes the
+// gap that the webhook-only wait left open.
 func InstallCertManager() error {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
-	cmd := exec.Command("kubectl", "apply", "-f", url)
-	if _, err := Run(cmd); err != nil {
+	if _, err := Run(exec.Command("kubectl", "apply", "-f", url)); err != nil {
 		return err
 	}
-	// Wait for cert-manager-webhook to be ready, which can take time if cert-manager
-	// was re-installed after uninstalling on a cluster.
-	cmd = exec.Command(
-		"kubectl", "wait", "deployment.apps/cert-manager-webhook",
-		"--for", "condition=Available",
-		"--namespace", "cert-manager",
-		"--timeout", "5m",
-	)
 
-	_, err := Run(cmd)
-	return err
+	for _, deployment := range certManagerDeployments {
+		cmd := exec.Command(
+			"kubectl", "wait", "deployment.apps/"+deployment,
+			"--for", "condition=Available",
+			"--namespace", "cert-manager",
+			"--timeout", "5m",
+		)
+		if _, err := Run(cmd); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // IsCertManagerCRDsInstalled checks if any Cert Manager CRDs are installed
