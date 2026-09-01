@@ -124,7 +124,10 @@ func readTarget(
 	version := sts.Annotations[components.BrokerVersionAnnotation]
 	if version == "" {
 		return nil, invalidTarget(
-			name, "it carries no %s annotation", components.BrokerVersionAnnotation,
+			name,
+			"it carries no %s annotation. The cluster controller stamps it on every apply, "+
+				"so let one reconcile of the cluster finish and retry",
+			components.BrokerVersionAnnotation,
 		)
 	}
 
