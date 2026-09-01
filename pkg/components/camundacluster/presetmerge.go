@@ -139,17 +139,22 @@ func releaseLayer(release *v1.CamundaReleaseSpec) v1.CamundaClusterSpec {
 		layer.Admin = &v1.WebAppSpec{WorkloadSpec: *env}
 	}
 	if c := release.Connectors; c != nil {
-		layer.Connectors = &v1.ConnectorsSpec{Version: c.Version}
-		if env := releaseWorkload(&c.ReleaseEnvSpec); env != nil {
-			layer.Connectors.WorkloadSpec = *env
+		env := releaseWorkload(&c.ReleaseEnvSpec)
+		if c.Version != "" || env != nil {
+			layer.Connectors = &v1.ConnectorsSpec{Version: c.Version}
+			if env != nil {
+				layer.Connectors.WorkloadSpec = *env
+			}
 		}
 	}
 
 	return layer
 }
 
+// releaseWorkload treats an empty block as unset, so `zeebe: {}` on a
+// release introduces no component block into the merged spec.
 func releaseWorkload(env *v1.ReleaseEnvSpec) *v1.WorkloadSpec {
-	if env == nil {
+	if env == nil || (len(env.ExtraEnv) == 0 && len(env.ExtraEnvFrom) == 0) {
 		return nil
 	}
 

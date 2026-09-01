@@ -418,6 +418,23 @@ func TestMergeSpecReleaseWithoutAPreset(t *testing.T) {
 	assert.Equal(t, "storage", got.StorageRef)
 }
 
+// An empty block on a release counts as unset, so it introduces no block
+// into the merged spec.
+func TestMergeSpecReleaseEmptyBlocksStayAbsent(t *testing.T) {
+	t.Parallel()
+
+	release := &v1.CamundaReleaseSpec{
+		Version:    "8.9.4",
+		Zeebe:      &v1.ReleaseEnvSpec{},
+		Connectors: &v1.ReleaseConnectorsSpec{},
+	}
+
+	got := MergeSpec(v1.CamundaClusterSpec{}, nil, release)
+
+	assert.Nil(t, got.Zeebe)
+	assert.Nil(t, got.Connectors)
+}
+
 // The images of a release do not merge into the spec: they change only what
 // is pulled, through Input.Images, never which version the operator renders.
 func TestMergeSpecReleaseImagesStayOutOfTheSpec(t *testing.T) {
