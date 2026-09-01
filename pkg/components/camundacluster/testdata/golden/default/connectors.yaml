@@ -53,7 +53,7 @@ spec:
         envFrom:
         - configMapRef:
             name: overrides
-        image: 'registry.example.com/camunda/connectors-bundle:'
+        image: registry.example.com/camunda/connectors-bundle:8.9.7
         name: connectors
         ports:
         - containerPort: 8080

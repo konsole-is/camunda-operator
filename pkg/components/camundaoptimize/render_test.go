@@ -173,9 +173,9 @@ func TestBaseEnvReadsCredentialsFromSecrets(t *testing.T) {
 	)
 }
 
-// A platform without a license leaves the license variable out; a platform
-// registry prefixes the image.
-func TestImageUsesRegistryPrefix(t *testing.T) {
+// A platform without a license leaves the license variable out; an images
+// entry renames the repository.
+func TestImageUsesTheImagesRename(t *testing.T) {
 	t.Parallel()
 
 	assert.Equal(t, "camunda/optimize:8.9.4", Image(fixtureMinimal(t)))

@@ -88,15 +88,16 @@ func fixtureMinimal(t *testing.T) Input {
 	return newInput(t, nil)
 }
 
-// fixtureDefault is the doc's realistic cluster on the medium preset: three
-// brokers, resources, extra env, connectors, monitoring, a service account,
-// a license, and a registry.
+// fixtureDefault is the doc's realistic cluster on the medium preset and
+// the medium release: three brokers, resources, extra env, connectors,
+// monitoring, a service account, a license, and a mirror.
 func fixtureDefault(t *testing.T) Input {
 	t.Helper()
 	return newInput(t, func(in *Input) {
 		in.Cluster.Spec = v1.CamundaClusterSpec{
 			PlatformConfigRef: "my-platform-config",
 			PresetRef:         "medium",
+			ReleaseRef:        "camunda-8-9-0",
 			Version:           "8.9.9",
 			ExternalURL:       "https://my-cluster.camunda.example.com",
 			ServiceAccount: &v1.ServiceAccountSpec{Annotations: map[string]string{
@@ -135,7 +136,7 @@ func fixtureDefault(t *testing.T) Input {
 				Labels:  map[string]string{"release": "prometheus"},
 			}},
 		}
-		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, mediumPreset(), nil))
+		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, mediumPreset(), mediumRelease()))
 		in.Platform = v1.CamundaPlatformConfigSpec{
 			LicenseSecretRef: &v1.SecretKeyRef{Name: "camunda-license", Namespace: "camunda-system", Key: "key"},
 			Images: &v1.ImagesSpec{
