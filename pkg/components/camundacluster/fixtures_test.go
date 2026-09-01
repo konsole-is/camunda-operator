@@ -90,7 +90,9 @@ func fixtureMinimal(t *testing.T) Input {
 
 // fixtureDefault is the doc's realistic cluster on the medium preset and
 // the medium release: three brokers, resources, extra env, connectors,
-// monitoring, a service account, a license, and a mirror.
+// monitoring, a service account, a license, and a mirror. Its own
+// spec.version overrides the version of the release, the connectors
+// version comes from the release.
 func fixtureDefault(t *testing.T) Input {
 	t.Helper()
 	return newInput(t, func(in *Input) {
