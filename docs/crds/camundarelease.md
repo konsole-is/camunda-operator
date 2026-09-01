@@ -1,6 +1,6 @@
 # CamundaRelease
 
-`CamundaRelease` is a cluster-scoped description of what runs on a [CamundaCluster](camundacluster.md): the Camunda version, the connectors version, the image references that replace the ones the versions produce, and the environment that a version needs. You create it, or another tool creates it for you.
+`CamundaRelease` is a cluster-scoped description of what runs on a [CamundaCluster](camundacluster.md). It holds the Camunda version, the connectors version, an optional pinned image per process, and the environment that a version needs. You create it, or another tool creates it for you.
 
 A release separates what runs from the shape of a cluster. The shape lives in a [CamundaClusterPreset](camundaclusterpreset.md). A platform team keeps a handful of presets, such as `small` and `medium`, and one release per rollout, such as `camunda-8-9-4`. To move a fleet to a new patch, the team edits one release. To move one cluster, the owner changes one `releaseRef`.
 
@@ -32,13 +32,13 @@ A cluster that sets `spec.version` next to a `releaseRef` runs its own version. 
 
 ## Versions
 
-`spec.version` is the Camunda version of the orchestration cluster processes. `spec.connectors.version` is the version of the connectors bundle, which has its own patch line. A cluster that runs connectors needs the bundle version from the release or from its own spec.
+`spec.version` is the Camunda version of the orchestration cluster processes. `spec.connectors.version` is the version of the connectors bundle image, the image that the connectors runtime runs, and it has its own patch line. A cluster that runs connectors needs the bundle version from the release or from its own spec.
 
 When you edit a release, every cluster that references it rolls to the new version. A cluster whose brokers run a higher version refuses the move and reports `Ready: False` with reason `VersionDowngradeRefused`. The [CamundaCluster page](camundacluster.md#version) states the rule and the annotation that sanctions a downgrade.
 
 ## Pinned images
 
-`spec.images` replaces the image reference of a process. The value is a complete reference, tag or digest included, and the operator pulls it as it is:
+`spec.images` has two entries. `camunda` is the image of every orchestration cluster process, because they all run one image. `connectors` is the image of the connectors runtime. Each value is a complete reference, tag or digest included, and the operator pulls it as it is:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -51,7 +51,9 @@ spec:
     camunda: "mirror.example.com/camunda/camunda@sha256:7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730"
 ```
 
-A pinned image changes only what is pulled. `spec.version` stays the version that the operator believes the process runs: the version gates, the downgrade rule, and the environment that the operator computes all read it. Pin an image of the same version that you name, for example a digest of it or a patched build of it.
+A pinned image changes only what is pulled. The version gates, the downgrade rule, and the computed environment still read `spec.version`, not the image. Pin an image of the same version that you name, for example a digest of it or a patched build of it.
+
+To pin an image for a few clusters only, create a second release with the pin and point the `releaseRef` of those clusters at it.
 
 To rename every image of an environment to a mirror, use `spec.images` on the [CamundaPlatformConfig](camundaplatformconfig.md#images) instead. A release pins one exact reference for the clusters that use this release. A platform config renames the repository for every cluster and lets the version supply the tag.
 
@@ -90,7 +92,7 @@ metadata:
   # Cluster-scoped: no namespace.
   name: camunda-8-9-4
 spec:
-  # string. Required. Camunda version as x.y.z, 8.9.0 or later.
+  # string. Required. Camunda version as x.y.z. The referencing cluster checks the floor of 8.9.0.
   version: "8.9.4"
   # object. Optional. The connectors runtime of this release.
   connectors:
