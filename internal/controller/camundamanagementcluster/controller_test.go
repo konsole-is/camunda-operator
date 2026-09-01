@@ -620,10 +620,11 @@ func expectReadyWhileStamping(mc *v1.CamundaManagementCluster, keys ...client.Ob
 }
 
 // startIdentityPod creates the pod that the Management Identity Deployment
-// describes and reports its container as running. Envtest runs no Deployment
-// controller and no kubelet, so a spec that needs a started Identity is what
-// puts the pod behind the Deployment.
-func startIdentityPod(key client.ObjectKey) {
+// describes and reports its container as running and not ready, the state of
+// a start in flight. Envtest runs no Deployment controller and no kubelet, so
+// a spec that needs a started Identity is what puts the pod behind the
+// Deployment. It returns the pod, so a spec can move its status later.
+func startIdentityPod(key client.ObjectKey) *corev1.Pod {
 	GinkgoHelper()
 
 	var workload appsv1.Deployment
@@ -648,6 +649,8 @@ func startIdentityPod(key client.ObjectKey) {
 		State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{StartedAt: metav1.Now()}},
 	}}
 	Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
+
+	return pod
 }
 
 // stampDeploymentReady writes the status that a running Deployment controller

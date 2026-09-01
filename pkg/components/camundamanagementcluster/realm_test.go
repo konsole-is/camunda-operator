@@ -21,6 +21,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -81,14 +83,26 @@ func TestRealmTargetOfAKeycloakWithNoBundle(t *testing.T) {
 	t.Parallel()
 
 	target := RealmTarget(IdentityProvider{
-		Mode:        ModeKeycloak,
-		KeycloakURL: "http://my-management-keycloak.my-ns.svc:8080/auth",
-		Realm:       "camunda-platform",
+		Mode:             ModeKeycloak,
+		KeycloakURL:      "http://my-management-keycloak.my-ns.svc:8080/auth",
+		Realm:            "camunda-platform",
+		AdminCredentials: &v1.LocalCredentialsSecretRef{Name: "keycloak-admin"},
 	})
 
 	require.NotNil(t, target)
 	assert.Nil(t, target.CABundleSecretRef)
-	assert.Equal(t, v1.LocalCredentialsSecretRef{}, target.AdminCredentialsSecretRef)
+}
+
+// A provider that names no administrator gives the operator nothing to sign
+// in with, so there is nothing worth recording.
+func TestRealmTargetWithoutAnAdministratorIsNil(t *testing.T) {
+	t.Parallel()
+
+	assert.Nil(t, RealmTarget(IdentityProvider{
+		Mode:        ModeExternalKeycloak,
+		KeycloakURL: "https://kc.example.com/auth",
+		Realm:       "camunda-platform",
+	}))
 }
 
 func TestRealmIdentity(t *testing.T) {
@@ -108,6 +122,31 @@ func TestRealmIdentity(t *testing.T) {
 			name:   "ignores a trailing slash of the URL",
 			target: v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth//", Realm: "camunda-platform"},
 			want:   "https://kc.example.com/auth/realms/camunda-platform",
+		},
+		{
+			name:   "folds the case of the scheme and of the host",
+			target: v1.KeycloakRealmTarget{URL: "HTTPS://KC.Example.com/auth", Realm: "camunda-platform"},
+			want:   "https://kc.example.com/auth/realms/camunda-platform",
+		},
+		{
+			name:   "drops the default port of https",
+			target: v1.KeycloakRealmTarget{URL: "https://kc.example.com:443/auth", Realm: "camunda-platform"},
+			want:   "https://kc.example.com/auth/realms/camunda-platform",
+		},
+		{
+			name:   "drops the default port of http",
+			target: v1.KeycloakRealmTarget{URL: "http://kc.example.com:80/auth", Realm: "camunda-platform"},
+			want:   "http://kc.example.com/auth/realms/camunda-platform",
+		},
+		{
+			name:   "keeps a port that is not the default",
+			target: v1.KeycloakRealmTarget{URL: "https://kc.example.com:8443/auth", Realm: "camunda-platform"},
+			want:   "https://kc.example.com:8443/auth/realms/camunda-platform",
+		},
+		{
+			name:   "keeps the case of the path",
+			target: v1.KeycloakRealmTarget{URL: "https://kc.example.com/Auth", Realm: "camunda-platform"},
+			want:   "https://kc.example.com/Auth/realms/camunda-platform",
 		},
 	}
 
@@ -153,6 +192,16 @@ func TestSameRealm(t *testing.T) {
 			name:  "a trailing slash names the same realm",
 			other: v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth/", Realm: "camunda-platform"},
 			want:  true,
+		},
+		{
+			name:  "the case of the host and a default port name the same realm",
+			other: v1.KeycloakRealmTarget{URL: "https://KC.example.com:443/auth", Realm: "camunda-platform"},
+			want:  true,
+		},
+		{
+			name:  "another case of the realm is another realm",
+			other: v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: "Camunda-Platform"},
+			want:  false,
 		},
 		{
 			name:  "another Keycloak is another realm",
@@ -208,6 +257,89 @@ func TestRealmProviderOfARecordWithNoBundle(t *testing.T) {
 	})
 
 	assert.Nil(t, provider.CABundle)
+}
+
+// The pods below stand for the states one rollout of the Management Identity
+// Deployment can hold at once. Only a pod that is starting against the realm
+// of the target blocks a withdrawal from it.
+func TestIdentityWritesRealm(t *testing.T) {
+	t.Parallel()
+
+	target := v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: "camunda-platform"}
+	pod := func(url string, mutate ...func(p *corev1.Pod)) corev1.Pod {
+		p := corev1.Pod{Spec: corev1.PodSpec{Containers: []corev1.Container{{
+			Name: identityContainer,
+			Env: []corev1.EnvVar{
+				{Name: keycloakEnvURL, Value: url},
+				{Name: keycloakEnvRealm, Value: "camunda-platform"},
+			},
+		}}}}
+		for _, m := range mutate {
+			m(&p)
+		}
+
+		return p
+	}
+	ready := func(p *corev1.Pod) {
+		p.Status.Conditions = []corev1.PodCondition{{
+			Type: corev1.PodReady, Status: corev1.ConditionTrue,
+		}}
+	}
+	terminating := func(p *corev1.Pod) {
+		now := metav1.Now()
+		p.DeletionTimestamp = &now
+	}
+	failed := func(p *corev1.Pod) { p.Status.Phase = corev1.PodFailed }
+
+	tests := []struct {
+		name string
+		pods []corev1.Pod
+		want bool
+	}{
+		{
+			name: "a starting pod against the realm blocks the withdrawal",
+			pods: []corev1.Pod{pod("https://kc.example.com/auth")},
+			want: true,
+		},
+		{
+			name: "a ready pod against the realm does not",
+			pods: []corev1.Pod{pod("https://kc.example.com/auth", ready)},
+			want: false,
+		},
+		{
+			name: "a starting pod against another Keycloak does not",
+			pods: []corev1.Pod{pod("https://other.example.com/auth")},
+			want: false,
+		},
+		{
+			name: "a starting pod of the oidc mode does not",
+			pods: []corev1.Pod{pod("")},
+			want: false,
+		},
+		{
+			name: "a terminating pod does not",
+			pods: []corev1.Pod{pod("https://kc.example.com/auth", terminating)},
+			want: false,
+		},
+		{
+			name: "a failed pod does not",
+			pods: []corev1.Pod{pod("https://kc.example.com/auth", failed)},
+			want: false,
+		},
+		{
+			name: "no pods at all do not",
+			pods: nil,
+			want: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, test.want, IdentityWritesRealm(test.pods, target))
+		})
+	}
 }
 
 // A record round-trips: the provider built from it names the same realm.

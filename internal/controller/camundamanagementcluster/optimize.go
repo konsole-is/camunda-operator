@@ -37,17 +37,22 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
-// The event that the controller records when it writes the redirect URIs of
-// the Optimize client. One write can add a callback, remove one, or both, so
-// the vocabulary names the write and not a direction. Every other write to
-// the realm records the same action under a reason of its own.
+// The event vocabulary of this file. Every event of the realm records the
+// same Update action under a reason of its own.
 const (
+	// eventReasonOptimizeCallbacks is recorded when the controller writes the
+	// redirect URIs of the Optimize client. One write can add a callback,
+	// remove one, or both, so the reason names the write and not a direction.
 	eventReasonOptimizeCallbacks = "OptimizeCallbacksUpdated"
-	eventActionUpdate            = "Update"
-	// eventReasonCallbacksLeftBehind is recorded when the annotation
-	// ForgetCallbackRealmAnnotation lets go of a realm that still carries
-	// the login callbacks of this management plane.
+	// eventActionUpdate is the action of every event of this file.
+	eventActionUpdate = "Update"
+	// eventReasonCallbacksLeftBehind is recorded when the
+	// ForgetCallbackRealmAnnotation lets go of a realm that still carries the
+	// login callbacks of this management plane.
 	eventReasonCallbacksLeftBehind = "OptimizeCallbacksLeftBehind"
+	// eventReasonForgetIgnored is recorded when a ForgetCallbackRealmAnnotation
+	// names another realm than the recorded one and is removed unused.
+	eventReasonForgetIgnored = "ForgetCallbackRealmIgnored"
 )
 
 // rollingOut is what the condition says while Management Identity starts. It
@@ -148,7 +153,7 @@ func (r *Reconciler) syncOptimizeCallbacks(
 	if provider.Mode == components.ModeOIDC {
 		// A plane that registered callbacks in a Keycloak before this mode is
 		// the one case where this mode still has a realm to tidy.
-		failure, err := r.withdrawRetargeted(ctx, mc, res)
+		failure, err := r.withdrawRetargeted(ctx, mc, nil, res.Input.Suspended)
 		if err != nil {
 			return nil, false, err
 		}
@@ -202,18 +207,22 @@ func (r *Reconciler) syncOptimizeCallbacks(
 	}
 	// The realm that the spec named before goes first. A realm that keeps the
 	// callbacks signs people in to the same Optimize instances as the new one,
-	// and no later reconcile can reach it once the record is gone.
-	retargeted, err := r.withdrawRetargeted(ctx, mc, res)
-	if err != nil {
-		return nil, false, err
-	}
-	if retargeted != nil {
-		stageCallbacks(mc, metav1.ConditionFalse, retargeted.Reason, retargeted.Message)
-		if len(desired) == 0 {
-			return nil, true, nil
+	// and no later reconcile can reach it once the record is gone. A nil
+	// target names no administrator; keycloakAdmin reports that below, and a
+	// withdrawal decided on it would read the missing name as the oidc mode.
+	if target := components.RealmTarget(provider); target != nil {
+		retargeted, err := r.withdrawRetargeted(ctx, mc, target, res.Input.Suspended)
+		if err != nil {
+			return nil, false, err
 		}
+		if retargeted != nil {
+			stageCallbacks(mc, metav1.ConditionFalse, retargeted.Reason, retargeted.Message)
+			if len(desired) == 0 {
+				return nil, true, nil
+			}
 
-		return retargeted, true, nil
+			return retargeted, true, nil
+		}
 	}
 	// Management Identity writes the whole client representation while it
 	// starts. This step reads that representation and writes it back with the
@@ -297,9 +306,9 @@ func (r *Reconciler) syncOptimizeCallbacks(
 
 // withdrawRetargeted removes the login callbacks of this management plane from
 // the realm that status.callbackRealm names, once the spec names another realm
-// or the oidc mode. It forgets the record when that realm holds nothing of
-// this operator any more, and the caller then registers in the realm of the
-// spec.
+// or the oidc mode. target is the realm of the spec, nil in the oidc mode. It
+// forgets the record when that realm holds nothing of this operator any more,
+// and the caller then registers in the realm of the spec.
 //
 // A suspended management plane leaves every realm as it is, and so does one
 // whose spec still names the recorded realm.
@@ -310,32 +319,39 @@ func (r *Reconciler) syncOptimizeCallbacks(
 func (r *Reconciler) withdrawRetargeted(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
-	res resolved,
+	target *v1.KeycloakRealmTarget,
+	suspended bool,
 ) (*conditions.PreCheckFailure, error) {
-	recorded := mc.Status.CallbackRealm
-	if recorded == nil || res.Input.Suspended {
-		return nil, nil
-	}
-
-	if target := components.RealmTarget(res.Input.Provider); target != nil &&
-		components.SameRealm(*recorded, *target) {
-		return nil, nil
-	}
-	forgotten, err := r.forgetCallbackRealm(ctx, mc)
-	if err != nil || forgotten {
+	if err := r.dropSpentForgetAnnotation(ctx, mc); err != nil {
 		return nil, err
 	}
-	// The pods of the revision before the change still write the recorded
-	// realm while they start, so a withdrawal that overlaps one of them is put
-	// back by it.
-	rolledOut, err := r.identityRolledOut(ctx, mc)
+	recorded := mc.Status.CallbackRealm
+	if recorded == nil || suspended {
+		return nil, nil
+	}
+	if target != nil && components.SameRealm(*recorded, *target) {
+		return nil, nil
+	}
+	if r.forgetCallbackRealm(mc) {
+		return nil, nil
+	}
+	// Only a Management Identity pod that is starting against the recorded
+	// realm writes its Optimize client, so the withdrawal waits for that pod
+	// and for nothing else. Whether the pods of the new revision ever become
+	// ready says nothing about the old realm, and a wait on them would hold
+	// the callbacks there for as long as the new Keycloak is broken.
+	writing, err := r.identityWritesRecordedRealm(ctx, mc, *recorded)
 	if err != nil {
 		return nil, err
 	}
-	if !rolledOut {
+	if writing {
 		return &conditions.PreCheckFailure{
-			Reason:  string(component.PrerequisiteNotMet),
-			Message: rollingOut,
+			Reason: string(component.PrerequisiteNotMet),
+			Message: fmt.Sprintf(
+				"A Management Identity pod is starting against realm %q of Keycloak %q, and it "+
+					"owns the Optimize client of that realm while it starts",
+				recorded.Realm, recorded.URL,
+			),
 		}, nil
 	}
 
@@ -363,27 +379,98 @@ func (r *Reconciler) withdrawRetargeted(
 	return nil, nil
 }
 
-// forgetCallbackRealm lets go of the realm that status.callbackRealm records
-// when the ForgetCallbackRealmAnnotation names it, with the login callbacks
-// still in it, and removes the annotation. It reports whether the record is
-// gone. The caller has found that the spec no longer names the recorded
-// realm, so an annotation that names another realm stays where it is: it
-// says nothing about the realm the plane is leaving now.
-//
-// The Warning event is the one trace of the callbacks that stay behind. A
-// Keycloak that is gone for good has nothing to withdraw from, and one that
-// is only down comes back with the callbacks still on its Optimize client.
-func (r *Reconciler) forgetCallbackRealm(
+// withdrawUnresolved is the withdrawal from the recorded realm on a pass that
+// a failed pre-check stops. It needs nothing the pre-check resolves: the
+// realm to leave comes from status.callbackRealm, and the realm of the spec,
+// read from the spec alone, only says whether the plane is leaving. A
+// retarget whose new administrator Secret is still missing therefore tidies
+// the old realm all the same. It reports whether the caller has to come back
+// on the retry interval.
+func (r *Reconciler) withdrawUnresolved(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 ) (bool, error) {
-	recorded := mc.Status.CallbackRealm
-	named, ok := mc.Annotations[components.ForgetCallbackRealmAnnotation]
-	if !ok || named != components.RealmIdentity(*recorded) {
-		return false, nil
-	}
-	if err := r.removeAnnotation(ctx, mc, components.ForgetCallbackRealmAnnotation); err != nil {
+	before := mc.Status.CallbackRealm
+	target, err := specRealmTarget(mc)
+	if err != nil {
 		return false, err
+	}
+	failure, err := r.withdrawRetargeted(ctx, mc, target, mc.Spec.Suspend)
+	if err != nil {
+		return false, err
+	}
+	if failure != nil {
+		stageCallbacks(mc, metav1.ConditionFalse, failure.Reason, failure.Message)
+
+		return true, nil
+	}
+	// The callbacks left the old realm, and this pass registers nothing, so
+	// the condition must stop reporting a realm that now holds none of them.
+	if before != nil && mc.Status.CallbackRealm == nil {
+		stageCallbacks(
+			mc, metav1.ConditionFalse, string(component.PrerequisiteNotMet),
+			fmt.Sprintf(
+				"The login callbacks left realm %q of Keycloak %q, and the identity provider of "+
+					"the spec is not resolved, so they are registered nowhere",
+				before.Realm, before.URL,
+			),
+		)
+	}
+
+	return false, nil
+}
+
+// specRealmTarget is the realm that the spec names, read from the spec alone,
+// or nil in the oidc mode. The two Keycloak modes resolve without a
+// pre-check, the way the finalizer reads them.
+func specRealmTarget(mc *v1.CamundaManagementCluster) (*v1.KeycloakRealmTarget, error) {
+	if components.Mode(mc) == components.ModeOIDC {
+		return nil, nil
+	}
+
+	provider, err := components.ResolveIdentityProvider(components.Input{Cluster: mc})
+	if err != nil {
+		return nil, fmt.Errorf("resolving the identity provider of the spec: %w", err)
+	}
+	target := components.RealmTarget(provider)
+	// A nil target in a Keycloak mode would read as the oidc mode and
+	// withdraw on a spec that changed nothing.
+	if target == nil {
+		return nil, errors.New("the identity provider of the spec names no Keycloak administrator")
+	}
+
+	return target, nil
+}
+
+// identityWritesRecordedRealm reports whether a Management Identity pod of
+// this management plane is starting against recorded. The read goes through
+// APIReader, for the reason startedInitialClaim gives.
+func (r *Reconciler) identityWritesRecordedRealm(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	recorded v1.KeycloakRealmTarget,
+) (bool, error) {
+	var pods corev1.PodList
+	if err := r.APIReader.List(
+		ctx,
+		&pods,
+		client.InNamespace(mc.Namespace),
+		client.MatchingLabels(components.IdentityPodLabels(mc)),
+	); err != nil {
+		return false, fmt.Errorf("listing the Management Identity pods: %w", err)
+	}
+
+	return components.IdentityWritesRealm(pods.Items, recorded), nil
+}
+
+// forgetCallbackRealm lets go of the realm that status.callbackRealm records
+// when the ForgetCallbackRealmAnnotation names it, with the login callbacks
+// still in it, and reports whether it did. The Warning event is the one
+// trace of the callbacks that stay behind.
+func (r *Reconciler) forgetCallbackRealm(mc *v1.CamundaManagementCluster) bool {
+	recorded := mc.Status.CallbackRealm
+	if mc.Annotations[components.ForgetCallbackRealmAnnotation] != components.RealmIdentity(*recorded) {
+		return false
 	}
 	r.EventRecorder.Eventf(
 		mc,
@@ -398,9 +485,49 @@ func (r *Reconciler) forgetCallbackRealm(
 		recorded.URL,
 		components.ForgetCallbackRealmAnnotation,
 	)
+	// The annotation stays until the next pass. Removing it now, with the
+	// cleared record still waiting on the deferred status flush, would
+	// consume it even when that flush fails, and the record would come back
+	// with the annotation gone. The next pass finds the record gone and
+	// removes it.
 	mc.Status.CallbackRealm = nil
 
-	return true, nil
+	return true
+}
+
+// dropSpentForgetAnnotation removes a ForgetCallbackRealmAnnotation that
+// names no recorded realm: the realm it named is let go of and its record is
+// gone, or it names another realm than the recorded one and applies to
+// nothing. The second case records a Warning event, because somebody set the
+// annotation by hand and it would otherwise vanish without a word.
+func (r *Reconciler) dropSpentForgetAnnotation(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) error {
+	named, ok := mc.Annotations[components.ForgetCallbackRealmAnnotation]
+	if !ok {
+		return nil
+	}
+	recorded := mc.Status.CallbackRealm
+	if recorded != nil && named == components.RealmIdentity(*recorded) {
+		return nil
+	}
+	if recorded != nil {
+		r.EventRecorder.Eventf(
+			mc,
+			nil,
+			corev1.EventTypeWarning,
+			eventReasonForgetIgnored,
+			eventActionUpdate,
+			"Annotation %s names realm %q and status.callbackRealm names realm %q, so the "+
+				"annotation is removed and nothing is let go of",
+			components.ForgetCallbackRealmAnnotation,
+			named,
+			components.RealmIdentity(*recorded),
+		)
+	}
+
+	return r.removeAnnotation(ctx, mc, components.ForgetCallbackRealmAnnotation)
 }
 
 // identityRolledOut reports whether every pod of the Management Identity that

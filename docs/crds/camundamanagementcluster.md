@@ -552,6 +552,8 @@ Keep the Secret that `adminCredentialsSecretRef` names there, and the Secret of 
 
 A move to the `oidc` mode empties the old realm the same way. `status.callbackRealm` then goes, and `OptimizeCallbacksReady` reads `Disabled`.
 
+The old realm never waits for the new one. The callbacks leave it even while the new identity provider cannot be used yet, for example while its administrator Secret is missing or its Keycloak does not answer Management Identity.
+
 The field is absent in the `keycloak` mode. A move away from that mode deletes the Keycloak that the operator runs, and the database of that Keycloak keeps the realm as it was.
 
 An old Keycloak that does not answer keeps the callbacks, and the new realm gets none until it does. `OptimizeCallbacksReady` reads `ConnectionFailed`, `WriteFailed`, or `MissingSecret`, and the message names the old realm. `Ready` reads the same reason while this management plane serves an Optimize:
@@ -572,9 +574,9 @@ kubectl annotate camundamanagementcluster my-management -n my-management-ns \
   camunda.io/forget-callback-realm="https://old-keycloak.example.com/auth/realms/camunda-platform"
 ```
 
-The management plane then registers in the new realm, removes the annotation, and records the Warning event `OptimizeCallbacksLeftBehind`. The callbacks stay in the old realm. If that Keycloak comes back, remove them from its `optimize` client yourself. The annotation lets go of the realm it names and of no other.
+The management plane then registers in the new realm, records the Warning event `OptimizeCallbacksLeftBehind`, and removes the annotation. The callbacks stay in the old realm. If that Keycloak comes back, remove them from its `optimize` client yourself. The annotation lets go of the realm it names and of no other. One that names another realm than `status.callbackRealm` is removed unused, and the Warning event `ForgetCallbackRealmIgnored` names both realms.
 
-A suspended management plane leaves every realm as it is. The callbacks move when the plane resumes. Deleting a suspended plane removes them from the realm that `status.callbackRealm` names.
+A suspended management plane leaves every realm as it is, and it leaves the annotation as it is until it resumes. The callbacks move when the plane resumes. Deleting a suspended plane removes them from the realm that `status.callbackRealm` names.
 
 ## The contract that Optimize reads
 

@@ -17,7 +17,11 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"net"
+	"net/url"
 	"strings"
+
+	corev1 "k8s.io/api/core/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -26,32 +30,63 @@ import (
 // the operator signs in to it with. It is what status.callbackRealm holds
 // after the login callbacks of Optimize are registered there.
 //
-// The oidc mode administers no realm, so its provider records nil.
+// The oidc mode administers no realm, and a provider that names no
+// administrator gives the operator nothing to sign in with, so both record
+// nil.
 func RealmTarget(provider IdentityProvider) *v1.KeycloakRealmTarget {
-	if provider.Mode == ModeOIDC {
+	if provider.Mode == ModeOIDC || provider.AdminCredentials == nil {
 		return nil
 	}
 
-	target := &v1.KeycloakRealmTarget{
-		URL:               provider.KeycloakURL,
-		Realm:             provider.Realm,
-		CABundleSecretRef: provider.CABundle.DeepCopy(),
+	return &v1.KeycloakRealmTarget{
+		URL:                       provider.KeycloakURL,
+		Realm:                     provider.Realm,
+		AdminCredentialsSecretRef: *provider.AdminCredentials.DeepCopy(),
+		CABundleSecretRef:         provider.CABundle.DeepCopy(),
 	}
-	if provider.AdminCredentials != nil {
-		target.AdminCredentialsSecretRef = *provider.AdminCredentials.DeepCopy()
-	}
-
-	return target
 }
 
-// RealmIdentity returns the name of the realm that target holds, as the URL of
-// its realm endpoint: the URL without its trailing slashes, then /realms/ and
-// the realm. Two targets of one identity are one realm. The administrator and
-// the certificate authority take no part in it. The result is deterministic,
-// so a name derived from it (a hash, for example) identifies the realm across
+// RealmIdentity returns the name of the realm that target holds, as the URL
+// of its realm endpoint: the URL, then /realms/ and the realm. The scheme and
+// the host of the URL are folded to lower case, and a default port (443 on
+// https, 80 on http) and every trailing slash are dropped. The path of the
+// URL and the realm stay as they are, because both are case-sensitive. Two
+// targets of one identity are one realm. The administrator and the
+// certificate authority take no part in it. The result is deterministic, so
+// a name derived from it (a hash, for example) identifies the realm across
 // resources.
 func RealmIdentity(target v1.KeycloakRealmTarget) string {
-	return strings.TrimRight(target.URL, "/") + keycloakRealmPath + target.Realm
+	return normalizeKeycloakURL(target.URL) + keycloakRealmPath + target.Realm
+}
+
+// normalizeKeycloakURL trims the trailing slashes of raw and folds what
+// names the same server either way: the case of the scheme and of the host,
+// and a port that only spells out the default of the scheme. A raw value
+// that does not parse as a URL comes back with only the slashes trimmed.
+func normalizeKeycloakURL(raw string) string {
+	trimmed := strings.TrimRight(raw, "/")
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return trimmed
+	}
+
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	host := strings.ToLower(parsed.Hostname())
+	port := parsed.Port()
+	if (parsed.Scheme == "https" && port == "443") || (parsed.Scheme == "http" && port == "80") {
+		port = ""
+	}
+	switch {
+	case port != "":
+		parsed.Host = net.JoinHostPort(host, port)
+	case strings.Contains(host, ":"):
+		// An IPv6 host keeps the brackets that Hostname stripped.
+		parsed.Host = "[" + host + "]"
+	default:
+		parsed.Host = host
+	}
+
+	return parsed.String()
 }
 
 // SameRealm reports whether a and b name one realm.
@@ -73,4 +108,64 @@ func RealmProvider(target v1.KeycloakRealmTarget) IdentityProvider {
 		CABundle:         target.CABundleSecretRef.DeepCopy(),
 		Clients:          ProviderClients{Optimize: Client{ID: keycloakClientOptimize}},
 	}
+}
+
+// IdentityWritesRealm reports whether one of pods is a Management Identity
+// pod that points at the realm of target and is not ready. Such a pod is
+// starting, and Management Identity writes the whole Optimize client of its
+// realm while it starts, so a withdrawal from that realm would be put back
+// by it. A ready pod started long ago and writes nothing more, a pod that
+// points at another realm writes that one, and a pod that is going away or
+// done runs no start.
+func IdentityWritesRealm(pods []corev1.Pod, target v1.KeycloakRealmTarget) bool {
+	for i := range pods {
+		pod := &pods[i]
+		if pod.DeletionTimestamp != nil || podDone(pod) || podReady(pod) {
+			continue
+		}
+		if realm, ok := identityRealmEnv(pod); ok && SameRealm(realm, target) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// podReady reports the Ready condition of pod.
+func podReady(pod *corev1.Pod) bool {
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady {
+			return condition.Status == corev1.ConditionTrue
+		}
+	}
+
+	return false
+}
+
+// podDone reports a pod whose containers ran and will not run again, which a
+// Deployment can leave behind as an object until it is collected.
+func podDone(pod *corev1.Pod) bool {
+	return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
+}
+
+// identityRealmEnv reads the Keycloak URL and the realm that the Management
+// Identity container of pod points at, and false for one that names no
+// Keycloak, which is a pod of the oidc mode.
+func identityRealmEnv(pod *corev1.Pod) (v1.KeycloakRealmTarget, bool) {
+	var realm v1.KeycloakRealmTarget
+	for _, container := range pod.Spec.Containers {
+		if container.Name != identityContainer {
+			continue
+		}
+		for _, env := range container.Env {
+			switch env.Name {
+			case keycloakEnvURL:
+				realm.URL = env.Value
+			case keycloakEnvRealm:
+				realm.Realm = env.Value
+			}
+		}
+	}
+
+	return realm, realm.URL != ""
 }

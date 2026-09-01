@@ -29,6 +29,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
@@ -548,9 +549,173 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 
 			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
 			g.Expect(condition.Reason).To(Equal(v1.ReasonHealthy))
+
+			// The event is the one trace of the callbacks that stay behind.
+			g.Expect(eventReasons(g, s.mc)).To(ContainElement(eventReasonCallbacksLeftBehind))
 		}, timeout, interval).Should(Succeed())
 
 		// The old realm keeps what the annotation asked to leave there.
+		Expect(first.redirectURIs()).To(HaveLen(1))
+	})
+
+	// The realm to leave is in the record, so a spec that cannot be resolved
+	// yet still tidies it. Without this, a retarget whose new administrator
+	// Secret is not created yet would leave the callbacks where no later
+	// reconcile can reach them.
+	It("withdraws from the old realm while the Secret of the new one is missing", func() {
+		first := startFakeKeycloak(withOptimizeClient())
+		second := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(first))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+
+		const missingSecret = "missing-keycloak-admin"
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.IdentityProvider.ExternalKeycloak.URL = second.url
+			latest.Spec.IdentityProvider.ExternalKeycloak.AdminCredentialsSecretRef.Name = missingSecret
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(first.redirectURIs()).To(BeEmpty())
+			g.Expect(readManagementCluster(g, s.mc).Status.CallbackRealm).To(BeNil())
+
+			ready := conditionOf(g, s.mc, v1.ConditionReady)
+			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(ready.Reason).To(Equal(v1.ReasonMissingSecret))
+		}, timeout, interval).Should(Succeed())
+
+		// The Secret arrives, and the callbacks reach the realm it unlocks.
+		createSecret(s.namespace, missingSecret, map[string]string{
+			"username": "keycloak-admin", "password": "keycloak-s3cret",
+		})
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(second.redirectURIs()).To(Equal([]string{
+				blueOptimizeURL + components.OptimizeCallbackPath,
+			}))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// A new Keycloak that Management Identity cannot reach keeps the rollout
+	// from ever finishing. The withdrawal from the old realm must not wait on
+	// that: only a pod that starts against the old realm can write it, and
+	// there is none.
+	It("withdraws from the old realm while the new Identity never becomes ready", func() {
+		first := startFakeKeycloak(withOptimizeClient())
+		second := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(first))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+
+		retargetKeycloak(s.mc, second.url)
+
+		// Nothing stamps the Deployment after the change, so Management
+		// Identity stays mid-rollout for the rest of the spec. The old realm
+		// is tidied all the same, and only the registration in the new one
+		// keeps waiting.
+		Eventually(func(g Gomega) {
+			g.Expect(first.redirectURIs()).To(BeEmpty())
+			g.Expect(readManagementCluster(g, s.mc).Status.CallbackRealm).To(BeNil())
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Reason).To(Equal(string(component.PrerequisiteNotMet)))
+			g.Expect(second.redirectURIs()).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// An Identity pod of the revision before the change can still be starting
+	// while the spec moves on, and its initializer writes the old realm. The
+	// withdrawal waits for exactly that pod and for nothing else.
+	It("waits for an Identity pod that is starting against the old realm", func() {
+		first := startFakeKeycloak(withOptimizeClient())
+		second := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(first))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		identity := client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+
+		// The pod is created from the template that still names the first
+		// Keycloak, and it is running and not ready: a start in flight.
+		pod := startIdentityPod(identity)
+
+		retargetKeycloak(s.mc, second.url)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(condition.Reason).To(Equal(string(component.PrerequisiteNotMet)))
+			g.Expect(condition.Message).To(ContainSubstring(first.url))
+		}, timeout, interval).Should(Succeed())
+		Expect(first.redirectURIs()).To(HaveLen(1))
+
+		markPodReady(pod)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(BeEmpty())
+			g.Expect(second.redirectURIs()).To(Equal([]string{
+				blueOptimizeURL + components.OptimizeCallbackPath,
+			}))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// An annotation that names another realm than the recorded one sanctions
+	// nothing. It is removed with a Warning event, so a typo does not sit
+	// armed until a later retarget happens to match it.
+	It("removes a forget annotation that names no recorded realm", func() {
+		first := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(first))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(readManagementCluster(g, s.mc).Status.CallbackRealm).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			metav1.SetMetaDataAnnotation(
+				&latest.ObjectMeta,
+				components.ForgetCallbackRealmAnnotation,
+				"https://elsewhere.example.com/auth/realms/other",
+			)
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			g.Expect(latest.Annotations).NotTo(HaveKey(components.ForgetCallbackRealmAnnotation))
+			g.Expect(latest.Status.CallbackRealm).NotTo(BeNil())
+			g.Expect(eventReasons(g, s.mc)).To(ContainElement(eventReasonForgetIgnored))
+		}, timeout, interval).Should(Succeed())
+
 		Expect(first.redirectURIs()).To(HaveLen(1))
 	})
 
@@ -933,6 +1098,36 @@ func retargetKeycloak(mc *v1.CamundaManagementCluster, url string) {
 		latest.Spec.IdentityProvider.ExternalKeycloak.URL = url
 		g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
+}
+
+// markPodReady reports the containers of pod as passing their readiness
+// probes, the way the kubelet does.
+func markPodReady(pod *corev1.Pod) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var latest corev1.Pod
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(pod), &latest)).To(Succeed())
+		latest.Status.Conditions = []corev1.PodCondition{{
+			Type: corev1.PodReady, Status: corev1.ConditionTrue,
+		}}
+		g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// eventReasons returns the reason of every event that regards mc.
+func eventReasons(g Gomega, mc *v1.CamundaManagementCluster) []string {
+	var events eventsv1.EventList
+	g.Expect(k8sClient.List(ctx, &events, client.InNamespace(mc.Namespace))).To(Succeed())
+
+	reasons := make([]string, 0, len(events.Items))
+	for _, event := range events.Items {
+		if event.Regarding.Name == mc.Name {
+			reasons = append(reasons, event.Reason)
+		}
+	}
+
+	return reasons
 }
 
 // readConfigMap returns the Optimize root URLs that a ConfigMap holds.

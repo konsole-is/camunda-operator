@@ -154,8 +154,9 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // claims, deletes its contract, and releases the finalizer. Otherwise the
 // finalizer is added before the first side effect, the pre-checks resolve every
 // reference into the render input, and a failed pre-check reports its Ready
-// reason, lets go of the clusters that the selectors no longer match, and
-// stops. Then the orchestration clusters are selected and claimed, the
+// reason, lets go of the clusters that the selectors no longer match,
+// withdraws from a realm that status.callbackRealm names and the spec does
+// not, and stops. Then the orchestration clusters are selected and claimed, the
 // CamundaOptimizes behind the contract are discovered, the components
 // converge, every attached cluster is pointed at Console, the
 // ManagementAuthConfig is applied, and the login callback of every discovered
@@ -224,7 +225,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	if errors.As(err, &failure) {
 		conditions.Stage(&mc, conditions.Failed(&mc, failure))
 
-		return ctrl.Result{}, r.withdrawFromDeselected(ctx, &mc)
+		// The withdrawal from a recorded realm runs on this path too. It
+		// needs nothing the pre-check resolves, and the old realm would
+		// otherwise keep the callbacks for as long as the failure stands.
+		retry, withdrawErr := r.withdrawUnresolved(ctx, &mc)
+		var result ctrl.Result
+		if retry {
+			result.RequeueAfter = r.retryInterval()
+		}
+
+		return result, errors.Join(withdrawErr, r.withdrawFromDeselected(ctx, &mc))
 	}
 	if err != nil {
 		return ctrl.Result{}, stepResolveReferences.stop(&mc, err)
