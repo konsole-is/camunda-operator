@@ -379,6 +379,164 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, identity, &workload))).To(BeTrue())
 	})
 
+	// A realm that the spec no longer names is out of reach of every later
+	// reconcile, so the callbacks have to leave it in the pass that finds the
+	// change.
+	It("moves the callbacks to the Keycloak that the spec now names", func() {
+		first := startFakeKeycloak(withOptimizeClient())
+		second := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(first))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(Equal([]string{
+				blueOptimizeURL + components.OptimizeCallbackPath,
+			}))
+			g.Expect(readManagementCluster(g, s.mc).Status.CallbackRealm).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		retargetKeycloak(s.mc, second.url)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(BeEmpty())
+			g.Expect(second.redirectURIs()).To(Equal([]string{
+				blueOptimizeURL + components.OptimizeCallbackPath,
+			}))
+
+			recorded := readManagementCluster(g, s.mc).Status.CallbackRealm
+			g.Expect(recorded).NotTo(BeNil())
+			g.Expect(recorded.URL).To(Equal(second.url))
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(condition.Reason).To(Equal(v1.ReasonHealthy))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// The oidc mode registers nothing, so the realm of the Keycloak mode before
+	// it would keep callbacks that no later reconcile can reach.
+	It("withdraws the callbacks when the spec changes to the oidc mode", func() {
+		keycloak := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(keycloak))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(keycloak.redirectURIs()).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.IdentityProvider = v1.IdentityProviderSpec{OIDC: &v1.ManagementOIDCSpec{}}
+			latest.Spec.Identity.Admin = v1.IdentityAdminSpec{
+				ClaimName: "oid", ClaimValue: "admin-oid",
+			}
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(keycloak.redirectURIs()).To(BeEmpty())
+			g.Expect(readManagementCluster(g, s.mc).Status.CallbackRealm).To(BeNil())
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(condition.Reason).To(Equal(string(component.Disabled)))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// The new realm waits until the old one is clear. Registering in both would
+	// leave the users of the old realm signing in to Optimize as before.
+	It("reports the realm it cannot withdraw from and registers nothing new", func() {
+		first := startFakeKeycloak(withOptimizeClient())
+		second := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(first))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+
+		first.setRefuseUpdate(true)
+		retargetKeycloak(s.mc, second.url)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(condition.Reason).To(Equal(v1.ReasonWriteFailed))
+			g.Expect(condition.Message).To(ContainSubstring(first.url))
+
+			g.Expect(second.redirectURIs()).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+
+		first.setRefuseUpdate(false)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(BeEmpty())
+			g.Expect(second.redirectURIs()).To(Equal([]string{
+				blueOptimizeURL + components.OptimizeCallbackPath,
+			}))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// A suspended management plane leaves every realm as it is, so a spec that
+	// is retargeted while it sleeps still has the old realm to tidy on
+	// deletion.
+	It("withdraws from the realm it registered in when it is deleted", func() {
+		first := startFakeKeycloak(withOptimizeClient())
+		second := startFakeKeycloak(withOptimizeClient(
+			greenOptimizeURL + components.OptimizeCallbackPath,
+		))
+		s := newScenario(withFakeKeycloak(first))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.Suspend = true
+			latest.Spec.IdentityProvider.ExternalKeycloak.URL = second.url
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady).Reason).To(
+				Equal(string(component.Suspended)),
+			)
+
+			recorded := readManagementCluster(g, s.mc).Status.CallbackRealm
+			g.Expect(recorded).NotTo(BeNil())
+			g.Expect(recorded.URL).To(Equal(first.url))
+		}, timeout, interval).Should(Succeed())
+
+		Expect(deleteManagementCluster(s.mc)).To(Succeed())
+
+		Expect(first.redirectURIs()).To(BeEmpty())
+		Expect(second.redirectURIs()).To(Equal([]string{
+			greenOptimizeURL + components.OptimizeCallbackPath,
+		}))
+	})
+
 	// Two planes can share one external Keycloak realm. A plane parked on a
 	// name another owner holds never served those Optimize instances, so its
 	// deletion must not take the holder's callbacks with it.
@@ -703,6 +861,18 @@ func createOptimize(namespace, contract, externalURL string) *v1.CamundaOptimize
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, optimize) })
 
 	return optimize
+}
+
+// retargetKeycloak points the spec of a management cluster in the
+// externalKeycloak mode at another Keycloak.
+func retargetKeycloak(mc *v1.CamundaManagementCluster, url string) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		latest := readManagementCluster(g, mc)
+		latest.Spec.IdentityProvider.ExternalKeycloak.URL = url
+		g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 }
 
 // readConfigMap returns the Optimize root URLs that a ConfigMap holds.

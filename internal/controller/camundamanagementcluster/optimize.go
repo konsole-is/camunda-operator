@@ -46,6 +46,11 @@ const (
 	eventActionUpdate            = "Update"
 )
 
+// rollingOut is what the condition says while Management Identity starts. It
+// owns the Optimize client of the realm then, so the operator writes no realm
+// at all until the rollout is over.
+const rollingOut = "Management Identity is rolling out, and it owns the Optimize client while it starts"
+
 // discoverOptimizes finds the Optimize instances that this management plane
 // serves, records them in status.optimize, and puts their URLs in the render
 // input.
@@ -132,6 +137,20 @@ func (r *Reconciler) syncOptimizeCallbacks(
 	// not waiting on anything, so neither reports a prerequisite.
 	provider := res.Input.Provider
 	if provider.Mode == components.ModeOIDC {
+		// A plane that registered callbacks in a Keycloak before this mode is
+		// the one case where this mode still has a realm to tidy.
+		failure, err := r.withdrawRetargeted(ctx, mc, res)
+		if err != nil {
+			return nil, false, err
+		}
+		if failure != nil {
+			stageCallbacks(mc, metav1.ConditionFalse, failure.Reason, failure.Message)
+
+			// Everybody signs in through the identity provider of the platform
+			// config now, so the realm that is left over holds nobody back.
+			return nil, true, nil
+		}
+
 		stageCallbacks(
 			mc, metav1.ConditionTrue, string(component.Disabled),
 			"The identity provider of the platform config holds the callback URLs of Optimize",
@@ -172,6 +191,21 @@ func (r *Reconciler) syncOptimizeCallbacks(
 
 		return nil, false, nil
 	}
+	// The realm that the spec named before goes first. A realm that keeps the
+	// callbacks signs people in to the same Optimize instances as the new one,
+	// and no later reconcile can reach it once the record is gone.
+	retargeted, err := r.withdrawRetargeted(ctx, mc, res)
+	if err != nil {
+		return nil, false, err
+	}
+	if retargeted != nil {
+		stageCallbacks(mc, metav1.ConditionFalse, retargeted.Reason, retargeted.Message)
+		if len(desired) == 0 {
+			return nil, true, nil
+		}
+
+		return retargeted, true, nil
+	}
 	// Management Identity writes the whole client representation while it
 	// starts. This step reads that representation and writes it back with the
 	// redirect URIs replaced, so a write of its own between the two calls would
@@ -182,8 +216,6 @@ func (r *Reconciler) syncOptimizeCallbacks(
 		return nil, false, err
 	}
 	if !rolledOut {
-		const rollingOut = "Management Identity is rolling out, and it owns the Optimize client " +
-			"while it starts"
 		stageCallbacks(mc, metav1.ConditionFalse, string(component.PrerequisiteNotMet), rollingOut)
 		// A rollout that surges keeps IdentityReady True from the pod of the
 		// previous revision, so no component reports that the realm is behind.
@@ -222,9 +254,17 @@ func (r *Reconciler) syncOptimizeCallbacks(
 		return failure, true, nil
 	}
 
-	// The realm carries the callbacks, so the Optimize client is there and the
-	// Optimize role came with it. The first administrator can be one from
-	// before that role existed, and this is where they are given it.
+	// The realm carries the callbacks, so it is the realm to take them out of
+	// when the spec names another one later. Only a Keycloak that you run is
+	// recorded: the Keycloak that the operator runs is deleted by the same
+	// change, and its realm goes with it.
+	if provider.Mode == components.ModeExternalKeycloak {
+		mc.Status.CallbackRealm = new(components.RealmTarget(provider))
+	}
+
+	// The Optimize client is there and the Optimize role came with it. The
+	// first administrator can be one from before that role existed, and this
+	// is where they are given it.
 	grantFailure, err := r.grantAdminOptimizeRole(ctx, mc, provider)
 	if err != nil {
 		return nil, false, err
@@ -244,6 +284,69 @@ func (r *Reconciler) syncOptimizeCallbacks(
 	)
 
 	return nil, false, nil
+}
+
+// withdrawRetargeted removes the login callbacks of this management plane from
+// the realm that status.callbackRealm names, once the spec names another realm
+// or the oidc mode. It forgets the record when that realm holds nothing of
+// this operator any more, and the caller then registers in the realm of the
+// spec.
+//
+// A suspended management plane leaves every realm as it is, and so does one
+// whose spec still names the recorded realm.
+//
+// The failure it returns names the recorded realm. Nothing but this record
+// reaches that realm, so the caller reports the failure, leaves the realm of
+// the spec as it is, and comes back on the retry interval.
+func (r *Reconciler) withdrawRetargeted(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	res resolved,
+) (*conditions.PreCheckFailure, error) {
+	recorded := mc.Status.CallbackRealm
+	if recorded == nil || res.Input.Suspended {
+		return nil, nil
+	}
+
+	provider := res.Input.Provider
+	if provider.Mode != components.ModeOIDC &&
+		components.SameRealm(*recorded, components.RealmTarget(provider)) {
+		return nil, nil
+	}
+	// The pods of the revision before the change still write the recorded
+	// realm while they start, so a withdrawal that overlaps one of them is put
+	// back by it.
+	rolledOut, err := r.identityRolledOut(ctx, mc)
+	if err != nil {
+		return nil, err
+	}
+	if !rolledOut {
+		return &conditions.PreCheckFailure{
+			Reason:  string(component.PrerequisiteNotMet),
+			Message: rollingOut,
+		}, nil
+	}
+
+	old := components.RealmProvider(*recorded)
+	failure, err := r.convergeOptimizeCallbacks(ctx, mc, old, old.Clients.Optimize.ID, nil)
+	if err != nil {
+		return nil, err
+	}
+	// A realm that holds no Optimize client holds no callback of this operator
+	// either, so that realm is as tidy as a withdrawal leaves it.
+	if failure != nil && failure.Reason != v1.ReasonOptimizeClientMissing {
+		return &conditions.PreCheckFailure{
+			Reason: failure.Reason,
+			Message: fmt.Sprintf(
+				"Realm %q of Keycloak %q still carries the login callbacks of this management plane, "+
+					"and this operator could not remove them: %s",
+				recorded.Realm, recorded.URL, failure.Message,
+			),
+		}, nil
+	}
+	mc.Status.CallbackRealm = nil
+
+	return nil, nil
 }
 
 // identityRolledOut reports whether every pod of the Management Identity that
@@ -299,8 +402,11 @@ func nothingRegistered(mc *v1.CamundaManagementCluster) bool {
 }
 
 // stageNoCallbacks reports a realm that holds no login callback of this
-// management plane.
+// management plane, and forgets the realm that status.callbackRealm named. No
+// realm holds a callback of this operator in that state, so no realm is left
+// to withdraw from later.
 func stageNoCallbacks(mc *v1.CamundaManagementCluster) {
+	mc.Status.CallbackRealm = nil
 	stageCallbacks(
 		mc, metav1.ConditionTrue, v1.ReasonNoCallbacks,
 		"No Optimize behind this management plane names a URL, so no login callback of this "+

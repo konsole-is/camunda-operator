@@ -442,6 +442,16 @@ type CamundaManagementClusterStatus struct {
 	// +listMapKey=name
 	// +optional
 	Optimize []AttachedOptimizeStatus `json:"optimize,omitempty"`
+	// CallbackRealm is the Keycloak realm that this management plane last
+	// registered the login callbacks of Optimize in. When the spec names
+	// another realm, or the oidc mode, the operator signs in to this one and
+	// removes the callbacks before it registers them in the new realm.
+	//
+	// It is absent in the keycloak mode, where the operator runs Keycloak and
+	// deletes it with the management plane, and absent while no login callback
+	// of this operator is registered anywhere.
+	// +optional
+	CallbackRealm *KeycloakRealmTarget `json:"callbackRealm,omitempty"`
 	// Conditions represent the current state. Ready carries a pre-check
 	// reason, or it is derived from the conditions of the deployed components.
 	// The per-component conditions (KeycloakReady, IdentityReady,
@@ -488,6 +498,26 @@ type AttachedOptimizeStatus struct {
 	// ExternalURL is spec.externalUrl of that CamundaOptimize. The registered
 	// callback is this URL plus the login path of Optimize.
 	ExternalURL string `json:"externalUrl"`
+}
+
+// KeycloakRealmTarget is one Keycloak realm and how the operator signs in to
+// it. Two targets name the same realm when their url and their realm are the
+// same, whichever administrator each of them carries.
+type KeycloakRealmTarget struct {
+	// URL is the URL of Keycloak that the operator reaches, the /auth path
+	// included when Keycloak serves one.
+	URL string `json:"url"`
+	// Realm is the Keycloak realm.
+	Realm string `json:"realm"`
+	// AdminCredentialsSecretRef names the Secret with the Keycloak
+	// administrator that the operator signs in with, in the namespace of this
+	// resource.
+	AdminCredentialsSecretRef LocalCredentialsSecretRef `json:"adminCredentialsSecretRef"`
+	// CABundleSecretRef names the Secret key with the certificate authority of
+	// Keycloak, in the namespace of this resource. It is absent for a Keycloak
+	// whose certificate a public authority signed.
+	// +optional
+	CABundleSecretRef *LocalSecretKeyRef `json:"caBundleSecretRef,omitempty"`
 }
 
 // +kubebuilder:object:root=true

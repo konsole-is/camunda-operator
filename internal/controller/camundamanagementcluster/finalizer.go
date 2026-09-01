@@ -185,22 +185,13 @@ func (r *Reconciler) ownsContract(ctx context.Context, mc *v1.CamundaManagementC
 // it holds would stay claimed with nothing left to free them. A realm that the
 // operator could not reach keeps the callbacks, and the log line says so.
 //
-// The oidc mode registered nothing, and a Keycloak that the operator ran goes
-// with this resource, so only a Keycloak that you run keeps anything. The
-// caller decides whether this plane owns the contract; without that, a plane
-// parked on a name another owner holds would take the callbacks of the holder
-// with it.
+// A Keycloak that the operator ran goes with this resource, so only a Keycloak
+// that you run keeps anything. The caller decides whether this plane owns the
+// contract; without that, a plane parked on a name another owner holds would
+// take the callbacks of the holder with it.
 func (r *Reconciler) withdrawOptimizeCallbacks(ctx context.Context, mc *v1.CamundaManagementCluster) {
-	if components.Mode(mc) == components.ModeOIDC {
-		return
-	}
-
-	// The provider of a Keycloak mode follows from the spec alone, so the
-	// deletion path needs none of the pre-checks.
-	provider, err := components.ResolveIdentityProvider(components.Input{Cluster: mc})
-	if err != nil {
-		logf.FromContext(ctx).Error(err, "Resolving Keycloak to withdraw the Optimize callbacks")
-
+	provider, registered := withdrawalRealm(ctx, mc)
+	if !registered {
 		return
 	}
 
@@ -215,4 +206,35 @@ func (r *Reconciler) withdrawOptimizeCallbacks(ctx context.Context, mc *v1.Camun
 			failure, "Withdrawing the Optimize callbacks", "reason", failure.Reason,
 		)
 	}
+}
+
+// withdrawalRealm returns the realm to take the login callbacks out of, and
+// false for a management plane that registered none anywhere.
+//
+// status.callbackRealm is the realm they went into, which is the one to tidy
+// even after the spec was pointed at another Keycloak. A plane that recorded
+// none falls back to the spec: the record is written after the first
+// registration, and a Management Identity that started before it wrote the
+// callbacks of its own into the realm that the spec names. The provider of a
+// Keycloak mode follows from the spec alone, so the deletion path needs none
+// of the pre-checks.
+func withdrawalRealm(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) (components.IdentityProvider, bool) {
+	if recorded := mc.Status.CallbackRealm; recorded != nil {
+		return components.RealmProvider(*recorded), true
+	}
+	if components.Mode(mc) == components.ModeOIDC {
+		return components.IdentityProvider{}, false
+	}
+
+	provider, err := components.ResolveIdentityProvider(components.Input{Cluster: mc})
+	if err != nil {
+		logf.FromContext(ctx).Error(err, "Resolving Keycloak to withdraw the Optimize callbacks")
+
+		return components.IdentityProvider{}, false
+	}
+
+	return provider, true
 }

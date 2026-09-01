@@ -4886,6 +4886,73 @@ spec:
           status:
             description: status defines the observed state of CamundaManagementCluster
             properties:
+              callbackRealm:
+                description: |-
+                  CallbackRealm is the Keycloak realm that this management plane last
+                  registered the login callbacks of Optimize in. When the spec names
+                  another realm, or the oidc mode, the operator signs in to this one and
+                  removes the callbacks before it registers them in the new realm.
+
+                  It is absent in the keycloak mode, where the operator runs Keycloak and
+                  deletes it with the management plane, and absent while no login callback
+                  of this operator is registered anywhere.
+                properties:
+                  adminCredentialsSecretRef:
+                    description: |-
+                      AdminCredentialsSecretRef names the Secret with the Keycloak
+                      administrator that the operator signs in with, in the namespace of this
+                      resource.
+                    properties:
+                      name:
+                        description: Name of the Secret holding the credentials.
+                        minLength: 1
+                        type: string
+                      passwordKey:
+                        default: password
+                        description: PasswordKey is the key in the Secret holding
+                          the plaintext password.
+                        minLength: 1
+                        type: string
+                      usernameKey:
+                        default: username
+                        description: UsernameKey is the key in the Secret holding
+                          the plaintext username.
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  caBundleSecretRef:
+                    description: |-
+                      CABundleSecretRef names the Secret key with the certificate authority of
+                      Keycloak, in the namespace of this resource. It is absent for a Keycloak
+                      whose certificate a public authority signed.
+                    properties:
+                      key:
+                        description: Key in the Secret holding the value.
+                        minLength: 1
+                        type: string
+                      name:
+                        description: Name of the Secret holding the value.
+                        minLength: 1
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  realm:
+                    description: Realm is the Keycloak realm.
+                    type: string
+                  url:
+                    description: |-
+                      URL is the URL of Keycloak that the operator reaches, the /auth path
+                      included when Keycloak serves one.
+                    type: string
+                required:
+                - adminCredentialsSecretRef
+                - realm
+                - url
+                type: object
               clusters:
                 description: |-
                   Clusters lists every CamundaCluster that clusterSelector matched, and
