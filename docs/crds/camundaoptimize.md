@@ -51,11 +51,18 @@ A Service name stops at 63 characters, which is the tightest bound of the derive
 
 Read the names back with `kubectl get deploy,svc -l camunda.io/cluster=<cluster>`. The selector matches while the cluster name is 63 characters or less. For a longer name the label carries the cut form. `kubectl get deploy --show-labels` shows the value to select on.
 
-`kubectl describe camundaoptimize <name>` shows the condition messages that the table under [Status](#status) tells you to read. The kind carries no printer columns yet, so `kubectl get camundaoptimize` shows the name and the age alone. To see the state of every one at once, ask for the condition:
+`kubectl get camundaoptimize` shows whether each instance is ready, why, and the cluster it reads:
 
 ```bash
-kubectl get camundaoptimize -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,REASON:.status.conditions[?(@.type=="Ready")].reason'
+kubectl get camundaoptimize -n my-cluster-ns
 ```
+
+```
+NAME                  READY   REASON    CLUSTER      AGE
+my-cluster-optimize   True    Healthy   my-cluster   6m
+```
+
+`kubectl describe camundaoptimize <name>` shows the condition messages that the table under [Status](#status) tells you to read.
 
 The operator creates no Ingress and no route from outside the Kubernetes cluster. To open the user interface, publish `<name>-webapp` yourself, or reach it for a moment with `kubectl port-forward svc/<name>-webapp 8090:8090`.
 

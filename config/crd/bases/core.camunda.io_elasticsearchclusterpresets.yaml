@@ -14,7 +14,14 @@ spec:
     singular: elasticsearchclusterpreset
   scope: Cluster
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.cluster.version
+      name: Version
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
     schema:
       openAPIV3Schema:
         description: |-
@@ -1217,3 +1224,4 @@ spec:
         type: object
     served: true
     storage: true
+    subresources: {}

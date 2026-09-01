@@ -85,10 +85,12 @@ type BackupScheduleStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Cluster",type=string,JSONPath=`.spec.clusterRef.name`
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
+// +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Schedule",type=string,JSONPath=`.spec.schedule`
-// +kubebuilder:printcolumn:name="Last schedule",type=date,JSONPath=`.status.lastScheduleTime`
-// +kubebuilder:printcolumn:name="Last backup",type=string,JSONPath=`.status.lastBackupName`
+// +kubebuilder:printcolumn:name="Cluster",type=string,JSONPath=`.spec.clusterRef.name`,priority=1
+// +kubebuilder:printcolumn:name="Last schedule",type=date,JSONPath=`.status.lastScheduleTime`,priority=1
+// +kubebuilder:printcolumn:name="Last backup",type=string,JSONPath=`.status.lastBackupName`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // BackupSchedule creates logical backups of one CamundaCluster on a cron

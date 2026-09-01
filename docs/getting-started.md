@@ -131,6 +131,11 @@ kubectl wait camundacluster/my-cluster -n my-cluster-ns \
 kubectl get camundacluster -n my-cluster-ns
 ```
 
+```
+NAME         READY   REASON    VERSION   AGE
+my-cluster   True    Healthy   8.9.9     12m
+```
+
 If `Ready` stays `False`, read the conditions. The reason names the problem, for example a missing reference:
 
 ```bash

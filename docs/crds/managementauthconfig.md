@@ -80,6 +80,8 @@ When you edit the contract or the referenced Secret, the operator validates the 
 
 ## Status
 
+`kubectl get managementauthconfig` shows `Ready`, its reason, and the age.
+
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Healthy` | The Secret exists and holds the configured key. | Nothing. |

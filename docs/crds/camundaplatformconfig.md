@@ -151,6 +151,8 @@ When a referenced Secret or key is missing, `Ready` is `False` with reason `Miss
 
 ## Status
 
+`kubectl get camundaplatformconfig` shows `Ready`, its reason, and the age.
+
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Healthy` | Every referenced Secret exists and carries the named key. | Nothing. |

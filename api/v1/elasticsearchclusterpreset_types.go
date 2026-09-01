@@ -38,6 +38,8 @@ type ElasticsearchClusterPresetSpec struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.cluster.version`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // ElasticsearchClusterPreset is a cluster-scoped, passive baseline
 // configuration for ElasticsearchCluster resources: no controller reconciles

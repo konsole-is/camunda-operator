@@ -4,7 +4,7 @@
 
 A preset holds one PostgreSQL sizing as data: version, instance count, resources, storage, scheduling, monitoring, and the archive bucket. Each `DatabaseServer` that references it stays small and consistent. A platform team can publish a set of presets, for example `small`, `standard`, and `large`, and each team picks one.
 
-No controller reconciles a preset. It creates nothing and reports no status. The `DatabaseServer` controller reads it. A `DatabaseServer` uses it through `spec.presetRef`.
+No controller reconciles a preset. It creates nothing and reports no status. `kubectl get databaseserverpreset` shows the version it holds and the age. The `DatabaseServer` controller reads it. A `DatabaseServer` uses it through `spec.presetRef`.
 
 The smallest preset sets a version, an instance count, and a volume size:
 

@@ -14,7 +14,14 @@ spec:
     singular: databaseserverpreset
   scope: Cluster
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.server.version
+      name: Version
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
     schema:
       openAPIV3Schema:
         description: |-
@@ -932,3 +939,4 @@ spec:
         type: object
     served: true
     storage: true
+    subresources: {}

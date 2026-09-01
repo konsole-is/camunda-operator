@@ -145,6 +145,8 @@ Writing the request itself clears nothing. A request and its answer leave `Ready
 
 ## Status
 
+`kubectl get databaseserverconfig` shows `Ready`, its reason, the PostgreSQL version that the server reported, and the age.
+
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Healthy` | The server answered the admin credentials and reported its version. | Nothing. |
