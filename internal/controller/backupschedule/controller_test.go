@@ -17,6 +17,7 @@ limitations under the License.
 package backupschedule
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -123,6 +124,26 @@ func createWorld(storageType v1.SecondaryStorageType, mutate ...func(*v1.Camunda
 	Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
 	return &world{namespace: namespace, cluster: cluster}
+}
+
+// holdStorage puts the cluster of w in the suspension of a storage contract
+// that another cluster holds: Ready False with reason StorageAlreadyAttached.
+// The CamundaCluster controller does not run in this suite, so the condition
+// stays where the spec puts it.
+func holdStorage(w *world) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var current v1.CamundaCluster
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &current)).To(Succeed())
+		meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{
+			Type:               v1.ConditionReady,
+			Status:             metav1.ConditionFalse,
+			Reason:             v1.ReasonStorageAlreadyAttached,
+			Message:            "another CamundaCluster holds the SecondaryStorageConfig",
+			ObservedGeneration: current.Generation,
+		})
+		g.Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 }
 
 // createSchedule creates a daily schedule for the cluster of w and returns it
@@ -331,6 +352,32 @@ var _ = Describe("BackupSchedule controller", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(eventReasons(schedule)).To(ContainElement(ContainSubstring("TriggerSkipped")))
 			g.Expect(eventReasons(schedule)).To(ContainElement(ContainSubstring("suspended")))
+
+			var current v1.BackupSchedule
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), &current)).To(Succeed())
+			g.Expect(current.Status.LastScheduleTime).NotTo(BeNil())
+			g.Expect(current.Status.LastScheduleTime.Time).To(BeTemporally("==", trigger))
+			g.Expect(current.Status.LastBackupName).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+		Expect(scheduledOf(schedule)).To(BeEmpty())
+	})
+
+	It("skips the trigger of a cluster whose storage contract another cluster holds", func() {
+		w := createWorld(v1.SecondaryStorageTypeRDBMS)
+		holdStorage(w)
+		schedule, trigger := createSchedule(w)
+
+		clock.Set(trigger.Add(30 * time.Second))
+		touch(schedule)
+
+		// The event of the two suspensions is one event: the schedule waits
+		// on the cluster, and the cluster reports which suspension it is in.
+		want := fmt.Sprintf(
+			"TriggerSkipped: Skipped the trigger at %s: CamundaCluster %q is suspended",
+			trigger.Format(time.RFC3339), w.cluster.Name,
+		)
+		Eventually(func(g Gomega) {
+			g.Expect(eventReasons(schedule)).To(ContainElement(want))
 
 			var current v1.BackupSchedule
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), &current)).To(Succeed())
