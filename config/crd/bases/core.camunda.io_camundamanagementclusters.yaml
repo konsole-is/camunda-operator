@@ -4894,8 +4894,9 @@ spec:
                   removes the callbacks before it registers them in the new realm.
 
                   It is absent in the keycloak mode, where the operator runs Keycloak and
-                  deletes it with the management plane, and absent while no login callback
-                  of this operator is registered anywhere. A Keycloak that is gone for
+                  deletes it with the management plane or with a move away from that
+                  mode, and absent while no login callback of this operator is registered
+                  anywhere. A Keycloak that is gone for
                   good never answers, so the annotation camunda.io/forget-callback-realm,
                   set to <url>/realms/<realm> of this field, lets go of it with the
                   callbacks still in it.
