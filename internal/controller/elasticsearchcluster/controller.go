@@ -490,7 +490,7 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 	// differently than the one that registered it publishes nothing until the
 	// new repository exists. The record also keeps the name through a
 	// suspension.
-	registered := cluster.Status.SnapshotRepository
+	registeredName := cluster.Status.SnapshotRepository
 	password, err := credentials.LookupOrNew(
 		ctx, r.APIReader, client.ObjectKey{
 			Namespace: cluster.Namespace, Name: components.UserSecretName(cluster),
@@ -515,7 +515,7 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 		return nil, nil, fmt.Errorf("building elasticsearch component: %w", err)
 	}
 
-	storageContractComp, err := components.StorageContractComponent(cluster, merged, storage, registered)
+	storageContractComp, err := components.StorageContractComponent(cluster, merged, storage, registeredName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building storage-contract component: %w", err)
 	}

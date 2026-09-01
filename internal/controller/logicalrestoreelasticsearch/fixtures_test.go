@@ -40,6 +40,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	elasticsearchcluster "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin/esadmintest"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
@@ -159,7 +160,9 @@ func newWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	w.finish(mutate...)
 	w.esNamespace = "es-ns-" + utilrand.String(6)
 	w.esCluster = "es-" + utilrand.String(6)
-	w.repository = w.esNamespace + "." + w.esCluster
+	w.repository = elasticsearchcluster.RepositoryName(&v1.ElasticsearchCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: w.esCluster, Namespace: w.esNamespace},
+	})
 
 	return w
 }
