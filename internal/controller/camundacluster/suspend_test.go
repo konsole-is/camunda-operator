@@ -52,7 +52,7 @@ func workloadMeta(cluster *v1.CamundaCluster, name, comp string, controlled bool
 		Name:      name,
 		Namespace: cluster.Namespace,
 		Labels: map[string]string{
-			labels.ClusterKey:   cluster.Name,
+			labels.ClusterKey:   labels.OwnerName(cluster.Name),
 			labels.ComponentKey: comp,
 			labels.ManagedByKey: labels.ManagedBy,
 		},

@@ -587,6 +587,12 @@ var _ = Describe("CamundaCluster controller", func() {
 			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
 		}, timeout, interval).Should(Succeed())
 		expectEvent(cluster, eventReasonWorkloadsSuspended, corev1.EventTypeNormal)
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			g.Expect(latest.Status.Management).To(BeNil(), "no endpoint is published while the workloads are at zero")
+			g.Expect(latest.Status.Gateway).To(BeNil())
+		}, timeout, interval).Should(Succeed())
 
 		By("recreating the Secret")
 		createSecret(ns, name, map[string]string{"username": "camunda", "password": "es-password"})

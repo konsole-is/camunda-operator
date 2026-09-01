@@ -229,6 +229,11 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if suspended && suspendErr == nil {
 			failure.Message += ". The workloads are scaled to zero, with the volumes kept, until the pre-check passes"
 		}
+		// The bindings are nil while the cluster is suspended, see binding.go.
+		// The endpoints of the scaled workloads answer nothing, so a consumer
+		// must see a cluster that is not ready, not a stale endpoint.
+		cluster.Status.Management = nil
+		cluster.Status.Gateway = nil
 		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
 		if suspendErr != nil {
 			return ctrl.Result{}, suspendErr
