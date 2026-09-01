@@ -111,9 +111,14 @@ ORIGIN=$(echo "$LOGIN_START_URL" | cut -d/ -f1-3)
 
 request() {
   name=$1
-  shift
+  url=$2
+  shift 2
+  STATUS="no answer"
+  URL=$url
+  REDIRECT="[]"
+  : > "$BODY"
   meta=$(curl -sS --cookie-jar "$JAR" --cookie "$JAR" -o "$BODY" ` +
-	`-w '%{http_code} %{url_effective} [%{redirect_url}]' "$@")
+	`-w '%{http_code} %{url_effective} [%{redirect_url}]' "$@" "$url") || fail "$name"
   STATUS=$(echo "$meta" | cut -d' ' -f1)
   URL=$(echo "$meta" | cut -d' ' -f2)
   REDIRECT=$(echo "$meta" | cut -d' ' -f3)
@@ -126,13 +131,13 @@ fail() {
   exit 1
 }
 
-request "login page" -L -H 'Accept: text/html' "$LOGIN_START_URL"
+request "login page" "$LOGIN_START_URL" -L -H 'Accept: text/html'
 ACTION=$(grep -o 'action="[^"]*login-actions/authenticate[^"]*"' "$BODY" | ` +
 	`head -n 1 | sed -e 's/^action="//' -e 's/"$//' -e 's/&amp;/\&/g')
 if [ -z "$ACTION" ]; then fail "the login page of the realm"; fi
 
-request "callback" -L --data-urlencode "username=$LOGIN_USERNAME" ` +
-	`--data-urlencode "password=$LOGIN_PASSWORD" "$ACTION"
+request "callback" "$ACTION" -L --data-urlencode "username=$LOGIN_USERNAME" ` +
+	`--data-urlencode "password=$LOGIN_PASSWORD"
 case "$URL" in "$ORIGIN"*) ;; *) fail "the return to the application" ;; esac
 
 request "protected endpoint" "$LOGIN_PROTECTED_URL"
