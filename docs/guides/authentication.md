@@ -292,7 +292,6 @@ The identity provider has one confidential client `camunda` with the secret in t
       name: medium
     spec:
       cluster:
-        version: "8.9.9"
         zeebe:
           replicas: 3
           partitions: 3
@@ -300,7 +299,6 @@ The identity provider has one confidential client `camunda` with the secret in t
           storageSize: "32Gi"
         connectors:
           enabled: true
-          version: "8.9.7"
         auth:
           admin:
             clients:
@@ -311,7 +309,7 @@ The identity provider has one confidential client `camunda` with the secret in t
                 claimValue: "camunda-admins"
     ```
 
-3. One cluster. It inherits the client, the administrators, and connectors from the layers above. It sets only what is its own: the names of the references, the URL, and the storage.
+3. One cluster. It inherits the client, the administrators, and connectors from the layers above, and its versions from a [CamundaRelease](../crds/camundarelease.md). It sets only what is its own: the names of the references, the URL, and the storage.
 
     ```yaml
     apiVersion: core.camunda.io/v1
@@ -321,6 +319,7 @@ The identity provider has one confidential client `camunda` with the secret in t
       namespace: orders
     spec:
       presetRef: medium
+      releaseRef: camunda-8-9-4
       platformConfigRef: production
       storageRef: orders-storage
       externalUrl: "https://orders.camunda.example.com"
