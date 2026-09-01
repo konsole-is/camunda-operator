@@ -265,10 +265,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			ctx, &mc, "the realm of the spec answers to another management plane",
 		)
 
+		// A non-nil error makes controller-runtime drop the result and
+		// requeue with backoff, so the interval goes back alone.
+		if err := errors.Join(withdrawErr, r.withdrawFromDeselected(ctx, &mc)); err != nil {
+			return ctrl.Result{}, err
+		}
+
 		// Nothing watches the Lease, and a plane never watches another plane,
 		// so a parked plane finds a released realm on its own.
-		return ctrl.Result{RequeueAfter: r.retryInterval()},
-			errors.Join(withdrawErr, r.withdrawFromDeselected(ctx, &mc))
+		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 
 	clusters, err := r.listClusters(ctx)
