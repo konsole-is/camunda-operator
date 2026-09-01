@@ -134,6 +134,7 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups="",resources=pods,verbs=list
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
@@ -145,7 +146,9 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // failed pre-check reports its Ready reason and stops. A cluster whose
 // storage contract another cluster holds renders suspended, reports
 // StorageAlreadyAttached instead of the aggregate, and looks again on a
-// timer. An effective version below the one the brokers run is refused
+// timer. A cluster that takes a contract over reports WaitingForHandover on
+// the same timer while a pod of the previous holder still writes it. An
+// effective version below the one the brokers run is refused
 // before anything is applied, unless the annotation
 // camunda.io/allow-version-downgrade names it. A cluster that is parked on a
 // held contract renders at zero on the running version first, and the

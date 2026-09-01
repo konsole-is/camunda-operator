@@ -147,6 +147,18 @@ func discoveryLabels(cluster *v1.CamundaCluster, comp string) map[string]string 
 	return labels.Discovery(labels.Cluster(cluster.Name), comp)
 }
 
+// StoragePodLabels returns the labels that find every pod of the cluster
+// named cluster that writes the SecondaryStorageConfig named contract. The
+// pods carry them next to the discovery labels, and a cluster that takes the
+// contract over lists the pods of the previous holder by them. Both values
+// are bounded the way a label value demands.
+func StoragePodLabels(cluster, contract string) map[string]string {
+	return map[string]string{
+		labels.ClusterKey:         labels.OwnerName(cluster),
+		labels.StorageContractKey: labels.OwnerName(contract),
+	}
+}
+
 // zeebeComponent builds the brokers: the optional ServiceAccount, the
 // StatefulSet, the headless Service, and the optional ServiceMonitor. It is
 // gated on p.Enabled like every process component.
@@ -373,7 +385,10 @@ func podTemplate(in Input, p Process) corev1.PodTemplateSpec {
 	return corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: labels.Merge(
-				DerivedPodLabels(in.Backup, in.Documents),
+				labels.Merge(
+					DerivedPodLabels(in.Backup, in.Documents),
+					StoragePodLabels(in.Cluster.Name, in.Cluster.Spec.StorageRef),
+				),
 				discoveryLabels(in.Cluster, p.Component),
 			),
 			Annotations: map[string]string{ConfigHashAnnotation: configHash(in, p, r)},

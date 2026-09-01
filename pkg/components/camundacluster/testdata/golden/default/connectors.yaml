@@ -23,6 +23,7 @@ spec:
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: connectors
+        camunda.io/storage-contract: my-storage-config
         company.com/team: automation-ops
         team: platform
     spec:

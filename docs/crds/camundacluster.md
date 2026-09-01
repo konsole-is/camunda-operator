@@ -130,7 +130,21 @@ The claim goes to the cluster whose reconcile patches the contract first. This i
 
 The API server accepts a second cluster that names a held contract. That cluster is suspended: every workload at zero and the volumes kept. Its `Ready` is `False` with reason `StorageAlreadyAttached`, and the message names the holder and the contract.
 
-The suspended cluster looks again every 30 seconds. When the holder is deleted or names another contract, the suspended cluster takes the claim and resumes on its own. A paused holder keeps its claim until you unpause it. After a repoint, the pods of the previous holder reach their new backend only when its rollout finishes. For that time both clusters write the old backend. If that overlap matters, stop the holder first. Do not remove the two claim annotations by hand while two clusters name the contract. Both clusters then race for the free contract, and the holder can lose it and be suspended.
+The suspended cluster looks again every 30 seconds. When the holder is deleted or names another contract, the suspended cluster takes the claim and resumes on its own. A paused holder keeps its claim until you unpause it. Do not remove the two claim annotations by hand while two clusters name the contract. Both clusters then race for the free contract, and the holder can lose it and be suspended.
+
+The two clusters never write one backend at the same time. The pods of a deleted holder go after the cluster, and the pods of a repointed holder go when its rollout replaces them. Until then, the cluster that takes the contract stays at zero. Its `Ready` is `False` with reason `WaitingForHandover`, and the message names the previous holder and its pods. The state clears on its own. Every pod carries the label `camunda.io/storage-contract` with the name of the contract it writes, so `kubectl get pods -l camunda.io/storage-contract=<name>` lists them.
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: WaitingForHandover
+      message: >-
+        Pods of the previous holder CamundaCluster "my-cluster-ns/my-other-cluster"
+        still write SecondaryStorageConfig "my-cluster-ns/my-storage-config":
+        my-other-cluster-zeebe-0. This cluster starts when they are gone
+```
 
 A recreated contract is a new claim. If the producer deletes the contract and creates it again, the holder and a suspended cluster race for the new claim. The holder can lose that race. Do not recreate a contract while two clusters name it.
 
@@ -271,6 +285,7 @@ Deleting the cluster removes every resource that the operator created for it. Th
 | `Ready` | `Degraded` / `Down` | Some or no replicas of a component are ready after the grace period. | Read the pods and events of the named component. |
 | `Ready` | `Suspended` | `spec.suspend` is true and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to resume. |
 | `Ready` | `StorageAlreadyAttached` | Another `CamundaCluster` holds the `SecondaryStorageConfig` that `storageRef` names. This cluster is suspended. | Give this cluster a contract of its own, or delete the holder. The message names both, and the last apply error of the workloads when one occurred. |
+| `Ready` | `WaitingForHandover` | This cluster takes over the `SecondaryStorageConfig` that `storageRef` names, and pods of the previous holder still write it. This cluster stays at zero. | Wait. The message names the previous holder and its pods. The state clears on its own. If the pods never go, delete them. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, a ServiceAccount with `create: false` is absent, two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. | Read the message. Create the missing resource or correct the field it names. |
 | `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. | Create the Secret with the named key. |
 | `Ready` | `VersionDowngradeRefused` | The effective version is below the version the brokers run, and no annotation sanctions the move. The operator applies nothing, and the brokers keep the version they have. | Read [Version](#version). Set the version forward again, or sanction the downgrade. |

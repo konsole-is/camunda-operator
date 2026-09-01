@@ -19,6 +19,8 @@ package camundacluster
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -38,9 +40,11 @@ const eventReasonStorageClaimed = "StorageClaimed"
 // claimStorage gives this cluster the storage contract, or records the
 // cluster that holds it. The first CamundaCluster that claims a contract
 // holds it. A claim whose holder is gone, or names another contract, is
-// stale and is taken over. Otherwise the holder lands on in.Storage.Holder
-// and the controller renders this cluster suspended. It needs res.storage
-// from resolveStorage. A conflict on the claim is a transient error.
+// stale and is taken over once no pod of that holder writes the contract.
+// Until then the claim stays and the step fails with WaitingForHandover. A
+// live holder lands on in.Storage.Holder and the controller renders this
+// cluster suspended. It needs res.storage from resolveStorage. A conflict on
+// the claim is a transient error.
 func (res *resolver) claimStorage(ctx context.Context, in *components.Input) error {
 	self := secondarystorageconfig.Holder{
 		Cluster: client.ObjectKeyFromObject(res.cluster),
@@ -64,6 +68,10 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 			}
 
 			return nil
+		}
+
+		if err := res.waitForHandover(ctx, holder); err != nil {
+			return err
 		}
 	}
 
@@ -107,6 +115,61 @@ func (res *resolver) staleHolder(ctx context.Context, holder secondarystoragecon
 	repointed := !owner.Spec.Pause && held != client.ObjectKeyFromObject(res.storage)
 
 	return owner.UID != holder.UID || repointed, nil
+}
+
+// waitForHandover fails with WaitingForHandover while a pod of the stale
+// holder still writes the contract: a deleted holder leaves its pods to the
+// garbage collector, and a repointed one replaces them through a rollout.
+// Nothing watches those pods for this cluster, so the failure is unwatched
+// and the controller looks again on its timer.
+func (res *resolver) waitForHandover(ctx context.Context, holder secondarystorageconfig.Holder) error {
+	pods, err := res.holderPods(ctx, holder)
+	if err != nil {
+		return err
+	}
+	if len(pods) == 0 {
+		return nil
+	}
+
+	return conditions.NewUnwatchedFailure(
+		v1.ReasonWaitingForHandover,
+		fmt.Sprintf(
+			"Pods of the previous holder CamundaCluster %q still write SecondaryStorageConfig %q: %s. "+
+				"This cluster starts when they are gone",
+			objectPath(holder.Cluster), objectPath(client.ObjectKeyFromObject(res.storage)),
+			strings.Join(pods, ", "),
+		),
+	)
+}
+
+// holderPods returns the sorted names of the pods of holder that carry the
+// storage labels of the contract. A holder in another namespace names a
+// contract of its own, so it has no pods on this one.
+func (res *resolver) holderPods(ctx context.Context, holder secondarystorageconfig.Holder) ([]string, error) {
+	if holder.Cluster.Namespace != res.storage.Namespace {
+		return nil, nil
+	}
+
+	var pods corev1.PodList
+	if err := res.reader.List(
+		ctx,
+		&pods,
+		client.InNamespace(holder.Cluster.Namespace),
+		client.MatchingLabels(components.StoragePodLabels(holder.Cluster.Name, res.storage.Name)),
+	); err != nil {
+		return nil, fmt.Errorf(
+			"listing the pods of the holder %s of SecondaryStorageConfig %s: %w",
+			holder.Cluster, client.ObjectKeyFromObject(res.storage), err,
+		)
+	}
+
+	var names []string
+	for i := range pods.Items {
+		names = append(names, pods.Items[i].Name)
+	}
+	slices.Sort(names)
+
+	return names, nil
 }
 
 // storageHeld builds the Ready condition of a cluster whose storage contract
