@@ -38,14 +38,16 @@ func TestRealmTargetRecordsWhereTheRealmIsAndHowToSignIn(t *testing.T) {
 		CABundle: &v1.LocalSecretKeyRef{Name: "keycloak-ca", Key: "ca.crt"},
 	}
 
-	assert.Equal(t, &v1.KeycloakRealmTarget{
-		URL:   "https://keycloak.example.com/auth",
-		Realm: "camunda-platform",
-		AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
-			Name: "keycloak-admin", UsernameKey: "username", PasswordKey: "password",
-		},
-		CABundleSecretRef: &v1.LocalSecretKeyRef{Name: "keycloak-ca", Key: "ca.crt"},
-	}, RealmTarget(provider))
+	assert.Equal(
+		t, &v1.KeycloakRealmTarget{
+			URL:   "https://keycloak.example.com/auth",
+			Realm: "camunda-platform",
+			AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
+				Name: "keycloak-admin", UsernameKey: "username", PasswordKey: "password",
+			},
+			CABundleSecretRef: &v1.LocalSecretKeyRef{Name: "keycloak-ca", Key: "ca.crt"},
+		}, RealmTarget(provider),
+	)
 }
 
 // The oidc mode administers no realm, so there is nothing to record.

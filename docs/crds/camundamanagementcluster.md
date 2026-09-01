@@ -535,7 +535,7 @@ The `oidc` mode registers nothing. Your provider holds the callback URLs, so `sp
 
 ### Moving the callbacks to another realm
 
-When `spec.identityProvider` starts naming another Keycloak, another `realm`, or the `oidc` mode, the login callbacks leave the realm they were in. Only then does the management plane register them in the new realm. `status.callbackRealm` names the realm that carries them:
+When `spec.identityProvider` starts naming another Keycloak, another `realm`, or the `oidc` mode, the login callbacks leave the realm they were in. Only then does the management plane register them in the new realm. `status.callbackRealm` names the realm that carries them, so it keeps naming the old realm until they have left it:
 
 ```yaml
 status:
@@ -548,7 +548,7 @@ status:
       passwordKey: "password"
 ```
 
-Keep that Secret, and the Secret of `caBundleSecretRef` when the old Keycloak needed one, until `OptimizeCallbacksReady` reads `Healthy` again. The operator signs in to the old Keycloak with them one last time.
+Keep the Secret that `adminCredentialsSecretRef` names there, and the Secret of `caBundleSecretRef` when the old Keycloak needed one, until `OptimizeCallbacksReady` reads `Healthy` again. The operator signs in to the old Keycloak with them one last time.
 
 A move to the `oidc` mode empties the old realm the same way. `status.callbackRealm` then goes, and `OptimizeCallbacksReady` reads `Disabled`.
 
