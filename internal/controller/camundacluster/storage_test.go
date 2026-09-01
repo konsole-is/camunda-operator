@@ -123,7 +123,7 @@ func TestStampBrokerVersion(t *testing.T) {
 		{
 			name:    "stamps an unstamped claim",
 			version: "8.9.9",
-			want:  "8.9.9", patched: true,
+			want:    "8.9.9", patched: true,
 		},
 		{
 			name:    "restamps a claim of an earlier version",
