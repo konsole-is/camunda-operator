@@ -531,7 +531,7 @@ func TestValidateMerged(t *testing.T) {
 		{
 			"missing version",
 			v1.CamundaClusterSpec{},
-			"missing required fields after the preset and release merge: version",
+			"missing required fields: version",
 		},
 		{
 			"version below floor",
@@ -591,7 +591,7 @@ func TestValidateMergedJoinsEveryProblem(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(
 		t,
-		"missing required fields after the preset and release merge: version; "+
+		"missing required fields: version; "+
 			"zeebe.replicationFactor 3 exceeds zeebe.replicas 1; "+
 			"connectors.version is required when connectors are enabled",
 		err.Error(),
