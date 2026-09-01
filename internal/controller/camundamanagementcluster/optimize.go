@@ -130,6 +130,11 @@ func (r *Reconciler) listOptimizes(ctx context.Context, contract string) ([]v1.C
 // callback it registered before is waiting to be withdrawn, and it stops
 // calling Keycloak altogether once the condition reports that nothing of this
 // operator is registered.
+//
+// status.callbackRealm records the realm of a Keycloak that you run once the
+// callbacks are there. A spec that names another realm, or the oidc mode,
+// withdraws from the recorded realm before this step registers anywhere
+// else, so a realm the spec no longer names never keeps signing people in.
 func (r *Reconciler) syncOptimizeCallbacks(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
