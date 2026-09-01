@@ -218,12 +218,11 @@ func RepositoryName(cluster *v1.ElasticsearchCluster) string {
 }
 
 // RepositoryBasePath returns the base path that the snapshot repository named
-// repository holds in the bucket whose base path is bucketPath, and reports
-// whether repository can be a name that RepositoryName produced: a namespace
-// and a cluster name that Kubernetes itself accepts. A name that cannot be
-// one answers false. Such a name holds a prefix that only its own
-// registration knows, so a caller must read that registration instead of
-// writing one of its own.
+// repository holds in the bucket whose base path is bucketPath. It reports
+// true only when repository can be a name that RepositoryName produced: a
+// namespace and a cluster name that Kubernetes itself accepts. Any other name
+// holds a prefix that only its own registration knows, so a caller must read
+// that registration instead of writing one of its own.
 func RepositoryBasePath(bucketPath, repository string) (string, bool) {
 	namespace, name, found := strings.Cut(repository, repositorySeparator)
 	if !found ||
