@@ -301,6 +301,13 @@ func servingClusterWithBucket(namespace, bucket string) *v1.ElasticsearchCluster
 	return cluster
 }
 
+// repositoryOf names the snapshot repository that the operator registers for
+// cluster. The name carries the namespace, so two clusters of one name in two
+// namespaces never meet on one registration.
+func repositoryOf(cluster *v1.ElasticsearchCluster) string {
+	return cluster.Namespace + "." + cluster.Name
+}
+
 // expectRepositoryRegistered waits for the cluster to report a healthy
 // snapshot repository.
 func expectRepositoryRegistered(cluster *v1.ElasticsearchCluster) {
@@ -600,7 +607,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key, &contract)).To(Succeed())
-			g.Expect(contract.Spec.Elasticsearch.SnapshotRepository).To(Equal(cluster.Name))
+			g.Expect(contract.Spec.Elasticsearch.SnapshotRepository).To(Equal(repositoryOf(cluster)))
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -656,7 +663,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
 			g.Expect(condition.Reason).To(Equal(v1.ReasonHealthy))
 
-			registered := elasticsearch.Repository(cluster.Name)
+			registered := elasticsearch.Repository(repositoryOf(cluster))
 			g.Expect(registered).NotTo(BeNil())
 			g.Expect(registered.Settings).To(
 				HaveKeyWithValue("endpoint", "http://minio.minio.svc:9000"),
@@ -686,7 +693,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(condition.Reason).To(Equal(v1.ReasonHealthy))
 		}, timeout, interval).Should(Succeed())
 
-		repo := elasticsearch.Repository(cluster.Name)
+		repo := elasticsearch.Repository(repositoryOf(cluster))
 		Expect(repo).NotTo(BeNil())
 		Expect(repo.Type).To(Equal("s3"))
 		Expect(repo.Settings).To(HaveKeyWithValue("bucket", "camunda-backups"))
@@ -708,10 +715,10 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		// that was already on its way.
 		var puts int
 		Eventually(func(g Gomega) {
-			before := elasticsearch.RepositoryPuts(cluster.Name)
+			before := elasticsearch.RepositoryPuts(repositoryOf(cluster))
 			g.Expect(before).NotTo(BeZero())
 			time.Sleep(interval)
-			puts = elasticsearch.RepositoryPuts(cluster.Name)
+			puts = elasticsearch.RepositoryPuts(repositoryOf(cluster))
 			g.Expect(puts).To(Equal(before), "a registration is still in flight")
 		}, timeout, interval).Should(Succeed())
 		// The reconciler writes the cluster too, so the update re-reads on a
@@ -724,7 +731,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		Consistently(func(g Gomega) {
-			g.Expect(elasticsearch.RepositoryPuts(cluster.Name)).To(Equal(puts))
+			g.Expect(elasticsearch.RepositoryPuts(repositoryOf(cluster))).To(Equal(puts))
 		}, "2s", interval).Should(Succeed())
 
 		// A changed bucket re-registers: the fingerprint no longer matches.
@@ -737,11 +744,50 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		Eventually(func(g Gomega) {
-			g.Expect(elasticsearch.RepositoryPuts(cluster.Name)).To(BeNumerically(">", puts))
-			refreshed := elasticsearch.Repository(cluster.Name)
+			g.Expect(elasticsearch.RepositoryPuts(repositoryOf(cluster))).To(BeNumerically(">", puts))
+			refreshed := elasticsearch.Repository(repositoryOf(cluster))
 			g.Expect(refreshed).NotTo(BeNil())
 			g.Expect(refreshed.Settings).To(HaveKeyWithValue("endpoint", "http://minio.minio.svc:9000"))
 		}, timeout, interval).Should(Succeed())
+	})
+
+	// The suite runs one Elasticsearch behind every cluster, which is what a
+	// contract that names the Elasticsearch of another namespace produces. Two
+	// clusters of one name must not meet on one registration there: the second
+	// would point the repository of the first at its own prefix, and a
+	// consumer of either would read snapshots that the other wrote.
+	It("gives two clusters of one name in two namespaces two repositories", func() {
+		name := "esc-" + utilrand.String(8)
+		serving := func() *v1.ElasticsearchCluster {
+			namespace := newElasticsearchClusterNamespace()
+			bucket := createObjectStorageConfig(namespace, s3BucketSpec(nil))
+			preset := createElasticsearchClusterPreset(smallClusterSpec())
+			cluster := validElasticsearchCluster()
+			cluster.Name = name
+			cluster.Namespace = namespace
+			cluster.Spec.PresetRef = preset.Name
+			cluster.Spec.SnapshotStorageRef = bucket.Name
+			createECKSecrets(cluster)
+			createElasticsearchCluster(cluster)
+			expectRepositoryRegistered(cluster)
+
+			return cluster
+		}
+
+		clusters := []*v1.ElasticsearchCluster{serving(), serving()}
+		Expect(repositoryOf(clusters[0])).NotTo(Equal(repositoryOf(clusters[1])))
+
+		// Both clusters keep reconciling. Neither registration moves to the
+		// prefix of the other cluster, which is what a shared name produced.
+		Consistently(func(g Gomega) {
+			for _, cluster := range clusters {
+				repo := elasticsearch.Repository(repositoryOf(cluster))
+				g.Expect(repo).NotTo(BeNil(), cluster.Namespace)
+				g.Expect(repo.Settings).To(HaveKeyWithValue(
+					"base_path", "clusters/"+cluster.Namespace+"/"+cluster.Name,
+				))
+			}
+		}, "2s", interval).Should(Succeed())
 	})
 
 	// A gcs bucket registers a gcs repository under the same per-cluster
@@ -754,7 +800,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 
 		expectRepositoryRegistered(cluster)
 
-		repo := elasticsearch.Repository(cluster.Name)
+		repo := elasticsearch.Repository(repositoryOf(cluster))
 		Expect(repo).NotTo(BeNil())
 		Expect(repo.Type).To(Equal("gcs"))
 		Expect(repo.Settings).To(HaveKeyWithValue("bucket", "camunda-backups"))
@@ -772,7 +818,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 
 		expectRepositoryRegistered(cluster)
 
-		repo := elasticsearch.Repository(cluster.Name)
+		repo := elasticsearch.Repository(repositoryOf(cluster))
 		Expect(repo).NotTo(BeNil())
 		Expect(repo.Type).To(Equal("azure"))
 		Expect(repo.Settings).To(HaveKeyWithValue("container", "camunda-backups"))

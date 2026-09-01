@@ -288,7 +288,7 @@ status:
     version: 8.9.9
     partitions: 3
     # Elasticsearch path with a backupStorageRef only: the snapshot repository of the storage contract.
-    backupRepository: my-cluster
+    backupRepository: my-cluster-ns.my-cluster-es
 ```
 
 `status.gateway` publishes the address of the client APIs, so a client or another resource connects without knowing which process runs the gateway. It is empty while the cluster is suspended.
