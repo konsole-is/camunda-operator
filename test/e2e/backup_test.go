@@ -317,10 +317,11 @@ func itBacksUpTheRelationalCluster(cluster *v1.CamundaCluster) {
 
 // esRepository returns the snapshot repository that the ElasticsearchCluster
 // named elasticsearch registers. Both flows run their Elasticsearch in the
-// namespace of their cluster, and the repository name carries that namespace
-// so that two clusters of one name never meet on one registration.
+// namespace of their cluster.
 func esRepository(cluster *v1.CamundaCluster, elasticsearch string) string {
-	return cluster.Namespace + "." + elasticsearch
+	return escomponents.RepositoryName(&v1.ElasticsearchCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: elasticsearch, Namespace: cluster.Namespace},
+	})
 }
 
 // runtimeBackupObjects returns the objects that the Zeebe backup of id wrote
