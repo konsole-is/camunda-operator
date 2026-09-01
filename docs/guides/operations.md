@@ -15,7 +15,7 @@ NAME         READY   REASON    VERSION   AGE
 my-cluster   True    Healthy   8.9.9     12m
 ```
 
-The operator reports the state of each component in `status.conditions`. Read the status itself for those:
+The operator reports the state of each component in `status.conditions`. Read the status to see them:
 
 ```bash
 kubectl get camundacluster my-cluster -n my-cluster-ns -o yaml

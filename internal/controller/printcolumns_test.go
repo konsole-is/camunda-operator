@@ -116,6 +116,19 @@ func TestEveryCRDPrintsTheStateItReports(t *testing.T) {
 	}
 }
 
+// reportsConditions reports whether the status of the version carries
+// conditions, which is what a Ready column reads.
+func (v crdVersion) reportsConditions() bool {
+	status, ok := v.Schema.OpenAPIV3Schema.Properties["status"]
+	if !ok {
+		return false
+	}
+
+	_, ok = status.Properties["conditions"]
+
+	return ok
+}
+
 // assertReadyLeads asserts the uniform shape: Ready and its reason open the
 // row, and at most one column of the default width stands between the reason
 // and the age.
@@ -136,17 +149,4 @@ func assertReadyLeads(t *testing.T, columns []printerColumn) {
 	}
 
 	assert.LessOrEqual(t, wide, 1, "at most one column stands between Reason and Age")
-}
-
-// reportsConditions reports whether the status of the version carries
-// conditions, which is what a Ready column reads.
-func (v crdVersion) reportsConditions() bool {
-	status, ok := v.Schema.OpenAPIV3Schema.Properties["status"]
-	if !ok {
-		return false
-	}
-
-	_, ok = status.Properties["conditions"]
-
-	return ok
 }
