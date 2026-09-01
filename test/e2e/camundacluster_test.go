@@ -56,8 +56,8 @@ const (
 	// ccRDBMSPreset and ccRDBMSRelease split the RDBMS cluster into the
 	// shape and the versions, so the flow proves the preset and release
 	// layering end to end.
-	ccRDBMSPreset  = "camunda-rdbms-e2e"
-	ccRDBMSRelease = "camunda-rdbms-e2e"
+	ccRDBMSPreset  = "camunda-rdbms-e2e-preset"
+	ccRDBMSRelease = "camunda-rdbms-e2e-release"
 	// ccStorageConfig is the SecondaryStorageConfig of the Elasticsearch
 	// flow, published by its ElasticsearchCluster.
 	ccStorageConfig = "camunda-storage"

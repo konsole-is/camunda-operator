@@ -178,8 +178,9 @@ func (s brokerStorage) runningVersion() string {
 }
 
 // appliedVersion returns the version that the applied StatefulSet carries
-// in its broker version annotation, or the empty string before the first
-// apply.
+// in its broker version annotation. It returns the empty string before the
+// first apply, and for a StatefulSet without the annotation, which an apply
+// from before the annotation existed left behind.
 func (s brokerStorage) appliedVersion() string {
 	if s.statefulSet == nil {
 		return ""
