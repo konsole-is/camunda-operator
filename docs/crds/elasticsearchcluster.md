@@ -45,7 +45,9 @@ You can increase `spec.storageSize` at any time. You cannot decrease it. Admissi
 
 Set `spec.snapshotStorageRef` to an `ObjectStorageConfig` to take part in backups. The operator registers the snapshot repository `<namespace>.<name>` in Elasticsearch with the base path `<basePath>/<namespace>/<name>`, where `<basePath>` comes from the bucket. The bucket must be the same one that the `CamundaCluster` references in its `backupStorageRef`. The operator gives the nodes the credentials or the workload identity of the bucket. For an `AzureBlob` bucket, the endpoint must reduce to an endpoint suffix (`https://<account>.blob.<suffix>`), or `Ready` reports `InvalidReference`. `SnapshotRepositoryReady` reports the registration, and the `SecondaryStorageConfig` carries `snapshotRepository` only after the registration succeeds.
 
-The repository name carries the namespace, so two `ElasticsearchCluster` resources of one name in two namespaces never share a repository. This matters when both reach one Elasticsearch server, which happens when a `SecondaryStorageConfig` points at an Elasticsearch that another `ElasticsearchCluster` owns. Each name reads back as the one base path that holds its snapshots, so a restore that registers the repository of another cluster leaves a registration that no `ElasticsearchCluster` rewrites.
+The name carries the namespace. Two `ElasticsearchCluster` resources of one name in two namespaces therefore never share a repository. This matters when both reach one Elasticsearch server. A `SecondaryStorageConfig` that points at the Elasticsearch of another `ElasticsearchCluster` puts them there. Your snapshots stay under the base path of your own cluster. A restore of a backup from another cluster does not move them.
+
+A repository name stops at 253 characters, which is the bound of the `snapshotRepository` field. ECK rejects an `Elasticsearch` name over 36 characters, and a namespace stops at 63. The longest name the operator can build is therefore 100 characters, so the bound is out of reach.
 
 ## Credentials
 

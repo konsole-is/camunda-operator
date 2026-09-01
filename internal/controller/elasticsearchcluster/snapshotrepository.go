@@ -166,6 +166,12 @@ func (r *ElasticsearchClusterReconciler) checkServiceAccount(
 // is reported for a cluster that takes no part in backups. The caller skips
 // it entirely while the cluster is suspended.
 //
+// It records the converged name in status.snapshotRepository, which is what
+// the contract publishes, and clears it for a cluster that references no
+// bucket. A registration that fails leaves the record alone: the repository
+// that Elasticsearch already holds is still there, and a consumer of the
+// contract keeps a name it can use.
+//
 // A repository that already converged is not re-registered while its settings
 // are unchanged: Elasticsearch verifies a repository on every registration,
 // with every data node writing a test blob. The fingerprints live in memory,
@@ -181,6 +187,8 @@ func (r *ElasticsearchClusterReconciler) registerSnapshotRepository(
 ) metav1.Condition {
 	if storage == nil || storage.Config == nil {
 		r.registeredRepositories.Delete(client.ObjectKeyFromObject(cluster))
+		cluster.Status.SnapshotRepository = ""
+
 		return metav1.Condition{}
 	}
 
@@ -192,6 +200,8 @@ func (r *ElasticsearchClusterReconciler) registerSnapshotRepository(
 	if previous, ok := r.registeredRepositories.Load(key); ok &&
 		previous == fingerprint &&
 		meta.IsStatusConditionTrue(cluster.Status.Conditions, components.ConditionSnapshotRepository) {
+		cluster.Status.SnapshotRepository = name
+
 		return r.repositoryCondition(
 			cluster, metav1.ConditionTrue, v1.ReasonHealthy,
 			fmt.Sprintf("snapshot repository %q is registered", name),
@@ -220,6 +230,7 @@ func (r *ElasticsearchClusterReconciler) registerSnapshotRepository(
 		)
 	}
 	r.registeredRepositories.Store(key, fingerprint)
+	cluster.Status.SnapshotRepository = name
 
 	return r.repositoryCondition(
 		cluster, metav1.ConditionTrue, v1.ReasonHealthy,

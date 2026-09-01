@@ -143,8 +143,14 @@ func assertElasticsearchClusterGoldens(
 	merged v1.ElasticsearchClusterSpec,
 	storage *SnapshotStorage,
 ) {
-	registered := storage != nil
 	t.Helper()
+
+	// The goldens pin a cluster whose repository has converged, so a fixture
+	// with a bucket publishes the name.
+	var registeredName string
+	if storage != nil {
+		registeredName = RepositoryName(cluster)
+	}
 
 	scheme := goldenScheme(t)
 	base := filepath.Join("testdata", "golden", dir)
@@ -170,7 +176,7 @@ func assertElasticsearchClusterGoldens(
 		golden.WithScheme(scheme), golden.Update(*updateGolden),
 	)
 
-	storageContract, err := StorageContractComponent(cluster, merged, storage, registered)
+	storageContract, err := StorageContractComponent(cluster, merged, storage, registeredName)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "storage-contract.yaml"), storageContract,
@@ -343,15 +349,23 @@ func TestPublishedRepositoryName(t *testing.T) {
 		Type: v1.ObjectStorageAuthTypeWorkloadIdentity,
 	})}
 
-	assert.Empty(t, publishedRepositoryName(cluster, storage, false, false), "not yet registered")
-	assert.Equal(t, "my-ns.my-es", publishedRepositoryName(cluster, storage, true, false))
+	assert.Empty(t, publishedRepositoryName(cluster, storage, "", false), "not yet registered")
+	assert.Equal(t, "my-ns.my-es", publishedRepositoryName(cluster, storage, "my-ns.my-es", false))
 	assert.Equal(
-		t, "my-ns.my-es", publishedRepositoryName(cluster, nil, true, true),
+		t, "my-ns.my-es", publishedRepositoryName(cluster, nil, "my-ns.my-es", true),
 		"suspension resolves no bucket but keeps the registered name",
 	)
 	assert.Empty(
-		t, publishedRepositoryName(cluster, nil, true, false),
+		t, publishedRepositoryName(cluster, nil, "my-ns.my-es", false),
 		"a dropped bucket reference clears the name",
+	)
+	// The record names the repository rather than counting it, so a cluster
+	// that converged under an older naming rule publishes nothing until the
+	// repository it needs now exists. Publishing the new name over the old
+	// registration is the case the condition alone could not tell apart.
+	assert.Empty(
+		t, publishedRepositoryName(cluster, storage, "my-es", false),
+		"another name converged, so the repository this cluster needs is not registered",
 	)
 }
 

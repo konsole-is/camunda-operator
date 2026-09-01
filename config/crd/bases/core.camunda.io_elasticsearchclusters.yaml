@@ -1265,6 +1265,15 @@ spec:
                   by the operator.
                 format: int64
                 type: integer
+              snapshotRepository:
+                description: |-
+                  SnapshotRepository is the snapshot repository that the operator has
+                  registered in Elasticsearch for this cluster. It is the name that the
+                  published SecondaryStorageConfig carries, and it is empty until the
+                  first registration converges. A cluster whose name a later operator
+                  version derives differently therefore publishes nothing until the new
+                  repository exists, rather than a name that Elasticsearch does not hold.
+                type: string
               volumes:
                 description: |-
                   Volumes lists the bound data PersistentVolumeClaims of the cluster and

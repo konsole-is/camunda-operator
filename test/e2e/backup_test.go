@@ -245,6 +245,15 @@ func itBacksUpTheElasticsearchCluster(cluster *v1.CamundaCluster, elasticsearch,
 	})
 }
 
+// esRepository returns the snapshot repository that the ElasticsearchCluster
+// named elasticsearch registers. Both flows run their Elasticsearch in the
+// namespace of their cluster.
+func esRepository(cluster *v1.CamundaCluster, elasticsearch string) string {
+	return escomponents.RepositoryName(&v1.ElasticsearchCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: elasticsearch, Namespace: cluster.Namespace},
+	})
+}
+
 // itBacksUpTheRelationalCluster registers the backup specs of the RDBMS flow.
 // The CamundaCluster flow calls it while its cluster is healthy.
 func itBacksUpTheRelationalCluster(cluster *v1.CamundaCluster) {
@@ -312,15 +321,6 @@ func itBacksUpTheRelationalCluster(cluster *v1.CamundaCluster) {
 		objects, err := utils.MinIOObjectsWithPrefix(minioNamespace, backup.Status.ObjectKey, storeTimeout)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(objects).To(BeEmpty())
-	})
-}
-
-// esRepository returns the snapshot repository that the ElasticsearchCluster
-// named elasticsearch registers. Both flows run their Elasticsearch in the
-// namespace of their cluster.
-func esRepository(cluster *v1.CamundaCluster, elasticsearch string) string {
-	return escomponents.RepositoryName(&v1.ElasticsearchCluster{
-		ObjectMeta: metav1.ObjectMeta{Name: elasticsearch, Namespace: cluster.Namespace},
 	})
 }
 

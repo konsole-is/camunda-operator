@@ -139,6 +139,8 @@ The restore reads the snapshots from the repository that the backup recorded in 
 
 An `ElasticsearchCluster` names its repository `<namespace>.<name>`, and that name gives the prefix. The registration that a restore leaves therefore belongs to the source alone. No `ElasticsearchCluster` of the target points it somewhere else.
 
+The prefix is read against the `basePath` that the `ObjectStorageConfig` carries now. Keep `basePath` unchanged for as long as you keep backups. A bucket whose `basePath` moved after a backup holds that backup under the old prefix, and the restore looks under the new one.
+
 If the repository is already registered, the operator uses it as it is. It never points an existing registration at another bucket or another prefix. The Elasticsearch of a target can be a cluster that this operator does not manage, where an administrator registered the repository by hand. A registration that points elsewhere makes the restore fail on a snapshot that is missing, and the message names the repository.
 
 A hand-chosen repository name gives no prefix. If the target holds no registration under such a name, `Ready` reports `InvalidReference` and the message names the repository and the bucket. Register the repository on the Elasticsearch of the target, over the prefix that holds the snapshots of the backup. The restore continues on its own.

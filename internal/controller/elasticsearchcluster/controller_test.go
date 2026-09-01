@@ -602,6 +602,12 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(k8sClient.Get(ctx, key, &contract)).To(Succeed())
 			g.Expect(contract.Spec.Elasticsearch.SnapshotRepository).To(Equal(components.RepositoryName(cluster)))
 		}, timeout, interval).Should(Succeed())
+
+		// The published name comes from the record of what converged, so the
+		// cluster reports the same repository the contract carries.
+		var fetched v1.ElasticsearchCluster
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
+		Expect(fetched.Status.SnapshotRepository).To(Equal(components.RepositoryName(cluster)))
 	})
 
 	// Nothing reports that Elasticsearch started answering: it is not an

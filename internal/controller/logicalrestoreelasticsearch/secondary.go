@@ -220,10 +220,10 @@ func (r *Reconciler) ensureRepository(
 	basePath, ok := elasticsearch.RepositoryBasePath(bucket.BasePath(), repository)
 	if !ok {
 		return "", logicalbackup.InvalidReference(
-			"the Elasticsearch of the target holds no snapshot repository %q, and the name is not "+
-				"one that this operator registers, so the restore cannot tell which prefix of "+
-				"ObjectStorageConfig %q it reads. Register the repository on the target over the "+
-				"prefix that holds the snapshots of the backup",
+			"the Elasticsearch of the target holds no snapshot repository %q. The name is not one "+
+				"that this operator registers. The restore therefore cannot tell which prefix of "+
+				"ObjectStorageConfig %q holds the snapshots. Register the repository on the "+
+				"target, over the prefix that holds the snapshots of the backup",
 			repository, bucket.Name,
 		), nil
 	}
