@@ -178,9 +178,9 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "ElasticsearchCluster"},
 			ObjectMeta: metav1.ObjectMeta{Name: esName, Namespace: mcKeycloakNamespace},
 			Spec: v1.ElasticsearchClusterSpec{
-				Version:     os.Getenv(envElasticsearchVersion),
-				Replicas:    new(int32(1)),
-				StorageSize: new(resource.MustParse(esStorageSize)),
+				Version:                os.Getenv(envElasticsearchVersion),
+				Replicas:               new(int32(1)),
+				StorageSize:            new(resource.MustParse(esStorageSize)),
 				Resources:              capped("200m", "1Gi", "1536Mi"),
 				ExtraEnv:               esHeapEnv(),
 				SecondaryStorageConfig: mcKeycloakStorage,
@@ -489,6 +489,16 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 		Eventually(func(g Gomega) {
 			expectReady(g, optimizeResource, mcOptimizeName, mcKeycloakNamespace, v1.ReasonHealthy)
 		}, optimizeReadyTimeout, 10*time.Second).Should(Succeed())
+
+		// The callback and the role are what a login needs, and the two
+		// assertions above read them from the realm. This one is the login:
+		// the first administrator signs in to the webapp through the realm,
+		// and the webapp serves the session that comes back.
+		By("signing the first administrator in to the webapp")
+		Eventually(func(g Gomega) {
+			out, err := optimizeBrowserLogin(mc, optimizeWebappURL())
+			g.Expect(err).NotTo(HaveOccurred(), out)
+		}, 3*time.Minute, 15*time.Second).Should(Succeed())
 	})
 
 	It("registers a second Optimize and withdraws it again without rolling Management Identity", func() {
@@ -616,6 +626,16 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 		urls, err = optimizeRootURLs(mc)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(urls).To(Equal(optimizeWebappURL()))
+
+		// The withdrawal rewrites the redirect URIs of the one Optimize
+		// client that both instances share. A rewrite that drops the callback
+		// of the first one leaves the realm reading right and the login
+		// broken, so the login is what closes that gap.
+		By("signing in to the first Optimize again after the withdrawal")
+		Eventually(func(g Gomega) {
+			out, err := optimizeBrowserLogin(mc, optimizeWebappURL())
+			g.Expect(err).NotTo(HaveOccurred(), out)
+		}, 3*time.Minute, 15*time.Second).Should(Succeed())
 
 		// The management plane still serves one Optimize, so the environment
 		// of Management Identity still names the preset and the pod template
@@ -883,8 +903,8 @@ func webModelerSpec(mc *v1.CamundaManagementCluster, databaseRef string) *v1.Web
 
 // keycloakServiceURL is the URL of the Keycloak that the operator runs, the
 // /auth base path included, as every pod of the Kubernetes cluster reaches
-// it. The flow completes no browser login, so the address that a browser
-// would use is the in-cluster one too.
+// it. The browser login of the flow runs from such a pod, so this is the
+// address of the front channel as well as the one of the back channel.
 func keycloakServiceURL(mc *v1.CamundaManagementCluster) string {
 	return fmt.Sprintf(
 		"http://%s.%s.svc:%d/auth",
@@ -899,8 +919,8 @@ func keycloakRealmURL(mc *v1.CamundaManagementCluster) string {
 }
 
 // webModelerRestapiURL and webModelerWebsocketsURL are the addresses that Web
-// Modeler publishes to a browser. No browser reaches this flow, and Web
-// Modeler refuses to start without them.
+// Modeler publishes to a browser. No browser reaches Web Modeler in this
+// flow, and Web Modeler refuses to start without them.
 func webModelerRestapiURL(mc *v1.CamundaManagementCluster) string {
 	return fmt.Sprintf(
 		"http://%s.%s.svc:%d",
@@ -990,6 +1010,26 @@ func secondOptimizeWebappURL() string {
 		optimizecomponents.WorkloadName(optimize, optimizecomponents.ComponentWebapp),
 		mcKeycloakNamespace, optimizecomponents.PortHTTP,
 	)
+}
+
+// optimizeBrowserLogin signs the first administrator of the management plane
+// in to the Optimize webapp at webappURL, through the realm that Management
+// Identity administers, and reads the root of the webapp again with the
+// session it gets.
+//
+// The root is both the start of the login and the protected endpoint: the
+// webapp answers a browser without a session with the redirect to the realm,
+// and a browser with one with the application itself.
+func optimizeBrowserLogin(mc *v1.CamundaManagementCluster, webappURL string) (string, error) {
+	return browserLogin(browserLoginRequest{
+		Namespace:      mc.Namespace,
+		Name:           "optimize",
+		StartURL:       webappURL + "/",
+		ProtectedURL:   webappURL + "/",
+		Username:       mcAdminUsername,
+		PasswordSecret: components.IdentityAdminSecretName(mc),
+		PasswordKey:    components.PasswordKey,
+	})
 }
 
 // identityPodNames returns the names of the ready Management Identity pods.
