@@ -250,6 +250,23 @@ A change to the cluster, to a referenced resource, or to a referenced Secret rol
 
 The operator checks every reference at reconcile time, not at admission, so you can create the resources in any order. A missing `CamundaPlatformConfig`, `CamundaClusterPreset`, `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` sets `Ready` to `False` with reason `InvalidReference`. A missing Secret or key sets reason `MissingSecret`.
 
+When any of these checks fails for a running cluster, the cluster is suspended: every workload scales to zero and the volumes stay. Pods that keep running can write a backend that the cluster no longer resolves. `Ready` keeps the failure reason, and the message says what happened to the workloads. The per-process conditions report `Suspending` while the pods stop, then `Suspended`. The cluster records the event `WorkloadsSuspended` for each workload it scales, and `status.gateway` and `status.management` are cleared. When the check passes again, the cluster resumes on its own.
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: MissingSecret
+      message: >-
+        Secret my-cluster-ns/my-storage-credentials not found. The workloads
+        are scaled to zero, with the volumes kept, until the pre-check passes
+    - type: ZeebeReady
+      status: "True"
+      reason: Suspended
+      message: Scaled to zero while the pre-check of the cluster fails
+```
+
 ## Suspend and pause
 
 `spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` is empty. When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
@@ -286,8 +303,8 @@ Deleting the cluster removes every resource that the operator created for it. Th
 | `Ready` | `Suspended` | `spec.suspend` is true and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to resume. |
 | `Ready` | `StorageAlreadyAttached` | Another `CamundaCluster` holds the `SecondaryStorageConfig` that `storageRef` names. This cluster is suspended. | Give this cluster a contract of its own, or delete the holder. The message names both, and the last apply error of the workloads when one occurred. |
 | `Ready` | `WaitingForHandover` | This cluster takes over the `SecondaryStorageConfig` that `storageRef` names, and pods of the previous holder still run on it. This cluster stays at zero. | Wait. The message names the previous holder and its pods. The state clears on its own. If the pods never go, delete them. |
-| `Ready` | `InvalidReference` | A referenced resource does not exist, a ServiceAccount with `create: false` is absent, two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. | Read the message. Create the missing resource or correct the field it names. |
-| `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. | Create the Secret with the named key. |
+| `Ready` | `InvalidReference` | A referenced resource does not exist, a ServiceAccount with `create: false` is absent, two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. A running cluster is scaled to zero, with the volumes kept. | Read the message. Create the missing resource or correct the field it names. The cluster resumes on its own. |
+| `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. A running cluster is scaled to zero, with the volumes kept. | Create the Secret with the named key. The cluster resumes on its own. |
 | `Ready` | `VersionDowngradeRefused` | The effective version is below the version the brokers run, and no annotation sanctions the move. The operator applies nothing, and the brokers keep the version they have. | Read [Version](#version). Set the version forward again, or sanction the downgrade. |
 
 `status.management` publishes the address of the management API, so a backup kind calls it without knowing which process hosts it. It is empty while the cluster is suspended.

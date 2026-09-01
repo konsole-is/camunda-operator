@@ -519,6 +519,54 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		expectClaimedBy(held, repointed)
 	})
 
+	// Two contracts can name one backend, and the operator compares
+	// contracts, not endpoints. When the holder of one contract loses it and
+	// keeps running, both clusters write the backend. A cluster whose
+	// pre-check fails therefore scales to zero, so the two never both run.
+	It("scales a running cluster to zero when its contract goes away, while the other keeps running", func() {
+		ns := newNamespace()
+		first := newNamedCluster("cc-a-", ns, createPlatformConfig(), createBinding(ns, true))
+		createCluster(first)
+		binding := createBinding(ns, true)
+		second := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
+		createCluster(second)
+		expectHolds(first)
+		expectHolds(second)
+
+		By("deleting the contract of the second cluster")
+		Expect(k8sClient.Delete(ctx, binding)).To(Succeed())
+		expectReady(
+			second,
+			metav1.ConditionFalse,
+			Equal(v1.ReasonInvalidReference),
+			And(
+				ContainSubstring(binding.Name),
+				ContainSubstring("The workloads are scaled to zero, with the volumes kept"),
+			),
+		)
+		zeebeKey := client.ObjectKey{Namespace: ns, Name: second.Name + "-zeebe"}
+		Eventually(func(g Gomega) {
+			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
+		}, timeout, interval).Should(Succeed(), "the broker StatefulSet is scaled, not deleted")
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(second), &latest)).To(Succeed())
+			zeebe := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionZeebeReady)
+			g.Expect(zeebe).NotTo(BeNil())
+			g.Expect(zeebe.Reason).To(Equal("Suspended"))
+		}, timeout, interval).Should(Succeed(), "the broker condition reports the suspension")
+		expectHolds(first)
+
+		By("recreating the contract")
+		recreated := &v1.SecondaryStorageConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: binding.Name, Namespace: ns},
+			Spec:       *binding.Spec.DeepCopy(),
+		}
+		Expect(k8sClient.Create(ctx, recreated)).To(Succeed())
+		expectHolds(second)
+		expectClaimedBy(recreated, second)
+	})
+
 	// A claim whose holder never existed, or was deleted before the operator
 	// ran, must not park every later cluster forever.
 	It("takes over a claim whose holder does not exist", func() {
