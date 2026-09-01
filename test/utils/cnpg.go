@@ -66,9 +66,9 @@ const (
 	// be served before the manager starts.
 	cnpgClusterCRD       = "clusters.postgresql.cnpg.io"
 	barmanObjectStoreCRD = "objectstores.barmancloud.cnpg.io"
-	// cnpgDeploymentSelector and barmanPluginSelector select the pod of
-	// cnpgDeployment and barmanPluginDeployment. A rollout that times out
-	// dumps the pods these match, for the diagnostics dump.
+	// cnpgDeploymentSelector and barmanPluginSelector select the pods of
+	// cnpgDeployment and barmanPluginDeployment. dumpInstallDiagnostics
+	// describes the pods these match when a wait on the two fails.
 	cnpgDeploymentSelector = "app.kubernetes.io/name=cloudnative-pg"
 	barmanPluginSelector   = "app=barman-cloud"
 	// barmanClientCertificate and barmanServerCertificate are the two
