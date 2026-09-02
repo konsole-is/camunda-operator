@@ -158,7 +158,9 @@ The importer reads Elasticsearch directly. It does not go through the orchestrat
 
 The operator keeps the exporter settings on the cluster while the suspension holds. A suspension is not a detachment, and the brokers are at zero, so nothing exports. Only deletion withdraws the settings.
 
-A failed check of a reference stops the workloads the same way. The operator scales the webapp and the importer to zero and keeps them. The importer reads Elasticsearch on its own, so a reference that no longer resolves must not leave it writing. `Ready` keeps the failure reason, and the message says that the workloads are at zero. `WebappReady` and `ImporterReady` report `Suspending` while the pods stop, then `Suspended`. The operator records the event `WorkloadsSuspended` for each Deployment it scales. When the check passes again, the workloads start on their own.
+A failed check of a reference stops a running instance the same way. The operator scales the webapp and the importer to zero and keeps them. The importer reads Elasticsearch on its own, so a reference that no longer resolves must not leave it writing. `Ready` keeps the failure reason, and the message says that the workloads are at zero. `WebappReady` and `ImporterReady` report `Suspending` while the pods stop, then `Suspended`. The operator records the event `WorkloadsSuspended` for each Deployment it scales. When the check passes again, the workloads start on their own.
+
+An instance whose first check fails has no workloads to stop. It reports the failure on `Ready` alone, and it creates the workloads when the check passes.
 
 ```yaml
 status:
@@ -227,7 +229,7 @@ A `CamundaOptimize` that never held the attachment removes nothing from the clus
 | `WebappReady` / `ImporterReady` | `Degraded` / `Down` | Some or no replicas are ready after the grace period. | Read the pods and events of the named Deployment. |
 | `Ready` | `Healthy` | Every condition that takes part is healthy. | Nothing. |
 | `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Degraded` / `Down` | The reason of the governing condition. The message names it. | Read the row of that condition. |
-| `Ready` | `Suspended` | `spec.suspend` of the referenced cluster is `true`, and both workloads are at zero. `Ready` is `True`. | Nothing. Set `suspend` back to `false` on the cluster to start Optimize again. |
+| `Ready` | `Suspended` | The referenced cluster is suspended and both workloads are at zero. `spec.suspend` of the cluster is `true`, or the operator suspended the cluster itself, for example while another cluster holds its storage contract. `Ready` is `True`. | Nothing. Optimize starts again when the cluster does. |
 | `Ready` | `ClusterAlreadyAttached` | Another `CamundaOptimize` is already attached to the referenced cluster. | Delete one of the two. The message names the one that holds the cluster. |
 | `Ready` | `WaitingForHandover` | This resource now holds the cluster, and the importer Deployment of the previous one still exists. | Wait. The message names the Deployment. The state clears on its own. |
 | `Ready` | `InvalidReference` | The `clusterRef`, the `managementAuthRef`, or the `storageRef` chain of the cluster does not resolve. It also reports a referenced cluster whose effective spec is invalid, such as a version below `8.9.0`. | Read the message. Create the missing resource, or correct the field it names. |
