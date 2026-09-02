@@ -519,6 +519,38 @@ func TestNormalizeRealmIdentity(t *testing.T) {
 	assert.True(t, folded)
 }
 
+// One host has many spellings. A terminal dot spells the fully qualified
+// form, and an IPv6 address has an expanded form and a compressed one. Each
+// spelling would otherwise claim the realm for itself.
+func TestRealmIdentityFoldsTheSpellingsOfOneHost(t *testing.T) {
+	t.Parallel()
+
+	realm := "camunda-platform"
+
+	assert.Equal(
+		t,
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: realm}),
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com./auth", Realm: realm}),
+	)
+	assert.Equal(
+		t,
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://[2001:db8::1]/auth", Realm: realm}),
+		RealmIdentity(v1.KeycloakRealmTarget{
+			URL: "https://[2001:0DB8:0000:0000:0000:0000:0000:0001]/auth", Realm: realm,
+		}),
+	)
+	assert.Equal(
+		t,
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://[2001:db8::1]:8443/auth", Realm: realm}),
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://[2001:0db8::0001]:8443/auth", Realm: realm}),
+	)
+	assert.NotEqual(
+		t,
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: realm}),
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://other.example.com/auth", Realm: realm}),
+	)
+}
+
 // A value that does not parse as a URL is folded of nothing. It keeps the
 // user and the password that were written into it, so the caller is told not
 // to print it.
