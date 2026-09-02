@@ -2041,6 +2041,11 @@ spec:
                 - externalUrl
                 - version
                 type: object
+                x-kubernetes-validations:
+                - message: spec.identity.extraEnv cannot set KEYCLOAK_URL or KEYCLOAK_REALM,
+                    which the operator renders from spec.identityProvider
+                  rule: '!has(self.extraEnv) || self.extraEnv.all(e, e.name != ''KEYCLOAK_URL''
+                    && e.name != ''KEYCLOAK_REALM'')'
               identityProvider:
                 description: |-
                   IdentityProvider selects where users authenticate. Exactly one of

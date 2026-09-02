@@ -136,14 +136,15 @@ func (r *Reconciler) listOptimizes(ctx context.Context, contract string) ([]v1.C
 // calling Keycloak altogether once the condition reports that nothing of this
 // operator is registered.
 //
-// status.callbackRealm records the realm of a Keycloak that you run once the
-// callbacks are there. Reconcile withdraws from a recorded realm the spec no
-// longer names before the components run, and withdrawal is what that pass
-// found. A Keycloak-to-Keycloak move with a pending withdrawal stops the
-// pass in Reconcile while the plane serves an Optimize, so this step never
-// registers beside a realm that is still being left; the oidc mode and a
-// plane that serves no Optimize reach it with the pending failure to
-// report.
+// status.callbackRealm records the realm of a Keycloak that you run from the
+// moment Reconcile points Management Identity at it, and this step writes it
+// again when the realm converges, so it names the Secrets of the spec.
+// Reconcile withdraws from a recorded realm the spec no longer names before
+// the components run, and withdrawal is what that pass found. A
+// Keycloak-to-Keycloak move with a pending withdrawal stops the pass in
+// Reconcile while the plane serves an Optimize, so this step never registers
+// beside a realm that is still being left. The oidc mode and a plane that
+// serves no Optimize reach it with the pending failure to report.
 func (r *Reconciler) syncOptimizeCallbacks(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,

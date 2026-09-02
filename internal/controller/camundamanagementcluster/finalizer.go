@@ -212,28 +212,39 @@ func (r *Reconciler) withdrawOptimizeCallbacks(ctx context.Context, mc *v1.Camun
 // false for a management plane that registered none anywhere.
 //
 // status.callbackRealm is the realm they went into, which is the one to tidy
-// even after the spec was pointed at another Keycloak. A plane that recorded
-// none falls back to the spec: the record is written after the first
-// registration, and a Management Identity that started before it wrote the
-// callbacks of its own into the realm that the spec names. The provider of a
-// Keycloak mode follows from the spec alone, so the deletion path needs none
-// of the pre-checks.
+// even after the spec was pointed at another Keycloak. The spec wins when it
+// names that same realm, because the record keeps the Secrets of the pass
+// that wrote it and a rotation of them changes no realm. A plane that
+// recorded no realm falls back to the spec too: the operator runs the
+// Keycloak of the keycloak mode and records nothing for it, and a plane that
+// serves no Optimize runs a Management Identity against the realm the spec
+// names with no record of it. The provider of a Keycloak mode follows from
+// the spec alone, so the deletion path needs none of the pre-checks.
 func withdrawalRealm(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 ) (components.IdentityProvider, bool) {
-	if recorded := mc.Status.CallbackRealm; recorded != nil {
-		return components.RealmProvider(*recorded), true
-	}
+	recorded := mc.Status.CallbackRealm
 	if components.Mode(mc) == components.ModeOIDC {
-		return components.IdentityProvider{}, false
+		if recorded == nil {
+			return components.IdentityProvider{}, false
+		}
+
+		return components.RealmProvider(*recorded), true
 	}
 
 	provider, err := components.ResolveIdentityProvider(components.Input{Cluster: mc})
 	if err != nil {
+		if recorded != nil {
+			return components.RealmProvider(*recorded), true
+		}
 		logf.FromContext(ctx).Error(err, "Resolving Keycloak to withdraw the Optimize callbacks")
 
 		return components.IdentityProvider{}, false
+	}
+	target := components.RealmTarget(provider)
+	if recorded != nil && (target == nil || !components.SameRealm(*recorded, *target)) {
+		return components.RealmProvider(*recorded), true
 	}
 
 	return provider, true

@@ -19,6 +19,7 @@ package controller
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -172,6 +173,30 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			validManagementCluster, func(o *v1.CamundaManagementCluster) {
 				o.Spec.Identity.ExternalURL = "https://"
 			}, "externalUrl must be a valid http or https URL",
+		),
+		Entry(
+			"rejects an identity extraEnv that sets the Keycloak URL",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.ExtraEnv = []corev1.EnvVar{
+					{Name: "KEYCLOAK_URL", Value: "https://elsewhere.example.com/auth"},
+				}
+			}, "cannot set KEYCLOAK_URL or KEYCLOAK_REALM",
+		),
+		Entry(
+			"rejects an identity extraEnv that sets the Keycloak realm",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.ExtraEnv = []corev1.EnvVar{
+					{Name: "KEYCLOAK_REALM", Value: "other"},
+				}
+			}, "cannot set KEYCLOAK_URL or KEYCLOAK_REALM",
+		),
+		Entry(
+			"accepts an identity extraEnv of another variable",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.ExtraEnv = []corev1.EnvVar{
+					{Name: "IDENTITY_LOG_LEVEL", Value: "DEBUG"},
+				}
+			}, "",
 		),
 		Entry(
 			"rejects a Web Modeler without a mail fromAddress",

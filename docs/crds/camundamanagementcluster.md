@@ -548,7 +548,7 @@ status:
       passwordKey: "password"
 ```
 
-`status.callbackRealm` also keeps naming the old realm while a Management Identity pod of the old configuration still runs. Such a pod can restart and put the callbacks back. Once the old realm is empty, the operator stops Management Identity, checks the realm once more when its pods are gone, and only then starts the workloads against the new Keycloak. A move therefore restarts Management Identity once, and nobody signs in between the stop and the start.
+`status.callbackRealm` also keeps naming the old realm while a Management Identity pod of the old configuration still runs. Such a pod can restart and put the callbacks back. A move therefore stops Management Identity once and starts it again against the new Keycloak, and nobody signs in between the stop and the start.
 
 Keep the Secret that `adminCredentialsSecretRef` names there, and the Secret of `caBundleSecretRef` when the old Keycloak needed one, until `status.callbackRealm` stops naming the old realm. The operator signs in to the old Keycloak with them one last time. The record is the completion signal of a move, because the condition ends at `Healthy`, `Disabled`, or `NoCallbacks`, whichever the new mode reaches.
 
@@ -910,6 +910,7 @@ The API server refuses an apply that breaks one of these:
 - `spec.identityProvider.externalKeycloak.realm` holds letters, digits, dots, hyphens, and underscores. It starts and ends with a letter or a digit.
 - Every `version` is three numbers separated by dots, for example `8.9.0`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both. The rule binds `spec.identity`, `spec.console`, `spec.webModeler.restapi`, and `spec.webModeler.websockets`.
+- `spec.identity.extraEnv` sets no `KEYCLOAK_URL` and no `KEYCLOAK_REALM`. The operator renders both from `spec.identityProvider` and administers that realm alone.
 
 The operator checks these after you apply the resource and reports them on `Ready`:
 
