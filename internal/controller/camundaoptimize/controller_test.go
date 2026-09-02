@@ -811,6 +811,16 @@ var _ = Describe("CamundaOptimize controller", func() {
 				g.Expect(ready.Message).To(ContainSubstring("scaled to zero"))
 			}, timeout, interval).Should(Succeed())
 			expectCondition(s.optimize, v1.ConditionImporterReady, Equal(string(component.Suspended)))
+
+			By("starting both workloads again when the contract comes back")
+			restored := &v1.SecondaryStorageConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: s.binding.Name, Namespace: s.namespace},
+				Spec:       *s.binding.Spec.DeepCopy(),
+			}
+			Expect(k8sClient.Create(ctx, restored)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, restored) })
+			expectReplicas(1, webappKey, importerKey)
+			expectCondition(s.optimize, v1.ConditionReady, Not(Equal(v1.ReasonInvalidReference)))
 		})
 
 		It("withdraws the exporter entries on deletion and keeps the entry of the user", func() {

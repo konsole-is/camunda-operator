@@ -173,7 +173,7 @@ status:
         stays suspended until that one releases it
 ```
 
-Do not point `storageRef` of a holder at another contract and back while a second cluster waits for the handover. The second cluster reads the pods of the holder once, before it takes the claim. A holder that returns at that moment can start pods next to it. The operator suspends the loser as soon as it sees the new claim, but both clusters write the backend until the pods of the loser stop.
+Do not point `storageRef` of a holder at another contract and back while a second cluster waits for the handover. A holder that returns at that moment can start pods next to the second cluster. The operator then suspends the cluster that lost the claim, but both write the backend until the pods of that cluster stop.
 
 The operator compares contracts, not endpoints. Give one contract to one backend. Two hand-written contracts that name one Elasticsearch are not caught.
 
