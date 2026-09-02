@@ -150,12 +150,9 @@ func (r *Reconciler) stopIdentity(ctx context.Context, mc *v1.CamundaManagementC
 		// leaves it free for anybody. Only the owner reference tells the
 		// Management Identity of this plane from a workload that somebody else
 		// runs, and the ReplicaSets under such a workload are not ours either.
-		//
-		// The pass ends here, the way a refused delete precondition below ends
-		// it, and for the same reason: a workload of another owner at this
-		// name runs a Management Identity that this pass cannot stop, and
-		// everything after this gives the realm it writes to the next
-		// claimant.
+		// The pass ends here the way the refused delete precondition below
+		// ends it. The replacement is only already there, instead of arriving
+		// between the read and the delete.
 		if !metav1.IsControlledBy(&identity, mc) {
 			return fmt.Errorf(
 				"the Deployment %q has another owner and can still write the Keycloak realm, so "+
