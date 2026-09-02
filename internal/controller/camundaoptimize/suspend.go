@@ -18,6 +18,7 @@ package camundaoptimize
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -70,9 +71,14 @@ var workloadConditions = map[string]string{
 // Suspended at zero. It reports whether it found a workload that this
 // CamundaOptimize controls. The reconcile comes back through the watch on the
 // Deployments, so the conditions converge without a timer.
+//
+// The importer goes first, and both are tried with their errors joined. It is
+// the workload that writes Elasticsearch, so a webapp that a conflict or an
+// admission rule keeps up must not keep the importer up with it.
 func (r *Reconciler) suspendWorkloads(ctx context.Context, optimize *v1.CamundaOptimize) (bool, error) {
 	var found bool
-	for _, comp := range []string{components.ComponentWebapp, components.ComponentImporter} {
+	var errs []error
+	for _, comp := range []string{components.ComponentImporter, components.ComponentWebapp} {
 		key := client.ObjectKey{
 			Namespace: optimize.Namespace,
 			Name:      components.WorkloadName(optimize, comp),
@@ -80,10 +86,10 @@ func (r *Reconciler) suspendWorkloads(ctx context.Context, optimize *v1.CamundaO
 
 		var deployment appsv1.Deployment
 		if err := r.APIReader.Get(ctx, key, &deployment); err != nil {
-			if apierrors.IsNotFound(err) {
-				continue
+			if !apierrors.IsNotFound(err) {
+				errs = append(errs, fmt.Errorf("reading Deployment %q: %w", key, err))
 			}
-			return false, fmt.Errorf("reading Deployment %q: %w", key, err)
+			continue
 		}
 		if !metav1.IsControlledBy(&deployment, optimize) {
 			continue
@@ -92,13 +98,14 @@ func (r *Reconciler) suspendWorkloads(ctx context.Context, optimize *v1.CamundaO
 
 		if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != 0 {
 			if err := r.scaleToZero(ctx, optimize, &deployment); err != nil {
-				return false, err
+				errs = append(errs, err)
+				continue
 			}
 		}
 		stageSuspension(optimize, comp, deployment.Status.Replicas)
 	}
 
-	return found, nil
+	return found, errors.Join(errs...)
 }
 
 // scaleToZero patches the replicas of a Deployment to zero and records the

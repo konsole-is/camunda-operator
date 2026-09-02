@@ -146,7 +146,7 @@ status:
         my-other-cluster-zeebe-0. This cluster starts when they are gone
 ```
 
-Every pod carries the label `camunda.io/storage-contract` with the contract it runs on. A label value stops at 63 characters, so the operator shortens a longer contract name and adds a hash to it. Print the label as a column to read it for a name of any length:
+Every pod carries the label `camunda.io/storage-contract` with the contract it runs on. The pods of an [Optimize instance](camundaoptimize.md) attached to the cluster carry it too, because its importer writes that backend as well. A label value stops at 63 characters, so the operator shortens a longer contract name and adds a hash to it. Print the label as a column to read it for a name of any length:
 
 ```bash
 kubectl get pods -n my-cluster-ns -L camunda.io/storage-contract

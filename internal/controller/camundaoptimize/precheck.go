@@ -155,6 +155,7 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	if err != nil {
 		return out, err
 	}
+	out.Input.StorageContract = binding.Name
 
 	effective, err := res.resolveEffective(ctx, &cluster)
 	if err != nil {

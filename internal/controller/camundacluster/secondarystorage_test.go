@@ -39,6 +39,8 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	optimizecomponents "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
 
@@ -138,9 +140,10 @@ func TestStaleHolder(t *testing.T) {
 }
 
 // TestHolderPods covers holderPods against a fake client: only a pod that
-// carries the storage labels of the holder and the contract counts, and a
-// holder in another namespace has none, because a same-named contract there
-// is another object.
+// carries the storage labels of the holder and the contract counts, the
+// importer of an Optimize attached to the holder among them, and a holder in
+// another namespace has none, because a same-named contract there is another
+// object.
 func TestHolderPods(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
@@ -153,8 +156,8 @@ func TestHolderPods(t *testing.T) {
 		Cluster: types.NamespacedName{Namespace: "team-a", Name: "holder"},
 		UID:     "uid-1",
 	}
-	pod := func(namespace, name string, labels map[string]string) *corev1.Pod {
-		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: labels}}
+	pod := func(namespace, name string, podLabels map[string]string) *corev1.Pod {
+		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: podLabels}}
 	}
 
 	cases := map[string]struct {
@@ -170,6 +173,16 @@ func TestHolderPods(t *testing.T) {
 			},
 			holder: holder,
 			pods:   []string{"holder-zeebe-0", "holder-zeebe-1"},
+		},
+		"the Optimize importer pod of the holder on the contract": {
+			objects: []client.Object{
+				pod("team-a", "holder-optimize-importer-0", labels.Merge(
+					components.StoragePodLabels("holder", "storage-contract"),
+					map[string]string{labels.ComponentKey: optimizecomponents.ComponentImporter},
+				)),
+			},
+			holder: holder,
+			pods:   []string{"holder-optimize-importer-0"},
 		},
 		"pods of the holder on another contract": {
 			objects: []client.Object{

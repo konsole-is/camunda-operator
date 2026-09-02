@@ -23,13 +23,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -135,6 +138,50 @@ func TestSuspendWorkloads(t *testing.T) {
 		t, meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionConnectorsReady),
 		"a workload of another owner stages nothing",
 	)
+
+	t.Run("a workload that cannot be patched does not stop the rest", func(t *testing.T) {
+		blocked := suspendCluster()
+		failing := &appsv1.StatefulSet{
+			ObjectMeta: workloadMeta(blocked, "my-cluster-zeebe", "zeebe", true),
+			Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(3))},
+		}
+		reachable := &appsv1.Deployment{
+			ObjectMeta: workloadMeta(blocked, "my-cluster-gateway", "gateway", true),
+			Spec:       appsv1.DeploymentSpec{Replicas: new(int32(2))},
+		}
+		blockedClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(failing, reachable).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Patch: func(
+					ctx context.Context,
+					c client.WithWatch,
+					obj client.Object,
+					patch client.Patch,
+					opts ...client.PatchOption,
+				) error {
+					if obj.GetName() == failing.Name {
+						return apierrors.NewConflict(
+							schema.GroupResource{Resource: "statefulsets"}, obj.GetName(), assert.AnError,
+						)
+					}
+
+					return c.Patch(ctx, obj, patch, opts...)
+				},
+			}).
+			Build()
+		blockedReconciler := &CamundaClusterReconciler{
+			Client: blockedClient, APIReader: blockedClient, EventRecorder: events.NewFakeRecorder(10),
+		}
+
+		_, err := blockedReconciler.suspendWorkloads(context.Background(), blocked)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), failing.Name)
+
+		var latest appsv1.Deployment
+		require.NoError(t, blockedClient.Get(context.Background(), client.ObjectKeyFromObject(reachable), &latest))
+		assert.Equal(t, int32(0), *latest.Spec.Replicas, "the workload behind the failed one still scales")
+	})
 
 	t.Run("a cluster without workloads reports none", func(t *testing.T) {
 		empty := suspendCluster()

@@ -24,14 +24,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
@@ -92,6 +95,51 @@ func TestSuspendWorkloads(t *testing.T) {
 		var stays appsv1.Deployment
 		require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(importer), &stays))
 		assert.Equal(t, int32(0), *stays.Spec.Replicas)
+	})
+
+	t.Run("a webapp that cannot be patched does not keep the importer up", func(t *testing.T) {
+		blocked := suspendOptimize("blocked-optimize", "uid-4")
+		blockedWebapp := &appsv1.Deployment{
+			ObjectMeta: optimizeWorkloadMeta(blocked, components.ComponentWebapp, blocked),
+			Spec:       appsv1.DeploymentSpec{Replicas: new(int32(1))},
+		}
+		blockedImporter := &appsv1.Deployment{
+			ObjectMeta: optimizeWorkloadMeta(blocked, components.ComponentImporter, blocked),
+			Spec:       appsv1.DeploymentSpec{Replicas: new(int32(1))},
+		}
+		blockedClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(blockedWebapp, blockedImporter).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Patch: func(
+					ctx context.Context,
+					c client.WithWatch,
+					obj client.Object,
+					patch client.Patch,
+					opts ...client.PatchOption,
+				) error {
+					if obj.GetName() == blockedWebapp.Name {
+						return apierrors.NewConflict(
+							schema.GroupResource{Resource: "deployments"}, obj.GetName(), assert.AnError,
+						)
+					}
+
+					return c.Patch(ctx, obj, patch, opts...)
+				},
+			}).
+			Build()
+		blockedReconciler := &Reconciler{
+			Client: blockedClient, APIReader: blockedClient, EventRecorder: events.NewFakeRecorder(10),
+		}
+
+		_, err := blockedReconciler.suspendWorkloads(context.Background(), blocked)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), blockedWebapp.Name)
+
+		var latest appsv1.Deployment
+		key := client.ObjectKeyFromObject(blockedImporter)
+		require.NoError(t, blockedClient.Get(context.Background(), key, &latest))
+		assert.Equal(t, int32(0), *latest.Spec.Replicas, "the importer writes the backend, so it stops either way")
 	})
 
 	t.Run("an instance without workloads reports none", func(t *testing.T) {

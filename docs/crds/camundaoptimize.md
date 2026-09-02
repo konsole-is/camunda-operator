@@ -49,6 +49,8 @@ The operator creates two Deployments in the namespace of the resource, and one S
 
 A Service name stops at 63 characters, which is the tightest bound of the derived names. A `CamundaOptimize` name that is too long to carry the suffix is cut, and a hash of the full name is added. Two such resources stay apart. The operator applies the same bound to the Secrets that it mirrors into the namespace, and to the value of the `camunda.io/cluster` label.
 
+The pods also carry the label `camunda.io/storage-contract` with the secondary storage contract of the cluster. A cluster that takes that contract over waits for these pods as it waits for the pods of the previous holder, see [CamundaCluster](camundacluster.md#secondary-storage).
+
 Read the names back with `kubectl get deploy,svc -l camunda.io/cluster=<cluster>`. The selector matches while the cluster name is 63 characters or less. For a longer name the label carries the cut form. `kubectl get deploy --show-labels` shows the value to select on.
 
 `kubectl describe camundaoptimize <name>` shows the condition messages that the table under [Status](#status) tells you to read. The kind carries no printer columns yet, so `kubectl get camundaoptimize` shows the name and the age alone. To see the state of every one at once, ask for the condition:
@@ -146,7 +148,7 @@ A callback URL that does not match is a failed sign-in. It does not change the s
 
 The major and the minor must match the effective version of the cluster. Camunda supports Optimize only on a matching minor. A difference reports `VersionMismatch`, and the message names both versions, so it tells you which minor to use.
 
-The effective version of the cluster is `spec.version` of the `CamundaCluster`, or the value its `presetRef` supplies when the cluster sets none. An upgrade of the cluster to a new minor therefore puts Optimize into `VersionMismatch` until you raise `spec.version` here as well. The workloads that already run stay as they are while the versions disagree. The operator applies nothing new until they match again.
+The effective version of the cluster is `spec.version` of the `CamundaCluster`, or the value its `presetRef` supplies when the cluster sets none. An upgrade of the cluster to a new minor therefore puts Optimize into `VersionMismatch` until you raise `spec.version` here as well. The operator scales both workloads to zero while the versions disagree, see [Suspension](#suspension). An importer of another minor must not write analytics from records that it does not support. Both start again when you set a version on the minor of the cluster.
 
 ## Suspension
 

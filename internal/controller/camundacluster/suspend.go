@@ -18,6 +18,7 @@ package camundacluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -58,25 +59,29 @@ var processConditions = map[string]string{
 // whether it found a workload that the cluster controls. The reconcile comes
 // back through the watch on the workloads, so the conditions converge
 // without a timer.
+//
+// Every workload is tried, and the errors are joined. One workload that a
+// conflict or an admission rule keeps up must not leave the rest of them
+// writing the backend.
 func (r *CamundaClusterReconciler) suspendWorkloads(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 ) (bool, error) {
 	var found bool
-	suspend := func(obj client.Object, replicas *int32, observed int32) error {
+	var errs []error
+	suspend := func(obj client.Object, replicas *int32, observed int32) {
 		if !metav1.IsControlledBy(obj, cluster) {
-			return nil
+			return
 		}
 		found = true
 
 		if replicas == nil || *replicas != 0 {
 			if err := r.scaleToZero(ctx, cluster, obj); err != nil {
-				return err
+				errs = append(errs, err)
+				return
 			}
 		}
 		stageSuspension(cluster, obj.GetLabels()[labels.ComponentKey], observed)
-
-		return nil
 	}
 
 	selector := []client.ListOption{
@@ -89,26 +94,22 @@ func (r *CamundaClusterReconciler) suspendWorkloads(
 
 	var sets appsv1.StatefulSetList
 	if err := r.APIReader.List(ctx, &sets, selector...); err != nil {
-		return false, fmt.Errorf("listing the StatefulSets of the cluster: %w", err)
+		errs = append(errs, fmt.Errorf("listing the StatefulSets of the cluster: %w", err))
 	}
 	for i := range sets.Items {
-		if err := suspend(&sets.Items[i], sets.Items[i].Spec.Replicas, sets.Items[i].Status.Replicas); err != nil {
-			return false, err
-		}
+		suspend(&sets.Items[i], sets.Items[i].Spec.Replicas, sets.Items[i].Status.Replicas)
 	}
 
 	var deployments appsv1.DeploymentList
 	if err := r.APIReader.List(ctx, &deployments, selector...); err != nil {
-		return false, fmt.Errorf("listing the Deployments of the cluster: %w", err)
+		errs = append(errs, fmt.Errorf("listing the Deployments of the cluster: %w", err))
 	}
 	for i := range deployments.Items {
 		item := &deployments.Items[i]
-		if err := suspend(item, item.Spec.Replicas, item.Status.Replicas); err != nil {
-			return false, err
-		}
+		suspend(item, item.Spec.Replicas, item.Status.Replicas)
 	}
 
-	return found, nil
+	return found, errors.Join(errs...)
 }
 
 // scaleToZero patches the replicas of a workload to zero and records the

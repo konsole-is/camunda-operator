@@ -150,6 +150,11 @@ func (res *resolver) waitForHandover(ctx context.Context, holder secondarystorag
 // holderPods returns the sorted names of the pods of holder that carry the
 // storage labels of the contract. A holder in another namespace names a
 // contract of its own, so it has no pods on this one.
+//
+// The pods of a CamundaOptimize attached to the holder carry the same pair,
+// see pkg/components/camundaoptimize. Its importer writes the analytics
+// indices of this contract, so it holds the handover like a pod of the
+// cluster itself.
 func (res *resolver) holderPods(ctx context.Context, holder secondarystorageconfig.Holder) ([]string, error) {
 	if holder.Cluster.Namespace != res.storage.Namespace {
 		return nil, nil
