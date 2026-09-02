@@ -535,7 +535,7 @@ The `oidc` mode registers nothing. Your provider holds the callback URLs, so `sp
 
 ### Moving the callbacks to another realm
 
-When `spec.identityProvider` starts naming another Keycloak, another `realm`, or the `oidc` mode, the login callbacks leave the realm they were in. Only then does the management plane register them in the new realm. `status.callbackRealm` names the realm the plane last pointed Management Identity at. Identity registers the callbacks there while it starts, so the field appears with the realm and not with the first registration. During a move it keeps naming the old realm until the callbacks have left it, and after that until nothing is left that could write them back:
+When `spec.identityProvider` starts naming another Keycloak, another `realm`, or the `oidc` mode, the login callbacks leave the realm they were in. On a move from one Keycloak to another, a plane that serves an Optimize empties the old realm before it registers them in the new one. A move to the `oidc` mode and a plane that serves no Optimize register nothing in a realm, so neither waits. `status.callbackRealm` names the realm the plane last pointed Management Identity at. Identity registers the callbacks there while it starts, so the field appears with the realm and not with the first registration. During a move it keeps naming the old realm until the callbacks have left it, and after that until nothing is left that could write them back:
 
 ```yaml
 status:

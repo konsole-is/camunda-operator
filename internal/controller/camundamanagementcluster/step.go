@@ -42,13 +42,18 @@ const (
 	stepClaimClusters     = step("claim the orchestration clusters")
 	stepDiscoverOptimize  = step("discover the Optimize instances")
 	stepWithdrawCallbacks = step("withdraw the login callbacks from the realm the spec left")
-	stepBuildComponents   = step("build the components")
-	stepRecordClaim       = step("record the initial administrator claim")
-	stepWebModelerUsers   = step("sync the Web Modeler users")
-	stepPing              = step("point the orchestration clusters at Console")
-	stepReleaseClaims     = step("release the clusters that left the selector")
-	stepWriteContract     = step("write the ManagementAuthConfig")
-	stepOptimizeCallbacks = step("register the login callbacks of Optimize")
+	// stepRecordCallbackRealm is the status write of the realm that the plane
+	// points Management Identity at. It is the one status write of a
+	// reconcile that the deferred flush does not make, because the record has
+	// to be durable before Identity can register the callbacks.
+	stepRecordCallbackRealm = step("record the realm of the login callbacks")
+	stepBuildComponents     = step("build the components")
+	stepRecordClaim         = step("record the initial administrator claim")
+	stepWebModelerUsers     = step("sync the Web Modeler users")
+	stepPing                = step("point the orchestration clusters at Console")
+	stepReleaseClaims       = step("release the clusters that left the selector")
+	stepWriteContract       = step("write the ManagementAuthConfig")
+	stepOptimizeCallbacks   = step("register the login callbacks of Optimize")
 )
 
 // stepError is the failure of one step. It carries the Ready reason of the

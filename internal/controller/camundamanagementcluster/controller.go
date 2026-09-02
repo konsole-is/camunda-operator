@@ -228,30 +228,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	res, err := r.preCheck(ctx, &mc)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
-		conditions.Stage(&mc, conditions.Failed(&mc, failure))
-
-		// The withdrawal from a recorded realm runs on this path too. It
-		// needs nothing the pre-check resolves, and the old realm would
-		// otherwise keep the callbacks for as long as the failure stands.
-		retry, withdrawErr := r.withdrawUnresolved(ctx, &mc)
-		callbackErr := stepWithdrawCallbacks.wrap(withdrawErr)
-		releaseErr := stepReleaseClaims.wrap(r.withdrawFromDeselected(ctx, &mc))
-		// A step that failed says more than the pre-check it ran beside: the
-		// pre-check names something of the spec, and the step names a call
-		// that the operator could not make at all.
-		if failed := firstStep(callbackErr, releaseErr); failed != nil {
-			conditions.Stage(&mc, failed.condition(&mc))
-
-			// A result beside a non-nil error is dropped by
-			// controller-runtime, so the retry is dropped here too. A failure
-			// requeues with backoff on its own.
-			return ctrl.Result{}, errors.Join(callbackErr, releaseErr)
-		}
-		if retry {
-			return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
-		}
-
-		return ctrl.Result{}, nil
+		return r.reconcileUnresolved(ctx, &mc, failure)
 	}
 	if err != nil {
 		return ctrl.Result{}, stepResolveReferences.stop(&mc, err)
@@ -310,7 +287,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
-	recordCallbackRealm(&mc, res.Input.Provider, target)
+	// The record reaches the API server before the components can start a pod
+	// that writes the realm. FlushStatus is deferred to the end of this pass,
+	// and Management Identity registers the login callbacks as it starts, so
+	// a pass that ends between the apply and that flush would leave them in a
+	// realm no record names.
+	if recordCallbackRealm(&mc, res.Input.Provider, target) {
+		if err := component.FlushStatus(ctx, rec, nil); err != nil {
+			return ctrl.Result{}, stepRecordCallbackRealm.stop(&mc, err)
+		}
+	}
 
 	// A renamed contract leaves the old name behind until the new contract is
 	// written, so the status keeps naming the old one until then.
@@ -374,6 +360,40 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	return result, errors.Join(
 		reconcileErr, claimErr, userErr, pingErr, releaseErr, contractErr, callbackErr,
 	)
+}
+
+// reconcileUnresolved is the pass of a management plane whose pre-check
+// failed. It reports the failure and runs the two halves that need nothing
+// the pre-check resolves: the withdrawal from a recorded realm that the spec
+// no longer names, and the release of the clusters that left the selector.
+// The old realm would otherwise keep the login callbacks for as long as the
+// failure stands.
+func (r *Reconciler) reconcileUnresolved(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	failure *conditions.PreCheckFailure,
+) (ctrl.Result, error) {
+	conditions.Stage(mc, conditions.Failed(mc, failure))
+
+	retry, withdrawErr := r.withdrawUnresolved(ctx, mc)
+	callbackErr := stepWithdrawCallbacks.wrap(withdrawErr)
+	releaseErr := stepReleaseClaims.wrap(r.withdrawFromDeselected(ctx, mc))
+	// A step that failed says more than the pre-check it ran beside: the
+	// pre-check names something of the spec, and the step names a call that
+	// the operator could not make at all.
+	if failed := firstStep(callbackErr, releaseErr); failed != nil {
+		conditions.Stage(mc, failed.condition(mc))
+
+		// A result beside a non-nil error is dropped by controller-runtime,
+		// so the retry is dropped here too. A failure requeues with backoff
+		// on its own.
+		return ctrl.Result{}, errors.Join(callbackErr, releaseErr)
+	}
+	if retry {
+		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+	}
+
+	return ctrl.Result{}, nil
 }
 
 // withdrawFromDeselected takes back what the management plane put on the

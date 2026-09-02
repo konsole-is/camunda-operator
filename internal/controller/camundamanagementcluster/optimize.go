@@ -501,11 +501,13 @@ func (r *Reconciler) stopOldIdentityWriters(
 
 // recordCallbackRealm records the realm that this management plane points
 // Management Identity at, once the withdrawal from any realm it is leaving is
-// over. Identity registers the login callbacks of its realm itself, while it
-// starts, so the realm is recorded before the components can start a pod
-// against it: a record written after the first registration converged would
-// miss a retarget during that first start, and the callbacks would stay in a
-// realm that no record names.
+// over, and reports whether it wrote one. Identity registers the login
+// callbacks of its realm itself, while it starts, so the realm is recorded
+// before the components can start a pod against it: a record written after
+// the first registration converged would miss a retarget during that first
+// start, and the callbacks would stay in a realm that no record names. The
+// caller makes a staged record durable before it applies the components, for
+// the same reason.
 //
 // target is the realm of the spec, and only a Keycloak that you run is
 // recorded, for the reason syncOptimizeCallbacks gives. A realm that is
@@ -518,10 +520,13 @@ func recordCallbackRealm(
 	mc *v1.CamundaManagementCluster,
 	provider components.IdentityProvider,
 	target *v1.KeycloakRealmTarget,
-) {
-	if mc.Status.CallbackRealm == nil && provider.Mode == components.ModeExternalKeycloak {
-		mc.Status.CallbackRealm = target
+) bool {
+	if mc.Status.CallbackRealm != nil || provider.Mode != components.ModeExternalKeycloak {
+		return false
 	}
+	mc.Status.CallbackRealm = target
+
+	return target != nil
 }
 
 // withdrawUnresolved is the withdrawal from the recorded realm on a pass that
