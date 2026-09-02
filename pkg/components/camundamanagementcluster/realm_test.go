@@ -560,6 +560,13 @@ func TestRealmIdentityFoldsTheSpellingsOfOneHost(t *testing.T) {
 		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://[2001:db8::1]:8443/auth", Realm: realm}),
 		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://[2001:0db8::0001]:8443/auth", Realm: realm}),
 	)
+	// An HTTP client resolves an internationalized host through its IDNA form,
+	// so both spellings reach one server.
+	assert.Equal(
+		t,
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://bücher.example/auth", Realm: realm}),
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://xn--bcher-kva.example/auth", Realm: realm}),
+	)
 	assert.NotEqual(
 		t,
 		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: realm}),

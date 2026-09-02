@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/net/idna"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
@@ -63,8 +64,9 @@ func RealmTarget(provider IdentityProvider) *v1.KeycloakRealmTarget {
 // of its realm endpoint: the URL, then /realms/ and the realm. Spellings of
 // one Keycloak fold to one identity: the case of the scheme and of the host,
 // a user in the URL, a default port (443 on https, 80 on http), a terminal
-// dot of the host, the spelling of an IP literal or of a port, a percent
-// escape of the path, and every trailing slash make no difference. The case
+// dot of the host, the spelling of an IP literal, of an internationalized host
+// or of a port, a percent escape of the path, and every trailing slash make no
+// difference. The case
 // of the path and of the realm does make one, because Keycloak treats both as
 // case-sensitive. The administrator and the certificate authority take no
 // part in it. The result is deterministic, so a name derived from it (a hash,
@@ -77,8 +79,8 @@ func RealmIdentity(target v1.KeycloakRealmTarget) string {
 // normalizeKeycloakURL trims the trailing slashes of raw and folds every
 // spelling of one server into one: the case of the scheme and of the host, a
 // user in the URL, a default port of the scheme, a terminal dot of the host,
-// the spelling of an IP literal or of a port, and a percent escape of the
-// path. A raw value that does not parse as a URL comes back with only the
+// the spelling of an IP literal, of an internationalized host or of a port,
+// and a percent escape of the path. A raw value that does not parse as a URL comes back with only the
 // slashes trimmed.
 func normalizeKeycloakURL(raw string) string {
 	folded, _ := foldKeycloakURL(raw)
@@ -117,6 +119,13 @@ func foldKeycloakURL(raw string) (string, bool) {
 	// spelling would otherwise take a claim of its own on one realm.
 	if fqdn := strings.TrimSuffix(host, "."); fqdn != "" {
 		host = fqdn
+	}
+	// An HTTP client resolves an internationalized host through its IDNA form,
+	// so "bücher.example" and "xn--bcher-kva.example" reach one server and must
+	// fold to one realm. A host that the profile refuses, an IP literal among
+	// them, keeps the spelling it came with.
+	if ascii, err := idna.Lookup.ToASCII(host); err == nil && ascii != "" {
+		host = ascii
 	}
 	if ip := net.ParseIP(host); ip != nil {
 		host = ip.String()
