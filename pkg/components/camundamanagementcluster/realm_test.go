@@ -510,12 +510,27 @@ func TestNormalizeRealmIdentity(t *testing.T) {
 
 	target := v1.KeycloakRealmTarget{URL: "https://KC.Example.com:443/auth", Realm: "camunda-platform"}
 
-	assert.Equal(t, RealmIdentity(target), NormalizeRealmIdentity(
-		"https://KC.Example.com:443/auth/realms/camunda-platform",
-	))
-	assert.NotEqual(t, RealmIdentity(target), NormalizeRealmIdentity(
-		"https://kc.example.com/auth/realms/Camunda-Platform",
-	))
+	identity, folded := NormalizeRealmIdentity("https://KC.Example.com:443/auth/realms/camunda-platform")
+	assert.Equal(t, RealmIdentity(target), identity)
+	assert.True(t, folded)
+
+	other, folded := NormalizeRealmIdentity("https://kc.example.com/auth/realms/Camunda-Platform")
+	assert.NotEqual(t, RealmIdentity(target), other)
+	assert.True(t, folded)
+}
+
+// A value that does not parse as a URL is folded of nothing. It keeps the
+// user and the password that were written into it, so the caller is told not
+// to print it.
+func TestNormalizeRealmIdentityOfAValueThatIsNoURL(t *testing.T) {
+	t.Parallel()
+
+	raw := "https://someone:hunter%zz@kc.example.com/auth/realms/camunda-platform"
+
+	identity, folded := NormalizeRealmIdentity(raw)
+
+	assert.False(t, folded)
+	assert.Equal(t, raw, identity)
 }
 
 // A workload template is read the same way a pod is: what its Management

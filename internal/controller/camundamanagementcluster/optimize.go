@@ -648,7 +648,9 @@ func (r *Reconciler) identityPods(
 // trace of the callbacks that stay behind.
 func (r *Reconciler) forgetCallbackRealm(mc *v1.CamundaManagementCluster) bool {
 	recorded := mc.Status.CallbackRealm
-	named := components.NormalizeRealmIdentity(mc.Annotations[components.ForgetCallbackRealmAnnotation])
+	named, _ := components.NormalizeRealmIdentity(
+		mc.Annotations[components.ForgetCallbackRealmAnnotation],
+	)
 	if named != components.RealmIdentity(*recorded) {
 		return false
 	}
@@ -689,24 +691,29 @@ func (r *Reconciler) dropSpentForgetAnnotation(
 		return nil
 	}
 	// The annotation is written by hand, and a Keycloak URL admits a user with
-	// a password, so the event prints the folded identity of the value rather
-	// than the value.
-	identity := components.NormalizeRealmIdentity(named)
+	// a password, so the event carries the folded identity of the value. A
+	// value that does not parse as a URL is folded of nothing, and the event
+	// says only that it is not a realm.
+	identity, folded := components.NormalizeRealmIdentity(named)
 	recorded := mc.Status.CallbackRealm
 	if recorded != nil && identity == components.RealmIdentity(*recorded) {
 		return nil
 	}
 	if recorded != nil {
+		carried := "a value that is not a realm identity"
+		if folded {
+			carried = fmt.Sprintf("realm %q", identity)
+		}
 		r.EventRecorder.Eventf(
 			mc,
 			nil,
 			corev1.EventTypeWarning,
 			eventReasonForgetIgnored,
 			eventActionUpdate,
-			"Annotation %s names realm %q and status.callbackRealm names realm %q, so the "+
+			"Annotation %s carries %s and status.callbackRealm names realm %q, so the "+
 				"annotation is removed and nothing is let go of",
 			components.ForgetCallbackRealmAnnotation,
-			identity,
+			carried,
 			components.RealmIdentity(*recorded),
 		)
 	}

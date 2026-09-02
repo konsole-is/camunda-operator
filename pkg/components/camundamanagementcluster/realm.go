@@ -71,10 +71,20 @@ func RealmIdentity(target v1.KeycloakRealmTarget) string {
 // URL. A raw value that does not parse as a URL comes back with only the
 // slashes trimmed.
 func normalizeKeycloakURL(raw string) string {
+	folded, _ := foldKeycloakURL(raw)
+
+	return folded
+}
+
+// foldKeycloakURL is normalizeKeycloakURL with the answer to whether the
+// value parsed as a URL. A false says that nothing was folded out of it, a
+// user with a password included, so a caller that prints the result to a user
+// must not print it.
+func foldKeycloakURL(raw string) (string, bool) {
 	trimmed := strings.TrimRight(raw, "/")
 	parsed, err := url.Parse(trimmed)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return trimmed
+		return trimmed, false
 	}
 
 	// A user in the URL reaches the same realm as the URL without it, and it
@@ -98,7 +108,7 @@ func normalizeKeycloakURL(raw string) string {
 		parsed.Host = host
 	}
 
-	return parsed.String()
+	return parsed.String(), true
 }
 
 // NormalizeRealmIdentity folds a hand-written realm identity the way
@@ -107,8 +117,12 @@ func normalizeKeycloakURL(raw string) string {
 // difference. The path, and with it the realm at its end, stays as it is. It
 // lets an annotation written from status.callbackRealm match the recorded
 // identity, whose URL was folded the same way.
-func NormalizeRealmIdentity(value string) string {
-	return normalizeKeycloakURL(value)
+//
+// The second result is false for a value that does not parse as a URL. Such a
+// value comes back as it was written, with a user and a password still in it,
+// so a message that a user reads must not carry it.
+func NormalizeRealmIdentity(value string) (string, bool) {
+	return foldKeycloakURL(value)
 }
 
 // RealmURL is the URL of target as RealmIdentity reads it: a user in the URL,

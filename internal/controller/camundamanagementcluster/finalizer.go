@@ -85,10 +85,10 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	if err := r.stopIdentity(ctx, mc); err != nil {
 		return err
 	}
-	// The contract is the claim on the realm, so it is held until the realm is
-	// tidy. Deleting it first would let a waiting management plane take the
-	// name and register its own callbacks while this withdrawal is still in
-	// flight, and this withdrawal would then take the new owner's away.
+	// The contract is the claim on its own name, and it is held until the realm
+	// is tidy. Deleting it first lets a management plane parked on that name
+	// take it and register its own callbacks while this withdrawal is still in
+	// flight, and this withdrawal then takes the new owner's away.
 	if r.registeredCallbacks(ctx, mc) {
 		r.withdrawOptimizeCallbacks(ctx, mc)
 	}
