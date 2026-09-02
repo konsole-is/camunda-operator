@@ -429,6 +429,26 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 	})
 })
 
+// An entry of extraEnv with the name of a rendered variable replaces it, so a
+// spec that sets the Keycloak of Management Identity there would administer a
+// realm that this plane never claimed.
+var _ = Describe("the schema of the Management Identity block", func() {
+	It("refuses an extraEnv entry that names the Keycloak of the realm", func() {
+		namespace := newNamespace()
+		mc := newManagementCluster(namespace, "any-database-config")
+		mc.Spec.PlatformConfigRef = "any-platform-config"
+		mc.Spec.Identity.ExtraEnv = []corev1.EnvVar{
+			{Name: "KEYCLOAK_URL", Value: "https://another.example.com/auth"},
+		}
+
+		err := k8sClient.Create(ctx, mc)
+
+		Expect(err).To(MatchError(ContainSubstring(
+			"extraEnv must not set KEYCLOAK_URL or KEYCLOAK_REALM",
+		)))
+	})
+})
+
 // Only the externalKeycloak mode names a realm from the spec, because it is
 // the only mode that claims one. A plane that moves to the keycloak mode
 // therefore gives back a realm whose identity the Keycloak it now runs

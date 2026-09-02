@@ -98,7 +98,7 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	// The realm claim goes last of all. Once it is gone a plane parked on the
 	// realm claims it and runs its own Management Identity against clients
 	// this withdrawal may still be writing.
-	if err := r.releaseRealmClaims(ctx, mc, false); err != nil {
+	if _, err := r.releaseRealmClaims(ctx, mc, nil, nil, false); err != nil {
 		return err
 	}
 	r.EventRecorder.Eventf(

@@ -2042,8 +2042,9 @@ spec:
                 - version
                 type: object
                 x-kubernetes-validations:
-                - message: spec.identity.extraEnv cannot set KEYCLOAK_URL or KEYCLOAK_REALM,
-                    which the operator renders from spec.identityProvider
+                - message: extraEnv must not set KEYCLOAK_URL or KEYCLOAK_REALM. The
+                    operator renders both from spec.identityProvider, and this management
+                    plane claims the realm they name
                   rule: '!has(self.extraEnv) || self.extraEnv.all(e, e.name != ''KEYCLOAK_URL''
                     && e.name != ''KEYCLOAK_REALM'')'
               identityProvider:

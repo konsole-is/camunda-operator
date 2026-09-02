@@ -103,10 +103,10 @@ func (r *Reconciler) claimRealm(
 // A suspended plane sweeps nothing. It touches no claim at all, so the realms
 // it holds stay held until it resumes.
 //
-// It reports whether a workload alone kept a realm. Nothing watches the pods
-// or the ReplicaSets of the plane, and Kubernetes collects them in the
-// background, so the caller comes back on the retry interval to give that
-// realm up once the workload is gone.
+// It reports whether a claim of this plane stayed only because a workload
+// names its realm. Nothing watches the pods or the ReplicaSets of the plane,
+// and Kubernetes collects them in the background, so the caller comes back on
+// the retry interval to give that claim up once the workload is gone.
 func (r *Reconciler) releaseUnusedRealms(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
@@ -128,14 +128,15 @@ func (r *Reconciler) releaseUnusedRealms(
 	if err != nil {
 		return false, err
 	}
-	var held bool
+	var workload []*v1.KeycloakRealmTarget
 	for i := range pointed {
 		keep = append(keep, &pointed[i])
-		held = held || (!namesRealm(current, pointed[i]) &&
-			!namesRealm(mc.Status.CallbackRealm, pointed[i]))
+		if !namesRealm(current, pointed[i]) && !namesRealm(mc.Status.CallbackRealm, pointed[i]) {
+			workload = append(workload, &pointed[i])
+		}
 	}
 
-	return held, r.releaseRealmClaims(ctx, mc, unknown, keep...)
+	return r.releaseRealmClaims(ctx, mc, keep, workload, unknown)
 }
 
 // namesRealm reports whether target names the realm of realm. A nil target
@@ -326,14 +327,19 @@ func (r *Reconciler) realmHolderKeeps(
 }
 
 // releaseRealmClaims deletes every realm claim Lease of the namespace of the
-// operator that still names mc, except the ones of the realms that keep name.
+// operator that still names mc, except the ones of the realms that keep names.
 // A nil entry of keep names no realm. The finalizer passes none, so a deleted
 // management cluster gives back every realm it holds.
+//
+// workload names the realms that only a Management Identity workload of mc
+// keeps, and it is a part of keep. The bool reports that a Lease of one of
+// them is there and stayed, which is the state that no watch ends.
 //
 // unknown says that a Management Identity workload of mc writes a realm that
 // the workload does not name, so no claim of this plane can be shown to be
 // unused. Every one of them is kept then, the way IdentityTemplatePointsAtRealm
-// counts such a workload as a writer of every realm.
+// counts such a workload as a writer of every realm, and each one reads as
+// held by that workload.
 //
 // The label selector is the one that NewRealmClaimLease writes. It carries the
 // name of the management cluster alone, so the list also holds the claims of
@@ -342,9 +348,10 @@ func (r *Reconciler) realmHolderKeeps(
 func (r *Reconciler) releaseRealmClaims(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
+	keep []*v1.KeycloakRealmTarget,
+	workload []*v1.KeycloakRealmTarget,
 	unknown bool,
-	keep ...*v1.KeycloakRealmTarget,
-) error {
+) (bool, error) {
 	var leases coordinationv1.LeaseList
 	err := r.APIReader.List(
 		ctx, &leases,
@@ -352,31 +359,52 @@ func (r *Reconciler) releaseRealmClaims(
 		client.MatchingLabels(components.RealmClaimLeaseLabels(mc.Name)),
 	)
 	if err != nil {
-		return fmt.Errorf("listing the realm claim Leases of %s: %w", client.ObjectKeyFromObject(mc), err)
+		return false, fmt.Errorf(
+			"listing the realm claim Leases of %s: %w", client.ObjectKeyFromObject(mc), err,
+		)
 	}
 
-	kept := make(map[string]bool, len(keep))
-	for _, target := range keep {
-		if target != nil {
-			kept[components.RealmClaimLeaseName(components.RealmIdentity(*target))] = true
-		}
-	}
+	kept := leaseNames(keep)
+	held := leaseNames(workload)
 
+	var workloadHolds bool
 	self := realmClaimSelf(mc)
 	for i := range leases.Items {
 		lease := &leases.Items[i]
-		if kept[lease.Name] || unknown {
-			continue
-		}
 		if recorded, ours := components.RealmClaimHolderOf(lease); !ours || recorded != self {
 			continue
 		}
+		if kept[lease.Name] {
+			workloadHolds = workloadHolds || held[lease.Name]
+
+			continue
+		}
+		// A workload that writes a realm it does not name can write this one,
+		// so the claim stays and the caller comes back for it.
+		if unknown {
+			workloadHolds = true
+
+			continue
+		}
 		if err := r.deleteRealmClaim(ctx, lease); err != nil {
-			return err
+			return false, err
 		}
 	}
 
-	return nil
+	return workloadHolds, nil
+}
+
+// leaseNames is the set of claim Lease names of targets. A nil entry names no
+// realm.
+func leaseNames(targets []*v1.KeycloakRealmTarget) map[string]bool {
+	names := make(map[string]bool, len(targets))
+	for _, target := range targets {
+		if target != nil {
+			names[components.RealmClaimLeaseName(components.RealmIdentity(*target))] = true
+		}
+	}
+
+	return names
 }
 
 // dropRealmClaim deletes the claim Lease of target while its annotations

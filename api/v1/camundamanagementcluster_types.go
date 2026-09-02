@@ -288,11 +288,12 @@ type ManagementOIDCSpec struct{}
 // IdentitySpec configures Management Identity.
 //
 // The operator owns the Keycloak URL and the realm of the container. Both come
-// from spec.identityProvider, and the operator administers exactly that realm,
-// so an entry of extraEnv that names either one is refused: Management
-// Identity would write the login callbacks of Optimize into a realm that
-// status.callbackRealm never names and no withdrawal reaches.
-// +kubebuilder:validation:XValidation:rule="!has(self.extraEnv) || self.extraEnv.all(e, e.name != 'KEYCLOAK_URL' && e.name != 'KEYCLOAK_REALM')",message="spec.identity.extraEnv cannot set KEYCLOAK_URL or KEYCLOAK_REALM, which the operator renders from spec.identityProvider"
+// from spec.identityProvider, and this management plane claims exactly the
+// realm they name, so an entry of extraEnv that replaces either one is
+// refused: Management Identity would write the login callbacks of Optimize
+// into a realm that status.callbackRealm never names, that no withdrawal
+// reaches, and that another management plane can hold.
+// +kubebuilder:validation:XValidation:rule="!has(self.extraEnv) || self.extraEnv.all(e, e.name != 'KEYCLOAK_URL' && e.name != 'KEYCLOAK_REALM')",message="extraEnv must not set KEYCLOAK_URL or KEYCLOAK_REALM. The operator renders both from spec.identityProvider, and this management plane claims the realm they name"
 type IdentitySpec struct {
 	// Version is the Management Identity version, as a full semantic version.
 	// The operator supports 8.9.0 and later.
