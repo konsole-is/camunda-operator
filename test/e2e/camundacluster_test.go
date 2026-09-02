@@ -87,6 +87,8 @@ const (
 //     https://docs.camunda.io/docs/apis-tools/orchestration-cluster-api-rest/specifications/create-process-instance/
 //   - POST /v2/process-instances/search ({"filter": {"processDefinitionId": ...}})
 //     https://docs.camunda.io/docs/apis-tools/orchestration-cluster-api-rest/specifications/search-process-instances/
+//   - GET /v2/authentication/me
+//     https://docs.camunda.io/docs/apis-tools/orchestration-cluster-api-rest/specifications/get-authentication/
 //
 // The web applications answer under /operate/, /tasklist/, and /admin/
 // (https://docs.camunda.io/docs/reference/announcements-release-notes/890/890-announcements/#identity).
@@ -95,6 +97,10 @@ const (
 	pathDeployments      = "/v2/deployments"
 	pathProcessInstances = "/v2/process-instances"
 	pathInstanceSearch   = "/v2/process-instances/search"
+	// pathAuthenticationMe names the caller of the request. It answers 401
+	// without credentials, and the user of a browser session with the value
+	// of the username claim.
+	pathAuthenticationMe = "/v2/authentication/me"
 )
 
 var webAppPaths = []string{"/operate/", "/tasklist/", "/admin/"}

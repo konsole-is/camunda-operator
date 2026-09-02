@@ -60,19 +60,27 @@ const (
 	ccOIDCSecretName = "camunda-oidc-client"
 	ccOIDCSecretKey  = "client-secret"
 	// ccOIDCUsernameClaim and ccOIDCClientIDClaim are the claims the realm
-	// puts in an access token. The client id claim comes from a hardcoded
-	// claim mapper, because Keycloak names the client in "azp", which the
-	// tokens of persons carry as well.
+	// puts in an access token. The client id claim comes from a mapper of the
+	// realm, because Keycloak names the client in "azp", which the tokens of
+	// persons carry as well. That mapper puts the claim in the token of a
+	// service account and in no other, so the cluster reads a browser login
+	// as the person and a machine call as the client.
 	ccOIDCUsernameClaim = "preferred_username"
 	ccOIDCClientIDClaim = "client_id"
+	// The user of the realm and the Secret of testdata/keycloak.yaml that
+	// carries the password of that user. The browser login signs in as this
+	// user, and preferred_username of the tokens it gets is the name below.
+	ccOIDCUsername        = "ada@example.com"
+	ccOIDCUserSecretName  = "keycloak-user"
+	ccOIDCUserPasswordKey = "password"
 
 	// ccOIDCReadyTimeout adds the Keycloak startup to the Camunda one.
 	ccOIDCReadyTimeout = 15 * time.Minute
 )
 
-// keycloakBaseURL is the issuer host of the flow, reachable from the pods of
-// the namespace. Nothing resolves it from outside, because the flow never
-// completes a browser login.
+// keycloakBaseURL is the issuer host of the flow. Every pod of the namespace
+// reaches it, and the browser login runs from such a pod, so this is the
+// address of the front channel as well as the one of the back channel.
 func keycloakBaseURL() string {
 	return fmt.Sprintf("http://keycloak.%s.svc:8080", ccOIDCNamespace)
 }
@@ -266,6 +274,25 @@ var _ = Describe("CamundaCluster with OIDC", Ordered, Label(utils.LabelCamundaCl
 		Expect(err).NotTo(HaveOccurred())
 		Expect(final.Query().Get("redirect_uri")).To(Equal(cluster.Spec.ExternalURL + "/sso-callback"))
 		Expect(final.Query().Get("client_id")).To(Equal(ccOIDCClientID))
+	})
+
+	// The spec above ends where the login begins. This one runs it to the end:
+	// it posts the credentials of the user of the realm and reads the endpoint
+	// that names the caller of the session. The name in the answer is the
+	// value of the claim that the platform config maps, so a cluster that
+	// accepts the session as somebody else fails here.
+	It("completes a browser login as a user of the realm", func() {
+		out, err := browserLogin(browserLoginRequest{
+			Namespace:      ccOIDCNamespace,
+			Name:           "browser",
+			StartURL:       gatewayURL(cluster, "/operate/"),
+			ProtectedURL:   gatewayURL(cluster, pathAuthenticationMe),
+			Username:       ccOIDCUsername,
+			PasswordSecret: ccOIDCUserSecretName,
+			PasswordKey:    ccOIDCUserPasswordKey,
+		})
+		Expect(err).NotTo(HaveOccurred(), out)
+		Expect(out).To(ContainSubstring(`"username":"`+ccOIDCUsername+`"`), out)
 	})
 
 	It("runs the connectors runtime under OIDC", func() {

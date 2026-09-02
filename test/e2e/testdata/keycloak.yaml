@@ -9,12 +9,25 @@
 # it is a Secret and not a ConfigMap, as the PostgreSQL fixture of the suite
 # already does with its credentials.
 #
+# The user carries a first and a last name. Keycloak requires both of every
+# user, and it asks a user who has neither to complete the profile at the first
+# login. That form stands between the credentials and the callback, so the
+# browser login of the suite never reaches the application without the two
+# names.
+#
 # The "camunda" client carries two protocol mappers, and the CamundaCluster
 # flow does not work without either one. The audience mapper puts the client
 # id in "aud", because Keycloak otherwise issues "aud": "account" and the
-# Camunda audiences check refuses the token. The hardcoded-claim mapper puts
-# "client_id" in the access token, because a Keycloak token names its client
-# in "azp", and "azp" is also present in the tokens of persons.
+# Camunda audiences check refuses the token.
+#
+# The second mapper puts "client_id" in the access token of a service account,
+# because a Keycloak token names its client in "azp", and "azp" is present in
+# the token of a person as well. It is the built-in "Client ID" mapper of
+# Keycloak: it copies the "clientId" note of the session, which Keycloak sets
+# on a client-credentials session and on no other. The token of a person
+# therefore carries no "client_id", which is what the orchestration cluster
+# needs to read a browser login as the person rather than as the client
+# (https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/admin/connect-external-identity-provider/#how-principal-identification-works).
 #
 # The four "management-" clients are the ones a CamundaManagementCluster in
 # the oidc mode names in spec.auth.oidc.management.clients. Management
@@ -60,10 +73,10 @@ stringData:
             {
               "name": "camunda-client-id",
               "protocol": "openid-connect",
-              "protocolMapper": "oidc-hardcoded-claim-mapper",
+              "protocolMapper": "oidc-usersessionmodel-note-mapper",
               "config": {
+                "user.session.note": "clientId",
                 "claim.name": "client_id",
-                "claim.value": "camunda",
                 "jsonType.label": "String",
                 "access.token.claim": "true",
                 "id.token.claim": "false",
@@ -160,6 +173,8 @@ stringData:
           "username": "ada@example.com",
           "email": "ada@example.com",
           "emailVerified": true,
+          "firstName": "Ada",
+          "lastName": "Lovelace",
           "enabled": true,
           "credentials": [
             {
@@ -171,6 +186,18 @@ stringData:
         }
       ]
     }
+---
+# The password of that user, for the helper pod that completes the browser
+# login. The pod reads it through secretKeyRef, so the password never stands in
+# a pod spec. It repeats the value of the realm export above, and the login
+# fails when the two stop agreeing.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-user
+type: Opaque
+stringData:
+  password: ada-e2e-password
 ---
 apiVersion: apps/v1
 kind: Deployment
