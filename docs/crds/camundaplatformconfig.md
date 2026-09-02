@@ -236,7 +236,7 @@ spec:
     namespace: "camunda-system"
     # string. Required. Key in the Secret.
     key: "license-key"
-  # object. Optional. Renames one image. The value is a full repository with its registry and no tag or digest. The tag always comes from the version field of the resource that runs the image.
+  # object. Optional. Renames images, one entry per image. Each value is a full repository with its registry and no tag or digest. The tag always comes from the version field of the resource that runs the image.
   # A registry with a port needs a path after it, as in registry:5000/camunda/optimize.
   images:
     # string. Optional, default: camunda/camunda. The orchestration cluster processes.

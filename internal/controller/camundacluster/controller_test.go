@@ -903,7 +903,17 @@ var _ = Describe("CamundaCluster controller", func() {
 			HaveKeyWithValue(components.BrokerVersionAnnotation, "8.9.4"),
 		)
 
+		By("dropping the pin when the cluster overrides the version")
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Version = "8.9.5" })
+		Eventually(func(g Gomega) {
+			g.Expect(zeebeContainer(cluster).Image).To(
+				Equal("camunda/camunda:8.9.5"),
+				"the pin belongs to the version of the release, not to the one the cluster set",
+			)
+		}, timeout, interval).Should(Succeed())
+
 		By("refusing a lower version against the annotation, not the image tag")
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Version = "" })
 		Eventually(func(g Gomega) {
 			var latest v1.CamundaRelease
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(release), &latest)).To(Succeed())
@@ -913,7 +923,7 @@ var _ = Describe("CamundaCluster controller", func() {
 		expectReady(
 			cluster, metav1.ConditionFalse,
 			Equal(v1.ReasonVersionDowngradeRefused),
-			ContainSubstring("8.9.3 is below the running version 8.9.4"),
+			ContainSubstring("8.9.3 is below the running version 8.9.5"),
 		)
 	})
 

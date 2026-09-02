@@ -38,7 +38,7 @@ When you edit a release, every cluster that references it rolls to the new versi
 
 ## Pinned images
 
-`spec.images` has two entries. `camunda` is the image of every orchestration cluster process, because they all run one image. `connectors` is the image of the connectors runtime. Each value is a complete reference, tag or digest included, and the operator pulls it as it is:
+`spec.images` accepts two entries. `camunda` is the image of every orchestration cluster process, because they all run one image. `connectors` is the image of the connectors runtime. Each value is a complete reference, tag or digest included, and the operator pulls it as it is:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -52,6 +52,8 @@ spec:
 ```
 
 A pinned image changes only what is pulled. The version gates, the downgrade rule, and the computed environment still read `spec.version`, not the image. Pin an image of the same version that you name, for example a digest of it or a patched build of it.
+
+A pin belongs to the version of the release. A cluster that runs another version does not pull it: when `spec.version` on the cluster wins over the release, or a restore sets the version, the cluster pulls the normal repository at that version. The `connectors` pin follows `connectors.version` the same way.
 
 To pin an image for a few clusters only, create a second release with the pin and point the `releaseRef` of those clusters at it.
 
@@ -102,7 +104,7 @@ spec:
     extraEnv: []
     # []EnvFromSource. Optional. Environment sources of the connectors runtime.
     extraEnvFrom: []
-  # object. Optional. Complete image references, pulled as they are. The version above stays the version the operator believes the process runs.
+  # object. Optional. Complete image references, pulled as they are. A pin applies only while the version of the release is the effective one, and the version stays what the operator believes the process runs.
   images:
     # string. Optional. Image of every orchestration cluster process.
     camunda: "mirror.example.com/camunda/camunda@sha256:7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730"

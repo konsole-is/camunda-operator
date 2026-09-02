@@ -71,10 +71,11 @@ type Input struct {
 	// Effective is the merged spec (preset, release, cluster) with the
 	// defaults applied.
 	Effective Effective
-	// Images are the image references that the release pins, or nil when
-	// the cluster names no release or the release pins none. A pinned
-	// reference is pulled as it is, and Effective.Version stays the version
-	// that the operator believes the process runs.
+	// Images are the image references that the release pins, filled by the
+	// controller from ReleaseImages. Nil when the cluster names no release,
+	// the release pins none, or no pin applies to the effective versions. A
+	// pinned reference is pulled as it is, and Effective.Version stays the
+	// version that the operator believes the process runs.
 	Images *v1.ReleaseImagesSpec
 	// Platform is the spec of the referenced CamundaPlatformConfig.
 	Platform v1.CamundaPlatformConfigSpec

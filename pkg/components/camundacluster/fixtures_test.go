@@ -259,8 +259,9 @@ func fixtureRelease(t *testing.T) Input {
 				"7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730",
 			Connectors: "mirror.example.com/camunda/connectors-bundle:8.9.7-patched",
 		}
-		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, mediumPreset(), release))
-		in.Images = release.Images
+		merged := MergeSpec(in.Cluster.Spec, mediumPreset(), release)
+		in.Effective = NewEffective(merged)
+		in.Images = ReleaseImages(merged, release)
 	})
 }
 

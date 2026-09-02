@@ -70,13 +70,14 @@ type resolver struct {
 	storage *v1.SecondaryStorageConfig
 }
 
-// preCheck resolves every reference of cluster into the render input, in the
-// documented order: the preset, the release and the merged spec, the platform config and
-// its Secrets, the storage binding and its chain, the claim on the binding,
-// the object storage references. Every Secret is checked for its keys through
-// the uncached reader. A Secret outside the cluster namespace is copied into
-// the returned mirrors, and the input references the copy, so the renderer
-// only ever names Secrets of the cluster namespace. HashInputs carry the
+// preCheck resolves every reference of cluster into the render input, in
+// the documented order: the preset, the release and the merged spec, the
+// platform config and its Secrets, the storage binding and its chain, the
+// claim on the binding, the object storage references. Every Secret is
+// checked for its keys through the uncached reader. A Secret outside the
+// cluster namespace is copied into the returned mirrors, and the input
+// references the copy, so the renderer only ever names Secrets of the
+// cluster namespace. HashInputs carry the
 // resource version of every Secret and the generation of every CR read,
 // sorted, so a change to any of them rolls the pods. A failed check returns a
 // *conditions.PreCheckFailure: InvalidReference for a dangling reference or
@@ -151,7 +152,6 @@ func (res *resolver) resolveEffective(ctx context.Context, in *components.Input)
 			return err
 		}
 		release = &obj.Spec
-		in.Images = obj.Spec.Images
 	}
 
 	merged := components.MergeSpec(res.cluster.Spec, preset, release)
@@ -162,6 +162,7 @@ func (res *resolver) resolveEffective(ctx context.Context, in *components.Input)
 		}
 	}
 	in.Effective = components.NewEffective(merged)
+	in.Images = components.ReleaseImages(merged, release)
 
 	return nil
 }

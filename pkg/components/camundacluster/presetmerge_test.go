@@ -435,6 +435,88 @@ func TestMergeSpecReleaseEmptyBlocksStayAbsent(t *testing.T) {
 	assert.Nil(t, got.Connectors)
 }
 
+// A pin belongs to the version of the release, so a version that another
+// layer supplies drops it: the operator must not pull the artifact of one
+// version while it renders the environment of another. A restore that
+// forces spec.version is the sharpest case, because it sanctions the
+// downgrade and the version rule never compares the image.
+func TestReleaseImages(t *testing.T) {
+	t.Parallel()
+
+	pins := &v1.ReleaseImagesSpec{
+		Camunda:    "mirror.example.com/camunda@sha256:abc",
+		Connectors: "mirror.example.com/connectors:8.9.7-patched",
+	}
+	release := func() *v1.CamundaReleaseSpec {
+		return &v1.CamundaReleaseSpec{
+			Version:    "8.9.4",
+			Connectors: &v1.ReleaseConnectorsSpec{Version: "8.9.7"},
+			Images:     pins,
+		}
+	}
+
+	tests := []struct {
+		name    string
+		spec    v1.CamundaClusterSpec
+		release *v1.CamundaReleaseSpec
+		want    *v1.ReleaseImagesSpec
+	}{
+		{
+			name:    "no release",
+			release: nil,
+			want:    nil,
+		},
+		{
+			name:    "no pins",
+			release: &v1.CamundaReleaseSpec{Version: "8.9.4"},
+			want:    nil,
+		},
+		{
+			name:    "both pins apply while the release versions are effective",
+			release: release(),
+			want:    pins,
+		},
+		{
+			name:    "a cluster version drops the camunda pin",
+			spec:    v1.CamundaClusterSpec{Version: "8.9.2"},
+			release: release(),
+			want:    &v1.ReleaseImagesSpec{Connectors: pins.Connectors},
+		},
+		{
+			name:    "a cluster connectors version drops the connectors pin",
+			spec:    v1.CamundaClusterSpec{Connectors: &v1.ConnectorsSpec{Version: "8.9.8"}},
+			release: release(),
+			want:    &v1.ReleaseImagesSpec{Camunda: pins.Camunda},
+		},
+		{
+			name: "a connectors pin needs a connectors version on the release",
+			release: &v1.CamundaReleaseSpec{
+				Version: "8.9.4",
+				Images:  pins,
+			},
+			want: &v1.ReleaseImagesSpec{Camunda: pins.Camunda},
+		},
+		{
+			name: "nothing left returns nil",
+			spec: v1.CamundaClusterSpec{
+				Version:    "8.9.2",
+				Connectors: &v1.ConnectorsSpec{Version: "8.9.8"},
+			},
+			release: release(),
+			want:    nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			merged := MergeSpec(tt.spec, nil, tt.release)
+			assert.Equal(t, tt.want, ReleaseImages(merged, tt.release))
+		})
+	}
+}
+
 // The images of a release do not merge into the spec: they change only what
 // is pulled, through Input.Images, never which version the operator renders.
 func TestMergeSpecReleaseImagesStayOutOfTheSpec(t *testing.T) {

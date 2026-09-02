@@ -218,10 +218,10 @@ func (res *resolver) resolveStorage(
 }
 
 // resolveEffective merges the preset and the release of the cluster under
-// its spec and checks the version gate. Camunda supports Optimize only on a matching minor, so the
-// major and the minor of spec.version must equal those of the effective
-// version of the cluster. The patch levels may differ: Optimize has its own
-// patch line.
+// its spec and checks the version gate. Camunda supports Optimize only on a
+// matching minor, so the major and the minor of spec.version must equal
+// those of the effective version of the cluster. The patch levels may
+// differ: Optimize has its own patch line.
 func (res *resolver) resolveEffective(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,

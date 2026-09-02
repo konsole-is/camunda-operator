@@ -94,7 +94,7 @@ func MergeSpec(
 		merged = *preset.Cluster.DeepCopy()
 	}
 	if release != nil {
-		merged = mergeLayer(merged, releaseLayer(release))
+		merged = mergeLayer(merged, releaseLayer(release.DeepCopy()))
 	}
 	merged = mergeLayer(merged, spec)
 
@@ -111,6 +111,40 @@ func MergeSpec(
 	merged.Pause = spec.Pause
 
 	return *merged.DeepCopy()
+}
+
+// ReleaseImages returns the image references that the release pins for the
+// merged spec, or nil when none applies. A pin belongs to the version of the
+// release, so it applies only while that version is the effective one: a
+// cluster that sets its own version, or a restore that forces one, pulls the
+// normal repository at that version instead of the pin. The camunda pin
+// follows spec.version, the connectors pin follows connectors.version, each
+// on its own. The result shares no memory with release.
+func ReleaseImages(merged v1.CamundaClusterSpec, release *v1.CamundaReleaseSpec) *v1.ReleaseImagesSpec {
+	if release == nil || release.Images == nil {
+		return nil
+	}
+
+	images := *release.Images
+
+	if merged.Version != release.Version {
+		images.Camunda = ""
+	}
+
+	effectiveConnectors := ""
+	if merged.Connectors != nil {
+		effectiveConnectors = merged.Connectors.Version
+	}
+	if release.Connectors == nil || release.Connectors.Version == "" ||
+		effectiveConnectors != release.Connectors.Version {
+		images.Connectors = ""
+	}
+
+	if images == (v1.ReleaseImagesSpec{}) {
+		return nil
+	}
+
+	return &images
 }
 
 // releaseLayer expresses a release in the shape of a cluster spec, so the
