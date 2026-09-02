@@ -361,6 +361,48 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 		}, "2s", interval).Should(Succeed())
 	})
 
+	// A suspended plane touches no claim on any path. A pre-check that stops
+	// failing passes while it sleeps must not give its realm back either.
+	It("keeps its claim while suspended even when the spec no longer resolves", func() {
+		s := newScenario(withExternalKeycloak)
+		expectReadyWhileStamping(s.mc, identityKey(s))
+		expectRealmClaimHolder(externalRealmTarget(), s.mc)
+
+		By("suspending the plane, which scales its Management Identity to zero")
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.Suspend = true
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			// Envtest runs no Deployment controller, so the scale to zero is
+			// stamped the way a rollout is.
+			stampDeploymentReady(g, identityKey(s))
+
+			ready := conditionOf(g, s.mc, v1.ConditionReady)
+			g.Expect(ready.Reason).To(Equal(string(component.Suspended)))
+		}, timeout, interval).Should(Succeed())
+
+		By("pointing the sleeping plane at a Keycloak whose administrator Secret is missing")
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.IdentityProvider.ExternalKeycloak.URL = "https://second.example.com/auth"
+			latest.Spec.IdentityProvider.ExternalKeycloak.AdminCredentialsSecretRef.Name = "gone"
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			ready := conditionOf(g, s.mc, v1.ConditionReady)
+			g.Expect(ready.Reason).To(Equal(v1.ReasonMissingSecret))
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			var lease coordinationv1.Lease
+			g.Expect(k8sClient.Get(ctx, realmLeaseKey(externalRealmTarget()), &lease)).To(Succeed())
+		}, "2s", interval).Should(Succeed())
+	})
+
 	// The keycloak mode owns the Keycloak it runs, and deletes it with the
 	// plane, so the realm needs no claim there.
 	It("claims no realm in the keycloak mode", func() {

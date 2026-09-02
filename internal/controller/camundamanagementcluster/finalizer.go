@@ -18,6 +18,7 @@ package camundamanagementcluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -121,8 +122,9 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	return nil
 }
 
-// stopIdentity deletes the Management Identity Deployment, so that no pod of
-// it starts after this point and writes the Optimize client again.
+// stopIdentity deletes the Management Identity Deployment and the ReplicaSets
+// of it, so that no pod of it starts after this point and writes the Optimize
+// client again.
 //
 // Kubernetes collects that Deployment through its owner reference, but only
 // once the finalizer is gone, which is after the realm is tidied. Without this
@@ -158,7 +160,52 @@ func (r *Reconciler) stopIdentity(ctx context.Context, mc *v1.CamundaManagementC
 		return fmt.Errorf("deleting Deployment %q: %w", key, err)
 	}
 
-	return nil
+	// The ReplicaSets go after the Deployment. Before it, the Deployment makes
+	// another one at once.
+	return r.stopIdentitySets(ctx, mc, &identity)
+}
+
+// stopIdentitySets deletes the ReplicaSets of the Management Identity
+// Deployment of mc.
+//
+// Kubernetes collects them with the Deployment, but in the background, and one
+// that still asks for a pod starts another Management Identity while it waits.
+// That pod would write the clients of the realm this deletion is about to give
+// back.
+func (r *Reconciler) stopIdentitySets(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	identity *appsv1.Deployment,
+) error {
+	var sets appsv1.ReplicaSetList
+	if err := r.APIReader.List(
+		ctx,
+		&sets,
+		client.InNamespace(mc.Namespace),
+		client.MatchingLabels(components.IdentityPodLabels(mc)),
+	); err != nil {
+		return fmt.Errorf("listing the Management Identity ReplicaSets: %w", err)
+	}
+
+	var errs []error
+	for i := range sets.Items {
+		set := &sets.Items[i]
+		// The labels are the discovery labels of this plane, which anybody can
+		// write. The owner reference is what tells the ReplicaSets of the
+		// Deployment that was just deleted from a workload of somebody else.
+		if !metav1.IsControlledBy(set, identity) {
+			continue
+		}
+
+		err := r.Delete(ctx, set, client.Preconditions{UID: &set.UID})
+		if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+			errs = append(errs, fmt.Errorf(
+				"deleting ReplicaSet %q: %w", client.ObjectKeyFromObject(set), err,
+			))
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 // ownsContract reports whether a ManagementAuthConfig that this management

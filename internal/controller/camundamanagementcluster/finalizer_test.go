@@ -170,31 +170,37 @@ var finalizerRealm = v1.KeycloakRealmTarget{
 // says nothing about the Management Identity Deployment, which writes the
 // clients of the realm and must be gone before another plane claims it.
 func TestFinalizeStopsIdentityBeforeTheRealm(t *testing.T) {
-	t.Run("the Deployment goes before the realm claim, with no contract", func(t *testing.T) {
+	t.Run("the workloads go before the realm claim, with no contract", func(t *testing.T) {
 		mc := finalizingCluster()
 		identity := ownedIdentity(mc)
+		set := ownedIdentitySet(mc, identity)
 		lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
-		r, deletes := finalizerReconciler(t, mc, identity, lease)
+		r, deletes := finalizerReconciler(t, mc, identity, set, lease)
 
 		require.NoError(t, r.finalize(context.Background(), mc))
 
-		assert.Equal(t, []string{identity.Name, lease.Name}, deletes.names)
+		assert.Equal(t, []string{identity.Name, set.Name, lease.Name}, deletes.names)
 		assert.False(t, exists(t, r, identity))
+		assert.False(t, exists(t, r, set))
 		assert.False(t, exists(t, r, lease))
 		assert.False(t, controllerutil.ContainsFinalizer(mc, Finalizer))
 	})
 
 	// The name of the Deployment is derived from the name of the management
-	// cluster, so a workload of another owner can hold it.
-	t.Run("a Deployment of another owner stays", func(t *testing.T) {
+	// cluster, and the labels of a ReplicaSet are the discovery labels of the
+	// plane, so a workload of another owner can carry either.
+	t.Run("the workloads of another owner stay", func(t *testing.T) {
 		mc := finalizingCluster()
 		identity := ownedIdentity(mc)
+		set := ownedIdentitySet(mc, identity)
 		identity.OwnerReferences = nil
-		r, _ := finalizerReconciler(t, mc, identity)
+		set.OwnerReferences = nil
+		r, _ := finalizerReconciler(t, mc, identity, set)
 
 		require.NoError(t, r.finalize(context.Background(), mc))
 
 		assert.True(t, exists(t, r, identity))
+		assert.True(t, exists(t, r, set))
 	})
 }
 
@@ -222,6 +228,29 @@ func ownedIdentity(mc *v1.CamundaManagementCluster) *appsv1.Deployment {
 			Kind:       "CamundaManagementCluster",
 			Name:       mc.Name,
 			UID:        mc.UID,
+			Controller: &controller,
+		}},
+	}}
+}
+
+// ownedIdentitySet is a ReplicaSet of the Management Identity Deployment. It
+// carries the discovery labels that the pod template of that Deployment has.
+func ownedIdentitySet(
+	mc *v1.CamundaManagementCluster,
+	identity *appsv1.Deployment,
+) *appsv1.ReplicaSet {
+	controller := true
+
+	return &appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{
+		Namespace: mc.Namespace,
+		Name:      identity.Name + "-7d9f8c",
+		UID:       "identity-set-uid",
+		Labels:    components.IdentityPodLabels(mc),
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: appsv1.SchemeGroupVersion.String(),
+			Kind:       "Deployment",
+			Name:       identity.Name,
+			UID:        identity.UID,
 			Controller: &controller,
 		}},
 	}}

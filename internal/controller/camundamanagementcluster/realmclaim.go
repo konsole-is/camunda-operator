@@ -94,10 +94,17 @@ func (r *Reconciler) claimRealm(
 // realm writes its clients again. A workload that writes a realm it does not
 // name keeps every claim of the plane, because none of them can be shown to
 // be unused.
+//
+// A suspended plane sweeps nothing. It touches no claim at all, so the realms
+// it holds stay held until it resumes.
 func (r *Reconciler) releaseUnusedRealms(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 ) error {
+	if mc.Spec.Suspend {
+		return nil
+	}
+
 	current, err := specRealmTarget(mc)
 	if err != nil {
 		return err
