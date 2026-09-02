@@ -282,9 +282,9 @@ func (r *Reconciler) ownsContract(ctx context.Context, mc *v1.CamundaManagementC
 //
 // A Keycloak that the operator ran goes with this resource, so only a Keycloak
 // that you run keeps anything. The caller decides whether this plane ever
-// registered a callback, through registeredCallbacks; without that, a plane
-// parked on a name another owner holds would take the callbacks of the holder
-// with it.
+// registered a callback, through registeredCallbacks. Without that, a plane
+// parked on a name another owner holds takes the callbacks of the holder with
+// it.
 func (r *Reconciler) withdrawOptimizeCallbacks(ctx context.Context, mc *v1.CamundaManagementCluster) {
 	for _, provider := range withdrawalRealms(ctx, mc) {
 		failure, err := r.convergeOptimizeCallbacks(
