@@ -145,7 +145,7 @@ status:
 
 Give the waiting plane a realm of its own, or delete the holder. The waiting plane then proceeds on its own. A holder releases a realm when it is deleted. It also releases one that its spec no longer names, once two things are true of that realm: the login callbacks have left it, and no Management Identity of the plane points at it any more. Two planes on one Keycloak with two realms work today.
 
-A plane that you retarget into the wait leaves the old realm first. While `status.callbackRealm` names a realm, the plane removes its login callbacks from that realm and stops the Management Identity that points there, so this plane signs nobody in until it holds a realm again. It keeps the claim on the old realm while any workload of it still points there, so no other plane takes a realm that this one starts against again. Give the waiting plane a realm of its own and its Management Identity comes back in that realm, or delete the plane and it gives back every realm it holds.
+A plane that you retarget into the wait leaves the old realm first. While `status.callbackRealm` names a realm, the plane removes its login callbacks from that realm. Once they are out, it stops the Management Identity that points there, and this plane signs nobody in until it holds a realm again. An old Keycloak that does not let the callbacks go keeps that Management Identity running, and everybody keeps signing in through the old realm meanwhile. It keeps the claim on the old realm while any workload of it still points there, so no other plane takes a realm that this one starts against again. Give the waiting plane a realm of its own and its Management Identity comes back in that realm, or delete the plane and it gives back every realm it holds.
 
 A pod of that Management Identity that restarts while it waits writes the clients of the old realm again, and the login callbacks of this plane with them. The operator removes them again. It keeps removing them while `status.callbackRealm` names that realm, and the record goes once nothing of the plane can write it. The claim on the realm goes on a later look. Callbacks stay behind in a realm when you let go of it with the [`camunda.io/forget-callback-realm`](#moving-the-callbacks-to-another-realm) annotation. The record goes at once then, the claim still waits until no Management Identity of the plane points at the realm, and you remove the callbacks from its `optimize` client yourself.
 
@@ -575,7 +575,7 @@ status:
       passwordKey: "password"
 ```
 
-`status.callbackRealm` also keeps naming the old realm until every Management Identity pod of the old configuration is gone. A move restarts Management Identity once, and nobody signs in between the stop and the start.
+`status.callbackRealm` also keeps naming the old realm until every Management Identity workload of the old configuration is gone: its Deployment, every ReplicaSet under it that can still start a pod, and every pod that has not finished. A move restarts Management Identity once, and nobody signs in between the stop and the start.
 
 Keep the Secret that `adminCredentialsSecretRef` names there, and the Secret of `caBundleSecretRef` when the old Keycloak needed one, until `status.callbackRealm` stops naming the old realm. The operator signs in to the old Keycloak with them one last time. The record is the completion signal of a move, because the condition ends at `Healthy`, `Disabled`, or `NoCallbacks`, whichever the new mode reaches.
 

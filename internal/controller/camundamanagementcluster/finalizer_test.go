@@ -339,6 +339,18 @@ func ownedIdentitySet(
 	}}
 }
 
+// pointIdentityAtRealm gives the Deployment a Management Identity container
+// that names the realm of target, the way a rendered pod template does.
+func pointIdentityAtRealm(identity *appsv1.Deployment, target v1.KeycloakRealmTarget) {
+	identity.Spec.Template.Spec.Containers = []corev1.Container{{
+		Name: "identity",
+		Env: []corev1.EnvVar{
+			{Name: "KEYCLOAK_URL", Value: target.URL},
+			{Name: "KEYCLOAK_REALM", Value: target.Realm},
+		},
+	}}
+}
+
 // ownedContract is the ManagementAuthConfig that mc writes, with the owner
 // labels that make it this plane's.
 func ownedContract(mc *v1.CamundaManagementCluster) *v1.ManagementAuthConfig {

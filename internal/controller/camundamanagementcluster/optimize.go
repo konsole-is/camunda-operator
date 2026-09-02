@@ -452,13 +452,16 @@ func (r *Reconciler) stopOldIdentityWriters(
 	case apierrors.IsNotFound(err):
 	case err != nil:
 		return false, fmt.Errorf("reading Deployment %q: %w", key, err)
-	case metav1.IsControlledBy(&identity, mc) &&
-		components.IdentityTemplatePointsAtRealm(&identity.Spec.Template.Spec, recorded):
+	case components.IdentityTemplatePointsAtRealm(&identity.Spec.Template.Spec, recorded):
+		// A Deployment at this name starts a pod against the realm its
+		// template names whoever owns it, so it holds the record either way.
+		// Only the delete asks who owns it: a workload of another owner is
+		// not ours to stop, and the record waits for whoever removes it.
 		writers = true
 		// The UID is a precondition, so a Deployment that took the name
 		// between the read and this call is refused rather than deleted, the
 		// way stopIdentity of the finalizer deletes it.
-		if identity.DeletionTimestamp == nil {
+		if metav1.IsControlledBy(&identity, mc) && identity.DeletionTimestamp == nil {
 			err := r.Delete(ctx, &identity, client.Preconditions{UID: &identity.UID})
 			if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
 				return false, fmt.Errorf("deleting Deployment %q: %w", key, err)

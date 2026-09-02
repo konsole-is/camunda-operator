@@ -17,16 +17,20 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"context"
 	"encoding/json"
 	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
@@ -1884,4 +1888,54 @@ func (f *fakeKeycloak) serveRoleMappings(w http.ResponseWriter, r *http.Request)
 	}
 	f.granted[userID] = append(f.granted[userID], added...)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// A Deployment at the derived Management Identity name starts a pod against
+// the realm its template names whoever owns it, so it holds the record of
+// that realm. Only the delete asks who owns it.
+func TestStopOldIdentityWritersReadsEveryDeploymentAtTheName(t *testing.T) {
+	t.Run("a Deployment of another owner holds the record and stays", func(t *testing.T) {
+		mc := finalizingCluster()
+		identity := ownedIdentity(mc)
+		identity.OwnerReferences = nil
+		pointIdentityAtRealm(identity, finalizerRealm)
+		r, deletes := fakeReconciler(t, mc, identity)
+
+		writers, err := r.stopOldIdentityWriters(context.Background(), mc, finalizerRealm)
+
+		require.NoError(t, err)
+		assert.True(t, writers)
+		assert.Empty(t, deletes.names)
+		assert.True(t, exists(t, r, identity))
+	})
+
+	t.Run("a Deployment of this plane holds the record and goes", func(t *testing.T) {
+		mc := finalizingCluster()
+		identity := ownedIdentity(mc)
+		pointIdentityAtRealm(identity, finalizerRealm)
+		r, deletes := fakeReconciler(t, mc, identity)
+
+		writers, err := r.stopOldIdentityWriters(context.Background(), mc, finalizerRealm)
+
+		require.NoError(t, err)
+		assert.True(t, writers)
+		assert.Equal(t, []string{identity.Name}, deletes.names)
+	})
+
+	// A Deployment that points somewhere else writes another realm, and the
+	// record of this one is free to go.
+	t.Run("a Deployment of another realm holds nothing", func(t *testing.T) {
+		mc := finalizingCluster()
+		identity := ownedIdentity(mc)
+		identity.OwnerReferences = nil
+		pointIdentityAtRealm(identity, v1.KeycloakRealmTarget{
+			URL: "https://other.example.com/auth", Realm: "camunda-platform",
+		})
+		r, _ := fakeReconciler(t, mc, identity)
+
+		writers, err := r.stopOldIdentityWriters(context.Background(), mc, finalizerRealm)
+
+		require.NoError(t, err)
+		assert.False(t, writers)
+	})
 }

@@ -24,7 +24,6 @@ import (
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -147,10 +146,10 @@ func namesRealm(target *v1.KeycloakRealmTarget, realm v1.KeycloakRealmTarget) bo
 
 // identityRealms returns the realm of every Management Identity workload of
 // mc that can still start against a Keycloak: the pod template of the
-// Deployment it owns, every ReplicaSet of it that can still create a pod, and
-// every pod of it that is not done. It also reports whether one of them writes
-// a realm that the workload does not name. The reads go through APIReader, for
-// the reason startedInitialClaim gives.
+// Deployment at its derived name, every ReplicaSet of it that can still
+// create a pod, and every pod of it that is not done. It also reports whether
+// one of them writes a realm that the workload does not name. The reads go
+// through APIReader, for the reason startedInitialClaim gives.
 //
 // The three sources answer for one another. A parked plane renders nothing,
 // so the Deployment it ran before keeps its old realm and starts a pod
@@ -168,11 +167,12 @@ func (r *Reconciler) identityRealms(
 	var identity appsv1.Deployment
 	switch err := r.APIReader.Get(ctx, key, &identity); {
 	case err == nil:
-		if metav1.IsControlledBy(&identity, mc) {
-			templateRealms, templateUnknown := components.IdentityTemplateRealms(&identity)
-			realms = append(realms, templateRealms...)
-			unknown = unknown || templateUnknown
-		}
+		// The owner is not read here, for the reason the ReplicaSets below
+		// give: a Deployment at this name starts a pod against the realm its
+		// template names whoever owns it.
+		templateRealms, templateUnknown := components.IdentityTemplateRealms(&identity)
+		realms = append(realms, templateRealms...)
+		unknown = unknown || templateUnknown
 	case !apierrors.IsNotFound(err):
 		return nil, false, fmt.Errorf("reading Deployment %q: %w", key, err)
 	}

@@ -555,3 +555,30 @@ func expectRealmClaimHolder(target v1.KeycloakRealmTarget, mc *v1.CamundaManagem
 		g.Expect(holder.UID).To(Equal(mc.UID))
 	}, timeout, interval).Should(Succeed())
 }
+
+// The claim sweep reads the Deployment at the derived name the way it reads
+// the labelled ReplicaSets and pods: a workload that runs Management Identity
+// against a realm writes its clients whoever owns it, so its claim stays.
+func TestIdentityRealmsReadsADeploymentOfAnotherOwner(t *testing.T) {
+	mc := finalizingCluster()
+	mc.Spec = externalKeycloakCluster("https://new.example.com/auth", "new-admin").Spec
+
+	identity := ownedIdentity(mc)
+	identity.OwnerReferences = nil
+	pointIdentityAtRealm(identity, finalizerRealm)
+	lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
+	r, _ := fakeReconciler(t, mc, identity, lease)
+
+	realms, unknown, err := r.identityRealms(context.Background(), mc)
+
+	require.NoError(t, err)
+	assert.False(t, unknown)
+	require.Len(t, realms, 1)
+	assert.True(t, components.SameRealm(finalizerRealm, realms[0]))
+
+	held, err := r.releaseUnusedRealms(context.Background(), mc)
+
+	require.NoError(t, err)
+	assert.True(t, held, "the workload holds the claim of a realm the spec left")
+	assert.True(t, exists(t, r, lease))
+}
