@@ -256,25 +256,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, stepClaimRealm.stop(&mc, err)
 	}
 	if parked != nil {
-		conditions.Stage(&mc, conditions.Failed(&mc, parked))
-
-		// A parked plane that is leaving a recorded realm still tidies it,
-		// the way a failed pre-check does, so the old realm does not keep
-		// signing people in for as long as the park stands.
-		_, withdrawErr := r.withdrawStopped(
-			ctx, &mc, "the realm of the spec answers to another management plane",
-		)
-		withdrawErr = stepOptimizeCallbacks.wrap(withdrawErr)
-
-		// A non-nil error makes controller-runtime drop the result and
-		// requeue with backoff, so the interval goes back alone.
-		if err := errors.Join(withdrawErr, r.withdrawFromDeselected(ctx, &mc)); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		// Nothing watches the Lease, and a plane never watches another plane,
-		// so a parked plane finds a released realm on its own.
-		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+		return r.reconcileParked(ctx, &mc, parked)
 	}
 
 	clusters, err := r.listClusters(ctx)
@@ -298,40 +280,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, stepDiscoverOptimize.stop(&mc, err)
 	}
 
-	// The realm the spec left is tidied before the components move Management
-	// Identity to the new Keycloak: a pod of the new revision registers the
-	// login callbacks in the new realm as it starts, and they must not appear
-	// there while the old realm still refuses to let go of its own. A move to
-	// the oidc mode is not held: Management Identity writes no realm there,
-	// so there is no second registration to hold back.
 	target := components.RealmTarget(res.Input.Provider)
-	withdrawal, consumed, err := r.withdrawRetargeted(ctx, &mc, target, res.Input.Suspended)
+	withdrawal, stop, err := r.leaveOldRealm(ctx, rec, &mc, res, target)
 	if err != nil {
-		return ctrl.Result{}, stepWithdrawCallbacks.stop(&mc, err)
-	}
-	// A record that the forget annotation consumed goes out with this pass's
-	// status flush, and the annotation is removed on the next pass, once the
-	// record it consumed is gone from the API server. Registering in a new
-	// realm now would replace the record first, and the next pass would then
-	// report the spent annotation as one that names a foreign realm.
-	if consumed {
-		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
-	}
-	if withdrawal != nil && target != nil && len(res.Input.OptimizeURLs) > 0 {
-		// The plane stays where it is until the old realm and its writers
-		// are gone, so the callbacks never fill the new realm beside a realm
-		// that still signs people in. A plane that serves no Optimize is not
-		// held, and neither is a move to the oidc mode: neither fills the
-		// new realm with anything, so there is no second registration to
-		// hold back, and only the condition reports the realm still to be
-		// emptied.
-		stageCallbacks(&mc, metav1.ConditionFalse, withdrawal.Reason, withdrawal.Message)
-		conditions.Stage(&mc, conditions.Failed(&mc, withdrawal))
-
-		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
-	}
-	if err := r.recordCallbackRealm(ctx, rec, &mc, res, target); err != nil {
 		return ctrl.Result{}, err
+	}
+	if stop {
+		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 
 	// A renamed contract leaves the old name behind until the new contract is
@@ -398,6 +353,56 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	)
 }
 
+// leaveOldRealm tidies the realm that status.callbackRealm names and the spec
+// does not, and records the realm that the components are about to point
+// Management Identity at. It runs before the components move Identity to the
+// new Keycloak: a pod of the new revision registers the login callbacks in the
+// new realm as it starts, and they must not appear there while the old realm
+// still refuses to let go of its own. A move to the oidc mode is not held:
+// Management Identity writes no realm there, so there is no second
+// registration to hold back.
+//
+// target is the realm of the spec, nil in the oidc mode. It returns the
+// withdrawal that is still pending, for the caller to fold into Ready, and
+// whether the pass ends here and comes back on the retry interval.
+func (r *Reconciler) leaveOldRealm(
+	ctx context.Context,
+	rec component.ReconcileContext,
+	mc *v1.CamundaManagementCluster,
+	res resolved,
+	target *v1.KeycloakRealmTarget,
+) (*conditions.PreCheckFailure, bool, error) {
+	withdrawal, consumed, err := r.withdrawRetargeted(ctx, mc, target, res.Input.Suspended)
+	if err != nil {
+		return nil, false, stepWithdrawCallbacks.stop(mc, err)
+	}
+	// A record that the forget annotation consumed goes out with this pass's
+	// status flush, and the annotation is removed on the next pass, once the
+	// record it consumed is gone from the API server. Registering in a new
+	// realm now would replace the record first, and the next pass would then
+	// report the spent annotation as one that names a foreign realm.
+	if consumed {
+		return nil, true, nil
+	}
+	if withdrawal != nil && target != nil && len(res.Input.OptimizeURLs) > 0 {
+		// The plane stays where it is until the old realm and its writers are
+		// gone, so the callbacks never fill the new realm beside a realm that
+		// still signs people in. A plane that serves no Optimize is not held,
+		// and neither is a move to the oidc mode: neither fills the new realm
+		// with anything, so there is no second registration to hold back, and
+		// only the condition reports the realm still to be emptied.
+		stageCallbacks(mc, metav1.ConditionFalse, withdrawal.Reason, withdrawal.Message)
+		conditions.Stage(mc, conditions.Failed(mc, withdrawal))
+
+		return nil, true, nil
+	}
+	if err := r.recordCallbackRealm(ctx, rec, mc, res, target); err != nil {
+		return nil, false, err
+	}
+
+	return withdrawal, false, nil
+}
+
 // reconcileUnresolved is the pass of a management plane whose pre-check
 // failed. It reports the failure and runs the three halves that need nothing
 // the pre-check resolves: the release of the realm claims that nothing of the
@@ -438,6 +443,37 @@ func (r *Reconciler) reconcileUnresolved(
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// reconcileParked is the pass of a management plane whose realm another plane
+// holds. It renders nothing, so the plane stays where it is, and it runs the
+// two halves that a park does not stop: the withdrawal from a recorded realm
+// that the spec no longer names, and the release of the clusters that left the
+// selector. The old realm would otherwise keep signing people in for as long
+// as the park stands.
+func (r *Reconciler) reconcileParked(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	parked *conditions.PreCheckFailure,
+) (ctrl.Result, error) {
+	conditions.Stage(mc, conditions.Failed(mc, parked))
+
+	_, withdrawErr := r.withdrawStopped(
+		ctx, mc, "the realm of the spec answers to another management plane",
+	)
+	callbackErr := stepWithdrawCallbacks.wrap(withdrawErr)
+	releaseErr := stepReleaseClaims.wrap(r.withdrawFromDeselected(ctx, mc))
+	if failed := firstStep(callbackErr, releaseErr); failed != nil {
+		conditions.Stage(mc, failed.condition(mc))
+
+		// A result beside a non-nil error is dropped by controller-runtime, so
+		// the interval is dropped here too. A failure requeues with backoff.
+		return ctrl.Result{}, errors.Join(callbackErr, releaseErr)
+	}
+
+	// Nothing watches the Lease, and a plane never watches another plane, so a
+	// parked plane finds a released realm on its own.
+	return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 }
 
 // withdrawFromDeselected takes back what the management plane put on the

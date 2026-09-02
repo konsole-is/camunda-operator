@@ -180,7 +180,7 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 				o.Spec.Identity.ExtraEnv = []corev1.EnvVar{
 					{Name: "KEYCLOAK_URL", Value: "https://elsewhere.example.com/auth"},
 				}
-			}, "cannot set KEYCLOAK_URL or KEYCLOAK_REALM",
+			}, "must not set KEYCLOAK_URL or KEYCLOAK_REALM",
 		),
 		Entry(
 			"rejects an identity extraEnv that sets the Keycloak realm",
@@ -188,7 +188,7 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 				o.Spec.Identity.ExtraEnv = []corev1.EnvVar{
 					{Name: "KEYCLOAK_REALM", Value: "other"},
 				}
-			}, "cannot set KEYCLOAK_URL or KEYCLOAK_REALM",
+			}, "must not set KEYCLOAK_URL or KEYCLOAK_REALM",
 		),
 		Entry(
 			"accepts an identity extraEnv of another variable",

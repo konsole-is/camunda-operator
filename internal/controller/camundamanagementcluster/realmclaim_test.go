@@ -189,9 +189,9 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 			g.Expect(old.redirectURIs()).To(BeEmpty())
 		}, timeout, interval).Should(Succeed())
 
-		// The parked plane renders nothing, so the Management Identity it ran
-		// still points at the old realm and holds the claim on it. The claim
-		// goes once that workload does.
+		// The claim on the old realm goes once nothing of the plane points
+		// there: the record is cleared by the withdrawal above, and the
+		// Deployment of that realm is the last thing left.
 		By("releasing the old claim once nothing of the plane points there")
 		deleteIdentityDeployment(s)
 		nudge(s.mc)
@@ -244,19 +244,10 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 			g.Expect(k8sClient.Get(ctx, realmLeaseKey(fakeRealmTarget(old)), &lease)).To(Succeed())
 		}, "2s", interval).Should(Succeed())
 
-		// The Deployment starts another pod against the old realm as soon as
-		// this one goes, so the claim outlives the pod. Envtest runs no
-		// Deployment controller, so no pod comes back here.
-		By("keeping the claim while the Deployment can start another pod")
-		deleteIdentityPods(s)
-		nudge(s.mc)
-
-		Consistently(func(g Gomega) {
-			var lease coordinationv1.Lease
-			g.Expect(k8sClient.Get(ctx, realmLeaseKey(fakeRealmTarget(old)), &lease)).To(Succeed())
-		}, "2s", interval).Should(Succeed())
-
+		// The withdrawal deleted the Deployment of the old realm before it
+		// cleared the record, so the pod is the last thing that points there.
 		By("releasing the claim once no workload of the plane points at it")
+		deleteIdentityPods(s)
 		deleteIdentityDeployment(s)
 		nudge(s.mc)
 
