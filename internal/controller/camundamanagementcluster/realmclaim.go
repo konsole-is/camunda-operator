@@ -178,7 +178,11 @@ func (r *Reconciler) identityRealms(
 	}
 
 	// A ReplicaSet carries the labels of the pod template it holds, so one
-	// selector reads both.
+	// selector reads both. The labels alone are enough to keep a claim, where
+	// the finalizer reads the owner reference before it deletes: a workload
+	// that runs Management Identity against a realm writes its clients
+	// whoever owns it, and keeping the claim of that realm is the safe answer
+	// either way.
 	var sets appsv1.ReplicaSetList
 	if err := r.APIReader.List(
 		ctx,
