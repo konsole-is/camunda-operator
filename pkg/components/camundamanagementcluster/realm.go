@@ -93,6 +93,16 @@ func normalizeKeycloakURL(raw string) string {
 	return parsed.String()
 }
 
+// NormalizeRealmIdentity folds a hand-written realm identity the way
+// RealmIdentity folds a URL: the case of the scheme and of the host, a
+// spelled-out default port, and trailing slashes make no difference. The
+// path, and with it the realm at its end, stays as it is. It lets an
+// annotation written from status.callbackRealm match the recorded identity,
+// whose URL was folded the same way.
+func NormalizeRealmIdentity(value string) string {
+	return normalizeKeycloakURL(value)
+}
+
 // SameRealm reports whether a and b name one realm.
 func SameRealm(a, b v1.KeycloakRealmTarget) bool {
 	return RealmIdentity(a) == RealmIdentity(b)

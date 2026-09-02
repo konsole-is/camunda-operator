@@ -80,7 +80,9 @@ const (
 	// CamundaManagementCluster that lets go of the realm that
 	// status.callbackRealm records, with the login callbacks of Optimize
 	// still in it. The value is the identity of that realm, as RealmIdentity
-	// returns it, so a stale annotation cannot let go of another realm. The
+	// returns it, so a stale annotation cannot let go of another realm; a
+	// hand-written value matches when it differs only in the case of the
+	// scheme or the host, a default port, or a trailing slash. The
 	// controller reads it when the spec no longer names the recorded realm,
 	// and removes it once it has let go of the realm. Set it when the
 	// Keycloak of that realm is gone for good.

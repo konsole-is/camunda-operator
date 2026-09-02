@@ -454,8 +454,8 @@ type CamundaManagementClusterStatus struct {
 	// mode, and absent while no login callback of this operator is registered
 	// anywhere. A Keycloak that is gone for
 	// good never answers, so the annotation camunda.io/forget-callback-realm,
-	// set to <url>/realms/<realm> of this field, lets go of it with the
-	// callbacks still in it.
+	// set to the value that the OptimizeCallbacksReady message names, lets
+	// go of it with the callbacks still in it.
 	// +optional
 	CallbackRealm *KeycloakRealmTarget `json:"callbackRealm,omitempty"`
 	// Conditions represent the current state. Ready carries a pre-check

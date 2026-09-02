@@ -550,7 +550,7 @@ status:
 
 `status.callbackRealm` also keeps naming the old realm while a Management Identity pod of the old configuration still runs. Such a pod can restart and put the callbacks back. Once the old realm is empty, the operator stops Management Identity, checks the realm once more when its pods are gone, and only then starts the workloads against the new Keycloak. A move therefore restarts Management Identity once, and nobody signs in between the stop and the start.
 
-Keep the Secret that `adminCredentialsSecretRef` names there, and the Secret of `caBundleSecretRef` when the old Keycloak needed one, until `OptimizeCallbacksReady` reads `Healthy` again. The operator signs in to the old Keycloak with them one last time.
+Keep the Secret that `adminCredentialsSecretRef` names there, and the Secret of `caBundleSecretRef` when the old Keycloak needed one, until `status.callbackRealm` stops naming the old realm. The operator signs in to the old Keycloak with them one last time. The record is the completion signal of a move, because the condition ends at `Healthy`, `Disabled`, or `NoCallbacks`, whichever the new mode reaches.
 
 A move to the `oidc` mode empties the old realm the same way. `status.callbackRealm` then goes, and `OptimizeCallbacksReady` reads `Disabled`.
 
@@ -571,7 +571,7 @@ status:
 
 A plane that serves no Optimize is not held. It fills no realm, so the workloads move at once, `Ready` stays with them, and only `OptimizeCallbacksReady` keeps naming the realm still to be emptied.
 
-If the old Keycloak is gone for good, set the annotation that the message names. Its value is the old realm, as `<url>/realms/<realm>`:
+If the old Keycloak is gone for good, set the annotation that the message names, with the exact value it prints. The value is the old realm, as `<url>/realms/<realm>`, and a spelling that differs only in the case of the host, a default port, or a trailing slash matches too:
 
 ```bash
 kubectl annotate camundamanagementcluster my-management -n my-management-ns \

@@ -419,6 +419,21 @@ func TestIdentityPointsAtRealm(t *testing.T) {
 	}
 }
 
+// A value derived from status.callbackRealm by hand matches the recorded
+// identity whatever the case of its host or a spelled-out default port.
+func TestNormalizeRealmIdentity(t *testing.T) {
+	t.Parallel()
+
+	target := v1.KeycloakRealmTarget{URL: "https://KC.Example.com:443/auth", Realm: "camunda-platform"}
+
+	assert.Equal(t, RealmIdentity(target), NormalizeRealmIdentity(
+		"https://KC.Example.com:443/auth/realms/camunda-platform",
+	))
+	assert.NotEqual(t, RealmIdentity(target), NormalizeRealmIdentity(
+		"https://kc.example.com/auth/realms/Camunda-Platform",
+	))
+}
+
 // A workload template is read the same way a pod is: what its Management
 // Identity container points at is the realm its pods would write.
 func TestIdentityTemplatePointsAtRealm(t *testing.T) {

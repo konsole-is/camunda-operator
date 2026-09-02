@@ -377,7 +377,7 @@ func (r *Reconciler) withdrawRetargeted(
 			),
 		}, nil
 	}
-	writers, err := r.stopOldIdentityWriters(ctx, mc, *recorded, pods)
+	writers, err := r.stopOldIdentityWriters(ctx, mc, *recorded)
 	if err != nil {
 		return nil, err
 	}
@@ -404,13 +404,17 @@ func (r *Reconciler) withdrawRetargeted(
 // replacement pod right after any list, even one that found no pod at all. A
 // ReplicaSet that the garbage collector has not caught up with counts the
 // same way, and so does every pod that points at the realm.
+//
+// The pods are listed last, after the Deployment and the ReplicaSets. A pod
+// that a ReplicaSet started before the garbage collector removed both is
+// still an object at that moment, terminating at worst, and a pod whose
+// object is gone can no longer run, so nothing slips between the lists.
 func (r *Reconciler) stopOldIdentityWriters(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	recorded v1.KeycloakRealmTarget,
-	pods []corev1.Pod,
 ) (bool, error) {
-	writers := components.IdentityPointsAtRealm(pods, recorded)
+	var writers bool
 
 	key := client.ObjectKey{Namespace: mc.Namespace, Name: components.IdentityName(mc)}
 	var identity appsv1.Deployment
@@ -446,6 +450,14 @@ func (r *Reconciler) stopOldIdentityWriters(
 		if components.IdentityTemplatePointsAtRealm(&sets.Items[i].Spec.Template.Spec, recorded) {
 			writers = true
 		}
+	}
+
+	pods, err := r.identityPods(ctx, mc)
+	if err != nil {
+		return false, err
+	}
+	if components.IdentityPointsAtRealm(pods, recorded) {
+		writers = true
 	}
 
 	return writers, nil
@@ -539,7 +551,8 @@ func (r *Reconciler) identityPods(
 // trace of the callbacks that stay behind.
 func (r *Reconciler) forgetCallbackRealm(mc *v1.CamundaManagementCluster) bool {
 	recorded := mc.Status.CallbackRealm
-	if mc.Annotations[components.ForgetCallbackRealmAnnotation] != components.RealmIdentity(*recorded) {
+	named := components.NormalizeRealmIdentity(mc.Annotations[components.ForgetCallbackRealmAnnotation])
+	if named != components.RealmIdentity(*recorded) {
 		return false
 	}
 	r.EventRecorder.Eventf(
@@ -579,7 +592,7 @@ func (r *Reconciler) dropSpentForgetAnnotation(
 		return nil
 	}
 	recorded := mc.Status.CallbackRealm
-	if recorded != nil && named == components.RealmIdentity(*recorded) {
+	if recorded != nil && components.NormalizeRealmIdentity(named) == components.RealmIdentity(*recorded) {
 		return nil
 	}
 	if recorded != nil {
