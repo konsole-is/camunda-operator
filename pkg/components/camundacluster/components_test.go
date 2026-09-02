@@ -234,7 +234,7 @@ func TestConfigHashAnnotationOnEveryPodTemplate(t *testing.T) {
 	// A change to one process rolls that process only.
 	changed := fixtureDefault(t)
 	changed.Cluster.Spec.Connectors.ExtraEnv = []corev1.EnvVar{{Name: "LOGGING_LEVEL_ROOT", Value: "debug"}}
-	changed.Effective = NewEffective(MergeSpec(changed.Cluster.Spec, mediumPreset(), nil))
+	changed.Effective = NewEffective(MergeSpec(changed.Cluster.Spec, mediumPreset(), mediumRelease()))
 	comps, err = Build(changed)
 	require.NoError(t, err)
 	for _, pc := range comps {
