@@ -24,6 +24,7 @@ package elasticsearchcluster
 
 import (
 	"maps"
+	"strings"
 
 	commonv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/common/v1"
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
@@ -34,10 +35,12 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/serviceaccount"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/eckelasticsearch"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
@@ -88,6 +91,11 @@ const (
 	PasswordKey = "password"
 	// rolesKey is the key of the roles in the user Secret.
 	rolesKey = "roles"
+	// repositorySeparator joins the namespace and the name of a cluster into
+	// the name of its snapshot repository. A Kubernetes namespace is a
+	// DNS-1123 label and holds no dot, so the first dot of a repository name
+	// splits it back into the two parts that give the base path.
+	repositorySeparator = "."
 )
 
 // camundaRole is the definition of the role that the Camunda user holds, in
@@ -196,37 +204,69 @@ func RolesSecretName(cluster *v1.ElasticsearchCluster) string {
 }
 
 // RepositoryName returns the name of the snapshot repository that the operator
-// registers for the cluster. Consumers read it from the snapshotRepository
-// field of the published SecondaryStorageConfig rather than deriving it.
+// registers for the cluster: "<namespace>.<name>". Consumers read it from the
+// snapshotRepository field of the published SecondaryStorageConfig rather than
+// deriving it.
+//
+// A snapshot repository is a name on one Elasticsearch server, and two
+// clusters of one name in two namespaces can reach one server, so the name
+// carries the namespace. RepositoryBasePath reads it back: a registration
+// under this name therefore carries one base path, whichever controller
+// writes it.
 func RepositoryName(cluster *v1.ElasticsearchCluster) string {
-	return cluster.Name
+	return cluster.Namespace + repositorySeparator + cluster.Name
+}
+
+// RepositoryBasePath returns the base path that the snapshot repository named
+// repository holds in the bucket whose base path is bucketPath. It reports
+// true only when repository can be a name that RepositoryName produced: a
+// namespace and a cluster name that Kubernetes itself accepts. Any other name
+// holds a prefix that only its own registration knows, so a caller must read
+// that registration instead of writing one of its own.
+func RepositoryBasePath(bucketPath, repository string) (string, bool) {
+	namespace, name, found := strings.Cut(repository, repositorySeparator)
+	if !found ||
+		len(validation.IsDNS1123Label(namespace)) > 0 ||
+		len(validation.IsDNS1123Subdomain(name)) > 0 {
+		return "", false
+	}
+
+	return logicalbackup.ClusterPrefix(bucketPath, namespace, name), true
 }
 
 // publishedRepositoryName returns the repository name to publish in the
-// contract, or the empty string when the cluster references no bucket or its
-// repository was never registered. The GoDoc of the contract field promises a
-// registered repository; a name published before the registration converges
-// would send the first snapshot of a consumer into a repository that does not
-// exist.
+// contract, or the empty string when the cluster references no bucket or the
+// repository this cluster needs is not registered. The GoDoc of the contract
+// field promises a registered repository. A name published before the
+// registration converges would send the first snapshot of a consumer into a
+// repository that does not exist.
 //
-// registered is the last observed convergence, not this reconcile's: it also
-// holds through a suspension, where the bucket is not resolved (storage is
-// nil) and the registration is skipped, but the repository persists in the
-// cluster state that the data volumes retain. Only a cluster that dropped its
-// bucket reference while running clears the field.
+// registeredName is the repository that Elasticsearch last confirmed, which
+// the cluster records in its status. It is compared against the name this
+// cluster needs, not merely tested for emptiness: an operator version that
+// derives the name differently must publish nothing until the repository
+// under the new name exists.
+//
+// The record is the last observed convergence, not this reconcile's, so it
+// also holds through a suspension. A suspended cluster resolves no bucket
+// (storage is nil) and registers nothing, while the repository persists in
+// the cluster state that the data volumes retain. Only a cluster that dropped
+// its bucket reference while running clears the field.
 func publishedRepositoryName(
 	cluster *v1.ElasticsearchCluster,
 	storage *SnapshotStorage,
-	registered, suspended bool,
+	registeredName string,
+	suspended bool,
 ) string {
-	if !registered {
+	name := RepositoryName(cluster)
+	if registeredName != name {
 		return ""
 	}
 	if !storage.repository() && !suspended {
 		return ""
 	}
 
-	return RepositoryName(cluster)
+	return name
 }
 
 // ServiceAccountName returns the name of the ServiceAccount of the pods: the
@@ -348,11 +388,16 @@ func ElasticsearchComponent(
 // Secret credentials, and the reference to the ECK CA certificate. A
 // read-only registration guards the contract on the credentials Secret, and
 // blocks while that Secret is absent.
+//
+// registeredName is the snapshot repository that Elasticsearch last
+// confirmed, which the caller reads from status.snapshotRepository. The
+// contract carries it only when it is the repository this cluster needs: see
+// publishedRepositoryName.
 func StorageContractComponent(
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
 	storage *SnapshotStorage,
-	registered bool,
+	registeredName string,
 ) (*component.Component, error) {
 	suspended := merged.Suspend
 	userSecret, err := secret.NewBuilder(&corev1.Secret{
@@ -384,7 +429,7 @@ func StorageContractComponent(
 					Name: CACertSecretName(cluster),
 					Key:  CACertKey,
 				},
-				SnapshotRepository: publishedRepositoryName(cluster, storage, registered, suspended),
+				SnapshotRepository: publishedRepositoryName(cluster, storage, registeredName, suspended),
 			},
 		},
 	}).Build()

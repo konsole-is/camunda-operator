@@ -300,6 +300,14 @@ type ElasticsearchClusterStatus struct {
 	// +listMapKey=name
 	// +optional
 	Volumes []VolumeStatus `json:"volumes,omitempty"`
+	// SnapshotRepository is the snapshot repository that the operator has
+	// registered in Elasticsearch for this cluster. It is the name that the
+	// published SecondaryStorageConfig carries, and it is empty until the
+	// first registration converges. A cluster whose name a later operator
+	// version derives differently therefore publishes nothing until the new
+	// repository exists, rather than a name that Elasticsearch does not hold.
+	// +optional
+	SnapshotRepository string `json:"snapshotRepository,omitempty"`
 	// Conditions represent the current state. Ready carries a pre-check
 	// reason (InvalidReference, MissingSecret, ECKNotInstalled), or it is
 	// derived from the component conditions. The per-component conditions

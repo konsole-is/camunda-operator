@@ -484,11 +484,13 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 ) (core []*component.Component, metrics *component.Component, err error) {
 	// The contract publishes the repository name only once a registration has
 	// converged: a consumer that read the name earlier would snapshot against
-	// a repository that does not exist. The condition is the persisted record
-	// of that convergence, which also keeps the name through a suspension.
-	registered := meta.IsStatusConditionTrue(
-		cluster.Status.Conditions, components.ConditionSnapshotRepository,
-	)
+	// a repository that does not exist. status.snapshotRepository is the
+	// persisted record of that convergence. It names the repository rather
+	// than counting it, so a cluster whose name this operator derives
+	// differently than the one that registered it publishes nothing until the
+	// new repository exists. The record also keeps the name through a
+	// suspension.
+	registeredName := cluster.Status.SnapshotRepository
 	password, err := credentials.LookupOrNew(
 		ctx, r.APIReader, client.ObjectKey{
 			Namespace: cluster.Namespace, Name: components.UserSecretName(cluster),
@@ -513,7 +515,7 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 		return nil, nil, fmt.Errorf("building elasticsearch component: %w", err)
 	}
 
-	storageContractComp, err := components.StorageContractComponent(cluster, merged, storage, registered)
+	storageContractComp, err := components.StorageContractComponent(cluster, merged, storage, registeredName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building storage-contract component: %w", err)
 	}

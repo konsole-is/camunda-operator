@@ -40,6 +40,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	elasticsearchcluster "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin/esadmintest"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
@@ -97,6 +98,13 @@ type world struct {
 
 	// search is the fake Elasticsearch of the target.
 	search *esadmintest.Server
+	// esNamespace and esCluster name the ElasticsearchCluster that registered
+	// the repository of the backup. They are deliberately not the namespace
+	// of the restore: a cluster reads through the Elasticsearch of any
+	// namespace, and the snapshots lie under the prefix of that
+	// Elasticsearch.
+	esNamespace string
+	esCluster   string
 	// repository is the snapshot repository that the backup recorded.
 	repository string
 }
@@ -150,7 +158,11 @@ func newWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	Expect(k8sClient.Create(ctx, w.storage)).To(Succeed())
 
 	w.finish(mutate...)
-	w.repository = "es-" + utilrand.String(6)
+	w.esNamespace = "es-ns-" + utilrand.String(6)
+	w.esCluster = "es-" + utilrand.String(6)
+	w.repository = elasticsearchcluster.RepositoryName(&v1.ElasticsearchCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: w.esCluster, Namespace: w.esNamespace},
+	})
 
 	return w
 }

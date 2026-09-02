@@ -88,7 +88,7 @@ spec:
   snapshotStorageRef: my-backup-bucket
 ```
 
-The operator registers the repository `my-cluster-es` in Elasticsearch, under the same prefix layout as every other backup object. It then publishes the name in the `SecondaryStorageConfig` as `snapshotRepository`, and the `CamundaCluster` configures its components with it.
+The operator registers the repository `my-cluster-ns.my-cluster-es` in Elasticsearch, under the same prefix layout as every other backup object. The name carries the namespace, so two `ElasticsearchCluster` resources of one name in two namespaces never share one repository. The operator then publishes the name in the `SecondaryStorageConfig` as `snapshotRepository`, and the `CamundaCluster` configures its components with it.
 
 Make sure that the repository is ready before you take a backup. The `ElasticsearchCluster` reports it:
 
@@ -106,7 +106,7 @@ And the `CamundaCluster` publishes the name in its management binding:
 status:
   management:
     endpoint: http://my-cluster-zeebe.my-cluster-ns.svc:9600
-    backupRepository: my-cluster-es
+    backupRepository: my-cluster-ns.my-cluster-es
     version: "8.9.9"
     partitions: 3
 ```
@@ -252,7 +252,7 @@ status:
   phase: Completed
   backupId: 1755640800000
   partitionsCount: 3
-  repository: my-cluster-es
+  repository: my-cluster-ns.my-cluster-es
   historySnapshots:
     - camunda_webapps_1755640800000_8.9.9_part_1_of_6
     - camunda_webapps_1755640800000_8.9.9_part_2_of_6

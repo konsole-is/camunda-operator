@@ -109,7 +109,7 @@ spec:
       # string. Required. Key in the Secret that holds the CA bundle.
       key: ca.crt
     # string. Optional. Name of the snapshot repository, registered in this Elasticsearch cluster, that backups write to. An ElasticsearchCluster with a snapshotStorageRef fills it. Set it by hand for an Elasticsearch cluster the operator does not manage. A cluster that takes backups needs it.
-    snapshotRepository: my-cluster-es
+    snapshotRepository: my-cluster-ns.my-cluster-es
   # object. Required when type is rdbms, forbidden otherwise. Relational database backend details.
   rdbms:
     # string. Required. Name of the DatabaseConfig, in the namespace of this contract, that describes the logical database.
@@ -147,7 +147,7 @@ spec:
     caSecretRef:
       name: my-cluster-es-http-certs-public
       key: ca.crt
-    snapshotRepository: my-cluster-es
+    snapshotRepository: my-cluster-ns.my-cluster-es
 ```
 
 ### A relational database backend
