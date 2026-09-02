@@ -49,6 +49,11 @@ const (
 	decodeBuffer = 4096
 )
 
+// manifestExtensions are the file types kustomize reads as a resource. A
+// resource that is not a directory and carries none of them, a README for
+// example, makes kubectl apply -k fail.
+var manifestExtensions = []string{".yaml", ".yml", ".json"}
+
 var _ = Describe("config/example", func() {
 	It("applies every inventory against the schema", func() {
 		root, err := utils.ModuleRoot()
@@ -103,8 +108,19 @@ func applyInventory(dir string) {
 	listed := listedResources(dir)
 	for _, resource := range listed {
 		path := filepath.Join(dir, resource)
-		_, err := os.Stat(path)
+
+		info, err := os.Stat(path)
 		Expect(err).NotTo(HaveOccurred(), kustomizationFile+" of "+dir+" lists "+resource+", which is not there")
+
+		if info.IsDir() {
+			_, err := os.Stat(filepath.Join(path, kustomizationFile))
+			Expect(err).NotTo(HaveOccurred(), path+" is a resource directory with no "+kustomizationFile)
+
+			continue
+		}
+
+		ext := filepath.Ext(resource)
+		Expect(manifestExtensions).To(ContainElement(ext), path+" is a resource kustomize cannot read")
 	}
 
 	entries, err := os.ReadDir(dir)
