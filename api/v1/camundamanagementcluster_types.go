@@ -94,9 +94,10 @@ const (
 	// spec.identityProvider.externalKeycloak names is not this management
 	// cluster's to administer: another management cluster holds it, or a
 	// Lease that this operator did not write blocks it. One realm answers to
-	// one management plane, so this one starts nothing new, touches nothing
-	// in that realm, and looks again on its retry interval. The message
-	// names the holder, or the Lease to remove.
+	// one management plane, so the operator starts nothing new for this one,
+	// writes nothing in that realm, and looks again on its retry interval.
+	// Workloads the plane already ran keep running. The message names the
+	// holder, or the Lease to remove.
 	ReasonRealmClaimedElsewhere = "RealmClaimedElsewhere"
 	// ReasonNotReady means that a selected CamundaCluster is not attached
 	// yet: it publishes no gateway endpoints, so Web Modeler cannot deploy to

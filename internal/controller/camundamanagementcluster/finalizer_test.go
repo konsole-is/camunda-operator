@@ -177,7 +177,7 @@ func TestFinalizeStopsIdentityBeforeTheRealm(t *testing.T) {
 		identity := ownedIdentity(mc)
 		set := ownedIdentitySet(mc, identity)
 		lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
-		r, deletes := finalizerReconciler(t, mc, identity, set, lease)
+		r, deletes := fakeReconciler(t, mc, identity, set, lease)
 
 		require.NoError(t, r.finalize(context.Background(), mc))
 
@@ -196,7 +196,7 @@ func TestFinalizeStopsIdentityBeforeTheRealm(t *testing.T) {
 		identity := ownedIdentity(mc)
 		set := ownedIdentitySet(mc, identity)
 		identity.OwnerReferences = nil
-		r, _ := finalizerReconciler(t, mc, identity, set)
+		r, _ := fakeReconciler(t, mc, identity, set)
 
 		require.NoError(t, r.finalize(context.Background(), mc))
 
@@ -211,7 +211,7 @@ func TestFinalizeStopsIdentityBeforeTheRealm(t *testing.T) {
 		mc := finalizingCluster()
 		set := ownedIdentitySet(mc, ownedIdentity(mc))
 		lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
-		r, deletes := finalizerReconciler(t, mc, set, lease)
+		r, deletes := fakeReconciler(t, mc, set, lease)
 
 		require.NoError(t, r.finalize(context.Background(), mc))
 
@@ -226,7 +226,7 @@ func TestFinalizeStopsIdentityBeforeTheRealm(t *testing.T) {
 		mc := finalizingCluster()
 		identity := ownedIdentity(mc)
 		lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
-		r, deletes := finalizerReconciler(t, mc, identity, lease)
+		r, deletes := fakeReconciler(t, mc, identity, lease)
 		deletes.conflictOn = identity.Name
 
 		require.Error(t, r.finalize(context.Background(), mc))
@@ -301,9 +301,9 @@ type deleteLog struct {
 	conflictOn string
 }
 
-// finalizerReconciler builds a reconciler over a fake client that holds
-// objects, and the log of what it deletes.
-func finalizerReconciler(t *testing.T, objects ...client.Object) (*Reconciler, *deleteLog) {
+// fakeReconciler builds a reconciler over a fake client that holds objects,
+// and the log of what it deletes.
+func fakeReconciler(t *testing.T, objects ...client.Object) (*Reconciler, *deleteLog) {
 	t.Helper()
 
 	scheme := runtime.NewScheme()

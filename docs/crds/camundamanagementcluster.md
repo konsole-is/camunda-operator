@@ -130,7 +130,7 @@ The first `CamundaManagementCluster` that reaches the realm holds it. Management
 
 Which plane that is comes from the order the operator reaches them, not from the order you created them. A suspended plane takes no realm until it resumes, and it keeps every realm it already holds.
 
-A second plane that names the same `url` and `realm` waits, from any namespace. It starts nothing new, touches nothing in that realm, and `Ready` names the holder:
+A second plane that names the same `url` and `realm` waits, from any namespace. The operator starts nothing new for it and writes nothing in that realm, and `Ready` names the holder:
 
 ```yaml
 status:
@@ -552,7 +552,7 @@ This resource carries no Optimize address of its own. Every address comes from a
 
 An Optimize that this operator does not run therefore cannot sign in through this management plane in a Keycloak mode. Registering its callback by hand does not last: the next reconcile that converges the realm removes it. Give that Optimize a realm of its own, or run it as a `CamundaOptimize`.
 
-One realm answers to one management plane. A second plane that names the same `url` and `realm` waits with the `Ready` reason `RealmClaimedElsewhere` and touches nothing in the realm. See [One realm answers to one management plane](#one-realm-answers-to-one-management-plane).
+One realm answers to one management plane. A second plane that names the same `url` and `realm` waits with the `Ready` reason `RealmClaimedElsewhere`, and the operator starts nothing new for it. See [One realm answers to one management plane](#one-realm-answers-to-one-management-plane).
 
 There is one window where a callback added by hand survives. While `OptimizeCallbacksReady` reads `NoCallbacks`, no Optimize behind this management plane names an address, and the plane stops reading the realm. A callback added in that state stays and works until the first `CamundaOptimize` with a `spec.externalUrl` appears, and the reconcile that finds it removes the callback again. Do not build on that window.
 
@@ -736,7 +736,7 @@ The `ManagementAuthConfig` is the one step that reads `WriteFailed` on `Ready` i
 | `Ready` | `InvalidReference` | A referenced resource does not exist, two components name one `DatabaseConfig`, or the platform config cannot serve the `oidc` mode. | Read the message. Create the missing resource, or correct the field it names. |
 | `Ready` | `MissingSecret` | A referenced Secret does not exist or lacks a key. The message names both. | Create the Secret with the named key. |
 | `Ready` | `Conflict` | A `ManagementAuthConfig` of that name exists and belongs to another owner. The message names the holder. | Set `spec.managementAuthConfigName` to a free name, or remove the object. |
-| `Ready` | `RealmClaimedElsewhere` | Another management plane holds the Keycloak realm that `externalKeycloak` names, or a Lease that this operator did not write blocks it. This plane starts nothing new and touches nothing in that realm. The message names the holder, or the Lease to remove. | Give this plane a realm of its own, or delete the holder or the named Lease. See [One realm answers to one management plane](#one-realm-answers-to-one-management-plane). |
+| `Ready` | `RealmClaimedElsewhere` | Another management plane holds the Keycloak realm that `externalKeycloak` names, or a Lease that this operator did not write blocks it. The operator starts nothing new for this plane and writes nothing in that realm. Workloads it already ran keep running. The message names the holder, or the Lease to remove. | Give this plane a realm of its own, or delete the holder or the named Lease. See [One realm answers to one management plane](#one-realm-answers-to-one-management-plane). |
 | `Ready` | `WriteFailed` | The `ManagementAuthConfig` could not be written, or Keycloak refused the change to the `optimize` client. | Read the `ManagementAuthReady` and `OptimizeCallbacksReady` rows. |
 | `Ready` | `StepFailed` | A step did not finish, usually because the Kubernetes API refused a call. The message names what the operator could not do. | Read the message. The operator tries again. If the reason stays, correct what the message names. |
 | `Ready` | `OptimizeClientMissing` / `ConnectionFailed` / `AdminRoleGrantFailed` | The realm is not in the state the management plane wants: the login callbacks are missing, or the first administrator holds no `Optimize` role. | Read the `OptimizeCallbacksReady` row. |

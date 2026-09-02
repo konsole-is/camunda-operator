@@ -17,9 +17,14 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"context"
+	"testing"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -423,6 +428,31 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 		}, "2s", interval).Should(Succeed())
 	})
 })
+
+// Only the externalKeycloak mode names a realm from the spec, because it is
+// the only mode that claims one. A plane that moves to the keycloak mode
+// therefore gives back a realm whose identity the Keycloak it now runs
+// happens to share.
+func TestReleaseUnusedRealmsNamesTheSpecRealmOnlyWhereItClaims(t *testing.T) {
+	mc := &v1.CamundaManagementCluster{ObjectMeta: metav1.ObjectMeta{
+		Namespace: "my-management-ns", Name: "my-management", UID: "management-uid",
+	}}
+	mc.Spec.IdentityProvider.Keycloak = &v1.ManagedKeycloakSpec{}
+
+	provider, err := components.ResolveIdentityProvider(components.Input{Cluster: mc})
+	require.NoError(t, err)
+	target := components.RealmTarget(provider)
+	require.NotNil(t, target)
+
+	lease := components.NewRealmClaimLease(testClaimNamespace, *target, mc)
+	r, _ := fakeReconciler(t, mc, lease)
+
+	held, err := r.releaseUnusedRealms(context.Background(), mc)
+
+	require.NoError(t, err)
+	assert.False(t, held)
+	assert.False(t, exists(t, r, lease), "the keycloak mode claims no realm")
+}
 
 // markIdentityPodsReady stamps the Ready condition on every Management
 // Identity pod of a scenario, the way a kubelet does once the containers

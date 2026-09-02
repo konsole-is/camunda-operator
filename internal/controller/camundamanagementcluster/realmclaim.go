@@ -84,8 +84,10 @@ func (r *Reconciler) claimRealm(
 // names any more. Three things name a realm, and each of them keeps its
 // claim:
 //
-// The spec, read from the spec alone, so a pass that resolved nothing sweeps
-// the same way as one that resolved everything.
+// The realm of the spec, read from the spec alone, so a pass that resolved
+// nothing sweeps the same way as one that resolved everything. Only the
+// externalKeycloak mode names one here, because it is the only mode that
+// claims; a plane that moves to another mode gives its realm back.
 //
 // status.callbackRealm, which still carries the login callbacks of this
 // plane. Its claim goes once the withdrawal has cleared the record, which the
@@ -113,9 +115,12 @@ func (r *Reconciler) releaseUnusedRealms(
 		return false, nil
 	}
 
-	current, err := specRealmTarget(mc)
-	if err != nil {
-		return false, err
+	var current *v1.KeycloakRealmTarget
+	if components.Mode(mc) == components.ModeExternalKeycloak {
+		var err error
+		if current, err = specRealmTarget(mc); err != nil {
+			return false, err
+		}
 	}
 
 	keep := []*v1.KeycloakRealmTarget{current, mc.Status.CallbackRealm}
