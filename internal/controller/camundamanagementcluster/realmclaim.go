@@ -46,13 +46,15 @@ import (
 // holds the realm, and the message names it. The caller stages it on Ready,
 // renders nothing, and comes back on the retry interval. Only a failure of
 // the Kubernetes API comes back as an error.
+//
+// The bool is the one releaseUnusedRealms returns.
 func (r *Reconciler) claimRealm(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	res resolved,
-) (*conditions.PreCheckFailure, error) {
+) (*conditions.PreCheckFailure, bool, error) {
 	if res.Input.Suspended {
-		return nil, nil
+		return nil, false, nil
 	}
 
 	var current *v1.KeycloakRealmTarget
@@ -64,17 +66,18 @@ func (r *Reconciler) claimRealm(
 		var err error
 		parked, err = r.takeRealmClaim(ctx, mc, *current)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
 
 	// The sweep runs on the parked path too: a claim kept there would block
 	// every later claimant of a realm this plane already left.
-	if err := r.releaseUnusedRealms(ctx, mc); err != nil {
-		return nil, err
+	held, err := r.releaseUnusedRealms(ctx, mc)
+	if err != nil {
+		return nil, false, err
 	}
 
-	return parked, nil
+	return parked, held, nil
 }
 
 // releaseUnusedRealms gives back every realm claim of mc that nothing of it
@@ -97,29 +100,43 @@ func (r *Reconciler) claimRealm(
 //
 // A suspended plane sweeps nothing. It touches no claim at all, so the realms
 // it holds stay held until it resumes.
+//
+// It reports whether a workload alone kept a realm. Nothing watches the pods
+// or the ReplicaSets of the plane, and Kubernetes collects them in the
+// background, so the caller comes back on the retry interval to give that
+// realm up once the workload is gone.
 func (r *Reconciler) releaseUnusedRealms(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
-) error {
+) (bool, error) {
 	if mc.Spec.Suspend {
-		return nil
+		return false, nil
 	}
 
 	current, err := specRealmTarget(mc)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	keep := []*v1.KeycloakRealmTarget{current, mc.Status.CallbackRealm}
 	pointed, unknown, err := r.identityRealms(ctx, mc)
 	if err != nil {
-		return err
+		return false, err
 	}
+	var held bool
 	for i := range pointed {
 		keep = append(keep, &pointed[i])
+		held = held || (!namesRealm(current, pointed[i]) &&
+			!namesRealm(mc.Status.CallbackRealm, pointed[i]))
 	}
 
-	return r.releaseRealmClaims(ctx, mc, unknown, keep...)
+	return held, r.releaseRealmClaims(ctx, mc, unknown, keep...)
+}
+
+// namesRealm reports whether target names the realm of realm. A nil target
+// names none.
+func namesRealm(target *v1.KeycloakRealmTarget, realm v1.KeycloakRealmTarget) bool {
+	return target != nil && components.SameRealm(*target, realm)
 }
 
 // identityRealms returns the realm of every Management Identity workload of

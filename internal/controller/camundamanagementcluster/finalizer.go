@@ -151,9 +151,12 @@ func (r *Reconciler) stopIdentity(ctx context.Context, mc *v1.CamundaManagementC
 		}
 
 		// The UID is a precondition, so a Deployment that took the name
-		// between the read and this call is refused rather than deleted.
+		// between the read and this call is refused rather than deleted. The
+		// refusal goes back as an error: the replacement runs a Management
+		// Identity that this pass knows nothing about, and the next pass reads
+		// it before anything else here gives its realm away.
 		err := r.Delete(ctx, &identity, client.Preconditions{UID: &identity.UID})
-		if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+		if err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("deleting Deployment %q: %w", key, err)
 		}
 	case !apierrors.IsNotFound(err):
@@ -202,8 +205,11 @@ func (r *Reconciler) stopIdentitySets(
 			continue
 		}
 
+		// A ReplicaSet that took the name between the list and this call is
+		// refused, and the refusal goes back as an error for the reason the
+		// Deployment gives.
 		err := r.Delete(ctx, set, client.Preconditions{UID: &set.UID})
-		if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+		if err != nil && !apierrors.IsNotFound(err) {
 			errs = append(errs, fmt.Errorf(
 				"deleting ReplicaSet %q: %w", client.ObjectKeyFromObject(set), err,
 			))

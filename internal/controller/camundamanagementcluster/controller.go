@@ -251,7 +251,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// The realm goes before anything that would touch it: the components
 	// render the Management Identity that bootstraps it, and the callback
 	// step writes its Optimize client.
-	parked, err := r.claimRealm(ctx, &mc, res)
+	parked, heldRealm, err := r.claimRealm(ctx, &mc, res)
 	if err != nil {
 		return ctrl.Result{}, stepClaimRealm.stop(&mc, err)
 	}
@@ -387,7 +387,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// or a login callback that somebody removed there.
 	var result ctrl.Result
 	switch {
-	case anyRow(rows, v1.ReasonBasicAuthUserFailed), callbackRetry:
+	case anyRow(rows, v1.ReasonBasicAuthUserFailed), callbackRetry, heldRealm:
 		result.RequeueAfter = r.retryInterval()
 	case convergesUsers(&mc, attached), len(res.Input.OptimizeURLs) > 0:
 		result.RequeueAfter = r.convergeInterval()
@@ -415,7 +415,8 @@ func (r *Reconciler) reconcileUnresolved(
 
 	// The sweep runs before the withdrawal, where the claim step runs before
 	// it on the resolved path, so that it still reads the recorded realm.
-	sweepErr := stepClaimRealm.wrap(r.releaseUnusedRealms(ctx, mc))
+	heldRealm, sweepErr := r.releaseUnusedRealms(ctx, mc)
+	sweepErr = stepClaimRealm.wrap(sweepErr)
 	retry, withdrawErr := r.withdrawStopped(
 		ctx, mc, "the identity provider of the spec is not resolved",
 	)
@@ -432,7 +433,7 @@ func (r *Reconciler) reconcileUnresolved(
 		// on its own.
 		return ctrl.Result{}, errors.Join(sweepErr, callbackErr, releaseErr)
 	}
-	if retry {
+	if retry || heldRealm {
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 

@@ -18,6 +18,7 @@ package camundamanagementcluster
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,6 +29,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -216,7 +218,26 @@ func TestFinalizeStopsIdentityBeforeTheRealm(t *testing.T) {
 		assert.Equal(t, []string{set.Name, lease.Name}, deletes.names)
 		assert.False(t, exists(t, r, set))
 	})
+
+	// A workload that was replaced between the read and the delete fails the
+	// precondition. The realm stays claimed until a pass has read what took
+	// its place.
+	t.Run("a replaced Deployment keeps the realm claim", func(t *testing.T) {
+		mc := finalizingCluster()
+		identity := ownedIdentity(mc)
+		lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
+		r, deletes := finalizerReconciler(t, mc, identity, lease)
+		deletes.conflictOn = identity.Name
+
+		require.Error(t, r.finalize(context.Background(), mc))
+
+		assert.True(t, exists(t, r, lease))
+		assert.True(t, controllerutil.ContainsFinalizer(mc, Finalizer))
+	})
 }
+
+// errReplaced is what the conflict of a replaced object carries.
+var errReplaced = errors.New("the object was replaced")
 
 // finalizingCluster is a management cluster that carries the finalizer and no
 // record of a contract.
@@ -274,6 +295,10 @@ func ownedIdentitySet(
 // the order it deleted them.
 type deleteLog struct {
 	names []string
+	// conflictOn answers the delete of the object of that name with a
+	// conflict, the way the API server does when the object was replaced
+	// between the read and the delete.
+	conflictOn string
 }
 
 // finalizerReconciler builds a reconciler over a fake client that holds
@@ -299,6 +324,11 @@ func finalizerReconciler(t *testing.T, objects ...client.Object) (*Reconciler, *
 				opts ...client.DeleteOption,
 			) error {
 				deletes.names = append(deletes.names, obj.GetName())
+				if obj.GetName() == deletes.conflictOn {
+					return apierrors.NewConflict(
+						schema.GroupResource{}, obj.GetName(), errReplaced,
+					)
+				}
 
 				return inner.Delete(ctx, obj, opts...)
 			},
