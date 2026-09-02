@@ -28,6 +28,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -128,13 +129,17 @@ func applyFile(path string) {
 // run. The API server rejects a namespaced object whose namespace is absent,
 // even on a dry run, so the namespaces an inventory declares must exist for
 // the rest of it to validate.
+//
+// Strict field validation turns a misspelled field into an error. A CRD
+// schema prunes an unknown field without it, so a typo would pass unseen.
 func applyObject(path string, obj *unstructured.Unstructured) {
 	GinkgoHelper()
 
 	where := fmt.Sprintf("%s: %s %s", path, obj.GetKind(), obj.GetName())
+	strict := client.FieldValidation(metav1.FieldValidationStrict)
 
 	if obj.GetKind() == "Namespace" {
-		err := k8sClient.Create(ctx, obj)
+		err := k8sClient.Create(ctx, obj, strict)
 		if !apierrors.IsAlreadyExists(err) {
 			Expect(err).NotTo(HaveOccurred(), where)
 		}
@@ -142,5 +147,5 @@ func applyObject(path string, obj *unstructured.Unstructured) {
 		return
 	}
 
-	Expect(k8sClient.Create(ctx, obj, client.DryRunAll)).To(Succeed(), where)
+	Expect(k8sClient.Create(ctx, obj, client.DryRunAll, strict)).To(Succeed(), where)
 }
