@@ -84,13 +84,23 @@ func findInventories(root string) []string {
 }
 
 // applyInventory walks the manifests in file-name order, which is the order
-// the README of the inventory applies them. Every one of them must also be a
-// resource of the kustomization, because a file the kustomization does not
-// list is a file that kubectl apply -k silently leaves out.
+// the README of the inventory applies them.
+//
+// The manifests and the resources of the kustomization must be the same set,
+// so that the numbered path of the README and kubectl apply -k stand the same
+// scenario up. A manifest that the kustomization does not list is one that
+// kubectl apply -k leaves out. A resource that it lists but that is not there
+// makes kubectl apply -k fail outright. A resource can be a directory, as the
+// shared presets are.
 func applyInventory(dir string) {
 	GinkgoHelper()
 
 	listed := listedResources(dir)
+	for _, resource := range listed {
+		path := filepath.Join(dir, resource)
+		_, err := os.Stat(path)
+		Expect(err).NotTo(HaveOccurred(), kustomizationFile+" of "+dir+" lists "+resource+", which is not there")
+	}
 
 	entries, err := os.ReadDir(dir)
 	Expect(err).NotTo(HaveOccurred(), dir)
