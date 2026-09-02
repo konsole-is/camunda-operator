@@ -219,10 +219,15 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}, timeout, interval).Should(Succeed())
 
 		// A management plane that has reported an empty realm stops calling
-		// Keycloak, so a plane that serves no Optimize costs it nothing.
+		// Keycloak, so a plane that serves no Optimize costs it nothing. It
+		// records no realm either: Management Identity creates the Optimize
+		// client from the preset of the Optimize instances the plane serves,
+		// and a record that is written and taken away again would keep the
+		// status moving for as long as the plane runs.
 		at := keycloak.requests()
 		Consistently(func(g Gomega) {
 			g.Expect(keycloak.requests()).To(Equal(at))
+			g.Expect(readManagementCluster(g, s.mc).Status.CallbackRealm).To(BeNil())
 		}, "2s", interval).Should(Succeed())
 	})
 

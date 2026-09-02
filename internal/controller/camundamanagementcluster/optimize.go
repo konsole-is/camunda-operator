@@ -501,32 +501,42 @@ func (r *Reconciler) stopOldIdentityWriters(
 
 // recordCallbackRealm records the realm that this management plane points
 // Management Identity at, once the withdrawal from any realm it is leaving is
-// over, and reports whether it wrote one. Identity registers the login
-// callbacks of its realm itself, while it starts, so the realm is recorded
-// before the components can start a pod against it: a record written after
-// the first registration converged would miss a retarget during that first
-// start, and the callbacks would stay in a realm that no record names. The
-// caller makes a staged record durable before it applies the components, for
-// the same reason.
+// over, and writes the record before it returns. Identity registers the login
+// callbacks of its realm itself, while it starts, so the realm is on the API
+// server before the caller applies the components: a record written after the
+// first registration converged would miss a retarget during that first start,
+// and the callbacks would stay in a realm that no record names.
 //
-// target is the realm of the spec, and only a Keycloak that you run is
-// recorded, for the reason syncOptimizeCallbacks gives. A realm that is
-// already recorded keeps the Secrets it was written with, however the spec
-// rotates them: nothing here has signed in with the new ones yet, and a
-// Secret that exists can still hold the wrong password. syncOptimizeCallbacks
-// writes the record again once Keycloak accepted them, and the deletion path
-// tries both.
-func recordCallbackRealm(
+// Only the state that lets Identity register anything is recorded: a Keycloak
+// that you run, a plane that is not suspended, and one that serves an
+// Optimize, because Identity creates the Optimize client from the preset of
+// the Optimize instances the plane serves. A plane that serves none registers
+// nothing, and syncOptimizeCallbacks would take a record of it away again.
+//
+// target is the realm of the spec. A realm that is already recorded keeps the
+// Secrets it was written with, however the spec rotates them: nothing here
+// has signed in with the new ones yet, and a Secret that exists can still
+// hold the wrong password. syncOptimizeCallbacks writes the record again once
+// Keycloak accepted them, and the deletion path tries both.
+func (r *Reconciler) recordCallbackRealm(
+	ctx context.Context,
+	rec component.ReconcileContext,
 	mc *v1.CamundaManagementCluster,
-	provider components.IdentityProvider,
+	res resolved,
 	target *v1.KeycloakRealmTarget,
-) bool {
-	if mc.Status.CallbackRealm != nil || provider.Mode != components.ModeExternalKeycloak {
-		return false
+) error {
+	if mc.Status.CallbackRealm != nil || target == nil ||
+		res.Input.Provider.Mode != components.ModeExternalKeycloak ||
+		res.Input.Suspended || len(res.Input.OptimizeURLs) == 0 {
+		return nil
 	}
 	mc.Status.CallbackRealm = target
 
-	return target != nil
+	if err := component.FlushStatus(ctx, rec, nil); err != nil {
+		return stepRecordCallbackRealm.stop(mc, err)
+	}
+
+	return nil
 }
 
 // withdrawUnresolved is the withdrawal from the recorded realm on a pass that

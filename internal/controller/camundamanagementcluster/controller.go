@@ -178,7 +178,9 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 //
 // Status is written once per reconcile: the components and conditions.Stage
 // stage conditions on the in-memory CR, and the deferred FlushStatus persists
-// them together.
+// them together. The pass that first records the realm of the login callbacks
+// writes it once more, before the components apply, because Management
+// Identity registers those callbacks as it starts.
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
 	var mc v1.CamundaManagementCluster
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &mc); err != nil {
@@ -287,15 +289,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
-	// The record reaches the API server before the components can start a pod
-	// that writes the realm. FlushStatus is deferred to the end of this pass,
-	// and Management Identity registers the login callbacks as it starts, so
-	// a pass that ends between the apply and that flush would leave them in a
-	// realm no record names.
-	if recordCallbackRealm(&mc, res.Input.Provider, target) {
-		if err := component.FlushStatus(ctx, rec, nil); err != nil {
-			return ctrl.Result{}, stepRecordCallbackRealm.stop(&mc, err)
-		}
+	if err := r.recordCallbackRealm(ctx, rec, &mc, res, target); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// A renamed contract leaves the old name behind until the new contract is
