@@ -218,13 +218,21 @@ func Discovery(owner Owner, component string) map[string]string {
 	}
 }
 
-// Merge returns the user labels with the operator labels applied over them.
+// Merge returns the user labels with the operator labels applied over them,
+// a later map over an earlier one.
 // A user label never overrides an operator label, because extensions and
 // selectors depend on the operator labels. The result is a new map.
-func Merge(user, operator map[string]string) map[string]string {
-	merged := make(map[string]string, len(user)+len(operator))
+func Merge(user map[string]string, operator ...map[string]string) map[string]string {
+	size := len(user)
+	for _, m := range operator {
+		size += len(m)
+	}
+
+	merged := make(map[string]string, size)
 	maps.Copy(merged, user)
-	maps.Copy(merged, operator)
+	for _, m := range operator {
+		maps.Copy(merged, m)
+	}
 	return merged
 }
 

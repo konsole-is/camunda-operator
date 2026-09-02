@@ -385,10 +385,8 @@ func podTemplate(in Input, p Process) corev1.PodTemplateSpec {
 	return corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: labels.Merge(
-				labels.Merge(
-					DerivedPodLabels(in.Backup, in.Documents),
-					StoragePodLabels(in.Cluster.Name, in.Cluster.Spec.StorageRef),
-				),
+				DerivedPodLabels(in.Backup, in.Documents),
+				StoragePodLabels(in.Cluster.Name, in.Cluster.Spec.StorageRef),
 				discoveryLabels(in.Cluster, p.Component),
 			),
 			Annotations: map[string]string{ConfigHashAnnotation: configHash(in, p, r)},
