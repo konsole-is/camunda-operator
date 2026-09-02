@@ -38,6 +38,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // externalKeycloakCluster is a management plane in the externalKeycloak mode
@@ -190,18 +191,23 @@ func TestFinalizeStopsIdentityBeforeTheRealm(t *testing.T) {
 
 	// The name of the Deployment is derived from the name of the management
 	// cluster, and the labels of a ReplicaSet are the discovery labels of the
-	// plane, so a workload of another owner can carry either.
-	t.Run("the workloads of another owner stay", func(t *testing.T) {
+	// plane, so a workload of another owner can carry either. That workload
+	// keeps writing the realm, and this pass cannot stop it, so the realm
+	// stays claimed and the object stays.
+	t.Run("the workloads of another owner stay, with the realm claim", func(t *testing.T) {
 		mc := finalizingCluster()
 		identity := ownedIdentity(mc)
 		set := ownedIdentitySet(mc, identity)
 		identity.OwnerReferences = nil
-		r, _ := fakeReconciler(t, mc, identity, set)
+		lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
+		r, _ := fakeReconciler(t, mc, identity, set, lease)
 
-		require.NoError(t, r.finalize(context.Background(), mc))
+		require.Error(t, r.finalize(context.Background(), mc))
 
 		assert.True(t, exists(t, r, identity))
 		assert.True(t, exists(t, r, set))
+		assert.True(t, exists(t, r, lease))
+		assert.True(t, controllerutil.ContainsFinalizer(mc, Finalizer))
 	})
 
 	// A pass that stopped between the two deletions leaves ReplicaSets that
@@ -233,6 +239,48 @@ func TestFinalizeStopsIdentityBeforeTheRealm(t *testing.T) {
 
 		assert.True(t, exists(t, r, lease))
 		assert.True(t, controllerutil.ContainsFinalizer(mc, Finalizer))
+	})
+}
+
+// TestRegisteredCallbacksAuthorizesTheWithdrawal covers the two proofs that
+// this management plane has login callbacks of its own to remove.
+// status.callbackRealm is written before the components apply, so a plane
+// whose contract write never landed still registered in the realm it recorded.
+func TestRegisteredCallbacksAuthorizesTheWithdrawal(t *testing.T) {
+	t.Run("a recorded realm authorizes it with no contract", func(t *testing.T) {
+		mc := finalizingCluster()
+		realm := finalizerRealm
+		mc.Status.CallbackRealm = &realm
+		r, _ := fakeReconciler(t, mc)
+
+		assert.True(t, r.registeredCallbacks(context.Background(), mc))
+	})
+
+	// The keycloak mode records no realm, because the operator deletes that
+	// Keycloak with the plane. The contract is what says it registered there.
+	t.Run("a contract of this plane authorizes it with no record", func(t *testing.T) {
+		mc := finalizingCluster()
+		r, _ := fakeReconciler(t, mc, ownedContract(mc))
+
+		assert.True(t, r.registeredCallbacks(context.Background(), mc))
+	})
+
+	// A plane with neither served no Optimize anywhere, and a deletion must
+	// not remove a callback of another owner on a guess.
+	t.Run("a plane with neither withdraws from nothing", func(t *testing.T) {
+		mc := finalizingCluster()
+		r, _ := fakeReconciler(t, mc)
+
+		assert.False(t, r.registeredCallbacks(context.Background(), mc))
+	})
+
+	t.Run("a contract of another owner authorizes nothing", func(t *testing.T) {
+		mc := finalizingCluster()
+		contract := ownedContract(mc)
+		contract.Labels[labels.ManagementClusterKey] = "elsewhere"
+		r, _ := fakeReconciler(t, mc, contract)
+
+		assert.False(t, r.registeredCallbacks(context.Background(), mc))
 	})
 }
 
@@ -288,6 +336,18 @@ func ownedIdentitySet(
 			UID:        identity.UID,
 			Controller: &controller,
 		}},
+	}}
+}
+
+// ownedContract is the ManagementAuthConfig that mc writes, with the owner
+// labels that make it this plane's.
+func ownedContract(mc *v1.CamundaManagementCluster) *v1.ManagementAuthConfig {
+	return &v1.ManagementAuthConfig{ObjectMeta: metav1.ObjectMeta{
+		Name: components.ContractName(mc),
+		Labels: map[string]string{
+			labels.ManagementClusterKey:          labels.OwnerName(mc.Name),
+			labels.ManagementClusterNamespaceKey: mc.Namespace,
+		},
 	}}
 }
 

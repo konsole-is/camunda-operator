@@ -89,7 +89,7 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	// tidy. Deleting it first would let a waiting management plane take the
 	// name and register its own callbacks while this withdrawal is still in
 	// flight, and this withdrawal would then take the new owner's away.
-	if r.ownsContract(ctx, mc) {
+	if r.registeredCallbacks(ctx, mc) {
 		r.withdrawOptimizeCallbacks(ctx, mc)
 	}
 	if err := r.withdrawContract(ctx, mc); err != nil {
@@ -135,6 +135,10 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 // deletion never waits for it: a management plane must not be held open by a
 // pod that is going away. The entry it leaves then names a realm client of a
 // management plane that no longer exists.
+//
+// A Deployment of another owner at that name ends the pass with an error.
+// Nothing here can stop it, and everything after it releases the realm that
+// it writes.
 func (r *Reconciler) stopIdentity(ctx context.Context, mc *v1.CamundaManagementCluster) error {
 	key := client.ObjectKey{Namespace: mc.Namespace, Name: components.IdentityName(mc)}
 
@@ -146,8 +150,17 @@ func (r *Reconciler) stopIdentity(ctx context.Context, mc *v1.CamundaManagementC
 		// leaves it free for anybody. Only the owner reference tells the
 		// Management Identity of this plane from a workload that somebody else
 		// runs, and the ReplicaSets under such a workload are not ours either.
+		//
+		// The pass ends here, the way a refused delete precondition below ends
+		// it, and for the same reason: a workload of another owner at this
+		// name runs a Management Identity that this pass cannot stop, and
+		// everything after this gives the realm it writes to the next
+		// claimant.
 		if !metav1.IsControlledBy(&identity, mc) {
-			return nil
+			return fmt.Errorf(
+				"the Deployment %q has another owner and can still write the Keycloak realm, so "+
+					"this deletion waits until that Deployment is gone", key,
+			)
 		}
 
 		// The UID is a precondition, so a Deployment that took the name
@@ -219,10 +232,22 @@ func (r *Reconciler) stopIdentitySets(
 	return errors.Join(errs...)
 }
 
+// registeredCallbacks reports whether this management plane can have login
+// callbacks of its own in a realm, which is what authorizes the withdrawal.
+//
+// status.callbackRealm names the realm that Management Identity was pointed
+// at. It is written before the components apply, so a plane whose contract
+// write never landed still holds the record of the realm its Identity
+// registered in. A ManagementAuthConfig that this plane holds answers for the
+// keycloak mode, which records no realm because the operator deletes that
+// Keycloak with the plane. A plane with neither served no Optimize anywhere.
+func (r *Reconciler) registeredCallbacks(ctx context.Context, mc *v1.CamundaManagementCluster) bool {
+	return mc.Status.CallbackRealm != nil || r.ownsContract(ctx, mc)
+}
+
 // ownsContract reports whether a ManagementAuthConfig that this management
 // plane holds exists, under the name it writes now or the name its status
-// recorded. Only a plane that held one ever served an Optimize behind it, so
-// only that plane has a login callback in the realm to remove.
+// recorded.
 //
 // An absent contract answers no. A plane that was deleted before it ever wrote
 // one registered nothing, and a read that fails answers no for the same
@@ -256,9 +281,10 @@ func (r *Reconciler) ownsContract(ctx context.Context, mc *v1.CamundaManagementC
 // operator could not reach keeps the callbacks, and the log line says so.
 //
 // A Keycloak that the operator ran goes with this resource, so only a Keycloak
-// that you run keeps anything. The caller decides whether this plane owns the
-// contract; without that, a plane parked on a name another owner holds would
-// take the callbacks of the holder with it.
+// that you run keeps anything. The caller decides whether this plane ever
+// registered a callback, through registeredCallbacks; without that, a plane
+// parked on a name another owner holds would take the callbacks of the holder
+// with it.
 func (r *Reconciler) withdrawOptimizeCallbacks(ctx context.Context, mc *v1.CamundaManagementCluster) {
 	for _, provider := range withdrawalRealms(ctx, mc) {
 		failure, err := r.convergeOptimizeCallbacks(

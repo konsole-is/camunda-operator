@@ -688,8 +688,12 @@ func (r *Reconciler) dropSpentForgetAnnotation(
 	if !ok {
 		return nil
 	}
+	// The annotation is written by hand, and a Keycloak URL admits a user with
+	// a password, so the event prints the folded identity of the value rather
+	// than the value.
+	identity := components.NormalizeRealmIdentity(named)
 	recorded := mc.Status.CallbackRealm
-	if recorded != nil && components.NormalizeRealmIdentity(named) == components.RealmIdentity(*recorded) {
+	if recorded != nil && identity == components.RealmIdentity(*recorded) {
 		return nil
 	}
 	if recorded != nil {
@@ -702,7 +706,7 @@ func (r *Reconciler) dropSpentForgetAnnotation(
 			"Annotation %s names realm %q and status.callbackRealm names realm %q, so the "+
 				"annotation is removed and nothing is let go of",
 			components.ForgetCallbackRealmAnnotation,
-			named,
+			identity,
 			components.RealmIdentity(*recorded),
 		)
 	}

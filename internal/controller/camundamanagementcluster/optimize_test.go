@@ -948,6 +948,9 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 	// An annotation that names another realm than the recorded one sanctions
 	// nothing. It is removed with a Warning event, so a typo does not sit
 	// armed until a later retarget happens to match it.
+	// The annotation is written by hand, and a Keycloak URL admits a user with
+	// a password, so the event that reports the removal prints the folded
+	// identity of the value and never the value.
 	It("removes a forget annotation that names no recorded realm", func() {
 		first := startFakeKeycloak(withOptimizeClient())
 		s := newScenario(withFakeKeycloak(first))
@@ -965,7 +968,7 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 			metav1.SetMetaDataAnnotation(
 				&latest.ObjectMeta,
 				components.ForgetCallbackRealmAnnotation,
-				"https://elsewhere.example.com/auth/realms/other",
+				"https://someone:hunter2@elsewhere.example.com/auth/realms/other",
 			)
 			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
@@ -975,6 +978,10 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 			g.Expect(latest.Annotations).NotTo(HaveKey(components.ForgetCallbackRealmAnnotation))
 			g.Expect(latest.Status.CallbackRealm).NotTo(BeNil())
 			g.Expect(eventReasons(g, s.mc)).To(ContainElement(eventReasonForgetIgnored))
+			g.Expect(eventNotes(g, s.mc)).To(ContainElement(And(
+				ContainSubstring("https://elsewhere.example.com/auth/realms/other"),
+				Not(ContainSubstring("hunter2")),
+			)))
 		}, timeout, interval).Should(Succeed())
 
 		Expect(first.redirectURIs()).To(HaveLen(1))
@@ -1466,6 +1473,21 @@ func eventReasons(g Gomega, mc *v1.CamundaManagementCluster) []string {
 	}
 
 	return reasons
+}
+
+// eventNotes returns the message of every event that names mc.
+func eventNotes(g Gomega, mc *v1.CamundaManagementCluster) []string {
+	var events eventsv1.EventList
+	g.Expect(k8sClient.List(ctx, &events, client.InNamespace(mc.Namespace))).To(Succeed())
+
+	notes := make([]string, 0, len(events.Items))
+	for _, event := range events.Items {
+		if event.Regarding.Name == mc.Name {
+			notes = append(notes, event.Note)
+		}
+	}
+
+	return notes
 }
 
 // readConfigMap returns the Optimize root URLs that a ConfigMap holds.
