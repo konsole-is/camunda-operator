@@ -234,11 +234,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// needs nothing the pre-check resolves, and the old realm would
 		// otherwise keep the callbacks for as long as the failure stands.
 		retry, withdrawErr := r.withdrawUnresolved(ctx, &mc)
-		// A result beside a non-nil error is dropped by controller-runtime,
-		// so the retry is returned only when nothing failed; a failure
-		// requeues with backoff on its own.
-		if err := errors.Join(withdrawErr, r.withdrawFromDeselected(ctx, &mc)); err != nil {
-			return ctrl.Result{}, err
+		callbackErr := stepWithdrawCallbacks.wrap(withdrawErr)
+		releaseErr := stepReleaseClaims.wrap(r.withdrawFromDeselected(ctx, &mc))
+		// A step that failed says more than the pre-check it ran beside: the
+		// pre-check names something of the spec, and the step names a call
+		// that the operator could not make at all.
+		if failed := firstStep(callbackErr, releaseErr); failed != nil {
+			conditions.Stage(&mc, failed.condition(&mc))
+
+			// A result beside a non-nil error is dropped by
+			// controller-runtime, so the retry is dropped here too. A failure
+			// requeues with backoff on its own.
+			return ctrl.Result{}, errors.Join(callbackErr, releaseErr)
 		}
 		if retry {
 			return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
