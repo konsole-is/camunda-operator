@@ -571,14 +571,14 @@ status:
 
 A plane that serves no Optimize is not held. It fills no realm, so the workloads move at once, `Ready` stays with them, and only `OptimizeCallbacksReady` keeps naming the realm still to be emptied.
 
-If the old Keycloak is gone for good, set the annotation that the message names, with the exact value it prints. The value is the old realm, as `<url>/realms/<realm>`, and a spelling that differs only in the case of the host, a default port, or a trailing slash matches too:
+If the old Keycloak is gone for good, set the annotation that the message names, with the exact value it prints. A Keycloak that never answered takes the same route. `status.callbackRealm` names the realm from the moment the plane points Management Identity at it, so a `url` with a typo in it is a realm to let go of, and the corrected `url` is a move away from it. The value is the old realm, as `<url>/realms/<realm>`, and a spelling that differs only in the case of the host, a default port, or a trailing slash matches too:
 
 ```bash
 kubectl annotate camundamanagementcluster my-management -n my-management-ns \
   camunda.io/forget-callback-realm="https://old-keycloak.example.com/auth/realms/camunda-platform"
 ```
 
-The management plane then registers in the new realm, records the Warning event `OptimizeCallbacksLeftBehind`, and removes the annotation. The callbacks stay in the old realm. If that Keycloak comes back, remove them from its `optimize` client yourself. The annotation lets go of the realm it names and of no other. One that names another realm than `status.callbackRealm` is removed unused, and the Warning event `ForgetCallbackRealmIgnored` names both realms.
+The management plane then lets go of the old realm, records the Warning event `OptimizeCallbacksLeftBehind`, and removes the annotation. The move goes on from there. The plane registers the callbacks in the new realm when the new mode holds one and the plane serves an Optimize. A move to the `oidc` mode registers none, and `OptimizeCallbacksReady` reads `Disabled`. The callbacks stay in the old realm. If that Keycloak comes back, remove them from its `optimize` client yourself. The annotation lets go of the realm it names and of no other. One that names another realm than `status.callbackRealm` is removed unused, and the Warning event `ForgetCallbackRealmIgnored` names both realms.
 
 A suspended management plane leaves every realm as it is. An annotation that names the realm of `status.callbackRealm` waits until the plane resumes, and the callbacks move then. An annotation that names another realm is removed while the plane sleeps, the same as when it runs. Deleting a suspended plane removes the callbacks from the realm that `status.callbackRealm` names.
 

@@ -508,22 +508,18 @@ func (r *Reconciler) stopOldIdentityWriters(
 // realm that no record names.
 //
 // target is the realm of the spec, and only a Keycloak that you run is
-// recorded, for the reason syncOptimizeCallbacks gives. A record of that same
-// realm is written again, so that a rotated administrator or certificate
-// authority reaches the record while the spec still names the realm. A record
-// of another realm is the one the plane is leaving, and it stays until the
-// withdrawal from it is over.
+// recorded, for the reason syncOptimizeCallbacks gives. A realm that is
+// already recorded keeps the Secrets it was written with, however the spec
+// rotates them: nothing here has signed in with the new ones yet, and a
+// Secret that exists can still hold the wrong password. syncOptimizeCallbacks
+// writes the record again once Keycloak accepted them, and the deletion path
+// tries both.
 func recordCallbackRealm(
 	mc *v1.CamundaManagementCluster,
 	provider components.IdentityProvider,
 	target *v1.KeycloakRealmTarget,
 ) {
-	if provider.Mode != components.ModeExternalKeycloak || target == nil {
-		return
-	}
-
-	recorded := mc.Status.CallbackRealm
-	if recorded == nil || components.SameRealm(*recorded, *target) {
+	if mc.Status.CallbackRealm == nil && provider.Mode == components.ModeExternalKeycloak {
 		mc.Status.CallbackRealm = target
 	}
 }
