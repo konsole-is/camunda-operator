@@ -92,6 +92,11 @@ func findInventories(root string) []string {
 // kubectl apply -k leaves out. A resource that it lists but that is not there
 // makes kubectl apply -k fail outright. A resource can be a directory, as the
 // shared presets are.
+//
+// Only the set is checked, not the order. Kustomize sorts its output by kind
+// and puts Namespace first, so the order of the resources list is not the
+// order anything is applied in. The operator resolves a reference after the
+// resources exist, so a scenario stands up whatever order it arrives in.
 func applyInventory(dir string) {
 	GinkgoHelper()
 

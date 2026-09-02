@@ -10,7 +10,7 @@ The operator has three preset kinds:
 | `ElasticsearchClusterPreset` | `ElasticsearchCluster` | `spec.presetRef` |
 | `DatabaseServerPreset` | `DatabaseServer` | `spec.presetRef` |
 
-All three are cluster-scoped. No controller reconciles them, and they create nothing. The cluster that references a preset reads it on every reconcile and merges its own spec over `spec.cluster` of the preset.
+All three are cluster-scoped. No controller reconciles them, and they create nothing. The resource that references a preset reads it on every reconcile and merges its own spec over the baseline the preset holds. That baseline is `spec.cluster` on the two cluster presets, and `spec.server` on `DatabaseServerPreset`.
 
 ## The three layers of a Camunda cluster
 
