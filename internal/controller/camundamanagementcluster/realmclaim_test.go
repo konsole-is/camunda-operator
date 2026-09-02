@@ -22,6 +22,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -57,6 +58,35 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 
 		expectReadyWhileStamping(second.mc, identityKey(second))
 		expectRealmClaimHolder(externalRealmTarget(), second.mc)
+	})
+
+	// A Lease at the name of the realm that this operator did not write has
+	// no provenance. It blocks without a takeover, and only its removal by
+	// hand frees the realm.
+	It("parks on a Lease that names no management cluster until it is removed", func() {
+		foreign := &coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{
+			Namespace: testClaimNamespace,
+			Name:      realmLeaseKey(externalRealmTarget()).Name,
+		}}
+		Expect(k8sClient.Create(ctx, foreign)).To(Succeed())
+		DeferCleanup(func() {
+			_ = client.IgnoreNotFound(k8sClient.Delete(ctx, foreign))
+		})
+
+		s := newScenario(withExternalKeycloak)
+
+		Eventually(func(g Gomega) {
+			ready := conditionOf(g, s.mc, v1.ConditionReady)
+			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(ready.Reason).To(Equal(v1.ReasonRealmClaimedElsewhere))
+			g.Expect(ready.Message).To(ContainSubstring("names no CamundaManagementCluster"))
+			g.Expect(ready.Message).To(ContainSubstring(foreign.Name))
+		}, timeout, interval).Should(Succeed())
+
+		Expect(k8sClient.Delete(ctx, foreign)).To(Succeed())
+
+		expectReadyWhileStamping(s.mc, identityKey(s))
+		expectRealmClaimHolder(externalRealmTarget(), s.mc)
 	})
 
 	// A crash between the claim and the release leaves a Lease whose holder
@@ -160,6 +190,55 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 		expectRealmClaimHolder(externalRealmTarget(), holder.mc)
 	})
 
+	// A restart of a Management Identity pod writes the clients of its realm
+	// again, so the realm of a running pod is never left for another plane,
+	// not even by a plane parked on the realm it wants next.
+	It("keeps the claim on the realm its Management Identity still points at", func() {
+		holder := newScenario(withExternalKeycloak)
+		expectReadyWhileStamping(holder.mc, identityKey(holder))
+		expectRealmClaimHolder(externalRealmTarget(), holder.mc)
+
+		old := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(old))
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(old.redirectURIs()).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+		startIdentityPod(identityKey(s))
+		// A pod that is not ready is one that still starts, and the
+		// withdrawal of the callbacks waits for it. This pod ran long ago.
+		markIdentityPodsReady(s)
+		expectRealmClaimHolder(fakeRealmTarget(old), s.mc)
+
+		retargetKeycloak(s.mc, keycloakExternalURL)
+
+		Eventually(func(g Gomega) {
+			ready := conditionOf(g, s.mc, v1.ConditionReady)
+			g.Expect(ready.Reason).To(Equal(v1.ReasonRealmClaimedElsewhere))
+
+			g.Expect(old.redirectURIs()).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+
+		By("keeping the claim while the pod of the old realm runs")
+		Consistently(func(g Gomega) {
+			var lease coordinationv1.Lease
+			g.Expect(k8sClient.Get(ctx, realmLeaseKey(fakeRealmTarget(old)), &lease)).To(Succeed())
+		}, "2s", interval).Should(Succeed())
+
+		By("releasing the claim once that pod is gone")
+		deleteIdentityPods(s)
+		nudge(s.mc)
+
+		Eventually(func(g Gomega) {
+			var lease coordinationv1.Lease
+			err := k8sClient.Get(ctx, realmLeaseKey(fakeRealmTarget(old)), &lease)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// The oidc mode administers no realm, so a plane that moves there keeps
 	// no claim on the realm it administered before.
 	It("releases the realm when the spec moves to the oidc mode", func() {
@@ -237,6 +316,46 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 		}, "2s", interval).Should(Succeed())
 	})
 })
+
+// markIdentityPodsReady stamps the Ready condition on every Management
+// Identity pod of a scenario, the way a kubelet does once the containers
+// pass their probes. Envtest runs none.
+func markIdentityPodsReady(s scenario) {
+	GinkgoHelper()
+
+	var pods corev1.PodList
+	Expect(k8sClient.List(
+		ctx,
+		&pods,
+		client.InNamespace(s.namespace),
+		client.MatchingLabels(components.IdentityPodLabels(s.mc)),
+	)).To(Succeed())
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		pod.Status.Conditions = append(pod.Status.Conditions, corev1.PodCondition{
+			Type: corev1.PodReady, Status: corev1.ConditionTrue,
+		})
+		Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
+	}
+}
+
+// deleteIdentityPods removes every Management Identity pod of a scenario at
+// once. Envtest runs no kubelet, so a graceful deletion would leave the pod
+// terminating for its whole grace period.
+func deleteIdentityPods(s scenario) {
+	GinkgoHelper()
+
+	var pods corev1.PodList
+	Expect(k8sClient.List(
+		ctx,
+		&pods,
+		client.InNamespace(s.namespace),
+		client.MatchingLabels(components.IdentityPodLabels(s.mc)),
+	)).To(Succeed())
+	for i := range pods.Items {
+		Expect(k8sClient.Delete(ctx, &pods.Items[i], client.GracePeriodSeconds(0))).To(Succeed())
+	}
+}
 
 // identityKey is the key of the Management Identity Deployment of a scenario.
 func identityKey(s scenario) client.ObjectKey {

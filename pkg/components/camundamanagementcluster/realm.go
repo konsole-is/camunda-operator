@@ -188,6 +188,32 @@ func IdentityTemplatePointsAtRealm(spec *corev1.PodSpec, target v1.KeycloakRealm
 	}
 }
 
+// IdentityRealms returns the realm of every Management Identity pod of pods
+// that is not going away and not done, and reports whether one of them writes
+// a realm that the pod does not name, which identityRealmEnv reads as
+// realmUnknown. A ready pod counts too: it writes nothing now, but a restart
+// runs its start against that realm again. Pods of the oidc mode name no
+// Keycloak and contribute nothing.
+func IdentityRealms(pods []corev1.Pod) ([]v1.KeycloakRealmTarget, bool) {
+	var realms []v1.KeycloakRealmTarget
+	var unknown bool
+	for i := range pods {
+		pod := &pods[i]
+		if pod.DeletionTimestamp != nil || podDone(pod) {
+			continue
+		}
+		switch realm, state := identityRealmEnv(&pod.Spec); state {
+		case realmUnknown:
+			unknown = true
+		case realmNamed:
+			realms = append(realms, realm)
+		case realmNone:
+		}
+	}
+
+	return realms, unknown
+}
+
 // podReady reports the Ready condition of pod.
 func podReady(pod *corev1.Pod) bool {
 	for _, condition := range pod.Status.Conditions {

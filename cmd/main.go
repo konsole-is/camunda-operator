@@ -137,9 +137,9 @@ func main() {
 	)
 	flag.StringVar(
 		&operatorNamespace, "namespace", os.Getenv(namespaceEnv),
-		"The namespace that the operator runs in. It holds the Lease that serializes the claim "+
-			"of a logical database, which crosses namespaces. Defaults to the "+namespaceEnv+
-			" environment variable, and then to the namespace of the Pod.",
+		"The namespace that the operator runs in. It holds the Leases that serialize the "+
+			"cross-namespace claims: of a logical database, and of a Keycloak realm. Defaults "+
+			"to the "+namespaceEnv+" environment variable, and then to the namespace of the Pod.",
 	)
 	opts := zap.Options{
 		Development: true,
@@ -164,9 +164,10 @@ func main() {
 	if operatorNamespace == "" {
 		operatorNamespace = podNamespace()
 	}
-	// The Database controller serializes the claim of a logical database
-	// through a Lease of this namespace. Without one it cannot tell two
-	// claimants apart, so the manager refuses to start.
+	// The Database and CamundaManagementCluster controllers serialize the
+	// claim of a logical database and of a Keycloak realm through Leases of
+	// this namespace. Without one they cannot tell two claimants apart, so
+	// the manager refuses to start.
 	if operatorNamespace == "" {
 		setupLog.Error(
 			nil,

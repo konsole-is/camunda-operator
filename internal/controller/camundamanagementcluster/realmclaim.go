@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -70,13 +71,44 @@ func (r *Reconciler) claimRealm(
 	// later claimant of a realm this plane already left. The recorded realm
 	// still carries the login callbacks of this plane, and its claim goes
 	// once the withdrawal has cleared the record, which the next pass reads
-	// from the persisted status. A claim released before that would let
-	// another plane register in a realm this one still tidies.
-	if err := r.releaseRealmClaims(ctx, mc, current, mc.Status.CallbackRealm); err != nil {
+	// from the persisted status. A realm that a Management Identity pod of
+	// this plane still points at is kept too: a restart of that pod writes
+	// the clients of that realm again, so it is not left for another plane.
+	keep := []*v1.KeycloakRealmTarget{current, mc.Status.CallbackRealm}
+	pointed, unknown, err := r.identityRealms(ctx, mc)
+	if err != nil {
+		return nil, err
+	}
+	for i := range pointed {
+		keep = append(keep, &pointed[i])
+	}
+	if err := r.releaseRealmClaims(ctx, mc, unknown, keep...); err != nil {
 		return nil, err
 	}
 
 	return parked, nil
+}
+
+// identityRealms returns the realm of every Management Identity pod of mc,
+// and whether one of them writes a realm that the pod does not name. The read
+// goes through APIReader, for the reason startedInitialClaim gives.
+func (r *Reconciler) identityRealms(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) ([]v1.KeycloakRealmTarget, bool, error) {
+	var pods corev1.PodList
+	if err := r.APIReader.List(
+		ctx,
+		&pods,
+		client.InNamespace(mc.Namespace),
+		client.MatchingLabels(components.IdentityPodLabels(mc)),
+	); err != nil {
+		return nil, false, fmt.Errorf("listing the Management Identity pods: %w", err)
+	}
+
+	realms, unknown := components.IdentityRealms(pods.Items)
+
+	return realms, unknown, nil
 }
 
 // takeRealmClaim creates the claim Lease of the realm that target names. The
@@ -183,11 +215,6 @@ func (r *Reconciler) createRealmClaim(
 // A holder that is gone, or that a later management cluster replaced under
 // the same name, keeps nothing, so a crash between the claim and the release
 // never blocks the realm forever.
-//
-// A holder that is there keeps the claim against every other claimant. Its
-// Management Identity bootstrapped the clients of the realm and its Optimize
-// instances sign in through them. To hand the realm on would put a second
-// Identity on those clients.
 func (r *Reconciler) realmHolderKeeps(
 	ctx context.Context,
 	holder components.RealmClaimHolder,
@@ -209,6 +236,11 @@ func (r *Reconciler) realmHolderKeeps(
 // A nil entry of keep names no realm. The finalizer passes none, so a deleted
 // management cluster gives back every realm it holds.
 //
+// unknown says that a Management Identity workload of mc writes a realm that
+// the workload does not name, so no claim of this plane can be shown to be
+// unused. Every one of them is kept then, the way IdentityTemplatePointsAtRealm
+// counts such a workload as a writer of every realm.
+//
 // The label selector is the one that NewRealmClaimLease writes. It carries the
 // name of the management cluster alone, so the list also holds the claims of
 // a management cluster of another namespace with this name, and of a later
@@ -216,6 +248,7 @@ func (r *Reconciler) realmHolderKeeps(
 func (r *Reconciler) releaseRealmClaims(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
+	unknown bool,
 	keep ...*v1.KeycloakRealmTarget,
 ) error {
 	var leases coordinationv1.LeaseList
@@ -238,7 +271,7 @@ func (r *Reconciler) releaseRealmClaims(
 	self := realmClaimSelf(mc)
 	for i := range leases.Items {
 		lease := &leases.Items[i]
-		if kept[lease.Name] {
+		if kept[lease.Name] || unknown {
 			continue
 		}
 		if recorded, ours := components.RealmClaimHolderOf(lease); !ours || recorded != self {
@@ -273,12 +306,9 @@ func (r *Reconciler) dropRealmClaim(
 }
 
 // deleteRealmClaim deletes lease under the UID and the resourceVersion that it
-// was read with. A Lease that is gone is left alone.
-//
-// A Lease that changed in between fails the preconditions, which means it was
-// not deleted. The error goes back to the caller, so a release keeps its
-// finalizer and reads the Lease again on the next look. To report a conflict
-// as a release would let the management cluster go while its claim stayed.
+// was read with. A Lease that is gone is left alone, and one that changed in
+// between fails the preconditions and returns the error, so the caller reads
+// it again on its next look.
 func (r *Reconciler) deleteRealmClaim(ctx context.Context, lease *coordinationv1.Lease) error {
 	err := r.Delete(ctx, lease, client.Preconditions{
 		UID: &lease.UID, ResourceVersion: &lease.ResourceVersion,
