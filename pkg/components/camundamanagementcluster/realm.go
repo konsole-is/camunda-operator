@@ -31,10 +31,10 @@ import (
 // RealmTarget records the realm of provider: where it is, and which Secrets
 // the operator signs in to it with. In the externalKeycloak mode it is what
 // status.callbackRealm holds after the login callbacks of Optimize are
-// registered there. The keycloak mode returns a target too, for comparisons
-// against a record, but it is never persisted: the operator deletes that
-// Keycloak together with the mode, so there would be nothing to withdraw
-// from.
+// registered there. The keycloak mode returns a target too, which is the realm
+// that mode claims and the one a record is compared against, but that target
+// is never persisted: the operator deletes that Keycloak together with the
+// mode, so there would be nothing to withdraw from.
 //
 // The URL is recorded as RealmIdentity folds it, so two spellings of one realm
 // record one value and a user in the URL reaches no status.

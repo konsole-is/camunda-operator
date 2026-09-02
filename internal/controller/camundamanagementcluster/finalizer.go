@@ -89,7 +89,11 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	// is tidy. Deleting it first lets a management plane parked on that name
 	// take it and register its own callbacks while this withdrawal is still in
 	// flight, and this withdrawal then takes the new owner's away.
-	if r.registeredCallbacks(ctx, mc) {
+	registered, err := r.registeredCallbacks(ctx, mc)
+	if err != nil {
+		return err
+	}
+	if registered {
 		if err := r.withdrawOptimizeCallbacks(ctx, mc); err != nil {
 			return err
 		}
@@ -245,19 +249,31 @@ func (r *Reconciler) stopIdentitySets(
 // registered in. A ManagementAuthConfig that this plane holds answers for the
 // keycloak mode, which records no realm because the operator deletes that
 // Keycloak with the plane. A plane with neither served no Optimize anywhere.
-func (r *Reconciler) registeredCallbacks(ctx context.Context, mc *v1.CamundaManagementCluster) bool {
-	return mc.Status.CallbackRealm != nil || r.ownsContract(ctx, mc)
+func (r *Reconciler) registeredCallbacks(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) (bool, error) {
+	if mc.Status.CallbackRealm != nil {
+		return true, nil
+	}
+
+	return r.ownsContract(ctx, mc)
 }
 
 // ownsContract reports whether a ManagementAuthConfig that this management
 // plane holds exists, under the name it writes now or the name its status
 // recorded.
 //
-// An absent contract answers no. A plane that was deleted before it ever wrote
-// one registered nothing, and a read that fails answers no for the same
-// reason: the deletion must never remove a callback of another owner on a
-// guess.
-func (r *Reconciler) ownsContract(ctx context.Context, mc *v1.CamundaManagementCluster) bool {
+// An absent contract answers no: a plane that was deleted before it ever wrote
+// one registered nothing. A contract of another owner answers no as well, so
+// the deletion never removes a callback of that owner on a guess. A read that
+// fails is an error, the way the read of the realm claim is, because the pass
+// deletes the contract and releases the realm right after and a no would leave
+// the callbacks in there.
+func (r *Reconciler) ownsContract(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) (bool, error) {
 	names := []string{components.ContractName(mc)}
 	if previous := mc.Status.ManagementAuthConfig; previous != "" {
 		names = append(names, previous)
@@ -266,14 +282,18 @@ func (r *Reconciler) ownsContract(ctx context.Context, mc *v1.CamundaManagementC
 	for _, name := range names {
 		var existing v1.ManagementAuthConfig
 		if err := r.APIReader.Get(ctx, client.ObjectKey{Name: name}, &existing); err != nil {
-			continue
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+
+			return false, fmt.Errorf("reading ManagementAuthConfig %q: %w", name, err)
 		}
 		if ownedBy(&existing, mc) {
-			return true
+			return true, nil
 		}
 	}
 
-	return false
+	return false, nil
 }
 
 // withdrawOptimizeCallbacks removes the login callbacks that this management
@@ -306,9 +326,10 @@ func (r *Reconciler) withdrawOptimizeCallbacks(
 		)
 		switch {
 		case err != nil:
+			// The URL of the spec admits a user with a password, and this
+			// error reaches a log, so the message names the realm alone.
 			return fmt.Errorf(
-				"withdrawing the Optimize callbacks of realm %q of Keycloak %q: %w",
-				provider.Realm, provider.KeycloakURL, err,
+				"withdrawing the Optimize callbacks of realm %q: %w", provider.Realm, err,
 			)
 		case failure != nil && failure.Reason != v1.ReasonOptimizeClientMissing:
 			logf.FromContext(ctx).Error(

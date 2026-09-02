@@ -91,13 +91,15 @@ const (
 	// message names the holder.
 	ReasonClaimedElsewhere = "ClaimedElsewhere"
 	// ReasonRealmClaimedElsewhere means that the Keycloak realm that
-	// spec.identityProvider.externalKeycloak names is not this management
-	// cluster's to administer: another management cluster holds it, or a
+	// spec.identityProvider names is not this management cluster's to
+	// administer: another management cluster holds it, or a
 	// Lease that this operator did not write blocks it. One realm answers to
 	// one management plane, so the operator starts nothing new for this one,
 	// writes nothing in that realm, and looks again on its retry interval.
 	// Workloads the plane already ran keep running. The message names the
-	// holder, or the Lease to remove.
+	// holder, or the Lease to remove. Both Keycloak modes report it: the realm
+	// of a Keycloak that the operator runs is claimed like any other, because
+	// an externalKeycloak plane can name the Service address of it.
 	ReasonRealmClaimedElsewhere = "RealmClaimedElsewhere"
 	// ReasonNotReady means that a selected CamundaCluster is not attached
 	// yet: it publishes no gateway endpoints, so Web Modeler cannot deploy to

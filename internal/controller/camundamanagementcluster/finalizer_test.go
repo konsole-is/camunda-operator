@@ -345,7 +345,10 @@ func TestRegisteredCallbacksAuthorizesTheWithdrawal(t *testing.T) {
 		mc.Status.CallbackRealm = &realm
 		r, _ := fakeReconciler(t, mc)
 
-		assert.True(t, r.registeredCallbacks(context.Background(), mc))
+		registered, err := r.registeredCallbacks(context.Background(), mc)
+
+		require.NoError(t, err)
+		assert.True(t, registered)
 	})
 
 	// The keycloak mode records no realm, because the operator deletes that
@@ -354,7 +357,10 @@ func TestRegisteredCallbacksAuthorizesTheWithdrawal(t *testing.T) {
 		mc := finalizingCluster()
 		r, _ := fakeReconciler(t, mc, ownedContract(mc))
 
-		assert.True(t, r.registeredCallbacks(context.Background(), mc))
+		registered, err := r.registeredCallbacks(context.Background(), mc)
+
+		require.NoError(t, err)
+		assert.True(t, registered)
 	})
 
 	// A plane with neither served no Optimize anywhere, and a deletion must
@@ -363,7 +369,22 @@ func TestRegisteredCallbacksAuthorizesTheWithdrawal(t *testing.T) {
 		mc := finalizingCluster()
 		r, _ := fakeReconciler(t, mc)
 
-		assert.False(t, r.registeredCallbacks(context.Background(), mc))
+		registered, err := r.registeredCallbacks(context.Background(), mc)
+
+		require.NoError(t, err)
+		assert.False(t, registered)
+	})
+
+	// The pass deletes the contract and releases the realm right after, so a
+	// contract it could not read must not read as one this plane never held.
+	t.Run("a contract that cannot be read stops the deletion", func(t *testing.T) {
+		mc := finalizingCluster()
+		r, log := fakeReconciler(t, mc, ownedContract(mc))
+		log.getFails = components.ContractName(mc)
+
+		_, err := r.registeredCallbacks(context.Background(), mc)
+
+		require.Error(t, err)
 	})
 
 	t.Run("a contract of another owner authorizes nothing", func(t *testing.T) {
@@ -372,7 +393,10 @@ func TestRegisteredCallbacksAuthorizesTheWithdrawal(t *testing.T) {
 		contract.Labels[labels.ManagementClusterKey] = "elsewhere"
 		r, _ := fakeReconciler(t, mc, contract)
 
-		assert.False(t, r.registeredCallbacks(context.Background(), mc))
+		registered, err := r.registeredCallbacks(context.Background(), mc)
+
+		require.NoError(t, err)
+		assert.False(t, registered)
 	})
 }
 
