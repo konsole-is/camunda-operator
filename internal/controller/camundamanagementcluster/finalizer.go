@@ -18,6 +18,7 @@ package camundamanagementcluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -44,13 +45,15 @@ const (
 	eventReasonAttachmentRemoved = "AttachmentRemoved"
 )
 
-// finalize withdraws the Console ping settings and every claim, removes the
-// login callbacks from the realm, deletes the ManagementAuthConfig, and
-// releases the finalizer, in that order: the contract is the claim on the
-// realm, so it goes last. The Deployments, the Services, and the copies of
-// referenced Secrets carry an owner reference, so Kubernetes collects them;
-// what the management plane wrote on an orchestration cluster, what it wrote in
-// the realm, and the contract, are outside that chain.
+// finalize withdraws the Console ping settings and every claim on the
+// orchestration clusters, stops Management Identity, removes the login
+// callbacks from the realm, deletes the ManagementAuthConfig, releases the
+// claim on every realm, and releases the finalizer, in that order: the realm
+// is tidied before anything that would let another plane into it goes. The
+// Deployments, the Services, and the copies of referenced Secrets carry an
+// owner reference, so Kubernetes collects them; what the management plane
+// wrote on an orchestration cluster, what it wrote in the realm, the contract,
+// and the realm claims are outside that chain.
 //
 // The withdrawal goes first. Once the finalizer is gone the object is gone for
 // good, and no retry can free the orchestration clusters or remove a contract
@@ -76,17 +79,26 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	if err := r.withdrawClaims(ctx, mc, clusters); err != nil {
 		return err
 	}
+	// The Deployment goes whatever the contract says. A plane whose contract
+	// write never landed, and one whose contract somebody deleted, still runs
+	// the Management Identity that writes the clients of the realm.
+	if err := r.stopIdentity(ctx, mc); err != nil {
+		return err
+	}
 	// The contract is the claim on the realm, so it is held until the realm is
 	// tidy. Deleting it first would let a waiting management plane take the
 	// name and register its own callbacks while this withdrawal is still in
 	// flight, and this withdrawal would then take the new owner's away.
 	if r.ownsContract(ctx, mc) {
-		if err := r.stopIdentity(ctx, mc); err != nil {
-			return err
-		}
 		r.withdrawOptimizeCallbacks(ctx, mc)
 	}
 	if err := r.withdrawContract(ctx, mc); err != nil {
+		return err
+	}
+	// The realm claim goes last of all. Once it is gone a plane parked on the
+	// realm claims it and runs its own Management Identity against clients
+	// this withdrawal may still be writing.
+	if _, err := r.releaseRealmClaims(ctx, mc, nil, nil, false); err != nil {
 		return err
 	}
 	r.EventRecorder.Eventf(
@@ -97,8 +109,8 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 		eventActionFinalize,
 		"Withdrew the claims and the Console ping settings on the orchestration clusters, "+
 			"tried to remove the Web Modeler users and the login callbacks of Optimize (a failed "+
-			"removal has a warning event or a log line of its own), and removed "+
-			"ManagementAuthConfig %q",
+			"removal has a warning event or a log line of its own), removed "+
+			"ManagementAuthConfig %q, and released the claim on the Keycloak realm",
 		components.ContractName(mc),
 	)
 
@@ -110,8 +122,9 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	return nil
 }
 
-// stopIdentity deletes the Management Identity Deployment, so that no pod of
-// it starts after this point and writes the Optimize client again.
+// stopIdentity deletes the Management Identity Deployment and the ReplicaSets
+// of it, so that no pod of it starts after this point and writes the Optimize
+// client again.
 //
 // Kubernetes collects that Deployment through its owner reference, but only
 // once the finalizer is gone, which is after the realm is tidied. Without this
@@ -126,28 +139,84 @@ func (r *Reconciler) stopIdentity(ctx context.Context, mc *v1.CamundaManagementC
 	key := client.ObjectKey{Namespace: mc.Namespace, Name: components.IdentityName(mc)}
 
 	var identity appsv1.Deployment
-	if err := r.APIReader.Get(ctx, key, &identity); err != nil {
-		if apierrors.IsNotFound(err) {
+	switch err := r.APIReader.Get(ctx, key, &identity); {
+	case err == nil:
+		// The name is derived from the name of this management cluster, so
+		// another owner can hold it: a plane whose components never converged
+		// leaves it free for anybody. Only the owner reference tells the
+		// Management Identity of this plane from a workload that somebody else
+		// runs, and the ReplicaSets under such a workload are not ours either.
+		if !metav1.IsControlledBy(&identity, mc) {
 			return nil
 		}
+
+		// The UID is a precondition, so a Deployment that took the name
+		// between the read and this call is refused rather than deleted. The
+		// refusal goes back as an error: the replacement runs a Management
+		// Identity that this pass knows nothing about, and the next pass reads
+		// it before anything else here gives its realm away.
+		err := r.Delete(ctx, &identity, client.Preconditions{UID: &identity.UID})
+		if err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("deleting Deployment %q: %w", key, err)
+		}
+	case !apierrors.IsNotFound(err):
 		return fmt.Errorf("reading Deployment %q: %w", key, err)
 	}
-	// The name is derived from the name of this management cluster, so another
-	// owner can hold it: a plane whose components never converged leaves it
-	// free for anybody. Only the owner reference tells the Management Identity
-	// of this plane from a workload that somebody else runs.
-	if !metav1.IsControlledBy(&identity, mc) {
-		return nil
+
+	// The ReplicaSets go after the Deployment, because before it the Deployment
+	// makes another one at once, and they go on a pass that finds the
+	// Deployment already gone, because that is what a pass that stopped between
+	// the two deletions leaves behind.
+	return r.stopIdentitySets(ctx, mc, key.Name)
+}
+
+// stopIdentitySets deletes every ReplicaSet of the Management Identity
+// Deployment that name names. The caller has established that no Deployment of
+// another owner holds that name.
+//
+// Kubernetes collects them with the Deployment, but in the background, and one
+// that still asks for a pod starts another Management Identity while it waits.
+// That pod would write the clients of the realm this deletion is about to give
+// back.
+func (r *Reconciler) stopIdentitySets(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	name string,
+) error {
+	var sets appsv1.ReplicaSetList
+	if err := r.APIReader.List(
+		ctx,
+		&sets,
+		client.InNamespace(mc.Namespace),
+		client.MatchingLabels(components.IdentityPodLabels(mc)),
+	); err != nil {
+		return fmt.Errorf("listing the Management Identity ReplicaSets: %w", err)
 	}
 
-	// The UID is a precondition, so a Deployment that took the name between
-	// the read and this call is refused rather than deleted.
-	err := r.Delete(ctx, &identity, client.Preconditions{UID: &identity.UID})
-	if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
-		return fmt.Errorf("deleting Deployment %q: %w", key, err)
+	var errs []error
+	for i := range sets.Items {
+		set := &sets.Items[i]
+		// The labels are the discovery labels of this plane, which anybody can
+		// write. The owner reference is what tells a ReplicaSet of the
+		// Management Identity Deployment from a workload of somebody else.
+		owner := metav1.GetControllerOf(set)
+		if owner == nil || owner.APIVersion != appsv1.SchemeGroupVersion.String() ||
+			owner.Kind != "Deployment" || owner.Name != name {
+			continue
+		}
+
+		// A ReplicaSet that took the name between the list and this call is
+		// refused, and the refusal goes back as an error for the reason the
+		// Deployment gives.
+		err := r.Delete(ctx, set, client.Preconditions{UID: &set.UID})
+		if err != nil && !apierrors.IsNotFound(err) {
+			errs = append(errs, fmt.Errorf(
+				"deleting ReplicaSet %q: %w", client.ObjectKeyFromObject(set), err,
+			))
+		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 // ownsContract reports whether a ManagementAuthConfig that this management

@@ -67,6 +67,7 @@ rules:
   resources:
   - replicasets
   verbs:
+  - delete
   - list
 - apiGroups:
   - barmancloud.cnpg.io

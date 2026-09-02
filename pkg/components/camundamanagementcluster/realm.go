@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"strings"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -53,20 +54,22 @@ func RealmTarget(provider IdentityProvider) *v1.KeycloakRealmTarget {
 // RealmIdentity returns the name of the realm that target holds, as the URL
 // of its realm endpoint: the URL, then /realms/ and the realm. The scheme and
 // the host of the URL are folded to lower case, and a default port (443 on
-// https, 80 on http) and every trailing slash are dropped. The path of the
-// URL and the realm stay as they are, because both are case-sensitive. Two
-// targets of one identity are one realm. The administrator and the
-// certificate authority take no part in it. The result is deterministic, so
-// a name derived from it (a hash, for example) identifies the realm across
-// resources.
+// https, 80 on http), a user in the URL, and every trailing slash are
+// dropped. The path of the URL and the realm stay as they are, because both
+// are case-sensitive. Two targets of one identity are one realm. The
+// administrator and the certificate authority take no part in it. The result
+// is deterministic, so a name derived from it (a hash, for example)
+// identifies the realm across resources, and it is safe to read, so a claim
+// can name the realm it holds in the clear.
 func RealmIdentity(target v1.KeycloakRealmTarget) string {
 	return normalizeKeycloakURL(target.URL) + keycloakRealmPath + target.Realm
 }
 
 // normalizeKeycloakURL trims the trailing slashes of raw and folds what
 // names the same server either way: the case of the scheme and of the host,
-// and a port that only spells out the default of the scheme. A raw value
-// that does not parse as a URL comes back with only the slashes trimmed.
+// a port that only spells out the default of the scheme, and a user in the
+// URL. A raw value that does not parse as a URL comes back with only the
+// slashes trimmed.
 func normalizeKeycloakURL(raw string) string {
 	trimmed := strings.TrimRight(raw, "/")
 	parsed, err := url.Parse(trimmed)
@@ -74,6 +77,11 @@ func normalizeKeycloakURL(raw string) string {
 		return trimmed
 	}
 
+	// A user in the URL reaches the same realm as the URL without it, and it
+	// carries a password. Keeping it would let two spellings of one realm
+	// take a claim each, and would write the password into the annotations of
+	// the claim.
+	parsed.User = nil
 	parsed.Scheme = strings.ToLower(parsed.Scheme)
 	host := strings.ToLower(parsed.Hostname())
 	port := parsed.Port()
@@ -95,12 +103,20 @@ func normalizeKeycloakURL(raw string) string {
 
 // NormalizeRealmIdentity folds a hand-written realm identity the way
 // RealmIdentity folds a URL: the case of the scheme and of the host, a
-// spelled-out default port, and trailing slashes make no difference. The
-// path, and with it the realm at its end, stays as it is. It lets an
-// annotation written from status.callbackRealm match the recorded identity,
-// whose URL was folded the same way.
+// spelled-out default port, a user in the URL, and trailing slashes make no
+// difference. The path, and with it the realm at its end, stays as it is. It
+// lets an annotation written from status.callbackRealm match the recorded
+// identity, whose URL was folded the same way.
 func NormalizeRealmIdentity(value string) string {
 	return normalizeKeycloakURL(value)
+}
+
+// RealmURL is the URL of target as RealmIdentity reads it: a user in the URL,
+// a default port, the case of the scheme and of the host, and every trailing
+// slash are folded out. A message that names the Keycloak of a realm uses it,
+// so a password in the URL never reaches a condition or an event.
+func RealmURL(target v1.KeycloakRealmTarget) string {
+	return normalizeKeycloakURL(target.URL)
 }
 
 // SameRealm reports whether a and b name one realm.
@@ -185,6 +201,113 @@ func IdentityTemplatePointsAtRealm(spec *corev1.PodSpec, target v1.KeycloakRealm
 		return SameRealm(realm, target)
 	default:
 		return false
+	}
+}
+
+// IdentityRealms returns the realm of every Management Identity pod of pods
+// whose containers can still run, and reports whether one of them writes a
+// realm that the pod does not name. A ready pod counts because a restart runs
+// its start against that realm again, and a terminating pod counts until it
+// is gone, because one inside its initializer still writes. Pods of the oidc
+// mode name no Keycloak and contribute nothing.
+func IdentityRealms(pods []corev1.Pod) ([]v1.KeycloakRealmTarget, bool) {
+	var realms []v1.KeycloakRealmTarget
+	var unknown bool
+	for i := range pods {
+		pod := &pods[i]
+		if podDone(pod) {
+			continue
+		}
+		switch realm, state := identityRealmEnv(&pod.Spec); state {
+		case realmUnknown:
+			unknown = true
+		case realmNamed:
+			realms = append(realms, realm)
+		case realmNone:
+		}
+	}
+
+	return realms, unknown
+}
+
+// IdentityTemplateRealms returns the realm that the pod template of the
+// Management Identity Deployment names, and reports whether that template
+// writes a realm it does not name. A Deployment names at most one realm, and
+// none at all when it starts no pod against a Keycloak: one of the oidc mode,
+// and one that is fully scaled down, which scaledDown defines.
+//
+// The template outlives every pod of it. A Deployment that still names a
+// realm starts a pod against that realm at any moment, so a caller that reads
+// the pods alone gives the realm back in the gap between a pod that went and
+// its replacement.
+func IdentityTemplateRealms(deployment *appsv1.Deployment) ([]v1.KeycloakRealmTarget, bool) {
+	if scaledDown(
+		deployment.Spec.Replicas,
+		deployment.Generation,
+		deployment.Status.ObservedGeneration,
+		deployment.Status.Replicas,
+	) {
+		return nil, false
+	}
+
+	return templateRealms(&deployment.Spec.Template.Spec)
+}
+
+// IdentityReplicaSetRealms returns the realm of every Management Identity
+// ReplicaSet of sets that can still create a pod, and reports whether one of
+// them writes a realm that its template does not name.
+//
+// A ReplicaSet keeps the template it was made from. The old ReplicaSet of a
+// rollout therefore starts a pod against the realm the Deployment has already
+// left, for as long as it is not scaled to zero.
+func IdentityReplicaSetRealms(sets []appsv1.ReplicaSet) ([]v1.KeycloakRealmTarget, bool) {
+	var realms []v1.KeycloakRealmTarget
+	var unknown bool
+	for i := range sets {
+		set := &sets[i]
+		if scaledDown(
+			set.Spec.Replicas, set.Generation, set.Status.ObservedGeneration, set.Status.Replicas,
+		) {
+			continue
+		}
+		setRealms, setUnknown := templateRealms(&set.Spec.Template.Spec)
+		realms = append(realms, setRealms...)
+		unknown = unknown || setUnknown
+	}
+
+	return realms, unknown
+}
+
+// scaledDown reports a Management Identity workload that starts no pod any
+// more: it asks for none, its controller has read that, and it holds none.
+//
+// The three go together. A workload that asks for none and whose controller
+// has not caught up can have the pod creation of the generation before it in
+// flight, and that pod starts against the realm of the template.
+//
+// An unset replica count is one replica, as Kubernetes reads it.
+//
+// The withdrawal wait of stopOldIdentityWriters asks the same question of a
+// ReplicaSet and answers it on the replica count alone. It must, because that
+// wait holds status.callbackRealm: a rule that waits for a controller to catch
+// up would keep a plane in the realm it is leaving whenever the count never
+// gets read. A claim that is held too long only makes the next claimant wait
+// for its retry, so this rule takes the safer side of the same question.
+func scaledDown(replicas *int32, generation, observed int64, held int32) bool {
+	return replicas != nil && *replicas == 0 && observed >= generation && held == 0
+}
+
+// templateRealms returns the realm that a pod template names, and reports
+// whether it writes a realm it does not name. A template of the oidc mode
+// names no Keycloak and returns none.
+func templateRealms(spec *corev1.PodSpec) ([]v1.KeycloakRealmTarget, bool) {
+	switch realm, state := identityRealmEnv(spec); state {
+	case realmUnknown:
+		return nil, true
+	case realmNamed:
+		return []v1.KeycloakRealmTarget{realm}, false
+	default:
+		return nil, false
 	}
 }
 

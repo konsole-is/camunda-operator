@@ -90,6 +90,15 @@ const (
 	// management plane, so this operator leaves the cluster untouched. The
 	// message names the holder.
 	ReasonClaimedElsewhere = "ClaimedElsewhere"
+	// ReasonRealmClaimedElsewhere means that the Keycloak realm that
+	// spec.identityProvider.externalKeycloak names is not this management
+	// cluster's to administer: another management cluster holds it, or a
+	// Lease that this operator did not write blocks it. One realm answers to
+	// one management plane, so the operator starts nothing new for this one,
+	// writes nothing in that realm, and looks again on its retry interval.
+	// Workloads the plane already ran keep running. The message names the
+	// holder, or the Lease to remove.
+	ReasonRealmClaimedElsewhere = "RealmClaimedElsewhere"
 	// ReasonNotReady means that a selected CamundaCluster is not attached
 	// yet: it publishes no gateway endpoints, so Web Modeler cannot deploy to
 	// it, or it changed while the operator claimed it. The state clears when
@@ -279,11 +288,12 @@ type ManagementOIDCSpec struct{}
 // IdentitySpec configures Management Identity.
 //
 // The operator owns the Keycloak URL and the realm of the container. Both come
-// from spec.identityProvider, and the operator administers exactly that realm,
-// so an entry of extraEnv that names either one is refused: Management
-// Identity would write the login callbacks of Optimize into a realm that
-// status.callbackRealm never names and no withdrawal reaches.
-// +kubebuilder:validation:XValidation:rule="!has(self.extraEnv) || self.extraEnv.all(e, e.name != 'KEYCLOAK_URL' && e.name != 'KEYCLOAK_REALM')",message="spec.identity.extraEnv cannot set KEYCLOAK_URL or KEYCLOAK_REALM, which the operator renders from spec.identityProvider"
+// from spec.identityProvider, and this management plane claims exactly the
+// realm they name, so an entry of extraEnv that replaces either one is
+// refused: Management Identity would write the login callbacks of Optimize
+// into a realm that status.callbackRealm never names, that no withdrawal
+// reaches, and that another management plane can hold.
+// +kubebuilder:validation:XValidation:rule="!has(self.extraEnv) || self.extraEnv.all(e, e.name != 'KEYCLOAK_URL' && e.name != 'KEYCLOAK_REALM')",message="extraEnv must not set KEYCLOAK_URL or KEYCLOAK_REALM. The operator renders both from spec.identityProvider, and this management plane claims the realm they name"
 type IdentitySpec struct {
 	// Version is the Management Identity version, as a full semantic version.
 	// The operator supports 8.9.0 and later.

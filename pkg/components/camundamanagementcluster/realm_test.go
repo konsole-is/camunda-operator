@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -148,6 +149,15 @@ func TestRealmIdentity(t *testing.T) {
 			target: v1.KeycloakRealmTarget{URL: "https://kc.example.com/Auth", Realm: "camunda-platform"},
 			want:   "https://kc.example.com/Auth/realms/camunda-platform",
 		},
+		{
+			// A URL that carries a user reaches the same realm as one without
+			// it, and the password must not reach the annotations of a claim.
+			name: "drops a user in the URL",
+			target: v1.KeycloakRealmTarget{
+				URL: "https://admin:s3cret@kc.example.com/auth", Realm: "camunda-platform",
+			},
+			want: "https://kc.example.com/auth/realms/camunda-platform",
+		},
 	}
 
 	for _, test := range tests {
@@ -157,6 +167,15 @@ func TestRealmIdentity(t *testing.T) {
 			assert.Equal(t, test.want, RealmIdentity(test.target))
 		})
 	}
+}
+
+// A message that names the Keycloak of a realm must carry no password.
+func TestRealmURL(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "https://kc.example.com/auth", RealmURL(v1.KeycloakRealmTarget{
+		URL: "https://admin:s3cret@kc.example.com:443/auth/", Realm: "camunda-platform",
+	}))
 }
 
 func TestSameRealm(t *testing.T) {
@@ -353,20 +372,6 @@ func TestIdentityPointsAtRealm(t *testing.T) {
 	t.Parallel()
 
 	target := v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: "camunda-platform"}
-	pod := func(url string, mutate ...func(p *corev1.Pod)) corev1.Pod {
-		p := corev1.Pod{Spec: corev1.PodSpec{Containers: []corev1.Container{{
-			Name: identityContainer,
-			Env: []corev1.EnvVar{
-				{Name: keycloakEnvURL, Value: url},
-				{Name: keycloakEnvRealm, Value: "camunda-platform"},
-			},
-		}}}}
-		for _, m := range mutate {
-			m(&p)
-		}
-
-		return p
-	}
 	ready := func(p *corev1.Pod) {
 		p.Status.Conditions = []corev1.PodCondition{{
 			Type: corev1.PodReady, Status: corev1.ConditionTrue,
@@ -385,22 +390,22 @@ func TestIdentityPointsAtRealm(t *testing.T) {
 	}{
 		{
 			name: "a ready pod against the realm keeps the record",
-			pods: []corev1.Pod{pod("https://kc.example.com/auth", ready)},
+			pods: []corev1.Pod{identityRealmPod("https://kc.example.com/auth", ready)},
 			want: true,
 		},
 		{
 			name: "a terminating pod against the realm keeps it too",
-			pods: []corev1.Pod{pod("https://kc.example.com/auth", terminating)},
+			pods: []corev1.Pod{identityRealmPod("https://kc.example.com/auth", terminating)},
 			want: true,
 		},
 		{
 			name: "a pod against another Keycloak does not",
-			pods: []corev1.Pod{pod("https://other.example.com/auth", ready)},
+			pods: []corev1.Pod{identityRealmPod("https://other.example.com/auth", ready)},
 			want: false,
 		},
 		{
 			name: "a failed pod does not",
-			pods: []corev1.Pod{pod("https://kc.example.com/auth", failed)},
+			pods: []corev1.Pod{identityRealmPod("https://kc.example.com/auth", failed)},
 			want: false,
 		},
 		{
@@ -417,6 +422,85 @@ func TestIdentityPointsAtRealm(t *testing.T) {
 			assert.Equal(t, test.want, IdentityPointsAtRealm(test.pods, target))
 		})
 	}
+}
+
+// The sweep gives back every realm that nothing of the plane points at, so
+// what counts here decides which claim it keeps.
+func TestIdentityRealms(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		pods []corev1.Pod
+		want []string
+	}{
+		{
+			name: "a running pod names its realm",
+			pods: []corev1.Pod{identityRealmPod("https://kc.example.com/auth")},
+			want: []string{"https://kc.example.com/auth"},
+		},
+		{
+			// The initializer of a pod that is going away still writes the
+			// clients of its realm, and the ReplicaSet of it starts the next
+			// pod against the same realm.
+			name: "a terminating pod names its realm until it is gone",
+			pods: []corev1.Pod{identityRealmPod("https://kc.example.com/auth", func(p *corev1.Pod) {
+				now := metav1.Now()
+				p.DeletionTimestamp = &now
+			})},
+			want: []string{"https://kc.example.com/auth"},
+		},
+		{
+			name: "a failed pod names none",
+			pods: []corev1.Pod{identityRealmPod("https://kc.example.com/auth", func(p *corev1.Pod) {
+				p.Status.Phase = corev1.PodFailed
+			})},
+			want: []string{},
+		},
+		{
+			name: "a pod of the oidc mode names none",
+			pods: []corev1.Pod{identityRealmPod("")},
+			want: []string{},
+		},
+		{
+			name: "the pods of a rollout name both realms",
+			pods: []corev1.Pod{
+				identityRealmPod("https://old.example.com/auth"),
+				identityRealmPod("https://new.example.com/auth"),
+			},
+			want: []string{"https://old.example.com/auth", "https://new.example.com/auth"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			realms, unknown := IdentityRealms(test.pods)
+			assert.False(t, unknown)
+			urls := make([]string, 0, len(realms))
+			for _, realm := range realms {
+				urls = append(urls, realm.URL)
+			}
+			assert.Equal(t, test.want, urls)
+		})
+	}
+}
+
+// A pod whose Keycloak URL or realm comes from a reference can write any
+// realm, so the sweep must keep every claim of the plane rather than read the
+// pod as one that names none.
+func TestIdentityRealmsOfAPodWithAReference(t *testing.T) {
+	t.Parallel()
+
+	pod := identityRealmPod("https://kc.example.com/auth", func(p *corev1.Pod) {
+		p.Spec.Containers[0].Env[0].ValueFrom = identityRealmReference
+	})
+
+	realms, unknown := IdentityRealms([]corev1.Pod{pod})
+
+	assert.True(t, unknown)
+	assert.Empty(t, realms)
 }
 
 // A value derived from status.callbackRealm by hand matches the recorded
@@ -463,12 +547,7 @@ func TestIdentityTemplateWithAReferenceWritesEveryRealm(t *testing.T) {
 	t.Parallel()
 
 	target := v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: "camunda-platform"}
-	reference := &corev1.EnvVarSource{
-		ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
-			LocalObjectReference: corev1.LocalObjectReference{Name: "identity-extra"},
-			Key:                  "url",
-		},
-	}
+	reference := identityRealmReference
 	spec := func(env ...corev1.EnvVar) *corev1.PodSpec {
 		return &corev1.PodSpec{Containers: []corev1.Container{{
 			Name: identityContainer,
@@ -490,6 +569,166 @@ func TestIdentityTemplateWithAReferenceWritesEveryRealm(t *testing.T) {
 		corev1.EnvVar{Name: keycloakEnvRealm, Value: "camunda-platform"},
 		corev1.EnvVar{Name: "IDENTITY_LOG_LEVEL", ValueFrom: reference},
 	), target))
+}
+
+// The template outlives the pods of it, so a Deployment that still names a
+// realm holds the claim on it through the gap between two pods.
+func TestIdentityTemplateRealms(t *testing.T) {
+	t.Parallel()
+
+	deployment := func(url string, replicas *int32) *appsv1.Deployment {
+		return &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Generation: 2},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: replicas,
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{Containers: identityRealmContainers(url)},
+				},
+			},
+			Status: appsv1.DeploymentStatus{ObservedGeneration: 2},
+		}
+	}
+	zero, one := int32(0), int32(1)
+
+	t.Run("a template that names a Keycloak points at its realm", func(t *testing.T) {
+		t.Parallel()
+
+		realms, unknown := IdentityTemplateRealms(deployment("https://kc.example.com/auth", &one))
+		assert.False(t, unknown)
+		require.Len(t, realms, 1)
+		assert.Equal(t, "https://kc.example.com/auth", realms[0].URL)
+		assert.Equal(t, "camunda-platform", realms[0].Realm)
+	})
+
+	t.Run("an unset replica count is one replica", func(t *testing.T) {
+		t.Parallel()
+
+		realms, _ := IdentityTemplateRealms(deployment("https://kc.example.com/auth", nil))
+		assert.Len(t, realms, 1)
+	})
+
+	t.Run("a Deployment scaled to zero points at none", func(t *testing.T) {
+		t.Parallel()
+
+		realms, unknown := IdentityTemplateRealms(deployment("https://kc.example.com/auth", &zero))
+		assert.Empty(t, realms)
+		assert.False(t, unknown)
+	})
+
+	t.Run("a template of the oidc mode points at none", func(t *testing.T) {
+		t.Parallel()
+
+		realms, unknown := IdentityTemplateRealms(deployment("", &one))
+		assert.Empty(t, realms)
+		assert.False(t, unknown)
+	})
+
+	// The realm behind a reference is not in the template, so no claim of the
+	// plane can be shown to be unused.
+	t.Run("a template that takes its realm from a reference names none", func(t *testing.T) {
+		t.Parallel()
+
+		d := deployment("https://kc.example.com/auth", &one)
+		d.Spec.Template.Spec.Containers[0].Env[1].ValueFrom = identityRealmReference
+
+		realms, unknown := IdentityTemplateRealms(d)
+
+		assert.Empty(t, realms)
+		assert.True(t, unknown)
+	})
+
+	// The pod creation of the generation before the scale to zero can still be
+	// in flight, and that pod starts against the realm of the template.
+	t.Run("a scale to zero that the controller has not read points at its realm", func(t *testing.T) {
+		t.Parallel()
+
+		unread := deployment("https://kc.example.com/auth", &zero)
+		unread.Status.ObservedGeneration = 1
+		realms, _ := IdentityTemplateRealms(unread)
+		assert.Len(t, realms, 1)
+	})
+
+	t.Run("a scale to zero that still holds a pod points at its realm", func(t *testing.T) {
+		t.Parallel()
+
+		holding := deployment("https://kc.example.com/auth", &zero)
+		holding.Status.Replicas = 1
+		realms, _ := IdentityTemplateRealms(holding)
+		assert.Len(t, realms, 1)
+	})
+}
+
+// The old ReplicaSet of a rollout keeps the template the Deployment left, so
+// it can start a pod against the old realm until it is scaled to zero.
+func TestIdentityReplicaSetRealms(t *testing.T) {
+	t.Parallel()
+
+	set := func(url string, replicas int32) appsv1.ReplicaSet {
+		return appsv1.ReplicaSet{
+			ObjectMeta: metav1.ObjectMeta{Generation: 2},
+			Spec: appsv1.ReplicaSetSpec{
+				Replicas: &replicas,
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{Containers: identityRealmContainers(url)},
+				},
+			},
+			Status: appsv1.ReplicaSetStatus{ObservedGeneration: 2},
+		}
+	}
+	unread := set("https://unread.example.com/auth", 0)
+	unread.Status.ObservedGeneration = 1
+
+	realms, unknown := IdentityReplicaSetRealms([]appsv1.ReplicaSet{
+		set("https://old.example.com/auth", 1),
+		set("https://new.example.com/auth", 2),
+		set("https://scaled-down.example.com/auth", 0),
+		unread,
+		set("", 1),
+	})
+
+	assert.False(t, unknown)
+	urls := make([]string, 0, len(realms))
+	for _, realm := range realms {
+		urls = append(urls, realm.URL)
+	}
+	want := []string{
+		"https://old.example.com/auth",
+		"https://new.example.com/auth",
+		"https://unread.example.com/auth",
+	}
+	assert.Equal(t, want, urls)
+}
+
+// identityRealmPod is a Management Identity pod that points at url. An empty
+// url is the oidc mode, which names no Keycloak.
+func identityRealmPod(url string, mutate ...func(p *corev1.Pod)) corev1.Pod {
+	pod := corev1.Pod{Spec: corev1.PodSpec{Containers: identityRealmContainers(url)}}
+	for _, m := range mutate {
+		m(&pod)
+	}
+
+	return pod
+}
+
+// identityRealmContainers is the container list of a Management Identity pod
+// or pod template that points at url.
+func identityRealmContainers(url string) []corev1.Container {
+	return []corev1.Container{{
+		Name: identityContainer,
+		Env: []corev1.EnvVar{
+			{Name: keycloakEnvURL, Value: url},
+			{Name: keycloakEnvRealm, Value: "camunda-platform"},
+		},
+	}}
+}
+
+// identityRealmReference stands for a value that spec.identity.extraEnv took
+// from a ConfigMap, which is not in the workload.
+var identityRealmReference = &corev1.EnvVarSource{
+	ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+		LocalObjectReference: corev1.LocalObjectReference{Name: "identity-extra"},
+		Key:                  "url",
+	},
 }
 
 // A record round-trips: the provider built from it names the same realm.

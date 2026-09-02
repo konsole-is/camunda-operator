@@ -268,7 +268,7 @@ func (r *Reconciler) syncOptimizeCallbacks(
 				fmt.Sprintf(
 					"A Management Identity pod is starting against realm %q of Keycloak %q, and "+
 						"it owns the Optimize client of that realm while it starts",
-					target.Realm, target.URL,
+					target.Realm, components.RealmURL(*target),
 				),
 			)
 
@@ -382,7 +382,7 @@ func (r *Reconciler) withdrawRetargeted(
 			Message: fmt.Sprintf(
 				"A Management Identity pod is starting against realm %q of Keycloak %q, and it "+
 					"owns the Optimize client of that realm while it starts",
-				recorded.Realm, recorded.URL,
+				recorded.Realm, components.RealmURL(*recorded),
 			),
 		}, false, nil
 	}
@@ -401,7 +401,7 @@ func (r *Reconciler) withdrawRetargeted(
 				"Realm %q of Keycloak %q still carries the login callbacks of this management plane, "+
 					"and this operator could not remove them: %s. If that Keycloak is gone for good, "+
 					"set the annotation %s=%q on this resource to leave them there",
-				recorded.Realm, recorded.URL, failure.Message,
+				recorded.Realm, components.RealmURL(*recorded), failure.Message,
 				components.ForgetCallbackRealmAnnotation, components.RealmIdentity(*recorded),
 			),
 		}, false, nil
@@ -417,7 +417,7 @@ func (r *Reconciler) withdrawRetargeted(
 				"Realm %q of Keycloak %q holds no login callback of this management plane any "+
 					"more, and the Management Identity of that realm is not fully stopped; the "+
 					"plane moves to the new identity provider when nothing of it is left",
-				recorded.Realm, recorded.URL,
+				recorded.Realm, components.RealmURL(*recorded),
 			),
 		}, false, nil
 	}
@@ -539,16 +539,21 @@ func (r *Reconciler) recordCallbackRealm(
 	return nil
 }
 
-// withdrawUnresolved is the withdrawal from the recorded realm on a pass that
-// a failed pre-check stops. It needs nothing the pre-check resolves: the
-// realm to leave comes from status.callbackRealm, and the realm of the spec,
-// read from the spec alone, only says whether the plane is leaving. A
-// retarget whose new administrator Secret is still missing therefore tidies
-// the old realm all the same. It reports whether the caller has to come back
-// on the retry interval.
-func (r *Reconciler) withdrawUnresolved(
+// withdrawStopped is the withdrawal from the recorded realm on a pass that
+// stops before it registers anywhere: a failed pre-check, or a plane parked
+// on a realm that another management plane holds. It needs nothing the
+// pre-check resolves: the realm to leave comes from status.callbackRealm, and
+// the realm of the spec, read from the spec alone, only says whether the
+// plane is leaving. A retarget whose new administrator Secret is still
+// missing therefore tidies the old realm all the same. It reports whether the
+// caller has to come back on the retry interval.
+//
+// stopped says what stops the pass, for the condition message of a plane
+// whose callbacks left the old realm and are registered nowhere yet.
+func (r *Reconciler) withdrawStopped(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
+	stopped string,
 ) (bool, error) {
 	before := mc.Status.CallbackRealm
 	target, err := specRealmTarget(mc)
@@ -572,9 +577,9 @@ func (r *Reconciler) withdrawUnresolved(
 			mc, metav1.ConditionFalse, string(component.PrerequisiteNotMet),
 			fmt.Sprintf(
 				"Realm %q of Keycloak %q keeps the login callbacks of this management plane, as "+
-					"the annotation %s asked. The identity provider of the spec is not resolved, "+
-					"so the callbacks are registered nowhere",
-				before.Realm, before.URL, components.ForgetCallbackRealmAnnotation,
+					"the annotation %s asked. They are registered nowhere, because %s",
+				before.Realm, components.RealmURL(*before), components.ForgetCallbackRealmAnnotation,
+				stopped,
 			),
 		)
 
@@ -586,9 +591,9 @@ func (r *Reconciler) withdrawUnresolved(
 		stageCallbacks(
 			mc, metav1.ConditionFalse, string(component.PrerequisiteNotMet),
 			fmt.Sprintf(
-				"The login callbacks left realm %q of Keycloak %q, and the identity provider of "+
-					"the spec is not resolved, so they are registered nowhere",
-				before.Realm, before.URL,
+				"The login callbacks left realm %q of Keycloak %q, and %s, so they are "+
+					"registered nowhere",
+				before.Realm, components.RealmURL(*before), stopped,
 			),
 		)
 	}
@@ -657,7 +662,7 @@ func (r *Reconciler) forgetCallbackRealm(mc *v1.CamundaManagementCluster) bool {
 			"as the annotation %s asked",
 		components.RealmProvider(*recorded).Clients.Optimize.ID,
 		recorded.Realm,
-		recorded.URL,
+		components.RealmURL(*recorded),
 		components.ForgetCallbackRealmAnnotation,
 	)
 	// The annotation stays until the next pass. Removing it now, with the

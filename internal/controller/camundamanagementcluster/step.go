@@ -37,6 +37,7 @@ type step string
 // reads "Could not <step>: <answer>".
 const (
 	stepResolveReferences = step("resolve the references of the spec")
+	stepClaimRealm        = step("claim the Keycloak realm")
 	stepFindClusters      = step("find the orchestration clusters")
 	stepSelectNamespaces  = step("select the namespaces")
 	stepClaimClusters     = step("claim the orchestration clusters")

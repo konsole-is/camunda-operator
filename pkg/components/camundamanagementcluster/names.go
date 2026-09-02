@@ -58,6 +58,9 @@ const (
 	// passwords of the Web Modeler users on the attached basic-auth
 	// orchestration clusters. No workload carries this value.
 	ComponentWebModelerClusterUser = "web-modeler-cluster-user"
+	// ComponentRealmClaim labels the Lease that claims a Keycloak realm for
+	// one management cluster. No workload carries this value.
+	ComponentRealmClaim = "realm-claim"
 )
 
 // The keys and identities that a user or another controller can observe on
