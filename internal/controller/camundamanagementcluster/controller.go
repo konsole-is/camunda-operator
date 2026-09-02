@@ -264,6 +264,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		_, withdrawErr := r.withdrawStopped(
 			ctx, &mc, "the realm of the spec answers to another management plane",
 		)
+		withdrawErr = stepOptimizeCallbacks.wrap(withdrawErr)
 
 		// A non-nil error makes controller-runtime drop the result and
 		// requeue with backoff, so the interval goes back alone.

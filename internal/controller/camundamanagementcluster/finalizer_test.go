@@ -194,13 +194,27 @@ func TestFinalizeStopsIdentityBeforeTheRealm(t *testing.T) {
 		identity := ownedIdentity(mc)
 		set := ownedIdentitySet(mc, identity)
 		identity.OwnerReferences = nil
-		set.OwnerReferences = nil
 		r, _ := finalizerReconciler(t, mc, identity, set)
 
 		require.NoError(t, r.finalize(context.Background(), mc))
 
 		assert.True(t, exists(t, r, identity))
 		assert.True(t, exists(t, r, set))
+	})
+
+	// A pass that stopped between the two deletions leaves ReplicaSets that
+	// still start Management Identity. The next pass finds no Deployment, and
+	// it must not hand the realm on with them still there.
+	t.Run("a pass that stopped after the Deployment still stops the ReplicaSets", func(t *testing.T) {
+		mc := finalizingCluster()
+		set := ownedIdentitySet(mc, ownedIdentity(mc))
+		lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
+		r, deletes := finalizerReconciler(t, mc, set, lease)
+
+		require.NoError(t, r.finalize(context.Background(), mc))
+
+		assert.Equal(t, []string{set.Name, lease.Name}, deletes.names)
+		assert.False(t, exists(t, r, set))
 	})
 }
 

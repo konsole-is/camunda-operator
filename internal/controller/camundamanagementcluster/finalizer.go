@@ -139,34 +139,37 @@ func (r *Reconciler) stopIdentity(ctx context.Context, mc *v1.CamundaManagementC
 	key := client.ObjectKey{Namespace: mc.Namespace, Name: components.IdentityName(mc)}
 
 	var identity appsv1.Deployment
-	if err := r.APIReader.Get(ctx, key, &identity); err != nil {
-		if apierrors.IsNotFound(err) {
+	switch err := r.APIReader.Get(ctx, key, &identity); {
+	case err == nil:
+		// The name is derived from the name of this management cluster, so
+		// another owner can hold it: a plane whose components never converged
+		// leaves it free for anybody. Only the owner reference tells the
+		// Management Identity of this plane from a workload that somebody else
+		// runs, and the ReplicaSets under such a workload are not ours either.
+		if !metav1.IsControlledBy(&identity, mc) {
 			return nil
 		}
+
+		// The UID is a precondition, so a Deployment that took the name
+		// between the read and this call is refused rather than deleted.
+		err := r.Delete(ctx, &identity, client.Preconditions{UID: &identity.UID})
+		if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+			return fmt.Errorf("deleting Deployment %q: %w", key, err)
+		}
+	case !apierrors.IsNotFound(err):
 		return fmt.Errorf("reading Deployment %q: %w", key, err)
 	}
-	// The name is derived from the name of this management cluster, so another
-	// owner can hold it: a plane whose components never converged leaves it
-	// free for anybody. Only the owner reference tells the Management Identity
-	// of this plane from a workload that somebody else runs.
-	if !metav1.IsControlledBy(&identity, mc) {
-		return nil
-	}
 
-	// The UID is a precondition, so a Deployment that took the name between
-	// the read and this call is refused rather than deleted.
-	err := r.Delete(ctx, &identity, client.Preconditions{UID: &identity.UID})
-	if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
-		return fmt.Errorf("deleting Deployment %q: %w", key, err)
-	}
-
-	// The ReplicaSets go after the Deployment. Before it, the Deployment makes
-	// another one at once.
-	return r.stopIdentitySets(ctx, mc, &identity)
+	// The ReplicaSets go after the Deployment, because before it the Deployment
+	// makes another one at once, and they go on a pass that finds the
+	// Deployment already gone, because that is what a pass that stopped between
+	// the two deletions leaves behind.
+	return r.stopIdentitySets(ctx, mc, key.Name)
 }
 
-// stopIdentitySets deletes the ReplicaSets of the Management Identity
-// Deployment of mc.
+// stopIdentitySets deletes every ReplicaSet of the Management Identity
+// Deployment that name names. The caller has established that no Deployment of
+// another owner holds that name.
 //
 // Kubernetes collects them with the Deployment, but in the background, and one
 // that still asks for a pod starts another Management Identity while it waits.
@@ -175,7 +178,7 @@ func (r *Reconciler) stopIdentity(ctx context.Context, mc *v1.CamundaManagementC
 func (r *Reconciler) stopIdentitySets(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
-	identity *appsv1.Deployment,
+	name string,
 ) error {
 	var sets appsv1.ReplicaSetList
 	if err := r.APIReader.List(
@@ -191,9 +194,11 @@ func (r *Reconciler) stopIdentitySets(
 	for i := range sets.Items {
 		set := &sets.Items[i]
 		// The labels are the discovery labels of this plane, which anybody can
-		// write. The owner reference is what tells the ReplicaSets of the
-		// Deployment that was just deleted from a workload of somebody else.
-		if !metav1.IsControlledBy(set, identity) {
+		// write. The owner reference is what tells a ReplicaSet of the
+		// Management Identity Deployment from a workload of somebody else.
+		owner := metav1.GetControllerOf(set)
+		if owner == nil || owner.APIVersion != appsv1.SchemeGroupVersion.String() ||
+			owner.Kind != "Deployment" || owner.Name != name {
 			continue
 		}
 
