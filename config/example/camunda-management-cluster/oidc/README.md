@@ -28,13 +28,15 @@ preset kind, so every value on it is its own.
     | `camunda-web-modeler` | public | Web Modeler |
     | `camunda-web-modeler-api` | confidential | The Web Modeler API |
 
-- Replace the placeholder values in `02-secrets.yaml` with the secrets of the
-  four confidential clients, and the SMTP credentials of Web Modeler.
+- Replace the placeholder values in `02-secrets.yaml`: the secrets of the four
+  confidential clients, the SMTP credentials of Web Modeler, and your Camunda
+  license key.
 - Replace `claimValue` in `06-management-cluster.yaml` with the value that
   identifies your first administrator. The claim `oid` is an example. Use a
   claim your provider puts in the token.
-- Replace the four `login.example.com` URLs with those of your provider, and
-  point the three `externalUrl` hostnames at your own domain.
+- Replace the four `login.example.com` URLs with those of your provider.
+- Replace every `camunda.example.com` hostname with your own domain, and route
+  each URL to the Service of its component.
 
 ## Apply
 
@@ -54,7 +56,8 @@ their number order:
     ```
 
 2. `01-namespace.yaml` creates the namespace `my-management-ns`.
-3. `02-secrets.yaml` creates the four client Secrets and the SMTP Secret.
+3. `02-secrets.yaml` creates the four client Secrets, the SMTP Secret, and the
+   license Secret.
 4. `03-database-server.yaml` creates the `DatabaseServer` `my-db`, which
    inherits the preset `standard`. Wait for it:
 
@@ -91,20 +94,56 @@ plane serves every cluster on the Kubernetes cluster.
 CAUTION: Do not apply
 [Camunda cluster on Elasticsearch](../../camunda-cluster/elasticsearch) with
 `-k`. That inventory carries a `CamundaPlatformConfig` of its own, under the
-same cluster-scoped name `my-platform-config`, with `method: basic`. It would
-replace the OIDC configuration here, and the management plane would lose its
+same cluster-scoped name `my-platform-config`, with `method: basic`. An apply
+of it replaces the OIDC configuration here, and the management plane loses its
 identity provider.
 
-Take the three manifests that are not the platform configuration instead:
+Take the namespace and the Elasticsearch cluster from it:
 
 ```sh
 kubectl apply -f config/example/camunda-cluster/elasticsearch/01-namespace.yaml
 kubectl apply -f config/example/camunda-cluster/elasticsearch/02-elasticsearch-cluster.yaml
-kubectl apply -f config/example/camunda-cluster/elasticsearch/04-camunda-cluster.yaml
 ```
 
-That `CamundaCluster` already names `my-platform-config`, so it reads the OIDC
+That `ElasticsearchCluster` needs the prerequisites in
+[its README](../../camunda-cluster/elasticsearch).
+
+Its `04-camunda-cluster.yaml` is written for basic authentication. Copy that
+file, and add the two fields that an OIDC cluster needs:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  platformConfigRef: my-platform-config
+  storageRef: my-storage-config
+  externalUrl: "https://my-cluster.camunda.example.com"
+  auth:
+    admin:
+      users:
+        - "ada@example.com"
+  # ... the version, the zeebe block, and the gateway block of the file
+```
+
+- `spec.auth.admin` names the first administrator. A new OIDC cluster has none
+  until this block names one. Each entry under `users` is a value of the claim
+  `preferred_username`, because `05-platform-config.yaml` names that claim in
+  `usernameClaim`. While no user is named, the web applications show the
+  first-run setup page at `/admin/setup`.
+- `spec.externalUrl` gives the browser login its redirect URI, which is
+  `<externalUrl>/sso-callback`. Register
+  `https://my-cluster.camunda.example.com/sso-callback` on the
+  `camunda-orchestration` client. Without `externalUrl` the operator registers
+  no redirect URI, and the orchestration cluster falls back to its own default.
+
+That `CamundaCluster` names `my-platform-config`, so it reads the OIDC
 configuration of this inventory.
+
+[Authentication](https://konsole-is.github.io/camunda-operator/guides/authentication/#oidc)
+explains both fields in full.
 
 ## Remove
 

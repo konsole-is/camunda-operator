@@ -60,6 +60,16 @@ and can compare its `CamundaCluster` with the one in `camunda-cluster/rdbms`.
 
 ## Before you apply
 
+- Get the files. Clone this repository, or point `kubectl apply -k` at the
+  directory on GitHub and name the release you run:
+
+    ```sh
+    kubectl apply -k "https://github.com/konsole-is/camunda-operator//config/example/camunda-cluster/rdbms?ref=<version>"
+    ```
+
+    The remote form reads the shared presets too, so one command is still
+    enough. Every other command below assumes a local clone.
+
 - Install the operator, and the third-party operators the inventory needs.
   Each README names them. See
   [Installation](https://konsole-is.github.io/camunda-operator/installation/).

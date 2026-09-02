@@ -3,7 +3,7 @@
 A complete orchestration cluster that keeps its secondary storage in
 Elasticsearch. The cluster is `my-cluster` in the namespace `my-cluster-ns`.
 
-The manifests use the names and the values of
+The manifests use the names of
 [Getting started](https://konsole-is.github.io/camunda-operator/getting-started/).
 The sizes suit one small test cluster, such as kind.
 

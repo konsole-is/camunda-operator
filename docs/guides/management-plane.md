@@ -27,7 +27,7 @@ graph LR
 
 The operator checks every reference after the resources exist, not when you apply them, so you can create the resources in any order. The order above is the one where nothing waits.
 
-Two complete inventories follow this order and are ready to apply: [`config/example/camunda-management-cluster/keycloak`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-management-cluster/keycloak) for step 3a, and [`config/example/camunda-management-cluster/oidc`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-management-cluster/oidc) for step 3c.
+Two complete inventories follow this order and are ready to apply: [`config/example/camunda-management-cluster/keycloak`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-management-cluster/keycloak) for step 3a, and [`config/example/camunda-management-cluster/oidc`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-management-cluster/oidc) for step 3c.
 
 ## Step 1: The databases
 
@@ -82,7 +82,7 @@ Pick one of the three identity provider modes below. Everything else on the reso
 
 Use this when you want a self-contained platform. The operator creates a Keycloak for the Keycloak Operator to run, and Management Identity creates the realm, every client, and the first user in it. With Management Identity 8.9, set a `version` below `26.7.0`. See [The operator runs Keycloak](../crds/camundamanagementcluster.md#the-operator-runs-keycloak) for why.
 
-The whole chain of this step, with one orchestration cluster and Optimize, is ready to apply in [`config/example/camunda-management-cluster/keycloak`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-management-cluster/keycloak).
+The whole chain of this step, with one orchestration cluster and Optimize, is ready to apply in [`config/example/camunda-management-cluster/keycloak`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-management-cluster/keycloak).
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -184,7 +184,7 @@ The rest reads the same as [Step 3a](#step-3a-the-operator-runs-keycloak): the f
 
 Use this when you already run an identity provider, for example Microsoft Entra ID, Okta, or a central Keycloak that you administer yourself. Nothing is created for you.
 
-The whole chain of this step is ready to apply in [`config/example/camunda-management-cluster/oidc`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-management-cluster/oidc).
+The whole chain of this step is ready to apply in [`config/example/camunda-management-cluster/oidc`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-management-cluster/oidc).
 
 First register one application per component at your provider. Camunda lists which is confidential and which is public in [Connect Management Identity to an identity provider](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/), and it names the redirect URI of each one under [component-specific configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/#component-specific-configuration).
 

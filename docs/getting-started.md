@@ -5,7 +5,7 @@ You create four resources: an `ElasticsearchCluster` for secondary storage, a `C
 
 The sizes in this guide fit a local [kind](https://kind.sigs.k8s.io/) cluster. They are not production sizes.
 
-The same four resources are ready to apply in [`config/example/camunda-cluster/elasticsearch`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-cluster/elasticsearch). Follow the steps below to learn what each one does, or apply that directory to get the cluster in one command.
+The same four resources are ready to apply in [`config/example/camunda-cluster/elasticsearch`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-cluster/elasticsearch). Follow the steps below to learn what each one does, or apply that directory to get the cluster in one command.
 
 ## Before you start
 

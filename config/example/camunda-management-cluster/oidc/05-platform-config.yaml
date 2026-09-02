@@ -54,3 +54,7 @@ spec:
               name: my-web-modeler-api-credentials
               namespace: my-management-ns
               key: client-secret
+  licenseSecretRef:
+    name: my-camunda-license
+    namespace: my-management-ns
+    key: license-key

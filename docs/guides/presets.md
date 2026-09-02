@@ -132,7 +132,7 @@ A `DatabaseServerPreset` carries the shape of a PostgreSQL server under `spec.se
 
 The [CamundaClusterPreset](../crds/camundaclusterpreset.md), [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md), and [DatabaseServerPreset](../crds/databaseserverpreset.md) pages list every field.
 
-Three ready-to-apply presets, and the inventories that use them, are in [`config/example/presets`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/presets).
+Three ready-to-apply presets are in [`config/example/presets`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/presets). The [example inventories](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example) next to it name them.
 
 ## Override one field
 

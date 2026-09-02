@@ -20,10 +20,15 @@ and the `CamundaCluster` names `small`. `CamundaManagementCluster` and
   [Installation](https://konsole-is.github.io/camunda-operator/installation/).
   Install the Keycloak Operator release that matches
   `spec.identityProvider.keycloak.version`.
+- Give the Kubernetes cluster a default StorageClass. The
+  `ElasticsearchCluster` needs about 4 GB of free memory, and the management
+  plane, the orchestration cluster, and Optimize need more on top of that.
+- On kind, raise the map count that Elasticsearch needs:
+  `sudo sysctl -w vm.max_map_count=262144`.
 - Replace the placeholder values in `02-secrets.yaml`. Both Secrets hold
   values that no cluster accepts.
-- Point the four `externalUrl` hostnames at your own domain, and route each
-  one to the Service of its component.
+- Replace every `camunda.example.com` hostname with your own domain, and route
+  each URL to the Service of its component.
 
 ## Apply
 

@@ -28,7 +28,7 @@ If a second cluster names a contract that another cluster holds, the operator su
 
 Prerequisite: the ECK operator is installed in the Kubernetes cluster, and the camunda-operator started after the ECK CRDs were installed. The operator does not run Elasticsearch nodes itself. It creates an ECK `Elasticsearch` resource, and ECK runs the nodes.
 
-This chain is ready to apply in [`config/example/camunda-cluster/elasticsearch`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-cluster/elasticsearch).
+This chain is ready to apply in [`config/example/camunda-cluster/elasticsearch`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-cluster/elasticsearch).
 
 1. Create an `ElasticsearchCluster`. The sizes below are for trying out. For production, use more nodes and larger volumes.
 
@@ -106,7 +106,7 @@ For all fields, see [ElasticsearchCluster](../crds/elasticsearchcluster.md) and 
 
 The chain has two halves. The first half is the server, and you get it in one of two ways. The second half is the logical database on that server, and it is the same either way.
 
-Both halves are ready to apply in [`config/example/camunda-cluster/rdbms`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-cluster/rdbms), which takes the `DatabaseServer` route for the first half and holds the `Database`, the platform configuration, and the `CamundaCluster` as well.
+[`config/example/camunda-cluster/rdbms`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-cluster/rdbms) is ready to apply. It takes the `DatabaseServer` route, and it holds the `Database`, the platform configuration, and the `CamundaCluster`.
 
 | | A `DatabaseServer` | A server you run |
 | --- | --- | --- |
