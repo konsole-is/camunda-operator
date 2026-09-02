@@ -332,7 +332,7 @@ GOLANGCI_LINT_VERSION ?= v2.8.0
 # RENOVATE_VERSION is the Renovate release whose validator lint-renovate runs
 # against renovate.json5.
 # renovate: datasource=npm depName=renovate
-RENOVATE_VERSION ?= 44.39.2
+RENOVATE_VERSION ?= 44.39.3
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
 $(KUSTOMIZE): $(LOCALBIN)
