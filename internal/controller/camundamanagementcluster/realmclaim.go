@@ -34,8 +34,8 @@ import (
 )
 
 // claimRealm takes the claim on the Keycloak realm that the spec names, and
-// gives back every realm claim of this management plane that neither the spec
-// nor status.callbackRealm names any more.
+// gives back every realm claim of this management plane that nothing of it
+// names any more, which releaseUnusedRealms decides.
 //
 // Only the externalKeycloak mode claims. The keycloak mode owns the Keycloak
 // it runs, and the oidc mode administers no realm. A suspended plane touches
@@ -68,38 +68,65 @@ func (r *Reconciler) claimRealm(
 		}
 	}
 
-	// The realms that neither the spec nor status.callbackRealm names go
-	// back, on the parked path too: a claim kept there would block every
-	// later claimant of a realm this plane already left. The recorded realm
-	// still carries the login callbacks of this plane, and its claim goes
-	// once the withdrawal has cleared the record, which the next pass reads
-	// from the persisted status. A realm that a Management Identity workload
-	// of this plane still points at is kept too: a start against that realm
-	// writes its clients again, so it is not left for another plane.
-	keep := []*v1.KeycloakRealmTarget{current, mc.Status.CallbackRealm}
-	pointed, unknown, err := r.identityRealms(ctx, mc)
-	if err != nil {
-		return nil, err
-	}
-	for i := range pointed {
-		keep = append(keep, &pointed[i])
-	}
-	if err := r.releaseRealmClaims(ctx, mc, unknown, keep...); err != nil {
+	// The sweep runs on the parked path too: a claim kept there would block
+	// every later claimant of a realm this plane already left.
+	if err := r.releaseUnusedRealms(ctx, mc); err != nil {
 		return nil, err
 	}
 
 	return parked, nil
 }
 
+// releaseUnusedRealms gives back every realm claim of mc that nothing of it
+// names any more. Three things name a realm, and each of them keeps its
+// claim:
+//
+// The spec, read from the spec alone, so a pass that resolved nothing sweeps
+// the same way as one that resolved everything.
+//
+// status.callbackRealm, which still carries the login callbacks of this
+// plane. Its claim goes once the withdrawal has cleared the record, which the
+// next pass reads from the persisted status. Releasing it in the pass that
+// cleared it would hand the realm on before the record of the withdrawal
+// survives a crash.
+//
+// A Management Identity workload of the plane, because a start against that
+// realm writes its clients again. A workload that writes a realm it does not
+// name keeps every claim of the plane, because none of them can be shown to
+// be unused.
+func (r *Reconciler) releaseUnusedRealms(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) error {
+	current, err := specRealmTarget(mc)
+	if err != nil {
+		return err
+	}
+
+	keep := []*v1.KeycloakRealmTarget{current, mc.Status.CallbackRealm}
+	pointed, unknown, err := r.identityRealms(ctx, mc)
+	if err != nil {
+		return err
+	}
+	for i := range pointed {
+		keep = append(keep, &pointed[i])
+	}
+
+	return r.releaseRealmClaims(ctx, mc, unknown, keep...)
+}
+
 // identityRealms returns the realm of every Management Identity workload of
 // mc that can still start against a Keycloak: the pod template of the
-// Deployment it owns, and every pod of it that is not done. It also reports
-// whether one of them writes a realm that the workload does not name. The
-// reads go through APIReader, for the reason startedInitialClaim gives.
+// Deployment it owns, every ReplicaSet of it that can still create a pod, and
+// every pod of it that is not done. It also reports whether one of them writes
+// a realm that the workload does not name. The reads go through APIReader, for
+// the reason startedInitialClaim gives.
 //
-// The Deployment is the durable one. A parked plane renders nothing, so the
-// Deployment it ran before keeps its old realm and starts a pod against that
-// realm whenever one goes.
+// The three sources answer for one another. A parked plane renders nothing,
+// so the Deployment it ran before keeps its old realm and starts a pod
+// against that realm whenever one goes. A rollout leaves the old ReplicaSet
+// behind, which keeps the template the Deployment has moved on from. A pod
+// outlives the ReplicaSet that made it.
 func (r *Reconciler) identityRealms(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
@@ -119,6 +146,21 @@ func (r *Reconciler) identityRealms(
 	case !apierrors.IsNotFound(err):
 		return nil, false, fmt.Errorf("reading Deployment %q: %w", key, err)
 	}
+
+	// A ReplicaSet carries the labels of the pod template it holds, so one
+	// selector reads both.
+	var sets appsv1.ReplicaSetList
+	if err := r.APIReader.List(
+		ctx,
+		&sets,
+		client.InNamespace(mc.Namespace),
+		client.MatchingLabels(components.IdentityPodLabels(mc)),
+	); err != nil {
+		return nil, false, fmt.Errorf("listing the Management Identity ReplicaSets: %w", err)
+	}
+	setRealms, setUnknown := components.IdentityReplicaSetRealms(sets.Items)
+	realms = append(realms, setRealms...)
+	unknown = unknown || setUnknown
 
 	var pods corev1.PodList
 	if err := r.APIReader.List(

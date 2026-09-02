@@ -226,11 +226,39 @@ func IdentityRealms(pods []corev1.Pod) ([]v1.KeycloakRealmTarget, bool) {
 // the pods alone gives the realm back in the gap between a pod that went and
 // its replacement.
 func IdentityTemplateRealms(deployment *appsv1.Deployment) ([]v1.KeycloakRealmTarget, bool) {
-	if deployment.Spec.Replicas != nil && *deployment.Spec.Replicas == 0 {
+	return templateRealms(deployment.Spec.Replicas, &deployment.Spec.Template.Spec)
+}
+
+// IdentityReplicaSetRealms returns the realm of every Management Identity
+// ReplicaSet of sets that can still create a pod, and reports whether one of
+// them writes a realm that its template does not name.
+//
+// A ReplicaSet keeps the template it was made from. The old ReplicaSet of a
+// rollout therefore starts a pod against the realm the Deployment has already
+// left, for as long as it is not scaled to zero.
+func IdentityReplicaSetRealms(sets []appsv1.ReplicaSet) ([]v1.KeycloakRealmTarget, bool) {
+	var realms []v1.KeycloakRealmTarget
+	var unknown bool
+	for i := range sets {
+		set := &sets[i]
+		setRealms, setUnknown := templateRealms(set.Spec.Replicas, &set.Spec.Template.Spec)
+		realms = append(realms, setRealms...)
+		unknown = unknown || setUnknown
+	}
+
+	return realms, unknown
+}
+
+// templateRealms returns the realm that a pod template names, and reports
+// whether it writes a realm it does not name. A template names none when it
+// starts no pod against a Keycloak: a workload scaled to zero, and the oidc
+// mode. An unset replica count is one replica, as Kubernetes reads it.
+func templateRealms(replicas *int32, spec *corev1.PodSpec) ([]v1.KeycloakRealmTarget, bool) {
+	if replicas != nil && *replicas == 0 {
 		return nil, false
 	}
 
-	switch realm, state := identityRealmEnv(&deployment.Spec.Template.Spec); state {
+	switch realm, state := identityRealmEnv(spec); state {
 	case realmUnknown:
 		return nil, true
 	case realmNamed:

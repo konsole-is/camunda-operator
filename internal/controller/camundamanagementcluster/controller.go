@@ -398,11 +398,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 }
 
 // reconcileUnresolved is the pass of a management plane whose pre-check
-// failed. It reports the failure and runs the two halves that need nothing
-// the pre-check resolves: the withdrawal from a recorded realm that the spec
-// no longer names, and the release of the clusters that left the selector.
-// The old realm would otherwise keep the login callbacks for as long as the
-// failure stands.
+// failed. It reports the failure and runs the three halves that need nothing
+// the pre-check resolves: the release of the realm claims that nothing of the
+// plane names any more, the withdrawal from a recorded realm that the spec no
+// longer names, and the release of the clusters that left the selector. The
+// old realm would otherwise keep the login callbacks, and the claims of the
+// realms this plane left would keep every later claimant out, for as long as
+// the failure stands.
 func (r *Reconciler) reconcileUnresolved(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
@@ -410,6 +412,9 @@ func (r *Reconciler) reconcileUnresolved(
 ) (ctrl.Result, error) {
 	conditions.Stage(mc, conditions.Failed(mc, failure))
 
+	// The sweep runs before the withdrawal, where the claim step runs before
+	// it on the resolved path, so that it still reads the recorded realm.
+	sweepErr := stepClaimRealm.wrap(r.releaseUnusedRealms(ctx, mc))
 	retry, withdrawErr := r.withdrawStopped(
 		ctx, mc, "the identity provider of the spec is not resolved",
 	)
@@ -418,13 +423,13 @@ func (r *Reconciler) reconcileUnresolved(
 	// A step that failed says more than the pre-check it ran beside: the
 	// pre-check names something of the spec, and the step names a call that
 	// the operator could not make at all.
-	if failed := firstStep(callbackErr, releaseErr); failed != nil {
+	if failed := firstStep(sweepErr, callbackErr, releaseErr); failed != nil {
 		conditions.Stage(mc, failed.condition(mc))
 
 		// A result beside a non-nil error is dropped by controller-runtime,
 		// so the retry is dropped here too. A failure requeues with backoff
 		// on its own.
-		return ctrl.Result{}, errors.Join(callbackErr, releaseErr)
+		return ctrl.Result{}, errors.Join(sweepErr, callbackErr, releaseErr)
 	}
 	if retry {
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil

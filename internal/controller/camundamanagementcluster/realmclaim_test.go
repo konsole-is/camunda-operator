@@ -262,6 +262,48 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// The sweep runs on the failed pre-check path too. A reference that stops
+	// resolving must not strand the claim on a realm that nothing of the plane
+	// names any more.
+	It("releases the realm it left even when the spec no longer resolves", func() {
+		old := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(old))
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(old.redirectURIs()).To(HaveLen(1))
+			g.Expect(readManagementCluster(g, s.mc).Status.CallbackRealm).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		expectRealmClaimHolder(fakeRealmTarget(old), s.mc)
+
+		By("pointing the spec at a Keycloak whose administrator Secret is missing")
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.IdentityProvider.ExternalKeycloak.URL = "https://second.example.com/auth"
+			latest.Spec.IdentityProvider.ExternalKeycloak.AdminCredentialsSecretRef.Name = "gone"
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			ready := conditionOf(g, s.mc, v1.ConditionReady)
+			g.Expect(ready.Reason).To(Equal(v1.ReasonMissingSecret))
+
+			g.Expect(old.redirectURIs()).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+
+		By("releasing the old claim once nothing of the plane points there")
+		deleteIdentityDeployment(s)
+		nudge(s.mc)
+
+		Eventually(func(g Gomega) {
+			var lease coordinationv1.Lease
+			err := k8sClient.Get(ctx, realmLeaseKey(fakeRealmTarget(old)), &lease)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// The oidc mode administers no realm, so a plane that moves there keeps
 	// no claim on the realm it administered before.
 	It("releases the realm when the spec moves to the oidc mode", func() {

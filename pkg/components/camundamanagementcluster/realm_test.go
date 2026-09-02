@@ -616,6 +616,35 @@ func TestIdentityTemplateRealms(t *testing.T) {
 	})
 }
 
+// The old ReplicaSet of a rollout keeps the template the Deployment left, so
+// it can start a pod against the old realm until it is scaled to zero.
+func TestIdentityReplicaSetRealms(t *testing.T) {
+	t.Parallel()
+
+	set := func(url string, replicas int32) appsv1.ReplicaSet {
+		return appsv1.ReplicaSet{Spec: appsv1.ReplicaSetSpec{
+			Replicas: &replicas,
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{Containers: identityRealmContainers(url)},
+			},
+		}}
+	}
+
+	realms, unknown := IdentityReplicaSetRealms([]appsv1.ReplicaSet{
+		set("https://old.example.com/auth", 1),
+		set("https://new.example.com/auth", 2),
+		set("https://scaled-down.example.com/auth", 0),
+		set("", 1),
+	})
+
+	assert.False(t, unknown)
+	urls := make([]string, 0, len(realms))
+	for _, realm := range realms {
+		urls = append(urls, realm.URL)
+	}
+	assert.Equal(t, []string{"https://old.example.com/auth", "https://new.example.com/auth"}, urls)
+}
+
 // identityRealmPod is a Management Identity pod that points at url. An empty
 // url is the oidc mode, which names no Keycloak.
 func identityRealmPod(url string, mutate ...func(p *corev1.Pod)) corev1.Pod {
