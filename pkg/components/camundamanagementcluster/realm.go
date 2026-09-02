@@ -233,8 +233,8 @@ func IdentityRealms(pods []corev1.Pod) ([]v1.KeycloakRealmTarget, bool) {
 // IdentityTemplateRealms returns the realm that the pod template of the
 // Management Identity Deployment names, and reports whether that template
 // writes a realm it does not name. A Deployment names at most one realm, and
-// none at all when it starts no pod against a Keycloak: one scaled to zero,
-// and one of the oidc mode.
+// none at all when it starts no pod against a Keycloak: one of the oidc mode,
+// and one that is fully scaled down, which scaledDown defines.
 //
 // The template outlives every pod of it. A Deployment that still names a
 // realm starts a pod against that realm at any moment, so a caller that reads

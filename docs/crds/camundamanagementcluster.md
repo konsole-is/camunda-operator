@@ -128,7 +128,7 @@ spec:
 
 The first `CamundaManagementCluster` that reaches the realm holds it. Management Identity administers the clients of that realm, and the plane owns the login callbacks of its `optimize` client, so a second plane on the same realm would undo both.
 
-Which plane that is comes from the order the operator gets to them, not from the order you created them. Two planes that name one realm at the same time both ask the Kubernetes API server for the claim, and it answers one of them. A suspended plane asks for nothing, so it takes no realm until it resumes, and it keeps every realm it already holds.
+Which plane that is comes from the order the operator reaches them, not from the order you created them. A suspended plane takes no realm until it resumes, and it keeps every realm it already holds.
 
 A second plane that names the same `url` and `realm` waits, from any namespace. It starts nothing new, touches nothing in that realm, and `Ready` names the holder:
 
@@ -144,6 +144,8 @@ status:
 Give the waiting plane a realm of its own, or delete the holder. The waiting plane then proceeds on its own. A holder releases a realm when it is deleted. It also releases one that its spec no longer names, once two things are true of that realm: the login callbacks have left it, and no Management Identity of the plane points at it any more. Two planes on one Keycloak with two realms work today.
 
 A plane that you retarget into the wait keeps the workloads it already ran, and they keep pointing at the realm they were rendered for. The plane also keeps its claim on that realm while its Management Identity points at it, so no other plane takes a realm that this one starts against again. The claim goes when nothing of the plane points there any more: correct the spec of the waiting plane and its Management Identity moves to the new realm, or delete the plane and it gives back every realm it holds.
+
+A pod of that Management Identity that restarts while it waits writes the clients of the old realm again, and the login callbacks of this plane with them. The operator removed those once and does not remove them a second time. If you keep that realm in use, remove them from its `optimize` client yourself.
 
 #### Trust of an https Keycloak
 
