@@ -46,6 +46,9 @@ import (
 // secret.
 func externalKeycloakCluster(url, secret string) *v1.CamundaManagementCluster {
 	return &v1.CamundaManagementCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "my-management-ns", Name: "my-management", UID: "management-uid",
+		},
 		Spec: v1.CamundaManagementClusterSpec{
 			IdentityProvider: v1.IdentityProviderSpec{
 				ExternalKeycloak: &v1.ExternalKeycloakSpec{
@@ -80,7 +83,9 @@ func TestWithdrawalRealmsTriesTheSpecThenTheRecordOfOneRealm(t *testing.T) {
 		},
 	}
 
-	realms := withdrawalRealms(context.Background(), mc)
+	r, _ := fakeReconciler(t, mc)
+
+	realms := r.withdrawalRealms(context.Background(), mc)
 
 	require.Len(t, realms, 2)
 	require.NotNil(t, realms[0].AdminCredentials)
@@ -104,7 +109,9 @@ func TestWithdrawalRealmsOfAnUnchangedRecord(t *testing.T) {
 		},
 	}
 
-	realms := withdrawalRealms(context.Background(), mc)
+	r, _ := fakeReconciler(t, mc)
+
+	realms := r.withdrawalRealms(context.Background(), mc)
 
 	require.Len(t, realms, 1)
 	assert.Equal(t, "https://kc.example.com/auth", realms[0].KeycloakURL)
@@ -126,7 +133,9 @@ func TestWithdrawalRealmsKeepTheRecordOfAnotherRealm(t *testing.T) {
 		},
 	}
 
-	realms := withdrawalRealms(context.Background(), mc)
+	r, _ := fakeReconciler(t, mc)
+
+	realms := r.withdrawalRealms(context.Background(), mc)
 
 	require.Len(t, realms, 1)
 	assert.Equal(t, "https://old.example.com/auth", realms[0].KeycloakURL)
@@ -135,17 +144,43 @@ func TestWithdrawalRealmsKeepTheRecordOfAnotherRealm(t *testing.T) {
 }
 
 // A plane that recorded no realm still runs a Management Identity against the
-// realm of the spec, so that realm is the one to tidy.
+// realm of the spec, so that realm is the one to tidy. Its claim on that realm
+// is what says it was ever in there.
 func TestWithdrawalRealmsFallBackToTheSpec(t *testing.T) {
-	t.Parallel()
-
 	mc := externalKeycloakCluster("https://kc.example.com/auth", "keycloak-admin")
+	target := v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: "camunda-platform"}
+	lease := components.NewRealmClaimLease(testClaimNamespace, target, mc)
+	r, _ := fakeReconciler(t, mc, lease)
 
-	realms := withdrawalRealms(context.Background(), mc)
+	realms := r.withdrawalRealms(context.Background(), mc)
 
 	require.Len(t, realms, 1)
 	assert.Equal(t, "https://kc.example.com/auth", realms[0].KeycloakURL)
 	assert.Equal(t, "camunda-platform", realms[0].Realm)
+}
+
+// A plane parked on the realm of another plane keeps the contract of the realm
+// it left, and its spec names a realm it never entered. Deleting it must leave
+// the callbacks of the holder alone.
+func TestWithdrawalRealmsLeaveARealmThisPlaneNeverClaimed(t *testing.T) {
+	mc := externalKeycloakCluster("https://kc.example.com/auth", "keycloak-admin")
+	r, _ := fakeReconciler(t, mc)
+
+	assert.Empty(t, r.withdrawalRealms(context.Background(), mc))
+}
+
+// The operator runs the Keycloak of the keycloak mode and claims no realm in
+// it, so the spec is the only way to a client that Identity made there.
+func TestWithdrawalRealmsOfTheKeycloakModeNeedNoClaim(t *testing.T) {
+	mc := &v1.CamundaManagementCluster{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "my-management-ns", Name: "my-management"},
+		Spec: v1.CamundaManagementClusterSpec{
+			IdentityProvider: v1.IdentityProviderSpec{Keycloak: &v1.ManagedKeycloakSpec{}},
+		},
+	}
+	r, _ := fakeReconciler(t, mc)
+
+	assert.Len(t, r.withdrawalRealms(context.Background(), mc), 1)
 }
 
 // The oidc mode registers nothing, so a plane that recorded no realm has
@@ -159,7 +194,9 @@ func TestWithdrawalRealmsOfTheOIDCModeWithoutARecord(t *testing.T) {
 		},
 	}
 
-	assert.Empty(t, withdrawalRealms(context.Background(), mc))
+	r, _ := fakeReconciler(t, mc)
+
+	assert.Empty(t, r.withdrawalRealms(context.Background(), mc))
 }
 
 // finalizerRealm is the realm that the specs below claim.

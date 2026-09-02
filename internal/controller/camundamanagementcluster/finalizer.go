@@ -283,7 +283,7 @@ func (r *Reconciler) ownsContract(ctx context.Context, mc *v1.CamundaManagementC
 // parked on a name another owner holds takes the callbacks of the holder with
 // it.
 func (r *Reconciler) withdrawOptimizeCallbacks(ctx context.Context, mc *v1.CamundaManagementCluster) {
-	for _, provider := range withdrawalRealms(ctx, mc) {
+	for _, provider := range r.withdrawalRealms(ctx, mc) {
 		failure, err := r.convergeOptimizeCallbacks(
 			ctx, mc, provider, provider.Clients.Optimize.ID, nil,
 		)
@@ -308,12 +308,10 @@ func (r *Reconciler) withdrawOptimizeCallbacks(ctx context.Context, mc *v1.Camun
 // when it names that same realm, because a rotation of the Secrets changes no
 // realm and the record can still name the Secret that was replaced. The
 // record follows as a second try, for a spec whose Secrets are the broken
-// ones. A plane that recorded no realm has the spec alone: the operator runs
-// the Keycloak of the keycloak mode and records nothing for it, and a plane
-// that serves no Optimize runs a Management Identity against the realm the
-// spec names with no record of it. The provider of a Keycloak mode follows
-// from the spec alone, so the deletion path needs none of the pre-checks.
-func withdrawalRealms(
+// ones. A plane that recorded no realm falls back to the spec, which
+// specRealmWithdrawal decides. The provider of a Keycloak mode follows from
+// the spec alone, so the deletion path needs none of the pre-checks.
+func (r *Reconciler) withdrawalRealms(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 ) []components.IdentityProvider {
@@ -336,7 +334,7 @@ func withdrawalRealms(
 		return nil
 	}
 	if recorded == nil {
-		return []components.IdentityProvider{provider}
+		return r.specRealmWithdrawal(ctx, mc, provider)
 	}
 	target := components.RealmTarget(provider)
 	if target == nil || !components.SameRealm(*recorded, *target) {
@@ -347,4 +345,51 @@ func withdrawalRealms(
 	}
 
 	return []components.IdentityProvider{provider, components.RealmProvider(*recorded)}
+}
+
+// specRealmWithdrawal is the withdrawal of a plane that recorded no realm. It
+// takes the realm of the spec, and nothing when this plane cannot be shown to
+// have been in that realm.
+//
+// A plane that serves no Optimize runs a Management Identity against the realm
+// the spec names and records nothing of it, so the spec is the only way to a
+// client that Identity made there.
+func (r *Reconciler) specRealmWithdrawal(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	provider components.IdentityProvider,
+) []components.IdentityProvider {
+	// The operator runs the Keycloak of the keycloak mode and claims no realm
+	// in it, so nothing but the spec names that realm.
+	if components.Mode(mc) == components.ModeKeycloak {
+		return []components.IdentityProvider{provider}
+	}
+
+	// A plane parked on the realm of another plane keeps the contract of the
+	// realm it left, and its spec names a realm it never entered. Its claim is
+	// what says this plane was ever in there.
+	target := components.RealmTarget(provider)
+	if target == nil || !r.holdsRealmClaim(ctx, mc, *target) {
+		return nil
+	}
+
+	return []components.IdentityProvider{provider}
+}
+
+// holdsRealmClaim reports whether the claim Lease of target names this
+// management plane. A Lease that is gone, one of another holder, and a read
+// that fails all answer no, so a deletion never writes a realm that this plane
+// cannot show it entered.
+func (r *Reconciler) holdsRealmClaim(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	target v1.KeycloakRealmTarget,
+) bool {
+	lease, found, err := r.readRealmClaim(ctx, target)
+	if err != nil || !found {
+		return false
+	}
+	holder, ours := components.RealmClaimHolderOf(lease)
+
+	return ours && holder == realmClaimSelf(mc)
 }
