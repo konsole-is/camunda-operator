@@ -53,6 +53,22 @@ func TestRealmTargetRecordsWhereTheRealmIsAndHowToSignIn(t *testing.T) {
 	)
 }
 
+// The CEL rules on url admit a user with a password. The record is written to
+// the API server, so it holds the folded URL and no password reaches status.
+func TestRealmTargetRecordsTheFoldedURL(t *testing.T) {
+	t.Parallel()
+
+	target := RealmTarget(IdentityProvider{
+		Mode:             ModeExternalKeycloak,
+		KeycloakURL:      "https://admin:s3cret@KC.Example.com:443/auth/",
+		Realm:            keycloakDefaultRealm,
+		AdminCredentials: &v1.LocalCredentialsSecretRef{Name: "keycloak-admin"},
+	})
+
+	require.NotNil(t, target)
+	assert.Equal(t, "https://kc.example.com/auth", target.URL)
+}
+
 // The oidc mode administers no realm, so there is nothing to record.
 func TestRealmTargetOfTheOIDCModeIsNil(t *testing.T) {
 	t.Parallel()

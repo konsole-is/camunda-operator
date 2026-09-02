@@ -467,8 +467,9 @@ type CamundaManagementClusterStatus struct {
 	// non-nil value does not say that the callbacks are still there: when the
 	// spec names another realm, or the oidc mode, the operator removes them
 	// from this realm first, and the field then outlives the emptied realm
-	// until no Management Identity pod, ReplicaSet, or Deployment of that
-	// realm's configuration is left to put them back. It goes when that drain
+	// until nothing of that realm's configuration can put them back: no
+	// Management Identity pod of it that can still run, and no Deployment or
+	// ReplicaSet of it that can still start one. It goes when that drain
 	// is over, so its disappearance, or its move to the new realm, is the
 	// completion signal of a move.
 	//

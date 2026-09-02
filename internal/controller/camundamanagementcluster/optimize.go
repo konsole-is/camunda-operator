@@ -483,6 +483,9 @@ func (r *Reconciler) stopOldIdentityWriters(
 		// A Deployment keeps the ReplicaSet of every revision it rolled over,
 		// at zero replicas. Such a revision starts no pod, and a pod it has
 		// left is in the list below. An absent count means one replica.
+		//
+		// The replica count alone answers it here. scaledDown says why this
+		// wait must not ask whether a controller has read that count.
 		if set.Spec.Replicas != nil && *set.Spec.Replicas == 0 {
 			continue
 		}
