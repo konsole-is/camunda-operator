@@ -40,10 +40,16 @@ const maxHolderIdentityLength = 128
 // that holds it, and the realm it holds. Every decision about ownership reads
 // them. A Lease without all three holder annotations is not one of ours.
 const (
+	// RealmClaimHolderNamespaceAnnotation names the namespace of the holder.
 	RealmClaimHolderNamespaceAnnotation = "camunda.io/realm-claim-holder-namespace"
-	RealmClaimHolderNameAnnotation      = "camunda.io/realm-claim-holder-name"
-	RealmClaimHolderUIDAnnotation       = "camunda.io/realm-claim-holder-uid"
-	RealmClaimRealmAnnotation           = "camunda.io/realm-claim-realm"
+	// RealmClaimHolderNameAnnotation names the holder.
+	RealmClaimHolderNameAnnotation = "camunda.io/realm-claim-holder-name"
+	// RealmClaimHolderUIDAnnotation carries the UID of the holder, which
+	// tells it apart from a later management cluster of the same name.
+	RealmClaimHolderUIDAnnotation = "camunda.io/realm-claim-holder-uid"
+	// RealmClaimRealmAnnotation carries the identity of the claimed realm,
+	// as RealmIdentity returns it, for a reader of the Lease.
+	RealmClaimRealmAnnotation = "camunda.io/realm-claim-realm"
 )
 
 // RealmClaimHolder is the CamundaManagementCluster that a realm claim Lease
