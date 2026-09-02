@@ -939,7 +939,7 @@ The API server refuses an apply that breaks one of these:
 - `spec.identityProvider.externalKeycloak.realm` holds letters, digits, dots, hyphens, and underscores. It starts and ends with a letter or a digit.
 - Every `version` is three numbers separated by dots, for example `8.9.0`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both. The rule binds `spec.identity`, `spec.console`, `spec.webModeler.restapi`, and `spec.webModeler.websockets`.
-- `spec.identity.extraEnv` sets no `KEYCLOAK_URL` and no `KEYCLOAK_REALM`. The operator renders both from `spec.identityProvider` and administers that realm alone.
+- `spec.identity.extraEnv` sets no `KEYCLOAK_URL` and no `KEYCLOAK_REALM`. Both follow from `spec.identityProvider`, and in a Keycloak mode the operator administers that realm alone.
 
 The operator checks these after you apply the resource and reports them on `Ready`:
 
