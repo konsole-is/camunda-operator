@@ -303,6 +303,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
+	recordCallbackRealm(&mc, res.Input.Provider, target)
 
 	// A renamed contract leaves the old name behind until the new contract is
 	// written, so the status keeps naming the old one until then.

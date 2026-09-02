@@ -535,7 +535,7 @@ The `oidc` mode registers nothing. Your provider holds the callback URLs, so `sp
 
 ### Moving the callbacks to another realm
 
-When `spec.identityProvider` starts naming another Keycloak, another `realm`, or the `oidc` mode, the login callbacks leave the realm they were in. Only then does the management plane register them in the new realm. `status.callbackRealm` names the last realm the plane registered them in. During a move it keeps naming the old realm until the callbacks have left it, and after that until nothing is left that could write them back:
+When `spec.identityProvider` starts naming another Keycloak, another `realm`, or the `oidc` mode, the login callbacks leave the realm they were in. Only then does the management plane register them in the new realm. `status.callbackRealm` names the realm the plane last pointed Management Identity at. Identity registers the callbacks there while it starts, so the field appears with the realm and not with the first registration. During a move it keeps naming the old realm until the callbacks have left it, and after that until nothing is left that could write them back:
 
 ```yaml
 status:
@@ -556,9 +556,9 @@ A move to the `oidc` mode empties the old realm the same way. `status.callbackRe
 
 The old realm never waits for the new one. The callbacks leave it even while the new identity provider cannot be used yet, for example while its administrator Secret is missing or its Keycloak does not answer Management Identity.
 
-The field is absent in the `keycloak` mode. A move away from that mode deletes the Keycloak that the operator runs, and the database of that Keycloak keeps the realm as it was.
+The field is absent once a move into the `keycloak` mode is over. The operator runs that Keycloak, so its realm is never recorded. A move into it from a Keycloak that you ran keeps naming the old realm until that realm is empty and nothing of it can write again. A move away from the `keycloak` mode deletes the Keycloak that the operator runs, and the database of that Keycloak keeps the realm as it was.
 
-On a move from one Keycloak to another, an old Keycloak that does not let go keeps the whole plane: the workloads stay on the old Keycloak, the new realm gets nothing, and everybody keeps signing in through the old one. `OptimizeCallbacksReady` reads `ConnectionFailed`, `WriteFailed`, `MissingSecret`, or `InvalidCABundle`, the message names the old realm, and `Ready` reads the same reason. On a move to the `oidc` mode the plane moves at once and only `OptimizeCallbacksReady` reports the failure, because Management Identity registers nothing in a realm there; the operator keeps trying to empty the old realm:
+On a move from one Keycloak to another, an old Keycloak that does not let go keeps the whole plane: the workloads stay on the old Keycloak, the new realm gets nothing, and everybody keeps signing in through the old one. `OptimizeCallbacksReady` reads `ConnectionFailed`, `WriteFailed`, `MissingSecret`, or `InvalidCABundle`, the message names the old realm, and `Ready` reads the same reason. On a move to the `oidc` mode the plane moves at once and only `OptimizeCallbacksReady` reports the failure, because Management Identity registers nothing in a realm there. The operator keeps trying to empty the old realm:
 
 ```yaml
 status:

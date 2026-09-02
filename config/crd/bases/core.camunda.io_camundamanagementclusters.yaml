@@ -4888,24 +4888,28 @@ spec:
             properties:
               callbackRealm:
                 description: |-
-                  CallbackRealm is the last Keycloak realm that this management plane
-                  registered the login callbacks of Optimize in. A non-nil value does
-                  not say that the callbacks are still there: when the spec names
-                  another realm, or the oidc mode, the operator removes them from this
-                  realm first, and the field then outlives the emptied realm until no
-                  Management Identity pod, ReplicaSet, or Deployment of that realm's
-                  configuration is left to put them back. It goes when that drain is
-                  over, so its disappearance, or its move to the new realm, is the
+                  CallbackRealm is the Keycloak realm that this management plane last
+                  pointed Management Identity at, in the externalKeycloak mode. Identity
+                  registers the login callbacks of Optimize there while it starts, so the
+                  field appears with the realm and not with the first registration. A
+                  non-nil value does not say that the callbacks are still there: when the
+                  spec names another realm, or the oidc mode, the operator removes them
+                  from this realm first, and the field then outlives the emptied realm
+                  until no Management Identity pod, ReplicaSet, or Deployment of that
+                  realm's configuration is left to put them back. It goes when that drain
+                  is over, so its disappearance, or its move to the new realm, is the
                   completion signal of a move.
 
-                  It is absent in the keycloak mode, where the operator runs Keycloak and
-                  deletes it with the management plane or with a move away from that
-                  mode, and absent while no login callback of this operator is registered
-                  anywhere and nothing remains that could write them back. A Keycloak
-                  that is gone for good never answers, so the annotation
-                  camunda.io/forget-callback-realm, set to the value that the
-                  OptimizeCallbacksReady message names, lets go of it with the callbacks
-                  still in it.
+                  It is absent once a move into the keycloak or the oidc mode is over,
+                  and while no login callback of this operator is registered anywhere and
+                  nothing remains that could write them back. The operator runs the
+                  Keycloak of the keycloak mode and deletes it with the management plane
+                  or with a move away from that mode, so that realm is never recorded.
+                  During a move into either mode the field still names the realm that the
+                  plane is leaving. A Keycloak that is gone for good never answers, so
+                  the annotation camunda.io/forget-callback-realm, set to the value that
+                  the OptimizeCallbacksReady message names, lets go of it with the
+                  callbacks still in it.
                 properties:
                   adminCredentialsSecretRef:
                     description: |-

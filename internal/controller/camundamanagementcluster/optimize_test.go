@@ -633,15 +633,58 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 
 		// Nothing stamps the Deployment after the change, so Management
 		// Identity stays mid-rollout for the rest of the spec. The old realm
-		// is tidied all the same, and only the registration in the new one
-		// keeps waiting.
+		// is tidied all the same, the record moves to the realm the plane now
+		// points Identity at, and only the registration keeps waiting.
 		Eventually(func(g Gomega) {
 			g.Expect(first.redirectURIs()).To(BeEmpty())
-			g.Expect(readManagementCluster(g, s.mc).Status.CallbackRealm).To(BeNil())
+
+			recorded := readManagementCluster(g, s.mc).Status.CallbackRealm
+			g.Expect(recorded).NotTo(BeNil())
+			g.Expect(recorded.URL).To(Equal(second.url))
 
 			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
 			g.Expect(condition.Reason).To(Equal(string(component.PrerequisiteNotMet)))
 			g.Expect(second.redirectURIs()).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// Management Identity writes the login callbacks itself while it starts,
+	// before this operator reaches the realm at all. The realm is recorded
+	// from the moment the plane points Identity at it, so a retarget during
+	// that first start still finds the realm to empty.
+	It("empties the first realm after a retarget during the first Identity start", func() {
+		// The client holds the callback that Management Identity wrote as it
+		// started, and the rollout it is in never finishes.
+		first := startFakeKeycloak(withOptimizeClient(
+			blueOptimizeURL + components.OptimizeCallbackPath,
+		))
+		second := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(first))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			recorded := readManagementCluster(g, s.mc).Status.CallbackRealm
+			g.Expect(recorded).NotTo(BeNil())
+			g.Expect(recorded.URL).To(Equal(first.url))
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Reason).To(Equal(string(component.PrerequisiteNotMet)))
+		}, timeout, interval).Should(Succeed())
+
+		retargetKeycloak(s.mc, second.url)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(BeEmpty())
+			g.Expect(second.redirectURIs()).To(Equal([]string{
+				blueOptimizeURL + components.OptimizeCallbackPath,
+			}))
+
+			recorded := readManagementCluster(g, s.mc).Status.CallbackRealm
+			g.Expect(recorded).NotTo(BeNil())
+			g.Expect(recorded.URL).To(Equal(second.url))
 		}, timeout, interval).Should(Succeed())
 	})
 
