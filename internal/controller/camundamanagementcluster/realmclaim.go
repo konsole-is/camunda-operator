@@ -56,18 +56,27 @@ func (r *Reconciler) claimRealm(
 	if res.Input.Provider.Mode == components.ModeExternalKeycloak {
 		current = components.RealmTarget(res.Input.Provider)
 	}
+	var parked *conditions.PreCheckFailure
 	if current != nil {
-		parked, err := r.takeRealmClaim(ctx, mc, *current)
-		if err != nil || parked != nil {
-			return parked, err
+		var err error
+		parked, err = r.takeRealmClaim(ctx, mc, *current)
+		if err != nil {
+			return nil, err
 		}
 	}
 
-	// The recorded realm still carries the login callbacks of this plane.
-	// Its claim goes once the withdrawal has cleared the record, which the
-	// next pass reads from the persisted status. A claim released before that
-	// would let another plane register in a realm this one still tidies.
-	return nil, r.releaseRealmClaims(ctx, mc, current, mc.Status.CallbackRealm)
+	// The realms that neither the spec nor status.callbackRealm names go
+	// back, on the parked path too: a claim kept there would block every
+	// later claimant of a realm this plane already left. The recorded realm
+	// still carries the login callbacks of this plane, and its claim goes
+	// once the withdrawal has cleared the record, which the next pass reads
+	// from the persisted status. A claim released before that would let
+	// another plane register in a realm this one still tidies.
+	if err := r.releaseRealmClaims(ctx, mc, current, mc.Status.CallbackRealm); err != nil {
+		return nil, err
+	}
+
+	return parked, nil
 }
 
 // takeRealmClaim creates the claim Lease of the realm that target names. The

@@ -125,6 +125,41 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 		expectRealmClaimHolder(fakeRealmTarget(second), s.mc)
 	})
 
+	// A parked plane still gives back the realm it left, once the callbacks
+	// left it. A claim kept there would block every later claimant of the
+	// old realm for as long as the park stands.
+	It("releases the realm it left even while parked on the next one", func() {
+		holder := newScenario(withExternalKeycloak)
+		expectReadyWhileStamping(holder.mc, identityKey(holder))
+		expectRealmClaimHolder(externalRealmTarget(), holder.mc)
+
+		old := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(old))
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(old.redirectURIs()).To(HaveLen(1))
+			g.Expect(readManagementCluster(g, s.mc).Status.CallbackRealm).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		expectRealmClaimHolder(fakeRealmTarget(old), s.mc)
+
+		retargetKeycloak(s.mc, keycloakExternalURL)
+
+		Eventually(func(g Gomega) {
+			ready := conditionOf(g, s.mc, v1.ConditionReady)
+			g.Expect(ready.Reason).To(Equal(v1.ReasonRealmClaimedElsewhere))
+
+			g.Expect(old.redirectURIs()).To(BeEmpty())
+			var lease coordinationv1.Lease
+			err := k8sClient.Get(ctx, realmLeaseKey(fakeRealmTarget(old)), &lease)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		expectRealmClaimHolder(externalRealmTarget(), holder.mc)
+	})
+
 	// The oidc mode administers no realm, so a plane that moves there keeps
 	// no claim on the realm it administered before.
 	It("releases the realm when the spec moves to the oidc mode", func() {
