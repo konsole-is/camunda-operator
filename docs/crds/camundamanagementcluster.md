@@ -548,7 +548,7 @@ status:
       passwordKey: "password"
 ```
 
-`status.callbackRealm` also keeps naming the old realm while a Management Identity pod of the old configuration still runs. Such a pod can restart and put the callbacks back. A move therefore stops Management Identity once and starts it again against the new Keycloak, and nobody signs in between the stop and the start.
+`status.callbackRealm` also keeps naming the old realm until every Management Identity pod of the old configuration is gone. A move restarts Management Identity once, and nobody signs in between the stop and the start.
 
 Keep the Secret that `adminCredentialsSecretRef` names there, and the Secret of `caBundleSecretRef` when the old Keycloak needed one, until `status.callbackRealm` stops naming the old realm. The operator signs in to the old Keycloak with them one last time. The record is the completion signal of a move, because the condition ends at `Healthy`, `Disabled`, or `NoCallbacks`, whichever the new mode reaches.
 

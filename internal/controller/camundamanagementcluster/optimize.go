@@ -747,9 +747,17 @@ func (r *Reconciler) identityRolledOut(
 }
 
 // nothingRegistered reports whether the last reconcile already found no login
-// callback of this operator in the realm. A management plane that rests there
-// makes no call to Keycloak at all.
+// callback of this operator in the realm, and no realm is recorded. A
+// management plane that rests there makes no call to Keycloak at all.
+//
+// The record is what makes the second half necessary. It is written before
+// the components start Management Identity, and a pass that ends before its
+// conditions reach the API server leaves that record beside the reason of an
+// older pass. Only a plane with no record can rest on the reason alone.
 func nothingRegistered(mc *v1.CamundaManagementCluster) bool {
+	if mc.Status.CallbackRealm != nil {
+		return false
+	}
 	condition := meta.FindStatusCondition(
 		mc.Status.Conditions, v1.ConditionOptimizeCallbacksReady,
 	)
