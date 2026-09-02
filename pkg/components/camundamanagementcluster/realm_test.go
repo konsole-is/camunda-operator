@@ -551,6 +551,25 @@ func TestRealmIdentityFoldsTheSpellingsOfOneHost(t *testing.T) {
 	)
 }
 
+// A percent escape of an unreserved character spells the same path, so it
+// folds into one identity too.
+func TestRealmIdentityFoldsAPercentEscapeOfThePath(t *testing.T) {
+	t.Parallel()
+
+	realm := keycloakDefaultRealm
+
+	assert.Equal(
+		t,
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: realm}),
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/%61uth", Realm: realm}),
+	)
+	assert.NotEqual(
+		t,
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: realm}),
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/Auth", Realm: realm}),
+	)
+}
+
 // A port is a number, so the leading zeroes that spell the same one make no
 // difference, and a default port spelled with them is still the default.
 func TestRealmIdentityFoldsTheLeadingZeroesOfAPort(t *testing.T) {

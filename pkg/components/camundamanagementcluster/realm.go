@@ -53,26 +53,26 @@ func RealmTarget(provider IdentityProvider) *v1.KeycloakRealmTarget {
 }
 
 // RealmIdentity returns the name of the realm that target holds, as the URL
-// of its realm endpoint: the URL, then /realms/ and the realm. The scheme and
-// the host of the URL are folded to lower case, an IP literal is folded to
-// its canonical spelling, and a terminal dot of the host, the leading zeroes
-// of a port, a default port (443 on https, 80 on http), a user in the URL,
-// and every trailing slash are dropped. The path of the URL and the realm stay as they are, because both
-// are case-sensitive. Two targets of one identity are one realm. The
-// administrator and the certificate authority take no part in it. The result
-// is deterministic, so a name derived from it (a hash, for example)
-// identifies the realm across resources, and it is safe to read, so a claim
-// can name the realm it holds in the clear.
+// of its realm endpoint: the URL, then /realms/ and the realm. Spellings of
+// one Keycloak fold to one identity: the case of the scheme and of the host,
+// a user in the URL, a default port (443 on https, 80 on http), a terminal
+// dot of the host, the spelling of an IP literal or of a port, a percent
+// escape of the path, and every trailing slash make no difference. The case
+// of the path and of the realm does make one, because Keycloak treats both as
+// case-sensitive. The administrator and the certificate authority take no
+// part in it. The result is deterministic, so a name derived from it (a hash,
+// for example) identifies the realm across resources, and it is safe to read,
+// so a claim can name the realm it holds in the clear.
 func RealmIdentity(target v1.KeycloakRealmTarget) string {
 	return normalizeKeycloakURL(target.URL) + keycloakRealmPath + target.Realm
 }
 
-// normalizeKeycloakURL trims the trailing slashes of raw and folds what
-// names the same server either way: the case of the scheme and of the host, a
-// terminal dot of the host, the spelling of an IP literal, the leading zeroes
-// of a port, a port that only spells out the default of the scheme, and a
-// user in the URL. A raw value
-// that does not parse as a URL comes back with only the slashes trimmed.
+// normalizeKeycloakURL trims the trailing slashes of raw and folds every
+// spelling of one server into one: the case of the scheme and of the host, a
+// user in the URL, a default port of the scheme, a terminal dot of the host,
+// the spelling of an IP literal or of a port, and a percent escape of the
+// path. A raw value that does not parse as a URL comes back with only the
+// slashes trimmed.
 func normalizeKeycloakURL(raw string) string {
 	folded, _ := foldKeycloakURL(raw)
 
@@ -125,18 +125,17 @@ func foldKeycloakURL(raw string) (string, bool) {
 	default:
 		parsed.Host = host
 	}
+	// url.Parse keeps the spelling of the path beside the decoded one, so
+	// /%61uth and /auth would each take a claim on one realm. Dropping the
+	// spelling makes the URL print from the decoded path, which is one form.
+	parsed.RawPath = ""
 
 	return parsed.String(), true
 }
 
 // NormalizeRealmIdentity folds a hand-written realm identity the way
-// RealmIdentity folds a URL: the case of the scheme and of the host, the
-// spelling of an IP literal, a terminal dot of the host, the leading zeroes
-// of a port, a spelled-out default port, a user in the URL, and trailing
-// slashes make no difference.
-// The path, and with it the realm at its end, stays as it is. It lets an
-// annotation written from status.callbackRealm match the recorded identity,
-// whose URL was folded the same way.
+// RealmIdentity folds a URL, so an annotation written from
+// status.callbackRealm matches the recorded identity however it is spelled.
 //
 // The second result is false for a value that does not parse as a URL. Such a
 // value comes back as it was written, with a user and a password still in it,
@@ -145,11 +144,10 @@ func NormalizeRealmIdentity(value string) (string, bool) {
 	return foldKeycloakURL(value)
 }
 
-// RealmURL is the URL of target as RealmIdentity reads it: a user in the URL,
-// a default port, the leading zeroes of a port, a terminal dot of the host,
-// the spelling of an IP literal, the case of the scheme and of the host, and
-// every trailing slash are folded out. A message that names the Keycloak of a realm uses it, so a password in
-// the URL never reaches a condition or an event.
+// RealmURL is the URL of target as RealmIdentity reads it, with every
+// spelling folded into one and a user in the URL dropped. A message that
+// names the Keycloak of a realm uses it, so a password in the URL never
+// reaches a condition or an event.
 func RealmURL(target v1.KeycloakRealmTarget) string {
 	return normalizeKeycloakURL(target.URL)
 }
