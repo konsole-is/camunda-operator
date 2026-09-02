@@ -76,5 +76,7 @@ The `version` fields hold the versions that the end-to-end suite of this
 repository runs, which `test/e2e/matrix/8.9.env` pins. Keep the two in step
 when you raise one.
 
-A version stays on the instance, never in a preset, so one cluster can move
-before the fleet does.
+In these inventories a version stays on the instance, so one cluster can move
+before the fleet does. A preset can carry `cluster.version` instead, and the
+[presets guide](https://konsole-is.github.io/camunda-operator/guides/presets/)
+shows that shape.

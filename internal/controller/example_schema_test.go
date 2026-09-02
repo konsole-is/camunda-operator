@@ -84,9 +84,13 @@ func findInventories(root string) []string {
 }
 
 // applyInventory walks the manifests in file-name order, which is the order
-// the README of the inventory applies them.
+// the README of the inventory applies them. Every one of them must also be a
+// resource of the kustomization, because a file the kustomization does not
+// list is a file that kubectl apply -k silently leaves out.
 func applyInventory(dir string) {
 	GinkgoHelper()
+
+	listed := listedResources(dir)
 
 	entries, err := os.ReadDir(dir)
 	Expect(err).NotTo(HaveOccurred(), dir)
@@ -97,9 +101,27 @@ func applyInventory(dir string) {
 		}
 
 		if filepath.Ext(entry.Name()) == ".yaml" {
-			applyFile(filepath.Join(dir, entry.Name()))
+			path := filepath.Join(dir, entry.Name())
+			Expect(listed).To(ContainElement(entry.Name()), path+" is not a resource of "+kustomizationFile)
+			applyFile(path)
 		}
 	}
+}
+
+func listedResources(dir string) []string {
+	GinkgoHelper()
+
+	path := filepath.Join(dir, kustomizationFile)
+
+	data, err := os.ReadFile(path)
+	Expect(err).NotTo(HaveOccurred(), path)
+
+	var manifest struct {
+		Resources []string `json:"resources"`
+	}
+	Expect(utilyaml.NewYAMLOrJSONDecoder(bytes.NewReader(data), decodeBuffer).Decode(&manifest)).To(Succeed(), path)
+
+	return manifest.Resources
 }
 
 func applyFile(path string) {
