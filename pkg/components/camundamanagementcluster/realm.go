@@ -170,10 +170,22 @@ func IdentityPointsAtRealm(pods []corev1.Pod, target v1.KeycloakRealmTarget) boo
 // pod template of a Deployment or a ReplicaSet: a workload whose template
 // points at the realm can start a pod against it at any moment, even while
 // it has none, so it counts as a writer of that realm the same as a pod.
+//
+// A container that takes the Keycloak URL or the realm from a reference
+// answers yes for every target. spec.identity.extraEnv can replace either
+// variable, and the value behind a reference is not in the workload, so the
+// realm such a container writes is unknown and the record of any realm must
+// outlive it.
 func IdentityTemplatePointsAtRealm(spec *corev1.PodSpec, target v1.KeycloakRealmTarget) bool {
-	realm, ok := identityRealmEnv(spec)
-
-	return ok && SameRealm(realm, target)
+	realm, state := identityRealmEnv(spec)
+	switch state {
+	case realmUnknown:
+		return true
+	case realmNamed:
+		return SameRealm(realm, target)
+	default:
+		return false
+	}
 }
 
 // podReady reports the Ready condition of pod.
@@ -193,11 +205,26 @@ func podDone(pod *corev1.Pod) bool {
 	return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
 }
 
+// realmState is what the environment of a Management Identity container says
+// about the realm that its Optimize client lives in.
+type realmState int
+
+const (
+	// realmNone is a container that names no Keycloak, which is the oidc mode.
+	realmNone realmState = iota
+	// realmNamed is a container whose environment holds the realm.
+	realmNamed
+	// realmUnknown is a container that takes the Keycloak URL or the realm
+	// from a reference, so the realm is not in the workload.
+	realmUnknown
+)
+
 // identityRealmEnv reads the Keycloak URL and the realm that the Management
-// Identity container of spec points at, and false for one that names no
-// Keycloak, which is the oidc mode.
-func identityRealmEnv(spec *corev1.PodSpec) (v1.KeycloakRealmTarget, bool) {
+// Identity container of spec points at, and reports what the environment
+// says about them. The realm is meaningful for realmNamed alone.
+func identityRealmEnv(spec *corev1.PodSpec) (v1.KeycloakRealmTarget, realmState) {
 	var realm v1.KeycloakRealmTarget
+	var unknown bool
 	for _, container := range spec.Containers {
 		if container.Name != identityContainer {
 			continue
@@ -208,9 +235,21 @@ func identityRealmEnv(spec *corev1.PodSpec) (v1.KeycloakRealmTarget, bool) {
 				realm.URL = env.Value
 			case keycloakEnvRealm:
 				realm.Realm = env.Value
+			default:
+				continue
+			}
+			if env.ValueFrom != nil {
+				unknown = true
 			}
 		}
 	}
 
-	return realm, realm.URL != ""
+	switch {
+	case unknown:
+		return realm, realmUnknown
+	case realm.URL != "":
+		return realm, realmNamed
+	default:
+		return realm, realmNone
+	}
 }

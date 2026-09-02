@@ -455,6 +455,43 @@ func TestIdentityTemplatePointsAtRealm(t *testing.T) {
 	assert.False(t, IdentityTemplatePointsAtRealm(&corev1.PodSpec{}, target))
 }
 
+// spec.identity.extraEnv can replace the Keycloak URL or the realm with a
+// reference, and the value behind it is not in the workload. Such a container
+// can write any realm, so it must not read as one that writes none: the
+// record it would silently release is the only way back to that realm.
+func TestIdentityTemplateWithAReferenceWritesEveryRealm(t *testing.T) {
+	t.Parallel()
+
+	target := v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: "camunda-platform"}
+	reference := &corev1.EnvVarSource{
+		ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "identity-extra"},
+			Key:                  "url",
+		},
+	}
+	spec := func(env ...corev1.EnvVar) *corev1.PodSpec {
+		return &corev1.PodSpec{Containers: []corev1.Container{{
+			Name: identityContainer,
+			Env:  env,
+		}}}
+	}
+
+	assert.True(t, IdentityTemplatePointsAtRealm(spec(
+		corev1.EnvVar{Name: keycloakEnvURL, ValueFrom: reference},
+		corev1.EnvVar{Name: keycloakEnvRealm, Value: "camunda-platform"},
+	), target))
+	assert.True(t, IdentityTemplatePointsAtRealm(spec(
+		corev1.EnvVar{Name: keycloakEnvURL, Value: "https://other.example.com/auth"},
+		corev1.EnvVar{Name: keycloakEnvRealm, ValueFrom: reference},
+	), target))
+	// A reference on another variable says nothing about the realm.
+	assert.False(t, IdentityTemplatePointsAtRealm(spec(
+		corev1.EnvVar{Name: keycloakEnvURL, Value: "https://other.example.com/auth"},
+		corev1.EnvVar{Name: keycloakEnvRealm, Value: "camunda-platform"},
+		corev1.EnvVar{Name: "IDENTITY_LOG_LEVEL", ValueFrom: reference},
+	), target))
+}
+
 // A record round-trips: the provider built from it names the same realm.
 func TestRealmProviderKeepsTheIdentityOfTheRecord(t *testing.T) {
 	t.Parallel()

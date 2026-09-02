@@ -514,12 +514,28 @@ func (r *Reconciler) withdrawUnresolved(
 	if err != nil {
 		return false, err
 	}
-	failure, _, err := r.withdrawRetargeted(ctx, mc, target, mc.Spec.Suspend)
+	failure, consumed, err := r.withdrawRetargeted(ctx, mc, target, mc.Spec.Suspend)
 	if err != nil {
 		return false, err
 	}
 	if failure != nil {
 		stageCallbacks(mc, metav1.ConditionFalse, failure.Reason, failure.Message)
+
+		return true, nil
+	}
+	// The annotation let go of the realm with the callbacks still in it, so
+	// the condition must not report that they left. The caller comes back,
+	// and the next pass removes the spent annotation.
+	if consumed {
+		stageCallbacks(
+			mc, metav1.ConditionFalse, string(component.PrerequisiteNotMet),
+			fmt.Sprintf(
+				"Realm %q of Keycloak %q keeps the login callbacks of this management plane, as "+
+					"the annotation %s asked. The identity provider of the spec is not resolved, "+
+					"so the callbacks are registered nowhere",
+				before.Realm, before.URL, components.ForgetCallbackRealmAnnotation,
+			),
+		)
 
 		return true, nil
 	}

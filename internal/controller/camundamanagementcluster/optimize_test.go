@@ -713,6 +713,66 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// The annotation is read on a pass that a failed pre-check stops too. The
+	// callbacks stay in the old realm then, so the condition must say that
+	// they are still there and not that they left.
+	It("says the callbacks stay behind when a failed pre-check reads the annotation", func() {
+		first := startFakeKeycloak(withOptimizeClient())
+		second := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(first))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+
+		// The new Keycloak names an administrator Secret that is not there,
+		// so the pre-check stops every pass, and the old Keycloak refuses to
+		// let the callbacks go.
+		first.setRefuseUpdate(true)
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.IdentityProvider.ExternalKeycloak.URL = second.url
+			latest.Spec.IdentityProvider.ExternalKeycloak.AdminCredentialsSecretRef.Name = "missing-keycloak-admin"
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		var recorded v1.KeycloakRealmTarget
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			g.Expect(latest.Status.CallbackRealm).NotTo(BeNil())
+			recorded = *latest.Status.CallbackRealm
+
+			g.Expect(conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady).Message).To(
+				ContainSubstring(components.ForgetCallbackRealmAnnotation),
+			)
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			metav1.SetMetaDataAnnotation(
+				&latest.ObjectMeta, components.ForgetCallbackRealmAnnotation, components.RealmIdentity(recorded),
+			)
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			g.Expect(latest.Status.CallbackRealm).To(BeNil())
+			g.Expect(latest.Annotations).NotTo(HaveKey(components.ForgetCallbackRealmAnnotation))
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Message).To(ContainSubstring("keeps the login callbacks"))
+			g.Expect(condition.Message).To(ContainSubstring(first.url))
+		}, timeout, interval).Should(Succeed())
+
+		// The old realm keeps what the annotation asked to leave there.
+		Expect(first.redirectURIs()).To(HaveLen(1))
+	})
+
 	// A Deployment keeps the ReplicaSet of every revision it rolled over, at
 	// zero replicas. Such a revision starts no pod, so it must not hold the
 	// record: a plane whose withdrawal failed once would never leave the old
