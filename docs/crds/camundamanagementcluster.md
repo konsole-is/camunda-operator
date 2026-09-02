@@ -141,7 +141,7 @@ status:
 
 Give the waiting plane a realm of its own, or delete the holder. The waiting plane then proceeds on its own. A holder releases a realm when it is deleted, and when its spec moves to another realm or another mode, once the login callbacks have left it. Two planes on one Keycloak with two realms work today.
 
-A plane that you retarget into the wait keeps the workloads it already ran, and they keep pointing at the realm they were rendered for. The plane also keeps its claim on that realm while one of its Management Identity pods points at it, so no other plane takes a realm that a restart of such a pod would write again.
+A plane that you retarget into the wait keeps the workloads it already ran, and they keep pointing at the realm they were rendered for. The plane also keeps its claim on that realm while its Management Identity points at it, so no other plane takes a realm that this one starts against again. The claim goes when nothing of the plane points there any more: correct the spec of the waiting plane and its Management Identity moves to the new realm, or delete the plane and it gives back every realm it holds.
 
 #### Trust of an https Keycloak
 

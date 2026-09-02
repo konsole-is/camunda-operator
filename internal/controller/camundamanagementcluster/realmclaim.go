@@ -20,9 +20,11 @@ import (
 	"context"
 	"fmt"
 
+	appsv1 "k8s.io/api/apps/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -71,9 +73,9 @@ func (r *Reconciler) claimRealm(
 	// later claimant of a realm this plane already left. The recorded realm
 	// still carries the login callbacks of this plane, and its claim goes
 	// once the withdrawal has cleared the record, which the next pass reads
-	// from the persisted status. A realm that a Management Identity pod of
-	// this plane still points at is kept too: a restart of that pod writes
-	// the clients of that realm again, so it is not left for another plane.
+	// from the persisted status. A realm that a Management Identity workload
+	// of this plane still points at is kept too: a start against that realm
+	// writes its clients again, so it is not left for another plane.
 	keep := []*v1.KeycloakRealmTarget{current, mc.Status.CallbackRealm}
 	pointed, unknown, err := r.identityRealms(ctx, mc)
 	if err != nil {
@@ -89,13 +91,35 @@ func (r *Reconciler) claimRealm(
 	return parked, nil
 }
 
-// identityRealms returns the realm of every Management Identity pod of mc,
-// and whether one of them writes a realm that the pod does not name. The read
-// goes through APIReader, for the reason startedInitialClaim gives.
+// identityRealms returns the realm of every Management Identity workload of
+// mc that can still start against a Keycloak: the pod template of the
+// Deployment it owns, and every pod of it that is not done. It also reports
+// whether one of them writes a realm that the workload does not name. The
+// reads go through APIReader, for the reason startedInitialClaim gives.
+//
+// The Deployment is the durable one. A parked plane renders nothing, so the
+// Deployment it ran before keeps its old realm and starts a pod against that
+// realm whenever one goes.
 func (r *Reconciler) identityRealms(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 ) ([]v1.KeycloakRealmTarget, bool, error) {
+	var realms []v1.KeycloakRealmTarget
+	var unknown bool
+
+	key := client.ObjectKey{Namespace: mc.Namespace, Name: components.IdentityName(mc)}
+	var identity appsv1.Deployment
+	switch err := r.APIReader.Get(ctx, key, &identity); {
+	case err == nil:
+		if metav1.IsControlledBy(&identity, mc) {
+			templateRealms, templateUnknown := components.IdentityTemplateRealms(&identity)
+			realms = append(realms, templateRealms...)
+			unknown = unknown || templateUnknown
+		}
+	case !apierrors.IsNotFound(err):
+		return nil, false, fmt.Errorf("reading Deployment %q: %w", key, err)
+	}
+
 	var pods corev1.PodList
 	if err := r.APIReader.List(
 		ctx,
@@ -105,10 +129,9 @@ func (r *Reconciler) identityRealms(
 	); err != nil {
 		return nil, false, fmt.Errorf("listing the Management Identity pods: %w", err)
 	}
+	podRealms, podUnknown := components.IdentityRealms(pods.Items)
 
-	realms, unknown := components.IdentityRealms(pods.Items)
-
-	return realms, unknown, nil
+	return append(realms, podRealms...), unknown || podUnknown, nil
 }
 
 // takeRealmClaim creates the claim Lease of the realm that target names. The

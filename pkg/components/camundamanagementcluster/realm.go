@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"strings"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -189,17 +190,17 @@ func IdentityTemplatePointsAtRealm(spec *corev1.PodSpec, target v1.KeycloakRealm
 }
 
 // IdentityRealms returns the realm of every Management Identity pod of pods
-// that is not going away and not done, and reports whether one of them writes
-// a realm that the pod does not name, which identityRealmEnv reads as
-// realmUnknown. A ready pod counts too: it writes nothing now, but a restart
-// runs its start against that realm again. Pods of the oidc mode name no
-// Keycloak and contribute nothing.
+// whose containers can still run, and reports whether one of them writes a
+// realm that the pod does not name. A ready pod counts because a restart runs
+// its start against that realm again, and a terminating pod counts until it
+// is gone, because one inside its initializer still writes. Pods of the oidc
+// mode name no Keycloak and contribute nothing.
 func IdentityRealms(pods []corev1.Pod) ([]v1.KeycloakRealmTarget, bool) {
 	var realms []v1.KeycloakRealmTarget
 	var unknown bool
 	for i := range pods {
 		pod := &pods[i]
-		if pod.DeletionTimestamp != nil || podDone(pod) {
+		if podDone(pod) {
 			continue
 		}
 		switch realm, state := identityRealmEnv(&pod.Spec); state {
@@ -212,6 +213,31 @@ func IdentityRealms(pods []corev1.Pod) ([]v1.KeycloakRealmTarget, bool) {
 	}
 
 	return realms, unknown
+}
+
+// IdentityTemplateRealms returns the realm that the pod template of the
+// Management Identity Deployment names, and reports whether that template
+// writes a realm it does not name. A Deployment names at most one realm, and
+// none at all when it starts no pod against a Keycloak: one scaled to zero,
+// and one of the oidc mode.
+//
+// The template outlives every pod of it. A Deployment that still names a
+// realm starts a pod against that realm at any moment, so a caller that reads
+// the pods alone gives the realm back in the gap between a pod that went and
+// its replacement.
+func IdentityTemplateRealms(deployment *appsv1.Deployment) ([]v1.KeycloakRealmTarget, bool) {
+	if deployment.Spec.Replicas != nil && *deployment.Spec.Replicas == 0 {
+		return nil, false
+	}
+
+	switch realm, state := identityRealmEnv(&deployment.Spec.Template.Spec); state {
+	case realmUnknown:
+		return nil, true
+	case realmNamed:
+		return []v1.KeycloakRealmTarget{realm}, false
+	default:
+		return nil, false
+	}
 }
 
 // podReady reports the Ready condition of pod.

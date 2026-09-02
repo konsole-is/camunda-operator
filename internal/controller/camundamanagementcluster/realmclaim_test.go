@@ -182,6 +182,16 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 			g.Expect(ready.Reason).To(Equal(v1.ReasonRealmClaimedElsewhere))
 
 			g.Expect(old.redirectURIs()).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+
+		// The parked plane renders nothing, so the Management Identity it ran
+		// still points at the old realm and holds the claim on it. The claim
+		// goes once that workload does.
+		By("releasing the old claim once nothing of the plane points there")
+		deleteIdentityDeployment(s)
+		nudge(s.mc)
+
+		Eventually(func(g Gomega) {
 			var lease coordinationv1.Lease
 			err := k8sClient.Get(ctx, realmLeaseKey(fakeRealmTarget(old)), &lease)
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
@@ -190,10 +200,11 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 		expectRealmClaimHolder(externalRealmTarget(), holder.mc)
 	})
 
-	// A restart of a Management Identity pod writes the clients of its realm
-	// again, so the realm of a running pod is never left for another plane,
-	// not even by a plane parked on the realm it wants next.
-	It("keeps the claim on the realm its Management Identity still points at", func() {
+	// A Management Identity that points at a realm writes its clients again
+	// whenever a pod of it starts, so the realm of a running workload is never
+	// left for another plane, not even by a plane parked on the realm it wants
+	// next.
+	It("keeps the claim while a Management Identity workload points at the realm", func() {
 		holder := newScenario(withExternalKeycloak)
 		expectReadyWhileStamping(holder.mc, identityKey(holder))
 		expectRealmClaimHolder(externalRealmTarget(), holder.mc)
@@ -228,8 +239,20 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 			g.Expect(k8sClient.Get(ctx, realmLeaseKey(fakeRealmTarget(old)), &lease)).To(Succeed())
 		}, "2s", interval).Should(Succeed())
 
-		By("releasing the claim once that pod is gone")
+		// The Deployment starts another pod against the old realm as soon as
+		// this one goes, so the claim outlives the pod. Envtest runs no
+		// Deployment controller, so no pod comes back here.
+		By("keeping the claim while the Deployment can start another pod")
 		deleteIdentityPods(s)
+		nudge(s.mc)
+
+		Consistently(func(g Gomega) {
+			var lease coordinationv1.Lease
+			g.Expect(k8sClient.Get(ctx, realmLeaseKey(fakeRealmTarget(old)), &lease)).To(Succeed())
+		}, "2s", interval).Should(Succeed())
+
+		By("releasing the claim once no workload of the plane points at it")
+		deleteIdentityDeployment(s)
 		nudge(s.mc)
 
 		Eventually(func(g Gomega) {
@@ -355,6 +378,16 @@ func deleteIdentityPods(s scenario) {
 	for i := range pods.Items {
 		Expect(k8sClient.Delete(ctx, &pods.Items[i], client.GracePeriodSeconds(0))).To(Succeed())
 	}
+}
+
+// deleteIdentityDeployment removes the Management Identity Deployment of a
+// scenario. A parked plane renders nothing, so nothing writes it back.
+func deleteIdentityDeployment(s scenario) {
+	GinkgoHelper()
+
+	Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Namespace: s.namespace, Name: components.IdentityName(s.mc)},
+	}))).To(Succeed())
 }
 
 // identityKey is the key of the Management Identity Deployment of a scenario.
