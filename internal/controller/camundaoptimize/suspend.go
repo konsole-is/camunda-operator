@@ -17,11 +17,19 @@ limitations under the License.
 package camundaoptimize
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 )
 
 // The event vocabulary of the suspension that a CamundaOptimize follows.
@@ -35,11 +43,120 @@ const (
 	// eventReasonClusterResumed is recorded when the referenced cluster stops
 	// being suspended and the Optimize workloads start again.
 	eventReasonClusterResumed = "ClusterResumed"
+	// eventReasonWorkloadsSuspended is recorded when a failed pre-check scales
+	// an Optimize workload to zero.
+	eventReasonWorkloadsSuspended = "WorkloadsSuspended"
 	// noteSuspended and noteResumed carry the name of the cluster, which is
 	// what the Ready condition cannot say.
 	noteSuspended = "Scaling the Optimize workloads to zero: CamundaCluster %q is suspended"
 	noteResumed   = "Starting the Optimize workloads again: CamundaCluster %q is no longer suspended"
 )
+
+// workloadConditions maps an Optimize workload to the condition that it
+// reports.
+var workloadConditions = map[string]string{
+	components.ComponentWebapp:   v1.ConditionWebappReady,
+	components.ComponentImporter: v1.ConditionImporterReady,
+}
+
+// suspendWorkloads scales the webapp and the importer to zero and keeps
+// everything else: the Deployments, the Services, and the copies of the
+// referenced Secrets. A failed pre-check leaves no input to render from, and
+// an importer that keeps running on its last configuration writes an
+// Elasticsearch that this CamundaOptimize no longer resolves. The cluster
+// stops on a failed pre-check of its own, so the importer that reads its
+// records stops with it. The condition of each workload reports the
+// suspension the way a component does: Suspending while replicas stop,
+// Suspended at zero. It reports whether it found a workload that this
+// CamundaOptimize controls. The reconcile comes back through the watch on the
+// Deployments, so the conditions converge without a timer.
+func (r *Reconciler) suspendWorkloads(ctx context.Context, optimize *v1.CamundaOptimize) (bool, error) {
+	var found bool
+	for _, comp := range []string{components.ComponentWebapp, components.ComponentImporter} {
+		key := client.ObjectKey{
+			Namespace: optimize.Namespace,
+			Name:      components.WorkloadName(optimize, comp),
+		}
+
+		var deployment appsv1.Deployment
+		if err := r.APIReader.Get(ctx, key, &deployment); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return false, fmt.Errorf("reading Deployment %q: %w", key, err)
+		}
+		if !metav1.IsControlledBy(&deployment, optimize) {
+			continue
+		}
+		found = true
+
+		if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != 0 {
+			if err := r.scaleToZero(ctx, optimize, &deployment); err != nil {
+				return false, err
+			}
+		}
+		stageSuspension(optimize, comp, deployment.Status.Replicas)
+	}
+
+	return found, nil
+}
+
+// scaleToZero patches the replicas of a Deployment to zero and records the
+// event on the CamundaOptimize. A Deployment that is already gone needs
+// nothing. The ocf apply takes the field back with force when the pre-check
+// passes again.
+func (r *Reconciler) scaleToZero(
+	ctx context.Context,
+	optimize *v1.CamundaOptimize,
+	deployment *appsv1.Deployment,
+) error {
+	patch := client.MergeFrom(deployment.DeepCopy())
+	deployment.Spec.Replicas = new(int32(0))
+
+	if err := r.Patch(ctx, deployment, patch); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("scaling Deployment %s to zero: %w", client.ObjectKeyFromObject(deployment), err)
+	}
+
+	r.EventRecorder.Eventf(
+		optimize,
+		nil,
+		corev1.EventTypeNormal,
+		eventReasonWorkloadsSuspended,
+		eventActionSuspend,
+		"Scaled %q to zero because the pre-check failed",
+		deployment.Name,
+	)
+
+	return nil
+}
+
+// stageSuspension sets the condition of the given workload, in memory, the
+// way ocf reports a suspension: Suspended and True once the Deployment
+// observes zero replicas, Suspending and False while they stop. An unknown
+// workload changes nothing.
+func stageSuspension(optimize *v1.CamundaOptimize, comp string, observed int32) {
+	conditionType, ok := workloadConditions[comp]
+	if !ok {
+		return
+	}
+
+	condition := metav1.Condition{
+		Type:               conditionType,
+		Status:             metav1.ConditionTrue,
+		Reason:             string(component.Suspended),
+		Message:            "Scaled to zero while the pre-check of the Optimize instance fails",
+		ObservedGeneration: optimize.Generation,
+	}
+	if observed != 0 {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = string(component.Suspending)
+		condition.Message = fmt.Sprintf("Waiting for %d replicas to stop", observed)
+	}
+	meta.SetStatusCondition(optimize.GetStatusConditions(), condition)
+}
 
 // recordSuspensionChange records an event when the suspension of the
 // referenced cluster changes, and nothing while it holds.

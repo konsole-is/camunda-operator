@@ -158,6 +158,23 @@ The importer reads Elasticsearch directly. It does not go through the orchestrat
 
 The operator keeps the exporter settings on the cluster while the suspension holds. A suspension is not a detachment, and the brokers are at zero, so nothing exports. Only deletion withdraws the settings.
 
+A failed check of a reference stops the workloads the same way. The operator scales the webapp and the importer to zero and keeps them. The importer reads Elasticsearch on its own, so a reference that no longer resolves must not leave it writing. `Ready` keeps the failure reason, and the message says that the workloads are at zero. `WebappReady` and `ImporterReady` report `Suspending` while the pods stop, then `Suspended`. The operator records the event `WorkloadsSuspended` for each Deployment it scales. When the check passes again, the workloads start on their own.
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: InvalidReference
+      message: >-
+        SecondaryStorageConfig "my-cluster-ns/my-storage-config" not found. The
+        Optimize workloads are scaled to zero until the pre-check passes
+    - type: ImporterReady
+      status: "True"
+      reason: Suspended
+      message: Scaled to zero while the pre-check of the Optimize instance fails
+```
+
 ## Stopping the import
 
 Set `spec.importer.replicas` to `0` to stop the import while the cluster keeps running. Use it for an index rewrite. The webapp keeps serving what is already imported. Set it back to `1` to start the import again.
@@ -205,7 +222,7 @@ A `CamundaOptimize` that never held the attachment removes nothing from the clus
 | `WebappReady` | `Healthy` | Every webapp replica is ready. | Nothing. |
 | `ImporterReady` | `Healthy` | The importer replica is ready, or `spec.importer.replicas` is `0`. | Nothing. |
 | `WebappReady` / `ImporterReady` | `Creating` / `Updating` / `Scaling` | The Deployment rolls out or scales. | Wait. |
-| `WebappReady` / `ImporterReady` | `Suspended` | The referenced cluster is suspended, so the Deployment is at zero. | Nothing. See [Suspension](#suspension). |
+| `WebappReady` / `ImporterReady` | `Suspending` / `Suspended` | The referenced cluster is suspended, or a check of this resource failed, so the Deployment stops or is at zero. | Nothing. See [Suspension](#suspension). |
 | `WebappReady` / `ImporterReady` | `Failing` | The Deployment has replicas that do not become ready. | Read the pods of the named Deployment. |
 | `WebappReady` / `ImporterReady` | `Degraded` / `Down` | Some or no replicas are ready after the grace period. | Read the pods and events of the named Deployment. |
 | `Ready` | `Healthy` | Every condition that takes part is healthy. | Nothing. |
@@ -222,6 +239,8 @@ A `CamundaOptimize` that never held the attachment removes nothing from the clus
 `Ready` is `True` only when every condition that takes part in it is `True`. When one of them is not `True`, `Ready` repeats its reason and its message, and the message names the condition it came from. Read the row of that condition to know what to do.
 
 `WebappReady` and `ImporterReady` always take part. `MirroredSecretsReady` takes part when a referenced Secret lives in another namespace, and reports `Disabled` when none does.
+
+Every reason above that reports a failed check scales both workloads to zero and keeps them, see [Suspension](#suspension). `ClusterAlreadyAttached` is the one exception. The workloads then belong to the resource that holds the cluster, so this one removes its own.
 
 `status.observedGeneration` is the last generation the operator reconciled.
 

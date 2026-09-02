@@ -123,6 +123,10 @@ func (res *resolver) staleHolder(ctx context.Context, holder secondarystoragecon
 // rollout.
 // Nothing watches those pods for this cluster, so the failure is unwatched
 // and the controller looks again on its timer.
+//
+// The list is read once, before the claim moves. A previous holder that is
+// pointed back at the contract in that moment can start pods next to the
+// taker, and it stops again as soon as it reads the new claim.
 func (res *resolver) waitForHandover(ctx context.Context, holder secondarystorageconfig.Holder) error {
 	pods, err := res.holderPods(ctx, holder)
 	if err != nil {

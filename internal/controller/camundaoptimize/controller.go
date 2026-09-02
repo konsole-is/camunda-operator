@@ -110,7 +110,10 @@ type Reconciler struct {
 // Reconcile converges a CamundaOptimize. A CR under deletion withdraws the
 // exporter patch and releases the finalizer. Otherwise the finalizer is added
 // before the first side effect, the pre-checks resolve every reference into
-// the render input, and a failed pre-check reports its Ready reason and stops.
+// the render input, and a failed pre-check reports its Ready reason, scales
+// the webapp and the importer to zero, and stops. A CamundaOptimize that lost
+// the attachment deletes those workloads instead, because they belong to the
+// instance that holds it now.
 // Then the exporter patch turns the Elasticsearch exporter of the referenced
 // cluster on, and the components converge: the copies of referenced Secrets,
 // the webapp, the importer. Ready is True only when every component that takes
@@ -167,10 +170,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	res, err := r.preCheck(ctx, &optimize)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
-		conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
 		// A CamundaOptimize that lost the attachment must not keep the
 		// workloads it built while it held it, see releaseWorkloads.
 		if failure.Reason == v1.ReasonClusterAlreadyAttached {
+			conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
 			// The component conditions describe workloads that the next call
 			// deletes, and comps stays nil on this path, so the flush does not
 			// own those types and would write the stale values back. A parked
@@ -180,7 +183,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			return ctrl.Result{}, r.releaseWorkloads(ctx, &optimize)
 		}
 
-		return ctrl.Result{}, nil
+		// Every other failed pre-check stops the workloads and keeps them.
+		// The reference that failed can be the one the cluster failed on too,
+		// and then the cluster reports itself suspended while this controller
+		// cannot resolve it either. The importer must not keep writing
+		// Elasticsearch through that, see suspendWorkloads.
+		suspended, suspendErr := r.suspendWorkloads(ctx, &optimize)
+		if suspended && suspendErr == nil {
+			failure.Message += ". The Optimize workloads are scaled to zero until the pre-check passes"
+		}
+		conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
+
+		return ctrl.Result{}, suspendErr
 	}
 	if err != nil {
 		return ctrl.Result{}, err

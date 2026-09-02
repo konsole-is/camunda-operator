@@ -132,7 +132,7 @@ The API server accepts a second cluster that names a held contract. That cluster
 
 The suspended cluster looks again every 30 seconds. When the holder is deleted or names another contract, the suspended cluster takes the claim and resumes on its own. A paused holder keeps its claim until you unpause it. Do not remove the two claim annotations by hand while two clusters name the contract. Both clusters then race for the free contract, and the holder can lose it and be suspended.
 
-The cluster that takes the contract stays at zero while pods of the previous holder still run on it. The pods of a deleted holder go after the cluster, and the pods of a repointed holder go when its rollout replaces them. Until then, its `Ready` is `False` with reason `WaitingForHandover`, and the message names the previous holder and its pods. The state clears on its own. Every pod carries the label `camunda.io/storage-contract` with the name of the contract it runs on, so `kubectl get pods -l camunda.io/storage-contract=<name>` lists them.
+The cluster that takes the contract stays at zero while pods of the previous holder still run on it. The pods of a deleted holder go after the cluster, and the pods of a repointed holder go when its rollout replaces them. Until then, its `Ready` is `False` with reason `WaitingForHandover`, and the message names the previous holder and its pods. The state clears on its own.
 
 ```yaml
 status:
@@ -144,6 +144,18 @@ status:
         Pods of the previous holder CamundaCluster "my-cluster-ns/my-other-cluster"
         still run on SecondaryStorageConfig "my-cluster-ns/my-storage-config":
         my-other-cluster-zeebe-0. This cluster starts when they are gone
+```
+
+Every pod carries the label `camunda.io/storage-contract` with the contract it runs on. A label value stops at 63 characters, so the operator shortens a longer contract name and adds a hash to it. Print the label as a column to read it for a name of any length:
+
+```bash
+kubectl get pods -n my-cluster-ns -L camunda.io/storage-contract
+```
+
+If the contract name is 63 characters or shorter, you can select on it:
+
+```bash
+kubectl get pods -n my-cluster-ns -l camunda.io/storage-contract=my-storage-config
 ```
 
 A recreated contract is a new claim. If the producer deletes the contract and creates it again, the holder and a suspended cluster race for the new claim. The holder can lose that race. Do not recreate a contract while two clusters name it.
@@ -160,6 +172,8 @@ status:
         CamundaCluster uses one secondary storage contract, so this cluster
         stays suspended until that one releases it
 ```
+
+Do not point `storageRef` of a holder at another contract and back while a second cluster waits for the handover. The second cluster reads the pods of the holder once, before it takes the claim. A holder that returns at that moment can start pods next to it. The operator suspends the loser as soon as it sees the new claim, but both clusters write the backend until the pods of the loser stop.
 
 The operator compares contracts, not endpoints. Give one contract to one backend. Two hand-written contracts that name one Elasticsearch are not caught.
 

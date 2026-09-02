@@ -781,6 +781,38 @@ var _ = Describe("CamundaOptimize controller", func() {
 			expectReplicas(1, webappKey, importerKey)
 		})
 
+		// The cluster stops on this reference too, and reports itself
+		// suspended. This controller cannot follow that suspension through
+		// the render input, because the reference it fails on is the same
+		// one, so the workloads stop on the failed pre-check instead.
+		It("scales to zero when the storage contract of its cluster is deleted", func() {
+			s := newScenario("8.9.4")
+			webappKey := client.ObjectKey{
+				Namespace: s.namespace,
+				Name:      components.WorkloadName(s.optimize, components.ComponentWebapp),
+			}
+			importerKey := client.ObjectKey{
+				Namespace: s.namespace,
+				Name:      components.WorkloadName(s.optimize, components.ComponentImporter),
+			}
+			expectReplicas(1, webappKey, importerKey)
+
+			By("deleting the contract that the cluster and this instance both resolve")
+			Expect(k8sClient.Delete(ctx, s.binding)).To(Succeed())
+
+			By("scaling both workloads to zero and naming that in the Ready message")
+			expectReplicas(0, webappKey, importerKey)
+			Eventually(func(g Gomega) {
+				var latest v1.CamundaOptimize
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(s.optimize), &latest)).To(Succeed())
+				ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
+				g.Expect(ready).NotTo(BeNil())
+				g.Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+				g.Expect(ready.Message).To(ContainSubstring("scaled to zero"))
+			}, timeout, interval).Should(Succeed())
+			expectCondition(s.optimize, v1.ConditionImporterReady, Equal(string(component.Suspended)))
+		})
+
 		It("withdraws the exporter entries on deletion and keeps the entry of the user", func() {
 			s := newScenario("8.9.4")
 			expectClusterEnv(s.cluster, ContainElement("CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME"))
