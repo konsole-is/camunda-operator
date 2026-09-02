@@ -4891,7 +4891,9 @@ spec:
                   CallbackRealm is the Keycloak realm that this management plane last
                   registered the login callbacks of Optimize in. When the spec names
                   another realm, or the oidc mode, the operator signs in to this one and
-                  removes the callbacks before it registers them in the new realm.
+                  removes the callbacks before it registers them in the new realm, and
+                  the field stays until no Management Identity pod of the old
+                  configuration is left to put them back.
 
                   It is absent in the keycloak mode, where the operator runs Keycloak and
                   deletes it with the management plane or with a move away from that
