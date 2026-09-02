@@ -126,7 +126,9 @@ spec:
 
 #### One realm answers to one management plane
 
-The first `CamundaManagementCluster` that names a realm holds it. Management Identity administers the clients of that realm, and the plane owns the login callbacks of its `optimize` client, so a second plane on the same realm would undo both.
+The first `CamundaManagementCluster` that reaches the realm holds it. Management Identity administers the clients of that realm, and the plane owns the login callbacks of its `optimize` client, so a second plane on the same realm would undo both.
+
+Which plane that is comes from the order the operator gets to them, not from the order you created them. Two planes that name one realm at the same time both ask the Kubernetes API server for the claim, and it answers one of them. A suspended plane asks for nothing, so it takes no realm until it resumes, and it keeps every realm it already holds.
 
 A second plane that names the same `url` and `realm` waits, from any namespace. It starts nothing new, touches nothing in that realm, and `Ready` names the holder:
 
