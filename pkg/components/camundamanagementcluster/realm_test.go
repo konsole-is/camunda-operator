@@ -589,6 +589,19 @@ func TestRealmIdentityFoldsTheLeadingZeroesOfAPort(t *testing.T) {
 	)
 }
 
+// A realm identity carries no query and no fragment. A value that has one is
+// no identity, and both go, so a message never prints what they held.
+func TestNormalizeRealmIdentityOfAValueWithAQuery(t *testing.T) {
+	t.Parallel()
+
+	identity, folded := NormalizeRealmIdentity(
+		"https://kc.example.com/auth/realms/camunda-platform?token=s3cret#s3cret",
+	)
+
+	assert.False(t, folded)
+	assert.Equal(t, "https://kc.example.com/auth/realms/camunda-platform", identity)
+}
+
 // A value that does not parse as a URL is folded of nothing. It keeps the
 // user and the password that were written into it, so the caller is told not
 // to print it.

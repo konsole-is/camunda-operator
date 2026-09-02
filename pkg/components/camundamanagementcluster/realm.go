@@ -79,16 +79,24 @@ func normalizeKeycloakURL(raw string) string {
 	return folded
 }
 
-// foldKeycloakURL is normalizeKeycloakURL with the answer to whether the
-// value parsed as a URL. A false says that nothing was folded out of it, a
-// user with a password included, so a caller that prints the result to a user
-// must not print it.
+// foldKeycloakURL is normalizeKeycloakURL with the answer to whether the value
+// is a realm identity and nothing else. A false says that the value held
+// something no identity has, so a caller that shows the result to a user must
+// not show it: what it held is still in there, or was dropped from a value
+// that carries who knows what else.
 func foldKeycloakURL(raw string) (string, bool) {
 	trimmed := strings.TrimRight(raw, "/")
 	parsed, err := url.Parse(trimmed)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return trimmed, false
 	}
+
+	// A realm is a URL with a path and nothing after it, which the CEL rules
+	// on url hold to. A query and a fragment name no realm and can carry
+	// anything, so they go, and the value counts as no identity.
+	identity := parsed.RawQuery == "" && parsed.Fragment == ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
 
 	// A user in the URL reaches the same realm as the URL without it, and it
 	// carries a password. Keeping it would let two spellings of one realm
@@ -130,16 +138,17 @@ func foldKeycloakURL(raw string) (string, bool) {
 	// spelling makes the URL print from the decoded path, which is one form.
 	parsed.RawPath = ""
 
-	return parsed.String(), true
+	return parsed.String(), identity
 }
 
 // NormalizeRealmIdentity folds a hand-written realm identity the way
 // RealmIdentity folds a URL, so an annotation written from
 // status.callbackRealm matches the recorded identity however it is spelled.
 //
-// The second result is false for a value that does not parse as a URL. Such a
-// value comes back as it was written, with a user and a password still in it,
-// so a message that a user reads must not carry it.
+// The second result is false for a value that is not a realm identity: one
+// that does not parse as a URL comes back with a user and a password still in
+// it, and one that carries a query or a fragment comes back without them. A
+// message that a user reads must carry neither.
 func NormalizeRealmIdentity(value string) (string, bool) {
 	return foldKeycloakURL(value)
 }
