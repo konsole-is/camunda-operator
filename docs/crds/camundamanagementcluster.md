@@ -548,6 +548,8 @@ status:
       passwordKey: "password"
 ```
 
+`status.callbackRealm` also keeps naming the old realm while a Management Identity pod of the old configuration still runs. Such a pod can restart and put the callbacks back, and the record is what finds them and removes them again.
+
 Keep the Secret that `adminCredentialsSecretRef` names there, and the Secret of `caBundleSecretRef` when the old Keycloak needed one, until `OptimizeCallbacksReady` reads `Healthy` again. The operator signs in to the old Keycloak with them one last time.
 
 A move to the `oidc` mode empties the old realm the same way. `status.callbackRealm` then goes, and `OptimizeCallbacksReady` reads `Disabled`.
@@ -556,7 +558,7 @@ The old realm never waits for the new one. The callbacks leave it even while the
 
 The field is absent in the `keycloak` mode. A move away from that mode deletes the Keycloak that the operator runs, and the database of that Keycloak keeps the realm as it was.
 
-An old Keycloak that does not answer keeps the callbacks, and the new realm gets none until it does. `OptimizeCallbacksReady` reads `ConnectionFailed`, `WriteFailed`, or `MissingSecret`, and the message names the old realm. `Ready` reads the same reason while this management plane serves an Optimize:
+On a move from one Keycloak to another, an old Keycloak that does not let go keeps the whole plane: the workloads stay on the old Keycloak, the new realm gets nothing, and everybody keeps signing in through the old one. `OptimizeCallbacksReady` reads `ConnectionFailed`, `WriteFailed`, `MissingSecret`, or `InvalidCABundle`, the message names the old realm, and `Ready` reads the same reason. On a move to the `oidc` mode the plane moves at once and only `OptimizeCallbacksReady` reports the failure, because Management Identity registers nothing in a realm there; the operator keeps trying to empty the old realm:
 
 ```yaml
 status:

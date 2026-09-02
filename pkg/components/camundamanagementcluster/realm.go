@@ -27,8 +27,12 @@ import (
 )
 
 // RealmTarget records the realm of provider: where it is, and which Secrets
-// the operator signs in to it with. It is what status.callbackRealm holds
-// after the login callbacks of Optimize are registered there.
+// the operator signs in to it with. In the externalKeycloak mode it is what
+// status.callbackRealm holds after the login callbacks of Optimize are
+// registered there. The keycloak mode returns a target too, for comparisons
+// against a record, but it is never persisted: the operator deletes that
+// Keycloak together with the mode, so there would be nothing to withdraw
+// from.
 //
 // The oidc mode administers no realm, and a provider that names no
 // administrator gives the operator nothing to sign in with, so both record
@@ -114,13 +118,33 @@ func RealmProvider(target v1.KeycloakRealmTarget) IdentityProvider {
 // pod that points at the realm of target and is not ready. Such a pod is
 // starting, and Management Identity writes the whole Optimize client of its
 // realm while it starts, so a withdrawal from that realm would be put back
-// by it. A ready pod started long ago and writes nothing more, a pod that
-// points at another realm writes that one, and a pod that is going away or
-// done runs no start.
+// by it. A ready pod started long ago and writes nothing more, and a pod
+// that points at another realm writes that one. A pod that is going away
+// counts: its container can still be inside the start until the kubelet
+// stops it.
 func IdentityWritesRealm(pods []corev1.Pod, target v1.KeycloakRealmTarget) bool {
 	for i := range pods {
 		pod := &pods[i]
-		if pod.DeletionTimestamp != nil || podDone(pod) || podReady(pod) {
+		if podDone(pod) || podReady(pod) {
+			continue
+		}
+		if realm, ok := identityRealmEnv(pod); ok && SameRealm(realm, target) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// IdentityPointsAtRealm reports whether one of pods is a Management Identity
+// pod that points at the realm of target and can still run, ready or not.
+// Such a pod can restart and write the Optimize client of that realm from
+// its environment, so the record of that realm must outlive the pod: it is
+// what finds the realm again and empties it.
+func IdentityPointsAtRealm(pods []corev1.Pod, target v1.KeycloakRealmTarget) bool {
+	for i := range pods {
+		pod := &pods[i]
+		if podDone(pod) {
 			continue
 		}
 		if realm, ok := identityRealmEnv(pod); ok && SameRealm(realm, target) {

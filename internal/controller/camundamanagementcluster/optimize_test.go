@@ -481,6 +481,12 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 			g.Expect(condition.Message).To(ContainSubstring(first.url))
 
 			g.Expect(second.redirectURIs()).To(BeEmpty())
+
+			// The whole plane waits, not only this operator's writes: a
+			// rendered Management Identity would register in the new realm
+			// itself as its pod starts.
+			g.Expect(identityEnv(g, s)["KEYCLOAK_URL"]).To(Equal(first.url))
+			g.Expect(conditionOf(g, s.mc, v1.ConditionReady).Reason).To(Equal(v1.ReasonWriteFailed))
 		}, timeout, interval).Should(Succeed())
 
 		first.setRefuseUpdate(false)
@@ -641,7 +647,8 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 
 	// An Identity pod of the revision before the change can still be starting
 	// while the spec moves on, and its initializer writes the old realm. The
-	// withdrawal waits for exactly that pod and for nothing else.
+	// withdrawal waits for exactly that pod, and the record outlives it: even
+	// a ready pod can restart and register the old callbacks again.
 	It("waits for an Identity pod that is starting against the old realm", func() {
 		first := startFakeKeycloak(withOptimizeClient())
 		second := startFakeKeycloak(withOptimizeClient())
@@ -663,24 +670,43 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		retargetKeycloak(s.mc, second.url)
 
 		Eventually(func(g Gomega) {
-			stampIdentityReady(g, s)
-
 			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
 			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(condition.Reason).To(Equal(string(component.PrerequisiteNotMet)))
 			g.Expect(condition.Message).To(ContainSubstring(first.url))
 		}, timeout, interval).Should(Succeed())
+		// The starting pod can rewrite the old client at any moment, so
+		// nothing was written and the plane did not move.
 		Expect(first.redirectURIs()).To(HaveLen(1))
 
 		markPodReady(pod)
 
+		// A ready pod is past its start, so the old realm is emptied. It can
+		// still restart, so the record stays and the new realm waits.
 		Eventually(func(g Gomega) {
 			stampIdentityReady(g, s)
 
 			g.Expect(first.redirectURIs()).To(BeEmpty())
+
+			recorded := readManagementCluster(g, s.mc).Status.CallbackRealm
+			g.Expect(recorded).NotTo(BeNil())
+			g.Expect(recorded.URL).To(Equal(first.url))
+			g.Expect(second.redirectURIs()).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+
+		// The pod goes, and the record and the registration follow it.
+		Expect(k8sClient.Delete(ctx, pod, client.GracePeriodSeconds(0))).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
 			g.Expect(second.redirectURIs()).To(Equal([]string{
 				blueOptimizeURL + components.OptimizeCallbackPath,
 			}))
+
+			recorded := readManagementCluster(g, s.mc).Status.CallbackRealm
+			g.Expect(recorded).NotTo(BeNil())
+			g.Expect(recorded.URL).To(Equal(second.url))
 		}, timeout, interval).Should(Succeed())
 	})
 

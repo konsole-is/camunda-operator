@@ -317,8 +317,13 @@ func TestIdentityWritesRealm(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "a terminating pod does not",
+			name: "a terminating pod that is not ready still blocks it",
 			pods: []corev1.Pod{pod("https://kc.example.com/auth", terminating)},
+			want: true,
+		},
+		{
+			name: "a terminating pod that is ready does not",
+			pods: []corev1.Pod{pod("https://kc.example.com/auth", terminating, ready)},
 			want: false,
 		},
 		{
@@ -338,6 +343,78 @@ func TestIdentityWritesRealm(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, test.want, IdentityWritesRealm(test.pods, target))
+		})
+	}
+}
+
+// A pod that can still run keeps the record of its realm alive, ready or
+// not: a restart of it writes the client again from its environment.
+func TestIdentityPointsAtRealm(t *testing.T) {
+	t.Parallel()
+
+	target := v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: "camunda-platform"}
+	pod := func(url string, mutate ...func(p *corev1.Pod)) corev1.Pod {
+		p := corev1.Pod{Spec: corev1.PodSpec{Containers: []corev1.Container{{
+			Name: identityContainer,
+			Env: []corev1.EnvVar{
+				{Name: keycloakEnvURL, Value: url},
+				{Name: keycloakEnvRealm, Value: "camunda-platform"},
+			},
+		}}}}
+		for _, m := range mutate {
+			m(&p)
+		}
+
+		return p
+	}
+	ready := func(p *corev1.Pod) {
+		p.Status.Conditions = []corev1.PodCondition{{
+			Type: corev1.PodReady, Status: corev1.ConditionTrue,
+		}}
+	}
+	terminating := func(p *corev1.Pod) {
+		now := metav1.Now()
+		p.DeletionTimestamp = &now
+	}
+	failed := func(p *corev1.Pod) { p.Status.Phase = corev1.PodFailed }
+
+	tests := []struct {
+		name string
+		pods []corev1.Pod
+		want bool
+	}{
+		{
+			name: "a ready pod against the realm keeps the record",
+			pods: []corev1.Pod{pod("https://kc.example.com/auth", ready)},
+			want: true,
+		},
+		{
+			name: "a terminating pod against the realm keeps it too",
+			pods: []corev1.Pod{pod("https://kc.example.com/auth", terminating)},
+			want: true,
+		},
+		{
+			name: "a pod against another Keycloak does not",
+			pods: []corev1.Pod{pod("https://other.example.com/auth", ready)},
+			want: false,
+		},
+		{
+			name: "a failed pod does not",
+			pods: []corev1.Pod{pod("https://kc.example.com/auth", failed)},
+			want: false,
+		},
+		{
+			name: "no pods at all do not",
+			pods: nil,
+			want: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, test.want, IdentityPointsAtRealm(test.pods, target))
 		})
 	}
 }

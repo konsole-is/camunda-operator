@@ -41,6 +41,7 @@ const (
 	stepSelectNamespaces  = step("select the namespaces")
 	stepClaimClusters     = step("claim the orchestration clusters")
 	stepDiscoverOptimize  = step("discover the Optimize instances")
+	stepWithdrawCallbacks = step("withdraw the login callbacks from the realm the spec left")
 	stepBuildComponents   = step("build the components")
 	stepRecordClaim       = step("record the initial administrator claim")
 	stepWebModelerUsers   = step("sync the Web Modeler users")

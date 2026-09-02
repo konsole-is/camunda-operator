@@ -156,11 +156,15 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // reference into the render input, and a failed pre-check reports its Ready
 // reason, lets go of the clusters that the selectors no longer match,
 // withdraws from a realm that status.callbackRealm names and the spec does
-// not, and stops. Then the orchestration clusters are selected and claimed, the
-// CamundaOptimizes behind the contract are discovered, the components
+// not, and stops. Then the orchestration clusters are selected and claimed,
+// the CamundaOptimizes behind the contract are discovered, the login
+// callbacks are withdrawn from a realm that status.callbackRealm names and
+// the spec does not (a Keycloak-to-Keycloak move that cannot finish that
+// withdrawal stops here, so the components never move Management Identity to
+// a new realm while the old one still signs people in), the components
 // converge, every attached cluster is pointed at Console, the
-// ManagementAuthConfig is applied, and the login callback of every discovered
-// Optimize is registered in the realm. A plane that serves at least one
+// ManagementAuthConfig is applied, and the login callback of every
+// discovered Optimize is registered in the realm. A plane that serves at least one
 // Optimize also waits for the login callbacks of the realm, and one that
 // serves none reads Ready whatever the realm says.
 //
@@ -229,12 +233,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// needs nothing the pre-check resolves, and the old realm would
 		// otherwise keep the callbacks for as long as the failure stands.
 		retry, withdrawErr := r.withdrawUnresolved(ctx, &mc)
-		var result ctrl.Result
+		// A result beside a non-nil error is dropped by controller-runtime,
+		// so the retry is returned only when nothing failed; a failure
+		// requeues with backoff on its own.
+		if err := errors.Join(withdrawErr, r.withdrawFromDeselected(ctx, &mc)); err != nil {
+			return ctrl.Result{}, err
+		}
 		if retry {
-			result.RequeueAfter = r.retryInterval()
+			return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 		}
 
-		return result, errors.Join(withdrawErr, r.withdrawFromDeselected(ctx, &mc))
+		return ctrl.Result{}, nil
 	}
 	if err != nil {
 		return ctrl.Result{}, stepResolveReferences.stop(&mc, err)
@@ -259,6 +268,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	if err := r.discoverOptimizes(ctx, &mc, &res); err != nil {
 		return ctrl.Result{}, stepDiscoverOptimize.stop(&mc, err)
+	}
+
+	// The realm the spec left is tidied before the components move Management
+	// Identity to the new Keycloak: a pod of the new revision registers the
+	// login callbacks in the new realm as it starts, and they must not appear
+	// there while the old realm still refuses to let go of its own. A move to
+	// the oidc mode is not held: Management Identity writes no realm there,
+	// so there is no second registration to hold back.
+	target := components.RealmTarget(res.Input.Provider)
+	withdrawal, tidy, err := r.withdrawRetargeted(ctx, &mc, target, res.Input.Suspended)
+	if err != nil {
+		return ctrl.Result{}, stepWithdrawCallbacks.stop(&mc, err)
+	}
+	if withdrawal != nil && !tidy && target != nil {
+		stageCallbacks(&mc, metav1.ConditionFalse, withdrawal.Reason, withdrawal.Message)
+		conditions.Stage(&mc, conditions.Failed(&mc, withdrawal))
+
+		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 
 	// A renamed contract leaves the old name behind until the new contract is
@@ -296,7 +323,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			contractErr = err
 		}
 	}
-	callbackFailure, callbackRetry, callbackErr := r.syncOptimizeCallbacks(ctx, &mc, res, contractErr)
+	callbackFailure, callbackRetry, callbackErr := r.syncOptimizeCallbacks(
+		ctx, &mc, res, contractErr, withdrawal,
+	)
 	contractErr = stepWriteContract.wrapAs(v1.ReasonWriteFailed, contractErr)
 	callbackErr = stepOptimizeCallbacks.wrap(callbackErr)
 	conditions.Stage(&mc, readyCondition(
