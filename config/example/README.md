@@ -21,7 +21,7 @@ it condenses.
 A preset is the shape of a resource: the sizing, the topology, the resources.
 It is cluster scoped, and it is written once. The three inventories that use
 presets share the one copy in [`presets`](presets), so a `CamundaCluster`
-shrinks to its references, its URL, and its version:
+shrinks to its references and its version:
 
 ```yaml
 spec:
