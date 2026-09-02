@@ -525,7 +525,7 @@ func TestNormalizeRealmIdentity(t *testing.T) {
 func TestRealmIdentityFoldsTheSpellingsOfOneHost(t *testing.T) {
 	t.Parallel()
 
-	realm := "camunda-platform"
+	realm := keycloakDefaultRealm
 
 	assert.Equal(
 		t,
@@ -548,6 +548,25 @@ func TestRealmIdentityFoldsTheSpellingsOfOneHost(t *testing.T) {
 		t,
 		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: realm}),
 		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://other.example.com/auth", Realm: realm}),
+	)
+}
+
+// A port is a number, so the leading zeroes that spell the same one make no
+// difference, and a default port spelled with them is still the default.
+func TestRealmIdentityFoldsTheLeadingZeroesOfAPort(t *testing.T) {
+	t.Parallel()
+
+	realm := keycloakDefaultRealm
+
+	assert.Equal(
+		t,
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com:8443/auth", Realm: realm}),
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com:08443/auth", Realm: realm}),
+	)
+	assert.Equal(
+		t,
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: realm}),
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com:0443/auth", Realm: realm}),
 	)
 }
 
