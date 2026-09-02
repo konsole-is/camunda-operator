@@ -651,10 +651,13 @@ func (r *Reconciler) identityPods(
 // trace of the callbacks that stay behind.
 func (r *Reconciler) forgetCallbackRealm(mc *v1.CamundaManagementCluster) bool {
 	recorded := mc.Status.CallbackRealm
-	named, _ := components.NormalizeRealmIdentity(
+	// A value that is no realm identity names no realm, whatever it folds to.
+	// The hatch leaves the callbacks behind for good, so it answers to the
+	// exact value the condition message prints and to nothing else.
+	named, identity := components.NormalizeRealmIdentity(
 		mc.Annotations[components.ForgetCallbackRealmAnnotation],
 	)
-	if named != components.RealmIdentity(*recorded) {
+	if !identity || named != components.RealmIdentity(*recorded) {
 		return false
 	}
 	r.EventRecorder.Eventf(
@@ -697,15 +700,17 @@ func (r *Reconciler) dropSpentForgetAnnotation(
 	// a password, so the event carries the folded identity of the value. A
 	// value that does not parse as a URL is folded of nothing, and the event
 	// says only that it is not a realm.
-	identity, folded := components.NormalizeRealmIdentity(named)
+	folded, identity := components.NormalizeRealmIdentity(named)
 	recorded := mc.Status.CallbackRealm
-	if recorded != nil && identity == components.RealmIdentity(*recorded) {
+	// A value that is no realm identity is one forgetCallbackRealm refuses, so
+	// it is spent here and removed, whatever it folds to.
+	if recorded != nil && identity && folded == components.RealmIdentity(*recorded) {
 		return nil
 	}
 	if recorded != nil {
 		carried := "a value that is not a realm identity"
-		if folded {
-			carried = fmt.Sprintf("realm %q", identity)
+		if identity {
+			carried = fmt.Sprintf("realm %q", folded)
 		}
 		r.EventRecorder.Eventf(
 			mc,

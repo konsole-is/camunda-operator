@@ -552,21 +552,32 @@ func TestRealmIdentityFoldsTheSpellingsOfOneHost(t *testing.T) {
 }
 
 // A percent escape of an unreserved character spells the same path, so it
-// folds into one identity too.
+// folds into one identity too. An escape of a reserved character does not:
+// %2F sits inside a segment and / separates two, and a server can route them
+// apart.
 func TestRealmIdentityFoldsAPercentEscapeOfThePath(t *testing.T) {
 	t.Parallel()
 
 	realm := keycloakDefaultRealm
+	plain := RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: realm})
 
-	assert.Equal(
-		t,
-		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: realm}),
-		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/%61uth", Realm: realm}),
-	)
+	assert.Equal(t, plain, RealmIdentity(v1.KeycloakRealmTarget{
+		URL: "https://kc.example.com/%61uth", Realm: realm,
+	}))
+	assert.NotEqual(t, plain, RealmIdentity(v1.KeycloakRealmTarget{
+		URL: "https://kc.example.com/Auth", Realm: realm,
+	}))
 	assert.NotEqual(
 		t,
-		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: realm}),
-		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/Auth", Realm: realm}),
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth/blue", Realm: realm}),
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth%2Fblue", Realm: realm}),
+	)
+	// The hex digits of an escape are case-insensitive, so one reserved
+	// character still has one spelling.
+	assert.Equal(
+		t,
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth%2Fblue", Realm: realm}),
+		RealmIdentity(v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth%2fblue", Realm: realm}),
 	)
 }
 

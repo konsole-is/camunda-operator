@@ -991,6 +991,44 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		Expect(first.redirectURIs()).To(HaveLen(1))
 	})
 
+	// The hatch leaves the callbacks behind for good, so it answers to the
+	// exact value the condition message prints. A value that carries a query
+	// is no realm identity, whatever it folds to, and it is removed unused.
+	It("refuses a forget annotation that carries a query", func() {
+		first := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(first))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		var recorded string
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			realm := readManagementCluster(g, s.mc).Status.CallbackRealm
+			g.Expect(realm).NotTo(BeNil())
+			recorded = components.RealmIdentity(*realm)
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			metav1.SetMetaDataAnnotation(
+				&latest.ObjectMeta,
+				components.ForgetCallbackRealmAnnotation,
+				recorded+"?typo=1",
+			)
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			g.Expect(latest.Annotations).NotTo(HaveKey(components.ForgetCallbackRealmAnnotation))
+			g.Expect(latest.Status.CallbackRealm).NotTo(BeNil())
+			g.Expect(eventReasons(g, s.mc)).To(ContainElement(eventReasonForgetIgnored))
+		}, timeout, interval).Should(Succeed())
+
+		Expect(first.redirectURIs()).To(HaveLen(1))
+	})
+
 	// Suspension holds the realms, not an annotation that sanctions nothing.
 	// A typo that waits until the plane resumes is a typo that a later
 	// retarget can meet, so it goes while the plane sleeps.

@@ -134,11 +134,59 @@ func foldKeycloakURL(raw string) (string, bool) {
 		parsed.Host = host
 	}
 	// url.Parse keeps the spelling of the path beside the decoded one, so
-	// /%61uth and /auth would each take a claim on one realm. Dropping the
-	// spelling makes the URL print from the decoded path, which is one form.
-	parsed.RawPath = ""
+	// /%61uth and /auth would take a claim each on one realm.
+	if escaped := foldUnreservedEscapes(parsed.EscapedPath()); escaped != "" {
+		if decoded, err := url.PathUnescape(escaped); err == nil {
+			parsed.Path, parsed.RawPath = decoded, escaped
+		}
+	}
 
 	return parsed.String(), identity
+}
+
+// foldUnreservedEscapes decodes the percent escapes of an already escaped path
+// that stand for an unreserved character, and writes every other escape in
+// upper case. RFC 3986 makes those two spellings of one path, so /%61uth and
+// /auth are one realm.
+//
+// An escape of a reserved character stays as it is. %2F and / are not one
+// path: a server reads the first inside a segment and the second as the
+// separator between two, and a proxy can route them apart.
+func foldUnreservedEscapes(escaped string) string {
+	var folded strings.Builder
+	folded.Grow(len(escaped))
+	for i := 0; i < len(escaped); i++ {
+		if escaped[i] != '%' || i+2 >= len(escaped) {
+			folded.WriteByte(escaped[i])
+
+			continue
+		}
+		char, err := strconv.ParseUint(escaped[i+1:i+3], 16, 8)
+		switch {
+		case err != nil:
+			folded.WriteByte(escaped[i])
+
+			continue
+		case unreserved(byte(char)):
+			folded.WriteByte(byte(char))
+		default:
+			folded.WriteString(strings.ToUpper(escaped[i : i+3]))
+		}
+		i += 2
+	}
+
+	return folded.String()
+}
+
+// unreserved reports whether char is one of the unreserved characters of RFC
+// 3986, which a percent escape and the character itself spell alike.
+func unreserved(char byte) bool {
+	switch {
+	case char >= 'A' && char <= 'Z', char >= 'a' && char <= 'z', char >= '0' && char <= '9':
+		return true
+	default:
+		return char == '-' || char == '.' || char == '_' || char == '~'
+	}
 }
 
 // NormalizeRealmIdentity folds a hand-written realm identity the way
