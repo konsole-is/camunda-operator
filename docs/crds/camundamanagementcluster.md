@@ -147,6 +147,8 @@ A plane that you retarget into the wait keeps the workloads it already ran, and 
 
 A pod of that Management Identity that restarts while it waits writes the clients of the old realm again, and the login callbacks of this plane with them. The operator removed those once and does not remove them a second time. If you keep that realm in use, remove them from its `optimize` client yourself.
 
+A plane can also come into the wait on the realm its own workloads run against. You upgrade a cluster where two planes already share one realm, or somebody removes a claim by hand and another plane takes it. The operator then writes nothing more in that realm, and `Ready` names the holder, but the Management Identity of the waiting plane keeps running against it, as every workload of a waiting plane does. Correct the spec of that plane, or delete it.
+
 #### Trust of an https Keycloak
 
 The operator signs in to Keycloak itself, to register the login callback of every Optimize this management plane serves. It trusts the certificate authorities of its own image, which are the public ones. A Keycloak whose certificate comes from an authority of your own therefore fails the handshake, and `OptimizeCallbacksReady` reads `ConnectionFailed`.
