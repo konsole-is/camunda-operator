@@ -86,7 +86,7 @@ Each creation records the Normal event `BackupCreated` on the schedule. The even
 
 The operator skips a trigger and creates no backup when:
 
-- The cluster is suspended. A suspended cluster answers no call, so a backup can only fail.
+- The cluster is suspended. A suspended cluster answers no call, so a backup can only fail. Both causes of a suspension skip the trigger: `spec.suspend` on the cluster, and a `SecondaryStorageConfig` that another `CamundaCluster` holds. The second one shows on the cluster as `Ready` reason `StorageAlreadyAttached`.
 - A backup of this schedule has not reached a terminal phase. Two backups of one schedule never overlap.
 - A reference of the schedule does not resolve. The `Ready` condition already says which one.
 
@@ -251,7 +251,7 @@ spec:
 
 ## Related
 
-- [CamundaCluster](camundacluster.md): the cluster that the schedule backs up. Its `spec.suspend` gates the triggers, and its `spec.backup.primaryStorage.retention.window` bounds how long a dump stays restorable.
+- [CamundaCluster](camundacluster.md): the cluster that the schedule backs up. Its suspension gates the triggers, and its `spec.backup.primaryStorage.retention.window` bounds how long a dump stays restorable.
 - [SecondaryStorageConfig](secondarystorageconfig.md): its `spec.type` selects the backup kind that each trigger creates.
 - [LogicalBackupElasticsearch](logicalbackupelasticsearch.md): the backup kind for an Elasticsearch cluster.
 - [LogicalBackupRDBMS](logicalbackuprdbms.md): the backup kind for a relational cluster.

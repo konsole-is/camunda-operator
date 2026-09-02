@@ -94,7 +94,7 @@ func (o Options) withDefaults() Options {
 type BackupScheduleReconciler struct {
 	client.Client
 	// APIReader reads without the cache. A trigger decides on live state: a
-	// stale suspend flag or a stale backup list must not start or skip a
+	// stale suspension or a stale backup list must not start or skip a
 	// backup, and the pruning deletes data, so it counts live objects.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
@@ -284,7 +284,7 @@ func (r *BackupScheduleReconciler) trigger(
 		return nil
 	}
 
-	if res.cluster.Spec.Suspend {
+	if res.cluster.Suspended() {
 		schedule.Status.LastScheduleTime = &consumed
 		r.EventRecorder.Eventf(
 			schedule,
