@@ -241,7 +241,16 @@ func IdentityRealms(pods []corev1.Pod) ([]v1.KeycloakRealmTarget, bool) {
 // the pods alone gives the realm back in the gap between a pod that went and
 // its replacement.
 func IdentityTemplateRealms(deployment *appsv1.Deployment) ([]v1.KeycloakRealmTarget, bool) {
-	return templateRealms(deployment.Spec.Replicas, &deployment.Spec.Template.Spec)
+	if scaledDown(
+		deployment.Spec.Replicas,
+		deployment.Generation,
+		deployment.Status.ObservedGeneration,
+		deployment.Status.Replicas,
+	) {
+		return nil, false
+	}
+
+	return templateRealms(&deployment.Spec.Template.Spec)
 }
 
 // IdentityReplicaSetRealms returns the realm of every Management Identity
@@ -256,7 +265,12 @@ func IdentityReplicaSetRealms(sets []appsv1.ReplicaSet) ([]v1.KeycloakRealmTarge
 	var unknown bool
 	for i := range sets {
 		set := &sets[i]
-		setRealms, setUnknown := templateRealms(set.Spec.Replicas, &set.Spec.Template.Spec)
+		if scaledDown(
+			set.Spec.Replicas, set.Generation, set.Status.ObservedGeneration, set.Status.Replicas,
+		) {
+			continue
+		}
+		setRealms, setUnknown := templateRealms(&set.Spec.Template.Spec)
 		realms = append(realms, setRealms...)
 		unknown = unknown || setUnknown
 	}
@@ -264,15 +278,29 @@ func IdentityReplicaSetRealms(sets []appsv1.ReplicaSet) ([]v1.KeycloakRealmTarge
 	return realms, unknown
 }
 
-// templateRealms returns the realm that a pod template names, and reports
-// whether it writes a realm it does not name. A template names none when it
-// starts no pod against a Keycloak: a workload scaled to zero, and the oidc
-// mode. An unset replica count is one replica, as Kubernetes reads it.
-func templateRealms(replicas *int32, spec *corev1.PodSpec) ([]v1.KeycloakRealmTarget, bool) {
-	if replicas != nil && *replicas == 0 {
-		return nil, false
-	}
+// scaledDown reports a Management Identity workload that starts no pod any
+// more: it asks for none, its controller has read that, and it holds none.
+//
+// The three go together. A workload that asks for none and whose controller
+// has not caught up can have the pod creation of the generation before it in
+// flight, and that pod starts against the realm of the template.
+//
+// An unset replica count is one replica, as Kubernetes reads it.
+//
+// The withdrawal wait of stopOldIdentityWriters asks the same question of a
+// ReplicaSet and answers it on the replica count alone. It must, because that
+// wait holds status.callbackRealm: a rule that waits for a controller to catch
+// up would keep a plane in the realm it is leaving whenever the count never
+// gets read. A claim that is held too long only makes the next claimant wait
+// for its retry, so this rule takes the safer side of the same question.
+func scaledDown(replicas *int32, generation, observed int64, held int32) bool {
+	return replicas != nil && *replicas == 0 && observed >= generation && held == 0
+}
 
+// templateRealms returns the realm that a pod template names, and reports
+// whether it writes a realm it does not name. A template of the oidc mode
+// names no Keycloak and returns none.
+func templateRealms(spec *corev1.PodSpec) ([]v1.KeycloakRealmTarget, bool) {
 	switch realm, state := identityRealmEnv(spec); state {
 	case realmUnknown:
 		return nil, true

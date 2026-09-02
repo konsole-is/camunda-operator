@@ -577,12 +577,16 @@ func TestIdentityTemplateRealms(t *testing.T) {
 	t.Parallel()
 
 	deployment := func(url string, replicas *int32) *appsv1.Deployment {
-		return &appsv1.Deployment{Spec: appsv1.DeploymentSpec{
-			Replicas: replicas,
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{Containers: identityRealmContainers(url)},
+		return &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Generation: 2},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: replicas,
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{Containers: identityRealmContainers(url)},
+				},
 			},
-		}}
+			Status: appsv1.DeploymentStatus{ObservedGeneration: 2},
+		}
 	}
 	zero, one := int32(0), int32(1)
 
@@ -632,6 +636,26 @@ func TestIdentityTemplateRealms(t *testing.T) {
 		assert.Empty(t, realms)
 		assert.True(t, unknown)
 	})
+
+	// The pod creation of the generation before the scale to zero can still be
+	// in flight, and that pod starts against the realm of the template.
+	t.Run("a scale to zero that the controller has not read points at its realm", func(t *testing.T) {
+		t.Parallel()
+
+		unread := deployment("https://kc.example.com/auth", &zero)
+		unread.Status.ObservedGeneration = 1
+		realms, _ := IdentityTemplateRealms(unread)
+		assert.Len(t, realms, 1)
+	})
+
+	t.Run("a scale to zero that still holds a pod points at its realm", func(t *testing.T) {
+		t.Parallel()
+
+		holding := deployment("https://kc.example.com/auth", &zero)
+		holding.Status.Replicas = 1
+		realms, _ := IdentityTemplateRealms(holding)
+		assert.Len(t, realms, 1)
+	})
 }
 
 // The old ReplicaSet of a rollout keeps the template the Deployment left, so
@@ -640,18 +664,25 @@ func TestIdentityReplicaSetRealms(t *testing.T) {
 	t.Parallel()
 
 	set := func(url string, replicas int32) appsv1.ReplicaSet {
-		return appsv1.ReplicaSet{Spec: appsv1.ReplicaSetSpec{
-			Replicas: &replicas,
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{Containers: identityRealmContainers(url)},
+		return appsv1.ReplicaSet{
+			ObjectMeta: metav1.ObjectMeta{Generation: 2},
+			Spec: appsv1.ReplicaSetSpec{
+				Replicas: &replicas,
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{Containers: identityRealmContainers(url)},
+				},
 			},
-		}}
+			Status: appsv1.ReplicaSetStatus{ObservedGeneration: 2},
+		}
 	}
+	unread := set("https://unread.example.com/auth", 0)
+	unread.Status.ObservedGeneration = 1
 
 	realms, unknown := IdentityReplicaSetRealms([]appsv1.ReplicaSet{
 		set("https://old.example.com/auth", 1),
 		set("https://new.example.com/auth", 2),
 		set("https://scaled-down.example.com/auth", 0),
+		unread,
 		set("", 1),
 	})
 
@@ -660,7 +691,12 @@ func TestIdentityReplicaSetRealms(t *testing.T) {
 	for _, realm := range realms {
 		urls = append(urls, realm.URL)
 	}
-	assert.Equal(t, []string{"https://old.example.com/auth", "https://new.example.com/auth"}, urls)
+	want := []string{
+		"https://old.example.com/auth",
+		"https://new.example.com/auth",
+		"https://unread.example.com/auth",
+	}
+	assert.Equal(t, want, urls)
 }
 
 // identityRealmPod is a Management Identity pod that points at url. An empty
