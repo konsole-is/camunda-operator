@@ -4,8 +4,9 @@
 #
 # None of the three sets secondaryStorageConfig. That field is for the
 # secondary storage of an orchestration cluster, which these are not.
-# databaseName takes lowercase letters and underscores only, so Web Modeler
-# gets web_modeler.
+# databaseName starts with a lowercase letter or an underscore, then takes
+# lowercase letters, digits, and underscores, up to 63 characters. A hyphen
+# is not one of them, so Web Modeler gets web_modeler.
 apiVersion: core.camunda.io/v1
 kind: Database
 metadata:

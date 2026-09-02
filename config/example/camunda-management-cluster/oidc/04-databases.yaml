@@ -1,6 +1,8 @@
 # Each Database publishes a DatabaseConfig of its own name, which the
-# management cluster names in a databaseConfigRef. databaseName takes
-# lowercase letters and underscores only, so Web Modeler gets web_modeler.
+# management cluster names in a databaseConfigRef. databaseName starts with a
+# lowercase letter or an underscore, then takes lowercase letters, digits, and
+# underscores, up to 63 characters. A hyphen is not one of them, so Web
+# Modeler gets web_modeler.
 apiVersion: core.camunda.io/v1
 kind: Database
 metadata:
