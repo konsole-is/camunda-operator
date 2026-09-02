@@ -24,6 +24,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -131,7 +132,7 @@ func applyInventory(dir string) {
 			continue
 		}
 
-		if filepath.Ext(entry.Name()) == ".yaml" {
+		if slices.Contains(manifestExtensions, filepath.Ext(entry.Name())) {
 			path := filepath.Join(dir, entry.Name())
 			Expect(listed).To(ContainElement(entry.Name()), path+" is not a resource of "+kustomizationFile)
 			applyFile(path)
@@ -196,6 +197,10 @@ func applyObject(path string, obj *unstructured.Unstructured) {
 	where := fmt.Sprintf("%s: %s %s", path, obj.GetKind(), obj.GetName())
 	strict := client.FieldValidation(metav1.FieldValidationStrict)
 
+	// Two inventories can declare the same namespace, and the second Create
+	// then reports AlreadyExists. That does not hide a bad manifest: the API
+	// server decodes and validates before it looks the name up, so a typo or
+	// a broken value in the later copy still comes back as its own error.
 	if obj.GetKind() == "Namespace" {
 		err := k8sClient.Create(ctx, obj, strict)
 		if !apierrors.IsAlreadyExists(err) {
