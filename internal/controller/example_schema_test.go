@@ -152,6 +152,11 @@ func applyFile(path string) {
 // even on a dry run, so the namespaces an inventory declares must exist for
 // the rest of it to validate.
 //
+// The namespaces are left behind on purpose. envtest runs no namespace
+// controller, so a deleted namespace never leaves Terminating, and nothing
+// can be created in it again. Cleaning up would break a later run of this
+// spec rather than isolate it.
+//
 // Strict field validation turns a misspelled field into an error. A CRD
 // schema prunes an unknown field without it, so a typo would pass unseen.
 func applyObject(path string, obj *unstructured.Unstructured) {
