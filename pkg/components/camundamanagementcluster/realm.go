@@ -54,20 +54,22 @@ func RealmTarget(provider IdentityProvider) *v1.KeycloakRealmTarget {
 // RealmIdentity returns the name of the realm that target holds, as the URL
 // of its realm endpoint: the URL, then /realms/ and the realm. The scheme and
 // the host of the URL are folded to lower case, and a default port (443 on
-// https, 80 on http) and every trailing slash are dropped. The path of the
-// URL and the realm stay as they are, because both are case-sensitive. Two
-// targets of one identity are one realm. The administrator and the
-// certificate authority take no part in it. The result is deterministic, so
-// a name derived from it (a hash, for example) identifies the realm across
-// resources.
+// https, 80 on http), a user in the URL, and every trailing slash are
+// dropped. The path of the URL and the realm stay as they are, because both
+// are case-sensitive. Two targets of one identity are one realm. The
+// administrator and the certificate authority take no part in it. The result
+// is deterministic, so a name derived from it (a hash, for example)
+// identifies the realm across resources, and it is safe to read, so a claim
+// can name the realm it holds in the clear.
 func RealmIdentity(target v1.KeycloakRealmTarget) string {
 	return normalizeKeycloakURL(target.URL) + keycloakRealmPath + target.Realm
 }
 
 // normalizeKeycloakURL trims the trailing slashes of raw and folds what
 // names the same server either way: the case of the scheme and of the host,
-// and a port that only spells out the default of the scheme. A raw value
-// that does not parse as a URL comes back with only the slashes trimmed.
+// a port that only spells out the default of the scheme, and a user in the
+// URL. A raw value that does not parse as a URL comes back with only the
+// slashes trimmed.
 func normalizeKeycloakURL(raw string) string {
 	trimmed := strings.TrimRight(raw, "/")
 	parsed, err := url.Parse(trimmed)
@@ -75,6 +77,11 @@ func normalizeKeycloakURL(raw string) string {
 		return trimmed
 	}
 
+	// A user in the URL reaches the same realm as the URL without it, and it
+	// carries a password. Keeping it would let two spellings of one realm
+	// take a claim each, and would write the password into the annotations of
+	// the claim.
+	parsed.User = nil
 	parsed.Scheme = strings.ToLower(parsed.Scheme)
 	host := strings.ToLower(parsed.Hostname())
 	port := parsed.Port()

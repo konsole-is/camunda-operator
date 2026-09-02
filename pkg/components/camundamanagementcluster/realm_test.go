@@ -149,6 +149,15 @@ func TestRealmIdentity(t *testing.T) {
 			target: v1.KeycloakRealmTarget{URL: "https://kc.example.com/Auth", Realm: "camunda-platform"},
 			want:   "https://kc.example.com/Auth/realms/camunda-platform",
 		},
+		{
+			// A URL that carries a user reaches the same realm as one without
+			// it, and the password must not reach the annotations of a claim.
+			name: "drops a user in the URL",
+			target: v1.KeycloakRealmTarget{
+				URL: "https://admin:s3cret@kc.example.com/auth", Realm: "camunda-platform",
+			},
+			want: "https://kc.example.com/auth/realms/camunda-platform",
+		},
 	}
 
 	for _, test := range tests {
