@@ -139,9 +139,10 @@ func (r *Reconciler) listOptimizes(ctx context.Context, contract string) ([]v1.C
 // status.callbackRealm records the realm of a Keycloak that you run once the
 // callbacks are there. Reconcile withdraws from a recorded realm the spec no
 // longer names before the components run, and withdrawal is what that pass
-// found: nil once the recorded realm is tidy, or the failure to report. A
-// non-nil one holds the registration below back, so a realm the spec left
-// never keeps signing people in while the new one fills.
+// found. Only the oidc mode reaches this step with a non-nil one: a
+// Keycloak-to-Keycloak move with a pending withdrawal stops the pass in
+// Reconcile instead, so this step never registers beside a realm that is
+// still being left.
 func (r *Reconciler) syncOptimizeCallbacks(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
@@ -204,20 +205,6 @@ func (r *Reconciler) syncOptimizeCallbacks(
 
 		return nil, false, nil
 	}
-	// The realm that the spec named before went first, before the components.
-	// A failure that was not tidy gated the pass there, so what reaches this
-	// point is a recorded realm that is empty and waiting for the last pod
-	// that points at it to go. The registration waits with it: the record is
-	// one field, and registering now would overwrite the realm it still has
-	// to watch.
-	if withdrawal != nil {
-		stageCallbacks(mc, metav1.ConditionFalse, withdrawal.Reason, withdrawal.Message)
-		if len(desired) == 0 {
-			return nil, true, nil
-		}
-
-		return withdrawal, true, nil
-	}
 	// Management Identity writes the whole client representation while it
 	// starts. This step reads that representation and writes it back with the
 	// redirect URIs replaced, so a write of its own between the two calls would
@@ -270,7 +257,7 @@ func (r *Reconciler) syncOptimizeCallbacks(
 	// when the spec names another one later. Only a Keycloak that you run is
 	// recorded: the Keycloak that the operator runs is deleted by the same
 	// change, and its realm goes with it. The write cannot lose a pending
-	// record: a pass with one never reaches this point.
+	// record: a pass that still holds one stops in Reconcile.
 	if provider.Mode == components.ModeExternalKeycloak {
 		mc.Status.CallbackRealm = components.RealmTarget(provider)
 	}
@@ -309,12 +296,13 @@ func (r *Reconciler) syncOptimizeCallbacks(
 // The second result reports whether the recorded realm is tidy: it holds no
 // callback of this operator, or there is no record at all. Reconcile runs
 // this before the components and does not move the plane to a new Keycloak
-// while the old realm is not tidy, so nothing registers in the new realm
-// while the old one still signs people in. A tidy realm can still come back
-// with a failure: the record is kept while a pod that points at that realm
-// can run, because a restart of it writes the client again from its
-// environment, and the record is what finds the realm and empties it once
-// more. The record goes only when no such pod is left.
+// while the record stands, so nothing registers in the new realm while the
+// old one still signs people in. A tidy realm can still come back with a
+// failure: the record is kept while a pod that points at that realm can
+// run, because a restart of it writes the client again from its
+// environment. Reconcile then stops the old Management Identity, this
+// function checks the realm once more when its pods are gone, and only the
+// pass that finds none clears the record.
 //
 // The failure names the recorded realm. Nothing but the record reaches that
 // realm, so the caller reports the failure and comes back on the retry
@@ -382,8 +370,8 @@ func (r *Reconciler) withdrawRetargeted(
 			Reason: string(component.PrerequisiteNotMet),
 			Message: fmt.Sprintf(
 				"Realm %q of Keycloak %q holds no login callback of this management plane any "+
-					"more, and a Management Identity pod that points at it still runs, so the "+
-					"record is kept until that pod is gone",
+					"more, and a Management Identity pod that points at it still runs; the "+
+					"plane moves to the new identity provider when that pod is gone",
 				recorded.Realm, recorded.URL,
 			),
 		}, true, nil

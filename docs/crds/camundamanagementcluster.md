@@ -548,7 +548,7 @@ status:
       passwordKey: "password"
 ```
 
-`status.callbackRealm` also keeps naming the old realm while a Management Identity pod of the old configuration still runs. Such a pod can restart and put the callbacks back, and the record is what finds them and removes them again.
+`status.callbackRealm` also keeps naming the old realm while a Management Identity pod of the old configuration still runs. Such a pod can restart and put the callbacks back. Once the old realm is empty, the operator stops Management Identity, checks the realm once more when its pods are gone, and only then starts the workloads against the new Keycloak. A move therefore restarts Management Identity once, and nobody signs in between the stop and the start.
 
 Keep the Secret that `adminCredentialsSecretRef` names there, and the Secret of `caBundleSecretRef` when the old Keycloak needed one, until `OptimizeCallbacksReady` reads `Healthy` again. The operator signs in to the old Keycloak with them one last time.
 
@@ -698,7 +698,7 @@ The `ManagementAuthConfig` is the one step that reads `WriteFailed` on `Ready` i
 | `OptimizeCallbacksReady` | `AdminRoleGrantFailed` | The first administrator did not get the `Optimize` role of the realm. The realm holds no user of that name, or it holds no `Optimize` role, or Keycloak refused the grant. The message names which. | Read the message. A missing user or a missing role is one somebody removed from the realm, so put it back, or correct `spec.identity.admin.username`. |
 | `OptimizeCallbacksReady` | `Disabled` | The mode is `oidc`, so your provider holds the callback URLs. | Nothing. |
 | `OptimizeCallbacksReady` | `Suspended` | `spec.suspend` is `true`, so every realm is left as it is, the one in `status.callbackRealm` included. | Nothing. |
-| `OptimizeCallbacksReady` | `PrerequisiteNotMet` | The operator is waiting for something before it touches a realm: Management Identity, which owns the Optimize client while it starts, or the `ManagementAuthConfig`, which decides who this plane serves. The message names which one. | Read the `IdentityReady` row, or the `ManagementAuthReady` row, whichever the message names. |
+| `OptimizeCallbacksReady` | `PrerequisiteNotMet` | The operator is waiting for something before it touches a realm: Management Identity, which owns the Optimize client while it starts; the `ManagementAuthConfig`, which decides who this plane serves; or, on a move to another identity provider, the stop of the Management Identity pods of the realm the plane is leaving. The message names which one. | Read the row the message names, or wait: on a move, the operator stops the old Management Identity itself and moves on when its pods are gone. |
 | `Ready` | `Healthy` | Every condition that takes part is healthy and the contract is written. The callbacks are registered too while `status.optimize` holds a row; a plane that serves no Optimize reads `Healthy` whatever the realm says. | Nothing. |
 | `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Suspending` / `PendingSuspension` / `PrerequisiteNotMet` | The reason of the governing condition. The message names it. | Read the row of that condition. |
 | `Ready` | `ImmutableAfterStart` | `spec.identity.admin` asks for an administrator claim that Management Identity did not start with. | Read the `IdentityReady` row. |

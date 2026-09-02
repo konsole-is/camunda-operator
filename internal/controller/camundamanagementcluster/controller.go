@@ -281,7 +281,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	if err != nil {
 		return ctrl.Result{}, stepWithdrawCallbacks.stop(&mc, err)
 	}
-	if withdrawal != nil && !tidy && target != nil {
+	if withdrawal != nil && target != nil {
+		// While the old realm still holds the callbacks, the plane stays up
+		// on the old Keycloak. Once it is empty, the old Management Identity
+		// is stopped: its pods are the last writers of that realm, and one
+		// that restarts would put the callbacks back while the new realm
+		// fills. The realm is checked once more when they are gone, and only
+		// then do the components start Identity against the new Keycloak, so
+		// the two realms never accept the callbacks at the same time.
+		if tidy {
+			if err := r.stopIdentity(ctx, &mc); err != nil {
+				return ctrl.Result{}, stepWithdrawCallbacks.stop(&mc, err)
+			}
+		}
 		stageCallbacks(&mc, metav1.ConditionFalse, withdrawal.Reason, withdrawal.Message)
 		conditions.Stage(&mc, conditions.Failed(&mc, withdrawal))
 

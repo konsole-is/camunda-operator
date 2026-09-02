@@ -682,16 +682,19 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		markPodReady(pod)
 
 		// A ready pod is past its start, so the old realm is emptied. It can
-		// still restart, so the record stays and the new realm waits.
+		// still restart, so the record stays, the old Management Identity is
+		// stopped rather than moved, and the new realm waits: nothing may
+		// write it while a pod of the old realm can come back.
 		Eventually(func(g Gomega) {
-			stampIdentityReady(g, s)
-
 			g.Expect(first.redirectURIs()).To(BeEmpty())
 
 			recorded := readManagementCluster(g, s.mc).Status.CallbackRealm
 			g.Expect(recorded).NotTo(BeNil())
 			g.Expect(recorded.URL).To(Equal(first.url))
 			g.Expect(second.redirectURIs()).To(BeEmpty())
+
+			var workload appsv1.Deployment
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, identity, &workload))).To(BeTrue())
 		}, timeout, interval).Should(Succeed())
 
 		// The pod goes, and the record and the registration follow it.
