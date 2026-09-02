@@ -307,6 +307,33 @@ func TestFinalizeStopsIdentityBeforeTheRealm(t *testing.T) {
 	})
 }
 
+// A Keycloak that does not answer is best effort, and the deletion goes on
+// without it. A Kubernetes API that does not answer is not: it leaves the
+// realms to withdraw from unknown, and the pass releases the claim on every one
+// of them two calls later.
+func TestFinalizeStopsWhenTheWithdrawalCannotReadKubernetes(t *testing.T) {
+	mc := externalKeycloakCluster("https://new.example.com/auth", "new-admin")
+	mc.Finalizers = []string{Finalizer}
+	recorded := v1.KeycloakRealmTarget{
+		URL:   "https://old.example.com/auth",
+		Realm: "camunda-platform",
+		AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
+			Name:        "old-admin",
+			UsernameKey: "username",
+			PasswordKey: "password",
+		},
+	}
+	mc.Status.CallbackRealm = &recorded
+	lease := components.NewRealmClaimLease(testClaimNamespace, recorded, mc)
+	r, deletes := fakeReconciler(t, mc, lease)
+	deletes.getFails = recorded.AdminCredentialsSecretRef.Name
+
+	require.Error(t, r.finalize(context.Background(), mc))
+
+	assert.True(t, exists(t, r, lease), "the claim on a realm that was not emptied stays")
+	assert.True(t, controllerutil.ContainsFinalizer(mc, Finalizer))
+}
+
 // TestRegisteredCallbacksAuthorizesTheWithdrawal covers the two proofs that
 // this management plane has login callbacks of its own to remove.
 // status.callbackRealm is written before the components apply, so a plane
@@ -419,6 +446,37 @@ func pointIdentityAtRealm(identity *appsv1.Deployment, target v1.KeycloakRealmTa
 	}}
 }
 
+// startingIdentityPod is a Management Identity pod of mc that points at the
+// realm of target and never became ready, the way a pod is while it starts and
+// while it crashes.
+func startingIdentityPod(
+	mc *v1.CamundaManagementCluster,
+	target v1.KeycloakRealmTarget,
+) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: mc.Namespace,
+			Name:      components.IdentityName(mc) + "-7d9f8c-xk2vp",
+			Labels:    components.IdentityPodLabels(mc),
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Name: "identity",
+				Env: []corev1.EnvVar{
+					{Name: "KEYCLOAK_URL", Value: target.URL},
+					{Name: "KEYCLOAK_REALM", Value: target.Realm},
+				},
+			}},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			Conditions: []corev1.PodCondition{{
+				Type: corev1.PodReady, Status: corev1.ConditionFalse,
+			}},
+		},
+	}
+}
+
 // ownedContract is the ManagementAuthConfig that mc writes, with the owner
 // labels that make it this plane's.
 func ownedContract(mc *v1.CamundaManagementCluster) *v1.ManagementAuthConfig {
@@ -498,6 +556,15 @@ func fakeReconciler(t *testing.T, objects ...client.Object) (*Reconciler, *delet
 		EventRecorder:  events.NewFakeRecorder(16),
 		ClaimNamespace: testClaimNamespace,
 	}, deletes
+}
+
+// readableEvents gives r a recorder whose events a test can read, and returns
+// it.
+func readableEvents(r *Reconciler) *events.FakeRecorder {
+	recorder := events.NewFakeRecorder(4)
+	r.EventRecorder = recorder
+
+	return recorder
 }
 
 // exists reports whether obj is still in the cluster of r.

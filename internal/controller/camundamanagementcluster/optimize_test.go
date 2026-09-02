@@ -1928,6 +1928,39 @@ func (f *fakeKeycloak) serveRoleMappings(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// The wait on a starting pod must not outlive the Deployment that makes that
+// pod. A Management Identity that never becomes ready, because the Keycloak of
+// the recorded realm is gone, would otherwise keep the plane in that realm for
+// good, and the wait would name no way out.
+func TestWithdrawRetargetedStopsTheIdentityThatFeedsTheWait(t *testing.T) {
+	mc := externalKeycloakCluster("https://new.example.com/auth", "new-admin")
+	recorded := finalizerRealm
+	mc.Status.CallbackRealm = &recorded
+	identity := ownedIdentity(mc)
+	pointIdentityAtRealm(identity, finalizerRealm)
+	pod := startingIdentityPod(mc, finalizerRealm)
+	r, deletes := fakeReconciler(t, mc, identity, pod)
+
+	target, err := specRealmTarget(mc)
+	require.NoError(t, err)
+
+	failure, consumed, err := r.withdrawRetargeted(context.Background(), mc, target, false)
+
+	require.NoError(t, err)
+	assert.False(t, consumed)
+	require.NotNil(t, failure)
+	assert.Equal(t, string(component.PrerequisiteNotMet), failure.Reason)
+	assert.Contains(
+		t, failure.Message, components.ForgetCallbackRealmAnnotation,
+		"the wait names the way out of a Keycloak that is gone for good",
+	)
+	assert.Equal(t, []string{identity.Name}, deletes.names)
+	assert.False(t, exists(t, r, identity))
+	assert.NotNil(
+		t, mc.Status.CallbackRealm, "the record stays while a pod can still write the realm",
+	)
+}
+
 // A Deployment at the derived Management Identity name starts a pod against
 // the realm its template names whoever owns it, so it holds the record of
 // that realm. Only the delete asks who owns it.
@@ -1975,5 +2008,48 @@ func TestStopOldIdentityWritersReadsEveryDeploymentAtTheName(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.False(t, writers)
+	})
+}
+
+// TestDropSpentForgetAnnotationLeavesAnEvent covers the removal of a
+// ForgetCallbackRealmAnnotation that lets go of nothing. Somebody set it by
+// hand, so it never vanishes without a word.
+func TestDropSpentForgetAnnotationLeavesAnEvent(t *testing.T) {
+	// The pass after the annotation was consumed finds the record gone. The
+	// realm went on the pass before, so the event is a Normal one.
+	t.Run("a plane that records no realm", func(t *testing.T) {
+		mc := externalKeycloakCluster("https://kc.example.com/auth", "keycloak-admin")
+		mc.Annotations = map[string]string{
+			components.ForgetCallbackRealmAnnotation: "https://old.example.com/auth/realms/other",
+		}
+		r, _ := fakeReconciler(t, mc)
+		recorder := readableEvents(r)
+
+		require.NoError(t, r.dropSpentForgetAnnotation(context.Background(), mc))
+
+		assert.NotContains(t, mc.Annotations, components.ForgetCallbackRealmAnnotation)
+		require.Len(t, recorder.Events, 1)
+		event := <-recorder.Events
+		assert.Contains(t, event, eventReasonForgetRemoved)
+		assert.Contains(t, event, "https://old.example.com/auth/realms/other")
+	})
+
+	// An annotation that names another realm than the recorded one asked for
+	// something and got nothing, so it is a Warning.
+	t.Run("a plane that records another realm", func(t *testing.T) {
+		mc := externalKeycloakCluster("https://kc.example.com/auth", "keycloak-admin")
+		recorded := finalizerRealm
+		mc.Status.CallbackRealm = &recorded
+		mc.Annotations = map[string]string{
+			components.ForgetCallbackRealmAnnotation: "https://old.example.com/auth/realms/other",
+		}
+		r, _ := fakeReconciler(t, mc)
+		recorder := readableEvents(r)
+
+		require.NoError(t, r.dropSpentForgetAnnotation(context.Background(), mc))
+
+		assert.NotContains(t, mc.Annotations, components.ForgetCallbackRealmAnnotation)
+		require.Len(t, recorder.Events, 1)
+		assert.Contains(t, <-recorder.Events, eventReasonForgetIgnored)
 	})
 }

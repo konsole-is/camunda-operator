@@ -53,6 +53,9 @@ const (
 	// eventReasonForgetIgnored is recorded when a ForgetCallbackRealmAnnotation
 	// names another realm than the recorded one and is removed unused.
 	eventReasonForgetIgnored = "ForgetCallbackRealmIgnored"
+	// eventReasonForgetRemoved is recorded when a ForgetCallbackRealmAnnotation
+	// is removed from a management plane that records no realm.
+	eventReasonForgetRemoved = "ForgetCallbackRealmRemoved"
 )
 
 // rollingOut is what the condition says while Management Identity starts. It
@@ -334,7 +337,10 @@ func (r *Reconciler) syncOptimizeCallbacks(
 // Identity Deployment whose template points at the realm is deleted, and the
 // record is kept until that Deployment, every ReplicaSet of it, and every
 // pod that points at the realm are gone, because any of them can put the
-// callbacks back. Only the pass that finds none clears the record.
+// callbacks back. Only the pass that finds none clears the record. A pod that
+// is starting against the realm holds the realm write back and stops that
+// Deployment all the same, so the wait ends whether or not the pod ever
+// becomes ready.
 //
 // The failure names the recorded realm, and nothing but the record reaches
 // that realm, so the caller reports the failure and comes back on the retry
@@ -377,12 +383,24 @@ func (r *Reconciler) withdrawRetargeted(
 	// says nothing about the old realm, and a wait on them would hold the
 	// callbacks there for as long as the new Keycloak is broken.
 	if components.IdentityWritesRealm(pods, *recorded) {
+		// The Deployment of the recorded realm is what starts that pod again.
+		// A Management Identity that never becomes ready, because the Keycloak
+		// it starts against is gone, would otherwise wait on a pod that its own
+		// Deployment keeps making, and the realm would never be left.
+		if _, err := r.stopOldIdentityWriters(ctx, mc, *recorded); err != nil {
+			return nil, false, err
+		}
+
 		return &conditions.PreCheckFailure{
 			Reason: string(component.PrerequisiteNotMet),
 			Message: fmt.Sprintf(
 				"A Management Identity pod is starting against realm %q of Keycloak %q, and it "+
-					"owns the Optimize client of that realm while it starts",
+					"owns the Optimize client of that realm while it starts. That Management "+
+					"Identity is stopped, and this operator empties the realm once the pod is "+
+					"gone. If that Keycloak is gone for good, set the annotation %s=%q on this "+
+					"resource to leave the login callbacks there",
 				recorded.Realm, components.RealmURL(*recorded),
+				components.ForgetCallbackRealmAnnotation, components.RealmIdentity(*recorded),
 			),
 		}, false, nil
 	}
@@ -689,13 +707,17 @@ func (r *Reconciler) forgetCallbackRealm(mc *v1.CamundaManagementCluster) bool {
 // dropSpentForgetAnnotation removes a ForgetCallbackRealmAnnotation that
 // names no recorded realm: the realm it named is let go of and its record is
 // gone, or it names another realm than the recorded one and applies to
-// nothing. The second case records a Warning event, because somebody set the
-// annotation by hand and it would otherwise vanish without a word.
+// nothing. Both record an event, because somebody set the annotation by hand
+// and it would otherwise vanish without a word. The one that names another
+// realm than the recorded one is a Warning: nothing was let go of and the
+// annotation asked for something. With no record at all, the removal is the
+// last step of a realm that was let go of on the pass before, so the event is
+// a Normal one.
 func (r *Reconciler) dropSpentForgetAnnotation(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 ) error {
-	named, ok := mc.Annotations[components.ForgetCallbackRealmAnnotation]
+	value, ok := mc.Annotations[components.ForgetCallbackRealmAnnotation]
 	if !ok {
 		return nil
 	}
@@ -703,31 +725,45 @@ func (r *Reconciler) dropSpentForgetAnnotation(
 	// a password, so the event carries the folded identity of the value. A
 	// value that does not parse as a URL is folded of nothing, and the event
 	// says only that it is not a realm.
-	folded, identity := components.NormalizeRealmIdentity(named)
+	folded, identity := components.NormalizeRealmIdentity(value)
 	recorded := mc.Status.CallbackRealm
 	// A value that is no realm identity is one forgetCallbackRealm refuses, so
 	// it is spent here and removed, whatever it folds to.
 	if recorded != nil && identity && folded == components.RealmIdentity(*recorded) {
 		return nil
 	}
-	if recorded != nil {
-		carried := "a value that is not a realm identity"
-		if identity {
-			carried = fmt.Sprintf("realm %q", folded)
-		}
+
+	carried := "a value that is not a realm identity"
+	if identity {
+		carried = fmt.Sprintf("realm %q", folded)
+	}
+	if recorded == nil {
 		r.EventRecorder.Eventf(
 			mc,
 			nil,
-			corev1.EventTypeWarning,
-			eventReasonForgetIgnored,
+			corev1.EventTypeNormal,
+			eventReasonForgetRemoved,
 			eventActionUpdate,
-			"Annotation %s carries %s and status.callbackRealm names realm %q, so the "+
-				"annotation is removed and nothing is let go of",
+			"Removed the annotation %s, which carries %s. status.callbackRealm names no realm, so "+
+				"no realm is let go of on this pass",
 			components.ForgetCallbackRealmAnnotation,
 			carried,
-			components.RealmIdentity(*recorded),
 		)
+
+		return r.removeAnnotation(ctx, mc, components.ForgetCallbackRealmAnnotation)
 	}
+	r.EventRecorder.Eventf(
+		mc,
+		nil,
+		corev1.EventTypeWarning,
+		eventReasonForgetIgnored,
+		eventActionUpdate,
+		"Annotation %s carries %s and status.callbackRealm names realm %q, so the "+
+			"annotation is removed and nothing is let go of",
+		components.ForgetCallbackRealmAnnotation,
+		carried,
+		components.RealmIdentity(*recorded),
+	)
 
 	return r.removeAnnotation(ctx, mc, components.ForgetCallbackRealmAnnotation)
 }

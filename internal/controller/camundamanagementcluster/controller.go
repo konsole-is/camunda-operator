@@ -450,13 +450,19 @@ func (r *Reconciler) reconcileUnresolved(
 // two halves that a park does not stop: the withdrawal from a recorded realm
 // that the spec no longer names, and the release of the clusters that left the
 // selector. The old realm would otherwise keep signing people in for as long
-// as the park stands.
+// as the park stands. OptimizeCallbacksReady reports the park too, because a
+// plane that lost the claim registers nothing in that realm any more.
 func (r *Reconciler) reconcileParked(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	parked *conditions.PreCheckFailure,
 ) (ctrl.Result, error) {
 	conditions.Stage(mc, conditions.Failed(mc, parked))
+	// The plane registers nothing in a realm it does not hold, so the callbacks
+	// of the last pass that ran must not keep reading Healthy over a realm that
+	// another plane converges now. The withdrawal below overwrites this with
+	// what it found, where it has something more exact to say.
+	stageCallbacks(mc, metav1.ConditionFalse, parked.Reason, parked.Message)
 
 	_, withdrawErr := r.withdrawStopped(
 		ctx, mc, "the realm of the spec answers to another management plane",

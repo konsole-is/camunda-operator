@@ -100,7 +100,11 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	// The realm claim goes last of all. Once it is gone a plane parked on the
 	// realm claims it and runs its own Management Identity against clients
 	// this withdrawal may still be writing.
-	if _, err := r.releaseRealmClaims(ctx, mc, nil, nil, false); err != nil {
+	leases, err := r.realmClaimLeases(ctx, mc)
+	if err != nil {
+		return err
+	}
+	if _, err := r.releaseRealmClaims(ctx, leases, nil, nil, false); err != nil {
 		return err
 	}
 	r.EventRecorder.Eventf(
@@ -158,7 +162,8 @@ func (r *Reconciler) stopIdentity(ctx context.Context, mc *v1.CamundaManagementC
 		if !metav1.IsControlledBy(&identity, mc) {
 			return fmt.Errorf(
 				"the Deployment %q has another owner and can still write the Keycloak realm, so "+
-					"this deletion waits until that Deployment is gone", key,
+					"this deletion waits until that Deployment is gone: delete it, or give it "+
+					"another name, and this management plane goes", key,
 			)
 		}
 
@@ -301,7 +306,10 @@ func (r *Reconciler) withdrawOptimizeCallbacks(
 		)
 		switch {
 		case err != nil:
-			logf.FromContext(ctx).Error(err, "Withdrawing the Optimize callbacks")
+			return fmt.Errorf(
+				"withdrawing the Optimize callbacks of realm %q of Keycloak %q: %w",
+				provider.Realm, provider.KeycloakURL, err,
+			)
 		case failure != nil && failure.Reason != v1.ReasonOptimizeClientMissing:
 			logf.FromContext(ctx).Error(
 				failure, "Withdrawing the Optimize callbacks", "reason", failure.Reason,
@@ -373,8 +381,9 @@ func (r *Reconciler) specRealmWithdrawal(
 	mc *v1.CamundaManagementCluster,
 	provider components.IdentityProvider,
 ) ([]components.IdentityProvider, error) {
-	// The operator runs the Keycloak of the keycloak mode and claims no realm
-	// in it, so nothing but the spec names that realm.
+	// The operator runs the Keycloak of the keycloak mode, and it is deleted
+	// with this plane, so the realm behind it is this plane's whatever the
+	// claim says.
 	if components.Mode(mc) == components.ModeKeycloak {
 		return []components.IdentityProvider{provider}, nil
 	}
@@ -387,8 +396,16 @@ func (r *Reconciler) specRealmWithdrawal(
 		return nil, nil
 	}
 	holds, err := r.holdsRealmClaim(ctx, mc, *target)
-	if err != nil || !holds {
+	if err != nil {
 		return nil, err
+	}
+	if !holds {
+		logf.FromContext(ctx).Info(
+			"Left the login callbacks of the realm alone, this management plane holds no claim on it",
+			"realm", components.RealmIdentity(*target),
+		)
+
+		return nil, nil
 	}
 
 	return []components.IdentityProvider{provider}, nil

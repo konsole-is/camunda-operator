@@ -36,10 +36,12 @@ import (
 // gives back every realm claim of this management plane that nothing of it
 // names any more, which releaseUnusedRealms decides.
 //
-// Only the externalKeycloak mode claims. The keycloak mode owns the Keycloak
-// it runs, and the oidc mode administers no realm. A suspended plane touches
-// no claim: the realm it holds stays held, and a realm the spec now names is
-// claimed on resume.
+// Both Keycloak modes claim. The oidc mode administers no realm and claims
+// nothing. The Keycloak that the operator runs is claimed like any other: an
+// externalKeycloak plane can name the Service URL of that Keycloak, reach the
+// same realm through it, and run a second Management Identity over the clients
+// of the plane that owns it. A suspended plane touches no claim: the realm it
+// holds stays held, and a realm the spec now names is claimed on resume.
 //
 // The failure it returns is the parked state: another management cluster
 // holds the realm, and the message names it. The caller stages it on Ready,
@@ -56,10 +58,7 @@ func (r *Reconciler) claimRealm(
 		return nil, false, nil
 	}
 
-	var current *v1.KeycloakRealmTarget
-	if res.Input.Provider.Mode == components.ModeExternalKeycloak {
-		current = components.RealmTarget(res.Input.Provider)
-	}
+	current := components.RealmTarget(res.Input.Provider)
 	var parked *conditions.PreCheckFailure
 	if current != nil {
 		var err error
@@ -84,9 +83,8 @@ func (r *Reconciler) claimRealm(
 // claim:
 //
 // The realm of the spec, read from the spec alone, so a pass that resolved
-// nothing sweeps the same way as one that resolved everything. Only the
-// externalKeycloak mode names one here, because it is the only mode that
-// claims; a plane that moves to another mode gives its realm back.
+// nothing sweeps the same way as one that resolved everything. The oidc mode
+// names none, so a plane that moves to it gives its realm back.
 //
 // status.callbackRealm, which still carries the login callbacks of this
 // plane. Its claim goes once the withdrawal has cleared the record, which the
@@ -114,12 +112,17 @@ func (r *Reconciler) releaseUnusedRealms(
 		return false, nil
 	}
 
-	var current *v1.KeycloakRealmTarget
-	if components.Mode(mc) == components.ModeExternalKeycloak {
-		var err error
-		if current, err = specRealmTarget(mc); err != nil {
-			return false, err
-		}
+	// The claims are read first. A plane that holds none has nothing to give
+	// back, and the workloads below only say which of them to keep, so their
+	// three reads would answer a question nobody asked.
+	leases, err := r.realmClaimLeases(ctx, mc)
+	if err != nil || len(leases) == 0 {
+		return false, err
+	}
+
+	current, err := specRealmTarget(mc)
+	if err != nil {
+		return false, err
 	}
 
 	keep := []*v1.KeycloakRealmTarget{current, mc.Status.CallbackRealm}
@@ -135,7 +138,41 @@ func (r *Reconciler) releaseUnusedRealms(
 		}
 	}
 
-	return r.releaseRealmClaims(ctx, mc, keep, workload, unknown)
+	return r.releaseRealmClaims(ctx, leases, keep, workload, unknown)
+}
+
+// realmClaimLeases reads every realm claim Lease of the namespace of the
+// operator that names mc as its holder.
+//
+// The label selector is the one that NewRealmClaimLease writes. It carries the
+// name of the management cluster alone, so the list also holds the claims of a
+// management cluster of another namespace with this name, and of a later one.
+// The holder annotations tell them apart.
+func (r *Reconciler) realmClaimLeases(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) ([]coordinationv1.Lease, error) {
+	var leases coordinationv1.LeaseList
+	err := r.APIReader.List(
+		ctx, &leases,
+		client.InNamespace(r.ClaimNamespace),
+		client.MatchingLabels(components.RealmClaimLeaseLabels(mc.Name)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"listing the realm claim Leases of %s: %w", client.ObjectKeyFromObject(mc), err,
+		)
+	}
+
+	self := realmClaimSelf(mc)
+	var held []coordinationv1.Lease
+	for i := range leases.Items {
+		if recorded, ours := components.RealmClaimHolderOf(&leases.Items[i]); ours && recorded == self {
+			held = append(held, leases.Items[i])
+		}
+	}
+
+	return held, nil
 }
 
 // namesRealm reports whether target names the realm of realm. A nil target
@@ -330,54 +367,33 @@ func (r *Reconciler) realmHolderKeeps(
 	return other.UID == holder.UID, nil
 }
 
-// releaseRealmClaims deletes every realm claim Lease of the namespace of the
-// operator that still names mc, except the ones of the realms that keep names.
-// A nil entry of keep names no realm. The finalizer passes none, so a deleted
-// management cluster gives back every realm it holds.
+// releaseRealmClaims deletes every Lease of leases, which realmClaimLeases
+// read, except the ones of the realms that keep names. A nil entry of keep
+// names no realm. The finalizer passes none, so a deleted management cluster
+// gives back every realm it holds.
 //
-// workload names the realms that only a Management Identity workload of mc
-// keeps, and it is a part of keep. The bool reports that a Lease of one of
-// them is there and stayed, which is the state that no watch ends.
+// workload names the realms that only a Management Identity workload of the
+// plane keeps, and it is a part of keep. The bool reports that a Lease of one
+// of them is there and stayed, which is the state that no watch ends.
 //
-// unknown says that a Management Identity workload of mc writes a realm that
-// the workload does not name, so no claim of this plane can be shown to be
-// unused. Every one of them is kept then, the way IdentityTemplatePointsAtRealm
-// counts such a workload as a writer of every realm, and each one reads as
-// held by that workload.
-//
-// The label selector is the one that NewRealmClaimLease writes. It carries the
-// name of the management cluster alone, so the list also holds the claims of
-// a management cluster of another namespace with this name, and of a later
-// one. The holder annotations tell them apart.
+// unknown says that a Management Identity workload of the plane writes a realm
+// that the workload does not name, so no claim of this plane can be shown to
+// be unused. Every one of them is kept then, the way
+// IdentityTemplatePointsAtRealm counts such a workload as a writer of every
+// realm, and each one reads as held by that workload.
 func (r *Reconciler) releaseRealmClaims(
 	ctx context.Context,
-	mc *v1.CamundaManagementCluster,
+	leases []coordinationv1.Lease,
 	keep []*v1.KeycloakRealmTarget,
 	workload []*v1.KeycloakRealmTarget,
 	unknown bool,
 ) (bool, error) {
-	var leases coordinationv1.LeaseList
-	err := r.APIReader.List(
-		ctx, &leases,
-		client.InNamespace(r.ClaimNamespace),
-		client.MatchingLabels(components.RealmClaimLeaseLabels(mc.Name)),
-	)
-	if err != nil {
-		return false, fmt.Errorf(
-			"listing the realm claim Leases of %s: %w", client.ObjectKeyFromObject(mc), err,
-		)
-	}
-
 	kept := leaseNames(keep)
 	held := leaseNames(workload)
 
 	var workloadHolds bool
-	self := realmClaimSelf(mc)
-	for i := range leases.Items {
-		lease := &leases.Items[i]
-		if recorded, ours := components.RealmClaimHolderOf(lease); !ours || recorded != self {
-			continue
-		}
+	for i := range leases {
+		lease := &leases[i]
 		if kept[lease.Name] {
 			workloadHolds = workloadHolds || held[lease.Name]
 

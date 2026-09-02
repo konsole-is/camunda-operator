@@ -49,6 +49,12 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(ready.Reason).To(Equal(v1.ReasonRealmClaimedElsewhere))
 			g.Expect(ready.Message).To(ContainSubstring(first.namespace + "/" + first.mc.Name))
+
+			// A parked plane registers nothing in the realm it waits for, so
+			// the callbacks must not read of a realm it does not hold.
+			callbacks := conditionOf(g, second.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(callbacks.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(callbacks.Reason).To(Equal(v1.ReasonRealmClaimedElsewhere))
 		}, timeout, interval).Should(Succeed())
 
 		By("rendering nothing that would touch the realm")
@@ -399,24 +405,22 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 		}, "2s", interval).Should(Succeed())
 	})
 
-	// The keycloak mode owns the Keycloak it runs, and deletes it with the
-	// plane, so the realm needs no claim there.
-	It("claims no realm in the keycloak mode", func() {
+	// The operator runs the Keycloak of this mode, and an externalKeycloak
+	// plane can name the Service URL of it. The realm behind that Service
+	// answers to one management plane the way every other realm does.
+	It("claims the realm of the Keycloak that the operator runs", func() {
 		s := newScenario(withManagedKeycloak)
 
 		Eventually(func(g Gomega) {
 			conditionOf(g, s.mc, v1.ConditionKeycloakReady)
 		}, timeout, interval).Should(Succeed())
 
-		Consistently(func(g Gomega) {
-			var leases coordinationv1.LeaseList
-			g.Expect(k8sClient.List(
-				ctx, &leases,
-				client.InNamespace(testClaimNamespace),
-				client.MatchingLabels(components.RealmClaimLeaseLabels(s.mc.Name)),
-			)).To(Succeed())
-			g.Expect(leases.Items).To(BeEmpty())
-		}, "2s", interval).Should(Succeed())
+		provider, err := components.ResolveIdentityProvider(components.Input{Cluster: s.mc})
+		Expect(err).NotTo(HaveOccurred())
+		target := components.RealmTarget(provider)
+		Expect(target).NotTo(BeNil())
+
+		expectRealmClaimHolder(*target, s.mc)
 	})
 })
 
@@ -440,11 +444,10 @@ var _ = Describe("the schema of the Management Identity block", func() {
 	})
 })
 
-// Only the externalKeycloak mode names a realm from the spec, because it is
-// the only mode that claims one. A plane that moves to the keycloak mode
-// therefore gives back a realm whose identity the Keycloak it now runs
-// happens to share.
-func TestReleaseUnusedRealmsNamesTheSpecRealmOnlyWhereItClaims(t *testing.T) {
+// The keycloak mode names the realm of the Keycloak that the operator runs,
+// and it holds the claim on it: an externalKeycloak plane can name the Service
+// URL of that Keycloak and reach the same realm through it.
+func TestReleaseUnusedRealmsKeepsTheRealmOfTheKeycloakMode(t *testing.T) {
 	mc := &v1.CamundaManagementCluster{ObjectMeta: metav1.ObjectMeta{
 		Namespace: "my-management-ns", Name: "my-management", UID: "management-uid",
 	}}
@@ -462,7 +465,7 @@ func TestReleaseUnusedRealmsNamesTheSpecRealmOnlyWhereItClaims(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.False(t, held)
-	assert.False(t, exists(t, r, lease), "the keycloak mode claims no realm")
+	assert.True(t, exists(t, r, lease), "the keycloak mode claims the realm it runs")
 }
 
 // markIdentityPodsReady stamps the Ready condition on every Management
