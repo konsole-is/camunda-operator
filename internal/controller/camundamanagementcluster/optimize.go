@@ -430,8 +430,8 @@ func (r *Reconciler) withdrawRetargeted(
 // whose template points at the realm is deleted here: a snapshot of the pods
 // alone does not bound the future, because its ReplicaSet can start a
 // replacement pod right after any list, even one that found no pod at all. A
-// ReplicaSet that the garbage collector has not caught up with counts the
-// same way, and so does every pod that points at the realm.
+// ReplicaSet that still wants a replica counts the same way, and so does
+// every pod that points at the realm.
 //
 // The pods are listed last, after the Deployment and the ReplicaSets. A pod
 // that a ReplicaSet started before the garbage collector removed both is
@@ -475,7 +475,14 @@ func (r *Reconciler) stopOldIdentityWriters(
 		return false, fmt.Errorf("listing the Management Identity ReplicaSets: %w", err)
 	}
 	for i := range sets.Items {
-		if components.IdentityTemplatePointsAtRealm(&sets.Items[i].Spec.Template.Spec, recorded) {
+		set := &sets.Items[i]
+		// A Deployment keeps the ReplicaSet of every revision it rolled over,
+		// at zero replicas. Such a revision starts no pod, and a pod it has
+		// left is in the list below. An absent count means one replica.
+		if set.Spec.Replicas != nil && *set.Spec.Replicas == 0 {
+			continue
+		}
+		if components.IdentityTemplatePointsAtRealm(&set.Spec.Template.Spec, recorded) {
 			writers = true
 		}
 	}

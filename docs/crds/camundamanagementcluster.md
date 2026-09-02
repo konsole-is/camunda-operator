@@ -580,7 +580,7 @@ kubectl annotate camundamanagementcluster my-management -n my-management-ns \
 
 The management plane then registers in the new realm, records the Warning event `OptimizeCallbacksLeftBehind`, and removes the annotation. The callbacks stay in the old realm. If that Keycloak comes back, remove them from its `optimize` client yourself. The annotation lets go of the realm it names and of no other. One that names another realm than `status.callbackRealm` is removed unused, and the Warning event `ForgetCallbackRealmIgnored` names both realms.
 
-A suspended management plane leaves every realm as it is, and it leaves the annotation as it is until it resumes. The callbacks move when the plane resumes. Deleting a suspended plane removes them from the realm that `status.callbackRealm` names.
+A suspended management plane leaves every realm as it is. An annotation that names the realm of `status.callbackRealm` waits until the plane resumes, and the callbacks move then. An annotation that names another realm is removed while the plane sleeps, the same as when it runs. Deleting a suspended plane removes the callbacks from the realm that `status.callbackRealm` names.
 
 ## The contract that Optimize reads
 

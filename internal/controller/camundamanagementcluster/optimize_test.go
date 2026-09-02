@@ -713,6 +713,88 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// A Deployment keeps the ReplicaSet of every revision it rolled over, at
+	// zero replicas. Such a revision starts no pod, so it must not hold the
+	// record: a plane whose withdrawal failed once would never leave the old
+	// realm again, however long the old Keycloak answers.
+	It("moves on while a retired ReplicaSet of the old realm is kept", func() {
+		first := startFakeKeycloak(withOptimizeClient())
+		second := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(first))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		identity := client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+
+		createIdentityReplicaSet(identity, 0)
+
+		retargetKeycloak(s.mc, second.url)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(BeEmpty())
+			g.Expect(second.redirectURIs()).To(Equal([]string{
+				blueOptimizeURL + components.OptimizeCallbackPath,
+			}))
+
+			recorded := readManagementCluster(g, s.mc).Status.CallbackRealm
+			g.Expect(recorded).NotTo(BeNil())
+			g.Expect(recorded.URL).To(Equal(second.url))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// A ReplicaSet of the old realm that still wants a replica starts one
+	// after any list, and that pod writes the old realm from its environment.
+	// The record outlives it, and the new realm gets nothing until it is
+	// scaled down.
+	It("keeps the record while a ReplicaSet of the old realm wants a replica", func() {
+		first := startFakeKeycloak(withOptimizeClient())
+		second := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(first))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		identity := client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+
+		set := createIdentityReplicaSet(identity, 1)
+
+		retargetKeycloak(s.mc, second.url)
+
+		Eventually(func(g Gomega) {
+			g.Expect(first.redirectURIs()).To(BeEmpty())
+
+			recorded := readManagementCluster(g, s.mc).Status.CallbackRealm
+			g.Expect(recorded).NotTo(BeNil())
+			g.Expect(recorded.URL).To(Equal(first.url))
+			g.Expect(second.redirectURIs()).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+
+		scaleReplicaSet(set, 0)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(second.redirectURIs()).To(Equal([]string{
+				blueOptimizeURL + components.OptimizeCallbackPath,
+			}))
+
+			recorded := readManagementCluster(g, s.mc).Status.CallbackRealm
+			g.Expect(recorded).NotTo(BeNil())
+			g.Expect(recorded.URL).To(Equal(second.url))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// A plane that serves no Optimize fills no realm, so a failing withdrawal
 	// holds nothing back: the workloads move, Ready stays with them, and only
 	// the condition keeps naming the realm still to be emptied.
@@ -787,6 +869,43 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 			g.Expect(eventReasons(g, s.mc)).To(ContainElement(eventReasonForgetIgnored))
 		}, timeout, interval).Should(Succeed())
 
+		Expect(first.redirectURIs()).To(HaveLen(1))
+	})
+
+	// Suspension holds the realms, not an annotation that sanctions nothing.
+	// A typo that waits until the plane resumes is a typo that a later
+	// retarget can meet, so it goes while the plane sleeps.
+	It("removes a forget annotation of another realm while it is suspended", func() {
+		first := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(first))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(readManagementCluster(g, s.mc).Status.CallbackRealm).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.Suspend = true
+			metav1.SetMetaDataAnnotation(
+				&latest.ObjectMeta,
+				components.ForgetCallbackRealmAnnotation,
+				"https://elsewhere.example.com/auth/realms/other",
+			)
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			g.Expect(latest.Annotations).NotTo(HaveKey(components.ForgetCallbackRealmAnnotation))
+			g.Expect(latest.Status.CallbackRealm).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		// The realm of the record is untouched, which is what suspension
+		// promises.
 		Expect(first.redirectURIs()).To(HaveLen(1))
 	})
 
@@ -1183,6 +1302,46 @@ func markPodReady(pod *corev1.Pod) {
 			Type: corev1.PodReady, Status: corev1.ConditionTrue,
 		}}
 		g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// createIdentityReplicaSet creates the ReplicaSet that a Deployment controller
+// creates for the Management Identity Deployment as it is now, at replicas
+// replicas. Envtest runs no Deployment controller, so a spec that needs the
+// revision of an earlier template is what creates it.
+func createIdentityReplicaSet(key client.ObjectKey, replicas int32) *appsv1.ReplicaSet {
+	GinkgoHelper()
+
+	var workload appsv1.Deployment
+	Expect(k8sClient.Get(ctx, key, &workload)).To(Succeed())
+
+	set := &appsv1.ReplicaSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      key.Name + "-" + utilrand.String(5),
+			Namespace: key.Namespace,
+			Labels:    workload.Spec.Template.Labels,
+		},
+		Spec: appsv1.ReplicaSetSpec{
+			Replicas: &replicas,
+			Selector: workload.Spec.Selector,
+			Template: workload.Spec.Template,
+		},
+	}
+	Expect(k8sClient.Create(ctx, set)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, set) })
+
+	return set
+}
+
+// scaleReplicaSet writes the replica count of set.
+func scaleReplicaSet(set *appsv1.ReplicaSet, replicas int32) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var latest appsv1.ReplicaSet
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(set), &latest)).To(Succeed())
+		latest.Spec.Replicas = &replicas
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }
 
