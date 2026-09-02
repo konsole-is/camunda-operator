@@ -84,23 +84,35 @@ func UninstallCertManager() {
 	}
 }
 
-// InstallCertManager installs the cert manager bundle.
+// certManagerDeployments are the three Deployments the cert-manager bundle
+// creates.
+var certManagerDeployments = []string{"cert-manager", "cert-manager-cainjector", "cert-manager-webhook"}
+
+// InstallCertManager installs the cert manager bundle and waits until every
+// one of its Deployments is Available, which can take time if cert-manager
+// was re-installed after uninstalling on a cluster.
 func InstallCertManager() error {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
-	cmd := exec.Command("kubectl", "apply", "-f", url)
-	if _, err := Run(cmd); err != nil {
+	if _, err := Run(exec.Command("kubectl", "apply", "-f", url)); err != nil {
 		return err
 	}
-	// Wait for cert-manager-webhook to be ready, which can take time if cert-manager
-	// was re-installed after uninstalling on a cluster.
-	cmd = exec.Command(
-		"kubectl", "wait", "deployment.apps/cert-manager-webhook",
-		"--for", "condition=Available",
-		"--namespace", "cert-manager",
-		"--timeout", "5m",
-	)
 
-	_, err := Run(cmd)
+	// One kubectl wait call names all three Deployments so they share one
+	// 5-minute deadline instead of up to 5 minutes each. The webhook
+	// Deployment answers Available from a plain HTTP health check that runs
+	// on a port separate from the one it admits requests on, so Available
+	// does not mean the webhook can admit a Certificate yet. The controller
+	// Deployment is what issues a Certificate once admitted, and the
+	// cainjector Deployment is what writes the CA bundle the webhook config
+	// needs before the API server trusts it.
+	args := make([]string, 0, 7+len(certManagerDeployments))
+	args = append(args, "wait", "--for", "condition=Available", "--namespace", "cert-manager", "--timeout", "5m")
+	for _, deployment := range certManagerDeployments {
+		args = append(args, "deployment.apps/"+deployment)
+	}
+
+	_, err := Run(exec.Command("kubectl", args...))
+
 	return err
 }
 
