@@ -238,7 +238,7 @@ func (r *Reconciler) takeRealmClaim(
 			"CamundaManagementCluster %s holds realm %q of Keycloak %q. One realm answers to one "+
 				"management plane, so this one waits and starts nothing new until that claim is "+
 				"released. Give it a realm of its own, or delete the holder",
-			holder.NamespacedName, target.Realm, target.URL,
+			holder.NamespacedName, target.Realm, components.RealmURL(target),
 		),
 	}, nil
 }
@@ -283,7 +283,7 @@ func (r *Reconciler) createRealmClaim(
 				Message: fmt.Sprintf(
 					"Lease %s claims realm %q of Keycloak %q and names no CamundaManagementCluster. "+
 						"Delete it if nothing else uses it",
-					client.ObjectKeyFromObject(lease), target.Realm, target.URL,
+					client.ObjectKeyFromObject(lease), target.Realm, components.RealmURL(target),
 				),
 			}, nil
 		}

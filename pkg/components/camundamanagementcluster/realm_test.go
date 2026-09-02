@@ -169,6 +169,15 @@ func TestRealmIdentity(t *testing.T) {
 	}
 }
 
+// A message that names the Keycloak of a realm must carry no password.
+func TestRealmURL(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "https://kc.example.com/auth", RealmURL(v1.KeycloakRealmTarget{
+		URL: "https://admin:s3cret@kc.example.com:443/auth/", Realm: "camunda-platform",
+	}))
+}
+
 func TestSameRealm(t *testing.T) {
 	t.Parallel()
 

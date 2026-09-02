@@ -103,12 +103,20 @@ func normalizeKeycloakURL(raw string) string {
 
 // NormalizeRealmIdentity folds a hand-written realm identity the way
 // RealmIdentity folds a URL: the case of the scheme and of the host, a
-// spelled-out default port, and trailing slashes make no difference. The
-// path, and with it the realm at its end, stays as it is. It lets an
-// annotation written from status.callbackRealm match the recorded identity,
-// whose URL was folded the same way.
+// spelled-out default port, a user in the URL, and trailing slashes make no
+// difference. The path, and with it the realm at its end, stays as it is. It
+// lets an annotation written from status.callbackRealm match the recorded
+// identity, whose URL was folded the same way.
 func NormalizeRealmIdentity(value string) string {
 	return normalizeKeycloakURL(value)
+}
+
+// RealmURL is the URL of target as RealmIdentity reads it: a user in the URL,
+// a default port, the case of the scheme and of the host, and every trailing
+// slash are folded out. A message that names the Keycloak of a realm uses it,
+// so a password in the URL never reaches a condition or an event.
+func RealmURL(target v1.KeycloakRealmTarget) string {
+	return normalizeKeycloakURL(target.URL)
 }
 
 // SameRealm reports whether a and b name one realm.

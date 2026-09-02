@@ -268,7 +268,7 @@ func (r *Reconciler) syncOptimizeCallbacks(
 				fmt.Sprintf(
 					"A Management Identity pod is starting against realm %q of Keycloak %q, and "+
 						"it owns the Optimize client of that realm while it starts",
-					target.Realm, target.URL,
+					target.Realm, components.RealmURL(*target),
 				),
 			)
 
@@ -382,7 +382,7 @@ func (r *Reconciler) withdrawRetargeted(
 			Message: fmt.Sprintf(
 				"A Management Identity pod is starting against realm %q of Keycloak %q, and it "+
 					"owns the Optimize client of that realm while it starts",
-				recorded.Realm, recorded.URL,
+				recorded.Realm, components.RealmURL(*recorded),
 			),
 		}, false, nil
 	}
@@ -401,7 +401,7 @@ func (r *Reconciler) withdrawRetargeted(
 				"Realm %q of Keycloak %q still carries the login callbacks of this management plane, "+
 					"and this operator could not remove them: %s. If that Keycloak is gone for good, "+
 					"set the annotation %s=%q on this resource to leave them there",
-				recorded.Realm, recorded.URL, failure.Message,
+				recorded.Realm, components.RealmURL(*recorded), failure.Message,
 				components.ForgetCallbackRealmAnnotation, components.RealmIdentity(*recorded),
 			),
 		}, false, nil
@@ -417,7 +417,7 @@ func (r *Reconciler) withdrawRetargeted(
 				"Realm %q of Keycloak %q holds no login callback of this management plane any "+
 					"more, and the Management Identity of that realm is not fully stopped; the "+
 					"plane moves to the new identity provider when nothing of it is left",
-				recorded.Realm, recorded.URL,
+				recorded.Realm, components.RealmURL(*recorded),
 			),
 		}, false, nil
 	}
@@ -578,7 +578,8 @@ func (r *Reconciler) withdrawStopped(
 			fmt.Sprintf(
 				"Realm %q of Keycloak %q keeps the login callbacks of this management plane, as "+
 					"the annotation %s asked. They are registered nowhere, because %s",
-				before.Realm, before.URL, components.ForgetCallbackRealmAnnotation, stopped,
+				before.Realm, components.RealmURL(*before), components.ForgetCallbackRealmAnnotation,
+				stopped,
 			),
 		)
 
@@ -592,7 +593,7 @@ func (r *Reconciler) withdrawStopped(
 			fmt.Sprintf(
 				"The login callbacks left realm %q of Keycloak %q, and %s, so they are "+
 					"registered nowhere",
-				before.Realm, before.URL, stopped,
+				before.Realm, components.RealmURL(*before), stopped,
 			),
 		)
 	}
@@ -661,7 +662,7 @@ func (r *Reconciler) forgetCallbackRealm(mc *v1.CamundaManagementCluster) bool {
 			"as the annotation %s asked",
 		components.RealmProvider(*recorded).Clients.Optimize.ID,
 		recorded.Realm,
-		recorded.URL,
+		components.RealmURL(*recorded),
 		components.ForgetCallbackRealmAnnotation,
 	)
 	// The annotation stays until the next pass. Removing it now, with the
