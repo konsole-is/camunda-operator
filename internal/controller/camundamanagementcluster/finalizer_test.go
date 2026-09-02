@@ -85,7 +85,8 @@ func TestWithdrawalRealmsTriesTheSpecThenTheRecordOfOneRealm(t *testing.T) {
 
 	r, _ := fakeReconciler(t, mc)
 
-	realms := r.withdrawalRealms(context.Background(), mc)
+	realms, err := r.withdrawalRealms(context.Background(), mc)
+	require.NoError(t, err)
 
 	require.Len(t, realms, 2)
 	require.NotNil(t, realms[0].AdminCredentials)
@@ -111,7 +112,8 @@ func TestWithdrawalRealmsOfAnUnchangedRecord(t *testing.T) {
 
 	r, _ := fakeReconciler(t, mc)
 
-	realms := r.withdrawalRealms(context.Background(), mc)
+	realms, err := r.withdrawalRealms(context.Background(), mc)
+	require.NoError(t, err)
 
 	require.Len(t, realms, 1)
 	assert.Equal(t, "https://kc.example.com/auth", realms[0].KeycloakURL)
@@ -135,7 +137,8 @@ func TestWithdrawalRealmsKeepTheRecordOfAnotherRealm(t *testing.T) {
 
 	r, _ := fakeReconciler(t, mc)
 
-	realms := r.withdrawalRealms(context.Background(), mc)
+	realms, err := r.withdrawalRealms(context.Background(), mc)
+	require.NoError(t, err)
 
 	require.Len(t, realms, 1)
 	assert.Equal(t, "https://old.example.com/auth", realms[0].KeycloakURL)
@@ -152,7 +155,8 @@ func TestWithdrawalRealmsFallBackToTheSpec(t *testing.T) {
 	lease := components.NewRealmClaimLease(testClaimNamespace, target, mc)
 	r, _ := fakeReconciler(t, mc, lease)
 
-	realms := r.withdrawalRealms(context.Background(), mc)
+	realms, err := r.withdrawalRealms(context.Background(), mc)
+	require.NoError(t, err)
 
 	require.Len(t, realms, 1)
 	assert.Equal(t, "https://kc.example.com/auth", realms[0].KeycloakURL)
@@ -166,7 +170,10 @@ func TestWithdrawalRealmsLeaveARealmThisPlaneNeverClaimed(t *testing.T) {
 	mc := externalKeycloakCluster("https://kc.example.com/auth", "keycloak-admin")
 	r, _ := fakeReconciler(t, mc)
 
-	assert.Empty(t, r.withdrawalRealms(context.Background(), mc))
+	realms, err := r.withdrawalRealms(context.Background(), mc)
+
+	require.NoError(t, err)
+	assert.Empty(t, realms)
 }
 
 // The operator runs the Keycloak of the keycloak mode and claims no realm in
@@ -180,7 +187,25 @@ func TestWithdrawalRealmsOfTheKeycloakModeNeedNoClaim(t *testing.T) {
 	}
 	r, _ := fakeReconciler(t, mc)
 
-	assert.Len(t, r.withdrawalRealms(context.Background(), mc), 1)
+	realms, err := r.withdrawalRealms(context.Background(), mc)
+
+	require.NoError(t, err)
+	assert.Len(t, realms, 1)
+}
+
+// A read that fails leaves the realms to withdraw from unknown, and the
+// deletion releases the claim on every realm right after, so the pass stops
+// instead of taking the failure for a plane that claimed nothing.
+func TestWithdrawalRealmsFailWhenTheClaimCannotBeRead(t *testing.T) {
+	mc := externalKeycloakCluster("https://kc.example.com/auth", "keycloak-admin")
+	target := v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: "camunda-platform"}
+	lease := components.NewRealmClaimLease(testClaimNamespace, target, mc)
+	r, log := fakeReconciler(t, mc, lease)
+	log.getFails = lease.Name
+
+	_, err := r.withdrawalRealms(context.Background(), mc)
+
+	require.Error(t, err)
 }
 
 // The oidc mode registers nothing, so a plane that recorded no realm has
@@ -196,7 +221,10 @@ func TestWithdrawalRealmsOfTheOIDCModeWithoutARecord(t *testing.T) {
 
 	r, _ := fakeReconciler(t, mc)
 
-	assert.Empty(t, r.withdrawalRealms(context.Background(), mc))
+	realms, err := r.withdrawalRealms(context.Background(), mc)
+
+	require.NoError(t, err)
+	assert.Empty(t, realms)
 }
 
 // finalizerRealm is the realm that the specs below claim.
@@ -321,6 +349,9 @@ func TestRegisteredCallbacksAuthorizesTheWithdrawal(t *testing.T) {
 	})
 }
 
+// errUnread is what a read that the API server does not answer carries.
+var errUnread = errors.New("the API server did not answer")
+
 // errReplaced is what the conflict of a replaced object carries.
 var errReplaced = errors.New("the object was replaced")
 
@@ -408,6 +439,9 @@ type deleteLog struct {
 	// conflict, the way the API server does when the object was replaced
 	// between the read and the delete.
 	conflictOn string
+	// getFails answers every read of the object of that name with an error,
+	// the way an API server that is not answering does.
+	getFails string
 }
 
 // fakeReconciler builds a reconciler over a fake client that holds objects,
@@ -426,6 +460,19 @@ func fakeReconciler(t *testing.T, objects ...client.Object) (*Reconciler, *delet
 		WithScheme(scheme).
 		WithObjects(objects...).
 		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(
+				ctx context.Context,
+				inner client.WithWatch,
+				key client.ObjectKey,
+				obj client.Object,
+				opts ...client.GetOption,
+			) error {
+				if deletes.getFails != "" && key.Name == deletes.getFails {
+					return apierrors.NewInternalError(errUnread)
+				}
+
+				return inner.Get(ctx, key, obj, opts...)
+			},
 			Delete: func(
 				ctx context.Context,
 				inner client.WithWatch,

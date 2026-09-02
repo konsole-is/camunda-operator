@@ -90,7 +90,9 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	// take it and register its own callbacks while this withdrawal is still in
 	// flight, and this withdrawal then takes the new owner's away.
 	if r.registeredCallbacks(ctx, mc) {
-		r.withdrawOptimizeCallbacks(ctx, mc)
+		if err := r.withdrawOptimizeCallbacks(ctx, mc); err != nil {
+			return err
+		}
 	}
 	if err := r.withdrawContract(ctx, mc); err != nil {
 		return err
@@ -272,18 +274,28 @@ func (r *Reconciler) ownsContract(ctx context.Context, mc *v1.CamundaManagementC
 // withdrawOptimizeCallbacks removes the login callbacks that this management
 // plane registered on the Optimize client of the realm.
 //
-// It is best effort, and it never stops the deletion. A Keycloak that does not
-// answer must not keep the resource alive, because the orchestration clusters
-// it holds would stay claimed with nothing left to free them. A realm that the
-// operator could not reach keeps the callbacks, and the log line says so.
+// A Keycloak that does not answer is best effort and never stops the deletion,
+// because the orchestration clusters this resource holds would stay claimed
+// with nothing left to free them. A realm that the operator could not reach
+// keeps the callbacks, and the log line says so. A failure of the Kubernetes
+// API does stop the deletion: it leaves the realms to withdraw from unknown,
+// and the caller releases the claim on every one of them next.
 //
 // A Keycloak that the operator ran goes with this resource, so only a Keycloak
 // that you run keeps anything. The caller decides whether this plane ever
 // registered a callback, through registeredCallbacks. Without that, a plane
 // parked on a name another owner holds takes the callbacks of the holder with
 // it.
-func (r *Reconciler) withdrawOptimizeCallbacks(ctx context.Context, mc *v1.CamundaManagementCluster) {
-	for _, provider := range r.withdrawalRealms(ctx, mc) {
+func (r *Reconciler) withdrawOptimizeCallbacks(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) error {
+	realms, err := r.withdrawalRealms(ctx, mc)
+	if err != nil {
+		return err
+	}
+
+	for _, provider := range realms {
 		failure, err := r.convergeOptimizeCallbacks(
 			ctx, mc, provider, provider.Clients.Optimize.ID, nil,
 		)
@@ -295,9 +307,11 @@ func (r *Reconciler) withdrawOptimizeCallbacks(ctx context.Context, mc *v1.Camun
 				failure, "Withdrawing the Optimize callbacks", "reason", failure.Reason,
 			)
 		default:
-			return
+			return nil
 		}
 	}
+
+	return nil
 }
 
 // withdrawalRealms lists what to take the login callbacks out of, in the order
@@ -314,37 +328,37 @@ func (r *Reconciler) withdrawOptimizeCallbacks(ctx context.Context, mc *v1.Camun
 func (r *Reconciler) withdrawalRealms(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
-) []components.IdentityProvider {
+) ([]components.IdentityProvider, error) {
 	recorded := mc.Status.CallbackRealm
 	if components.Mode(mc) == components.ModeOIDC {
 		if recorded == nil {
-			return nil
+			return nil, nil
 		}
 
-		return []components.IdentityProvider{components.RealmProvider(*recorded)}
+		return []components.IdentityProvider{components.RealmProvider(*recorded)}, nil
 	}
 
 	provider, err := components.ResolveIdentityProvider(components.Input{Cluster: mc})
 	if err != nil {
 		if recorded != nil {
-			return []components.IdentityProvider{components.RealmProvider(*recorded)}
+			return []components.IdentityProvider{components.RealmProvider(*recorded)}, nil
 		}
 		logf.FromContext(ctx).Error(err, "Resolving Keycloak to withdraw the Optimize callbacks")
 
-		return nil
+		return nil, nil
 	}
 	if recorded == nil {
 		return r.specRealmWithdrawal(ctx, mc, provider)
 	}
 	target := components.RealmTarget(provider)
 	if target == nil || !components.SameRealm(*recorded, *target) {
-		return []components.IdentityProvider{components.RealmProvider(*recorded)}
+		return []components.IdentityProvider{components.RealmProvider(*recorded)}, nil
 	}
 	if apiequality.Semantic.DeepEqual(*recorded, *target) {
-		return []components.IdentityProvider{provider}
+		return []components.IdentityProvider{provider}, nil
 	}
 
-	return []components.IdentityProvider{provider, components.RealmProvider(*recorded)}
+	return []components.IdentityProvider{provider, components.RealmProvider(*recorded)}, nil
 }
 
 // specRealmWithdrawal is the withdrawal of a plane that recorded no realm. It
@@ -358,38 +372,45 @@ func (r *Reconciler) specRealmWithdrawal(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	provider components.IdentityProvider,
-) []components.IdentityProvider {
+) ([]components.IdentityProvider, error) {
 	// The operator runs the Keycloak of the keycloak mode and claims no realm
 	// in it, so nothing but the spec names that realm.
 	if components.Mode(mc) == components.ModeKeycloak {
-		return []components.IdentityProvider{provider}
+		return []components.IdentityProvider{provider}, nil
 	}
 
 	// A plane parked on the realm of another plane keeps the contract of the
 	// realm it left, and its spec names a realm it never entered. Its claim is
 	// what says this plane was ever in there.
 	target := components.RealmTarget(provider)
-	if target == nil || !r.holdsRealmClaim(ctx, mc, *target) {
-		return nil
+	if target == nil {
+		return nil, nil
+	}
+	holds, err := r.holdsRealmClaim(ctx, mc, *target)
+	if err != nil || !holds {
+		return nil, err
 	}
 
-	return []components.IdentityProvider{provider}
+	return []components.IdentityProvider{provider}, nil
 }
 
 // holdsRealmClaim reports whether the claim Lease of target names this
-// management plane. A Lease that is gone, one of another holder, and a read
-// that fails all answer no, so a deletion never writes a realm that this plane
-// cannot show it entered.
+// management plane. A Lease that is gone and one of another holder answer no,
+// so a deletion never writes a realm that this plane cannot show it entered.
+//
+// A read that fails is an error and not a no. The caller releases the claim on
+// every realm right after, so an unread claim that answered no would leave the
+// callbacks of this plane in a realm the next plane takes.
 func (r *Reconciler) holdsRealmClaim(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	target v1.KeycloakRealmTarget,
-) bool {
+) (bool, error) {
 	lease, found, err := r.readRealmClaim(ctx, target)
 	if err != nil || !found {
-		return false
+		return false, err
 	}
 	holder, ours := components.RealmClaimHolderOf(lease)
 
-	return ours && holder == realmClaimSelf(mc)
+	return ours && holder == realmClaimSelf(mc), nil
 }

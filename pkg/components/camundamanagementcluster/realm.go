@@ -235,9 +235,10 @@ func RealmProvider(target v1.KeycloakRealmTarget) IdentityProvider {
 // starting, and Management Identity writes the whole Optimize client of its
 // realm while it starts, so a withdrawal from that realm would be put back
 // by it. A ready pod started long ago and writes nothing more, and a pod
-// that points at another realm writes that one. A pod that is going away
-// counts: its container can still be inside the start until the kubelet
-// stops it.
+// that points at another realm writes that one. A pod that is going away and
+// was never ready counts, because its container can still be inside the start
+// until the kubelet stops it. One that was ready before it went away does not,
+// for the reason any ready pod does not.
 func IdentityWritesRealm(pods []corev1.Pod, target v1.KeycloakRealmTarget) bool {
 	for i := range pods {
 		pod := &pods[i]
