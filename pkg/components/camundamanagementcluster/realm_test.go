@@ -629,6 +629,37 @@ func TestNormalizeRealmIdentityOfAValueWithAQuery(t *testing.T) {
 	assert.Equal(t, "https://kc.example.com/auth/realms/camunda-platform", identity)
 }
 
+// The operator renders a realm beside every Keycloak URL. A container that
+// names a Keycloak and no realm takes the realm from its image, so what it
+// writes cannot be read and it counts as a writer of every realm. An empty URL
+// beside a realm is the oidc mode of this operator, which administers none.
+func TestIdentityRealmsOfAPartialEnvironment(t *testing.T) {
+	t.Parallel()
+
+	withURLOnly := &corev1.PodSpec{Containers: []corev1.Container{{
+		Name: identityContainer,
+		Env:  []corev1.EnvVar{{Name: keycloakEnvURL, Value: "https://kc.example.com/auth"}},
+	}}}
+
+	realms, unknown := templateRealms(withURLOnly)
+
+	assert.True(t, unknown)
+	assert.Empty(t, realms)
+	assert.True(t, IdentityTemplatePointsAtRealm(withURLOnly, v1.KeycloakRealmTarget{
+		URL: "https://other.example.com/auth", Realm: keycloakDefaultRealm,
+	}))
+
+	withRealmOnly := &corev1.PodSpec{Containers: []corev1.Container{{
+		Name: identityContainer,
+		Env:  []corev1.EnvVar{{Name: keycloakEnvRealm, Value: keycloakDefaultRealm}},
+	}}}
+
+	realms, unknown = templateRealms(withRealmOnly)
+
+	assert.False(t, unknown)
+	assert.Empty(t, realms)
+}
+
 // A value that does not parse as a URL is folded of nothing. It keeps the
 // user and the password that were written into it, so the caller is told not
 // to print it.

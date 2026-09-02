@@ -468,9 +468,15 @@ func identityRealmEnv(spec *corev1.PodSpec) (v1.KeycloakRealmTarget, realmState)
 	switch {
 	case unknown:
 		return realm, realmUnknown
-	case realm.URL != "":
-		return realm, realmNamed
-	default:
+	case realm.URL == "":
+		// The operator renders both variables in every mode, and the oidc mode
+		// renders an empty URL beside the default realm. No URL is no Keycloak.
 		return realm, realmNone
+	case realm.Realm == "":
+		// A container that names a Keycloak and no realm takes the realm from
+		// its image, so the realm it writes cannot be read from here.
+		return realm, realmUnknown
+	default:
+		return realm, realmNamed
 	}
 }
