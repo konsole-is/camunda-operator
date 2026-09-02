@@ -2,6 +2,9 @@
 # no Keycloak and issues no clients. It reads the clients you registered under
 # spec.auth.oidc.management.clients of my-platform-config.
 #
+# CamundaManagementCluster has no preset kind. Every value here is bound to
+# this one plane.
+#
 # identityProvider.oidc is an empty object. It carries no fields.
 #
 # In this mode the first administrator is a claim, not a user. Set claimName

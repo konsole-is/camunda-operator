@@ -8,6 +8,10 @@ The management plane is `my-management` in the namespace `my-management-ns`.
 The manifests use the names of
 [Management plane](https://konsole-is.github.io/camunda-operator/guides/management-plane/#step-3c-your-own-oidc-provider).
 
+The `DatabaseServer` inherits its sizing from the preset `standard` in
+[`config/example/presets`](../../presets). `CamundaManagementCluster` has no
+preset kind, so every value on it is its own.
+
 ## Before you start
 
 - Install the CloudNativePG operator and the Camunda operator. See
@@ -34,27 +38,35 @@ The manifests use the names of
 
 ## Apply
 
-One command applies the whole inventory:
+One command applies the whole inventory, presets included:
 
 ```sh
 kubectl apply -k config/example/camunda-management-cluster/oidc
 ```
 
-To see each resource become ready, apply the files in their number order:
+To see each resource become ready, apply the presets once, then the files in
+their number order:
 
-1. `01-namespace.yaml` creates the namespace `my-management-ns`.
-2. `02-secrets.yaml` creates the four client Secrets and the SMTP Secret.
-3. `03-database-server.yaml` creates the `DatabaseServer` `my-db`. Wait for it:
+1. The shared presets, once per Kubernetes cluster:
+
+    ```sh
+    kubectl apply -k config/example/presets
+    ```
+
+2. `01-namespace.yaml` creates the namespace `my-management-ns`.
+3. `02-secrets.yaml` creates the four client Secrets and the SMTP Secret.
+4. `03-database-server.yaml` creates the `DatabaseServer` `my-db`, which
+   inherits the preset `standard`. Wait for it:
 
     ```sh
     kubectl wait databaseserver/my-db -n my-management-ns \
       --for=condition=Ready --timeout=10m
     ```
 
-4. `04-databases.yaml` creates the two `Database` resources.
-5. `05-platform-config.yaml` creates the cluster-scoped
+5. `04-databases.yaml` creates the two `Database` resources.
+6. `05-platform-config.yaml` creates the cluster-scoped
    `CamundaPlatformConfig` `my-platform-config`.
-6. `06-management-cluster.yaml` creates the `CamundaManagementCluster`
+7. `06-management-cluster.yaml` creates the `CamundaManagementCluster`
    `my-management`. Wait for it:
 
     ```sh
@@ -88,8 +100,11 @@ kubectl delete camundaplatformconfig/my-platform-config
 kubectl delete namespace my-management-ns
 ```
 
+The presets are shared, so leave them unless no inventory uses them any more.
+
 ## Related
 
+- [Presets](https://konsole-is.github.io/camunda-operator/guides/presets/)
 - [Management plane](https://konsole-is.github.io/camunda-operator/guides/management-plane/#step-3c-your-own-oidc-provider)
 - [The clients of the management plane](https://konsole-is.github.io/camunda-operator/crds/camundaplatformconfig/#the-clients-of-the-management-plane)
 - [CamundaManagementCluster](https://konsole-is.github.io/camunda-operator/crds/camundamanagementcluster/)

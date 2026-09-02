@@ -2,14 +2,15 @@
 
 A preset is a baseline that many clusters inherit. You write the sizing, the topology, the backup policy, and the authentication defaults once. Each cluster then names the preset and sets only what is its own. The result is a small manifest per cluster, and one place to change a whole fleet.
 
-The operator has two preset kinds:
+The operator has three preset kinds:
 
 | Preset | Inherited by | Reference field |
 | --- | --- | --- |
 | `CamundaClusterPreset` | `CamundaCluster` | `spec.presetRef` |
 | `ElasticsearchClusterPreset` | `ElasticsearchCluster` | `spec.presetRef` |
+| `DatabaseServerPreset` | `DatabaseServer` | `spec.presetRef` |
 
-Both are cluster-scoped. No controller reconciles them, and they create nothing. The cluster that references a preset reads it on every reconcile and merges its own spec over `spec.cluster` of the preset.
+All three are cluster-scoped. No controller reconciles them, and they create nothing. The cluster that references a preset reads it on every reconcile and merges its own spec over `spec.cluster` of the preset.
 
 ## The three layers of a Camunda cluster
 
@@ -127,7 +128,11 @@ spec:
 
 The backup policy of the preset takes effect on a cluster that sets `spec.backupStorageRef`. A cluster without a bucket takes no backups and ignores the policy. See the [backup guide](backup.md).
 
-The [CamundaClusterPreset](../crds/camundaclusterpreset.md) and [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md) pages list every field.
+A `DatabaseServerPreset` carries the shape of a PostgreSQL server under `spec.server`, and its instance-bound fields are `presetRef`, `databaseServerConfig`, and `suspend`. Its `archive` block is inheritable, because one bucket serves a fleet and every server writes under a prefix of its own.
+
+The [CamundaClusterPreset](../crds/camundaclusterpreset.md), [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md), and [DatabaseServerPreset](../crds/databaseserverpreset.md) pages list every field.
+
+Three ready-to-apply presets, and the inventories that use them, are in [`config/example/presets`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/presets).
 
 ## Override one field
 
@@ -165,3 +170,4 @@ To roll out a change in steps, create a second preset, for example `medium-v2`, 
 - [Operations](operations.md): how a preset change reaches the pods, and how storage grows.
 - [CamundaClusterPreset](../crds/camundaclusterpreset.md): every field and the merge rules.
 - [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md): every field and the merge rules.
+- [DatabaseServerPreset](../crds/databaseserverpreset.md): every field and the merge rules.

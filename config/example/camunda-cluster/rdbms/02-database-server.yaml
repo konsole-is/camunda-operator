@@ -4,20 +4,15 @@
 # Do not write that contract or that Secret by hand. A contract of this name
 # that already exists is refused with the reason ContractTaken.
 #
-# spec.archive turns on point-in-time recovery. It needs the Barman Cloud
-# plugin, cert-manager, and an ObjectStorageConfig, so this example leaves it
-# out. See the guide for the archive fields.
+# presetRef names the shared DatabaseServerPreset standard, which carries the
+# instance count, the volume size, and the resources. Only the fields that
+# belong to this one server stay here.
 apiVersion: core.camunda.io/v1
 kind: DatabaseServer
 metadata:
   name: my-db
   namespace: my-cluster-ns
 spec:
+  presetRef: standard
   version: "17"
-  instances: 1
-  storageSize: 8Gi
-  resources:
-    requests:
-      cpu: 250m
-      memory: 512Mi
   databaseServerConfig: my-db-server

@@ -8,6 +8,11 @@ The orchestration cluster is `my-cluster` in the namespace `my-cluster-ns`.
 The manifests use the names of
 [Management plane](https://konsole-is.github.io/camunda-operator/guides/management-plane/).
 
+The sizing lives in [`config/example/presets`](../../presets). The
+`DatabaseServer` and the `ElasticsearchCluster` name the preset `standard`,
+and the `CamundaCluster` names `small`. `CamundaManagementCluster` and
+`CamundaOptimize` have no preset kind, so every value on them is their own.
+
 ## Before you start
 
 - Install the Keycloak Operator, the CloudNativePG operator, the ECK
@@ -22,27 +27,35 @@ The manifests use the names of
 
 ## Apply
 
-One command applies the whole inventory:
+One command applies the whole inventory, presets included:
 
 ```sh
 kubectl apply -k config/example/camunda-management-cluster/keycloak
 ```
 
-To see each resource become ready, apply the files in their number order:
+To see each resource become ready, apply the presets once, then the files in
+their number order:
 
-1. `01-namespaces.yaml` creates both namespaces.
-2. `02-secrets.yaml` creates the license Secret and the SMTP Secret.
-3. `03-database-server.yaml` creates the `DatabaseServer` `my-db`. Wait for it:
+1. The shared presets, once per Kubernetes cluster:
+
+    ```sh
+    kubectl apply -k config/example/presets
+    ```
+
+2. `01-namespaces.yaml` creates both namespaces.
+3. `02-secrets.yaml` creates the license Secret and the SMTP Secret.
+4. `03-database-server.yaml` creates the `DatabaseServer` `my-db`, which
+   inherits the preset `standard`. Wait for it:
 
     ```sh
     kubectl wait databaseserver/my-db -n my-management-ns \
       --for=condition=Ready --timeout=10m
     ```
 
-4. `04-databases.yaml` creates the three `Database` resources.
-5. `05-platform-config.yaml` creates the cluster-scoped
+5. `04-databases.yaml` creates the three `Database` resources.
+6. `05-platform-config.yaml` creates the cluster-scoped
    `CamundaPlatformConfig` `my-platform-config`.
-6. `06-management-cluster.yaml` creates the `CamundaManagementCluster`
+7. `06-management-cluster.yaml` creates the `CamundaManagementCluster`
    `my-management`. Wait for it:
 
     ```sh
@@ -50,17 +63,17 @@ To see each resource become ready, apply the files in their number order:
       --for=condition=Ready --timeout=15m
     ```
 
-7. `07-elasticsearch-cluster.yaml` creates the `ElasticsearchCluster`
-   `my-cluster-es`.
-8. `08-camunda-cluster.yaml` creates the `CamundaCluster` `my-cluster`. Wait
-   for it:
+8. `07-elasticsearch-cluster.yaml` creates the `ElasticsearchCluster`
+   `my-cluster-es`, which inherits the preset `standard`.
+9. `08-camunda-cluster.yaml` creates the `CamundaCluster` `my-cluster`, which
+   inherits the preset `small`. Wait for it:
 
     ```sh
     kubectl wait camundacluster/my-cluster -n my-cluster-ns \
       --for=condition=Ready --timeout=15m
     ```
 
-9. `09-optimize.yaml` creates the `CamundaOptimize` `my-cluster-optimize`.
+10. `09-optimize.yaml` creates the `CamundaOptimize` `my-cluster-optimize`.
 
 ## What you get
 
@@ -76,6 +89,13 @@ To see each resource become ready, apply the files in their number order:
   plane attaches to it.
 - `status.optimize` of `my-management` lists `my-cluster-optimize`, because it
   names this contract and sets an `externalUrl`.
+
+## Add a second cluster
+
+`clusterSelector` matches on labels, so a second cluster joins this plane by
+carrying `environment: production`. With the preset `small` in place, that
+cluster is `08-camunda-cluster.yaml` again with another name and its own
+storage. Nothing on `my-management` changes.
 
 ## Why the cluster runs on Elasticsearch
 
@@ -97,8 +117,11 @@ kubectl delete camundaplatformconfig/my-platform-config
 kubectl delete namespace my-management-ns my-cluster-ns
 ```
 
+The presets are shared, so leave them unless no inventory uses them any more.
+
 ## Related
 
+- [Presets](https://konsole-is.github.io/camunda-operator/guides/presets/)
 - [Management plane](https://konsole-is.github.io/camunda-operator/guides/management-plane/#step-3a-the-operator-runs-keycloak)
 - [CamundaManagementCluster](https://konsole-is.github.io/camunda-operator/crds/camundamanagementcluster/)
 - [CamundaOptimize](https://konsole-is.github.io/camunda-operator/crds/camundaoptimize/)

@@ -2,6 +2,10 @@
 # The operator publishes the SecondaryStorageConfig my-storage-config from it,
 # with the endpoint and the generated credentials. Do not write that contract
 # by hand.
+#
+# This inventory sets every field inline, with no presetRef. It is the one
+# example of the explicit shape. The other three inventories inherit their
+# sizing from config/example/presets instead.
 apiVersion: core.camunda.io/v1
 kind: ElasticsearchCluster
 metadata:

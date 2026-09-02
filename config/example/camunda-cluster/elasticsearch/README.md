@@ -7,6 +7,11 @@ The manifests use the names and the values of
 [Getting started](https://konsole-is.github.io/camunda-operator/getting-started/).
 The sizes suit one small test cluster, such as kind.
 
+This inventory sets every field inline and names no preset. It is the one
+example of the explicit shape. The other three inherit their sizing from
+[`config/example/presets`](../../presets). Compare its `CamundaCluster` with
+the one in [`camunda-cluster/rdbms`](../rdbms) to see the difference.
+
 ## Before you start
 
 - Install the ECK operator and the Camunda operator. See

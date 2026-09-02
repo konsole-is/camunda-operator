@@ -8,6 +8,10 @@ The manifests use the names of
 [Secondary storage](https://konsole-is.github.io/camunda-operator/guides/secondary-storage/#postgresql).
 The sizes suit one small test cluster, such as kind.
 
+The sizing lives in [`config/example/presets`](../../presets). The
+`DatabaseServer` names the preset `standard`, the `CamundaCluster` names
+`small`, and each one keeps only what belongs to it.
+
 ## Before you start
 
 - Install the CloudNativePG operator and the Camunda operator. See
@@ -20,33 +24,43 @@ an `ObjectStorageConfig` for the bucket.
 
 ## Apply
 
-One command applies the whole inventory:
+One command applies the whole inventory, presets included:
 
 ```sh
 kubectl apply -k config/example/camunda-cluster/rdbms
 ```
 
-To see each resource become ready, apply the files in their number order:
+To see each resource become ready, apply the presets once, then the files in
+their number order:
 
-1. `01-namespace.yaml` creates the namespace `my-cluster-ns`.
-2. `02-database-server.yaml` creates the `DatabaseServer` `my-db`. Wait for it:
+1. The shared presets, once per Kubernetes cluster:
+
+    ```sh
+    kubectl apply -k config/example/presets
+    ```
+
+2. `01-namespace.yaml` creates the namespace `my-cluster-ns`.
+3. `02-database-server.yaml` creates the `DatabaseServer` `my-db`. It inherits
+   the instance count, the volume size, and the resources from the preset
+   `standard`. Wait for it:
 
     ```sh
     kubectl wait databaseserver/my-db -n my-cluster-ns \
       --for=condition=Ready --timeout=10m
     ```
 
-3. `03-database.yaml` creates the `Database` `my-camunda-db`. Wait for it:
+4. `03-database.yaml` creates the `Database` `my-camunda-db`. Wait for it:
 
     ```sh
     kubectl wait database/my-camunda-db -n my-cluster-ns \
       --for=condition=Ready --timeout=5m
     ```
 
-4. `04-platform-config.yaml` creates the cluster-scoped
+5. `04-platform-config.yaml` creates the cluster-scoped
    `CamundaPlatformConfig` `my-platform-config`.
-5. `05-camunda-cluster.yaml` creates the `CamundaCluster` `my-cluster`.
-   Wait for it:
+6. `05-camunda-cluster.yaml` creates the `CamundaCluster` `my-cluster`. It
+   inherits the broker count, the partitions, the volumes, and the resources
+   from the preset `small`. Wait for it:
 
     ```sh
     kubectl wait camundacluster/my-cluster -n my-cluster-ns \
@@ -65,6 +79,12 @@ To see each resource become ready, apply the files in their number order:
 - `my-cluster-camunda-admin` is the Secret with the first administrator. Read
   the keys `username` and `password` from it to log in.
 
+## Add a second cluster
+
+The preset is the point. A second cluster of the same shape is
+`05-camunda-cluster.yaml` again with another name, another `storageRef`, and
+its own `Database`. The sizing stays in `small`.
+
 ## Remove
 
 Delete in the reverse order, so that the cluster stops before its database:
@@ -80,8 +100,11 @@ kubectl delete namespace my-cluster-ns
 Deletion of the `Database` removes the published contracts and Secrets. It
 never drops the database or its roles.
 
+The presets are shared, so leave them unless no inventory uses them any more.
+
 ## Related
 
+- [Presets](https://konsole-is.github.io/camunda-operator/guides/presets/)
 - [Secondary storage](https://konsole-is.github.io/camunda-operator/guides/secondary-storage/#postgresql)
 - [DatabaseServer](https://konsole-is.github.io/camunda-operator/crds/databaseserver/)
 - [Database](https://konsole-is.github.io/camunda-operator/crds/database/)

@@ -2,6 +2,9 @@
 # clients, and publishes the cluster-scoped ManagementAuthConfig my-management
 # that CamundaOptimize reads.
 #
+# CamundaManagementCluster has no preset kind. Every value here is bound to
+# this one plane: its URLs, its databases, and its first administrator.
+#
 # clusterSelector matches the labels of a CamundaCluster. This one selects
 # my-cluster, which carries environment: production. An empty selector, {},
 # would select every cluster instead.

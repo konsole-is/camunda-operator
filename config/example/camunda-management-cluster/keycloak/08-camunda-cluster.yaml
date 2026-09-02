@@ -1,6 +1,10 @@
 # The orchestration cluster that the management plane serves. The label
 # environment: production is what the clusterSelector of my-management
 # matches. Without it the management plane leaves this cluster alone.
+#
+# presetRef names the shared CamundaClusterPreset small. One preset serves
+# every cluster of this shape, so a second cluster is this manifest again
+# with another name.
 apiVersion: core.camunda.io/v1
 kind: CamundaCluster
 metadata:
@@ -9,18 +13,8 @@ metadata:
   labels:
     environment: production
 spec:
+  presetRef: small
   version: "8.9.17"
   platformConfigRef: my-platform-config
   storageRef: my-storage-config
   externalUrl: "https://my-cluster.camunda.example.com"
-  zeebe:
-    storageSize: 1Gi
-    resources:
-      requests:
-        cpu: "1"
-        memory: 1.5Gi
-  gateway:
-    resources:
-      requests:
-        cpu: 500m
-        memory: 512Mi

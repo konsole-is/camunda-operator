@@ -1,9 +1,11 @@
-# The resources are listed in the order the README applies them. Do not add a
-# namespace transformer here: CamundaPlatformConfig is cluster scoped, and a
-# transformer would stamp a namespace on it.
+# The resources are listed in the order the README applies them. The shared
+# presets come first, so that kubectl apply -k on this directory alone stands
+# the whole inventory up. Do not add a namespace transformer here:
+# CamundaPlatformConfig and the presets are cluster scoped.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+- ../../presets
 - 01-namespace.yaml
 - 02-database-server.yaml
 - 03-database.yaml

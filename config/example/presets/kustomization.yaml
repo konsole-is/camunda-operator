@@ -1,0 +1,9 @@
+# The three preset kinds are cluster scoped and passive. No controller
+# reconciles them, and nothing here depends on anything else, so the files
+# carry no numbers.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- camunda-cluster-preset.yaml
+- elasticsearch-cluster-preset.yaml
+- database-server-preset.yaml

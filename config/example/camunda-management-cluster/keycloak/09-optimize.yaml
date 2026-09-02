@@ -2,6 +2,8 @@
 # ManagementAuthConfig that my-management publishes, so Optimize logs its
 # users in against the same Keycloak.
 #
+# CamundaOptimize has no preset kind.
+#
 # externalUrl is where users reach Optimize. The management plane registers it
 # as the login callback of the Optimize client. It must carry no trailing
 # slash, no comma, no query, and no fragment.
