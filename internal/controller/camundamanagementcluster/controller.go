@@ -149,6 +149,7 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // +kubebuilder:rbac:groups="",resources=pods,verbs=list
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=replicasets,verbs=list
 
 // Reconcile converges one management plane. A CR under deletion withdraws its
 // claims, deletes its contract, and releases the finalizer. Otherwise the
@@ -277,23 +278,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// the oidc mode is not held: Management Identity writes no realm there,
 	// so there is no second registration to hold back.
 	target := components.RealmTarget(res.Input.Provider)
-	withdrawal, tidy, err := r.withdrawRetargeted(ctx, &mc, target, res.Input.Suspended)
+	withdrawal, err := r.withdrawRetargeted(ctx, &mc, target, res.Input.Suspended)
 	if err != nil {
 		return ctrl.Result{}, stepWithdrawCallbacks.stop(&mc, err)
 	}
-	if withdrawal != nil && target != nil {
-		// While the old realm still holds the callbacks, the plane stays up
-		// on the old Keycloak. Once it is empty, the old Management Identity
-		// is stopped: its pods are the last writers of that realm, and one
-		// that restarts would put the callbacks back while the new realm
-		// fills. The realm is checked once more when they are gone, and only
-		// then do the components start Identity against the new Keycloak, so
-		// the two realms never accept the callbacks at the same time.
-		if tidy {
-			if err := r.stopIdentity(ctx, &mc); err != nil {
-				return ctrl.Result{}, stepWithdrawCallbacks.stop(&mc, err)
-			}
-		}
+	if withdrawal != nil && target != nil && len(res.Input.OptimizeURLs) > 0 {
+		// The plane stays where it is until the old realm and its writers
+		// are gone, so the callbacks never fill the new realm beside a realm
+		// that still signs people in. A plane that serves no Optimize is not
+		// held, and neither is a move to the oidc mode: neither fills the
+		// new realm with anything, so there is no second registration to
+		// hold back, and only the condition reports the realm still to be
+		// emptied.
 		stageCallbacks(&mc, metav1.ConditionFalse, withdrawal.Reason, withdrawal.Message)
 		conditions.Stage(&mc, conditions.Failed(&mc, withdrawal))
 

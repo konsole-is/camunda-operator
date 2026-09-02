@@ -419,6 +419,27 @@ func TestIdentityPointsAtRealm(t *testing.T) {
 	}
 }
 
+// A workload template is read the same way a pod is: what its Management
+// Identity container points at is the realm its pods would write.
+func TestIdentityTemplatePointsAtRealm(t *testing.T) {
+	t.Parallel()
+
+	target := v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: "camunda-platform"}
+	spec := func(url string) *corev1.PodSpec {
+		return &corev1.PodSpec{Containers: []corev1.Container{{
+			Name: identityContainer,
+			Env: []corev1.EnvVar{
+				{Name: keycloakEnvURL, Value: url},
+				{Name: keycloakEnvRealm, Value: "camunda-platform"},
+			},
+		}}}
+	}
+
+	assert.True(t, IdentityTemplatePointsAtRealm(spec("https://kc.example.com/auth"), target))
+	assert.False(t, IdentityTemplatePointsAtRealm(spec("https://other.example.com/auth"), target))
+	assert.False(t, IdentityTemplatePointsAtRealm(&corev1.PodSpec{}, target))
+}
+
 // A record round-trips: the provider built from it names the same realm.
 func TestRealmProviderKeepsTheIdentityOfTheRecord(t *testing.T) {
 	t.Parallel()

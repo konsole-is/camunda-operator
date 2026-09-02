@@ -128,7 +128,7 @@ func IdentityWritesRealm(pods []corev1.Pod, target v1.KeycloakRealmTarget) bool 
 		if podDone(pod) || podReady(pod) {
 			continue
 		}
-		if realm, ok := identityRealmEnv(pod); ok && SameRealm(realm, target) {
+		if IdentityTemplatePointsAtRealm(&pod.Spec, target) {
 			return true
 		}
 	}
@@ -147,12 +147,23 @@ func IdentityPointsAtRealm(pods []corev1.Pod, target v1.KeycloakRealmTarget) boo
 		if podDone(pod) {
 			continue
 		}
-		if realm, ok := identityRealmEnv(pod); ok && SameRealm(realm, target) {
+		if IdentityTemplatePointsAtRealm(&pod.Spec, target) {
 			return true
 		}
 	}
 
 	return false
+}
+
+// IdentityTemplatePointsAtRealm reports whether the Management Identity
+// container of spec points at the realm of target. It reads a pod, or the
+// pod template of a Deployment or a ReplicaSet: a workload whose template
+// points at the realm can start a pod against it at any moment, even while
+// it has none, so it counts as a writer of that realm the same as a pod.
+func IdentityTemplatePointsAtRealm(spec *corev1.PodSpec, target v1.KeycloakRealmTarget) bool {
+	realm, ok := identityRealmEnv(spec)
+
+	return ok && SameRealm(realm, target)
 }
 
 // podReady reports the Ready condition of pod.
@@ -173,11 +184,11 @@ func podDone(pod *corev1.Pod) bool {
 }
 
 // identityRealmEnv reads the Keycloak URL and the realm that the Management
-// Identity container of pod points at, and false for one that names no
-// Keycloak, which is a pod of the oidc mode.
-func identityRealmEnv(pod *corev1.Pod) (v1.KeycloakRealmTarget, bool) {
+// Identity container of spec points at, and false for one that names no
+// Keycloak, which is the oidc mode.
+func identityRealmEnv(spec *corev1.PodSpec) (v1.KeycloakRealmTarget, bool) {
 	var realm v1.KeycloakRealmTarget
-	for _, container := range pod.Spec.Containers {
+	for _, container := range spec.Containers {
 		if container.Name != identityContainer {
 			continue
 		}

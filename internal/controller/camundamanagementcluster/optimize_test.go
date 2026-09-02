@@ -713,6 +713,48 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// A plane that serves no Optimize fills no realm, so a failing withdrawal
+	// holds nothing back: the workloads move, Ready stays with them, and only
+	// the condition keeps naming the realm still to be emptied.
+	It("keeps a plane that serves no Optimize ready while the old realm refuses", func() {
+		first := startFakeKeycloak(withOptimizeClient())
+		second := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(first))
+
+		optimize := createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+
+		first.setRefuseUpdate(true)
+		Expect(k8sClient.Delete(ctx, optimize)).To(Succeed())
+		retargetKeycloak(s.mc, second.url)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(condition.Message).To(ContainSubstring(first.url))
+
+			// The workloads moved and the plane is ready without the realm.
+			g.Expect(identityEnv(g, s)["KEYCLOAK_URL"]).To(Equal(second.url))
+			g.Expect(conditionOf(g, s.mc, v1.ConditionReady).Reason).To(Equal(v1.ReasonHealthy))
+		}, timeout, interval).Should(Succeed())
+
+		first.setRefuseUpdate(false)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			g.Expect(first.redirectURIs()).To(BeEmpty())
+			g.Expect(readManagementCluster(g, s.mc).Status.CallbackRealm).To(BeNil())
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// An annotation that names another realm than the recorded one sanctions
 	// nothing. It is removed with a Warning event, so a typo does not sit
 	// armed until a later retarget happens to match it.
