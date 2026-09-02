@@ -106,7 +106,7 @@ For all fields, see [ElasticsearchCluster](../crds/elasticsearchcluster.md) and 
 
 The chain has two halves. The first half is the server, and you get it in one of two ways. The second half is the logical database on that server, and it is the same either way.
 
-The `DatabaseServer` half of this chain is ready to apply in [`config/example/camunda-cluster/rdbms`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-cluster/rdbms).
+Both halves are ready to apply in [`config/example/camunda-cluster/rdbms`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-cluster/rdbms), which takes the `DatabaseServer` route for the first half and holds the `Database`, the platform configuration, and the `CamundaCluster` as well.
 
 | | A `DatabaseServer` | A server you run |
 | --- | --- | --- |
