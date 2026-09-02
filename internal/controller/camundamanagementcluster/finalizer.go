@@ -45,14 +45,14 @@ const (
 )
 
 // finalize withdraws the Console ping settings and every claim on the
-// orchestration clusters, removes the login callbacks from the realm, deletes
-// the ManagementAuthConfig, releases the claim on every realm, and releases
-// the finalizer, in that order: the realm is tidied before anything that would
-// let another plane into it goes. The Deployments, the Services, and the
-// copies of referenced Secrets carry an owner reference, so Kubernetes
-// collects them; what the management plane wrote on an orchestration cluster,
-// what it wrote in the realm, the contract, and the realm claims are outside
-// that chain.
+// orchestration clusters, stops Management Identity, removes the login
+// callbacks from the realm, deletes the ManagementAuthConfig, releases the
+// claim on every realm, and releases the finalizer, in that order: the realm
+// is tidied before anything that would let another plane into it goes. The
+// Deployments, the Services, and the copies of referenced Secrets carry an
+// owner reference, so Kubernetes collects them; what the management plane
+// wrote on an orchestration cluster, what it wrote in the realm, the contract,
+// and the realm claims are outside that chain.
 //
 // The withdrawal goes first. Once the finalizer is gone the object is gone for
 // good, and no retry can free the orchestration clusters or remove a contract
@@ -78,14 +78,17 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	if err := r.withdrawClaims(ctx, mc, clusters); err != nil {
 		return err
 	}
+	// The Deployment goes whatever the contract says. A plane whose contract
+	// write never landed, and one whose contract somebody deleted, still runs
+	// the Management Identity that writes the clients of the realm.
+	if err := r.stopIdentity(ctx, mc); err != nil {
+		return err
+	}
 	// The contract is the claim on the realm, so it is held until the realm is
 	// tidy. Deleting it first would let a waiting management plane take the
 	// name and register its own callbacks while this withdrawal is still in
 	// flight, and this withdrawal would then take the new owner's away.
 	if r.ownsContract(ctx, mc) {
-		if err := r.stopIdentity(ctx, mc); err != nil {
-			return err
-		}
 		r.withdrawOptimizeCallbacks(ctx, mc)
 	}
 	if err := r.withdrawContract(ctx, mc); err != nil {

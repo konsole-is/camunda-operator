@@ -136,7 +136,7 @@ status:
     - type: Ready
       status: "False"
       reason: RealmClaimedElsewhere
-      message: 'CamundaManagementCluster my-management-ns/my-management holds realm "camunda-platform" of Keycloak "https://keycloak.example.com/auth". One realm answers to one management plane, so this one waits and runs nothing until that claim is released. Give it a realm of its own, or delete the holder'
+      message: 'CamundaManagementCluster my-management-ns/my-management holds realm "camunda-platform" of Keycloak "https://keycloak.example.com/auth". One realm answers to one management plane, so this one waits and starts nothing new until that claim is released. Give it a realm of its own, or delete the holder'
 ```
 
 Give the waiting plane a realm of its own, or delete the holder. The waiting plane then proceeds on its own. A holder releases a realm when it is deleted, and when its spec moves to another realm or another mode, once the login callbacks have left it. Two planes on one Keycloak with two realms work today.
@@ -597,7 +597,7 @@ kubectl annotate camundamanagementcluster my-management -n my-management-ns \
   camunda.io/forget-callback-realm="https://old-keycloak.example.com/auth/realms/camunda-platform"
 ```
 
-The management plane then lets go of the old realm, records the Warning event `OptimizeCallbacksLeftBehind`, and removes the annotation. The move goes on from there. The plane registers the callbacks in the new realm when the new mode holds one and the plane serves an Optimize. A move to the `oidc` mode registers none, and `OptimizeCallbacksReady` reads `Disabled`. The callbacks stay in the old realm. The old realm stays claimed by this plane until the record of it goes, by withdrawal or by this annotation. Only then can another management plane claim it. If that Keycloak comes back, remove them from its `optimize` client yourself. The annotation lets go of the realm it names and of no other. One that names another realm than `status.callbackRealm` is removed unused, and the Warning event `ForgetCallbackRealmIgnored` names both realms.
+The management plane then lets go of the old realm, records the Warning event `OptimizeCallbacksLeftBehind`, and removes the annotation. The move goes on from there. The plane registers the callbacks in the new realm when the new mode holds one and the plane serves an Optimize. A move to the `oidc` mode registers none, and `OptimizeCallbacksReady` reads `Disabled`. The callbacks stay in the old realm. This plane holds the old realm until the withdrawal removes the callbacks, or until this annotation tells the operator to leave them there. Only then can another management plane claim it. If that Keycloak comes back, remove them from its `optimize` client yourself. The annotation lets go of the realm it names and of no other. One that names another realm than `status.callbackRealm` is removed unused, and the Warning event `ForgetCallbackRealmIgnored` names both realms.
 
 A suspended management plane leaves every realm as it is. An annotation that names the realm of `status.callbackRealm` waits until the plane resumes, and the callbacks move then. An annotation that names another realm is removed while the plane sleeps, the same as when it runs. Deleting a suspended plane removes the callbacks from the realm that `status.callbackRealm` names.
 

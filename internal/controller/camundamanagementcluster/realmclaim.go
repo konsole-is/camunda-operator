@@ -147,7 +147,7 @@ func (r *Reconciler) takeRealmClaim(
 		Reason: v1.ReasonRealmClaimedElsewhere,
 		Message: fmt.Sprintf(
 			"CamundaManagementCluster %s holds realm %q of Keycloak %q. One realm answers to one "+
-				"management plane, so this one waits and runs nothing until that claim is "+
+				"management plane, so this one waits and starts nothing new until that claim is "+
 				"released. Give it a realm of its own, or delete the holder",
 			holder.NamespacedName, target.Realm, target.URL,
 		),

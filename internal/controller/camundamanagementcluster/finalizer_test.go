@@ -22,8 +22,20 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/events"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 )
 
 // externalKeycloakCluster is a management plane in the externalKeycloak mode
@@ -145,4 +157,129 @@ func TestWithdrawalRealmsOfTheOIDCModeWithoutARecord(t *testing.T) {
 	}
 
 	assert.Empty(t, withdrawalRealms(context.Background(), mc))
+}
+
+// finalizerRealm is the realm that the specs below claim.
+var finalizerRealm = v1.KeycloakRealmTarget{
+	URL: "https://keycloak.example.com/auth", Realm: "camunda-platform",
+}
+
+// TestFinalizeStopsIdentityBeforeTheRealm covers the deletion of a management
+// plane that never wrote a contract, or whose contract somebody removed. The
+// contract says only whether this plane has login callbacks to withdraw. It
+// says nothing about the Management Identity Deployment, which writes the
+// clients of the realm and must be gone before another plane claims it.
+func TestFinalizeStopsIdentityBeforeTheRealm(t *testing.T) {
+	t.Run("the Deployment goes before the realm claim, with no contract", func(t *testing.T) {
+		mc := finalizingCluster()
+		identity := ownedIdentity(mc)
+		lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
+		r, deletes := finalizerReconciler(t, mc, identity, lease)
+
+		require.NoError(t, r.finalize(context.Background(), mc))
+
+		assert.Equal(t, []string{identity.Name, lease.Name}, deletes.names)
+		assert.False(t, exists(t, r, identity))
+		assert.False(t, exists(t, r, lease))
+		assert.False(t, controllerutil.ContainsFinalizer(mc, Finalizer))
+	})
+
+	// The name of the Deployment is derived from the name of the management
+	// cluster, so a workload of another owner can hold it.
+	t.Run("a Deployment of another owner stays", func(t *testing.T) {
+		mc := finalizingCluster()
+		identity := ownedIdentity(mc)
+		identity.OwnerReferences = nil
+		r, _ := finalizerReconciler(t, mc, identity)
+
+		require.NoError(t, r.finalize(context.Background(), mc))
+
+		assert.True(t, exists(t, r, identity))
+	})
+}
+
+// finalizingCluster is a management cluster that carries the finalizer and no
+// record of a contract.
+func finalizingCluster() *v1.CamundaManagementCluster {
+	return &v1.CamundaManagementCluster{ObjectMeta: metav1.ObjectMeta{
+		Namespace:  "my-management-ns",
+		Name:       "my-management",
+		UID:        "management-uid",
+		Finalizers: []string{Finalizer},
+	}}
+}
+
+// ownedIdentity is the Management Identity Deployment of mc.
+func ownedIdentity(mc *v1.CamundaManagementCluster) *appsv1.Deployment {
+	controller := true
+
+	return &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+		Namespace: mc.Namespace,
+		Name:      components.IdentityName(mc),
+		UID:       "identity-uid",
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: v1.GroupVersion.String(),
+			Kind:       "CamundaManagementCluster",
+			Name:       mc.Name,
+			UID:        mc.UID,
+			Controller: &controller,
+		}},
+	}}
+}
+
+// deleteLog records the name of every object that the reconciler deleted, in
+// the order it deleted them.
+type deleteLog struct {
+	names []string
+}
+
+// finalizerReconciler builds a reconciler over a fake client that holds
+// objects, and the log of what it deletes.
+func finalizerReconciler(t *testing.T, objects ...client.Object) (*Reconciler, *deleteLog) {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, v1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, coordinationv1.AddToScheme(scheme))
+
+	deletes := &deleteLog{}
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objects...).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Delete: func(
+				ctx context.Context,
+				inner client.WithWatch,
+				obj client.Object,
+				opts ...client.DeleteOption,
+			) error {
+				deletes.names = append(deletes.names, obj.GetName())
+
+				return inner.Delete(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	return &Reconciler{
+		Client:         c,
+		APIReader:      c,
+		Scheme:         scheme,
+		EventRecorder:  events.NewFakeRecorder(16),
+		ClaimNamespace: testClaimNamespace,
+	}, deletes
+}
+
+// exists reports whether obj is still in the cluster of r.
+func exists(t *testing.T, r *Reconciler, obj client.Object) bool {
+	t.Helper()
+
+	err := r.Get(context.Background(), client.ObjectKeyFromObject(obj), obj.DeepCopyObject().(client.Object))
+	if apierrors.IsNotFound(err) {
+		return false
+	}
+	require.NoError(t, err)
+
+	return true
 }
