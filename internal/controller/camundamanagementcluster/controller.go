@@ -278,9 +278,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// the oidc mode is not held: Management Identity writes no realm there,
 	// so there is no second registration to hold back.
 	target := components.RealmTarget(res.Input.Provider)
-	withdrawal, err := r.withdrawRetargeted(ctx, &mc, target, res.Input.Suspended)
+	withdrawal, consumed, err := r.withdrawRetargeted(ctx, &mc, target, res.Input.Suspended)
 	if err != nil {
 		return ctrl.Result{}, stepWithdrawCallbacks.stop(&mc, err)
+	}
+	// A record that the forget annotation consumed goes out with this pass's
+	// status flush, and the annotation is removed on the next pass, once the
+	// record it consumed is gone from the API server. Registering in a new
+	// realm now would replace the record first, and the next pass would then
+	// report the spent annotation as one that names a foreign realm.
+	if consumed {
+		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 	if withdrawal != nil && target != nil && len(res.Input.OptimizeURLs) > 0 {
 		// The plane stays where it is until the old realm and its writers

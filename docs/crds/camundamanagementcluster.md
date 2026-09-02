@@ -535,7 +535,7 @@ The `oidc` mode registers nothing. Your provider holds the callback URLs, so `sp
 
 ### Moving the callbacks to another realm
 
-When `spec.identityProvider` starts naming another Keycloak, another `realm`, or the `oidc` mode, the login callbacks leave the realm they were in. Only then does the management plane register them in the new realm. `status.callbackRealm` names the realm that carries them, so it keeps naming the old realm until they have left it:
+When `spec.identityProvider` starts naming another Keycloak, another `realm`, or the `oidc` mode, the login callbacks leave the realm they were in. Only then does the management plane register them in the new realm. `status.callbackRealm` names the last realm the plane registered them in. During a move it keeps naming the old realm until the callbacks have left it, and after that until nothing is left that could write them back:
 
 ```yaml
 status:

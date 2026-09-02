@@ -442,20 +442,24 @@ type CamundaManagementClusterStatus struct {
 	// +listMapKey=name
 	// +optional
 	Optimize []AttachedOptimizeStatus `json:"optimize,omitempty"`
-	// CallbackRealm is the Keycloak realm that this management plane last
-	// registered the login callbacks of Optimize in. When the spec names
-	// another realm, or the oidc mode, the operator signs in to this one and
-	// removes the callbacks before it registers them in the new realm, and
-	// the field stays until no Management Identity pod of the old
-	// configuration is left to put them back.
+	// CallbackRealm is the last Keycloak realm that this management plane
+	// registered the login callbacks of Optimize in. A non-nil value does
+	// not say that the callbacks are still there: when the spec names
+	// another realm, or the oidc mode, the operator removes them from this
+	// realm first, and the field then outlives the emptied realm until no
+	// Management Identity pod, ReplicaSet, or Deployment of that realm's
+	// configuration is left to put them back. It goes when that drain is
+	// over, so its disappearance, or its move to the new realm, is the
+	// completion signal of a move.
 	//
 	// It is absent in the keycloak mode, where the operator runs Keycloak and
 	// deletes it with the management plane or with a move away from that
 	// mode, and absent while no login callback of this operator is registered
-	// anywhere. A Keycloak that is gone for
-	// good never answers, so the annotation camunda.io/forget-callback-realm,
-	// set to the value that the OptimizeCallbacksReady message names, lets
-	// go of it with the callbacks still in it.
+	// anywhere and nothing remains that could write them back. A Keycloak
+	// that is gone for good never answers, so the annotation
+	// camunda.io/forget-callback-realm, set to the value that the
+	// OptimizeCallbacksReady message names, lets go of it with the callbacks
+	// still in it.
 	// +optional
 	CallbackRealm *KeycloakRealmTarget `json:"callbackRealm,omitempty"`
 	// Conditions represent the current state. Ready carries a pre-check

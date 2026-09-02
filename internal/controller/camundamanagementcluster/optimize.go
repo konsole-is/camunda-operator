@@ -251,6 +251,28 @@ func (r *Reconciler) syncOptimizeCallbacks(
 	// client is absent for the same reason: a plane with no Optimize renders
 	// no preset for Management Identity to create it from.
 	if len(desired) == 0 && (failure == nil || failure.Reason == v1.ReasonOptimizeClientMissing) {
+		// NoCallbacks stops the calls to Keycloak, so it must not rest on a
+		// realm that a starting pod can still write. The Deployment status
+		// that the rollout wait above reads can be complete while a pod of
+		// the old revision is still terminating inside its start, and that
+		// pod would put the callback list of its environment back unseen.
+		pods, err := r.identityPods(ctx, mc)
+		if err != nil {
+			return nil, false, err
+		}
+		if target := components.RealmTarget(provider); target != nil &&
+			components.IdentityWritesRealm(pods, *target) {
+			stageCallbacks(
+				mc, metav1.ConditionFalse, string(component.PrerequisiteNotMet),
+				fmt.Sprintf(
+					"A Management Identity pod is starting against realm %q of Keycloak %q, and "+
+						"it owns the Optimize client of that realm while it starts",
+					target.Realm, target.URL,
+				),
+			)
+
+			return nil, true, nil
+		}
 		stageNoCallbacks(mc)
 
 		return nil, false, nil
@@ -319,28 +341,34 @@ func (r *Reconciler) syncOptimizeCallbacks(
 // serves an Optimize does not move to a new Keycloak while a failure stands,
 // so the callbacks never fill the new realm beside a realm that still signs
 // people in.
+//
+// The second result reports that the ForgetCallbackRealmAnnotation consumed
+// the record on this pass. The caller ends the pass then: registering in the
+// new realm right away would replace the cleared record before it persisted,
+// and the next pass would read the spent annotation as one that names a
+// foreign realm.
 func (r *Reconciler) withdrawRetargeted(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	target *v1.KeycloakRealmTarget,
 	suspended bool,
-) (*conditions.PreCheckFailure, error) {
+) (*conditions.PreCheckFailure, bool, error) {
 	if err := r.dropSpentForgetAnnotation(ctx, mc); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	recorded := mc.Status.CallbackRealm
 	if recorded == nil || suspended {
-		return nil, nil
+		return nil, false, nil
 	}
 	if target != nil && components.SameRealm(*recorded, *target) {
-		return nil, nil
+		return nil, false, nil
 	}
 	if r.forgetCallbackRealm(mc) {
-		return nil, nil
+		return nil, true, nil
 	}
 	pods, err := r.identityPods(ctx, mc)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	// A pod that is starting against the recorded realm writes its Optimize
 	// client, so a write of this operator between its read and its write
@@ -355,13 +383,13 @@ func (r *Reconciler) withdrawRetargeted(
 					"owns the Optimize client of that realm while it starts",
 				recorded.Realm, recorded.URL,
 			),
-		}, nil
+		}, false, nil
 	}
 
 	old := components.RealmProvider(*recorded)
 	failure, err := r.convergeOptimizeCallbacks(ctx, mc, old, old.Clients.Optimize.ID, nil)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	// A realm that holds no Optimize client holds no callback of this operator
 	// either, so that realm is as tidy as a withdrawal leaves it.
@@ -375,11 +403,11 @@ func (r *Reconciler) withdrawRetargeted(
 				recorded.Realm, recorded.URL, failure.Message,
 				components.ForgetCallbackRealmAnnotation, components.RealmIdentity(*recorded),
 			),
-		}, nil
+		}, false, nil
 	}
 	writers, err := r.stopOldIdentityWriters(ctx, mc, *recorded)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if writers {
 		return &conditions.PreCheckFailure{
@@ -390,11 +418,11 @@ func (r *Reconciler) withdrawRetargeted(
 					"plane moves to the new identity provider when nothing of it is left",
 				recorded.Realm, recorded.URL,
 			),
-		}, nil
+		}, false, nil
 	}
 	mc.Status.CallbackRealm = nil
 
-	return nil, nil
+	return nil, false, nil
 }
 
 // stopOldIdentityWriters stops what can still write the recorded realm and
@@ -479,7 +507,7 @@ func (r *Reconciler) withdrawUnresolved(
 	if err != nil {
 		return false, err
 	}
-	failure, err := r.withdrawRetargeted(ctx, mc, target, mc.Spec.Suspend)
+	failure, _, err := r.withdrawRetargeted(ctx, mc, target, mc.Spec.Suspend)
 	if err != nil {
 		return false, err
 	}
