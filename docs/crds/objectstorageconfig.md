@@ -73,6 +73,8 @@ The Secret lives in the namespace of the contract. A contract can reach no Secre
 
 ## Status
 
+`kubectl get objectstorageconfig` shows `Ready`, its reason, the storage type, and the age.
+
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Healthy` | The contract is valid. A Secret in `auth.credentials`, if any, exists and holds the configured keys. | Nothing. |

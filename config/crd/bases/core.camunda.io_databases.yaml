@@ -21,6 +21,9 @@ spec:
     - jsonPath: .status.conditions[?(@.type=="Ready")].reason
       name: Reason
       type: string
+    - jsonPath: .spec.databaseName
+      name: Database
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date

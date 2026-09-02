@@ -4,7 +4,7 @@
 
 A preset holds one Elasticsearch sizing as data: version, node count, resources, storage, scheduling, and more. Each `ElasticsearchCluster` that references it stays small and consistent. A platform team can publish a set of presets, for example `small`, `standard`, and `large`, and each team picks one.
 
-No controller reconciles a preset. It creates nothing and reports no status. The `ElasticsearchCluster` controller reads it. The operator creates no resources from a preset. An `ElasticsearchCluster` uses it through `spec.presetRef`.
+No controller reconciles a preset. It creates nothing and reports no status. `kubectl get elasticsearchclusterpreset` shows the version it holds and the age. The `ElasticsearchCluster` controller reads it. The operator creates no resources from a preset. An `ElasticsearchCluster` uses it through `spec.presetRef`.
 
 The smallest preset sets a version, a node count, and a volume size:
 

@@ -252,6 +252,8 @@ Deleting the cluster removes every resource that the operator created for it. Th
 
 ## Status
 
+`kubectl get camundacluster` shows `Ready`, its reason, the Camunda version, and the age. A suspended cluster shows no version.
+
 `Ready` is `True` only when every component that the cluster needs is `True`. Its reason and message come from the component that governs: the first component that is not `True`, or the healthiest one when all are. A component that the cluster does not need (an embedded gateway or web application, disabled connectors) reads `True` with reason `Disabled` and stays out of `Ready`.
 
 | Type | Reason | Meaning | What to do |

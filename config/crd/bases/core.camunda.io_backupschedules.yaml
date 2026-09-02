@@ -15,17 +15,26 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.clusterRef.name
-      name: Cluster
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
       type: string
     - jsonPath: .spec.schedule
       name: Schedule
       type: string
+    - jsonPath: .spec.clusterRef.name
+      name: Cluster
+      priority: 1
+      type: string
     - jsonPath: .status.lastScheduleTime
       name: Last schedule
+      priority: 1
       type: date
     - jsonPath: .status.lastBackupName
       name: Last backup
+      priority: 1
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age

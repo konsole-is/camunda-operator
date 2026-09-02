@@ -4,7 +4,18 @@ This guide covers the day-2 tasks of a running orchestration cluster: read its s
 
 ## Read the status
 
-The operator reports the state of a cluster in `status.conditions`. `kubectl get` shows no status columns for a `CamundaCluster`, so read the status itself:
+`kubectl get` shows whether a cluster is ready, why, and the Camunda version it runs:
+
+```bash
+kubectl get camundacluster -n my-cluster-ns
+```
+
+```
+NAME         READY   REASON    VERSION   AGE
+my-cluster   True    Healthy   8.9.9     12m
+```
+
+The operator reports the state of each component in `status.conditions`. Read the status to see them:
 
 ```bash
 kubectl get camundacluster my-cluster -n my-cluster-ns -o yaml

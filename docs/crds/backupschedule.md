@@ -4,7 +4,7 @@
 
 At each trigger the operator creates one backup of the kind that matches the secondary storage of the cluster: `LogicalBackupElasticsearch` for an Elasticsearch cluster, `LogicalBackupRDBMS` for a relational one. The controller of that kind runs the backup. The schedule also owns retention: it deletes its own terminal backups beyond `spec.retained`, and the deletion removes the stored artifacts too.
 
-`kubectl get backupschedules` lists the schedules with the cluster, the cron expression, the last trigger, the last backup, and the age.
+`kubectl get backupschedules` lists the schedules with `Ready`, its reason, the cron expression, and the age. `kubectl get backupschedules -o wide` adds the cluster, the last schedule, and the last backup.
 
 Before you create a schedule, make sure that:
 
@@ -247,7 +247,7 @@ spec:
     failed: 1
 ```
 
-`kubectl get backupschedules -n my-cluster-ns` then shows the cluster, the cron expression, the last trigger, and the last backup that the schedule created.
+`kubectl get backupschedules -n my-cluster-ns -o wide` then shows the cron expression, the cluster, the last schedule, and the last backup that the schedule created.
 
 ## Related
 

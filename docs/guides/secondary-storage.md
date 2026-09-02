@@ -69,6 +69,11 @@ Prerequisite: the ECK operator is installed in the Kubernetes cluster, and the c
     kubectl get secondarystorageconfig my-storage-config -n my-cluster-ns
     ```
 
+    ```
+    NAME                READY   REASON    TYPE            AGE
+    my-storage-config   True    Healthy   elasticsearch   2m
+    ```
+
 4. Point the `CamundaCluster` at it with `spec.storageRef: my-storage-config`. The `CamundaCluster` must be in the same namespace as the `SecondaryStorageConfig`, because `storageRef` is a name without a namespace.
 
     ```yaml

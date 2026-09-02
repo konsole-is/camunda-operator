@@ -57,6 +57,8 @@ A `LogicalBackupRDBMS` dumps the database with the user in `backupCredentialsSec
 
 ## Status
 
+`kubectl get databaseconfig` shows `Ready`, its reason, the name of the logical database, and the age.
+
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Healthy` | The `DatabaseServerConfig` and all referenced Secrets exist and hold the required keys. | Nothing. |

@@ -37,6 +37,8 @@ type DatabaseServerPresetSpec struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.server.version`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // DatabaseServerPreset is a cluster-scoped, passive baseline configuration
 // for DatabaseServer resources: no controller reconciles it, it provisions

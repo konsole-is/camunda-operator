@@ -80,6 +80,8 @@ Deletion removes the `DatabaseConfig`, the `SecondaryStorageConfig`, and the cre
 
 ## Status
 
+`kubectl get database` shows `Ready`, its reason, the name of the logical database, and the age.
+
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `InvalidReference` | `spec.serverRef` names no `DatabaseServerConfig` in this namespace. Or another `Database`, named in the message as `<namespace>/<name>`, holds the same logical database name on the same server. Or nothing holds that name yet and another `Database` goes first for it, which the message says. | Create the `DatabaseServerConfig`, or change `databaseName`, or delete the `Database` that the message names. A message that another `Database` goes first says that nothing held the name when the operator looked. That `Database` can still take it, and it can take it before it becomes `Ready`. If it does not take it, read its `Ready` condition and clear what stops it, or change `databaseName` here, or delete it. |

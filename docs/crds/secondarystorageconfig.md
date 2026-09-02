@@ -67,6 +67,8 @@ When you edit the contract, a referenced Secret, or the referenced `DatabaseConf
 
 ## Status
 
+`kubectl get secondarystorageconfig` shows `Ready`, its reason, the storage type, and the age.
+
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Healthy` | All referenced Secrets and kinds exist and hold the required keys. | Nothing. |

@@ -305,6 +305,8 @@ The objects already in the bucket stay. Remove them yourself when you no longer 
 
 ## Status
 
+`kubectl get databaseserver` shows `Ready`, its reason, the PostgreSQL version, and the age.
+
 ```yaml
 status:
   observedGeneration: 3

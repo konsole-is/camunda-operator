@@ -67,6 +67,8 @@ Deletion removes everything the operator created: the ECK resource, the Secrets,
 
 ## Status
 
+`kubectl get elasticsearchcluster` shows `Ready`, its reason, and the age.
+
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `ECKNotInstalled` | The ECK CRDs were not installed when the operator started. The operator does not create the ECK resource, the Secrets, or the `SecondaryStorageConfig`. | Install ECK, then restart the operator. |
