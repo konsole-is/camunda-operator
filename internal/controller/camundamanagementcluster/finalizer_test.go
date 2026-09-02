@@ -27,14 +27,15 @@ import (
 )
 
 // externalKeycloakCluster is a management plane in the externalKeycloak mode
-// that signs in to realm at url with the Secret named secret.
-func externalKeycloakCluster(url, realm, secret string) *v1.CamundaManagementCluster {
+// that signs in to the realm of these tests at url with the Secret named
+// secret.
+func externalKeycloakCluster(url, secret string) *v1.CamundaManagementCluster {
 	return &v1.CamundaManagementCluster{
 		Spec: v1.CamundaManagementClusterSpec{
 			IdentityProvider: v1.IdentityProviderSpec{
 				ExternalKeycloak: &v1.ExternalKeycloakSpec{
 					URL:   url,
-					Realm: realm,
+					Realm: "camunda-platform",
 					AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
 						Name:        secret,
 						UsernameKey: "username",
@@ -46,14 +47,14 @@ func externalKeycloakCluster(url, realm, secret string) *v1.CamundaManagementClu
 	}
 }
 
-// The record keeps the Secrets of the pass that wrote it, and a rotation of
-// them changes no realm, so the record is not written again. A deletion in
-// that state must sign in with the Secret of the spec and not with the one
-// that was replaced.
-func TestWithdrawalRealmPrefersTheSpecForTheRecordedRealm(t *testing.T) {
+// A rotation of the administrator Secret changes no realm, so a record from
+// before it can still name the Secret that was replaced. The deletion signs
+// in with the Secret of the spec first, and it keeps the recorded one as the
+// second try, for a spec whose Secret is the broken one.
+func TestWithdrawalRealmsTriesTheSpecThenTheRecordOfOneRealm(t *testing.T) {
 	t.Parallel()
 
-	mc := externalKeycloakCluster("https://kc.example.com/auth", "camunda-platform", "rotated")
+	mc := externalKeycloakCluster("https://kc.example.com/auth", "rotated")
 	mc.Status.CallbackRealm = &v1.KeycloakRealmTarget{
 		URL:   "https://kc.example.com/auth",
 		Realm: "camunda-platform",
@@ -64,20 +65,42 @@ func TestWithdrawalRealmPrefersTheSpecForTheRecordedRealm(t *testing.T) {
 		},
 	}
 
-	provider, registered := withdrawalRealm(context.Background(), mc)
+	realms := withdrawalRealms(context.Background(), mc)
 
-	require.True(t, registered)
-	assert.Equal(t, "camunda-platform", provider.Realm)
-	require.NotNil(t, provider.AdminCredentials)
-	assert.Equal(t, "rotated", provider.AdminCredentials.Name)
+	require.Len(t, realms, 2)
+	require.NotNil(t, realms[0].AdminCredentials)
+	assert.Equal(t, "rotated", realms[0].AdminCredentials.Name)
+	require.NotNil(t, realms[1].AdminCredentials)
+	assert.Equal(t, "replaced", realms[1].AdminCredentials.Name)
+}
+
+// A record that names what the spec names is the same try twice.
+func TestWithdrawalRealmsOfAnUnchangedRecord(t *testing.T) {
+	t.Parallel()
+
+	mc := externalKeycloakCluster("https://kc.example.com/auth", "keycloak-admin")
+	mc.Status.CallbackRealm = &v1.KeycloakRealmTarget{
+		URL:   "https://kc.example.com/auth",
+		Realm: "camunda-platform",
+		AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
+			Name:        "keycloak-admin",
+			UsernameKey: "username",
+			PasswordKey: "password",
+		},
+	}
+
+	realms := withdrawalRealms(context.Background(), mc)
+
+	require.Len(t, realms, 1)
+	assert.Equal(t, "https://kc.example.com/auth", realms[0].KeycloakURL)
 }
 
 // The spec names another realm than the record, so the record is the only way
 // back to the realm that holds the callbacks.
-func TestWithdrawalRealmKeepsTheRecordOfAnotherRealm(t *testing.T) {
+func TestWithdrawalRealmsKeepTheRecordOfAnotherRealm(t *testing.T) {
 	t.Parallel()
 
-	mc := externalKeycloakCluster("https://new.example.com/auth", "camunda-platform", "new-admin")
+	mc := externalKeycloakCluster("https://new.example.com/auth", "new-admin")
 	mc.Status.CallbackRealm = &v1.KeycloakRealmTarget{
 		URL:   "https://old.example.com/auth",
 		Realm: "camunda-platform",
@@ -88,31 +111,31 @@ func TestWithdrawalRealmKeepsTheRecordOfAnotherRealm(t *testing.T) {
 		},
 	}
 
-	provider, registered := withdrawalRealm(context.Background(), mc)
+	realms := withdrawalRealms(context.Background(), mc)
 
-	require.True(t, registered)
-	assert.Equal(t, "https://old.example.com/auth", provider.KeycloakURL)
-	require.NotNil(t, provider.AdminCredentials)
-	assert.Equal(t, "old-admin", provider.AdminCredentials.Name)
+	require.Len(t, realms, 1)
+	assert.Equal(t, "https://old.example.com/auth", realms[0].KeycloakURL)
+	require.NotNil(t, realms[0].AdminCredentials)
+	assert.Equal(t, "old-admin", realms[0].AdminCredentials.Name)
 }
 
 // A plane that recorded no realm still runs a Management Identity against the
 // realm of the spec, so that realm is the one to tidy.
-func TestWithdrawalRealmFallsBackToTheSpec(t *testing.T) {
+func TestWithdrawalRealmsFallBackToTheSpec(t *testing.T) {
 	t.Parallel()
 
-	mc := externalKeycloakCluster("https://kc.example.com/auth", "camunda-platform", "keycloak-admin")
+	mc := externalKeycloakCluster("https://kc.example.com/auth", "keycloak-admin")
 
-	provider, registered := withdrawalRealm(context.Background(), mc)
+	realms := withdrawalRealms(context.Background(), mc)
 
-	require.True(t, registered)
-	assert.Equal(t, "https://kc.example.com/auth", provider.KeycloakURL)
-	assert.Equal(t, "camunda-platform", provider.Realm)
+	require.Len(t, realms, 1)
+	assert.Equal(t, "https://kc.example.com/auth", realms[0].KeycloakURL)
+	assert.Equal(t, "camunda-platform", realms[0].Realm)
 }
 
 // The oidc mode registers nothing, so a plane that recorded no realm has
 // nothing to withdraw from.
-func TestWithdrawalRealmOfTheOIDCModeWithoutARecord(t *testing.T) {
+func TestWithdrawalRealmsOfTheOIDCModeWithoutARecord(t *testing.T) {
 	t.Parallel()
 
 	mc := &v1.CamundaManagementCluster{
@@ -121,7 +144,5 @@ func TestWithdrawalRealmOfTheOIDCModeWithoutARecord(t *testing.T) {
 		},
 	}
 
-	_, registered := withdrawalRealm(context.Background(), mc)
-
-	assert.False(t, registered)
+	assert.Empty(t, withdrawalRealms(context.Background(), mc))
 }

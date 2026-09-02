@@ -22,6 +22,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -190,62 +191,68 @@ func (r *Reconciler) ownsContract(ctx context.Context, mc *v1.CamundaManagementC
 // contract; without that, a plane parked on a name another owner holds would
 // take the callbacks of the holder with it.
 func (r *Reconciler) withdrawOptimizeCallbacks(ctx context.Context, mc *v1.CamundaManagementCluster) {
-	provider, registered := withdrawalRealm(ctx, mc)
-	if !registered {
-		return
-	}
-
-	failure, err := r.convergeOptimizeCallbacks(
-		ctx, mc, provider, provider.Clients.Optimize.ID, nil,
-	)
-	switch {
-	case err != nil:
-		logf.FromContext(ctx).Error(err, "Withdrawing the Optimize callbacks")
-	case failure != nil && failure.Reason != v1.ReasonOptimizeClientMissing:
-		logf.FromContext(ctx).Error(
-			failure, "Withdrawing the Optimize callbacks", "reason", failure.Reason,
+	for _, provider := range withdrawalRealms(ctx, mc) {
+		failure, err := r.convergeOptimizeCallbacks(
+			ctx, mc, provider, provider.Clients.Optimize.ID, nil,
 		)
+		switch {
+		case err != nil:
+			logf.FromContext(ctx).Error(err, "Withdrawing the Optimize callbacks")
+		case failure != nil && failure.Reason != v1.ReasonOptimizeClientMissing:
+			logf.FromContext(ctx).Error(
+				failure, "Withdrawing the Optimize callbacks", "reason", failure.Reason,
+			)
+		default:
+			return
+		}
 	}
 }
 
-// withdrawalRealm returns the realm to take the login callbacks out of, and
-// false for a management plane that registered none anywhere.
+// withdrawalRealms lists what to take the login callbacks out of, in the order
+// to try it, and nothing for a management plane that registered none anywhere.
 //
 // status.callbackRealm is the realm they went into, which is the one to tidy
-// even after the spec was pointed at another Keycloak. The spec wins when it
-// names that same realm, because the record keeps the Secrets of the pass
-// that wrote it and a rotation of them changes no realm. A plane that
-// recorded no realm falls back to the spec too: the operator runs the
-// Keycloak of the keycloak mode and records nothing for it, and a plane that
-// serves no Optimize runs a Management Identity against the realm the spec
-// names with no record of it. The provider of a Keycloak mode follows from
-// the spec alone, so the deletion path needs none of the pre-checks.
-func withdrawalRealm(
+// even after the spec was pointed at another Keycloak. The spec goes first
+// when it names that same realm, because a rotation of the Secrets changes no
+// realm and the record can still name the Secret that was replaced. The
+// record follows as a second try, for a spec whose Secrets are the broken
+// ones. A plane that recorded no realm has the spec alone: the operator runs
+// the Keycloak of the keycloak mode and records nothing for it, and a plane
+// that serves no Optimize runs a Management Identity against the realm the
+// spec names with no record of it. The provider of a Keycloak mode follows
+// from the spec alone, so the deletion path needs none of the pre-checks.
+func withdrawalRealms(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
-) (components.IdentityProvider, bool) {
+) []components.IdentityProvider {
 	recorded := mc.Status.CallbackRealm
 	if components.Mode(mc) == components.ModeOIDC {
 		if recorded == nil {
-			return components.IdentityProvider{}, false
+			return nil
 		}
 
-		return components.RealmProvider(*recorded), true
+		return []components.IdentityProvider{components.RealmProvider(*recorded)}
 	}
 
 	provider, err := components.ResolveIdentityProvider(components.Input{Cluster: mc})
 	if err != nil {
 		if recorded != nil {
-			return components.RealmProvider(*recorded), true
+			return []components.IdentityProvider{components.RealmProvider(*recorded)}
 		}
 		logf.FromContext(ctx).Error(err, "Resolving Keycloak to withdraw the Optimize callbacks")
 
-		return components.IdentityProvider{}, false
+		return nil
+	}
+	if recorded == nil {
+		return []components.IdentityProvider{provider}
 	}
 	target := components.RealmTarget(provider)
-	if recorded != nil && (target == nil || !components.SameRealm(*recorded, *target)) {
-		return components.RealmProvider(*recorded), true
+	if target == nil || !components.SameRealm(*recorded, *target) {
+		return []components.IdentityProvider{components.RealmProvider(*recorded)}
+	}
+	if apiequality.Semantic.DeepEqual(*recorded, *target) {
+		return []components.IdentityProvider{provider}
 	}
 
-	return provider, true
+	return []components.IdentityProvider{provider, components.RealmProvider(*recorded)}
 }
