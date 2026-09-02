@@ -86,9 +86,25 @@ their number order:
 ## Add an orchestration cluster
 
 This inventory holds no `CamundaCluster`. `clusterSelector` is empty, so the
-plane serves every cluster on the Kubernetes cluster. Add one with the
-[Camunda cluster on Elasticsearch](../../camunda-cluster/elasticsearch)
-inventory, and give it the same `platformConfigRef`.
+plane serves every cluster on the Kubernetes cluster.
+
+CAUTION: Do not apply
+[Camunda cluster on Elasticsearch](../../camunda-cluster/elasticsearch) with
+`-k`. That inventory carries a `CamundaPlatformConfig` of its own, under the
+same cluster-scoped name `my-platform-config`, with `method: basic`. It would
+replace the OIDC configuration here, and the management plane would lose its
+identity provider.
+
+Take the three manifests that are not the platform configuration instead:
+
+```sh
+kubectl apply -f config/example/camunda-cluster/elasticsearch/01-namespace.yaml
+kubectl apply -f config/example/camunda-cluster/elasticsearch/02-elasticsearch-cluster.yaml
+kubectl apply -f config/example/camunda-cluster/elasticsearch/04-camunda-cluster.yaml
+```
+
+That `CamundaCluster` already names `my-platform-config`, so it reads the OIDC
+configuration of this inventory.
 
 ## Remove
 
