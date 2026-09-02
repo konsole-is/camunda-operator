@@ -167,9 +167,10 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // reference into the render input, and a failed pre-check reports its Ready
 // reason, lets go of the clusters that the selectors no longer match,
 // withdraws from a realm that status.callbackRealm names and the spec does
-// not, and stops. The Keycloak realm of the externalKeycloak mode is claimed
-// next, and a plane whose realm another plane holds parks the same way, under
-// RealmClaimedElsewhere, and looks again on the retry interval. Then the
+// not, and stops. The Keycloak realm that the spec names is claimed next, in
+// both Keycloak modes, and a plane whose realm another plane holds parks the
+// same way, under RealmClaimedElsewhere, and looks again on the retry
+// interval. Then the
 // orchestration clusters are selected and claimed, the CamundaOptimizes
 // behind the contract are discovered, the login callbacks are withdrawn from
 // a realm that status.callbackRealm names and the spec does not (a

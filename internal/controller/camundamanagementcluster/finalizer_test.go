@@ -176,8 +176,9 @@ func TestWithdrawalRealmsLeaveARealmThisPlaneNeverClaimed(t *testing.T) {
 	assert.Empty(t, realms)
 }
 
-// The operator runs the Keycloak of the keycloak mode and claims no realm in
-// it, so the spec is the only way to a client that Identity made there.
+// The operator runs the Keycloak of the keycloak mode, and it is deleted with
+// the plane, so the realm behind it is this plane's whatever the claim says.
+// The withdrawal of that mode therefore reads the spec and no claim.
 func TestWithdrawalRealmsOfTheKeycloakModeNeedNoClaim(t *testing.T) {
 	mc := &v1.CamundaManagementCluster{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "my-management-ns", Name: "my-management"},
