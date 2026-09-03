@@ -346,6 +346,10 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
+		// The flip to Suspended stands behind the stamp: the controller
+		// scales the Deployment, the stamp mirrors the zero, and one more
+		// pass reads it. Three round trips need more room than one, the way
+		// the multi-hop waits of logicalbackuprdbms take it.
 		Eventually(func(g Gomega) {
 			// Envtest runs no Deployment controller, so the scale to zero is
 			// stamped the way a rollout is.
@@ -353,7 +357,7 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 
 			ready := conditionOf(g, s.mc, v1.ConditionReady)
 			g.Expect(ready.Reason).To(Equal(string(component.Suspended)))
-		}, timeout, interval).Should(Succeed())
+		}, "20s", interval).Should(Succeed())
 
 		Consistently(func(g Gomega) {
 			var lease coordinationv1.Lease
@@ -377,6 +381,10 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
+		// The flip to Suspended stands behind the stamp: the controller
+		// scales the Deployment, the stamp mirrors the zero, and one more
+		// pass reads it. Three round trips need more room than one, the way
+		// the multi-hop waits of logicalbackuprdbms take it.
 		Eventually(func(g Gomega) {
 			// Envtest runs no Deployment controller, so the scale to zero is
 			// stamped the way a rollout is.
@@ -384,7 +392,7 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 
 			ready := conditionOf(g, s.mc, v1.ConditionReady)
 			g.Expect(ready.Reason).To(Equal(string(component.Suspended)))
-		}, timeout, interval).Should(Succeed())
+		}, "20s", interval).Should(Succeed())
 
 		By("pointing the sleeping plane at a Keycloak whose administrator Secret is missing")
 		Eventually(func(g Gomega) {
