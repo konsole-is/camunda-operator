@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
@@ -47,13 +48,13 @@ const (
 
 // finalize withdraws the Console ping settings and every claim on the
 // orchestration clusters, stops Management Identity, removes the login
-// callbacks from the realm, deletes the ManagementAuthConfig, releases the
-// claim on every realm, and releases the finalizer, in that order: the realm
-// is tidied before anything that would let another plane into it goes. The
-// Deployments, the Services, and the copies of referenced Secrets carry an
-// owner reference, so Kubernetes collects them; what the management plane
-// wrote on an orchestration cluster, what it wrote in the realm, the contract,
-// and the realm claims are outside that chain.
+// callbacks from the realm, deletes the ManagementAuthConfig, clears the
+// record of the realm, releases the claim on every realm, and releases the
+// finalizer, in that order: the realm is tidied before anything that would let
+// another plane into it goes. The Deployments, the Services, and the copies of
+// referenced Secrets carry an owner reference, so Kubernetes collects them;
+// what the management plane wrote on an orchestration cluster, what it wrote in
+// the realm, the contract, and the realm claims are outside that chain.
 //
 // The withdrawal goes first. Once the finalizer is gone the object is gone for
 // good, and no retry can free the orchestration clusters or remove a contract
@@ -99,6 +100,15 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 		}
 	}
 	if err := r.withdrawContract(ctx, mc); err != nil {
+		return err
+	}
+	// The record is what sends a pass that runs again back into the realm, so
+	// it goes from the API server before the claim does. A pass that released
+	// the claim and then failed to remove the finalizer runs again, and by then
+	// a plane parked on the realm holds it and has registered the login
+	// callbacks of the same Optimize instances there, under the same URLs.
+	// With the record still in place that second pass takes those away.
+	if err := r.clearCallbackRealm(ctx, mc); err != nil {
 		return err
 	}
 	// The realm claim goes last of all. Once it is gone a plane parked on the
@@ -451,4 +461,32 @@ func (r *Reconciler) holdsRealmClaim(
 	holder, ours := components.RealmClaimHolderOf(lease)
 
 	return ours && holder == realmClaimSelf(mc), nil
+}
+
+// clearCallbackRealm takes the record of the realm off the API server. It
+// writes the status of mc once, the way recordCallbackRealm does, and a plane
+// that recorded no realm writes nothing. An object that is gone answers
+// NotFound, which is no error here, as in the removal of the finalizer.
+func (r *Reconciler) clearCallbackRealm(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) error {
+	if mc.Status.CallbackRealm == nil {
+		return nil
+	}
+	mc.Status.CallbackRealm = nil
+
+	rec := component.ReconcileContext{
+		Client:        r.Client,
+		Scheme:        r.Scheme,
+		EventRecorder: r.EventRecorder,
+		Metrics:       r.Metrics,
+		APIReader:     r.APIReader,
+		Owner:         mc,
+	}
+	if err := component.FlushStatus(ctx, rec, nil); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("clearing the record of the realm of the login callbacks: %w", err)
+	}
+
+	return nil
 }

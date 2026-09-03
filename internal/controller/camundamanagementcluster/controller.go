@@ -193,7 +193,9 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // stage conditions on the in-memory CR, and the deferred FlushStatus persists
 // them together. The pass that first records the realm of the login callbacks
 // writes it once more, before the components apply, because Management
-// Identity registers those callbacks as it starts.
+// Identity registers those callbacks as it starts. A pass that deletes the
+// resource writes the status once, to clear that record before it gives the
+// realm back.
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
 	var mc v1.CamundaManagementCluster
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &mc); err != nil {

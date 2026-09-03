@@ -45,8 +45,8 @@ const (
 	stepWithdrawCallbacks = step("withdraw the login callbacks from the realm the spec left")
 	// stepRecordCallbackRealm is the status write of the realm that the plane
 	// points Management Identity at. It is the one status write of a
-	// reconcile that the deferred flush does not make, because the record has
-	// to be durable before Identity can register the callbacks.
+	// converging pass that the deferred flush does not make, because the
+	// record has to be durable before Identity can register the callbacks.
 	stepRecordCallbackRealm = step("record the realm of the login callbacks")
 	stepBuildComponents     = step("build the components")
 	stepRecordClaim         = step("record the initial administrator claim")

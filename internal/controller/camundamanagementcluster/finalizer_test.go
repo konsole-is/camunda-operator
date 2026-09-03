@@ -335,6 +335,46 @@ func TestFinalizeStopsWhenTheWithdrawalCannotReadKubernetes(t *testing.T) {
 	assert.True(t, controllerutil.ContainsFinalizer(mc, Finalizer))
 }
 
+// TestFinalizeClearsTheRecordBeforeTheRealmClaim covers the pass that runs
+// again. A pass that released the claim and then failed to remove the
+// finalizer comes back. The realm it gave back holds another management plane
+// by then, and that plane registered the login callbacks of the same Optimize
+// instances there, under the same URLs. A second withdrawal would take those
+// away, so the record that authorizes it is off the API server before the
+// claim goes.
+func TestFinalizeClearsTheRecordBeforeTheRealmClaim(t *testing.T) {
+	t.Run("the claim stays while the record is still on the API server", func(t *testing.T) {
+		mc := recordingCluster()
+		lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
+		r, deletes := fakeReconciler(t, mc, lease)
+		deletes.statusFails = mc.Name
+
+		require.Error(t, r.finalize(context.Background(), mc))
+
+		assert.True(t, exists(t, r, lease))
+		assert.True(t, controllerutil.ContainsFinalizer(mc, Finalizer))
+	})
+
+	t.Run("a pass that runs again after the release withdraws from nothing", func(t *testing.T) {
+		mc := recordingCluster()
+		lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
+		r, deletes := fakeReconciler(t, mc, lease)
+		deletes.updateFails = mc.Name
+
+		require.Error(t, r.finalize(context.Background(), mc))
+		assert.False(t, exists(t, r, lease), "the claim was released")
+
+		retried := storedCluster(t, r, mc)
+		require.True(t, controllerutil.ContainsFinalizer(retried, Finalizer))
+		assert.Nil(t, retried.Status.CallbackRealm)
+
+		registered, err := r.registeredCallbacks(context.Background(), retried)
+
+		require.NoError(t, err)
+		assert.False(t, registered)
+	})
+}
+
 // TestRegisteredCallbacksAuthorizesTheWithdrawal covers the two proofs that
 // this management plane has login callbacks of its own to remove.
 // status.callbackRealm is written before the components apply, so a plane
@@ -407,6 +447,9 @@ var errUnread = errors.New("the API server did not answer")
 // errReplaced is what the conflict of a replaced object carries.
 var errReplaced = errors.New("the object was replaced")
 
+// errUnwritten is what a write that the API server refuses carries.
+var errUnwritten = errors.New("the API server did not take the write")
+
 // finalizingCluster is a management cluster that carries the finalizer and no
 // record of a contract.
 func finalizingCluster() *v1.CamundaManagementCluster {
@@ -416,6 +459,17 @@ func finalizingCluster() *v1.CamundaManagementCluster {
 		UID:        "management-uid",
 		Finalizers: []string{Finalizer},
 	}}
+}
+
+// recordingCluster is a management cluster under deletion that recorded the
+// realm its Management Identity registered the login callbacks in.
+func recordingCluster() *v1.CamundaManagementCluster {
+	mc := externalKeycloakCluster(finalizerRealm.URL, "keycloak-admin")
+	mc.Finalizers = []string{Finalizer}
+	realm := finalizerRealm
+	mc.Status.CallbackRealm = &realm
+
+	return mc
 }
 
 // ownedIdentity is the Management Identity Deployment of mc.
@@ -525,6 +579,13 @@ type deleteLog struct {
 	// getFails answers every read of the object of that name with an error,
 	// the way an API server that is not answering does.
 	getFails string
+	// updateFails answers the update of the object of that name with an
+	// error. The status write has statusFails of its own, because the fake
+	// client serves the two through different calls.
+	updateFails string
+	// statusFails answers the status write of the object of that name with an
+	// error.
+	statusFails string
 }
 
 // fakeReconciler builds a reconciler over a fake client that holds objects,
@@ -542,6 +603,7 @@ func fakeReconciler(t *testing.T, objects ...client.Object) (*Reconciler, *delet
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(objects...).
+		WithStatusSubresource(&v1.CamundaManagementCluster{}).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Get: func(
 				ctx context.Context,
@@ -555,6 +617,31 @@ func fakeReconciler(t *testing.T, objects ...client.Object) (*Reconciler, *delet
 				}
 
 				return inner.Get(ctx, key, obj, opts...)
+			},
+			Update: func(
+				ctx context.Context,
+				inner client.WithWatch,
+				obj client.Object,
+				opts ...client.UpdateOption,
+			) error {
+				if deletes.updateFails != "" && obj.GetName() == deletes.updateFails {
+					return apierrors.NewInternalError(errUnwritten)
+				}
+
+				return inner.Update(ctx, obj, opts...)
+			},
+			SubResourceUpdate: func(
+				ctx context.Context,
+				inner client.Client,
+				subResource string,
+				obj client.Object,
+				opts ...client.SubResourceUpdateOption,
+			) error {
+				if deletes.statusFails != "" && obj.GetName() == deletes.statusFails {
+					return apierrors.NewInternalError(errUnwritten)
+				}
+
+				return inner.SubResource(subResource).Update(ctx, obj, opts...)
 			},
 			Delete: func(
 				ctx context.Context,
@@ -590,6 +677,20 @@ func readableEvents(r *Reconciler) *events.FakeRecorder {
 	r.EventRecorder = recorder
 
 	return recorder
+}
+
+// storedCluster reads mc back from the cluster of r.
+func storedCluster(
+	t *testing.T,
+	r *Reconciler,
+	mc *v1.CamundaManagementCluster,
+) *v1.CamundaManagementCluster {
+	t.Helper()
+
+	var stored v1.CamundaManagementCluster
+	require.NoError(t, r.Get(context.Background(), client.ObjectKeyFromObject(mc), &stored))
+
+	return &stored
 }
 
 // exists reports whether obj is still in the cluster of r.
