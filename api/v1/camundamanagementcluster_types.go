@@ -257,14 +257,18 @@ type ExternalKeycloakSpec struct {
 	// the Kubernetes cluster.
 	//
 	// The operator appends /realms/<realm> to this URL, so the URL carries no
-	// query and no fragment.
+	// query and no fragment. The URL also lands in the annotations of the
+	// Lease that claims the realm, so it is bounded.
+	// +kubebuilder:validation:MaxLength=2048
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="url must be a valid http or https URL"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('?') && !self.contains('#')",message="url must carry no query and no fragment"
 	URL string `json:"url"`
 	// Realm is the realm that Management Identity uses and creates. Empty
 	// means camunda-platform. The realm lands in the issuer, the token, and
 	// the JWKS path of every URL that Management Identity builds, so it holds
-	// letters, digits, dots, hyphens, and underscores only.
+	// letters, digits, dots, hyphens, and underscores only, and it is bounded
+	// the way the URL is.
+	// +kubebuilder:validation:MaxLength=255
 	// +kubebuilder:validation:XValidation:rule="self == '' || self.matches('^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$')",message="realm must hold letters, digits, dots, hyphens, and underscores, and start and end with a letter or a digit"
 	// +optional
 	Realm string `json:"realm,omitempty"`

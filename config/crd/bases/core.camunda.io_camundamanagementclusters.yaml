@@ -2109,7 +2109,9 @@ spec:
                           Realm is the realm that Management Identity uses and creates. Empty
                           means camunda-platform. The realm lands in the issuer, the token, and
                           the JWKS path of every URL that Management Identity builds, so it holds
-                          letters, digits, dots, hyphens, and underscores only.
+                          letters, digits, dots, hyphens, and underscores only, and it is bounded
+                          the way the URL is.
+                        maxLength: 255
                         type: string
                         x-kubernetes-validations:
                         - message: realm must hold letters, digits, dots, hyphens,
@@ -2123,7 +2125,9 @@ spec:
                           the Kubernetes cluster.
 
                           The operator appends /realms/<realm> to this URL, so the URL carries no
-                          query and no fragment.
+                          query and no fragment. The URL also lands in the annotations of the
+                          Lease that claims the realm, so it is bounded.
+                        maxLength: 2048
                         type: string
                         x-kubernetes-validations:
                         - message: url must be a valid http or https URL

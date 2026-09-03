@@ -17,6 +17,8 @@ limitations under the License.
 package controller
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -312,10 +314,26 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			}, "url must carry no query and no fragment",
 		),
 		Entry(
+			// The url lands in the annotations of the Lease that claims the
+			// realm, and the annotations of an object are bounded, so an
+			// unbounded url would make every create of the claim fail.
+			"rejects an external Keycloak url longer than 2048 characters",
+			externalKeycloakManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.ExternalKeycloak.URL =
+					"https://kc.example.com/" + strings.Repeat("a", 2048) + "/auth"
+			}, "Too long",
+		),
+		Entry(
 			"accepts a realm of letters, digits, dots, hyphens, and underscores",
 			externalKeycloakManagementCluster, func(o *v1.CamundaManagementCluster) {
 				o.Spec.IdentityProvider.ExternalKeycloak.Realm = "Team_blue.eu-1"
 			}, "",
+		),
+		Entry(
+			"rejects a realm longer than 255 characters",
+			externalKeycloakManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.ExternalKeycloak.Realm = strings.Repeat("a", 256)
+			}, "Too long",
 		),
 		Entry(
 			"rejects a realm with a path separator",
