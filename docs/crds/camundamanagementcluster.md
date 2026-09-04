@@ -120,7 +120,7 @@ spec:
   # ... the rest of your management cluster
 ```
 
-`url` serves browsers and containers alike, so it must resolve from inside the Kubernetes cluster. If your Keycloak serves under the `/auth` path, include that path. The operator appends `/realms/<realm>` to this URL, so it must carry no query and no fragment. It must also carry no user and no password. A Keycloak behind a proxy that needs basic authentication is not supported.
+`url` serves browsers and containers alike, so it must resolve from inside the Kubernetes cluster. If your Keycloak serves under the `/auth` path, include that path. The operator appends `/realms/<realm>` to this URL, so it must carry no query and no fragment. It must also carry no user and no password. The operator does not support a Keycloak behind a proxy that needs basic authentication.
 
 `realm` defaults to `camunda-platform`. The realm lands in the issuer, the token, and the JWKS path that Management Identity builds. It holds letters, digits, dots, hyphens, and underscores only, and it starts and ends with a letter or a digit.
 
@@ -958,7 +958,7 @@ The API server refuses an apply that breaks one of these:
 - `spec.identity.admin.claimName` holds no equals sign.
 - Every `externalUrl`, `websocketsExternalUrl`, and `url` is an `http` or `https` URL. `spec.identityProvider.keycloak.externalUrl` must carry the `/auth` path.
 - `spec.identityProvider.keycloak.externalUrl` and `spec.identityProvider.externalKeycloak.url` carry no query and no fragment.
-- `spec.identityProvider.externalKeycloak.url` carries no user and no password. A Keycloak behind a proxy that needs basic authentication is not supported.
+- `spec.identityProvider.externalKeycloak.url` carries no user and no password. The operator does not support a Keycloak behind a proxy that needs basic authentication.
 - `spec.identityProvider.externalKeycloak.realm` holds letters, digits, dots, hyphens, and underscores. It starts and ends with a letter or a digit.
 - Every `version` is three numbers separated by dots, for example `8.9.0`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both. The rule binds `spec.identity`, `spec.console`, `spec.webModeler.restapi`, and `spec.webModeler.websockets`.
