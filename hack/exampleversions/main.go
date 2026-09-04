@@ -30,8 +30,9 @@ limitations under the License.
 // It reads the block style of these files: one key per line, two-space
 // indentation, and no flow mapping. In a Markdown file it reads the fenced
 // yaml blocks. A version inside a sequence takes the path of the key that
-// holds the sequence, which no entry holds, so the check fails on it instead
-// of passing it unseen.
+// holds the sequence, with version behind it, for example spec.images.version.
+// No entry holds such a path, so the check fails on it instead of passing it
+// unseen.
 package main
 
 import (
