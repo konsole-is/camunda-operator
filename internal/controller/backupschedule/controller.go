@@ -81,6 +81,15 @@ type Options struct {
 	Now func() time.Time
 }
 
+// withDefaults fills the zero fields of o with the production defaults.
+func (o Options) withDefaults() Options {
+	if o.Now == nil {
+		o.Now = time.Now
+	}
+
+	return o
+}
+
 // BackupScheduleReconciler reconciles a BackupSchedule.
 type BackupScheduleReconciler struct {
 	client.Client
@@ -519,15 +528,6 @@ func (r *BackupScheduleReconciler) SetupWithManager(mgr ctrl.Manager, opts Optio
 		).
 		Named(controllerName).
 		Complete(r)
-}
-
-// withDefaults fills the zero fields of o with the production defaults.
-func (o Options) withDefaults() Options {
-	if o.Now == nil {
-		o.Now = time.Now
-	}
-
-	return o
 }
 
 // enqueueSchedule maps a backup event to the schedule that created it. A

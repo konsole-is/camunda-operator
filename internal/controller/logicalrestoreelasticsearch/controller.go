@@ -109,6 +109,21 @@ type Options struct {
 	MidRunGrace time.Duration
 }
 
+// withDefaults fills the zero fields of o with the production configuration.
+func (o Options) withDefaults() Options {
+	if o.PollInterval <= 0 {
+		o.PollInterval = defaultPollInterval
+	}
+	if o.RetryInterval <= 0 {
+		o.RetryInterval = defaultRetryInterval
+	}
+	if o.MidRunGrace <= 0 {
+		o.MidRunGrace = defaultMidRunGrace
+	}
+
+	return o
+}
+
 // Reconciler drives a LogicalRestoreElasticsearch to a terminal phase.
 type Reconciler struct {
 	client.Client
@@ -125,6 +140,12 @@ type Reconciler struct {
 	Metrics component.MetricsRecorder
 
 	opts Options
+}
+
+// New returns a Reconciler with the given options, with every zero field
+// filled from the production configuration.
+func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options Options) *Reconciler {
+	return &Reconciler{Client: c, APIReader: reader, Scheme: scheme, opts: options.withDefaults()}
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=logicalrestoreelasticsearches,verbs=get;list;watch;create;update;patch;delete
@@ -378,25 +399,4 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		).
 		Named(controllerName).
 		Complete(r)
-}
-
-// New returns a Reconciler with the given options, with every zero field
-// filled from the production configuration.
-func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options Options) *Reconciler {
-	return &Reconciler{Client: c, APIReader: reader, Scheme: scheme, opts: options.withDefaults()}
-}
-
-// withDefaults fills the zero fields of o with the production configuration.
-func (o Options) withDefaults() Options {
-	if o.PollInterval <= 0 {
-		o.PollInterval = defaultPollInterval
-	}
-	if o.RetryInterval <= 0 {
-		o.RetryInterval = defaultRetryInterval
-	}
-	if o.MidRunGrace <= 0 {
-		o.MidRunGrace = defaultMidRunGrace
-	}
-
-	return o
 }

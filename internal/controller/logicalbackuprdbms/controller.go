@@ -135,6 +135,32 @@ type Options struct {
 	RegistrationGrace time.Duration
 }
 
+// withDefaults fills the zero fields of o with the production defaults. It
+// rejects an empty CLIImage because the Job builder cannot guess an image.
+func (o Options) withDefaults() (Options, error) {
+	if o.CLIImage == "" {
+		return o, errors.New("the camunda-operator-cli image is required")
+	}
+	if o.OpenBucket == nil {
+		o.OpenBucket = func(
+			ctx context.Context, cfg *v1.ObjectStorageConfig, creds *objectstore.Credentials,
+		) (ArtifactBucket, error) {
+			return objectstore.Open(ctx, cfg, creds)
+		}
+	}
+	if o.RetryInterval <= 0 {
+		o.RetryInterval = defaultRetryInterval
+	}
+	if o.MidRunGrace <= 0 {
+		o.MidRunGrace = defaultMidRunGrace
+	}
+	if o.RegistrationGrace <= 0 {
+		o.RegistrationGrace = defaultRegistrationGrace
+	}
+
+	return o, nil
+}
+
 // LogicalBackupRDBMSReconciler reconciles a LogicalBackupRDBMS.
 type LogicalBackupRDBMSReconciler struct {
 	client.Client
@@ -358,32 +384,6 @@ func (r *LogicalBackupRDBMSReconciler) SetupWithManager(mgr ctrl.Manager, opts O
 		).
 		Named(controllerName).
 		Complete(r)
-}
-
-// withDefaults fills the zero fields of o with the production defaults. It
-// rejects an empty CLIImage because the Job builder cannot guess an image.
-func (o Options) withDefaults() (Options, error) {
-	if o.CLIImage == "" {
-		return o, errors.New("the camunda-operator-cli image is required")
-	}
-	if o.OpenBucket == nil {
-		o.OpenBucket = func(
-			ctx context.Context, cfg *v1.ObjectStorageConfig, creds *objectstore.Credentials,
-		) (ArtifactBucket, error) {
-			return objectstore.Open(ctx, cfg, creds)
-		}
-	}
-	if o.RetryInterval <= 0 {
-		o.RetryInterval = defaultRetryInterval
-	}
-	if o.MidRunGrace <= 0 {
-		o.MidRunGrace = defaultMidRunGrace
-	}
-	if o.RegistrationGrace <= 0 {
-		o.RegistrationGrace = defaultRegistrationGrace
-	}
-
-	return o, nil
 }
 
 // enqueueForCluster maps a cluster event to every non-terminal backup that

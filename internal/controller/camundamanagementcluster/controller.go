@@ -124,6 +124,12 @@ type Reconciler struct {
 	keycloakServed bool
 }
 
+// New builds the reconciler of the management plane. SetupWithManager fills
+// what the manager supplies.
+func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reconciler {
+	return &Reconciler{Client: c, APIReader: apiReader, Scheme: scheme}
+}
+
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundamanagementclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundamanagementclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundamanagementclusters/finalizers,verbs=update
@@ -787,12 +793,6 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.keycloakServed = keycloakKindServed(mgr.GetRESTMapper())
 
 	return r.setupWatches(mgr)
-}
-
-// New builds the reconciler of the management plane. SetupWithManager fills
-// what the manager supplies.
-func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reconciler {
-	return &Reconciler{Client: c, APIReader: apiReader, Scheme: scheme}
 }
 
 // keycloakKindServed reports whether the Kubernetes cluster serves the

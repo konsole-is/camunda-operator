@@ -138,6 +138,11 @@ type Reconciler struct {
 	options Options
 }
 
+// New returns a Reconciler with the given options.
+func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options Options) *Reconciler {
+	return &Reconciler{Client: c, APIReader: reader, Scheme: scheme, options: options}
+}
+
 // +kubebuilder:rbac:groups=core.camunda.io,resources=logicalbackupelasticsearches,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=logicalbackupelasticsearches/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=logicalbackupelasticsearches/finalizers,verbs=update
@@ -327,9 +332,4 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 			),
 		).
 		Complete(r)
-}
-
-// New returns a Reconciler with the given options.
-func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options Options) *Reconciler {
-	return &Reconciler{Client: c, APIReader: reader, Scheme: scheme, options: options}
 }

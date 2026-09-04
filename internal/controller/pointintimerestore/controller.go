@@ -129,6 +129,24 @@ type Options struct {
 	ReadJobLog ReadJobLog
 }
 
+// withDefaults fills the zero fields of o with the production configuration.
+func (o Options) withDefaults() Options {
+	if o.PollInterval <= 0 {
+		o.PollInterval = defaultPollInterval
+	}
+	if o.RetryInterval <= 0 {
+		o.RetryInterval = defaultRetryInterval
+	}
+	if o.MidRunGrace <= 0 {
+		o.MidRunGrace = defaultMidRunGrace
+	}
+	if o.ReadPositions == nil {
+		o.ReadPositions = readPositions
+	}
+
+	return o
+}
+
 // Reconciler drives a PointInTimeRestore to a terminal phase.
 type Reconciler struct {
 	client.Client
@@ -150,6 +168,24 @@ type Reconciler struct {
 	ClaimNamespace string
 
 	opts Options
+}
+
+// New returns a Reconciler with the given options, with every zero field
+// filled from the production configuration.
+func New(
+	c client.Client,
+	reader client.Reader,
+	scheme *runtime.Scheme,
+	claimNamespace string,
+	options Options,
+) *Reconciler {
+	return &Reconciler{
+		Client:         c,
+		APIReader:      reader,
+		Scheme:         scheme,
+		ClaimNamespace: claimNamespace,
+		opts:           options.withDefaults(),
+	}
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=pointintimerestores,verbs=get;list;watch;create;update;patch;delete
@@ -407,40 +443,4 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		).
 		Named(controllerName).
 		Complete(r)
-}
-
-// New returns a Reconciler with the given options, with every zero field
-// filled from the production configuration.
-func New(
-	c client.Client,
-	reader client.Reader,
-	scheme *runtime.Scheme,
-	claimNamespace string,
-	options Options,
-) *Reconciler {
-	return &Reconciler{
-		Client:         c,
-		APIReader:      reader,
-		Scheme:         scheme,
-		ClaimNamespace: claimNamespace,
-		opts:           options.withDefaults(),
-	}
-}
-
-// withDefaults fills the zero fields of o with the production configuration.
-func (o Options) withDefaults() Options {
-	if o.PollInterval <= 0 {
-		o.PollInterval = defaultPollInterval
-	}
-	if o.RetryInterval <= 0 {
-		o.RetryInterval = defaultRetryInterval
-	}
-	if o.MidRunGrace <= 0 {
-		o.MidRunGrace = defaultMidRunGrace
-	}
-	if o.ReadPositions == nil {
-		o.ReadPositions = readPositions
-	}
-
-	return o
 }
