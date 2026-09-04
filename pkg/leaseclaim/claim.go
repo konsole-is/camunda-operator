@@ -313,11 +313,12 @@ func (c *Claim[T]) Release(ctx context.Context, lease *coordinationv1.Lease) err
 	return nil
 }
 
-// Held returns every claim Lease of the namespace that still names owner.
+// Held returns every claim Lease of the namespace that records the UID of
+// owner, which is every claim owner can give back.
 //
 // The label selector carries the name of the owner alone. The list therefore
 // also holds the claims of a resource of another namespace with this name,
-// and of a later resource. The holder annotations tell them apart.
+// and of a later resource. The recorded UID tells them apart.
 func (c *Claim[T]) Held(ctx context.Context, owner T) ([]coordinationv1.Lease, error) {
 	holder := holderOf(owner)
 
@@ -335,7 +336,7 @@ func (c *Claim[T]) Held(ctx context.Context, owner T) ([]coordinationv1.Lease, e
 
 	var held []coordinationv1.Lease
 	for i := range leases.Items {
-		if recorded, ours := c.schema.HolderOf(&leases.Items[i]); ours && recorded == holder {
+		if recorded, ours := c.schema.HolderOf(&leases.Items[i]); ours && recorded.UID == holder.UID {
 			held = append(held, leases.Items[i])
 		}
 	}

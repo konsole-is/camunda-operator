@@ -615,9 +615,37 @@ func TestHeldReadsTheHolderAnnotations(t *testing.T) {
 	)
 }
 
-// TestHoldsReadsTheWholeIdentity pins the predicate that a deletion asks
+// A holder that reads a claim as its own must be able to give it back. The
+// UID decides both, so a name annotation that somebody edited by hand leaves
+// no claim that this resource holds and never sweeps.
+func TestHeldListsAClaimWhoseNameAnnotationChanged(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	schema := testSchema()
+	owner := claimant("alpha", "only", "uid-only")
+	c := testClient(t, owner)
+	claims := New(schema, c, c, testNamespace, keepEvery)
+	require.NoError(t, taken(claims.Take(ctx, owner, "key")))
+
+	lease, found := leaseOf(t, c, "key")
+	require.True(t, found)
+	lease.Annotations[schema.HolderNameAnnotation] = "edited-by-hand"
+	require.NoError(t, c.Update(ctx, lease))
+
+	holds, err := claims.Holds(ctx, "key", owner)
+	require.NoError(t, err)
+	assert.True(t, holds, "the recorded UID is the owner")
+
+	held, err := claims.Held(ctx, owner)
+
+	require.NoError(t, err)
+	assert.Len(t, held, 1, "a claim it holds is a claim it can give back")
+}
+
+// TestHoldsReadsTheRecordedUID pins the predicate that a deletion asks
 // before it writes the thing behind the claim.
-func TestHoldsReadsTheWholeIdentity(t *testing.T) {
+func TestHoldsReadsTheRecordedUID(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
