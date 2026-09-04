@@ -291,8 +291,9 @@ func realmCallbackHandoff(
 }
 
 // watchRealmCallbacksScript samples the client of both realms every three
-// seconds and prints one line for each sample. It reads a token of its own on
-// every sample, because the watch outlives the lifespan of one.
+// seconds and prints one line for each sample. The first sample takes the
+// token of the prelude, and each sleep is followed by a token of its own,
+// because the watch outlives the lifespan of one.
 //
 // A probe exits the script through its command substitution: an unexpected
 // status from Keycloak ends the watch rather than reading as an absent
@@ -310,8 +311,6 @@ const watchRealmCallbacksScript = keycloakTokenScript + `probe() {
 
 start=$(date +%s)
 while :; do
-  KC_TOKEN=$(keycloak_token)
-  if [ -z "$KC_TOKEN" ]; then echo "no access_token from $KC_URL" >&2; exit 1; fi
   from=$(probe "$KC_REALM_FROM")
   to=$(probe "$KC_REALM_TO")
   echo "t=$(( $(date +%s) - start )) $KC_REALM_FROM=$from $KC_REALM_TO=$to"
@@ -321,6 +320,8 @@ while :; do
     exit 1
   fi
   sleep 3
+  KC_TOKEN=$(keycloak_token)
+  if [ -z "$KC_TOKEN" ]; then echo "no access_token from $KC_URL" >&2; exit 1; fi
 done`
 
 // expectCallbackHandoff asserts the order of the two realms from the samples
