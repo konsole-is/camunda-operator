@@ -498,6 +498,14 @@ type DatabaseServerStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Version is the PostgreSQL major version that the server runs, as a bare
+	// number such as "17". It is the version of the merged spec, so it names
+	// what runs whether the release, the preset, or the server supplies it,
+	// and it stays on the major of the data directory while a version change
+	// is refused. It is empty until the first reconcile resolves the
+	// references of the server.
+	// +optional
+	Version string `json:"version,omitempty"`
 	// Cluster is the CloudNativePG cluster that the published contract points
 	// at. It is the name of the server until a recovery replaces it.
 	// +optional
@@ -549,7 +557,7 @@ type DatabaseServerStatus struct {
 // +kubebuilder:resource:scope=Namespaced
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
-// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.version`
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.version`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:validation:XValidation:rule="oldSelf.hasValue() || (self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$') && self.metadata.name.size() <= 46)",message="metadata.name must be a DNS-1035 label of at most 46 characters, because it names the CloudNativePG cluster of the server",optionalOldSelf=true
 

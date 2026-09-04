@@ -2282,6 +2282,13 @@ var _ = Describe("DatabaseServer controller", func() {
 		Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
 		Expect(cluster.Spec.ImageName).To(HaveSuffix(":17"))
 		Expect(cluster.Spec.Instances).To(Equal(1))
+
+		By("publishing it in status.version, which the Version column reads")
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			g.Expect(latest.Status.Version).To(Equal("17"))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	// The data directory does not exist yet, so nothing refuses the change and
@@ -2351,6 +2358,11 @@ var _ = Describe("DatabaseServer controller", func() {
 			HaveField("InvolvedObject.Name", server.Name),
 			HaveField("Type", corev1.EventTypeWarning),
 		)))
+
+		By("keeping the running major in status.version, not the refused one")
+		var latest v1.DatabaseServer
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+		Expect(latest.Status.Version).To(Equal("17"))
 	})
 
 	// The refusal is one thing that happened, and it stands until the version

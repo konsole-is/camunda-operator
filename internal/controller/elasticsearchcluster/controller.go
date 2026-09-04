@@ -209,6 +209,8 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
+	cluster.Status.Version = merged.Version
+
 	if err := r.keepAppliedStorageSize(ctx, &cluster, &merged); err != nil {
 		return ctrl.Result{}, err
 	}

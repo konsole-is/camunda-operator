@@ -301,6 +301,12 @@ type ElasticsearchClusterStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Version is the Elasticsearch version that the cluster runs, as a full
+	// semantic version. It is the version of the merged spec, so it names what
+	// runs whether the release, the preset, or the cluster supplies it. It is
+	// empty until the first reconcile resolves the references of the cluster.
+	// +optional
+	Version string `json:"version,omitempty"`
 	// Volumes lists the bound data PersistentVolumeClaims of the cluster and
 	// the capacity that each one reports, sorted by name.
 	// +listType=map
@@ -330,6 +336,7 @@ type ElasticsearchClusterStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.version`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // ElasticsearchCluster provisions and operates an Elasticsearch cluster for

@@ -21,6 +21,9 @@ spec:
     - jsonPath: .status.conditions[?(@.type=="Ready")].reason
       name: Reason
       type: string
+    - jsonPath: .status.version
+      name: Version
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -1289,6 +1292,13 @@ spec:
                   first registration converges. A cluster whose name a later operator
                   version derives differently therefore publishes nothing until the new
                   repository exists, rather than a name that Elasticsearch does not hold.
+                type: string
+              version:
+                description: |-
+                  Version is the Elasticsearch version that the cluster runs, as a full
+                  semantic version. It is the version of the merged spec, so it names what
+                  runs whether the release, the preset, or the cluster supplies it. It is
+                  empty until the first reconcile resolves the references of the cluster.
                 type: string
               volumes:
                 description: |-

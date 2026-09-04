@@ -318,6 +318,7 @@ The objects already in the bucket stay. Remove them yourself when you no longer 
 ```yaml
 status:
   observedGeneration: 3
+  version: "17"
   cluster: my-db
   systemIdentifier: "7370000000000000001"
   archive:
@@ -387,6 +388,8 @@ status:
 | `MonitoringReady` | `Healthy` | The `PodMonitor` is applied. | Nothing. |
 
 A part that the spec switches off is reported on its own condition and never on `Ready`. `MonitoringReady` stays out of `Ready` always, and `ArchiveReady` stays out of it on a server with no `archive` block. A server that runs therefore reads `Ready: Healthy` whether or not it scrapes, and so does a server with no `archive` block. A server that asks for an archive reads `Ready: Blocked` until its first base backup completes.
+
+`status.version` is the PostgreSQL major the server runs. It is the merged version, so it names what runs whether the release, the preset, or the server supplies it, and `kubectl get databaseserver` prints it in the `VERSION` column. While a version change is refused it stays on the major of the data directory, not the one the spec asks for. It is empty until the first reconcile resolves the references of the server.
 
 `status.cluster` is the CloudNativePG cluster that the contract points at. `status.systemIdentifier` is the identity of the PostgreSQL instance behind it, which a [Database](database.md) uses to tell two servers apart. `status.observedGeneration` is the last generation the operator reconciled.
 

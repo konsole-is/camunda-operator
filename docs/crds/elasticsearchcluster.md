@@ -96,7 +96,7 @@ Deletion removes everything the operator created: the ECK resource, the Secrets,
 
 ## Status
 
-`kubectl get elasticsearchcluster` shows `Ready`, its reason, and the age.
+`kubectl get elasticsearchcluster` shows `Ready`, its reason, the Elasticsearch version, and the age.
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
@@ -111,6 +111,8 @@ Deletion removes everything the operator created: the ECK resource, the Secrets,
 | `SnapshotRepositoryReady` | `ConnectionFailed` | Elasticsearch did not answer, or it rejected the registration. `Ready` is `False` while this holds. | Make sure that the bucket, its credentials, and the identity of the pods are correct. |
 | `SnapshotRepositoryReady` | `MissingSecret` | The `elastic` user Secret or the CA Secret of ECK does not exist yet. | Wait. ECK creates them with the cluster. |
 | `MetricsReady` | component status | The exporter. It is not part of `Ready`. It is `Disabled` while monitoring is off and `Suspended` while the cluster is suspended. | Read the exporter Deployment `<name>-es-exporter` when it is `Failing`. |
+
+`status.version` is the Elasticsearch version the cluster runs. It is the merged version, so it names what runs whether the release, the preset, or the cluster supplies it, and `kubectl get elasticsearchcluster` prints it in the `VERSION` column. It is empty until the first reconcile resolves the references of the cluster.
 
 `status.observedGeneration` is the last generation that the operator reconciled.
 

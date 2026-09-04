@@ -288,6 +288,10 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	// After the guard, so the published version is the major the instances
+	// run rather than the one a refused change asks for.
+	server.Status.Version = resolved.merged.Version
+
 	// Read once and used twice: the clamp below, and status.Volumes further
 	// down. Nothing this reconcile applies creates a claim, so the second
 	// reader loses nothing by taking the same answer.

@@ -1215,6 +1215,13 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 
 		es := fetchOwnedElasticsearch(cluster)
 		Expect(es.Spec.Version).To(Equal("9.2.4"))
+
+		By("publishing it in status.version, which the Version column reads")
+		Eventually(func(g Gomega) {
+			var latest v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			g.Expect(latest.Status.Version).To(Equal("9.2.4"))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("runs its own version over the one the release names", func() {
