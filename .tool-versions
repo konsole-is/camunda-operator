@@ -1,6 +1,6 @@
-kubebuilder 4.13.1
-golang 1.26.2
-kind 0.31.0
-kubectl 1.35.3
-helm 4.1.4
-cosign 3.1.2
+kubebuilder 4.15.0
+golang 1.27.1
+kind 0.33.0
+kubectl 1.37.0
+helm 4.2.4
+cosign 3.1.3
