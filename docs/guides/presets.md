@@ -148,6 +148,8 @@ The [CamundaClusterPreset](../crds/camundaclusterpreset.md), [ElasticsearchClust
 
 Three ready-to-apply presets are in [`config/example/presets`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/presets), and the release that runs on them is in [`config/example/releases`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/releases). The [example inventories](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example) next to them name both. A `CamundaCluster` there keeps its references and the fields that belong to that one cluster.
 
+That release carries the name of the minor line, `camunda-8-9`, because you edit that one release in place. When you want two releases side by side, name each one for its rollout, such as `camunda-8-9-4`.
+
 ## Override one field
 
 A cluster overrides a field of the preset by setting it. The other fields of the preset stay. A cluster that needs more brokers than `medium` gives, and nothing else:

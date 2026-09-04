@@ -4,8 +4,8 @@
 #
 # presetRef names the shared CamundaClusterPreset small, and releaseRef names
 # the shared CamundaRelease camunda-8-9. One preset serves every cluster of
-# this shape, and one release serves every cluster on this version, so a
-# second cluster is this manifest again with another name.
+# this shape, and one release serves every cluster on this version. A second
+# cluster is this manifest again with another name.
 #
 # spec.version is unset, so the cluster runs the version of the release.
 apiVersion: core.camunda.io/v1

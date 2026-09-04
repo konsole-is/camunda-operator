@@ -8,10 +8,10 @@ resources already made.
 | Inventory | What it stands up | Shape |
 | --- | --- | --- |
 | [`presets`](presets) | The three preset kinds, shared by the inventories below. | Applied once |
-| [`releases`](releases) | One `CamundaRelease`, shared by the orchestration clusters below. | Applied once |
+| [`releases`](releases) | One `CamundaRelease`, named by the clusters of `camunda-cluster/rdbms` and `camunda-management-cluster/keycloak`. | Applied once |
 | [`camunda-cluster/elasticsearch`](camunda-cluster/elasticsearch) | One orchestration cluster with Elasticsearch as its secondary storage. | Every field inline |
-| [`camunda-cluster/rdbms`](camunda-cluster/rdbms) | One orchestration cluster with PostgreSQL as its secondary storage, run by CloudNativePG. | Preset and release |
-| [`camunda-management-cluster/keycloak`](camunda-management-cluster/keycloak) | A management plane whose Keycloak the operator runs, one cluster it serves, and Optimize. | Preset and release |
+| [`camunda-cluster/rdbms`](camunda-cluster/rdbms) | One orchestration cluster with PostgreSQL as its secondary storage, run by CloudNativePG. | Presets and release |
+| [`camunda-management-cluster/keycloak`](camunda-management-cluster/keycloak) | A management plane whose Keycloak the operator runs, one cluster it serves, and Optimize. | Presets and release |
 | [`camunda-management-cluster/oidc`](camunda-management-cluster/oidc) | A management plane against an identity provider you run. | Presets |
 
 Each directory carries a README with the apply order and a link to the guide
