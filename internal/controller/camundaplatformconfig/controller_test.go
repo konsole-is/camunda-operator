@@ -239,7 +239,7 @@ var _ = Describe("CamundaPlatformConfig controller", func() {
 		expectReady(cfg, metav1.ConditionTrue, v1.ReasonHealthy, Equal("All checks passed"))
 
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cfg), cfg)).To(Succeed())
-		cfg.Spec.ImageRegistry = "registry.example.com/camunda"
+		cfg.Spec.Images = &v1.ImagesSpec{Camunda: "registry.example.com/camunda/camunda"}
 		Expect(k8sClient.Update(ctx, cfg)).To(Succeed())
 
 		Eventually(func(g Gomega) {

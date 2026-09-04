@@ -56,12 +56,13 @@ spec:
                   Cluster is the configuration baseline that referencing clusters
                   inherit. It reuses the CamundaCluster spec type so the two never drift
                   apart. The instance-bound fields of that type (platformConfigRef,
-                  presetRef, externalUrl, serviceAccount, storageRef, backupStorageRef,
-                  documentStorageRef, monitoring, suspend, pause) must be left unset
-                  inside a preset. Explicit zero values (an empty presetRef, suspend:
-                  false), as templated YAML renders unset fields, count as unset. The
-                  CamundaCluster doc lists the field details, the CamundaClusterPreset
-                  doc lists the merge rules.
+                  presetRef, releaseRef, externalUrl, serviceAccount, storageRef,
+                  backupStorageRef, documentStorageRef, monitoring, suspend, pause) must
+                  be left unset inside a preset, and so must the fields that belong to a
+                  CamundaRelease (version, connectors.version). Explicit zero values (an
+                  empty presetRef, suspend: false), as templated YAML renders unset
+                  fields, count as unset. The CamundaCluster doc lists the field details,
+                  the CamundaClusterPreset doc lists the merge rules.
                 properties:
                   admin:
                     description: |-
@@ -3082,7 +3083,7 @@ spec:
                           Version is the version of the connectors bundle image, as a full
                           semantic version. The bundle has its own patch line, so it does not
                           follow the cluster version. Required when connectors are enabled,
-                          unless the resolved preset provides it.
+                          unless the resolved release provides it. Forbidden in a preset.
                         pattern: ^\d+\.\d+\.\d+$
                         type: string
                     type: object
@@ -5223,7 +5224,7 @@ spec:
                   platformConfigRef:
                     description: |-
                       PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that
-                      provides auth, license, and image registry. Required on a
+                      provides auth, license, and image repositories. Required on a
                       CamundaCluster, forbidden in a preset.
                     maxLength: 253
                     pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
@@ -5243,6 +5244,12 @@ spec:
                     description: |-
                       PresetRef names a cluster-scoped CamundaClusterPreset used as the
                       configuration baseline. The preset doc lists the merge rules.
+                    type: string
+                  releaseRef:
+                    description: |-
+                      ReleaseRef names a cluster-scoped CamundaRelease that provides the
+                      versions, the pinned images, and the environment of a version. It
+                      merges over the preset and under this spec. Forbidden in a preset.
                     type: string
                   scheduling:
                     description: |-
@@ -6828,12 +6835,12 @@ spec:
                   version:
                     description: |-
                       Version is the Camunda version to deploy, as a full semantic version.
-                      The floor of 8.9.0 is enforced by the controller on the preset-merged
-                      result, the schema pins only the three-segment shape. Required unless
-                      the resolved preset provides it. A value below the version that the
-                      brokers run is refused with Ready VersionDowngradeRefused unless the
-                      annotation camunda.io/allow-version-downgrade on the CamundaCluster
-                      names it.
+                      The floor of 8.9.0 is enforced by the controller on the merged result,
+                      the schema pins only the three-segment shape. Required unless the
+                      resolved release provides it, and forbidden in a preset. A value below
+                      the version that the brokers run is refused with Ready
+                      VersionDowngradeRefused unless the annotation
+                      camunda.io/allow-version-downgrade on the CamundaCluster names it.
                     pattern: ^\d+\.\d+\.\d+$
                     type: string
                   zeebe:
@@ -7812,16 +7819,22 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-validations:
-                - message: instance-bound fields (platformConfigRef, presetRef, externalUrl,
-                    serviceAccount, storageRef, backupStorageRef, documentStorageRef,
+                - message: instance-bound fields (platformConfigRef, presetRef, releaseRef,
+                    externalUrl, serviceAccount, storageRef, backupStorageRef, documentStorageRef,
                     monitoring, suspend, pause) must not be set in a preset
                   rule: (!has(self.platformConfigRef) || self.platformConfigRef ==
-                    '') && (!has(self.presetRef) || self.presetRef == '') && (!has(self.externalUrl)
-                    || self.externalUrl == '') && !has(self.serviceAccount) && (!has(self.storageRef)
+                    '') && (!has(self.presetRef) || self.presetRef == '') && (!has(self.releaseRef)
+                    || self.releaseRef == '') && (!has(self.externalUrl) || self.externalUrl
+                    == '') && !has(self.serviceAccount) && (!has(self.storageRef)
                     || self.storageRef == '') && (!has(self.backupStorageRef) || self.backupStorageRef
                     == '') && (!has(self.documentStorageRef) || self.documentStorageRef
                     == '') && !has(self.monitoring) && (!has(self.suspend) || !self.suspend)
                     && (!has(self.pause) || !self.pause)
+                - message: version and connectors.version belong to a CamundaRelease
+                    and must not be set in a preset
+                  rule: (!has(self.version) || self.version == '') && (!has(self.connectors)
+                    || !has(self.connectors.version) || self.connectors.version ==
+                    '')
             required:
             - cluster
             type: object

@@ -1,0 +1,60 @@
+# CamundaPlatformConfig is cluster scoped, so it carries no namespace.
+#
+# The operator makes no discovery request, so set authUrl, tokenUrl, and
+# jwksUrl next to issuerUrl. Your provider publishes all four.
+#
+# Every component of the management plane needs a client of its own. Identity
+# and Optimize are always needed. Console needs clients.console, and Web
+# Modeler needs both clients.webModeler and clients.webModelerApi. A missing
+# client makes the management cluster report Ready=False with the reason
+# InvalidReference.
+#
+# The Console client and the Web Modeler client are public, so they carry a
+# clientId and no clientSecretRef.
+apiVersion: core.camunda.io/v1
+kind: CamundaPlatformConfig
+metadata:
+  name: my-platform-config
+spec:
+  auth:
+    method: oidc
+    oidc:
+      issuerUrl: "https://login.example.com/realms/camunda"
+      authUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/auth"
+      tokenUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/token"
+      jwksUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/certs"
+      clientId: camunda-orchestration
+      usernameClaim: preferred_username
+      clientIdClaim: client_id
+      clientSecretRef:
+        name: my-oidc-credentials
+        namespace: my-management-ns
+        key: client-secret
+      management:
+        clients:
+          identity:
+            clientId: camunda-identity
+            clientSecretRef:
+              name: my-management-identity-credentials
+              namespace: my-management-ns
+              key: client-secret
+          optimize:
+            clientId: camunda-optimize
+            clientSecretRef:
+              name: my-optimize-credentials
+              namespace: my-management-ns
+              key: client-secret
+          console:
+            clientId: camunda-console
+          webModeler:
+            clientId: camunda-web-modeler
+          webModelerApi:
+            clientId: camunda-web-modeler-api
+            clientSecretRef:
+              name: my-web-modeler-api-credentials
+              namespace: my-management-ns
+              key: client-secret
+  licenseSecretRef:
+    name: my-camunda-license
+    namespace: my-management-ns
+    key: license-key

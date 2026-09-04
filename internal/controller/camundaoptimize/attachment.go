@@ -33,6 +33,17 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
+// holdsAttachment reports whether optimize is the CamundaOptimize that holds
+// the attachment to the cluster it names.
+func (r *Reconciler) holdsAttachment(ctx context.Context, optimize *v1.CamundaOptimize) (bool, error) {
+	holder, err := r.attachmentHolder(ctx, optimize)
+	if err != nil {
+		return false, err
+	}
+
+	return holder != nil && holder.Name == optimize.Name, nil
+}
+
 // attachmentHolder returns the CamundaOptimize that holds the attachment to
 // the cluster that optimize names: the oldest one, and among equally old ones
 // the one whose name sorts first. Every reconcile of every attached
@@ -86,17 +97,6 @@ func olderThan(a, b *v1.CamundaOptimize) bool {
 	return a.Name < b.Name
 }
 
-// holdsAttachment reports whether optimize is the CamundaOptimize that holds
-// the attachment to the cluster it names.
-func (r *Reconciler) holdsAttachment(ctx context.Context, optimize *v1.CamundaOptimize) (bool, error) {
-	holder, err := r.attachmentHolder(ctx, optimize)
-	if err != nil {
-		return false, err
-	}
-
-	return holder != nil && holder.Name == optimize.Name, nil
-}
-
 // releaseWorkloads deletes the Deployment, the Service, and the ServiceMonitor
 // of each component that optimize controls, and the copies of referenced
 // Secrets that it made. A parked CamundaOptimize renders nothing, and a copy of
@@ -146,24 +146,6 @@ func (r *Reconciler) releaseWorkloads(ctx context.Context, optimize *v1.CamundaO
 	return nil
 }
 
-// removeComponentConditions drops every condition that a component of this
-// CamundaOptimize reports. A parked CamundaOptimize builds no components, so
-// FlushStatus owns none of these types and leaves whatever the object already
-// carries. Without this call a deposed holder keeps a WebappReady of True over
-// a Deployment that releaseWorkloads has deleted.
-//
-// The conditions come back on their own when this CamundaOptimize takes the
-// attachment again, because the components write them.
-func removeComponentConditions(optimize *v1.CamundaOptimize) {
-	for _, conditionType := range []string{
-		v1.ConditionWebappReady,
-		v1.ConditionImporterReady,
-		v1.ConditionMirroredSecretsReady,
-	} {
-		meta.RemoveStatusCondition(optimize.GetStatusConditions(), conditionType)
-	}
-}
-
 // deleteControlled deletes the object at key when optimize controls it. A
 // missing object is already the wanted state. The ownership check matters
 // because the managed labels of two CamundaOptimizes on one cluster are
@@ -190,6 +172,24 @@ func (r *Reconciler) deleteControlled(
 	}
 
 	return nil
+}
+
+// removeComponentConditions drops every condition that a component of this
+// CamundaOptimize reports. A parked CamundaOptimize builds no components, so
+// FlushStatus owns none of these types and leaves whatever the object already
+// carries. Without this call a deposed holder keeps a WebappReady of True over
+// a Deployment that releaseWorkloads has deleted.
+//
+// The conditions come back on their own when this CamundaOptimize takes the
+// attachment again, because the components write them.
+func removeComponentConditions(optimize *v1.CamundaOptimize) {
+	for _, conditionType := range []string{
+		v1.ConditionWebappReady,
+		v1.ConditionImporterReady,
+		v1.ConditionMirroredSecretsReady,
+	} {
+		meta.RemoveStatusCondition(optimize.GetStatusConditions(), conditionType)
+	}
 }
 
 // otherImporter returns the name of an importer Deployment of the same cluster

@@ -464,6 +464,104 @@ func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request, name s
 	}
 }
 
+// handleSnapshot routes the per-snapshot requests: create, status, delete.
+func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []string) {
+	switch r.Method {
+	case http.MethodPut:
+		if s.Dropping(w, "snapshotCreate") {
+			return
+		}
+		if s.Failing("snapshotCreate") {
+			errorBody(w, http.StatusInternalServerError, "injected snapshot create failure")
+			return
+		}
+		if _, ok := s.repos[parts[1]]; !ok {
+			errorBodyTyped(
+				w, http.StatusNotFound,
+				"repository_missing_exception", "["+parts[1]+"] missing",
+			)
+			return
+		}
+		key := parts[1] + "/" + parts[2]
+		if _, exists := s.snapshots[key]; exists {
+			errorBody(
+				w, http.StatusBadRequest,
+				"invalid_snapshot_name_exception: snapshot with the same name already exists",
+			)
+			return
+		}
+		var body struct {
+			Indices  string         `json:"indices"`
+			Metadata map[string]any `json:"metadata"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		s.snapshots[key] = &Snapshot{
+			Repo: parts[1], Name: parts[2], State: "IN_PROGRESS",
+			Indices: body.Indices, Metadata: body.Metadata,
+		}
+		s.snapshotCreates[key]++
+		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"accepted": true})
+
+	case http.MethodGet:
+		if s.Dropping(w, "snapshotStatus") {
+			return
+		}
+		if s.Failing("snapshotStatus") {
+			errorBody(w, http.StatusInternalServerError, "injected snapshot status failure")
+			return
+		}
+		if _, ok := s.repos[parts[1]]; !ok {
+			errorBodyTyped(
+				w, http.StatusNotFound,
+				"repository_missing_exception", "["+parts[1]+"] missing",
+			)
+			return
+		}
+		snapshot, ok := s.snapshots[parts[1]+"/"+parts[2]]
+		if !ok {
+			errorBodyTyped(
+				w, http.StatusNotFound,
+				"snapshot_missing_exception", "["+parts[1]+":"+parts[2]+"] is missing",
+			)
+			return
+		}
+		info := map[string]any{"snapshot": snapshot.Name, "state": snapshot.State}
+		if len(snapshot.Metadata) > 0 {
+			info["metadata"] = snapshot.Metadata
+		}
+		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"snapshots": []map[string]any{info}})
+
+	case http.MethodDelete:
+		if s.Dropping(w, "snapshotDelete") {
+			return
+		}
+		if s.Failing("snapshotDelete") {
+			errorBody(w, http.StatusInternalServerError, "injected snapshot delete failure")
+			return
+		}
+		if _, ok := s.repos[parts[1]]; !ok {
+			errorBodyTyped(
+				w, http.StatusNotFound,
+				"repository_missing_exception", "["+parts[1]+"] missing",
+			)
+			return
+		}
+		key := parts[1] + "/" + parts[2]
+		if _, ok := s.snapshots[key]; !ok {
+			errorBodyTyped(
+				w, http.StatusNotFound,
+				"snapshot_missing_exception", "["+parts[1]+":"+parts[2]+"] is missing",
+			)
+			return
+		}
+		delete(s.snapshots, key)
+		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"acknowledged": true})
+
+	default:
+		errorBody(w, http.StatusMethodNotAllowed, "unsupported method "+r.Method)
+	}
+}
+
 // handleRestore serves POST /_snapshot/<repo>/<snapshot>/_restore. The
 // repository and the snapshot must both exist, the way they must on a real
 // cluster, so a restore of an artifact that is gone reads as a rejection and
@@ -665,102 +763,4 @@ func sortedKeys(set map[string]struct{}) []string {
 	slices.Sort(names)
 
 	return names
-}
-
-// handleSnapshot routes the per-snapshot requests: create, status, delete.
-func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []string) {
-	switch r.Method {
-	case http.MethodPut:
-		if s.Dropping(w, "snapshotCreate") {
-			return
-		}
-		if s.Failing("snapshotCreate") {
-			errorBody(w, http.StatusInternalServerError, "injected snapshot create failure")
-			return
-		}
-		if _, ok := s.repos[parts[1]]; !ok {
-			errorBodyTyped(
-				w, http.StatusNotFound,
-				"repository_missing_exception", "["+parts[1]+"] missing",
-			)
-			return
-		}
-		key := parts[1] + "/" + parts[2]
-		if _, exists := s.snapshots[key]; exists {
-			errorBody(
-				w, http.StatusBadRequest,
-				"invalid_snapshot_name_exception: snapshot with the same name already exists",
-			)
-			return
-		}
-		var body struct {
-			Indices  string         `json:"indices"`
-			Metadata map[string]any `json:"metadata"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		s.snapshots[key] = &Snapshot{
-			Repo: parts[1], Name: parts[2], State: "IN_PROGRESS",
-			Indices: body.Indices, Metadata: body.Metadata,
-		}
-		s.snapshotCreates[key]++
-		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"accepted": true})
-
-	case http.MethodGet:
-		if s.Dropping(w, "snapshotStatus") {
-			return
-		}
-		if s.Failing("snapshotStatus") {
-			errorBody(w, http.StatusInternalServerError, "injected snapshot status failure")
-			return
-		}
-		if _, ok := s.repos[parts[1]]; !ok {
-			errorBodyTyped(
-				w, http.StatusNotFound,
-				"repository_missing_exception", "["+parts[1]+"] missing",
-			)
-			return
-		}
-		snapshot, ok := s.snapshots[parts[1]+"/"+parts[2]]
-		if !ok {
-			errorBodyTyped(
-				w, http.StatusNotFound,
-				"snapshot_missing_exception", "["+parts[1]+":"+parts[2]+"] is missing",
-			)
-			return
-		}
-		info := map[string]any{"snapshot": snapshot.Name, "state": snapshot.State}
-		if len(snapshot.Metadata) > 0 {
-			info["metadata"] = snapshot.Metadata
-		}
-		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"snapshots": []map[string]any{info}})
-
-	case http.MethodDelete:
-		if s.Dropping(w, "snapshotDelete") {
-			return
-		}
-		if s.Failing("snapshotDelete") {
-			errorBody(w, http.StatusInternalServerError, "injected snapshot delete failure")
-			return
-		}
-		if _, ok := s.repos[parts[1]]; !ok {
-			errorBodyTyped(
-				w, http.StatusNotFound,
-				"repository_missing_exception", "["+parts[1]+"] missing",
-			)
-			return
-		}
-		key := parts[1] + "/" + parts[2]
-		if _, ok := s.snapshots[key]; !ok {
-			errorBodyTyped(
-				w, http.StatusNotFound,
-				"snapshot_missing_exception", "["+parts[1]+":"+parts[2]+"] is missing",
-			)
-			return
-		}
-		delete(s.snapshots, key)
-		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"acknowledged": true})
-
-	default:
-		errorBody(w, http.StatusMethodNotAllowed, "unsupported method "+r.Method)
-	}
 }

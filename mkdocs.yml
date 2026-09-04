@@ -94,6 +94,7 @@ nav:
           - CamundaCluster: crds/camundacluster.md
           - CamundaPlatformConfig: crds/camundaplatformconfig.md
           - CamundaClusterPreset: crds/camundaclusterpreset.md
+          - CamundaRelease: crds/camundarelease.md
       - Storage backends:
           - ElasticsearchCluster: crds/elasticsearchcluster.md
           - ElasticsearchClusterPreset: crds/elasticsearchclusterpreset.md

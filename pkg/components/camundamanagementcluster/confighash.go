@@ -85,6 +85,21 @@ func componentEnv(in Input, comp string) []corev1.EnvVar {
 	return nil
 }
 
+// envValue renders the value of an environment entry as a reference, never as
+// Secret data.
+func envValue(e corev1.EnvVar) string {
+	switch {
+	case e.ValueFrom == nil:
+		return e.Value
+	case e.ValueFrom.SecretKeyRef != nil:
+		return "secretKeyRef:" + e.ValueFrom.SecretKeyRef.Name + "/" + e.ValueFrom.SecretKeyRef.Key
+	case e.ValueFrom.ConfigMapKeyRef != nil:
+		return "configMapKeyRef:" + e.ValueFrom.ConfigMapKeyRef.Name + "/" + e.ValueFrom.ConfigMapKeyRef.Key
+	default:
+		return ""
+	}
+}
+
 // componentInputs returns the hash inputs of one component alone: what the
 // controller resolved under that component, the credentials that Management
 // Identity creates the clients and the first user with, and the pusher
@@ -118,19 +133,4 @@ func componentInputs(in Input, comp string) []string {
 	}
 
 	return inputs
-}
-
-// envValue renders the value of an environment entry as a reference, never as
-// Secret data.
-func envValue(e corev1.EnvVar) string {
-	switch {
-	case e.ValueFrom == nil:
-		return e.Value
-	case e.ValueFrom.SecretKeyRef != nil:
-		return "secretKeyRef:" + e.ValueFrom.SecretKeyRef.Name + "/" + e.ValueFrom.SecretKeyRef.Key
-	case e.ValueFrom.ConfigMapKeyRef != nil:
-		return "configMapKeyRef:" + e.ValueFrom.ConfigMapKeyRef.Name + "/" + e.ValueFrom.ConfigMapKeyRef.Key
-	default:
-		return ""
-	}
 }

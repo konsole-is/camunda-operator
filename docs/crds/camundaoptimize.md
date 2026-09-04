@@ -49,6 +49,8 @@ The operator creates two Deployments in the namespace of the resource, and one S
 
 A Service name stops at 63 characters, which is the tightest bound of the derived names. A `CamundaOptimize` name that is too long to carry the suffix is cut, and a hash of the full name is added. Two such resources stay apart. The operator applies the same bound to the Secrets that it mirrors into the namespace, and to the value of the `camunda.io/cluster` label.
 
+The pods also carry the label `camunda.io/storage-contract` with the secondary storage contract of the cluster. A cluster that takes that contract over waits for these pods as it waits for the pods of the previous holder, see [CamundaCluster](camundacluster.md#secondary-storage).
+
 Read the names back with `kubectl get deploy,svc -l camunda.io/cluster=<cluster>`. The selector matches while the cluster name is 63 characters or less. For a longer name the label carries the cut form. `kubectl get deploy --show-labels` shows the value to select on.
 
 `kubectl get camundaoptimize` shows whether each instance is ready, why, and the cluster it reads:
@@ -153,17 +155,36 @@ A callback URL that does not match is a failed sign-in. It does not change the s
 
 The major and the minor must match the effective version of the cluster. Camunda supports Optimize only on a matching minor. A difference reports `VersionMismatch`, and the message names both versions, so it tells you which minor to use.
 
-The effective version of the cluster is `spec.version` of the `CamundaCluster`, or the value its `presetRef` supplies when the cluster sets none. An upgrade of the cluster to a new minor therefore puts Optimize into `VersionMismatch` until you raise `spec.version` here as well. The workloads that already run stay as they are while the versions disagree. The operator applies nothing new until they match again.
+The effective version of the cluster is `spec.version` of the `CamundaCluster`, or the value its `presetRef` supplies when the cluster sets none. An upgrade of the cluster to a new minor therefore puts Optimize into `VersionMismatch` until you raise `spec.version` here as well. The operator scales both workloads to zero while the versions disagree, see [Suspension](#suspension). An importer of another minor must not write analytics from records that it does not support. Both start again when you set a version on the minor of the cluster.
 
 ## Suspension
 
 The importer reads Elasticsearch directly. It does not go through the orchestration cluster, so it keeps reading whether or not that cluster runs.
 
-`spec.suspend` on the referenced `CamundaCluster` therefore reaches the Optimize workloads too. The operator scales the webapp and the importer to zero with the workloads of the cluster, and starts them again when you clear the field. `suspend` means "stop everything attached to this cluster", not "stop the workloads of this cluster". The operator also suspends a cluster whose storage contract another cluster holds, and the Optimize workloads follow that suspension the same way.
+`spec.suspend` on the referenced `CamundaCluster` therefore reaches the Optimize workloads too. The operator scales the webapp and the importer to zero with the workloads of the cluster, and starts them again when you clear the field. `suspend` means "stop everything attached to this cluster", not "stop the workloads of this cluster". The operator also suspends a cluster on its own, for example while another cluster holds its storage contract or while a reference of the cluster does not resolve, and the Optimize workloads follow every suspension the same way.
 
 `Ready` reads `True` with reason `Suspended` while the suspension holds. A cluster with `spec.suspend` reports the same. A cluster that another cluster parked reports `Ready` `False` with reason `StorageAlreadyAttached` instead, see [CamundaCluster](camundacluster.md#secondary-storage). Zero replicas is the state you asked for, so the Optimize condition is not an error. The condition does not name the cluster, but the events do: `kubectl describe camundaoptimize <name>` shows `ClusterSuspended` when the workloads go to zero and `ClusterResumed` when they start again.
 
 The operator keeps the exporter settings on the cluster while the suspension holds. A suspension is not a detachment, and the brokers are at zero, so nothing exports. Only deletion withdraws the settings.
+
+A failed check of a reference stops a running instance the same way. The operator scales the webapp and the importer to zero and keeps them. The importer reads Elasticsearch on its own, so a reference that no longer resolves must not leave it writing. `Ready` keeps the failure reason, and the message says that the workloads are at zero. `WebappReady` and `ImporterReady` report `Suspending` while the pods stop, then `Suspended`. The operator records the event `WorkloadsSuspended` for each Deployment it scales. When the check passes again, the workloads start on their own.
+
+An instance whose first check fails has no workloads to stop. It reports the failure on `Ready` alone, and it creates the workloads when the check passes.
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: InvalidReference
+      message: >-
+        SecondaryStorageConfig "my-cluster-ns/my-storage-config" not found. The
+        Optimize workloads are scaled to zero until the pre-check passes
+    - type: ImporterReady
+      status: "True"
+      reason: Suspended
+      message: Scaled to zero while the pre-check of the Optimize instance fails
+```
 
 ## Stopping the import
 
@@ -192,7 +213,7 @@ A Secret that you attach yourself through `extraEnv` or `extraEnvFrom` is not pa
 
 Set `spec.monitoring.serviceMonitor.enabled` to `true` to get one ServiceMonitor per Deployment. They scrape `/actuator/prometheus` on the `management` port, 8092. Use `spec.monitoring.serviceMonitor.labels` to add the label that your Prometheus instance selects on.
 
-The operator creates them only when the Kubernetes cluster serves the `ServiceMonitor` kind. It reads that on each reconcile, so you can install the Prometheus operator after the fact.
+The operator creates them only when the Kubernetes cluster serves the `ServiceMonitor` kind. You can install the Prometheus operator afterwards, and the operator creates them then.
 
 ## Deletion
 
@@ -212,12 +233,12 @@ A `CamundaOptimize` that never held the attachment removes nothing from the clus
 | `WebappReady` | `Healthy` | Every webapp replica is ready. | Nothing. |
 | `ImporterReady` | `Healthy` | The importer replica is ready, or `spec.importer.replicas` is `0`. | Nothing. |
 | `WebappReady` / `ImporterReady` | `Creating` / `Updating` / `Scaling` | The Deployment rolls out or scales. | Wait. |
-| `WebappReady` / `ImporterReady` | `Suspended` | The referenced cluster is suspended, so the Deployment is at zero. | Nothing. See [Suspension](#suspension). |
+| `WebappReady` / `ImporterReady` | `Suspending` / `Suspended` | The referenced cluster is suspended, or a check of this resource failed, so the Deployment stops or is at zero. | Nothing. See [Suspension](#suspension). |
 | `WebappReady` / `ImporterReady` | `Failing` | The Deployment has replicas that do not become ready. | Read the pods of the named Deployment. |
 | `WebappReady` / `ImporterReady` | `Degraded` / `Down` | Some or no replicas are ready after the grace period. | Read the pods and events of the named Deployment. |
 | `Ready` | `Healthy` | Every condition that takes part is healthy. | Nothing. |
 | `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Degraded` / `Down` | The reason of the governing condition. The message names it. | Read the row of that condition. |
-| `Ready` | `Suspended` | `spec.suspend` of the referenced cluster is `true`, and both workloads are at zero. `Ready` is `True`. | Nothing. Set `suspend` back to `false` on the cluster to start Optimize again. |
+| `Ready` | `Suspended` | The referenced cluster is suspended and both workloads are at zero. `spec.suspend` of the cluster is `true`, or the operator suspended the cluster itself, for example while another cluster holds its storage contract. `Ready` is `True`. | Nothing. Optimize starts again when the cluster does. |
 | `Ready` | `ClusterAlreadyAttached` | Another `CamundaOptimize` is already attached to the referenced cluster. | Delete one of the two. The message names the one that holds the cluster. |
 | `Ready` | `WaitingForHandover` | This resource now holds the cluster, and the importer Deployment of the previous one still exists. | Wait. The message names the Deployment. The state clears on its own. |
 | `Ready` | `InvalidReference` | The `clusterRef`, the `managementAuthRef`, or the `storageRef` chain of the cluster does not resolve. It also reports a referenced cluster whose effective spec is invalid, such as a version below `8.9.0`. | Read the message. Create the missing resource, or correct the field it names. |
@@ -229,6 +250,8 @@ A `CamundaOptimize` that never held the attachment removes nothing from the clus
 `Ready` is `True` only when every condition that takes part in it is `True`. When one of them is not `True`, `Ready` repeats its reason and its message, and the message names the condition it came from. Read the row of that condition to know what to do.
 
 `WebappReady` and `ImporterReady` always take part. `MirroredSecretsReady` takes part when a referenced Secret lives in another namespace, and reports `Disabled` when none does.
+
+Every reason above that reports a failed check scales both workloads to zero and keeps them, see [Suspension](#suspension). `ClusterAlreadyAttached` is the one exception. The workloads then belong to the resource that holds the cluster, so this one removes its own.
 
 `status.observedGeneration` is the last generation the operator reconciled.
 
@@ -319,7 +342,7 @@ The API server enforces these at admission:
 - `spec.importer.replicas` must be `0` or `1`. Optimize supports one active importer, and more than one makes the analytics data inconsistent.
 - `spec.clusterRef` is immutable.
 
-The operator checks more at reconcile time and reports the result on `Ready`:
+The API server accepts a resource that breaks the rules below, because they depend on live state. The operator reports the result on `Ready` instead:
 
 - The references resolve.
 - The secondary storage of the cluster is Elasticsearch.
@@ -393,5 +416,5 @@ spec:
 - [ManagementAuthConfig](managementauthconfig.md): referenced through `managementAuthRef`.
 - [SecondaryStorageConfig](secondarystorageconfig.md): resolved through the `storageRef` of the cluster. It carries the Elasticsearch endpoint and credentials.
 - [CamundaManagementCluster](camundamanagementcluster.md): produces the `ManagementAuthConfig` in a self-managed installation.
-- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md): backs up the cluster, which includes the `zeebe-record` indices that Optimize reads. It does not back up the Optimize analytics indices. Optimize keeps those behind a backup API of its own, which no controller calls yet.
+- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md): backs up the cluster, which includes the `zeebe-record` indices that Optimize reads. It does not back up the Optimize analytics indices. Optimize keeps those behind a backup API of its own, which the operator does not call yet.
 - [ElasticsearchCluster](elasticsearchcluster.md): the ECK-managed Elasticsearch behind the contract.

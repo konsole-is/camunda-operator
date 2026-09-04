@@ -113,43 +113,115 @@ func render(in Input, p Process) rendered {
 	return r
 }
 
-// identityEnv is the cluster identity layer: name, size, partitions,
-// replication factor, the contact points of every broker, the gRPC bind
-// address, and the gateway id of every Deployment-backed unified process
-// (the gateway and the standalone web applications, which run the gateway
-// code path).
-func identityEnv(in Input, p Process) []corev1.EnvVar {
-	e := in.Effective
-	env := []corev1.EnvVar{
-		camundaconfig.Var(camundaconfig.KeyClusterName, in.Cluster.Name),
-		camundaconfig.Var(camundaconfig.KeyClusterSize, strconv.Itoa(int(e.ZeebeReplicas()))),
-		camundaconfig.Var(camundaconfig.KeyClusterPartitionCount, strconv.Itoa(int(e.Partitions()))),
-		camundaconfig.Var(camundaconfig.KeyClusterReplicationFactor, strconv.Itoa(int(e.ReplicationFactor()))),
-		camundaconfig.Var(camundaconfig.KeyClusterInitialContacts, strings.Join(contactPoints(in), ",")),
-		camundaconfig.Var(camundaconfig.KeyGRPCAddress, grpcBindAddress),
+// dedupeEnv keeps the last occurrence of every name and preserves the order
+// of first appearance.
+func dedupeEnv(env []corev1.EnvVar) []corev1.EnvVar {
+	last := make(map[string]corev1.EnvVar, len(env))
+	order := make([]string, 0, len(env))
+	for _, e := range env {
+		if _, seen := last[e.Name]; !seen {
+			order = append(order, e.Name)
+		}
+		last[e.Name] = e
 	}
 
-	if p.Kind == ProcessDeployment {
-		env = append(env, camundaconfig.VarFrom(camundaconfig.KeyClusterGatewayID, &corev1.EnvVarSource{
-			FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
-		}))
+	out := make([]corev1.EnvVar, 0, len(order))
+	for _, name := range order {
+		out = append(out, last[name])
+	}
+	return out
+}
+
+// connectorsEnv is the client layer of the connectors runtime: the mode, the
+// gateway addresses, the credentials of the admin user or the OIDC client,
+// and the license.
+func connectorsEnv(in Input) []corev1.EnvVar {
+	host := gatewayServiceHost(in.Cluster, in.Effective)
+	env := []corev1.EnvVar{
+		camundaconfig.Var(camundaconfig.KeyClientMode, clientModeSelfManaged),
+		camundaconfig.Var(camundaconfig.KeyClientGRPCAddress, "http://"+host+":"+strconv.Itoa(int(PortGRPC))),
+		camundaconfig.Var(camundaconfig.KeyClientRESTAddress, RESTEndpoint(in.Cluster, in.Effective)),
+	}
+
+	auth := ResolveAuth(in)
+	env = append(env, camundaconfig.Var(camundaconfig.KeyClientAuthMethod, string(auth.Method)))
+	if auth.OIDC != nil {
+		env = append(
+			env,
+			camundaconfig.Var(camundaconfig.KeyClientAuthClientID, auth.OIDC.ClientID),
+			camundaconfig.VarFrom(
+				camundaconfig.KeyClientAuthClientSecret,
+				secretSource(auth.OIDC.ClientSecretRef.Name, auth.OIDC.ClientSecretRef.Key),
+			),
+			camundaconfig.Var(camundaconfig.KeyClientAuthIssuerURL, auth.OIDC.IssuerURL),
+			camundaconfig.Var(camundaconfig.KeyClientAuthAudience, auth.OIDC.Audience),
+		)
+	} else {
+		env = append(
+			env,
+			camundaconfig.Var(camundaconfig.KeyClientAuthUsername, AdminUsername),
+			camundaconfig.VarFrom(
+				camundaconfig.KeyClientAuthPassword,
+				secretSource(AdminSecretName(in.Cluster), AdminPasswordKey),
+			),
+		)
+	}
+
+	if in.Platform.LicenseSecretRef != nil {
+		env = append(env, corev1.EnvVar{
+			Name:      camundaconfig.EnvLicenseKey,
+			ValueFrom: secretSource(in.Platform.LicenseSecretRef.Name, in.Platform.LicenseSecretRef.Key),
+		})
 	}
 
 	return env
 }
 
-// contactPoints returns the internal address of every broker pod through the
-// headless zeebe Service.
-func contactPoints(in Input) []string {
-	zeebe := WorkloadName(in.Cluster, ComponentZeebe)
-	points := make([]string, 0, in.Effective.ZeebeReplicas())
-	for i := range in.Effective.ZeebeReplicas() {
-		points = append(
-			points,
-			zeebe+"-"+strconv.Itoa(int(i))+"."+zeebe+"."+in.Cluster.Namespace+".svc:"+strconv.Itoa(int(PortInternal)),
-		)
+// secretSource builds the source of an environment variable that reads one
+// key of a Secret in the pod's namespace.
+func secretSource(name, key string) *corev1.EnvVarSource {
+	return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+		LocalObjectReference: corev1.LocalObjectReference{Name: name},
+		Key:                  key,
+	}}
+}
+
+// userEnv is the user override layer: the global extraEnv, then the extraEnv
+// of every component that envSources names. dedupeEnv makes the last one
+// win.
+func userEnv(in Input, p Process) []corev1.EnvVar {
+	env := slices.Clone(in.Effective.ExtraEnv)
+	for _, component := range envSources(p) {
+		env = append(env, in.Effective.Workload(component).ExtraEnv...)
 	}
-	return points
+	return env
+}
+
+// envSources returns the component names whose extraEnv and extraEnvFrom
+// apply to a process, in the order they are layered: the embedded gateway
+// (on the brokers), the embedded web applications the process hosts, then
+// the process's own component.
+func envSources(p Process) []string {
+	sources := []string{}
+	if p.EmbeddedGateway {
+		sources = append(sources, ComponentGateway)
+	}
+	for _, app := range webApps {
+		if app.component != p.Component && slices.Contains(p.Profiles, app.profile) {
+			sources = append(sources, app.component)
+		}
+	}
+	return append(sources, p.Component)
+}
+
+// userEnvFrom concatenates the global extraEnvFrom and the extraEnvFrom of
+// every component that envSources names.
+func userEnvFrom(in Input, p Process) []corev1.EnvFromSource {
+	envFrom := slices.Clone(in.Effective.ExtraEnvFrom)
+	for _, component := range envSources(p) {
+		envFrom = append(envFrom, in.Effective.Workload(component).ExtraEnvFrom...)
+	}
+	return envFrom
 }
 
 // storageEnv is the secondary storage layer. It returns the volume and mount
@@ -211,6 +283,56 @@ func storageEnv(in Input) rendered {
 	}
 
 	return r
+}
+
+// RDBMSURL returns the JDBC URL of the relational secondary storage that the
+// orchestration cluster is configured with. It is the value that the rendered
+// pod template carries under camundaconfig.KeyRDBMSURL. It is the one
+// definition of that value, so a consumer that reads it from a live template
+// compares against the same rendering. The RDBMS backup is such a consumer.
+// It reads the value to prove that the dump targets the database that Zeebe
+// runs.
+func RDBMSURL(host string, port int32, database string) string {
+	return jdbcPostgres + host + ":" + strconv.Itoa(int(port)) + "/" + database
+}
+
+// identityEnv is the cluster identity layer: name, size, partitions,
+// replication factor, the contact points of every broker, the gRPC bind
+// address, and the gateway id of every Deployment-backed unified process
+// (the gateway and the standalone web applications, which run the gateway
+// code path).
+func identityEnv(in Input, p Process) []corev1.EnvVar {
+	e := in.Effective
+	env := []corev1.EnvVar{
+		camundaconfig.Var(camundaconfig.KeyClusterName, in.Cluster.Name),
+		camundaconfig.Var(camundaconfig.KeyClusterSize, strconv.Itoa(int(e.ZeebeReplicas()))),
+		camundaconfig.Var(camundaconfig.KeyClusterPartitionCount, strconv.Itoa(int(e.Partitions()))),
+		camundaconfig.Var(camundaconfig.KeyClusterReplicationFactor, strconv.Itoa(int(e.ReplicationFactor()))),
+		camundaconfig.Var(camundaconfig.KeyClusterInitialContacts, strings.Join(contactPoints(in), ",")),
+		camundaconfig.Var(camundaconfig.KeyGRPCAddress, grpcBindAddress),
+	}
+
+	if p.Kind == ProcessDeployment {
+		env = append(env, camundaconfig.VarFrom(camundaconfig.KeyClusterGatewayID, &corev1.EnvVarSource{
+			FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
+		}))
+	}
+
+	return env
+}
+
+// contactPoints returns the internal address of every broker pod through the
+// headless zeebe Service.
+func contactPoints(in Input) []string {
+	zeebe := WorkloadName(in.Cluster, ComponentZeebe)
+	points := make([]string, 0, in.Effective.ZeebeReplicas())
+	for i := range in.Effective.ZeebeReplicas() {
+		points = append(
+			points,
+			zeebe+"-"+strconv.Itoa(int(i))+"."+zeebe+"."+in.Cluster.Namespace+".svc:"+strconv.Itoa(int(PortInternal)),
+		)
+	}
+	return points
 }
 
 // authEnv is the authentication and platform layer: the method, the OIDC
@@ -369,126 +491,4 @@ func roleEnv(p Process) []corev1.EnvVar {
 		)
 	}
 	return env
-}
-
-// connectorsEnv is the client layer of the connectors runtime: the mode, the
-// gateway addresses, the credentials of the admin user or the OIDC client,
-// and the license.
-func connectorsEnv(in Input) []corev1.EnvVar {
-	host := gatewayServiceHost(in.Cluster, in.Effective)
-	env := []corev1.EnvVar{
-		camundaconfig.Var(camundaconfig.KeyClientMode, clientModeSelfManaged),
-		camundaconfig.Var(camundaconfig.KeyClientGRPCAddress, "http://"+host+":"+strconv.Itoa(int(PortGRPC))),
-		camundaconfig.Var(camundaconfig.KeyClientRESTAddress, RESTEndpoint(in.Cluster, in.Effective)),
-	}
-
-	auth := ResolveAuth(in)
-	env = append(env, camundaconfig.Var(camundaconfig.KeyClientAuthMethod, string(auth.Method)))
-	if auth.OIDC != nil {
-		env = append(
-			env,
-			camundaconfig.Var(camundaconfig.KeyClientAuthClientID, auth.OIDC.ClientID),
-			camundaconfig.VarFrom(
-				camundaconfig.KeyClientAuthClientSecret,
-				secretSource(auth.OIDC.ClientSecretRef.Name, auth.OIDC.ClientSecretRef.Key),
-			),
-			camundaconfig.Var(camundaconfig.KeyClientAuthIssuerURL, auth.OIDC.IssuerURL),
-			camundaconfig.Var(camundaconfig.KeyClientAuthAudience, auth.OIDC.Audience),
-		)
-	} else {
-		env = append(
-			env,
-			camundaconfig.Var(camundaconfig.KeyClientAuthUsername, AdminUsername),
-			camundaconfig.VarFrom(
-				camundaconfig.KeyClientAuthPassword,
-				secretSource(AdminSecretName(in.Cluster), AdminPasswordKey),
-			),
-		)
-	}
-
-	if in.Platform.LicenseSecretRef != nil {
-		env = append(env, corev1.EnvVar{
-			Name:      camundaconfig.EnvLicenseKey,
-			ValueFrom: secretSource(in.Platform.LicenseSecretRef.Name, in.Platform.LicenseSecretRef.Key),
-		})
-	}
-
-	return env
-}
-
-// envSources returns the component names whose extraEnv and extraEnvFrom
-// apply to a process, in the order they are layered: the embedded gateway
-// (on the brokers), the embedded web applications the process hosts, then
-// the process's own component.
-func envSources(p Process) []string {
-	sources := []string{}
-	if p.EmbeddedGateway {
-		sources = append(sources, ComponentGateway)
-	}
-	for _, app := range webApps {
-		if app.component != p.Component && slices.Contains(p.Profiles, app.profile) {
-			sources = append(sources, app.component)
-		}
-	}
-	return append(sources, p.Component)
-}
-
-// userEnv is the user override layer: the global extraEnv, then the extraEnv
-// of every component that envSources names. dedupeEnv makes the last one
-// win.
-func userEnv(in Input, p Process) []corev1.EnvVar {
-	env := slices.Clone(in.Effective.ExtraEnv)
-	for _, component := range envSources(p) {
-		env = append(env, in.Effective.Workload(component).ExtraEnv...)
-	}
-	return env
-}
-
-// userEnvFrom concatenates the global extraEnvFrom and the extraEnvFrom of
-// every component that envSources names.
-func userEnvFrom(in Input, p Process) []corev1.EnvFromSource {
-	envFrom := slices.Clone(in.Effective.ExtraEnvFrom)
-	for _, component := range envSources(p) {
-		envFrom = append(envFrom, in.Effective.Workload(component).ExtraEnvFrom...)
-	}
-	return envFrom
-}
-
-// dedupeEnv keeps the last occurrence of every name and preserves the order
-// of first appearance.
-func dedupeEnv(env []corev1.EnvVar) []corev1.EnvVar {
-	last := make(map[string]corev1.EnvVar, len(env))
-	order := make([]string, 0, len(env))
-	for _, e := range env {
-		if _, seen := last[e.Name]; !seen {
-			order = append(order, e.Name)
-		}
-		last[e.Name] = e
-	}
-
-	out := make([]corev1.EnvVar, 0, len(order))
-	for _, name := range order {
-		out = append(out, last[name])
-	}
-	return out
-}
-
-// secretSource builds the source of an environment variable that reads one
-// key of a Secret in the pod's namespace.
-func secretSource(name, key string) *corev1.EnvVarSource {
-	return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-		LocalObjectReference: corev1.LocalObjectReference{Name: name},
-		Key:                  key,
-	}}
-}
-
-// RDBMSURL returns the JDBC URL of the relational secondary storage that the
-// orchestration cluster is configured with. It is the value that the rendered
-// pod template carries under camundaconfig.KeyRDBMSURL. It is the one
-// definition of that value, so a consumer that reads it from a live template
-// compares against the same rendering. The RDBMS backup is such a consumer.
-// It reads the value to prove that the dump targets the database that Zeebe
-// runs.
-func RDBMSURL(host string, port int32, database string) string {
-	return jdbcPostgres + host + ":" + strconv.Itoa(int(port)) + "/" + database
 }

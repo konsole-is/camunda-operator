@@ -290,127 +290,6 @@ func Mode(mc *v1.CamundaManagementCluster) ProviderMode {
 	}
 }
 
-// resolveManagedKeycloak reads the Keycloak that the operator runs.
-// Management Identity administers Keycloak through the Service that the
-// Keycloak Operator creates, and that Service is the back-channel issuer of
-// the realm. Browsers use spec.externalUrl, and so does the front-channel
-// issuer that every token carries.
-//
-// The Service serves http, so the provider carries no certificate authority
-// for the operator to trust. The administrator is the one the Keycloak
-// Operator writes into <keycloak>-initial-admin next to the Keycloak custom
-// resource.
-func resolveManagedKeycloak(in Input) IdentityProvider {
-	spec := in.Cluster.Spec.IdentityProvider.Keycloak
-	service := fmt.Sprintf(
-		"http://%s.%s.svc:%d%s",
-		KeycloakServiceName(in.Cluster), in.Cluster.Namespace, KeycloakServicePort, keycloakBasePath,
-	)
-
-	admin := &v1.LocalCredentialsSecretRef{
-		Name:        KeycloakInitialAdminSecretName(in.Cluster),
-		UsernameKey: KeycloakAdminUsernameKey,
-		PasswordKey: KeycloakAdminPasswordKey,
-	}
-
-	return keycloakProvider(
-		in, ModeKeycloak, service, spec.ExternalURL, keycloakDefaultRealm, admin, nil,
-	)
-}
-
-// resolveExternalKeycloak reads the Keycloak that the user runs. One URL
-// serves browsers and containers alike, so the front-channel and the
-// back-channel issuer are the same. The administrator comes from
-// adminCredentialsSecretRef, in the management namespace.
-func resolveExternalKeycloak(in Input) IdentityProvider {
-	spec := in.Cluster.Spec.IdentityProvider.ExternalKeycloak
-	admin := spec.AdminCredentialsSecretRef.DeepCopy()
-
-	return keycloakProvider(
-		in,
-		ModeExternalKeycloak,
-		spec.URL,
-		spec.URL,
-		cmp.Or(spec.Realm, keycloakDefaultRealm),
-		admin,
-		spec.CABundleSecretRef.DeepCopy(),
-	)
-}
-
-// keycloakProvider builds the identity provider of both Keycloak modes.
-// Management Identity creates every client in the realm on its first start,
-// so the client ids and the audiences are the ones it uses, not values a user
-// chooses.
-func keycloakProvider(
-	in Input,
-	mode ProviderMode,
-	backendURL, publicURL, realm string,
-	admin *v1.LocalCredentialsSecretRef,
-	caBundle *v1.LocalSecretKeyRef,
-) IdentityProvider {
-	// Every URL below appends a path, so a URL that ends in a slash would
-	// build "//realms", which Keycloak serves under no such address.
-	backendURL = strings.TrimRight(backendURL, "/")
-	publicURL = strings.TrimRight(publicURL, "/")
-
-	issuer := publicURL + keycloakRealmPath + realm
-	backendIssuer := backendURL + keycloakRealmPath + realm
-
-	return IdentityProvider{
-		Mode:              mode,
-		Type:              identityTypeKeycloak,
-		SpringProfile:     identityProfileKeycloak,
-		IssuerURL:         issuer,
-		IssuerBackendURL:  backendIssuer,
-		AuthURL:           issuer + keycloakAuthPath,
-		TokenURL:          backendIssuer + keycloakTokenPath,
-		JwksURL:           backendIssuer + keycloakCertsPath,
-		KeycloakURL:       backendURL,
-		KeycloakPublicURL: publicURL,
-		Realm:             realm,
-		AdminCredentials:  admin,
-		CABundle:          caBundle,
-		Clients:           keycloakClients(in),
-	}
-}
-
-// keycloakClients returns the clients that Management Identity creates in the
-// realm, one per component the spec deploys. A browser application holds no
-// secret, and Identity makes the secret of its own client, so only Optimize
-// carries a reference. Web Modeler is one client in front of two resource
-// servers, so its two entries carry the same id.
-func keycloakClients(in Input) ProviderClients {
-	clients := ProviderClients{
-		Identity: Client{
-			ID:       keycloakClientIdentity,
-			Audience: keycloakAudienceIdentity,
-		},
-		Optimize: Client{
-			ID:       keycloakClientOptimize,
-			Audience: keycloakAudienceOptimize,
-			SecretRef: &v1.SecretKeyRef{
-				Name:      in.Secrets.OptimizeClient,
-				Namespace: in.Cluster.Namespace,
-				Key:       ClientSecretKey,
-			},
-		},
-	}
-	if in.Cluster.Spec.Console != nil {
-		clients.Console = PublicClient{ID: keycloakClientConsole, Audience: keycloakAudienceConsole}
-	}
-	if in.Cluster.Spec.WebModeler != nil {
-		clients.WebModeler = PublicClient{
-			ID: keycloakClientWebModeler, Audience: keycloakAudienceWebModeler,
-		}
-		clients.WebModelerAPI = Client{
-			ID: keycloakClientWebModeler, Audience: keycloakAudienceWebModeler,
-		}
-		clients.WebModelerPublicAPIAudience = keycloakAudienceWebModelerPublic
-	}
-
-	return clients
-}
-
 // resolveOIDC reads the identity provider of the platform config. The issuer
 // is both the front-channel and the back-channel issuer: Camunda does not
 // support split-horizon URLs for a generic OIDC provider, see
@@ -574,6 +453,127 @@ func identityType(providerType v1.OIDCProviderType) string {
 	return identityTypeGeneric
 }
 
+// resolveManagedKeycloak reads the Keycloak that the operator runs.
+// Management Identity administers Keycloak through the Service that the
+// Keycloak Operator creates, and that Service is the back-channel issuer of
+// the realm. Browsers use spec.externalUrl, and so does the front-channel
+// issuer that every token carries.
+//
+// The Service serves http, so the provider carries no certificate authority
+// for the operator to trust. The administrator is the one the Keycloak
+// Operator writes into <keycloak>-initial-admin next to the Keycloak custom
+// resource.
+func resolveManagedKeycloak(in Input) IdentityProvider {
+	spec := in.Cluster.Spec.IdentityProvider.Keycloak
+	service := fmt.Sprintf(
+		"http://%s.%s.svc:%d%s",
+		KeycloakServiceName(in.Cluster), in.Cluster.Namespace, KeycloakServicePort, keycloakBasePath,
+	)
+
+	admin := &v1.LocalCredentialsSecretRef{
+		Name:        KeycloakInitialAdminSecretName(in.Cluster),
+		UsernameKey: KeycloakAdminUsernameKey,
+		PasswordKey: KeycloakAdminPasswordKey,
+	}
+
+	return keycloakProvider(
+		in, ModeKeycloak, service, spec.ExternalURL, keycloakDefaultRealm, admin, nil,
+	)
+}
+
+// keycloakProvider builds the identity provider of both Keycloak modes.
+// Management Identity creates every client in the realm on its first start,
+// so the client ids and the audiences are the ones it uses, not values a user
+// chooses.
+func keycloakProvider(
+	in Input,
+	mode ProviderMode,
+	backendURL, publicURL, realm string,
+	admin *v1.LocalCredentialsSecretRef,
+	caBundle *v1.LocalSecretKeyRef,
+) IdentityProvider {
+	// Every URL below appends a path, so a URL that ends in a slash would
+	// build "//realms", which Keycloak serves under no such address.
+	backendURL = strings.TrimRight(backendURL, "/")
+	publicURL = strings.TrimRight(publicURL, "/")
+
+	issuer := publicURL + keycloakRealmPath + realm
+	backendIssuer := backendURL + keycloakRealmPath + realm
+
+	return IdentityProvider{
+		Mode:              mode,
+		Type:              identityTypeKeycloak,
+		SpringProfile:     identityProfileKeycloak,
+		IssuerURL:         issuer,
+		IssuerBackendURL:  backendIssuer,
+		AuthURL:           issuer + keycloakAuthPath,
+		TokenURL:          backendIssuer + keycloakTokenPath,
+		JwksURL:           backendIssuer + keycloakCertsPath,
+		KeycloakURL:       backendURL,
+		KeycloakPublicURL: publicURL,
+		Realm:             realm,
+		AdminCredentials:  admin,
+		CABundle:          caBundle,
+		Clients:           keycloakClients(in),
+	}
+}
+
+// keycloakClients returns the clients that Management Identity creates in the
+// realm, one per component the spec deploys. A browser application holds no
+// secret, and Identity makes the secret of its own client, so only Optimize
+// carries a reference. Web Modeler is one client in front of two resource
+// servers, so its two entries carry the same id.
+func keycloakClients(in Input) ProviderClients {
+	clients := ProviderClients{
+		Identity: Client{
+			ID:       keycloakClientIdentity,
+			Audience: keycloakAudienceIdentity,
+		},
+		Optimize: Client{
+			ID:       keycloakClientOptimize,
+			Audience: keycloakAudienceOptimize,
+			SecretRef: &v1.SecretKeyRef{
+				Name:      in.Secrets.OptimizeClient,
+				Namespace: in.Cluster.Namespace,
+				Key:       ClientSecretKey,
+			},
+		},
+	}
+	if in.Cluster.Spec.Console != nil {
+		clients.Console = PublicClient{ID: keycloakClientConsole, Audience: keycloakAudienceConsole}
+	}
+	if in.Cluster.Spec.WebModeler != nil {
+		clients.WebModeler = PublicClient{
+			ID: keycloakClientWebModeler, Audience: keycloakAudienceWebModeler,
+		}
+		clients.WebModelerAPI = Client{
+			ID: keycloakClientWebModeler, Audience: keycloakAudienceWebModeler,
+		}
+		clients.WebModelerPublicAPIAudience = keycloakAudienceWebModelerPublic
+	}
+
+	return clients
+}
+
+// resolveExternalKeycloak reads the Keycloak that the user runs. One URL
+// serves browsers and containers alike, so the front-channel and the
+// back-channel issuer are the same. The administrator comes from
+// adminCredentialsSecretRef, in the management namespace.
+func resolveExternalKeycloak(in Input) IdentityProvider {
+	spec := in.Cluster.Spec.IdentityProvider.ExternalKeycloak
+	admin := spec.AdminCredentialsSecretRef.DeepCopy()
+
+	return keycloakProvider(
+		in,
+		ModeExternalKeycloak,
+		spec.URL,
+		spec.URL,
+		cmp.Or(spec.Realm, keycloakDefaultRealm),
+		admin,
+		spec.CABundleSecretRef.DeepCopy(),
+	)
+}
+
 // console returns spec.console, or the zero value while the spec deploys no
 // Console. The renderer runs either way: a Console that the spec dropped is
 // rendered gated off, so that its component deletes what it left behind.
@@ -583,18 +583,6 @@ func (in Input) console() v1.ConsoleSpec {
 	}
 
 	return *in.Cluster.Spec.Console
-}
-
-// webModeler returns spec.webModeler, or the zero value while the spec deploys
-// no Web Modeler. The renderer runs either way: a Web Modeler that the spec
-// dropped is rendered gated off, so that its component deletes what it left
-// behind.
-func (in Input) webModeler() v1.WebModelerSpec {
-	if in.Cluster.Spec.WebModeler == nil {
-		return v1.WebModelerSpec{}
-	}
-
-	return *in.Cluster.Spec.WebModeler
 }
 
 // workload returns the WorkloadSpec of a component, or the zero value when the
@@ -620,6 +608,18 @@ func (in Input) workload(comp string) v1.WorkloadSpec {
 	}
 
 	return v1.WorkloadSpec{}
+}
+
+// webModeler returns spec.webModeler, or the zero value while the spec deploys
+// no Web Modeler. The renderer runs either way: a Web Modeler that the spec
+// dropped is rendered gated off, so that its component deletes what it left
+// behind.
+func (in Input) webModeler() v1.WebModelerSpec {
+	if in.Cluster.Spec.WebModeler == nil {
+		return v1.WebModelerSpec{}
+	}
+
+	return *in.Cluster.Spec.WebModeler
 }
 
 // replicas returns the replica count of a component. Every component defaults

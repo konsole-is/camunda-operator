@@ -14,6 +14,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    camunda.io/broker-version: 8.9.9
     camunda.io/requested-storage-size: 10Gi
   labels:
     app.kubernetes.io/managed-by: camunda-operator
@@ -39,6 +40,7 @@ spec:
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: zeebe
+        camunda.io/storage-contract: my-storage-config
     spec:
       containers:
       - command:

@@ -765,7 +765,6 @@ var _ = Describe("CamundaCluster backup schema", func() {
 		preset := &v1.CamundaClusterPreset{
 			ObjectMeta: metav1.ObjectMeta{Name: "ccp-" + utilrand.String(8)},
 			Spec: v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{
-				Version: "8.9.0",
 				Backup: &v1.ClusterBackupSpec{
 					PrimaryStorage: &v1.PrimaryStorageBackupSpec{Schedule: "PT2H"},
 				},
@@ -777,7 +776,6 @@ var _ = Describe("CamundaCluster backup schema", func() {
 		rejected := &v1.CamundaClusterPreset{
 			ObjectMeta: metav1.ObjectMeta{Name: "ccp-" + utilrand.String(8)},
 			Spec: v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{
-				Version:          "8.9.0",
 				BackupStorageRef: "my-backup-config",
 			}},
 		}

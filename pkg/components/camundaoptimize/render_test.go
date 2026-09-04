@@ -173,9 +173,9 @@ func TestBaseEnvReadsCredentialsFromSecrets(t *testing.T) {
 	)
 }
 
-// A platform without a license leaves the license variable out; a platform
-// registry prefixes the image.
-func TestImageUsesRegistryPrefix(t *testing.T) {
+// A platform without a license leaves the license variable out; an images
+// entry renames the repository.
+func TestImageUsesTheImagesRename(t *testing.T) {
 	t.Parallel()
 
 	assert.Equal(t, "camunda/optimize:8.9.4", Image(fixtureMinimal(t)))
@@ -184,7 +184,9 @@ func TestImageUsesRegistryPrefix(t *testing.T) {
 	assert.Equal(t, "registry.example.com/mirror/camunda/optimize:8.9.4", Image(fixtureRealistic(t)))
 
 	trailing := newInput(t, func(in *Input) {
-		in.Platform = v1.CamundaPlatformConfigSpec{ImageRegistry: "registry.example.com/"}
+		in.Platform = v1.CamundaPlatformConfigSpec{
+			Images: &v1.ImagesSpec{Optimize: "registry.example.com/camunda/optimize/"},
+		}
 	})
 	assert.Equal(t, "registry.example.com/camunda/optimize:8.9.4", Image(trailing))
 }

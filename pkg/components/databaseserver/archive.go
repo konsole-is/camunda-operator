@@ -106,100 +106,32 @@ type ArchiveOutage struct {
 	Confirmed bool
 }
 
-// ArchiveOutageOf returns what CloudNativePG reports about the write-ahead log
-// uploads of cluster at now, or nil when it reports nothing wrong. A cluster
-// that has not uploaded a segment yet reports nothing, and so does one that
-// archives nowhere.
-func ArchiveOutageOf(cluster *cnpgv1.Cluster, now time.Time) *ArchiveOutage {
-	condition := cnpgcluster.ContinuousArchiving(cluster)
-	if condition == nil || condition.Status != metav1.ConditionFalse {
-		return nil
-	}
-
-	return &ArchiveOutage{
-		Reason:    condition.Reason,
-		Message:   condition.Message,
-		Since:     condition.LastTransitionTime,
-		Confirmed: !now.Before(condition.LastTransitionTime.Add(ArchiveOutageGracePeriod)),
-	}
-}
-
-// ArchiveFailingMessage returns the ArchiveReady message of a server whose
-// write-ahead log stopped reaching the bucket: what CloudNativePG reports,
-// what the archive still holds, and what to do about it.
-func ArchiveFailingMessage(outage *ArchiveOutage) string {
-	return fmt.Sprintf(
-		"CloudNativePG reports %s on the write-ahead log uploads of this server since %s: %s. "+
-			"The archive holds every point up to the last segment that arrived, and a restore to "+
-			"a point after that reaches nothing. Repair the bucket or the credentials of the "+
-			"bucket. The segments that are held back arrive once the uploads run again.",
-		outage.Reason, outage.Since.UTC().Format(time.RFC3339), outage.Message,
-	)
-}
-
-// ObjectStoreName returns the name of the ObjectStore that describes the
-// archive of the server. It stays the name of the server across a recovery:
-// one bucket location holds every archive the server has written, and the
-// serverName parameter of the cluster is what separates them.
-func ObjectStoreName(server *v1.DatabaseServer) string { return server.Name }
-
-// ArchiveTakenMessage returns the ArchiveReady message for an ObjectStore of
-// the name the server derives that another owner controls: who holds it, and
-// what to do about it. holder is that owner's controller reference. An
-// ObjectStore that nothing controls is adopted, not reported, so there is no
-// message for it; the design spec says why.
-func ArchiveTakenMessage(name string, holder metav1.OwnerReference) string {
-	return fmt.Sprintf(
-		"Barman Cloud ObjectStore %q already exists and %s %q controls it. It describes the "+
-			"archive of another server, so this server archives nothing: its cluster carries no "+
-			"archive plugin, it takes no base backup, and it publishes no point-in-time-recovery "+
-			"capability. The archive it wrote before and its history stay. Remove that "+
-			"ObjectStore, or give this server a name of its own.",
-		name, holder.Kind, holder.Name,
-	)
-}
-
-// BaseBackupName returns the name of the ScheduledBackup that takes the base
-// backups of the current cluster. It follows the cluster, so a recovery gets
-// a schedule of its own.
-func BaseBackupName(server *v1.DatabaseServer) string { return ClusterName(server) }
-
-// ArchiveSecretName returns the Secret that carries the bucket settings of the
-// archive into the Barman Cloud plugin.
-func ArchiveSecretName(server *v1.DatabaseServer) string {
-	return server.Name + archiveSecretSuffix
-}
-
-// ArchiveSegment returns the directory in the bucket that holds the archive of
-// this server: its name, a dash, and the first eight hex characters of the
-// SHA-256 of its UID. Two servers of one name and different UIDs get different
-// directories.
-func ArchiveSegment(server *v1.DatabaseServer) string {
-	sum := sha256.Sum256([]byte(server.UID))
-
-	return server.Name + "-" + hex.EncodeToString(sum[:4])
-}
-
-// Archiving reports whether the merged spec asks for an archive. It is the one
-// place that decides the question, so every reader of the rule answers the
-// same.
-func Archiving(merged v1.DatabaseServerSpec) bool { return merged.Archive != nil }
-
-// ValidateArchiveStorage reports why a bucket cannot hold the archive of a
-// server, or nil when it can. The caller turns the message into a pre-check
-// failure on the server.
+// barmanArchive is the Barman Cloud side of the active storage block, reduced
+// to what every renderer in this file reads. One switch builds it, in resolve;
+// nothing else here dispatches on the storage type. Adding a storage type is a
+// case in that switch and nothing more.
 //
-// Every storage type of the contract is served. What can still fail is a
-// contract whose declared type and block disagree. It answers with the same
-// resolution the renderers use, so a bucket the pre-check accepts is one every
-// renderer can render.
-func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
-	// The server only names the archive Secret and the object prefix, and
-	// neither can make a bucket unservable, so a nameless one answers the
-	// question.
-	_, err := (&ArchiveStorage{Config: config}).resolve(&v1.DatabaseServer{})
-
-	return err
+// This mirrors the activeBlock of ObjectStorageConfig, which reduces the same
+// three blocks one layer down for the same reason.
+type barmanArchive struct {
+	// destinationRoot is the provider-addressing prefix of the archive URL,
+	// without the base path of the contract.
+	destinationRoot string
+	// destinationPath is the bucket URL that holds the archives of one
+	// server: destinationRoot, the base path of the contract, and the prefix
+	// of the server.
+	destinationPath string
+	// endpointURL addresses an S3-compatible store. It is empty for every
+	// other provider and for AWS S3 itself.
+	endpointURL string
+	// secretData holds the bucket settings that the plugin reads from a
+	// Secret, keyed by the key each one takes.
+	secretData map[string][]byte
+	// Exactly one credentials block is set, the one of the declared storage
+	// type.
+	s3Credentials     *barmanobjectstore.S3Credentials
+	azureCredentials  *barmanobjectstore.AzureCredentials
+	googleCredentials *barmanobjectstore.GoogleCredentials
 }
 
 // ArchiveComponent builds the archive component: the Secret with the bucket
@@ -324,6 +256,141 @@ func ArchiveComponent(
 	return comp, destination, nil
 }
 
+// archiveSecret renders the Secret that carries the bucket settings of the
+// archive. The Barman Cloud plugin reads every one of them from a Secret key,
+// including the region of an S3 bucket, so the Secret exists for a bucket that
+// authenticates through workload identity too.
+func archiveSecret(server *v1.DatabaseServer, resolved *barmanArchive) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ArchiveSecretName(server),
+			Namespace: server.Namespace,
+			Labels:    managedLabels(server),
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: archiveSecretData(resolved),
+	}
+}
+
+// ArchiveSecretName returns the Secret that carries the bucket settings of the
+// archive into the Barman Cloud plugin.
+func ArchiveSecretName(server *v1.DatabaseServer) string {
+	return server.Name + archiveSecretSuffix
+}
+
+// archiveSecretData returns the keys of the archive Secret, or nil when the
+// bucket needs none.
+func archiveSecretData(resolved *barmanArchive) map[string][]byte {
+	if resolved == nil {
+		return nil
+	}
+
+	return resolved.secretData
+}
+
+// objectStore renders the ObjectStore that describes the archive: where it
+// lives, how the plugin authenticates, how long a base backup and the
+// write-ahead log that follows it are kept, and that both are compressed.
+func objectStore(
+	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
+	resolved *barmanArchive,
+) *barmanobjectstore.ObjectStore {
+	store := &barmanobjectstore.ObjectStore{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ObjectStoreName(server),
+			Namespace: server.Namespace,
+			Labels:    managedLabels(server),
+		},
+		Spec: barmanobjectstore.ObjectStoreSpec{
+			Configuration: barmanobjectstore.BarmanObjectStoreConfiguration{
+				DestinationPath: destinationPath(resolved),
+				Wal: &barmanobjectstore.WalBackupConfiguration{
+					Compression: barmanobjectstore.CompressionTypeGzip,
+				},
+				Data: &barmanobjectstore.DataBackupConfiguration{
+					Compression: barmanobjectstore.CompressionTypeGzip,
+				},
+			},
+			RetentionPolicy: retentionPolicy(merged),
+		},
+	}
+
+	if resolved != nil {
+		store.Spec.Configuration.EndpointURL = resolved.endpointURL
+		store.Spec.Configuration.S3Credentials = resolved.s3Credentials
+		store.Spec.Configuration.AzureCredentials = resolved.azureCredentials
+		store.Spec.Configuration.GoogleCredentials = resolved.googleCredentials
+	}
+
+	return store
+}
+
+// ObjectStoreName returns the name of the ObjectStore that describes the
+// archive of the server. It stays the name of the server across a recovery:
+// one bucket location holds every archive the server has written, and the
+// serverName parameter of the cluster is what separates them.
+func ObjectStoreName(server *v1.DatabaseServer) string { return server.Name }
+
+// destinationPath returns the bucket URL that holds the archives of the
+// server, in the form the Barman Cloud plugin addresses the provider, or the
+// empty string when the bucket did not resolve.
+func destinationPath(resolved *barmanArchive) string {
+	if resolved == nil {
+		return ""
+	}
+
+	return resolved.destinationPath
+}
+
+// retentionPolicy renders spec.archive.retentionPeriodDays as the barman
+// retention policy the plugin enforces. It is the same number the contract of
+// the server publishes, so what the operator declares is what it enforces.
+func retentionPolicy(merged v1.DatabaseServerSpec) string {
+	if merged.Archive == nil {
+		return ""
+	}
+
+	return strconv.Itoa(int(merged.Archive.RetentionPeriodDays)) + "d"
+}
+
+// scheduledBackup renders the ScheduledBackup that takes the base backups of
+// the current cluster. The first one runs at once, whatever the schedule says:
+// the archive can be recovered from only after a base backup completes, so
+// waiting for the next scheduled slot would leave a window with no recovery
+// point at all.
+//
+// A suspended server carries a suspended schedule. Its instances are gone, so
+// every slot the schedule reaches would otherwise start a backup that cannot
+// run and fail it.
+func scheduledBackup(server *v1.DatabaseServer, merged v1.DatabaseServerSpec) *cnpgv1.ScheduledBackup {
+	schedule := DefaultBaseBackupSchedule
+	if merged.Archive != nil && merged.Archive.BaseBackupSchedule != "" {
+		schedule = merged.Archive.BaseBackupSchedule
+	}
+
+	return &cnpgv1.ScheduledBackup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      BaseBackupName(server),
+			Namespace: server.Namespace,
+			Labels:    managedLabels(server),
+		},
+		Spec: cnpgv1.ScheduledBackupSpec{
+			Schedule:            schedule,
+			Suspend:             new(merged.Suspend),
+			Immediate:           new(true),
+			Method:              cnpgv1.BackupMethodPlugin,
+			PluginConfiguration: &cnpgv1.BackupPluginConfiguration{Name: BarmanPluginName},
+			Cluster:             cnpgv1.LocalObjectReference{Name: ClusterName(server)},
+		},
+	}
+}
+
+// BaseBackupName returns the name of the ScheduledBackup that takes the base
+// backups of the current cluster. It follows the cluster, so a recovery gets
+// a schedule of its own.
+func BaseBackupName(server *v1.DatabaseServer) string { return ClusterName(server) }
+
 // archiveGuard blocks the archive while it cannot be recovered from. Two
 // things block it: no base backup of the archive the server writes now has
 // completed, and the write-ahead log of the server stopped reaching the
@@ -381,68 +448,73 @@ func archiveGuard(
 	}
 }
 
-// archiveSecret renders the Secret that carries the bucket settings of the
-// archive. The Barman Cloud plugin reads every one of them from a Secret key,
-// including the region of an S3 bucket, so the Secret exists for a bucket that
-// authenticates through workload identity too.
-func archiveSecret(server *v1.DatabaseServer, resolved *barmanArchive) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      ArchiveSecretName(server),
-			Namespace: server.Namespace,
-			Labels:    managedLabels(server),
-		},
-		Type: corev1.SecretTypeOpaque,
-		Data: archiveSecretData(resolved),
-	}
-}
+// Archiving reports whether the merged spec asks for an archive. It is the one
+// place that decides the question, so every reader of the rule answers the
+// same.
+func Archiving(merged v1.DatabaseServerSpec) bool { return merged.Archive != nil }
 
-// archiveSecretData returns the keys of the archive Secret, or nil when the
-// bucket needs none.
-func archiveSecretData(resolved *barmanArchive) map[string][]byte {
-	if resolved == nil {
+// ArchiveOutageOf returns what CloudNativePG reports about the write-ahead log
+// uploads of cluster at now, or nil when it reports nothing wrong. A cluster
+// that has not uploaded a segment yet reports nothing, and so does one that
+// archives nowhere.
+func ArchiveOutageOf(cluster *cnpgv1.Cluster, now time.Time) *ArchiveOutage {
+	condition := cnpgcluster.ContinuousArchiving(cluster)
+	if condition == nil || condition.Status != metav1.ConditionFalse {
 		return nil
 	}
 
-	return resolved.secretData
+	return &ArchiveOutage{
+		Reason:    condition.Reason,
+		Message:   condition.Message,
+		Since:     condition.LastTransitionTime,
+		Confirmed: !now.Before(condition.LastTransitionTime.Add(ArchiveOutageGracePeriod)),
+	}
 }
 
-// objectStore renders the ObjectStore that describes the archive: where it
-// lives, how the plugin authenticates, how long a base backup and the
-// write-ahead log that follows it are kept, and that both are compressed.
-func objectStore(
-	server *v1.DatabaseServer,
-	merged v1.DatabaseServerSpec,
-	resolved *barmanArchive,
-) *barmanobjectstore.ObjectStore {
-	store := &barmanobjectstore.ObjectStore{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      ObjectStoreName(server),
-			Namespace: server.Namespace,
-			Labels:    managedLabels(server),
-		},
-		Spec: barmanobjectstore.ObjectStoreSpec{
-			Configuration: barmanobjectstore.BarmanObjectStoreConfiguration{
-				DestinationPath: destinationPath(resolved),
-				Wal: &barmanobjectstore.WalBackupConfiguration{
-					Compression: barmanobjectstore.CompressionTypeGzip,
-				},
-				Data: &barmanobjectstore.DataBackupConfiguration{
-					Compression: barmanobjectstore.CompressionTypeGzip,
-				},
-			},
-			RetentionPolicy: retentionPolicy(merged),
-		},
-	}
+// ArchiveFailingMessage returns the ArchiveReady message of a server whose
+// write-ahead log stopped reaching the bucket: what CloudNativePG reports,
+// what the archive still holds, and what to do about it.
+func ArchiveFailingMessage(outage *ArchiveOutage) string {
+	return fmt.Sprintf(
+		"CloudNativePG reports %s on the write-ahead log uploads of this server since %s: %s. "+
+			"The archive holds every point up to the last segment that arrived, and a restore to "+
+			"a point after that reaches nothing. Repair the bucket or the credentials of the "+
+			"bucket. The segments that are held back arrive once the uploads run again.",
+		outage.Reason, outage.Since.UTC().Format(time.RFC3339), outage.Message,
+	)
+}
 
-	if resolved != nil {
-		store.Spec.Configuration.EndpointURL = resolved.endpointURL
-		store.Spec.Configuration.S3Credentials = resolved.s3Credentials
-		store.Spec.Configuration.AzureCredentials = resolved.azureCredentials
-		store.Spec.Configuration.GoogleCredentials = resolved.googleCredentials
-	}
+// ArchiveTakenMessage returns the ArchiveReady message for an ObjectStore of
+// the name the server derives that another owner controls: who holds it, and
+// what to do about it. holder is that owner's controller reference. An
+// ObjectStore that nothing controls is adopted, not reported, so there is no
+// message for it; the design spec says why.
+func ArchiveTakenMessage(name string, holder metav1.OwnerReference) string {
+	return fmt.Sprintf(
+		"Barman Cloud ObjectStore %q already exists and %s %q controls it. It describes the "+
+			"archive of another server, so this server archives nothing: its cluster carries no "+
+			"archive plugin, it takes no base backup, and it publishes no point-in-time-recovery "+
+			"capability. The archive it wrote before and its history stay. Remove that "+
+			"ObjectStore, or give this server a name of its own.",
+		name, holder.Kind, holder.Name,
+	)
+}
 
-	return store
+// ValidateArchiveStorage reports why a bucket cannot hold the archive of a
+// server, or nil when it can. The caller turns the message into a pre-check
+// failure on the server.
+//
+// Every storage type of the contract is served. What can still fail is a
+// contract whose declared type and block disagree. It answers with the same
+// resolution the renderers use, so a bucket the pre-check accepts is one every
+// renderer can render.
+func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
+	// The server only names the archive Secret and the object prefix, and
+	// neither can make a bucket unservable, so a nameless one answers the
+	// question.
+	_, err := (&ArchiveStorage{Config: config}).resolve(&v1.DatabaseServer{})
+
+	return err
 }
 
 // ArchiveLocation returns where in object storage the archive of server is
@@ -463,58 +535,14 @@ func (a *ArchiveStorage) ArchiveLocation(server *v1.DatabaseServer) string {
 	return a.Config.LocationOf(archivePathSegment + "/" + server.Namespace + "/" + ArchiveSegment(server))
 }
 
-// destinationPath returns the bucket URL that holds the archives of the
-// server, in the form the Barman Cloud plugin addresses the provider, or the
-// empty string when the bucket did not resolve.
-func destinationPath(resolved *barmanArchive) string {
-	if resolved == nil {
-		return ""
-	}
+// ArchiveSegment returns the directory in the bucket that holds the archive of
+// this server: its name, a dash, and the first eight hex characters of the
+// SHA-256 of its UID. Two servers of one name and different UIDs get different
+// directories.
+func ArchiveSegment(server *v1.DatabaseServer) string {
+	sum := sha256.Sum256([]byte(server.UID))
 
-	return resolved.destinationPath
-}
-
-// retentionPolicy renders spec.archive.retentionPeriodDays as the barman
-// retention policy the plugin enforces. It is the same number the contract of
-// the server publishes, so what the operator declares is what it enforces.
-func retentionPolicy(merged v1.DatabaseServerSpec) string {
-	if merged.Archive == nil {
-		return ""
-	}
-
-	return strconv.Itoa(int(merged.Archive.RetentionPeriodDays)) + "d"
-}
-
-// scheduledBackup renders the ScheduledBackup that takes the base backups of
-// the current cluster. The first one runs at once, whatever the schedule says:
-// the archive can be recovered from only after a base backup completes, so
-// waiting for the next scheduled slot would leave a window with no recovery
-// point at all.
-//
-// A suspended server carries a suspended schedule. Its instances are gone, so
-// every slot the schedule reaches would otherwise start a backup that cannot
-// run and fail it.
-func scheduledBackup(server *v1.DatabaseServer, merged v1.DatabaseServerSpec) *cnpgv1.ScheduledBackup {
-	schedule := DefaultBaseBackupSchedule
-	if merged.Archive != nil && merged.Archive.BaseBackupSchedule != "" {
-		schedule = merged.Archive.BaseBackupSchedule
-	}
-
-	return &cnpgv1.ScheduledBackup{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      BaseBackupName(server),
-			Namespace: server.Namespace,
-			Labels:    managedLabels(server),
-		},
-		Spec: cnpgv1.ScheduledBackupSpec{
-			Schedule:            schedule,
-			Suspend:             new(merged.Suspend),
-			Immediate:           new(true),
-			Method:              cnpgv1.BackupMethodPlugin,
-			PluginConfiguration: &cnpgv1.BackupPluginConfiguration{Name: BarmanPluginName},
-			Cluster:             cnpgv1.LocalObjectReference{Name: ClusterName(server)},
-		},
-	}
+	return server.Name + "-" + hex.EncodeToString(sum[:4])
 }
 
 // archivePlugin returns the plugin entry that makes the cluster archive its
@@ -577,34 +605,6 @@ func (a *ArchiveStorage) podLabels() map[string]string {
 	}
 
 	return a.Config.WorkloadIdentityPodLabels()
-}
-
-// barmanArchive is the Barman Cloud side of the active storage block, reduced
-// to what every renderer in this file reads. One switch builds it, in resolve;
-// nothing else here dispatches on the storage type. Adding a storage type is a
-// case in that switch and nothing more.
-//
-// This mirrors the activeBlock of ObjectStorageConfig, which reduces the same
-// three blocks one layer down for the same reason.
-type barmanArchive struct {
-	// destinationRoot is the provider-addressing prefix of the archive URL,
-	// without the base path of the contract.
-	destinationRoot string
-	// destinationPath is the bucket URL that holds the archives of one
-	// server: destinationRoot, the base path of the contract, and the prefix
-	// of the server.
-	destinationPath string
-	// endpointURL addresses an S3-compatible store. It is empty for every
-	// other provider and for AWS S3 itself.
-	endpointURL string
-	// secretData holds the bucket settings that the plugin reads from a
-	// Secret, keyed by the key each one takes.
-	secretData map[string][]byte
-	// Exactly one credentials block is set, the one of the declared storage
-	// type.
-	s3Credentials     *barmanobjectstore.S3Credentials
-	azureCredentials  *barmanobjectstore.AzureCredentials
-	googleCredentials *barmanobjectstore.GoogleCredentials
 }
 
 // resolve reduces the contract and its credentials to the archive that the

@@ -315,26 +315,6 @@ func (r *Reconciler) complete(pitr *v1.PointInTimeRestore) {
 	)
 }
 
-// fail ends the restore with reason and message. Every failure that this kind
-// raises itself reports the reason Failed: the causes that carry a reason of
-// their own, for example a server without point-in-time recovery, hold the
-// restore instead of ending it. Status keeps the reason, so a terminal look
-// stages the same one again after a write conflict.
-func (r *Reconciler) fail(pitr *v1.PointInTimeRestore, reason, message string) {
-	pitr.Status.Phase = v1.PointInTimeRestoreFailed
-	restore.Fail(&pitr.Status.RestoreProgress, reason, message, metav1.Now())
-	restore.StageTerminal(pitr, &pitr.Status.RestoreProgress)
-	r.EventRecorder.Eventf(
-		pitr,
-		nil,
-		corev1.EventTypeWarning,
-		restore.EventReasonFailed,
-		restore.EventActionRestore,
-		"The restore failed: %s",
-		pitr.Status.FailureMessage,
-	)
-}
-
 // progressing stages that a phase of the restore runs.
 func (r *Reconciler) progressing(pitr *v1.PointInTimeRestore, message string) {
 	conditions.Stage(pitr, conditions.Ready(
@@ -378,6 +358,26 @@ func (r *Reconciler) holdStarted(
 	}
 
 	return outcome
+}
+
+// fail ends the restore with reason and message. Every failure that this kind
+// raises itself reports the reason Failed: the causes that carry a reason of
+// their own, for example a server without point-in-time recovery, hold the
+// restore instead of ending it. Status keeps the reason, so a terminal look
+// stages the same one again after a write conflict.
+func (r *Reconciler) fail(pitr *v1.PointInTimeRestore, reason, message string) {
+	pitr.Status.Phase = v1.PointInTimeRestoreFailed
+	restore.Fail(&pitr.Status.RestoreProgress, reason, message, metav1.Now())
+	restore.StageTerminal(pitr, &pitr.Status.RestoreProgress)
+	r.EventRecorder.Eventf(
+		pitr,
+		nil,
+		corev1.EventTypeWarning,
+		restore.EventReasonFailed,
+		restore.EventActionRestore,
+		"The restore failed: %s",
+		pitr.Status.FailureMessage,
+	)
 }
 
 // SetupWithManager registers the controller, the field index, and the

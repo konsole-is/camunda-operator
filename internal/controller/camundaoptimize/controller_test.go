@@ -35,6 +35,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
+	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
@@ -417,6 +418,17 @@ func fetchSecret(key client.ObjectKey) *corev1.Secret {
 
 // expectCondition polls until the condition of the given type on optimize has
 // a reason that matches.
+func expectNotReadyCluster(cluster *v1.CamundaCluster, reason string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var latest v1.CamundaCluster
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+		ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
+		g.Expect(ready).NotTo(BeNil())
+		g.Expect(ready.Reason).To(Equal(reason))
+	}, timeout, interval).Should(Succeed())
+}
+
 func expectCondition(optimize *v1.CamundaOptimize, conditionType string, reason gomegatypes.GomegaMatcher) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
@@ -714,6 +726,101 @@ var _ = Describe("CamundaOptimize controller", func() {
 				g.Expect(ready.Status).To(Equal(metav1.ConditionTrue))
 				g.Expect(ready.Reason).To(Equal(string(component.Suspended)))
 			}, timeout, interval).Should(Succeed())
+		})
+
+		// The cluster waits for the pods of the previous holder of its
+		// contract and runs no workloads, so the importer has nothing to
+		// import and follows the suspension.
+		It("scales to zero while its cluster waits for a storage handover", func() {
+			ns := newNamespace()
+			binding := createBinding(ns)
+			auth := createAuth(ns, true)
+
+			By("claiming the contract for a holder that is gone, with a pod it left behind")
+			Eventually(func(g Gomega) {
+				var latest v1.SecondaryStorageConfig
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(binding), &latest)).To(Succeed())
+				if latest.Annotations == nil {
+					latest.Annotations = map[string]string{}
+				}
+				latest.Annotations[secondarystorageconfig.ClaimHolderAnnotation] = ns + "/ghost"
+				latest.Annotations[secondarystorageconfig.ClaimHolderUIDAnnotation] = "ghost-uid"
+				g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ghost-zeebe-0",
+					Namespace: ns,
+					Labels:    clustercomponents.StoragePodLabels("ghost", binding.Name),
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "camunda", Image: "camunda/camunda:8.9.9"}},
+				},
+			}
+			Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+
+			waiting := createCluster(ns, binding)
+			expectNotReadyCluster(waiting, v1.ReasonWaitingForHandover)
+
+			optimize := createOptimize(ns, waiting, auth, "8.9.9")
+			webappKey := client.ObjectKey{
+				Namespace: ns,
+				Name:      components.WorkloadName(optimize, components.ComponentWebapp),
+			}
+			importerKey := client.ObjectKey{
+				Namespace: ns,
+				Name:      components.WorkloadName(optimize, components.ComponentImporter),
+			}
+
+			By("scaling both workloads to zero while the cluster waits")
+			expectReplicas(0, webappKey, importerKey)
+			expectCondition(optimize, v1.ConditionImporterReady, Equal(string(component.Suspended)))
+
+			By("starting them when the pod of the previous holder goes")
+			Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
+			expectReplicas(1, webappKey, importerKey)
+		})
+
+		// The cluster stops on this reference too, and reports itself
+		// suspended. This controller cannot follow that suspension through
+		// the render input, because the reference it fails on is the same
+		// one, so the workloads stop on the failed pre-check instead.
+		It("scales to zero when the storage contract of its cluster is deleted", func() {
+			s := newScenario("8.9.4")
+			webappKey := client.ObjectKey{
+				Namespace: s.namespace,
+				Name:      components.WorkloadName(s.optimize, components.ComponentWebapp),
+			}
+			importerKey := client.ObjectKey{
+				Namespace: s.namespace,
+				Name:      components.WorkloadName(s.optimize, components.ComponentImporter),
+			}
+			expectReplicas(1, webappKey, importerKey)
+
+			By("deleting the contract that the cluster and this instance both resolve")
+			Expect(k8sClient.Delete(ctx, s.binding)).To(Succeed())
+
+			By("scaling both workloads to zero and naming that in the Ready message")
+			expectReplicas(0, webappKey, importerKey)
+			Eventually(func(g Gomega) {
+				var latest v1.CamundaOptimize
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(s.optimize), &latest)).To(Succeed())
+				ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
+				g.Expect(ready).NotTo(BeNil())
+				g.Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+				g.Expect(ready.Message).To(ContainSubstring("scaled to zero"))
+			}, timeout, interval).Should(Succeed())
+			expectCondition(s.optimize, v1.ConditionImporterReady, Equal(string(component.Suspended)))
+
+			By("starting both workloads again when the contract comes back")
+			restored := &v1.SecondaryStorageConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: s.binding.Name, Namespace: s.namespace},
+				Spec:       *s.binding.Spec.DeepCopy(),
+			}
+			Expect(k8sClient.Create(ctx, restored)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, restored) })
+			expectReplicas(1, webappKey, importerKey)
+			expectCondition(s.optimize, v1.ConditionReady, Not(Equal(v1.ReasonInvalidReference)))
 		})
 
 		It("withdraws the exporter entries on deletion and keeps the entry of the user", func() {

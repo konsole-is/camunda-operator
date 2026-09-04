@@ -741,8 +741,7 @@ var _ = Describe("Admin password rotation", func() {
 		preset := &v1.CamundaClusterPreset{
 			ObjectMeta: metav1.ObjectMeta{Name: "ccp-" + utilrand.String(8)},
 			Spec: v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{
-				Version: "8.9.9",
-				Auth:    &v1.ClusterAuthSpec{Basic: &v1.BasicAuthSpec{PasswordRotation: "round-1"}},
+				Auth: &v1.ClusterAuthSpec{Basic: &v1.BasicAuthSpec{PasswordRotation: "round-1"}},
 			}},
 		}
 		Expect(k8sClient.Create(ctx, preset)).To(Succeed())

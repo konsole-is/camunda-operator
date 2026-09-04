@@ -33,6 +33,7 @@ const (
 	fixtureNamespace = "camunda"
 	fixtureCluster   = "my-cluster"
 	fixtureVersion   = "8.9.4"
+	fixtureContract  = "my-storage-config"
 )
 
 // newInput returns the minimal render input, with mutate applied to it.
@@ -48,8 +49,9 @@ func newInput(t *testing.T, mutate func(in *Input)) Input {
 				ClusterRef:        v1.ClusterRef{Name: fixtureCluster},
 			},
 		},
-		ClusterName: fixtureCluster,
-		Partitions:  1,
+		ClusterName:     fixtureCluster,
+		StorageContract: fixtureContract,
+		Partitions:      1,
 		Storage: v1.ElasticsearchStorage{
 			Endpoint: "http://elasticsearch.camunda.svc:9200",
 			CredentialsSecretRef: v1.LocalCredentialsSecretRef{
@@ -100,7 +102,7 @@ func fixtureRealistic(t *testing.T) Input {
 		in.Partitions = 3
 		in.ServiceMonitorSupported = true
 		in.Platform = v1.CamundaPlatformConfigSpec{
-			ImageRegistry:    "registry.example.com/mirror",
+			Images:           &v1.ImagesSpec{Optimize: "registry.example.com/mirror/camunda/optimize"},
 			LicenseSecretRef: &v1.SecretKeyRef{Name: "camunda-license", Namespace: fixtureNamespace, Key: "license"},
 		}
 		in.Storage.Endpoint = "https://elasticsearch.camunda.svc:9200"

@@ -258,7 +258,7 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 
 	It("reports WriteFailed while Keycloak refuses the change to the client", func() {
 		keycloak := startFakeKeycloak(withOptimizeClient())
-		keycloak.refuseUpdate = true
+		keycloak.setRefuseUpdate(true)
 		s := newScenario(withFakeKeycloak(keycloak))
 
 		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
@@ -961,10 +961,13 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 
 		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
 
+		// The record is written before the components run. Only the callbacks
+		// of the fake prove that the converge reached Keycloak.
 		Eventually(func(g Gomega) {
 			stampIdentityReady(g, s)
 
 			g.Expect(readManagementCluster(g, s.mc).Status.CallbackRealm).NotTo(BeNil())
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
 		}, timeout, interval).Should(Succeed())
 
 		Eventually(func(g Gomega) {
@@ -988,7 +991,11 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 			)))
 		}, timeout, interval).Should(Succeed())
 
-		Expect(first.redirectURIs()).To(HaveLen(1))
+		// The annotation let go of nothing. The window covers the reconcile
+		// passes that its removal brings.
+		Consistently(func(g Gomega) {
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
+		}, "2s", interval).Should(Succeed())
 	})
 
 	// The hatch leaves the callbacks behind for good, so it answers to the
@@ -1000,6 +1007,8 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 
 		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
 
+		// The record is written before the components run. Only the callbacks
+		// of the fake prove that the converge reached Keycloak.
 		var recorded string
 		Eventually(func(g Gomega) {
 			stampIdentityReady(g, s)
@@ -1007,6 +1016,7 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 			realm := readManagementCluster(g, s.mc).Status.CallbackRealm
 			g.Expect(realm).NotTo(BeNil())
 			recorded = components.RealmIdentity(*realm)
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
 		}, timeout, interval).Should(Succeed())
 
 		Eventually(func(g Gomega) {
@@ -1026,7 +1036,11 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 			g.Expect(eventReasons(g, s.mc)).To(ContainElement(eventReasonForgetIgnored))
 		}, timeout, interval).Should(Succeed())
 
-		Expect(first.redirectURIs()).To(HaveLen(1))
+		// The annotation let go of nothing. The window covers the reconcile
+		// passes that its removal brings.
+		Consistently(func(g Gomega) {
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
+		}, "2s", interval).Should(Succeed())
 	})
 
 	// Suspension holds the realms, not an annotation that sanctions nothing.
@@ -1038,10 +1052,14 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 
 		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
 
+		// A suspended plane leaves the realm as it is, so the callbacks have to
+		// reach it before the plane sleeps. The record is written before the
+		// components run, so it proves nothing about Keycloak.
 		Eventually(func(g Gomega) {
 			stampIdentityReady(g, s)
 
 			g.Expect(readManagementCluster(g, s.mc).Status.CallbackRealm).NotTo(BeNil())
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
 		}, timeout, interval).Should(Succeed())
 
 		Eventually(func(g Gomega) {
@@ -1062,8 +1080,11 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}, timeout, interval).Should(Succeed())
 
 		// The realm of the record is untouched, which is what suspension
-		// promises.
-		Expect(first.redirectURIs()).To(HaveLen(1))
+		// promises. The window covers the reconcile passes that the removal of
+		// the annotation brings.
+		Consistently(func(g Gomega) {
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
+		}, "2s", interval).Should(Succeed())
 	})
 
 	// A suspended management plane leaves every realm as it is, so a spec that
@@ -1309,7 +1330,7 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 
 	It("reports ConnectionFailed while Keycloak refuses the administrator", func() {
 		keycloak := startFakeKeycloak(withOptimizeClient())
-		keycloak.refuse = true
+		keycloak.setRefuse(true)
 		s := newScenario(withFakeKeycloak(keycloak))
 
 		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
@@ -1592,10 +1613,6 @@ func withFakeKeycloak(keycloak *fakeKeycloak) func(f *fixture) {
 	}
 }
 
-// fakeKeycloak is a Keycloak that serves the token endpoint, the Optimize
-// client of one realm, and the users and realm roles of that realm. It records
-// the redirect URIs and the role mappings that the operator writes.
-
 // withFakeKeycloakTLS turns a scenario into the externalKeycloak mode against
 // a fake Keycloak that serves https. bundle is what the Secret of
 // caBundleSecretRef holds, and an empty one names no Secret at all, so a spec
@@ -1615,20 +1632,24 @@ func withFakeKeycloakTLS(keycloak *fakeKeycloak, bundle string) func(f *fixture)
 	}
 }
 
-// fakeKeycloak is a Keycloak that serves the token endpoint and the Optimize
-// client of one realm. It records the redirect URIs that the operator writes.
+// fakeKeycloak is a Keycloak that serves the token endpoint, the Optimize
+// client of one realm, and the users and realm roles of that realm. It records
+// the redirect URIs and the role mappings that the operator writes.
+//
+// url is set before the server answers anything. The test and the goroutine of
+// the server both touch every other field, so they all go through mu.
 type fakeKeycloak struct {
 	url string
+
+	mu sync.Mutex
 	// refuse answers every administration call with 401, the way a Keycloak
 	// that does not know the administrator does.
 	refuse bool
 	// refuseUpdate answers the client update with 403, the way a Keycloak does
 	// for an administrator that cannot change a client of the realm.
 	refuseUpdate bool
-
-	mu       sync.Mutex
-	stored   keycloakadmin.Representation
-	answered int
+	stored       keycloakadmin.Representation
+	answered     int
 	// users maps the username of every user of the realm to the internal id
 	// that a role mapping is written by.
 	users map[string]string
@@ -1795,6 +1816,14 @@ func (f *fakeKeycloak) setRedirectURIs(uris []string) {
 	f.stored.SetRedirectURIs(uris)
 }
 
+// setRefuse turns the refusal of every administration call on and off.
+func (f *fakeKeycloak) setRefuse(refuse bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.refuse = refuse
+}
+
 // setRefuseUpdate turns the refusal of the client update on and off.
 func (f *fakeKeycloak) setRefuseUpdate(refuse bool) {
 	f.mu.Lock()
@@ -1813,8 +1842,9 @@ func (f *fakeKeycloak) requests() int {
 
 func (f *fakeKeycloak) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	f.answered++
-	f.mu.Unlock()
 
 	if strings.HasSuffix(r.URL.Path, "/protocol/openid-connect/token") {
 		w.Header().Set("Content-Type", "application/json")
@@ -1827,9 +1857,6 @@ func (f *fakeKeycloak) serve(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	switch {

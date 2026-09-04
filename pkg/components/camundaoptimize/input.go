@@ -42,13 +42,18 @@ type Input struct {
 	// a restore of that cluster writes analytics from half-restored indices.
 	Suspended bool
 	// Platform is the spec of the CamundaPlatformConfig that the referenced
-	// cluster names. It gives the image registry prefix and the license. It is
+	// cluster names. It gives the image repositories and the license. It is
 	// the zero value when the cluster names none.
 	Platform v1.CamundaPlatformConfigSpec
 	// Storage is the elasticsearch block of the SecondaryStorageConfig that
 	// the referenced cluster names, with every Secret reference already
 	// pointed at its copy in the CamundaOptimize namespace.
 	Storage v1.ElasticsearchStorage
+	// StorageContract is the name of that SecondaryStorageConfig. It is the
+	// camunda.io/storage-contract label value of the pods, so a cluster that
+	// takes the contract over waits for the importer of the previous holder
+	// as it waits for the pods of that cluster. It is always set.
+	StorageContract string
 	// Auth is the ManagementAuthConfig that spec.managementAuthRef names, with
 	// its client secret reference already pointed at its copy in the
 	// CamundaOptimize namespace.

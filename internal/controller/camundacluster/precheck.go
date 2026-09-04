@@ -70,13 +70,14 @@ type resolver struct {
 	storage *v1.SecondaryStorageConfig
 }
 
-// preCheck resolves every reference of cluster into the render input, in the
-// documented order: the preset and the merged spec, the platform config and
-// its Secrets, the storage binding and its chain, the claim on the binding,
-// the object storage references. Every Secret is checked for its keys through
-// the uncached reader. A Secret outside the cluster namespace is copied into
-// the returned mirrors, and the input references the copy, so the renderer
-// only ever names Secrets of the cluster namespace. HashInputs carry the
+// preCheck resolves every reference of cluster into the render input, in
+// the documented order: the preset, the release and the merged spec, the
+// platform config and its Secrets, the storage binding and its chain, the
+// claim on the binding, the object storage references. Every Secret is
+// checked for its keys through the uncached reader. A Secret outside the
+// cluster namespace is copied into the returned mirrors, and the input
+// references the copy, so the renderer only ever names Secrets of the
+// cluster namespace. HashInputs carry the
 // resource version of every Secret and the generation of every CR read,
 // sorted, so a change to any of them rolls the pods. A failed check returns a
 // *conditions.PreCheckFailure: InvalidReference for a dangling reference or
@@ -117,9 +118,10 @@ func (r *CamundaClusterReconciler) preCheck(
 	return in, res.mirrors, nil
 }
 
-// resolveEffective reads the preset that spec.presetRef names, merges it
-// under the cluster spec, validates the result, and sets in.Effective. An
-// invalid merged spec maps to InvalidReference with the fields named.
+// resolveEffective reads the preset that spec.presetRef names and the
+// release that spec.releaseRef names, merges them under the cluster spec,
+// validates the result, and sets in.Effective and in.Images. An invalid
+// merged spec maps to InvalidReference with the fields named.
 func (res *resolver) resolveEffective(ctx context.Context, in *components.Input) error {
 	var preset *v1.CamundaClusterPresetSpec
 	if res.cluster.Spec.PresetRef != "" {
@@ -143,7 +145,16 @@ func (res *resolver) resolveEffective(ctx context.Context, in *components.Input)
 		preset = &obj.Spec
 	}
 
-	merged := components.MergePreset(res.cluster.Spec, preset)
+	var release *v1.CamundaReleaseSpec
+	if res.cluster.Spec.ReleaseRef != "" {
+		var obj v1.CamundaRelease
+		if err := res.get(ctx, client.ObjectKey{Name: res.cluster.Spec.ReleaseRef}, &obj); err != nil {
+			return err
+		}
+		release = &obj.Spec
+	}
+
+	merged := components.MergeSpec(res.cluster.Spec, preset, release)
 	if err := components.ValidateMerged(merged); err != nil {
 		return &conditions.PreCheckFailure{
 			Reason:  v1.ReasonInvalidReference,
@@ -151,6 +162,7 @@ func (res *resolver) resolveEffective(ctx context.Context, in *components.Input)
 		}
 	}
 	in.Effective = components.NewEffective(merged)
+	in.Images = components.ReleaseImages(merged, release)
 
 	return nil
 }
@@ -287,6 +299,39 @@ func (res *resolver) resolveRDBMSStorage(
 	return nil
 }
 
+// checkDumpCredentials reports the backup user of the database as a Warning
+// event when it does not resolve. Only dump Jobs consume it, so the cluster
+// neither parks nor rolls its pods on it, and the backup that needs it parks
+// on its own pre-check. The Secret is no hash input. A nil reference means
+// that the database takes no dumps.
+func (res *resolver) checkDumpCredentials(
+	ctx context.Context,
+	ref *v1.LocalCredentialsSecretRef,
+) error {
+	if ref == nil {
+		return nil
+	}
+
+	key := client.ObjectKey{Namespace: res.cluster.Namespace, Name: ref.Name}
+	msg, err := secretref.CheckKeys(ctx, res.reader, key, ref.UsernameKey, ref.PasswordKey)
+	if err != nil {
+		return fmt.Errorf("reading Secret %q: %w", key, err)
+	}
+	if msg != "" {
+		res.recorder.Eventf(
+			res.cluster,
+			nil,
+			corev1.EventTypeWarning,
+			eventReasonDumpCredentials,
+			eventActionReconcile,
+			"The dump credentials do not resolve, so backups of this cluster will park: %s",
+			msg,
+		)
+	}
+
+	return nil
+}
+
 // warnReferencedJavaToolOptions warns about every process that needs the JVM
 // trust store but reads JAVA_TOOL_OPTIONS from a reference. It needs
 // in.Effective and in.Storage, and it never fails: the referenced value can
@@ -356,39 +401,6 @@ func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose
 		return err
 	}
 	ref.Name, ref.Namespace = local.Name, local.Namespace
-
-	return nil
-}
-
-// checkDumpCredentials reports the backup user of the database as a Warning
-// event when it does not resolve. Only dump Jobs consume it, so the cluster
-// neither parks nor rolls its pods on it, and the backup that needs it fails
-// its own pre-check. The Secret is no hash input. A nil reference means that
-// the database takes no dumps.
-func (res *resolver) checkDumpCredentials(
-	ctx context.Context,
-	ref *v1.LocalCredentialsSecretRef,
-) error {
-	if ref == nil {
-		return nil
-	}
-
-	key := client.ObjectKey{Namespace: res.cluster.Namespace, Name: ref.Name}
-	msg, err := secretref.CheckKeys(ctx, res.reader, key, ref.UsernameKey, ref.PasswordKey)
-	if err != nil {
-		return fmt.Errorf("reading Secret %q: %w", key, err)
-	}
-	if msg != "" {
-		res.recorder.Eventf(
-			res.cluster,
-			nil,
-			corev1.EventTypeWarning,
-			eventReasonDumpCredentials,
-			eventActionReconcile,
-			"The dump credentials do not resolve, so backups of this cluster will park: %s",
-			msg,
-		)
-	}
 
 	return nil
 }

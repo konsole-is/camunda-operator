@@ -40,21 +40,6 @@ const passwordAlphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01
 // which is just under 191 bits of entropy.
 const passwordLength = 32
 
-// NewPassword returns a new 32-character alphanumeric password drawn from
-// crypto/rand.
-func NewPassword() (string, error) {
-	password := make([]byte, passwordLength)
-	for i := range password {
-		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(passwordAlphabet))))
-		if err != nil {
-			return "", fmt.Errorf("generating password: %w", err)
-		}
-		password[i] = passwordAlphabet[n.Int64()]
-	}
-
-	return string(password), nil
-}
-
 // Password is a resolved credential: the value to publish in a Secret, and the
 // identity of the Secret the value was read from.
 //
@@ -71,26 +56,12 @@ type Password struct {
 	SourceUID types.UID
 }
 
-// PreconditionAnnotations returns the annotations that bind an apply of the
-// credential Secret to the object that Value came from. A new password has no
-// source object and gets no precondition, so the apply is free to create the
-// Secret. NewApplyClient turns the annotation into metadata.uid on the patch,
-// so it never reaches the cluster.
-func (p Password) PreconditionAnnotations() map[string]string {
-	if p.SourceUID == "" {
-		return nil
-	}
-
-	return map[string]string{PreconditionAnnotation: string(p.SourceUID)}
-}
-
 // LookupOrNew returns the password stored under field in the Secret at key,
 // together with the UID of that Secret. If the Secret is absent, or the field
 // is absent or empty, it returns a new password and no UID: an empty value
-// is never a credential, so it is replaced, not kept. Controllers call it
-// with an uncached
-// reader before they publish a credential Secret. A password then stays stable
-// after creation, and to rotate it you delete the Secret.
+// is never a credential, so it is replaced, not kept. Controllers call it with
+// an uncached reader before they publish a credential Secret. A password then
+// stays stable after creation, and to rotate it you delete the Secret.
 //
 // The returned UID is what keeps that rotation contract through a concurrent
 // delete: the component that publishes the Secret must stamp
@@ -135,4 +106,32 @@ func lookup(ctx context.Context, r client.Reader, key client.ObjectKey, field st
 	}
 
 	return Password{Value: string(value), SourceUID: secret.UID}, nil
+}
+
+// NewPassword returns a new 32-character alphanumeric password drawn from
+// crypto/rand.
+func NewPassword() (string, error) {
+	password := make([]byte, passwordLength)
+	for i := range password {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(passwordAlphabet))))
+		if err != nil {
+			return "", fmt.Errorf("generating password: %w", err)
+		}
+		password[i] = passwordAlphabet[n.Int64()]
+	}
+
+	return string(password), nil
+}
+
+// PreconditionAnnotations returns the annotations that bind an apply of the
+// credential Secret to the object that Value came from. A new password has no
+// source object and gets no precondition, so the apply is free to create the
+// Secret. NewApplyClient turns the annotation into metadata.uid on the patch,
+// so it never reaches the cluster.
+func (p Password) PreconditionAnnotations() map[string]string {
+	if p.SourceUID == "" {
+		return nil
+	}
+
+	return map[string]string{PreconditionAnnotation: string(p.SourceUID)}
 }

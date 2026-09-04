@@ -477,6 +477,17 @@ func webModelerClientPusherPort(external *url.URL) string {
 	return strconv.Itoa(portHTTP)
 }
 
+// webModelerPusherPath returns the base path of the WebSocket endpoint, which
+// both sides of the pairing must agree on. A URL that names no path uses the
+// root.
+func webModelerPusherPath(external *url.URL) string {
+	if path := externalPath(external); path != "" {
+		return path
+	}
+
+	return webModelerDefaultPusherPath
+}
+
 // webModelerWebsocketsContainerSpec renders the websockets container. It reads
 // the same pairing credentials as the restapi container and nothing else.
 func webModelerWebsocketsContainerSpec(in Input) corev1.Container {
@@ -570,15 +581,4 @@ func webModelerWebsocketsService(in Input) *corev1.Service {
 			}},
 		},
 	}
-}
-
-// webModelerPusherPath returns the base path of the WebSocket endpoint, which
-// both sides of the pairing must agree on. A URL that names no path uses the
-// root.
-func webModelerPusherPath(external *url.URL) string {
-	if path := externalPath(external); path != "" {
-		return path
-	}
-
-	return webModelerDefaultPusherPath
 }

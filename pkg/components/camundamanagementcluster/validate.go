@@ -101,41 +101,6 @@ func ValidateSpec(mc *v1.CamundaManagementCluster) *conditions.PreCheckFailure {
 	return checkDistinctDatabases(mc)
 }
 
-// checkDistinctDatabases refuses two components that name one DatabaseConfig.
-// Management Identity, Keycloak, and Web Modeler each own every table of the
-// database they open, so two of them in one database overwrite each other.
-func checkDistinctDatabases(mc *v1.CamundaManagementCluster) *conditions.PreCheckFailure {
-	refs := []referencedDatabase{
-		{"spec.identity.databaseConfigRef", mc.Spec.Identity.DatabaseConfigRef},
-	}
-	if keycloak := mc.Spec.IdentityProvider.Keycloak; keycloak != nil {
-		refs = append(refs, referencedDatabase{
-			"spec.identityProvider.keycloak.databaseConfigRef", keycloak.DatabaseConfigRef,
-		})
-	}
-	if webModeler := mc.Spec.WebModeler; webModeler != nil {
-		refs = append(refs, referencedDatabase{
-			"spec.webModeler.databaseConfigRef", webModeler.DatabaseConfigRef,
-		})
-	}
-
-	seen := map[string]string{}
-	for _, r := range refs {
-		if first, taken := seen[r.ref]; taken {
-			return &conditions.PreCheckFailure{
-				Reason: v1.ReasonInvalidReference,
-				Message: fmt.Sprintf(
-					"%s and %s both name DatabaseConfig %q; each component needs a database of its own",
-					first, r.field, r.ref,
-				),
-			}
-		}
-		seen[r.ref] = r.field
-	}
-
-	return nil
-}
-
 // atLeast reports whether version is floor or later. Both carry three numeric
 // segments, which the CRD pattern of every version field enforces, so a
 // version of any other shape is below every floor.
@@ -173,4 +138,39 @@ func parseVersion(version string) ([3]int, bool) {
 	}
 
 	return parsed, true
+}
+
+// checkDistinctDatabases refuses two components that name one DatabaseConfig.
+// Management Identity, Keycloak, and Web Modeler each own every table of the
+// database they open, so two of them in one database overwrite each other.
+func checkDistinctDatabases(mc *v1.CamundaManagementCluster) *conditions.PreCheckFailure {
+	refs := []referencedDatabase{
+		{"spec.identity.databaseConfigRef", mc.Spec.Identity.DatabaseConfigRef},
+	}
+	if keycloak := mc.Spec.IdentityProvider.Keycloak; keycloak != nil {
+		refs = append(refs, referencedDatabase{
+			"spec.identityProvider.keycloak.databaseConfigRef", keycloak.DatabaseConfigRef,
+		})
+	}
+	if webModeler := mc.Spec.WebModeler; webModeler != nil {
+		refs = append(refs, referencedDatabase{
+			"spec.webModeler.databaseConfigRef", webModeler.DatabaseConfigRef,
+		})
+	}
+
+	seen := map[string]string{}
+	for _, r := range refs {
+		if first, taken := seen[r.ref]; taken {
+			return &conditions.PreCheckFailure{
+				Reason: v1.ReasonInvalidReference,
+				Message: fmt.Sprintf(
+					"%s and %s both name DatabaseConfig %q; each component needs a database of its own",
+					first, r.field, r.ref,
+				),
+			}
+		}
+		seen[r.ref] = r.field
+	}
+
+	return nil
 }

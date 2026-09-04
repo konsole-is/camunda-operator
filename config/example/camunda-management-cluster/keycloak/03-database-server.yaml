@@ -1,0 +1,14 @@
+# The PostgreSQL server for the management plane. The operator publishes the
+# DatabaseServerConfig my-db-server from it. Keycloak, Management Identity,
+# and Web Modeler each get a logical database on this server.
+#
+# presetRef names the shared DatabaseServerPreset standard.
+apiVersion: core.camunda.io/v1
+kind: DatabaseServer
+metadata:
+  name: my-db
+  namespace: my-management-ns
+spec:
+  presetRef: standard
+  version: "17"
+  databaseServerConfig: my-db-server

@@ -39,7 +39,7 @@ If `spec.presetRef` names an `ElasticsearchClusterPreset`, the preset is the bas
 
 ## Storage
 
-You can increase `spec.storageSize` at any time. You cannot decrease it. Admission rejects a lower inline value. If a preset lowers the size under a running cluster, the operator keeps the current size and records a Warning event with reason `StorageShrinkIgnored`. To get a smaller volume, delete and recreate the cluster.
+You can increase `spec.storageSize` at any time. You cannot decrease it. The API server rejects a lower inline value. If a preset lowers the size under a running cluster, the operator keeps the current size and records a Warning event with reason `StorageShrinkIgnored`. To get a smaller volume, delete and recreate the cluster.
 
 ## Snapshot repository
 
@@ -51,7 +51,7 @@ A repository name stops at 253 characters, which is the bound of the `snapshotRe
 
 ## Credentials
 
-The operator generates the password once and keeps it. To rotate it, delete the Secret `<name>-es-user`. The operator generates a new password on the next reconcile and publishes it in a new Secret.
+The operator generates the password once and keeps it. To rotate it, delete the Secret `<name>-es-user`. The operator then generates a new password and publishes it in a new Secret.
 
 ## Monitoring
 
@@ -79,7 +79,7 @@ Deletion removes everything the operator created: the ECK resource, the Secrets,
 | `Ready` | `InvalidReference` | `spec.presetRef` or `spec.snapshotStorageRef` names a resource that does not exist, the merged spec lacks `version`, `replicas`, or `storageSize`, the version is below the floor, the bucket has settings that Elasticsearch cannot use, or a ServiceAccount with `create: false` does not exist. | Read the message. Create the missing resource, or fix the field it names. |
 | `Ready` | `MissingSecret` | The bucket of `spec.snapshotStorageRef` names a Secret or a key that does not exist. Or the components are healthy and the ECK Secrets that the repository registration needs do not exist yet. | Create the Secret with the keys that the `ObjectStorageConfig` names. If `SnapshotRepositoryReady` reports `MissingSecret`, wait for ECK. |
 | `Ready` | `Suspended` | `Ready` is `True`. The cluster is suspended by `spec.suspend: true`. The data volumes stay. | Nothing. To serve again, set `spec.suspend: false`. To wait for a serving cluster, require `Ready=True` and a reason other than `Suspended`. |
-| `Ready` | `ConnectionFailed` | The components are healthy, but the snapshot repository is not registered. See `SnapshotRepositoryReady`. | Read the message of `SnapshotRepositoryReady`. Make sure that the bucket and its credentials are correct. The operator retries every 30 seconds. |
+| `Ready` | `ConnectionFailed` | The components are healthy, but the snapshot repository is not registered. See `SnapshotRepositoryReady`. | Read the message of `SnapshotRepositoryReady`. Make sure that the bucket and its credentials are correct. The operator retries on its own. |
 | `Ready` | component status | `Ready` is `True` only when every component is `True`. The reason comes from the component that is not ready, for example `Creating`, `Updating`, `Failing`, `Degraded` (yellow health), `Down` (red health), or `Error`. The message names the component. | Wait while the reason is `Creating` or `Updating`. For other reasons, read the component condition and the ECK resource `<name>`. |
 | `CredentialsReady`, `KeystoreReady`, `ElasticsearchReady`, `StorageContractReady` | component status | The detail of each component that makes up `Ready`. `KeystoreReady` is `Disabled` unless the bucket needs keystore entries. | Read the message of the component that is not `True`. |
 | `SnapshotRepositoryReady` | `Healthy` | The snapshot repository `<namespace>.<name>` is registered. The condition is absent when `spec.snapshotStorageRef` is unset. | Nothing. |
@@ -180,10 +180,10 @@ spec:
 ### Validation rules
 
 - `spec.secondaryStorageConfig` is required.
-- `spec.storageSize` cannot shrink. Admission rejects a value that is lower than the previous inline value.
+- `spec.storageSize` cannot shrink. The API server rejects a value that is lower than the previous inline value.
 - `spec.version` must have three segments (`9.2.4`, not `9.2`). The operator then requires Elasticsearch 8.19+ or 9.2+ on the merged spec.
 - `spec.replicas` must be at least 1.
-- When `spec.presetRef` is unset, `version`, `replicas`, and `storageSize` must be set inline. With a preset, the merged result must contain them. The operator enforces this rule, not admission.
+- When `spec.presetRef` is unset, `version`, `replicas`, and `storageSize` must be set inline. With a preset, the merged result must contain them. The operator enforces this rule, not the API server.
 - `spec.secondaryStorageConfig`, `spec.snapshotStorageRef`, and `spec.serviceAccount.name` must be valid resource names.
 - `spec.persistentVolumeClaimRetentionPolicy.whenDeleted` must be `Retain` or `Delete`.
 

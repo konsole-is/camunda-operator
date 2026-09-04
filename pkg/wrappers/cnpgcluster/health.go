@@ -91,16 +91,6 @@ func DefaultConvergingStatusHandler(
 	}, nil
 }
 
-// Converged reports whether CloudNativePG holds the Cluster in the state the
-// spec asks for. The converging handler and the grace handler share it, so the
-// two can never disagree about which states are healthy. The count has to
-// match exactly, because a scale-down reports more ready pods than the spec
-// wants.
-func Converged(cluster *cnpgv1.Cluster) bool {
-	return cluster.Status.Phase == cnpgv1.PhaseHealthy &&
-		cluster.Status.ReadyInstances == cluster.Spec.Instances
-}
-
 // Failing reports whether CloudNativePG holds the Cluster in a phase it stops
 // retrying, and names that phase. A caller that
 // drives a Cluster outside a component, for example the one a recovery
@@ -110,6 +100,16 @@ func Failing(cluster *cnpgv1.Cluster) (string, bool) {
 	_, failing := failingPhases[cluster.Status.Phase]
 
 	return cluster.Status.Phase, failing
+}
+
+// Converged reports whether CloudNativePG holds the Cluster in the state the
+// spec asks for. The converging handler and the grace handler share it, so the
+// two can never disagree about which states are healthy. The count has to
+// match exactly, because a scale-down reports more ready pods than the spec
+// wants.
+func Converged(cluster *cnpgv1.Cluster) bool {
+	return cluster.Status.Phase == cnpgv1.PhaseHealthy &&
+		cluster.Status.ReadyInstances == cluster.Spec.Instances
 }
 
 // phaseText renders a phase for a status reason. An empty phase means

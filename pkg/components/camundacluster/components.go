@@ -79,7 +79,9 @@ const (
 // chart 14.8.3 templates/connectors/files/_application.yaml:12-17).
 const metricsPath = "/actuator/prometheus"
 
-// The probe timings of the unified processes.
+// The probe timings of the unified processes. Kubernetes runs no readiness
+// probe until a startup probe succeeds, so the boot of the JVM is measured
+// against the budget of the startup probe rather than the readiness one.
 const (
 	startupFailureThreshold int32 = 60
 	startupPeriodSeconds    int32 = 5
@@ -97,6 +99,13 @@ const camundaUID int64 = 1001
 type ProcessComponent struct {
 	Process   Process
 	Component *component.Component
+}
+
+// namedPort is one port of a process, shared by the container and the
+// Service.
+type namedPort struct {
+	name string
+	port int32
 }
 
 // Build returns one component per process, in Resolve order, for every
@@ -128,23 +137,6 @@ func Build(in Input) ([]ProcessComponent, error) {
 	}
 
 	return comps, nil
-}
-
-// BrokerClaimSelector is the label selector of the broker volume claims.
-func BrokerClaimSelector(cluster *v1.CamundaCluster) map[string]string {
-	return discoveryLabels(cluster, ComponentZeebe)
-}
-
-// managedLabels returns the labels of an object that the operator applies
-// for a component.
-func managedLabels(cluster *v1.CamundaCluster, comp string) map[string]string {
-	return labels.Managed(labels.Cluster(cluster.Name), comp)
-}
-
-// discoveryLabels returns the labels of the pods, the volume claims, and the
-// selectors of a component.
-func discoveryLabels(cluster *v1.CamundaCluster, comp string) map[string]string {
-	return labels.Discovery(labels.Cluster(cluster.Name), comp)
 }
 
 // zeebeComponent builds the brokers: the optional ServiceAccount, the
@@ -193,6 +185,333 @@ func zeebeComponent(in Input, p Process) (*component.Component, error) {
 		Build()
 }
 
+// serviceAccountFor renders the ServiceAccount of every workload pod: the
+// workload-identity annotations that the referenced buckets derive, with the
+// annotations of spec.serviceAccount merged over them, so an explicit user
+// value on the same key wins.
+func serviceAccountFor(in Input) *corev1.ServiceAccount {
+	var user map[string]string
+	if in.Effective.ServiceAccount != nil {
+		user = in.Effective.ServiceAccount.Annotations
+	}
+	annotations := labels.Merge(in.ServiceAccountAnnotations, user)
+	if len(annotations) == 0 {
+		annotations = nil
+	}
+
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        ServiceAccountName(in.Cluster, in.Effective),
+			Namespace:   in.Cluster.Namespace,
+			Labels:      managedLabels(in.Cluster, ComponentZeebe),
+			Annotations: annotations,
+		},
+	}
+}
+
+// managedLabels returns the labels of an object that the operator applies
+// for a component.
+func managedLabels(cluster *v1.CamundaCluster, comp string) map[string]string {
+	return labels.Managed(labels.Cluster(cluster.Name), comp)
+}
+
+// zeebeStatefulSet renders the base broker StatefulSet: parallel pod
+// management, a rolling update, the data volume claim template with
+// in.VolumeClaimSize (the effective size when unset), the requested storage
+// size annotation, and the default retention policy (the volumes go with the
+// cluster; a scale-down always retains). statefulSetMutations layer the
+// overrides on top.
+func zeebeStatefulSet(in Input, p Process) *appsv1.StatefulSet {
+	e := in.Effective
+	storageSize := e.StorageSize()
+	claimSize := storageSize
+	if in.VolumeClaimSize != nil {
+		claimSize = *in.VolumeClaimSize
+	}
+
+	var storageClassName *string
+	if e.Zeebe != nil {
+		storageClassName = e.Zeebe.StorageClassName
+	}
+
+	template := podTemplate(in, p)
+	template.Spec.Containers[0].VolumeMounts = append(
+		[]corev1.VolumeMount{{Name: DataVolumeName, MountPath: DataMountPath}},
+		template.Spec.Containers[0].VolumeMounts...,
+	)
+
+	return &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      WorkloadName(in.Cluster, p.Component),
+			Namespace: in.Cluster.Namespace,
+			Labels:    managedLabels(in.Cluster, p.Component),
+			Annotations: map[string]string{
+				RequestedStorageSizeAnnotation: storageSize.String(),
+				BrokerVersionAnnotation:        e.Version,
+			},
+		},
+		Spec: appsv1.StatefulSetSpec{
+			Replicas:            new(p.Replicas),
+			Selector:            &metav1.LabelSelector{MatchLabels: discoveryLabels(in.Cluster, p.Component)},
+			ServiceName:         WorkloadName(in.Cluster, p.Component),
+			PodManagementPolicy: appsv1.ParallelPodManagement,
+			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
+				Type: appsv1.RollingUpdateStatefulSetStrategyType,
+			},
+			PersistentVolumeClaimRetentionPolicy: &appsv1.StatefulSetPersistentVolumeClaimRetentionPolicy{
+				WhenDeleted: appsv1.DeletePersistentVolumeClaimRetentionPolicyType,
+				WhenScaled:  appsv1.RetainPersistentVolumeClaimRetentionPolicyType,
+			},
+			Template: template,
+			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   DataVolumeName,
+					Labels: discoveryLabels(in.Cluster, p.Component),
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+					StorageClassName: storageClassName,
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{corev1.ResourceStorage: claimSize},
+					},
+				},
+			}},
+		},
+	}
+}
+
+// podTemplate renders the base pod template of a process: the discovery
+// labels, the config hash annotation of the process, the container, the
+// volumes of the rendered configuration, and the security context of the
+// image user. The override surfaces (user pod metadata, resources,
+// scheduling, the ServiceAccount) are mutations, see workloadMutations.
+func podTemplate(in Input, p Process) corev1.PodTemplateSpec {
+	r := render(in, p)
+
+	return corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: labels.Merge(
+				DerivedPodLabels(in.Backup, in.Documents),
+				StoragePodLabels(in.Cluster.Name, in.Cluster.Spec.StorageRef),
+				discoveryLabels(in.Cluster, p.Component),
+			),
+			Annotations: map[string]string{ConfigHashAnnotation: configHash(in, p, r)},
+		},
+		Spec: corev1.PodSpec{
+			Containers:      []corev1.Container{container(in, p, r)},
+			Volumes:         r.volumes,
+			SecurityContext: podSecurityContext(),
+		},
+	}
+}
+
+// StoragePodLabels returns the labels that find every pod of the cluster
+// named cluster that runs on the SecondaryStorageConfig named contract. The
+// pods carry them next to the discovery labels, and a cluster that takes the
+// contract over lists the pods of the previous holder by them. Both values
+// are bounded the way a label value demands.
+func StoragePodLabels(cluster, contract string) map[string]string {
+	return map[string]string{
+		labels.ClusterKey:         labels.OwnerName(cluster),
+		labels.StorageContractKey: labels.OwnerName(contract),
+	}
+}
+
+// discoveryLabels returns the labels of the pods, the volume claims, and the
+// selectors of a component.
+func discoveryLabels(cluster *v1.CamundaCluster, comp string) map[string]string {
+	return labels.Discovery(labels.Cluster(cluster.Name), comp)
+}
+
+// container renders the container of a process from the rendered
+// configuration. The resources are a mutation, see workloadMutations.
+func container(in Input, p Process, r rendered) corev1.Container {
+	c := corev1.Container{
+		Name:           containerName(p),
+		Image:          Image(in, p),
+		Command:        r.command,
+		Env:            r.env,
+		EnvFrom:        r.envFrom,
+		Ports:          containerPorts(p),
+		VolumeMounts:   r.mounts,
+		StartupProbe:   probe(portNameManagement, healthStartupPath, startupPeriodSeconds, startupFailureThreshold),
+		ReadinessProbe: probe(portNameManagement, healthReadinessPath, readinessPeriodSeconds, 0),
+		LivenessProbe:  probe(portNameManagement, healthLivenessPath, livenessPeriodSeconds, 0),
+	}
+
+	if p.Component == ComponentConnectors {
+		connectorsProbes(&c)
+	}
+
+	return c
+}
+
+// containerName returns the name of the container of a process: connectors
+// for the connectors runtime, camunda for every unified process.
+func containerName(p Process) string {
+	if p.Component == ComponentConnectors {
+		return connectorsContainer
+	}
+	return ContainerCamunda
+}
+
+func containerPorts(p Process) []corev1.ContainerPort {
+	named := ports(p)
+	result := make([]corev1.ContainerPort, 0, len(named))
+	for _, np := range named {
+		result = append(
+			result,
+			corev1.ContainerPort{Name: np.name, ContainerPort: np.port, Protocol: corev1.ProtocolTCP},
+		)
+	}
+	return result
+}
+
+// ports returns the ports of a process: connectors serve HTTP only; the
+// brokers serve command, internal, and management, plus gRPC and HTTP with an
+// embedded gateway; the gateway and web application processes serve HTTP and
+// management, plus gRPC for the gateway.
+func ports(p Process) []namedPort {
+	if p.Component == ComponentConnectors {
+		return []namedPort{{portNameHTTP, PortHTTP}}
+	}
+
+	var result []namedPort
+	if p.ServesGRPC {
+		result = append(result, namedPort{portNameGRPC, PortGRPC})
+	}
+	if p.ServesHTTP {
+		result = append(result, namedPort{portNameHTTP, PortHTTP})
+	}
+	if p.Kind == ProcessStatefulSet {
+		result = append(result, namedPort{portNameCommand, PortCommand}, namedPort{portNameInternal, PortInternal})
+	}
+	return append(result, namedPort{portNameManagement, PortManagement})
+}
+
+// probe builds an HTTP probe on a named port. A zero failureThreshold keeps
+// the Kubernetes default.
+func probe(port, path string, periodSeconds, failureThreshold int32) *corev1.Probe {
+	return &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{
+			Path: path,
+			Port: intstr.FromString(port),
+		}},
+		PeriodSeconds:    periodSeconds,
+		FailureThreshold: failureThreshold,
+	}
+}
+
+// connectorsProbes sets the probes of the connectors container. The runtime
+// serves them on its HTTP port, not on a management port, and it groups its
+// health indicators differently from the unified binary.
+func connectorsProbes(c *corev1.Container) {
+	// The startup group holds startupCheck alone. That group answers from the
+	// process, so it reports when the runtime is up and says nothing about the
+	// gateway.
+	c.StartupProbe = probe(portNameHTTP, healthStartupPath, startupPeriodSeconds, startupFailureThreshold)
+	c.ReadinessProbe = probe(portNameHTTP, healthReadinessPath, readinessPeriodSeconds, 0)
+	// The liveness group of the runtime holds one indicator, zeebeClient, so
+	// the probe reports whether the gateway answers, not whether the container
+	// is healthy.
+	c.LivenessProbe = nil
+}
+
+// podSecurityContext runs the pods as the image user 1001:1001, with the
+// data volume owned by the same group.
+func podSecurityContext() *corev1.PodSecurityContext {
+	return &corev1.PodSecurityContext{
+		RunAsUser:    new(camundaUID),
+		RunAsGroup:   new(camundaUID),
+		FSGroup:      new(camundaUID),
+		RunAsNonRoot: new(true),
+	}
+}
+
+// serviceFor renders the Service of a process. The zeebe Service is headless
+// and publishes not-ready addresses, so the brokers find each other through
+// the contact points before they are ready.
+func serviceFor(in Input, p Process) *corev1.Service {
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      WorkloadName(in.Cluster, p.Component),
+			Namespace: in.Cluster.Namespace,
+			Labels:    managedLabels(in.Cluster, p.Component),
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: discoveryLabels(in.Cluster, p.Component),
+			Ports:    servicePorts(p),
+		},
+	}
+
+	if p.Kind == ProcessStatefulSet {
+		svc.Spec.ClusterIP = corev1.ClusterIPNone
+		svc.Spec.PublishNotReadyAddresses = true
+	}
+
+	return svc
+}
+
+func servicePorts(p Process) []corev1.ServicePort {
+	named := ports(p)
+	result := make([]corev1.ServicePort, 0, len(named))
+	for _, np := range named {
+		result = append(result, corev1.ServicePort{
+			Name:       np.name,
+			Port:       np.port,
+			TargetPort: intstr.FromString(np.name),
+			Protocol:   corev1.ProtocolTCP,
+		})
+	}
+	return result
+}
+
+// serviceMonitorFor renders the ServiceMonitor that scrapes
+// /actuator/prometheus on the management port of a unified process, or on
+// the HTTP port of connectors, through its Service.
+func serviceMonitorFor(in Input, p Process) *monitoringv1.ServiceMonitor {
+	var userLabels, annotations map[string]string
+	if m := in.Effective.Monitoring; m != nil && m.ServiceMonitor != nil {
+		userLabels = m.ServiceMonitor.Labels
+		annotations = m.ServiceMonitor.Annotations
+	}
+
+	port := portNameManagement
+	if p.Component == ComponentConnectors {
+		port = portNameHTTP
+	}
+
+	return &monitoringv1.ServiceMonitor{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        WorkloadName(in.Cluster, p.Component),
+			Namespace:   in.Cluster.Namespace,
+			Labels:      labels.Merge(userLabels, managedLabels(in.Cluster, p.Component)),
+			Annotations: annotations,
+		},
+		Spec: monitoringv1.ServiceMonitorSpec{
+			Selector:  metav1.LabelSelector{MatchLabels: discoveryLabels(in.Cluster, p.Component)},
+			Endpoints: []monitoringv1.Endpoint{{Port: port, Path: metricsPath}},
+		},
+	}
+}
+
+// usesServiceAccount reports whether the pods run under a named
+// ServiceAccount, whether or not the operator renders it. It is the gate form
+// of PodServiceAccountName, which is the one rule: an annotation-less
+// identity still binds the ServiceAccount by name on the cloud side, so the
+// name the pods use is the documented principal and must exist and be
+// referenced whenever a workload-identity bucket is.
+func usesServiceAccount(in Input) bool {
+	return PodServiceAccountName(in) != ""
+}
+
+// monitoringGate gates the ServiceMonitor on spec.monitoring.serviceMonitor.enabled.
+func monitoringGate(in Input) component.ResourceOption {
+	e := in.Effective
+	enabled := e.Monitoring != nil && e.Monitoring.ServiceMonitor != nil && e.Monitoring.ServiceMonitor.Enabled
+	return component.GatedBy(feature.NewBooleanGate(enabled))
+}
+
 // deploymentComponent builds a Deployment-backed process (the gateway, a web
 // application, or connectors): the Deployment, its Service, and the optional
 // ServiceMonitor. It is gated on p.Enabled, so an embedded or disabled
@@ -226,124 +545,6 @@ func deploymentComponent(in Input, p Process) (*component.Component, error) {
 		Build()
 }
 
-// monitoringGate gates the ServiceMonitor on spec.monitoring.serviceMonitor.enabled.
-func monitoringGate(in Input) component.ResourceOption {
-	e := in.Effective
-	enabled := e.Monitoring != nil && e.Monitoring.ServiceMonitor != nil && e.Monitoring.ServiceMonitor.Enabled
-	return component.GatedBy(feature.NewBooleanGate(enabled))
-}
-
-// usesServiceAccount reports whether the pods run under a named
-// ServiceAccount, whether or not the operator renders it. It is the gate form
-// of PodServiceAccountName, which is the one rule: an annotation-less
-// identity still binds the ServiceAccount by name on the cloud side, so the
-// name the pods use is the documented principal and must exist and be
-// referenced whenever a workload-identity bucket is.
-func usesServiceAccount(in Input) bool {
-	return PodServiceAccountName(in) != ""
-}
-
-// bucketUsesWorkloadIdentity reports whether the pods authenticate against
-// bucket as their ServiceAccount: the contract exists and holds no static
-// credentials.
-func bucketUsesWorkloadIdentity(bucket *v1.ObjectStorageConfig) bool {
-	return bucket != nil && bucket.CredentialsSecret() == nil
-}
-
-// rendersServiceAccount reports whether the operator renders the
-// ServiceAccount the pods use: it is used at all, and the spec does not name
-// a foreign one. A foreign account is excluded from the component rather
-// than gated off, so it is never a deletion target.
-func rendersServiceAccount(in Input) bool {
-	return in.Effective.ServiceAccount.Creates() && usesServiceAccount(in)
-}
-
-// serviceAccountFor renders the ServiceAccount of every workload pod: the
-// workload-identity annotations that the referenced buckets derive, with the
-// annotations of spec.serviceAccount merged over them, so an explicit user
-// value on the same key wins.
-func serviceAccountFor(in Input) *corev1.ServiceAccount {
-	var user map[string]string
-	if in.Effective.ServiceAccount != nil {
-		user = in.Effective.ServiceAccount.Annotations
-	}
-	annotations := labels.Merge(in.ServiceAccountAnnotations, user)
-	if len(annotations) == 0 {
-		annotations = nil
-	}
-
-	return &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        ServiceAccountName(in.Cluster, in.Effective),
-			Namespace:   in.Cluster.Namespace,
-			Labels:      managedLabels(in.Cluster, ComponentZeebe),
-			Annotations: annotations,
-		},
-	}
-}
-
-// zeebeStatefulSet renders the base broker StatefulSet: parallel pod
-// management, a rolling update, the data volume claim template with
-// in.VolumeClaimSize (the effective size when unset), the requested storage
-// size annotation, and the default retention policy (the volumes go with the
-// cluster; a scale-down always retains). statefulSetMutations layer the
-// overrides on top.
-func zeebeStatefulSet(in Input, p Process) *appsv1.StatefulSet {
-	e := in.Effective
-	storageSize := e.StorageSize()
-	claimSize := storageSize
-	if in.VolumeClaimSize != nil {
-		claimSize = *in.VolumeClaimSize
-	}
-
-	var storageClassName *string
-	if e.Zeebe != nil {
-		storageClassName = e.Zeebe.StorageClassName
-	}
-
-	template := podTemplate(in, p)
-	template.Spec.Containers[0].VolumeMounts = append(
-		[]corev1.VolumeMount{{Name: DataVolumeName, MountPath: DataMountPath}},
-		template.Spec.Containers[0].VolumeMounts...,
-	)
-
-	return &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        WorkloadName(in.Cluster, p.Component),
-			Namespace:   in.Cluster.Namespace,
-			Labels:      managedLabels(in.Cluster, p.Component),
-			Annotations: map[string]string{RequestedStorageSizeAnnotation: storageSize.String()},
-		},
-		Spec: appsv1.StatefulSetSpec{
-			Replicas:            new(p.Replicas),
-			Selector:            &metav1.LabelSelector{MatchLabels: discoveryLabels(in.Cluster, p.Component)},
-			ServiceName:         WorkloadName(in.Cluster, p.Component),
-			PodManagementPolicy: appsv1.ParallelPodManagement,
-			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
-				Type: appsv1.RollingUpdateStatefulSetStrategyType,
-			},
-			PersistentVolumeClaimRetentionPolicy: &appsv1.StatefulSetPersistentVolumeClaimRetentionPolicy{
-				WhenDeleted: appsv1.DeletePersistentVolumeClaimRetentionPolicyType,
-				WhenScaled:  appsv1.RetainPersistentVolumeClaimRetentionPolicyType,
-			},
-			Template: template,
-			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   DataVolumeName,
-					Labels: discoveryLabels(in.Cluster, p.Component),
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-					StorageClassName: storageClassName,
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{corev1.ResourceStorage: claimSize},
-					},
-				},
-			}},
-		},
-	}
-}
-
 // deploymentFor renders the base rolling-update Deployment of a process.
 // deploymentMutations layer the overrides on top.
 func deploymentFor(in Input, p Process) *appsv1.Deployment {
@@ -362,214 +563,22 @@ func deploymentFor(in Input, p Process) *appsv1.Deployment {
 	}
 }
 
-// podTemplate renders the base pod template of a process: the discovery
-// labels, the config hash annotation of the process, the container, the
-// volumes of the rendered configuration, and the security context of the
-// image user. The override surfaces (user pod metadata, resources,
-// scheduling, the ServiceAccount) are mutations, see workloadMutations.
-func podTemplate(in Input, p Process) corev1.PodTemplateSpec {
-	r := render(in, p)
-
-	return corev1.PodTemplateSpec{
-		ObjectMeta: metav1.ObjectMeta{
-			Labels: labels.Merge(
-				DerivedPodLabels(in.Backup, in.Documents),
-				discoveryLabels(in.Cluster, p.Component),
-			),
-			Annotations: map[string]string{ConfigHashAnnotation: configHash(in, p, r)},
-		},
-		Spec: corev1.PodSpec{
-			Containers:      []corev1.Container{container(in, p, r)},
-			Volumes:         r.volumes,
-			SecurityContext: podSecurityContext(),
-		},
-	}
+// BrokerClaimSelector is the label selector of the broker volume claims.
+func BrokerClaimSelector(cluster *v1.CamundaCluster) map[string]string {
+	return discoveryLabels(cluster, ComponentZeebe)
 }
 
-// podSecurityContext runs the pods as the image user 1001:1001, with the
-// data volume owned by the same group.
-func podSecurityContext() *corev1.PodSecurityContext {
-	return &corev1.PodSecurityContext{
-		RunAsUser:    new(camundaUID),
-		RunAsGroup:   new(camundaUID),
-		FSGroup:      new(camundaUID),
-		RunAsNonRoot: new(true),
-	}
+// bucketUsesWorkloadIdentity reports whether the pods authenticate against
+// bucket as their ServiceAccount: the contract exists and holds no static
+// credentials.
+func bucketUsesWorkloadIdentity(bucket *v1.ObjectStorageConfig) bool {
+	return bucket != nil && bucket.CredentialsSecret() == nil
 }
 
-// containerName returns the name of the container of a process: connectors
-// for the connectors runtime, camunda for every unified process.
-func containerName(p Process) string {
-	if p.Component == ComponentConnectors {
-		return connectorsContainer
-	}
-	return ContainerCamunda
-}
-
-// container renders the container of a process from the rendered
-// configuration. The resources are a mutation, see workloadMutations.
-func container(in Input, p Process, r rendered) corev1.Container {
-	c := corev1.Container{
-		Name:           containerName(p),
-		Image:          Image(in, p),
-		Command:        r.command,
-		Env:            r.env,
-		EnvFrom:        r.envFrom,
-		Ports:          containerPorts(p),
-		VolumeMounts:   r.mounts,
-		StartupProbe:   probe(portNameManagement, healthStartupPath, startupPeriodSeconds, startupFailureThreshold),
-		ReadinessProbe: probe(portNameManagement, healthReadinessPath, readinessPeriodSeconds, 0),
-		LivenessProbe:  probe(portNameManagement, healthLivenessPath, livenessPeriodSeconds, 0),
-	}
-
-	if p.Component == ComponentConnectors {
-		connectorsProbes(&c)
-	}
-
-	return c
-}
-
-// connectorsProbes sets the probes of the connectors container. The runtime
-// serves them on its HTTP port, not on a management port, and it groups its
-// health indicators differently from the unified binary.
-//
-// It gets no liveness probe. The liveness group of the runtime holds one
-// indicator, zeebeClient, so the probe reports whether the gateway answers,
-// not whether the container is healthy. A gateway that is away for 90
-// seconds, which one rolling update of the gateway can take, then kills a
-// connectors container that works correctly, and the restart does not bring
-// the gateway back. The Camunda chart ships connectors.livenessProbe.enabled
-// false for the same reason.
-//
-// It gets a startup probe on the startup group, which holds startupCheck
-// alone. That group answers from the process, so it reports when the runtime
-// is up and says nothing about the gateway. Kubernetes runs no readiness
-// probe until a startup probe succeeds, so the boot of the JVM is measured
-// against the budget of this probe, 60 tries five seconds apart, rather than
-// against the readiness probe.
-func connectorsProbes(c *corev1.Container) {
-	c.StartupProbe = probe(portNameHTTP, healthStartupPath, startupPeriodSeconds, startupFailureThreshold)
-	c.ReadinessProbe = probe(portNameHTTP, healthReadinessPath, readinessPeriodSeconds, 0)
-	c.LivenessProbe = nil
-}
-
-// probe builds an HTTP probe on a named port. A zero failureThreshold keeps
-// the Kubernetes default.
-func probe(port, path string, periodSeconds, failureThreshold int32) *corev1.Probe {
-	return &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{
-			Path: path,
-			Port: intstr.FromString(port),
-		}},
-		PeriodSeconds:    periodSeconds,
-		FailureThreshold: failureThreshold,
-	}
-}
-
-// namedPort is one port of a process, shared by the container and the
-// Service.
-type namedPort struct {
-	name string
-	port int32
-}
-
-// ports returns the ports of a process: connectors serve HTTP only; the
-// brokers serve command, internal, and management, plus gRPC and HTTP with an
-// embedded gateway; the gateway and web application processes serve HTTP and
-// management, plus gRPC for the gateway.
-func ports(p Process) []namedPort {
-	if p.Component == ComponentConnectors {
-		return []namedPort{{portNameHTTP, PortHTTP}}
-	}
-
-	var result []namedPort
-	if p.ServesGRPC {
-		result = append(result, namedPort{portNameGRPC, PortGRPC})
-	}
-	if p.ServesHTTP {
-		result = append(result, namedPort{portNameHTTP, PortHTTP})
-	}
-	if p.Kind == ProcessStatefulSet {
-		result = append(result, namedPort{portNameCommand, PortCommand}, namedPort{portNameInternal, PortInternal})
-	}
-	return append(result, namedPort{portNameManagement, PortManagement})
-}
-
-func containerPorts(p Process) []corev1.ContainerPort {
-	named := ports(p)
-	result := make([]corev1.ContainerPort, 0, len(named))
-	for _, np := range named {
-		result = append(
-			result,
-			corev1.ContainerPort{Name: np.name, ContainerPort: np.port, Protocol: corev1.ProtocolTCP},
-		)
-	}
-	return result
-}
-
-func servicePorts(p Process) []corev1.ServicePort {
-	named := ports(p)
-	result := make([]corev1.ServicePort, 0, len(named))
-	for _, np := range named {
-		result = append(result, corev1.ServicePort{
-			Name:       np.name,
-			Port:       np.port,
-			TargetPort: intstr.FromString(np.name),
-			Protocol:   corev1.ProtocolTCP,
-		})
-	}
-	return result
-}
-
-// serviceFor renders the Service of a process. The zeebe Service is headless
-// and publishes not-ready addresses, so the brokers find each other through
-// the contact points before they are ready.
-func serviceFor(in Input, p Process) *corev1.Service {
-	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      WorkloadName(in.Cluster, p.Component),
-			Namespace: in.Cluster.Namespace,
-			Labels:    managedLabels(in.Cluster, p.Component),
-		},
-		Spec: corev1.ServiceSpec{
-			Selector: discoveryLabels(in.Cluster, p.Component),
-			Ports:    servicePorts(p),
-		},
-	}
-
-	if p.Kind == ProcessStatefulSet {
-		svc.Spec.ClusterIP = corev1.ClusterIPNone
-		svc.Spec.PublishNotReadyAddresses = true
-	}
-
-	return svc
-}
-
-// serviceMonitorFor renders the ServiceMonitor that scrapes
-// /actuator/prometheus on the management port of a unified process, or on
-// the HTTP port of connectors, through its Service.
-func serviceMonitorFor(in Input, p Process) *monitoringv1.ServiceMonitor {
-	var userLabels, annotations map[string]string
-	if m := in.Effective.Monitoring; m != nil && m.ServiceMonitor != nil {
-		userLabels = m.ServiceMonitor.Labels
-		annotations = m.ServiceMonitor.Annotations
-	}
-
-	port := portNameManagement
-	if p.Component == ComponentConnectors {
-		port = portNameHTTP
-	}
-
-	return &monitoringv1.ServiceMonitor{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        WorkloadName(in.Cluster, p.Component),
-			Namespace:   in.Cluster.Namespace,
-			Labels:      labels.Merge(userLabels, managedLabels(in.Cluster, p.Component)),
-			Annotations: annotations,
-		},
-		Spec: monitoringv1.ServiceMonitorSpec{
-			Selector:  metav1.LabelSelector{MatchLabels: discoveryLabels(in.Cluster, p.Component)},
-			Endpoints: []monitoringv1.Endpoint{{Port: port, Path: metricsPath}},
-		},
-	}
+// rendersServiceAccount reports whether the operator renders the
+// ServiceAccount the pods use: it is used at all, and the spec does not name
+// a foreign one. A foreign account is excluded from the component rather
+// than gated off, so it is never a deletion target.
+func rendersServiceAccount(in Input) bool {
+	return in.Effective.ServiceAccount.Creates() && usesServiceAccount(in)
 }

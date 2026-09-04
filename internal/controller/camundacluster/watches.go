@@ -47,6 +47,10 @@ const (
 	// PresetRefField is exported: an extension that renders from the effective
 	// spec of a cluster finds the clusters bound to a preset through it.
 	PresetRefField = "camundacluster.spec.presetRef"
+	// ReleaseRefField is exported for the same reason: an extension that
+	// renders from the effective spec of a cluster finds the clusters bound
+	// to a release through it.
+	ReleaseRefField = "camundacluster.spec.releaseRef"
 	// PlatformConfigRefField is exported: an extension that reads the platform
 	// defaults of a cluster finds the clusters bound to one through it.
 	PlatformConfigRefField = "camundacluster.spec.platformConfigRef"
@@ -69,6 +73,9 @@ const (
 var indexers = map[string]client.IndexerFunc{
 	PresetRefField: func(o client.Object) []string {
 		return nonEmpty(o.(*v1.CamundaCluster).Spec.PresetRef)
+	},
+	ReleaseRefField: func(o client.Object) []string {
+		return nonEmpty(o.(*v1.CamundaCluster).Spec.ReleaseRef)
 	},
 	PlatformConfigRefField: func(o client.Object) []string {
 		return nonEmpty(o.(*v1.CamundaCluster).Spec.PlatformConfigRef)
@@ -97,201 +104,12 @@ var indexers = map[string]client.IndexerFunc{
 	},
 }
 
-// presetSecretRefs is the index function of presetSecretRefsField. A preset is
-// cluster-scoped and its reference resolves in the namespace of each cluster
-// that inherits it, so the key is the Secret name alone.
-func presetSecretRefs(o client.Object) []string {
-	auth := o.(*v1.CamundaClusterPreset).Spec.Cluster.Auth
-	if auth == nil || auth.ClientSecretRef == nil {
-		return nil
-	}
-	return []string{auth.ClientSecretRef.Name}
-}
-
-// nonEmpty returns the non-empty values.
-func nonEmpty(values ...string) []string {
-	var result []string
-	for _, v := range values {
-		if v != "" {
-			result = append(result, v)
-		}
-	}
-	return result
-}
-
-// enqueueForSecret maps a Secret event to every cluster that can reference
-// it: every cluster of the Secret namespace (a same-namespace binding,
-// DatabaseConfig, or auth Secret lives there), every cluster whose own auth
-// reference names it, every cluster whose platform config or preset
-// references it, every cluster whose binding references it, and every
-// cluster in the namespace of a DatabaseConfig that references it. The reads
-// go through the cached client; the Secret watch is metadata-only.
-func (r *CamundaClusterReconciler) enqueueForSecret() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-		key := refindex.ObjectNamespacedName(o)
-		set := requestSet{}
-
-		set.addList(ctx, r.Client, client.InNamespace(o.GetNamespace()))
-		set.addList(ctx, r.Client, client.MatchingFields{secretRefsField: key})
-
-		for _, cfg := range listByIndex[v1.CamundaPlatformConfigList](
-			ctx, r.Client, camundaplatformconfig.SecretRefsField, key,
-		).Items {
-			set.addList(ctx, r.Client, client.MatchingFields{PlatformConfigRefField: cfg.Name})
-		}
-
-		for _, preset := range listByIndex[v1.CamundaClusterPresetList](
-			ctx, r.Client, presetSecretRefsField, o.GetName(),
-		).Items {
-			set.addList(
-				ctx, r.Client,
-				client.InNamespace(o.GetNamespace()),
-				client.MatchingFields{PresetRefField: preset.Name},
-			)
-		}
-
-		for _, binding := range listByIndex[v1.SecondaryStorageConfigList](
-			ctx, r.Client, secondarystorageconfig.SecretRefsField, key,
-		).Items {
-			set.addList(ctx, r.Client, client.MatchingFields{
-				StorageRefField: refindex.NamespacedKey(binding.Namespace, binding.Name),
-			})
-		}
-
-		for _, dbConfig := range listByIndex[v1.DatabaseConfigList](
-			ctx, r.Client, databaseconfig.SecretRefsField, key,
-		).Items {
-			set.addList(ctx, r.Client, client.InNamespace(dbConfig.Namespace))
-		}
-
-		for _, bucket := range listByIndex[v1.ObjectStorageConfigList](
-			ctx, r.Client, refindex.ObjectStorageConfigSecretField, key,
-		).Items {
-			set.addList(ctx, r.Client, client.MatchingFields{
-				objectStorageRefsField: refindex.NamespacedKey(bucket.Namespace, bucket.Name),
-			})
-		}
-
-		return set.requests()
-	})
-}
-
-// listByIndex lists the objects of L whose index field matches key. A list
-// failure is logged and yields an empty list.
-func listByIndex[L any, PL interface {
-	*L
-	client.ObjectList
-}](ctx context.Context, c client.Client, field, key string) *L {
-	list := PL(new(L))
-	if err := c.List(ctx, list, client.MatchingFields{field: key}); err != nil {
-		logf.FromContext(ctx).Error(err, "listing referrers for Secret enqueue", "field", field, "secret", key)
-	}
-	return list
-}
-
-// enqueueInNamespace maps an event to every cluster of the namespace of the
-// event object.
-func (r *CamundaClusterReconciler) enqueueInNamespace() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-		set := requestSet{}
-		set.addList(ctx, r.Client, client.InNamespace(o.GetNamespace()))
-		return set.requests()
-	})
-}
-
-// enqueueAll maps an event to every cluster. DatabaseServerConfigs are few
-// and rarely change, and any cluster on an rdbms binding can depend on one.
-func (r *CamundaClusterReconciler) enqueueAll() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, _ client.Object) []reconcile.Request {
-		set := requestSet{}
-		set.addList(ctx, r.Client)
-		return set.requests()
-	})
-}
-
-// ClusterNameFromLabel returns the name of the CamundaCluster in the
-// namespace whose rendered resources carry the given camunda.io/cluster label
-// value, or the empty string when no cluster in the namespace does.
-//
-// The label carries labels.OwnerName of the cluster name, which is not the
-// name once the name passes 63 characters. So a caller that maps a rendered
-// resource back to its cluster resolves it here, by comparing forward over
-// the clusters of the namespace. It never reads the label value as a name.
-//
-// It is exported because the Optimize controller maps the same label on the
-// Deployments this operator renders.
-func ClusterNameFromLabel(
-	ctx context.Context,
-	c client.Client,
-	namespace, value string,
-) (string, error) {
-	var clusters v1.CamundaClusterList
-	if err := c.List(ctx, &clusters, client.InNamespace(namespace)); err != nil {
-		return "", fmt.Errorf("listing the clusters of namespace %q: %w", namespace, err)
-	}
-
-	for i := range clusters.Items {
-		if labels.OwnerName(clusters.Items[i].Name) == value {
-			return clusters.Items[i].Name, nil
-		}
-	}
-
-	return "", nil
-}
-
-// enqueueForBrokerClaim maps a PersistentVolumeClaim event to the cluster
-// that labels it, so a resize or a binding outside the spec updates
-// status.volumes.
-func (r *CamundaClusterReconciler) enqueueForBrokerClaim() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-		value, ok := o.GetLabels()[labels.ClusterKey]
-		if !ok {
-			return nil
-		}
-
-		name, err := ClusterNameFromLabel(ctx, r.Client, o.GetNamespace(), value)
-		if err != nil {
-			logf.FromContext(ctx).Error(err, "Resolving the cluster of a broker claim", "label", value)
-			return nil
-		}
-		if name == "" {
-			return nil
-		}
-
-		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: o.GetNamespace(), Name: name}}}
-	})
-}
-
-// requestSet collects reconcile requests without duplicates.
-type requestSet map[types.NamespacedName]struct{}
-
-// addList adds every cluster that the list options select. A list failure is
-// logged and drops those requests; the log line is the operational signal.
-func (s requestSet) addList(ctx context.Context, c client.Client, opts ...client.ListOption) {
-	var clusters v1.CamundaClusterList
-	if err := c.List(ctx, &clusters, opts...); err != nil {
-		logf.FromContext(ctx).Error(err, "listing clusters for enqueue")
-		return
-	}
-	for _, cluster := range clusters.Items {
-		s[client.ObjectKeyFromObject(&cluster)] = struct{}{}
-	}
-}
-
-func (s requestSet) requests() []reconcile.Request {
-	reqs := make([]reconcile.Request, 0, len(s))
-	for key := range s {
-		reqs = append(reqs, reconcile.Request{NamespacedName: key})
-	}
-	return reqs
-}
-
 // SetupWithManager registers the controller, the reference indexes of the
 // clusters, the Secret index of the presets, and the watches. It owns the
 // workloads, Services, ServiceAccounts, and Secrets (metadata only) it
 // applies, and watches the broker claims by the camunda.io/cluster label.
-// Every reference is watched: platform configs, presets, bindings, and object
-// storage configs through the indexes, DatabaseConfigs by namespace,
+// Every reference is watched: platform configs, presets, releases, bindings,
+// and object storage configs through the indexes, DatabaseConfigs by namespace,
 // DatabaseServerConfigs for every cluster, and Secrets (metadata only)
 // through enqueueForSecret, which also follows the Secret indexes of the
 // platform configs, the bindings, and the DatabaseConfigs. The pre-checks put the
@@ -358,6 +176,10 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			refindex.Enqueue(cached, clusters, PresetRefField, refindex.ObjectName),
 		).
 		Watches(
+			&v1.CamundaRelease{},
+			refindex.Enqueue(cached, clusters, ReleaseRefField, refindex.ObjectName),
+		).
+		Watches(
 			&v1.SecondaryStorageConfig{},
 			refindex.Enqueue(cached, clusters, StorageRefField, refindex.ObjectNamespacedName),
 		).
@@ -370,4 +192,193 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.Secret{}, r.enqueueForSecret(), builder.OnlyMetadata).
 		Named(controllerName).
 		Complete(r)
+}
+
+// enqueueForBrokerClaim maps a PersistentVolumeClaim event to the cluster
+// that labels it, so a resize or a binding outside the spec updates
+// status.volumes.
+func (r *CamundaClusterReconciler) enqueueForBrokerClaim() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		value, ok := o.GetLabels()[labels.ClusterKey]
+		if !ok {
+			return nil
+		}
+
+		name, err := ClusterNameFromLabel(ctx, r.Client, o.GetNamespace(), value)
+		if err != nil {
+			logf.FromContext(ctx).Error(err, "Resolving the cluster of a broker claim", "label", value)
+			return nil
+		}
+		if name == "" {
+			return nil
+		}
+
+		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: o.GetNamespace(), Name: name}}}
+	})
+}
+
+// ClusterNameFromLabel returns the name of the CamundaCluster in the
+// namespace whose rendered resources carry the given camunda.io/cluster label
+// value, or the empty string when no cluster in the namespace does.
+//
+// The label carries labels.OwnerName of the cluster name, which is not the
+// name once the name passes 63 characters. So a caller that maps a rendered
+// resource back to its cluster resolves it here, by comparing forward over
+// the clusters of the namespace. It never reads the label value as a name.
+//
+// It is exported because the Optimize controller maps the same label on the
+// Deployments this operator renders.
+func ClusterNameFromLabel(
+	ctx context.Context,
+	c client.Client,
+	namespace, value string,
+) (string, error) {
+	var clusters v1.CamundaClusterList
+	if err := c.List(ctx, &clusters, client.InNamespace(namespace)); err != nil {
+		return "", fmt.Errorf("listing the clusters of namespace %q: %w", namespace, err)
+	}
+
+	for i := range clusters.Items {
+		if labels.OwnerName(clusters.Items[i].Name) == value {
+			return clusters.Items[i].Name, nil
+		}
+	}
+
+	return "", nil
+}
+
+// enqueueInNamespace maps an event to every cluster of the namespace of the
+// event object.
+func (r *CamundaClusterReconciler) enqueueInNamespace() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		set := requestSet{}
+		set.addList(ctx, r.Client, client.InNamespace(o.GetNamespace()))
+		return set.requests()
+	})
+}
+
+// enqueueAll maps an event to every cluster. DatabaseServerConfigs are few
+// and rarely change, and any cluster on an rdbms binding can depend on one.
+func (r *CamundaClusterReconciler) enqueueAll() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, _ client.Object) []reconcile.Request {
+		set := requestSet{}
+		set.addList(ctx, r.Client)
+		return set.requests()
+	})
+}
+
+// enqueueForSecret maps a Secret event to every cluster that can reference
+// it: every cluster of the Secret namespace (a same-namespace binding,
+// DatabaseConfig, or auth Secret lives there), every cluster whose own auth
+// reference names it, every cluster whose platform config or preset
+// references it, every cluster whose binding references it, and every
+// cluster in the namespace of a DatabaseConfig that references it. The reads
+// go through the cached client; the Secret watch is metadata-only.
+func (r *CamundaClusterReconciler) enqueueForSecret() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		key := refindex.ObjectNamespacedName(o)
+		set := requestSet{}
+
+		set.addList(ctx, r.Client, client.InNamespace(o.GetNamespace()))
+		set.addList(ctx, r.Client, client.MatchingFields{secretRefsField: key})
+
+		for _, cfg := range listByIndex[v1.CamundaPlatformConfigList](
+			ctx, r.Client, camundaplatformconfig.SecretRefsField, key,
+		).Items {
+			set.addList(ctx, r.Client, client.MatchingFields{PlatformConfigRefField: cfg.Name})
+		}
+
+		for _, preset := range listByIndex[v1.CamundaClusterPresetList](
+			ctx, r.Client, presetSecretRefsField, o.GetName(),
+		).Items {
+			set.addList(
+				ctx, r.Client,
+				client.InNamespace(o.GetNamespace()),
+				client.MatchingFields{PresetRefField: preset.Name},
+			)
+		}
+
+		for _, binding := range listByIndex[v1.SecondaryStorageConfigList](
+			ctx, r.Client, secondarystorageconfig.SecretRefsField, key,
+		).Items {
+			set.addList(ctx, r.Client, client.MatchingFields{
+				StorageRefField: refindex.NamespacedKey(binding.Namespace, binding.Name),
+			})
+		}
+
+		for _, dbConfig := range listByIndex[v1.DatabaseConfigList](
+			ctx, r.Client, databaseconfig.SecretRefsField, key,
+		).Items {
+			set.addList(ctx, r.Client, client.InNamespace(dbConfig.Namespace))
+		}
+
+		for _, bucket := range listByIndex[v1.ObjectStorageConfigList](
+			ctx, r.Client, refindex.ObjectStorageConfigSecretField, key,
+		).Items {
+			set.addList(ctx, r.Client, client.MatchingFields{
+				objectStorageRefsField: refindex.NamespacedKey(bucket.Namespace, bucket.Name),
+			})
+		}
+
+		return set.requests()
+	})
+}
+
+// presetSecretRefs is the index function of presetSecretRefsField. A preset is
+// cluster-scoped and its reference resolves in the namespace of each cluster
+// that inherits it, so the key is the Secret name alone.
+func presetSecretRefs(o client.Object) []string {
+	auth := o.(*v1.CamundaClusterPreset).Spec.Cluster.Auth
+	if auth == nil || auth.ClientSecretRef == nil {
+		return nil
+	}
+	return []string{auth.ClientSecretRef.Name}
+}
+
+// nonEmpty returns the non-empty values.
+func nonEmpty(values ...string) []string {
+	var result []string
+	for _, v := range values {
+		if v != "" {
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
+// listByIndex lists the objects of L whose index field matches key. A list
+// failure is logged and yields an empty list.
+func listByIndex[L any, PL interface {
+	*L
+	client.ObjectList
+}](ctx context.Context, c client.Client, field, key string) *L {
+	list := PL(new(L))
+	if err := c.List(ctx, list, client.MatchingFields{field: key}); err != nil {
+		logf.FromContext(ctx).Error(err, "listing referrers for Secret enqueue", "field", field, "secret", key)
+	}
+	return list
+}
+
+// requestSet collects reconcile requests without duplicates.
+type requestSet map[types.NamespacedName]struct{}
+
+// addList adds every cluster that the list options select. A list failure is
+// logged and drops those requests; the log line is the operational signal.
+func (s requestSet) addList(ctx context.Context, c client.Client, opts ...client.ListOption) {
+	var clusters v1.CamundaClusterList
+	if err := c.List(ctx, &clusters, opts...); err != nil {
+		logf.FromContext(ctx).Error(err, "listing clusters for enqueue")
+		return
+	}
+	for _, cluster := range clusters.Items {
+		s[client.ObjectKeyFromObject(&cluster)] = struct{}{}
+	}
+}
+
+func (s requestSet) requests() []reconcile.Request {
+	reqs := make([]reconcile.Request, 0, len(s))
+	for key := range s {
+		reqs = append(reqs, reconcile.Request{NamespacedName: key})
+	}
+	return reqs
 }

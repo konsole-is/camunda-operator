@@ -67,7 +67,8 @@ type Target struct {
 	// CAMUNDA_CLUSTER_PARTITIONCOUNT on the broker container. A restore of a
 	// backup must match it.
 	Partitions int32
-	// Version is the Camunda version, read from the tag of the broker image.
+	// Version is the Camunda version, read from the camunda.io/broker-version
+	// annotation of the StatefulSet.
 	Version string
 	// ClaimTemplate is the data claim template of the StatefulSet. It carries
 	// the storage class, the access modes, the labels, and the size that a
@@ -120,10 +121,13 @@ func readTarget(
 		return nil, err
 	}
 
-	version := components.ImageTag(broker.Image)
+	version := sts.Annotations[components.BrokerVersionAnnotation]
 	if version == "" {
 		return nil, invalidTarget(
-			name, "the broker image %q carries no version tag", broker.Image,
+			name,
+			"it carries no %s annotation. The cluster controller stamps it on every apply, "+
+				"so let one reconcile of the cluster finish and retry",
+			components.BrokerVersionAnnotation,
 		)
 	}
 
@@ -190,16 +194,6 @@ func containerNamed(containers []corev1.Container, name string) *corev1.Containe
 	return nil
 }
 
-func claimTemplateNamed(claims []corev1.PersistentVolumeClaim, name string) *corev1.PersistentVolumeClaim {
-	for i := range claims {
-		if claims[i].Name == name {
-			return &claims[i]
-		}
-	}
-
-	return nil
-}
-
 // envCount reads one plain positive count off the broker container. A
 // variable that carries a ValueFrom is not readable here: its value lives in
 // a Secret, a ConfigMap, or a field of the pod, and only the kubelet resolves
@@ -230,4 +224,14 @@ func envCount(sts string, broker *corev1.Container, key camundaconfig.Key) (int3
 	}
 
 	return 0, invalidTarget(sts, "its container carries no %s", name)
+}
+
+func claimTemplateNamed(claims []corev1.PersistentVolumeClaim, name string) *corev1.PersistentVolumeClaim {
+	for i := range claims {
+		if claims[i].Name == name {
+			return &claims[i]
+		}
+	}
+
+	return nil
 }

@@ -22,6 +22,7 @@ spec:
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: gateway
+        camunda.io/storage-contract: my-storage-config
     spec:
       containers:
       - env:

@@ -31,7 +31,6 @@ import (
 // mediumPreset is the "medium" preset of the CamundaClusterPreset doc.
 func mediumPreset() *v1.CamundaClusterPresetSpec {
 	return &v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{
-		Version: "8.9.0",
 		Auth: &v1.ClusterAuthSpec{
 			ClientID: "medium-clusters",
 			Audience: "medium-clusters",
@@ -69,8 +68,17 @@ func mediumPreset() *v1.CamundaClusterPresetSpec {
 		Operate:    &v1.WebAppSpec{Mode: v1.ComponentModeEmbedded},
 		Tasklist:   &v1.WebAppSpec{Mode: v1.ComponentModeEmbedded},
 		Admin:      &v1.WebAppSpec{Mode: v1.ComponentModeEmbedded},
-		Connectors: &v1.ConnectorsSpec{Enabled: new(true), Version: "8.9.7"},
+		Connectors: &v1.ConnectorsSpec{Enabled: new(true)},
 	}}
+}
+
+// mediumRelease is the release that the preset fixtures pair with the medium
+// preset: the versions that the preset no longer carries.
+func mediumRelease() *v1.CamundaReleaseSpec {
+	return &v1.CamundaReleaseSpec{
+		Version:    "8.9.0",
+		Connectors: &v1.ReleaseConnectorsSpec{Version: "8.9.7"},
+	}
 }
 
 // fixtureMinimal is the doc's minimal cluster: an Elasticsearch binding
@@ -80,15 +88,18 @@ func fixtureMinimal(t *testing.T) Input {
 	return newInput(t, nil)
 }
 
-// fixtureDefault is the doc's realistic cluster on the medium preset: three
-// brokers, resources, extra env, connectors, monitoring, a service account,
-// a license, and a registry.
+// fixtureDefault is the doc's realistic cluster on the medium preset and
+// the medium release: three brokers, resources, extra env, connectors,
+// monitoring, a service account, a license, and a mirror. Its own
+// spec.version overrides the version of the release, the connectors
+// version comes from the release.
 func fixtureDefault(t *testing.T) Input {
 	t.Helper()
 	return newInput(t, func(in *Input) {
 		in.Cluster.Spec = v1.CamundaClusterSpec{
 			PlatformConfigRef: "my-platform-config",
 			PresetRef:         "medium",
+			ReleaseRef:        "camunda-8-9-0",
 			Version:           "8.9.9",
 			ExternalURL:       "https://my-cluster.camunda.example.com",
 			ServiceAccount: &v1.ServiceAccountSpec{Annotations: map[string]string{
@@ -127,10 +138,13 @@ func fixtureDefault(t *testing.T) Input {
 				Labels:  map[string]string{"release": "prometheus"},
 			}},
 		}
-		in.Effective = NewEffective(MergePreset(in.Cluster.Spec, mediumPreset()))
+		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, mediumPreset(), mediumRelease()))
 		in.Platform = v1.CamundaPlatformConfigSpec{
 			LicenseSecretRef: &v1.SecretKeyRef{Name: "camunda-license", Namespace: "camunda-system", Key: "key"},
-			ImageRegistry:    "registry.example.com",
+			Images: &v1.ImagesSpec{
+				Camunda:    "registry.example.com/camunda/camunda",
+				Connectors: "registry.example.com/camunda/connectors-bundle",
+			},
 		}
 		in.Storage.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
 			Name: "my-cluster-es-es-http-certs-public", Key: "ca.crt",
@@ -213,16 +227,41 @@ func fixtureOIDC(t *testing.T) Input {
 }
 
 // fixturePreset sets only the references on the cluster; the medium preset
-// provides everything else.
+// provides the shape and the medium release the versions.
 func fixturePreset(t *testing.T) Input {
 	t.Helper()
 	return newInput(t, func(in *Input) {
 		in.Cluster.Spec = v1.CamundaClusterSpec{
 			PlatformConfigRef: "my-platform-config",
 			PresetRef:         "medium",
+			ReleaseRef:        "camunda-8-9-0",
 			StorageRef:        "my-storage-config",
 		}
-		in.Effective = NewEffective(MergePreset(in.Cluster.Spec, mediumPreset()))
+		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, mediumPreset(), mediumRelease()))
+	})
+}
+
+// fixtureRelease pins the images of both processes through the release. The
+// broker StatefulSet keeps the effective version in its annotation while the
+// containers pull the pinned references.
+func fixtureRelease(t *testing.T) Input {
+	t.Helper()
+	return newInput(t, func(in *Input) {
+		in.Cluster.Spec = v1.CamundaClusterSpec{
+			PlatformConfigRef: "my-platform-config",
+			PresetRef:         "medium",
+			ReleaseRef:        "camunda-8-9-0",
+			StorageRef:        "my-storage-config",
+		}
+		release := mediumRelease()
+		release.Images = &v1.ReleaseImagesSpec{
+			Camunda: "mirror.example.com/camunda/camunda@sha256:" +
+				"7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730",
+			Connectors: "mirror.example.com/camunda/connectors-bundle:8.9.7-patched",
+		}
+		merged := MergeSpec(in.Cluster.Spec, mediumPreset(), release)
+		in.Effective = NewEffective(merged)
+		in.Images = ReleaseImages(merged, release)
 	})
 }
 
@@ -290,6 +329,7 @@ func goldenFixtures(t *testing.T) map[string]Input {
 		"rdbms":      fixtureRDBMS(t),
 		"oidc":       fixtureOIDC(t),
 		"preset":     fixturePreset(t),
+		"release":    fixtureRelease(t),
 		"suspended":  fixtureSuspended(t),
 
 		"backup-elasticsearch": fixtureBackupElasticsearch(t),

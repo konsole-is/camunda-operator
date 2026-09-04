@@ -117,38 +117,6 @@ func (s brokerStorage) volumeClaimSize() *resource.Quantity {
 	return nil
 }
 
-// largestClaimSize returns the largest capacity or request of the bound
-// claims, or nil without a bound claim. A claim that is still expanding
-// requests more than it reports.
-func (s brokerStorage) largestClaimSize() *resource.Quantity {
-	var largest *resource.Quantity
-	for i := range s.claims {
-		claim := &s.claims[i]
-		for _, size := range []resource.Quantity{
-			claim.Status.Capacity[corev1.ResourceStorage],
-			claim.Spec.Resources.Requests[corev1.ResourceStorage],
-		} {
-			if largest == nil || size.Cmp(*largest) > 0 {
-				largest = &size
-			}
-		}
-	}
-	return largest
-}
-
-// requestedSizeApplied reports whether the applied StatefulSet already
-// carries the requested storage size annotation for size. It is false before
-// the first apply and after every change of the effective size, so an event
-// that depends on it fires once per requested size.
-func (s brokerStorage) requestedSizeApplied(size resource.Quantity) bool {
-	if s.statefulSet == nil {
-		return false
-	}
-
-	applied, err := resource.ParseQuantity(s.statefulSet.Annotations[components.RequestedStorageSizeAnnotation])
-	return err == nil && applied.Cmp(size) == 0
-}
-
 // volumes returns one status entry per bound claim that reports a capacity,
 // sorted by name.
 func (s brokerStorage) volumes() []v1.VolumeStatus {
@@ -175,23 +143,6 @@ func (s brokerStorage) runningVersion() string {
 	}
 
 	return components.RetainedVersion(s.claims)
-}
-
-// appliedVersion returns the tag of the broker image on the applied
-// StatefulSet, or the empty string before the first apply or when the
-// container carries no tag.
-func (s brokerStorage) appliedVersion() string {
-	if s.statefulSet == nil {
-		return ""
-	}
-
-	for _, container := range s.statefulSet.Spec.Template.Spec.Containers {
-		if container.Name == components.ContainerCamunda {
-			return components.ImageTag(container.Image)
-		}
-	}
-
-	return ""
 }
 
 // stampBrokerVersion patches the broker version annotation onto every bound
@@ -226,6 +177,18 @@ func (r *CamundaClusterReconciler) stampBrokerVersion(ctx context.Context, stora
 	}
 
 	return nil
+}
+
+// appliedVersion returns the version that the applied StatefulSet carries
+// in its broker version annotation. It returns the empty string before the
+// first apply, and for a StatefulSet without the annotation, which an apply
+// from before the annotation existed left behind.
+func (s brokerStorage) appliedVersion() string {
+	if s.statefulSet == nil {
+		return ""
+	}
+
+	return s.statefulSet.Annotations[components.BrokerVersionAnnotation]
 }
 
 // growBrokerClaims patches every bound broker claim that requests less than
@@ -280,4 +243,36 @@ func (r *CamundaClusterReconciler) recordIgnoredShrink(
 		largest,
 		largest,
 	)
+}
+
+// requestedSizeApplied reports whether the applied StatefulSet already
+// carries the requested storage size annotation for size. It is false before
+// the first apply and after every change of the effective size, so an event
+// that depends on it fires once per requested size.
+func (s brokerStorage) requestedSizeApplied(size resource.Quantity) bool {
+	if s.statefulSet == nil {
+		return false
+	}
+
+	applied, err := resource.ParseQuantity(s.statefulSet.Annotations[components.RequestedStorageSizeAnnotation])
+	return err == nil && applied.Cmp(size) == 0
+}
+
+// largestClaimSize returns the largest capacity or request of the bound
+// claims, or nil without a bound claim. A claim that is still expanding
+// requests more than it reports.
+func (s brokerStorage) largestClaimSize() *resource.Quantity {
+	var largest *resource.Quantity
+	for i := range s.claims {
+		claim := &s.claims[i]
+		for _, size := range []resource.Quantity{
+			claim.Status.Capacity[corev1.ResourceStorage],
+			claim.Spec.Resources.Requests[corev1.ResourceStorage],
+		} {
+			if largest == nil || size.Cmp(*largest) > 0 {
+				largest = &size
+			}
+		}
+	}
+	return largest
 }

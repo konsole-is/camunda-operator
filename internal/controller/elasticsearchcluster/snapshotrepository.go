@@ -311,29 +311,6 @@ func (r *ElasticsearchClusterReconciler) eckSecretValue(
 	return secret.Data[dataKey], nil
 }
 
-// effectiveSnapshotStorageRef resolves the bucket reference of cluster the
-// way the reconcile does: the inline value, or the preset's when the inline
-// one is unset. The watches must see through the preset, or a fleet cluster
-// that inherits its bucket never hears about a credential rotation.
-func (r *ElasticsearchClusterReconciler) effectiveSnapshotStorageRef(
-	ctx context.Context,
-	cluster *v1.ElasticsearchCluster,
-) string {
-	if cluster.Spec.SnapshotStorageRef != "" {
-		return cluster.Spec.SnapshotStorageRef
-	}
-	if cluster.Spec.PresetRef == "" {
-		return ""
-	}
-
-	var preset v1.ElasticsearchClusterPreset
-	if err := r.Get(ctx, types.NamespacedName{Name: cluster.Spec.PresetRef}, &preset); err != nil {
-		return ""
-	}
-
-	return preset.Spec.Cluster.SnapshotStorageRef
-}
-
 // enqueueForSnapshotStorage maps a bucket event to every cluster of the bucket
 // namespace whose effective reference names it, preset-provided references
 // included.
@@ -407,4 +384,27 @@ func (r *ElasticsearchClusterReconciler) clustersReferencingBuckets(
 	}
 
 	return requests
+}
+
+// effectiveSnapshotStorageRef resolves the bucket reference of cluster the
+// way the reconcile does: the inline value, or the preset's when the inline
+// one is unset. The watches must see through the preset, or a fleet cluster
+// that inherits its bucket never hears about a credential rotation.
+func (r *ElasticsearchClusterReconciler) effectiveSnapshotStorageRef(
+	ctx context.Context,
+	cluster *v1.ElasticsearchCluster,
+) string {
+	if cluster.Spec.SnapshotStorageRef != "" {
+		return cluster.Spec.SnapshotStorageRef
+	}
+	if cluster.Spec.PresetRef == "" {
+		return ""
+	}
+
+	var preset v1.ElasticsearchClusterPreset
+	if err := r.Get(ctx, types.NamespacedName{Name: cluster.Spec.PresetRef}, &preset); err != nil {
+		return ""
+	}
+
+	return preset.Spec.Cluster.SnapshotStorageRef
 }

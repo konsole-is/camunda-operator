@@ -32,7 +32,6 @@ func NewUnwatchedFailure(reason, message string) *UnwatchedPreCheckFailure {
 	}
 }
 
-// Error returns the message of the wrapped failure.
 func (u *UnwatchedPreCheckFailure) Error() string { return u.Failure.Error() }
 
 // Unwrap exposes the wrapped failure, so errors.As finds both types.

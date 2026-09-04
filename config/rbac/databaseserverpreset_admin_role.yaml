@@ -19,9 +19,3 @@ rules:
   - databaseserverpresets
   verbs:
   - '*'
-- apiGroups:
-  - core.camunda.io
-  resources:
-  - databaseserverpresets/status
-  verbs:
-  - get

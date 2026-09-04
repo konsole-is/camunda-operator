@@ -1,6 +1,6 @@
 # Secondary storage
 
-Camunda keeps its data in two places. Primary storage is the Zeebe log and state on the broker volumes. Secondary storage holds the exported process, decision, and task data that Operate, Tasklist, and the search API read. The operator supports two secondary storage backends: Elasticsearch and PostgreSQL. It runs Elasticsearch through the ECK operator. It runs PostgreSQL through the CloudNativePG operator, or it prepares a database on a server you run. A `CamundaCluster` never sees the backend. It only references a `SecondaryStorageConfig` by name, through `spec.storageRef`.
+Camunda keeps its data in two places. Primary storage is the Zeebe log and state on the broker volumes. Secondary storage holds the exported data that Operate, Tasklist, and the search API read, and Camunda describes it in [Configure secondary storage](https://docs.camunda.io/docs/self-managed/concepts/secondary-storage/configuring-secondary-storage/). The operator supports two secondary storage backends: Elasticsearch and PostgreSQL. It runs Elasticsearch through the ECK operator. It runs PostgreSQL through the CloudNativePG operator, or it prepares a database on a server you run. A `CamundaCluster` never sees the backend. It only references a `SecondaryStorageConfig` by name, through `spec.storageRef`.
 
 This guide tells you which backend to pick, which resources to create for each backend, and in which order.
 
@@ -27,6 +27,8 @@ If a second cluster names a contract that another cluster holds, the operator su
 ## Elasticsearch
 
 Prerequisite: the ECK operator is installed in the Kubernetes cluster, and the camunda-operator started after the ECK CRDs were installed. The operator does not run Elasticsearch nodes itself. It creates an ECK `Elasticsearch` resource, and ECK runs the nodes.
+
+This chain is ready to apply in [`config/example/camunda-cluster/elasticsearch`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-cluster/elasticsearch).
 
 1. Create an `ElasticsearchCluster`. The sizes below are for trying out. For production, use more nodes and larger volumes.
 
@@ -108,6 +110,8 @@ For all fields, see [ElasticsearchCluster](../crds/elasticsearchcluster.md) and 
 ## PostgreSQL
 
 The chain has two halves. The first half is the server, and you get it in one of two ways. The second half is the logical database on that server, and it is the same either way.
+
+[`config/example/camunda-cluster/rdbms`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-cluster/rdbms) is ready to apply. It takes the `DatabaseServer` route, and it holds the `Database`, the platform configuration, and the `CamundaCluster`.
 
 | | A `DatabaseServer` | A server you run |
 | --- | --- | --- |

@@ -262,6 +262,26 @@ func (r *DatabaseReconciler) holderKeeps(ctx context.Context, holder components.
 	return other.UID == holder.UID, nil
 }
 
+// dropClaim deletes the claim Lease of key while its annotations still name
+// holder. A Lease that is gone, or that another Database holds, is left
+// alone.
+func (r *DatabaseReconciler) dropClaim(ctx context.Context, key string, holder components.ClaimHolder) error {
+	if key == "" {
+		return nil
+	}
+
+	lease, found, err := r.readClaim(ctx, key)
+	if err != nil || !found {
+		return err
+	}
+
+	if recorded, ours := components.ClaimHolderOf(lease); !ours || recorded != holder {
+		return nil
+	}
+
+	return r.deleteClaim(ctx, lease)
+}
+
 // finalize releases the claims of a deleted Database and removes the claim
 // finalizer.
 //
@@ -332,24 +352,12 @@ func (r *DatabaseReconciler) releaseHeldClaims(
 	return nil
 }
 
-// dropClaim deletes the claim Lease of key while its annotations still name
-// holder. A Lease that is gone, or that another Database holds, is left
-// alone.
-func (r *DatabaseReconciler) dropClaim(ctx context.Context, key string, holder components.ClaimHolder) error {
-	if key == "" {
-		return nil
+// selfHolder is the holder identity of database.
+func selfHolder(database *v1.Database) components.ClaimHolder {
+	return components.ClaimHolder{
+		NamespacedName: client.ObjectKeyFromObject(database),
+		UID:            database.UID,
 	}
-
-	lease, found, err := r.readClaim(ctx, key)
-	if err != nil || !found {
-		return err
-	}
-
-	if recorded, ours := components.ClaimHolderOf(lease); !ours || recorded != holder {
-		return nil
-	}
-
-	return r.deleteClaim(ctx, lease)
 }
 
 // deleteClaim deletes lease under the UID and the resourceVersion that it was
@@ -389,12 +397,4 @@ func (r *DatabaseReconciler) readClaim(
 	}
 
 	return &lease, true, nil
-}
-
-// selfHolder is the holder identity of database.
-func selfHolder(database *v1.Database) components.ClaimHolder {
-	return components.ClaimHolder{
-		NamespacedName: client.ObjectKeyFromObject(database),
-		UID:            database.UID,
-	}
 }

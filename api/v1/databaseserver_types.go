@@ -133,10 +133,9 @@ type DatabaseServerSpec struct {
 	// +optional
 	PresetRef string `json:"presetRef,omitempty"`
 	// PlatformConfigRef names a cluster-scoped CamundaPlatformConfig. Only
-	// its image settings are read: spec.imageRegistry and
-	// spec.images.postgres decide where the PostgreSQL image is pulled from,
-	// which is what an air-gapped cluster needs. Empty leaves the image at
-	// its default repository.
+	// its image settings are read: spec.images.postgres decides where the
+	// PostgreSQL image is pulled from, which is what an air-gapped cluster
+	// needs. Empty leaves the image at its default repository.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=253
 	// +optional

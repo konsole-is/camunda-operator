@@ -147,7 +147,7 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	out.ClusterUID = cluster.UID
 	// The Optimize workloads follow the suspension of the cluster they attach
 	// to, by spec.suspend or by the storage claim. spec.suspend is the
-	// cluster's own field: MergePreset carries it through unchanged, so no
+	// cluster's own field: MergeSpec carries it through unchanged, so no
 	// preset can set it.
 	out.Input.Suspended = cluster.Suspended()
 
@@ -155,6 +155,7 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	if err != nil {
 		return out, err
 	}
+	out.Input.StorageContract = binding.Name
 
 	effective, err := res.resolveEffective(ctx, &cluster)
 	if err != nil {
@@ -217,11 +218,11 @@ func (res *resolver) resolveStorage(
 	return &binding, nil
 }
 
-// resolveEffective merges the preset of the cluster under its spec and checks
-// the version gate. Camunda supports Optimize only on a matching minor, so the
-// major and the minor of spec.version must equal those of the effective
-// version of the cluster. The patch levels may differ: Optimize has its own
-// patch line.
+// resolveEffective merges the preset and the release of the cluster under
+// its spec and checks the version gate. Camunda supports Optimize only on a
+// matching minor, so the major and the minor of spec.version must equal
+// those of the effective version of the cluster. The patch levels may
+// differ: Optimize has its own patch line.
 func (res *resolver) resolveEffective(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -235,9 +236,19 @@ func (res *resolver) resolveEffective(
 		preset = &obj.Spec
 	}
 
-	merged := clustercomponents.MergePreset(cluster.Spec, preset)
-	// The rules that admission cannot enforce, because a preset can supply the
-	// values, are checked by the cluster controller and not by the API server.
+	var release *v1.CamundaReleaseSpec
+	if cluster.Spec.ReleaseRef != "" {
+		var obj v1.CamundaRelease
+		if err := res.get(ctx, client.ObjectKey{Name: cluster.Spec.ReleaseRef}, &obj); err != nil {
+			return clustercomponents.Effective{}, err
+		}
+		release = &obj.Spec
+	}
+
+	merged := clustercomponents.MergeSpec(cluster.Spec, preset, release)
+	// The rules that admission cannot enforce, because a release can supply
+	// the values, are checked by the cluster controller and not by the API
+	// server.
 	// A cluster below the version floor is therefore accepted by the API server
 	// and never reconciled. An attachment to one deploys Optimize against a
 	// cluster that never comes up.
@@ -349,6 +360,16 @@ func (res *resolver) resolveElasticsearch(
 	return nil
 }
 
+// checkLocalSecret checks that the Secret named name in the namespace of the
+// Optimize instance carries keys, and records its resource version as a render
+// input. Every reference of a namespaced kind resolves here, so no copy is
+// involved.
+func (res *resolver) checkLocalSecret(ctx context.Context, name string, keys ...string) error {
+	_, err := res.secret(ctx, client.ObjectKey{Namespace: res.optimize.Namespace, Name: name}, "", keys...)
+
+	return err
+}
+
 // checkExporterConflicts refuses to apply the exporter settings when the
 // cluster already carries an entry of the same name that supplies its value
 // the other way. Server-side apply would merge the two into one entry with
@@ -430,16 +451,6 @@ func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose
 	ref.Name, ref.Namespace = local.Name, local.Namespace
 
 	return nil
-}
-
-// checkLocalSecret checks that the Secret named name in the namespace of the
-// Optimize instance carries keys, and records its resource version as a render
-// input. Every reference of a namespaced kind resolves here, so no copy is
-// involved.
-func (res *resolver) checkLocalSecret(ctx context.Context, name string, keys ...string) error {
-	_, err := res.secret(ctx, client.ObjectKey{Namespace: res.optimize.Namespace, Name: name}, "", keys...)
-
-	return err
 }
 
 // secret checks that the Secret at key carries every one of keys. When the

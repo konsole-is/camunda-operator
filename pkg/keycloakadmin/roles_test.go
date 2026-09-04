@@ -38,9 +38,10 @@ func TestFindUser(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "9f2a", id)
-	require.Len(t, fake.calls, 2)
-	assert.Equal(t, "/auth/admin/realms/camunda-platform/users", fake.calls[1].path)
-	assert.Equal(t, "exact=true&username=platform-admin", fake.calls[1].query)
+	calls := fake.recorded()
+	require.Len(t, calls, 2)
+	assert.Equal(t, "/auth/admin/realms/camunda-platform/users", calls[1].path)
+	assert.Equal(t, "exact=true&username=platform-admin", calls[1].query)
 }
 
 // The lookup is exact, so a realm that holds no user of that name answers with
@@ -74,8 +75,9 @@ func TestFindRealmRole(t *testing.T) {
 
 	require.NotNil(t, role)
 	assert.Equal(t, RealmRole{ID: "1b7c", Name: "Optimize"}, *role)
-	require.Len(t, fake.calls, 2)
-	assert.Equal(t, "/auth/admin/realms/camunda-platform/roles/Optimize", fake.calls[1].path)
+	calls := fake.recorded()
+	require.Len(t, calls, 2)
+	assert.Equal(t, "/auth/admin/realms/camunda-platform/roles/Optimize", calls[1].path)
 }
 
 // A realm that Management Identity bootstrapped without Optimize holds no
@@ -128,11 +130,12 @@ func TestUserRealmRolesReadsTheRolesTheUserHolds(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []RealmRole{{ID: "aa", Name: "Identity"}, {ID: "bb", Name: "Console"}}, held)
-	require.Len(t, fake.calls, 2)
+	calls := fake.recorded()
+	require.Len(t, calls, 2)
 	assert.Equal(
 		t,
 		"/auth/admin/realms/camunda-platform/users/9f2a/role-mappings/realm/composite",
-		fake.calls[1].path,
+		calls[1].path,
 	)
 }
 
@@ -148,14 +151,15 @@ func TestAddUserRealmRole(t *testing.T) {
 		AddUserRealmRole(context.Background(), "9f2a", RealmRole{ID: "1b7c", Name: "Optimize"})
 	require.NoError(t, err)
 
-	require.Len(t, fake.calls, 2)
-	assert.Equal(t, http.MethodPost, fake.calls[1].method)
+	calls := fake.recorded()
+	require.Len(t, calls, 2)
+	assert.Equal(t, http.MethodPost, calls[1].method)
 	assert.Equal(
 		t,
 		"/auth/admin/realms/camunda-platform/users/9f2a/role-mappings/realm",
-		fake.calls[1].path,
+		calls[1].path,
 	)
-	assert.JSONEq(t, `[{"id":"1b7c","name":"Optimize"}]`, fake.calls[1].body)
+	assert.JSONEq(t, `[{"id":"1b7c","name":"Optimize"}]`, calls[1].body)
 }
 
 func TestAddUserRealmRoleRefused(t *testing.T) {

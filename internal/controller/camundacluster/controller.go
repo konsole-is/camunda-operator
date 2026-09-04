@@ -111,20 +111,11 @@ const concurrentReconciles = 4
 // at an unwatched dependency, such as a pre-existing ServiceAccount.
 const defaultRetryInterval = 30 * time.Second
 
-// retryInterval returns the wait before an unwatched dependency is looked at
-// again.
-func (r *CamundaClusterReconciler) retryInterval() time.Duration {
-	if r.RetryInterval > 0 {
-		return r.RetryInterval
-	}
-
-	return defaultRetryInterval
-}
-
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusterpresets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=camundareleases,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaplatformconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseconfigs,verbs=get;list;watch
@@ -134,6 +125,7 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups="",resources=pods,verbs=list
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
@@ -141,32 +133,14 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 
 // Reconcile converges a CamundaCluster. A paused cluster records one Paused
 // event and returns before anything is read or written, status included.
-// Otherwise the pre-checks resolve every reference into the render input; a
-// failed pre-check reports its Ready reason and stops. A cluster whose
-// storage contract another cluster holds renders suspended, reports
-// StorageAlreadyAttached instead of the aggregate, and looks again on a
-// timer. An effective version below the one the brokers run is refused
-// before anything is applied, unless the annotation
-// camunda.io/allow-version-downgrade names it. A cluster that is parked on a
-// held contract renders at zero on the running version first, and the
-// refusal is reported once the holder releases. The annotation is removed once
-// the brokers carry that version, and as soon as it names a version the
-// cluster is not asked to run. The running version is stamped on the bound
-// broker claims, so it survives a delete with retained volumes and the rule
-// holds for a cluster recreated on them. The broker storage lifecycle then grows the
-// bound broker claims in place and records an ignored shrink; the claim
-// template keeps its applied size, so the StatefulSet is never recreated.
-// The admin credential resolves next, and a requested password rotation runs
-// there; a failed user API call surfaces on AdminSecretReady and retries on
-// a timer. Then the components are reconciled in order: the admin Secret,
-// the mirrored Secrets, then every process, each gated on whether the
-// cluster needs it. The management binding is published with the status, and
-// cleared while the cluster is suspended. The ServiceAccount the pods run
-// under is published with it and is never cleared: the account outlives a
-// suspension. Ready is True only when every component the cluster needs is
-// True. Its reason and message come from the governing component, which is
-// the highest-priority component that is not True, or the highest-priority
-// of all of them when they all are.
+//
+// Ready is True only when every component the cluster needs is True. Its
+// reason and message come from the governing component, which is the
+// highest-priority component that is not True, or the highest-priority of all
+// of them when they all are. A cluster whose storage contract another cluster
+// holds reports StorageAlreadyAttached instead of the aggregate. A cluster
+// that takes a contract over reports WaitingForHandover while a pod of the
+// previous holder still runs on it. Both look again on a timer.
 //
 // Status is written once per reconcile: the components and conditions.Stage
 // stage conditions on the in-memory cluster, and the deferred FlushStatus
@@ -215,7 +189,24 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	in, mirrors, err := r.preCheck(ctx, &cluster)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
+		// A running cluster stops while its pre-check fails: its workloads
+		// scale to zero and its volumes stay, because they can keep writing
+		// a backend that the cluster no longer resolves. The failure stays
+		// the Ready reason, and the message says what happened to the
+		// workloads.
+		suspended, suspendErr := r.suspendWorkloads(ctx, &cluster)
+		if suspended && suspendErr == nil {
+			failure.Message += ". The workloads are scaled to zero, with the volumes kept, until the pre-check passes"
+		}
+		// The bindings are nil while the cluster is suspended, see binding.go.
+		// The endpoints of the scaled workloads answer nothing, so a consumer
+		// must see a cluster that is not ready, not a stale endpoint.
+		cluster.Status.Management = nil
+		cluster.Status.Gateway = nil
 		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
+		if suspendErr != nil {
+			return ctrl.Result{}, suspendErr
+		}
 
 		// Only an unwatched failure needs a timer; everything else the
 		// pre-checks resolve re-enqueues through a watch.
@@ -266,9 +257,11 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		// A parked cluster must stop, refused or not: its brokers write the
 		// contract it left, which the next cluster can claim. The guard reads
-		// its baseline from the applied image, so the parking renders the
-		// running version and the refusal stands when the holder releases.
+		// its baseline from the applied StatefulSet, so the parking renders
+		// the running version, with no pinned image over it, and the refusal
+		// stands when the holder releases.
 		in.Effective.Version = storage.runningVersion()
+		in.Images = nil
 	}
 	// Only a reconcile that reached the check and did not report a refusal
 	// drops the cluster out of the memo, so a refusal that comes back, or one
@@ -317,6 +310,8 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	cluster.Status.Volumes = storage.volumes()
 	cluster.Status.Management = managementBinding(&cluster, in)
 	cluster.Status.Gateway = gatewayBinding(&cluster, in)
+	// The account outlives a suspension, so it stands while the management
+	// binding and the gateway binding are cleared.
 	cluster.Status.ServiceAccountName = components.PodServiceAccountName(in)
 	cred.recordRotation(&cluster)
 
@@ -333,6 +328,30 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	return ctrl.Result{}, reconcileErr
+}
+
+// retryInterval returns the wait before an unwatched dependency is looked at
+// again.
+func (r *CamundaClusterReconciler) retryInterval() time.Duration {
+	if r.RetryInterval > 0 {
+		return r.RetryInterval
+	}
+
+	return defaultRetryInterval
+}
+
+// serviceMonitorSupported reports whether the cluster serves the
+// ServiceMonitor kind. On a cluster without the prometheus-operator CRDs the
+// components then omit the resource instead of failing every reconcile.
+func (r *CamundaClusterReconciler) serviceMonitorSupported() bool {
+	if r.restMapper == nil {
+		return false
+	}
+
+	_, err := r.restMapper.RESTMapping(
+		schema.GroupKind{Group: "monitoring.coreos.com", Kind: "ServiceMonitor"}, "v1",
+	)
+	return err == nil
 }
 
 // clusterComponents are the components of one cluster: all of them are
@@ -409,18 +428,4 @@ func reconcileComponents(ctx context.Context, rec component.ReconcileContext, co
 	}
 
 	return firstErr
-}
-
-// serviceMonitorSupported reports whether the cluster serves the
-// ServiceMonitor kind. On a cluster without the prometheus-operator CRDs the
-// components then omit the resource instead of failing every reconcile.
-func (r *CamundaClusterReconciler) serviceMonitorSupported() bool {
-	if r.restMapper == nil {
-		return false
-	}
-
-	_, err := r.restMapper.RESTMapping(
-		schema.GroupKind{Group: "monitoring.coreos.com", Kind: "ServiceMonitor"}, "v1",
-	)
-	return err == nil
 }

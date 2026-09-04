@@ -275,23 +275,6 @@ func (r *Reconciler) complete(lrr *v1.LogicalRestoreRDBMS) {
 	)
 }
 
-// fail ends the restore with reason and message. Status keeps the reason, so
-// a terminal look stages the same one again after a write conflict.
-func (r *Reconciler) fail(lrr *v1.LogicalRestoreRDBMS, reason, message string) {
-	lrr.Status.Phase = v1.LogicalRestoreFailed
-	restore.Fail(&lrr.Status.RestoreProgress, reason, message, metav1.Now())
-	restore.StageTerminal(lrr, &lrr.Status.RestoreProgress)
-	r.EventRecorder.Eventf(
-		lrr,
-		nil,
-		corev1.EventTypeWarning,
-		restore.EventReasonFailed,
-		restore.EventActionRestore,
-		"The restore failed: %s",
-		lrr.Status.FailureMessage,
-	)
-}
-
 // progressing stages that a phase of the restore runs.
 func (r *Reconciler) progressing(lrr *v1.LogicalRestoreRDBMS, message string) {
 	conditions.Stage(lrr, conditions.Ready(
@@ -337,6 +320,23 @@ func (r *Reconciler) holdStarted(
 	}
 
 	return outcome
+}
+
+// fail ends the restore with reason and message. Status keeps the reason, so
+// a terminal look stages the same one again after a write conflict.
+func (r *Reconciler) fail(lrr *v1.LogicalRestoreRDBMS, reason, message string) {
+	lrr.Status.Phase = v1.LogicalRestoreFailed
+	restore.Fail(&lrr.Status.RestoreProgress, reason, message, metav1.Now())
+	restore.StageTerminal(lrr, &lrr.Status.RestoreProgress)
+	r.EventRecorder.Eventf(
+		lrr,
+		nil,
+		corev1.EventTypeWarning,
+		restore.EventReasonFailed,
+		restore.EventActionRestore,
+		"The restore failed: %s",
+		lrr.Status.FailureMessage,
+	)
 }
 
 // SetupWithManager applies the options, registers the controller, the two

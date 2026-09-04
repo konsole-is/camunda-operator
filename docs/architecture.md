@@ -6,14 +6,14 @@ Read it when you want to understand why a feature is its own resource, or how to
 ## One small core, many attachments
 
 `CamundaCluster` describes the orchestration cluster and nothing else.
-Every other capability is its own kind with its own controller. A backup, for example, is a `LogicalBackupElasticsearch` that names the cluster in `clusterRef`. The cluster does not know that the backup exists.
+Every other capability is its own kind. A backup, for example, is a `LogicalBackupElasticsearch` that names the cluster in `clusterRef`. The cluster does not know that the backup exists.
 
 This is the core rule of the operator: **features attach to workloads. Workloads do not know about features.**
 
 The rule has three consequences that you can rely on:
 
-- The `CamundaCluster` controller has no plugin interface and no code dependency on any other controller.
-- A failure in an attached feature never blocks the reconciliation of the cluster.
+- A feature attaches to a cluster that you never edit for it. There is no plugin to enable and no field to set.
+- A failure in an attached feature never stops the operator from managing the cluster.
 - You can create, change, or delete an attached feature without a change to the cluster.
 
 This is how the Kubernetes ecosystem itself works. cert-manager writes Secrets. The HorizontalPodAutoscaler patches replicas on a Deployment. Neither goes through a central coordinator.
@@ -38,7 +38,7 @@ When a feature needs to call the cluster, it reads `status.management` of the `C
 
 ## Contracts carry connection details
 
-Controllers pass connection details to each other through contract kinds, never through direct references to each other:
+The kinds pass connection details to each other through contract kinds, never through direct references to each other:
 
 | Contract | Carries |
 | --- | --- |
@@ -53,7 +53,7 @@ An `ElasticsearchCluster` writes a `SecondaryStorageConfig`. A `Database` writes
 
 Because the consumer reads only the contract, you can also write a contract by hand, or let another tool write it. An Elasticsearch cluster that the operator does not manage, or a bucket that Crossplane provisions, looks the same to the consumer.
 
-Every contract has a validation controller. It checks that the referenced Secrets and resources exist, and for a database server that the server answers. It reports the result on `Ready`. It never provisions anything.
+The operator validates every contract. It checks that the referenced Secrets and resources exist, and for a database server that the server answers. It reports the result on `Ready`. It never provisions anything.
 
 ## Some inputs must be known before creation
 
@@ -66,6 +66,7 @@ These settings are plain fields on the resource, set before creation. `spec.zeeb
 ```mermaid
 graph LR
     CCP[CamundaClusterPreset]
+    CR[CamundaRelease]
     PFC[CamundaPlatformConfig]
     ESCP[ElasticsearchClusterPreset]
     ESC[ElasticsearchCluster]
@@ -96,6 +97,7 @@ graph LR
     SSC -.->|databaseConfigRef| DBC
 
     CC -.->|presetRef| CCP
+    CC -.->|releaseRef| CR
     CC -.->|platformConfigRef| PFC
     CC -.->|storageRef| SSC
     CC -.->|"backupStorageRef / documentStorageRef"| OSC
@@ -114,7 +116,7 @@ graph LR
 Solid arrows mean "creates". Dotted arrows mean "references".
 `CamundaOptimize` consumes `ManagementAuthConfig`. The [CRD reference](crds/index.md) lists every kind.
 
-A reference by name points into the namespace of the resource that holds it. A `CamundaCluster` in `my-cluster-ns` reads the `SecondaryStorageConfig` of `storageRef` and the `ObjectStorageConfig` of `backupStorageRef` in `my-cluster-ns`. A cluster-scoped kind has no namespace of its own, so a reference to one carries a plain name. `CamundaPlatformConfig`, `ManagementAuthConfig`, and the three preset kinds are cluster-scoped.
+A reference by name points into the namespace of the resource that holds it. A `CamundaCluster` in `my-cluster-ns` reads the `SecondaryStorageConfig` of `storageRef` and the `ObjectStorageConfig` of `backupStorageRef` in `my-cluster-ns`. A cluster-scoped kind has no namespace of its own, so a reference to one carries a plain name. `CamundaPlatformConfig`, `ManagementAuthConfig`, `CamundaRelease`, and the three preset kinds are cluster-scoped.
 
 The same rule holds for Secrets. A namespaced kind reads its Secrets from its own namespace only, so its `secretRef` blocks name a Secret and its keys, and never a namespace. A cluster-scoped kind names the namespace, because it has none of its own. Only `CamundaPlatformConfig` and `ManagementAuthConfig` do that, and the operator copies the Secrets they name into each namespace that reads them. A preset is cluster-scoped too, and it names no namespace. A `secretRef` on a preset resolves in the namespace of each cluster that inherits it.
 
@@ -122,7 +124,7 @@ The management plane is the one place where a resource reaches across namespaces
 
 ## Status conventions
 
-Every kind with a controller reports conditions, and every one has an aggregate `Ready` condition. `status.observedGeneration` records the last generation the controller reconciled.
+Every kind that the operator acts on reports conditions, and every one has an aggregate `Ready` condition. `status.observedGeneration` records the last generation the operator reconciled.
 
 A kind that runs workloads also reports one condition per component, named `<Component>Ready`, for example `ZeebeReady`. `Ready` takes its reason and message from the component that needs attention. When every component is healthy, the reason is `Healthy`.
 
@@ -139,19 +141,17 @@ The reasons you will see most:
 | `InvalidReference` | A referenced resource does not exist, or the merged configuration is invalid. The message names it. |
 | `MissingSecret` | A referenced Secret or key does not exist. The message names it. |
 | `ConnectionFailed` | An external system did not answer. |
-| `Error` | The controller hit an error. The message carries it. |
+| `Error` | The operator hit an error. The message carries it. |
 
-The operator checks references at reconcile time, not at admission. You can create resources in any order. A resource waits with `InvalidReference` or `MissingSecret` until its references exist.
+The API server accepts a resource that names something you did not create yet, so you can create resources in any order. A resource waits with `InvalidReference` or `MissingSecret` until its references exist.
 
 ## How the operator writes
 
-The operator applies every resource that it manages with Server-Side Apply. Each controller owns only the fields that it sets. A field that you set by hand on a managed resource stays until the operator needs that field.
-
-The operator writes the status of a resource once per reconcile, through the status subresource.
+The operator applies every resource that it manages with Server-Side Apply. It owns only the fields that it sets. A field that you set by hand on a managed resource stays until the operator needs that field.
 
 ## The api module
 
-The CRD types under `api/` are the Go module `github.com/konsole-is/camunda-operator/api`. The operators above import this module to create and read the CRs. The module depends on `k8s.io/api`, `k8s.io/apimachinery`, and the standard library only. It never imports `pkg/`, `internal/`, ocf, or controller-runtime. The test `api/v1/module_test.go` enforces this rule. See [Use the API types from Go](go-api.md) for the version scheme.
+The CRD types under `api/` are the Go module `github.com/konsole-is/camunda-operator/api`. Import it to create and read the custom resources from Go. It depends on `k8s.io/api`, `k8s.io/apimachinery`, and the standard library only, so it never pulls the operator itself into your build. See [Use the API types from Go](go-api.md) for the version scheme.
 
 ## Support policy
 

@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/workloadmutations"
 )
 
@@ -59,7 +60,13 @@ func TestMutationsAreGatedOffWithoutOverrides(t *testing.T) {
 		assert.Nil(t, template.Spec.Affinity, comp.GetName())
 		assert.Empty(t, template.Spec.Tolerations, comp.GetName())
 		assert.Empty(t, template.Spec.Containers[0].EnvFrom, comp.GetName())
-		assert.Equal(t, discoveryLabels(in, comp.GetName()), template.Labels, comp.GetName())
+		assert.Equal(t, podLabels(in, comp.GetName()), template.Labels, comp.GetName())
+		assert.Equal(
+			t,
+			fixtureContract,
+			template.Labels[labels.StorageContractKey],
+			"the pods name the contract they run on, so a handover waits for them",
+		)
 		assert.Equal(
 			t,
 			map[string]string{ConfigHashAnnotation: ConfigHash(in, comp.GetName())},

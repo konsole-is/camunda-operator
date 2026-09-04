@@ -5,6 +5,8 @@ You create four resources: an `ElasticsearchCluster` for secondary storage, a `C
 
 The sizes in this guide fit a local [kind](https://kind.sigs.k8s.io/) cluster. They are not production sizes.
 
+The same four resources are ready to apply in [`config/example/camunda-cluster/elasticsearch`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-cluster/elasticsearch). Follow the steps below to learn what each one does, or apply that directory to get the cluster in one command.
+
 ## Before you start
 
 You need:
@@ -121,7 +123,7 @@ spec:
 
 This is the default topology of Camunda 8.9: one Zeebe broker, and one gateway that also serves Operate, Tasklist, and Admin.
 
-In a shared environment, the version and the sizing come from a `CamundaClusterPreset`, and a cluster sets only `presetRef` and its references. See the [presets guide](guides/presets.md).
+In a shared environment, the sizing comes from a `CamundaClusterPreset`, the version from a `CamundaRelease`, and a cluster sets only `presetRef`, `releaseRef`, and its references. See the [presets guide](guides/presets.md).
 
 Wait until it is ready:
 
@@ -177,7 +179,13 @@ kubectl delete namespace my-cluster-ns
 Deleting the `CamundaCluster` deletes the broker volumes. To keep them, set the retention policy before you delete:
 
 ```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
 spec:
+  # ... the rest of your cluster
   zeebe:
     persistentVolumeClaimRetentionPolicy:
       whenDeleted: Retain

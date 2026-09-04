@@ -222,7 +222,12 @@ func (w *world) renderBrokers() {
 	selector := map[string]string{"camunda.io/cluster": w.cluster.Name, "camunda.io/component": "zeebe"}
 
 	workload := &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: w.namespace, Labels: selector},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   w.namespace,
+			Labels:      selector,
+			Annotations: map[string]string{camundacluster.BrokerVersionAnnotation: worldVersion},
+		},
 		Spec: appsv1.StatefulSetSpec{
 			Replicas:    new(int32(0)),
 			ServiceName: name,
@@ -316,12 +321,14 @@ func (w *world) setRunningBrokers(running int32) {
 }
 
 // rollBrokerImage stands in for the CamundaCluster controller rolling a new
-// spec.version into the broker StatefulSet. The tag of that image is where a
-// restore reads the Camunda version that the cluster really runs.
+// spec.version into the broker StatefulSet. The broker version annotation of
+// that StatefulSet is where a restore reads the Camunda version that the
+// cluster really runs.
 func (w *world) rollBrokerImage(version string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		brokers := w.brokerStatefulSet(g)
+		brokers.Annotations[camundacluster.BrokerVersionAnnotation] = version
 		brokers.Spec.Template.Spec.Containers[0].Image = "camunda/camunda:" + version
 		g.Expect(k8sClient.Update(ctx, brokers)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
