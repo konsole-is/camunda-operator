@@ -51,9 +51,8 @@ const retryInterval = 5 * time.Second
 
 // watchWindow is the budget of a wake that a watch delivers. The chain is the
 // watch event, the enqueue, one reconcile, and the status write, behind the
-// queue of the restores that the earlier specs left running. That chain took
-// up to 413 ms with ten of these suites on two cores. The window stays under
-// retryInterval, so a hold that ends inside it was ended by a watch.
+// queue of the restores that the earlier specs left running. The window stays
+// under retryInterval, so a hold that ends inside it was ended by a watch.
 const watchWindow = 2 * time.Second
 
 var (
