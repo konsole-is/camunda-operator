@@ -73,31 +73,6 @@ type SnapshotStorage struct {
 	Credentials *objectstore.Credentials
 }
 
-// identityAnnotations returns the ServiceAccount annotations that bind the
-// identity of the bucket, or nil when there is no bucket or no identity.
-func (s *SnapshotStorage) identityAnnotations() map[string]string {
-	if s == nil {
-		return nil
-	}
-
-	return s.Config.WorkloadIdentityAnnotations()
-}
-
-// workloadIdentity reports whether the nodes authenticate against the bucket
-// as their ServiceAccount. It is true for every workload-identity bucket,
-// annotation or not: EKS Pod Identity and Workload Identity Federation bind
-// the ServiceAccount by name on the cloud side, so the account must exist and
-// be referenced even when there is nothing to annotate onto it.
-func (s *SnapshotStorage) workloadIdentity() bool {
-	return s != nil && s.Config != nil && s.Credentials == nil
-}
-
-// repository reports whether the cluster has a snapshot repository to
-// register and to publish.
-func (s *SnapshotStorage) repository() bool {
-	return s != nil && s.Config != nil
-}
-
 // identityMechanism is how the nodes prove who they are to the bucket. It is
 // a property of the cloud, not of the storage type: S3 and GCS both read the
 // projected ServiceAccount token of the pod, while Azure reads a federated
@@ -142,6 +117,195 @@ type snapshotRepository struct {
 	nodeConfig map[string]any
 	// identity is how the nodes prove who they are to the bucket.
 	identity identityMechanism
+}
+
+// The federated-token plumbing of Azure workload identity. Elasticsearch
+// reads files under its own configuration directory alone, so the projected
+// token goes there rather than to the default path of the Azure webhook, and
+// the SDK is pointed at it by name.
+const (
+	azureTokenVolume            = "azure-identity-token"
+	azureTokenDir               = "/usr/share/elasticsearch/config/azure/tokens"
+	azureTokenAudience          = "api://AzureADTokenExchange"
+	azureTokenExpirationSeconds = 3600
+	azureFederatedTokenFileEnv  = "AZURE_FEDERATED_TOKEN_FILE"
+)
+
+// azureEndpointSuffixSetting is the node setting that names the service
+// endpoint of an azure client. It is the one client setting that the keystore
+// does not take.
+var azureEndpointSuffixSetting = "azure.client." + esadmin.DefaultClientName + ".endpoint_suffix"
+
+// KeystoreComponent builds the keystore component: the Secret whose entries
+// ECK loads into the keystore of every node, holding the client settings of
+// the snapshot bucket that Elasticsearch accepts nowhere else. Elasticsearch
+// reads the credentials of a repository from the keystore alone, never from
+// the settings of the repository. The component is gated on the bucket
+// needing entries at all; when it needs none the Secret is deleted.
+func KeystoreComponent(
+	cluster *v1.ElasticsearchCluster,
+	storage *SnapshotStorage,
+) (*component.Component, error) {
+	keystoreSecret, err := secret.NewBuilder(&corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      KeystoreSecretName(cluster),
+			Namespace: cluster.Namespace,
+			Labels:    managedLabels(cluster),
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: storage.keystoreEntries(),
+	}).Build()
+	if err != nil {
+		return nil, err
+	}
+
+	return component.NewComponentBuilder().
+		WithName("keystore").
+		WithConditionType(ConditionKeystore).
+		WithResource(keystoreSecret, component.GatedBy(feature.NewBooleanGate(storage.keystore()))).
+		Build()
+}
+
+// KeystoreSecretName returns the name of the Secret that carries the bucket
+// credentials into the keystore of every node.
+func KeystoreSecretName(cluster *v1.ElasticsearchCluster) string {
+	return cluster.Name + keystoreSecretSuffix
+}
+
+// ValidateSnapshotStorage reports why a bucket cannot back the snapshot
+// repository of a cluster, or nil when it can. The caller turns the message
+// into a pre-check failure on the cluster.
+//
+// Every storage type of the contract is served. What can still fail is a
+// contract whose declared type and block disagree, and an azure container
+// whose endpoint Elasticsearch cannot express: see azureEndpointSuffix.
+//
+// It answers with resolve, so the pre-check can never accept a bucket that
+// the renderers cannot render.
+func ValidateSnapshotStorage(config *v1.ObjectStorageConfig) error {
+	_, err := (&SnapshotStorage{Config: config}).resolve()
+
+	return err
+}
+
+// snapshotStorageMutations returns the mutations that the snapshot bucket adds
+// to the ECK CR. Each one is gated on what the resolved repository needs; a
+// cluster with no bucket, or one whose bucket does not resolve, gets none of
+// them.
+//
+// The gates read the identity mechanism, not the storage type. S3 and GCS
+// share a branch here because they share a mechanism, which is the reason,
+// rather than because neither of them is Azure.
+func snapshotStorageMutations(storage *SnapshotStorage) []eckelasticsearch.Mutation {
+	repo := storage.repositoryOrNil()
+	if repo == nil {
+		return nil
+	}
+
+	return []eckelasticsearch.Mutation{
+		{
+			// ECK mounts no ServiceAccount token unless the pod template asks
+			// for one, and both IRSA and Workload Identity Federation read the
+			// projected token of the pod. Azure is not here: it projects a
+			// token of its own below, with the audience that Entra ID expects.
+			Name:    "ServiceAccountToken",
+			Feature: feature.NewBooleanGate(repo.identity == identityFromServiceAccountToken),
+			Mutate: func(m *eckelasticsearch.Mutator) error {
+				m.Edit(func(es *esv1.Elasticsearch) error {
+					automount := true
+					es.Spec.NodeSets[0].PodTemplate.Spec.AutomountServiceAccountToken = &automount
+					return nil
+				})
+				return nil
+			},
+		},
+		{
+			Name:    "AzureWorkloadIdentity",
+			Feature: feature.NewBooleanGate(repo.identity == identityFromFederatedToken),
+			Mutate: func(m *eckelasticsearch.Mutator) error {
+				m.Edit(func(es *esv1.Elasticsearch) error {
+					template := &es.Spec.NodeSets[0].PodTemplate
+					// Without the label the webhook of Azure injects neither
+					// the client id nor the tenant id, whatever the
+					// ServiceAccount is annotated with.
+					template.Labels = labels.Merge(
+						template.Labels, storage.Config.WorkloadIdentityPodLabels(),
+					)
+					expiration := int64(azureTokenExpirationSeconds)
+					template.Spec.Volumes = append(template.Spec.Volumes, corev1.Volume{
+						Name: azureTokenVolume,
+						VolumeSource: corev1.VolumeSource{
+							Projected: &corev1.ProjectedVolumeSource{
+								Sources: []corev1.VolumeProjection{{
+									ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+										Audience:          azureTokenAudience,
+										ExpirationSeconds: &expiration,
+										Path:              azureTokenVolume,
+									},
+								}},
+							},
+						},
+					})
+					return nil
+				})
+				m.EditContainer(nodeSetName, func(c *editors.ContainerEditor) error {
+					container := c.Raw()
+					container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+						Name:      azureTokenVolume,
+						MountPath: azureTokenDir,
+					})
+					c.EnsureEnvVar(corev1.EnvVar{
+						Name:  azureFederatedTokenFileEnv,
+						Value: azureTokenDir + "/" + azureTokenVolume,
+					})
+					return nil
+				})
+				return nil
+			},
+		},
+		{
+			// Only the settings that the keystore does not take land here, and
+			// a client whose settings are all default needs none of them.
+			Name:    "NodeConfig",
+			Feature: feature.NewBooleanGate(len(repo.nodeConfig) > 0),
+			Mutate: func(m *eckelasticsearch.Mutator) error {
+				m.Edit(func(es *esv1.Elasticsearch) error {
+					nodeSet := &es.Spec.NodeSets[0]
+					if nodeSet.Config == nil {
+						nodeSet.Config = &commonv1.Config{Data: map[string]any{}}
+					}
+					maps.Copy(nodeSet.Config.Data, repo.nodeConfig)
+					return nil
+				})
+				return nil
+			},
+		},
+	}
+}
+
+// identityAnnotations returns the ServiceAccount annotations that bind the
+// identity of the bucket, or nil when there is no bucket or no identity.
+func (s *SnapshotStorage) identityAnnotations() map[string]string {
+	if s == nil {
+		return nil
+	}
+
+	return s.Config.WorkloadIdentityAnnotations()
+}
+
+// workloadIdentity reports whether the nodes authenticate against the bucket
+// as their ServiceAccount. It is true for every workload-identity bucket,
+// annotation or not: EKS Pod Identity and Workload Identity Federation bind
+// the ServiceAccount by name on the cloud side, so the account must exist and
+// be referenced even when there is nothing to annotate onto it.
+func (s *SnapshotStorage) workloadIdentity() bool {
+	return s != nil && s.Config != nil && s.Credentials == nil
+}
+
+// repository reports whether the cluster has a snapshot repository to
+// register and to publish.
+func (s *SnapshotStorage) repository() bool {
+	return s != nil && s.Config != nil
 }
 
 // resolve reduces the contract and its credentials to the repository that
@@ -241,6 +405,43 @@ func (s *SnapshotStorage) resolve() (*snapshotRepository, error) {
 	)
 }
 
+// azureEndpointSuffix reduces the service endpoint of an azure container to
+// the endpoint suffix that Elasticsearch takes, and reports whether it could.
+//
+// Elasticsearch addresses an account as https://<account>.blob.<suffix> and
+// configures only the suffix, so it serves the public Azure endpoint and the
+// sovereign clouds, and nothing else. An emulator that addresses the account
+// through a path, such as Azurite, has no suffix to give: it is rejected here
+// rather than silently registered against the public endpoint of the account,
+// which is a different store than the contract names.
+func azureEndpointSuffix(storage *v1.AzureBlobStorage) (string, bool) {
+	if storage.Endpoint == "" {
+		return defaultAzureEndpointSuffix, true
+	}
+
+	// Only the scheme and the host survive into the suffix, so an endpoint
+	// that carries anything else says something the suffix cannot. Dropping a
+	// port, a path, a query, a fragment, or credentials silently would leave
+	// the repository addressing a store the contract did not name.
+	endpoint, err := url.Parse(storage.ServiceEndpoint())
+	if err != nil ||
+		endpoint.Scheme != "https" ||
+		endpoint.Path != "" ||
+		endpoint.Port() != "" ||
+		endpoint.RawQuery != "" ||
+		endpoint.Fragment != "" ||
+		endpoint.User != nil {
+		return "", false
+	}
+
+	suffix, found := strings.CutPrefix(endpoint.Host, storage.AccountName+".blob.")
+	if !found || suffix == "" {
+		return "", false
+	}
+
+	return suffix, true
+}
+
 // repositoryOrNil resolves the bucket and drops the reason it could not. The
 // renderers use it: a bucket that does not resolve renders nothing, and the
 // pre-check has already reported why to the user.
@@ -267,42 +468,6 @@ func (s *SnapshotStorage) keystoreEntries() map[string][]byte {
 // keystore reports whether the nodes need a keystore Secret.
 func (s *SnapshotStorage) keystore() bool {
 	return len(s.keystoreEntries()) > 0
-}
-
-// KeystoreSecretName returns the name of the Secret that carries the bucket
-// credentials into the keystore of every node.
-func KeystoreSecretName(cluster *v1.ElasticsearchCluster) string {
-	return cluster.Name + keystoreSecretSuffix
-}
-
-// KeystoreComponent builds the keystore component: the Secret whose entries
-// ECK loads into the keystore of every node, holding the client settings of
-// the snapshot bucket that Elasticsearch accepts nowhere else. Elasticsearch
-// reads the credentials of a repository from the keystore alone, never from
-// the settings of the repository. The component is gated on the bucket
-// needing entries at all; when it needs none the Secret is deleted.
-func KeystoreComponent(
-	cluster *v1.ElasticsearchCluster,
-	storage *SnapshotStorage,
-) (*component.Component, error) {
-	keystoreSecret, err := secret.NewBuilder(&corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      KeystoreSecretName(cluster),
-			Namespace: cluster.Namespace,
-			Labels:    managedLabels(cluster),
-		},
-		Type: corev1.SecretTypeOpaque,
-		Data: storage.keystoreEntries(),
-	}).Build()
-	if err != nil {
-		return nil, err
-	}
-
-	return component.NewComponentBuilder().
-		WithName("keystore").
-		WithConditionType(ConditionKeystore).
-		WithResource(keystoreSecret, component.GatedBy(feature.NewBooleanGate(storage.keystore()))).
-		Build()
 }
 
 // RepositoryConfig returns the settings of the snapshot repository that the
@@ -351,170 +516,5 @@ func RepositoryConfigAt(storage *SnapshotStorage, basePath string) esadmin.Repos
 		Endpoint:        repo.endpoint,
 		Region:          repo.region,
 		PathStyleAccess: repo.pathStyle,
-	}
-}
-
-// ValidateSnapshotStorage reports why a bucket cannot back the snapshot
-// repository of a cluster, or nil when it can. The caller turns the message
-// into a pre-check failure on the cluster.
-//
-// Every storage type of the contract is served. What can still fail is a
-// contract whose declared type and block disagree, and an azure container
-// whose endpoint Elasticsearch cannot express: see azureEndpointSuffix.
-//
-// It answers with resolve, so the pre-check can never accept a bucket that
-// the renderers cannot render.
-func ValidateSnapshotStorage(config *v1.ObjectStorageConfig) error {
-	_, err := (&SnapshotStorage{Config: config}).resolve()
-
-	return err
-}
-
-// azureEndpointSuffix reduces the service endpoint of an azure container to
-// the endpoint suffix that Elasticsearch takes, and reports whether it could.
-//
-// Elasticsearch addresses an account as https://<account>.blob.<suffix> and
-// configures only the suffix, so it serves the public Azure endpoint and the
-// sovereign clouds, and nothing else. An emulator that addresses the account
-// through a path, such as Azurite, has no suffix to give: it is rejected here
-// rather than silently registered against the public endpoint of the account,
-// which is a different store than the contract names.
-func azureEndpointSuffix(storage *v1.AzureBlobStorage) (string, bool) {
-	if storage.Endpoint == "" {
-		return defaultAzureEndpointSuffix, true
-	}
-
-	// Only the scheme and the host survive into the suffix, so an endpoint
-	// that carries anything else says something the suffix cannot. Dropping a
-	// port, a path, a query, a fragment, or credentials silently would leave
-	// the repository addressing a store the contract did not name.
-	endpoint, err := url.Parse(storage.ServiceEndpoint())
-	if err != nil ||
-		endpoint.Scheme != "https" ||
-		endpoint.Path != "" ||
-		endpoint.Port() != "" ||
-		endpoint.RawQuery != "" ||
-		endpoint.Fragment != "" ||
-		endpoint.User != nil {
-		return "", false
-	}
-
-	suffix, found := strings.CutPrefix(endpoint.Host, storage.AccountName+".blob.")
-	if !found || suffix == "" {
-		return "", false
-	}
-
-	return suffix, true
-}
-
-// The federated-token plumbing of Azure workload identity. Elasticsearch
-// reads files under its own configuration directory alone, so the projected
-// token goes there rather than to the default path of the Azure webhook, and
-// the SDK is pointed at it by name.
-const (
-	azureTokenVolume            = "azure-identity-token"
-	azureTokenDir               = "/usr/share/elasticsearch/config/azure/tokens"
-	azureTokenAudience          = "api://AzureADTokenExchange"
-	azureTokenExpirationSeconds = 3600
-	azureFederatedTokenFileEnv  = "AZURE_FEDERATED_TOKEN_FILE"
-)
-
-// azureEndpointSuffixSetting is the node setting that names the service
-// endpoint of an azure client. It is the one client setting that the keystore
-// does not take.
-var azureEndpointSuffixSetting = "azure.client." + esadmin.DefaultClientName + ".endpoint_suffix"
-
-// snapshotStorageMutations returns the mutations that the snapshot bucket adds
-// to the ECK CR. Each one is gated on what the resolved repository needs; a
-// cluster with no bucket, or one whose bucket does not resolve, gets none of
-// them.
-//
-// The gates read the identity mechanism, not the storage type. S3 and GCS
-// share a branch here because they share a mechanism, which is the reason,
-// rather than because neither of them is Azure.
-func snapshotStorageMutations(storage *SnapshotStorage) []eckelasticsearch.Mutation {
-	repo := storage.repositoryOrNil()
-	if repo == nil {
-		return nil
-	}
-
-	return []eckelasticsearch.Mutation{
-		{
-			// ECK mounts no ServiceAccount token unless the pod template asks
-			// for one, and both IRSA and Workload Identity Federation read the
-			// projected token of the pod. Azure is not here: it projects a
-			// token of its own below, with the audience that Entra ID expects.
-			Name:    "ServiceAccountToken",
-			Feature: feature.NewBooleanGate(repo.identity == identityFromServiceAccountToken),
-			Mutate: func(m *eckelasticsearch.Mutator) error {
-				m.Edit(func(es *esv1.Elasticsearch) error {
-					automount := true
-					es.Spec.NodeSets[0].PodTemplate.Spec.AutomountServiceAccountToken = &automount
-					return nil
-				})
-				return nil
-			},
-		},
-		{
-			Name:    "AzureWorkloadIdentity",
-			Feature: feature.NewBooleanGate(repo.identity == identityFromFederatedToken),
-			Mutate: func(m *eckelasticsearch.Mutator) error {
-				m.Edit(func(es *esv1.Elasticsearch) error {
-					template := &es.Spec.NodeSets[0].PodTemplate
-					// Without the label the webhook of Azure injects neither
-					// the client id nor the tenant id, whatever the
-					// ServiceAccount is annotated with.
-					template.Labels = labels.Merge(
-						template.Labels, storage.Config.WorkloadIdentityPodLabels(),
-					)
-					expiration := int64(azureTokenExpirationSeconds)
-					template.Spec.Volumes = append(template.Spec.Volumes, corev1.Volume{
-						Name: azureTokenVolume,
-						VolumeSource: corev1.VolumeSource{
-							Projected: &corev1.ProjectedVolumeSource{
-								Sources: []corev1.VolumeProjection{{
-									ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
-										Audience:          azureTokenAudience,
-										ExpirationSeconds: &expiration,
-										Path:              azureTokenVolume,
-									},
-								}},
-							},
-						},
-					})
-					return nil
-				})
-				m.EditContainer(nodeSetName, func(c *editors.ContainerEditor) error {
-					container := c.Raw()
-					container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
-						Name:      azureTokenVolume,
-						MountPath: azureTokenDir,
-					})
-					c.EnsureEnvVar(corev1.EnvVar{
-						Name:  azureFederatedTokenFileEnv,
-						Value: azureTokenDir + "/" + azureTokenVolume,
-					})
-					return nil
-				})
-				return nil
-			},
-		},
-		{
-			// Only the settings that the keystore does not take land here, and
-			// a client whose settings are all default needs none of them.
-			Name:    "NodeConfig",
-			Feature: feature.NewBooleanGate(len(repo.nodeConfig) > 0),
-			Mutate: func(m *eckelasticsearch.Mutator) error {
-				m.Edit(func(es *esv1.Elasticsearch) error {
-					nodeSet := &es.Spec.NodeSets[0]
-					if nodeSet.Config == nil {
-						nodeSet.Config = &commonv1.Config{Data: map[string]any{}}
-					}
-					maps.Copy(nodeSet.Config.Data, repo.nodeConfig)
-					return nil
-				})
-				return nil
-			},
-		},
 	}
 }

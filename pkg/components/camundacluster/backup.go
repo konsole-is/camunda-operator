@@ -60,15 +60,6 @@ const (
 	gcsKeyMountPath  = "/etc/camunda/gcs-backup"
 )
 
-// BackupBasePath returns the prefix that this cluster writes its backups
-// under, through the one layout definition of pkg/logicalbackup: the prefix
-// of the contract, then the namespace and the name of the cluster. Two
-// clusters that share a bucket therefore never share a prefix, which the
-// Zeebe backup store requires. Azure has no prefix of its own; see azureEnv.
-func BackupBasePath(in Input) string {
-	return logicalbackup.ClusterPrefix(in.Backup.BasePath(), in.Cluster.Namespace, in.Cluster.Name)
-}
-
 // DerivedServiceAccountAnnotations returns the workload-identity annotations
 // of every referenced bucket, merged. The per-cloud knowledge lives on the
 // contract (WorkloadIdentityAnnotations); this function only merges and
@@ -192,6 +183,24 @@ func backupEnv(in Input, p Process) rendered {
 	return r
 }
 
+// backupIDModeEnv renders the three keys that tell a process whether the
+// cluster generates its own backup ids. Camunda 8.9 reads them wherever the
+// backupRuntime actuator runs, and a cluster that takes continuous backups,
+// or runs either scheduler, generates the id itself. Retention is not among
+// them: it prunes backups and takes none, so only the brokers need it.
+func backupIDModeEnv(in Input) []corev1.EnvVar {
+	backup := in.Effective.PrimaryStorageBackup()
+
+	return []corev1.EnvVar{
+		camundaconfig.Var(
+			camundaconfig.KeyPrimaryBackupContinuous,
+			strconv.FormatBool(backup.Continuous),
+		),
+		camundaconfig.Var(camundaconfig.KeyPrimaryBackupSchedule, backup.Schedule),
+		camundaconfig.Var(camundaconfig.KeyPrimaryBackupCheckpointInterval, backup.CheckpointInterval),
+	}
+}
+
 // s3Env renders the S3 backup store. Without static keys nothing
 // authenticates here and the AWS credential chain resolves the identity of
 // the pod ServiceAccount. An endpoint marks S3-compatible storage, which also
@@ -251,6 +260,15 @@ func s3Env(in Input, s3 *v1.S3Storage) []corev1.EnvVar {
 	}
 
 	return env
+}
+
+// BackupBasePath returns the prefix that this cluster writes its backups
+// under, through the one layout definition of pkg/logicalbackup: the prefix
+// of the contract, then the namespace and the name of the cluster. Two
+// clusters that share a bucket therefore never share a prefix, which the
+// Zeebe backup store requires. Azure has no prefix of its own; see azureEnv.
+func BackupBasePath(in Input) string {
+	return logicalbackup.ClusterPrefix(in.Backup.BasePath(), in.Cluster.Namespace, in.Cluster.Name)
 }
 
 // gcsEnv renders the GCS backup store. The store takes no key as a property:
@@ -335,22 +353,4 @@ func primaryStorageScheduleEnv(in Input) []corev1.EnvVar {
 		camundaconfig.Var(camundaconfig.KeyPrimaryBackupRetentionWindow, backup.RetentionWindow),
 		camundaconfig.Var(camundaconfig.KeyPrimaryBackupRetentionCleanupSchedule, backup.CleanupSchedule),
 	)
-}
-
-// backupIDModeEnv renders the three keys that tell a process whether the
-// cluster generates its own backup ids. Camunda 8.9 reads them wherever the
-// backupRuntime actuator runs, and a cluster that takes continuous backups,
-// or runs either scheduler, generates the id itself. Retention is not among
-// them: it prunes backups and takes none, so only the brokers need it.
-func backupIDModeEnv(in Input) []corev1.EnvVar {
-	backup := in.Effective.PrimaryStorageBackup()
-
-	return []corev1.EnvVar{
-		camundaconfig.Var(
-			camundaconfig.KeyPrimaryBackupContinuous,
-			strconv.FormatBool(backup.Continuous),
-		),
-		camundaconfig.Var(camundaconfig.KeyPrimaryBackupSchedule, backup.Schedule),
-		camundaconfig.Var(camundaconfig.KeyPrimaryBackupCheckpointInterval, backup.CheckpointInterval),
-	}
 }

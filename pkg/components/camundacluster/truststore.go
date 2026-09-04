@@ -117,24 +117,6 @@ if [ "$count" -eq 0 ]; then
 fi
 `
 
-// usesTrustStore reports whether a process runs with the JVM trust store: its
-// secondary storage is an Elasticsearch that names a certificate authority.
-//
-// The gate is the caSecretRef of the binding, not the kind of resource that
-// published it. An ElasticsearchCluster always names one, and a hand-written
-// contract that points at any private-CA endpoint gets the same trust store.
-//
-// Connectors are left out. They talk to the gateway alone, they never read
-// the secondary storage, and render gives them no CA mount to read.
-func usesTrustStore(in Input, p Process) bool {
-	if p.Component == ComponentConnectors {
-		return false
-	}
-
-	es := in.Storage.Elasticsearch
-	return in.Storage.Type == v1.SecondaryStorageTypeElasticsearch && es != nil && es.CASecretRef != nil
-}
-
 // trustStoreMutation adds the trust store to a workload: the emptyDir that
 // carries it, the init container that builds it from the mounted CA, and the
 // read-only mount of it on the process container.
@@ -169,6 +151,24 @@ func trustStoreMutation(in Input, p Process) workloadMutation {
 			return nil
 		},
 	}
+}
+
+// usesTrustStore reports whether a process runs with the JVM trust store: its
+// secondary storage is an Elasticsearch that names a certificate authority.
+//
+// The gate is the caSecretRef of the binding, not the kind of resource that
+// published it. An ElasticsearchCluster always names one, and a hand-written
+// contract that points at any private-CA endpoint gets the same trust store.
+//
+// Connectors are left out. They talk to the gateway alone, they never read
+// the secondary storage, and render gives them no CA mount to read.
+func usesTrustStore(in Input, p Process) bool {
+	if p.Component == ComponentConnectors {
+		return false
+	}
+
+	es := in.Storage.Elasticsearch
+	return in.Storage.Type == v1.SecondaryStorageTypeElasticsearch && es != nil && es.CASecretRef != nil
 }
 
 // trustStoreInitContainer builds the init container that writes the trust

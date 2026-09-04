@@ -106,100 +106,32 @@ type ArchiveOutage struct {
 	Confirmed bool
 }
 
-// ArchiveOutageOf returns what CloudNativePG reports about the write-ahead log
-// uploads of cluster at now, or nil when it reports nothing wrong. A cluster
-// that has not uploaded a segment yet reports nothing, and so does one that
-// archives nowhere.
-func ArchiveOutageOf(cluster *cnpgv1.Cluster, now time.Time) *ArchiveOutage {
-	condition := cnpgcluster.ContinuousArchiving(cluster)
-	if condition == nil || condition.Status != metav1.ConditionFalse {
-		return nil
-	}
-
-	return &ArchiveOutage{
-		Reason:    condition.Reason,
-		Message:   condition.Message,
-		Since:     condition.LastTransitionTime,
-		Confirmed: !now.Before(condition.LastTransitionTime.Add(ArchiveOutageGracePeriod)),
-	}
-}
-
-// ArchiveFailingMessage returns the ArchiveReady message of a server whose
-// write-ahead log stopped reaching the bucket: what CloudNativePG reports,
-// what the archive still holds, and what to do about it.
-func ArchiveFailingMessage(outage *ArchiveOutage) string {
-	return fmt.Sprintf(
-		"CloudNativePG reports %s on the write-ahead log uploads of this server since %s: %s. "+
-			"The archive holds every point up to the last segment that arrived, and a restore to "+
-			"a point after that reaches nothing. Repair the bucket or the credentials of the "+
-			"bucket. The segments that are held back arrive once the uploads run again.",
-		outage.Reason, outage.Since.UTC().Format(time.RFC3339), outage.Message,
-	)
-}
-
-// ObjectStoreName returns the name of the ObjectStore that describes the
-// archive of the server. It stays the name of the server across a recovery:
-// one bucket location holds every archive the server has written, and the
-// serverName parameter of the cluster is what separates them.
-func ObjectStoreName(server *v1.DatabaseServer) string { return server.Name }
-
-// ArchiveTakenMessage returns the ArchiveReady message for an ObjectStore of
-// the name the server derives that another owner controls: who holds it, and
-// what to do about it. holder is that owner's controller reference. An
-// ObjectStore that nothing controls is adopted, not reported, so there is no
-// message for it; the design spec says why.
-func ArchiveTakenMessage(name string, holder metav1.OwnerReference) string {
-	return fmt.Sprintf(
-		"Barman Cloud ObjectStore %q already exists and %s %q controls it. It describes the "+
-			"archive of another server, so this server archives nothing: its cluster carries no "+
-			"archive plugin, it takes no base backup, and it publishes no point-in-time-recovery "+
-			"capability. The archive it wrote before and its history stay. Remove that "+
-			"ObjectStore, or give this server a name of its own.",
-		name, holder.Kind, holder.Name,
-	)
-}
-
-// BaseBackupName returns the name of the ScheduledBackup that takes the base
-// backups of the current cluster. It follows the cluster, so a recovery gets
-// a schedule of its own.
-func BaseBackupName(server *v1.DatabaseServer) string { return ClusterName(server) }
-
-// ArchiveSecretName returns the Secret that carries the bucket settings of the
-// archive into the Barman Cloud plugin.
-func ArchiveSecretName(server *v1.DatabaseServer) string {
-	return server.Name + archiveSecretSuffix
-}
-
-// ArchiveSegment returns the directory in the bucket that holds the archive of
-// this server: its name, a dash, and the first eight hex characters of the
-// SHA-256 of its UID. Two servers of one name and different UIDs get different
-// directories.
-func ArchiveSegment(server *v1.DatabaseServer) string {
-	sum := sha256.Sum256([]byte(server.UID))
-
-	return server.Name + "-" + hex.EncodeToString(sum[:4])
-}
-
-// Archiving reports whether the merged spec asks for an archive. It is the one
-// place that decides the question, so every reader of the rule answers the
-// same.
-func Archiving(merged v1.DatabaseServerSpec) bool { return merged.Archive != nil }
-
-// ValidateArchiveStorage reports why a bucket cannot hold the archive of a
-// server, or nil when it can. The caller turns the message into a pre-check
-// failure on the server.
+// barmanArchive is the Barman Cloud side of the active storage block, reduced
+// to what every renderer in this file reads. One switch builds it, in resolve;
+// nothing else here dispatches on the storage type. Adding a storage type is a
+// case in that switch and nothing more.
 //
-// Every storage type of the contract is served. What can still fail is a
-// contract whose declared type and block disagree. It answers with the same
-// resolution the renderers use, so a bucket the pre-check accepts is one every
-// renderer can render.
-func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
-	// The server only names the archive Secret and the object prefix, and
-	// neither can make a bucket unservable, so a nameless one answers the
-	// question.
-	_, err := (&ArchiveStorage{Config: config}).resolve(&v1.DatabaseServer{})
-
-	return err
+// This mirrors the activeBlock of ObjectStorageConfig, which reduces the same
+// three blocks one layer down for the same reason.
+type barmanArchive struct {
+	// destinationRoot is the provider-addressing prefix of the archive URL,
+	// without the base path of the contract.
+	destinationRoot string
+	// destinationPath is the bucket URL that holds the archives of one
+	// server: destinationRoot, the base path of the contract, and the prefix
+	// of the server.
+	destinationPath string
+	// endpointURL addresses an S3-compatible store. It is empty for every
+	// other provider and for AWS S3 itself.
+	endpointURL string
+	// secretData holds the bucket settings that the plugin reads from a
+	// Secret, keyed by the key each one takes.
+	secretData map[string][]byte
+	// Exactly one credentials block is set, the one of the declared storage
+	// type.
+	s3Credentials     *barmanobjectstore.S3Credentials
+	azureCredentials  *barmanobjectstore.AzureCredentials
+	googleCredentials *barmanobjectstore.GoogleCredentials
 }
 
 // ArchiveComponent builds the archive component: the Secret with the bucket
@@ -324,63 +256,6 @@ func ArchiveComponent(
 	return comp, destination, nil
 }
 
-// archiveGuard blocks the archive while it cannot be recovered from. Two
-// things block it: no base backup of the archive the server writes now has
-// completed, and the write-ahead log of the server stopped reaching the
-// bucket. archiveStart is when the earliest such backup completed, or nil when
-// none has, and outage is the stop in the uploads that the caller reports on,
-// or nil. The guard blocks on every outage it is given.
-//
-// The uploads come first. An archive that stopped receiving write-ahead log
-// takes no base backup either, so the failing uploads are what the reader acts
-// on.
-//
-// A suspended server is never blocked by the base backup. Its schedule is
-// suspended with it, so no backup can complete and there is nothing to wait
-// on. Blocking there would hold the archive of a server that was suspended
-// before its first backup at False for as long as the suspension lasts. The
-// guard engages again when the server comes back.
-func archiveGuard(
-	server *v1.DatabaseServer,
-	archiveStart *metav1.Time,
-	outage *ArchiveOutage,
-	suspended bool,
-) func(cnpgv1.Cluster) (concepts.GuardStatusWithReason, error) {
-	return func(cnpgv1.Cluster) (concepts.GuardStatusWithReason, error) {
-		switch {
-		case outage != nil:
-			return concepts.GuardStatusWithReason{
-				Status: concepts.GuardStatusBlocked,
-				Reason: fmt.Sprintf(
-					"CloudNativePG reports %s on the write-ahead log uploads of this server since %s",
-					outage.Reason, outage.Since.UTC().Format(time.RFC3339),
-				),
-			}, nil
-
-		case archiveStart != nil:
-			return concepts.GuardStatusWithReason{
-				Status: concepts.GuardStatusUnblocked,
-				Reason: fmt.Sprintf(
-					"the archive holds a base backup taken at %s",
-					archiveStart.UTC().Format(time.RFC3339),
-				),
-			}, nil
-
-		case suspended:
-			return concepts.GuardStatusWithReason{
-				Status: concepts.GuardStatusUnblocked,
-				Reason: "the server is suspended, so no base backup can complete",
-			}, nil
-
-		default:
-			return concepts.GuardStatusWithReason{
-				Status: concepts.GuardStatusBlocked,
-				Reason: fmt.Sprintf("the first base backup of %q is not complete yet", ClusterName(server)),
-			}, nil
-		}
-	}
-}
-
 // archiveSecret renders the Secret that carries the bucket settings of the
 // archive. The Barman Cloud plugin reads every one of them from a Secret key,
 // including the region of an S3 bucket, so the Secret exists for a bucket that
@@ -445,22 +320,26 @@ func objectStore(
 	return store
 }
 
-// ArchiveLocation returns where in object storage the archive of server is
-// written, as the canonical location of the bucket contract narrowed to the
-// prefix that holds this server alone. It is the empty string when the server
-// references no bucket.
-//
-// status.archive.history compares intervals by it. The ObjectStorageConfig
-// that a record names can be edited in place, or removed and created again
-// under its name, and neither shows in the name. It is the canonical location
-// rather than the URL the plugin is given, because the endpoint and the region
-// select the service that answers and neither reaches that URL.
-func (a *ArchiveStorage) ArchiveLocation(server *v1.DatabaseServer) string {
-	if a == nil || a.Config == nil {
-		return ""
-	}
+// ObjectStoreName returns the name of the ObjectStore that describes the
+// archive of the server. It stays the name of the server across a recovery:
+// one bucket location holds every archive the server has written, and the
+// serverName parameter of the cluster is what separates them.
+func ObjectStoreName(server *v1.DatabaseServer) string { return server.Name }
 
-	return a.Config.LocationOf(archivePathSegment + "/" + server.Namespace + "/" + ArchiveSegment(server))
+// ArchiveTakenMessage returns the ArchiveReady message for an ObjectStore of
+// the name the server derives that another owner controls: who holds it, and
+// what to do about it. holder is that owner's controller reference. An
+// ObjectStore that nothing controls is adopted, not reported, so there is no
+// message for it; the design spec says why.
+func ArchiveTakenMessage(name string, holder metav1.OwnerReference) string {
+	return fmt.Sprintf(
+		"Barman Cloud ObjectStore %q already exists and %s %q controls it. It describes the "+
+			"archive of another server, so this server archives nothing: its cluster carries no "+
+			"archive plugin, it takes no base backup, and it publishes no point-in-time-recovery "+
+			"capability. The archive it wrote before and its history stay. Remove that "+
+			"ObjectStore, or give this server a name of its own.",
+		name, holder.Kind, holder.Name,
+	)
 }
 
 // destinationPath returns the bucket URL that holds the archives of the
@@ -515,6 +394,155 @@ func scheduledBackup(server *v1.DatabaseServer, merged v1.DatabaseServerSpec) *c
 			Cluster:             cnpgv1.LocalObjectReference{Name: ClusterName(server)},
 		},
 	}
+}
+
+// BaseBackupName returns the name of the ScheduledBackup that takes the base
+// backups of the current cluster. It follows the cluster, so a recovery gets
+// a schedule of its own.
+func BaseBackupName(server *v1.DatabaseServer) string { return ClusterName(server) }
+
+// ArchiveSecretName returns the Secret that carries the bucket settings of the
+// archive into the Barman Cloud plugin.
+func ArchiveSecretName(server *v1.DatabaseServer) string {
+	return server.Name + archiveSecretSuffix
+}
+
+// archiveGuard blocks the archive while it cannot be recovered from. Two
+// things block it: no base backup of the archive the server writes now has
+// completed, and the write-ahead log of the server stopped reaching the
+// bucket. archiveStart is when the earliest such backup completed, or nil when
+// none has, and outage is the stop in the uploads that the caller reports on,
+// or nil. The guard blocks on every outage it is given.
+//
+// The uploads come first. An archive that stopped receiving write-ahead log
+// takes no base backup either, so the failing uploads are what the reader acts
+// on.
+//
+// A suspended server is never blocked by the base backup. Its schedule is
+// suspended with it, so no backup can complete and there is nothing to wait
+// on. Blocking there would hold the archive of a server that was suspended
+// before its first backup at False for as long as the suspension lasts. The
+// guard engages again when the server comes back.
+func archiveGuard(
+	server *v1.DatabaseServer,
+	archiveStart *metav1.Time,
+	outage *ArchiveOutage,
+	suspended bool,
+) func(cnpgv1.Cluster) (concepts.GuardStatusWithReason, error) {
+	return func(cnpgv1.Cluster) (concepts.GuardStatusWithReason, error) {
+		switch {
+		case outage != nil:
+			return concepts.GuardStatusWithReason{
+				Status: concepts.GuardStatusBlocked,
+				Reason: fmt.Sprintf(
+					"CloudNativePG reports %s on the write-ahead log uploads of this server since %s",
+					outage.Reason, outage.Since.UTC().Format(time.RFC3339),
+				),
+			}, nil
+
+		case archiveStart != nil:
+			return concepts.GuardStatusWithReason{
+				Status: concepts.GuardStatusUnblocked,
+				Reason: fmt.Sprintf(
+					"the archive holds a base backup taken at %s",
+					archiveStart.UTC().Format(time.RFC3339),
+				),
+			}, nil
+
+		case suspended:
+			return concepts.GuardStatusWithReason{
+				Status: concepts.GuardStatusUnblocked,
+				Reason: "the server is suspended, so no base backup can complete",
+			}, nil
+
+		default:
+			return concepts.GuardStatusWithReason{
+				Status: concepts.GuardStatusBlocked,
+				Reason: fmt.Sprintf("the first base backup of %q is not complete yet", ClusterName(server)),
+			}, nil
+		}
+	}
+}
+
+// Archiving reports whether the merged spec asks for an archive. It is the one
+// place that decides the question, so every reader of the rule answers the
+// same.
+func Archiving(merged v1.DatabaseServerSpec) bool { return merged.Archive != nil }
+
+// ValidateArchiveStorage reports why a bucket cannot hold the archive of a
+// server, or nil when it can. The caller turns the message into a pre-check
+// failure on the server.
+//
+// Every storage type of the contract is served. What can still fail is a
+// contract whose declared type and block disagree. It answers with the same
+// resolution the renderers use, so a bucket the pre-check accepts is one every
+// renderer can render.
+func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
+	// The server only names the archive Secret and the object prefix, and
+	// neither can make a bucket unservable, so a nameless one answers the
+	// question.
+	_, err := (&ArchiveStorage{Config: config}).resolve(&v1.DatabaseServer{})
+
+	return err
+}
+
+// ArchiveOutageOf returns what CloudNativePG reports about the write-ahead log
+// uploads of cluster at now, or nil when it reports nothing wrong. A cluster
+// that has not uploaded a segment yet reports nothing, and so does one that
+// archives nowhere.
+func ArchiveOutageOf(cluster *cnpgv1.Cluster, now time.Time) *ArchiveOutage {
+	condition := cnpgcluster.ContinuousArchiving(cluster)
+	if condition == nil || condition.Status != metav1.ConditionFalse {
+		return nil
+	}
+
+	return &ArchiveOutage{
+		Reason:    condition.Reason,
+		Message:   condition.Message,
+		Since:     condition.LastTransitionTime,
+		Confirmed: !now.Before(condition.LastTransitionTime.Add(ArchiveOutageGracePeriod)),
+	}
+}
+
+// ArchiveFailingMessage returns the ArchiveReady message of a server whose
+// write-ahead log stopped reaching the bucket: what CloudNativePG reports,
+// what the archive still holds, and what to do about it.
+func ArchiveFailingMessage(outage *ArchiveOutage) string {
+	return fmt.Sprintf(
+		"CloudNativePG reports %s on the write-ahead log uploads of this server since %s: %s. "+
+			"The archive holds every point up to the last segment that arrived, and a restore to "+
+			"a point after that reaches nothing. Repair the bucket or the credentials of the "+
+			"bucket. The segments that are held back arrive once the uploads run again.",
+		outage.Reason, outage.Since.UTC().Format(time.RFC3339), outage.Message,
+	)
+}
+
+// ArchiveLocation returns where in object storage the archive of server is
+// written, as the canonical location of the bucket contract narrowed to the
+// prefix that holds this server alone. It is the empty string when the server
+// references no bucket.
+//
+// status.archive.history compares intervals by it. The ObjectStorageConfig
+// that a record names can be edited in place, or removed and created again
+// under its name, and neither shows in the name. It is the canonical location
+// rather than the URL the plugin is given, because the endpoint and the region
+// select the service that answers and neither reaches that URL.
+func (a *ArchiveStorage) ArchiveLocation(server *v1.DatabaseServer) string {
+	if a == nil || a.Config == nil {
+		return ""
+	}
+
+	return a.Config.LocationOf(archivePathSegment + "/" + server.Namespace + "/" + ArchiveSegment(server))
+}
+
+// ArchiveSegment returns the directory in the bucket that holds the archive of
+// this server: its name, a dash, and the first eight hex characters of the
+// SHA-256 of its UID. Two servers of one name and different UIDs get different
+// directories.
+func ArchiveSegment(server *v1.DatabaseServer) string {
+	sum := sha256.Sum256([]byte(server.UID))
+
+	return server.Name + "-" + hex.EncodeToString(sum[:4])
 }
 
 // archivePlugin returns the plugin entry that makes the cluster archive its
@@ -577,34 +605,6 @@ func (a *ArchiveStorage) podLabels() map[string]string {
 	}
 
 	return a.Config.WorkloadIdentityPodLabels()
-}
-
-// barmanArchive is the Barman Cloud side of the active storage block, reduced
-// to what every renderer in this file reads. One switch builds it, in resolve;
-// nothing else here dispatches on the storage type. Adding a storage type is a
-// case in that switch and nothing more.
-//
-// This mirrors the activeBlock of ObjectStorageConfig, which reduces the same
-// three blocks one layer down for the same reason.
-type barmanArchive struct {
-	// destinationRoot is the provider-addressing prefix of the archive URL,
-	// without the base path of the contract.
-	destinationRoot string
-	// destinationPath is the bucket URL that holds the archives of one
-	// server: destinationRoot, the base path of the contract, and the prefix
-	// of the server.
-	destinationPath string
-	// endpointURL addresses an S3-compatible store. It is empty for every
-	// other provider and for AWS S3 itself.
-	endpointURL string
-	// secretData holds the bucket settings that the plugin reads from a
-	// Secret, keyed by the key each one takes.
-	secretData map[string][]byte
-	// Exactly one credentials block is set, the one of the declared storage
-	// type.
-	s3Credentials     *barmanobjectstore.S3Credentials
-	azureCredentials  *barmanobjectstore.AzureCredentials
-	googleCredentials *barmanobjectstore.GoogleCredentials
 }
 
 // resolve reduces the contract and its credentials to the archive that the

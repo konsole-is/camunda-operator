@@ -160,11 +160,6 @@ func PingCollisions(cluster *v1.CamundaCluster, clusterVersion string) []PingCol
 	return collisions
 }
 
-// holds reports whether name is one of the four settings of this key set.
-func (n pingEnvNames) holds(name string) bool {
-	return name == n.enabled || name == n.endpoint || name == n.clusterName || name == n.pingPeriod
-}
-
 // valueFromManagers returns the field managers that own valueFrom of the
 // spec.extraEnv entry name, sorted.
 func valueFromManagers(fields []metav1.ManagedFieldsEntry, name string) []string {
@@ -193,4 +188,9 @@ func valueFromManagers(fields []metav1.ManagedFieldsEntry, name string) []string
 	slices.Sort(managers)
 
 	return slices.Compact(managers)
+}
+
+// holds reports whether name is one of the four settings of this key set.
+func (n pingEnvNames) holds(name string) bool {
+	return name == n.enabled || name == n.endpoint || name == n.clusterName || name == n.pingPeriod
 }

@@ -152,23 +152,6 @@ func AdminSecretName(cluster *v1.CamundaCluster) string {
 	return labels.BoundedName(cluster.Name, limit) + adminSecretSuffix
 }
 
-// ServiceAccountName returns the name that the ServiceAccount of the cluster
-// carries: the name the spec sets, or the name derived from the cluster. It
-// never answers whether the cluster has one. A caller that needs the account
-// a pod or a Job runs under asks PodServiceAccountName.
-//
-// It is the principal that a workload identity without an annotation binds,
-// so it is part of the contract with the cloud provider.
-func ServiceAccountName(cluster *v1.CamundaCluster, e Effective) string {
-	if e.ServiceAccount != nil && e.ServiceAccount.Name != "" {
-		return e.ServiceAccount.Name
-	}
-
-	limit := validation.DNS1123SubdomainMaxLength - len(serviceAccountSuffix)
-
-	return labels.BoundedName(cluster.Name, limit) + serviceAccountSuffix
-}
-
 // PodServiceAccountName returns the ServiceAccount that the pods of the
 // cluster run under, or the empty string when they run under the default
 // account of their namespace.
@@ -194,4 +177,21 @@ func PodServiceAccountName(in Input) string {
 	}
 
 	return ServiceAccountName(in.Cluster, in.Effective)
+}
+
+// ServiceAccountName returns the name that the ServiceAccount of the cluster
+// carries: the name the spec sets, or the name derived from the cluster. It
+// never answers whether the cluster has one. A caller that needs the account
+// a pod or a Job runs under asks PodServiceAccountName.
+//
+// It is the principal that a workload identity without an annotation binds,
+// so it is part of the contract with the cloud provider.
+func ServiceAccountName(cluster *v1.CamundaCluster, e Effective) string {
+	if e.ServiceAccount != nil && e.ServiceAccount.Name != "" {
+		return e.ServiceAccount.Name
+	}
+
+	limit := validation.DNS1123SubdomainMaxLength - len(serviceAccountSuffix)
+
+	return labels.BoundedName(cluster.Name, limit) + serviceAccountSuffix
 }

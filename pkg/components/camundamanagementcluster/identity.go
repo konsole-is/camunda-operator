@@ -339,6 +339,12 @@ func initialClaim(mc *v1.CamundaManagementCluster) (name, value string) {
 	return name, value
 }
 
+// RecordedInitialClaim returns the initial administrator claim that
+// Management Identity started with, or empty while it has not started yet.
+func RecordedInitialClaim(mc *v1.CamundaManagementCluster) string {
+	return mc.Annotations[InitialClaimAnnotation]
+}
+
 // SpecInitialClaim returns the initial administrator claim of the spec, in the
 // form the annotation records: "<claimName>=<claimValue>". The controller
 // compares it against the recorded one to find a change that Identity can no
@@ -349,10 +355,51 @@ func SpecInitialClaim(mc *v1.CamundaManagementCluster) string {
 	return admin.ClaimName + initialClaimSeparator + admin.ClaimValue
 }
 
-// RecordedInitialClaim returns the initial administrator claim that
-// Management Identity started with, or empty while it has not started yet.
-func RecordedInitialClaim(mc *v1.CamundaManagementCluster) string {
-	return mc.Annotations[InitialClaimAnnotation]
+// identityDatabaseEnv renders the connection to the Identity database.
+func identityDatabaseEnv(db Database) []corev1.EnvVar {
+	return []corev1.EnvVar{
+		{Name: identityEnvDatabaseHost, Value: db.Host},
+		{Name: identityEnvDatabasePort, Value: strconv.Itoa(int(db.Port))},
+		{Name: identityEnvDatabaseName, Value: db.Name},
+		{
+			Name:      identityEnvDatabaseUsername,
+			ValueFrom: secretSource(db.Credentials.Name, db.Credentials.UsernameKey),
+		},
+		{
+			Name:      identityEnvDatabasePassword,
+			ValueFrom: secretSource(db.Credentials.Name, db.Credentials.PasswordKey),
+		},
+	}
+}
+
+// identityService renders the Service of Management Identity. Both ports are
+// exposed: the HTTP port serves the user interface and the API, the management
+// port the actuator endpoints.
+func identityService(in Input) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      IdentityName(in.Cluster),
+			Namespace: in.Cluster.Namespace,
+			Labels:    managedLabels(in, ComponentIdentity),
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: discoveryLabels(in, ComponentIdentity),
+			Ports: []corev1.ServicePort{
+				{
+					Name:       portNameHTTP,
+					Port:       IdentityServicePortHTTP,
+					TargetPort: intstr.FromString(portNameHTTP),
+					Protocol:   corev1.ProtocolTCP,
+				},
+				{
+					Name:       portNameManagement,
+					Port:       IdentityServicePortManagement,
+					TargetPort: intstr.FromString(portNameManagement),
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+		},
+	}
 }
 
 // StartedInitialClaim returns the initial administrator claim that Management
@@ -446,51 +493,4 @@ func identityClaimEnv(pod *corev1.Pod) string {
 	}
 
 	return name + initialClaimSeparator + value
-}
-
-// identityDatabaseEnv renders the connection to the Identity database.
-func identityDatabaseEnv(db Database) []corev1.EnvVar {
-	return []corev1.EnvVar{
-		{Name: identityEnvDatabaseHost, Value: db.Host},
-		{Name: identityEnvDatabasePort, Value: strconv.Itoa(int(db.Port))},
-		{Name: identityEnvDatabaseName, Value: db.Name},
-		{
-			Name:      identityEnvDatabaseUsername,
-			ValueFrom: secretSource(db.Credentials.Name, db.Credentials.UsernameKey),
-		},
-		{
-			Name:      identityEnvDatabasePassword,
-			ValueFrom: secretSource(db.Credentials.Name, db.Credentials.PasswordKey),
-		},
-	}
-}
-
-// identityService renders the Service of Management Identity. Both ports are
-// exposed: the HTTP port serves the user interface and the API, the management
-// port the actuator endpoints.
-func identityService(in Input) *corev1.Service {
-	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      IdentityName(in.Cluster),
-			Namespace: in.Cluster.Namespace,
-			Labels:    managedLabels(in, ComponentIdentity),
-		},
-		Spec: corev1.ServiceSpec{
-			Selector: discoveryLabels(in, ComponentIdentity),
-			Ports: []corev1.ServicePort{
-				{
-					Name:       portNameHTTP,
-					Port:       IdentityServicePortHTTP,
-					TargetPort: intstr.FromString(portNameHTTP),
-					Protocol:   corev1.ProtocolTCP,
-				},
-				{
-					Name:       portNameManagement,
-					Port:       IdentityServicePortManagement,
-					TargetPort: intstr.FromString(portNameManagement),
-					Protocol:   corev1.ProtocolTCP,
-				},
-			},
-		},
-	}
 }

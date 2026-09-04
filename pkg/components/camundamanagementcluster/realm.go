@@ -29,6 +29,20 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
+// realmState is what the environment of a Management Identity container says
+// about the realm that its Optimize client lives in.
+type realmState int
+
+const (
+	// realmNone is a container that names no Keycloak, which is the oidc mode.
+	realmNone realmState = iota
+	// realmNamed is a container whose environment holds the realm.
+	realmNamed
+	// realmUnknown is a container that takes the Keycloak URL or the realm
+	// from a reference, so the realm is not in the workload.
+	realmUnknown
+)
+
 // RealmTarget records the realm of provider: where it is, and which Secrets
 // the operator signs in to it with. In the externalKeycloak mode it is what
 // status.callbackRealm holds after the login callbacks of Optimize are
@@ -58,22 +72,6 @@ func RealmTarget(provider IdentityProvider) *v1.KeycloakRealmTarget {
 		AdminCredentialsSecretRef: *provider.AdminCredentials.DeepCopy(),
 		CABundleSecretRef:         provider.CABundle.DeepCopy(),
 	}
-}
-
-// RealmIdentity returns the name of the realm that target holds, as the URL
-// of its realm endpoint: the URL, then /realms/ and the realm. Spellings of
-// one Keycloak fold to one identity: the case of the scheme and of the host,
-// a user in the URL, a default port (443 on https, 80 on http), a terminal
-// dot of the host, the spelling of an IP literal, of an internationalized host
-// or of a port, a percent escape of the path, and every trailing slash make no
-// difference. The case
-// of the path and of the realm does make one, because Keycloak treats both as
-// case-sensitive. The administrator and the certificate authority take no
-// part in it. The result is deterministic, so a name derived from it (a hash,
-// for example) identifies the realm across resources, and it is safe to read,
-// so a claim can name the realm it holds in the clear.
-func RealmIdentity(target v1.KeycloakRealmTarget) string {
-	return normalizeKeycloakURL(target.URL) + keycloakRealmPath + target.Realm
 }
 
 // normalizeKeycloakURL trims the trailing slashes of raw and folds every
@@ -225,11 +223,6 @@ func RealmURL(target v1.KeycloakRealmTarget) string {
 	return normalizeKeycloakURL(target.URL)
 }
 
-// SameRealm reports whether a and b name one realm.
-func SameRealm(a, b v1.KeycloakRealmTarget) bool {
-	return RealmIdentity(a) == RealmIdentity(b)
-}
-
 // RealmProvider builds the identity provider of a recorded realm target: the
 // URL, the realm, the administrator, and the Optimize client, which is what
 // the operator needs to administer the login callbacks there.
@@ -269,19 +262,17 @@ func IdentityWritesRealm(pods []corev1.Pod, target v1.KeycloakRealmTarget) bool 
 	return false
 }
 
-// IdentityPointsAtRealm reports whether one of pods is a Management Identity
-// pod that points at the realm of target and can still run, ready or not.
-// Such a pod can restart and write the Optimize client of that realm from
-// its environment, so the record of that realm must outlive the pod: it is
-// what finds the realm again and empties it.
-func IdentityPointsAtRealm(pods []corev1.Pod, target v1.KeycloakRealmTarget) bool {
-	for i := range pods {
-		pod := &pods[i]
-		if podDone(pod) {
-			continue
-		}
-		if IdentityTemplatePointsAtRealm(&pod.Spec, target) {
-			return true
+// podDone reports a pod whose containers ran and will not run again, which a
+// Deployment can leave behind as an object until it is collected.
+func podDone(pod *corev1.Pod) bool {
+	return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
+}
+
+// podReady reports the Ready condition of pod.
+func podReady(pod *corev1.Pod) bool {
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady {
+			return condition.Status == corev1.ConditionTrue
 		}
 	}
 
@@ -309,6 +300,87 @@ func IdentityTemplatePointsAtRealm(spec *corev1.PodSpec, target v1.KeycloakRealm
 	default:
 		return false
 	}
+}
+
+// identityRealmEnv reads the Keycloak URL and the realm that the Management
+// Identity container of spec points at, and reports what the environment
+// says about them. The realm is meaningful for realmNamed alone.
+func identityRealmEnv(spec *corev1.PodSpec) (v1.KeycloakRealmTarget, realmState) {
+	var realm v1.KeycloakRealmTarget
+	var unknown bool
+	for _, container := range spec.Containers {
+		if container.Name != identityContainer {
+			continue
+		}
+		for _, env := range container.Env {
+			switch env.Name {
+			case keycloakEnvURL:
+				realm.URL = env.Value
+			case keycloakEnvRealm:
+				realm.Realm = env.Value
+			default:
+				continue
+			}
+			if env.ValueFrom != nil {
+				unknown = true
+			}
+		}
+	}
+
+	switch {
+	case unknown:
+		return realm, realmUnknown
+	case realm.URL == "":
+		// The operator renders both variables in every mode, and the oidc mode
+		// renders an empty URL beside the default realm. No URL is no Keycloak.
+		return realm, realmNone
+	case realm.Realm == "":
+		// A container that names a Keycloak and no realm takes the realm from
+		// its image, so the realm it writes cannot be read from here.
+		return realm, realmUnknown
+	default:
+		return realm, realmNamed
+	}
+}
+
+// SameRealm reports whether a and b name one realm.
+func SameRealm(a, b v1.KeycloakRealmTarget) bool {
+	return RealmIdentity(a) == RealmIdentity(b)
+}
+
+// RealmIdentity returns the name of the realm that target holds, as the URL
+// of its realm endpoint: the URL, then /realms/ and the realm. Spellings of
+// one Keycloak fold to one identity: the case of the scheme and of the host,
+// a user in the URL, a default port (443 on https, 80 on http), a terminal
+// dot of the host, the spelling of an IP literal, of an internationalized host
+// or of a port, a percent escape of the path, and every trailing slash make no
+// difference. The case
+// of the path and of the realm does make one, because Keycloak treats both as
+// case-sensitive. The administrator and the certificate authority take no
+// part in it. The result is deterministic, so a name derived from it (a hash,
+// for example) identifies the realm across resources, and it is safe to read,
+// so a claim can name the realm it holds in the clear.
+func RealmIdentity(target v1.KeycloakRealmTarget) string {
+	return normalizeKeycloakURL(target.URL) + keycloakRealmPath + target.Realm
+}
+
+// IdentityPointsAtRealm reports whether one of pods is a Management Identity
+// pod that points at the realm of target and can still run, ready or not.
+// Such a pod can restart and write the Optimize client of that realm from
+// its environment, so the record of that realm must outlive the pod: it is
+// what finds the realm again and empties it.
+func IdentityPointsAtRealm(pods []corev1.Pod, target v1.KeycloakRealmTarget) bool {
+	for i := range pods {
+		pod := &pods[i]
+		if podDone(pod) {
+			continue
+		}
+		if IdentityTemplatePointsAtRealm(&pod.Spec, target) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // IdentityRealms returns the realm of every Management Identity pod of pods
@@ -360,31 +432,6 @@ func IdentityTemplateRealms(deployment *appsv1.Deployment) ([]v1.KeycloakRealmTa
 	return templateRealms(&deployment.Spec.Template.Spec)
 }
 
-// IdentityReplicaSetRealms returns the realm of every Management Identity
-// ReplicaSet of sets that can still create a pod, and reports whether one of
-// them writes a realm that its template does not name.
-//
-// A ReplicaSet keeps the template it was made from. The old ReplicaSet of a
-// rollout therefore starts a pod against the realm the Deployment has already
-// left, for as long as it is not scaled to zero.
-func IdentityReplicaSetRealms(sets []appsv1.ReplicaSet) ([]v1.KeycloakRealmTarget, bool) {
-	var realms []v1.KeycloakRealmTarget
-	var unknown bool
-	for i := range sets {
-		set := &sets[i]
-		if scaledDown(
-			set.Spec.Replicas, set.Generation, set.Status.ObservedGeneration, set.Status.Replicas,
-		) {
-			continue
-		}
-		setRealms, setUnknown := templateRealms(&set.Spec.Template.Spec)
-		realms = append(realms, setRealms...)
-		unknown = unknown || setUnknown
-	}
-
-	return realms, unknown
-}
-
 // scaledDown reports a Management Identity workload that starts no pod any
 // more: it asks for none, its controller has read that, and it holds none.
 //
@@ -418,74 +465,27 @@ func templateRealms(spec *corev1.PodSpec) ([]v1.KeycloakRealmTarget, bool) {
 	}
 }
 
-// podReady reports the Ready condition of pod.
-func podReady(pod *corev1.Pod) bool {
-	for _, condition := range pod.Status.Conditions {
-		if condition.Type == corev1.PodReady {
-			return condition.Status == corev1.ConditionTrue
-		}
-	}
-
-	return false
-}
-
-// podDone reports a pod whose containers ran and will not run again, which a
-// Deployment can leave behind as an object until it is collected.
-func podDone(pod *corev1.Pod) bool {
-	return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
-}
-
-// realmState is what the environment of a Management Identity container says
-// about the realm that its Optimize client lives in.
-type realmState int
-
-const (
-	// realmNone is a container that names no Keycloak, which is the oidc mode.
-	realmNone realmState = iota
-	// realmNamed is a container whose environment holds the realm.
-	realmNamed
-	// realmUnknown is a container that takes the Keycloak URL or the realm
-	// from a reference, so the realm is not in the workload.
-	realmUnknown
-)
-
-// identityRealmEnv reads the Keycloak URL and the realm that the Management
-// Identity container of spec points at, and reports what the environment
-// says about them. The realm is meaningful for realmNamed alone.
-func identityRealmEnv(spec *corev1.PodSpec) (v1.KeycloakRealmTarget, realmState) {
-	var realm v1.KeycloakRealmTarget
+// IdentityReplicaSetRealms returns the realm of every Management Identity
+// ReplicaSet of sets that can still create a pod, and reports whether one of
+// them writes a realm that its template does not name.
+//
+// A ReplicaSet keeps the template it was made from. The old ReplicaSet of a
+// rollout therefore starts a pod against the realm the Deployment has already
+// left, for as long as it is not scaled to zero.
+func IdentityReplicaSetRealms(sets []appsv1.ReplicaSet) ([]v1.KeycloakRealmTarget, bool) {
+	var realms []v1.KeycloakRealmTarget
 	var unknown bool
-	for _, container := range spec.Containers {
-		if container.Name != identityContainer {
+	for i := range sets {
+		set := &sets[i]
+		if scaledDown(
+			set.Spec.Replicas, set.Generation, set.Status.ObservedGeneration, set.Status.Replicas,
+		) {
 			continue
 		}
-		for _, env := range container.Env {
-			switch env.Name {
-			case keycloakEnvURL:
-				realm.URL = env.Value
-			case keycloakEnvRealm:
-				realm.Realm = env.Value
-			default:
-				continue
-			}
-			if env.ValueFrom != nil {
-				unknown = true
-			}
-		}
+		setRealms, setUnknown := templateRealms(&set.Spec.Template.Spec)
+		realms = append(realms, setRealms...)
+		unknown = unknown || setUnknown
 	}
 
-	switch {
-	case unknown:
-		return realm, realmUnknown
-	case realm.URL == "":
-		// The operator renders both variables in every mode, and the oidc mode
-		// renders an empty URL beside the default realm. No URL is no Keycloak.
-		return realm, realmNone
-	case realm.Realm == "":
-		// A container that names a Keycloak and no realm takes the realm from
-		// its image, so the realm it writes cannot be read from here.
-		return realm, realmUnknown
-	default:
-		return realm, realmNamed
-	}
+	return realms, unknown
 }

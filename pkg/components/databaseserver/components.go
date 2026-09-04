@@ -76,46 +76,6 @@ const (
 	defaultInstances = 1
 )
 
-// ClusterName returns the name of the CloudNativePG cluster that backs the
-// server: the one status records, or the name of the server before the first
-// reconcile. A recovery replaces the cluster with one under a new name, so
-// every caller derives names from this rather than from server.Name.
-func ClusterName(server *v1.DatabaseServer) string {
-	if server.Status.Cluster != "" {
-		return server.Status.Cluster
-	}
-
-	return server.Name
-}
-
-// ReadWriteHost returns the in-cluster address of the primary instance, the
-// host that the published contract carries.
-func ReadWriteHost(server *v1.DatabaseServer) string {
-	return ClusterName(server) + readWriteServiceSuffix + "." + server.Namespace + ".svc"
-}
-
-// ClusterFromReadWriteHost returns the CloudNativePG cluster that host names,
-// or the empty string when host is not an address of this server. It is the
-// inverse of ReadWriteHost: the published contract is the record of which
-// cluster the server runs from, so a server whose status was lost reads it
-// back from the contract it published.
-func ClusterFromReadWriteHost(server *v1.DatabaseServer, host string) string {
-	suffix := readWriteServiceSuffix + "." + server.Namespace + ".svc"
-	name, found := strings.CutSuffix(host, suffix)
-	if !found {
-		return ""
-	}
-
-	return name
-}
-
-// SuperuserSecretName returns the Secret that CloudNativePG writes the
-// superuser credentials to. The published contract points at it, so no
-// password passes through the operator.
-func SuperuserSecretName(server *v1.DatabaseServer) string {
-	return ClusterName(server) + superuserSecretSuffix
-}
-
 // ClusterComponent builds the cluster component from the preset-merged spec:
 // the CloudNativePG cluster that runs the PostgreSQL instances. spec.suspend
 // suspends the component, which hibernates the cluster and keeps its volumes.
@@ -217,6 +177,42 @@ func cluster(
 			},
 		},
 	}
+}
+
+// ClusterName returns the name of the CloudNativePG cluster that backs the
+// server: the one status records, or the name of the server before the first
+// reconcile. A recovery replaces the cluster with one under a new name, so
+// every caller derives names from this rather than from server.Name.
+func ClusterName(server *v1.DatabaseServer) string {
+	if server.Status.Cluster != "" {
+		return server.Status.Cluster
+	}
+
+	return server.Name
+}
+
+// managedLabels returns the labels of a resource that the operator applies for
+// server.
+func managedLabels(server *v1.DatabaseServer) map[string]string {
+	return labels.Managed(labels.DatabaseServer(server.Name), componentLabel)
+}
+
+// instances returns the instance count of the merged spec, or the documented
+// default when it names none.
+func instances(merged v1.DatabaseServerSpec) int {
+	if merged.Instances == nil {
+		return defaultInstances
+	}
+
+	return int(*merged.Instances)
+}
+
+// discoveryLabels returns the labels of the pods, volumes, and services that
+// CloudNativePG creates for the cluster. They carry the owner and component,
+// so an extension can discover them, but not the manager label: CloudNativePG
+// manages those objects.
+func discoveryLabels(server *v1.DatabaseServer) map[string]string {
+	return labels.Discovery(labels.DatabaseServer(server.Name), componentLabel)
 }
 
 // clusterMutations layers the optional concerns of the merged spec onto the
@@ -344,14 +340,46 @@ func serviceAccountAnnotations(
 	return annotations
 }
 
-// instances returns the instance count of the merged spec, or the documented
-// default when it names none.
-func instances(merged v1.DatabaseServerSpec) int {
-	if merged.Instances == nil {
-		return defaultInstances
+// takenGuard blocks a resource while the object of the name the server derives
+// is not this component's to apply. reason says why, and it is empty when the
+// name is the component's.
+//
+// component.BlockOnForeignController covers an object that another owner
+// controls. This covers the ones it does not: an object that nothing controls
+// at all, which the apply would otherwise rewrite and adopt, and a cluster
+// that a running rollback has cut over to and that is no longer there.
+func takenGuard[T any](reason string) func(T) (concepts.GuardStatusWithReason, error) {
+	return func(T) (concepts.GuardStatusWithReason, error) {
+		if reason == "" {
+			return concepts.GuardStatusWithReason{Status: concepts.GuardStatusUnblocked}, nil
+		}
+
+		return concepts.GuardStatusWithReason{
+			Status: concepts.GuardStatusBlocked,
+			Reason: reason,
+		}, nil
+	}
+}
+
+// ReadWriteHost returns the in-cluster address of the primary instance, the
+// host that the published contract carries.
+func ReadWriteHost(server *v1.DatabaseServer) string {
+	return ClusterName(server) + readWriteServiceSuffix + "." + server.Namespace + ".svc"
+}
+
+// ClusterFromReadWriteHost returns the CloudNativePG cluster that host names,
+// or the empty string when host is not an address of this server. It is the
+// inverse of ReadWriteHost: the published contract is the record of which
+// cluster the server runs from, so a server whose status was lost reads it
+// back from the contract it published.
+func ClusterFromReadWriteHost(server *v1.DatabaseServer, host string) string {
+	suffix := readWriteServiceSuffix + "." + server.Namespace + ".svc"
+	name, found := strings.CutSuffix(host, suffix)
+	if !found {
+		return ""
 	}
 
-	return int(*merged.Instances)
+	return name
 }
 
 // ClusterTakenMessage says that a CloudNativePG cluster of the name the server
@@ -396,41 +424,6 @@ func RecoveryHoldsClusterMessage(name string) string {
 	)
 }
 
-// takenGuard blocks a resource while the object of the name the server derives
-// is not this component's to apply. reason says why, and it is empty when the
-// name is the component's.
-//
-// component.BlockOnForeignController covers an object that another owner
-// controls. This covers the ones it does not: an object that nothing controls
-// at all, which the apply would otherwise rewrite and adopt, and a cluster
-// that a running rollback has cut over to and that is no longer there.
-func takenGuard[T any](reason string) func(T) (concepts.GuardStatusWithReason, error) {
-	return func(T) (concepts.GuardStatusWithReason, error) {
-		if reason == "" {
-			return concepts.GuardStatusWithReason{Status: concepts.GuardStatusUnblocked}, nil
-		}
-
-		return concepts.GuardStatusWithReason{
-			Status: concepts.GuardStatusBlocked,
-			Reason: reason,
-		}, nil
-	}
-}
-
-// managedLabels returns the labels of a resource that the operator applies for
-// server.
-func managedLabels(server *v1.DatabaseServer) map[string]string {
-	return labels.Managed(labels.DatabaseServer(server.Name), componentLabel)
-}
-
-// discoveryLabels returns the labels of the pods, volumes, and services that
-// CloudNativePG creates for the cluster. They carry the owner and component,
-// so an extension can discover them, but not the manager label: CloudNativePG
-// manages those objects.
-func discoveryLabels(server *v1.DatabaseServer) map[string]string {
-	return labels.Discovery(labels.DatabaseServer(server.Name), componentLabel)
-}
-
 // superuserSecretRef returns a read-only reference to the Secret that
 // CloudNativePG writes the superuser credentials to, for a component that must
 // wait until that Secret exists.
@@ -441,4 +434,11 @@ func superuserSecretRef(server *v1.DatabaseServer) *corev1.Secret {
 			Namespace: server.Namespace,
 		},
 	}
+}
+
+// SuperuserSecretName returns the Secret that CloudNativePG writes the
+// superuser credentials to. The published contract points at it, so no
+// password passes through the operator.
+func SuperuserSecretName(server *v1.DatabaseServer) string {
+	return ClusterName(server) + superuserSecretSuffix
 }

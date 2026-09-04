@@ -50,19 +50,6 @@ func ConfigHash(in Input, p Process) string {
 	return configHash(in, p, render(in, p))
 }
 
-// PasswordHash returns the hash input for a credential value: the first 64
-// bits of its SHA-256 digest, hex encoded. An empty value returns "", so a
-// cluster without the credential adds no input. The digest of a generated
-// password (191 bits of entropy) does not expose the password.
-func PasswordHash(value string) string {
-	if value == "" {
-		return ""
-	}
-
-	sum := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(sum[:])[:configHashLength]
-}
-
 // configHash is ConfigHash for an already rendered process.
 func configHash(in Input, p Process, r rendered) string {
 	var b strings.Builder
@@ -117,6 +104,19 @@ func envFromValue(source corev1.EnvFromSource) string {
 	default:
 		return "prefix:" + source.Prefix
 	}
+}
+
+// PasswordHash returns the hash input for a credential value: the first 64
+// bits of its SHA-256 digest, hex encoded. An empty value returns "", so a
+// cluster without the credential adds no input. The digest of a generated
+// password (191 bits of entropy) does not expose the password.
+func PasswordHash(value string) string {
+	if value == "" {
+		return ""
+	}
+
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])[:configHashLength]
 }
 
 // PresetFingerprint is the hash input that stands for a CamundaClusterPreset:

@@ -104,17 +104,6 @@ const (
 	PingFieldManager = "camunda-operator/camundamanagementcluster-ping"
 )
 
-// AttachmentFieldManager returns the field manager that owns the claim
-// annotation that this management cluster writes on an orchestration cluster.
-// It is separate from FieldManager so that a withdrawal removes that
-// annotation and nothing else, and it carries the UID of the management
-// cluster so that no two management clusters share it: a claim is applied
-// without forced ownership, and the API server refuses the second claimant
-// with a conflict instead of letting it take the annotation over.
-func AttachmentFieldManager(mc *v1.CamundaManagementCluster) string {
-	return attachmentFieldManagerPrefix + string(mc.UID)
-}
-
 // The keys of the Secrets that the operator generates and of the one the
 // Keycloak Operator writes.
 const (
@@ -267,16 +256,15 @@ const keycloakDerivedSuffixMax = max(
 // name readable and tell the clusters of one management plane apart.
 const clusterUIDPrefixLength = 8
 
-// IdentityName returns the name of the Management Identity Deployment and
-// Service.
-func IdentityName(mc *v1.CamundaManagementCluster) string { return suffixed(mc.Name, identitySuffix) }
-
-// IdentityPodLabels returns the labels that select the pods of the Management
-// Identity Deployment. The pod template carries them and can carry more, so a
-// reader that lists by them in the namespace of the management cluster reads
-// exactly those pods.
-func IdentityPodLabels(mc *v1.CamundaManagementCluster) map[string]string {
-	return labels.Discovery(labels.ManagementCluster(mc.Name), ComponentIdentity)
+// AttachmentFieldManager returns the field manager that owns the claim
+// annotation that this management cluster writes on an orchestration cluster.
+// It is separate from FieldManager so that a withdrawal removes that
+// annotation and nothing else, and it carries the UID of the management
+// cluster so that no two management clusters share it: a claim is applied
+// without forced ownership, and the API server refuses the second claimant
+// with a conflict instead of letting it take the annotation over.
+func AttachmentFieldManager(mc *v1.CamundaManagementCluster) string {
+	return attachmentFieldManagerPrefix + string(mc.UID)
 }
 
 // IdentityServiceURL returns the URL of Management Identity inside the
@@ -287,14 +275,22 @@ func IdentityServiceURL(mc *v1.CamundaManagementCluster) string {
 	return serviceURL(IdentityName(mc), mc.Namespace, IdentityServicePortHTTP)
 }
 
-// KeycloakName returns the name of the Keycloak custom resource. It is
-// shorter than the other names of the management plane: the Keycloak Operator
-// names what it creates after the Keycloak, with a suffix of its own, and
-// those names are DNS labels too.
-func KeycloakName(mc *v1.CamundaManagementCluster) string {
-	limit := validation.DNS1123LabelMaxLength - len(keycloakSuffix) - 1 - keycloakDerivedSuffixMax
+// serviceURL returns the HTTP URL of one Service of the management plane, as a
+// pod of any namespace reaches it.
+func serviceURL(name, namespace string, port int32) string {
+	return "http://" + name + "." + namespace + ".svc:" + strconv.Itoa(int(port))
+}
 
-	return labels.BoundedName(mc.Name, limit) + "-" + keycloakSuffix
+// IdentityName returns the name of the Management Identity Deployment and
+// Service.
+func IdentityName(mc *v1.CamundaManagementCluster) string { return suffixed(mc.Name, identitySuffix) }
+
+// IdentityPodLabels returns the labels that select the pods of the Management
+// Identity Deployment. The pod template carries them and can carry more, so a
+// reader that lists by them in the namespace of the management cluster reads
+// exactly those pods.
+func IdentityPodLabels(mc *v1.CamundaManagementCluster) map[string]string {
+	return labels.Discovery(labels.ManagementCluster(mc.Name), ComponentIdentity)
 }
 
 // ConsoleName returns the name of the Console Deployment and Service.
@@ -315,6 +311,14 @@ func WebModelerRestapiName(mc *v1.CamundaManagementCluster) string {
 	return suffixed(mc.Name, webModelerRestapiSuffix)
 }
 
+// suffixed joins the name of the management cluster and a suffix with a dash.
+// The Service is the tightest bound of the resources that carry these names, a
+// DNS label of 63 characters, so a long name truncates and keeps its identity
+// in a hash.
+func suffixed(name, suffix string) string {
+	return labels.BoundedName(name, validation.DNS1123LabelMaxLength-len(suffix)-1) + "-" + suffix
+}
+
 // WebModelerWebsocketsName returns the name of the Web Modeler websockets
 // Deployment and Service.
 func WebModelerWebsocketsName(mc *v1.CamundaManagementCluster) string {
@@ -326,6 +330,16 @@ func WebModelerWebsocketsName(mc *v1.CamundaManagementCluster) string {
 // names it after the resource, with a "-service" suffix.
 func KeycloakServiceName(mc *v1.CamundaManagementCluster) string {
 	return KeycloakName(mc) + keycloakServiceSuffix
+}
+
+// KeycloakName returns the name of the Keycloak custom resource. It is
+// shorter than the other names of the management plane: the Keycloak Operator
+// names what it creates after the Keycloak, with a suffix of its own, and
+// those names are DNS labels too.
+func KeycloakName(mc *v1.CamundaManagementCluster) string {
+	limit := validation.DNS1123LabelMaxLength - len(keycloakSuffix) - 1 - keycloakDerivedSuffixMax
+
+	return labels.BoundedName(mc.Name, limit) + "-" + keycloakSuffix
 }
 
 // KeycloakInitialAdminSecretName returns the name of the Secret that the
@@ -372,6 +386,15 @@ func WebModelerClusterUserSecretName(mc *v1.CamundaManagementCluster, uid types.
 	return suffixed(mc.Name, webModelerClusterUserPrefix+shortUID(uid))
 }
 
+// shortUID returns the head of a UID, or the whole UID when it is shorter.
+func shortUID(uid types.UID) string {
+	if len(uid) <= clusterUIDPrefixLength {
+		return string(uid)
+	}
+
+	return string(uid)[:clusterUIDPrefixLength]
+}
+
 // ContractName returns the name of the cluster-scoped ManagementAuthConfig
 // that this management cluster writes: spec.managementAuthConfigName, or the
 // name of the resource when that is empty.
@@ -381,27 +404,4 @@ func ContractName(mc *v1.CamundaManagementCluster) string {
 	}
 
 	return mc.Name
-}
-
-// suffixed joins the name of the management cluster and a suffix with a dash.
-// The Service is the tightest bound of the resources that carry these names, a
-// DNS label of 63 characters, so a long name truncates and keeps its identity
-// in a hash.
-func suffixed(name, suffix string) string {
-	return labels.BoundedName(name, validation.DNS1123LabelMaxLength-len(suffix)-1) + "-" + suffix
-}
-
-// serviceURL returns the HTTP URL of one Service of the management plane, as a
-// pod of any namespace reaches it.
-func serviceURL(name, namespace string, port int32) string {
-	return "http://" + name + "." + namespace + ".svc:" + strconv.Itoa(int(port))
-}
-
-// shortUID returns the head of a UID, or the whole UID when it is shorter.
-func shortUID(uid types.UID) string {
-	if len(uid) <= clusterUIDPrefixLength {
-		return string(uid)
-	}
-
-	return string(uid)[:clusterUIDPrefixLength]
 }

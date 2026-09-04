@@ -57,14 +57,6 @@ var MirrorPurposes = []MirrorPurpose{
 	MirrorPurposeIdentityClient,
 }
 
-// MirroredSecretName returns the name of the copy of a referenced Secret in
-// the management namespace: <name>-management-<purpose>.
-func MirroredSecretName(mc *v1.CamundaManagementCluster, purpose MirrorPurpose) string {
-	suffix := "-management-" + string(purpose)
-
-	return labels.BoundedName(mc.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
-}
-
 // LocalSecretName returns the name under which a Secret at namespace/name is
 // reachable from a pod of the management plane. A Secret of the management
 // namespace keeps its own name; one from any other namespace resolves to its
@@ -75,6 +67,14 @@ func LocalSecretName(mc *v1.CamundaManagementCluster, namespace, name string, pu
 	}
 
 	return MirroredSecretName(mc, purpose)
+}
+
+// MirroredSecretName returns the name of the copy of a referenced Secret in
+// the management namespace: <name>-management-<purpose>.
+func MirroredSecretName(mc *v1.CamundaManagementCluster, purpose MirrorPurpose) string {
+	suffix := "-management-" + string(purpose)
+
+	return labels.BoundedName(mc.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
 }
 
 // Valid reports whether p is in MirrorPurposes, the set the component

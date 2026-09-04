@@ -57,15 +57,6 @@ var MirrorPurposes = []MirrorPurpose{
 // mirroredComponentName is the ocf name of the mirrored Secrets component.
 const mirroredComponentName = "optimize-secrets"
 
-// MirroredSecretName returns the name of the copy of a referenced Secret in
-// the CamundaOptimize namespace: <name>-optimize-<purpose>. A long
-// CamundaOptimize name truncates, the way WorkloadName truncates.
-func MirroredSecretName(o *v1.CamundaOptimize, purpose MirrorPurpose) string {
-	suffix := "-optimize-" + string(purpose)
-
-	return labels.BoundedName(o.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
-}
-
 // MirroredSecretComponent renders one Secret per purpose of MirrorPurposes in
 // the CamundaOptimize namespace, in one component. The keys of mirrors are the
 // purposes that are present, the values the copied data (only the keys that
@@ -109,6 +100,15 @@ func MirroredSecretComponent(
 	}
 
 	return builder.Build()
+}
+
+// MirroredSecretName returns the name of the copy of a referenced Secret in
+// the CamundaOptimize namespace: <name>-optimize-<purpose>. A long
+// CamundaOptimize name truncates, the way WorkloadName truncates.
+func MirroredSecretName(o *v1.CamundaOptimize, purpose MirrorPurpose) string {
+	suffix := "-optimize-" + string(purpose)
+
+	return labels.BoundedName(o.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
 }
 
 // Valid reports whether p is in MirrorPurposes, the set the component
