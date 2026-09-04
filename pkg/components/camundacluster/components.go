@@ -79,7 +79,9 @@ const (
 // chart 14.8.3 templates/connectors/files/_application.yaml:12-17).
 const metricsPath = "/actuator/prometheus"
 
-// The probe timings of the unified processes.
+// The probe timings of the unified processes. Kubernetes runs no readiness
+// probe until a startup probe succeeds, so the boot of the JVM is measured
+// against the budget of the startup probe rather than the readiness one.
 const (
 	startupFailureThreshold int32 = 60
 	startupPeriodSeconds    int32 = 5

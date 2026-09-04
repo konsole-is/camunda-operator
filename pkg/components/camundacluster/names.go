@@ -161,6 +161,7 @@ func AdminSecretName(cluster *v1.CamundaCluster) string {
 //
 // A consumer outside this package never asks it: the controller publishes the
 // answer on status.serviceAccountName, and the consumer reads that field.
+//
 // ServiceAccountName answers a different question: the name the account
 // carries when the cluster has one.
 func PodServiceAccountName(in Input) string {

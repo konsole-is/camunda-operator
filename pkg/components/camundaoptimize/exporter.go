@@ -56,8 +56,8 @@ const ExporterClassName = "io.camunda.zeebe.exporter.ElasticsearchExporter"
 // Elasticsearch with a private CA therefore needs that CA in the JVM trust
 // store of the broker before the exporter can reach it
 // (camunda/camunda#9839). pkg/components/camundacluster builds that trust
-// store for every binding that names a certificate authority, so this
-// exporter reaches such an endpoint without a setting of its own.
+// store for every binding that names a certificate authority. This exporter
+// then reaches such an endpoint without a setting of its own.
 func ExporterEnv(storage v1.ElasticsearchStorage) []corev1.EnvVar {
 	creds := storage.CredentialsSecretRef
 

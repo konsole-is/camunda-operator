@@ -358,8 +358,8 @@ func SameRealm(a, b v1.KeycloakRealmTarget) bool {
 // Keycloak treats both as case-sensitive. The administrator and the
 // certificate authority take no part in it. The result is deterministic, so a
 // name derived from it (a hash, for example) identifies the realm across
-// resources, and it is safe to read, so a claim can name the realm it holds
-// in the clear.
+// resources. The result is safe to read, so a claim can name the realm it
+// holds in the clear.
 func RealmIdentity(target v1.KeycloakRealmTarget) string {
 	return normalizeKeycloakURL(target.URL) + keycloakRealmPath + target.Realm
 }
