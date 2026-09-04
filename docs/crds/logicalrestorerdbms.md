@@ -1,6 +1,6 @@
 # LogicalRestoreRDBMS
 
-`LogicalRestoreRDBMS` restores one completed [LogicalBackupRDBMS](logicalbackuprdbms.md) into one suspended [CamundaCluster](camundacluster.md). You create it, or a recovery flow above the operator creates it for you.
+`LogicalRestoreRDBMS` restores one completed [LogicalBackupRDBMS](logicalbackuprdbms.md) into one suspended [CamundaCluster](camundacluster.md). You create it, or an automated recovery flow creates it for you.
 
 The backup and the target both store their data in a relational database. The target must be the cluster the backup came from. A restore names a `CamundaCluster` with the same name, in the same namespace as the backup. Use this kind to undo a destructive operation, or to rebuild the cluster on new infrastructure under its own name.
 
@@ -56,7 +56,7 @@ Each write is a server-side apply of one field, under a field manager of its own
 | `spec.suspend` | `camunda-operator/restore-suspend` | The restore withdraws it when it reaches `Completed`. |
 | `spec.version` and the annotation `camunda.io/allow-version-downgrade` | `camunda-operator/restore-version` | The restore keeps `spec.version`. The operator removes the annotation once the brokers carry the version, and as soon as it names another version. |
 
-These names are published. A GitOps tool reads them, and so does a layer above this operator, for example a `CloudCamundaCluster` of `camunda-cloud-operator`. The names tell a write of a restore from a write of a user.
+These names are published. A GitOps tool reads them in a conflict message, and they tell a write of a restore from a write of a user.
 
 The annotation sanctions the move. A [CamundaCluster](camundacluster.md#version) refuses a version below the one its brokers run, unless the annotation names it. The restore writes the version and the annotation together.
 
@@ -92,11 +92,11 @@ The restore withdraws its suspension when it reaches `Completed`, and only when 
 
 - **A target that you suspended yourself stays suspended.** The restore recorded no suspension of its own, so it withdraws none.
 - **A failed restore leaves the target suspended.** Its broker volumes can be empty or half written. Brokers that start over such volumes are worse than a cluster that is down. Read `status.failureMessage`, correct the cause, and create a new restore.
-- **A restore that you delete while it runs leaves the target suspended.** The restore needs no finalizer, and it gets none for this. A finalizer that unsuspends the target on delete starts brokers over volumes that the restore already erased. Suspended is the safe state to be left in. Unsuspend the cluster yourself once you know what its volumes hold.
+- **A restore that you delete while it runs leaves the target suspended.** A delete never unsuspends the target. Brokers that start over volumes the restore already erased are worse than a cluster that is down. Unsuspend the cluster yourself once you know what its volumes hold.
 
 ### A GitOps tool that owns the CamundaCluster
 
-The operator uses its own field managers, the same way [CamundaOptimize](camundaoptimize.md) does for `spec.zeebe.extraEnv`. A tool that manages the `CamundaCluster` with server-side apply keeps every field that it declares. The operator keeps the fields that it declares.
+The operator declares the two fields above under its own names, the same way [CamundaOptimize](camundaoptimize.md) does for `spec.zeebe.extraEnv`. A tool that manages the `CamundaCluster` with server-side apply keeps every field that it declares. The operator keeps the fields that it declares.
 
 A tool that also declares one of these fields fights the operator for it. Argo CD or Flux reverts the write of the restore, the restore writes it again, and the restore stalls in `Pending`. If you drive the `CamundaCluster` from Git:
 
@@ -104,17 +104,17 @@ A tool that also declares one of these fields fights the operator for it. Argo C
 - Put `spec.version` back after the restore, with the version that you want the cluster to run.
 - A tool that prunes annotations it does not declare removes the sanction, and the cluster then refuses the version write. Exclude `camunda.io/allow-version-downgrade` from pruning for the time of the restore.
 
-Suspension is a standing condition, not a gate that admission passes once. A cluster that somebody unsuspends while the restore runs holds the restore in its current phase and fails it after ten minutes, with reason `ClusterNotSuspended`. Every phase after admission erases something of the target.
+The target must stay suspended for the whole restore, not only at the start. A cluster that somebody unsuspends while the restore runs holds the restore in its current phase, and fails it after ten minutes with reason `ClusterNotSuspended`. Every phase after `Pending` erases something of the target.
 
 ## One operation at a time
 
-A cluster holds one backup or one restore at a time. The operator records the holder in a Lease next to the cluster. A restore takes that Lease before it writes anything on the target and before every phase that erases something, and it gives the Lease back when it reaches `Completed` or `Failed`. It therefore holds the target while it prepares it, which it reports as `Pending`.
+A cluster holds one backup or one restore at a time. This restore holds the target from the moment it starts to prepare it, which it reports as `Pending`. It gives the hold back when it reaches `Completed` or `Failed`.
 
-A cluster that another backup or another restore holds keeps this restore in `Pending` with reason `ClusterClaimed`. The message names the holder. Nothing bounds this wait, and you change nothing: the restore starts on its own when the holder reaches a terminal phase. No watch wakes this hold. The controller wakes it on its retry timer alone, so the restore can start up to one retry interval after the holder finished.
+A cluster that another backup or another restore holds keeps this restore in `Pending` with reason `ClusterClaimed`. The message names the holder. Nothing bounds this wait, and you change nothing. The restore starts on its own a short time after the holder reaches a terminal phase.
 
 ## Phases
 
-`status.phase` is the resume marker. A restore that re-enters after an operator restart continues at the recorded phase.
+`status.phase` records how far the restore got. A restore continues at that phase after the operator restarts.
 
 | Phase | What happens |
 | --- | --- |
@@ -134,9 +134,9 @@ The operator compares the backup against the target before the first destructive
 | The target is the cluster the backup came from. | The restore application reads the primary-storage backup under the prefix of the cluster it runs as. A different name points it at a prefix that holds no backup of this cluster. |
 | The target stores its data in a relational database. | The dump holds relational data. An Elasticsearch target has nothing to read it with. |
 | The target backs up through the same `ObjectStorageConfig` as the backup. | The `pg_restore` Job reads the bucket of the backup with the credentials that the contract of the target names, in the namespace of the target. |
-| The target runs the same Camunda minor as the backup, or one minor newer. | Camunda migrates its own schema one minor at a time. The patch level is free. The restore moves the target to the version of the backup before this rule runs, so it holds by construction. |
+| The target runs the same Camunda minor as the backup, or one minor newer. | Camunda migrates its own schema one minor at a time, as [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/) states. The patch level is free. The restore moves the target to the version of the backup before this rule runs, so it holds by construction. |
 
-The brokers write the backup prefix of their own cluster into their configuration. The restore Jobs copy that configuration from the live broker StatefulSet, so the restore always reads the prefix of the target.
+The brokers write the backup prefix of their own cluster into their configuration, and the restore reads that same prefix. A restore therefore always reads the primary-storage backup of the target.
 
 The backup must record the Camunda version it was taken with, in `status.version`. A backup that recorded none fails the restore: nothing then proves that the target can read it. A backup whose recorded version is not of the form `x.y.z` fails it too, because the operator cannot write such a value on the target.
 
@@ -144,11 +144,11 @@ CAUTION: The restore sets `spec.version` to the version of the backup every time
 
 The rules compare no partition count. A relational backup records none, and it needs none. The restore application reads the exporter position from the restored database and aligns the partitions itself.
 
-The target facts come from the live broker StatefulSet, not from `status.management` of the cluster. A suspended cluster has no management binding.
+These rules read the running shape of the target, not `status.management` of the cluster. A suspended cluster has no management binding.
 
 ## Secondary storage
 
-The operator applies one Job that rebuilds the logical database of the target. An init container streams the dump from the backup bucket into a scratch volume through the `download` subcommand of `camunda-operator-cli`. The main container then runs `pg_restore --clean --if-exists --no-owner` from that file.
+The operator runs one Job that rebuilds the logical database of the target. The Job downloads the dump from the backup bucket, then runs `pg_restore --clean --if-exists --no-owner` on it.
 
 **The Job connects as the application role of the target**, the role that `DatabaseConfig.spec.credentialsSecretRef` names. `pg_restore --clean` drops each object before it recreates it, and PostgreSQL lets only the owner of an object drop it. The application role owns the database and every object in it. The backup role that wrote the dump owns nothing: it holds USAGE and CREATE on the schema and DML on the tables. A restore that connected as the backup role would fail every DROP with "must be owner of table" and would restore no data.
 
@@ -156,7 +156,7 @@ Every credentials Secret lives in the namespace of the target. A Secret that is 
 
 The Job takes its pod settings and its postgres image from `spec.backup.dump` of the target cluster, through its preset when it names one. The Job runs under the ServiceAccount of the cluster, so the pod shape and the executable stay the choice of whoever owns the cluster. The restore resource carries no pod block of its own.
 
-The `DatabaseServerConfig` of the target must publish `status.serverVersion`, which its controller writes once it reached the server as declared. The Job runs client tools of that major version. A server that was not probed for its current spec holds the restore with reason `InvalidReference`.
+The `DatabaseServerConfig` of the target must publish `status.serverVersion`. The Job runs client tools of that major version. A server that the operator did not reach for its current spec holds the restore with reason `InvalidReference`.
 
 The operator records the Job in `status.secondaryJobName` and follows it to its end:
 
@@ -169,17 +169,17 @@ The operator records the Job in `status.secondaryJobName` and follows it to its 
 
 The Camunda restore application refuses a non-empty data directory, so the operator deletes the broker data volumes of the target and creates them again. The new volume takes the size that the backup recorded in `status.storageSizes.zeebe`, or the size of the claim template of the broker StatefulSet when the backup recorded none. The storage class, the access modes, and the labels always come from the claim template.
 
-**The volumes belong to the broker StatefulSet, not to the restore.** They carry no owner reference to the restore resource, so deleting the restore never deletes a broker volume.
+**The volumes belong to the broker StatefulSet, not to the restore.** Deleting the restore never deletes a broker volume.
 
-The operator refuses a Job that carries the name of one of its Jobs but no owner reference of this restore. Such a Job belongs to an earlier restore of the same name, and its result says nothing about this one. The restore fails, and the message names the Job.
+A Job that already carries the name of one of these Jobs, from an earlier restore of the same name, fails this restore. Its result says nothing about this restore. The message names the Job.
 
 The operator then runs the Camunda restore application once per broker, as a Job with **no arguments**. The continuous primary-storage backup of Zeebe carries the checkpoint, and the restore application reads the exporter position from the restored database and picks the backups itself.
 
-The Jobs copy their configuration from the live broker StatefulSet, so the restore application always runs with the configuration the brokers run with, and the two cannot drift. A cluster whose broker StatefulSet was deleted cannot restore until its own controller applies it again.
+The Jobs run with the configuration the brokers run with, so the two cannot drift. A cluster whose broker StatefulSet is gone cannot restore until the cluster brings it back.
 
 ## The restore Jobs
 
-The restore runs the Camunda restore application once per broker, as a Job. Each Job pod mounts the data volume of its broker. A pod that finished still counts as a user of that volume, so the volume cannot terminate while the pod exists.
+The restore runs the Camunda restore application once per broker, as a Job. Each Job pod uses the data volume of its broker. A pod that finished still holds that volume, so the volume cannot terminate while the pod exists.
 
 | Terminal phase | What happens to the Jobs |
 | --- | --- |
@@ -200,9 +200,9 @@ kubectl logs -n my-cluster-ns job/my-cluster-restore-lrrdbms-0
 
 ## Deletion
 
-When you delete the restore, the operator deletes the Jobs it created. A restore that completed already removed its per-broker Jobs. A restore that failed still has them, and this is how you remove them. It writes nothing to an external store, so it needs no finalizer and leaves no artifact behind. The recreated broker volumes stay.
+When you delete the restore, the operator deletes the Jobs it created. A restore that completed already removed its per-broker Jobs. A restore that failed still has them, and this is how you remove them. The restore wrote nothing to the backup bucket, so the delete leaves no artifact there. The recreated broker volumes stay.
 
-A target that the restore suspended stays suspended. That is deliberate. Unsuspending it here would start brokers over volumes that the restore already erased. Unsuspend the cluster yourself once you know what its volumes hold.
+A target that the restore suspended stays suspended. That is deliberate. Brokers that start over volumes the restore already erased are worse than a cluster that is down. Unsuspend the cluster yourself once you know what its volumes hold.
 
 ## Status
 
@@ -229,7 +229,7 @@ The status also records what the restore pinned and what it did:
 - `status.brokers` is the broker count that the operator read off the broker StatefulSet.
 - `status.recreatedClaims` names the broker data volumes that the operator deleted and created again.
 - `status.primaryJobNames` names the per-broker restore Jobs, in broker order.
-- `status.terminalReason` is the `Ready` reason of the terminal phase. The operator stages the condition again from it, so a write conflict cannot lose the reason.
+- `status.terminalReason` is the `Ready` reason of the terminal phase.
 - `status.completionTime` is when the restore reached `Completed` or `Failed`.
 - `status.observedGeneration` is the last generation the operator reconciled.
 
@@ -260,7 +260,7 @@ spec:
 - `spec` is immutable. A restore runs once, and you retry it with a new resource.
 - `backupRef` and `targetClusterRef` name resources in the namespace of the restore. Neither crosses a namespace. The operator reads the Secrets of the target and runs Jobs in that namespace, so both references stay inside the RBAC boundary of the restore.
 - `backupRef` carries a name alone. The kind of the restore says which backup kind it reads.
-- The suspend state, the phase of the backup, and the compatibility rules depend on live state. The operator checks them at reconcile time.
+- The API server accepts a restore that breaks the rules below, because they depend on live state. The restore reports the breach on `Ready` instead: the suspend state of the target, the phase of the backup, and the compatibility rules.
 
 ## Related
 

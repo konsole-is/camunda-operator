@@ -253,12 +253,17 @@ A `DatabaseServer` suspends the same way. The instance pods go, the data volumes
 `pause: true` is different:
 
 ```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
 spec:
   # ... the rest of your cluster
   pause: true
 ```
 
-The operator stops reconciling the resource. It writes nothing, not even status, and records one `Paused` event per reconcile. The workloads keep running as they are. Use `suspend` to save compute and keep the data. Use `pause` when you must stop the operator from touching the resource, for example while you inspect or repair a workload by hand.
+The operator changes nothing for this resource. It writes no status, and it records a `Paused` event each time it looks at the resource. The workloads keep running as they are. Use `suspend` to save compute and keep the data. Use `pause` when you must stop the operator from touching the resource, for example while you inspect or repair a workload by hand.
 
 ## Grow storage
 
@@ -276,7 +281,7 @@ spec:
     storageSize: 64Gi
 ```
 
-The operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. If it does not, the API server rejects the expansion and the operator retries with backoff. A volume of a new replica is expanded after it binds. `status.volumes` shows the result per volume:
+The operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. If it does not, the API server rejects the expansion, and the operator tries again. A volume of a new replica is expanded after it binds. `status.volumes` shows the result per volume:
 
 ```yaml
 status:
@@ -289,13 +294,13 @@ status:
       capacity: 32Gi   # not expanded yet
 ```
 
-A smaller value is rejected at admission. If a preset lowers the size under a running cluster, the operator ignores it, keeps the current size, and records the Warning event `StorageShrinkIgnored` once per requested size. To get a smaller volume, delete and recreate the cluster.
+The API server rejects a smaller value. If a preset lowers the size under a running cluster, the operator ignores it, keeps the current size, and records the Warning event `StorageShrinkIgnored` once per requested size. To get a smaller volume, delete and recreate the cluster.
 
 `storageSize` of an `ElasticsearchCluster`, and `storageSize` and `walStorageSize` of a `DatabaseServer`, obey the same rules: they grow in place, a smaller inline value is rejected, and a smaller preset value is ignored with `StorageShrinkIgnored`.
 
 ## Rotate passwords
 
-The operator generates each password once and keeps it stable. To rotate one, delete its Secret. The operator generates a new password on the next reconcile and publishes it in a new Secret. The old password is never published again. The admin user of a basic-authentication cluster is the exception: it rotates through the spec, and a deletion does not change it on the cluster.
+The operator generates each password once and keeps it stable. To rotate one, delete its Secret. The operator then generates a new password and publishes it in a new Secret. The old password is never published again. The admin user of a basic-authentication cluster is the exception: it rotates through the spec, and a deletion does not change it on the cluster.
 
 | Password | Secret to delete | What happens next |
 | --- | --- | --- |
@@ -312,13 +317,19 @@ kubectl delete secret my-cluster-es-es-user -n my-cluster-ns
 The admin user is different. The orchestration cluster creates the `admin` user once, at first start, and a new Secret alone does not change its password. Rotate it through the spec:
 
 ```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
 spec:
+  # ... the rest of your cluster
   auth:
     basic:
       passwordRotation: "2026-08"
 ```
 
-A changed value rotates once. The operator generates a new password, sets it on the `admin` user through the user API of the running cluster, publishes it in `<name>-camunda-admin`, and rolls the connectors Deployment. `status.adminPassword.rotation` shows the value when the rotation is complete. A failed rotation surfaces on the condition `AdminSecretReady` and retries; the [authentication guide](authentication.md#rotate-the-password) has the failure modes.
+A changed value rotates once. The operator generates a new password, sets it on the `admin` user through the user API of the running cluster, publishes it in `<name>-camunda-admin`, and rolls the connectors Deployment. `status.adminPassword.rotation` shows the value when the rotation is complete. A failed rotation shows on the condition `AdminSecretReady`, and the operator tries again. The [authentication guide](authentication.md#rotate-the-password) has the failure modes.
 
 ## Change configuration and referenced Secrets
 
@@ -326,10 +337,16 @@ You do not edit the cluster to roll a configuration change. A change to the `Cam
 
 The [CamundaPlatformConfig](../crds/camundaplatformconfig.md) is cluster-scoped, so the Secrets it names are copied into the namespace of the cluster as `<name>-camunda-<purpose>`, for example `my-cluster-camunda-license` or `my-cluster-camunda-oidc-client`. The pods read the copy. When the source Secret changes, the copy follows, and the pods roll. `MirroredSecretsReady` reports the copies. Every other Secret a cluster reads already lives in its namespace.
 
-To add your own environment variables, use `extraEnv` and `extraEnvFrom`. The operator renders its own configuration first, then the top-level `extraEnv`, then the `extraEnv` of the embedded components that the process hosts, then the `extraEnv` of the process itself. A later entry with the same name wins, and an entry replaces an operator entry with the same name. For example, to set the heap of the brokers:
+To add your own environment variables, use `extraEnv` and `extraEnvFrom`. The operator writes its own configuration first, then the top-level `extraEnv`, then the `extraEnv` of the embedded parts that the process hosts, then the `extraEnv` of the process itself. A later entry with the same name wins, and an entry replaces an operator entry with the same name. For example, to set the heap of the brokers:
 
 ```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
 spec:
+  # ... the rest of your cluster
   zeebe:
     extraEnv:
       - name: JAVA_TOOL_OPTIONS

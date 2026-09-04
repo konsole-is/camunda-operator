@@ -84,7 +84,7 @@ spec:
   # ... the rest of your server
 ```
 
-Neither volume size can shrink. Admission rejects a lower inline value. If a preset lowers a size under a running server, the operator keeps the current size and records a Warning event with reason `StorageShrinkIgnored`. Raise a size and CloudNativePG grows the volumes in place, if the StorageClass allows it. To get a smaller volume, delete and recreate the server.
+Neither volume size can shrink. The API server rejects a lower inline value. If a preset lowers a size under a running server, the operator keeps the current size and records a Warning event with reason `StorageShrinkIgnored`. Raise a size and CloudNativePG grows the volumes in place, if the StorageClass allows it. To get a smaller volume, delete and recreate the server.
 
 The write-ahead log volume cannot be removed either. You can add `walStorageSize` to a server that runs without one. If you clear it, or a preset clears it, the operator keeps the volume at the size it has and records a Warning event with reason `WALStorageKept`. To run the log on the data volume again, delete and recreate the server.
 
@@ -116,7 +116,7 @@ Raise `retentionPeriodDays` and the window widens only as the archive writes pas
 
 `baseBackupSchedule` is a six-field cron in UTC, seconds first: seconds, minutes, hours, day of month, month, day of week. It defaults to `0 0 2 * * *`, which is daily at 02:00. Each field takes `*`, `?`, a number, a range, a list, or a step such as `*/15`. The month and the day of week also take their names, such as `JAN` and `SUN`. The descriptors `@yearly`, `@annually`, `@monthly`, `@weekly`, `@daily`, `@midnight`, `@hourly`, and `@every 6h` are accepted too.
 
-Admission checks each field against the values CloudNativePG takes there: 0-59 for seconds and minutes, 0-23 for hours, 1-31 for the day of the month, 1-12 or `JAN`-`DEC` for the month, and 0-6 or `SUN`-`SAT` for the day of the week. It rejects the five-field cron of a Kubernetes CronJob, because CloudNativePG reads the first field as seconds: `0 2 * * *` runs every hour at two minutes past, not daily at 02:00. A step takes at most three digits, and the number in `@every` takes at most six digits on each side of the point. A longer number is refused, because CloudNativePG cannot read it and the base backups stop. Admission cannot compare the two ends of a range. The operator refuses a range that reads downward, such as `FRI-MON`. `Ready` reports `InvalidReference` with the schedule in the message, and no base backup schedule reaches the cluster.
+The API server checks each field against the values CloudNativePG takes there: 0-59 for seconds and minutes, 0-23 for hours, 1-31 for the day of the month, 1-12 or `JAN`-`DEC` for the month, and 0-6 or `SUN`-`SAT` for the day of the week. It rejects the five-field cron of a Kubernetes CronJob, because CloudNativePG reads the first field as seconds: `0 2 * * *` runs every hour at two minutes past, not daily at 02:00. A step takes at most three digits, and the number in `@every` takes at most six digits on each side of the point. A longer number is refused, because CloudNativePG cannot read it and the base backups stop. The API server cannot compare the two ends of a range. The operator refuses a range that reads downward, such as `FRI-MON`. `Ready` reports `InvalidReference` with the schedule in the message, and no base backup schedule reaches the cluster.
 
 The first base backup runs as soon as the server is up, whatever the schedule says. `ArchiveReady` is `False` until that first base backup completes: an archive that holds write-ahead log and no base backup cannot be recovered to any point.
 
@@ -458,7 +458,7 @@ spec:
 
 - `metadata.name` must be a DNS-1035 label of 46 characters or fewer: lowercase letters, digits, and `-`, starting with a letter.
 - `databaseServerConfig` is required on a `DatabaseServer` and must not be set in a preset.
-- `storageSize` and `walStorageSize` cannot shrink. Admission rejects a lower inline value, and a lower preset value is ignored with the Warning event `StorageShrinkIgnored`.
+- `storageSize` and `walStorageSize` cannot shrink. The API server rejects a lower inline value, and a lower preset value is ignored with the Warning event `StorageShrinkIgnored`.
 - `walStorageSize` cannot be cleared once the server has a write-ahead log volume. The operator keeps the volume and records the Warning event `WALStorageKept`.
 - `version` is a bare major, such as `17`. Anything below 14 is rejected on the `Ready` condition with reason `InvalidReference`, because Camunda 8.9 supports PostgreSQL 14 and later. See the [RDBMS version support policy](https://docs.camunda.io/docs/self-managed/concepts/databases/relational-db/rdbms-support-policy/).
 - `version` cannot move to another major once the server runs. See [The PostgreSQL version](#the-postgresql-version).

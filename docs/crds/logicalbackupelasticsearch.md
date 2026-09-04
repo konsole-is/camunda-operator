@@ -42,7 +42,7 @@ graph LR
 
 ## Exporting
 
-The backup pauses exporting before it writes and resumes it at the end. Records still flow into Elasticsearch, but Zeebe cannot compact its log while exporting is paused. If a step fails, the backup resumes exporting before it ends as `Failed`.
+The backup soft pauses exporting before it writes and resumes it at the end. Records still flow into Elasticsearch while exporting is soft paused, and Camunda describes what the mode blocks in [Management API](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/zeebe/operations/management-api/). Broker disk usage grows for as long as a backup runs. If a step fails, the backup resumes exporting before it ends as `Failed`.
 
 ## One backup at a time
 

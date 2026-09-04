@@ -179,7 +179,13 @@ kubectl delete namespace my-cluster-ns
 Deleting the `CamundaCluster` deletes the broker volumes. To keep them, set the retention policy before you delete:
 
 ```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
 spec:
+  # ... the rest of your cluster
   zeebe:
     persistentVolumeClaimRetentionPolicy:
       whenDeleted: Retain

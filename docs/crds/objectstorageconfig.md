@@ -184,7 +184,7 @@ spec:
 - `s3.endpoint` and `azureBlob.endpoint` must be valid `http` or `https` URLs.
 - A `basePath`, when set, must match `^[^/]+(/[^/]+)*$`: a plain prefix without leading or trailing slashes. An empty string is rejected. Omit the field to use the bucket root.
 - `bucketName`, `accountName`, `container`, and every Secret reference field must not be empty.
-- The Secret of `auth.credentials` is checked at reconcile time, not at admission, because you can create the Secret after the contract.
+- The API server accepts a contract whose `auth.credentials` Secret does not exist yet, so you can create the Secret after the contract. The contract reports the missing Secret on `Ready`.
 - No field is immutable.
 
 ### S3 with EKS Pod Identity

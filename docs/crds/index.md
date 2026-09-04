@@ -9,17 +9,17 @@ Each page opens with what the kind is and a minimal manifest, then covers one to
 | --- | --- | --- |
 | [CamundaCluster](camundacluster.md) | Namespaced | One orchestration cluster: Zeebe, gateway, web applications, connectors. |
 | [CamundaPlatformConfig](camundaplatformconfig.md) | Cluster | Settings shared by all clusters: authentication, license, image repositories. |
-| [CamundaClusterPreset](camundaclusterpreset.md) | Cluster | A baseline spec that clusters inherit. No controller. |
-| [CamundaRelease](camundarelease.md) | Cluster | The versions, pinned images, and environment that clusters run. No controller. |
+| [CamundaClusterPreset](camundaclusterpreset.md) | Cluster | A baseline spec that clusters inherit. Passive data. |
+| [CamundaRelease](camundarelease.md) | Cluster | The versions, pinned images, and environment that clusters run. Passive data. |
 
 ## Storage backends
 
 | Kind | Scope | What it is |
 | --- | --- | --- |
 | [ElasticsearchCluster](elasticsearchcluster.md) | Namespaced | An Elasticsearch cluster run by ECK, published as a `SecondaryStorageConfig`. |
-| [ElasticsearchClusterPreset](elasticsearchclusterpreset.md) | Cluster | A baseline spec that Elasticsearch clusters inherit. No controller. |
+| [ElasticsearchClusterPreset](elasticsearchclusterpreset.md) | Cluster | A baseline spec that Elasticsearch clusters inherit. Passive data. |
 | [DatabaseServer](databaseserver.md) | Namespaced | A PostgreSQL server run by CloudNativePG, archived to a bucket, published as a `DatabaseServerConfig`. |
-| [DatabaseServerPreset](databaseserverpreset.md) | Cluster | A baseline spec that database servers inherit. No controller. |
+| [DatabaseServerPreset](databaseserverpreset.md) | Cluster | A baseline spec that database servers inherit. Passive data. |
 | [Database](database.md) | Namespaced | A logical database and its users on an existing PostgreSQL server, published as a `DatabaseConfig`. |
 
 Each backend kind needs an operator that this operator does not install. `ElasticsearchCluster` needs the ECK operator. `DatabaseServer` needs the CloudNativePG operator, and `spec.archive` also needs the Barman Cloud plugin and cert-manager. Install what you use, then restart the manager. See [Installation](../installation.md#requirements).

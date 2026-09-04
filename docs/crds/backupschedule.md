@@ -2,7 +2,7 @@
 
 `BackupSchedule` takes logical backups of one `CamundaCluster` on a cron schedule. You create it, or another tool creates it for you.
 
-At each trigger the operator creates one backup of the kind that matches the secondary storage of the cluster: `LogicalBackupElasticsearch` for an Elasticsearch cluster, `LogicalBackupRDBMS` for a relational one. The controller of that kind runs the backup. The schedule also owns retention: it deletes its own terminal backups beyond `spec.retained`, and the deletion removes the stored artifacts too.
+At each trigger the operator creates one backup of the kind that matches the secondary storage of the cluster: `LogicalBackupElasticsearch` for an Elasticsearch cluster, `LogicalBackupRDBMS` for a relational one. That backup then runs on its own. The schedule also owns retention: it deletes its own terminal backups beyond `spec.retained`, and the deletion removes the stored artifacts too.
 
 `kubectl get backupschedules` lists the schedules with `Ready`, its reason, the cron expression, and the age. `kubectl get backupschedules -o wide` adds the cluster, the last schedule, and the last backup.
 
@@ -40,6 +40,11 @@ graph LR
 `spec.schedule` is a five-field cron expression: minute, hour, day of month, month, and day of week. The operator evaluates it in UTC. The time zone of the cluster, of the node, and of your workstation does not change the trigger time.
 
 ```yaml
+apiVersion: core.camunda.io/v1
+kind: BackupSchedule
+metadata:
+  name: my-cluster-schedule
+  namespace: my-cluster-ns
 spec:
   # 02:00 UTC every day.
   schedule: "0 2 * * *"
@@ -108,6 +113,11 @@ Normal  TriggerSkipped  Skipped the trigger at 2026-08-21T02:00:00Z: backup "my-
 `spec.retained` bounds how many backups of this schedule are kept, per terminal phase:
 
 ```yaml
+apiVersion: core.camunda.io/v1
+kind: BackupSchedule
+metadata:
+  name: my-cluster-schedule
+  namespace: my-cluster-ns
 spec:
   retained:
     # Two weeks of nightly backups.
@@ -120,7 +130,7 @@ The operator deletes the oldest completed backups beyond `retained.completed`, b
 
 Retention is schedule-owned. The operator prunes only the backups that carry the label `camunda.io/backup-schedule` of this schedule. A backup that you create by hand carries no such label, so no schedule ever prunes it.
 
-A pruned backup is deleted through its own finalizer, so the stored artifacts go with it. For an Elasticsearch backup these are the snapshots and the partition backup. For a relational backup this is the database dump. Each deletion records the Normal event `BackupPruned`.
+A pruned backup takes its stored artifacts with it. For an Elasticsearch backup these are the snapshots and the partition backup. For a relational backup this is the database dump. Each deletion records the Normal event `BackupPruned`.
 
 The operator prunes at each trigger, after a change to the schedule, and when one of its backups reaches a terminal phase. If you lower a bound, the overflow is deleted at once.
 

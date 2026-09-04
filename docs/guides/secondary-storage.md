@@ -1,6 +1,6 @@
 # Secondary storage
 
-Camunda keeps its data in two places. Primary storage is the Zeebe log and state on the broker volumes. Secondary storage holds the exported process, decision, and task data that Operate, Tasklist, and the search API read. The operator supports two secondary storage backends: Elasticsearch and PostgreSQL. It runs Elasticsearch through the ECK operator. It runs PostgreSQL through the CloudNativePG operator, or it prepares a database on a server you run. A `CamundaCluster` never sees the backend. It only references a `SecondaryStorageConfig` by name, through `spec.storageRef`.
+Camunda keeps its data in two places. Primary storage is the Zeebe log and state on the broker volumes. Secondary storage holds the exported data that Operate, Tasklist, and the search API read, and Camunda describes it in [Configure secondary storage](https://docs.camunda.io/docs/self-managed/concepts/secondary-storage/configuring-secondary-storage/). The operator supports two secondary storage backends: Elasticsearch and PostgreSQL. It runs Elasticsearch through the ECK operator. It runs PostgreSQL through the CloudNativePG operator, or it prepares a database on a server you run. A `CamundaCluster` never sees the backend. It only references a `SecondaryStorageConfig` by name, through `spec.storageRef`.
 
 This guide tells you which backend to pick, which resources to create for each backend, and in which order.
 

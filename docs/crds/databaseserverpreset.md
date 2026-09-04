@@ -4,7 +4,7 @@
 
 A preset holds one PostgreSQL sizing as data: version, instance count, resources, storage, scheduling, monitoring, and the archive bucket. Each `DatabaseServer` that references it stays small and consistent. A platform team can publish a set of presets, for example `small`, `standard`, and `large`, and each team picks one.
 
-No controller reconciles a preset. It creates nothing and reports no status. `kubectl get databaseserverpreset` shows the version it holds and the age. The `DatabaseServer` controller reads it. A `DatabaseServer` uses it through `spec.presetRef`.
+A preset is passive data. It creates nothing and reports no status. `kubectl get databaseserverpreset` shows the version it holds and the age. A `DatabaseServer` uses it through `spec.presetRef`.
 
 The smallest preset sets a version, an instance count, and a volume size:
 
@@ -37,13 +37,13 @@ A preset can set `archive` and `platformConfigRef`. One bucket then serves every
 
 ## Changes
 
-An edit of a preset reaches every `DatabaseServer` that references it on its next reconcile. A lower `storageSize` or `walStorageSize` in the preset does not shrink a running server. That server keeps its current size and records a Warning event with reason `StorageShrinkIgnored`. A preset that clears `walStorageSize` does not remove the write-ahead log volume of a running server either. That server keeps the volume and records a Warning event with reason `WALStorageKept`. A new server uses the new baseline.
+An edit of a preset reaches every `DatabaseServer` that references it. A lower `storageSize` or `walStorageSize` in the preset does not shrink a running server. That server keeps its current size and records a Warning event with reason `StorageShrinkIgnored`. A preset that clears `walStorageSize` does not remove the write-ahead log volume of a running server either. That server keeps the volume and records a Warning event with reason `WALStorageKept`. A new server uses the new baseline.
 
 A new `version` in the preset does not move a running server to another PostgreSQL major. That server reports `Ready` `False` with reason `VersionChangeRefused` until the preset names its major again. A new server uses the new baseline. See [The PostgreSQL version](databaseserver.md#the-postgresql-version).
 
 ## Deletion
 
-Deleting a preset removes no server. Each `DatabaseServer` that references it reports `Ready` `False` with reason `InvalidReference` on its next reconcile.
+Deleting a preset removes no server. Each `DatabaseServer` that references it reports `Ready` `False` with reason `InvalidReference`.
 
 ## Status
 

@@ -4,7 +4,7 @@
 
 A preset holds one Elasticsearch sizing as data: version, node count, resources, storage, scheduling, and more. Each `ElasticsearchCluster` that references it stays small and consistent. A platform team can publish a set of presets, for example `small`, `standard`, and `large`, and each team picks one.
 
-No controller reconciles a preset. It creates nothing and reports no status. `kubectl get elasticsearchclusterpreset` shows the version it holds and the age. The `ElasticsearchCluster` controller reads it. The operator creates no resources from a preset. An `ElasticsearchCluster` uses it through `spec.presetRef`.
+A preset is passive data. It creates nothing and reports no status. `kubectl get elasticsearchclusterpreset` shows the version it holds and the age. An `ElasticsearchCluster` uses it through `spec.presetRef`.
 
 The smallest preset sets a version, a node count, and a volume size:
 
@@ -37,11 +37,11 @@ A preset can set `snapshotStorageRef`, `serviceAccount`, `secureSettings`, and `
 
 ## Changes
 
-An edit of a preset reaches every `ElasticsearchCluster` that references it on its next reconcile. A lower `storageSize` in the preset does not shrink a running cluster. That cluster keeps its current size and records a Warning event with reason `StorageShrinkIgnored`. A new cluster uses the new baseline.
+An edit of a preset reaches every `ElasticsearchCluster` that references it. A lower `storageSize` in the preset does not shrink a running cluster. That cluster keeps its current size and records a Warning event with reason `StorageShrinkIgnored`. A new cluster uses the new baseline.
 
 ## Deletion
 
-Deleting a preset removes no cluster. Each `ElasticsearchCluster` that references it reports `Ready` `False` with reason `InvalidReference` on its next reconcile.
+Deleting a preset removes no cluster. Each `ElasticsearchCluster` that references it reports `Ready` `False` with reason `InvalidReference`.
 
 ## Status
 

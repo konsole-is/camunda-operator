@@ -72,7 +72,7 @@ Every claimant records this field, the one that loses included, so it shows the 
 
 ## Changes
 
-All SQL is idempotent, so every reconcile can run it again. If you rename a binding, the operator publishes the object under the new name and leaves the object under the old name in place. If you clear `spec.secondaryStorageConfig`, the existing `SecondaryStorageConfig` stays in the same way. Both objects stay until you delete the `Database`. A `Database` that loses its claim removes them sooner. See [Uniqueness](#uniqueness).
+All SQL is idempotent, so the operator can run it again safely. If you rename a binding, the operator publishes the object under the new name and leaves the object under the old name in place. If you clear `spec.secondaryStorageConfig`, the existing `SecondaryStorageConfig` stays in the same way. Both objects stay until you delete the `Database`. A `Database` that loses its claim removes them sooner. See [Uniqueness](#uniqueness).
 
 ## Deletion
 
@@ -131,7 +131,7 @@ spec:
 
 - `spec.databaseName` must match `^[a-z_][a-z0-9_]{0,62}$`: a lowercase PostgreSQL identifier of at most 63 characters.
 - `spec.databaseConfig` and `spec.secondaryStorageConfig` must be valid resource names.
-- The uniqueness of the logical database name per server is enforced by the operator, not by admission. See `InvalidReference` above.
+- The operator enforces the uniqueness of the logical database name per server, and the API server does not. See `InvalidReference` above.
 
 ### A production-shaped example
 
