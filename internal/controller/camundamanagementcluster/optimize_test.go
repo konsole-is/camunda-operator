@@ -961,10 +961,13 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 
 		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
 
+		// The record is written before the components run. Only the callbacks
+		// of the fake prove that the converge reached Keycloak.
 		Eventually(func(g Gomega) {
 			stampIdentityReady(g, s)
 
 			g.Expect(readManagementCluster(g, s.mc).Status.CallbackRealm).NotTo(BeNil())
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
 		}, timeout, interval).Should(Succeed())
 
 		Eventually(func(g Gomega) {
@@ -988,7 +991,11 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 			)))
 		}, timeout, interval).Should(Succeed())
 
-		Expect(first.redirectURIs()).To(HaveLen(1))
+		// The annotation let go of nothing. The window covers the reconcile
+		// passes that its removal brings.
+		Consistently(func(g Gomega) {
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
+		}, "2s", interval).Should(Succeed())
 	})
 
 	// The hatch leaves the callbacks behind for good, so it answers to the
@@ -1000,6 +1007,8 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 
 		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
 
+		// The record is written before the components run. Only the callbacks
+		// of the fake prove that the converge reached Keycloak.
 		var recorded string
 		Eventually(func(g Gomega) {
 			stampIdentityReady(g, s)
@@ -1007,6 +1016,7 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 			realm := readManagementCluster(g, s.mc).Status.CallbackRealm
 			g.Expect(realm).NotTo(BeNil())
 			recorded = components.RealmIdentity(*realm)
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
 		}, timeout, interval).Should(Succeed())
 
 		Eventually(func(g Gomega) {
@@ -1026,7 +1036,11 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 			g.Expect(eventReasons(g, s.mc)).To(ContainElement(eventReasonForgetIgnored))
 		}, timeout, interval).Should(Succeed())
 
-		Expect(first.redirectURIs()).To(HaveLen(1))
+		// The annotation let go of nothing. The window covers the reconcile
+		// passes that its removal brings.
+		Consistently(func(g Gomega) {
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
+		}, "2s", interval).Should(Succeed())
 	})
 
 	// Suspension holds the realms, not an annotation that sanctions nothing.
@@ -1038,10 +1052,14 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 
 		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
 
+		// A suspended plane leaves the realm as it is, so the callbacks have to
+		// reach it before the plane sleeps. The record is written before the
+		// components run, so it proves nothing about Keycloak.
 		Eventually(func(g Gomega) {
 			stampIdentityReady(g, s)
 
 			g.Expect(readManagementCluster(g, s.mc).Status.CallbackRealm).NotTo(BeNil())
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
 		}, timeout, interval).Should(Succeed())
 
 		Eventually(func(g Gomega) {
@@ -1062,8 +1080,11 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}, timeout, interval).Should(Succeed())
 
 		// The realm of the record is untouched, which is what suspension
-		// promises.
-		Expect(first.redirectURIs()).To(HaveLen(1))
+		// promises. The window covers the reconcile passes that the removal of
+		// the annotation brings.
+		Consistently(func(g Gomega) {
+			g.Expect(first.redirectURIs()).To(HaveLen(1))
+		}, "2s", interval).Should(Succeed())
 	})
 
 	// A suspended management plane leaves every realm as it is, so a spec that
