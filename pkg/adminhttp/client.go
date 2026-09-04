@@ -97,6 +97,23 @@ type Client struct {
 	http        *http.Client
 }
 
+// Request is one call of a Client.
+type Request struct {
+	// Method is the HTTP method.
+	Method string
+	// Path is the path of the call. It starts with a slash and is appended
+	// to the endpoint of the client as it stands. It carries the query
+	// string when the call has one.
+	Path string
+	// Body is the JSON request body, or nil for a call that sends none. A
+	// request that carries one is sent as application/json.
+	Body []byte
+	// Accept reports whether the response status is a success. nil accepts
+	// every 2xx. An API that answers one exact status per call names it with
+	// Status.
+	Accept func(status int) bool
+}
+
 // New builds a client from cfg. It returns an error when a sentinel is
 // missing or the CA bundle is unusable.
 func New(cfg Config) (*Client, error) {
@@ -123,28 +140,6 @@ func New(cfg Config) (*Client, error) {
 		rejected:    cfg.Rejected,
 		http:        &http.Client{Timeout: requestTimeout, Transport: transport},
 	}, nil
-}
-
-// Request is one call of a Client.
-type Request struct {
-	// Method is the HTTP method.
-	Method string
-	// Path is the path of the call. It starts with a slash and is appended
-	// to the endpoint of the client as it stands. It carries the query
-	// string when the call has one.
-	Path string
-	// Body is the JSON request body, or nil for a call that sends none. A
-	// request that carries one is sent as application/json.
-	Body []byte
-	// Accept reports whether the response status is a success. nil accepts
-	// every 2xx. An API that answers one exact status per call names it with
-	// Status.
-	Accept func(status int) bool
-}
-
-// Status returns an Accept predicate that accepts want and nothing else.
-func Status(want int) func(status int) bool {
-	return func(status int) bool { return status == want }
 }
 
 // Do sends req and returns the response body and the status code. A
@@ -213,4 +208,9 @@ func errorBody(payload []byte) string {
 	}
 
 	return fmt.Sprintf("%s... (truncated, %d bytes)", cut, len(body))
+}
+
+// Status returns an Accept predicate that accepts want and nothing else.
+func Status(want int) func(status int) bool {
+	return func(status int) bool { return status == want }
 }

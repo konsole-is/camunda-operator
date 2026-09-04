@@ -96,6 +96,44 @@ func NewUserClient(binding UserBinding) (*UserClient, error) {
 	return &UserClient{api: api}, nil
 }
 
+// checkUserAPIVersion rejects a Camunda version below userAPIVersionFloor. A
+// later minor or major passes: the user API endpoints keep their shape
+// across minors, so the operator must call every version it accepts. This is
+// why the user client does not share the endpoint-set check of Client.
+func checkUserAPIVersion(version string) error {
+	major, minor, err := majorMinor(version)
+	if err != nil {
+		return err
+	}
+	floorMajor, floorMinor, _ := majorMinor(userAPIVersionFloor)
+
+	if major < floorMajor || (major == floorMajor && minor < floorMinor) {
+		return fmt.Errorf(
+			"unsupported Camunda version %q: the user API needs %s or later", version, userAPIVersionFloor,
+		)
+	}
+
+	return nil
+}
+
+// majorMinor reads the first two segments of a version such as 8.9 or
+// 8.10.1. A segment that follows the minor is ignored.
+func majorMinor(version string) (major int, minor int, err error) {
+	segments := strings.Split(version, ".")
+	if len(segments) < 2 {
+		return 0, 0, fmt.Errorf("unsupported Camunda version %q: it is not of the form major.minor", version)
+	}
+
+	if major, err = strconv.Atoi(segments[0]); err != nil {
+		return 0, 0, fmt.Errorf("unsupported Camunda version %q: its major is not a number", version)
+	}
+	if minor, err = strconv.Atoi(segments[1]); err != nil {
+		return 0, 0, fmt.Errorf("unsupported Camunda version %q: its minor is not a number", version)
+	}
+
+	return major, minor, nil
+}
+
 // GetUser reads user through GET /v2/users/{username}
 // (https://docs.camunda.io/docs/apis-tools/orchestration-cluster-api-rest/specifications/get-user/).
 // A username the cluster does not hold is reported by the second return
@@ -239,42 +277,4 @@ func classifyUserError(err error, status int) error {
 	default:
 		return err
 	}
-}
-
-// checkUserAPIVersion rejects a Camunda version below userAPIVersionFloor. A
-// later minor or major passes: the user API endpoints keep their shape
-// across minors, so the operator must call every version it accepts. This is
-// why the user client does not share the endpoint-set check of Client.
-func checkUserAPIVersion(version string) error {
-	major, minor, err := majorMinor(version)
-	if err != nil {
-		return err
-	}
-	floorMajor, floorMinor, _ := majorMinor(userAPIVersionFloor)
-
-	if major < floorMajor || (major == floorMajor && minor < floorMinor) {
-		return fmt.Errorf(
-			"unsupported Camunda version %q: the user API needs %s or later", version, userAPIVersionFloor,
-		)
-	}
-
-	return nil
-}
-
-// majorMinor reads the first two segments of a version such as 8.9 or
-// 8.10.1. A segment that follows the minor is ignored.
-func majorMinor(version string) (major int, minor int, err error) {
-	segments := strings.Split(version, ".")
-	if len(segments) < 2 {
-		return 0, 0, fmt.Errorf("unsupported Camunda version %q: it is not of the form major.minor", version)
-	}
-
-	if major, err = strconv.Atoi(segments[0]); err != nil {
-		return 0, 0, fmt.Errorf("unsupported Camunda version %q: its major is not a number", version)
-	}
-	if minor, err = strconv.Atoi(segments[1]); err != nil {
-		return 0, 0, fmt.Errorf("unsupported Camunda version %q: its minor is not a number", version)
-	}
-
-	return major, minor, nil
 }

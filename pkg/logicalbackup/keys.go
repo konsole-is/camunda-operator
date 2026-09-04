@@ -64,6 +64,15 @@ const optimizeIndices = "optimize-*"
 // (Camunda 8.9 restore guide, "find available backup IDs").
 const optimizeSnapshotMarker = "_optimize_"
 
+// Finalizer guards the stored artifacts of a logical backup. While it is set,
+// deleting the custom resource first deletes the snapshots or the dump that
+// the backup produced.
+//
+// The label that names the BackupSchedule which created a backup is
+// labels.BackupScheduleKey: pkg/labels is the one place that owns the label
+// keys of this operator.
+const Finalizer = "core.camunda.io/backup-artifacts"
+
 // RecordsSnapshotName returns the name of the Elasticsearch snapshot that
 // holds the exported Zeebe record indices of a backup id. The backup writes
 // it, and a restore locates it by the same rule.
@@ -96,15 +105,6 @@ func HasOptimizeSnapshot(names []string) bool {
 
 	return false
 }
-
-// Finalizer guards the stored artifacts of a logical backup. While it is set,
-// deleting the custom resource first deletes the snapshots or the dump that
-// the backup produced.
-//
-// The label that names the BackupSchedule which created a backup is
-// labels.BackupScheduleKey: pkg/labels is the one place that owns the label
-// keys of this operator.
-const Finalizer = "core.camunda.io/backup-artifacts"
 
 // AllocateBackupID returns the identifier of a backup that starts at the
 // given time: the Unix timestamp in milliseconds, the resolution at which the

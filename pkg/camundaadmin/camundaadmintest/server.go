@@ -206,44 +206,6 @@ func (s *Server) ConflictNextRuntimeStart(n int) {
 	s.conflictRuntimeStarts = n
 }
 
-// handleExporting serves the pause and resume operations. Both answer the
-// envelope that Camunda 8.9 answers: HTTP 200 with the outcome inside.
-func (s *Server) handleExporting(w http.ResponseWriter, r *http.Request, operation string) {
-	switch operation {
-	case "pause":
-		if s.Dropping(w, "pause") {
-			return
-		}
-		if s.Failing("pause") {
-			exportingEnvelope(w, http.StatusInternalServerError, "injected pause failure")
-			return
-		}
-		s.pauseCalls++
-		if r.URL.Query().Get("soft") == "true" {
-			s.exporting = "softPaused"
-		} else {
-			s.exporting = "paused"
-		}
-		exportingEnvelope(w, http.StatusNoContent, "")
-
-	case "resume":
-		s.resumeAttempts++
-		if s.Dropping(w, "resume") {
-			return
-		}
-		if s.Failing("resume") {
-			exportingEnvelope(w, http.StatusInternalServerError, "injected resume failure")
-			return
-		}
-		s.resumeCalls++
-		s.exporting = "running"
-		exportingEnvelope(w, http.StatusNoContent, "")
-
-	default:
-		errorBody(w, http.StatusNotFound, "unknown exporting operation "+operation)
-	}
-}
-
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/actuator")
 
@@ -337,6 +299,56 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleExporting serves the pause and resume operations. Both answer the
+// envelope that Camunda 8.9 answers: HTTP 200 with the outcome inside.
+func (s *Server) handleExporting(w http.ResponseWriter, r *http.Request, operation string) {
+	switch operation {
+	case "pause":
+		if s.Dropping(w, "pause") {
+			return
+		}
+		if s.Failing("pause") {
+			exportingEnvelope(w, http.StatusInternalServerError, "injected pause failure")
+			return
+		}
+		s.pauseCalls++
+		if r.URL.Query().Get("soft") == "true" {
+			s.exporting = "softPaused"
+		} else {
+			s.exporting = "paused"
+		}
+		exportingEnvelope(w, http.StatusNoContent, "")
+
+	case "resume":
+		s.resumeAttempts++
+		if s.Dropping(w, "resume") {
+			return
+		}
+		if s.Failing("resume") {
+			exportingEnvelope(w, http.StatusInternalServerError, "injected resume failure")
+			return
+		}
+		s.resumeCalls++
+		s.exporting = "running"
+		exportingEnvelope(w, http.StatusNoContent, "")
+
+	default:
+		errorBody(w, http.StatusNotFound, "unknown exporting operation "+operation)
+	}
+}
+
+// exportingEnvelope answers an exporting call the way Camunda 8.9 does: the
+// HTTP status is always 200, and the outcome is the status field of the body.
+// A message produces the failure shape, which nests it under body.
+func exportingEnvelope(w http.ResponseWriter, status int, message string) {
+	envelope := map[string]any{"status": status, "contentType": nil, "body": nil}
+	if message != "" {
+		envelope["body"] = map[string]string{"message": message}
+	}
+
+	adminhttptest.WriteJSON(w, http.StatusOK, envelope)
+}
+
 // handleRuntimeStart answers POST /backupRuntime: an explicit id conflicts
 // with any same-or-higher (or deleted) id; a nil id gets a generated one.
 func (s *Server) handleRuntimeStart(w http.ResponseWriter, r *http.Request) {
@@ -394,6 +406,11 @@ func (s *Server) handleRuntimeStart(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// conflictBody answers the 409 a cluster answers when an id is not usable.
+func conflictBody(w http.ResponseWriter) {
+	errorBody(w, http.StatusConflict, "a backup with the same or higher ID already exists")
+}
+
 // handleRuntimeStatus serves GET /backupRuntime/{id}.
 func (s *Server) handleRuntimeStatus(w http.ResponseWriter, path string) {
 	if s.Dropping(w, "runtimeStatus") {
@@ -436,21 +453,4 @@ func decodeBackupID(r *http.Request) int64 {
 
 func errorBody(w http.ResponseWriter, status int, message string) {
 	adminhttptest.WriteJSON(w, status, map[string]string{"message": message})
-}
-
-// conflictBody answers the 409 a cluster answers when an id is not usable.
-func conflictBody(w http.ResponseWriter) {
-	errorBody(w, http.StatusConflict, "a backup with the same or higher ID already exists")
-}
-
-// exportingEnvelope answers an exporting call the way Camunda 8.9 does: the
-// HTTP status is always 200, and the outcome is the status field of the body.
-// A message produces the failure shape, which nests it under body.
-func exportingEnvelope(w http.ResponseWriter, status int, message string) {
-	envelope := map[string]any{"status": status, "contentType": nil, "body": nil}
-	if message != "" {
-		envelope["body"] = map[string]string{"message": message}
-	}
-
-	adminhttptest.WriteJSON(w, http.StatusOK, envelope)
 }

@@ -116,26 +116,6 @@ type Owner struct {
 	Name string
 }
 
-// OwnerName bounds the name of an owning custom resource to what a label
-// value admits. A custom resource name is a DNS subdomain of up to 253
-// characters, but a label value stops at 63. The owner label is also part of
-// every selector, which the API server rejects whole when one value is too
-// long, so the resources of an owner with a long name never apply.
-//
-// The Owner constructors below apply it, so a caller that builds its labels
-// through Managed or Discovery never calls it. Call it directly in the two
-// places that step outside those constructors:
-//
-//   - to add a second owner label to a map that Managed built, for example
-//     the cluster label on a backup Job.
-//   - to read an owner label back. The value is not the name of the custom
-//     resource once the name passes 63 characters, so a reader that maps a
-//     rendered resource to its owner compares OwnerName(candidate) against
-//     the value. It never reads the value as a name.
-func OwnerName(name string) string {
-	return BoundedName(name, validation.LabelValueMaxLength)
-}
-
 // Cluster returns the Owner of resources that a CamundaCluster with the given
 // name renders.
 func Cluster(name string) Owner { return Owner{Key: ClusterKey, Name: OwnerName(name)} }
@@ -234,6 +214,26 @@ func Merge(user map[string]string, operator ...map[string]string) map[string]str
 		maps.Copy(merged, m)
 	}
 	return merged
+}
+
+// OwnerName bounds the name of an owning custom resource to what a label
+// value admits. A custom resource name is a DNS subdomain of up to 253
+// characters, but a label value stops at 63. The owner label is also part of
+// every selector, which the API server rejects whole when one value is too
+// long, so the resources of an owner with a long name never apply.
+//
+// The Owner constructors below apply it, so a caller that builds its labels
+// through Managed or Discovery never calls it. Call it directly in the two
+// places that step outside those constructors:
+//
+//   - to add a second owner label to a map that Managed built, for example
+//     the cluster label on a backup Job.
+//   - to read an owner label back. The value is not the name of the custom
+//     resource once the name passes 63 characters, so a reader that maps a
+//     rendered resource to its owner compares OwnerName(candidate) against
+//     the value. It never reads the value as a name.
+func OwnerName(name string) string {
+	return BoundedName(name, validation.LabelValueMaxLength)
 }
 
 // BoundedName returns name when it fits limit, or its head followed by a hash

@@ -121,6 +121,20 @@ func claimHolder(
 	return "", nil
 }
 
+// mountsClaim reports whether pod uses the named claim as one of its volumes.
+func mountsClaim(pod *corev1.Pod, claim string) bool {
+	return slices.ContainsFunc(pod.Spec.Volumes, func(volume corev1.Volume) bool {
+		return volume.PersistentVolumeClaim != nil &&
+			volume.PersistentVolumeClaim.ClaimName == claim
+	})
+}
+
+// isJob reports whether the reference names a batch/v1 Job. The kind alone is
+// not enough: another API group can declare a kind of the same name.
+func isJob(ref *metav1.OwnerReference) bool {
+	return ref.Kind == "Job" && ref.APIVersion == batchv1.SchemeGroupVersion.String()
+}
+
 // workloadHolder names a pod that a workload runs.
 //
 // The broker StatefulSet of the target is the one workload whose remedy the
@@ -197,18 +211,4 @@ func podOfGoneJob(pod, name string) string {
 		"pod %s holds it. The Job %s that ran it is gone. Remove that pod to free the volume",
 		pod, name,
 	)
-}
-
-// mountsClaim reports whether pod uses the named claim as one of its volumes.
-func mountsClaim(pod *corev1.Pod, claim string) bool {
-	return slices.ContainsFunc(pod.Spec.Volumes, func(volume corev1.Volume) bool {
-		return volume.PersistentVolumeClaim != nil &&
-			volume.PersistentVolumeClaim.ClaimName == claim
-	})
-}
-
-// isJob reports whether the reference names a batch/v1 Job. The kind alone is
-// not enough: another API group can declare a kind of the same name.
-func isJob(ref *metav1.OwnerReference) bool {
-	return ref.Kind == "Job" && ref.APIVersion == batchv1.SchemeGroupVersion.String()
 }

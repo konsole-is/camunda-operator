@@ -159,6 +159,39 @@ func Prepare(
 	return versionTarget(ctx, c, in, key)
 }
 
+// suspendTarget suspends the cluster of the restore. It records that this
+// restore is the one that suspended it, and it lets the record become durable
+// before it writes.
+//
+// The order is what keeps the cluster recoverable. A crash between the write
+// and the record would leave a suspended cluster that no restore ever
+// unsuspends again, because Resume reads the record to decide.
+func suspendTarget(
+	ctx context.Context,
+	c client.Client,
+	p *v1.RestoreProgress,
+	in PrepareInput,
+	key types.NamespacedName,
+) (Outcome, error) {
+	if !p.ClusterSuspended {
+		p.ClusterSuspended = true
+		progressing(in.Owner, fmt.Sprintf(
+			"the restore suspends CamundaCluster %s, and unsuspends it again when it completes", key,
+		))
+
+		return Outcome{Wait: Shortly}, nil
+	}
+
+	if err := applySuspend(ctx, c, key, in.Cluster.UID, true); err != nil {
+		return Outcome{}, err
+	}
+	progressing(in.Owner, fmt.Sprintf(
+		"the restore suspended CamundaCluster %s. It waits for the brokers to stop", key,
+	))
+
+	return Outcome{Wait: in.Poll}, nil
+}
+
 // suspendedByARestore reports whether the suspension of the cluster came from
 // a restore rather than from its owner. It reads the managed fields: the
 // suspend manager of this package owns spec.suspend only where a restore
@@ -201,39 +234,6 @@ func declaresSuspend(raw []byte) bool {
 	_, ok = inSpec["f:suspend"]
 
 	return ok
-}
-
-// suspendTarget suspends the cluster of the restore. It records that this
-// restore is the one that suspended it, and it lets the record become durable
-// before it writes.
-//
-// The order is what keeps the cluster recoverable. A crash between the write
-// and the record would leave a suspended cluster that no restore ever
-// unsuspends again, because Resume reads the record to decide.
-func suspendTarget(
-	ctx context.Context,
-	c client.Client,
-	p *v1.RestoreProgress,
-	in PrepareInput,
-	key types.NamespacedName,
-) (Outcome, error) {
-	if !p.ClusterSuspended {
-		p.ClusterSuspended = true
-		progressing(in.Owner, fmt.Sprintf(
-			"the restore suspends CamundaCluster %s, and unsuspends it again when it completes", key,
-		))
-
-		return Outcome{Wait: Shortly}, nil
-	}
-
-	if err := applySuspend(ctx, c, key, in.Cluster.UID, true); err != nil {
-		return Outcome{}, err
-	}
-	progressing(in.Owner, fmt.Sprintf(
-		"the restore suspended CamundaCluster %s. It waits for the brokers to stop", key,
-	))
-
-	return Outcome{Wait: in.Poll}, nil
 }
 
 // versionTarget sets the Camunda version of the backup on the cluster and

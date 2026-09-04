@@ -75,83 +75,6 @@ type JobInput struct {
 	Args []string
 }
 
-// isNil reports whether obj holds no object. An interface that carries a typed
-// nil pointer is not equal to nil, and every read of its name panics the same
-// way an untyped nil does.
-func isNil(obj client.Object) bool {
-	if obj == nil {
-		return true
-	}
-
-	value := reflect.ValueOf(obj)
-
-	return value.Kind() == reflect.Ptr && value.IsNil()
-}
-
-// jobKindInfixes name each restore kind inside a Job name. Two restores of
-// different kinds and the same name can live in one namespace, so the kind has
-// to reach the name. The values are the short names of the CRDs, which is what
-// a user already types with kubectl.
-var jobKindInfixes = map[string]string{
-	labels.LogicalRestoreElasticsearchKey: "lres",
-	labels.LogicalRestoreRDBMSKey:         "lrrdbms",
-	labels.PointInTimeRestoreKey:          "pitr",
-}
-
-// JobName returns the name of the restore Job of one broker:
-// <restore>-<kind>-<ordinal>, where kind is the short name of the restore
-// CRD, for example pitr for a PointInTimeRestore. It derives from the owner
-// and the ordinal alone, so a reconcile that re-enters after a crash finds the
-// Job it already created.
-//
-// A restore name can be a full DNS subdomain, but a Job name is a DNS label.
-// Build the owner through the constructor of its kind in pkg/labels, which
-// bounds the name to what a label value admits. This bounds it a second time,
-// to leave room for the suffix. Each step ends in a hash of the value that it
-// cuts, so two long restore names still get two Job names.
-//
-// JobName returns the empty string for an owner of any other kind, for an
-// owner without a name, and for a negative ordinal. BuildJob rejects all
-// three.
-func JobName(owner labels.Owner, ordinal int32) string {
-	kind, known := jobKindInfixes[owner.Key]
-	if !known || owner.Name == "" || ordinal < 0 {
-		return ""
-	}
-
-	suffix := "-" + kind + "-" + strconv.FormatInt(int64(ordinal), 10)
-
-	return labels.BoundedName(owner.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
-}
-
-// JobLabels returns every label that a restore Job and its pods carry: the
-// owner of the restore, the restore component, the operator as manager, and
-// the cluster the restore runs against.
-//
-// A consumer that selects these Jobs must build the labels here rather than
-// by hand. Both owner label values are bounded to a DNS label, and a restore
-// name and a cluster name can both be longer, so a hand-built selector misses
-// every Job of a restore or a cluster whose name passes 63 characters.
-func JobLabels(owner labels.Owner, cluster string) map[string]string {
-	managed := labels.Managed(owner, ComponentRestore)
-	managed[labels.ClusterKey] = labels.OwnerName(cluster)
-
-	return managed
-}
-
-// JobSelector returns the labels that select every restore Job of one restore
-// and every pod of those Jobs. It is what a caller passes to a List and to
-// podstate.Stuck. It carries no cluster label, so it keeps selecting after a
-// restore moved between clusters, and it carries no manager label, which a
-// selector must not depend on.
-//
-// The pod informer of the manager is scoped by the manager label. That scope
-// belongs to the cache, not to this selector: a caller that lists through the
-// live API reads the same pods with these labels alone.
-func JobSelector(owner labels.Owner) map[string]string {
-	return labels.Discovery(owner, ComponentRestore)
-}
-
 // BuildJob renders the Job that runs the restore application for one broker.
 //
 // The pod starts as a copy of the broker pod of the live StatefulSet, so the
@@ -262,35 +185,68 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 	}, nil
 }
 
-// spreadOverRestorePods retargets the spread constraints of the broker pods
-// at the pods of this restore. The shape stays the broker's own: the same
-// topology key, the same skew, and the same policies, so the restore pods
-// spread exactly as the brokers do.
+// jobKindInfixes name each restore kind inside a Job name. Two restores of
+// different kinds and the same name can live in one namespace, so the kind has
+// to reach the name. The values are the short names of the CRDs, which is what
+// a user already types with kubectl.
+var jobKindInfixes = map[string]string{
+	labels.LogicalRestoreElasticsearchKey: "lres",
+	labels.LogicalRestoreRDBMSKey:         "lrrdbms",
+	labels.PointInTimeRestoreKey:          "pitr",
+}
+
+// JobName returns the name of the restore Job of one broker:
+// <restore>-<kind>-<ordinal>, where kind is the short name of the restore
+// CRD, for example pitr for a PointInTimeRestore. It derives from the owner
+// and the ordinal alone, so a reconcile that re-enters after a crash finds the
+// Job it already created.
 //
-// The selector has to change. A restore pod carries camunda.io/component:
-// restore, so a constraint that selects the broker component counts no pod at
-// all and lets every restore pod land in one zone. With a
-// WaitForFirstConsumer storage class the recreated volumes then bind in that
-// one zone, and the brokers cannot spread over them afterwards.
-func spreadOverRestorePods(
-	constraints []corev1.TopologySpreadConstraint,
-	owner labels.Owner,
-) []corev1.TopologySpreadConstraint {
-	if len(constraints) == 0 {
-		return nil
+// A restore name can be a full DNS subdomain, but a Job name is a DNS label.
+// Build the owner through the constructor of its kind in pkg/labels, which
+// bounds the name to what a label value admits. This bounds it a second time,
+// to leave room for the suffix. Each step ends in a hash of the value that it
+// cuts, so two long restore names still get two Job names.
+//
+// JobName returns the empty string for an owner of any other kind, for an
+// owner without a name, and for a negative ordinal. BuildJob rejects all
+// three.
+func JobName(owner labels.Owner, ordinal int32) string {
+	kind, known := jobKindInfixes[owner.Key]
+	if !known || owner.Name == "" || ordinal < 0 {
+		return ""
 	}
 
-	retargeted := make([]corev1.TopologySpreadConstraint, 0, len(constraints))
-	for _, constraint := range constraints {
-		constraint.LabelSelector = &metav1.LabelSelector{MatchLabels: JobSelector(owner)}
-		// MatchLabelKeys adds the value of a pod label to the selector above.
-		// A Job stamps a per-Job identity onto its pods, so a key that keeps
-		// the broker pods together keeps every restore pod apart.
-		constraint.MatchLabelKeys = nil
-		retargeted = append(retargeted, constraint)
+	suffix := "-" + kind + "-" + strconv.FormatInt(int64(ordinal), 10)
+
+	return labels.BoundedName(owner.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
+}
+
+// isNil reports whether obj holds no object. An interface that carries a typed
+// nil pointer is not equal to nil, and every read of its name panics the same
+// way an untyped nil does.
+func isNil(obj client.Object) bool {
+	if obj == nil {
+		return true
 	}
 
-	return retargeted
+	value := reflect.ValueOf(obj)
+
+	return value.Kind() == reflect.Ptr && value.IsNil()
+}
+
+// JobLabels returns every label that a restore Job and its pods carry: the
+// owner of the restore, the restore component, the operator as manager, and
+// the cluster the restore runs against.
+//
+// A consumer that selects these Jobs must build the labels here rather than
+// by hand. Both owner label values are bounded to a DNS label, and a restore
+// name and a cluster name can both be longer, so a hand-built selector misses
+// every Job of a restore or a cluster whose name passes 63 characters.
+func JobLabels(owner labels.Owner, cluster string) map[string]string {
+	managed := labels.Managed(owner, ComponentRestore)
+	managed[labels.ClusterKey] = labels.OwnerName(cluster)
+
+	return managed
 }
 
 // restoreContainer is the broker container running the restore application:
@@ -363,4 +319,48 @@ func keepTrustStore(containers []corev1.Container) []corev1.Container {
 	}
 
 	return nil
+}
+
+// spreadOverRestorePods retargets the spread constraints of the broker pods
+// at the pods of this restore. The shape stays the broker's own: the same
+// topology key, the same skew, and the same policies, so the restore pods
+// spread exactly as the brokers do.
+//
+// The selector has to change. A restore pod carries camunda.io/component:
+// restore, so a constraint that selects the broker component counts no pod at
+// all and lets every restore pod land in one zone. With a
+// WaitForFirstConsumer storage class the recreated volumes then bind in that
+// one zone, and the brokers cannot spread over them afterwards.
+func spreadOverRestorePods(
+	constraints []corev1.TopologySpreadConstraint,
+	owner labels.Owner,
+) []corev1.TopologySpreadConstraint {
+	if len(constraints) == 0 {
+		return nil
+	}
+
+	retargeted := make([]corev1.TopologySpreadConstraint, 0, len(constraints))
+	for _, constraint := range constraints {
+		constraint.LabelSelector = &metav1.LabelSelector{MatchLabels: JobSelector(owner)}
+		// MatchLabelKeys adds the value of a pod label to the selector above.
+		// A Job stamps a per-Job identity onto its pods, so a key that keeps
+		// the broker pods together keeps every restore pod apart.
+		constraint.MatchLabelKeys = nil
+		retargeted = append(retargeted, constraint)
+	}
+
+	return retargeted
+}
+
+// JobSelector returns the labels that select every restore Job of one restore
+// and every pod of those Jobs. It is what a caller passes to a List and to
+// podstate.Stuck. It carries no cluster label, so it keeps selecting after a
+// restore moved between clusters, and it carries no manager label, which a
+// selector must not depend on.
+//
+// The pod informer of the manager is scoped by the manager label. That scope
+// belongs to the cache, not to this selector: a caller that lists through the
+// live API reads the same pods with these labels alone.
+func JobSelector(owner labels.Owner) map[string]string {
+	return labels.Discovery(owner, ComponentRestore)
 }
