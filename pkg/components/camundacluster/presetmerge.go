@@ -113,6 +113,54 @@ func MergeSpec(
 	return *merged.DeepCopy()
 }
 
+// releaseLayer expresses a release in the shape of a cluster spec, so the
+// same merge rules layer it. A component block appears only when the
+// release sets something under it, so a nil block of the preset stays nil.
+func releaseLayer(release *v1.CamundaReleaseSpec) v1.CamundaClusterSpec {
+	layer := v1.CamundaClusterSpec{
+		Version:      release.Version,
+		ExtraEnv:     release.ExtraEnv,
+		ExtraEnvFrom: release.ExtraEnvFrom,
+	}
+
+	if env := releaseWorkload(release.Zeebe); env != nil {
+		layer.Zeebe = &v1.ZeebeSpec{WorkloadSpec: *env}
+	}
+	if env := releaseWorkload(release.Gateway); env != nil {
+		layer.Gateway = &v1.GatewaySpec{WorkloadSpec: *env}
+	}
+	if env := releaseWorkload(release.Operate); env != nil {
+		layer.Operate = &v1.WebAppSpec{WorkloadSpec: *env}
+	}
+	if env := releaseWorkload(release.Tasklist); env != nil {
+		layer.Tasklist = &v1.WebAppSpec{WorkloadSpec: *env}
+	}
+	if env := releaseWorkload(release.Admin); env != nil {
+		layer.Admin = &v1.WebAppSpec{WorkloadSpec: *env}
+	}
+	if c := release.Connectors; c != nil {
+		env := releaseWorkload(&c.ReleaseEnvSpec)
+		if c.Version != "" || env != nil {
+			layer.Connectors = &v1.ConnectorsSpec{Version: c.Version}
+			if env != nil {
+				layer.Connectors.WorkloadSpec = *env
+			}
+		}
+	}
+
+	return layer
+}
+
+// releaseWorkload treats an empty block as unset, so `zeebe: {}` on a
+// release introduces no component block into the merged spec.
+func releaseWorkload(env *v1.ReleaseEnvSpec) *v1.WorkloadSpec {
+	if env == nil || (len(env.ExtraEnv) == 0 && len(env.ExtraEnvFrom) == 0) {
+		return nil
+	}
+
+	return &v1.WorkloadSpec{ExtraEnv: env.ExtraEnv, ExtraEnvFrom: env.ExtraEnvFrom}
+}
+
 // mergeLayer applies over on top of base under the field rules of MergeSpec,
 // the instance-bound fields aside. The result can share memory with either
 // argument.
@@ -415,54 +463,6 @@ func mergeConnectors(base, over *v1.ConnectorsSpec) *v1.ConnectorsSpec {
 	}
 
 	return base
-}
-
-// releaseLayer expresses a release in the shape of a cluster spec, so the
-// same merge rules layer it. A component block appears only when the
-// release sets something under it, so a nil block of the preset stays nil.
-func releaseLayer(release *v1.CamundaReleaseSpec) v1.CamundaClusterSpec {
-	layer := v1.CamundaClusterSpec{
-		Version:      release.Version,
-		ExtraEnv:     release.ExtraEnv,
-		ExtraEnvFrom: release.ExtraEnvFrom,
-	}
-
-	if env := releaseWorkload(release.Zeebe); env != nil {
-		layer.Zeebe = &v1.ZeebeSpec{WorkloadSpec: *env}
-	}
-	if env := releaseWorkload(release.Gateway); env != nil {
-		layer.Gateway = &v1.GatewaySpec{WorkloadSpec: *env}
-	}
-	if env := releaseWorkload(release.Operate); env != nil {
-		layer.Operate = &v1.WebAppSpec{WorkloadSpec: *env}
-	}
-	if env := releaseWorkload(release.Tasklist); env != nil {
-		layer.Tasklist = &v1.WebAppSpec{WorkloadSpec: *env}
-	}
-	if env := releaseWorkload(release.Admin); env != nil {
-		layer.Admin = &v1.WebAppSpec{WorkloadSpec: *env}
-	}
-	if c := release.Connectors; c != nil {
-		env := releaseWorkload(&c.ReleaseEnvSpec)
-		if c.Version != "" || env != nil {
-			layer.Connectors = &v1.ConnectorsSpec{Version: c.Version}
-			if env != nil {
-				layer.Connectors.WorkloadSpec = *env
-			}
-		}
-	}
-
-	return layer
-}
-
-// releaseWorkload treats an empty block as unset, so `zeebe: {}` on a
-// release introduces no component block into the merged spec.
-func releaseWorkload(env *v1.ReleaseEnvSpec) *v1.WorkloadSpec {
-	if env == nil || (len(env.ExtraEnv) == 0 && len(env.ExtraEnvFrom) == 0) {
-		return nil
-	}
-
-	return &v1.WorkloadSpec{ExtraEnv: env.ExtraEnv, ExtraEnvFrom: env.ExtraEnvFrom}
 }
 
 // ReleaseImages returns the image references that the release pins for the

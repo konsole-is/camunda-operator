@@ -267,24 +267,6 @@ func AttachmentFieldManager(mc *v1.CamundaManagementCluster) string {
 	return attachmentFieldManagerPrefix + string(mc.UID)
 }
 
-// IdentityServiceURL returns the URL of Management Identity inside the
-// Kubernetes cluster. A component of the management plane calls the Identity
-// API over it, so it stays reachable while no browser can reach the external
-// URL.
-func IdentityServiceURL(mc *v1.CamundaManagementCluster) string {
-	return serviceURL(IdentityName(mc), mc.Namespace, IdentityServicePortHTTP)
-}
-
-// serviceURL returns the HTTP URL of one Service of the management plane, as a
-// pod of any namespace reaches it.
-func serviceURL(name, namespace string, port int32) string {
-	return "http://" + name + "." + namespace + ".svc:" + strconv.Itoa(int(port))
-}
-
-// IdentityName returns the name of the Management Identity Deployment and
-// Service.
-func IdentityName(mc *v1.CamundaManagementCluster) string { return suffixed(mc.Name, identitySuffix) }
-
 // IdentityPodLabels returns the labels that select the pods of the Management
 // Identity Deployment. The pod template carries them and can carry more, so a
 // reader that lists by them in the namespace of the management cluster reads
@@ -293,8 +275,23 @@ func IdentityPodLabels(mc *v1.CamundaManagementCluster) map[string]string {
 	return labels.Discovery(labels.ManagementCluster(mc.Name), ComponentIdentity)
 }
 
-// ConsoleName returns the name of the Console Deployment and Service.
-func ConsoleName(mc *v1.CamundaManagementCluster) string { return suffixed(mc.Name, consoleSuffix) }
+// IdentityServiceURL returns the URL of Management Identity inside the
+// Kubernetes cluster. A component of the management plane calls the Identity
+// API over it, so it stays reachable while no browser can reach the external
+// URL.
+func IdentityServiceURL(mc *v1.CamundaManagementCluster) string {
+	return serviceURL(IdentityName(mc), mc.Namespace, IdentityServicePortHTTP)
+}
+
+// IdentityName returns the name of the Management Identity Deployment and
+// Service.
+func IdentityName(mc *v1.CamundaManagementCluster) string { return suffixed(mc.Name, identitySuffix) }
+
+// serviceURL returns the HTTP URL of one Service of the management plane, as a
+// pod of any namespace reaches it.
+func serviceURL(name, namespace string, port int32) string {
+	return "http://" + name + "." + namespace + ".svc:" + strconv.Itoa(int(port))
+}
 
 // ConsoleServiceURL returns the URL of Console inside the Kubernetes cluster.
 // An orchestration cluster of any namespace reports to it, so it must not
@@ -304,6 +301,9 @@ func ConsoleName(mc *v1.CamundaManagementCluster) string { return suffixed(mc.Na
 func ConsoleServiceURL(mc *v1.CamundaManagementCluster) string {
 	return serviceURL(ConsoleName(mc), mc.Namespace, ConsoleServicePortHTTP)
 }
+
+// ConsoleName returns the name of the Console Deployment and Service.
+func ConsoleName(mc *v1.CamundaManagementCluster) string { return suffixed(mc.Name, consoleSuffix) }
 
 // WebModelerRestapiName returns the name of the Web Modeler restapi
 // Deployment and Service.

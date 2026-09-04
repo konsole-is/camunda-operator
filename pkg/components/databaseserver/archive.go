@@ -272,6 +272,12 @@ func archiveSecret(server *v1.DatabaseServer, resolved *barmanArchive) *corev1.S
 	}
 }
 
+// ArchiveSecretName returns the Secret that carries the bucket settings of the
+// archive into the Barman Cloud plugin.
+func ArchiveSecretName(server *v1.DatabaseServer) string {
+	return server.Name + archiveSecretSuffix
+}
+
 // archiveSecretData returns the keys of the archive Secret, or nil when the
 // bucket needs none.
 func archiveSecretData(resolved *barmanArchive) map[string][]byte {
@@ -325,22 +331,6 @@ func objectStore(
 // one bucket location holds every archive the server has written, and the
 // serverName parameter of the cluster is what separates them.
 func ObjectStoreName(server *v1.DatabaseServer) string { return server.Name }
-
-// ArchiveTakenMessage returns the ArchiveReady message for an ObjectStore of
-// the name the server derives that another owner controls: who holds it, and
-// what to do about it. holder is that owner's controller reference. An
-// ObjectStore that nothing controls is adopted, not reported, so there is no
-// message for it; the design spec says why.
-func ArchiveTakenMessage(name string, holder metav1.OwnerReference) string {
-	return fmt.Sprintf(
-		"Barman Cloud ObjectStore %q already exists and %s %q controls it. It describes the "+
-			"archive of another server, so this server archives nothing: its cluster carries no "+
-			"archive plugin, it takes no base backup, and it publishes no point-in-time-recovery "+
-			"capability. The archive it wrote before and its history stay. Remove that "+
-			"ObjectStore, or give this server a name of its own.",
-		name, holder.Kind, holder.Name,
-	)
-}
 
 // destinationPath returns the bucket URL that holds the archives of the
 // server, in the form the Barman Cloud plugin addresses the provider, or the
@@ -400,12 +390,6 @@ func scheduledBackup(server *v1.DatabaseServer, merged v1.DatabaseServerSpec) *c
 // backups of the current cluster. It follows the cluster, so a recovery gets
 // a schedule of its own.
 func BaseBackupName(server *v1.DatabaseServer) string { return ClusterName(server) }
-
-// ArchiveSecretName returns the Secret that carries the bucket settings of the
-// archive into the Barman Cloud plugin.
-func ArchiveSecretName(server *v1.DatabaseServer) string {
-	return server.Name + archiveSecretSuffix
-}
 
 // archiveGuard blocks the archive while it cannot be recovered from. Two
 // things block it: no base backup of the archive the server writes now has
@@ -469,23 +453,6 @@ func archiveGuard(
 // same.
 func Archiving(merged v1.DatabaseServerSpec) bool { return merged.Archive != nil }
 
-// ValidateArchiveStorage reports why a bucket cannot hold the archive of a
-// server, or nil when it can. The caller turns the message into a pre-check
-// failure on the server.
-//
-// Every storage type of the contract is served. What can still fail is a
-// contract whose declared type and block disagree. It answers with the same
-// resolution the renderers use, so a bucket the pre-check accepts is one every
-// renderer can render.
-func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
-	// The server only names the archive Secret and the object prefix, and
-	// neither can make a bucket unservable, so a nameless one answers the
-	// question.
-	_, err := (&ArchiveStorage{Config: config}).resolve(&v1.DatabaseServer{})
-
-	return err
-}
-
 // ArchiveOutageOf returns what CloudNativePG reports about the write-ahead log
 // uploads of cluster at now, or nil when it reports nothing wrong. A cluster
 // that has not uploaded a segment yet reports nothing, and so does one that
@@ -515,6 +482,39 @@ func ArchiveFailingMessage(outage *ArchiveOutage) string {
 			"bucket. The segments that are held back arrive once the uploads run again.",
 		outage.Reason, outage.Since.UTC().Format(time.RFC3339), outage.Message,
 	)
+}
+
+// ArchiveTakenMessage returns the ArchiveReady message for an ObjectStore of
+// the name the server derives that another owner controls: who holds it, and
+// what to do about it. holder is that owner's controller reference. An
+// ObjectStore that nothing controls is adopted, not reported, so there is no
+// message for it; the design spec says why.
+func ArchiveTakenMessage(name string, holder metav1.OwnerReference) string {
+	return fmt.Sprintf(
+		"Barman Cloud ObjectStore %q already exists and %s %q controls it. It describes the "+
+			"archive of another server, so this server archives nothing: its cluster carries no "+
+			"archive plugin, it takes no base backup, and it publishes no point-in-time-recovery "+
+			"capability. The archive it wrote before and its history stay. Remove that "+
+			"ObjectStore, or give this server a name of its own.",
+		name, holder.Kind, holder.Name,
+	)
+}
+
+// ValidateArchiveStorage reports why a bucket cannot hold the archive of a
+// server, or nil when it can. The caller turns the message into a pre-check
+// failure on the server.
+//
+// Every storage type of the contract is served. What can still fail is a
+// contract whose declared type and block disagree. It answers with the same
+// resolution the renderers use, so a bucket the pre-check accepts is one every
+// renderer can render.
+func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
+	// The server only names the archive Secret and the object prefix, and
+	// neither can make a bucket unservable, so a nameless one answers the
+	// question.
+	_, err := (&ArchiveStorage{Config: config}).resolve(&v1.DatabaseServer{})
+
+	return err
 }
 
 // ArchiveLocation returns where in object storage the archive of server is
