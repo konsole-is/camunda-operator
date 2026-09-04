@@ -675,6 +675,10 @@ func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return errors.New("the namespace of the claim Leases is required")
 	}
 
+	if err := components.ClaimSchema().Validate(); err != nil {
+		return fmt.Errorf("the claim Schema of Database: %w", err)
+	}
+
 	if r.EventRecorder == nil {
 		r.EventRecorder = mgr.GetEventRecorder(controllerName)
 	}

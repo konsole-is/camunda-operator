@@ -82,11 +82,9 @@ type Claim[T client.Object] struct {
 // Writes go through c. Every read goes through reader, which must read the
 // API server directly and never a cache.
 //
-// New panics on a schema that Validate rejects, and on a nil c, reader or
-// holderKeeps. A controller passes all four once at the top of a reconcile,
-// so a wrong one is a programmer error that the first pass reports. A nil
-// holderKeeps runs only where two claimants meet, which is the case the
-// package exists for and the worst place to learn of it.
+// A controller builds this on every pass, so New checks nothing. Its caller
+// runs Validate on the schema once, where a failure stops the manager rather
+// than one reconcile.
 func New[T client.Object](
 	schema Schema[T],
 	c client.Client,
@@ -94,13 +92,6 @@ func New[T client.Object](
 	namespace string,
 	holderKeeps HolderKeeps,
 ) *Claim[T] {
-	if err := schema.Validate(); err != nil {
-		panic("leaseclaim: the claim Schema is not usable: " + err.Error())
-	}
-	if c == nil || reader == nil || holderKeeps == nil {
-		panic("leaseclaim: a claim needs a client, a reader and a HolderKeeps")
-	}
-
 	return &Claim[T]{
 		schema:      schema,
 		client:      c,

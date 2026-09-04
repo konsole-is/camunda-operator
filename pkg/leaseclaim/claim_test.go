@@ -568,36 +568,6 @@ func TestReadReportsAMissingLease(t *testing.T) {
 	assert.Nil(t, lease)
 }
 
-// TestNewRefusesWiringThatCannotDecideOwnership pins the guard on the
-// arguments of New. A nil HolderKeeps runs only where two claimants meet,
-// which is the case the package exists for.
-func TestNewRefusesWiringThatCannotDecideOwnership(t *testing.T) {
-	t.Parallel()
-
-	c := testClient(t)
-	cases := map[string]func(){
-		"a Schema with nothing in it": func() {
-			New(Schema[*corev1.ConfigMap]{}, c, c, testNamespace, keepEvery)
-		},
-		"a Schema with two equal annotation keys": func() {
-			schema := testSchema()
-			schema.KeyAnnotation = schema.HolderUIDAnnotation
-			New(schema, c, c, testNamespace, keepEvery)
-		},
-		"no client":      func() { New(testSchema(), nil, c, testNamespace, keepEvery) },
-		"no reader":      func() { New(testSchema(), c, nil, testNamespace, keepEvery) },
-		"no HolderKeeps": func() { New(testSchema(), c, c, testNamespace, nil) },
-	}
-
-	for name, build := range cases {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			assert.Panics(t, build)
-		})
-	}
-}
-
 // TestSchemaValidate names every field that a claim Lease needs to be read
 // back as a claim.
 func TestSchemaValidate(t *testing.T) {
@@ -606,14 +576,15 @@ func TestSchemaValidate(t *testing.T) {
 	require.NoError(t, testSchema().Validate())
 
 	cases := map[string]func(*Schema[*corev1.ConfigMap]){
-		"no prefix":             func(s *Schema[*corev1.ConfigMap]) { s.Prefix = "" },
-		"no noun":               func(s *Schema[*corev1.ConfigMap]) { s.Noun = "" },
-		"no Labels":             func(s *Schema[*corev1.ConfigMap]) { s.Labels = nil },
-		"no holder namespace":   func(s *Schema[*corev1.ConfigMap]) { s.HolderNamespaceAnnotation = "" },
-		"no holder name":        func(s *Schema[*corev1.ConfigMap]) { s.HolderNameAnnotation = "" },
-		"no holder uid":         func(s *Schema[*corev1.ConfigMap]) { s.HolderUIDAnnotation = "" },
-		"no key":                func(s *Schema[*corev1.ConfigMap]) { s.KeyAnnotation = "" },
-		"two equal holder keys": func(s *Schema[*corev1.ConfigMap]) { s.HolderNameAnnotation = s.HolderUIDAnnotation },
+		"no prefix":               func(s *Schema[*corev1.ConfigMap]) { s.Prefix = "" },
+		"a prefix with no hyphen": func(s *Schema[*corev1.ConfigMap]) { s.Prefix = "camunda" },
+		"no noun":                 func(s *Schema[*corev1.ConfigMap]) { s.Noun = "" },
+		"no Labels":               func(s *Schema[*corev1.ConfigMap]) { s.Labels = nil },
+		"no holder namespace":     func(s *Schema[*corev1.ConfigMap]) { s.HolderNamespaceAnnotation = "" },
+		"no holder name":          func(s *Schema[*corev1.ConfigMap]) { s.HolderNameAnnotation = "" },
+		"no holder uid":           func(s *Schema[*corev1.ConfigMap]) { s.HolderUIDAnnotation = "" },
+		"no key":                  func(s *Schema[*corev1.ConfigMap]) { s.KeyAnnotation = "" },
+		"two equal holder keys":   func(s *Schema[*corev1.ConfigMap]) { s.HolderNameAnnotation = s.HolderUIDAnnotation },
 	}
 
 	for name, breakSchema := range cases {

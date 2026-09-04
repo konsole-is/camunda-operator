@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -133,9 +134,17 @@ func (s Schema[T]) HolderOf(lease *coordinationv1.Lease) (Holder, bool) {
 // function each write a Lease that no other claimant recognises as a claim.
 // Two annotation keys that are equal drop one of the values the ownership
 // decision reads.
+//
+// A caller runs it once where a failure stops the operator, and never on a
+// reconcile path.
 func (s Schema[T]) Validate() error {
 	if s.Prefix == "" {
 		return errors.New("the Lease name prefix is empty")
+	}
+	// The hyphen keeps the prefix off the hash that follows it, so no prefix
+	// that starts another one can name the Lease of that other claim.
+	if !strings.HasSuffix(s.Prefix, "-") {
+		return fmt.Errorf("the Lease name prefix %q does not end with a hyphen", s.Prefix)
 	}
 	if s.Noun == "" {
 		return errors.New("the noun of the claim is empty")

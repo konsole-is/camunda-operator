@@ -770,6 +770,10 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return errors.New("the namespace of the realm claim Leases is required")
 	}
 
+	if err := components.RealmClaimSchema().Validate(); err != nil {
+		return fmt.Errorf("the realm claim Schema of CamundaManagementCluster: %w", err)
+	}
+
 	if r.EventRecorder == nil {
 		r.EventRecorder = mgr.GetEventRecorder(controllerName)
 	}
