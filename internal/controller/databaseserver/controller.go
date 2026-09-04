@@ -915,20 +915,21 @@ func clusterGuardReason(server *v1.DatabaseServer, derived derivedCluster) strin
 // reportedArchiveOutage returns the stop in the write-ahead log uploads that
 // the server reports on ArchiveReady and on its open archive record, or nil
 // when it reports on none.
-//
-// An unconfirmed outage is none of them. CloudNativePG raises its condition on
-// one failed upload, and the plugin uploads the segment again, so a reported
-// outage waits for the grace period of components.ArchiveOutageGracePeriod.
-//
-// A suspended server reports on none either. Its instances are gone, so it
-// writes no write-ahead log to lose, and what CloudNativePG left on the
-// condition describes the server that ran before the suspension. A server that
-// asks for no archive is the same case: the cluster carries no archive plugin,
-// and what stands on the condition is what the server archived before.
 func reportedArchiveOutage(
 	outage *components.ArchiveOutage,
 	merged v1.DatabaseServerSpec,
 ) *components.ArchiveOutage {
+	// An unconfirmed outage is none of them. CloudNativePG raises its condition
+	// on one failed upload, and the plugin uploads the segment again, so a
+	// reported outage waits for the grace period of
+	// components.ArchiveOutageGracePeriod.
+	//
+	// A suspended server reports on none either. Its instances are gone, so it
+	// writes no write-ahead log to lose, and what CloudNativePG left on the
+	// condition describes the server that ran before the suspension. A server
+	// that asks for no archive is the same case: the cluster carries no archive
+	// plugin, and what stands on the condition is what the server archived
+	// before.
 	if outage == nil || !outage.Confirmed || merged.Suspend || !components.Archiving(merged) {
 		return nil
 	}

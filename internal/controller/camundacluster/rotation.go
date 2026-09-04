@@ -378,22 +378,20 @@ func (r *CamundaClusterReconciler) readAdminSecret(
 	return read, nil
 }
 
-// publishedBefore reports whether an admin user of this cluster may already
-// exist with a password that the operator no longer holds. It reads the
-// brokers, and not the status of the cluster: the flush that would record it
-// lands after the components have created the Secret and the workloads, so a
-// manager that stops in between, while somebody deletes the Secret, would
-// forget that it ever published and take the replacement for a first
-// password.
-//
-// The brokers are the evidence twice over. The admin Secret is applied
-// before the StatefulSet, so a cluster whose brokers run has had one. And
-// the users live in the broker state, so volumes that outlived a deleted
-// cluster carry the admin user into the cluster that reattaches them, which
-// spec.zeebe.persistentVolumeClaimRetentionPolicy exists to allow. Either
-// one means the operator must ask the user API rather than assume its
-// password is the first.
+// publishedBefore reports whether an admin user of this cluster can already
+// exist with a password that the operator no longer holds. On true, the
+// operator must ask the user API rather than take its password for the first
+// one.
 func publishedBefore(storage brokerStorage) bool {
+	// The status of the cluster cannot answer this. The flush that records the
+	// publish lands after the components created the Secret and the workloads.
+	// A manager that stops in between, while somebody deletes the Secret,
+	// forgets that it ever published.
+	//
+	// The brokers are the evidence twice over. The admin Secret is applied
+	// before the StatefulSet, so a cluster whose brokers run has had one. The
+	// users also live in the broker state, so volumes that outlived a deleted
+	// cluster carry the admin user into the cluster that reattaches them.
 	return storage.statefulSet != nil || len(storage.claims) > 0
 }
 
