@@ -94,13 +94,13 @@ The operator creates no backup when:
 - The cluster is suspended. A suspended cluster runs no workloads, so a backup of it can only fail. `spec.suspend` suspends the cluster. So do these `Ready` reasons of the `CamundaCluster`: `StorageAlreadyAttached`, `WaitingForHandover`, `InvalidReference`, and `MissingSecret`. Every one of them skips the trigger. Read `Ready` on the `CamundaCluster` and correct the cause there. Backups start again at the next trigger after the cluster resumes.
 - A backup of this schedule has not reached a terminal phase. Two backups of one schedule never overlap, and a backup of either kind counts. If a backup regularly runs past the next trigger, give the schedule a longer gap.
 - An object already holds the name of the new backup and belongs to something else. Remove that object, or create a schedule of another name in place of this one. The name of a `BackupSchedule` cannot be changed.
-- A reference of the schedule does not resolve. The `Ready` condition of the schedule names it. Create the resource, or set the missing field.
+- A reference does not resolve. The `CamundaCluster` is missing, or it has no `spec.storageRef` or `spec.backupStorageRef`, or the `SecondaryStorageConfig` it names is missing. The `Ready` condition of the schedule names the one that applies. Create the resource, or set the missing field.
 - `spec.schedule` is not a valid cron expression. No trigger fires at all, and `Ready` names `spec.schedule`. Correct the expression.
 - More than one trigger passed unconsumed, for example while the operator was not running. The schedule takes the latest of them and skips the earlier ones. See [The cron expression](#the-cron-expression).
 
-The first two cases record the Normal event `TriggerSkipped`. A name that belongs to something else records the Warning event `BackupNameTaken`. The other three record no event. An unresolved reference and an invalid cron expression appear on the `Ready` condition of the schedule, and unconsumed triggers record nothing at all.
+The first two cases record the Normal event `TriggerSkipped`. A name that belongs to something else records the Warning event `BackupNameTaken`. The other three record no event. The `Ready` condition of the schedule carries the unresolved reference and the invalid cron expression. Unconsumed triggers record nothing at all.
 
-When the operator skips a trigger, it consumes that trigger and `status.lastScheduleTime` moves to it. The operator does not retry it and does not create the backup later. The next backup runs at the next trigger of the cron expression. When `status.lastScheduleTime` jumps over several triggers of the cron expression, the schedule took only the last of them. An operator that was not running is the usual cause.
+When the operator skips a trigger, it consumes that trigger and `status.lastScheduleTime` moves to it. The operator does not retry it and does not create the backup later. The next backup runs at the next trigger of the cron expression. When `status.lastScheduleTime` jumps over several triggers of the cron expression, the schedule took only the last of them.
 
 `kubectl describe backupschedule my-cluster-schedule -n my-cluster-ns` shows the events:
 
