@@ -129,24 +129,6 @@ type Options struct {
 	ReadJobLog ReadJobLog
 }
 
-// withDefaults fills the zero fields of o with the production configuration.
-func (o Options) withDefaults() Options {
-	if o.PollInterval <= 0 {
-		o.PollInterval = defaultPollInterval
-	}
-	if o.RetryInterval <= 0 {
-		o.RetryInterval = defaultRetryInterval
-	}
-	if o.MidRunGrace <= 0 {
-		o.MidRunGrace = defaultMidRunGrace
-	}
-	if o.ReadPositions == nil {
-		o.ReadPositions = readPositions
-	}
-
-	return o
-}
-
 // Reconciler drives a PointInTimeRestore to a terminal phase.
 type Reconciler struct {
 	client.Client
@@ -168,24 +150,6 @@ type Reconciler struct {
 	ClaimNamespace string
 
 	opts Options
-}
-
-// New returns a Reconciler with the given options, with every zero field
-// filled from the production configuration.
-func New(
-	c client.Client,
-	reader client.Reader,
-	scheme *runtime.Scheme,
-	claimNamespace string,
-	options Options,
-) *Reconciler {
-	return &Reconciler{
-		Client:         c,
-		APIReader:      reader,
-		Scheme:         scheme,
-		ClaimNamespace: claimNamespace,
-		opts:           options.withDefaults(),
-	}
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=pointintimerestores,verbs=get;list;watch;create;update;patch;delete
@@ -315,26 +279,6 @@ func (r *Reconciler) complete(pitr *v1.PointInTimeRestore) {
 	)
 }
 
-// fail ends the restore with reason and message. Every failure that this kind
-// raises itself reports the reason Failed: the causes that carry a reason of
-// their own, for example a server without point-in-time recovery, hold the
-// restore instead of ending it. Status keeps the reason, so a terminal look
-// stages the same one again after a write conflict.
-func (r *Reconciler) fail(pitr *v1.PointInTimeRestore, reason, message string) {
-	pitr.Status.Phase = v1.PointInTimeRestoreFailed
-	restore.Fail(&pitr.Status.RestoreProgress, reason, message, metav1.Now())
-	restore.StageTerminal(pitr, &pitr.Status.RestoreProgress)
-	r.EventRecorder.Eventf(
-		pitr,
-		nil,
-		corev1.EventTypeWarning,
-		restore.EventReasonFailed,
-		restore.EventActionRestore,
-		"The restore failed: %s",
-		pitr.Status.FailureMessage,
-	)
-}
-
 // progressing stages that a phase of the restore runs.
 func (r *Reconciler) progressing(pitr *v1.PointInTimeRestore, message string) {
 	conditions.Stage(pitr, conditions.Ready(
@@ -378,6 +322,26 @@ func (r *Reconciler) holdStarted(
 	}
 
 	return outcome
+}
+
+// fail ends the restore with reason and message. Every failure that this kind
+// raises itself reports the reason Failed: the causes that carry a reason of
+// their own, for example a server without point-in-time recovery, hold the
+// restore instead of ending it. Status keeps the reason, so a terminal look
+// stages the same one again after a write conflict.
+func (r *Reconciler) fail(pitr *v1.PointInTimeRestore, reason, message string) {
+	pitr.Status.Phase = v1.PointInTimeRestoreFailed
+	restore.Fail(&pitr.Status.RestoreProgress, reason, message, metav1.Now())
+	restore.StageTerminal(pitr, &pitr.Status.RestoreProgress)
+	r.EventRecorder.Eventf(
+		pitr,
+		nil,
+		corev1.EventTypeWarning,
+		restore.EventReasonFailed,
+		restore.EventActionRestore,
+		"The restore failed: %s",
+		pitr.Status.FailureMessage,
+	)
 }
 
 // SetupWithManager registers the controller, the field index, and the
@@ -443,4 +407,40 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		).
 		Named(controllerName).
 		Complete(r)
+}
+
+// New returns a Reconciler with the given options, with every zero field
+// filled from the production configuration.
+func New(
+	c client.Client,
+	reader client.Reader,
+	scheme *runtime.Scheme,
+	claimNamespace string,
+	options Options,
+) *Reconciler {
+	return &Reconciler{
+		Client:         c,
+		APIReader:      reader,
+		Scheme:         scheme,
+		ClaimNamespace: claimNamespace,
+		opts:           options.withDefaults(),
+	}
+}
+
+// withDefaults fills the zero fields of o with the production configuration.
+func (o Options) withDefaults() Options {
+	if o.PollInterval <= 0 {
+		o.PollInterval = defaultPollInterval
+	}
+	if o.RetryInterval <= 0 {
+		o.RetryInterval = defaultRetryInterval
+	}
+	if o.MidRunGrace <= 0 {
+		o.MidRunGrace = defaultMidRunGrace
+	}
+	if o.ReadPositions == nil {
+		o.ReadPositions = readPositions
+	}
+
+	return o
 }

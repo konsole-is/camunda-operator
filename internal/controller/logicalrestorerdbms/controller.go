@@ -111,26 +111,6 @@ type Options struct {
 	MidRunGrace time.Duration
 }
 
-// withDefaults fills the zero fields of o with the production configuration.
-// It rejects an empty CLIImage, because the restore cannot guess an image and
-// would fail only once it reached the secondary-storage phase.
-func (o Options) withDefaults() (Options, error) {
-	if o.CLIImage == "" {
-		return o, errors.New("the camunda-operator-cli image is required")
-	}
-	if o.PollInterval <= 0 {
-		o.PollInterval = defaultPollInterval
-	}
-	if o.RetryInterval <= 0 {
-		o.RetryInterval = defaultRetryInterval
-	}
-	if o.MidRunGrace <= 0 {
-		o.MidRunGrace = defaultMidRunGrace
-	}
-
-	return o, nil
-}
-
 // Reconciler drives a LogicalRestoreRDBMS to a terminal phase.
 type Reconciler struct {
 	client.Client
@@ -148,12 +128,6 @@ type Reconciler struct {
 	Metrics component.MetricsRecorder
 
 	opts Options
-}
-
-// New returns a Reconciler with the given options. SetupWithManager applies
-// their defaults and rejects an incomplete set.
-func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options Options) *Reconciler {
-	return &Reconciler{Client: c, APIReader: reader, Scheme: scheme, opts: options}
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=logicalrestorerdbmses,verbs=get;list;watch;create;update;patch;delete
@@ -275,23 +249,6 @@ func (r *Reconciler) complete(lrr *v1.LogicalRestoreRDBMS) {
 	)
 }
 
-// fail ends the restore with reason and message. Status keeps the reason, so
-// a terminal look stages the same one again after a write conflict.
-func (r *Reconciler) fail(lrr *v1.LogicalRestoreRDBMS, reason, message string) {
-	lrr.Status.Phase = v1.LogicalRestoreFailed
-	restore.Fail(&lrr.Status.RestoreProgress, reason, message, metav1.Now())
-	restore.StageTerminal(lrr, &lrr.Status.RestoreProgress)
-	r.EventRecorder.Eventf(
-		lrr,
-		nil,
-		corev1.EventTypeWarning,
-		restore.EventReasonFailed,
-		restore.EventActionRestore,
-		"The restore failed: %s",
-		lrr.Status.FailureMessage,
-	)
-}
-
 // progressing stages that a phase of the restore runs.
 func (r *Reconciler) progressing(lrr *v1.LogicalRestoreRDBMS, message string) {
 	conditions.Stage(lrr, conditions.Ready(
@@ -337,6 +294,23 @@ func (r *Reconciler) holdStarted(
 	}
 
 	return outcome
+}
+
+// fail ends the restore with reason and message. Status keeps the reason, so
+// a terminal look stages the same one again after a write conflict.
+func (r *Reconciler) fail(lrr *v1.LogicalRestoreRDBMS, reason, message string) {
+	lrr.Status.Phase = v1.LogicalRestoreFailed
+	restore.Fail(&lrr.Status.RestoreProgress, reason, message, metav1.Now())
+	restore.StageTerminal(lrr, &lrr.Status.RestoreProgress)
+	r.EventRecorder.Eventf(
+		lrr,
+		nil,
+		corev1.EventTypeWarning,
+		restore.EventReasonFailed,
+		restore.EventActionRestore,
+		"The restore failed: %s",
+		lrr.Status.FailureMessage,
+	)
 }
 
 // SetupWithManager applies the options, registers the controller, the two
@@ -415,4 +389,30 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		).
 		Named(controllerName).
 		Complete(r)
+}
+
+// New returns a Reconciler with the given options. SetupWithManager applies
+// their defaults and rejects an incomplete set.
+func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options Options) *Reconciler {
+	return &Reconciler{Client: c, APIReader: reader, Scheme: scheme, opts: options}
+}
+
+// withDefaults fills the zero fields of o with the production configuration.
+// It rejects an empty CLIImage, because the restore cannot guess an image and
+// would fail only once it reached the secondary-storage phase.
+func (o Options) withDefaults() (Options, error) {
+	if o.CLIImage == "" {
+		return o, errors.New("the camunda-operator-cli image is required")
+	}
+	if o.PollInterval <= 0 {
+		o.PollInterval = defaultPollInterval
+	}
+	if o.RetryInterval <= 0 {
+		o.RetryInterval = defaultRetryInterval
+	}
+	if o.MidRunGrace <= 0 {
+		o.MidRunGrace = defaultMidRunGrace
+	}
+
+	return o, nil
 }

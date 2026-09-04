@@ -135,32 +135,6 @@ type Options struct {
 	RegistrationGrace time.Duration
 }
 
-// withDefaults fills the zero fields of o with the production defaults. It
-// rejects an empty CLIImage because the Job builder cannot guess an image.
-func (o Options) withDefaults() (Options, error) {
-	if o.CLIImage == "" {
-		return o, errors.New("the camunda-operator-cli image is required")
-	}
-	if o.OpenBucket == nil {
-		o.OpenBucket = func(
-			ctx context.Context, cfg *v1.ObjectStorageConfig, creds *objectstore.Credentials,
-		) (ArtifactBucket, error) {
-			return objectstore.Open(ctx, cfg, creds)
-		}
-	}
-	if o.RetryInterval <= 0 {
-		o.RetryInterval = defaultRetryInterval
-	}
-	if o.MidRunGrace <= 0 {
-		o.MidRunGrace = defaultMidRunGrace
-	}
-	if o.RegistrationGrace <= 0 {
-		o.RegistrationGrace = defaultRegistrationGrace
-	}
-
-	return o, nil
-}
-
 // LogicalBackupRDBMSReconciler reconciles a LogicalBackupRDBMS.
 type LogicalBackupRDBMSReconciler struct {
 	client.Client
@@ -386,6 +360,58 @@ func (r *LogicalBackupRDBMSReconciler) SetupWithManager(mgr ctrl.Manager, opts O
 		Complete(r)
 }
 
+// withDefaults fills the zero fields of o with the production defaults. It
+// rejects an empty CLIImage because the Job builder cannot guess an image.
+func (o Options) withDefaults() (Options, error) {
+	if o.CLIImage == "" {
+		return o, errors.New("the camunda-operator-cli image is required")
+	}
+	if o.OpenBucket == nil {
+		o.OpenBucket = func(
+			ctx context.Context, cfg *v1.ObjectStorageConfig, creds *objectstore.Credentials,
+		) (ArtifactBucket, error) {
+			return objectstore.Open(ctx, cfg, creds)
+		}
+	}
+	if o.RetryInterval <= 0 {
+		o.RetryInterval = defaultRetryInterval
+	}
+	if o.MidRunGrace <= 0 {
+		o.MidRunGrace = defaultMidRunGrace
+	}
+	if o.RegistrationGrace <= 0 {
+		o.RegistrationGrace = defaultRegistrationGrace
+	}
+
+	return o, nil
+}
+
+// enqueueForCluster maps a cluster event to every non-terminal backup that
+// references it, so a suspend flip or a published binding wakes the waiting
+// ones.
+func (r *LogicalBackupRDBMSReconciler) enqueueForCluster() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
+		var list v1.LogicalBackupRDBMSList
+		if err := r.List(ctx, &list, client.MatchingFields{
+			clusterKeyIndex: refindex.NamespacedKey(obj.GetNamespace(), obj.GetName()),
+		}); err != nil {
+			return nil
+		}
+
+		requests := make([]ctrl.Request, 0, len(list.Items))
+		for i := range list.Items {
+			if list.Items[i].Terminal() {
+				continue
+			}
+			requests = append(requests, ctrl.Request{
+				NamespacedName: client.ObjectKeyFromObject(&list.Items[i]),
+			})
+		}
+
+		return requests
+	})
+}
+
 // clusterChanged passes the cluster events that a waiting backup needs: a
 // spec change (suspend, references) or a change of the published management
 // binding. Other status changes wake nothing.
@@ -417,30 +443,4 @@ func managementEqual(a, b *v1.ManagementBinding) bool {
 	}
 
 	return *a == *b
-}
-
-// enqueueForCluster maps a cluster event to every non-terminal backup that
-// references it, so a suspend flip or a published binding wakes the waiting
-// ones.
-func (r *LogicalBackupRDBMSReconciler) enqueueForCluster() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
-		var list v1.LogicalBackupRDBMSList
-		if err := r.List(ctx, &list, client.MatchingFields{
-			clusterKeyIndex: refindex.NamespacedKey(obj.GetNamespace(), obj.GetName()),
-		}); err != nil {
-			return nil
-		}
-
-		requests := make([]ctrl.Request, 0, len(list.Items))
-		for i := range list.Items {
-			if list.Items[i].Terminal() {
-				continue
-			}
-			requests = append(requests, ctrl.Request{
-				NamespacedName: client.ObjectKeyFromObject(&list.Items[i]),
-			})
-		}
-
-		return requests
-	})
 }

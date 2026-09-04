@@ -111,16 +111,6 @@ const concurrentReconciles = 4
 // at an unwatched dependency, such as a pre-existing ServiceAccount.
 const defaultRetryInterval = 30 * time.Second
 
-// retryInterval returns the wait before an unwatched dependency is looked at
-// again.
-func (r *CamundaClusterReconciler) retryInterval() time.Duration {
-	if r.RetryInterval > 0 {
-		return r.RetryInterval
-	}
-
-	return defaultRetryInterval
-}
-
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters/finalizers,verbs=update
@@ -360,6 +350,30 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{}, reconcileErr
 }
 
+// retryInterval returns the wait before an unwatched dependency is looked at
+// again.
+func (r *CamundaClusterReconciler) retryInterval() time.Duration {
+	if r.RetryInterval > 0 {
+		return r.RetryInterval
+	}
+
+	return defaultRetryInterval
+}
+
+// serviceMonitorSupported reports whether the cluster serves the
+// ServiceMonitor kind. On a cluster without the prometheus-operator CRDs the
+// components then omit the resource instead of failing every reconcile.
+func (r *CamundaClusterReconciler) serviceMonitorSupported() bool {
+	if r.restMapper == nil {
+		return false
+	}
+
+	_, err := r.restMapper.RESTMapping(
+		schema.GroupKind{Group: "monitoring.coreos.com", Kind: "ServiceMonitor"}, "v1",
+	)
+	return err == nil
+}
+
 // clusterComponents are the components of one cluster: all of them are
 // reconciled in order, and the ready ones make up Ready.
 type clusterComponents struct {
@@ -434,18 +448,4 @@ func reconcileComponents(ctx context.Context, rec component.ReconcileContext, co
 	}
 
 	return firstErr
-}
-
-// serviceMonitorSupported reports whether the cluster serves the
-// ServiceMonitor kind. On a cluster without the prometheus-operator CRDs the
-// components then omit the resource instead of failing every reconcile.
-func (r *CamundaClusterReconciler) serviceMonitorSupported() bool {
-	if r.restMapper == nil {
-		return false
-	}
-
-	_, err := r.restMapper.RESTMapping(
-		schema.GroupKind{Group: "monitoring.coreos.com", Kind: "ServiceMonitor"}, "v1",
-	)
-	return err == nil
 }

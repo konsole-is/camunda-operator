@@ -75,15 +75,6 @@ const keycloakKind = "Keycloak"
 // claim again.
 const defaultRetryInterval = 30 * time.Second
 
-// retryInterval returns RetryInterval, or defaultRetryInterval when unset.
-func (r *Reconciler) retryInterval() time.Duration {
-	if r.RetryInterval > 0 {
-		return r.RetryInterval
-	}
-
-	return defaultRetryInterval
-}
-
 // Reconciler turns a CamundaManagementCluster into one management plane: the
 // Management Identity Deployment and Service, the copies of referenced
 // Secrets, the ManagementAuthConfig, and the claims on the orchestration
@@ -131,12 +122,6 @@ type Reconciler struct {
 	// Keycloak kind of the Keycloak Operator. SetupWithManager probes the
 	// RESTMapper once and sets it.
 	keycloakServed bool
-}
-
-// New builds the reconciler of the management plane. SetupWithManager fills
-// what the manager supplies.
-func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reconciler {
-	return &Reconciler{Client: c, APIReader: apiReader, Scheme: scheme}
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundamanagementclusters,verbs=get;list;watch;create;update;patch;delete
@@ -356,56 +341,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	)
 }
 
-// leaveOldRealm tidies the realm that status.callbackRealm names and the spec
-// does not, and records the realm that the components are about to point
-// Management Identity at. It runs before the components move Identity to the
-// new Keycloak: a pod of the new revision registers the login callbacks in the
-// new realm as it starts, and they must not appear there while the old realm
-// still refuses to let go of its own. A move to the oidc mode is not held:
-// Management Identity writes no realm there, so there is no second
-// registration to hold back.
-//
-// target is the realm of the spec, nil in the oidc mode. It returns the
-// withdrawal that is still pending, for the caller to fold into Ready, and
-// whether the pass ends here and comes back on the retry interval.
-func (r *Reconciler) leaveOldRealm(
-	ctx context.Context,
-	rec component.ReconcileContext,
-	mc *v1.CamundaManagementCluster,
-	res resolved,
-	target *v1.KeycloakRealmTarget,
-) (*conditions.PreCheckFailure, bool, error) {
-	withdrawal, consumed, err := r.withdrawRetargeted(ctx, mc, target, res.Input.Suspended)
-	if err != nil {
-		return nil, false, stepWithdrawCallbacks.stop(mc, err)
-	}
-	// A record that the forget annotation consumed goes out with this pass's
-	// status flush, and the annotation is removed on the next pass, once the
-	// record it consumed is gone from the API server. Registering in a new
-	// realm now would replace the record first, and the next pass would then
-	// report the spent annotation as one that names a foreign realm.
-	if consumed {
-		return nil, true, nil
-	}
-	if withdrawal != nil && target != nil && len(res.Input.OptimizeURLs) > 0 {
-		// The plane stays where it is until the old realm and its writers are
-		// gone, so the callbacks never fill the new realm beside a realm that
-		// still signs people in. A plane that serves no Optimize is not held,
-		// and neither is a move to the oidc mode: neither fills the new realm
-		// with anything, so there is no second registration to hold back, and
-		// only the condition reports the realm still to be emptied.
-		stageCallbacks(mc, metav1.ConditionFalse, withdrawal.Reason, withdrawal.Message)
-		conditions.Stage(mc, conditions.Failed(mc, withdrawal))
-
-		return nil, true, nil
-	}
-	if err := r.recordCallbackRealm(ctx, rec, mc, res, target); err != nil {
-		return nil, false, err
-	}
-
-	return withdrawal, false, nil
-}
-
 // reconcileUnresolved is the pass of a management plane whose pre-check
 // failed. It reports the failure and runs the three halves that need nothing
 // the pre-check resolves: the release of the realm claims that nothing of the
@@ -485,65 +420,54 @@ func (r *Reconciler) reconcileParked(
 	return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 }
 
-// withdrawFromDeselected takes back what the management plane put on the
-// orchestration clusters that spec.clusterSelector and spec.namespaceSelector
-// no longer match: the Web Modeler user, the Console ping settings, and the
-// claim.
+// leaveOldRealm tidies the realm that status.callbackRealm names and the spec
+// does not, and records the realm that the components are about to point
+// Management Identity at. It runs before the components move Identity to the
+// new Keycloak: a pod of the new revision registers the login callbacks in the
+// new realm as it starts, and they must not appear there while the old realm
+// still refuses to let go of its own. A move to the oidc mode is not held:
+// Management Identity writes no realm there, so there is no second
+// registration to hold back.
 //
-// It is the half of the reconcile that a failed pre-check does not stop.
-// Nothing here reads a resolved reference, and a claim that waits for a broken
-// one keeps another management plane from taking the cluster.
-//
-// The order is the order of the attached path: the user and the ping first,
-// the claim last and only once both are gone, so that no other management
-// plane adopts a cluster whose user this one still has to remove.
-func (r *Reconciler) withdrawFromDeselected(
+// target is the realm of the spec, nil in the oidc mode. It returns the
+// withdrawal that is still pending, for the caller to fold into Ready, and
+// whether the pass ends here and comes back on the retry interval.
+func (r *Reconciler) leaveOldRealm(
 	ctx context.Context,
+	rec component.ReconcileContext,
 	mc *v1.CamundaManagementCluster,
-) error {
-	clusters, err := r.listClusters(ctx)
+	res resolved,
+	target *v1.KeycloakRealmTarget,
+) (*conditions.PreCheckFailure, bool, error) {
+	withdrawal, consumed, err := r.withdrawRetargeted(ctx, mc, target, res.Input.Suspended)
 	if err != nil {
-		return err
+		return nil, false, stepWithdrawCallbacks.stop(mc, err)
+	}
+	// A record that the forget annotation consumed goes out with this pass's
+	// status flush, and the annotation is removed on the next pass, once the
+	// record it consumed is gone from the API server. Registering in a new
+	// realm now would replace the record first, and the next pass would then
+	// report the spent annotation as one that names a foreign realm.
+	if consumed {
+		return nil, true, nil
+	}
+	if withdrawal != nil && target != nil && len(res.Input.OptimizeURLs) > 0 {
+		// The plane stays where it is until the old realm and its writers are
+		// gone, so the callbacks never fill the new realm beside a realm that
+		// still signs people in. A plane that serves no Optimize is not held,
+		// and neither is a move to the oidc mode: neither fills the new realm
+		// with anything, so there is no second registration to hold back, and
+		// only the condition reports the realm still to be emptied.
+		stageCallbacks(mc, metav1.ConditionFalse, withdrawal.Reason, withdrawal.Message)
+		conditions.Stage(mc, conditions.Failed(mc, withdrawal))
+
+		return nil, true, nil
+	}
+	if err := r.recordCallbackRealm(ctx, rec, mc, res, target); err != nil {
+		return nil, false, err
 	}
 
-	namespaces, err := r.selectedNamespaces(ctx, mc)
-	if err != nil {
-		return err
-	}
-
-	selected, err := selectedClusters(mc, clusters, namespaces)
-	if err != nil {
-		return err
-	}
-
-	users := make(map[types.UID]bool, len(selected))
-	pings := make(map[client.ObjectKey]bool, len(selected))
-	for _, cluster := range selected {
-		users[cluster.UID] = true
-		pings[client.ObjectKeyFromObject(cluster)] = true
-	}
-
-	userErr := r.withdrawUnservedUsers(ctx, mc, clusters, users, false)
-	pingErr := r.withdrawPingUnserved(ctx, mc, clusters, pings)
-	if err := errors.Join(userErr, pingErr); err != nil {
-		return err
-	}
-
-	return r.releaseClaims(ctx, mc, clusters, namespaces)
-}
-
-// reconcileComponents reconciles comps in order. It continues past a failing
-// component, so one failure does not stall the rest, and returns the first
-// error.
-func reconcileComponents(ctx context.Context, rec component.ReconcileContext, comps []*component.Component) error {
-	var firstErr error
-	for _, comp := range comps {
-		if err := comp.Reconcile(ctx, rec); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-
-	return firstErr
+	return withdrawal, false, nil
 }
 
 // recordInitialClaim records the initial administrator claim that Management
@@ -666,29 +590,6 @@ func (r *Reconciler) recordAnnotation(
 	return nil
 }
 
-// removeAnnotation takes one annotation off the CR, through a copy for the
-// reason recordAnnotation gives. The patch carries the resource version, so a
-// concurrent write conflicts and the reconcile retries instead of writing
-// back an annotation somebody just set.
-func (r *Reconciler) removeAnnotation(
-	ctx context.Context,
-	mc *v1.CamundaManagementCluster,
-	key string,
-) error {
-	patched := mc.DeepCopy()
-	delete(patched.Annotations, key)
-	patch := client.MergeFromWithOptions(mc, client.MergeFromWithOptimisticLock{})
-	if err := r.Patch(ctx, patched, patch); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("removing the %s annotation: %w", key, err)
-	}
-	mc.ObjectMeta = patched.ObjectMeta
-
-	return nil
-}
-
 // writeContract applies the ManagementAuthConfig and reports the write on
 // ManagementAuthReady.
 func (r *Reconciler) writeContract(
@@ -713,17 +614,6 @@ func (r *Reconciler) writeContract(
 	meta.SetStatusCondition(mc.GetStatusConditions(), condition)
 
 	return err
-}
-
-// anyRow reports whether a row of status.clusters carries reason.
-func anyRow(rows []v1.AttachedClusterStatus, reason string) bool {
-	for _, row := range rows {
-		if row.Reason == reason {
-			return true
-		}
-	}
-
-	return false
 }
 
 // readyCondition derives Ready from the steps of the reconcile, the
@@ -760,6 +650,110 @@ func readyCondition(
 	return ready
 }
 
+// anyRow reports whether a row of status.clusters carries reason.
+func anyRow(rows []v1.AttachedClusterStatus, reason string) bool {
+	for _, row := range rows {
+		if row.Reason == reason {
+			return true
+		}
+	}
+
+	return false
+}
+
+// retryInterval returns RetryInterval, or defaultRetryInterval when unset.
+func (r *Reconciler) retryInterval() time.Duration {
+	if r.RetryInterval > 0 {
+		return r.RetryInterval
+	}
+
+	return defaultRetryInterval
+}
+
+// withdrawFromDeselected takes back what the management plane put on the
+// orchestration clusters that spec.clusterSelector and spec.namespaceSelector
+// no longer match: the Web Modeler user, the Console ping settings, and the
+// claim.
+//
+// It is the half of the reconcile that a failed pre-check does not stop.
+// Nothing here reads a resolved reference, and a claim that waits for a broken
+// one keeps another management plane from taking the cluster.
+//
+// The order is the order of the attached path: the user and the ping first,
+// the claim last and only once both are gone, so that no other management
+// plane adopts a cluster whose user this one still has to remove.
+func (r *Reconciler) withdrawFromDeselected(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) error {
+	clusters, err := r.listClusters(ctx)
+	if err != nil {
+		return err
+	}
+
+	namespaces, err := r.selectedNamespaces(ctx, mc)
+	if err != nil {
+		return err
+	}
+
+	selected, err := selectedClusters(mc, clusters, namespaces)
+	if err != nil {
+		return err
+	}
+
+	users := make(map[types.UID]bool, len(selected))
+	pings := make(map[client.ObjectKey]bool, len(selected))
+	for _, cluster := range selected {
+		users[cluster.UID] = true
+		pings[client.ObjectKeyFromObject(cluster)] = true
+	}
+
+	userErr := r.withdrawUnservedUsers(ctx, mc, clusters, users, false)
+	pingErr := r.withdrawPingUnserved(ctx, mc, clusters, pings)
+	if err := errors.Join(userErr, pingErr); err != nil {
+		return err
+	}
+
+	return r.releaseClaims(ctx, mc, clusters, namespaces)
+}
+
+// reconcileComponents reconciles comps in order. It continues past a failing
+// component, so one failure does not stall the rest, and returns the first
+// error.
+func reconcileComponents(ctx context.Context, rec component.ReconcileContext, comps []*component.Component) error {
+	var firstErr error
+	for _, comp := range comps {
+		if err := comp.Reconcile(ctx, rec); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	return firstErr
+}
+
+// removeAnnotation takes one annotation off the CR, through a copy for the
+// reason recordAnnotation gives. The patch carries the resource version, so a
+// concurrent write conflicts and the reconcile retries instead of writing
+// back an annotation somebody just set.
+func (r *Reconciler) removeAnnotation(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	key string,
+) error {
+	patched := mc.DeepCopy()
+	delete(patched.Annotations, key)
+	patch := client.MergeFromWithOptions(mc, client.MergeFromWithOptimisticLock{})
+	if err := r.Patch(ctx, patched, patch); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("removing the %s annotation: %w", key, err)
+	}
+	mc.ObjectMeta = patched.ObjectMeta
+
+	return nil
+}
+
 // SetupWithManager registers the controller, the reference indexes, and the
 // watches. It refuses a reconciler without a namespace for the realm claim
 // Leases. It also sets EventRecorder and Metrics when they are nil, builds
@@ -793,6 +787,12 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.keycloakServed = keycloakKindServed(mgr.GetRESTMapper())
 
 	return r.setupWatches(mgr)
+}
+
+// New builds the reconciler of the management plane. SetupWithManager fills
+// what the manager supplies.
+func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reconciler {
+	return &Reconciler{Client: c, APIReader: apiReader, Scheme: scheme}
 }
 
 // keycloakKindServed reports whether the Kubernetes cluster serves the
