@@ -162,6 +162,53 @@ func TestTakeIsIdempotentForTheHolder(t *testing.T) {
 	assert.Nil(t, blocker)
 }
 
+// TestTakeReadsBeforeItWrites pins the fast path of a steady holder. Every
+// reconcile of a resource that holds its claim reaches Take, and a create that
+// the API server rejects on each of them is a write nothing needs.
+func TestTakeReadsBeforeItWrites(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	owner := claimant("alpha", "only", "uid-only")
+
+	var gets, creates int
+	c := fake.NewClientBuilder().
+		WithScheme(testScheme(t)).
+		WithObjects(owner).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(
+				ctx context.Context,
+				c client.WithWatch,
+				key client.ObjectKey,
+				obj client.Object,
+				opts ...client.GetOption,
+			) error {
+				gets++
+
+				return c.Get(ctx, key, obj, opts...)
+			},
+			Create: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				opts ...client.CreateOption,
+			) error {
+				creates++
+
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+	claims := New(testSchema(), c, c, testNamespace, keepEvery)
+	require.NoError(t, taken(claims.Take(ctx, owner, "key")))
+
+	gets, creates = 0, 0
+	require.NoError(t, taken(claims.Take(ctx, owner, "key")))
+
+	assert.Equal(t, 1, gets, "the holder reads its own claim back")
+	assert.Zero(t, creates, "the holder writes nothing")
+}
+
 // TestTakeTakesOverAHolderThatKeepsNothing covers the crash between a claim
 // and its release. Nothing else hands the key on.
 func TestTakeTakesOverAHolderThatKeepsNothing(t *testing.T) {

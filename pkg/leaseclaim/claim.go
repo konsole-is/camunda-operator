@@ -120,6 +120,16 @@ func New[T client.Object](
 // claimant that took the same Lease over first leaves this one a Blocker that
 // names it.
 func (c *Claim[T]) Take(ctx context.Context, owner T, key string) (*Blocker, error) {
+	// A holder that reads its own claim back needs no write. Without this a
+	// steady holder posts a create that the API server rejects on every pass.
+	held, err := c.Holds(ctx, key, HolderOf(owner))
+	if err != nil {
+		return nil, err
+	}
+	if held {
+		return nil, nil
+	}
+
 	blocker, err := c.create(ctx, owner, key)
 	if err != nil || blocker == nil || blocker.Foreign() {
 		return blocker, err
@@ -225,7 +235,6 @@ func (c *Claim[T]) Read(ctx context.Context, key string) (*coordinationv1.Lease,
 // the delete leaves a Lease the preconditions refuse. That is the claim
 // decided rather than a failure, so Drop reports no error and the create that
 // follows it names the winner.
-
 func (c *Claim[T]) Drop(ctx context.Context, key string, holder Holder) error {
 	lease, found, err := c.Read(ctx, key)
 	if err != nil || !found {
