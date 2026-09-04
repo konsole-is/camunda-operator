@@ -30,8 +30,8 @@ type applyClient struct {
 }
 
 // NewApplyClient wraps c so that Server-Side Apply patches of typed Keycloak
-// objects are serialized without the zero values that the Keycloak CRD schema
-// refuses. The wrapper converts such a patch to sanitized unstructured
+// objects are serialized without the fields that the Keycloak CRD does not
+// accept. The wrapper converts such a patch to sanitized unstructured
 // content, applies it, and decodes the server response back into the typed
 // object. Every other call passes through unchanged.
 //

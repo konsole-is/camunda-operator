@@ -32,7 +32,7 @@ type applyClient struct {
 
 // NewApplyClient wraps c so that Server-Side Apply patches of typed
 // Elasticsearch objects are serialized without the fields that the ECK CRD
-// schema does not declare. The wrapper converts such a patch to sanitized
+// does not accept. The wrapper converts such a patch to sanitized
 // unstructured content, applies it, and decodes the server response back into
 // the typed object. Every other call passes through unchanged.
 //
