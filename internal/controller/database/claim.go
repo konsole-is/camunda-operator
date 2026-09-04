@@ -93,7 +93,7 @@ func (r *DatabaseReconciler) claim(ctx context.Context, database *v1.Database, k
 		return r.takeClaim(ctx, claims, database, key)
 	}
 
-	if holder, ours := components.ClaimHolderOf(lease); ours && holder.UID == database.UID {
+	if holder, ours := components.ClaimHolderOf(lease); ours && holder == leaseclaim.HolderOf(database) {
 		return nil
 	}
 
