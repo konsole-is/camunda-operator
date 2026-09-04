@@ -2,7 +2,7 @@
 
 A `CamundaCluster` is one Camunda orchestration cluster: the Zeebe brokers, the gateway, the web applications Operate, Tasklist, and Admin, and optionally the connectors runtime. The operator turns it into StatefulSets, Deployments, and Services for Camunda 8.9 or later, and keeps them healthy.
 
-The cluster owns only its workloads. Secondary storage comes from a [SecondaryStorageConfig](secondarystorageconfig.md), bucket storage from an [ObjectStorageConfig](objectstorageconfig.md), shared settings from a [CamundaPlatformConfig](camundaplatformconfig.md), and sizing defaults from a [CamundaClusterPreset](camundaclusterpreset.md). Backups attach from the outside through [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md).
+The cluster owns only its workloads. Secondary storage comes from a [SecondaryStorageConfig](secondarystorageconfig.md), bucket storage from an [ObjectStorageConfig](objectstorageconfig.md), shared settings from a [CamundaPlatformConfig](camundaplatformconfig.md), sizing defaults from a [CamundaClusterPreset](camundaclusterpreset.md), and the versions from a [CamundaRelease](camundarelease.md). Backups attach from the outside through [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md).
 
 The smallest cluster names a platform configuration, a version, and a storage contract:
 
@@ -22,6 +22,7 @@ spec:
 graph LR
     CC[CamundaCluster] -.->|platformConfigRef| PFC[CamundaPlatformConfig]
     CC -.->|presetRef| CCP[CamundaClusterPreset]
+    CC -.->|releaseRef| CR[CamundaRelease]
     CC -.->|storageRef| SSC[SecondaryStorageConfig]
     CC -.->|backupStorageRef / documentStorageRef| OSC[ObjectStorageConfig]
     CC --> WL["StatefulSet, Deployments, Services"]
@@ -56,7 +57,7 @@ The operator generates the admin password once and keeps it stable. To rotate it
 
 ## Version
 
-The effective version is `spec.version`, or the version of the preset when the field is absent. It is the version the operator deploys, and a new version rolls every workload.
+The effective version is `spec.version`, or the version of the [CamundaRelease](camundarelease.md) of `releaseRef` when the field is absent. It is the version the operator deploys, and a new version rolls every workload. A release can also pin the exact image reference to pull. The version stays the one the rules below read, whatever the image tag says.
 
 The operator refuses a version below the one the brokers run. Camunda does not support a downgrade of a running cluster, see [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/). A broker that starts on data that a newer version wrote marks itself unhealthy. The cluster reports `Ready: False` with reason `VersionDowngradeRefused`, records the Warning event `VersionDowngradeRefused`, and applies nothing. The brokers keep the version they have.
 
@@ -82,10 +83,10 @@ status:
 The rule reads the effective version. Three edits therefore meet it the same way:
 
 - A lower `spec.version`.
-- A removed `spec.version`, when the preset carries a lower version.
-- A preset whose version is lowered.
+- A removed `spec.version`, when the release carries a lower version.
+- A release whose version is lowered.
 
-The running version is the version on the broker workload. After a version change it is the new version, even before the pods have rolled. The refusal message names it. The operator also stamps the highest version it asked each broker volume to run, as the annotation `camunda.io/broker-version`. A cluster recreated on retained volumes ([Storage](#storage)) reads its running version from that stamp, so the rule holds for it. A new cluster with new volumes has no running version, and the rule does not apply to it.
+The running version is the version that the operator stamped on the broker workload. After a version change it is the new version, even before the pods have rolled. The refusal message names it. The operator also stamps the highest version it asked each broker volume to run, as the annotation `camunda.io/broker-version`. A cluster recreated on retained volumes ([Storage](#storage)) reads its running version from that stamp, so the rule holds for it. A new cluster with new volumes has no running version, and the rule does not apply to it.
 
 A cluster whose storage contract another cluster holds is suspended before the rule applies, see [Secondary storage](#secondary-storage). One edit that repoints `spec.storageRef` to a held contract and lowers the version scales the workloads to zero on the running version. `Ready` reports `StorageAlreadyAttached`. When the holder releases the contract, the rule applies and the cluster reports `VersionDowngradeRefused`. It stays at zero until you set the version forward again or sanction the downgrade.
 
@@ -112,7 +113,7 @@ spec:
 
 The annotation sanctions a move to that version and to no other. The operator removes the annotation once the brokers carry the version. It also removes an annotation that does not name the effective version. Set the annotation in the same edit as the version, or after the refusal. The refusal keeps the lower effective version pending, so an annotation set after it matches.
 
-After a restore, you can give the preset control of the version again. Set the annotation to the version of the preset, and remove `spec.version` in the same edit. You can also remove `spec.version` first, and set the annotation after the refusal.
+After a restore, you can give the release control of the version again. Set the annotation to the version of the release, and remove `spec.version` in the same edit. You can also remove `spec.version` first, and set the annotation after the refusal.
 
 ## Storage
 
@@ -205,7 +206,7 @@ Two field managers that apply the same name do not collide. The merge is per fie
 
 Every unified process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError`, so the kubelet restarts a pod after an OutOfMemoryError. Heap size comes from the container-aware defaults of the JVM. To change the JVM options, set `JAVA_TOOL_OPTIONS` in `extraEnv` of the process. When the storage contract names a certificate authority, the trust store options go on the same variable after your value. Heap tuning and the trust store work together.
 
-To use a trust store of your own, name it with `-Djavax.net.ssl.trustStore` in your value. The JVM then reads your store and no other. That store must hold the certificate authority of the Elasticsearch endpoint, or the exporter fails and Optimize reads no records. This is also the way to trust a second private authority, for example an OIDC provider or a backup store. Put every authority in one store and name it. The spec has no volume field, so the store must already be in the process image. Build the Camunda image with the file in it and set `imageRegistry` on the [CamundaPlatformConfig](camundaplatformconfig.md).
+To use a trust store of your own, name it with `-Djavax.net.ssl.trustStore` in your value. The JVM then reads your store and no other. That store must hold the certificate authority of the Elasticsearch endpoint, or the exporter fails and Optimize reads no records. This is also the way to trust a second private authority, for example an OIDC provider or a backup store. Put every authority in one store and name it. The spec has no volume field, so the store must already be in the process image. Build the Camunda image with the file in it and name it under `images.camunda` on the [CamundaPlatformConfig](camundaplatformconfig.md), or pin it on a [CamundaRelease](camundarelease.md).
 
 A `JAVA_TOOL_OPTIONS` entry that reads its value from a Secret or a ConfigMap cannot take the trust store options. The cluster records the Warning event `TrustStoreOptionsNotApplied` and names the processes. The store still exists at `/etc/camunda/es-truststore/cacerts` with the password `changeit`. Name it in the referenced value, or name a store of your own that holds the authority.
 
@@ -262,7 +263,7 @@ When `spec.monitoring.serviceMonitor.enabled` is true, the operator creates one 
 
 A change to the cluster, to a referenced resource, or to a referenced Secret rolls out to the pods on its own. The [CamundaPlatformConfig](camundaplatformconfig.md) is cluster-scoped, so the Secrets it names are copied into the namespace of the cluster, and each copy follows its source.
 
-The operator checks every reference at reconcile time, not at admission, so you can create the resources in any order. A missing `CamundaPlatformConfig`, `CamundaClusterPreset`, `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` sets `Ready` to `False` with reason `InvalidReference`. A missing Secret or key sets reason `MissingSecret`.
+The operator checks every reference at reconcile time, not at admission, so you can create the resources in any order. A missing `CamundaPlatformConfig`, `CamundaClusterPreset`, `CamundaRelease`, `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` sets `Ready` to `False` with reason `InvalidReference`. A missing Secret or key sets reason `MissingSecret`.
 
 When any of these checks fails for a running cluster, the cluster is suspended: every workload scales to zero and the volumes stay. Pods that keep running can write a backend that the cluster no longer resolves. `Ready` keeps the failure reason, and the message says what happened to the workloads. The per-process conditions report `Suspending` while the pods stop, then `Suspended`. The cluster records the event `WorkloadsSuspended` for each workload it scales, and `status.gateway` and `status.management` are cleared. When the check passes again, the cluster resumes on its own.
 
@@ -367,11 +368,13 @@ metadata:
   name: my-cluster
   namespace: my-cluster-ns
 spec:
-  # string. Required. Name of the cluster-scoped CamundaPlatformConfig that provides auth, license, and image registry.
+  # string. Required. Name of the cluster-scoped CamundaPlatformConfig that provides auth, license, and image repositories.
   platformConfigRef: "my-platform-config"
   # string. Optional. Name of a cluster-scoped CamundaClusterPreset that provides the baseline.
   presetRef: "medium"
-  # string. Required unless the preset provides it. Camunda version as x.y.z, 8.9.0 or later.
+  # string. Optional. Name of a cluster-scoped CamundaRelease that provides the versions, the pinned images, and the environment of a version.
+  releaseRef: "camunda-8-9-4"
+  # string. Required unless the release provides it. Camunda version as x.y.z, 8.9.0 or later. It wins over the release.
   version: "8.9.0"
   # string. Optional. External base URL of the cluster, used for OIDC redirect URLs and web application links. The operator creates no Ingress.
   externalUrl: "https://my-cluster.camunda.example.com"
@@ -505,7 +508,7 @@ spec:
   connectors:
     # boolean. Optional, default: false. Runs the connectors runtime when true.
     enabled: true
-    # string. Required when enabled, unless the preset provides it. Version of the connectors bundle image as x.y.z. It does not follow spec.version.
+    # string. Required when enabled, unless the release provides it. Version of the connectors bundle image as x.y.z. It does not follow spec.version.
     version: "8.9.7"
     # integer. Optional, default: 1. Replicas.
     replicas: 2
@@ -608,7 +611,7 @@ The API server enforces these rules at admission:
 - `spec.backup.dump.extraEnvFrom` holds at most 8 sources. `spec.backup.dump.scratchVolume.storageClassName` requires `sizeLimit`.
 - `spec.backup.primaryStorage.checkpointInterval` and `retention.window` are ISO 8601 durations of days and time. Weeks, months, and years are rejected.
 
-The operator checks these rules on the merged spec after the preset is applied, and reports `Ready: InvalidReference` when one fails:
+The operator checks these rules on the merged spec after the preset and the release are applied, and reports `Ready: InvalidReference` when one fails:
 
 - The effective version is present and 8.9.0 or later.
 - The effective `replicationFactor` does not exceed the effective `replicas`, and the effective `partitions` is at least 1.
@@ -628,7 +631,7 @@ metadata:
 spec:
   platformConfigRef: "my-platform-config"
   presetRef: "medium"
-  version: "8.9.1"
+  releaseRef: "camunda-8-9-4"
   externalUrl: "https://my-cluster.camunda.example.com"
   serviceAccount:
     annotations:
@@ -652,8 +655,9 @@ spec:
 
 ## Related
 
-- [CamundaPlatformConfig](camundaplatformconfig.md): `platformConfigRef` provides authentication, the license, and the image registry.
+- [CamundaPlatformConfig](camundaplatformconfig.md): `platformConfigRef` provides authentication, the license, and the image repositories.
 - [CamundaClusterPreset](camundaclusterpreset.md): `presetRef` provides the baseline that this spec merges over.
+- [CamundaRelease](camundarelease.md): `releaseRef` provides the versions, the pinned images, and the environment of a version.
 - [SecondaryStorageConfig](secondarystorageconfig.md): `storageRef` names the secondary storage, Elasticsearch or RDBMS, in the namespace of the cluster.
 - [ObjectStorageConfig](objectstorageconfig.md): `backupStorageRef` and `documentStorageRef` name the buckets.
 - [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md): they reference this cluster through `clusterRef` and back it up.

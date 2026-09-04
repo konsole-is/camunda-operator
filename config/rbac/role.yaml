@@ -111,6 +111,7 @@ rules:
   - backupschedules
   - camundaclusterpresets
   - camundaplatformconfigs
+  - camundareleases
   - databaseserverpresets
   - elasticsearchclusterpresets
   - objectstorageconfigs

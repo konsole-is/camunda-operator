@@ -2,13 +2,13 @@
 
 `CamundaClusterPreset` is a cluster-scoped baseline configuration that [CamundaCluster](camundacluster.md) resources inherit. You create it, or another tool creates it for you.
 
-A preset lets a platform team define a standard cluster shape once: sizing, topology, environment variables, and backup policy. Each `CamundaCluster` opts in by name through `presetRef`, so individual clusters stay small and consistent. Typical presets are named for their size, for example `small`, `medium`, and `large`.
+A preset lets a platform team define a standard cluster shape once: sizing, topology, environment variables, and backup policy. Each `CamundaCluster` opts in by name through `presetRef`, so individual clusters stay small and consistent. Typical presets are named for their size, for example `small`, `medium`, and `large`. What runs on that shape, the versions and the pinned images, lives in a [CamundaRelease](camundarelease.md), so a version roll never edits a preset.
 
 A preset is passive data. No controller reconciles it, it creates nothing, and it reports no status. `kubectl get camundaclusterpreset` shows the version it holds and the age. A cluster that fits no preset leaves `presetRef` unset and configures everything inline.
 
 The operator creates no resources from this kind. A `CamundaCluster` that references it reads the preset on every reconcile and merges its own spec over `spec.cluster`. When you edit a preset, every referencing cluster picks up the change on its next reconcile.
 
-The smallest preset sets a version and a broker baseline:
+The smallest preset sets a broker baseline:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -17,7 +17,6 @@ metadata:
   name: small
 spec:
   cluster:
-    version: "8.9.0"
     zeebe:
       replicas: 1
       partitions: 1
@@ -28,26 +27,28 @@ spec:
 ```mermaid
 graph LR
     CC[CamundaCluster] -.->|presetRef| CCP[CamundaClusterPreset]
+    CC -.->|releaseRef| CR[CamundaRelease]
     CC -.->|platformConfigRef| PFC[CamundaPlatformConfig]
 ```
 
 ## Merge rules
 
-The cluster starts from `spec.cluster` of the preset. Each field then merges as the table says. The instance-bound fields always come from the cluster.
+The cluster starts from `spec.cluster` of the preset. The [CamundaRelease](camundarelease.md) of `releaseRef` merges over it, and the cluster spec merges over both. Each field merges as the table says. The instance-bound fields always come from the cluster.
 
 | Field | Merge behavior |
 | --- | --- |
-| `version`, `auth.clientId`, `auth.audience`, `auth.clientSecretRef`, per-component `mode`, `replicas`, `zeebe.partitions`, `zeebe.replicationFactor`, `zeebe.storageClassName`, `zeebe.storageSize`, `zeebe.persistentVolumeClaimRetentionPolicy`, `connectors.enabled`, `connectors.version` | The cluster value replaces the preset value. An unset cluster field inherits the preset value. |
+| `auth.clientId`, `auth.audience`, `auth.clientSecretRef`, per-component `mode`, `replicas`, `zeebe.partitions`, `zeebe.replicationFactor`, `zeebe.storageClassName`, `zeebe.storageSize`, `zeebe.persistentVolumeClaimRetentionPolicy`, `connectors.enabled` | The cluster value replaces the preset value. An unset cluster field inherits the preset value. |
 | `resources` | Merged per request and limit entry. A cluster entry replaces the matching preset entry. Unset entries inherit. |
-| `extraEnv` | Merged by variable name. Preset entries come first. A cluster entry with the same name replaces the preset entry. The list carries the same server-side apply semantics as the cluster field, see [CamundaCluster](camundacluster.md#environment-and-jvm). |
-| `extraEnvFrom` | Concatenated: preset entries first, then cluster entries. |
+| `extraEnv` | Merged by variable name. Preset entries come first, then release entries, then cluster entries. A later layer replaces an entry with the same name. The list carries the same server-side apply semantics as the cluster field, see [CamundaCluster](camundacluster.md#environment-and-jvm). |
+| `extraEnvFrom` | Concatenated: preset entries first, then release entries, then cluster entries. |
 | `podLabels`, `podAnnotations` | Merged by key. The cluster wins on a conflict. |
 | `scheduling` (top-level, per component, and `backup.dump.scheduling`) | Never merged. A block set on the cluster replaces the preset block at that level entirely. |
 | `auth.admin` | Never merged. A block set on the cluster replaces the whole preset block, so one manifest names every administrator. |
 | `auth.basic` | Never merged. A block set on the cluster replaces the whole preset block. A `passwordRotation` on the preset rotates the admin password of every cluster that inherits it, and each cluster reports its own `status.adminPassword.rotation`. |
 | `backup.primaryStorage` | Merged per field. A cluster can change the schedule and keep the retention of the preset. `continuous` is a pointer, so a cluster can set it to `false` while the preset sets it to `true`. |
 | `backup.dump` | Follows the component rules above. `scratchVolume` replaces as a whole block. `postgresImage` and `activeDeadlineSeconds` are replaced when the cluster sets them. |
-| `platformConfigRef`, `presetRef`, `externalUrl`, `serviceAccount`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, `pause` | Instance-bound. They always come from the cluster and are rejected in a preset. |
+| `platformConfigRef`, `presetRef`, `releaseRef`, `externalUrl`, `serviceAccount`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, `pause` | Instance-bound. They always come from the cluster and are rejected in a preset. |
+| `version`, `connectors.version` | Not part of a preset. They belong to a [CamundaRelease](camundarelease.md) or to the cluster, and a preset that sets one is rejected. |
 
 A `CamundaCluster` that names a preset that does not exist reports `Ready: False` with reason `InvalidReference`.
 
@@ -72,8 +73,6 @@ metadata:
 spec:
   # object. Required. The baseline. It has the shape of the CamundaCluster spec without the instance-bound fields. See the CamundaCluster page for every field.
   cluster:
-    # string. Optional. Camunda version of clusters that set none.
-    version: "8.9.0"
     # object. Optional. OIDC client credential defaults and administrators of referencing clusters. Sits between the platform config and the cluster.
     auth:
       # string. Optional. Default OIDC client ID.
@@ -159,8 +158,6 @@ spec:
     connectors:
       # boolean. Optional. Runs the connectors runtime when true.
       enabled: true
-      # string. Optional. Connectors bundle version of clusters that set none.
-      version: "8.9.7"
       # integer. Optional. Replicas.
       replicas: 1
       # object. Optional. CPU and memory.
@@ -171,8 +168,9 @@ spec:
 ### Validation rules
 
 - `spec.cluster` is required.
-- The instance-bound fields are rejected in `spec.cluster`: `platformConfigRef`, `presetRef`, `externalUrl`, `serviceAccount`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, and `pause`. An explicit zero value, for example `suspend: false` or an empty `presetRef`, counts as unset.
-- The fields of `spec.cluster` obey the same schema rules as on a `CamundaCluster`: versions are `x.y.z`, `whenDeleted` is `Delete` or `Retain`, and the backup durations are ISO 8601 days and time.
+- The instance-bound fields are rejected in `spec.cluster`: `platformConfigRef`, `presetRef`, `releaseRef`, `externalUrl`, `serviceAccount`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, and `pause`. An explicit zero value, for example `suspend: false` or an empty `presetRef`, counts as unset.
+- `version` and `connectors.version` are rejected in `spec.cluster`. They belong to a [CamundaRelease](camundarelease.md) or to the cluster.
+- The fields of `spec.cluster` obey the same schema rules as on a `CamundaCluster`: `whenDeleted` is `Delete` or `Retain`, and the backup durations are ISO 8601 days and time.
 - The transition rules of a `CamundaCluster` do not bind a preset: a preset can lower `zeebe.storageSize`. A referencing cluster keeps its applied volumes.
 - There is no cross-resource validation. The referencing cluster reports a problem with the merged spec.
 
@@ -185,7 +183,6 @@ metadata:
   name: medium
 spec:
   cluster:
-    version: "8.9.0"
     podLabels:
       company.com/team: "automation-ops"
     podAnnotations:
@@ -209,7 +206,6 @@ spec:
         requests: { cpu: "500m", memory: "1Gi" }
     connectors:
       enabled: true
-      version: "8.9.7"
       replicas: 1
       resources:
         requests: { cpu: "250m", memory: "512Mi" }
@@ -218,6 +214,7 @@ spec:
 ## Related
 
 - [CamundaCluster](camundacluster.md): references this resource through `presetRef` and merges its own spec over the baseline.
+- [CamundaRelease](camundarelease.md): the versions and the pinned images that run on this shape. It merges between the preset and the cluster.
 - [CamundaPlatformConfig](camundaplatformconfig.md): the `auth` baseline of a preset sits between the defaults of the platform config and the `auth` block of a cluster.
 - [Getting started](../getting-started.md): a preset is optional in the first setup.
 - [Operations guide](../guides/operations.md): how to resize a fleet of clusters through a preset.

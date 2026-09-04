@@ -67,8 +67,8 @@ func backupPreset() *v1.CamundaClusterPresetSpec {
 	}}
 }
 
-func TestMergePresetInheritsTheWholeBackupBlock(t *testing.T) {
-	merged := MergePreset(v1.CamundaClusterSpec{}, backupPreset())
+func TestMergeSpecInheritsTheWholeBackupBlock(t *testing.T) {
+	merged := MergeSpec(v1.CamundaClusterSpec{}, backupPreset(), nil)
 
 	require.NotNil(t, merged.Backup)
 	require.NotNil(t, merged.Backup.PrimaryStorage)
@@ -80,19 +80,19 @@ func TestMergePresetInheritsTheWholeBackupBlock(t *testing.T) {
 	assert.Equal(t, "50Gi", merged.Backup.Dump.ScratchVolume.SizeLimit.String())
 }
 
-func TestMergePresetKeepsTheClusterBackupWhenThePresetHasNone(t *testing.T) {
+func TestMergeSpecKeepsTheClusterBackupWhenThePresetHasNone(t *testing.T) {
 	spec := v1.CamundaClusterSpec{Backup: &v1.ClusterBackupSpec{
 		PrimaryStorage: &v1.PrimaryStorageBackupSpec{Schedule: "PT30M"},
 	}}
 
-	merged := MergePreset(spec, &v1.CamundaClusterPresetSpec{})
+	merged := MergeSpec(spec, &v1.CamundaClusterPresetSpec{}, nil)
 
 	require.NotNil(t, merged.Backup)
 	require.NotNil(t, merged.Backup.PrimaryStorage)
 	assert.Equal(t, "PT30M", merged.Backup.PrimaryStorage.Schedule)
 }
 
-func TestMergePresetOverridesPrimaryStoragePerField(t *testing.T) {
+func TestMergeSpecOverridesPrimaryStoragePerField(t *testing.T) {
 	spec := v1.CamundaClusterSpec{Backup: &v1.ClusterBackupSpec{
 		PrimaryStorage: &v1.PrimaryStorageBackupSpec{
 			Schedule:  "PT30M",
@@ -100,7 +100,7 @@ func TestMergePresetOverridesPrimaryStoragePerField(t *testing.T) {
 		},
 	}}
 
-	merged := MergePreset(spec, backupPreset())
+	merged := MergeSpec(spec, backupPreset(), nil)
 
 	ps := merged.Backup.PrimaryStorage
 	require.NotNil(t, ps)
@@ -114,7 +114,7 @@ func TestMergePresetOverridesPrimaryStoragePerField(t *testing.T) {
 // Continuous is a pointer so that a preset can enable it for a fleet and one
 // cluster can still turn it off. A bare bool could not express the third
 // state, and omitempty would drop the explicit false.
-func TestMergePresetContinuousHasThreeStates(t *testing.T) {
+func TestMergeSpecContinuousHasThreeStates(t *testing.T) {
 	cases := []struct {
 		name    string
 		cluster *bool
@@ -131,7 +131,7 @@ func TestMergePresetContinuousHasThreeStates(t *testing.T) {
 				PrimaryStorage: &v1.PrimaryStorageBackupSpec{Continuous: tc.cluster},
 			}}
 
-			merged := MergePreset(spec, backupPreset())
+			merged := MergeSpec(spec, backupPreset(), nil)
 
 			require.NotNil(t, merged.Backup.PrimaryStorage.Continuous)
 			assert.Equal(t, *tc.want, *merged.Backup.PrimaryStorage.Continuous)
@@ -139,7 +139,7 @@ func TestMergePresetContinuousHasThreeStates(t *testing.T) {
 	}
 }
 
-func TestMergePresetMergesTheDumpBlockLikeAWorkload(t *testing.T) {
+func TestMergeSpecMergesTheDumpBlockLikeAWorkload(t *testing.T) {
 	spec := v1.CamundaClusterSpec{Backup: &v1.ClusterBackupSpec{
 		Dump: &v1.BackupDumpSpec{DumpPodSpec: v1.DumpPodSpec{
 			Resources: &corev1.ResourceRequirements{
@@ -156,7 +156,7 @@ func TestMergePresetMergesTheDumpBlockLikeAWorkload(t *testing.T) {
 		}},
 	}}
 
-	merged := MergePreset(spec, backupPreset())
+	merged := MergeSpec(spec, backupPreset(), nil)
 
 	dump := merged.Backup.Dump
 	require.NotNil(t, dump)
@@ -180,7 +180,7 @@ func TestMergePresetMergesTheDumpBlockLikeAWorkload(t *testing.T) {
 // Scheduling and the scratch volume replace as whole blocks: a half-merged
 // affinity or a volume with a size from one source and a class from another
 // is not a shape a user can predict.
-func TestMergePresetReplacesTheDumpWholeBlocks(t *testing.T) {
+func TestMergeSpecReplacesTheDumpWholeBlocks(t *testing.T) {
 	spec := v1.CamundaClusterSpec{Backup: &v1.ClusterBackupSpec{
 		Dump: &v1.BackupDumpSpec{
 			DumpPodSpec: v1.DumpPodSpec{
@@ -192,7 +192,7 @@ func TestMergePresetReplacesTheDumpWholeBlocks(t *testing.T) {
 		},
 	}}
 
-	merged := MergePreset(spec, backupPreset())
+	merged := MergeSpec(spec, backupPreset(), nil)
 
 	dump := merged.Backup.Dump
 	assert.Equal(t, "cluster.example/postgres:17.4", dump.PostgresImage, "the cluster image wins")
@@ -208,7 +208,7 @@ func TestMergePresetReplacesTheDumpWholeBlocks(t *testing.T) {
 // The merge must not write through into the preset: a preset is shared by
 // every cluster that references it, and the reconcile of one cluster would
 // otherwise change what the next one reads.
-func TestMergePresetLeavesTheBackupPresetUntouched(t *testing.T) {
+func TestMergeSpecLeavesTheBackupPresetUntouched(t *testing.T) {
 	preset := backupPreset()
 	spec := v1.CamundaClusterSpec{Backup: &v1.ClusterBackupSpec{
 		PrimaryStorage: &v1.PrimaryStorageBackupSpec{Schedule: "PT5M"},
@@ -217,7 +217,7 @@ func TestMergePresetLeavesTheBackupPresetUntouched(t *testing.T) {
 		},
 	}}
 
-	_ = MergePreset(spec, preset)
+	_ = MergeSpec(spec, preset, nil)
 
 	assert.Equal(t, "PT1H", preset.Cluster.Backup.PrimaryStorage.Schedule)
 	assert.Equal(t, "preset", preset.Cluster.Backup.Dump.PodLabels["team"])

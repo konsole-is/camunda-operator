@@ -29,8 +29,9 @@ spec:
       openAPIV3Schema:
         description: |-
           CamundaPlatformConfig is the cluster-scoped CRD that holds the
-          environment-wide platform settings — identity provider, license, and image
-          registry — that every orchestration cluster referencing it shares.
+          environment-wide platform settings, the identity provider, the license, and
+          the image repositories, that every orchestration cluster referencing it
+          shares.
         properties:
           apiVersion:
             description: |-
@@ -355,18 +356,13 @@ spec:
                 - message: oidc is required when method is oidc and must not be set
                     when method is basic
                   rule: (self.method == 'oidc') == has(self.oidc)
-              imageRegistry:
-                description: |-
-                  ImageRegistry is the registry prefix of all Camunda component images.
-                  Empty means the upstream Camunda registry.
-                type: string
               images:
                 description: |-
-                  Images renames one image, for example to a mirror that keeps a
-                  different repository path. The tag always comes from the version field
-                  of the resource that runs the image. An entry here replaces both the
-                  repository and the imageRegistry prefix for that one image. A value
-                  that names a registry with a port needs a path after the port, as in
+                  Images renames the images that the operator pulls, one entry per
+                  image, for example to a mirror. Each value is a full repository with
+                  its registry and no tag. The tag always comes from the version field
+                  of the resource that runs the image. A value that names a registry
+                  with a port needs a path after the port, as in
                   registry:5000/camunda/optimize. The tag goes on the end of the value,
                   so the bare registry:5000 becomes the image registry:5000:<version>.
                 properties:

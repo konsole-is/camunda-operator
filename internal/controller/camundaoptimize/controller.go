@@ -98,6 +98,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaoptimizes/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusterpresets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=camundareleases,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaplatformconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=managementauthconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch

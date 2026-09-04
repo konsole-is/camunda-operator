@@ -23,6 +23,7 @@ resources:
 - bases/core.camunda.io_logicalrestorerdbmses.yaml
 - bases/core.camunda.io_databaseservers.yaml
 - bases/core.camunda.io_databaseserverpresets.yaml
+- bases/core.camunda.io_camundareleases.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

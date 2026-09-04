@@ -513,7 +513,6 @@ spec:
           webModeler:   {clientId: web-modeler}
           webModelerApi: {clientId: web-modeler-api, audience: web-modeler-api, publicApiAudience: web-modeler-public-api, clientSecretRef: {...}}
           console:      {clientId: console, audience: console}
-  imageRegistry: registry.example.com
   images:
     camunda: registry.example.com/mirror/camunda
     connectors: ...
@@ -528,7 +527,7 @@ spec:
 `management` is optional and only read in `oidc` mode. The platform validation controller
 checks every new `clientSecretRef` (`MissingSecret`). `images.<name>` is a repository; the tag
 comes from the owning CR's `version`. `pkg/images.Resolve(platform, image, version)` applies
-the override, else `imageRegistry` in front of the default repository, else the default.
+the override, else the default repository (`imageRegistry` was removed with `CamundaRelease`, #250).
 `pkg/components/camundacluster.Image` and `pkg/components/camundaoptimize.Image` are replaced by
 it, and so is every Job image the backup and restore controllers render.
 

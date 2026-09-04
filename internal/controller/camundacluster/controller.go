@@ -125,6 +125,7 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusterpresets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=camundareleases,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaplatformconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseconfigs,verbs=get;list;watch
@@ -288,9 +289,11 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		// A parked cluster must stop, refused or not: its brokers write the
 		// contract it left, which the next cluster can claim. The guard reads
-		// its baseline from the applied image, so the parking renders the
-		// running version and the refusal stands when the holder releases.
+		// its baseline from the applied StatefulSet, so the parking renders
+		// the running version, with no pinned image over it, and the refusal
+		// stands when the holder releases.
 		in.Effective.Version = storage.runningVersion()
+		in.Images = nil
 	}
 	// Only a reconcile that reached the check and did not report a refusal
 	// drops the cluster out of the memo, so a refusal that comes back, or one

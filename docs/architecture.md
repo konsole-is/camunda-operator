@@ -66,6 +66,7 @@ These settings are plain fields on the resource, set before creation. `spec.zeeb
 ```mermaid
 graph LR
     CCP[CamundaClusterPreset]
+    CR[CamundaRelease]
     PFC[CamundaPlatformConfig]
     ESCP[ElasticsearchClusterPreset]
     ESC[ElasticsearchCluster]
@@ -96,6 +97,7 @@ graph LR
     SSC -.->|databaseConfigRef| DBC
 
     CC -.->|presetRef| CCP
+    CC -.->|releaseRef| CR
     CC -.->|platformConfigRef| PFC
     CC -.->|storageRef| SSC
     CC -.->|"backupStorageRef / documentStorageRef"| OSC
@@ -114,7 +116,7 @@ graph LR
 Solid arrows mean "creates". Dotted arrows mean "references".
 `CamundaOptimize` consumes `ManagementAuthConfig`. The [CRD reference](crds/index.md) lists every kind.
 
-A reference by name points into the namespace of the resource that holds it. A `CamundaCluster` in `my-cluster-ns` reads the `SecondaryStorageConfig` of `storageRef` and the `ObjectStorageConfig` of `backupStorageRef` in `my-cluster-ns`. A cluster-scoped kind has no namespace of its own, so a reference to one carries a plain name. `CamundaPlatformConfig`, `ManagementAuthConfig`, and the three preset kinds are cluster-scoped.
+A reference by name points into the namespace of the resource that holds it. A `CamundaCluster` in `my-cluster-ns` reads the `SecondaryStorageConfig` of `storageRef` and the `ObjectStorageConfig` of `backupStorageRef` in `my-cluster-ns`. A cluster-scoped kind has no namespace of its own, so a reference to one carries a plain name. `CamundaPlatformConfig`, `ManagementAuthConfig`, `CamundaRelease`, and the three preset kinds are cluster-scoped.
 
 The same rule holds for Secrets. A namespaced kind reads its Secrets from its own namespace only, so its `secretRef` blocks name a Secret and its keys, and never a namespace. A cluster-scoped kind names the namespace, because it has none of its own. Only `CamundaPlatformConfig` and `ManagementAuthConfig` do that, and the operator copies the Secrets they name into each namespace that reads them. A preset is cluster-scoped too, and it names no namespace. A `secretRef` on a preset resolves in the namespace of each cluster that inherits it.
 

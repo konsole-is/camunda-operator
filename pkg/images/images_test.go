@@ -95,37 +95,13 @@ func TestResolveKeycloakTag(t *testing.T) {
 	assert.Equal(t, "camunda/keycloak:quay-optimized-26.0.7", Resolve(nil, Keycloak, "26.0.7"))
 }
 
-func TestResolveRegistry(t *testing.T) {
-	tests := []struct {
-		name     string
-		registry string
-		want     string
-	}{
-		{name: "no registry", registry: "", want: "camunda/optimize:8.9.9"},
-		{name: "registry", registry: "registry.example.com", want: "registry.example.com/camunda/optimize:8.9.9"},
-		{
-			name:     "registry with a trailing slash",
-			registry: "registry.example.com/",
-			want:     "registry.example.com/camunda/optimize:8.9.9",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			spec := &v1.CamundaPlatformConfigSpec{ImageRegistry: tt.registry}
-			assert.Equal(t, tt.want, Resolve(spec, Optimize, "8.9.9"))
-		})
-	}
-}
-
-func TestResolveOverrideWinsOverRegistry(t *testing.T) {
+func TestResolveOverrideAppliesToOneImage(t *testing.T) {
 	spec := &v1.CamundaPlatformConfigSpec{
-		ImageRegistry: "registry.example.com",
-		Images:        &v1.ImagesSpec{Optimize: "mirror.example.com/team/optimize"},
+		Images: &v1.ImagesSpec{Optimize: "mirror.example.com/team/optimize"},
 	}
 
 	assert.Equal(t, "mirror.example.com/team/optimize:8.9.9", Resolve(spec, Optimize, "8.9.9"))
-	// The override applies to one image only.
-	assert.Equal(t, "registry.example.com/camunda/identity:8.9.9", Resolve(spec, Identity, "8.9.9"))
+	assert.Equal(t, "camunda/identity:8.9.9", Resolve(spec, Identity, "8.9.9"))
 }
 
 func TestResolveOverridePerImage(t *testing.T) {

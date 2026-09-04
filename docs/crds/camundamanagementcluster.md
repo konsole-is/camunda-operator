@@ -641,11 +641,10 @@ If you change `spec.managementAuthConfigName` later, the operator writes the con
 
 ## Images
 
-Every image of the management plane has three sources on the referenced [CamundaPlatformConfig](camundaplatformconfig.md), in this order:
+Every image of the management plane has two sources on the referenced [CamundaPlatformConfig](camundaplatformconfig.md), in this order:
 
 1. A rename under `spec.images`.
-2. The `spec.imageRegistry` prefix in front of the default repository.
-3. The default repository of Camunda.
+2. The default repository of Camunda.
 
 The tag comes from the `version` field of the component that runs the image. Keycloak is the exception: its tag is `quay-optimized-<version>`, which is what Camunda publishes its Keycloak build under. See [Images](camundaplatformconfig.md#images).
 

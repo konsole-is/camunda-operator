@@ -484,7 +484,7 @@ func (r *BackupScheduleReconciler) warnRetentionWindow(
 		preset = &obj.Spec
 	}
 
-	policy := components.NewEffective(components.MergePreset(cluster.Spec, preset)).PrimaryStorageBackup()
+	policy := components.NewEffective(components.MergeSpec(cluster.Spec, preset, nil)).PrimaryStorageBackup()
 	completed, _ := retainedBounds(schedule.Spec)
 	message := retentionWindowWarning(completed, triggerInterval(sched, due), policy)
 	if message == "" {

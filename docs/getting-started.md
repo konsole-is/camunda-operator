@@ -121,7 +121,7 @@ spec:
 
 This is the default topology of Camunda 8.9: one Zeebe broker, and one gateway that also serves Operate, Tasklist, and Admin.
 
-In a shared environment, the version and the sizing come from a `CamundaClusterPreset`, and a cluster sets only `presetRef` and its references. See the [presets guide](guides/presets.md).
+In a shared environment, the sizing comes from a `CamundaClusterPreset`, the version from a `CamundaRelease`, and a cluster sets only `presetRef`, `releaseRef`, and its references. See the [presets guide](guides/presets.md).
 
 Wait until it is ready:
 

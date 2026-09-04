@@ -324,7 +324,7 @@ broker PVCs stay). `spec.pause`: reconcile returns before the pre-checks and rec
 
 ### Preset merge
 
-`MergePreset(spec, preset)` implements the preset doc rules field by field: scalars and
+`MergeSpec(spec, preset, release)` (named `MergePreset(spec, preset)` before #250) implements the preset doc rules field by field: scalars and
 pointers override individually (`version`, `auth` fields, per-component `mode`, `replicas`,
 `partitions`, `replicationFactor`, `storageClassName`, `storageSize`, `connectors.enabled`,
 `persistentVolumeClaimRetentionPolicy`); `resources` per request/limit entry; `extraEnv` by

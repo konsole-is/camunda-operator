@@ -58,7 +58,7 @@ func realisticPlatformConfig() *v1.CamundaPlatformConfig {
 			LicenseSecretRef: &v1.SecretKeyRef{
 				Name: "camunda-license", Namespace: "camunda-system", Key: "license-key",
 			},
-			ImageRegistry: "registry.example.com/camunda",
+			Images: &v1.ImagesSpec{Camunda: "registry.example.com/camunda/camunda"},
 		},
 	}
 }

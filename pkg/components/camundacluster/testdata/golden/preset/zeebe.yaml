@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    camunda.io/broker-version: 8.9.0
     camunda.io/requested-storage-size: 32Gi
   labels:
     app.kubernetes.io/managed-by: camunda-operator

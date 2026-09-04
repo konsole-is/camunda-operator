@@ -492,7 +492,7 @@ func (r *Reconciler) dumpBlock(
 				"reading CamundaClusterPreset %q: %w", cluster.Spec.PresetRef, err,
 			)
 		}
-		merged = camundacluster.MergePreset(cluster.Spec, &preset.Spec)
+		merged = camundacluster.MergeSpec(cluster.Spec, &preset.Spec, nil)
 	}
 
 	if merged.Backup == nil || merged.Backup.Dump == nil {

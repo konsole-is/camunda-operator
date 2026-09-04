@@ -34,18 +34,16 @@ import (
 )
 
 // brokerStorageRunning returns the storage of a cluster whose applied broker
-// StatefulSet runs the given image.
-func brokerStorageRunning(image string) brokerStorage {
-	return brokerStorageWithContainers(corev1.Container{Name: components.ContainerCamunda, Image: image})
-}
-
-// brokerStorageWithContainers returns the storage of a cluster whose applied
-// broker StatefulSet carries the given containers.
-func brokerStorageWithContainers(containers ...corev1.Container) brokerStorage {
+// StatefulSet carries version in its broker version annotation. An empty
+// version leaves the annotation off, as an apply from before the annotation
+// existed would.
+func brokerStorageRunning(version string) brokerStorage {
+	annotations := map[string]string{}
+	if version != "" {
+		annotations[components.BrokerVersionAnnotation] = version
+	}
 	return brokerStorage{statefulSet: &appsv1.StatefulSet{
-		Spec: appsv1.StatefulSetSpec{
-			Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: containers}},
-		},
+		ObjectMeta: metav1.ObjectMeta{Annotations: annotations},
 	}}
 }
 
@@ -63,37 +61,14 @@ func TestRunningVersion(t *testing.T) {
 			want:    "",
 		},
 		{
-			name:    "no camunda container",
-			storage: brokerStorageWithContainers(corev1.Container{Name: "sidecar", Image: "camunda/camunda:8.9.9"}),
+			name:    "a StatefulSet without the annotation",
+			storage: brokerStorageRunning(""),
 			want:    "",
 		},
 		{
-			name:    "no containers at all",
-			storage: brokerStorageWithContainers(),
-			want:    "",
-		},
-		{
-			name:    "untagged image",
-			storage: brokerStorageRunning("camunda/camunda"),
-			want:    "",
-		},
-		{
-			name:    "tagged image",
-			storage: brokerStorageRunning("camunda/camunda:8.9.9"),
+			name:    "an annotated StatefulSet",
+			storage: brokerStorageRunning("8.9.9"),
 			want:    "8.9.9",
-		},
-		{
-			name:    "tagged image behind a registry with a port",
-			storage: brokerStorageRunning("registry.example.com:5000/camunda/camunda:8.9.9"),
-			want:    "8.9.9",
-		},
-		{
-			name: "the camunda container is not the first one",
-			storage: brokerStorageWithContainers(
-				corev1.Container{Name: "sidecar", Image: "other:1.0.0"},
-				corev1.Container{Name: components.ContainerCamunda, Image: "camunda/camunda:8.9.9"},
-			),
-			want: "8.9.9",
 		},
 		{
 			name:    "retained claims without a StatefulSet",
@@ -103,7 +78,7 @@ func TestRunningVersion(t *testing.T) {
 		{
 			name: "the StatefulSet wins over the retained stamp",
 			storage: brokerStorage{
-				statefulSet: brokerStorageRunning("camunda/camunda:8.9.9").statefulSet,
+				statefulSet: brokerStorageRunning("8.9.9").statefulSet,
 				claims:      []corev1.PersistentVolumeClaim{stampedClaim("pvc-0", "8.9.8")},
 			},
 			want: "8.9.9",
@@ -135,9 +110,9 @@ func TestStampBrokerVersion(t *testing.T) {
 
 	tests := []struct {
 		name string
-		// image is the broker image of the applied StatefulSet. Empty means
-		// that no StatefulSet exists.
-		image string
+		// version is the broker version annotation of the applied
+		// StatefulSet. Empty means that no StatefulSet exists.
+		version string
 		// stamped is the annotation value the claim carries before the call.
 		stamped string
 		// want is the annotation value on the live claim after the call.
@@ -146,28 +121,28 @@ func TestStampBrokerVersion(t *testing.T) {
 		patched bool
 	}{
 		{
-			name:  "stamps an unstamped claim",
-			image: "camunda/camunda:8.9.9",
-			want:  "8.9.9", patched: true,
+			name:    "stamps an unstamped claim",
+			version: "8.9.9",
+			want:    "8.9.9", patched: true,
 		},
 		{
-			name:  "restamps a claim of an earlier version",
-			image: "camunda/camunda:8.9.9", stamped: "8.9.8",
+			name:    "restamps a claim of an earlier version",
+			version: "8.9.9", stamped: "8.9.8",
 			want: "8.9.9", patched: true,
 		},
 		{
-			name:  "leaves a current stamp alone",
-			image: "camunda/camunda:8.9.9", stamped: "8.9.9",
+			name:    "leaves a current stamp alone",
+			version: "8.9.9", stamped: "8.9.9",
 			want: "8.9.9",
 		},
 		{
-			name:  "never lowers a stamp",
-			image: "camunda/camunda:8.9.8", stamped: "8.9.9",
+			name:    "never lowers a stamp",
+			version: "8.9.8", stamped: "8.9.9",
 			want: "8.9.9",
 		},
 		{
-			name:  "replaces a malformed stamp",
-			image: "camunda/camunda:8.9.9", stamped: "latest",
+			name:    "replaces a malformed stamp",
+			version: "8.9.9", stamped: "latest",
 			want: "8.9.9", patched: true,
 		},
 		{
@@ -195,8 +170,8 @@ func TestStampBrokerVersion(t *testing.T) {
 			applied := live.ResourceVersion
 
 			storage := brokerStorage{claims: []corev1.PersistentVolumeClaim{live}}
-			if tt.image != "" {
-				storage.statefulSet = brokerStorageRunning(tt.image).statefulSet
+			if tt.version != "" {
+				storage.statefulSet = brokerStorageRunning(tt.version).statefulSet
 			}
 			require.NoError(t, r.stampBrokerVersion(context.Background(), storage))
 

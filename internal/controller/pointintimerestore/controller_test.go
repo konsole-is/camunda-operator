@@ -318,7 +318,11 @@ func createBrokers(w *world) {
 	GinkgoHelper()
 	name := components.WorkloadName(w.cluster, components.ComponentZeebe)
 	w.brokers = &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: w.namespace},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   w.namespace,
+			Annotations: map[string]string{components.BrokerVersionAnnotation: "8.9.9"},
+		},
 		Spec: appsv1.StatefulSetSpec{
 			ServiceName: name,
 			Replicas:    new(int32(0)),

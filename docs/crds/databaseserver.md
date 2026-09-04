@@ -287,10 +287,8 @@ kind: CamundaPlatformConfig
 metadata:
   name: my-platform-config
 spec:
-  # Put every default repository behind your mirror.
-  imageRegistry: "mirror.example.com"
   images:
-    # Or name one repository for PostgreSQL alone. This wins over imageRegistry.
+    # The repository that the PostgreSQL image is pulled from.
     postgres: "mirror.example.com/postgresql"
   # ... the rest of your platform config
 ```

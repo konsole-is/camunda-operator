@@ -102,7 +102,7 @@ func fixtureRealistic(t *testing.T) Input {
 		in.Partitions = 3
 		in.ServiceMonitorSupported = true
 		in.Platform = v1.CamundaPlatformConfigSpec{
-			ImageRegistry:    "registry.example.com/mirror",
+			Images:           &v1.ImagesSpec{Optimize: "registry.example.com/mirror/camunda/optimize"},
 			LicenseSecretRef: &v1.SecretKeyRef{Name: "camunda-license", Namespace: fixtureNamespace, Key: "license"},
 		}
 		in.Storage.Endpoint = "https://elasticsearch.camunda.svc:9200"

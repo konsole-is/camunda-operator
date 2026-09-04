@@ -171,7 +171,13 @@ func fixtureRealistic(t *testing.T) Input {
 // layer their own settings on top of it.
 func withEveryOverride(in *Input) {
 	in.Platform = newPlatform(func(p *v1.CamundaPlatformConfigSpec) {
-		p.ImageRegistry = "registry.example.com/mirror"
+		p.Images = &v1.ImagesSpec{
+			Identity:             "registry.example.com/mirror/camunda/identity",
+			Console:              "registry.example.com/mirror/camunda/console",
+			WebModelerRestapi:    "registry.example.com/mirror/camunda/web-modeler-restapi",
+			WebModelerWebsockets: "registry.example.com/mirror/camunda/web-modeler-websockets",
+			Keycloak:             "registry.example.com/mirror/camunda/keycloak",
+		}
 		p.LicenseSecretRef = &v1.SecretKeyRef{
 			Name:      MirroredSecretName(in.Cluster, MirrorPurposeLicense),
 			Namespace: fixtureNamespace,
@@ -342,7 +348,13 @@ func fixtureKeycloakRealistic(t *testing.T, managed bool) Input {
 		in.Secrets.IdentityAdmin = ""
 		delete(in.Secrets.Values, IdentityAdminSecretName(in.Cluster))
 		in.Platform = newPlatform(func(p *v1.CamundaPlatformConfigSpec) {
-			p.ImageRegistry = "registry.example.com/mirror"
+			p.Images = &v1.ImagesSpec{
+				Identity:             "registry.example.com/mirror/camunda/identity",
+				Console:              "registry.example.com/mirror/camunda/console",
+				WebModelerRestapi:    "registry.example.com/mirror/camunda/web-modeler-restapi",
+				WebModelerWebsockets: "registry.example.com/mirror/camunda/web-modeler-websockets",
+				Keycloak:             "registry.example.com/mirror/camunda/keycloak",
+			}
 			p.LicenseSecretRef = &v1.SecretKeyRef{
 				Name:      MirroredSecretName(in.Cluster, MirrorPurposeLicense),
 				Namespace: fixtureNamespace,

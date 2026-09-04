@@ -42,7 +42,7 @@ type Input struct {
 	// a restore of that cluster writes analytics from half-restored indices.
 	Suspended bool
 	// Platform is the spec of the CamundaPlatformConfig that the referenced
-	// cluster names. It gives the image registry prefix and the license. It is
+	// cluster names. It gives the image repositories and the license. It is
 	// the zero value when the cluster names none.
 	Platform v1.CamundaPlatformConfigSpec
 	// Storage is the elasticsearch block of the SecondaryStorageConfig that

@@ -20,4 +20,6 @@ spec:
     name: "camunda-license"
     namespace: "camunda-system"
     key: "license-key"
-  imageRegistry: "registry.example.com"
+  images:
+    camunda: "registry.example.com/camunda/camunda"
+    optimize: "registry.example.com/camunda/optimize"
