@@ -17,6 +17,8 @@ limitations under the License.
 package logicalrestorerdbms
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
@@ -823,14 +825,21 @@ var _ = Describe("LogicalRestoreRDBMS of primary storage", func() {
 		// The refusal belongs to a restore that started. Admission pins the
 		// backup id one look before it writes to the cluster, so the pin is
 		// readable while the restore is still in Pending. A restore in Pending
-		// has touched nothing, and a backup that does not match its pin holds
-		// it there instead of ending it. The spec therefore starts the restore
+		// touched nothing, and a backup that does not match its pin holds it
+		// there instead of ending it. The spec therefore starts the restore
 		// before it replaces the backup.
 		completeSecondaryStorage(w, lrr)
 		expectPhase(lrr, v1.LogicalRestoreRestoringPrimaryStorage)
 		Expect(latestOf(lrr).Status.BackupID).To(Equal(backupID))
 
+		// The delete opens the mid-run grace of the started restore, because
+		// the backup resolves to nothing until the replacement carries its
+		// status. The grace ends the restore with whichever failure is
+		// current, so the replacement has to be complete before it expires.
+		// The three writes take milliseconds. The guard below names the budget
+		// when they do not.
 		By("replacing the backup with another completed one of the same name")
+		replacedAt := time.Now()
 		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
 		replacement := &v1.LogicalBackupRDBMS{
 			ObjectMeta: metav1.ObjectMeta{Name: backup.Name, Namespace: w.namespace},
@@ -838,7 +847,7 @@ var _ = Describe("LogicalRestoreRDBMS of primary storage", func() {
 		}
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Create(ctx, replacement)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		}, timeout, 20*time.Millisecond).Should(Succeed())
 		replacement.Status = v1.LogicalBackupRDBMSStatus{
 			Phase:     v1.LogicalBackupCompleted,
 			BackupID:  backupID + 1,
@@ -847,6 +856,10 @@ var _ = Describe("LogicalRestoreRDBMS of primary storage", func() {
 			ObjectKey: "clusters/elsewhere/camunda.dump",
 		}
 		Expect(k8sClient.Status().Update(ctx, replacement)).To(Succeed())
+		Expect(time.Since(replacedAt)).To(
+			BeNumerically("<", midRunGrace),
+			"the replacement has to be complete before the mid-run grace of the restore ends",
+		)
 
 		// The dump of the replacement lies under another key. A restore that
 		// followed the name would download it and call it the backup it

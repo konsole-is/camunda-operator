@@ -148,11 +148,18 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 		CRDDirectoryPaths:     crdPaths,
 		ErrorIfCRDPathMissing: true,
 		BinaryAssetsDirectory: utils.EnvtestBinaryDir(),
-		// envtest gives the API server twenty seconds to answer. A full run
-		// starts one control plane per suite, and several of them boot at once
-		// on one machine. A boot that is slow under that load is not a defect
-		// of the suite that reports it.
+		// A full run starts one control plane per suite, and several of them
+		// boot at once on one machine. Two budgets of envtest are too small
+		// under that load, and a boot that is slow is not a defect of the
+		// suite that reports it. The control plane gets twenty seconds by
+		// default, and the wait for the CRDs to appear as API resources gets
+		// ten. ControlPlaneStartTimeout wins over
+		// KUBEBUILDER_CONTROLPLANE_START_TIMEOUT, which nothing in this
+		// repository sets. Start merges CRDDirectoryPaths and
+		// ErrorIfCRDPathMissing into CRDInstallOptions, so naming the struct
+		// here keeps both.
 		ControlPlaneStartTimeout: 2 * time.Minute,
+		CRDInstallOptions:        envtest.CRDInstallOptions{MaxTime: time.Minute},
 	}
 
 	cfg, err := control.Start()

@@ -19,6 +19,7 @@ package credentials
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,7 +40,14 @@ import (
 func startAPIServer(t *testing.T) client.Client {
 	t.Helper()
 
-	control := &envtest.Environment{BinaryAssetsDirectory: utils.EnvtestBinaryDir()}
+	control := &envtest.Environment{
+		BinaryAssetsDirectory: utils.EnvtestBinaryDir(),
+		// A full run starts one control plane per suite, and several of them
+		// boot at once on one machine. Twenty seconds, the envtest default, is
+		// not enough under that load. internal/testenv gives the suites it
+		// starts the same budget.
+		ControlPlaneStartTimeout: 2 * time.Minute,
+	}
 	cfg, err := control.Start()
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, control.Stop()) })
