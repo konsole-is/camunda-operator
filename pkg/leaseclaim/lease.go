@@ -38,11 +38,18 @@ import (
 // annotations, which every decision about ownership reads.
 const MaxHolderIdentityLength = 128
 
-// Holder is the resource that a claim Lease records. The UID tells it apart
-// from a later resource of the same name.
+// Holder is the resource that a claim Lease records. The UID decides
+// ownership on its own. The namespace and the name name the holder in a
+// message: a claimant that read them as ownership disowns its own claim over
+// one hand-edited annotation.
 type Holder struct {
 	types.NamespacedName
 	UID types.UID
+}
+
+// holderOf is the holder identity of obj.
+func holderOf(obj client.Object) Holder {
+	return Holder{NamespacedName: client.ObjectKeyFromObject(obj), UID: obj.GetUID()}
 }
 
 // Schema is the shape of the claim Leases of one kind of claim. A caller
@@ -51,9 +58,9 @@ type Holder struct {
 // takes this claim, so a Schema of one claim never renders a Lease for the
 // holder of another.
 //
-// Two Schema values must never share a Prefix or an annotation key. Each one
-// names a separate claim. A claimant of one that read the Leases of the other
-// as its own would hand a key to two holders.
+// Two Schema values must never share a Prefix, an annotation key or a label
+// set. Each one names a separate claim, and a claimant of one that reads the
+// Leases of the other as its own hands a key to two holders.
 type Schema[T client.Object] struct {
 	// Prefix starts the name of every Lease of this claim. It ends with a
 	// hyphen, and the hash of the claim key follows it.
@@ -130,10 +137,10 @@ func (s Schema[T]) HolderOf(lease *coordinationv1.Lease) (Holder, bool) {
 }
 
 // Validate reports whether the Schema names a claim that a claimant reads
-// back. A missing prefix, a missing annotation key and a missing Labels
-// function each write a Lease that no other claimant recognises as a claim.
-// Two annotation keys that are equal drop one of the values the ownership
-// decision reads.
+// back. A missing prefix, a missing annotation key and a Labels function that
+// gives no label each write a Lease that no other claimant recognises as a
+// claim. Two annotation keys that are equal drop one of the values the
+// ownership decision reads.
 //
 // A caller runs it once where a failure stops the operator, and never on a
 // reconcile path.
@@ -151,6 +158,11 @@ func (s Schema[T]) Validate() error {
 	}
 	if s.Labels == nil {
 		return errors.New("the Labels function is nil")
+	}
+	// Held lists on the selector alone, so a claim with no label reads every
+	// Lease of the namespace as its own.
+	if len(s.Labels("any-holder")) == 0 {
+		return errors.New("the Labels function returns no label")
 	}
 
 	seen := make(map[string]string, 4)
@@ -184,11 +196,4 @@ func (s Schema[T]) annotations() []schemaAnnotation {
 		{"HolderUIDAnnotation", s.HolderUIDAnnotation},
 		{"KeyAnnotation", s.KeyAnnotation},
 	}
-}
-
-// HolderOf is the holder identity of obj: its namespace, its name and its
-// UID. A claimant passes it to say who it is, and a sweep passes it to say
-// whose Leases to read.
-func HolderOf(obj client.Object) Holder {
-	return Holder{NamespacedName: client.ObjectKeyFromObject(obj), UID: obj.GetUID()}
 }

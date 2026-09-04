@@ -1,0 +1,16 @@
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  annotations:
+    camunda.io/database-claim-holder-name: orders
+    camunda.io/database-claim-holder-namespace: apps
+    camunda.io/database-claim-holder-uid: uid-1
+    camunda.io/database-claim-key: 7000000000000000001/camunda
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: database-claim
+    camunda.io/database: orders
+  name: camunda-database-537c677814e7a753304ecd6741008d668e6def27
+  namespace: camunda-system
+spec:
+  holderIdentity: apps/orders

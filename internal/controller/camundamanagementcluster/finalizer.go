@@ -33,7 +33,6 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
-	"github.com/konsole-is/camunda-operator/pkg/leaseclaim"
 )
 
 // The event vocabulary of this controller.
@@ -116,7 +115,7 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	// realm claims it and runs its own Management Identity against clients
 	// this withdrawal may still be writing.
 	claims := r.realmClaims()
-	leases, err := claims.Held(ctx, leaseclaim.HolderOf(mc))
+	leases, err := claims.Held(ctx, mc)
 	if err != nil {
 		return err
 	}
@@ -456,9 +455,7 @@ func (r *Reconciler) holdsRealmClaim(
 	mc *v1.CamundaManagementCluster,
 	target v1.KeycloakRealmTarget,
 ) (bool, error) {
-	return r.realmClaims().Holds(
-		ctx, components.RealmIdentity(target), leaseclaim.HolderOf(mc),
-	)
+	return r.realmClaims().Holds(ctx, components.RealmIdentity(target), mc)
 }
 
 // clearCallbackRealm takes the record of the realm off the API server. It

@@ -27,18 +27,19 @@ import (
 )
 
 // claimNaming is what tells the claim Leases of one claim from those of
-// another: the prefix of their names and the annotation keys that carry
-// ownership.
+// another: the prefix of their names, the annotation keys that carry
+// ownership, and the labels a sweep selects on.
 type claimNaming struct {
 	claim       string
 	prefix      string
 	annotations []string
+	selector    map[string]string
 }
 
 // TestTheShippedSchemasNameSeparateClaims pins the invariant that Validate
-// cannot check on its own. Two claims that shared a Lease name prefix or an
-// annotation key would read each other's Leases as their own, and one claimant
-// would take a key another one holds.
+// cannot check on its own. Two claims that share a Lease name prefix, an
+// annotation key or a selector read each other's Leases as their own, and one
+// claimant then takes a key another one holds.
 func TestTheShippedSchemasNameSeparateClaims(t *testing.T) {
 	t.Parallel()
 
@@ -49,8 +50,9 @@ func TestTheShippedSchemasNameSeparateClaims(t *testing.T) {
 
 	shipped := []claimNaming{
 		{
-			claim:  "the logical database claim",
-			prefix: database.Prefix,
+			claim:    "the logical database claim",
+			prefix:   database.Prefix,
+			selector: database.Labels("shared-name"),
 			annotations: []string{
 				database.HolderNamespaceAnnotation,
 				database.HolderNameAnnotation,
@@ -59,8 +61,9 @@ func TestTheShippedSchemasNameSeparateClaims(t *testing.T) {
 			},
 		},
 		{
-			claim:  "the Keycloak realm claim",
-			prefix: realm.Prefix,
+			claim:    "the Keycloak realm claim",
+			prefix:   realm.Prefix,
+			selector: realm.Labels("shared-name"),
 			annotations: []string{
 				realm.HolderNamespaceAnnotation,
 				realm.HolderNameAnnotation,
@@ -69,6 +72,10 @@ func TestTheShippedSchemasNameSeparateClaims(t *testing.T) {
 			},
 		},
 	}
+
+	// Held lists on the selector alone, so two claims of one holder name must
+	// not select each other's Leases.
+	assert.NotEqual(t, shipped[0].selector, shipped[1].selector)
 
 	prefixes := make(map[string]string, len(shipped))
 	annotations := make(map[string]string, 4*len(shipped))

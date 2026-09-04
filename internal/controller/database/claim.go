@@ -71,33 +71,40 @@ var errClaimNotFirst = errors.New("another Database goes first for the claim")
 // decides it, and the cached rule of checkCollision never overrules the
 // Lease. A Lease that exists names the holder, and the rule answers from an
 // index that lags behind: it would name the oldest claimant, which is a
-// Database that lost the race as often as it is the holder. The rule runs
-// only while no Lease exists, where it decides which claimant tries first.
+// Database that lost the race as often as it is the holder. The rule
+// therefore runs only while no Lease exists, where it decides which claimant
+// tries first.
 //
 // A claim that another Database holds returns an error that wraps
 // errClaimLost, so the reconcile withdraws the bindings and reports the
-// holder.
+// holder. A Lease that carries no holder annotations is not one of ours: it
+// blocks without a takeover, and the failure names it.
 func (r *DatabaseReconciler) claim(ctx context.Context, database *v1.Database, key string) error {
-	claims := r.claims()
-
-	lease, found, err := claims.Read(ctx, key)
-	if err != nil {
+	blocker, err := r.claims().TakeUnclaimed(ctx, database, key, func(ctx context.Context) error {
+		return r.checkCollision(ctx, database, key)
+	})
+	if err != nil || blocker == nil {
 		return err
 	}
 
-	if !found {
-		if err := r.checkCollision(ctx, database, key); err != nil {
-			return err
-		}
-
-		return r.takeClaim(ctx, claims, database, key)
+	if blocker.Foreign() {
+		return fmt.Errorf("%w: %w", errClaimLost, &conditions.PreCheckFailure{
+			Reason: v1.ReasonInvalidReference,
+			Message: fmt.Sprintf(
+				"Lease %s claims database %q on the same server and names no Database. "+
+					"Delete it if nothing else uses it",
+				blocker.Lease, database.Spec.DatabaseName,
+			),
+		})
 	}
 
-	if holder, ours := components.ClaimHolderOf(lease); ours && holder == leaseclaim.HolderOf(database) {
-		return nil
-	}
-
-	return r.takeClaim(ctx, claims, database, key)
+	return fmt.Errorf("%w: %w", errClaimLost, &conditions.PreCheckFailure{
+		Reason: v1.ReasonInvalidReference,
+		Message: fmt.Sprintf(
+			"Database %s already claims database %q on the same server",
+			blocker.Holder.NamespacedName, database.Spec.DatabaseName,
+		),
+	})
 }
 
 // claims is the claim protocol on the logical databases, over the Leases of
@@ -162,47 +169,6 @@ func withSelf(claimants []v1.Database, database *v1.Database) []v1.Database {
 	return append(claimants, *database)
 }
 
-// takeClaim takes the claim Lease of the logical database and turns a claim
-// this Database does not hold into the pre-check failure that withdraws the
-// bindings. The API server serializes the create, so of two Databases that
-// reach this together exactly one holds the claim, whatever the cached rule
-// answered them.
-//
-// It returns nil when database holds the claim after the call. A claim that
-// another Database holds returns an error that wraps errClaimLost. A Lease
-// that carries no holder annotations is not one of ours: it blocks without a
-// takeover, and the failure names it.
-func (r *DatabaseReconciler) takeClaim(
-	ctx context.Context,
-	claims *leaseclaim.Claim[*v1.Database],
-	database *v1.Database,
-	key string,
-) error {
-	blocker, err := claims.Take(ctx, database, key)
-	if err != nil || blocker == nil {
-		return err
-	}
-
-	if blocker.Foreign() {
-		return fmt.Errorf("%w: %w", errClaimLost, &conditions.PreCheckFailure{
-			Reason: v1.ReasonInvalidReference,
-			Message: fmt.Sprintf(
-				"Lease %s claims database %q on the same server and names no Database. "+
-					"Delete it if nothing else uses it",
-				blocker.Lease, database.Spec.DatabaseName,
-			),
-		})
-	}
-
-	return fmt.Errorf("%w: %w", errClaimLost, &conditions.PreCheckFailure{
-		Reason: v1.ReasonInvalidReference,
-		Message: fmt.Sprintf(
-			"Database %s already claims database %q on the same server",
-			blocker.Holder.NamespacedName, database.Spec.DatabaseName,
-		),
-	})
-}
-
 // holderKeeps reports whether the Database that the Lease names still owns
 // the claim. It does while it exists under the recorded UID.
 //
@@ -236,7 +202,7 @@ func (r *DatabaseReconciler) finalize(ctx context.Context, database *v1.Database
 		return nil
 	}
 
-	if err := r.releaseHeldClaims(ctx, leaseclaim.HolderOf(database), ""); err != nil {
+	if err := r.releaseHeldClaims(ctx, database, ""); err != nil {
 		return err
 	}
 
@@ -257,11 +223,11 @@ func (r *DatabaseReconciler) finalize(ctx context.Context, database *v1.Database
 //
 // An empty keep releases every claim of the holder.
 func (r *DatabaseReconciler) releaseHeldClaims(
-	ctx context.Context, holder components.ClaimHolder, keep string,
+	ctx context.Context, database *v1.Database, keep string,
 ) error {
 	claims := r.claims()
 
-	leases, err := claims.Held(ctx, holder)
+	leases, err := claims.Held(ctx, database)
 	if err != nil {
 		return err
 	}

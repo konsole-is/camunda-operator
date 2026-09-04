@@ -1,0 +1,16 @@
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  annotations:
+    camunda.io/database-claim-holder-name: nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn
+    camunda.io/database-claim-holder-namespace: ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss
+    camunda.io/database-claim-holder-uid: uid-2
+    camunda.io/database-claim-key: 7000000000000000002/other
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: database-claim
+    camunda.io/database: nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn-1be63cc0bd
+  name: camunda-database-3ae70ac13d3abc0c45dd1098dfd7f0e85add4336
+  namespace: camunda-system
+spec:
+  holderIdentity: ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn-134b74ed3b

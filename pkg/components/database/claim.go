@@ -55,14 +55,6 @@ type Claim struct {
 	Key    string
 }
 
-// NewClaimLease builds the claim Lease of key for database. The Database
-// controller creates it when the Database reaches its server, and the API
-// server serializes that create, so exactly one claimant holds the logical
-// database that key names.
-func NewClaimLease(namespace, key string, database *v1.Database) *coordinationv1.Lease {
-	return ClaimSchema().NewLease(namespace, key, database)
-}
-
 // ClaimSchema is the shape of the claim Leases of a logical database. The
 // Database controller runs the claim protocol of pkg/leaseclaim over it.
 func ClaimSchema() leaseclaim.Schema[*v1.Database] {
@@ -75,15 +67,6 @@ func ClaimSchema() leaseclaim.Schema[*v1.Database] {
 		KeyAnnotation:             ClaimKeyAnnotation,
 		Labels:                    ClaimLeaseLabels,
 	}
-}
-
-// ClaimLeaseName returns the name of the Lease that claims key:
-// "camunda-database-<hash of the key>". A claim key holds a system identifier
-// and a database name, which together are no DNS subdomain, so the name is
-// built from a hash of it. Every claimant of one logical database therefore
-// meets on one Lease, and the claim key annotation says which one that is.
-func ClaimLeaseName(key string) string {
-	return ClaimSchema().LeaseName(key)
 }
 
 // ClaimLeaseLabels returns the labels of the claim Leases of the Databases

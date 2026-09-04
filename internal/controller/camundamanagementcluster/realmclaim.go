@@ -185,7 +185,7 @@ func (r *Reconciler) releaseUnusedRealms(
 	// The claims are read first. A plane that holds none has nothing to give
 	// back, and the workloads below only say which of them to keep, so their
 	// three reads would answer a question nobody asked.
-	leases, err := claims.Held(ctx, leaseclaim.HolderOf(mc))
+	leases, err := claims.Held(ctx, mc)
 	if err != nil || len(leases) == 0 {
 		return false, err
 	}

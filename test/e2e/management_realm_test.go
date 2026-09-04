@@ -254,7 +254,7 @@ func realmClaimLease(keycloak *v1.CamundaManagementCluster, realm string) (*coor
 	})
 
 	var lease coordinationv1.Lease
-	if err := utils.Get("lease", components.RealmClaimLeaseName(identity), namespace, &lease); err != nil {
+	if err := utils.Get("lease", components.RealmClaimSchema().LeaseName(identity), namespace, &lease); err != nil {
 		return nil, err
 	}
 
