@@ -213,7 +213,7 @@ A Secret that you attach yourself through `extraEnv` or `extraEnvFrom` is not pa
 
 Set `spec.monitoring.serviceMonitor.enabled` to `true` to get one ServiceMonitor per Deployment. They scrape `/actuator/prometheus` on the `management` port, 8092. Use `spec.monitoring.serviceMonitor.labels` to add the label that your Prometheus instance selects on.
 
-The operator creates them only when the Kubernetes cluster serves the `ServiceMonitor` kind. It reads that on each reconcile, so you can install the Prometheus operator after the fact.
+The operator creates them only when the Kubernetes cluster serves the `ServiceMonitor` kind. You can install the Prometheus operator afterwards, and the operator creates them then.
 
 ## Deletion
 
@@ -342,7 +342,7 @@ The API server enforces these at admission:
 - `spec.importer.replicas` must be `0` or `1`. Optimize supports one active importer, and more than one makes the analytics data inconsistent.
 - `spec.clusterRef` is immutable.
 
-The operator checks more at reconcile time and reports the result on `Ready`:
+The API server accepts a resource that breaks the rules below, because they depend on live state. The operator reports the result on `Ready` instead:
 
 - The references resolve.
 - The secondary storage of the cluster is Elasticsearch.
@@ -416,5 +416,5 @@ spec:
 - [ManagementAuthConfig](managementauthconfig.md): referenced through `managementAuthRef`.
 - [SecondaryStorageConfig](secondarystorageconfig.md): resolved through the `storageRef` of the cluster. It carries the Elasticsearch endpoint and credentials.
 - [CamundaManagementCluster](camundamanagementcluster.md): produces the `ManagementAuthConfig` in a self-managed installation.
-- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md): backs up the cluster, which includes the `zeebe-record` indices that Optimize reads. It does not back up the Optimize analytics indices. Optimize keeps those behind a backup API of its own, which no controller calls yet.
+- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md): backs up the cluster, which includes the `zeebe-record` indices that Optimize reads. It does not back up the Optimize analytics indices. Optimize keeps those behind a backup API of its own, which the operator does not call yet.
 - [ElasticsearchCluster](elasticsearchcluster.md): the ECK-managed Elasticsearch behind the contract.
