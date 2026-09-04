@@ -37,7 +37,6 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
 
-// resolveStorage reads the storage contract of the cluster.
 // errNoStorage marks a cluster that names no storage contract.
 var errNoStorage = errors.New("no storage contract")
 
@@ -371,6 +370,7 @@ func (r *Reconciler) backfillStorageSizes(
 	logicalbackup.RecordStorageSizes(sizes, computed)
 }
 
+// resolveStorage reads the storage contract of the cluster.
 func (r *Reconciler) resolveStorage(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,

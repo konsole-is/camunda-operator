@@ -249,9 +249,6 @@ func (r *Reconciler) deleteArtifacts(
 	return r.deleteRuntimeBackup(ctx, backup, mgmt)
 }
 
-// releaseWithoutCleanup records that the artifacts are not reachable. The
-// finalizer releases anyway. A deleted cluster must not pin its backups
-// forever.
 // sweepPinnedSnapshots deletes the snapshots that this backup owns from the
 // pinned storage. Those are the recorded history snapshots when their
 // backup was accepted, and the records snapshot when it carries the UID. It
@@ -510,6 +507,9 @@ func (r *Reconciler) holdDeletion(backup *v1.LogicalBackupElasticsearch, reason 
 	)
 }
 
+// releaseWithoutCleanup records that the artifacts are not reachable. The
+// finalizer releases anyway. A deleted cluster must not pin its backups
+// forever.
 func (r *Reconciler) releaseWithoutCleanup(backup *v1.LogicalBackupElasticsearch, reason string) {
 	r.EventRecorder.Eventf(
 		backup,
