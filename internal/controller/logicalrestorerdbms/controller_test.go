@@ -820,9 +820,15 @@ var _ = Describe("LogicalRestoreRDBMS of primary storage", func() {
 		backup := createBackup(w)
 		lrr := createRestore(w, backup.Name)
 
-		Eventually(func(g Gomega) {
-			g.Expect(latest(g, lrr).Status.BackupID).To(Equal(backupID))
-		}, timeout, interval).Should(Succeed())
+		// The refusal belongs to a restore that started. Admission pins the
+		// backup id one look before it writes to the cluster, so the pin is
+		// readable while the restore is still in Pending. A restore in Pending
+		// has touched nothing, and a backup that does not match its pin holds
+		// it there instead of ending it. The spec therefore starts the restore
+		// before it replaces the backup.
+		completeSecondaryStorage(w, lrr)
+		expectPhase(lrr, v1.LogicalRestoreRestoringPrimaryStorage)
+		Expect(latestOf(lrr).Status.BackupID).To(Equal(backupID))
 
 		By("replacing the backup with another completed one of the same name")
 		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
