@@ -91,7 +91,7 @@ Each creation records the Normal event `BackupCreated` on the schedule. The even
 
 The operator creates no backup when:
 
-- The cluster is suspended. A suspended cluster answers no call, so a backup can only fail. `spec.suspend` suspends it, and so do these `Ready` reasons of the `CamundaCluster`: `StorageAlreadyAttached`, `WaitingForHandover`, `InvalidReference`, and `MissingSecret`. Every one of them skips the trigger. Read `Ready` on the `CamundaCluster` and correct the cause there. Backups start again at the next trigger after the cluster resumes.
+- The cluster is suspended. A suspended cluster runs no workloads, so a backup of it can only fail. `spec.suspend` suspends the cluster. So do these `Ready` reasons of the `CamundaCluster`: `StorageAlreadyAttached`, `WaitingForHandover`, `InvalidReference`, and `MissingSecret`. Every one of them skips the trigger. Read `Ready` on the `CamundaCluster` and correct the cause there. Backups start again at the next trigger after the cluster resumes.
 - A backup of this schedule has not reached a terminal phase. Two backups of one schedule never overlap, and a backup of either kind counts. If a backup regularly runs past the next trigger, give the schedule a longer gap.
 - An object already holds the name of the new backup and belongs to something else. Remove that object, or give the schedule another name.
 - A reference of the schedule does not resolve. The `Ready` condition of the schedule names it. Create the resource, or set the missing field.
