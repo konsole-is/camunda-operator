@@ -1,0 +1,34 @@
+# The shape of an orchestration cluster: sizing, topology, and resources. A
+# platform team writes this once, and every CamundaCluster that names it in
+# spec.presetRef inherits it.
+#
+# The instance-bound fields are rejected here: platformConfigRef, presetRef,
+# externalUrl, serviceAccount, storageRef, backupStorageRef,
+# documentStorageRef, monitoring, suspend, and pause. Each one belongs to a
+# single cluster, so each cluster sets it.
+#
+# version is not set here on purpose. Each cluster pins its own, so one
+# cluster can move before the fleet does.
+#
+# These sizes suit one small test cluster, such as kind. The docs name a
+# preset for the shape it describes, for example small, medium, and large.
+apiVersion: core.camunda.io/v1
+kind: CamundaClusterPreset
+metadata:
+  name: small
+spec:
+  cluster:
+    zeebe:
+      replicas: 1
+      partitions: 1
+      replicationFactor: 1
+      storageSize: 1Gi
+      resources:
+        requests:
+          cpu: "1"
+          memory: 1.5Gi
+    gateway:
+      resources:
+        requests:
+          cpu: 500m
+          memory: 512Mi

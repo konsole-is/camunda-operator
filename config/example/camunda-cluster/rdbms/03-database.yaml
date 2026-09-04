@@ -1,0 +1,15 @@
+# The logical database on my-db, with its own roles and Secrets. It publishes
+# the DatabaseConfig my-camunda-db and, because secondaryStorageConfig is set,
+# the SecondaryStorageConfig my-storage-config that the cluster points at.
+#
+# Database has no preset kind. It carries no sizing, only the server it uses
+# and the name of the database to prepare.
+apiVersion: core.camunda.io/v1
+kind: Database
+metadata:
+  name: my-camunda-db
+  namespace: my-cluster-ns
+spec:
+  serverRef: my-db-server
+  databaseName: camunda
+  secondaryStorageConfig: my-storage-config

@@ -2,14 +2,15 @@
 
 A preset is a baseline that many clusters inherit. You write the sizing, the topology, the backup policy, and the authentication defaults once. Each cluster then names the preset and sets only what is its own. What runs on that shape, the versions and the pinned images, lives in a `CamundaRelease`. The result is a small manifest per cluster, one place to change the shape of a fleet, and one place to roll its version.
 
-The operator has two preset kinds:
+The operator has three preset kinds:
 
 | Preset | Inherited by | Reference field |
 | --- | --- | --- |
 | `CamundaClusterPreset` | `CamundaCluster` | `spec.presetRef` |
 | `ElasticsearchClusterPreset` | `ElasticsearchCluster` | `spec.presetRef` |
+| `DatabaseServerPreset` | `DatabaseServer` | `spec.presetRef` |
 
-Both are cluster-scoped. No controller reconciles them, and they create nothing. The cluster that references a preset reads it on every reconcile and merges its own spec over `spec.cluster` of the preset.
+All three are cluster-scoped. No controller reconciles them, and they create nothing. The resource that references a preset reads it on every reconcile and merges its own spec over the baseline the preset holds. That baseline is `spec.cluster` on the two cluster presets, and `spec.server` on `DatabaseServerPreset`.
 
 ## The four layers of a Camunda cluster
 
@@ -141,7 +142,11 @@ spec:
 
 The backup policy of the preset takes effect on a cluster that sets `spec.backupStorageRef`. A cluster without a bucket takes no backups and ignores the policy. See the [backup guide](backup.md).
 
-The [CamundaClusterPreset](../crds/camundaclusterpreset.md) and [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md) pages list every field.
+A `DatabaseServerPreset` carries the shape of a PostgreSQL server under `spec.server`, and its instance-bound fields are `presetRef`, `databaseServerConfig`, and `suspend`. Its `archive` block is inheritable, because one bucket serves a fleet and every server writes under a prefix of its own.
+
+The [CamundaClusterPreset](../crds/camundaclusterpreset.md), [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md), and [DatabaseServerPreset](../crds/databaseserverpreset.md) pages list every field.
+
+Three ready-to-apply presets are in [`config/example/presets`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/presets). The [example inventories](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example) next to it name them.
 
 ## Override one field
 
@@ -182,3 +187,4 @@ A cluster that references a preset or a release that does not exist reports `Rea
 - [CamundaClusterPreset](../crds/camundaclusterpreset.md): every field and the merge rules.
 - [CamundaRelease](../crds/camundarelease.md): the versions, the pinned images, and the environment of a rollout.
 - [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md): every field and the merge rules.
+- [DatabaseServerPreset](../crds/databaseserverpreset.md): every field and the merge rules.

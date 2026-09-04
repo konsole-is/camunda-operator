@@ -1,0 +1,50 @@
+# The management plane. The operator runs Keycloak, creates the realm and the
+# clients, and publishes the cluster-scoped ManagementAuthConfig my-management
+# that CamundaOptimize reads.
+#
+# CamundaManagementCluster has no preset kind. Every value here is bound to
+# this one plane: its URLs, its databases, and its first administrator.
+#
+# clusterSelector matches the labels of a CamundaCluster. This one selects
+# my-cluster, which carries environment: production. An empty selector, {},
+# would select every cluster instead.
+#
+# The externalUrl of Keycloak must carry the path /auth, with no query and no
+# fragment. Route each externalUrl to the Service of its component.
+apiVersion: core.camunda.io/v1
+kind: CamundaManagementCluster
+metadata:
+  name: my-management
+  namespace: my-management-ns
+spec:
+  platformConfigRef: my-platform-config
+  clusterSelector:
+    matchLabels:
+      environment: production
+  identityProvider:
+    keycloak:
+      version: "26.6.4"
+      externalUrl: "https://camunda.example.com/auth"
+      databaseConfigRef: my-keycloak-db
+  identity:
+    version: "8.9.8"
+    externalUrl: "https://identity.camunda.example.com"
+    databaseConfigRef: my-identity-db
+    admin:
+      username: admin
+      email: admin@example.com
+  console:
+    version: "8.9.88"
+    externalUrl: "https://console.camunda.example.com"
+  webModeler:
+    version: "8.9.7"
+    externalUrl: "https://modeler.camunda.example.com"
+    websocketsExternalUrl: "https://modeler.camunda.example.com/ws"
+    databaseConfigRef: my-web-modeler-db
+    mail:
+      smtpHost: smtp.example.com
+      fromAddress: noreply@example.com
+      credentialsSecretRef:
+        name: my-smtp-credentials
+        usernameKey: username
+        passwordKey: password

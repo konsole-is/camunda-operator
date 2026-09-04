@@ -1,0 +1,14 @@
+# Optimize reads the secondary storage of the cluster it attaches to, and it
+# reads Elasticsearch only. A cluster on a relational database reports
+# StorageTypeMismatch on its CamundaOptimize.
+#
+# presetRef names the shared ElasticsearchClusterPreset standard.
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchCluster
+metadata:
+  name: my-cluster-es
+  namespace: my-cluster-ns
+spec:
+  presetRef: standard
+  version: "9.2.8"
+  secondaryStorageConfig: my-storage-config

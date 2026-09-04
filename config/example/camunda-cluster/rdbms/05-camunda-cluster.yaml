@@ -1,0 +1,16 @@
+# The orchestration cluster. storageRef names the SecondaryStorageConfig that
+# the Database publishes.
+#
+# presetRef names the shared CamundaClusterPreset small, which carries the
+# broker count, the partitions, the volumes, and the resources. What stays
+# here is what belongs to this one cluster: its references and its version.
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  presetRef: small
+  version: "8.9.17"
+  platformConfigRef: my-platform-config
+  storageRef: my-storage-config

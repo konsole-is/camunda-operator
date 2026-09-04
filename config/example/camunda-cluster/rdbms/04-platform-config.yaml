@@ -1,0 +1,10 @@
+# CamundaPlatformConfig is cluster scoped, so it carries no namespace.
+# Basic authentication needs no identity provider and no Secret. The operator
+# creates the first administrator and writes the Secret my-cluster-camunda-admin.
+apiVersion: core.camunda.io/v1
+kind: CamundaPlatformConfig
+metadata:
+  name: my-platform-config
+spec:
+  auth:
+    method: basic

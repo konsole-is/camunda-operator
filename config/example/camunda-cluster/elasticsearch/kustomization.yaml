@@ -1,0 +1,11 @@
+# The resources are listed in the order the README applies them. This
+# inventory references no preset, so it does not list config/example/presets.
+# Do not add a namespace transformer here: CamundaPlatformConfig is cluster
+# scoped.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- 01-namespace.yaml
+- 02-elasticsearch-cluster.yaml
+- 03-platform-config.yaml
+- 04-camunda-cluster.yaml
