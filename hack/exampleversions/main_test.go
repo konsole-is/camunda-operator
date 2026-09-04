@@ -119,6 +119,14 @@ func TestCheck(t *testing.T) {
 			},
 		},
 		{
+			name:     "a version inside a sequence",
+			manifest: releaseManifest + "  images:\n    - version: \"8.9.18\"\n",
+			problems: []string{
+				"camunda-release.yaml:14: spec.images.version is in no entry of hack/exampleversions. " +
+					"Add one that names the variable it follows",
+			},
+		},
+		{
 			name:     "a variable the matrix entry does not hold",
 			matrix:   "CAMUNDA_VERSION=8.9.18\nELASTICSEARCH_VERSION=9.2.8\n",
 			problems: []string{"camunda-release.yaml:12: the matrix entry holds no POSTGRES_VERSION"},
@@ -143,6 +151,48 @@ func TestCheck(t *testing.T) {
 			assert.Equal(t, test.problems, problems)
 		})
 	}
+}
+
+func TestCheckMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "README.md"), releasePage)
+
+	matrix := filepath.Join(dir, "8.9.env")
+	write(t, matrix, matrixEntry)
+
+	problems, err := check(dir, matrix, testPins)
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{
+		filepath.Join(dir, "camunda-release.yaml") + ": no such file. An entry expects spec.version in it",
+		filepath.Join(dir, "camunda-release.yaml") +
+			": no such file. An entry expects spec.elasticsearch.version in it",
+		filepath.Join(dir, "camunda-release.yaml") +
+			": no such file. An entry expects spec.databaseServer.version in it",
+	}, problems)
+}
+
+func TestCheckRepeatedPath(t *testing.T) {
+	dir := t.TempDir()
+	write(
+		t,
+		filepath.Join(dir, "camunda-release.yaml"),
+		releaseManifest+"---\napiVersion: core.camunda.io/v1\nkind: CamundaRelease\nspec:\n"+
+			"  # renovate: datasource=docker depName=camunda/camunda\n  version: \"8.9.18\"\n",
+	)
+	write(t, filepath.Join(dir, "README.md"), releasePage)
+
+	matrix := filepath.Join(dir, "8.9.env")
+	write(t, matrix, matrixEntry)
+
+	problems, err := check(dir, matrix, testPins)
+	require.NoError(t, err)
+
+	assert.Equal(
+		t,
+		[]string{filepath.Join(dir, "camunda-release.yaml") + ": spec.version stands 2 times. It has to stand once"},
+		problems,
+	)
 }
 
 // TestExampleInventories runs the check the lint gate runs, against the files

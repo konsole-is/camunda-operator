@@ -59,9 +59,11 @@
       // A version field of an example inventory: the marker, then
       // `version: "<version>"` on the next line. The inventories name a
       // version, not an image, because each kind of this operator builds the
-      // pull reference from it.
+      // pull reference from it. A README of an inventory repeats a manifest
+      // inside a fenced block, marker included, so the pages move with the
+      // manifests.
       customType: "regex",
-      managerFilePatterns: ["/^config/example/.*\\.yaml$/"],
+      managerFilePatterns: ["/^config/example/.*\\.yaml$/", "/^config/example/.*\\.md$/"],
       matchStrings: [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s*\\n\\s*version:\\s*\"(?<currentValue>[^\"]+)\"",
       ],

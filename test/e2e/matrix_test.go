@@ -42,7 +42,8 @@ const (
 )
 
 // versionEnv is every version variable of a matrix entry: the images of the
-// Camunda minor, and the third-party operator releases the suite installs.
+// Camunda minor, the PostgreSQL major of the DatabaseServer flow, and the
+// third-party operator releases the suite installs.
 var versionEnv = []string{
 	envCamundaVersion,
 	envConnectorsVersion,

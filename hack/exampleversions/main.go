@@ -25,12 +25,13 @@ limitations under the License.
 //   - a version whose entry names a marker does not carry it,
 //   - a version whose entry names none carries one.
 //
-// Usage: exampleversions [-matrix file] [dir]
+// Usage: exampleversions -matrix <file> [dir]
 //
 // It reads the block style of these files: one key per line, two-space
 // indentation, and no flow mapping. In a Markdown file it reads the fenced
-// yaml blocks. A version inside a sequence takes a path that no entry holds.
-// The check fails on it instead of passing it unseen.
+// yaml blocks. A version inside a sequence takes the path of the key that
+// holds the sequence, which no entry holds, so the check fails on it instead
+// of passing it unseen.
 package main
 
 import (
@@ -54,8 +55,7 @@ type pin struct {
 	// env is the variable of the matrix entry that holds the same version.
 	env string
 	// marker is the Renovate marker that stands above the field, without its
-	// leading "# renovate: ". It is empty for a version Renovate leaves
-	// alone, and for a version inside a Markdown file.
+	// leading "# renovate: ". It is empty for a version Renovate leaves alone.
 	marker string
 }
 
@@ -64,6 +64,21 @@ const (
 	keycloakMarker      = `datasource=docker depName=camunda/keycloak ` +
 		`extractVersion=^quay-optimized-(?<version>\d+\.\d+\.\d+)$`
 )
+
+// document is a parsed file: the version fields it holds, and its lines, which
+// the marker check reads.
+type document struct {
+	versions []version
+	lines    []string
+}
+
+// version is one version field: the dotted path of the field, the value it
+// holds, and the line it stands on, counted from one.
+type version struct {
+	path  string
+	value string
+	line  int
+}
 
 // pins is every version of the example inventories. A version that is not
 // here fails the check, so a new one has to name the variable it follows.
@@ -94,11 +109,26 @@ var pins = []pin{
 		path: "spec.databaseServer.version",
 		env:  "POSTGRES_VERSION",
 	},
-	// The README of the release repeats the manifest, so it drifts the same
-	// way the manifest does.
-	{file: "releases/README.md", path: "spec.version", env: "CAMUNDA_VERSION"},
-	{file: "releases/README.md", path: "spec.connectors.version", env: "CAMUNDA_CONNECTORS_VERSION"},
-	{file: "releases/README.md", path: "spec.elasticsearch.version", env: "ELASTICSEARCH_VERSION"},
+	// The README of the release repeats the manifest inside a fenced block,
+	// marker included, so Renovate raises the page with the manifest.
+	{
+		file:   "releases/README.md",
+		path:   "spec.version",
+		env:    "CAMUNDA_VERSION",
+		marker: "datasource=docker depName=camunda/camunda",
+	},
+	{
+		file:   "releases/README.md",
+		path:   "spec.connectors.version",
+		env:    "CAMUNDA_CONNECTORS_VERSION",
+		marker: "datasource=docker depName=camunda/connectors-bundle",
+	},
+	{
+		file:   "releases/README.md",
+		path:   "spec.elasticsearch.version",
+		env:    "ELASTICSEARCH_VERSION",
+		marker: elasticsearchMarker,
+	},
 	{file: "releases/README.md", path: "spec.databaseServer.version", env: "POSTGRES_VERSION"},
 	{
 		file:   "camunda-cluster/elasticsearch/02-elasticsearch-cluster.yaml",
@@ -163,12 +193,14 @@ var pins = []pin{
 }
 
 func main() {
-	matrix := flag.String(
-		"matrix",
-		filepath.Join("test", "e2e", "matrix", "8.9.env"),
-		"the matrix entry the example inventories mirror",
-	)
+	matrix := flag.String("matrix", "", "the matrix entry the example inventories mirror")
 	flag.Parse()
+
+	if *matrix == "" {
+		fmt.Fprintln(os.Stderr, "-matrix names the matrix entry to check against, for example test/e2e/matrix/8.9.env")
+		flag.Usage()
+		os.Exit(2)
+	}
 
 	examples := filepath.Join("config", "example")
 	if flag.NArg() > 0 {
@@ -295,23 +327,10 @@ func readExamples(dir string) (map[string]document, error) {
 	return docs, nil
 }
 
-// document is a parsed file: the version fields it holds, and its lines, which
-// the marker check reads.
-type document struct {
-	versions []version
-	lines    []string
-}
-
-// version is one version field: the dotted path of the field, the value it
-// holds, and the line it stands on, counted from one.
-type version struct {
-	path  string
-	value string
-	line  int
-}
-
-// keyLine matches a block mapping key with the value that follows it.
-var keyLine = regexp.MustCompile(`^(\s*)([A-Za-z][A-Za-z0-9_.-]*):(?:\s+(.*?))?\s*$`)
+// keyLine matches a block mapping key with the value that follows it. The
+// prefix takes the "- " of a sequence entry, so the first key of an entry
+// counts as a key and a version below it does not pass unseen.
+var keyLine = regexp.MustCompile(`^(\s*(?:-\s+)?)([A-Za-z][A-Za-z0-9_.-]*):(?:\s+(.*?))?\s*$`)
 
 // key is one mapping key of the path down to a line, with the indentation it
 // stands at.

@@ -37,14 +37,20 @@ kind: CamundaRelease
 metadata:
   name: camunda-8-9
 spec:
+  # renovate: datasource=docker depName=camunda/camunda
   version: "8.9.18"
   connectors:
+    # renovate: datasource=docker depName=camunda/connectors-bundle
     version: "8.9.9"
   elasticsearch:
+    # renovate: datasource=docker depName=docker.elastic.co/elasticsearch/elasticsearch
     version: "9.2.8"
   databaseServer:
     version: "17"
 ```
+
+The `# renovate` comments are in the file. Renovate reads them and raises the
+version below each one.
 
 - **`version`** is the Camunda version of the orchestration cluster processes.
   A cluster that names this release runs it and leaves `spec.version` unset.
