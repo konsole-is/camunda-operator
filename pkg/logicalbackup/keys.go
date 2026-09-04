@@ -64,6 +64,15 @@ const optimizeIndices = "optimize-*"
 // (Camunda 8.9 restore guide, "find available backup IDs").
 const optimizeSnapshotMarker = "_optimize_"
 
+// Finalizer guards the stored artifacts of a logical backup. While it is set,
+// deleting the custom resource first deletes the snapshots or the dump that
+// the backup produced.
+//
+// The label that names the BackupSchedule which created a backup is
+// labels.BackupScheduleKey: pkg/labels is the one place that owns the label
+// keys of this operator.
+const Finalizer = "core.camunda.io/backup-artifacts"
+
 // RecordsSnapshotName returns the name of the Elasticsearch snapshot that
 // holds the exported Zeebe record indices of a backup id. The backup writes
 // it, and a restore locates it by the same rule.
@@ -97,28 +106,16 @@ func HasOptimizeSnapshot(names []string) bool {
 	return false
 }
 
-// Finalizer guards the stored artifacts of a logical backup. While it is set,
-// deleting the custom resource first deletes the snapshots or the dump that
-// the backup produced.
-//
-// The label that names the BackupSchedule which created a backup is
-// labels.BackupScheduleKey: pkg/labels is the one place that owns the label
-// keys of this operator.
-const Finalizer = "core.camunda.io/backup-artifacts"
-
 // AllocateBackupID returns the identifier of a backup that starts at the
 // given time: the Unix timestamp in milliseconds, the resolution at which the
 // cluster generates ids of its own.
 //
 // Camunda requires the id to be greater than every id the cluster already
 // holds, and an id can never be reused, not even after its backup is deleted.
-// Neither this function nor the pre-checks guarantee that. The pre-checks only
-// stop a second backup while one is running, so two backups of one cluster
-// within the same tick still collide, and a clock that steps backwards
-// defeats any timestamp. Milliseconds make a collision unlikely, not
-// impossible. The cluster is the arbiter: it answers a repeated or lower id
-// with camundaadmin.ErrConflict, and a caller must never resolve that by
-// adopting the backup that already holds the id.
+// Neither this function nor the pre-checks guarantee that. The cluster is the
+// arbiter: it answers a repeated or lower id with camundaadmin.ErrConflict,
+// and a caller must never resolve that by adopting the backup that already
+// holds the id.
 func AllocateBackupID(at metav1.Time) int64 {
 	return at.UnixMilli()
 }

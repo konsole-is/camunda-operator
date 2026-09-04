@@ -107,6 +107,24 @@ type RepositoryConfig struct {
 	PathStyleAccess bool
 }
 
+// Snapshot is what SnapshotStatus reports about one snapshot: its state and
+// the user metadata that its creation carried. The metadata is how a caller
+// tells its own snapshot from one that another actor created under the same
+// name.
+type Snapshot struct {
+	// State of the snapshot. SnapshotMissing means that no snapshot with
+	// the name exists; every other field is empty then.
+	State SnapshotState
+	// Metadata is the user metadata of the snapshot, as the creation
+	// request carried it. Elasticsearch stores any JSON value verbatim and
+	// returns it with the snapshot info, so the values are decoded as
+	// encoding/json decodes into any: a string, a float64, a bool, nil, a
+	// []any, or a map[string]any. A snapshot that this client created
+	// carries strings only; one that another actor created can carry
+	// anything. MetadataString reads one entry as a string.
+	Metadata map[string]any
+}
+
 // Client administers one Elasticsearch cluster.
 type Client struct {
 	api *adminhttp.Client
@@ -194,48 +212,6 @@ func (c *Client) EnsureSnapshotRepository(ctx context.Context, name string, cfg 
 	return err
 }
 
-// Snapshot is what SnapshotStatus reports about one snapshot: its state and
-// the user metadata that its creation carried. The metadata is how a caller
-// tells its own snapshot from one that another actor created under the same
-// name.
-type Snapshot struct {
-	// State of the snapshot. SnapshotMissing means that no snapshot with
-	// the name exists; every other field is empty then.
-	State SnapshotState
-	// Metadata is the user metadata of the snapshot, as the creation
-	// request carried it. Elasticsearch stores any JSON value verbatim and
-	// returns it with the snapshot info, so the values are decoded as
-	// encoding/json decodes into any: a string, a float64, a bool, nil, a
-	// []any, or a map[string]any. A snapshot that this client created
-	// carries strings only; one that another actor created can carry
-	// anything. MetadataString reads one entry as a string.
-	Metadata map[string]any
-}
-
-// MetadataString returns the value under key in the metadata of the
-// snapshot when it is a string. It reports false for an absent key and for a
-// value of any other JSON type.
-func (s Snapshot) MetadataString(key string) (string, bool) {
-	value, ok := s.Metadata[key].(string)
-	return value, ok
-}
-
-// sameMetadata reports whether existing holds exactly the entries of want:
-// the same keys, each with the string value that want carries. Any entry
-// of another JSON type is a difference.
-func sameMetadata(existing map[string]any, want map[string]string) bool {
-	if len(existing) != len(want) {
-		return false
-	}
-	for key, value := range want {
-		if got, ok := existing[key].(string); !ok || got != value {
-			return false
-		}
-	}
-
-	return true
-}
-
 // CreateSnapshot starts the snapshot name of indices in repo, carrying
 // metadata as the user metadata of the snapshot. A snapshot that already
 // exists under the same name AND the same metadata is success, so a
@@ -295,6 +271,22 @@ func (c *Client) CreateSnapshot(
 	return nil
 }
 
+// sameMetadata reports whether existing holds exactly the entries of want:
+// the same keys, each with the string value that want carries. Any entry
+// of another JSON type is a difference.
+func sameMetadata(existing map[string]any, want map[string]string) bool {
+	if len(existing) != len(want) {
+		return false
+	}
+	for key, value := range want {
+		if got, ok := existing[key].(string); !ok || got != value {
+			return false
+		}
+	}
+
+	return true
+}
+
 // SnapshotStatus reports the snapshot name in repo: its state and its user
 // metadata. A snapshot that does not exist is SnapshotMissing, not an
 // error.
@@ -330,6 +322,14 @@ func (c *Client) SnapshotStatus(ctx context.Context, repo, name string) (Snapsho
 		State:    SnapshotState(response.Snapshots[0].State),
 		Metadata: response.Snapshots[0].Metadata,
 	}, nil
+}
+
+// MetadataString returns the value under key in the metadata of the
+// snapshot when it is a string. It reports false for an absent key and for a
+// value of any other JSON type.
+func (s Snapshot) MetadataString(key string) (string, bool) {
+	value, ok := s.Metadata[key].(string)
+	return value, ok
 }
 
 // DeleteSnapshot deletes the snapshot name from repo. A snapshot that does
