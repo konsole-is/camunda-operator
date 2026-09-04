@@ -19,9 +19,3 @@ rules:
   - elasticsearchclusterpresets
   verbs:
   - '*'
-- apiGroups:
-  - core.camunda.io
-  resources:
-  - elasticsearchclusterpresets/status
-  verbs:
-  - get
