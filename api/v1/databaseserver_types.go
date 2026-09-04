@@ -123,15 +123,21 @@ type DatabaseServerArchiveSpec struct {
 // DatabaseServerSpec defines the desired state of DatabaseServer.
 //
 // The type doubles as the configuration baseline of a DatabaseServerPreset,
-// so the field that is required on a DatabaseServer — databaseServerConfig —
-// is optional at the schema level here and enforced on the DatabaseServer
-// usage instead.
+// so the field that is required on a DatabaseServer, databaseServerConfig, is
+// optional at the schema level here and enforced on the DatabaseServer usage
+// instead. The instance-bound fields are server-only and rejected in a preset,
+// and so is the version, which belongs to a CamundaRelease.
 type DatabaseServerSpec struct {
 	// PresetRef names a cluster-scoped DatabaseServerPreset used as the
 	// configuration baseline; fields set inline override the preset's value
 	// for that field wholesale.
 	// +optional
 	PresetRef string `json:"presetRef,omitempty"`
+	// ReleaseRef names a cluster-scoped CamundaRelease that provides the
+	// PostgreSQL major version. It merges over the preset and under this spec.
+	// Forbidden in a preset.
+	// +optional
+	ReleaseRef string `json:"releaseRef,omitempty"`
 	// PlatformConfigRef names a cluster-scoped CamundaPlatformConfig. Only
 	// its image settings are read: spec.images.postgres decides where the
 	// PostgreSQL image is pulled from, which is what an air-gapped cluster
@@ -142,13 +148,14 @@ type DatabaseServerSpec struct {
 	PlatformConfigRef string `json:"platformConfigRef,omitempty"`
 	// Version is the PostgreSQL major version to run, as a bare number such
 	// as "17". It selects the image tag. Camunda 8.9 supports PostgreSQL 14
-	// and later; the floor is enforced by the controller on the
-	// preset-merged result. Required unless the resolved preset provides it.
+	// and later. The controller enforces that floor on the merged result.
+	// Required unless the resolved release provides it, and forbidden in a
+	// preset.
 	//
 	// The major of a running server cannot change. A value that names another
 	// major, higher or lower, is refused on the Ready condition with reason
 	// VersionChangeRefused, and the server keeps running the major it has. A
-	// preset can raise it the same way and is refused the same way. To run
+	// release can raise it the same way and is refused the same way. To run
 	// another major, create a server on it and move the data over.
 	// +kubebuilder:validation:Pattern=`^\d+$`
 	// +optional

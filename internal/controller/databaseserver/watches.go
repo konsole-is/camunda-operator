@@ -40,12 +40,28 @@ import (
 // preset edit enqueues every server that references it.
 const databaseServerPresetRefField = "databaseserver.spec.presetRef"
 
+// databaseServerReleaseRefField indexes DatabaseServers by spec.releaseRef, so
+// a release edit enqueues every server that references it.
+const databaseServerReleaseRefField = "databaseserver.spec.releaseRef"
+
 // watches registers the controller with every watch it needs.
 func (r *DatabaseServerReconciler) watches(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.DatabaseServer{},
 		databaseServerPresetRefField, func(o client.Object) []string {
 			if ref := o.(*v1.DatabaseServer).Spec.PresetRef; ref != "" {
+				return []string{ref}
+			}
+			return nil
+		},
+	); err != nil {
+		return err
+	}
+
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &v1.DatabaseServer{},
+		databaseServerReleaseRefField, func(o client.Object) []string {
+			if ref := o.(*v1.DatabaseServer).Spec.ReleaseRef; ref != "" {
 				return []string{ref}
 			}
 			return nil
@@ -97,6 +113,13 @@ func (r *DatabaseServerReconciler) watches(mgr ctrl.Manager) error {
 			refindex.Enqueue(
 				mgr.GetClient(), &v1.DatabaseServerList{},
 				databaseServerPresetRefField, refindex.ObjectName,
+			),
+		).
+		Watches(
+			&v1.CamundaRelease{},
+			refindex.Enqueue(
+				mgr.GetClient(), &v1.DatabaseServerList{},
+				databaseServerReleaseRefField, refindex.ObjectName,
 			),
 		).
 		Watches(&v1.CamundaPlatformConfig{}, r.enqueueForPlatformConfig()).
@@ -223,7 +246,8 @@ func (r *DatabaseServerReconciler) serversMatching(
 // effectiveSpec returns the preset-merged spec of server, for the enqueue
 // mappings that must see a reference a preset provides. A preset that does not
 // resolve yields the inline spec: the reconcile reports the dangling reference,
-// and an enqueue is not the place to.
+// and an enqueue is not the place to. The release layer is left out, because a
+// release carries the version alone and no mapping reads it.
 func (r *DatabaseServerReconciler) effectiveSpec(
 	ctx context.Context,
 	server *v1.DatabaseServer,
@@ -237,7 +261,7 @@ func (r *DatabaseServerReconciler) effectiveSpec(
 		return server.Spec
 	}
 
-	return components.MergePreset(server.Spec, &preset.Spec)
+	return components.MergeSpec(server.Spec, &preset.Spec, nil)
 }
 
 // archiveRef returns the bucket the merged spec archives to, or the empty

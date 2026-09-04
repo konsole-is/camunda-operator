@@ -66,7 +66,11 @@ const goldenServerUID = "b7e4d2a1-3c58-4f60-9a1d-2e5f8c0b4d71"
 
 // goldenMinimalDatabaseServer is the minimal example of the CRD doc with a
 // deterministic name, resolved against the "standard" preset of the doc.
-func goldenMinimalDatabaseServer() (*v1.DatabaseServer, *v1.DatabaseServerPresetSpec) {
+func goldenMinimalDatabaseServer() (
+	*v1.DatabaseServer,
+	*v1.DatabaseServerPresetSpec,
+	*v1.CamundaReleaseSpec,
+) {
 	server := &v1.DatabaseServer{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-cluster-db",
@@ -75,18 +79,22 @@ func goldenMinimalDatabaseServer() (*v1.DatabaseServer, *v1.DatabaseServerPreset
 		},
 		Spec: v1.DatabaseServerSpec{
 			PresetRef:            "standard",
+			ReleaseRef:           "camunda-8-9",
 			DatabaseServerConfig: "my-database-server",
 		},
 	}
 	preset := &v1.DatabaseServerPresetSpec{
 		Server: v1.DatabaseServerSpec{
-			Version:     "17",
 			Instances:   new(int32(2)),
 			StorageSize: new(resource.MustParse("64Gi")),
 		},
 	}
+	release := &v1.CamundaReleaseSpec{
+		Version:        "8.9.18",
+		DatabaseServer: &v1.ReleaseDatabaseServerSpec{Version: "17"},
+	}
 
-	return server, preset
+	return server, preset, release
 }
 
 // goldenRealisticDatabaseServer is the realistic example of the CRD doc with a
@@ -195,9 +203,9 @@ func assertDatabaseServerGoldens(
 func TestDatabaseServerGoldenMinimal(t *testing.T) {
 	t.Parallel()
 
-	server, preset := goldenMinimalDatabaseServer()
+	server, preset, release := goldenMinimalDatabaseServer()
 
-	assertDatabaseServerGoldens(t, "minimal", server, MergePreset(server.Spec, preset), nil)
+	assertDatabaseServerGoldens(t, "minimal", server, MergeSpec(server.Spec, preset, release), nil)
 }
 
 func TestDatabaseServerGoldenRealistic(t *testing.T) {
@@ -205,7 +213,7 @@ func TestDatabaseServerGoldenRealistic(t *testing.T) {
 
 	server := goldenRealisticDatabaseServer()
 
-	assertDatabaseServerGoldens(t, "realistic", server, MergePreset(server.Spec, nil), nil)
+	assertDatabaseServerGoldens(t, "realistic", server, MergeSpec(server.Spec, nil, nil), nil)
 }
 
 // goldenBucketName is the bucket contract that the archive cases reference.
@@ -244,7 +252,7 @@ func archiveSpec() *v1.DatabaseServerArchiveSpec {
 func TestDatabaseServerGoldenArchiveWorkloadIdentity(t *testing.T) {
 	t.Parallel()
 
-	server, preset := goldenMinimalDatabaseServer()
+	server, preset, release := goldenMinimalDatabaseServer()
 	server.Spec.Archive = archiveSpec()
 	archive := &ArchiveStorage{
 		Config: archiveBucket(v1.S3StorageAuth{
@@ -254,7 +262,7 @@ func TestDatabaseServerGoldenArchiveWorkloadIdentity(t *testing.T) {
 	}
 
 	assertDatabaseServerGoldens(
-		t, "archive-workload-identity", server, MergePreset(server.Spec, preset), archive,
+		t, "archive-workload-identity", server, MergeSpec(server.Spec, preset, release), archive,
 	)
 }
 
@@ -263,7 +271,7 @@ func TestDatabaseServerGoldenArchiveWorkloadIdentity(t *testing.T) {
 func TestDatabaseServerGoldenArchiveCredentials(t *testing.T) {
 	t.Parallel()
 
-	server, preset := goldenMinimalDatabaseServer()
+	server, preset, release := goldenMinimalDatabaseServer()
 	server.Spec.Archive = archiveSpec()
 	archive := &ArchiveStorage{
 		Config: archiveBucket(v1.S3StorageAuth{
@@ -280,7 +288,7 @@ func TestDatabaseServerGoldenArchiveCredentials(t *testing.T) {
 	}
 
 	assertDatabaseServerGoldens(
-		t, "archive-credentials", server, MergePreset(server.Spec, preset), archive,
+		t, "archive-credentials", server, MergeSpec(server.Spec, preset, release), archive,
 	)
 }
 
@@ -289,7 +297,7 @@ func TestDatabaseServerGoldenArchiveCredentials(t *testing.T) {
 func TestDatabaseServerGoldenArchiveGCSCredentials(t *testing.T) {
 	t.Parallel()
 
-	server, preset := goldenMinimalDatabaseServer()
+	server, preset, release := goldenMinimalDatabaseServer()
 	server.Spec.Archive = archiveSpec()
 	archive := &ArchiveStorage{
 		Config: &v1.ObjectStorageConfig{
@@ -314,7 +322,7 @@ func TestDatabaseServerGoldenArchiveGCSCredentials(t *testing.T) {
 	}
 
 	assertDatabaseServerGoldens(
-		t, "archive-gcs-credentials", server, MergePreset(server.Spec, preset), archive,
+		t, "archive-gcs-credentials", server, MergeSpec(server.Spec, preset, release), archive,
 	)
 }
 
@@ -324,7 +332,7 @@ func TestDatabaseServerGoldenArchiveGCSCredentials(t *testing.T) {
 func TestDatabaseServerGoldenArchiveAzureWorkloadIdentity(t *testing.T) {
 	t.Parallel()
 
-	server, preset := goldenMinimalDatabaseServer()
+	server, preset, release := goldenMinimalDatabaseServer()
 	server.Spec.Archive = archiveSpec()
 	archive := &ArchiveStorage{
 		Config: &v1.ObjectStorageConfig{
@@ -347,7 +355,7 @@ func TestDatabaseServerGoldenArchiveAzureWorkloadIdentity(t *testing.T) {
 	}
 
 	assertDatabaseServerGoldens(
-		t, "archive-azure-workload-identity", server, MergePreset(server.Spec, preset), archive,
+		t, "archive-azure-workload-identity", server, MergeSpec(server.Spec, preset, release), archive,
 	)
 }
 
@@ -372,7 +380,7 @@ func TestDatabaseServerGoldenSuspended(t *testing.T) {
 		}),
 	}
 
-	assertDatabaseServerGoldens(t, "suspended", server, MergePreset(server.Spec, nil), archive)
+	assertDatabaseServerGoldens(t, "suspended", server, MergeSpec(server.Spec, nil, nil), archive)
 }
 
 // renderComponent returns the YAML of comp, the same bytes a golden holds.
@@ -404,10 +412,10 @@ func TestSuspensionKeepsTheDeclaredState(t *testing.T) {
 	}
 
 	render := func(suspend bool) (cluster, contract, archived string) {
-		server, preset := goldenMinimalDatabaseServer()
+		server, preset, release := goldenMinimalDatabaseServer()
 		server.Spec.Archive = archiveSpec()
 		server.Spec.Suspend = suspend
-		merged := MergePreset(server.Spec, preset)
+		merged := MergeSpec(server.Spec, preset, release)
 
 		clusterComp, _, err := ClusterComponent(server, merged, archive, "", nil, "")
 		require.NoError(t, err)
@@ -481,8 +489,8 @@ func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
 func TestClusterImageComesFromThePlatformConfig(t *testing.T) {
 	t.Parallel()
 
-	server, preset := goldenMinimalDatabaseServer()
-	merged := MergePreset(server.Spec, preset)
+	server, preset, release := goldenMinimalDatabaseServer()
+	merged := MergeSpec(server.Spec, preset, release)
 
 	comp, _, err := ClusterComponent(server, merged, nil, "", nil, "")
 	require.NoError(t, err)

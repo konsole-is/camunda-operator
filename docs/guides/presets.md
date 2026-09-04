@@ -1,16 +1,19 @@
 # Presets
 
-A preset is a baseline that many clusters inherit. You write the sizing, the topology, the backup policy, and the authentication defaults once. Each cluster then names the preset and sets only what is its own. What runs on that shape, the versions and the pinned images, lives in a `CamundaRelease`. The result is a small manifest per cluster, one place to change the shape of a fleet, and one place to roll its version.
+A preset is a baseline that many resources inherit. You write the sizing, the topology, the backup policy, and the authentication defaults once. Each resource then names the preset and sets only what is its own. What runs on that shape, the versions and the pinned images, lives in a `CamundaRelease`. The result is a small manifest per resource, one place to change the shape of a fleet, and one place to roll its versions.
 
-The operator has three preset kinds:
+The operator has three preset kinds and one release kind:
 
-| Preset | Inherited by | Reference field |
-| --- | --- | --- |
-| `CamundaClusterPreset` | `CamundaCluster` | `spec.presetRef` |
-| `ElasticsearchClusterPreset` | `ElasticsearchCluster` | `spec.presetRef` |
-| `DatabaseServerPreset` | `DatabaseServer` | `spec.presetRef` |
+| Kind | Holds | Inherited by | Reference field |
+| --- | --- | --- | --- |
+| `CamundaClusterPreset` | The shape of a cluster | `CamundaCluster` | `spec.presetRef` |
+| `ElasticsearchClusterPreset` | The shape of an Elasticsearch cluster | `ElasticsearchCluster` | `spec.presetRef` |
+| `DatabaseServerPreset` | The shape of a PostgreSQL server | `DatabaseServer` | `spec.presetRef` |
+| `CamundaRelease` | Every version and the pinned images | `CamundaCluster`, `ElasticsearchCluster`, `DatabaseServer` | `spec.releaseRef` |
 
-All three are cluster-scoped. They are passive data, and they create nothing. The resource that references a preset merges its own spec over the baseline the preset holds. That baseline is `spec.cluster` on the two cluster presets, and `spec.server` on `DatabaseServerPreset`.
+All four are cluster-scoped. They are passive data, and they create nothing. The resource that references them merges the preset first, then the release, then its own spec. The preset baseline is `spec.cluster` on the two cluster presets, and `spec.server` on `DatabaseServerPreset`.
+
+No preset holds a version. All three reject one, so a version roll never edits a preset.
 
 ## The four layers of a Camunda cluster
 
@@ -28,7 +31,7 @@ graph LR
 | --- | --- | --- | --- |
 | `CamundaPlatformConfig` | The authentication method, the identity provider, the license, the image repositories | The platform team | Once per environment |
 | `CamundaClusterPreset` | Sizing, topology, connectors, backup policy, auth defaults, administrators | The platform team | Once per cluster shape, for example `small`, `medium`, `large` |
-| `CamundaRelease` | The Camunda and connectors versions, pinned images, the environment a version needs | The platform team | Once per rollout, for example `camunda-8-9-4` |
+| `CamundaRelease` | Every version of the platform, pinned images, the environment a version needs | The platform team | Once per rollout, for example `camunda-8-9-4` |
 | `CamundaCluster` | The references, the URL, the storage, and any override | The team that owns the cluster | Once per cluster |
 
 The platform config does not merge. Every cluster that references it gets the same values. The preset merges under the release, and both merge under the cluster, field by field, as the [merge rules](../crds/camundaclusterpreset.md#merge-rules) describe.
@@ -55,7 +58,7 @@ The broker count, the partitions, the volumes, the connectors, the backup policy
 
 The fields that a cluster must set itself are the ones that belong to one cluster: `platformConfigRef`, `presetRef`, `releaseRef`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `externalUrl`, `serviceAccount`, `monitoring`, `suspend`, and `pause`. A preset that sets one of them is rejected, and so is a preset that sets `version` or `connectors.version`.
 
-An `ElasticsearchCluster` works the same way. The instance-bound fields are `presetRef`, `secondaryStorageConfig`, and `suspend`:
+An `ElasticsearchCluster` works the same way. The instance-bound fields are `presetRef`, `releaseRef`, `secondaryStorageConfig`, and `suspend`:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -65,8 +68,11 @@ metadata:
   namespace: orders
 spec:
   presetRef: standard
+  releaseRef: camunda-8-9-4
   secondaryStorageConfig: orders-storage
 ```
+
+A `DatabaseServer` reads the same release through `spec.releaseRef`, and takes `spec.databaseServer.version` from it.
 
 ## Write a preset
 
@@ -120,7 +126,13 @@ spec:
   version: "8.9.4"
   connectors:
     version: "8.9.7"
+  elasticsearch:
+    version: "9.2.8"
+  databaseServer:
+    version: "17"
 ```
+
+One release names every version of the platform. The `ElasticsearchCluster` and the `DatabaseServer` that reference it take theirs from it.
 
 An `ElasticsearchClusterPreset` for the storage that goes with it:
 
@@ -131,7 +143,6 @@ metadata:
   name: standard
 spec:
   cluster:
-    version: "9.2.4"
     replicas: 3
     storageSize: "64Gi"
     storageClassName: "ssd"
@@ -142,7 +153,7 @@ spec:
 
 The backup policy of the preset takes effect on a cluster that sets `spec.backupStorageRef`. A cluster without a bucket takes no backups and ignores the policy. See the [backup guide](backup.md).
 
-A `DatabaseServerPreset` carries the shape of a PostgreSQL server under `spec.server`, and its instance-bound fields are `presetRef`, `databaseServerConfig`, and `suspend`. Its `archive` block is inheritable, because one bucket serves a fleet and every server writes under a prefix of its own.
+A `DatabaseServerPreset` carries the shape of a PostgreSQL server under `spec.server`, and its instance-bound fields are `presetRef`, `releaseRef`, `databaseServerConfig`, and `suspend`. Its `archive` block is inheritable, because one bucket serves a fleet and every server writes under a prefix of its own.
 
 The [CamundaClusterPreset](../crds/camundaclusterpreset.md), [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md), and [DatabaseServerPreset](../crds/databaseserverpreset.md) pages list every field.
 
@@ -176,11 +187,13 @@ Most fields merge like this, value by value. A few blocks replace as a whole, be
 
 When you edit a preset, every cluster that references it takes the new baseline. A larger `storageSize` grows the volumes of every cluster in place. A lower `storageSize` is ignored for a running cluster, which keeps its volumes and records the event `StorageShrinkIgnored`.
 
-To roll a fleet to a new version, edit the release. Every cluster that references it rolls its pods, whatever preset sizes it. To roll in steps, create a second release, for example `camunda-8-9-5`, and move clusters to it one at a time by changing `releaseRef`. When every cluster is on the new release, delete the old one.
+To roll a fleet to a new version, edit the release. Every resource that references it rolls its pods, whatever preset sizes it. To roll in steps, create a second release, for example `camunda-8-9-5`, and move resources to it one at a time by changing `releaseRef`. When every resource is on the new release, delete the old one.
 
 Every cluster whose brokers run a higher version refuses a lower one. Each one reports `Ready: False` with reason `VersionDowngradeRefused` and keeps the version its brokers run. To lower a fleet on purpose, lower the release first and let every cluster refuse. Then set the annotation `camunda.io/allow-version-downgrade` to the version of the release, on each cluster you want to move. The [CamundaCluster page](../crds/camundacluster.md#version) states the rule.
 
-A cluster that references a preset or a release that does not exist reports `Ready: False` with reason `InvalidReference` and keeps running as it is.
+A `DatabaseServer` refuses a PostgreSQL major other than the one its data directory runs, higher or lower. It reports `Ready: False` with reason `VersionChangeRefused` and keeps the major it has. No annotation lets that change through. To run a later major, create a server on it and move the data over. The [DatabaseServer page](../crds/databaseserver.md#the-postgresql-version) states the rule.
+
+A resource that references a preset or a release that does not exist reports `Ready: False` with reason `InvalidReference` and keeps running as it is.
 
 ## Related
 

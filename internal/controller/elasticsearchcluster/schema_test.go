@@ -36,6 +36,7 @@ func validElasticsearchCluster() *v1.ElasticsearchCluster {
 		ObjectMeta: metav1.ObjectMeta{Name: "esc-" + utilrand.String(8)},
 		Spec: v1.ElasticsearchClusterSpec{
 			PresetRef:              "standard",
+			Version:                "9.2.4",
 			SecondaryStorageConfig: "my-storage-config",
 		},
 	}
@@ -109,6 +110,13 @@ var _ = Describe("ElasticsearchCluster schema", func() {
 		Entry(
 			"accepts the realistic doc example",
 			realisticElasticsearchCluster, func(*v1.ElasticsearchCluster) {}, "",
+		),
+		Entry(
+			"accepts a releaseRef beside a presetRef",
+			validElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
+				o.Spec.ReleaseRef = "camunda-8-9-4"
+				o.Spec.Version = ""
+			}, "",
 		),
 		Entry(
 			"rejects a missing secondaryStorageConfig",

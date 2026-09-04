@@ -10,7 +10,7 @@ From an `ElasticsearchCluster` named `<name>`, the operator creates an ECK `Elas
 
 The Elasticsearch pods and their data volumes carry the labels `camunda.io/elasticsearch-cluster: <name>` and `camunda.io/component: elasticsearch`.
 
-The smallest cluster names a preset and the storage contract to create:
+The smallest cluster names a preset, a release, and the storage contract to create:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -20,12 +20,14 @@ metadata:
   namespace: my-cluster-ns
 spec:
   presetRef: "standard"
+  releaseRef: "camunda-8-9-4"
   secondaryStorageConfig: "my-storage-config"
 ```
 
 ```mermaid
 graph LR
     ESC[ElasticsearchCluster] -.->|presetRef| ESCP[ElasticsearchClusterPreset]
+    ESC -.->|releaseRef| CR[CamundaRelease]
     ESC -.->|snapshotStorageRef| OSC[ObjectStorageConfig]
     ESC -->|creates| ECK["Elasticsearch (ECK operator, external)"]
     ESC -->|creates| SEC["Secret <name>-es-user"]
@@ -33,9 +35,32 @@ graph LR
     CC[CamundaCluster] -.->|storageRef| SSC
 ```
 
-## Preset
+## Preset and release
 
-If `spec.presetRef` names an `ElasticsearchClusterPreset`, the preset is the baseline. A field set on the `ElasticsearchCluster` replaces the value of the preset for that field. The `scheduling` and `monitoring` blocks are replaced as a whole, never merged field by field. An edit of the preset reaches every cluster that references it.
+Three layers make the configuration of a cluster. Each later layer wins over the one before it:
+
+1. The [ElasticsearchClusterPreset](elasticsearchclusterpreset.md) that `spec.presetRef` names holds the shape: the node count, the volume size, the resources.
+2. The [CamundaRelease](camundarelease.md) that `spec.releaseRef` names holds the version, in `spec.elasticsearch.version`.
+3. The `ElasticsearchCluster` itself holds what belongs to this one cluster, and it overrides both.
+
+A field set on the `ElasticsearchCluster` replaces the value of the layer below for that field. The `scheduling` and `monitoring` blocks are replaced as a whole, never merged field by field. An edit of the preset or the release reaches every cluster that references it.
+
+A preset rejects `version`. A cluster that follows a fleet version leaves `spec.version` unset and names a release. A cluster that must move before the fleet does sets `spec.version`, which wins over the release.
+
+## Version
+
+`spec.version` is the Elasticsearch version, as three segments. Camunda 8.9 supports Elasticsearch 8.19 and later, or 9.2 and later. A merged version below that floor gives `Ready: False` with reason `InvalidReference`.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchCluster
+metadata:
+  name: my-cluster-es
+  namespace: my-cluster-ns
+spec:
+  version: "9.2.8"
+  # ... the rest of your cluster
+```
 
 ## Storage
 
@@ -59,7 +84,7 @@ When `spec.monitoring.serviceMonitor.enabled` is `true`, the operator also runs 
 
 ## Missing references
 
-If `spec.presetRef` or `spec.snapshotStorageRef` names a resource that does not exist, `Ready` is `False` with reason `InvalidReference`. If the bucket names a Secret or a key that does not exist, the reason is `MissingSecret`. If `spec.serviceAccount.create` is `false` and the ServiceAccount does not exist, the reason is `InvalidReference`.
+If `spec.presetRef`, `spec.releaseRef`, or `spec.snapshotStorageRef` names a resource that does not exist, `Ready` is `False` with reason `InvalidReference`. If the bucket names a Secret or a key that does not exist, the reason is `MissingSecret`. If `spec.serviceAccount.create` is `false` and the ServiceAccount does not exist, the reason is `InvalidReference`.
 
 ## Suspend
 
@@ -76,7 +101,7 @@ Deletion removes everything the operator created: the ECK resource, the Secrets,
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `ECKNotInstalled` | The ECK CRDs were not installed when the operator started. The operator does not create the ECK resource, the Secrets, or the `SecondaryStorageConfig`. | Install ECK, then restart the operator. |
-| `Ready` | `InvalidReference` | `spec.presetRef` or `spec.snapshotStorageRef` names a resource that does not exist, the merged spec lacks `version`, `replicas`, or `storageSize`, the version is below the floor, the bucket has settings that Elasticsearch cannot use, or a ServiceAccount with `create: false` does not exist. | Read the message. Create the missing resource, or fix the field it names. |
+| `Ready` | `InvalidReference` | `spec.presetRef`, `spec.releaseRef`, or `spec.snapshotStorageRef` names a resource that does not exist, the merged spec lacks `version`, `replicas`, or `storageSize`, the version is below the floor, the bucket has settings that Elasticsearch cannot use, or a ServiceAccount with `create: false` does not exist. | Read the message. Create the missing resource, or fix the field it names. |
 | `Ready` | `MissingSecret` | The bucket of `spec.snapshotStorageRef` names a Secret or a key that does not exist. Or the components are healthy and the ECK Secrets that the repository registration needs do not exist yet. | Create the Secret with the keys that the `ObjectStorageConfig` names. If `SnapshotRepositoryReady` reports `MissingSecret`, wait for ECK. |
 | `Ready` | `Suspended` | `Ready` is `True`. The cluster is suspended by `spec.suspend: true`. The data volumes stay. | Nothing. To serve again, set `spec.suspend: false`. To wait for a serving cluster, require `Ready=True` and a reason other than `Suspended`. |
 | `Ready` | `ConnectionFailed` | The components are healthy, but the snapshot repository is not registered. See `SnapshotRepositoryReady`. | Read the message of `SnapshotRepositoryReady`. Make sure that the bucket and its credentials are correct. The operator retries on its own. |
@@ -104,7 +129,9 @@ metadata:
 spec:
   # string. Optional. Name of a cluster-scoped ElasticsearchClusterPreset that is the baseline. A field set here replaces the value of the preset.
   presetRef: "standard"
-  # string. Required unless the preset provides it. Elasticsearch version as three segments. Camunda 8.9 supports 8.19+ and 9.2+.
+  # string. Optional. Name of a cluster-scoped CamundaRelease that supplies the version. It wins over the preset and loses to this spec.
+  releaseRef: "camunda-8-9-4"
+  # string. Required unless the release provides it. Elasticsearch version as three segments. Camunda 8.9 supports 8.19+ and 9.2+. Rejected in a preset.
   version: "9.2.4"
   # integer. Required unless the preset provides it. Number of Elasticsearch nodes, at least 1.
   replicas: 3
@@ -183,7 +210,7 @@ spec:
 - `spec.storageSize` cannot shrink. The API server rejects a value that is lower than the previous inline value.
 - `spec.version` must have three segments (`9.2.4`, not `9.2`). The operator then requires Elasticsearch 8.19+ or 9.2+ on the merged spec.
 - `spec.replicas` must be at least 1.
-- When `spec.presetRef` is unset, `version`, `replicas`, and `storageSize` must be set inline. With a preset, the merged result must contain them. The operator enforces this rule, not the API server.
+- `version`, `replicas`, and `storageSize` must be present after the merge. Set them inline, or take `replicas` and `storageSize` from a preset and `version` from a release. The operator enforces this rule, not the API server.
 - `spec.secondaryStorageConfig`, `spec.snapshotStorageRef`, and `spec.serviceAccount.name` must be valid resource names.
 - `spec.persistentVolumeClaimRetentionPolicy.whenDeleted` must be `Retain` or `Delete`.
 
@@ -225,6 +252,7 @@ spec:
 ## Related
 
 - [ElasticsearchClusterPreset](elasticsearchclusterpreset.md): the baseline that `spec.presetRef` names.
+- [CamundaRelease](camundarelease.md): the version that `spec.releaseRef` names.
 - [ObjectStorageConfig](objectstorageconfig.md): the snapshot bucket that `spec.snapshotStorageRef` names.
 - [SecondaryStorageConfig](secondarystorageconfig.md): the contract that this kind creates under `spec.secondaryStorageConfig`.
 - [CamundaCluster](camundacluster.md): references the `SecondaryStorageConfig` through `storageRef`. It must reference the same `ObjectStorageConfig` through `backupStorageRef`.

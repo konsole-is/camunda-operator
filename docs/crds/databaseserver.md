@@ -33,6 +33,7 @@ A rollback builds its cluster under the name of the server plus that suffix. The
 ```mermaid
 graph LR
     DBS[DatabaseServer] -.->|presetRef| DBSP[DatabaseServerPreset]
+    DBS -.->|releaseRef| CR[CamundaRelease]
     DBS -.->|archive.objectStorageRef| OSC[ObjectStorageConfig]
     DBS -->|creates| PG["PostgreSQL instances"]
     DBS -->|creates| ARC["Archive in the bucket"]
@@ -240,9 +241,15 @@ The published contract stays. A consumer that reads it reaches a server that doe
 
 Set the field back to `false` and the instances come back on the same volumes.
 
-## Presets
+## Presets and releases
 
-`spec.presetRef` names a cluster-scoped [DatabaseServerPreset](databaseserverpreset.md). A field you set on the server replaces the value of the preset for that field. A field you leave unset comes from the preset.
+Three layers make the configuration of a server. Each later layer wins over the one before it:
+
+1. The [DatabaseServerPreset](databaseserverpreset.md) that `spec.presetRef` names holds the shape: the instance count, the volume sizes, the resources.
+2. The [CamundaRelease](camundarelease.md) that `spec.releaseRef` names holds the version, in `spec.databaseServer.version`.
+3. The `DatabaseServer` itself holds what belongs to this one server, and it overrides both.
+
+A field you set on the server replaces the value of the layer below for that field. A field you leave unset comes from the layer below.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -252,8 +259,11 @@ metadata:
   namespace: my-cluster-ns
 spec:
   presetRef: standard
+  releaseRef: camunda-8-9-4
   databaseServerConfig: my-db-server
 ```
+
+A preset rejects `version`. A server that follows a fleet version leaves `spec.version` unset and names a release.
 
 ## The PostgreSQL version
 
@@ -273,7 +283,7 @@ spec:
   # ... the rest of your server
 ```
 
-A preset carries the version too, so a new `spec.server.version` on a [DatabaseServerPreset](databaseserverpreset.md) reaches every server that reads it. Set the version back, on the server or on the preset, and the refusal clears. No annotation lets the change through.
+A release carries the version too, so a new `spec.databaseServer.version` on a [CamundaRelease](camundarelease.md) reaches every server that reads it, and it is refused the same way. Set the version back, on the server or on the release, and the refusal clears. No annotation lets the change through.
 
 To run a later major, create a `DatabaseServer` on that version and move the data to it. A point-in-time restore is no help here: only the major that wrote an archive can read it back.
 
@@ -395,9 +405,11 @@ metadata:
 spec:
   # string. Optional. Name of a cluster-scoped DatabaseServerPreset used as the baseline.
   presetRef: "standard"
+  # string. Optional. Name of a cluster-scoped CamundaRelease that supplies the version. It wins over the preset and loses to this spec.
+  releaseRef: "camunda-8-9-4"
   # string. Optional. Name of a cluster-scoped CamundaPlatformConfig. Only its image settings are read.
   platformConfigRef: "my-platform-config"
-  # string. Required, unless the preset provides it. PostgreSQL major version, 14 or later.
+  # string. Required, unless the release provides it. PostgreSQL major version, 14 or later. Rejected in a preset.
   # It cannot move to another major once the server runs.
   version: "17"
   # integer. Optional, default: 1. Number of PostgreSQL instances, at least 1.
@@ -464,7 +476,7 @@ spec:
 - `version` cannot move to another major once the server runs. See [The PostgreSQL version](#the-postgresql-version).
 - `archive.retentionPeriodDays` must be from 1 to 36500. The upper bound is a hundred years. It keeps the reachable window that the operator computes from the retention inside the range its clock arithmetic can hold.
 - `archive.baseBackupSchedule` must be a six-field cron or a descriptor, and every range in it must read upward. See [The archive](#the-archive).
-- `version` and `storageSize` must be present after the preset merge. A missing field is reported on `Ready` with reason `InvalidReference`.
+- `version` and `storageSize` must be present after the merge. Set them inline, or take `storageSize` from a preset and `version` from a release. A missing field is reported on `Ready` with reason `InvalidReference`.
 
 ### A production-shaped example
 
@@ -476,6 +488,7 @@ metadata:
   namespace: my-cluster-ns
 spec:
   presetRef: standard
+  releaseRef: camunda-8-9-4
   platformConfigRef: my-platform-config
   databaseServerConfig: my-db-server
   archive:
@@ -486,6 +499,7 @@ spec:
 ## Related
 
 - [DatabaseServerPreset](databaseserverpreset.md): the cluster-scoped baseline that `spec.presetRef` names.
+- [CamundaRelease](camundarelease.md): the version that `spec.releaseRef` names.
 - [DatabaseServerConfig](databaseserverconfig.md): the contract this kind publishes.
 - [Database](database.md): creates the logical database and its users on the published contract.
 - [ObjectStorageConfig](objectstorageconfig.md): the bucket that `spec.archive.objectStorageRef` names.

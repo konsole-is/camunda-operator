@@ -10,7 +10,7 @@ Each page opens with what the kind is and a minimal manifest, then covers one to
 | [CamundaCluster](camundacluster.md) | Namespaced | One orchestration cluster: Zeebe, gateway, web applications, connectors. |
 | [CamundaPlatformConfig](camundaplatformconfig.md) | Cluster | Settings shared by all clusters: authentication, license, image repositories. |
 | [CamundaClusterPreset](camundaclusterpreset.md) | Cluster | A baseline spec that clusters inherit. Passive data. |
-| [CamundaRelease](camundarelease.md) | Cluster | The versions, pinned images, and environment that clusters run. Passive data. |
+| [CamundaRelease](camundarelease.md) | Cluster | Every version of the platform, the pinned images, and the environment they run. Passive data. |
 
 ## Storage backends
 
@@ -93,9 +93,11 @@ graph LR
     MC[CamundaManagementCluster]
 
     ESC -.->|presetRef| ESCP
+    ESC -.->|releaseRef| CR
     ESC -->|creates| SSC
     ESC -.->|snapshotStorageRef| OSC
     DBS -.->|presetRef| DBSP
+    DBS -.->|releaseRef| CR
     DBS -.->|archive.objectStorageRef| OSC
     DBS -->|creates| DBSC
     DB -->|creates| DBC

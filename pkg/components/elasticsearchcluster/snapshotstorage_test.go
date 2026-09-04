@@ -368,10 +368,10 @@ func TestValidateSnapshotStorageAcceptsEveryStorageType(t *testing.T) {
 func elasticsearchOf(t *testing.T, storage *SnapshotStorage) *esv1.Elasticsearch {
 	t.Helper()
 
-	cluster, preset := goldenMinimalElasticsearchCluster()
+	cluster, preset, release := goldenMinimalElasticsearchCluster()
 	cluster.Spec.SnapshotStorageRef = "bucket"
 
-	comp, err := ElasticsearchComponent(cluster, MergePreset(cluster.Spec, preset), storage)
+	comp, err := ElasticsearchComponent(cluster, MergeSpec(cluster.Spec, preset, release), storage)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()

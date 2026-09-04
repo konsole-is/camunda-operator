@@ -2,7 +2,9 @@
 # reads Elasticsearch only. A cluster on a relational database reports
 # StorageTypeMismatch on its CamundaOptimize.
 #
-# presetRef names the shared ElasticsearchClusterPreset standard.
+# presetRef names the shared ElasticsearchClusterPreset standard, and
+# releaseRef the shared CamundaRelease camunda-8-9, which carries the
+# Elasticsearch version.
 apiVersion: core.camunda.io/v1
 kind: ElasticsearchCluster
 metadata:
@@ -10,5 +12,5 @@ metadata:
   namespace: my-cluster-ns
 spec:
   presetRef: standard
-  version: "9.2.8"
+  releaseRef: camunda-8-9
   secondaryStorageConfig: my-storage-config

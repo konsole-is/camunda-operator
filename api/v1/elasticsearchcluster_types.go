@@ -146,20 +146,27 @@ type MonitoringSpec struct {
 // ElasticsearchClusterSpec defines the desired state of ElasticsearchCluster.
 //
 // The type doubles as the configuration baseline of an
-// ElasticsearchClusterPreset, so fields that are required on an
-// ElasticsearchCluster — secondaryStorageConfig — are optional at the schema
-// level here and enforced on the ElasticsearchCluster usage instead.
+// ElasticsearchClusterPreset, so the field that is required on an
+// ElasticsearchCluster, secondaryStorageConfig, is optional at the schema
+// level here and enforced on the ElasticsearchCluster usage instead. The
+// instance-bound fields are cluster-only and rejected in a preset, and so is
+// the version, which belongs to a CamundaRelease.
 type ElasticsearchClusterSpec struct {
 	// PresetRef names a cluster-scoped ElasticsearchClusterPreset used as the
 	// configuration baseline; fields set inline override the preset's value
 	// for that field wholesale.
 	// +optional
 	PresetRef string `json:"presetRef,omitempty"`
+	// ReleaseRef names a cluster-scoped CamundaRelease that provides the
+	// Elasticsearch version. It merges over the preset and under this spec.
+	// Forbidden in a preset.
+	// +optional
+	ReleaseRef string `json:"releaseRef,omitempty"`
 	// Version is the Elasticsearch version to deploy, as a full semantic
-	// version. Camunda 8.9 supports Elasticsearch 8.19+ and 9.2+; the floor is
-	// enforced by the controller on the preset-merged result, the schema pins
-	// only the three-segment shape. Required unless the resolved preset
-	// provides it.
+	// version. Camunda 8.9 supports Elasticsearch 8.19+ and 9.2+. The
+	// controller enforces that floor on the merged result, and the schema
+	// pins only the three-segment shape. Required unless the resolved release
+	// provides it, and forbidden in a preset.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	// +optional
 	Version string `json:"version,omitempty"`

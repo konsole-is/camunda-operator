@@ -31,7 +31,6 @@ import (
 func presetBaseline() *v1.DatabaseServerPresetSpec {
 	return &v1.DatabaseServerPresetSpec{
 		Server: v1.DatabaseServerSpec{
-			Version:          "17",
 			Instances:        new(int32(3)),
 			StorageSize:      new(resource.MustParse("64Gi")),
 			StorageClassName: new("preset-class"),
@@ -58,16 +57,15 @@ func presetBaseline() *v1.DatabaseServerPresetSpec {
 	}
 }
 
-func TestMergePresetInheritsEveryUnsetField(t *testing.T) {
+func TestMergeSpecInheritsEveryUnsetField(t *testing.T) {
 	t.Parallel()
 
 	preset := presetBaseline()
-	merged := MergePreset(v1.DatabaseServerSpec{
+	merged := MergeSpec(v1.DatabaseServerSpec{
 		PresetRef:            "standard",
 		DatabaseServerConfig: "my-database-server",
-	}, preset)
+	}, preset, nil)
 
-	assert.Equal(t, preset.Server.Version, merged.Version)
 	assert.Equal(t, preset.Server.Instances, merged.Instances)
 	assert.Equal(t, preset.Server.StorageSize, merged.StorageSize)
 	assert.Equal(t, preset.Server.StorageClassName, merged.StorageClassName)
@@ -84,11 +82,12 @@ func TestMergePresetInheritsEveryUnsetField(t *testing.T) {
 	assert.Equal(t, "my-database-server", merged.DatabaseServerConfig)
 }
 
-func TestMergePresetOverridesEverySetField(t *testing.T) {
+func TestMergeSpecOverridesEverySetField(t *testing.T) {
 	t.Parallel()
 
 	spec := v1.DatabaseServerSpec{
 		PresetRef:            "standard",
+		ReleaseRef:           "camunda-8-9",
 		DatabaseServerConfig: "my-database-server",
 		Suspend:              true,
 		Version:              "18",
@@ -114,18 +113,18 @@ func TestMergePresetOverridesEverySetField(t *testing.T) {
 		},
 	}
 
-	merged := MergePreset(spec, presetBaseline())
+	merged := MergeSpec(spec, presetBaseline(), nil)
 
 	assert.Equal(t, spec, merged)
 }
 
 // A preset is a shared baseline. Merging must never hand a caller a value that
 // aliases it, or one server's edit would reach every other server.
-func TestMergePresetCopiesThePresetBaseline(t *testing.T) {
+func TestMergeSpecCopiesThePresetBaseline(t *testing.T) {
 	t.Parallel()
 
 	preset := presetBaseline()
-	merged := MergePreset(v1.DatabaseServerSpec{DatabaseServerConfig: "c"}, preset)
+	merged := MergeSpec(v1.DatabaseServerSpec{DatabaseServerConfig: "c"}, preset, nil)
 
 	merged.PodLabels["from"] = "merged"
 	merged.Archive.RetentionPeriodDays = 99
@@ -134,12 +133,105 @@ func TestMergePresetCopiesThePresetBaseline(t *testing.T) {
 	assert.Equal(t, int32(7), preset.Server.Archive.RetentionPeriodDays)
 }
 
-func TestMergePresetWithoutAPresetReturnsTheSpec(t *testing.T) {
+func TestMergeSpecWithoutABaselineReturnsTheSpec(t *testing.T) {
 	t.Parallel()
 
 	spec := v1.DatabaseServerSpec{Version: "17", DatabaseServerConfig: "c"}
 
-	assert.Equal(t, spec, MergePreset(spec, nil))
+	assert.Equal(t, spec, MergeSpec(spec, nil, nil))
+}
+
+func TestMergeSpecTakesTheVersionFromTheRelease(t *testing.T) {
+	t.Parallel()
+
+	spec := v1.DatabaseServerSpec{
+		PresetRef:            "standard",
+		ReleaseRef:           "camunda-8-9",
+		DatabaseServerConfig: "my-database-server",
+	}
+	release := &v1.CamundaReleaseSpec{
+		Version:        "8.9.18",
+		DatabaseServer: &v1.ReleaseDatabaseServerSpec{Version: "17"},
+	}
+
+	merged := MergeSpec(spec, presetBaseline(), release)
+
+	assert.Equal(t, "17", merged.Version)
+	assert.Equal(t, presetBaseline().Server.Instances, merged.Instances, "the preset still supplies the shape")
+}
+
+// A release alone must be enough, so a server that names no preset still
+// follows the fleet version.
+func TestMergeSpecTakesTheVersionFromTheReleaseWithoutAPreset(t *testing.T) {
+	t.Parallel()
+
+	release := &v1.CamundaReleaseSpec{
+		Version:        "8.9.18",
+		DatabaseServer: &v1.ReleaseDatabaseServerSpec{Version: "17"},
+	}
+
+	merged := MergeSpec(v1.DatabaseServerSpec{ReleaseRef: "camunda-8-9"}, nil, release)
+
+	assert.Equal(t, "17", merged.Version)
+}
+
+func TestMergeSpecInlineVersionWinsOverTheRelease(t *testing.T) {
+	t.Parallel()
+
+	spec := v1.DatabaseServerSpec{ReleaseRef: "camunda-8-9", Version: "18"}
+	release := &v1.CamundaReleaseSpec{
+		Version:        "8.9.18",
+		DatabaseServer: &v1.ReleaseDatabaseServerSpec{Version: "17"},
+	}
+
+	merged := MergeSpec(spec, nil, release)
+
+	assert.Equal(t, "18", merged.Version)
+}
+
+// An empty block is what templated YAML renders for a release that names no
+// PostgreSQL version. It must leave the version to the layers below.
+func TestMergeSpecEmptyReleaseDatabaseServerBlockIsUnset(t *testing.T) {
+	t.Parallel()
+
+	spec := v1.DatabaseServerSpec{ReleaseRef: "camunda-8-9", Version: "18"}
+
+	empty := MergeSpec(spec, nil, &v1.CamundaReleaseSpec{
+		Version:        "8.9.18",
+		DatabaseServer: &v1.ReleaseDatabaseServerSpec{},
+	})
+	assert.Equal(t, "18", empty.Version)
+
+	absent := MergeSpec(spec, nil, &v1.CamundaReleaseSpec{Version: "8.9.18"})
+	assert.Equal(t, "18", absent.Version)
+}
+
+// The Camunda version of a release governs the orchestration cluster. A
+// PostgreSQL server must never read it.
+func TestMergeSpecIgnoresTheCamundaVersionOfTheRelease(t *testing.T) {
+	t.Parallel()
+
+	merged := MergeSpec(
+		v1.DatabaseServerSpec{ReleaseRef: "camunda-8-9"},
+		nil,
+		&v1.CamundaReleaseSpec{Version: "8.9.18"},
+	)
+
+	assert.Empty(t, merged.Version)
+}
+
+func TestMergeSpecDoesNotAliasTheRelease(t *testing.T) {
+	t.Parallel()
+
+	release := &v1.CamundaReleaseSpec{
+		Version:        "8.9.18",
+		DatabaseServer: &v1.ReleaseDatabaseServerSpec{Version: "17"},
+	}
+
+	merged := MergeSpec(v1.DatabaseServerSpec{}, nil, release)
+	merged.Version = "18"
+
+	assert.Equal(t, "17", release.DatabaseServer.Version)
 }
 
 // scheduled sets the archive of the spec to one that takes its base backups
@@ -172,17 +264,17 @@ func TestValidateMerged(t *testing.T) {
 		{
 			name:    "no version",
 			mutate:  func(s *v1.DatabaseServerSpec) { s.Version = "" },
-			wantErr: "missing required fields after preset merge: version",
+			wantErr: "missing required fields: version",
 		},
 		{
 			name:    "no storage size",
 			mutate:  func(s *v1.DatabaseServerSpec) { s.StorageSize = nil },
-			wantErr: "missing required fields after preset merge: storageSize",
+			wantErr: "missing required fields: storageSize",
 		},
 		{
 			name:    "no contract name",
 			mutate:  func(s *v1.DatabaseServerSpec) { s.DatabaseServerConfig = "" },
-			wantErr: "missing required fields after preset merge: databaseServerConfig",
+			wantErr: "missing required fields: databaseServerConfig",
 		},
 		{
 			name: "every field missing is named",
