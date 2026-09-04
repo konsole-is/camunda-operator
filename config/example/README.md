@@ -92,8 +92,10 @@ so a reader sees both and can compare its `CamundaCluster` with the one in
 
 Every version here is one that the end-to-end suite of this repository runs,
 which `test/e2e/matrix/8.9.env` pins. Renovate reads the marker comment above
-each version and raises it. One pull request carries the inventories and the
-matrix entry, and `make lint` fails when the two differ.
+a version and raises it, so one pull request carries the inventories and the
+matrix entry. The PostgreSQL major carries no marker, because a new major is a
+step you take on purpose. `make lint` fails when any version here and the
+matrix entry differ, marker or no marker.
 
 The Camunda, Elasticsearch, and PostgreSQL versions are in the shared release
 [`releases/camunda-release.yaml`](releases/camunda-release.yaml). Every

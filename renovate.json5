@@ -14,10 +14,11 @@
 //   CAMUNDA_VERSION=8.9.17
 //
 // The example inventories under config/example/ run the versions the matrix
-// entry tests, so each version field of a manifest carries the same marker.
-// One pull request moves both, because every marked pin belongs to the group
-// e2e-image-pins below. `make lint` fails when an inventory and the matrix
-// entry differ.
+// entry tests, so a version field of a manifest carries the same marker. One
+// pull request moves both, because every marked pin belongs to the group
+// e2e-image-pins below. The PostgreSQL major of the inventories carries no
+// marker, and `make lint` fails when any version of an inventory and the
+// matrix entry differ.
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["config:recommended"],

@@ -6,9 +6,10 @@
 # The Camunda, connectors, and Elasticsearch versions are the ones the
 # end-to-end suite of this repository runs, which test/e2e/matrix/8.9.env pins.
 # The PostgreSQL major is the one that suite runs as well. Renovate reads the
-# marker above each version and raises it in the same pull request as the
-# matrix file. Leave the markers in place. `make lint` fails when the two
-# files differ.
+# marker above a version and raises it in the same pull request as the matrix
+# file. Leave the markers in place. databaseServer.version carries none,
+# because a new PostgreSQL major is a step you take on purpose. `make lint`
+# fails when any version here and the matrix entry differ.
 #
 # connectors.version is here for a cluster that turns connectors on. The
 # bundle has a patch line of its own, so it does not follow spec.version. No

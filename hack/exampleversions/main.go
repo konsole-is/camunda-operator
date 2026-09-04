@@ -197,8 +197,9 @@ func main() {
 	}
 }
 
-// check returns one line per problem, in the order of the table. It returns an
-// error only when it cannot read a file it has to read.
+// check returns one line per problem: first the versions that no entry holds,
+// by file, then the entries of the table in order. It returns an error only
+// when it cannot read a file it has to read.
 func check(examples, matrixFile string, pins []pin) ([]string, error) {
 	matrix, err := readMatrix(matrixFile)
 	if err != nil {
