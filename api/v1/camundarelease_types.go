@@ -117,6 +117,9 @@ type ReleaseImagesSpec struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.version`
+// +kubebuilder:printcolumn:name="Connectors",type=string,JSONPath=`.spec.connectors.version`,priority=1
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // CamundaRelease is a cluster-scoped, passive description of what runs on a
 // CamundaCluster: the versions, the pinned images, and the environment a
