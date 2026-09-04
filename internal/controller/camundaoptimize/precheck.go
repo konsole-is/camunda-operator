@@ -360,6 +360,16 @@ func (res *resolver) resolveElasticsearch(
 	return nil
 }
 
+// checkLocalSecret checks that the Secret named name in the namespace of the
+// Optimize instance carries keys, and records its resource version as a render
+// input. Every reference of a namespaced kind resolves here, so no copy is
+// involved.
+func (res *resolver) checkLocalSecret(ctx context.Context, name string, keys ...string) error {
+	_, err := res.secret(ctx, client.ObjectKey{Namespace: res.optimize.Namespace, Name: name}, "", keys...)
+
+	return err
+}
+
 // checkExporterConflicts refuses to apply the exporter settings when the
 // cluster already carries an entry of the same name that supplies its value
 // the other way. Server-side apply would merge the two into one entry with
@@ -441,16 +451,6 @@ func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose
 	ref.Name, ref.Namespace = local.Name, local.Namespace
 
 	return nil
-}
-
-// checkLocalSecret checks that the Secret named name in the namespace of the
-// Optimize instance carries keys, and records its resource version as a render
-// input. Every reference of a namespaced kind resolves here, so no copy is
-// involved.
-func (res *resolver) checkLocalSecret(ctx context.Context, name string, keys ...string) error {
-	_, err := res.secret(ctx, client.ObjectKey{Namespace: res.optimize.Namespace, Name: name}, "", keys...)
-
-	return err
 }
 
 // secret checks that the Secret at key carries every one of keys. When the

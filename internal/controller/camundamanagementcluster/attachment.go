@@ -35,14 +35,6 @@ import (
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 )
 
-// ClaimValue returns the value of the claim annotation that mc puts on the
-// orchestration clusters it serves: "<namespace>/<name>". One cluster answers
-// to one management plane, so a cluster that carries another value is left
-// alone.
-func ClaimValue(mc *v1.CamundaManagementCluster) string {
-	return mc.Namespace + "/" + mc.Name
-}
-
 // attachedClusters selects the orchestration clusters that mc serves, claims
 // each of them, and reports what the management plane can do with each one.
 // provider is the identity provider that the pre-checks resolved.
@@ -116,95 +108,6 @@ func selectedClusters(
 	return selected, nil
 }
 
-// releaseClaims withdraws the claim of mc from every cluster that the selector
-// no longer matches. It runs after the Web Modeler user and the Console ping
-// of those clusters are withdrawn, and only when both succeeded, so that no
-// other management plane takes a cluster whose user this one still has to
-// remove.
-func (r *Reconciler) releaseClaims(
-	ctx context.Context,
-	mc *v1.CamundaManagementCluster,
-	clusters []v1.CamundaCluster,
-	namespaces map[string]bool,
-) error {
-	selector, err := metav1.LabelSelectorAsSelector(mc.Spec.ClusterSelector)
-	if err != nil {
-		return fmt.Errorf("reading spec.clusterSelector: %w", err)
-	}
-
-	var errs []error
-	for i := range clusters {
-		cluster := &clusters[i]
-		if inNamespaces(cluster, namespaces) && selector.Matches(k8slabels.Set(cluster.Labels)) {
-			continue
-		}
-		errs = append(errs, r.withdrawClaim(ctx, mc, cluster))
-	}
-
-	return errors.Join(errs...)
-}
-
-// selectedNamespaces returns the names of the namespaces that
-// spec.namespaceSelector matches. Nil puts no bound on the namespace: the
-// selector is unset or empty. An empty set is a bound that admits none.
-func (r *Reconciler) selectedNamespaces(
-	ctx context.Context,
-	mc *v1.CamundaManagementCluster,
-) (map[string]bool, error) {
-	spec := mc.Spec.NamespaceSelector
-	if spec == nil || (len(spec.MatchLabels) == 0 && len(spec.MatchExpressions) == 0) {
-		return nil, nil
-	}
-
-	selector, err := metav1.LabelSelectorAsSelector(spec)
-	if err != nil {
-		return nil, fmt.Errorf("reading spec.namespaceSelector: %w", err)
-	}
-
-	// Only the names and the labels are needed, so the list stays metadata.
-	list := &metav1.PartialObjectMetadataList{}
-	list.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("NamespaceList"))
-	if err := r.APIReader.List(ctx, list, client.MatchingLabelsSelector{Selector: selector}); err != nil {
-		return nil, fmt.Errorf("listing the namespaces of spec.namespaceSelector: %w", err)
-	}
-
-	selected := make(map[string]bool, len(list.Items))
-	for i := range list.Items {
-		selected[list.Items[i].Name] = true
-	}
-
-	return selected, nil
-}
-
-// inNamespaces reports whether the cluster sits inside the namespace bound.
-// A nil bound admits every namespace.
-func inNamespaces(cluster *v1.CamundaCluster, namespaces map[string]bool) bool {
-	return namespaces == nil || namespaces[cluster.Namespace]
-}
-
-// listClusters reads every CamundaCluster of the Kubernetes cluster, ordered
-// by namespace and name, so the claim decisions and status.clusters are stable
-// across reconciles.
-//
-// The list is read live rather than from the cache. A claim decided from a
-// stale cache can take a cluster that another management plane claimed
-// moments ago.
-func (r *Reconciler) listClusters(ctx context.Context) ([]v1.CamundaCluster, error) {
-	var list v1.CamundaClusterList
-	if err := r.APIReader.List(ctx, &list); err != nil {
-		return nil, fmt.Errorf("listing the CamundaClusters: %w", err)
-	}
-
-	slices.SortFunc(list.Items, func(a, b v1.CamundaCluster) int {
-		if a.Namespace != b.Namespace {
-			return strings.Compare(a.Namespace, b.Namespace)
-		}
-		return strings.Compare(a.Name, b.Name)
-	})
-
-	return list.Items, nil
-}
-
 // attach claims one selected cluster and reports its row. A cluster that the
 // management plane can serve is appended to attached.
 func (r *Reconciler) attach(
@@ -276,60 +179,13 @@ func (r *Reconciler) attach(
 	return row, nil
 }
 
-// basicUserSecret returns the name of the Secret that holds the password of
-// the Web Modeler user on a basic-auth cluster. An oidc cluster needs no user
-// of its own, so it gets no name.
-func basicUserSecret(
+// claim puts the claim of mc on one cluster.
+func (r *Reconciler) claim(
+	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	cluster *v1.CamundaCluster,
-	method v1.AuthenticationMethod,
-) string {
-	if method != v1.AuthenticationMethodBasic || mc.Spec.WebModeler == nil {
-		return ""
-	}
-
-	return components.WebModelerClusterUserSecretName(mc, cluster.UID)
-}
-
-// readClusterConfig reads the platform config that the cluster names. A missing
-// or dangling reference is a message for the row of the cluster rather than
-// an error: the cluster's own controller reports the same reference, and one
-// broken cluster must not stop the management plane. Any other failure of the
-// API is an error.
-func (r *Reconciler) readClusterConfig(
-	ctx context.Context,
-	cluster *v1.CamundaCluster,
-) (*v1.CamundaPlatformConfig, string, error) {
-	if cluster.Spec.PlatformConfigRef == "" {
-		return nil, "This cluster names no CamundaPlatformConfig", nil
-	}
-
-	var cfg v1.CamundaPlatformConfig
-	key := client.ObjectKey{Name: cluster.Spec.PlatformConfigRef}
-	if err := r.APIReader.Get(ctx, key, &cfg); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, fmt.Sprintf("CamundaPlatformConfig %q of this cluster not found", key.Name), nil
-		}
-		return nil, "", fmt.Errorf("reading CamundaPlatformConfig %q: %w", key.Name, err)
-	}
-
-	return &cfg, "", nil
-}
-
-// clusterAuthMethod reads how a cluster authenticates its users and clients,
-// from the platform config that the cluster names. It returns the
-// authentication method, or the row message of readClusterConfig when the
-// cluster names no config or names one that is gone.
-func (r *Reconciler) clusterAuthMethod(
-	ctx context.Context,
-	cluster *v1.CamundaCluster,
-) (v1.AuthenticationMethod, string, error) {
-	cfg, failure, err := r.readClusterConfig(ctx, cluster)
-	if err != nil || failure != "" {
-		return "", failure, err
-	}
-
-	return cfg.Spec.Method(), "", nil
+) error {
+	return r.applyClaim(ctx, mc, cluster, map[string]string{components.ClaimAnnotation: ClaimValue(mc)})
 }
 
 // clusterAuth reads how a cluster authenticates, like clusterAuthMethod, and
@@ -421,6 +277,151 @@ func clusterVersion(cluster *v1.CamundaCluster) string {
 	return cluster.Spec.Version
 }
 
+// basicUserSecret returns the name of the Secret that holds the password of
+// the Web Modeler user on a basic-auth cluster. An oidc cluster needs no user
+// of its own, so it gets no name.
+func basicUserSecret(
+	mc *v1.CamundaManagementCluster,
+	cluster *v1.CamundaCluster,
+	method v1.AuthenticationMethod,
+) string {
+	if method != v1.AuthenticationMethodBasic || mc.Spec.WebModeler == nil {
+		return ""
+	}
+
+	return components.WebModelerClusterUserSecretName(mc, cluster.UID)
+}
+
+// releaseClaims withdraws the claim of mc from every cluster that the selector
+// no longer matches. It runs after the Web Modeler user and the Console ping
+// of those clusters are withdrawn, and only when both succeeded, so that no
+// other management plane takes a cluster whose user this one still has to
+// remove.
+func (r *Reconciler) releaseClaims(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	clusters []v1.CamundaCluster,
+	namespaces map[string]bool,
+) error {
+	selector, err := metav1.LabelSelectorAsSelector(mc.Spec.ClusterSelector)
+	if err != nil {
+		return fmt.Errorf("reading spec.clusterSelector: %w", err)
+	}
+
+	var errs []error
+	for i := range clusters {
+		cluster := &clusters[i]
+		if inNamespaces(cluster, namespaces) && selector.Matches(k8slabels.Set(cluster.Labels)) {
+			continue
+		}
+		errs = append(errs, r.withdrawClaim(ctx, mc, cluster))
+	}
+
+	return errors.Join(errs...)
+}
+
+// selectedNamespaces returns the names of the namespaces that
+// spec.namespaceSelector matches. Nil puts no bound on the namespace: the
+// selector is unset or empty. An empty set is a bound that admits none.
+func (r *Reconciler) selectedNamespaces(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) (map[string]bool, error) {
+	spec := mc.Spec.NamespaceSelector
+	if spec == nil || (len(spec.MatchLabels) == 0 && len(spec.MatchExpressions) == 0) {
+		return nil, nil
+	}
+
+	selector, err := metav1.LabelSelectorAsSelector(spec)
+	if err != nil {
+		return nil, fmt.Errorf("reading spec.namespaceSelector: %w", err)
+	}
+
+	// Only the names and the labels are needed, so the list stays metadata.
+	list := &metav1.PartialObjectMetadataList{}
+	list.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("NamespaceList"))
+	if err := r.APIReader.List(ctx, list, client.MatchingLabelsSelector{Selector: selector}); err != nil {
+		return nil, fmt.Errorf("listing the namespaces of spec.namespaceSelector: %w", err)
+	}
+
+	selected := make(map[string]bool, len(list.Items))
+	for i := range list.Items {
+		selected[list.Items[i].Name] = true
+	}
+
+	return selected, nil
+}
+
+// inNamespaces reports whether the cluster sits inside the namespace bound.
+// A nil bound admits every namespace.
+func inNamespaces(cluster *v1.CamundaCluster, namespaces map[string]bool) bool {
+	return namespaces == nil || namespaces[cluster.Namespace]
+}
+
+// listClusters reads every CamundaCluster of the Kubernetes cluster, ordered
+// by namespace and name, so the claim decisions and status.clusters are stable
+// across reconciles.
+//
+// The list is read live rather than from the cache. A claim decided from a
+// stale cache can take a cluster that another management plane claimed
+// moments ago.
+func (r *Reconciler) listClusters(ctx context.Context) ([]v1.CamundaCluster, error) {
+	var list v1.CamundaClusterList
+	if err := r.APIReader.List(ctx, &list); err != nil {
+		return nil, fmt.Errorf("listing the CamundaClusters: %w", err)
+	}
+
+	slices.SortFunc(list.Items, func(a, b v1.CamundaCluster) int {
+		if a.Namespace != b.Namespace {
+			return strings.Compare(a.Namespace, b.Namespace)
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	return list.Items, nil
+}
+
+// clusterAuthMethod reads how a cluster authenticates its users and clients,
+// from the platform config that the cluster names. It returns the
+// authentication method, or the row message of readClusterConfig when the
+// cluster names no config or names one that is gone.
+func (r *Reconciler) clusterAuthMethod(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+) (v1.AuthenticationMethod, string, error) {
+	cfg, failure, err := r.readClusterConfig(ctx, cluster)
+	if err != nil || failure != "" {
+		return "", failure, err
+	}
+
+	return cfg.Spec.Method(), "", nil
+}
+
+// readClusterConfig reads the platform config that the cluster names. A missing
+// or dangling reference is a message for the row of the cluster rather than
+// an error: the cluster's own controller reports the same reference, and one
+// broken cluster must not stop the management plane. Any other failure of the
+// API is an error.
+func (r *Reconciler) readClusterConfig(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+) (*v1.CamundaPlatformConfig, string, error) {
+	if cluster.Spec.PlatformConfigRef == "" {
+		return nil, "This cluster names no CamundaPlatformConfig", nil
+	}
+
+	var cfg v1.CamundaPlatformConfig
+	key := client.ObjectKey{Name: cluster.Spec.PlatformConfigRef}
+	if err := r.APIReader.Get(ctx, key, &cfg); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, fmt.Sprintf("CamundaPlatformConfig %q of this cluster not found", key.Name), nil
+		}
+		return nil, "", fmt.Errorf("reading CamundaPlatformConfig %q: %w", key.Name, err)
+	}
+
+	return &cfg, "", nil
+}
+
 // withdrawClaims removes the claim of mc from every cluster that carries it.
 // The finalizer calls it, so a deleted management cluster leaves no cluster
 // claimed by an owner that is gone.
@@ -458,13 +459,12 @@ func (r *Reconciler) withdrawClaim(
 	return err
 }
 
-// claim puts the claim of mc on one cluster.
-func (r *Reconciler) claim(
-	ctx context.Context,
-	mc *v1.CamundaManagementCluster,
-	cluster *v1.CamundaCluster,
-) error {
-	return r.applyClaim(ctx, mc, cluster, map[string]string{components.ClaimAnnotation: ClaimValue(mc)})
+// ClaimValue returns the value of the claim annotation that mc puts on the
+// orchestration clusters it serves: "<namespace>/<name>". One cluster answers
+// to one management plane, so a cluster that carries another value is left
+// alone.
+func ClaimValue(mc *v1.CamundaManagementCluster) string {
+	return mc.Namespace + "/" + mc.Name
 }
 
 // applyClaim applies the minimal CamundaCluster object that carries the claim

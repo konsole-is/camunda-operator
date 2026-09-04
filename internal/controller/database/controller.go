@@ -242,6 +242,224 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	return ctrl.Result{}, reconcileErr
 }
 
+// preCheck runs the documented pre-checks in order: server reference, server
+// identity, admin credentials Secret, claim, connection. It records the
+// logical database that the Database names in status.collisionKey as soon as
+// the identity is known, and gives back every other claim it holds once it
+// holds this one and the server answers. It returns the connected
+// Bootstrapper, which the caller closes.
+//
+// A failed check returns an error carrying a *conditions.PreCheckFailure with
+// its Ready reason. A lost claim wraps errClaimLost beside it, and a claim
+// that another Database goes first for wraps errClaimNotFirst. Any other
+// error is a transient API failure.
+func (r *DatabaseReconciler) preCheck(ctx context.Context, database *v1.Database) (pgbootstrap.Bootstrapper, error) {
+	server, err := r.resolveServer(ctx, database)
+	if err != nil {
+		return nil, err
+	}
+
+	if server.Status.SystemIdentifier == "" {
+		return nil, &conditions.PreCheckFailure{
+			Reason: v1.ReasonServerIdentityUnknown,
+			Message: fmt.Sprintf(
+				"DatabaseServerConfig %s has not published its system identifier yet. Wait until "+
+					"it reports Ready", client.ObjectKeyFromObject(server),
+			),
+		}
+	}
+
+	// The identity of an endpoint the contract no longer names is the identity
+	// of another server. The claim would key on that one while the connection
+	// below reaches the endpoint of the spec, so the Database could take a
+	// logical database another Database already holds on the endpoint it
+	// connects to.
+	if !server.ProbedForCurrentSpec() {
+		return nil, &conditions.PreCheckFailure{
+			Reason: v1.ReasonServerIdentityUnknown,
+			Message: fmt.Sprintf(
+				"DatabaseServerConfig %s has not reached the server its spec names now, so its "+
+					"system identifier belongs to the server before that change: the record was "+
+					"probed at %s with Secret %q and keys %s, and the spec names %s with Secret "+
+					"%q and keys %s. Wait until the contract is probed again for the endpoint and "+
+					"the credentials it names now",
+				client.ObjectKeyFromObject(server),
+				server.Status.ProbedEndpoint, server.Status.ProbedSecretName,
+				server.Status.ProbedSecretKeys,
+				fmt.Sprintf("%s:%d", server.Spec.Host, server.Spec.Port),
+				server.Spec.AdminCredentialsSecretRef.Name,
+				server.Spec.AdminCredentialsSecretRef.UsernameKey+"/"+server.Spec.AdminCredentialsSecretRef.PasswordKey,
+			),
+		}
+	}
+
+	key := components.CollisionKey(server.Status.SystemIdentifier, database.Spec.DatabaseName)
+	// The field says which logical database this Database names. Every
+	// claimant records it, the one that loses included, so the index that
+	// checkCollision reads lists a Database under the name it asks for now
+	// and under no name it gave up.
+	database.Status.CollisionKey = key
+
+	user, password, err := r.adminCredentials(ctx, server)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := r.claim(ctx, database, key); err != nil {
+		return nil, err
+	}
+
+	bootstrapper, err := connect(ctx, server, user, password)
+	if err != nil {
+		return nil, err
+	}
+
+	// The Database holds the logical database it names now, and the server
+	// answers for it. Everything else it holds is free to go. A release
+	// before this point leaves the bindings of this Database on a logical
+	// database that another Database can take and rotate the roles of.
+	//
+	// The sweep runs on every pre-check that reaches here. status.collisionKey
+	// is written by the flush of this reconcile whether the sweep ran or not,
+	// so it is no record that the release happened, and a sweep that skipped
+	// on it would never run again after one failure.
+	if err := r.releaseHeldClaims(ctx, selfHolder(database), key); err != nil {
+		bootstrapper.Close()
+
+		return nil, err
+	}
+
+	return bootstrapper, nil
+}
+
+// resolveServer fetches the DatabaseServerConfig that spec.serverRef names in
+// the namespace of the Database. A dangling reference maps to
+// InvalidReference.
+func (r *DatabaseReconciler) resolveServer(
+	ctx context.Context, database *v1.Database,
+) (*v1.DatabaseServerConfig, error) {
+	key := types.NamespacedName{Namespace: database.Namespace, Name: database.Spec.ServerRef}
+
+	var server v1.DatabaseServerConfig
+	if err := r.Get(ctx, key, &server); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, &conditions.PreCheckFailure{
+				Reason:  v1.ReasonInvalidReference,
+				Message: fmt.Sprintf("DatabaseServerConfig %s not found", key),
+			}
+		}
+		return nil, err
+	}
+
+	return &server, nil
+}
+
+// adminCredentials checks that the admin credentials Secret of the server has
+// the configured keys, then returns the admin username and password. A missing
+// Secret or key maps to MissingSecret.
+func (r *DatabaseReconciler) adminCredentials(
+	ctx context.Context, server *v1.DatabaseServerConfig,
+) (user, password string, err error) {
+	ref := server.Spec.AdminCredentialsSecretRef
+	key := types.NamespacedName{Namespace: server.Namespace, Name: ref.Name}
+
+	msg, err := secretref.CheckKeys(ctx, r.APIReader, key, ref.UsernameKey, ref.PasswordKey)
+	if err != nil {
+		return "", "", err
+	}
+	if msg != "" {
+		return "", "", &conditions.PreCheckFailure{Reason: v1.ReasonMissingSecret, Message: msg}
+	}
+
+	var secret corev1.Secret
+	if err := r.APIReader.Get(ctx, key, &secret); err != nil {
+		return "", "", fmt.Errorf("reading admin credentials Secret %q: %w", key, err)
+	}
+
+	return string(secret.Data[ref.UsernameKey]), string(secret.Data[ref.PasswordKey]), nil
+}
+
+// connect opens the admin connection to server and pings it. Any failure maps
+// to ConnectionFailed. The caller closes the returned Bootstrapper.
+func connect(
+	ctx context.Context, server *v1.DatabaseServerConfig, user, password string,
+) (pgbootstrap.Bootstrapper, error) {
+	bootstrapper, err := pgbootstrap.Connect(ctx, pgbootstrap.Connection{
+		Host:     server.Spec.Host,
+		Port:     server.Spec.Port,
+		User:     user,
+		Password: password,
+	})
+	if err == nil {
+		if err = bootstrapper.Ping(ctx); err != nil {
+			bootstrapper.Close()
+		}
+	}
+	if err != nil {
+		return nil, &conditions.PreCheckFailure{
+			Reason: v1.ReasonConnectionFailed,
+			Message: fmt.Sprintf(
+				"Connecting to DatabaseServerConfig %s: %v", client.ObjectKeyFromObject(server), err,
+			),
+		}
+	}
+
+	return bootstrapper, nil
+}
+
+// resolvePasswords fills the role passwords of rb. It reuses the password of
+// an existing published Secret, so credentials stay stable after creation. A
+// missing Secret or key yields a new password. To rotate a credential, delete
+// its Secret.
+func (r *DatabaseReconciler) resolvePasswords(ctx context.Context, rb *components.Bindings) error {
+	var err error
+	if rb.AppPassword, err = credentials.LookupOrNew(
+		ctx,
+		r.APIReader,
+		rb.AppSecret,
+		components.CredentialPasswordKey,
+	); err != nil {
+		return err
+	}
+
+	if !rb.BackupEnabled {
+		return nil
+	}
+
+	rb.BackupPassword, err = credentials.LookupOrNew(
+		ctx,
+		r.APIReader,
+		rb.BackupSecret,
+		components.CredentialPasswordKey,
+	)
+	return err
+}
+
+// bootstrapSQL runs the idempotent bootstrap sequence: the logical database,
+// the application role, and, unless disabled, the backup role.
+func bootstrapSQL(ctx context.Context, b pgbootstrap.Bootstrapper, name string, rb components.Bindings) error {
+	if err := b.EnsureDatabase(ctx, name); err != nil {
+		return fmt.Errorf("ensuring database %q: %w", name, err)
+	}
+
+	if err := b.EnsureUser(ctx, rb.AppUser, rb.AppPassword.Value); err != nil {
+		return fmt.Errorf("ensuring application role %q: %w", rb.AppUser, err)
+	}
+	if err := b.GrantApplication(ctx, rb.AppUser, name); err != nil {
+		return fmt.Errorf("granting application role %q on %q: %w", rb.AppUser, name, err)
+	}
+
+	if !rb.BackupEnabled {
+		return nil
+	}
+
+	if err := b.EnsureBackupUser(ctx, rb.BackupUser, rb.BackupPassword.Value, name); err != nil {
+		return fmt.Errorf("ensuring backup role %q on %q: %w", rb.BackupUser, name, err)
+	}
+
+	return nil
+}
+
 // withdrawBindings deletes the bindings that database published and still
 // controls, and sets comps to the component that did it, so the one status
 // flush of this reconcile owns BindingsReady and reports it as Disabled. A
@@ -408,260 +626,6 @@ func controls(database *v1.Database, obj client.Object) bool {
 	return owner != nil && owner.UID == database.UID
 }
 
-// resolvePasswords fills the role passwords of rb. It reuses the password of
-// an existing published Secret, so credentials stay stable after creation. A
-// missing Secret or key yields a new password. To rotate a credential, delete
-// its Secret.
-func (r *DatabaseReconciler) resolvePasswords(ctx context.Context, rb *components.Bindings) error {
-	var err error
-	if rb.AppPassword, err = credentials.LookupOrNew(
-		ctx,
-		r.APIReader,
-		rb.AppSecret,
-		components.CredentialPasswordKey,
-	); err != nil {
-		return err
-	}
-
-	if !rb.BackupEnabled {
-		return nil
-	}
-
-	rb.BackupPassword, err = credentials.LookupOrNew(
-		ctx,
-		r.APIReader,
-		rb.BackupSecret,
-		components.CredentialPasswordKey,
-	)
-	return err
-}
-
-// bootstrapSQL runs the idempotent bootstrap sequence: the logical database,
-// the application role, and, unless disabled, the backup role.
-func bootstrapSQL(ctx context.Context, b pgbootstrap.Bootstrapper, name string, rb components.Bindings) error {
-	if err := b.EnsureDatabase(ctx, name); err != nil {
-		return fmt.Errorf("ensuring database %q: %w", name, err)
-	}
-
-	if err := b.EnsureUser(ctx, rb.AppUser, rb.AppPassword.Value); err != nil {
-		return fmt.Errorf("ensuring application role %q: %w", rb.AppUser, err)
-	}
-	if err := b.GrantApplication(ctx, rb.AppUser, name); err != nil {
-		return fmt.Errorf("granting application role %q on %q: %w", rb.AppUser, name, err)
-	}
-
-	if !rb.BackupEnabled {
-		return nil
-	}
-
-	if err := b.EnsureBackupUser(ctx, rb.BackupUser, rb.BackupPassword.Value, name); err != nil {
-		return fmt.Errorf("ensuring backup role %q on %q: %w", rb.BackupUser, name, err)
-	}
-
-	return nil
-}
-
-// preCheck runs the documented pre-checks in order: server reference, server
-// identity, admin credentials Secret, claim, connection. It records the
-// logical database that the Database names in status.collisionKey as soon as
-// the identity is known, and gives back every other claim it holds once it
-// holds this one and the server answers. It returns the connected
-// Bootstrapper, which the caller closes.
-//
-// A failed check returns an error carrying a *conditions.PreCheckFailure with
-// its Ready reason. A lost claim wraps errClaimLost beside it, and a claim
-// that another Database goes first for wraps errClaimNotFirst. Any other
-// error is a transient API failure.
-func (r *DatabaseReconciler) preCheck(ctx context.Context, database *v1.Database) (pgbootstrap.Bootstrapper, error) {
-	server, err := r.resolveServer(ctx, database)
-	if err != nil {
-		return nil, err
-	}
-
-	if server.Status.SystemIdentifier == "" {
-		return nil, &conditions.PreCheckFailure{
-			Reason: v1.ReasonServerIdentityUnknown,
-			Message: fmt.Sprintf(
-				"DatabaseServerConfig %s has not published its system identifier yet. Wait until "+
-					"it reports Ready", client.ObjectKeyFromObject(server),
-			),
-		}
-	}
-
-	// The identity of an endpoint the contract no longer names is the identity
-	// of another server. The claim would key on that one while the connection
-	// below reaches the endpoint of the spec, so the Database could take a
-	// logical database another Database already holds on the endpoint it
-	// connects to.
-	if !server.ProbedForCurrentSpec() {
-		return nil, &conditions.PreCheckFailure{
-			Reason: v1.ReasonServerIdentityUnknown,
-			Message: fmt.Sprintf(
-				"DatabaseServerConfig %s has not reached the server its spec names now, so its "+
-					"system identifier belongs to the server before that change: the record was "+
-					"probed at %s with Secret %q and keys %s, and the spec names %s with Secret "+
-					"%q and keys %s. Wait until the contract is probed again for the endpoint and "+
-					"the credentials it names now",
-				client.ObjectKeyFromObject(server),
-				server.Status.ProbedEndpoint, server.Status.ProbedSecretName,
-				server.Status.ProbedSecretKeys,
-				fmt.Sprintf("%s:%d", server.Spec.Host, server.Spec.Port),
-				server.Spec.AdminCredentialsSecretRef.Name,
-				server.Spec.AdminCredentialsSecretRef.UsernameKey+"/"+server.Spec.AdminCredentialsSecretRef.PasswordKey,
-			),
-		}
-	}
-
-	key := components.CollisionKey(server.Status.SystemIdentifier, database.Spec.DatabaseName)
-	// The field says which logical database this Database names. Every
-	// claimant records it, the one that loses included, so the index that
-	// checkCollision reads lists a Database under the name it asks for now
-	// and under no name it gave up.
-	database.Status.CollisionKey = key
-
-	user, password, err := r.adminCredentials(ctx, server)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := r.claim(ctx, database, key); err != nil {
-		return nil, err
-	}
-
-	bootstrapper, err := connect(ctx, server, user, password)
-	if err != nil {
-		return nil, err
-	}
-
-	// The Database holds the logical database it names now, and the server
-	// answers for it. Everything else it holds is free to go. A release
-	// before this point leaves the bindings of this Database on a logical
-	// database that another Database can take and rotate the roles of.
-	//
-	// The sweep runs on every pre-check that reaches here. status.collisionKey
-	// is written by the flush of this reconcile whether the sweep ran or not,
-	// so it is no record that the release happened, and a sweep that skipped
-	// on it would never run again after one failure.
-	if err := r.releaseHeldClaims(ctx, selfHolder(database), key); err != nil {
-		bootstrapper.Close()
-
-		return nil, err
-	}
-
-	return bootstrapper, nil
-}
-
-// resolveServer fetches the DatabaseServerConfig that spec.serverRef names in
-// the namespace of the Database. A dangling reference maps to
-// InvalidReference.
-func (r *DatabaseReconciler) resolveServer(
-	ctx context.Context, database *v1.Database,
-) (*v1.DatabaseServerConfig, error) {
-	key := types.NamespacedName{Namespace: database.Namespace, Name: database.Spec.ServerRef}
-
-	var server v1.DatabaseServerConfig
-	if err := r.Get(ctx, key, &server); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, &conditions.PreCheckFailure{
-				Reason:  v1.ReasonInvalidReference,
-				Message: fmt.Sprintf("DatabaseServerConfig %s not found", key),
-			}
-		}
-		return nil, err
-	}
-
-	return &server, nil
-}
-
-// adminCredentials checks that the admin credentials Secret of the server has
-// the configured keys, then returns the admin username and password. A missing
-// Secret or key maps to MissingSecret.
-func (r *DatabaseReconciler) adminCredentials(
-	ctx context.Context, server *v1.DatabaseServerConfig,
-) (user, password string, err error) {
-	ref := server.Spec.AdminCredentialsSecretRef
-	key := types.NamespacedName{Namespace: server.Namespace, Name: ref.Name}
-
-	msg, err := secretref.CheckKeys(ctx, r.APIReader, key, ref.UsernameKey, ref.PasswordKey)
-	if err != nil {
-		return "", "", err
-	}
-	if msg != "" {
-		return "", "", &conditions.PreCheckFailure{Reason: v1.ReasonMissingSecret, Message: msg}
-	}
-
-	var secret corev1.Secret
-	if err := r.APIReader.Get(ctx, key, &secret); err != nil {
-		return "", "", fmt.Errorf("reading admin credentials Secret %q: %w", key, err)
-	}
-
-	return string(secret.Data[ref.UsernameKey]), string(secret.Data[ref.PasswordKey]), nil
-}
-
-// connect opens the admin connection to server and pings it. Any failure maps
-// to ConnectionFailed. The caller closes the returned Bootstrapper.
-func connect(
-	ctx context.Context, server *v1.DatabaseServerConfig, user, password string,
-) (pgbootstrap.Bootstrapper, error) {
-	bootstrapper, err := pgbootstrap.Connect(ctx, pgbootstrap.Connection{
-		Host:     server.Spec.Host,
-		Port:     server.Spec.Port,
-		User:     user,
-		Password: password,
-	})
-	if err == nil {
-		if err = bootstrapper.Ping(ctx); err != nil {
-			bootstrapper.Close()
-		}
-	}
-	if err != nil {
-		return nil, &conditions.PreCheckFailure{
-			Reason: v1.ReasonConnectionFailed,
-			Message: fmt.Sprintf(
-				"Connecting to DatabaseServerConfig %s: %v", client.ObjectKeyFromObject(server), err,
-			),
-		}
-	}
-
-	return bootstrapper, nil
-}
-
-// enqueueForAdminSecret maps a Secret event to every Database whose server
-// names that Secret as the admin credentials Secret. A contract names a
-// Secret of its own namespace, so the scan covers the contracts of the
-// Secret's namespace only. The affected Databases resolve through the
-// serverRef index.
-func (r *DatabaseReconciler) enqueueForAdminSecret() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-		var servers v1.DatabaseServerConfigList
-		if err := r.List(ctx, &servers, client.InNamespace(o.GetNamespace())); err != nil {
-			logf.FromContext(ctx).Error(err, "listing database server configs for admin Secret enqueue")
-			return nil
-		}
-
-		var reqs []reconcile.Request
-		for _, server := range servers.Items {
-			if server.Spec.AdminCredentialsSecretRef.Name != o.GetName() {
-				continue
-			}
-
-			var databases v1.DatabaseList
-			if err := r.List(ctx, &databases, client.MatchingFields{
-				databaseServerRefField: refindex.NamespacedKey(server.Namespace, server.Name),
-			}); err != nil {
-				logf.FromContext(ctx).Error(err, "listing databases for admin Secret enqueue", "server", server.Name)
-				continue
-			}
-			for i := range databases.Items {
-				reqs = append(reqs, reconcile.Request{
-					NamespacedName: client.ObjectKeyFromObject(&databases.Items[i]),
-				})
-			}
-		}
-		return reqs
-	})
-}
-
 // SetupWithManager registers the controller, the serverRef and collision field
 // indexes, and the watches that trigger a reconcile. It refuses a reconciler
 // without a namespace for the claim Leases. The watches cover the owned
@@ -741,4 +705,40 @@ func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		).
 		Named(controllerName).
 		Complete(r)
+}
+
+// enqueueForAdminSecret maps a Secret event to every Database whose server
+// names that Secret as the admin credentials Secret. A contract names a
+// Secret of its own namespace, so the scan covers the contracts of the
+// Secret's namespace only. The affected Databases resolve through the
+// serverRef index.
+func (r *DatabaseReconciler) enqueueForAdminSecret() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		var servers v1.DatabaseServerConfigList
+		if err := r.List(ctx, &servers, client.InNamespace(o.GetNamespace())); err != nil {
+			logf.FromContext(ctx).Error(err, "listing database server configs for admin Secret enqueue")
+			return nil
+		}
+
+		var reqs []reconcile.Request
+		for _, server := range servers.Items {
+			if server.Spec.AdminCredentialsSecretRef.Name != o.GetName() {
+				continue
+			}
+
+			var databases v1.DatabaseList
+			if err := r.List(ctx, &databases, client.MatchingFields{
+				databaseServerRefField: refindex.NamespacedKey(server.Namespace, server.Name),
+			}); err != nil {
+				logf.FromContext(ctx).Error(err, "listing databases for admin Secret enqueue", "server", server.Name)
+				continue
+			}
+			for i := range databases.Items {
+				reqs = append(reqs, reconcile.Request{
+					NamespacedName: client.ObjectKeyFromObject(&databases.Items[i]),
+				})
+			}
+		}
+		return reqs
+	})
 }

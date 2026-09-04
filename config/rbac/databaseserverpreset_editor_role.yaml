@@ -25,9 +25,3 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - core.camunda.io
-  resources:
-  - databaseserverpresets/status
-  verbs:
-  - get

@@ -25,9 +25,3 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - core.camunda.io
-  resources:
-  - elasticsearchclusterpresets/status
-  verbs:
-  - get

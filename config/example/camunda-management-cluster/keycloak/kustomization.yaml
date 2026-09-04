@@ -1,12 +1,13 @@
 # The resources are listed in the order the README applies them. The shared
-# presets come first, so that kubectl apply -k on this directory alone stands
-# the whole inventory up. Do not add a namespace transformer here:
-# CamundaPlatformConfig and the presets are cluster scoped, and the inventory
-# spans two namespaces.
+# presets and the shared release come first, so that kubectl apply -k on this
+# directory alone stands the whole inventory up. Do not add a namespace
+# transformer here: CamundaPlatformConfig, the presets, and the release are
+# cluster scoped, and the inventory spans two namespaces.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
 - ../../presets
+- ../../releases
 - 01-namespaces.yaml
 - 02-secrets.yaml
 - 03-database-server.yaml

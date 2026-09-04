@@ -29,8 +29,10 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8slabels "k8s.io/apimachinery/pkg/labels"
@@ -161,6 +163,19 @@ const (
 	mcOIDCAdminClaimValue = "ada@example.com"
 )
 
+// keycloakTokenScript reads an administrator token of the master realm into
+// KC_TOKEN, and every script of the suite that calls the Keycloak admin API
+// starts with it. The curl image carries no jq, so the token is cut out with
+// sed. The name and the password go through --data-urlencode, so a reserved
+// character in either one reaches Keycloak whole.
+const keycloakTokenScript = `KC_TOKEN=$(curl -sS ` +
+	`-d grant_type=password -d client_id=admin-cli ` +
+	`--data-urlencode "username=$KC_USER" --data-urlencode "password=$KC_PASSWORD" ` +
+	`"$KC_URL/realms/master/protocol/openid-connect/token" | ` +
+	`sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+if [ -z "$KC_TOKEN" ]; then echo "no access_token from $KC_URL" >&2; exit 1; fi
+`
+
 // managementKeycloakNamespaceObject returns the namespace of the keycloak
 // flow. The suite applies it before the manager is deployed, so that the
 // Keycloak Operator has a namespace to run in.
@@ -187,6 +202,11 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 			},
 		}
 		cluster = newCluster(mcKeycloakNamespace, mcKeycloakClusterPlatform, mcKeycloakStorage, "", false)
+		// The two planes of the realm journeys, on the Keycloak that this
+		// flow runs. The first one starts on realm A and moves to realm B,
+		// and the second one names realm B while the first one holds it.
+		retarget = externalKeycloakPlane(mcRetargetName, mcRealmA, mcRetargetIdentityDB, mcRetargetAdmin, mc)
+		claimant = externalKeycloakPlane(mcClaimantName, mcRealmB, mcClaimantIdentityDB, mcClaimantAdmin, mc)
 		// installedKeycloakOperator records that this flow installed the
 		// Keycloak Operator, and with it that the namespace is its own to
 		// remove. KEYCLOAK_OPERATOR_INSTALL_SKIP=true names a cluster that
@@ -262,20 +282,22 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 	AfterAll(func() {
 		By("removing the Optimize instances, the cluster, the management plane, and the cluster-scoped resources")
 		_, _ = utils.Kubectl(
-			"delete", optimizeResource, mcOptimizeName, mcSecondOptimizeName, "-n", mcKeycloakNamespace,
-			"--ignore-not-found", "--wait=false",
+			"delete", optimizeResource, mcOptimizeName, mcSecondOptimizeName, mcRetargetOptimizeName,
+			"-n", mcKeycloakNamespace, "--ignore-not-found", "--wait=false",
 		)
 		_, _ = utils.Kubectl(
 			"delete", ccResource, ccName, "-n", mcKeycloakNamespace, "--ignore-not-found", "--wait=false",
 		)
 		_, _ = utils.Kubectl(
-			"delete", mcResource, mcKeycloakName, "-n", mcKeycloakNamespace, "--ignore-not-found",
+			"delete", mcResource, mcKeycloakName, mcRetargetName, mcClaimantName,
+			"-n", mcKeycloakNamespace, "--ignore-not-found",
 		)
 		_, _ = utils.Kubectl(
 			"delete", ccPlatformResource, mcKeycloakPlatform, mcKeycloakClusterPlatform, "--ignore-not-found",
 		)
 		_, _ = utils.Kubectl(
 			"delete", dbResource, mcKeycloakDatabase, mcKeycloakIdentityDB, mcKeycloakWebModelerDB,
+			mcRetargetIdentityDB, mcClaimantIdentityDB,
 			"-n", mcKeycloakNamespace, "--ignore-not-found", "--wait=false",
 		)
 		_, _ = utils.Kubectl(
@@ -357,6 +379,192 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 		Eventually(func(g Gomega) {
 			expectReady(g, authConfigResource, mcKeycloakName, "", v1.ReasonHealthy)
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
+	})
+
+	// The two specs below are the journeys of the callback record and of the
+	// realm claim. Each of them runs a Management Identity of its own beside
+	// the management plane above, so they run here, before the orchestration
+	// cluster and Optimize of this flow reserve the rest of the CPU of the
+	// node, and they take their planes down again when they are through.
+	It("moves the login callbacks of Optimize to the realm that the spec names", func() {
+		By("creating the Management Identity database of the retargeted plane")
+		Expect(apply(managementDatabase(
+			mcRetargetIdentityDB, mcKeycloakServer, mcKeycloakNamespace, "retarget_identity", "",
+		))).To(Succeed())
+		Eventually(func(g Gomega) {
+			expectReady(g, dbResource, mcRetargetIdentityDB, mcKeycloakNamespace, v1.ReasonHealthy)
+			expectReady(g, dbConfigResource, mcRetargetIdentityDB, mcKeycloakNamespace, v1.ReasonHealthy)
+		}, 5*time.Minute, 5*time.Second).Should(Succeed())
+
+		// The Optimize comes first, so the first Management Identity of the
+		// plane already carries the Optimize preset and starts once.
+		By("creating the CamundaOptimize that the plane serves")
+		Expect(apply(retargetOptimize())).To(Succeed())
+
+		By("creating a plane on realm A and waiting for its login callbacks")
+		Expect(apply(retarget)).To(Succeed())
+		Eventually(func(g Gomega) {
+			expectReady(g, mcResource, mcRetargetName, mcKeycloakNamespace, v1.ReasonHealthy)
+			expectCondition(
+				g, mcResource, mcRetargetName, mcKeycloakNamespace,
+				v1.ConditionOptimizeCallbacksReady, v1.ReasonHealthy,
+			)
+			expectCallbackRealm(g, managementPlane(g, mcRetargetName), mcRealmA)
+		}, mcReadyTimeout, 10*time.Second).Should(Succeed())
+
+		By("carrying the login callback on the Optimize client of realm A")
+		client, err := realmClient(mc, mcRealmA, mcOptimizeClientID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(client).To(ContainSubstring(retargetCallbackURL()))
+
+		before, err := identityUID(retarget)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("pointing the plane at realm B")
+		_, err = utils.Kubectl(
+			"patch", mcResource, mcRetargetName, "-n", mcKeycloakNamespace, "--type=merge",
+			"-p", fmt.Sprintf(`{"spec":{"identityProvider":{"externalKeycloak":{"realm":%q}}}}`, mcRealmB),
+		)
+		Expect(err).NotTo(HaveOccurred())
+
+		// The plane empties realm A in the pass that reads the new spec, and
+		// it stays there until every Management Identity that can fill that
+		// realm again is gone. The message of that state says the realm is
+		// empty, and the record still names realm A while it lasts.
+		By("holding the plane on realm A until nothing of it can write that realm")
+		Eventually(func(g Gomega) {
+			plane := managementPlane(g, mcRetargetName)
+			expectCallbackRealm(g, plane, mcRealmA)
+
+			cond := meta.FindStatusCondition(plane.Status.Conditions, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(cond).NotTo(BeNil(), "the plane reports no %s yet", v1.ConditionOptimizeCallbacksReady)
+			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse), cond.Message)
+			g.Expect(cond.Reason).To(Equal(string(component.PrerequisiteNotMet)), cond.Message)
+			g.Expect(cond.Message).To(ContainSubstring("holds no login callback"), cond.Message)
+		}, 5*time.Minute, time.Second).Should(Succeed())
+
+		// Realm B is read first. The checkpoint above lasts until the pods of
+		// the old realm are gone, and each read costs a helper pod, so a read
+		// of realm B taken second is a read that the end of the drain can
+		// reach. Realm A holds still either way: once it is empty, nothing of
+		// this plane points at it again.
+		By("creating nothing in realm B and leaving no login callback in realm A")
+		client, err = realmClient(mc, mcRealmB, mcOptimizeClientID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(client).To(
+			BeEmpty(), "Keycloak serves realm %q while the plane is still leaving realm %q", mcRealmB, mcRealmA,
+		)
+
+		client, err = realmClient(mc, mcRealmA, mcOptimizeClientID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(client).To(ContainSubstring(mcOptimizeClientJSON), "realm %q holds no Optimize client", mcRealmA)
+		Expect(client).NotTo(ContainSubstring(retargetCallbackURL()))
+
+		By("recording realm B and registering the login callbacks there")
+		Eventually(func(g Gomega) {
+			expectCallbackRealm(g, managementPlane(g, mcRetargetName), mcRealmB)
+			expectCondition(
+				g, mcResource, mcRetargetName, mcKeycloakNamespace,
+				v1.ConditionOptimizeCallbacksReady, v1.ReasonHealthy,
+			)
+			expectReady(g, mcResource, mcRetargetName, mcKeycloakNamespace, v1.ReasonHealthy)
+		}, mcReadyTimeout, 10*time.Second).Should(Succeed())
+
+		client, err = realmClient(mc, mcRealmB, mcOptimizeClientID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(client).To(ContainSubstring(retargetCallbackURL()))
+
+		client, err = realmClient(mc, mcRealmA, mcOptimizeClientID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(client).To(ContainSubstring(mcOptimizeClientJSON), "realm %q holds no Optimize client", mcRealmA)
+		Expect(client).NotTo(ContainSubstring(retargetCallbackURL()))
+
+		// The move costs the plane the Management Identity of the old realm,
+		// and the components build a Deployment for the new realm. A UID that
+		// stands over a requeue interval is the plane at rest rather than a
+		// plane that keeps replacing its Identity.
+		By("replacing Management Identity and holding it")
+		after, err := identityUID(retarget)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(after).NotTo(Equal(before), "Management Identity was never replaced")
+		Consistently(func(g Gomega) {
+			current, err := identityUID(retarget)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(current).To(Equal(after), "Management Identity was replaced again")
+		}, 30*time.Second, 10*time.Second).Should(Succeed())
+	})
+
+	It("parks a second plane on a claimed realm and hands the realm over when the holder goes", func() {
+		By("creating the Management Identity database of the second plane")
+		Expect(apply(managementDatabase(
+			mcClaimantIdentityDB, mcKeycloakServer, mcKeycloakNamespace, "claimant_identity", "",
+		))).To(Succeed())
+		Eventually(func(g Gomega) {
+			expectReady(g, dbResource, mcClaimantIdentityDB, mcKeycloakNamespace, v1.ReasonHealthy)
+			expectReady(g, dbConfigResource, mcClaimantIdentityDB, mcKeycloakNamespace, v1.ReasonHealthy)
+		}, 5*time.Minute, 5*time.Second).Should(Succeed())
+
+		By("creating a second plane on the realm that the first one holds")
+		Expect(apply(claimant)).To(Succeed())
+
+		By("parking it and naming the holder")
+		Eventually(func(g Gomega) {
+			cond, err := utils.Condition(mcResource, mcClaimantName, mcKeycloakNamespace, v1.ConditionReady)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(cond).NotTo(BeNil(), "the second plane reports no %s yet", v1.ConditionReady)
+			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse), cond.Message)
+			g.Expect(cond.Reason).To(Equal(v1.ReasonRealmClaimedElsewhere), cond.Message)
+			g.Expect(cond.Message).To(
+				ContainSubstring(mcKeycloakNamespace+"/"+mcRetargetName), cond.Message,
+			)
+		}, 3*time.Minute, 5*time.Second).Should(Succeed())
+
+		By("running no Management Identity while it waits")
+		Consistently(func(g Gomega) {
+			expectConditionFalse(
+				g, mcResource, mcClaimantName, mcKeycloakNamespace,
+				v1.ConditionReady, v1.ReasonRealmClaimedElsewhere,
+			)
+
+			exists, err := utils.Exists("deployment", components.IdentityName(claimant), mcKeycloakNamespace)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(exists).To(BeFalse(), "the parked plane runs a Management Identity")
+		}, 30*time.Second, 10*time.Second).Should(Succeed())
+
+		// The holder withdraws its login callbacks from realm B and gives the
+		// claim back while it goes, so this delete does not wait for it.
+		By("deleting the holder of realm B")
+		_, err := utils.Kubectl(
+			"delete", mcResource, mcRetargetName, "-n", mcKeycloakNamespace, "--wait=false",
+		)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("taking the claim over and converging")
+		Eventually(func(g Gomega) {
+			expectReady(g, mcResource, mcClaimantName, mcKeycloakNamespace, v1.ReasonHealthy)
+		}, mcReadyTimeout, 10*time.Second).Should(Succeed())
+
+		By("holding the claim Lease of realm B")
+		lease, err := realmClaimLease(mc, mcRealmB)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(lease.Annotations).To(HaveKeyWithValue(
+			components.RealmClaimHolderNamespaceAnnotation, mcKeycloakNamespace,
+		))
+		Expect(lease.Annotations).To(HaveKeyWithValue(
+			components.RealmClaimHolderNameAnnotation, mcClaimantName,
+		))
+
+		// The specs that follow run the orchestration cluster and Optimize of
+		// this flow, and the node carries them beside one management plane.
+		By("removing the second plane and the CamundaOptimize of the journeys")
+		_, err = utils.Kubectl(
+			"delete", mcResource, mcClaimantName, "-n", mcKeycloakNamespace, "--wait=false",
+		)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = utils.Kubectl(
+			"delete", optimizeResource, mcRetargetOptimizeName, "-n", mcKeycloakNamespace, "--wait=false",
+		)
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	It("attaches an orchestration cluster on the realm and points it at Console", func() {
@@ -1300,7 +1508,7 @@ func realmOptimizeClient(mc *v1.CamundaManagementCluster) (string, error) {
 				Env: []corev1.EnvVar{
 					{Name: "KC_URL", Value: keycloakServiceURL(mc)},
 					{Name: "KC_REALM", Value: mcRealm},
-					{Name: "KC_CLIENT_ID", Value: "optimize"},
+					{Name: "KC_CLIENT_ID", Value: mcOptimizeClientID},
 					utils.SecretEnv("KC_USER", adminSecret, components.KeycloakAdminUsernameKey),
 					utils.SecretEnv("KC_PASSWORD", adminSecret, components.KeycloakAdminPasswordKey),
 				},
@@ -1364,23 +1572,16 @@ func realmUserRoles(mc *v1.CamundaManagementCluster, username string) (string, e
 	}, podTimeout)
 }
 
-// readUserRolesScript reads an administrator token from the master realm,
-// looks the user up by the exact name, and prints the realm roles that the
-// user holds. The read is the composite one, so a role of a group of the user
-// is in the answer, the way the operator reads it.
+// readUserRolesScript looks the user up by the exact name and prints the realm
+// roles that the user holds. The read is the composite one, so a role of a
+// group of the user is in the answer, the way the operator reads it.
 //
-// The curl image carries no jq, so the token and the internal id of the user
-// are cut out with sed. The pattern for the id stops at the first object of
-// the list, which is the only one an exact lookup returns. The username goes
-// through --data-urlencode, so a name with a reserved character in it reaches
-// Keycloak whole.
-const readUserRolesScript = `KC_TOKEN=$(curl -sS ` +
-	`-d grant_type=password -d client_id=admin-cli ` +
-	`--data-urlencode "username=$KC_USER" --data-urlencode "password=$KC_PASSWORD" ` +
-	`"$KC_URL/realms/master/protocol/openid-connect/token" | ` +
-	`sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-if [ -z "$KC_TOKEN" ]; then echo "no access_token from $KC_URL" >&2; exit 1; fi
-KC_USER_ID=$(curl -sS -f -G -H "Authorization: Bearer $KC_TOKEN" ` +
+// The curl image carries no jq, so the internal id of the user is cut out with
+// sed. The pattern stops at the first object of the list, which is the only
+// one an exact lookup returns. The username goes through --data-urlencode, so
+// a name with a reserved character in it reaches Keycloak whole.
+const readUserRolesScript = keycloakTokenScript + `KC_USER_ID=$(curl -sS -f -G ` +
+	`-H "Authorization: Bearer $KC_TOKEN" ` +
 	`-d exact=true --data-urlencode "username=$KC_USERNAME" ` +
 	`"$KC_URL/admin/realms/$KC_REALM/users" | ` +
 	`sed -n 's/^[^{]*{[^}]*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
@@ -1389,39 +1590,21 @@ curl -sS -f -H "Authorization: Bearer $KC_TOKEN" ` +
 	`"$KC_URL/admin/realms/$KC_REALM/users/$KC_USER_ID/role-mappings/realm/composite" | ` +
 	`tr -d ' '`
 
-// readRolesScript reads an administrator token from the master realm and
-// prints the realm roles.
-const readRolesScript = `KC_TOKEN=$(curl -sS ` +
-	`-d grant_type=password -d client_id=admin-cli ` +
-	`--data-urlencode "username=$KC_USER" --data-urlencode "password=$KC_PASSWORD" ` +
-	`"$KC_URL/realms/master/protocol/openid-connect/token" | ` +
-	`sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-if [ -z "$KC_TOKEN" ]; then echo "no access_token from $KC_URL" >&2; exit 1; fi
-curl -sS -f -H "Authorization: Bearer $KC_TOKEN" ` +
+// readRolesScript prints the realm roles.
+const readRolesScript = keycloakTokenScript + `curl -sS -f ` +
+	`-H "Authorization: Bearer $KC_TOKEN" ` +
 	`"$KC_URL/admin/realms/$KC_REALM/roles" | tr -d ' '`
 
-// readClientScript reads an administrator token from the master realm and
-// prints the clients of the realm whose client id is KC_CLIENT_ID.
-const readClientScript = `KC_TOKEN=$(curl -sS ` +
-	`-d grant_type=password -d client_id=admin-cli ` +
-	`--data-urlencode "username=$KC_USER" --data-urlencode "password=$KC_PASSWORD" ` +
-	`"$KC_URL/realms/master/protocol/openid-connect/token" | ` +
-	`sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-if [ -z "$KC_TOKEN" ]; then echo "no access_token from $KC_URL" >&2; exit 1; fi
-curl -sS -f -H "Authorization: Bearer $KC_TOKEN" ` +
+// readClientScript prints the clients of the realm whose client id is
+// KC_CLIENT_ID.
+const readClientScript = keycloakTokenScript + `curl -sS -f ` +
+	`-H "Authorization: Bearer $KC_TOKEN" ` +
 	`"$KC_URL/admin/realms/$KC_REALM/clients?clientId=$KC_CLIENT_ID"`
 
-// registerClientScript reads an administrator token from the master realm and
-// posts one client to the realm. The curl image carries no jq, so the token
-// is cut out with sed, as the client-credentials helper of the suite does. A
-// 409 is a client the realm already holds.
-const registerClientScript = `KC_TOKEN=$(curl -sS ` +
-	`-d grant_type=password -d client_id=admin-cli ` +
-	`--data-urlencode "username=$KC_USER" --data-urlencode "password=$KC_PASSWORD" ` +
-	`"$KC_URL/realms/master/protocol/openid-connect/token" | ` +
-	`sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-if [ -z "$KC_TOKEN" ]; then echo "no access_token from $KC_URL" >&2; exit 1; fi
-KC_CODE=$(printf '%s' "$KC_CLIENT" | curl -sS -o /tmp/response -w '%{http_code}' ` +
+// registerClientScript posts one client to the realm. A 409 is a client the
+// realm already holds.
+const registerClientScript = keycloakTokenScript + `KC_CODE=$(printf '%s' "$KC_CLIENT" | ` +
+	`curl -sS -o /tmp/response -w '%{http_code}' ` +
 	`-H "Authorization: Bearer $KC_TOKEN" -H 'Content-Type: application/json' ` +
 	`--data-binary @- "$KC_URL/admin/realms/$KC_REALM/clients")
 echo "$KC_CODE"
