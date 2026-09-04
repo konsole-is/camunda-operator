@@ -207,6 +207,58 @@ func TestTakeTakesOverAHolderThatKeepsNothing(t *testing.T) {
 	assert.Equal(t, HolderOf(next), holder)
 }
 
+// Two claimants that meet one stale holder both try the takeover, and the
+// API server refuses the delete of the loser. The claim is decided by then, so
+// the loser reports the winner rather than a failure the reconcile retries.
+func TestTakeReportsTheClaimantThatWonATakeover(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	schema := testSchema()
+	gone := claimant("alpha", "gone", "uid-gone")
+	winner := claimant("beta", "winner", "uid-winner")
+	loser := claimant("gamma", "loser", "uid-loser")
+
+	c := fake.NewClientBuilder().
+		WithScheme(testScheme(t)).
+		WithObjects(gone, winner, loser, schema.NewLease(testNamespace, "key", gone)).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Delete: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				_ ...client.DeleteOption,
+			) error {
+				// The winner takes the Lease over between the read of the
+				// loser and its delete, so the preconditions no longer hold.
+				var lease coordinationv1.Lease
+				if err := c.Get(ctx, client.ObjectKeyFromObject(obj), &lease); err != nil {
+					return err
+				}
+				lease.Annotations[schema.HolderNamespaceAnnotation] = winner.Namespace
+				lease.Annotations[schema.HolderNameAnnotation] = winner.Name
+				lease.Annotations[schema.HolderUIDAnnotation] = string(winner.UID)
+				if err := c.Update(ctx, &lease); err != nil {
+					return err
+				}
+
+				return apierrors.NewConflict(
+					coordinationv1.Resource("leases"), obj.GetName(),
+					errors.New("the Lease changed"),
+				)
+			},
+		}).
+		Build()
+
+	blocker, err := New(schema, c, c, testNamespace, keepNone).Take(ctx, loser, "key")
+
+	require.NoError(t, err)
+	require.NotNil(t, blocker)
+	assert.Equal(t, HolderOf(winner), blocker.Holder)
+	_, found := leaseOf(t, c, "key")
+	assert.True(t, found, "the Lease of the winner survives")
+}
+
 // A holder that cannot be read keeps what it holds. A takeover after a failed
 // read hands one key to two claimants each time the API server fails.
 func TestTakeKeepsTheClaimWhenTheHolderCannotBeRead(t *testing.T) {

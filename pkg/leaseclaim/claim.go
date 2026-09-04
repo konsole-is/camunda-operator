@@ -116,7 +116,9 @@ func New[T client.Object](
 // it: only a failure of the Kubernetes API comes back as an error.
 //
 // A holder that HolderKeeps answers for is taken over: the Lease goes under
-// its UID and its resourceVersion, and the create runs once more.
+// its UID and its resourceVersion, and the create runs once more. A second
+// claimant that took the same Lease over first leaves this one a Blocker that
+// names it.
 func (c *Claim[T]) Take(ctx context.Context, owner T, key string) (*Blocker, error) {
 	blocker, err := c.create(ctx, owner, key)
 	if err != nil || blocker == nil || blocker.Foreign() {
@@ -218,6 +220,11 @@ func (c *Claim[T]) Read(ctx context.Context, key string) (*coordinationv1.Lease,
 // Drop deletes the claim Lease of key while its annotations still name
 // holder. A Lease that is gone, and one that another resource holds, is left
 // alone.
+//
+// A second claimant that took the same stale holder over between the read and
+// the delete leaves a Lease the preconditions refuse. That is the claim
+// decided rather than a failure, so Drop reports no error and the create that
+// follows it names the winner.
 
 func (c *Claim[T]) Drop(ctx context.Context, key string, holder Holder) error {
 	lease, found, err := c.Read(ctx, key)
@@ -229,7 +236,11 @@ func (c *Claim[T]) Drop(ctx context.Context, key string, holder Holder) error {
 		return nil
 	}
 
-	return c.Release(ctx, lease)
+	if err := c.Release(ctx, lease); err != nil && !apierrors.IsConflict(err) {
+		return err
+	}
+
+	return nil
 }
 
 // Release deletes lease under the UID and the resourceVersion that it was
