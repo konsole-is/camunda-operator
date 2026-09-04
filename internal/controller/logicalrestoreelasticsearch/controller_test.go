@@ -527,11 +527,14 @@ var _ = Describe("LogicalRestoreElasticsearch of primary storage", func() {
 	It("refuses a backup that was replaced under its name", func() {
 		w := newWorld()
 		backup := createBackup(w)
-		restore := createRestore(w, backup.Name)
-
-		Eventually(func(g Gomega) {
-			g.Expect(latest(g, restore).Status.BackupID).To(Equal(backupID))
-		}, timeout, interval).Should(Succeed())
+		// The refusal belongs to a restore that started. Admission pins the
+		// backup id one look before it writes to the cluster, so the pin is
+		// readable while the restore is still in Pending. A restore in Pending
+		// has touched nothing, and a backup that does not match its pin holds
+		// it there instead of ending it. The spec therefore starts the restore
+		// before it replaces the backup.
+		restore := startedRestore(w, backup)
+		Expect(latestOf(restore).Status.BackupID).To(Equal(backupID))
 
 		By("replacing the backup with another completed one of the same name")
 		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())

@@ -148,6 +148,11 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 		CRDDirectoryPaths:     crdPaths,
 		ErrorIfCRDPathMissing: true,
 		BinaryAssetsDirectory: utils.EnvtestBinaryDir(),
+		// envtest gives the API server twenty seconds to answer. A full run
+		// starts one control plane per suite, and several of them boot at once
+		// on one machine. A boot that is slow under that load is not a defect
+		// of the suite that reports it.
+		ControlPlaneStartTimeout: 2 * time.Minute,
 	}
 
 	cfg, err := control.Start()
