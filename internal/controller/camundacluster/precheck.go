@@ -301,9 +301,9 @@ func (res *resolver) resolveRDBMSStorage(
 
 // checkDumpCredentials reports the backup user of the database as a Warning
 // event when it does not resolve. Only dump Jobs consume it, so the cluster
-// neither parks nor rolls its pods on it, and the backup that needs it fails
-// its own pre-check. The Secret is no hash input. A nil reference means that
-// the database takes no dumps.
+// neither parks nor rolls its pods on it, and the backup that needs it parks
+// on its own pre-check. The Secret is no hash input. A nil reference means
+// that the database takes no dumps.
 func (res *resolver) checkDumpCredentials(
 	ctx context.Context,
 	ref *v1.LocalCredentialsSecretRef,
