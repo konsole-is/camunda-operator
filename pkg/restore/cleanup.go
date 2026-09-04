@@ -34,8 +34,9 @@ import (
 //
 // The recorded terminal reason decides what happens. A completed restore gives
 // its Jobs up, and a failed restore keeps them, because the logs of a failed
-// Job are the diagnosis. A failed restore therefore holds the broker data
-// volumes until somebody deletes the restore, which takes its Jobs with it.
+// Job are the diagnosis. A restore that failed after it recorded its Jobs
+// therefore holds the broker data volumes until somebody deletes the restore.
+// That delete takes its Jobs with it.
 //
 // Outcome.Done reports that no recorded Job is left, and only then are the
 // broker volumes free. Outcome.Wait paces the look that follows.
