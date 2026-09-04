@@ -598,7 +598,7 @@ func (r *LogicalBackupRDBMSReconciler) resolvePod(
 				"reading CamundaClusterPreset %q: %w", cluster.Spec.PresetRef, err,
 			)
 		}
-		merged = camundacluster.MergePreset(cluster.Spec, &preset.Spec)
+		merged = camundacluster.MergeSpec(cluster.Spec, &preset.Spec, nil)
 	}
 
 	settings, owned, image := dumpBlock(merged, backup)

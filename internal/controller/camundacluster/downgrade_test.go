@@ -119,7 +119,7 @@ func TestConsumeDowngradeSanction(t *testing.T) {
 			in := components.Input{
 				Effective: components.NewEffective(v1.CamundaClusterSpec{Version: tt.effective}),
 			}
-			storage := brokerStorageRunning("camunda/camunda:8.9.9")
+			storage := brokerStorageRunning("8.9.9")
 			err = r.consumeDowngradeSanction(context.Background(), cluster, in, storage)
 
 			if tt.staleWrite {
@@ -152,9 +152,9 @@ func TestRefuseDowngrade(t *testing.T) {
 		sanctioned string
 		// effective is the version of the preset-merged spec.
 		effective string
-		// image is the broker image of the applied StatefulSet. Empty means
-		// that no StatefulSet is applied yet.
-		image string
+		// applied is the broker version annotation of the applied
+		// StatefulSet. Empty means that no StatefulSet is applied yet.
+		applied string
 		// running is the version that a refusal must name. Empty means that
 		// the case expects no refusal.
 		running string
@@ -162,26 +162,26 @@ func TestRefuseDowngrade(t *testing.T) {
 		{
 			name:      "a lower patch without a sanction",
 			effective: "8.9.8",
-			image:     "camunda/camunda:8.9.9",
+			applied:   "8.9.9",
 			running:   "8.9.9",
 		},
 		{
 			name:      "a lower minor without a sanction",
 			effective: "8.8.9",
-			image:     "camunda/camunda:8.9.9",
+			applied:   "8.9.9",
 			running:   "8.9.9",
 		},
 		{
 			name:       "the sanction names the effective version",
 			sanctioned: "8.9.8",
 			effective:  "8.9.8",
-			image:      "camunda/camunda:8.9.9",
+			applied:    "8.9.9",
 		},
 		{
 			name:       "the sanction names another version",
 			sanctioned: "8.9.7",
 			effective:  "8.9.8",
-			image:      "camunda/camunda:8.9.9",
+			applied:    "8.9.9",
 			running:    "8.9.9",
 		},
 		{
@@ -189,19 +189,18 @@ func TestRefuseDowngrade(t *testing.T) {
 			effective: "8.9.8",
 		},
 		{
-			name:      "the running tag is not a version",
+			name:      "an applied StatefulSet without the annotation constrains nothing",
 			effective: "8.9.8",
-			image:     "camunda/camunda:latest",
 		},
 		{
 			name:      "the effective version equals the running one",
 			effective: "8.9.9",
-			image:     "camunda/camunda:8.9.9",
+			applied:   "8.9.9",
 		},
 		{
 			name:      "the effective version is above the running one",
 			effective: "8.9.10",
-			image:     "camunda/camunda:8.9.9",
+			applied:   "8.9.9",
 		},
 	}
 
@@ -219,8 +218,8 @@ func TestRefuseDowngrade(t *testing.T) {
 				Effective: components.NewEffective(v1.CamundaClusterSpec{Version: tt.effective}),
 			}
 			storage := brokerStorage{}
-			if tt.image != "" {
-				storage = brokerStorageRunning(tt.image)
+			if tt.applied != "" {
+				storage = brokerStorageRunning(tt.applied)
 			}
 
 			failure := refuseDowngrade(cluster, in, storage)

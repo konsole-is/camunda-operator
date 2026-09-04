@@ -1,0 +1,14 @@
+# CamundaPlatformConfig is cluster scoped, so it carries no namespace.
+# The management plane runs its own Keycloak, so the platform configuration
+# needs no identity provider of its own.
+apiVersion: core.camunda.io/v1
+kind: CamundaPlatformConfig
+metadata:
+  name: my-platform-config
+spec:
+  auth:
+    method: basic
+  licenseSecretRef:
+    name: my-camunda-license
+    namespace: my-management-ns
+    key: license-key

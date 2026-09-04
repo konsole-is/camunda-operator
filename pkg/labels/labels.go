@@ -53,6 +53,11 @@ const (
 	// relates to. It tells a cluster apart from a later one of the same name
 	// and namespace.
 	ClusterUIDKey = "camunda.io/cluster-uid"
+	// StorageContractKey names the SecondaryStorageConfig that a pod of a
+	// CamundaCluster runs on. It is on the pod, never on the selector, so a
+	// repoint of the cluster rolls the pods and the new ones carry the new
+	// value.
+	StorageContractKey = "camunda.io/storage-contract"
 	// ElasticsearchClusterKey names the owning ElasticsearchCluster.
 	ElasticsearchClusterKey = "camunda.io/elasticsearch-cluster"
 	// DatabaseServerKey names the owning DatabaseServer.
@@ -213,13 +218,21 @@ func Discovery(owner Owner, component string) map[string]string {
 	}
 }
 
-// Merge returns the user labels with the operator labels applied over them.
+// Merge returns the user labels with the operator labels applied over them,
+// a later map over an earlier one.
 // A user label never overrides an operator label, because extensions and
 // selectors depend on the operator labels. The result is a new map.
-func Merge(user, operator map[string]string) map[string]string {
-	merged := make(map[string]string, len(user)+len(operator))
+func Merge(user map[string]string, operator ...map[string]string) map[string]string {
+	size := len(user)
+	for _, m := range operator {
+		size += len(m)
+	}
+
+	merged := make(map[string]string, size)
 	maps.Copy(merged, user)
-	maps.Copy(merged, operator)
+	for _, m := range operator {
+		maps.Copy(merged, m)
+	}
 	return merged
 }
 

@@ -72,7 +72,7 @@ When you delete the backup, the operator deletes the snapshots and the partition
 | `Ready` | `Completed` | The backup finished. `Ready` is `True`. | Nothing. Record `status.backupId` for a restore. |
 | `Ready` | `Failed` | A step failed. Exporting runs again. | Read `status.failureMessage`. Correct the cause and create a new backup. |
 | `Ready` | `ResumeFailed` | A step failed or finished, and exporting did not resume within 30 minutes. Exporting stays paused. | Repair the management API, then delete this backup. The deletion resumes exporting. No other backup of the cluster starts before that. |
-| `Ready` | `ClusterSuspended` | The cluster is suspended, by `spec.suspend` or because another cluster holds its storage contract. The backup waits. | Set `spec.suspend` of the cluster to `false`, or give the cluster a contract of its own. |
+| `Ready` | `ClusterSuspended` | The cluster is suspended, by `spec.suspend` or by the operator, for example while another cluster holds its storage contract or a reference of the cluster does not resolve. The backup waits. | Read the `Ready` condition of the cluster. Set `spec.suspend` to `false`, or remove what suspends it. |
 | `Ready` | `BackupInProgress` | Another backup of the cluster runs. This one waits. | Wait. If the message says that the cluster is paused, delete or repair the named backup. |
 | `Ready` | `StorageTypeMismatch` | The cluster does not store its data in Elasticsearch. | Use `LogicalBackupRDBMS` for a relational cluster. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, or the cluster publishes no snapshot repository. | Read the message. Create the resource, or set `snapshotStorageRef` on the `ElasticsearchCluster`. |

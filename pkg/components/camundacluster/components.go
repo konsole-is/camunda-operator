@@ -147,6 +147,18 @@ func discoveryLabels(cluster *v1.CamundaCluster, comp string) map[string]string 
 	return labels.Discovery(labels.Cluster(cluster.Name), comp)
 }
 
+// StoragePodLabels returns the labels that find every pod of the cluster
+// named cluster that runs on the SecondaryStorageConfig named contract. The
+// pods carry them next to the discovery labels, and a cluster that takes the
+// contract over lists the pods of the previous holder by them. Both values
+// are bounded the way a label value demands.
+func StoragePodLabels(cluster, contract string) map[string]string {
+	return map[string]string{
+		labels.ClusterKey:         labels.OwnerName(cluster),
+		labels.StorageContractKey: labels.OwnerName(contract),
+	}
+}
+
 // zeebeComponent builds the brokers: the optional ServiceAccount, the
 // StatefulSet, the headless Service, and the optional ServiceMonitor. It is
 // gated on p.Enabled like every process component.
@@ -309,10 +321,13 @@ func zeebeStatefulSet(in Input, p Process) *appsv1.StatefulSet {
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        WorkloadName(in.Cluster, p.Component),
-			Namespace:   in.Cluster.Namespace,
-			Labels:      managedLabels(in.Cluster, p.Component),
-			Annotations: map[string]string{RequestedStorageSizeAnnotation: storageSize.String()},
+			Name:      WorkloadName(in.Cluster, p.Component),
+			Namespace: in.Cluster.Namespace,
+			Labels:    managedLabels(in.Cluster, p.Component),
+			Annotations: map[string]string{
+				RequestedStorageSizeAnnotation: storageSize.String(),
+				BrokerVersionAnnotation:        e.Version,
+			},
 		},
 		Spec: appsv1.StatefulSetSpec{
 			Replicas:            new(p.Replicas),
@@ -374,6 +389,7 @@ func podTemplate(in Input, p Process) corev1.PodTemplateSpec {
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: labels.Merge(
 				DerivedPodLabels(in.Backup, in.Documents),
+				StoragePodLabels(in.Cluster.Name, in.Cluster.Spec.StorageRef),
 				discoveryLabels(in.Cluster, p.Component),
 			),
 			Annotations: map[string]string{ConfigHashAnnotation: configHash(in, p, r)},

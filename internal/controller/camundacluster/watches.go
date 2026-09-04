@@ -47,6 +47,10 @@ const (
 	// PresetRefField is exported: an extension that renders from the effective
 	// spec of a cluster finds the clusters bound to a preset through it.
 	PresetRefField = "camundacluster.spec.presetRef"
+	// ReleaseRefField is exported for the same reason: an extension that
+	// renders from the effective spec of a cluster finds the clusters bound
+	// to a release through it.
+	ReleaseRefField = "camundacluster.spec.releaseRef"
 	// PlatformConfigRefField is exported: an extension that reads the platform
 	// defaults of a cluster finds the clusters bound to one through it.
 	PlatformConfigRefField = "camundacluster.spec.platformConfigRef"
@@ -69,6 +73,9 @@ const (
 var indexers = map[string]client.IndexerFunc{
 	PresetRefField: func(o client.Object) []string {
 		return nonEmpty(o.(*v1.CamundaCluster).Spec.PresetRef)
+	},
+	ReleaseRefField: func(o client.Object) []string {
+		return nonEmpty(o.(*v1.CamundaCluster).Spec.ReleaseRef)
 	},
 	PlatformConfigRefField: func(o client.Object) []string {
 		return nonEmpty(o.(*v1.CamundaCluster).Spec.PlatformConfigRef)
@@ -290,8 +297,8 @@ func (s requestSet) requests() []reconcile.Request {
 // clusters, the Secret index of the presets, and the watches. It owns the
 // workloads, Services, ServiceAccounts, and Secrets (metadata only) it
 // applies, and watches the broker claims by the camunda.io/cluster label.
-// Every reference is watched: platform configs, presets, bindings, and object
-// storage configs through the indexes, DatabaseConfigs by namespace,
+// Every reference is watched: platform configs, presets, releases, bindings,
+// and object storage configs through the indexes, DatabaseConfigs by namespace,
 // DatabaseServerConfigs for every cluster, and Secrets (metadata only)
 // through enqueueForSecret, which also follows the Secret indexes of the
 // platform configs, the bindings, and the DatabaseConfigs. The pre-checks put the
@@ -356,6 +363,10 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&v1.CamundaClusterPreset{},
 			refindex.Enqueue(cached, clusters, PresetRefField, refindex.ObjectName),
+		).
+		Watches(
+			&v1.CamundaRelease{},
+			refindex.Enqueue(cached, clusters, ReleaseRefField, refindex.ObjectName),
 		).
 		Watches(
 			&v1.SecondaryStorageConfig{},

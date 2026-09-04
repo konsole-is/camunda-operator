@@ -27,6 +27,8 @@ graph LR
 
 The operator checks every reference after the resources exist, not when you apply them, so you can create the resources in any order. The order above is the one where nothing waits.
 
+Two complete inventories follow this order and are ready to apply: [`config/example/camunda-management-cluster/keycloak`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-management-cluster/keycloak) for step 3a, and [`config/example/camunda-management-cluster/oidc`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-management-cluster/oidc) for step 3c.
+
 ## Step 1: The databases
 
 Management Identity, Web Modeler, and Keycloak each own every table of the database they open. Give each one a database of its own. Two components that name one [DatabaseConfig](../crds/databaseconfig.md) report `Ready=False` with reason `InvalidReference`.
@@ -79,6 +81,8 @@ Pick one of the three identity provider modes below. Everything else on the reso
 ### Step 3a: The operator runs Keycloak
 
 Use this when you want a self-contained platform. The operator creates a Keycloak for the Keycloak Operator to run, and Management Identity creates the realm, every client, and the first user in it. With Management Identity 8.9, set a `version` below `26.7.0`. See [The operator runs Keycloak](../crds/camundamanagementcluster.md#the-operator-runs-keycloak) for why.
+
+The whole chain of this step, with one orchestration cluster and Optimize, is ready to apply in [`config/example/camunda-management-cluster/keycloak`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-management-cluster/keycloak).
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -135,7 +139,7 @@ The operator generates one more Secret in this mode, `my-management-optimize-cli
 
 ### Step 3b: You run Keycloak
 
-Use this when your organization already runs Keycloak. Management Identity still creates the realm, the clients, and the first user in it, so it needs an administrator of that Keycloak.
+Use this when your organization already runs Keycloak. Management Identity still creates the realm, the clients, and the first user in it, so it needs an administrator of that Keycloak. Give every management plane a realm of its own. A second plane on the same realm waits with the `Ready` reason `RealmClaimedElsewhere`. See [One realm answers to one management plane](../crds/camundamanagementcluster.md#one-realm-answers-to-one-management-plane).
 
 Create the Secret with those credentials first:
 
@@ -179,6 +183,8 @@ The rest reads the same as [Step 3a](#step-3a-the-operator-runs-keycloak): the f
 ### Step 3c: Your own OIDC provider
 
 Use this when you already run an identity provider, for example Microsoft Entra ID, Okta, or a central Keycloak that you administer yourself. Nothing is created for you.
+
+The whole chain of this step is ready to apply in [`config/example/camunda-management-cluster/oidc`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-management-cluster/oidc).
 
 First register one application per component at your provider. Camunda lists which is confidential and which is public in [Connect Management Identity to an identity provider](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/), and it names the redirect URI of each one under [component-specific configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/#component-specific-configuration).
 
@@ -471,7 +477,7 @@ kubectl get camundamanagementcluster my-management -n my-management-ns \
 - **Rotate the Optimize client secret.** In the two Keycloak modes, delete `my-management-optimize-client`. The operator generates a new value and rolls the pods that read it. In the `oidc` mode, rotate the secret at your provider and update the Secret the platform config names.
 - **Take the management plane down for maintenance.** Set `spec.suspend: true`. Every workload goes to zero, Keycloak included. The contract, the annotation on each served cluster, and the Console settings stay, so nothing else has to change. `Ready` reads `True` with reason `Suspended`. Nobody can sign in to Console, Web Modeler, or Optimize while the management plane is down, because all three authenticate through Management Identity. The orchestration clusters run on.
 - **Upgrade a component.** Raise `identity.version`, `console.version`, `webModeler.version`, or `identityProvider.keycloak.version`. Each component carries its own version, so each one rolls on its own. The Keycloak Operator rolls Keycloak. In the two Keycloak modes, an upgrade keeps the realm, its clients, and its users.
-- **Move to another identity provider.** Change `spec.identityProvider`. The workloads roll into the new mode. The first administrator does not move with them: Management Identity keeps the one it started with, in its database.
+- **Move to another identity provider.** Change `spec.identityProvider`. The workloads roll into the new mode. The first administrator does not move with them: Management Identity keeps the one it started with, in its database. The login callbacks of Optimize move too. While the plane serves an Optimize, the operator empties a realm of a Keycloak that you ran (`externalKeycloak`) before the workloads move to another Keycloak. A move to the `oidc` mode is not held back. The operator empties the old realm first there too, and the workloads move even while the old Keycloak refuses to let the callbacks go. `OptimizeCallbacksReady` then names the realm still to be emptied, and the operator keeps trying. The operator registers no callback at an OIDC provider, so the callbacks of such a provider stay yours to keep. A Keycloak that the operator ran goes with the mode instead. Keep that old Keycloak, its administrator Secret, and the Secret of `caBundleSecretRef` when it named one, until `status.callbackRealm` stops naming it. See [Moving the callbacks to another realm](../crds/camundamanagementcluster.md#moving-the-callbacks-to-another-realm). A realm that another management plane already holds makes this one wait with the `Ready` reason `RealmClaimedElsewhere`. See [One realm answers to one management plane](../crds/camundamanagementcluster.md#one-realm-answers-to-one-management-plane).
 
 ## Related
 

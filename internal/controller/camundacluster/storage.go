@@ -177,21 +177,16 @@ func (s brokerStorage) runningVersion() string {
 	return components.RetainedVersion(s.claims)
 }
 
-// appliedVersion returns the tag of the broker image on the applied
-// StatefulSet, or the empty string before the first apply or when the
-// container carries no tag.
+// appliedVersion returns the version that the applied StatefulSet carries
+// in its broker version annotation. It returns the empty string before the
+// first apply, and for a StatefulSet without the annotation, which an apply
+// from before the annotation existed left behind.
 func (s brokerStorage) appliedVersion() string {
 	if s.statefulSet == nil {
 		return ""
 	}
 
-	for _, container := range s.statefulSet.Spec.Template.Spec.Containers {
-		if container.Name == components.ContainerCamunda {
-			return components.ImageTag(container.Image)
-		}
-	}
-
-	return ""
+	return s.statefulSet.Annotations[components.BrokerVersionAnnotation]
 }
 
 // stampBrokerVersion patches the broker version annotation onto every bound

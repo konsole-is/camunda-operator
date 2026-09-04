@@ -66,6 +66,9 @@ var _ = BeforeSuite(func() {
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),
 			Scheme:    mgr.GetScheme(),
+			// The handover spec waits for the cluster to look at the pods of
+			// the previous holder again, which happens on this timer.
+			RetryInterval: time.Second,
 		}).SetupWithManager(mgr); err != nil {
 			return err
 		}

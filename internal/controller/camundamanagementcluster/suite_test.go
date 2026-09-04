@@ -38,6 +38,10 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/testenv"
 )
 
+// testClaimNamespace holds the realm claim Leases of this suite. In a cluster
+// this is the namespace of the operator, which always exists, like this one.
+const testClaimNamespace = "default"
+
 // timeout and interval bound the Eventually polling of every envtest assertion.
 const (
 	timeout  = testenv.Timeout
@@ -130,6 +134,7 @@ var _ = BeforeSuite(func() {
 		// that a spec can watch the repair.
 		r.RetryInterval = time.Second
 		r.ConvergeInterval = time.Second
+		r.ClaimNamespace = testClaimNamespace
 
 		return r.SetupWithManager(mgr)
 	})

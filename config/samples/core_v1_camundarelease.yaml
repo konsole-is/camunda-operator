@@ -1,0 +1,14 @@
+apiVersion: core.camunda.io/v1
+kind: CamundaRelease
+metadata:
+  labels:
+    app.kubernetes.io/name: camunda-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: camunda-8-9-0
+spec:
+  version: "8.9.0"
+  connectors:
+    version: "8.9.7"
+  extraEnv:
+    - name: CAMUNDA_FEATURE_FLAG
+      value: "true"

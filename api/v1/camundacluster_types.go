@@ -17,6 +17,8 @@ limitations under the License.
 package v1
 
 import (
+	"slices"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -223,7 +225,7 @@ type ConnectorsSpec struct {
 	// Version is the version of the connectors bundle image, as a full
 	// semantic version. The bundle has its own patch line, so it does not
 	// follow the cluster version. Required when connectors are enabled,
-	// unless the resolved preset provides it.
+	// unless the resolved release provides it. Forbidden in a preset.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	// +optional
 	Version      string `json:"version,omitempty"`
@@ -371,7 +373,7 @@ type ClusterMonitoringSpec struct {
 // and rejected in a preset.
 type CamundaClusterSpec struct {
 	// PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that
-	// provides auth, license, and image registry. Required on a
+	// provides auth, license, and image repositories. Required on a
 	// CamundaCluster, forbidden in a preset.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=253
@@ -381,13 +383,18 @@ type CamundaClusterSpec struct {
 	// configuration baseline. The preset doc lists the merge rules.
 	// +optional
 	PresetRef string `json:"presetRef,omitempty"`
+	// ReleaseRef names a cluster-scoped CamundaRelease that provides the
+	// versions, the pinned images, and the environment of a version. It
+	// merges over the preset and under this spec. Forbidden in a preset.
+	// +optional
+	ReleaseRef string `json:"releaseRef,omitempty"`
 	// Version is the Camunda version to deploy, as a full semantic version.
-	// The floor of 8.9.0 is enforced by the controller on the preset-merged
-	// result, the schema pins only the three-segment shape. Required unless
-	// the resolved preset provides it. A value below the version that the
-	// brokers run is refused with Ready VersionDowngradeRefused unless the
-	// annotation camunda.io/allow-version-downgrade on the CamundaCluster
-	// names it.
+	// The floor of 8.9.0 is enforced by the controller on the merged result,
+	// the schema pins only the three-segment shape. Required unless the
+	// resolved release provides it, and forbidden in a preset. A value below
+	// the version that the brokers run is refused with Ready
+	// VersionDowngradeRefused unless the annotation
+	// camunda.io/allow-version-downgrade on the CamundaCluster names it.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	// +optional
 	Version string `json:"version,omitempty"`
@@ -610,14 +617,31 @@ func (in *CamundaCluster) SetObservedGeneration(generation int64) {
 	in.Status.ObservedGeneration = generation
 }
 
+// suspendedReadyReasons are the Ready reasons under which the operator holds
+// every workload of the cluster at zero: another cluster holds the storage
+// contract, the cluster waits for the pods of the previous holder of a
+// contract it takes over, or a pre-check failed on a dangling reference or a
+// missing Secret. VersionDowngradeRefused is not one of them: a refused
+// cluster keeps running on the version it has.
+var suspendedReadyReasons = []string{
+	ReasonStorageAlreadyAttached,
+	ReasonWaitingForHandover,
+	ReasonInvalidReference,
+	ReasonMissingSecret,
+}
+
 // Suspended reports whether the operator scales every workload of the cluster
-// to zero: spec.suspend is set, or another cluster holds the storage contract
-// and Ready carries reason StorageAlreadyAttached. An extension attached to
-// the cluster follows this, not spec.suspend alone.
+// to zero: spec.suspend is set, or Ready carries one of the
+// suspendedReadyReasons. An extension attached to the cluster follows this,
+// not spec.suspend alone.
 func (in *CamundaCluster) Suspended() bool {
+	if in.Spec.Suspend {
+		return true
+	}
+
 	ready := meta.FindStatusCondition(in.Status.Conditions, ConditionReady)
 
-	return in.Spec.Suspend || (ready != nil && ready.Reason == ReasonStorageAlreadyAttached)
+	return ready != nil && slices.Contains(suspendedReadyReasons, ready.Reason)
 }
 
 // +kubebuilder:object:root=true

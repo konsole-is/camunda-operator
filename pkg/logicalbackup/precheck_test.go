@@ -189,6 +189,38 @@ func TestPreCheckFailures(t *testing.T) {
 			message: "suspended",
 		},
 		{
+			name: "the cluster waits for a storage handover",
+			objects: func() []client.Object {
+				c := cluster()
+				c.Status.Conditions = []metav1.Condition{{
+					Type:               v1.ConditionReady,
+					Status:             metav1.ConditionFalse,
+					Reason:             v1.ReasonWaitingForHandover,
+					LastTransitionTime: metav1.Now(),
+				}}
+				return []client.Object{c, storage(v1.SecondaryStorageTypeElasticsearch), bucket()}
+			}(),
+			reason:  v1.ReasonClusterSuspended,
+			waiting: true,
+			message: "suspended",
+		},
+		{
+			name: "a pre-check failure holds the cluster at zero",
+			objects: func() []client.Object {
+				c := cluster()
+				c.Status.Conditions = []metav1.Condition{{
+					Type:               v1.ConditionReady,
+					Status:             metav1.ConditionFalse,
+					Reason:             v1.ReasonInvalidReference,
+					LastTransitionTime: metav1.Now(),
+				}}
+				return []client.Object{c, storage(v1.SecondaryStorageTypeElasticsearch), bucket()}
+			}(),
+			reason:  v1.ReasonClusterSuspended,
+			waiting: true,
+			message: "suspended",
+		},
+		{
 			name:    "the secondary storage does not exist",
 			objects: []client.Object{cluster(), bucket()},
 			reason:  v1.ReasonInvalidReference,

@@ -96,6 +96,8 @@ Keycloak needs a PostgreSQL database of its own. `databaseConfigRef` names a [Da
 
 The Keycloak Operator writes the first Keycloak administrator into the Secret `my-management-keycloak-initial-admin`. Management Identity signs in with it to create the realm.
 
+The realm of this Keycloak answers to this management plane alone. Another plane that names the address of this Keycloak under `identityProvider.externalKeycloak` waits with the `Ready` reason `RealmClaimedElsewhere`. See [One realm answers to one management plane](#one-realm-answers-to-one-management-plane).
+
 ### You run Keycloak
 
 `identityProvider.externalKeycloak` connects Management Identity to a Keycloak that you run. Management Identity still creates the realm, the clients, and the first user in it. Run Keycloak 26, below 26.7.0, for the reason the [section above](#the-operator-runs-keycloak) gives.
@@ -123,6 +125,35 @@ spec:
 `realm` defaults to `camunda-platform`. The realm lands in the issuer, the token, and the JWKS path that Management Identity builds. It holds letters, digits, dots, hyphens, and underscores only, and it starts and ends with a letter or a digit.
 
 `adminCredentialsSecretRef` names the Keycloak administrator that Management Identity bootstraps the realm with. The Secret lives in the namespace of this resource.
+
+#### One realm answers to one management plane
+
+The first `CamundaManagementCluster` that reaches the realm holds it. Management Identity administers the clients of that realm, and the plane owns the login callbacks of its `optimize` client, so a second plane on the same realm would undo both.
+
+Which plane that is comes from the order the operator reaches them, not from the order you created them. A suspended plane takes no realm until it resumes, and it keeps every realm it already holds.
+
+The realm of a Keycloak that the operator runs is held the same way. Its address is reachable inside the Kubernetes cluster, so a plane that names it under `identityProvider.externalKeycloak` waits for that realm.
+
+The realm that Management Identity administers is the realm this plane claims, so `spec.identity.extraEnv` refuses an entry named `KEYCLOAK_URL` or `KEYCLOAK_REALM`. An override there would put Management Identity in a realm that another plane holds.
+
+A second plane that names the same `url` and `realm` waits, from any namespace. The operator starts nothing new for it and writes nothing in that realm, and `Ready` names the holder:
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: RealmClaimedElsewhere
+      message: 'CamundaManagementCluster my-management-ns/my-management holds realm "camunda-platform" of Keycloak "https://keycloak.example.com/auth". One realm answers to one management plane, so this one waits and starts nothing new until that claim is released. Give it a realm of its own, or delete the holder'
+```
+
+Give the waiting plane a realm of its own, or delete the holder. The waiting plane then proceeds on its own. A holder releases a realm when it is deleted. It also releases one that its spec no longer names, once two things are true of that realm: the login callbacks have left it, and no Management Identity of the plane points at it any more. Two planes on one Keycloak with two realms work today.
+
+A plane that you retarget into the wait leaves the old realm first. While `status.callbackRealm` names a realm, the plane removes its login callbacks from that realm. Once they are out, it stops the Management Identity that points there, and this plane signs nobody in until it holds a realm again. An old Keycloak that does not let the callbacks go keeps that Management Identity running, and everybody keeps signing in through the old realm meanwhile. It keeps the claim on the old realm while any workload of it still points there, so no other plane takes a realm that this one starts against again. Give the waiting plane a realm of its own and its Management Identity comes back in that realm, or delete the plane and it gives back every realm it holds.
+
+A pod of that Management Identity that restarts while it waits writes the clients of the old realm again, and the login callbacks of this plane with them. The operator removes them again. It keeps removing them while `status.callbackRealm` names that realm, and the record goes once nothing of the plane can write it. The claim on the realm goes on a later look. Callbacks stay behind in a realm when you let go of it with the [`camunda.io/forget-callback-realm`](#moving-the-callbacks-to-another-realm) annotation. The record goes at once then, the claim still waits until no Management Identity of the plane points at the realm, and you remove the callbacks from its `optimize` client yourself.
+
+A plane can also come into the wait on the realm its own workloads run against. You upgrade a cluster where two planes already share one realm, or somebody removes a claim by hand and another plane takes it. The operator then writes nothing more in that realm, and `Ready` names the holder, but the Management Identity of the waiting plane keeps running against it, as every workload of a waiting plane does. Correct the spec of that plane, or delete it. Both of these remove the login callbacks of that plane from the realm, and they take the callbacks of the holder with them. The holder registers its own again on its next look.
 
 #### Trust of an https Keycloak
 
@@ -521,17 +552,77 @@ A role that the administrator holds through a group of the realm counts as held,
 
 This is the only role and the only user the management plane touches. Every other role of that administrator, and every other user of the realm, stays yours to manage in Management Identity. `OptimizeCallbacksReady` reads `AdminRoleGrantFailed` when the realm holds no user of that name, when it holds no `Optimize` role, or when Keycloak refused the grant. See [Status](#status).
 
-Deleting this resource removes those callbacks from the realm, and only when this management plane holds the `ManagementAuthConfig` it names. A Keycloak that does not answer at that moment keeps them, and the deletion goes through anyway, so the orchestration clusters this plane holds are always freed.
+Deleting this resource removes those callbacks from the realm that `status.callbackRealm` names. While that field is absent, the realm of the spec loses them, and only a plane that holds the `ManagementAuthConfig` it names removes anything there. A Keycloak that does not answer at that moment keeps them, and the deletion goes through anyway, so the orchestration clusters this plane holds are always freed.
 
 This resource carries no Optimize address of its own. Every address comes from a `CamundaOptimize`, and the management plane owns the whole login callback list of the `optimize` client.
 
 An Optimize that this operator does not run therefore cannot sign in through this management plane in a Keycloak mode. Registering its callback by hand does not last: the next reconcile that converges the realm removes it. Give that Optimize a realm of its own, or run it as a `CamundaOptimize`.
 
-One realm answers to one management plane. Two planes in the `externalKeycloak` mode that name the same `url` and `realm` each remove the login callbacks of the other, and each runs a Management Identity that administers the same clients. Give every management plane a realm of its own.
+One realm answers to one management plane. A second plane that names the same `url` and `realm` waits with the `Ready` reason `RealmClaimedElsewhere`, and the operator starts nothing new for it. See [One realm answers to one management plane](#one-realm-answers-to-one-management-plane).
 
 There is one window where a callback added by hand survives. While `OptimizeCallbacksReady` reads `NoCallbacks`, no Optimize behind this management plane names an address, and the plane stops reading the realm. A callback added in that state stays and works until the first `CamundaOptimize` with a `spec.externalUrl` appears, and the reconcile that finds it removes the callback again. Do not build on that window.
 
 The `oidc` mode registers nothing. Your provider holds the callback URLs, so `spec.externalUrl` is out of use there and `OptimizeCallbacksReady` reads `Disabled`. One application at your provider serves every Optimize of the management plane, so add the callback of each one to that application yourself.
+
+### Moving the callbacks to another realm
+
+When `spec.identityProvider` starts naming another Keycloak, another `realm`, or the `oidc` mode, the login callbacks leave the realm they were in. On a move from one Keycloak to another, a plane that serves an Optimize empties the old realm before it registers them in the new one. A move to the `oidc` mode and a plane that serves no Optimize register nothing in a realm, so neither waits. `status.callbackRealm` names the realm the plane last pointed Management Identity at. Identity registers the callbacks there while it starts, so the field appears with the realm and not with the first registration. During a move it keeps naming the old realm until the callbacks have left it, and after that until nothing is left that could write them back:
+
+```yaml
+status:
+  callbackRealm:
+    url: "https://keycloak.example.com/auth"
+    realm: "camunda-platform"
+    adminCredentialsSecretRef:
+      name: "my-keycloak-admin"
+      usernameKey: "username"
+      passwordKey: "password"
+```
+
+`status.callbackRealm` also keeps naming the old realm until no Management Identity of the old configuration can put the callbacks back into it. A move restarts Management Identity, and nobody signs in while it restarts. A move that the old realm holds back keeps Management Identity on the old realm until that realm is empty, and everybody keeps signing in there meanwhile. A move to the `oidc` mode, and a plane that serves no Optimize, are never held, so their Management Identity moves while the old realm is still being emptied.
+
+Keep the Secret that `adminCredentialsSecretRef` names there, and the Secret of `caBundleSecretRef` when the old Keycloak needed one, until `status.callbackRealm` stops naming the old realm. The operator signs in to the old Keycloak with them one last time. The record is the completion signal of a move, because the condition ends at `Healthy`, `Disabled`, or `NoCallbacks`, whichever the new mode reaches.
+
+A move to the `oidc` mode empties the old realm the same way. `status.callbackRealm` then goes, and `OptimizeCallbacksReady` reads `Disabled`.
+
+The old realm never waits for the new one. The callbacks leave it even while the new identity provider cannot be used yet, for example while its administrator Secret is missing or its Keycloak does not answer Management Identity.
+
+The field is absent once a move into the `keycloak` mode is over. The operator runs that Keycloak, so its realm is never recorded. A move into it from a Keycloak that you ran keeps naming the old realm until that realm is empty and nothing of it can write again. A move away from the `keycloak` mode deletes the Keycloak that the operator runs, and the database of that Keycloak keeps the realm as it was.
+
+On a move from one Keycloak to another, an old Keycloak that does not let go keeps the whole plane: the workloads stay on the old Keycloak, the new realm gets nothing, and everybody keeps signing in through the old one. `OptimizeCallbacksReady` reads `ConnectionFailed`, `WriteFailed`, `MissingSecret`, or `InvalidCABundle`, the message names the old realm, and `Ready` reads the same reason. On a move to the `oidc` mode the plane moves at once and only `OptimizeCallbacksReady` reports the failure, because Management Identity registers nothing in a realm there. The operator keeps trying to empty the old realm:
+
+```yaml
+status:
+  conditions:
+    - type: OptimizeCallbacksReady
+      status: "False"
+      reason: ConnectionFailed
+      message: 'Realm "camunda-platform" of Keycloak "https://old-keycloak.example.com/auth" still carries the login callbacks of this management plane, and this operator could not remove them: signing in at Keycloak: Post "https://old-keycloak.example.com/auth/realms/master/protocol/openid-connect/token": dial tcp: connection refused. If that Keycloak is gone for good, set the annotation camunda.io/forget-callback-realm="https://old-keycloak.example.com/auth/realms/camunda-platform" on this resource to leave them there'
+```
+
+A Management Identity pod that starts against the old realm holds the removal back. Such a pod writes the whole `optimize` client of that realm while it starts. `OptimizeCallbacksReady` reads `PrerequisiteNotMet` then. The operator stops the Management Identity of the old realm. The wait therefore ends even when the pod never becomes ready. A Keycloak that is gone for good is one such case:
+
+```yaml
+status:
+  conditions:
+    - type: OptimizeCallbacksReady
+      status: "False"
+      reason: PrerequisiteNotMet
+      message: 'A Management Identity pod is starting against realm "camunda-platform" of Keycloak "https://old-keycloak.example.com/auth", and it owns the Optimize client of that realm while it starts. That Management Identity is stopped, and this operator empties the realm once the pod is gone. If that Keycloak is gone for good, set the annotation camunda.io/forget-callback-realm="https://old-keycloak.example.com/auth/realms/camunda-platform" on this resource to leave the login callbacks there'
+```
+
+A plane that serves no Optimize is not held. It fills no realm, so the workloads move at once, `Ready` stays with them, and only `OptimizeCallbacksReady` keeps naming the realm still to be emptied.
+
+If the old Keycloak is gone for good, set the annotation that the message names, with the exact value it prints. A Keycloak that never answered takes the same route. `status.callbackRealm` names the realm from the moment the plane points Management Identity at it, so a `url` with a typo in it is a realm to let go of, and the corrected `url` is a move away from it. The value is the old realm, as `<url>/realms/<realm>`, and a spelling that differs only in the case of the host, a default port, or a trailing slash matches too:
+
+```bash
+kubectl annotate camundamanagementcluster my-management -n my-management-ns \
+  camunda.io/forget-callback-realm="https://old-keycloak.example.com/auth/realms/camunda-platform"
+```
+
+The management plane then lets go of the old realm, records the Warning event `OptimizeCallbacksLeftBehind`, and removes the annotation. The move goes on from there. The plane registers the callbacks in the new realm when the new mode holds one and the plane serves an Optimize. A move to the `oidc` mode registers none, and `OptimizeCallbacksReady` reads `Disabled`. The callbacks stay in the old realm. This plane holds the old realm until two things are true of it: the withdrawal removed the callbacks, or this annotation told the operator to leave them there, and no Management Identity of the plane points at that realm any more. Only then can another management plane claim it. If that Keycloak comes back, remove them from its `optimize` client yourself. The annotation lets go of the realm it names and of no other. One that names another realm than `status.callbackRealm` is removed unused, and the Warning event `ForgetCallbackRealmIgnored` names the recorded realm and what the annotation carried. One on a plane whose `status.callbackRealm` is absent is removed too, with the event `ForgetCallbackRealmRemoved`. That plane records no realm, so the annotation lets go of nothing.
+
+A suspended management plane leaves every realm as it is. An annotation that names the realm of `status.callbackRealm` waits until the plane resumes, and the callbacks move then. An annotation that names another realm is removed while the plane sleeps, the same as when it runs. Deleting a suspended plane removes the callbacks from the realm that `status.callbackRealm` names.
 
 ## The contract that Optimize reads
 
@@ -550,11 +641,10 @@ If you change `spec.managementAuthConfigName` later, the operator writes the con
 
 ## Images
 
-Every image of the management plane has three sources on the referenced [CamundaPlatformConfig](camundaplatformconfig.md), in this order:
+Every image of the management plane has two sources on the referenced [CamundaPlatformConfig](camundaplatformconfig.md), in this order:
 
 1. A rename under `spec.images`.
-2. The `spec.imageRegistry` prefix in front of the default repository.
-3. The default repository of Camunda.
+2. The default repository of Camunda.
 
 The tag comes from the `version` field of the component that runs the image. Keycloak is the exception: its tag is `quay-optimized-<version>`, which is what Camunda publishes its Keycloak build under. See [Images](camundaplatformconfig.md#images).
 
@@ -562,7 +652,7 @@ The tag comes from the `version` field of the component that runs the image. Key
 
 `spec.suspend: true` scales every workload of the management plane to zero, Keycloak included. The databases keep everything, so a resume brings the same realm, the same users, and the same projects back.
 
-The `ManagementAuthConfig`, the claims on the orchestration clusters, and the Console settings stay while the suspension holds. Nothing else has to change while the management plane is down.
+The `ManagementAuthConfig`, the claims on the orchestration clusters, the claim on the Keycloak realm, and the Console settings stay while the suspension holds. Nothing else has to change while the management plane is down. A realm that the spec started naming during the suspension is claimed on resume.
 
 `Ready` reads `True` with reason `Suspended`. Zero replicas is the state you asked for, so this is not an error.
 
@@ -577,6 +667,7 @@ Deleting the `CamundaManagementCluster` removes:
 - The `ManagementAuthConfig`. A `CamundaOptimize` that reads it then reports `InvalidReference`.
 - The Console settings and the `camunda.io/management-cluster` annotation on every orchestration cluster it served.
 - The `web-modeler` user on every basic-auth cluster it created one on. This is best effort. A cluster that is gone or unreachable records the Warning event `WebModelerUserRemovalFailed`, and the deletion goes on. Remove that user yourself.
+- The claim on the Keycloak realm. A management plane waiting for that realm then proceeds.
 
 Deletion keeps:
 
@@ -584,6 +675,13 @@ Deletion keeps:
 - Every user, group, and client in Keycloak, including the first administrator. Deleting the `Keycloak` resource removes the pods, not the database behind them.
 - The Secrets that you referenced. Only the copies of the Secrets that the [CamundaPlatformConfig](camundaplatformconfig.md) names go.
 - The orchestration clusters themselves. They keep running, and nothing else about them changes. They roll their pods once, when the Console settings go.
+
+Two things hold the deletion open, and the resource stays in `Terminating` until you act:
+
+- A Deployment named `my-management-identity` in this namespace that another owner runs. Such a Deployment writes the clients of the realm, and the operator does not remove a workload of somebody else. Delete that Deployment, or give it another name.
+- A Kubernetes API that does not answer. The operator tries again on its own.
+
+The operator log names both. A Keycloak that does not answer holds nothing: the deletion leaves the login callbacks in that realm and goes on. Remove them from the `optimize` client of the realm yourself.
 
 ## Status
 
@@ -643,15 +741,16 @@ The `ManagementAuthConfig` is the one step that reads `WriteFailed` on `Ready` i
 | `OptimizeCallbacksReady` | `Healthy` | The `optimize` client of the realm carries the login callback of every row of `status.optimize`, and the first administrator holds the `Optimize` role. | Nothing. |
 | `OptimizeCallbacksReady` | `NoCallbacks` | No Optimize behind this management plane names an address, so there is no login callback to register. The management plane stops reading the realm while this holds. | Nothing, until you run an Optimize. Then set `spec.externalUrl` on it. See [Optimize](#optimize). |
 | `OptimizeCallbacksReady` | `OptimizeClientMissing` | The realm holds no `optimize` client and Management Identity has finished starting. Management Identity creates that client while it starts and never after. While it is still starting, this condition reads `PrerequisiteNotMet` instead. | Restart Management Identity. A client that was removed from the realm comes back on the next start. |
-| `OptimizeCallbacksReady` | `ConnectionFailed` | Keycloak did not answer the operator, or it refused the administrator. The message carries what Keycloak said. | Read the message. Make sure that Keycloak answers and that the administrator Secret holds valid credentials. If the message names a certificate, set `caBundleSecretRef`. See [Trust of an https Keycloak](#trust-of-an-https-keycloak). |
+| `OptimizeCallbacksReady` | `ConnectionFailed` | Keycloak did not answer the operator, or it refused the administrator. The message carries what Keycloak said. When the message names a realm that the spec no longer names, it is the old Keycloak that did not answer. | Read the message. Make sure that Keycloak answers and that the administrator Secret holds valid credentials. If the message names a certificate, set `caBundleSecretRef`. See [Trust of an https Keycloak](#trust-of-an-https-keycloak). For an old Keycloak that is gone for good, see [Moving the callbacks to another realm](#moving-the-callbacks-to-another-realm). |
 | `OptimizeCallbacksReady` | `InvalidCABundle` | The key that `caBundleSecretRef` names holds no certificate in PEM form. | Put the certificate authority of Keycloak in that key, in PEM form. See [Trust of an https Keycloak](#trust-of-an-https-keycloak). |
 | `OptimizeCallbacksReady` | `InvalidReference` | The identity provider names no Keycloak administrator, so the operator cannot sign in to the realm. | Read the identity provider block. Both Keycloak modes name an administrator, so this is a report worth an issue. |
-| `OptimizeCallbacksReady` | `MissingSecret` | The Secret that the Keycloak Operator writes with the first Keycloak administrator does not exist or lacks a key, or the Secret of `caBundleSecretRef` does not. The message names the Secret and the key. | Wait for the Keycloak Operator to write it, or create the Secret the message names. In the `externalKeycloak` mode a missing `adminCredentialsSecretRef` Secret reports on `Ready` instead, and this condition keeps what it last read. |
-| `OptimizeCallbacksReady` | `WriteFailed` | Keycloak refused the change to the `optimize` client. The message carries what Keycloak said. | Read the message. Make sure that the administrator can change clients of the realm. |
+| `OptimizeCallbacksReady` | `MissingSecret` | The Secret that the Keycloak Operator writes with the first Keycloak administrator does not exist or lacks a key, or the Secret of `caBundleSecretRef` does not. The message names the Secret and the key. When the message names a realm that the spec no longer names, the Secret is the one of the old Keycloak, in `status.callbackRealm`. | Wait for the Keycloak Operator to write it, or create the Secret the message names. In the `externalKeycloak` mode a missing `adminCredentialsSecretRef` Secret reports on `Ready` instead, and this condition keeps what it last read. For the Secret of an old Keycloak, see [Moving the callbacks to another realm](#moving-the-callbacks-to-another-realm). |
+| `OptimizeCallbacksReady` | `WriteFailed` | Keycloak refused the change to the `optimize` client. The message carries what Keycloak said. When the message names a realm that the spec no longer names, the old Keycloak refused the removal of the callbacks. | Read the message. Make sure that the administrator can change clients of the realm. |
 | `OptimizeCallbacksReady` | `AdminRoleGrantFailed` | The first administrator did not get the `Optimize` role of the realm. The realm holds no user of that name, or it holds no `Optimize` role, or Keycloak refused the grant. The message names which. | Read the message. A missing user or a missing role is one somebody removed from the realm, so put it back, or correct `spec.identity.admin.username`. |
 | `OptimizeCallbacksReady` | `Disabled` | The mode is `oidc`, so your provider holds the callback URLs. | Nothing. |
-| `OptimizeCallbacksReady` | `Suspended` | `spec.suspend` is `true`, so the realm is left as it is. | Nothing. |
-| `OptimizeCallbacksReady` | `PrerequisiteNotMet` | The operator is waiting for something before it touches the realm: Management Identity, which owns the Optimize client while it starts, or the `ManagementAuthConfig`, which decides who this plane serves. The message names which one. | Read the `IdentityReady` row, or the `ManagementAuthReady` row, whichever the message names. |
+| `OptimizeCallbacksReady` | `Suspended` | `spec.suspend` is `true`, so every realm is left as it is, the one in `status.callbackRealm` included. | Nothing. |
+| `OptimizeCallbacksReady` | `RealmClaimedElsewhere` | Another management plane holds the realm of this plane, so this one registers no login callback in it. `Ready` reads the same reason. | Read the `Ready` row. |
+| `OptimizeCallbacksReady` | `PrerequisiteNotMet` | The operator is waiting for something before it touches a realm: Management Identity, which owns the Optimize client while it starts; the `ManagementAuthConfig`, which decides who this plane serves; or, on a move to another identity provider, the stop of the Management Identity pods of the realm the plane is leaving. The message names which one. | Read the row the message names, or wait: on a move, the operator stops the old Management Identity itself and moves on when its pods are gone. For an old Keycloak that is gone for good, see [Moving the callbacks to another realm](#moving-the-callbacks-to-another-realm). |
 | `Ready` | `Healthy` | Every condition that takes part is healthy and the contract is written. The callbacks are registered too while `status.optimize` holds a row; a plane that serves no Optimize reads `Healthy` whatever the realm says. | Nothing. |
 | `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Suspending` / `PendingSuspension` / `PrerequisiteNotMet` | The reason of the governing condition. The message names it. | Read the row of that condition. |
 | `Ready` | `ImmutableAfterStart` | `spec.identity.admin` asks for an administrator claim that Management Identity did not start with. | Read the `IdentityReady` row. |
@@ -661,6 +760,7 @@ The `ManagementAuthConfig` is the one step that reads `WriteFailed` on `Ready` i
 | `Ready` | `InvalidReference` | A referenced resource does not exist, two components name one `DatabaseConfig`, or the platform config cannot serve the `oidc` mode. | Read the message. Create the missing resource, or correct the field it names. |
 | `Ready` | `MissingSecret` | A referenced Secret does not exist or lacks a key. The message names both. | Create the Secret with the named key. |
 | `Ready` | `Conflict` | A `ManagementAuthConfig` of that name exists and belongs to another owner. The message names the holder. | Set `spec.managementAuthConfigName` to a free name, or remove the object. |
+| `Ready` | `RealmClaimedElsewhere` | Another management plane holds the Keycloak realm of this plane, or a Lease that this operator did not write blocks it. The operator starts nothing new for this plane and writes nothing in that realm. Workloads it already ran keep running, except that a plane retargeted into the wait leaves its old realm and loses the Management Identity of it. The message names the holder, or the Lease to remove. | Give this plane a realm of its own, or delete the holder or the named Lease. See [One realm answers to one management plane](#one-realm-answers-to-one-management-plane). |
 | `Ready` | `WriteFailed` | The `ManagementAuthConfig` could not be written, or Keycloak refused the change to the `optimize` client. | Read the `ManagementAuthReady` and `OptimizeCallbacksReady` rows. |
 | `Ready` | `StepFailed` | A step did not finish, usually because the Kubernetes API refused a call. The message names what the operator could not do. | Read the message. The operator tries again. If the reason stays, correct what the message names. |
 | `Ready` | `OptimizeClientMissing` / `ConnectionFailed` / `AdminRoleGrantFailed` | The realm is not in the state the management plane wants: the login callbacks are missing, or the first administrator holds no `Optimize` role. | Read the `OptimizeCallbacksReady` row. |
@@ -861,6 +961,7 @@ The API server refuses an apply that breaks one of these:
 - `spec.identityProvider.externalKeycloak.realm` holds letters, digits, dots, hyphens, and underscores. It starts and ends with a letter or a digit.
 - Every `version` is three numbers separated by dots, for example `8.9.0`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both. The rule binds `spec.identity`, `spec.console`, `spec.webModeler.restapi`, and `spec.webModeler.websockets`.
+- `spec.identity.extraEnv` sets no `KEYCLOAK_URL` and no `KEYCLOAK_REALM`. Both follow from `spec.identityProvider`, and in a Keycloak mode the operator administers that realm alone.
 
 The operator checks these after you apply the resource and reports them on `Ready`:
 

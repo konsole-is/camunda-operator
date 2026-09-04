@@ -63,6 +63,7 @@ func brokerStatefulSet() *appsv1.StatefulSet {
 				"camunda.io/component":         "zeebe",
 				"app.kubernetes.io/managed-by": "camunda-operator",
 			},
+			Annotations: map[string]string{"camunda.io/broker-version": "8.9.9"},
 		},
 		Spec: appsv1.StatefulSetSpec{
 			Replicas: new(int32(0)),
@@ -253,11 +254,9 @@ func TestReadTargetReportsEveryUnreadableFact(t *testing.T) {
 			},
 			text: "CAMUNDA_CLUSTER_PARTITIONCOUNT",
 		},
-		"broker image carries no tag": {
-			mutate: func(s *appsv1.StatefulSet) {
-				s.Spec.Template.Spec.Containers[0].Image = "camunda/camunda"
-			},
-			text: "camunda/camunda",
+		"no broker version annotation": {
+			mutate: func(s *appsv1.StatefulSet) { s.Annotations = nil },
+			text:   "camunda.io/broker-version",
 		},
 		"no data claim template": {
 			mutate: func(s *appsv1.StatefulSet) { s.Spec.VolumeClaimTemplates = nil },
@@ -282,69 +281,19 @@ func TestReadTargetReportsEveryUnreadableFact(t *testing.T) {
 	}
 }
 
-// The version decides whether a backup restores into this cluster at all, so
-// every reference form has to yield the tag or nothing. A registry port and a
-// digest both hold a colon that is not the start of a tag.
-func TestReadTargetTakesTheVersionFromTheImageTag(t *testing.T) {
+// The version decides whether a backup restores into this cluster at all. It
+// comes from the annotation the cluster controller renders, not from the
+// image tag: a release can pin an image whose tag names no version.
+func TestReadTargetTakesTheVersionFromTheAnnotation(t *testing.T) {
 	t.Parallel()
 
-	cases := map[string]struct {
-		image string
-		want  string
-	}{
-		"plain tag": {
-			image: "camunda/camunda:8.9.9",
-			want:  "8.9.9",
-		},
-		"registry with a port": {
-			image: "registry.example.com:5000/camunda/camunda:8.9.10",
-			want:  "8.9.10",
-		},
-		"tag and digest": {
-			image: "camunda/camunda:8.9.9@sha256:" + strings.Repeat("a", 64),
-			want:  "8.9.9",
-		},
-		"registry with a port, tag, and digest": {
-			image: "registry.example.com:5000/camunda/camunda:8.9.10@sha256:" + strings.Repeat("b", 64),
-			want:  "8.9.10",
-		},
-	}
+	sts := brokerStatefulSet()
+	sts.Annotations["camunda.io/broker-version"] = "8.9.10"
+	sts.Spec.Template.Spec.Containers[0].Image = "registry.example.com:5000/camunda/camunda@sha256:" +
+		strings.Repeat("a", 64)
+	c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(sts).Build()
 
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			sts := brokerStatefulSet()
-			sts.Spec.Template.Spec.Containers[0].Image = tc.image
-			c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(sts).Build()
-
-			target, err := readTarget(context.Background(), c, testCluster())
-			require.NoError(t, err)
-			assert.Equal(t, tc.want, target.Version)
-		})
-	}
-}
-
-// A digest alone pins the image without naming a version. The restore has
-// nothing to compare a backup against, so it stops instead of comparing the
-// digest.
-func TestReadTargetRejectsADigestWithoutATag(t *testing.T) {
-	t.Parallel()
-
-	for name, image := range map[string]string{
-		"digest only":              "camunda/camunda@sha256:" + strings.Repeat("c", 64),
-		"registry port and digest": "registry.example.com:5000/camunda/camunda@sha256:" + strings.Repeat("d", 64),
-	} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			sts := brokerStatefulSet()
-			sts.Spec.Template.Spec.Containers[0].Image = image
-			c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(sts).Build()
-
-			_, err := readTarget(context.Background(), c, testCluster())
-			var failure *conditions.PreCheckFailure
-			require.ErrorAs(t, err, &failure)
-			assert.Equal(t, v1.ReasonInvalidReference, failure.Reason)
-			assert.Contains(t, failure.Message, "no version tag")
-		})
-	}
+	target, err := readTarget(context.Background(), c, testCluster())
+	require.NoError(t, err)
+	assert.Equal(t, "8.9.10", target.Version)
 }

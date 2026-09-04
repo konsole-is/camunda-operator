@@ -8,7 +8,7 @@ metadata:
 spec:
   platformConfigRef: "camundaplatformconfig-sample"
   presetRef: "medium"
-  version: "8.9.1"
+  releaseRef: "camunda-8-9-0"
   externalUrl: "https://my-cluster.camunda.example.com"
   serviceAccount:
     annotations:
@@ -23,7 +23,6 @@ spec:
         value: "-XX:+ExitOnOutOfMemoryError -Xmx6g"
   connectors:
     enabled: true
-    version: "8.9.7"
   storageRef: "camundacluster-sample-storage"
   backupStorageRef: "my-backup-config"
   monitoring:

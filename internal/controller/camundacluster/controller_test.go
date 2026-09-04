@@ -497,6 +497,7 @@ var _ = Describe("CamundaCluster controller", func() {
 
 			cases := map[string]func(*v1.CamundaCluster){
 				"CamundaClusterPreset":  func(c *v1.CamundaCluster) { c.Spec.PresetRef = missing },
+				"CamundaRelease":        func(c *v1.CamundaCluster) { c.Spec.ReleaseRef = missing },
 				"CamundaPlatformConfig": func(c *v1.CamundaCluster) { c.Spec.PlatformConfigRef = missing },
 				"SecondaryStorageConfig": func(c *v1.CamundaCluster) {
 					c.Spec.StorageRef = missing
@@ -556,6 +557,49 @@ var _ = Describe("CamundaCluster controller", func() {
 		})
 		fetchStatefulSet(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"})
 		expectReady(cluster, metav1.ConditionFalse, Not(Equal(v1.ReasonMissingSecret)), Not(BeEmpty()))
+	})
+
+	It("scales a running cluster to zero when its credentials Secret goes away, and resumes on its return", func() {
+		ns := newNamespace()
+		binding := createBinding(ns, true)
+		cluster := newCluster(ns, createPlatformConfig(), binding)
+		createCluster(cluster)
+		zeebeKey := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"}
+		Eventually(func(g Gomega) {
+			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(Equal(int32(1)))
+		}, timeout, interval).Should(Succeed())
+
+		By("deleting the storage credentials Secret")
+		name := binding.Spec.Elasticsearch.CredentialsSecretRef.Name
+		Expect(k8sClient.Delete(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+		})).To(Succeed())
+
+		expectReady(
+			cluster,
+			metav1.ConditionFalse,
+			Equal(v1.ReasonMissingSecret),
+			And(
+				ContainSubstring(name),
+				ContainSubstring("The workloads are scaled to zero, with the volumes kept"),
+			),
+		)
+		Eventually(func(g Gomega) {
+			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
+		}, timeout, interval).Should(Succeed())
+		expectEvent(cluster, eventReasonWorkloadsSuspended, corev1.EventTypeNormal)
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			g.Expect(latest.Status.Management).To(BeNil(), "no endpoint is published while the workloads are at zero")
+			g.Expect(latest.Status.Gateway).To(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		By("recreating the Secret")
+		createSecret(ns, name, map[string]string{"username": "camunda", "password": "es-password"})
+		Eventually(func(g Gomega) {
+			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(Equal(int32(1)))
+		}, timeout, interval).Should(Succeed(), "the cluster resumes without intervention")
 	})
 
 	It("keeps the admin password stable across reconciles and regenerates it when the Secret is deleted", func() {
@@ -746,14 +790,13 @@ var _ = Describe("CamundaCluster controller", func() {
 		expectReady(cluster, metav1.ConditionTrue, Equal(v1.ReasonHealthy), Not(BeEmpty()))
 	})
 
-	It("refuses a removed spec.version when the preset carries a lower one", func() {
+	It("refuses a removed spec.version when the release carries a lower one", func() {
 		ns := newNamespace()
-		preset := minimalPreset()
-		preset.Spec.Cluster.Version = lowerVersion
-		Expect(k8sClient.Create(ctx, preset)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
+		release := minimalRelease(lowerVersion)
+		Expect(k8sClient.Create(ctx, release)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, release) })
 		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
-		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.ReleaseRef = release.Name
 		createCluster(cluster)
 		Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":8.9.9"))
 
@@ -809,28 +852,121 @@ var _ = Describe("CamundaCluster controller", func() {
 		)
 	})
 
-	It("refuses a preset whose version is lowered under a running cluster", func() {
+	It("refuses a release whose version is lowered under a running cluster", func() {
 		ns := newNamespace()
-		preset := minimalPreset()
-		preset.Spec.Cluster.Version = runningVersion
-		Expect(k8sClient.Create(ctx, preset)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
+		release := minimalRelease(runningVersion)
+		Expect(k8sClient.Create(ctx, release)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, release) })
 		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
-		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.ReleaseRef = release.Name
 		cluster.Spec.Version = ""
 		createCluster(cluster)
 		Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":8.9.9"))
 
 		Eventually(func(g Gomega) {
-			var latest v1.CamundaClusterPreset
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preset), &latest)).To(Succeed())
-			latest.Spec.Cluster.Version = lowerVersion
+			var latest v1.CamundaRelease
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(release), &latest)).To(Succeed())
+			latest.Spec.Version = lowerVersion
 			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 		expectReady(
 			cluster, metav1.ConditionFalse,
 			Equal(v1.ReasonVersionDowngradeRefused),
 			ContainSubstring("8.9.8 is below the running version 8.9.9"),
+		)
+	})
+
+	It("runs the version of the release with the sizing of the preset and rolls on a release edit", func() {
+		ns := newNamespace()
+		preset := minimalPreset()
+		Expect(k8sClient.Create(ctx, preset)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
+		release := minimalRelease("8.9.4")
+		Expect(k8sClient.Create(ctx, release)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, release) })
+
+		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+		cluster.Spec.Version = ""
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.ReleaseRef = release.Name
+		createCluster(cluster)
+
+		zeebeKey := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"}
+		Expect(zeebeContainer(cluster).Image).To(Equal("camunda/camunda:8.9.4"))
+		Expect(fetchStatefulSet(zeebeKey).Annotations).To(
+			HaveKeyWithValue(components.BrokerVersionAnnotation, "8.9.4"),
+		)
+
+		By("editing the release to a later version")
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaRelease
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(release), &latest)).To(Succeed())
+			latest.Spec.Version = "8.9.5"
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(zeebeContainer(cluster).Image).To(Equal("camunda/camunda:8.9.5"))
+		}, timeout, interval).Should(Succeed())
+
+		By("editing the preset, which resizes and does not change the version")
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaClusterPreset
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preset), &latest)).To(Succeed())
+			latest.Spec.Cluster.Zeebe.Resources = &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("3Gi")},
+			}
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(zeebeContainer(cluster).Resources.Requests[corev1.ResourceMemory]).To(
+				Equal(resource.MustParse("3Gi")),
+			)
+		}, timeout, interval).Should(Succeed())
+		Expect(zeebeContainer(cluster).Image).To(Equal("camunda/camunda:8.9.5"))
+	})
+
+	It("pulls a pinned release image while the version stays the semantic truth", func() {
+		ns := newNamespace()
+		release := minimalRelease("8.9.4")
+		release.Spec.Images = &v1.ReleaseImagesSpec{
+			Camunda: "mirror.example.com/camunda/camunda@sha256:" +
+				"7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730",
+		}
+		Expect(k8sClient.Create(ctx, release)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, release) })
+
+		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+		cluster.Spec.Version = ""
+		cluster.Spec.ReleaseRef = release.Name
+		createCluster(cluster)
+
+		zeebeKey := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"}
+		Expect(zeebeContainer(cluster).Image).To(Equal(release.Spec.Images.Camunda))
+		Expect(fetchStatefulSet(zeebeKey).Annotations).To(
+			HaveKeyWithValue(components.BrokerVersionAnnotation, "8.9.4"),
+		)
+
+		By("dropping the pin when the cluster overrides the version")
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Version = "8.9.5" })
+		Eventually(func(g Gomega) {
+			g.Expect(zeebeContainer(cluster).Image).To(
+				Equal("camunda/camunda:8.9.5"),
+				"the pin belongs to the version of the release, not to the one the cluster set",
+			)
+		}, timeout, interval).Should(Succeed())
+
+		By("refusing a lower version against the annotation, not the image tag")
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Version = "" })
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaRelease
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(release), &latest)).To(Succeed())
+			latest.Spec.Version = "8.9.3"
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		expectReady(
+			cluster, metav1.ConditionFalse,
+			Equal(v1.ReasonVersionDowngradeRefused),
+			ContainSubstring("8.9.3 is below the running version 8.9.5"),
 		)
 	})
 
@@ -850,7 +986,7 @@ var _ = Describe("CamundaCluster controller", func() {
 		Eventually(func(g Gomega) {
 			var latest v1.CamundaPlatformConfig
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cfg), &latest)).To(Succeed())
-			latest.Spec.ImageRegistry = "registry.example.com"
+			latest.Spec.Images = &v1.ImagesSpec{Camunda: "registry.example.com/camunda/camunda"}
 			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 		hash = configHash(cluster, hash)

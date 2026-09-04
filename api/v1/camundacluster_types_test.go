@@ -42,6 +42,38 @@ func TestCamundaClusterSuspended(t *testing.T) {
 			}}}},
 			want: true,
 		},
+		"the cluster waits for the pods of the previous holder": {
+			cluster: v1.CamundaCluster{Status: v1.CamundaClusterStatus{Conditions: []metav1.Condition{{
+				Type:   v1.ConditionReady,
+				Status: metav1.ConditionFalse,
+				Reason: v1.ReasonWaitingForHandover,
+			}}}},
+			want: true,
+		},
+		"a reference of the cluster does not resolve": {
+			cluster: v1.CamundaCluster{Status: v1.CamundaClusterStatus{Conditions: []metav1.Condition{{
+				Type:   v1.ConditionReady,
+				Status: metav1.ConditionFalse,
+				Reason: v1.ReasonInvalidReference,
+			}}}},
+			want: true,
+		},
+		"a referenced Secret of the cluster is missing": {
+			cluster: v1.CamundaCluster{Status: v1.CamundaClusterStatus{Conditions: []metav1.Condition{{
+				Type:   v1.ConditionReady,
+				Status: metav1.ConditionFalse,
+				Reason: v1.ReasonMissingSecret,
+			}}}},
+			want: true,
+		},
+		"a refused downgrade keeps the cluster running": {
+			cluster: v1.CamundaCluster{Status: v1.CamundaClusterStatus{Conditions: []metav1.Condition{{
+				Type:   v1.ConditionReady,
+				Status: metav1.ConditionFalse,
+				Reason: v1.ReasonVersionDowngradeRefused,
+			}}}},
+			want: false,
+		},
 		"Ready carries another reason": {
 			cluster: v1.CamundaCluster{Status: v1.CamundaClusterStatus{Conditions: []metav1.Condition{{
 				Type:   v1.ConditionReady,

@@ -63,6 +63,13 @@ rules:
   - update
   - watch
 - apiGroups:
+  - apps
+  resources:
+  - replicasets
+  verbs:
+  - delete
+  - list
+- apiGroups:
   - barmancloud.cnpg.io
   resources:
   - objectstores
@@ -104,6 +111,7 @@ rules:
   - backupschedules
   - camundaclusterpresets
   - camundaplatformconfigs
+  - camundareleases
   - databaseserverpresets
   - elasticsearchclusterpresets
   - objectstorageconfigs

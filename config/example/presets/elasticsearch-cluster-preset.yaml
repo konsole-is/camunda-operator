@@ -1,0 +1,19 @@
+# The shape of an Elasticsearch cluster. Every ElasticsearchCluster that names
+# it in spec.presetRef inherits it.
+#
+# The instance-bound fields are rejected here: presetRef,
+# secondaryStorageConfig, and suspend.
+#
+# version is not set here on purpose. Each cluster pins its own.
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchClusterPreset
+metadata:
+  name: standard
+spec:
+  cluster:
+    replicas: 1
+    storageSize: 1Gi
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi

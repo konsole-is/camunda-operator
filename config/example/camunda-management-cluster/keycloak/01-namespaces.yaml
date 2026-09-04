@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: my-management-ns
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: my-cluster-ns

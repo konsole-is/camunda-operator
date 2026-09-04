@@ -1,0 +1,23 @@
+# The shape of a PostgreSQL server. Every DatabaseServer that names it in
+# spec.presetRef inherits it.
+#
+# The instance-bound fields are rejected here: presetRef,
+# databaseServerConfig, and suspend.
+#
+# version is not set here on purpose. Each server pins its own.
+#
+# spec.archive would belong here, because one bucket serves a fleet and every
+# server writes under a prefix of its own. It is left out because it needs the
+# Barman Cloud plugin, cert-manager, and an ObjectStorageConfig.
+apiVersion: core.camunda.io/v1
+kind: DatabaseServerPreset
+metadata:
+  name: standard
+spec:
+  server:
+    instances: 1
+    storageSize: 8Gi
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi

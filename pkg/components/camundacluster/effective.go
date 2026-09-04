@@ -37,7 +37,8 @@ type Effective struct {
 	v1.CamundaClusterSpec
 }
 
-// NewEffective wraps a preset-merged spec. It copies nothing: the accessors
+// NewEffective wraps a merged spec (preset, release, cluster). It copies
+// nothing: the accessors
 // read the spec on every call.
 func NewEffective(merged v1.CamundaClusterSpec) Effective {
 	return Effective{CamundaClusterSpec: merged}

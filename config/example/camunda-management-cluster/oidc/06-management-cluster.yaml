@@ -1,0 +1,48 @@
+# The management plane against your own identity provider. The operator runs
+# no Keycloak and issues no clients. It reads the clients you registered under
+# spec.auth.oidc.management.clients of my-platform-config.
+#
+# CamundaManagementCluster has no preset kind. Every value here is bound to
+# this one plane.
+#
+# identityProvider.oidc is an empty object. It carries no fields.
+#
+# In this mode the first administrator is a claim, not a user. Set claimName
+# to a claim your provider puts in the token, and claimValue to the value that
+# identifies the person. A username, an email, or a password Secret belongs to
+# the Keycloak modes only.
+#
+# clusterSelector is empty, so this plane serves every CamundaCluster on the
+# Kubernetes cluster. Use matchLabels to select fewer.
+apiVersion: core.camunda.io/v1
+kind: CamundaManagementCluster
+metadata:
+  name: my-management
+  namespace: my-management-ns
+spec:
+  platformConfigRef: my-platform-config
+  clusterSelector: {}
+  identityProvider:
+    oidc: {}
+  identity:
+    version: "8.9.8"
+    externalUrl: "https://identity.camunda.example.com"
+    databaseConfigRef: my-identity-db
+    admin:
+      claimName: "oid"
+      claimValue: "<the claim value of your first administrator>"
+  console:
+    version: "8.9.88"
+    externalUrl: "https://console.camunda.example.com"
+  webModeler:
+    version: "8.9.7"
+    externalUrl: "https://modeler.camunda.example.com"
+    websocketsExternalUrl: "https://modeler.camunda.example.com/ws"
+    databaseConfigRef: my-web-modeler-db
+    mail:
+      smtpHost: smtp.example.com
+      fromAddress: noreply@example.com
+      credentialsSecretRef:
+        name: my-smtp-credentials
+        usernameKey: username
+        passwordKey: password

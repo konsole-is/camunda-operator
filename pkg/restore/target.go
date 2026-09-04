@@ -67,7 +67,8 @@ type Target struct {
 	// CAMUNDA_CLUSTER_PARTITIONCOUNT on the broker container. A restore of a
 	// backup must match it.
 	Partitions int32
-	// Version is the Camunda version, read from the tag of the broker image.
+	// Version is the Camunda version, read from the camunda.io/broker-version
+	// annotation of the StatefulSet.
 	Version string
 	// ClaimTemplate is the data claim template of the StatefulSet. It carries
 	// the storage class, the access modes, the labels, and the size that a
@@ -120,10 +121,13 @@ func readTarget(
 		return nil, err
 	}
 
-	version := components.ImageTag(broker.Image)
+	version := sts.Annotations[components.BrokerVersionAnnotation]
 	if version == "" {
 		return nil, invalidTarget(
-			name, "the broker image %q carries no version tag", broker.Image,
+			name,
+			"it carries no %s annotation. The cluster controller stamps it on every apply, "+
+				"so let one reconcile of the cluster finish and retry",
+			components.BrokerVersionAnnotation,
 		)
 	}
 

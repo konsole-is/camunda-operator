@@ -24,6 +24,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // workloadMutationNames are the mutations of every process, in registration
@@ -58,7 +59,15 @@ func TestMutationsAreGatedOffWithoutOverrides(t *testing.T) {
 		assert.Nil(t, template.Spec.Affinity, pc.Process.Component)
 		assert.Empty(t, template.Spec.Tolerations, pc.Process.Component)
 		assert.Empty(t, template.Spec.ServiceAccountName, pc.Process.Component)
-		assert.Equal(t, discoveryLabels(in.Cluster, pc.Process.Component), template.Labels, pc.Process.Component)
+		assert.Equal(
+			t,
+			labels.Merge(
+				StoragePodLabels(in.Cluster.Name, in.Cluster.Spec.StorageRef),
+				discoveryLabels(in.Cluster, pc.Process.Component),
+			),
+			template.Labels,
+			pc.Process.Component,
+		)
 		assert.Equal(t, []string{ConfigHashAnnotation}, keysOf(template.Annotations), pc.Process.Component)
 	}
 }

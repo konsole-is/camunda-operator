@@ -1,0 +1,150 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: gateway
+  name: my-cluster-gateway
+  namespace: my-cluster-ns
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      camunda.io/cluster: my-cluster
+      camunda.io/component: gateway
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: 374514e9c924ad42
+        company.com/cluster-preset: medium
+      labels:
+        camunda.io/cluster: my-cluster
+        camunda.io/component: gateway
+        camunda.io/storage-contract: my-storage-config
+        company.com/team: automation-ops
+    spec:
+      containers:
+      - env:
+        - name: CAMUNDA_CLUSTER_NAME
+          value: my-cluster
+        - name: CAMUNDA_CLUSTER_SIZE
+          value: "3"
+        - name: CAMUNDA_CLUSTER_PARTITIONCOUNT
+          value: "3"
+        - name: CAMUNDA_CLUSTER_REPLICATIONFACTOR
+          value: "3"
+        - name: CAMUNDA_CLUSTER_INITIALCONTACTPOINTS
+          value: my-cluster-zeebe-0.my-cluster-zeebe.my-cluster-ns.svc:26502,my-cluster-zeebe-1.my-cluster-zeebe.my-cluster-ns.svc:26502,my-cluster-zeebe-2.my-cluster-zeebe.my-cluster-ns.svc:26502
+        - name: CAMUNDA_API_GRPC_ADDRESS
+          value: 0.0.0.0
+        - name: CAMUNDA_CLUSTER_GATEWAYID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_TYPE
+          value: elasticsearch
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_URL
+          value: https://es-http.my-cluster-ns.svc:9200
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: es-user
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: es-user
+        - name: CAMUNDA_SECURITY_AUTHENTICATION_METHOD
+          value: basic
+        - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_USERNAME
+          value: admin
+        - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: my-cluster-camunda-admin
+        - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_NAME
+          value: admin
+        - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_EMAIL
+          valueFrom:
+            secretKeyRef:
+              key: email
+              name: my-cluster-camunda-admin
+        - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_USERS_0
+          value: admin
+        - name: SPRING_PROFILES_ACTIVE
+          value: admin,consolidated-auth,gateway,operate,tasklist
+        - name: JAVA_TOOL_OPTIONS
+          value: -XX:+ExitOnOutOfMemoryError
+        - name: TZ
+          value: UTC
+        image: mirror.example.com/camunda/camunda@sha256:7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: management
+          periodSeconds: 30
+        name: camunda
+        ports:
+        - containerPort: 26500
+          name: grpc
+          protocol: TCP
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 9600
+          name: management
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: management
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /actuator/health/startup
+            port: management
+          periodSeconds: 5
+      securityContext:
+        fsGroup: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: gateway
+  name: my-cluster-gateway
+  namespace: my-cluster-ns
+spec:
+  ports:
+  - name: grpc
+    port: 26500
+    protocol: TCP
+    targetPort: grpc
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: http
+  - name: management
+    port: 9600
+    protocol: TCP
+    targetPort: management
+  selector:
+    camunda.io/cluster: my-cluster
+    camunda.io/component: gateway
+status:
+  loadBalancer: {}
