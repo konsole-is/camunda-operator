@@ -291,9 +291,10 @@ func realmCallbackHandoff(
 }
 
 // watchRealmCallbacksScript samples the client of both realms every three
-// seconds and prints one line for each sample. The first sample takes the
-// token of the prelude, and each sleep is followed by a token of its own,
-// because the watch outlives the lifespan of one.
+// seconds and prints one line for each sample. The deadline is read before
+// each sample, so no sample and no call reaches Keycloak after it. The first
+// sample takes the token of the prelude, and each sleep is followed by a token
+// of its own, because the watch outlives the lifespan of one.
 //
 // A probe exits the script through its command substitution: an unexpected
 // status from Keycloak ends the watch rather than reading as an absent
@@ -311,14 +312,14 @@ const watchRealmCallbacksScript = keycloakTokenScript + `probe() {
 
 start=$(date +%s)
 while :; do
-  from=$(probe "$KC_REALM_FROM")
-  to=$(probe "$KC_REALM_TO")
-  echo "t=$(( $(date +%s) - start )) $KC_REALM_FROM=$from $KC_REALM_TO=$to"
-  if [ "$to" = 1 ]; then exit 0; fi
   if [ "$(( $(date +%s) - start ))" -ge "$KC_WATCH_SECONDS" ]; then
     echo "realm $KC_REALM_TO never carried the login callback" >&2
     exit 1
   fi
+  from=$(probe "$KC_REALM_FROM")
+  to=$(probe "$KC_REALM_TO")
+  echo "t=$(( $(date +%s) - start )) $KC_REALM_FROM=$from $KC_REALM_TO=$to"
+  if [ "$to" = 1 ]; then exit 0; fi
   sleep 3
   KC_TOKEN=$(keycloak_token)
   if [ -z "$KC_TOKEN" ]; then echo "no access_token from $KC_URL" >&2; exit 1; fi
