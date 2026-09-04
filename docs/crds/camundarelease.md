@@ -4,7 +4,7 @@
 
 A release separates what runs from the shape of a cluster. The shape lives in a [CamundaClusterPreset](camundaclusterpreset.md). A platform team keeps a handful of presets, such as `small` and `medium`, and one release per rollout, such as `camunda-8-9-4`. To move a fleet to a new patch, the team edits one release. To move one cluster, the owner changes one `releaseRef`.
 
-A release is passive data. No controller reconciles it, it creates nothing, and it reports no status. A cluster that fits no release leaves `releaseRef` unset and sets `version` inline, as before.
+A release is passive data. It creates nothing, and it reports no status. A cluster that fits no release leaves `releaseRef` unset and sets `version` inline, as before.
 
 The smallest release names one version:
 

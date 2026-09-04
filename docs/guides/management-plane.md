@@ -25,7 +25,7 @@ graph LR
     CC --> OPT[CamundaOptimize]
 ```
 
-The operator checks every reference after the resources exist, not when you apply them, so you can create the resources in any order. The order above is the one where nothing waits.
+The API server accepts a resource that names something you did not create yet. A missing reference shows up on `Ready` until the resource exists, so you can create these resources in any order. The order above is the one where nothing waits.
 
 Two complete inventories follow this order and are ready to apply: [`config/example/camunda-management-cluster/keycloak`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-management-cluster/keycloak) for step 3a, and [`config/example/camunda-management-cluster/oidc`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-management-cluster/oidc) for step 3c.
 

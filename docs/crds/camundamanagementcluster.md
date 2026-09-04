@@ -130,7 +130,7 @@ spec:
 
 The first `CamundaManagementCluster` that reaches the realm holds it. Management Identity administers the clients of that realm, and the plane owns the login callbacks of its `optimize` client, so a second plane on the same realm would undo both.
 
-Which plane that is comes from the order the operator reaches them, not from the order you created them. A suspended plane takes no realm until it resumes, and it keeps every realm it already holds.
+The holder is not always the plane you created first. A suspended plane takes no realm until it resumes, and it keeps every realm it already holds.
 
 The realm of a Keycloak that the operator runs is held the same way. Its address is reachable inside the Kubernetes cluster, so a plane that names it under `identityProvider.externalKeycloak` waits for that realm.
 
@@ -151,9 +151,9 @@ Give the waiting plane a realm of its own, or delete the holder. The waiting pla
 
 A plane that you retarget into the wait leaves the old realm first. While `status.callbackRealm` names a realm, the plane removes its login callbacks from that realm. Once they are out, it stops the Management Identity that points there, and this plane signs nobody in until it holds a realm again. An old Keycloak that does not let the callbacks go keeps that Management Identity running, and everybody keeps signing in through the old realm meanwhile. It keeps the claim on the old realm while any workload of it still points there, so no other plane takes a realm that this one starts against again. Give the waiting plane a realm of its own and its Management Identity comes back in that realm, or delete the plane and it gives back every realm it holds.
 
-A pod of that Management Identity that restarts while it waits writes the clients of the old realm again, and the login callbacks of this plane with them. The operator removes them again. It keeps removing them while `status.callbackRealm` names that realm, and the record goes once nothing of the plane can write it. The claim on the realm goes on a later look. Callbacks stay behind in a realm when you let go of it with the [`camunda.io/forget-callback-realm`](#moving-the-callbacks-to-another-realm) annotation. The record goes at once then, the claim still waits until no Management Identity of the plane points at the realm, and you remove the callbacks from its `optimize` client yourself.
+A pod of that Management Identity that restarts while it waits writes the clients of the old realm again, and the login callbacks of this plane with them. The operator removes them again. It keeps removing them while `status.callbackRealm` names that realm, and the record goes once nothing of the plane can write it. The claim on the realm goes after the record. Callbacks stay behind in a realm when you let go of it with the [`camunda.io/forget-callback-realm`](#moving-the-callbacks-to-another-realm) annotation. The record goes at once then, the claim still waits until no Management Identity of the plane points at the realm, and you remove the callbacks from its `optimize` client yourself.
 
-A plane can also come into the wait on the realm its own workloads run against. You upgrade a cluster where two planes already share one realm, or somebody removes a claim by hand and another plane takes it. The operator then writes nothing more in that realm, and `Ready` names the holder, but the Management Identity of the waiting plane keeps running against it, as every workload of a waiting plane does. Correct the spec of that plane, or delete it. Both of these remove the login callbacks of that plane from the realm, and they take the callbacks of the holder with them. The holder registers its own again on its next look.
+A plane can also come into the wait on the realm its own workloads run against. You upgrade a cluster where two planes already share one realm, or somebody removes a claim by hand and another plane takes it. The operator then writes nothing more in that realm, and `Ready` names the holder, but the Management Identity of the waiting plane keeps running against it, as every workload of a waiting plane does. Correct the spec of that plane, or delete it. Both of these remove the login callbacks of that plane from the realm, and they take the callbacks of the holder with them. The holder registers its own again soon after.
 
 #### Trust of an https Keycloak
 
@@ -540,7 +540,7 @@ status:
 
 The `OptimizeCallbacksReady` condition reports the realm. It reads `Healthy` while the `optimize` client carries the callback of every row above and the first administrator holds the `Optimize` role. See [Status](#status).
 
-The operator owns the login callbacks of the addresses above and nothing else on that client. It adds the ones that are missing and removes the ones of an Optimize that went away. A redirect URI of another shape stays where it is. A login callback you register by hand does not: it has the shape the operator owns, so the next reconcile that converges the realm removes it. Give the Optimize a `spec.externalUrl` instead.
+The operator owns the login callbacks of the addresses above and nothing else on that client. It adds the ones that are missing and removes the ones of an Optimize that went away. A redirect URI of another shape stays where it is. A login callback you register by hand does not: it has the shape the operator owns, so the operator removes it again. Give the Optimize a `spec.externalUrl` instead.
 
 Management Identity restarts when the first Optimize of a management plane arrives and when the last one goes. Adding or removing an Optimize while another one stays leaves it running. The addresses live in the ConfigMap `my-management-identity-optimize-urls`, which the Identity pods read the list from, so a change to the list does not restart them. Those two moments are where Management Identity starts and stops creating the Optimize client at all, so a plane that empties and fills again restarts at each one.
 
@@ -556,11 +556,11 @@ Deleting this resource removes those callbacks from the realm that `status.callb
 
 This resource carries no Optimize address of its own. Every address comes from a `CamundaOptimize`, and the management plane owns the whole login callback list of the `optimize` client.
 
-An Optimize that this operator does not run therefore cannot sign in through this management plane in a Keycloak mode. Registering its callback by hand does not last: the next reconcile that converges the realm removes it. Give that Optimize a realm of its own, or run it as a `CamundaOptimize`.
+An Optimize that this operator does not run therefore cannot sign in through this management plane in a Keycloak mode. Registering its callback by hand does not last, because the operator removes it again. Give that Optimize a realm of its own, or run it as a `CamundaOptimize`.
 
 One realm answers to one management plane. A second plane that names the same `url` and `realm` waits with the `Ready` reason `RealmClaimedElsewhere`, and the operator starts nothing new for it. See [One realm answers to one management plane](#one-realm-answers-to-one-management-plane).
 
-There is one window where a callback added by hand survives. While `OptimizeCallbacksReady` reads `NoCallbacks`, no Optimize behind this management plane names an address, and the plane stops reading the realm. A callback added in that state stays and works until the first `CamundaOptimize` with a `spec.externalUrl` appears, and the reconcile that finds it removes the callback again. Do not build on that window.
+There is one window where a callback added by hand survives. While `OptimizeCallbacksReady` reads `NoCallbacks`, no Optimize behind this management plane names an address, and the plane stops reading the realm. A callback added in that state stays and works until the first `CamundaOptimize` with a `spec.externalUrl` appears. The operator removes the callback then. Do not build on that window.
 
 The `oidc` mode registers nothing. Your provider holds the callback URLs, so `spec.externalUrl` is out of use there and `OptimizeCallbacksReady` reads `Disabled`. One application at your provider serves every Optimize of the management plane, so add the callback of each one to that application yourself.
 
@@ -691,7 +691,7 @@ A condition reads `True` under the reasons `Healthy`, `Disabled`, `Suspended`, a
 
 `OptimizeCallbacksReady` holds `Ready` back only while this management plane serves an Optimize. A plane that serves none reports what it found in the realm and stays ready, because nobody can sign in to an Optimize that does not exist.
 
-A failed pre-check reports on `Ready` and stops, so every other condition keeps the value it last had. Read `Ready` first, and take the rest as of the last reconcile that got past the pre-checks.
+A failed pre-check reports on `Ready` and stops, so every other condition keeps the value it last had. Read `Ready` first, and take the rest as of the last time the pre-checks passed.
 
 The management plane also does work that no workload condition reports. Each one of these is a step:
 
@@ -715,7 +715,7 @@ status:
       message: 'Could not find the orchestration clusters: listing the CamundaClusters: etcdserver: request timed out'
 ```
 
-`Ready` is never `True` in that pass, whatever the workloads report, because the operator did not get to the end of its work. Every other condition keeps the value it last had. The operator tries the step again on its own. `Ready` goes back to the state of the workloads once a pass runs to the end.
+`Ready` is never `True` while a step fails, whatever the workloads report. Every other condition keeps the value it last had. The operator tries the step again on its own, and `Ready` goes back to the state of the workloads once every step succeeds.
 
 The `ManagementAuthConfig` is the one step that reads `WriteFailed` on `Ready` instead of `StepFailed`. `ManagementAuthReady` carries the answer of the API server beside it.
 
