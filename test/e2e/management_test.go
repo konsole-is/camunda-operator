@@ -430,9 +430,7 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 		// The plane empties realm A in the pass that reads the new spec, and
 		// it stays there until every Management Identity that can fill that
 		// realm again is gone. The message of that state says the realm is
-		// empty, and the record still names realm A while it lasts, so the two
-		// reads below are reads from before anything of this plane reached
-		// realm B.
+		// empty, and the record still names realm A while it lasts.
 		By("holding the plane on realm A until nothing of it can write that realm")
 		Eventually(func(g Gomega) {
 			plane := managementPlane(g, mcRetargetName)
@@ -445,16 +443,22 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 			g.Expect(cond.Message).To(ContainSubstring("holds no login callback"), cond.Message)
 		}, 5*time.Minute, time.Second).Should(Succeed())
 
-		By("leaving no login callback in realm A and creating nothing in realm B")
-		client, err = realmClient(mc, mcRealmA, mcOptimizeClientID)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(client).NotTo(ContainSubstring(retargetCallbackURL()))
-
+		// Realm B is read first. The checkpoint above lasts until the pods of
+		// the old realm are gone, and each read costs a helper pod, so a read
+		// of realm B taken second is a read that the end of the drain can
+		// reach. Realm A holds still either way: once it is empty, nothing of
+		// this plane points at it again.
+		By("creating nothing in realm B and leaving no login callback in realm A")
 		client, err = realmClient(mc, mcRealmB, mcOptimizeClientID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(client).To(
 			BeEmpty(), "Keycloak serves realm %q while the plane is still leaving realm %q", mcRealmB, mcRealmA,
 		)
+
+		client, err = realmClient(mc, mcRealmA, mcOptimizeClientID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(client).To(ContainSubstring(mcOptimizeClientJSON), "realm %q holds no Optimize client", mcRealmA)
+		Expect(client).NotTo(ContainSubstring(retargetCallbackURL()))
 
 		By("recording realm B and registering the login callbacks there")
 		Eventually(func(g Gomega) {
@@ -472,13 +476,14 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 
 		client, err = realmClient(mc, mcRealmA, mcOptimizeClientID)
 		Expect(err).NotTo(HaveOccurred())
+		Expect(client).To(ContainSubstring(mcOptimizeClientJSON), "realm %q holds no Optimize client", mcRealmA)
 		Expect(client).NotTo(ContainSubstring(retargetCallbackURL()))
 
 		// The move costs the plane the Management Identity of the old realm,
-		// and the components build one Deployment for the new realm. A second
-		// UID after the move is that one restart, and a UID that stands is the
-		// plane at rest rather than a plane that keeps replacing it.
-		By("replacing Management Identity once")
+		// and the components build a Deployment for the new realm. A UID that
+		// stands over a requeue interval is the plane at rest rather than a
+		// plane that keeps replacing its Identity.
+		By("replacing Management Identity and holding it")
 		after, err := identityUID(retarget)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(after).NotTo(Equal(before), "Management Identity was never replaced")

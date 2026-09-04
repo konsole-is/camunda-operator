@@ -79,6 +79,12 @@ const (
 	// Optimize in the realm it administers. The operator writes the login
 	// callbacks of every Optimize it serves on that client.
 	mcOptimizeClientID = "optimize"
+	// mcOptimizeClientJSON is what the answer of realmClient carries for a
+	// realm that holds that client. A read of a realm Keycloak does not serve
+	// is empty and a read of a realm without the client is an empty list, so
+	// an assertion that a callback is gone holds in both. This one beside it
+	// says the realm and the client are there and the callback is not.
+	mcOptimizeClientJSON = `"clientId":"` + mcOptimizeClientID + `"`
 )
 
 // externalKeycloakPlane returns a management plane in the externalKeycloak
@@ -168,8 +174,8 @@ func managementPlane(g Gomega, name string) *v1.CamundaManagementCluster {
 	return &mc
 }
 
-// expectCallbackRealm asserts that mc records realm as the realm of its login
-// callbacks.
+// expectCallbackRealm asserts the realm that mc records. A plane that records
+// nothing fails, rather than reading as a plane that records another realm.
 func expectCallbackRealm(g Gomega, mc *v1.CamundaManagementCluster, realm string) {
 	g.Expect(mc.Status.CallbackRealm).NotTo(
 		BeNil(), "CamundaManagementCluster %q records no callback realm", mc.Name,
@@ -213,11 +219,15 @@ func realmClient(keycloak *v1.CamundaManagementCluster, realm, clientID string) 
 // readRealmClientScript prints the clients of KC_REALM whose client id is
 // KC_CLIENT_ID. A realm that Keycloak does not serve answers 404 and prints
 // nothing, which is a state of its own for the caller and no failure.
+//
+// The spaces go, the way the role reads of this suite drop them, so a caller
+// matches a field of the answer whatever Keycloak puts between the colon and
+// the value. No value that a caller matches carries a space.
 const readRealmClientScript = keycloakTokenScript + `KC_CODE=$(curl -sS -o /tmp/response ` +
 	`-w '%{http_code}' -H "Authorization: Bearer $KC_TOKEN" ` +
 	`"$KC_URL/admin/realms/$KC_REALM/clients?clientId=$KC_CLIENT_ID")
 case "$KC_CODE" in
-  200) cat /tmp/response ;;
+  200) tr -d ' ' < /tmp/response ;;
   404) ;;
   *) echo "reading the clients of realm $KC_REALM: $KC_CODE" >&2; cat /tmp/response >&2; exit 1 ;;
 esac`
