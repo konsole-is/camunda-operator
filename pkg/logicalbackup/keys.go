@@ -112,13 +112,10 @@ func HasOptimizeSnapshot(names []string) bool {
 //
 // Camunda requires the id to be greater than every id the cluster already
 // holds, and an id can never be reused, not even after its backup is deleted.
-// Neither this function nor the pre-checks guarantee that. The pre-checks only
-// stop a second backup while one is running, so two backups of one cluster
-// within the same tick still collide, and a clock that steps backwards
-// defeats any timestamp. Milliseconds make a collision unlikely, not
-// impossible. The cluster is the arbiter: it answers a repeated or lower id
-// with camundaadmin.ErrConflict, and a caller must never resolve that by
-// adopting the backup that already holds the id.
+// Neither this function nor the pre-checks guarantee that. The cluster is the
+// arbiter: it answers a repeated or lower id with camundaadmin.ErrConflict,
+// and a caller must never resolve that by adopting the backup that already
+// holds the id.
 func AllocateBackupID(at metav1.Time) int64 {
 	return at.UnixMilli()
 }

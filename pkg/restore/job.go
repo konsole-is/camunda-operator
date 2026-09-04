@@ -84,13 +84,12 @@ type JobInput struct {
 //
 //   - The pod runs one container, and that container runs the restore
 //     entrypoint under the restore Spring profile, with the node id as a
-//     plain value. It carries no probe, because the restore application is a
-//     one-shot process.
+//     plain value. It carries no probe.
 //   - The data volume becomes a claim on data-<cluster>-zeebe-<ordinal>,
 //     because a Job has no claim template.
 //   - The pod never restarts, and the Job never retries it.
 //   - The topology spread constraints keep the shape of the broker's own, but
-//     they select the pods of this restore. See spreadOverRestorePods.
+//     they select the pods of this restore.
 //   - The operator labels of the restore go over the copied broker labels, so
 //     the owner and the component name this restore.
 //

@@ -117,5 +117,4 @@ func BoundMessage(message string) string {
 	return cut + marker
 }
 
-// Error returns the condition-ready message.
 func (f *PreCheckFailure) Error() string { return f.Message }

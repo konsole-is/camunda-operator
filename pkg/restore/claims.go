@@ -68,10 +68,6 @@ type ClaimInput struct {
 // is gone. It reports Done only when every claim exists again as an empty
 // volume.
 //
-// A claim that still holds data is therefore never deleted and created in one
-// call. A claim that is already gone is recorded and created in the same
-// call, because there is nothing left to lose.
-//
 // The caller has two duties, and the safety of the restore rests on them:
 //
 //   - Persist Progress.Recreated before it applies any restore Job. Until
@@ -83,9 +79,7 @@ type ClaimInput struct {
 //
 // The reader must be uncached. A claim that was just deleted or applied is
 // what the next decision reads. The same reader also reads the pods of the
-// namespace, to name what holds a volume that still terminates. That read
-// happens at most once per call, whatever the number of terminating volumes,
-// because only the first hold names the reported reason.
+// namespace, to name what holds a volume that still terminates.
 func RecreateClaims(
 	ctx context.Context,
 	c client.Client,

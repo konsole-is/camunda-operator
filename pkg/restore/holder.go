@@ -121,7 +121,6 @@ func claimHolder(
 	return "", nil
 }
 
-// mountsClaim reports whether pod uses the named claim as one of its volumes.
 func mountsClaim(pod *corev1.Pod, claim string) bool {
 	return slices.ContainsFunc(pod.Spec.Volumes, func(volume corev1.Volume) bool {
 		return volume.PersistentVolumeClaim != nil &&

@@ -32,47 +32,22 @@ import (
 // CollectJobs removes the per-broker restore Jobs of a restore that completed,
 // and reports whether they are gone.
 //
-// A Job that completed keeps its pod. A pod that mounts a broker data volume
-// counts as a user of it, under the kubernetes.io/pvc-protection finalizer.
-// The volume therefore never terminates while the pod exists. The next
-// operation that needs the volume then waits without end: a second restore of
-// the cluster, or the deletion of the cluster itself.
-//
 // The recorded terminal reason decides what happens. A completed restore gives
 // its Jobs up, and a failed restore keeps them, because the logs of a failed
-// Job are the diagnosis. A restore that failed after it started the restore
-// application therefore holds the broker data volumes until somebody deletes
-// the restore, which takes its Jobs with it. A restore that failed earlier
-// recorded no Job, so it holds nothing and there is nothing here to remove.
+// Job are the diagnosis. A failed restore therefore holds the broker data
+// volumes until somebody deletes the restore, which takes its Jobs with it.
 //
-// The delete carries foreground propagation, and that is why the answer
-// matters. Background propagation returns before the pods are gone, and the
-// pods are what hold the volume. Foreground propagation keeps the Job in place
-// until its last pod is gone, so a Job that still exists means the pods can
-// still exist, whatever its deletion timestamp says. Outcome.Done reports that
-// no recorded Job is left, and only then are the volumes free.
-//
-// Finish runs this first of the three releases of a terminal restore, and it
-// runs nothing that follows while Done is false. The two that follow are the
-// unsuspend of the cluster and the release of the claim. A broker that the
-// scheduler places on another node cannot attach a ReadWriteOnce volume that
-// a completed pod still counts as a user of, and the claim is what tells the
-// next operation that the cluster is free.
-//
-// Outcome.Wait paces the look that follows. The Jobs belong to the restore, so
-// the delete wakes the controller through its own watch, and the wait is the
-// cheap guarantee next to it.
+// Outcome.Done reports that no recorded Job is left, and only then are the
+// broker volumes free. Outcome.Wait paces the look that follows.
 //
 // It is safe to call again on every look, and the answer converges. A Job that
 // is gone, a Job that another writer owns now, and a restore that recorded no
-// Job at all are all complete. A name that another writer takes between the
-// read and the delete answers the same way, because the delete carries a UID
-// precondition.
+// Job at all are all complete.
 //
 // The reader must be uncached. Only the controller reference proves that a Job
 // under a recorded name belongs to this restore, and a stale read of that
 // reference removes the Job of somebody else. A cached read also reports a Job
-// that is already gone, which would report the volumes free too early.
+// that is already gone, so it reports the volumes free too early.
 func CollectJobs(
 	ctx context.Context,
 	c client.Client,
