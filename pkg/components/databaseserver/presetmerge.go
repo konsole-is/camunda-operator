@@ -152,6 +152,24 @@ func ValidateMerged(spec v1.DatabaseServerSpec) error {
 	return nil
 }
 
+// checkVersionFloor rejects a PostgreSQL major below the Camunda 8.9 floor.
+// Any later major passes: Camunda adds a major to its policy before the
+// operator hears about it, and a server the user runs on purpose must not be
+// held back by a number in this file.
+func checkVersionFloor(version string) error {
+	unsupported := fmt.Errorf(
+		"version %q is not supported: Camunda 8.9 requires PostgreSQL %d or later",
+		version, MinimumPostgresMajor,
+	)
+
+	major, err := strconv.Atoi(version)
+	if err != nil || major < MinimumPostgresMajor {
+		return unsupported
+	}
+
+	return nil
+}
+
 // checkBaseBackupSchedule rejects a schedule that CloudNativePG cannot read.
 //
 // The pattern on the field bounds every field of the schedule, and a pattern
@@ -166,24 +184,6 @@ func checkBaseBackupSchedule(schedule string) error {
 			"archive.baseBackupSchedule %q is not a schedule CloudNativePG can read: %w",
 			schedule, err,
 		)
-	}
-
-	return nil
-}
-
-// checkVersionFloor rejects a PostgreSQL major below the Camunda 8.9 floor.
-// Any later major passes: Camunda adds a major to its policy before the
-// operator hears about it, and a server the user runs on purpose must not be
-// held back by a number in this file.
-func checkVersionFloor(version string) error {
-	unsupported := fmt.Errorf(
-		"version %q is not supported: Camunda 8.9 requires PostgreSQL %d or later",
-		version, MinimumPostgresMajor,
-	)
-
-	major, err := strconv.Atoi(version)
-	if err != nil || major < MinimumPostgresMajor {
-		return unsupported
 	}
 
 	return nil

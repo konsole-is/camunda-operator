@@ -58,15 +58,6 @@ var MirrorPurposes = []MirrorPurpose{
 // mirroredComponentName is the ocf name of the mirrored Secrets component.
 const mirroredComponentName = "mirrored-secrets"
 
-// MirroredSecretName returns the name of the copy of a referenced Secret in
-// the cluster namespace: <name>-camunda-<purpose>. A long cluster name
-// truncates, the way WorkloadName truncates.
-func MirroredSecretName(cluster *v1.CamundaCluster, purpose MirrorPurpose) string {
-	suffix := "-camunda-" + string(purpose)
-
-	return labels.BoundedName(cluster.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
-}
-
 // MirroredSecretComponent renders one Secret per purpose of MirrorPurposes
 // in the cluster namespace, in one component. The keys of mirrors are the
 // purposes that are present, the values the copied data (only the keys that
@@ -110,6 +101,15 @@ func MirroredSecretComponent(
 	}
 
 	return builder.Build()
+}
+
+// MirroredSecretName returns the name of the copy of a referenced Secret in
+// the cluster namespace: <name>-camunda-<purpose>. A long cluster name
+// truncates, the way WorkloadName truncates.
+func MirroredSecretName(cluster *v1.CamundaCluster, purpose MirrorPurpose) string {
+	suffix := "-camunda-" + string(purpose)
+
+	return labels.BoundedName(cluster.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
 }
 
 // Valid reports whether p is in MirrorPurposes, the set the component

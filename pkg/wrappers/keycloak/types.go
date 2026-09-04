@@ -16,6 +16,10 @@ limitations under the License.
 
 package keycloak
 
+// This file mirrors the upstream Keycloak API of the Keycloak Operator, in
+// the order upstream declares it. The file order rule of how-we-write-go does
+// not apply to it.
+
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

@@ -181,17 +181,7 @@ func identityComponents(in Input) (Built, error) {
 //
 // The list lives in a ConfigMap rather than in the pod template so that adding
 // or removing an Optimize does not roll Management Identity while the list
-// stays filled. The container refers to this key, and that reference does not
-// change when the list behind it does, so a new Optimize updates this object
-// and no pod restarts. A pod that starts later for any other reason reads the
-// list as it is then. The first URL and the last one are the exception: the
-// gate below adds and removes the reference itself, which is part of the pod
-// template.
-//
-// The content is deliberately absent from the config hash of Management
-// Identity. The pods that are already running get the new callback from the
-// operator, which registers it on the Optimize client directly, and this
-// ConfigMap is the floor that the next start reads.
+// stays filled.
 func identityOptimizeURLs(in Input) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -339,6 +329,12 @@ func initialClaim(mc *v1.CamundaManagementCluster) (name, value string) {
 	return name, value
 }
 
+// RecordedInitialClaim returns the initial administrator claim that
+// Management Identity started with, or empty while it has not started yet.
+func RecordedInitialClaim(mc *v1.CamundaManagementCluster) string {
+	return mc.Annotations[InitialClaimAnnotation]
+}
+
 // SpecInitialClaim returns the initial administrator claim of the spec, in the
 // form the annotation records: "<claimName>=<claimValue>". The controller
 // compares it against the recorded one to find a change that Identity can no
@@ -349,10 +345,51 @@ func SpecInitialClaim(mc *v1.CamundaManagementCluster) string {
 	return admin.ClaimName + initialClaimSeparator + admin.ClaimValue
 }
 
-// RecordedInitialClaim returns the initial administrator claim that
-// Management Identity started with, or empty while it has not started yet.
-func RecordedInitialClaim(mc *v1.CamundaManagementCluster) string {
-	return mc.Annotations[InitialClaimAnnotation]
+// identityDatabaseEnv renders the connection to the Identity database.
+func identityDatabaseEnv(db Database) []corev1.EnvVar {
+	return []corev1.EnvVar{
+		{Name: identityEnvDatabaseHost, Value: db.Host},
+		{Name: identityEnvDatabasePort, Value: strconv.Itoa(int(db.Port))},
+		{Name: identityEnvDatabaseName, Value: db.Name},
+		{
+			Name:      identityEnvDatabaseUsername,
+			ValueFrom: secretSource(db.Credentials.Name, db.Credentials.UsernameKey),
+		},
+		{
+			Name:      identityEnvDatabasePassword,
+			ValueFrom: secretSource(db.Credentials.Name, db.Credentials.PasswordKey),
+		},
+	}
+}
+
+// identityService renders the Service of Management Identity. Both ports are
+// exposed: the HTTP port serves the user interface and the API, the management
+// port the actuator endpoints.
+func identityService(in Input) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      IdentityName(in.Cluster),
+			Namespace: in.Cluster.Namespace,
+			Labels:    managedLabels(in, ComponentIdentity),
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: discoveryLabels(in, ComponentIdentity),
+			Ports: []corev1.ServicePort{
+				{
+					Name:       portNameHTTP,
+					Port:       IdentityServicePortHTTP,
+					TargetPort: intstr.FromString(portNameHTTP),
+					Protocol:   corev1.ProtocolTCP,
+				},
+				{
+					Name:       portNameManagement,
+					Port:       IdentityServicePortManagement,
+					TargetPort: intstr.FromString(portNameManagement),
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+		},
+	}
 }
 
 // StartedInitialClaim returns the initial administrator claim that Management
@@ -446,51 +483,4 @@ func identityClaimEnv(pod *corev1.Pod) string {
 	}
 
 	return name + initialClaimSeparator + value
-}
-
-// identityDatabaseEnv renders the connection to the Identity database.
-func identityDatabaseEnv(db Database) []corev1.EnvVar {
-	return []corev1.EnvVar{
-		{Name: identityEnvDatabaseHost, Value: db.Host},
-		{Name: identityEnvDatabasePort, Value: strconv.Itoa(int(db.Port))},
-		{Name: identityEnvDatabaseName, Value: db.Name},
-		{
-			Name:      identityEnvDatabaseUsername,
-			ValueFrom: secretSource(db.Credentials.Name, db.Credentials.UsernameKey),
-		},
-		{
-			Name:      identityEnvDatabasePassword,
-			ValueFrom: secretSource(db.Credentials.Name, db.Credentials.PasswordKey),
-		},
-	}
-}
-
-// identityService renders the Service of Management Identity. Both ports are
-// exposed: the HTTP port serves the user interface and the API, the management
-// port the actuator endpoints.
-func identityService(in Input) *corev1.Service {
-	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      IdentityName(in.Cluster),
-			Namespace: in.Cluster.Namespace,
-			Labels:    managedLabels(in, ComponentIdentity),
-		},
-		Spec: corev1.ServiceSpec{
-			Selector: discoveryLabels(in, ComponentIdentity),
-			Ports: []corev1.ServicePort{
-				{
-					Name:       portNameHTTP,
-					Port:       IdentityServicePortHTTP,
-					TargetPort: intstr.FromString(portNameHTTP),
-					Protocol:   corev1.ProtocolTCP,
-				},
-				{
-					Name:       portNameManagement,
-					Port:       IdentityServicePortManagement,
-					TargetPort: intstr.FromString(portNameManagement),
-					Protocol:   corev1.ProtocolTCP,
-				},
-			},
-		},
-	}
 }

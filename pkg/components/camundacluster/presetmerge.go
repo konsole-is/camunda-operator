@@ -113,40 +113,6 @@ func MergeSpec(
 	return *merged.DeepCopy()
 }
 
-// ReleaseImages returns the image references that the release pins for the
-// merged spec, or nil when none applies. A pin belongs to the version of the
-// release, so it applies only while that version is the effective one: a
-// cluster that sets its own version, or a restore that forces one, pulls the
-// normal repository at that version instead of the pin. The camunda pin
-// follows spec.version, the connectors pin follows connectors.version, each
-// on its own. The result shares no memory with release.
-func ReleaseImages(merged v1.CamundaClusterSpec, release *v1.CamundaReleaseSpec) *v1.ReleaseImagesSpec {
-	if release == nil || release.Images == nil {
-		return nil
-	}
-
-	images := *release.Images
-
-	if merged.Version != release.Version {
-		images.Camunda = ""
-	}
-
-	effectiveConnectors := ""
-	if merged.Connectors != nil {
-		effectiveConnectors = merged.Connectors.Version
-	}
-	if release.Connectors == nil || release.Connectors.Version == "" ||
-		effectiveConnectors != release.Connectors.Version {
-		images.Connectors = ""
-	}
-
-	if images == (v1.ReleaseImagesSpec{}) {
-		return nil
-	}
-
-	return &images
-}
-
 // releaseLayer expresses a release in the shape of a cluster spec, so the
 // same merge rules layer it. A component block appears only when the
 // release sets something under it, so a nil block of the preset stays nil.
@@ -254,121 +220,6 @@ func mergeAuth(base, over *v1.ClusterAuthSpec) *v1.ClusterAuthSpec {
 	return base
 }
 
-func mergeZeebe(base, over *v1.ZeebeSpec) *v1.ZeebeSpec {
-	if over == nil {
-		return base
-	}
-	if base == nil {
-		return over
-	}
-
-	base.WorkloadSpec = mergeWorkload(base.WorkloadSpec, over.WorkloadSpec)
-	if over.Partitions != nil {
-		base.Partitions = over.Partitions
-	}
-	if over.ReplicationFactor != nil {
-		base.ReplicationFactor = over.ReplicationFactor
-	}
-	if over.StorageClassName != nil {
-		base.StorageClassName = over.StorageClassName
-	}
-	if over.StorageSize != nil {
-		base.StorageSize = over.StorageSize
-	}
-	if over.PersistentVolumeClaimRetentionPolicy != nil {
-		base.PersistentVolumeClaimRetentionPolicy = over.PersistentVolumeClaimRetentionPolicy
-	}
-
-	return base
-}
-
-func mergeGateway(base, over *v1.GatewaySpec) *v1.GatewaySpec {
-	if over == nil {
-		return base
-	}
-	if base == nil {
-		return over
-	}
-
-	base.WorkloadSpec = mergeWorkload(base.WorkloadSpec, over.WorkloadSpec)
-	if over.Mode != "" {
-		base.Mode = over.Mode
-	}
-
-	return base
-}
-
-func mergeWebApp(base, over *v1.WebAppSpec) *v1.WebAppSpec {
-	if over == nil {
-		return base
-	}
-	if base == nil {
-		return over
-	}
-
-	base.WorkloadSpec = mergeWorkload(base.WorkloadSpec, over.WorkloadSpec)
-	if over.Mode != "" {
-		base.Mode = over.Mode
-	}
-
-	return base
-}
-
-func mergeConnectors(base, over *v1.ConnectorsSpec) *v1.ConnectorsSpec {
-	if over == nil {
-		return base
-	}
-	if base == nil {
-		return over
-	}
-
-	base.WorkloadSpec = mergeWorkload(base.WorkloadSpec, over.WorkloadSpec)
-	if over.Enabled != nil {
-		base.Enabled = over.Enabled
-	}
-	if over.Version != "" {
-		base.Version = over.Version
-	}
-
-	return base
-}
-
-// mergeWorkload applies the shared merge rules of one component block:
-// replicas by pointer, resources per entry, extraEnv by name, extraEnvFrom
-// concatenated, the maps by key, and scheduling wholesale.
-func mergeWorkload(base, over v1.WorkloadSpec) v1.WorkloadSpec {
-	if over.Replicas != nil {
-		base.Replicas = over.Replicas
-	}
-	base.Resources = mergeResources(base.Resources, over.Resources)
-	base.ExtraEnv = mergeEnv(base.ExtraEnv, over.ExtraEnv)
-	base.ExtraEnvFrom = append(base.ExtraEnvFrom, over.ExtraEnvFrom...)
-	base.PodLabels = mergeMap(base.PodLabels, over.PodLabels)
-	base.PodAnnotations = mergeMap(base.PodAnnotations, over.PodAnnotations)
-	if over.Scheduling != nil {
-		base.Scheduling = over.Scheduling
-	}
-
-	return base
-}
-
-func mergeResources(base, over *corev1.ResourceRequirements) *corev1.ResourceRequirements {
-	if over == nil {
-		return base
-	}
-	if base == nil {
-		return over
-	}
-
-	base.Requests = mergeMap(base.Requests, over.Requests)
-	base.Limits = mergeMap(base.Limits, over.Limits)
-	if over.Claims != nil {
-		base.Claims = over.Claims
-	}
-
-	return base
-}
-
 // mergeEnv keeps the order of base, replaces an entry by name, and appends
 // the entries of over that base does not have, in their order. A later entry
 // of over with the same name replaces the earlier one, so the result carries
@@ -409,89 +260,6 @@ func mergeMap[M ~map[K]V, K comparable, V any](base, over M) M {
 
 	maps.Copy(base, over)
 	return base
-}
-
-// ValidateMerged checks the merged spec for the rules that admission cannot
-// enforce, because a preset or a release can provide the values. The version must
-// be present, three segments, and 8.9.0 or later. The effective
-// replicationFactor must not exceed the effective replicas, the effective
-// partitions must be at least 1, and connectors.version must be present when
-// connectors are enabled. The error joins every problem with "; ".
-func ValidateMerged(spec v1.CamundaClusterSpec) error {
-	var problems []string
-	effective := NewEffective(spec)
-
-	if spec.Version == "" {
-		problems = append(problems, fmt.Sprintf(msgMissingFields, "version"))
-	} else if err := checkVersionFloor(spec.Version); err != nil {
-		problems = append(problems, err.Error())
-	}
-
-	if effective.ReplicationFactor() > effective.ZeebeReplicas() {
-		problems = append(problems, fmt.Sprintf(
-			msgReplicationFactorExceedsReplicas, effective.ReplicationFactor(), effective.ZeebeReplicas(),
-		))
-	}
-
-	if effective.Partitions() < 1 {
-		problems = append(problems, fmt.Sprintf(msgPartitionsBelowMinimum, effective.Partitions()))
-	}
-
-	if effective.ConnectorsEnabled() && spec.Connectors.Version == "" {
-		problems = append(problems, msgConnectorsVersionRequired)
-	}
-
-	if b := spec.Backup; b != nil && b.PrimaryStorage != nil &&
-		b.PrimaryStorage.Continuous != nil && *b.PrimaryStorage.Continuous &&
-		b.PrimaryStorage.Schedule == ScheduleNone {
-		problems = append(problems, msgContinuousWithoutSchedule)
-	}
-
-	if len(problems) > 0 {
-		return fmt.Errorf("%s", strings.Join(problems, "; "))
-	}
-
-	return nil
-}
-
-// checkVersionFloor rejects a Camunda version below versionFloor. A later
-// minor or major passes.
-func checkVersionFloor(version string) error {
-	segments, err := parseVersion(version)
-	if err != nil {
-		return err
-	}
-	floor, _ := parseVersion(versionFloor)
-
-	for i := range 3 {
-		switch {
-		case segments[i] < floor[i]:
-			return fmt.Errorf(msgVersionBelowFloor, version, versionFloor)
-		case segments[i] > floor[i]:
-			return nil
-		}
-	}
-
-	return nil
-}
-
-func parseVersion(version string) ([3]int, error) {
-	var parsed [3]int
-
-	segments := strings.Split(version, ".")
-	if len(segments) != 3 {
-		return parsed, fmt.Errorf(msgVersionNotThreeSegments, version)
-	}
-
-	for i, segment := range segments {
-		n, err := strconv.Atoi(segment)
-		if err != nil {
-			return parsed, fmt.Errorf(msgVersionNotThreeSegments, version)
-		}
-		parsed[i] = n
-	}
-
-	return parsed, nil
 }
 
 // mergeBackup merges the backup policy: the primary-storage fields merge one
@@ -580,4 +348,236 @@ func mergeBackupDump(base, over *v1.BackupDumpSpec) *v1.BackupDumpSpec {
 	}
 
 	return base
+}
+
+func mergeResources(base, over *corev1.ResourceRequirements) *corev1.ResourceRequirements {
+	if over == nil {
+		return base
+	}
+	if base == nil {
+		return over
+	}
+
+	base.Requests = mergeMap(base.Requests, over.Requests)
+	base.Limits = mergeMap(base.Limits, over.Limits)
+	if over.Claims != nil {
+		base.Claims = over.Claims
+	}
+
+	return base
+}
+
+func mergeZeebe(base, over *v1.ZeebeSpec) *v1.ZeebeSpec {
+	if over == nil {
+		return base
+	}
+	if base == nil {
+		return over
+	}
+
+	base.WorkloadSpec = mergeWorkload(base.WorkloadSpec, over.WorkloadSpec)
+	if over.Partitions != nil {
+		base.Partitions = over.Partitions
+	}
+	if over.ReplicationFactor != nil {
+		base.ReplicationFactor = over.ReplicationFactor
+	}
+	if over.StorageClassName != nil {
+		base.StorageClassName = over.StorageClassName
+	}
+	if over.StorageSize != nil {
+		base.StorageSize = over.StorageSize
+	}
+	if over.PersistentVolumeClaimRetentionPolicy != nil {
+		base.PersistentVolumeClaimRetentionPolicy = over.PersistentVolumeClaimRetentionPolicy
+	}
+
+	return base
+}
+
+// mergeWorkload applies the shared merge rules of one component block:
+// replicas by pointer, resources per entry, extraEnv by name, extraEnvFrom
+// concatenated, the maps by key, and scheduling wholesale.
+func mergeWorkload(base, over v1.WorkloadSpec) v1.WorkloadSpec {
+	if over.Replicas != nil {
+		base.Replicas = over.Replicas
+	}
+	base.Resources = mergeResources(base.Resources, over.Resources)
+	base.ExtraEnv = mergeEnv(base.ExtraEnv, over.ExtraEnv)
+	base.ExtraEnvFrom = append(base.ExtraEnvFrom, over.ExtraEnvFrom...)
+	base.PodLabels = mergeMap(base.PodLabels, over.PodLabels)
+	base.PodAnnotations = mergeMap(base.PodAnnotations, over.PodAnnotations)
+	if over.Scheduling != nil {
+		base.Scheduling = over.Scheduling
+	}
+
+	return base
+}
+
+func mergeGateway(base, over *v1.GatewaySpec) *v1.GatewaySpec {
+	if over == nil {
+		return base
+	}
+	if base == nil {
+		return over
+	}
+
+	base.WorkloadSpec = mergeWorkload(base.WorkloadSpec, over.WorkloadSpec)
+	if over.Mode != "" {
+		base.Mode = over.Mode
+	}
+
+	return base
+}
+
+func mergeWebApp(base, over *v1.WebAppSpec) *v1.WebAppSpec {
+	if over == nil {
+		return base
+	}
+	if base == nil {
+		return over
+	}
+
+	base.WorkloadSpec = mergeWorkload(base.WorkloadSpec, over.WorkloadSpec)
+	if over.Mode != "" {
+		base.Mode = over.Mode
+	}
+
+	return base
+}
+
+func mergeConnectors(base, over *v1.ConnectorsSpec) *v1.ConnectorsSpec {
+	if over == nil {
+		return base
+	}
+	if base == nil {
+		return over
+	}
+
+	base.WorkloadSpec = mergeWorkload(base.WorkloadSpec, over.WorkloadSpec)
+	if over.Enabled != nil {
+		base.Enabled = over.Enabled
+	}
+	if over.Version != "" {
+		base.Version = over.Version
+	}
+
+	return base
+}
+
+// ReleaseImages returns the image references that the release pins for the
+// merged spec, or nil when none applies. A pin belongs to the version of the
+// release, so it applies only while that version is the effective one: a
+// cluster that sets its own version, or a restore that forces one, pulls the
+// normal repository at that version instead of the pin. The camunda pin
+// follows spec.version, the connectors pin follows connectors.version, each
+// on its own. The result shares no memory with release.
+func ReleaseImages(merged v1.CamundaClusterSpec, release *v1.CamundaReleaseSpec) *v1.ReleaseImagesSpec {
+	if release == nil || release.Images == nil {
+		return nil
+	}
+
+	images := *release.Images
+
+	if merged.Version != release.Version {
+		images.Camunda = ""
+	}
+
+	effectiveConnectors := ""
+	if merged.Connectors != nil {
+		effectiveConnectors = merged.Connectors.Version
+	}
+	if release.Connectors == nil || release.Connectors.Version == "" ||
+		effectiveConnectors != release.Connectors.Version {
+		images.Connectors = ""
+	}
+
+	if images == (v1.ReleaseImagesSpec{}) {
+		return nil
+	}
+
+	return &images
+}
+
+// ValidateMerged checks the merged spec for the rules that admission cannot
+// enforce, because a preset or a release can provide the values. The version must
+// be present, three segments, and 8.9.0 or later. The effective
+// replicationFactor must not exceed the effective replicas, the effective
+// partitions must be at least 1, and connectors.version must be present when
+// connectors are enabled. The error joins every problem with "; ".
+func ValidateMerged(spec v1.CamundaClusterSpec) error {
+	var problems []string
+	effective := NewEffective(spec)
+
+	if spec.Version == "" {
+		problems = append(problems, fmt.Sprintf(msgMissingFields, "version"))
+	} else if err := checkVersionFloor(spec.Version); err != nil {
+		problems = append(problems, err.Error())
+	}
+
+	if effective.ReplicationFactor() > effective.ZeebeReplicas() {
+		problems = append(problems, fmt.Sprintf(
+			msgReplicationFactorExceedsReplicas, effective.ReplicationFactor(), effective.ZeebeReplicas(),
+		))
+	}
+
+	if effective.Partitions() < 1 {
+		problems = append(problems, fmt.Sprintf(msgPartitionsBelowMinimum, effective.Partitions()))
+	}
+
+	if effective.ConnectorsEnabled() && spec.Connectors.Version == "" {
+		problems = append(problems, msgConnectorsVersionRequired)
+	}
+
+	if b := spec.Backup; b != nil && b.PrimaryStorage != nil &&
+		b.PrimaryStorage.Continuous != nil && *b.PrimaryStorage.Continuous &&
+		b.PrimaryStorage.Schedule == ScheduleNone {
+		problems = append(problems, msgContinuousWithoutSchedule)
+	}
+
+	if len(problems) > 0 {
+		return fmt.Errorf("%s", strings.Join(problems, "; "))
+	}
+
+	return nil
+}
+
+// checkVersionFloor rejects a Camunda version below versionFloor. A later
+// minor or major passes.
+func checkVersionFloor(version string) error {
+	segments, err := parseVersion(version)
+	if err != nil {
+		return err
+	}
+	floor, _ := parseVersion(versionFloor)
+
+	for i := range 3 {
+		switch {
+		case segments[i] < floor[i]:
+			return fmt.Errorf(msgVersionBelowFloor, version, versionFloor)
+		case segments[i] > floor[i]:
+			return nil
+		}
+	}
+
+	return nil
+}
+
+func parseVersion(version string) ([3]int, error) {
+	var parsed [3]int
+
+	segments := strings.Split(version, ".")
+	if len(segments) != 3 {
+		return parsed, fmt.Errorf(msgVersionNotThreeSegments, version)
+	}
+
+	for i, segment := range segments {
+		n, err := strconv.Atoi(segment)
+		if err != nil {
+			return parsed, fmt.Errorf(msgVersionNotThreeSegments, version)
+		}
+		parsed[i] = n
+	}
+
+	return parsed, nil
 }

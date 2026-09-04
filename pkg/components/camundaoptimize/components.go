@@ -109,41 +109,6 @@ func buildComponent(in Input, name string) (*component.Component, error) {
 		Build()
 }
 
-// monitoringGate gates the ServiceMonitor on
-// spec.monitoring.serviceMonitor.enabled.
-func monitoringGate(in Input) component.ResourceOption {
-	monitor := in.serviceMonitorSpec()
-
-	return component.GatedBy(feature.NewBooleanGate(monitor != nil && monitor.Enabled))
-}
-
-// managedLabels returns the labels of an object that the operator applies for
-// a component. The owner is the referenced CamundaCluster, so the Optimize
-// workloads carry the same camunda.io/cluster value as the workloads of that
-// cluster.
-func managedLabels(in Input, comp string) map[string]string {
-	return labels.Managed(labels.Cluster(in.ClusterName), comp)
-}
-
-// discoveryLabels returns the labels of the pods and the selectors of a
-// component.
-func discoveryLabels(in Input, comp string) map[string]string {
-	return labels.Discovery(labels.Cluster(in.ClusterName), comp)
-}
-
-// podLabels returns the labels of the pods of a component: the discovery
-// labels and the SecondaryStorageConfig they run on. The importer writes the
-// analytics indices of that contract, so a cluster that takes the contract
-// over finds these pods with the same selector as the pods of the previous
-// holder. The label is on the pods, never on the selector, so a repoint of
-// the cluster rolls them and the new ones carry the new value.
-func podLabels(in Input, comp string) map[string]string {
-	return labels.Merge(
-		discoveryLabels(in, comp),
-		clustercomponents.StoragePodLabels(in.ClusterName, in.StorageContract),
-	)
-}
-
 // deploymentFor renders the base Deployment of a component.
 // workloadmutations.Mutations layers the overrides on top.
 func deploymentFor(in Input, comp string) *appsv1.Deployment {
@@ -160,6 +125,20 @@ func deploymentFor(in Input, comp string) *appsv1.Deployment {
 			Template: podTemplate(in, comp),
 		},
 	}
+}
+
+// managedLabels returns the labels of an object that the operator applies for
+// a component. The owner is the referenced CamundaCluster, so the Optimize
+// workloads carry the same camunda.io/cluster value as the workloads of that
+// cluster.
+func managedLabels(in Input, comp string) map[string]string {
+	return labels.Managed(labels.Cluster(in.ClusterName), comp)
+}
+
+// discoveryLabels returns the labels of the pods and the selectors of a
+// component.
+func discoveryLabels(in Input, comp string) map[string]string {
+	return labels.Discovery(labels.Cluster(in.ClusterName), comp)
 }
 
 // strategyFor returns the rollout strategy of a component. The importer takes
@@ -196,6 +175,19 @@ func podTemplate(in Input, comp string) corev1.PodTemplateSpec {
 	}
 }
 
+// podLabels returns the labels of the pods of a component: the discovery
+// labels and the SecondaryStorageConfig they run on. The importer writes the
+// analytics indices of that contract, so a cluster that takes the contract
+// over finds these pods with the same selector as the pods of the previous
+// holder. The label is on the pods, never on the selector, so a repoint of
+// the cluster rolls them and the new ones carry the new value.
+func podLabels(in Input, comp string) map[string]string {
+	return labels.Merge(
+		discoveryLabels(in, comp),
+		clustercomponents.StoragePodLabels(in.ClusterName, in.StorageContract),
+	)
+}
+
 // container renders the Optimize container of a component. Only the importer
 // imports the exported records of the cluster.
 func container(in Input, comp string) corev1.Container {
@@ -211,6 +203,13 @@ func container(in Input, comp string) corev1.Container {
 	}
 }
 
+func containerPorts() []corev1.ContainerPort {
+	return []corev1.ContainerPort{
+		{Name: portNameHTTP, ContainerPort: PortHTTP, Protocol: corev1.ProtocolTCP},
+		{Name: portNameManagement, ContainerPort: PortManagement, Protocol: corev1.ProtocolTCP},
+	}
+}
+
 // probe builds an HTTP probe on a named port. A zero failureThreshold keeps
 // the Kubernetes default.
 func probe(port, path string, periodSeconds, failureThreshold int32) *corev1.Probe {
@@ -221,13 +220,6 @@ func probe(port, path string, periodSeconds, failureThreshold int32) *corev1.Pro
 		}},
 		PeriodSeconds:    periodSeconds,
 		FailureThreshold: failureThreshold,
-	}
-}
-
-func containerPorts() []corev1.ContainerPort {
-	return []corev1.ContainerPort{
-		{Name: portNameHTTP, ContainerPort: PortHTTP, Protocol: corev1.ProtocolTCP},
-		{Name: portNameManagement, ContainerPort: PortManagement, Protocol: corev1.ProtocolTCP},
 	}
 }
 
@@ -283,4 +275,12 @@ func serviceMonitorFor(in Input, comp string) *monitoringv1.ServiceMonitor {
 			Endpoints: []monitoringv1.Endpoint{{Port: portNameManagement, Path: metricsPath}},
 		},
 	}
+}
+
+// monitoringGate gates the ServiceMonitor on
+// spec.monitoring.serviceMonitor.enabled.
+func monitoringGate(in Input) component.ResourceOption {
+	monitor := in.serviceMonitorSpec()
+
+	return component.GatedBy(feature.NewBooleanGate(monitor != nil && monitor.Enabled))
 }
