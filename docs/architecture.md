@@ -13,7 +13,7 @@ This is the core rule of the operator: **features attach to workloads. Workloads
 The rule has three consequences that you can rely on:
 
 - A feature attaches to a cluster that you never edit for it. There is no plugin to enable and no field to set.
-- A failure in an attached feature never stops the cluster.
+- A failure in an attached feature never stops the operator from managing the cluster.
 - You can create, change, or delete an attached feature without a change to the cluster.
 
 This is how the Kubernetes ecosystem itself works. cert-manager writes Secrets. The HorizontalPodAutoscaler patches replicas on a Deployment. Neither goes through a central coordinator.
