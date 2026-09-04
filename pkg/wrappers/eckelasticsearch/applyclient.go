@@ -26,6 +26,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+type applyClient struct {
+	client.Client
+}
+
 // NewApplyClient wraps c so that Server-Side Apply patches of typed
 // Elasticsearch objects are serialized without the fields that the ECK CRD
 // schema does not declare. The ECK CRDs prune status and creationTimestamp
@@ -40,10 +44,6 @@ import (
 // component must place this wrapper in the Client of the ReconcileContext.
 func NewApplyClient(c client.Client) client.Client {
 	return &applyClient{Client: c}
-}
-
-type applyClient struct {
-	client.Client
 }
 
 // Patch converts Server-Side Apply patches of *esv1.Elasticsearch to

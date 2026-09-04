@@ -25,6 +25,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+type applyClient struct {
+	client.Client
+}
+
 // NewApplyClient wraps c so that Server-Side Apply patches of typed Keycloak
 // objects are serialized without the zero values that the Keycloak CRD schema
 // refuses. The pod template of spec.unsupported is a corev1.PodTemplateSpec,
@@ -39,10 +43,6 @@ import (
 // must place this wrapper in the Client of the ReconcileContext.
 func NewApplyClient(c client.Client) client.Client {
 	return &applyClient{Client: c}
-}
-
-type applyClient struct {
-	client.Client
 }
 
 // Patch converts Server-Side Apply patches of *Keycloak to sanitized

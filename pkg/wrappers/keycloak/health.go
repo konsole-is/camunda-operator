@@ -65,6 +65,39 @@ func DefaultConvergingStatusHandler(
 	return concepts.AliveStatusWithReason{Status: status, Reason: notReadyReason(kc)}, nil
 }
 
+// condition returns the condition of the given type that the Keycloak
+// Operator reported.
+func condition(kc *Keycloak, conditionType string) (KeycloakCondition, bool) {
+	for _, c := range kc.Status.Conditions {
+		if c.Type == conditionType {
+			return c, true
+		}
+	}
+
+	return KeycloakCondition{}, false
+}
+
+// conditionMessage appends the message of a condition to a summary, when the
+// condition carries one.
+func conditionMessage(summary string, c KeycloakCondition) string {
+	if c.Message == "" {
+		return summary
+	}
+
+	return summary + ": " + c.Message
+}
+
+// notReadyReason explains why a Keycloak is not ready, from its Ready
+// condition when it reported one.
+func notReadyReason(kc *Keycloak) string {
+	ready, found := condition(kc, ConditionReady)
+	if !found {
+		return "Keycloak has not reported readiness yet"
+	}
+
+	return conditionMessage("Keycloak is not ready", ready)
+}
+
 // DefaultGraceStatusHandler grades a Keycloak that is still not converged
 // after the grace period: ready and free of errors is Healthy, anything else
 // is Down. A Keycloak serves requests or it does not, so it has no degraded
@@ -138,37 +171,4 @@ func DefaultSuspensionStatusHandler(kc *Keycloak) (concepts.SuspensionStatusWith
 // behind it is not the operator's to delete.
 func DefaultDeleteOnSuspendHandler(_ *Keycloak) bool {
 	return false
-}
-
-// condition returns the condition of the given type that the Keycloak
-// Operator reported.
-func condition(kc *Keycloak, conditionType string) (KeycloakCondition, bool) {
-	for _, c := range kc.Status.Conditions {
-		if c.Type == conditionType {
-			return c, true
-		}
-	}
-
-	return KeycloakCondition{}, false
-}
-
-// notReadyReason explains why a Keycloak is not ready, from its Ready
-// condition when it reported one.
-func notReadyReason(kc *Keycloak) string {
-	ready, found := condition(kc, ConditionReady)
-	if !found {
-		return "Keycloak has not reported readiness yet"
-	}
-
-	return conditionMessage("Keycloak is not ready", ready)
-}
-
-// conditionMessage appends the message of a condition to a summary, when the
-// condition carries one.
-func conditionMessage(summary string, c KeycloakCondition) string {
-	if c.Message == "" {
-		return summary
-	}
-
-	return summary + ": " + c.Message
 }
