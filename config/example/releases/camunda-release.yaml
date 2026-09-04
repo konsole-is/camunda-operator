@@ -14,8 +14,9 @@
 #
 # elasticsearch.version and databaseServer.version are what the storage of
 # these inventories runs. Every ElasticsearchCluster and every DatabaseServer
-# that names this release in spec.releaseRef takes them. Each line has a patch
-# line of its own, so neither follows spec.version.
+# that names this release in spec.releaseRef takes them. Neither follows
+# spec.version: Elasticsearch moves on a line of its own, and
+# databaseServer.version is a bare PostgreSQL major such as 17.
 #
 # A release also carries pinned images and the environment that a version
 # needs. Neither is set here, because no inventory needs one. The

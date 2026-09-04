@@ -36,7 +36,7 @@ A `releaseRef` that names no existing release gives `Ready: False` with reason `
 
 ## Versions
 
-Each version has a patch line of its own, so none of them follows `spec.version`.
+No version below follows `spec.version`. Each one moves on a line of its own, and `spec.databaseServer.version` is a bare PostgreSQL major rather than three segments.
 
 | Field | What runs it | Kind that reads it |
 | --- | --- | --- |

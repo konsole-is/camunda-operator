@@ -72,7 +72,7 @@ spec:
   secondaryStorageConfig: orders-storage
 ```
 
-A `DatabaseServer` reads the same release through `spec.releaseRef`, and takes `spec.databaseServer.version` from it.
+A `DatabaseServer` reads the same release through `spec.releaseRef`. It takes its PostgreSQL major from the `spec.databaseServer.version` of that release.
 
 ## Write a preset
 
