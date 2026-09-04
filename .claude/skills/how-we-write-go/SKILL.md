@@ -749,6 +749,8 @@ A file is read top to bottom, once, by someone who has never seen it. Order it s
 3. Every other function, in the order the entry point reaches them — its own calls first, then theirs. An exported function that other packages call is placed by this rule too. Being exported does not lift a function above the entry point.
 4. A helper with one caller sits directly under that caller, never at the end of the file.
 
+A method of a small value type, and the constructor of a type, stay directly under that type: they are part of what the type is, and a reader who meets `Options` wants `withDefaults` in the same view. Rule 3 orders the functions the entry point reaches, not these.
+
 ```go
 const ComponentName = "optimize"              // 1. shared surface
 type TrustStore struct{ ... }                 // 1. read by secrets.go and the controller
@@ -776,7 +778,7 @@ When no order makes the file read straight through, the file holds more than one
 
 - The first function in the file is not the one the file exists for.
 - You added a function at the end of the file and its caller is somewhere above it.
-- A constructor or a resolver sits above the code that consumes it because it is exported.
+- A resolver sits above the code that consumes it because it is exported. A constructor is different: it stays under its type.
 
 ## Common mistakes
 

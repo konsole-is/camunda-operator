@@ -132,6 +132,41 @@ func (r *CamundaPlatformConfigReconciler) validate(
 	return conditions.Ready(metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed", cfg.Generation), nil
 }
 
+// SetupWithManager registers the controller, an index of platform configs by
+// referenced Secret, and a metadata-only Secret watch.
+func (r *CamundaPlatformConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
+	}
+
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &v1.CamundaPlatformConfig{},
+		SecretRefsField, func(o client.Object) []string {
+			refs := secretRefs(o.(*v1.CamundaPlatformConfig))
+			keys := make([]string, 0, len(refs))
+			for _, ref := range refs {
+				keys = append(keys, refindex.NamespacedKey(ref.Namespace, ref.Name))
+			}
+			return keys
+		},
+	); err != nil {
+		return err
+	}
+
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&v1.CamundaPlatformConfig{}).
+		Watches(
+			&corev1.Secret{},
+			refindex.Enqueue(
+				mgr.GetClient(), &v1.CamundaPlatformConfigList{},
+				SecretRefsField, refindex.ObjectNamespacedName,
+			),
+			builder.OnlyMetadata,
+		).
+		Named(controllerName).
+		Complete(r)
+}
+
 // secretRefs is shared by validate and the SecretRefsField indexer so both see the same references.
 func secretRefs(cfg *v1.CamundaPlatformConfig) []fieldRef {
 	var refs []fieldRef
@@ -166,39 +201,4 @@ func managementClientRefs(mgmt *v1.ManagementOIDCClientsSpec) []fieldRef {
 		refs = append(refs, fieldRef{prefix + "webModelerApi.clientSecretRef", c.ClientSecretRef})
 	}
 	return refs
-}
-
-// SetupWithManager registers the controller, an index of platform configs by
-// referenced Secret, and a metadata-only Secret watch.
-func (r *CamundaPlatformConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if r.Metrics == nil {
-		r.Metrics = observability.Recorder(controllerName)
-	}
-
-	if err := mgr.GetFieldIndexer().IndexField(
-		context.Background(), &v1.CamundaPlatformConfig{},
-		SecretRefsField, func(o client.Object) []string {
-			refs := secretRefs(o.(*v1.CamundaPlatformConfig))
-			keys := make([]string, 0, len(refs))
-			for _, ref := range refs {
-				keys = append(keys, refindex.NamespacedKey(ref.Namespace, ref.Name))
-			}
-			return keys
-		},
-	); err != nil {
-		return err
-	}
-
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&v1.CamundaPlatformConfig{}).
-		Watches(
-			&corev1.Secret{},
-			refindex.Enqueue(
-				mgr.GetClient(), &v1.CamundaPlatformConfigList{},
-				SecretRefsField, refindex.ObjectNamespacedName,
-			),
-			builder.OnlyMetadata,
-		).
-		Named(controllerName).
-		Complete(r)
 }

@@ -62,6 +62,18 @@ type backup struct {
 	ZeebeSize *resource.Quantity
 }
 
+// resolution is everything a phase after admission reads again: the target
+// cluster, the backup it restores, the facts of the live broker StatefulSet,
+// and the storage contract of the target. A phase resolves it on every look,
+// because a reference that breaks mid-run has to reach the Ready condition
+// and the mid-run grace.
+type resolution struct {
+	cluster *v1.CamundaCluster
+	backup  *backup
+	target  *restore.Target
+	storage *v1.SecondaryStorageConfig
+}
+
 // admit resolves the references of the restore and holds it in Pending until
 // every one of them answers and no other operation holds the cluster. It pins
 // what the restore reads, the backup id and the identity of the target, then
@@ -177,43 +189,58 @@ func (r *Reconciler) start(lres *v1.LogicalRestoreElasticsearch) {
 	r.progressing(lres, "the restore compares the backup against the target")
 }
 
-// pinnedBackup reports the backup that is not the backup the restore pinned.
-// The pinned id is the identity of the backup, and the name alone is not: a
-// backup that somebody deleted and created again under one name is another set
-// of artifacts, whose snapshots lie under other names and pair with another
-// record snapshot. A restore that has pinned nothing yet passes.
-func pinnedBackup(pinned int64, source *backup) *conditions.PreCheckFailure {
-	if pinned == 0 || source.ID == pinned {
-		return nil
-	}
-
-	return logicalbackup.InvalidReference(
-		"LogicalBackupElasticsearch %s/%s holds backup %d and the restore started against %d, "+
-			"so it is another backup",
-		source.Namespace, source.Name, source.ID, pinned,
+// resolve resolves everything a running phase needs and reports the first
+// failure that the user must see. The reads are live: a stale suspend flag or
+// a stale storage reference lets the restore delete under a cluster that
+// moved on.
+func (r *Reconciler) resolve(
+	ctx context.Context,
+	lres *v1.LogicalRestoreElasticsearch,
+) (*resolution, *conditions.PreCheckFailure, error) {
+	cluster, failure, err := restore.ResolveCluster(
+		ctx,
+		r.APIReader,
+		types.NamespacedName{Namespace: lres.Namespace, Name: lres.Spec.TargetClusterRef.Name},
+		lres.Status.TargetClusterUID,
 	)
-}
-
-// notSuspended reports the target that started running again. A restore
-// rewrites the storage of its target, so it only touches a cluster whose
-// workloads are scaled down.
-//
-// Only a phase after admission reports it. Admission suspends the cluster
-// itself, so a cluster that is not suspended there is one that the restore
-// is about to suspend.
-func notSuspended(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
-	if cluster.Spec.Suspend {
-		return nil
+	if err != nil || failure != nil {
+		return nil, failure, err
+	}
+	// Suspension is a standing condition of a restore, not a gate that
+	// admission passes once. Every phase after admission deletes something of
+	// the target: the indices of its Elasticsearch, and the data volumes of
+	// its brokers. A cluster that is unsuspended mid-run starts its workloads
+	// again, and the restore would delete under them. The failure holds the
+	// restore for the mid-run grace and then ends it.
+	if failure := notSuspended(cluster); failure != nil {
+		return nil, failure, nil
 	}
 
-	return &conditions.PreCheckFailure{
-		Reason: v1.ReasonClusterNotSuspended,
-		Message: fmt.Sprintf(
-			"CamundaCluster %s/%s is not suspended. Set spec.suspend to true, so that no workload "+
-				"writes while the restore runs",
-			cluster.Namespace, cluster.Name,
-		),
+	source, failure, err := r.readBackup(ctx, lres)
+	if err != nil || failure != nil {
+		return nil, failure, err
 	}
+	if failure := pinnedBackup(lres.Status.BackupID, source); failure != nil {
+		return nil, failure, nil
+	}
+
+	target, failure, err := restore.ResolveTarget(ctx, r.APIReader, cluster)
+	if err != nil || failure != nil {
+		return nil, failure, err
+	}
+	// The version of the target is a standing condition too, for the same
+	// reason its suspension is. The restore Jobs copy the broker image, so a
+	// version that moves mid-run reaches the restore application itself.
+	if failure := restore.MovedVersion(source.Version, target.Version); failure != nil {
+		return nil, failure, nil
+	}
+
+	storage, failure, err := restore.ResolveStorage(ctx, r.APIReader, cluster)
+	if err != nil || failure != nil {
+		return nil, failure, err
+	}
+
+	return &resolution{cluster: cluster, backup: source, target: target, storage: storage}, nil, nil
 }
 
 // readBackup reads the LogicalBackupElasticsearch that the restore names. The
@@ -275,70 +302,43 @@ func backupFacts(source *v1.LogicalBackupElasticsearch) *backup {
 	return facts
 }
 
-// resolution is everything a phase after admission reads again: the target
-// cluster, the backup it restores, the facts of the live broker StatefulSet,
-// and the storage contract of the target. A phase resolves it on every look,
-// because a reference that breaks mid-run has to reach the Ready condition
-// and the mid-run grace.
-type resolution struct {
-	cluster *v1.CamundaCluster
-	backup  *backup
-	target  *restore.Target
-	storage *v1.SecondaryStorageConfig
+// notSuspended reports the target that started running again. A restore
+// rewrites the storage of its target, so it only touches a cluster whose
+// workloads are scaled down.
+//
+// Only a phase after admission reports it. Admission suspends the cluster
+// itself, so a cluster that is not suspended there is one that the restore
+// is about to suspend.
+func notSuspended(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
+	if cluster.Spec.Suspend {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonClusterNotSuspended,
+		Message: fmt.Sprintf(
+			"CamundaCluster %s/%s is not suspended. Set spec.suspend to true, so that no workload "+
+				"writes while the restore runs",
+			cluster.Namespace, cluster.Name,
+		),
+	}
 }
 
-// resolve resolves everything a running phase needs and reports the first
-// failure that the user must see. The reads are live: a stale suspend flag or
-// a stale storage reference lets the restore delete under a cluster that
-// moved on.
-func (r *Reconciler) resolve(
-	ctx context.Context,
-	lres *v1.LogicalRestoreElasticsearch,
-) (*resolution, *conditions.PreCheckFailure, error) {
-	cluster, failure, err := restore.ResolveCluster(
-		ctx,
-		r.APIReader,
-		types.NamespacedName{Namespace: lres.Namespace, Name: lres.Spec.TargetClusterRef.Name},
-		lres.Status.TargetClusterUID,
+// pinnedBackup reports the backup that is not the backup the restore pinned.
+// The pinned id is the identity of the backup, and the name alone is not: a
+// backup that somebody deleted and created again under one name is another set
+// of artifacts, whose snapshots lie under other names and pair with another
+// record snapshot. A restore that has pinned nothing yet passes.
+func pinnedBackup(pinned int64, source *backup) *conditions.PreCheckFailure {
+	if pinned == 0 || source.ID == pinned {
+		return nil
+	}
+
+	return logicalbackup.InvalidReference(
+		"LogicalBackupElasticsearch %s/%s holds backup %d and the restore started against %d, "+
+			"so it is another backup",
+		source.Namespace, source.Name, source.ID, pinned,
 	)
-	if err != nil || failure != nil {
-		return nil, failure, err
-	}
-	// Suspension is a standing condition of a restore, not a gate that
-	// admission passes once. Every phase after admission deletes something of
-	// the target: the indices of its Elasticsearch, and the data volumes of
-	// its brokers. A cluster that is unsuspended mid-run starts its workloads
-	// again, and the restore would delete under them. The failure holds the
-	// restore for the mid-run grace and then ends it.
-	if failure := notSuspended(cluster); failure != nil {
-		return nil, failure, nil
-	}
-
-	source, failure, err := r.readBackup(ctx, lres)
-	if err != nil || failure != nil {
-		return nil, failure, err
-	}
-	if failure := pinnedBackup(lres.Status.BackupID, source); failure != nil {
-		return nil, failure, nil
-	}
-
-	target, failure, err := restore.ResolveTarget(ctx, r.APIReader, cluster)
-	if err != nil || failure != nil {
-		return nil, failure, err
-	}
-	// The version of the target is a standing condition too, for the same
-	// reason its suspension is. The restore Jobs copy the broker image, so a
-	// version that moves mid-run reaches the restore application itself.
-	if failure := restore.MovedVersion(source.Version, target.Version); failure != nil {
-		return nil, failure, nil
-	}
-
-	storage, failure, err := restore.ResolveStorage(ctx, r.APIReader, cluster)
-	if err != nil || failure != nil {
-		return nil, failure, err
-	}
-
-	return &resolution{cluster: cluster, backup: source, target: target, storage: storage}, nil, nil
 }
 
 // backupBucket reads the ObjectStorageConfig that the backup wrote its

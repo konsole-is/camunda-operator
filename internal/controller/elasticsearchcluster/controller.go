@@ -315,30 +315,14 @@ func (r *ElasticsearchClusterReconciler) preCheck(
 	return merged, storage, nil
 }
 
-// readyWithRepository derives Ready from the components and lets a failed
-// snapshot-repository registration override a True result. The repository is
-// not a component, so conditions.Aggregate cannot see it, and a cluster whose
-// backups cannot be written is not ready.
-func readyWithRepository(
-	cluster *v1.ElasticsearchCluster,
-	repository metav1.Condition,
-	core []*component.Component,
-) metav1.Condition {
-	ready := conditions.Aggregate(cluster, core...)
-	if repository.Type == "" {
-		// The cluster has no repository, now or any more. Drop a condition
-		// left over from a bucket that the spec used to reference, so status
-		// never asserts something the spec no longer asks for.
-		meta.RemoveStatusCondition(cluster.GetStatusConditions(), components.ConditionSnapshotRepository)
-		return ready
+// retryInterval returns the wait before an unwatched dependency is looked at
+// again.
+func (r *ElasticsearchClusterReconciler) retryInterval() time.Duration {
+	if r.RetryInterval > 0 {
+		return r.RetryInterval
 	}
 
-	meta.SetStatusCondition(cluster.GetStatusConditions(), repository)
-	if repository.Status == metav1.ConditionTrue || ready.Status != metav1.ConditionTrue {
-		return ready
-	}
-
-	return conditions.Ready(metav1.ConditionFalse, repository.Reason, repository.Message, cluster.Generation)
+	return defaultRetryInterval
 }
 
 // keepAppliedStorageSize guards against the shrinks that admission cannot
@@ -402,75 +386,6 @@ func (d dataVolumes) largest() *resource.Quantity {
 	return largest
 }
 
-// dataVolumes lists the data volumes of cluster. ECK labels the claims with
-// the cluster name, and the data claims carry the data volume claim name as
-// prefix.
-func (r *ElasticsearchClusterReconciler) dataVolumes(
-	ctx context.Context,
-	cluster *v1.ElasticsearchCluster,
-) (dataVolumes, error) {
-	var claims corev1.PersistentVolumeClaimList
-	if err := r.List(
-		ctx, &claims,
-		client.InNamespace(cluster.Namespace),
-		client.MatchingLabels{components.ECKClusterNameLabel: cluster.Name},
-	); err != nil {
-		return dataVolumes{}, fmt.Errorf("listing data volume claims of %q: %w", cluster.Name, err)
-	}
-
-	var volumes dataVolumes
-	for i := range claims.Items {
-		claim := &claims.Items[i]
-		if !strings.HasPrefix(claim.Name, components.DataVolumeClaimName+"-") {
-			continue
-		}
-		if capacity, ok := claim.Status.Capacity[corev1.ResourceStorage]; ok {
-			volumes.volumes = append(volumes.volumes, v1.VolumeStatus{Name: claim.Name, Capacity: capacity})
-		}
-	}
-	slices.SortFunc(volumes.volumes, func(a, b v1.VolumeStatus) int { return strings.Compare(a.Name, b.Name) })
-
-	var es esv1.Elasticsearch
-	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), &es); err != nil {
-		if apierrors.IsNotFound(err) {
-			return volumes, nil
-		}
-		return dataVolumes{}, fmt.Errorf("reading applied Elasticsearch %q: %w", cluster.Name, err)
-	}
-	volumes.applied = appliedDataClaimSize(&es)
-
-	return volumes, nil
-}
-
-// enqueueForDataClaim maps a PersistentVolumeClaim event to the cluster that
-// ECK labels it with, so a resize outside the spec updates status.volumes.
-func enqueueForDataClaim() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []reconcile.Request {
-		name, ok := o.GetLabels()[components.ECKClusterNameLabel]
-		if !ok {
-			return nil
-		}
-		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: o.GetNamespace(), Name: name}}}
-	})
-}
-
-// appliedDataClaimSize returns the data volume claim size of the applied ECK
-// CR, or nil when the CR carries no such claim.
-func appliedDataClaimSize(es *esv1.Elasticsearch) *resource.Quantity {
-	for _, nodeSet := range es.Spec.NodeSets {
-		for _, claim := range nodeSet.VolumeClaimTemplates {
-			if claim.Name != components.DataVolumeClaimName {
-				continue
-			}
-			if size, ok := claim.Spec.Resources.Requests[corev1.ResourceStorage]; ok {
-				return &size
-			}
-		}
-	}
-
-	return nil
-}
-
 // buildComponents builds the components in dependency order: the three that
 // make up Ready (credentials, elasticsearch, storage-contract), and the
 // metrics component apart. It reads the password from the existing user
@@ -530,30 +445,6 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 	}, metricsComp, nil
 }
 
-// retryInterval returns the wait before an unwatched dependency is looked at
-// again.
-func (r *ElasticsearchClusterReconciler) retryInterval() time.Duration {
-	if r.RetryInterval > 0 {
-		return r.RetryInterval
-	}
-
-	return defaultRetryInterval
-}
-
-// reconcileComponents reconciles comps in order. It continues past a failing
-// component, so one failure does not stall the rest, and returns the first
-// error.
-func reconcileComponents(ctx context.Context, recCtx component.ReconcileContext, comps []*component.Component) error {
-	var firstErr error
-	for _, comp := range comps {
-		if err := comp.Reconcile(ctx, recCtx); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-
-	return firstErr
-}
-
 // serviceMonitorSupported reports whether the cluster serves the
 // ServiceMonitor kind. On a cluster without the prometheus-operator CRDs the
 // metrics component then omits the resource instead of failing every
@@ -569,13 +460,101 @@ func (r *ElasticsearchClusterReconciler) serviceMonitorSupported() bool {
 	return err == nil
 }
 
-// eckSupported reports whether the cluster serves the ECK Elasticsearch
-// kind.
-func (r *ElasticsearchClusterReconciler) eckSupported() bool {
-	_, err := r.restMapper.RESTMapping(
-		schema.GroupKind{Group: esv1.GroupVersion.Group, Kind: esv1.Kind}, esv1.GroupVersion.Version,
-	)
-	return err == nil
+// readyWithRepository derives Ready from the components and lets a failed
+// snapshot-repository registration override a True result. The repository is
+// not a component, so conditions.Aggregate cannot see it, and a cluster whose
+// backups cannot be written is not ready.
+func readyWithRepository(
+	cluster *v1.ElasticsearchCluster,
+	repository metav1.Condition,
+	core []*component.Component,
+) metav1.Condition {
+	ready := conditions.Aggregate(cluster, core...)
+	if repository.Type == "" {
+		// The cluster has no repository, now or any more. Drop a condition
+		// left over from a bucket that the spec used to reference, so status
+		// never asserts something the spec no longer asks for.
+		meta.RemoveStatusCondition(cluster.GetStatusConditions(), components.ConditionSnapshotRepository)
+		return ready
+	}
+
+	meta.SetStatusCondition(cluster.GetStatusConditions(), repository)
+	if repository.Status == metav1.ConditionTrue || ready.Status != metav1.ConditionTrue {
+		return ready
+	}
+
+	return conditions.Ready(metav1.ConditionFalse, repository.Reason, repository.Message, cluster.Generation)
+}
+
+// dataVolumes lists the data volumes of cluster. ECK labels the claims with
+// the cluster name, and the data claims carry the data volume claim name as
+// prefix.
+func (r *ElasticsearchClusterReconciler) dataVolumes(
+	ctx context.Context,
+	cluster *v1.ElasticsearchCluster,
+) (dataVolumes, error) {
+	var claims corev1.PersistentVolumeClaimList
+	if err := r.List(
+		ctx, &claims,
+		client.InNamespace(cluster.Namespace),
+		client.MatchingLabels{components.ECKClusterNameLabel: cluster.Name},
+	); err != nil {
+		return dataVolumes{}, fmt.Errorf("listing data volume claims of %q: %w", cluster.Name, err)
+	}
+
+	var volumes dataVolumes
+	for i := range claims.Items {
+		claim := &claims.Items[i]
+		if !strings.HasPrefix(claim.Name, components.DataVolumeClaimName+"-") {
+			continue
+		}
+		if capacity, ok := claim.Status.Capacity[corev1.ResourceStorage]; ok {
+			volumes.volumes = append(volumes.volumes, v1.VolumeStatus{Name: claim.Name, Capacity: capacity})
+		}
+	}
+	slices.SortFunc(volumes.volumes, func(a, b v1.VolumeStatus) int { return strings.Compare(a.Name, b.Name) })
+
+	var es esv1.Elasticsearch
+	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), &es); err != nil {
+		if apierrors.IsNotFound(err) {
+			return volumes, nil
+		}
+		return dataVolumes{}, fmt.Errorf("reading applied Elasticsearch %q: %w", cluster.Name, err)
+	}
+	volumes.applied = appliedDataClaimSize(&es)
+
+	return volumes, nil
+}
+
+// appliedDataClaimSize returns the data volume claim size of the applied ECK
+// CR, or nil when the CR carries no such claim.
+func appliedDataClaimSize(es *esv1.Elasticsearch) *resource.Quantity {
+	for _, nodeSet := range es.Spec.NodeSets {
+		for _, claim := range nodeSet.VolumeClaimTemplates {
+			if claim.Name != components.DataVolumeClaimName {
+				continue
+			}
+			if size, ok := claim.Spec.Resources.Requests[corev1.ResourceStorage]; ok {
+				return &size
+			}
+		}
+	}
+
+	return nil
+}
+
+// reconcileComponents reconciles comps in order. It continues past a failing
+// component, so one failure does not stall the rest, and returns the first
+// error.
+func reconcileComponents(ctx context.Context, recCtx component.ReconcileContext, comps []*component.Component) error {
+	var firstErr error
+	for _, comp := range comps {
+		if err := comp.Reconcile(ctx, recCtx); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	return firstErr
 }
 
 // SetupWithManager registers the controller, ownership watches on the ECK CR,
@@ -660,4 +639,25 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		Watches(&corev1.PersistentVolumeClaim{}, enqueueForDataClaim()).
 		Named(controllerName).
 		Complete(r)
+}
+
+// eckSupported reports whether the cluster serves the ECK Elasticsearch
+// kind.
+func (r *ElasticsearchClusterReconciler) eckSupported() bool {
+	_, err := r.restMapper.RESTMapping(
+		schema.GroupKind{Group: esv1.GroupVersion.Group, Kind: esv1.Kind}, esv1.GroupVersion.Version,
+	)
+	return err == nil
+}
+
+// enqueueForDataClaim maps a PersistentVolumeClaim event to the cluster that
+// ECK labels it with, so a resize outside the spec updates status.volumes.
+func enqueueForDataClaim() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []reconcile.Request {
+		name, ok := o.GetLabels()[components.ECKClusterNameLabel]
+		if !ok {
+			return nil
+		}
+		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: o.GetNamespace(), Name: name}}}
+	})
 }

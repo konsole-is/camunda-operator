@@ -386,6 +386,32 @@ func (r *LogicalBackupRDBMSReconciler) SetupWithManager(mgr ctrl.Manager, opts O
 		Complete(r)
 }
 
+// enqueueForCluster maps a cluster event to every non-terminal backup that
+// references it, so a suspend flip or a published binding wakes the waiting
+// ones.
+func (r *LogicalBackupRDBMSReconciler) enqueueForCluster() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
+		var list v1.LogicalBackupRDBMSList
+		if err := r.List(ctx, &list, client.MatchingFields{
+			clusterKeyIndex: refindex.NamespacedKey(obj.GetNamespace(), obj.GetName()),
+		}); err != nil {
+			return nil
+		}
+
+		requests := make([]ctrl.Request, 0, len(list.Items))
+		for i := range list.Items {
+			if list.Items[i].Terminal() {
+				continue
+			}
+			requests = append(requests, ctrl.Request{
+				NamespacedName: client.ObjectKeyFromObject(&list.Items[i]),
+			})
+		}
+
+		return requests
+	})
+}
+
 // clusterChanged passes the cluster events that a waiting backup needs: a
 // spec change (suspend, references) or a change of the published management
 // binding. Other status changes wake nothing.
@@ -417,30 +443,4 @@ func managementEqual(a, b *v1.ManagementBinding) bool {
 	}
 
 	return *a == *b
-}
-
-// enqueueForCluster maps a cluster event to every non-terminal backup that
-// references it, so a suspend flip or a published binding wakes the waiting
-// ones.
-func (r *LogicalBackupRDBMSReconciler) enqueueForCluster() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
-		var list v1.LogicalBackupRDBMSList
-		if err := r.List(ctx, &list, client.MatchingFields{
-			clusterKeyIndex: refindex.NamespacedKey(obj.GetNamespace(), obj.GetName()),
-		}); err != nil {
-			return nil
-		}
-
-		requests := make([]ctrl.Request, 0, len(list.Items))
-		for i := range list.Items {
-			if list.Items[i].Terminal() {
-				continue
-			}
-			requests = append(requests, ctrl.Request{
-				NamespacedName: client.ObjectKeyFromObject(&list.Items[i]),
-			})
-		}
-
-		return requests
-	})
 }

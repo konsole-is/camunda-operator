@@ -37,22 +37,6 @@ const (
 	defaultRetainedFailed    int32 = 3
 )
 
-// retainedBounds returns spec.retained with the documented defaults applied.
-func retainedBounds(spec v1.BackupScheduleSpec) (completed, failed int32) {
-	completed, failed = defaultRetainedCompleted, defaultRetainedFailed
-	if spec.Retained == nil {
-		return completed, failed
-	}
-	if spec.Retained.Completed != nil {
-		completed = *spec.Retained.Completed
-	}
-	if spec.Retained.Failed != nil {
-		failed = *spec.Retained.Failed
-	}
-
-	return completed, failed
-}
-
 // scheduledBackup is one backup that a schedule created, reduced to what the
 // overlap check and the pruning need: the object to delete, its kind for the
 // messages, its phase, and when it completed.
@@ -63,9 +47,39 @@ type scheduledBackup struct {
 	completed metav1.Time
 }
 
-// terminal reports whether the backup can never transition again.
-func (b scheduledBackup) terminal() bool {
-	return b.phase == v1.LogicalBackupCompleted || b.phase == v1.LogicalBackupFailed
+// prune deletes the backups of the schedule beyond spec.retained. Each delete
+// carries a UID precondition, so a backup that was deleted and re-created
+// under the same name in between is never touched. The deletion goes through
+// the backup finalizer, which removes the stored artifacts first.
+func (r *BackupScheduleReconciler) prune(ctx context.Context, schedule *v1.BackupSchedule) error {
+	items, err := r.scheduledBackups(ctx, schedule)
+	if err != nil {
+		return err
+	}
+
+	completed, failed := retainedBounds(schedule.Spec)
+	for _, item := range prunable(items, completed, failed) {
+		uid := item.object.GetUID()
+		err := r.Delete(ctx, item.object, client.Preconditions{UID: &uid})
+		if apierrors.IsNotFound(err) || apierrors.IsConflict(err) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("pruning %s %q: %w", item.kind, item.object.GetName(), err)
+		}
+		r.EventRecorder.Eventf(
+			schedule,
+			nil,
+			corev1.EventTypeNormal,
+			eventReasonBackupPruned,
+			eventActionPrune,
+			"Deleted %s %q beyond spec.retained; its finalizer removes the stored artifacts",
+			item.kind,
+			item.object.GetName(),
+		)
+	}
+
+	return nil
 }
 
 // scheduledBackups lists the backups of both kinds that carry the schedule's
@@ -126,24 +140,20 @@ func completedAt(completion *metav1.Time, created metav1.Time) metav1.Time {
 	return created
 }
 
-// nonTerminal returns the name of a backup that has not reached a terminal
-// phase, or the empty string when every one has. One such backup skips the
-// next trigger. The backup of exceptKind named exceptName does not count: it
-// is the backup of the trigger under decision, which a crashed earlier
-// attempt already created, and a trigger must not skip itself. The kind is
-// part of the key because both kinds share the name scheme, and a same-named
-// backup of the other kind is another trigger's backup, not this one's.
-func nonTerminal(items []scheduledBackup, exceptKind, exceptName string) string {
-	for _, item := range items {
-		if item.kind == exceptKind && item.object.GetName() == exceptName {
-			continue
-		}
-		if !item.terminal() {
-			return item.object.GetName()
-		}
+// retainedBounds returns spec.retained with the documented defaults applied.
+func retainedBounds(spec v1.BackupScheduleSpec) (completed, failed int32) {
+	completed, failed = defaultRetainedCompleted, defaultRetainedFailed
+	if spec.Retained == nil {
+		return completed, failed
+	}
+	if spec.Retained.Completed != nil {
+		completed = *spec.Retained.Completed
+	}
+	if spec.Retained.Failed != nil {
+		failed = *spec.Retained.Failed
 	}
 
-	return ""
+	return completed, failed
 }
 
 // prunable returns the backups to delete: the oldest completed ones beyond
@@ -180,37 +190,27 @@ func prunable(items []scheduledBackup, completed, failed int32) []scheduledBacku
 	return overflow
 }
 
-// prune deletes the backups of the schedule beyond spec.retained. Each delete
-// carries a UID precondition, so a backup that was deleted and re-created
-// under the same name in between is never touched. The deletion goes through
-// the backup finalizer, which removes the stored artifacts first.
-func (r *BackupScheduleReconciler) prune(ctx context.Context, schedule *v1.BackupSchedule) error {
-	items, err := r.scheduledBackups(ctx, schedule)
-	if err != nil {
-		return err
-	}
-
-	completed, failed := retainedBounds(schedule.Spec)
-	for _, item := range prunable(items, completed, failed) {
-		uid := item.object.GetUID()
-		err := r.Delete(ctx, item.object, client.Preconditions{UID: &uid})
-		if apierrors.IsNotFound(err) || apierrors.IsConflict(err) {
+// nonTerminal returns the name of a backup that has not reached a terminal
+// phase, or the empty string when every one has. One such backup skips the
+// next trigger. The backup of exceptKind named exceptName does not count: it
+// is the backup of the trigger under decision, which a crashed earlier
+// attempt already created, and a trigger must not skip itself. The kind is
+// part of the key because both kinds share the name scheme, and a same-named
+// backup of the other kind is another trigger's backup, not this one's.
+func nonTerminal(items []scheduledBackup, exceptKind, exceptName string) string {
+	for _, item := range items {
+		if item.kind == exceptKind && item.object.GetName() == exceptName {
 			continue
 		}
-		if err != nil {
-			return fmt.Errorf("pruning %s %q: %w", item.kind, item.object.GetName(), err)
+		if !item.terminal() {
+			return item.object.GetName()
 		}
-		r.EventRecorder.Eventf(
-			schedule,
-			nil,
-			corev1.EventTypeNormal,
-			eventReasonBackupPruned,
-			eventActionPrune,
-			"Deleted %s %q beyond spec.retained; its finalizer removes the stored artifacts",
-			item.kind,
-			item.object.GetName(),
-		)
 	}
 
-	return nil
+	return ""
+}
+
+// terminal reports whether the backup can never transition again.
+func (b scheduledBackup) terminal() bool {
+	return b.phase == v1.LogicalBackupCompleted || b.phase == v1.LogicalBackupFailed
 }

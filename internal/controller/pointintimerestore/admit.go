@@ -78,6 +78,10 @@ const (
 // restore ends instead of writing into it.
 var errClusterReplaced = errors.New("the CamundaCluster was replaced")
 
+// errChainChanged reports that the storage chain of the cluster is no longer
+// the chain that the restore validated.
+var errChainChanged = errors.New("the storage chain of the cluster changed")
+
 // admit runs every rule that must hold before the operator reads the
 // database, in the documented order. A rule that does not hold keeps the
 // restore in Pending, where it touches nothing and recovers on its own once
@@ -347,55 +351,6 @@ func (r *Reconciler) resolve(
 	}, nil, nil
 }
 
-// notSuspended reports the cluster that started running again. Suspension is
-// a standing condition of a restore, not a gate that admission passes once.
-// The primary-storage phase erases the data volumes of the brokers, and a
-// cluster that is unsuspended mid-run starts its brokers again, so the
-// restore would erase under them.
-//
-// Only a phase after admission reports it. Admission suspends the cluster
-// itself, so a cluster that is not suspended there is one that the restore is
-// about to suspend.
-func notSuspended(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
-	if cluster.Spec.Suspend {
-		return nil
-	}
-
-	return &conditions.PreCheckFailure{
-		Reason: v1.ReasonClusterNotSuspended,
-		Message: fmt.Sprintf(
-			"CamundaCluster %s/%s started running again while the restore ran. A restore rewrites "+
-				"its primary storage, so it runs only while spec.suspend is true",
-			cluster.Namespace, cluster.Name,
-		),
-	}
-}
-
-// errChainChanged reports that the storage chain of the cluster is no longer
-// the chain that the restore validated.
-var errChainChanged = errors.New("the storage chain of the cluster changed")
-
-// pinnedChain records what the restore validated. The rules of the server and
-// the state of the database are checked once, and every link of the chain is
-// mutable, so the record is what every later look is measured against.
-func pinnedChain(
-	storage *v1.SecondaryStorageConfig,
-	dbConfig *v1.DatabaseConfig,
-	server *v1.DatabaseServerConfig,
-) *v1.PointInTimeRestoreStorage {
-	return &v1.PointInTimeRestoreStorage{
-		SecondaryStorageConfig:    storage.Name,
-		SecondaryStorageConfigUID: storage.UID,
-		DatabaseConfig:            dbConfig.Name,
-		DatabaseConfigUID:         dbConfig.UID,
-		DatabaseServerConfig:      server.Name,
-		DatabaseServerConfigUID:   server.UID,
-		DatabaseName:              dbConfig.Spec.DatabaseName,
-		Endpoint:                  fmt.Sprintf("%s:%d", server.Spec.Host, server.Spec.Port),
-		SystemIdentifier:          server.Status.SystemIdentifier,
-	}
-}
-
 // pinnedChainCurrent reports whether the chain of this look is the chain that
 // the restore validated. A restore that has pinned nothing yet passes: it is
 // on its first look, and admission pins the chain before it reads the
@@ -658,6 +613,51 @@ func (r *Reconciler) dedicatedServer(
 func onInstance(identifier string) func(key string) bool {
 	return func(key string) bool {
 		return databasecomponents.CollisionIdentity(key) == identifier
+	}
+}
+
+// notSuspended reports the cluster that started running again. Suspension is
+// a standing condition of a restore, not a gate that admission passes once.
+// The primary-storage phase erases the data volumes of the brokers, and a
+// cluster that is unsuspended mid-run starts its brokers again, so the
+// restore would erase under them.
+//
+// Only a phase after admission reports it. Admission suspends the cluster
+// itself, so a cluster that is not suspended there is one that the restore is
+// about to suspend.
+func notSuspended(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
+	if cluster.Spec.Suspend {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonClusterNotSuspended,
+		Message: fmt.Sprintf(
+			"CamundaCluster %s/%s started running again while the restore ran. A restore rewrites "+
+				"its primary storage, so it runs only while spec.suspend is true",
+			cluster.Namespace, cluster.Name,
+		),
+	}
+}
+
+// pinnedChain records what the restore validated. The rules of the server and
+// the state of the database are checked once, and every link of the chain is
+// mutable, so the record is what every later look is measured against.
+func pinnedChain(
+	storage *v1.SecondaryStorageConfig,
+	dbConfig *v1.DatabaseConfig,
+	server *v1.DatabaseServerConfig,
+) *v1.PointInTimeRestoreStorage {
+	return &v1.PointInTimeRestoreStorage{
+		SecondaryStorageConfig:    storage.Name,
+		SecondaryStorageConfigUID: storage.UID,
+		DatabaseConfig:            dbConfig.Name,
+		DatabaseConfigUID:         dbConfig.UID,
+		DatabaseServerConfig:      server.Name,
+		DatabaseServerConfigUID:   server.UID,
+		DatabaseName:              dbConfig.Spec.DatabaseName,
+		Endpoint:                  fmt.Sprintf("%s:%d", server.Spec.Host, server.Spec.Port),
+		SystemIdentifier:          server.Status.SystemIdentifier,
 	}
 }
 

@@ -60,6 +60,18 @@ type backup struct {
 	ZeebeSize *resource.Quantity
 }
 
+// resolution is everything a phase after admission reads again: the target
+// cluster and its identity, the backup it restores, the facts of the live
+// broker StatefulSet, and the storage contract of the target. A phase
+// resolves it on every look, because a reference that breaks mid-run has to
+// reach the Ready condition and the mid-run grace.
+type resolution struct {
+	cluster *v1.CamundaCluster
+	backup  *backup
+	target  *restore.Target
+	storage *v1.SecondaryStorageConfig
+}
+
 // admit resolves the references of the restore and holds it in Pending until
 // every one of them answers and no other operation holds the target. It pins
 // what the restore reads, the backup id and the identity of the target, then
@@ -190,100 +202,6 @@ func (r *Reconciler) start(
 	)
 }
 
-// pinnedBackup reports the backup that is not the backup the restore pinned.
-// The pinned id is the identity of the backup, and the name alone is not: a
-// backup that somebody deleted and created again under one name is another set
-// of artifacts, and its dump lies under another key. A restore that has pinned
-// nothing yet passes.
-func pinnedBackup(pinned int64, source *backup) *conditions.PreCheckFailure {
-	if pinned == 0 || source.ID == pinned {
-		return nil
-	}
-
-	return logicalbackup.InvalidReference(
-		"LogicalBackupRDBMS %s/%s holds backup %d and the restore started against %d, so it is "+
-			"another backup",
-		source.Namespace, source.Name, source.ID, pinned,
-	)
-}
-
-// notSuspended reports the target that started running again. A restore
-// rewrites the storage of its target, so it only touches a cluster whose
-// workloads are scaled down.
-//
-// Only a phase after admission reports it. Admission suspends the cluster
-// itself, so a cluster that is not suspended there is one that the restore
-// is about to suspend.
-func notSuspended(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
-	if cluster.Spec.Suspend {
-		return nil
-	}
-
-	return &conditions.PreCheckFailure{
-		Reason: v1.ReasonClusterNotSuspended,
-		Message: fmt.Sprintf(
-			"CamundaCluster %s/%s is not suspended. A restore rewrites its storage, so it runs only "+
-				"while spec.suspend is true",
-			cluster.Namespace, cluster.Name,
-		),
-	}
-}
-
-// readBackup reads the LogicalBackupRDBMS that the restore names, and reports
-// a backup that is not completed as a failure the user corrects. A backup
-// that is deleted after the restore started is a failure too: the restore
-// keeps its pinned id, and the phases that still read the backup cannot run
-// without it.
-func (r *Reconciler) readBackup(
-	ctx context.Context,
-	lrr *v1.LogicalRestoreRDBMS,
-) (*backup, *conditions.PreCheckFailure, error) {
-	key := types.NamespacedName{Namespace: lrr.Namespace, Name: lrr.Spec.BackupRef.Name}
-
-	var source v1.LogicalBackupRDBMS
-	if err := r.APIReader.Get(ctx, key, &source); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, logicalbackup.InvalidReference("LogicalBackupRDBMS %s does not exist", key), nil
-		}
-
-		return nil, nil, fmt.Errorf("reading LogicalBackupRDBMS %s: %w", key, err)
-	}
-
-	if source.Status.Phase != v1.LogicalBackupCompleted {
-		reported := string(source.Status.Phase)
-		if reported == "" {
-			reported = "no phase yet"
-		}
-
-		return nil, logicalbackup.InvalidReference(
-			"LogicalBackupRDBMS %s reports %s. A restore reads a Completed backup only", key, reported,
-		), nil
-	}
-
-	return &backup{
-		Namespace: source.Namespace,
-		Name:      source.Name,
-		ID:        source.Status.BackupID,
-		Version:   source.Status.Version,
-		Cluster:   source.Spec.ClusterRef.Name,
-		Bucket:    source.Status.BucketRef,
-		ObjectKey: source.Status.ObjectKey,
-		ZeebeSize: source.Status.StorageSizes.Zeebe,
-	}, nil, nil
-}
-
-// resolution is everything a phase after admission reads again: the target
-// cluster and its identity, the backup it restores, the facts of the live
-// broker StatefulSet, and the storage contract of the target. A phase
-// resolves it on every look, because a reference that breaks mid-run has to
-// reach the Ready condition and the mid-run grace.
-type resolution struct {
-	cluster *v1.CamundaCluster
-	backup  *backup
-	target  *restore.Target
-	storage *v1.SecondaryStorageConfig
-}
-
 // resolve resolves everything a running phase needs and reports the first
 // failure that the user must see.
 func (r *Reconciler) resolve(
@@ -334,4 +252,86 @@ func (r *Reconciler) resolve(
 	}
 
 	return &resolution{cluster: cluster, backup: source, target: target, storage: storage}, nil, nil
+}
+
+// readBackup reads the LogicalBackupRDBMS that the restore names, and reports
+// a backup that is not completed as a failure the user corrects. A backup
+// that is deleted after the restore started is a failure too: the restore
+// keeps its pinned id, and the phases that still read the backup cannot run
+// without it.
+func (r *Reconciler) readBackup(
+	ctx context.Context,
+	lrr *v1.LogicalRestoreRDBMS,
+) (*backup, *conditions.PreCheckFailure, error) {
+	key := types.NamespacedName{Namespace: lrr.Namespace, Name: lrr.Spec.BackupRef.Name}
+
+	var source v1.LogicalBackupRDBMS
+	if err := r.APIReader.Get(ctx, key, &source); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, logicalbackup.InvalidReference("LogicalBackupRDBMS %s does not exist", key), nil
+		}
+
+		return nil, nil, fmt.Errorf("reading LogicalBackupRDBMS %s: %w", key, err)
+	}
+
+	if source.Status.Phase != v1.LogicalBackupCompleted {
+		reported := string(source.Status.Phase)
+		if reported == "" {
+			reported = "no phase yet"
+		}
+
+		return nil, logicalbackup.InvalidReference(
+			"LogicalBackupRDBMS %s reports %s. A restore reads a Completed backup only", key, reported,
+		), nil
+	}
+
+	return &backup{
+		Namespace: source.Namespace,
+		Name:      source.Name,
+		ID:        source.Status.BackupID,
+		Version:   source.Status.Version,
+		Cluster:   source.Spec.ClusterRef.Name,
+		Bucket:    source.Status.BucketRef,
+		ObjectKey: source.Status.ObjectKey,
+		ZeebeSize: source.Status.StorageSizes.Zeebe,
+	}, nil, nil
+}
+
+// notSuspended reports the target that started running again. A restore
+// rewrites the storage of its target, so it only touches a cluster whose
+// workloads are scaled down.
+//
+// Only a phase after admission reports it. Admission suspends the cluster
+// itself, so a cluster that is not suspended there is one that the restore
+// is about to suspend.
+func notSuspended(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
+	if cluster.Spec.Suspend {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonClusterNotSuspended,
+		Message: fmt.Sprintf(
+			"CamundaCluster %s/%s is not suspended. A restore rewrites its storage, so it runs only "+
+				"while spec.suspend is true",
+			cluster.Namespace, cluster.Name,
+		),
+	}
+}
+
+// pinnedBackup reports the backup that is not the backup the restore pinned.
+// The pinned id is the identity of the backup, and the name alone is not: a
+// backup that somebody deleted and created again under one name is another set
+// of artifacts, and its dump lies under another key. A restore that has pinned
+// nothing yet passes.
+func pinnedBackup(pinned int64, source *backup) *conditions.PreCheckFailure {
+	if pinned == 0 || source.ID == pinned {
+		return nil
+	}
+
+	return logicalbackup.InvalidReference(
+		"LogicalBackupRDBMS %s/%s holds backup %d and the restore started against %d, so it is "+
+			"another backup",
+		source.Namespace, source.Name, source.ID, pinned,
+	)
 }

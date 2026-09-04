@@ -375,48 +375,6 @@ func (r *BackupScheduleReconciler) trigger(
 	return nil
 }
 
-// backupBelongsTo reads the object that holds the name of want and reports
-// whether it is the backup this schedule creates for this trigger: the same
-// kind, carrying this schedule's label, and backing up the same cluster. It
-// reads live, because the decision admits or refuses a trigger.
-//
-// The label carries the name of the schedule under the bound of a label
-// value, so the comparison bounds the name of the schedule as well.
-//
-// An object that vanished between the failed create and this read is not
-// ours to adopt either. The next reconcile creates the backup if the trigger
-// is still due.
-func (r *BackupScheduleReconciler) backupBelongsTo(
-	ctx context.Context,
-	schedule *v1.BackupSchedule,
-	want client.Object,
-) (bool, error) {
-	found, ok := want.DeepCopyObject().(client.Object)
-	if !ok {
-		return false, fmt.Errorf("copying %T for the identity read", want)
-	}
-	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(want), found); err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-
-		return false, fmt.Errorf("reading the existing %q: %w", want.GetName(), err)
-	}
-
-	if found.GetLabels()[labels.BackupScheduleKey] != labels.OwnerName(schedule.Name) {
-		return false, nil
-	}
-
-	switch backup := found.(type) {
-	case *v1.LogicalBackupElasticsearch:
-		return backup.Spec.ClusterRef == schedule.Spec.ClusterRef, nil
-	case *v1.LogicalBackupRDBMS:
-		return backup.Spec.ClusterRef == schedule.Spec.ClusterRef, nil
-	}
-
-	return false, nil
-}
-
 // newBackup builds the backup of one trigger: the kind that matches the
 // storage type, named <schedule>-<unix-timestamp> of the trigger, labeled
 // with the cluster and the schedule, and without an owner reference, so
@@ -500,6 +458,48 @@ func (r *BackupScheduleReconciler) warnRetentionWindow(
 		"%s",
 		message,
 	)
+}
+
+// backupBelongsTo reads the object that holds the name of want and reports
+// whether it is the backup this schedule creates for this trigger: the same
+// kind, carrying this schedule's label, and backing up the same cluster. It
+// reads live, because the decision admits or refuses a trigger.
+//
+// The label carries the name of the schedule under the bound of a label
+// value, so the comparison bounds the name of the schedule as well.
+//
+// An object that vanished between the failed create and this read is not
+// ours to adopt either. The next reconcile creates the backup if the trigger
+// is still due.
+func (r *BackupScheduleReconciler) backupBelongsTo(
+	ctx context.Context,
+	schedule *v1.BackupSchedule,
+	want client.Object,
+) (bool, error) {
+	found, ok := want.DeepCopyObject().(client.Object)
+	if !ok {
+		return false, fmt.Errorf("copying %T for the identity read", want)
+	}
+	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(want), found); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("reading the existing %q: %w", want.GetName(), err)
+	}
+
+	if found.GetLabels()[labels.BackupScheduleKey] != labels.OwnerName(schedule.Name) {
+		return false, nil
+	}
+
+	switch backup := found.(type) {
+	case *v1.LogicalBackupElasticsearch:
+		return backup.Spec.ClusterRef == schedule.Spec.ClusterRef, nil
+	case *v1.LogicalBackupRDBMS:
+		return backup.Spec.ClusterRef == schedule.Spec.ClusterRef, nil
+	}
+
+	return false, nil
 }
 
 // SetupWithManager applies opts and registers the controller: the schedules,

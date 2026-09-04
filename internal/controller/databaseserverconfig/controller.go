@@ -223,27 +223,6 @@ func (r *DatabaseServerConfigReconciler) validate(
 	), probeInterval, nil
 }
 
-// probedAnotherServer reports whether the record of the last probe describes a
-// server, or a user on it, that this spec no longer names. A contract that has
-// never been probed has nothing to clear.
-func probedAnotherServer(cfg *v1.DatabaseServerConfig) bool {
-	return cfg.Status.ProbedAt != nil && !cfg.ProbedForCurrentSpec()
-}
-
-// probedEndpoint renders the endpoint of the spec as status records it.
-func probedEndpoint(cfg *v1.DatabaseServerConfig) string {
-	return fmt.Sprintf("%s:%d", cfg.Spec.Host, cfg.Spec.Port)
-}
-
-// probedSecretKeys renders the credential keys of the spec as status records
-// them. One Secret can hold the credentials of more than one user, so a spec
-// that reads other keys of one Secret reads another user.
-func probedSecretKeys(cfg *v1.DatabaseServerConfig) string {
-	ref := cfg.Spec.AdminCredentialsSecretRef
-
-	return ref.UsernameKey + "/" + ref.PasswordKey
-}
-
 // probeIsFresh reports whether the recorded probe still stands for cfg as it
 // is now, and for how long. A probe stands when it succeeded within the
 // interval, against the endpoint and the Secret that the spec names now. In
@@ -324,6 +303,27 @@ func probeWithin(
 	}
 
 	return version, systemIdentifier, nil
+}
+
+// probedEndpoint renders the endpoint of the spec as status records it.
+func probedEndpoint(cfg *v1.DatabaseServerConfig) string {
+	return fmt.Sprintf("%s:%d", cfg.Spec.Host, cfg.Spec.Port)
+}
+
+// probedSecretKeys renders the credential keys of the spec as status records
+// them. One Secret can hold the credentials of more than one user, so a spec
+// that reads other keys of one Secret reads another user.
+func probedSecretKeys(cfg *v1.DatabaseServerConfig) string {
+	ref := cfg.Spec.AdminCredentialsSecretRef
+
+	return ref.UsernameKey + "/" + ref.PasswordKey
+}
+
+// probedAnotherServer reports whether the record of the last probe describes a
+// server, or a user on it, that this spec no longer names. A contract that has
+// never been probed has nothing to clear.
+func probedAnotherServer(cfg *v1.DatabaseServerConfig) bool {
+	return cfg.Status.ProbedAt != nil && !cfg.ProbedForCurrentSpec()
 }
 
 // SetupWithManager registers the controller, an index of CRs by referenced
