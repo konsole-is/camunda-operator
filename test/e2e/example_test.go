@@ -71,11 +71,11 @@ const (
 	exTeardownTimeout = 10 * time.Minute
 )
 
-// The manifests of a management inventory up to its CamundaManagementCluster,
-// in the order its README applies them. This flow stops there. The plane needs
-// a license key, an SMTP host, and identity provider URLs that CI cannot
-// invent. The two management flows of this suite prove that a plane converges
-// against real ones.
+// The manifests of a management inventory that come before its
+// CamundaManagementCluster, in the order its README applies them. The plane
+// itself is not applied. It needs a license key, an SMTP host, and identity
+// provider URLs that CI cannot invent, and the two management flows of this
+// suite prove that a plane converges against real ones.
 var (
 	exKeycloakStorageFiles = []string{
 		"01-namespaces.yaml",
@@ -262,7 +262,7 @@ func dumpTeardown(namespaces []string) {
 
 // applyInventoryStorage applies the shared presets and then the named files of
 // the inventory. The kustomization of a management inventory covers its plane
-// as well, so this flow applies the files instead.
+// as well, so this flow names the files instead of applying the directory.
 func applyInventoryStorage(root, inventory string, files []string) {
 	GinkgoHelper()
 
@@ -270,7 +270,7 @@ func applyInventoryStorage(root, inventory string, files []string) {
 	_, err := utils.Kubectl("apply", "-k", filepath.Join(root, exPresets))
 	Expect(err).NotTo(HaveOccurred())
 
-	By("applying the inventory up to its management cluster")
+	By("applying the manifests that come before the management cluster")
 	args := []string{"apply"}
 	for _, file := range files {
 		args = append(args, "-f", filepath.Join(root, inventory, file))
