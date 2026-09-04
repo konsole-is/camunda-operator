@@ -138,7 +138,7 @@ const defaultRetryInterval = 30 * time.Second
 // reason and message come from the governing component, which is the
 // highest-priority component that is not True, or the highest-priority of all
 // of them when they all are. A cluster whose storage contract another cluster
-// holds reports StorageAlreadyAttached instead of the aggregate, and a cluster
+// holds reports StorageAlreadyAttached instead of the aggregate. A cluster
 // that takes a contract over reports WaitingForHandover while a pod of the
 // previous holder still runs on it. Both look again on a timer.
 //
@@ -310,8 +310,8 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	cluster.Status.Volumes = storage.volumes()
 	cluster.Status.Management = managementBinding(&cluster, in)
 	cluster.Status.Gateway = gatewayBinding(&cluster, in)
-	// The account outlives a suspension, so it stands while the bindings above
-	// are cleared.
+	// The account outlives a suspension, so it stands while the management
+	// binding and the gateway binding are cleared.
 	cluster.Status.ServiceAccountName = components.PodServiceAccountName(in)
 	cred.recordRotation(&cluster)
 

@@ -392,6 +392,8 @@ func publishedBefore(storage brokerStorage) bool {
 	// before the StatefulSet, so a cluster whose brokers run has had one. The
 	// users also live in the broker state, so volumes that outlived a deleted
 	// cluster carry the admin user into the cluster that reattaches them.
+	// spec.zeebe.persistentVolumeClaimRetentionPolicy is the field that lets
+	// the volumes outlive the cluster.
 	return storage.statefulSet != nil || len(storage.claims) > 0
 }
 
