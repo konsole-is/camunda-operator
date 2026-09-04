@@ -59,6 +59,32 @@ const (
 // Deployment alike; the builders lift it into their own mutation type.
 type workloadMutation = feature.Mutation[primitives.WorkloadMutator]
 
+// statefulSetMutations returns the mutations of the broker StatefulSet: the
+// workload mutations plus VolumeRetention.
+func statefulSetMutations(in Input, p Process) []statefulset.Mutation {
+	shared := workloadMutations(in, p)
+	mutations := make([]statefulset.Mutation, 0, len(shared)+1)
+	for _, m := range shared {
+		mutations = append(mutations, statefulset.LiftMutation(m))
+	}
+
+	retain := in.Effective.VolumeRetention() == v1.RetainPersistentVolumeClaimRetentionPolicyType
+	return append(mutations, statefulset.Mutation{
+		Name:    MutationVolumeRetention,
+		Feature: feature.NewBooleanGate(retain),
+		Mutate: func(m *statefulset.Mutator) error {
+			m.EditStatefulSetSpec(func(spec *editors.StatefulSetSpecEditor) error {
+				spec.SetPersistentVolumeClaimRetentionPolicy(&appsv1.StatefulSetPersistentVolumeClaimRetentionPolicy{
+					WhenDeleted: appsv1.RetainPersistentVolumeClaimRetentionPolicyType,
+					WhenScaled:  appsv1.RetainPersistentVolumeClaimRetentionPolicyType,
+				})
+				return nil
+			})
+			return nil
+		},
+	})
+}
+
 // workloadMutations returns the mutations of a process that a StatefulSet and
 // a Deployment share: the override mutations, each gated on its field
 // (Resources, SchedulingConstraints, PodMetadata, ServiceAccount), and
@@ -132,32 +158,6 @@ func workloadMutations(in Input, p Process) []workloadMutation {
 		},
 		trustStoreMutation(in, p),
 	}
-}
-
-// statefulSetMutations returns the mutations of the broker StatefulSet: the
-// workload mutations plus VolumeRetention.
-func statefulSetMutations(in Input, p Process) []statefulset.Mutation {
-	shared := workloadMutations(in, p)
-	mutations := make([]statefulset.Mutation, 0, len(shared)+1)
-	for _, m := range shared {
-		mutations = append(mutations, statefulset.LiftMutation(m))
-	}
-
-	retain := in.Effective.VolumeRetention() == v1.RetainPersistentVolumeClaimRetentionPolicyType
-	return append(mutations, statefulset.Mutation{
-		Name:    MutationVolumeRetention,
-		Feature: feature.NewBooleanGate(retain),
-		Mutate: func(m *statefulset.Mutator) error {
-			m.EditStatefulSetSpec(func(spec *editors.StatefulSetSpecEditor) error {
-				spec.SetPersistentVolumeClaimRetentionPolicy(&appsv1.StatefulSetPersistentVolumeClaimRetentionPolicy{
-					WhenDeleted: appsv1.RetainPersistentVolumeClaimRetentionPolicyType,
-					WhenScaled:  appsv1.RetainPersistentVolumeClaimRetentionPolicyType,
-				})
-				return nil
-			})
-			return nil
-		},
-	})
 }
 
 // deploymentMutations returns the workload mutations of a Deployment-backed

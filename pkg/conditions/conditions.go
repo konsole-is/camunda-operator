@@ -43,8 +43,13 @@ type PreCheckFailure struct {
 	Message string
 }
 
-// Error returns the condition-ready message.
-func (f *PreCheckFailure) Error() string { return f.Message }
+// Owner is a CRD that stages its Ready condition: the ocf owner plus the
+// observedGeneration setter that every CRD of this operator implements.
+type Owner interface {
+	component.OperatorCRD
+	// SetObservedGeneration records the last reconciled generation in status.
+	SetObservedGeneration(generation int64)
+}
 
 // MaxMessageLength bounds the message of every condition that this package
 // builds or stages, and of every status string a controller passes through
@@ -53,6 +58,47 @@ func (f *PreCheckFailure) Error() string { return f.Message }
 // controller that copies an external error into a message cannot know its
 // size. 8 KiB keeps the message readable and far under the cap.
 const MaxMessageLength = 8 << 10
+
+// Stage sets ready on owner and records the current generation as observed,
+// in memory. FlushStatus persists both. Every controller stages Ready through
+// Stage, so observedGeneration always moves with Ready. The message of ready
+// is bounded by MaxMessageLength, whichever way it was built.
+func Stage(owner Owner, ready metav1.Condition) {
+	ready.Message = BoundMessage(ready.Message)
+	meta.SetStatusCondition(owner.GetStatusConditions(), ready)
+	owner.SetObservedGeneration(owner.GetGeneration())
+}
+
+// Failed builds the Ready condition for a pre-check failure of owner.
+func Failed(owner Owner, failure *PreCheckFailure) metav1.Condition {
+	return Ready(metav1.ConditionFalse, failure.Reason, failure.Message, owner.GetGeneration())
+}
+
+// Ready builds a Ready condition observed at the given generation. It sets no
+// LastTransitionTime, because meta.SetStatusCondition supplies it. The
+// message is bounded by MaxMessageLength.
+func Ready(status metav1.ConditionStatus, reason, message string, observedGeneration int64) metav1.Condition {
+	return metav1.Condition{
+		Type: v1.ConditionReady, Status: status, Reason: reason,
+		Message: BoundMessage(message), ObservedGeneration: observedGeneration,
+	}
+}
+
+// Aggregate builds the Ready condition of owner from the given ocf
+// components. It is component.Aggregate under the Ready condition type: Ready
+// is True only when every component condition is True, and the reason and the
+// message come from the governing component, which is the one with the highest
+// component.Status priority among the components that are not True, or the
+// highest of all of them when they all are. A component that has not reported
+// yet counts as Unknown. With no components the result is False. The caller
+// decides which components make up Ready: an auxiliary component, for example
+// a metrics exporter, keeps its own condition and stays out of the list. The
+// message is bounded by MaxMessageLength.
+func Aggregate(owner component.OperatorCRD, comps ...*component.Component) metav1.Condition {
+	ready := metav1.Condition(component.Aggregate(v1.ConditionReady, owner, comps...))
+	ready.Message = BoundMessage(ready.Message)
+	return ready
+}
 
 // BoundMessage returns message when it is within MaxMessageLength bytes.
 // Otherwise it returns a prefix of message cut on a rune boundary, followed
@@ -71,51 +117,4 @@ func BoundMessage(message string) string {
 	return cut + marker
 }
 
-// Ready builds a Ready condition observed at the given generation. It sets no
-// LastTransitionTime, because meta.SetStatusCondition supplies it. The
-// message is bounded by MaxMessageLength.
-func Ready(status metav1.ConditionStatus, reason, message string, observedGeneration int64) metav1.Condition {
-	return metav1.Condition{
-		Type: v1.ConditionReady, Status: status, Reason: reason,
-		Message: BoundMessage(message), ObservedGeneration: observedGeneration,
-	}
-}
-
-// Owner is a CRD that stages its Ready condition: the ocf owner plus the
-// observedGeneration setter that every CRD of this operator implements.
-type Owner interface {
-	component.OperatorCRD
-	// SetObservedGeneration records the last reconciled generation in status.
-	SetObservedGeneration(generation int64)
-}
-
-// Stage sets ready on owner and records the current generation as observed,
-// in memory. FlushStatus persists both. Every controller stages Ready through
-// Stage, so observedGeneration always moves with Ready. The message of ready
-// is bounded by MaxMessageLength, whichever way it was built.
-func Stage(owner Owner, ready metav1.Condition) {
-	ready.Message = BoundMessage(ready.Message)
-	meta.SetStatusCondition(owner.GetStatusConditions(), ready)
-	owner.SetObservedGeneration(owner.GetGeneration())
-}
-
-// Failed builds the Ready condition for a pre-check failure of owner.
-func Failed(owner Owner, failure *PreCheckFailure) metav1.Condition {
-	return Ready(metav1.ConditionFalse, failure.Reason, failure.Message, owner.GetGeneration())
-}
-
-// Aggregate builds the Ready condition of owner from the given ocf
-// components. It is component.Aggregate under the Ready condition type: Ready
-// is True only when every component condition is True, and the reason and the
-// message come from the governing component, which is the one with the highest
-// component.Status priority among the components that are not True, or the
-// highest of all of them when they all are. A component that has not reported
-// yet counts as Unknown. With no components the result is False. The caller
-// decides which components make up Ready: an auxiliary component, for example
-// a metrics exporter, keeps its own condition and stays out of the list. The
-// message is bounded by MaxMessageLength.
-func Aggregate(owner component.OperatorCRD, comps ...*component.Component) metav1.Condition {
-	ready := metav1.Condition(component.Aggregate(v1.ConditionReady, owner, comps...))
-	ready.Message = BoundMessage(ready.Message)
-	return ready
-}
+func (f *PreCheckFailure) Error() string { return f.Message }

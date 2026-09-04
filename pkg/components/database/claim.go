@@ -144,6 +144,14 @@ func ListClaims(ctx context.Context, reader client.Reader, namespace string) ([]
 	return claims, nil
 }
 
+// claimLeaseSelector matches the claim Lease of every Database.
+func claimLeaseSelector() map[string]string {
+	return map[string]string{
+		labels.ComponentKey: ClaimComponent,
+		labels.ManagedByKey: labels.ManagedBy,
+	}
+}
+
 // ClaimHolderOf returns the Database that the annotations of the Lease name,
 // and whether all three of them are there. Only the annotations carry
 // ownership. The holderIdentity of the Lease is a display form for a reader.
@@ -161,12 +169,4 @@ func ClaimHolderOf(lease *coordinationv1.Lease) (ClaimHolder, bool) {
 	}
 
 	return holder, true
-}
-
-// claimLeaseSelector matches the claim Lease of every Database.
-func claimLeaseSelector() map[string]string {
-	return map[string]string{
-		labels.ComponentKey: ClaimComponent,
-		labels.ManagedByKey: labels.ManagedBy,
-	}
 }

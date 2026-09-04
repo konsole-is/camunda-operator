@@ -185,16 +185,6 @@ func (s *UserAPI) UpdateCalls() int {
 	return s.updateCalls
 }
 
-// problem answers with an application/problem+json body, the error shape of
-// the real API.
-func problem(w http.ResponseWriter, status int, detail string) {
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"type": "about:blank", "title": http.StatusText(status), "status": status, "detail": detail,
-	})
-}
-
 // handle routes one request to the endpoint it names. It runs under the lock
 // of the request.
 func (s *UserAPI) handle(w http.ResponseWriter, r *http.Request) {
@@ -434,6 +424,16 @@ func (s *UserAPI) authenticated(w http.ResponseWriter, r *http.Request) bool {
 	}
 
 	return true
+}
+
+// problem answers with an application/problem+json body, the error shape of
+// the real API.
+func problem(w http.ResponseWriter, status int, detail string) {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"type": "about:blank", "title": http.StatusText(status), "status": status, "detail": detail,
+	})
 }
 
 // validEmail mirrors the check that the orchestration cluster runs on an

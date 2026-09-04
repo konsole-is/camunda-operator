@@ -152,6 +152,27 @@ func AdminSecretName(cluster *v1.CamundaCluster) string {
 	return labels.BoundedName(cluster.Name, limit) + adminSecretSuffix
 }
 
+// PodServiceAccountName returns the ServiceAccount that the pods of the
+// cluster run under, or the empty string when they run under the default
+// account of their namespace.
+//
+// The pods need a named account only when something binds one: the spec asks
+// for one, or a referenced bucket authenticates through workload identity.
+//
+// A consumer outside this package never asks it: the controller publishes the
+// answer on status.serviceAccountName, and the consumer reads that field.
+//
+// ServiceAccountName answers a different question: the name the account
+// carries when the cluster has one.
+func PodServiceAccountName(in Input) string {
+	if in.Effective.ServiceAccount == nil &&
+		!bucketUsesWorkloadIdentity(in.Backup) && !bucketUsesWorkloadIdentity(in.Documents) {
+		return ""
+	}
+
+	return ServiceAccountName(in.Cluster, in.Effective)
+}
+
 // ServiceAccountName returns the name that the ServiceAccount of the cluster
 // carries: the name the spec sets, or the name derived from the cluster. It
 // never answers whether the cluster has one. A caller that needs the account
@@ -167,31 +188,4 @@ func ServiceAccountName(cluster *v1.CamundaCluster, e Effective) string {
 	limit := validation.DNS1123SubdomainMaxLength - len(serviceAccountSuffix)
 
 	return labels.BoundedName(cluster.Name, limit) + serviceAccountSuffix
-}
-
-// PodServiceAccountName returns the ServiceAccount that the pods of the
-// cluster run under, or the empty string when they run under the default
-// account of their namespace.
-//
-// The pods need a named account only when something binds one: the spec asks
-// for one, or a referenced bucket authenticates through workload identity.
-// With static credentials nothing does. The credentials arrive in a Secret,
-// so the pods carry no cloud identity and the operator renders no account.
-//
-// It takes the whole Input, so a bucket that a later spec adds reaches this
-// rule through the field the controller already fills. A consumer outside
-// this package never asks it: the controller publishes the answer on
-// status.serviceAccountName, and the consumer reads that field.
-//
-// ServiceAccountName answers a different question: the name the account
-// carries when the cluster has one. The site that names the ServiceAccount
-// resource keeps using it. So does any site that is already gated on whether
-// the cluster renders one.
-func PodServiceAccountName(in Input) string {
-	if in.Effective.ServiceAccount == nil &&
-		!bucketUsesWorkloadIdentity(in.Backup) && !bucketUsesWorkloadIdentity(in.Documents) {
-		return ""
-	}
-
-	return ServiceAccountName(in.Cluster, in.Effective)
 }

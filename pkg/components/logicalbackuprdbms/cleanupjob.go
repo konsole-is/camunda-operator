@@ -63,15 +63,6 @@ type CleanupJobInput struct {
 	CLIImage string
 }
 
-// CleanupJobName returns the name of the cleanup Job of one backup. It
-// derives from the backup name alone, bounded like the name of the dump Job.
-// A finalizer that re-enters therefore adopts the Job that it already
-// created.
-func CleanupJobName(backup *v1.LogicalBackupRDBMS) string {
-	return labels.BoundedName(backup.Name, validation.DNS1123LabelMaxLength-len(cleanupNameSuffix)) +
-		cleanupNameSuffix
-}
-
 // BuildCleanupJob renders the Job that removes the dump object of a deleted
 // backup where the identity lives. The Job is one camunda-operator-cli
 // delete container under the cluster ServiceAccount. It has the same pod
@@ -163,4 +154,13 @@ func BuildCleanupJob(in CleanupJobInput) (*batchv1.Job, error) {
 			Template:              template,
 		},
 	}, nil
+}
+
+// CleanupJobName returns the name of the cleanup Job of one backup. It
+// derives from the backup name alone, bounded like the name of the dump Job.
+// A finalizer that re-enters therefore adopts the Job that it already
+// created.
+func CleanupJobName(backup *v1.LogicalBackupRDBMS) string {
+	return labels.BoundedName(backup.Name, validation.DNS1123LabelMaxLength-len(cleanupNameSuffix)) +
+		cleanupNameSuffix
 }

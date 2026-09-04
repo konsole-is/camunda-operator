@@ -143,25 +143,6 @@ type JobInput struct {
 	CLIImage string
 }
 
-// JobName returns the name of the Job of one restore. It derives from the
-// restore name alone. The Job lives in the restore's own namespace, where that
-// name is unique. A reconcile that re-enters after a crash therefore adopts
-// the Job that it already created instead of a second one. A restore name can
-// be a full DNS subdomain, but a Job name is a DNS label. BoundedName
-// therefore truncates a long name deterministically and keeps it unique with a
-// hash of the whole name.
-func JobName(restore *v1.LogicalRestoreRDBMS) string {
-	return labels.BoundedName(restore.Name, validation.DNS1123LabelMaxLength-len(jobNameSuffix)) + jobNameSuffix
-}
-
-// JobBelongsTo reports whether job carries the identity of restore, that is
-// the UID label that BuildJob stamps. A Job found by name with another UID is
-// a leftover of a deleted and recreated restore of the same name, or a foreign
-// Job. The reconcile must not adopt or delete it for this restore.
-func JobBelongsTo(job *batchv1.Job, restore *v1.LogicalRestoreRDBMS) bool {
-	return job.Labels[RestoreUIDLabel] == string(restore.UID)
-}
-
 // BuildJob renders the Job that downloads the dump and restores it into the
 // target database. An initContainer streams the object into the scratch
 // volume. The main container runs pg_restore from that file, so the Job
@@ -256,16 +237,6 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 	}, nil
 }
 
-// activeDeadline returns the deadline of the pod block, or the production
-// default when it sets none.
-func activeDeadline(pod *v1.DumpPodSpec) *int64 {
-	if pod.ActiveDeadlineSeconds != nil {
-		return pod.ActiveDeadlineSeconds
-	}
-
-	return new(DefaultActiveDeadlineSeconds)
-}
-
 // downloadContainer streams the archive from the bucket into the scratch
 // volume through the download subcommand of camunda-operator-cli. It reads the
 // same file name that the dump Job wrote, so the two can never disagree.
@@ -301,6 +272,72 @@ func downloadContainer(in JobInput, pod *v1.DumpPodSpec, spec string) corev1.Con
 	}
 
 	return container
+}
+
+// credentialEnv projects the static credentials of the bucket, key by key in
+// the contract's own order. The subcommand rebuilds the Secret data from them
+// and hands it to the one mapping in objectstore.CredentialsFrom. Workload
+// identity projects nothing. The provider chain then authenticates as the
+// ServiceAccount of the pod.
+func credentialEnv(in JobInput) []corev1.EnvVar {
+	credentials := in.Bucket.CredentialsSecret()
+	if in.BucketSecretName == "" || credentials == nil {
+		return nil
+	}
+
+	env := make([]corev1.EnvVar, 0, len(credentials.Keys)+1)
+	env = append(env, corev1.EnvVar{
+		Name:  backup.EnvUploadCredentialKeys,
+		Value: strings.Join(credentials.Keys, ","),
+	})
+	for i, key := range credentials.Keys {
+		env = append(env, secretEnv(
+			backup.EnvUploadCredentialPrefix+strconv.Itoa(i), in.BucketSecretName, key,
+		))
+	}
+
+	return env
+}
+
+func secretEnv(name, secret, key string) corev1.EnvVar {
+	return corev1.EnvVar{
+		Name: name,
+		ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: secret},
+				Key:                  key,
+			},
+		},
+	}
+}
+
+// containerSecurity is the restricted-profile security context of one
+// container that runs as the given non-root uid.
+func containerSecurity(uid int64) *corev1.SecurityContext {
+	return &corev1.SecurityContext{
+		RunAsUser:                new(uid),
+		RunAsGroup:               new(uid),
+		RunAsNonRoot:             new(true),
+		AllowPrivilegeEscalation: new(false),
+		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+	}
+}
+
+// mergeEnv combines the variables that the Job sets with the extras of the pod
+// block, by name. The Job's own values always win, and a name appears once. A
+// duplicate can therefore neither redirect the restore nor make the apply fail
+// on a duplicate list-map key.
+func mergeEnv(own, extra []corev1.EnvVar) []corev1.EnvVar {
+	merged := make([]corev1.EnvVar, 0, len(own)+len(extra))
+	merged = append(merged, own...)
+	for _, env := range extra {
+		if slices.ContainsFunc(own, func(o corev1.EnvVar) bool { return o.Name == env.Name }) {
+			continue
+		}
+		merged = append(merged, env)
+	}
+
+	return merged
 }
 
 // restoreContainer runs pg_restore of the downloaded archive into the target
@@ -345,48 +382,6 @@ func restoreContainer(in JobInput, pod *v1.DumpPodSpec) corev1.Container {
 	return container
 }
 
-// credentialEnv projects the static credentials of the bucket, key by key in
-// the contract's own order. The subcommand rebuilds the Secret data from them
-// and hands it to the one mapping in objectstore.CredentialsFrom. Workload
-// identity projects nothing. The provider chain then authenticates as the
-// ServiceAccount of the pod.
-func credentialEnv(in JobInput) []corev1.EnvVar {
-	credentials := in.Bucket.CredentialsSecret()
-	if in.BucketSecretName == "" || credentials == nil {
-		return nil
-	}
-
-	env := make([]corev1.EnvVar, 0, len(credentials.Keys)+1)
-	env = append(env, corev1.EnvVar{
-		Name:  backup.EnvUploadCredentialKeys,
-		Value: strings.Join(credentials.Keys, ","),
-	})
-	for i, key := range credentials.Keys {
-		env = append(env, secretEnv(
-			backup.EnvUploadCredentialPrefix+strconv.Itoa(i), in.BucketSecretName, key,
-		))
-	}
-
-	return env
-}
-
-// mergeEnv combines the variables that the Job sets with the extras of the pod
-// block, by name. The Job's own values always win, and a name appears once. A
-// duplicate can therefore neither redirect the restore nor make the apply fail
-// on a duplicate list-map key.
-func mergeEnv(own, extra []corev1.EnvVar) []corev1.EnvVar {
-	merged := make([]corev1.EnvVar, 0, len(own)+len(extra))
-	merged = append(merged, own...)
-	for _, env := range extra {
-		if slices.ContainsFunc(own, func(o corev1.EnvVar) bool { return o.Name == env.Name }) {
-			continue
-		}
-		merged = append(merged, env)
-	}
-
-	return merged
-}
-
 // scratchVolume returns the volume that holds the archive. It is an emptyDir
 // bounded by sizeLimit, or a generic ephemeral PersistentVolumeClaim when a
 // storage class is set. The claim lets an archive larger than the node's
@@ -418,26 +413,31 @@ func scratchVolume(pod *v1.DumpPodSpec) corev1.Volume {
 	return scratch
 }
 
-// containerSecurity is the restricted-profile security context of one
-// container that runs as the given non-root uid.
-func containerSecurity(uid int64) *corev1.SecurityContext {
-	return &corev1.SecurityContext{
-		RunAsUser:                new(uid),
-		RunAsGroup:               new(uid),
-		RunAsNonRoot:             new(true),
-		AllowPrivilegeEscalation: new(false),
-		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-	}
+// JobName returns the name of the Job of one restore. It derives from the
+// restore name alone. The Job lives in the restore's own namespace, where that
+// name is unique. A reconcile that re-enters after a crash therefore adopts
+// the Job that it already created instead of a second one. A restore name can
+// be a full DNS subdomain, but a Job name is a DNS label. BoundedName
+// therefore truncates a long name deterministically and keeps it unique with a
+// hash of the whole name.
+func JobName(restore *v1.LogicalRestoreRDBMS) string {
+	return labels.BoundedName(restore.Name, validation.DNS1123LabelMaxLength-len(jobNameSuffix)) + jobNameSuffix
 }
 
-func secretEnv(name, secret, key string) corev1.EnvVar {
-	return corev1.EnvVar{
-		Name: name,
-		ValueFrom: &corev1.EnvVarSource{
-			SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: secret},
-				Key:                  key,
-			},
-		},
+// activeDeadline returns the deadline of the pod block, or the production
+// default when it sets none.
+func activeDeadline(pod *v1.DumpPodSpec) *int64 {
+	if pod.ActiveDeadlineSeconds != nil {
+		return pod.ActiveDeadlineSeconds
 	}
+
+	return new(DefaultActiveDeadlineSeconds)
+}
+
+// JobBelongsTo reports whether job carries the identity of restore, that is
+// the UID label that BuildJob stamps. A Job found by name with another UID is
+// a leftover of a deleted and recreated restore of the same name, or a foreign
+// Job. The reconcile must not adopt or delete it for this restore.
+func JobBelongsTo(job *batchv1.Job, restore *v1.LogicalRestoreRDBMS) bool {
+	return job.Labels[RestoreUIDLabel] == string(restore.UID)
 }

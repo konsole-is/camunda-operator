@@ -47,17 +47,6 @@ type Progress struct {
 	Recreated []string
 }
 
-// hold records that the step is not done. The first claim that holds it
-// names the message, so the reported reason is the lowest broker that waits
-// and does not change with every pass.
-func (p *Progress) hold(message string) {
-	if !p.Done {
-		return
-	}
-	p.Done = false
-	p.Message = message
-}
-
 // ClaimInput is everything RecreateClaims needs.
 type ClaimInput struct {
 	// Target holds the broker StatefulSet the claims belong to.
@@ -73,65 +62,11 @@ type ClaimInput struct {
 	FieldManager client.FieldOwner
 }
 
-// ClaimNames returns the names of the broker data claims, in broker order.
-// The name is what the StatefulSet expects: data-<cluster>-zeebe-<ordinal>.
-func (t *Target) ClaimNames() []string {
-	names := make([]string, 0, t.Brokers)
-	for ordinal := range t.Brokers {
-		names = append(names, t.claimName(ordinal))
-	}
-
-	return names
-}
-
-func (t *Target) claimName(ordinal int32) string {
-	return components.DataVolumeName + "-" + t.StatefulSet.Name + "-" + strconv.FormatInt(int64(ordinal), 10)
-}
-
-// ClaimSize returns the storage request of a recreated broker volume:
-// recorded when the backup recorded an effective restore size, and the
-// request of the claim template otherwise. A restored volume holds the data
-// of the backup, which the template size can be too small for.
-func (t *Target) ClaimSize(recorded *resource.Quantity) resource.Quantity {
-	if recorded != nil {
-		return *recorded
-	}
-
-	return t.ClaimTemplate.Spec.Resources.Requests[corev1.ResourceStorage]
-}
-
-// BuildClaim renders the broker data claim of one ordinal at the given size.
-// Everything but the size comes from the claim template, so the StatefulSet
-// selector and the discovery labels keep working.
-//
-// The claim carries no owner reference. The StatefulSet owns the broker
-// volumes. An owner reference to a restore deletes a live broker volume as
-// soon as somebody deletes the restore resource.
-func (t *Target) BuildClaim(ordinal int32, size resource.Quantity) *corev1.PersistentVolumeClaim {
-	spec := *t.ClaimTemplate.Spec.DeepCopy()
-	spec.Resources.Requests = corev1.ResourceList{corev1.ResourceStorage: size}
-
-	return &corev1.PersistentVolumeClaim{
-		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "PersistentVolumeClaim"},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        t.claimName(ordinal),
-			Namespace:   t.StatefulSet.Namespace,
-			Labels:      maps.Clone(t.ClaimTemplate.Labels),
-			Annotations: maps.Clone(t.ClaimTemplate.Annotations),
-		},
-		Spec: spec,
-	}
-}
-
 // RecreateClaims gives the brokers the empty data volumes that the restore
 // application needs. It deletes every claim that the recorded list does not
 // name yet, and it applies the claim the StatefulSet expects once the old one
 // is gone. It reports Done only when every claim exists again as an empty
 // volume.
-//
-// A claim that still holds data is therefore never deleted and created in one
-// call. A claim that is already gone is recorded and created in the same
-// call, because there is nothing left to lose.
 //
 // The caller has two duties, and the safety of the restore rests on them:
 //
@@ -144,9 +79,7 @@ func (t *Target) BuildClaim(ordinal int32, size resource.Quantity) *corev1.Persi
 //
 // The reader must be uncached. A claim that was just deleted or applied is
 // what the next decision reads. The same reader also reads the pods of the
-// namespace, to name what holds a volume that still terminates. That read
-// happens at most once per call, whatever the number of terminating volumes,
-// because only the first hold names the reported reason.
+// namespace, to name what holds a volume that still terminates.
 func RecreateClaims(
 	ctx context.Context,
 	c client.Client,
@@ -208,4 +141,65 @@ func RecreateClaims(
 	}
 
 	return progress, nil
+}
+
+// ClaimNames returns the names of the broker data claims, in broker order.
+// The name is what the StatefulSet expects: data-<cluster>-zeebe-<ordinal>.
+func (t *Target) ClaimNames() []string {
+	names := make([]string, 0, t.Brokers)
+	for ordinal := range t.Brokers {
+		names = append(names, t.claimName(ordinal))
+	}
+
+	return names
+}
+
+func (t *Target) claimName(ordinal int32) string {
+	return components.DataVolumeName + "-" + t.StatefulSet.Name + "-" + strconv.FormatInt(int64(ordinal), 10)
+}
+
+// BuildClaim renders the broker data claim of one ordinal at the given size.
+// Everything but the size comes from the claim template, so the StatefulSet
+// selector and the discovery labels keep working.
+//
+// The claim carries no owner reference. The StatefulSet owns the broker
+// volumes. An owner reference to a restore deletes a live broker volume as
+// soon as somebody deletes the restore resource.
+func (t *Target) BuildClaim(ordinal int32, size resource.Quantity) *corev1.PersistentVolumeClaim {
+	spec := *t.ClaimTemplate.Spec.DeepCopy()
+	spec.Resources.Requests = corev1.ResourceList{corev1.ResourceStorage: size}
+
+	return &corev1.PersistentVolumeClaim{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "PersistentVolumeClaim"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        t.claimName(ordinal),
+			Namespace:   t.StatefulSet.Namespace,
+			Labels:      maps.Clone(t.ClaimTemplate.Labels),
+			Annotations: maps.Clone(t.ClaimTemplate.Annotations),
+		},
+		Spec: spec,
+	}
+}
+
+// hold records that the step is not done. The first claim that holds it
+// names the message, so the reported reason is the lowest broker that waits
+// and does not change with every pass.
+func (p *Progress) hold(message string) {
+	if !p.Done {
+		return
+	}
+	p.Done = false
+	p.Message = message
+}
+
+// ClaimSize returns the storage request of a recreated broker volume:
+// recorded when the backup recorded an effective restore size, and the
+// request of the claim template otherwise. A restored volume holds the data
+// of the backup, which the template size can be too small for.
+func (t *Target) ClaimSize(recorded *resource.Quantity) resource.Quantity {
+	if recorded != nil {
+		return *recorded
+	}
+
+	return t.ClaimTemplate.Spec.Resources.Requests[corev1.ResourceStorage]
 }

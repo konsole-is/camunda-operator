@@ -770,6 +770,8 @@ func readinessProbe() *corev1.Probe           // 3. called by container
 
 When no order makes the file read straight through, the file holds more than one concern. Split it by concern, as above.
 
+**Generated files keep the order their generator writes.** This section does not apply to `zz_generated*` files, or to the `builder.go`, `mutator.go` and `resource.go` files under `pkg/wrappers/`. `ocf scaffold wrapper --force` writes those three from a template, so the next run drops a hand reorder. Every other file in a wrapper package is hand-written and takes the order above.
+
 **Red flags in your own diff:**
 
 - The first function in the file is not the one the file exists for.

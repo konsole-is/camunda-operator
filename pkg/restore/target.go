@@ -194,16 +194,6 @@ func containerNamed(containers []corev1.Container, name string) *corev1.Containe
 	return nil
 }
 
-func claimTemplateNamed(claims []corev1.PersistentVolumeClaim, name string) *corev1.PersistentVolumeClaim {
-	for i := range claims {
-		if claims[i].Name == name {
-			return &claims[i]
-		}
-	}
-
-	return nil
-}
-
 // envCount reads one plain positive count off the broker container. A
 // variable that carries a ValueFrom is not readable here: its value lives in
 // a Secret, a ConfigMap, or a field of the pod, and only the kubelet resolves
@@ -234,4 +224,14 @@ func envCount(sts string, broker *corev1.Container, key camundaconfig.Key) (int3
 	}
 
 	return 0, invalidTarget(sts, "its container carries no %s", name)
+}
+
+func claimTemplateNamed(claims []corev1.PersistentVolumeClaim, name string) *corev1.PersistentVolumeClaim {
+	for i := range claims {
+		if claims[i].Name == name {
+			return &claims[i]
+		}
+	}
+
+	return nil
 }
