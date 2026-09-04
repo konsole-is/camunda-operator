@@ -3,7 +3,7 @@
 # spec.presetRef inherits it.
 #
 # The instance-bound fields are rejected here: platformConfigRef, presetRef,
-# externalUrl, serviceAccount, storageRef, backupStorageRef,
+# releaseRef, externalUrl, serviceAccount, storageRef, backupStorageRef,
 # documentStorageRef, monitoring, suspend, and pause. Each one belongs to a
 # single cluster, so each cluster sets it.
 #

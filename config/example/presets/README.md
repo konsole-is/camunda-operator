@@ -34,7 +34,7 @@ copy.
 
 - **The instance-bound fields.** Each kind rejects the fields that belong to
   one resource. `CamundaClusterPreset` rejects `platformConfigRef`,
-  `presetRef`, `externalUrl`, `serviceAccount`, `storageRef`,
+  `presetRef`, `releaseRef`, `externalUrl`, `serviceAccount`, `storageRef`,
   `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, and
   `pause`. The other two reject `presetRef`, `suspend`, and the name of the
   contract they publish.
