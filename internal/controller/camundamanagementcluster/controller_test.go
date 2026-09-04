@@ -237,6 +237,31 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 			expectReadyWhileStamping(s.mc, key)
 		})
 
+		// A failed pre-check names something of the spec, and the steps that
+		// run beside it still call Kubernetes. A call that fails there says
+		// more than the pre-check, so Ready reports the step.
+		It("reports the failed step of a pass that a failed pre-check stopped", func() {
+			s := newScenario(func(f *fixture) { f.withClientSecret = false })
+
+			expectReadyReason(s.mc, v1.ReasonMissingSecret)
+
+			disarm := clusterListFault.arm()
+			defer disarm()
+			nudge(s.mc)
+
+			Eventually(func(g Gomega) {
+				ready := conditionOf(g, s.mc, v1.ConditionReady)
+				g.Expect(ready.Reason).To(Equal(v1.ReasonStepFailed))
+				g.Expect(ready.Message).To(
+					ContainSubstring("Could not release the clusters that left the selector"),
+				)
+			}, timeout, interval).Should(Succeed())
+
+			disarm()
+
+			expectReadyReason(s.mc, v1.ReasonMissingSecret)
+		})
+
 		It("leaves a contract that another owner created in the meantime alone", func() {
 			// Two management clusters that ask for one free name at the same
 			// time both pass the pre-check. The API server creates the
@@ -620,10 +645,11 @@ func expectReadyWhileStamping(mc *v1.CamundaManagementCluster, keys ...client.Ob
 }
 
 // startIdentityPod creates the pod that the Management Identity Deployment
-// describes and reports its container as running. Envtest runs no Deployment
-// controller and no kubelet, so a spec that needs a started Identity is what
-// puts the pod behind the Deployment.
-func startIdentityPod(key client.ObjectKey) {
+// describes and reports its container as running and not ready, the state of
+// a start in flight. Envtest runs no Deployment controller and no kubelet, so
+// a spec that needs a started Identity is what puts the pod behind the
+// Deployment. It returns the pod, so a spec can move its status later.
+func startIdentityPod(key client.ObjectKey) *corev1.Pod {
 	GinkgoHelper()
 
 	var workload appsv1.Deployment
@@ -648,6 +674,8 @@ func startIdentityPod(key client.ObjectKey) {
 		State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{StartedAt: metav1.Now()}},
 	}}
 	Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
+
+	return pod
 }
 
 // stampDeploymentReady writes the status that a running Deployment controller

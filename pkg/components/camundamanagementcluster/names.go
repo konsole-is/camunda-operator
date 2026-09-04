@@ -58,6 +58,9 @@ const (
 	// passwords of the Web Modeler users on the attached basic-auth
 	// orchestration clusters. No workload carries this value.
 	ComponentWebModelerClusterUser = "web-modeler-cluster-user"
+	// ComponentRealmClaim labels the Lease that claims a Keycloak realm for
+	// one management cluster. No workload carries this value.
+	ComponentRealmClaim = "realm-claim"
 )
 
 // The keys and identities that a user or another controller can observe on
@@ -76,6 +79,17 @@ const (
 	// Identity reads the claim on its first start only and stores the result
 	// in its database, so the operator keeps rendering the recorded value.
 	InitialClaimAnnotation = "camunda.io/identity-initial-claim"
+	// ForgetCallbackRealmAnnotation is the annotation of a
+	// CamundaManagementCluster that lets go of the realm that
+	// status.callbackRealm records, with the login callbacks of Optimize
+	// still in it. The value is the identity of that realm, as RealmIdentity
+	// returns it, so a stale annotation cannot let go of another realm. A
+	// hand-written value matches when it differs only in the case of the
+	// scheme or the host, a default port, or a trailing slash. The
+	// controller reads it when the spec no longer names the recorded realm,
+	// and removes it once it has let go of the realm. Set it when the
+	// Keycloak of that realm is gone for good.
+	ForgetCallbackRealmAnnotation = "camunda.io/forget-callback-realm"
 	// FieldManager owns every resource of the management cluster itself, the
 	// ManagementAuthConfig included.
 	FieldManager = "camunda-operator/camundamanagementcluster"

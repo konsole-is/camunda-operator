@@ -90,6 +90,17 @@ const (
 	// management plane, so this operator leaves the cluster untouched. The
 	// message names the holder.
 	ReasonClaimedElsewhere = "ClaimedElsewhere"
+	// ReasonRealmClaimedElsewhere means that the Keycloak realm that
+	// spec.identityProvider names is not this management cluster's to
+	// administer: another management cluster holds it, or a
+	// Lease that this operator did not write blocks it. One realm answers to
+	// one management plane, so the operator starts nothing new for this one,
+	// writes nothing in that realm, and looks again on its retry interval.
+	// Workloads the plane already ran keep running. The message names the
+	// holder, or the Lease to remove. Both Keycloak modes report it: the realm
+	// of a Keycloak that the operator runs is claimed like any other, because
+	// an externalKeycloak plane can name the Service address of it.
+	ReasonRealmClaimedElsewhere = "RealmClaimedElsewhere"
 	// ReasonNotReady means that a selected CamundaCluster is not attached
 	// yet: it publishes no gateway endpoints, so Web Modeler cannot deploy to
 	// it, or it changed while the operator claimed it. The state clears when
@@ -246,14 +257,18 @@ type ExternalKeycloakSpec struct {
 	// the Kubernetes cluster.
 	//
 	// The operator appends /realms/<realm> to this URL, so the URL carries no
-	// query and no fragment.
+	// query and no fragment. The URL also lands in the annotations of the
+	// Lease that claims the realm, so it is bounded.
+	// +kubebuilder:validation:MaxLength=2048
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="url must be a valid http or https URL"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('?') && !self.contains('#')",message="url must carry no query and no fragment"
 	URL string `json:"url"`
 	// Realm is the realm that Management Identity uses and creates. Empty
 	// means camunda-platform. The realm lands in the issuer, the token, and
 	// the JWKS path of every URL that Management Identity builds, so it holds
-	// letters, digits, dots, hyphens, and underscores only.
+	// letters, digits, dots, hyphens, and underscores only, and it is bounded
+	// the way the URL is.
+	// +kubebuilder:validation:MaxLength=255
 	// +kubebuilder:validation:XValidation:rule="self == '' || self.matches('^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$')",message="realm must hold letters, digits, dots, hyphens, and underscores, and start and end with a letter or a digit"
 	// +optional
 	Realm string `json:"realm,omitempty"`
@@ -277,6 +292,15 @@ type ExternalKeycloakSpec struct {
 type ManagementOIDCSpec struct{}
 
 // IdentitySpec configures Management Identity.
+//
+// The operator owns the Keycloak URL and the realm of the container. Both
+// follow from spec.identityProvider, so an entry of extraEnv that replaces
+// either one is refused. In a Keycloak mode the operator renders them and this
+// management plane claims exactly the realm they name, so an override would
+// have Management Identity write the login callbacks of Optimize into a realm
+// that status.callbackRealm never names, that no withdrawal reaches, and that
+// another management plane can hold.
+// +kubebuilder:validation:XValidation:rule="!has(self.extraEnv) || self.extraEnv.all(e, e.name != 'KEYCLOAK_URL' && e.name != 'KEYCLOAK_REALM')",message="extraEnv must not set KEYCLOAK_URL or KEYCLOAK_REALM. Both follow from spec.identityProvider, and in a Keycloak mode this management plane claims the realm they name"
 type IdentitySpec struct {
 	// Version is the Management Identity version, as a full semantic version.
 	// The operator supports 8.9.0 and later.
@@ -442,6 +466,31 @@ type CamundaManagementClusterStatus struct {
 	// +listMapKey=name
 	// +optional
 	Optimize []AttachedOptimizeStatus `json:"optimize,omitempty"`
+	// CallbackRealm is the Keycloak realm that this management plane last
+	// pointed Management Identity at, in the externalKeycloak mode. Identity
+	// registers the login callbacks of Optimize there while it starts, so the
+	// field appears with the realm and not with the first registration. A
+	// non-nil value does not say that the callbacks are still there: when the
+	// spec names another realm, or the oidc mode, the operator removes them
+	// from this realm first, and the field then outlives the emptied realm
+	// until nothing of that realm's configuration can put them back: no
+	// Management Identity pod of it that can still run, and no Deployment or
+	// ReplicaSet of it that can still start one. It goes when that drain
+	// is over, so its disappearance, or its move to the new realm, is the
+	// completion signal of a move.
+	//
+	// It is absent once a move into the keycloak or the oidc mode is over,
+	// and while no login callback of this operator is registered anywhere and
+	// nothing remains that could write them back. The operator runs the
+	// Keycloak of the keycloak mode and deletes it with the management plane
+	// or with a move away from that mode, so that realm is never recorded.
+	// During a move into either mode the field still names the realm that the
+	// plane is leaving. A Keycloak that is gone for good never answers, so
+	// the annotation camunda.io/forget-callback-realm, set to the value that
+	// the OptimizeCallbacksReady message names, lets go of it with the
+	// callbacks still in it.
+	// +optional
+	CallbackRealm *KeycloakRealmTarget `json:"callbackRealm,omitempty"`
 	// Conditions represent the current state. Ready carries a pre-check
 	// reason, or it is derived from the conditions of the deployed components.
 	// The per-component conditions (KeycloakReady, IdentityReady,
@@ -488,6 +537,27 @@ type AttachedOptimizeStatus struct {
 	// ExternalURL is spec.externalUrl of that CamundaOptimize. The registered
 	// callback is this URL plus the login path of Optimize.
 	ExternalURL string `json:"externalUrl"`
+}
+
+// KeycloakRealmTarget is one Keycloak realm and how the operator signs in to
+// it. Two targets name the same realm when their url and their realm are the
+// same, whichever administrator and certificate authority each of them
+// carries.
+type KeycloakRealmTarget struct {
+	// URL is the URL of Keycloak that the operator reaches, the /auth path
+	// included when Keycloak serves one.
+	URL string `json:"url"`
+	// Realm is the Keycloak realm.
+	Realm string `json:"realm"`
+	// AdminCredentialsSecretRef names the Secret with the Keycloak
+	// administrator that the operator signs in with, in the namespace of this
+	// resource.
+	AdminCredentialsSecretRef LocalCredentialsSecretRef `json:"adminCredentialsSecretRef"`
+	// CABundleSecretRef names the Secret key with the certificate authority of
+	// Keycloak, in the namespace of this resource. It is absent for a Keycloak
+	// whose certificate a public authority signed.
+	// +optional
+	CABundleSecretRef *LocalSecretKeyRef `json:"caBundleSecretRef,omitempty"`
 }
 
 // +kubebuilder:object:root=true
