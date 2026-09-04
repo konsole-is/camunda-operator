@@ -290,7 +290,7 @@ The operator also suspends a cluster on its own. `spec.suspend` stays yours. A c
 
 `suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it, and starts them again when you clear the field. The Optimize importer reads Elasticsearch directly. Without this, it keeps importing while the cluster is down. Every suspension by the operator reaches them the same way: a `CamundaOptimize` attached to a suspended cluster scales to zero, and a backup of it waits with reason `ClusterSuspended`.
 
-`spec.pause: true` freezes the cluster. The operator changes nothing that it manages for this cluster, and it writes no status. It records one `Paused` event. Set `pause` back to `false`, and the operator continues.
+`spec.pause: true` freezes the cluster. The operator changes nothing that it manages for this cluster, and it writes no status. It records the `Paused` event for as long as the pause holds, so the count of that event keeps rising. Set `pause` back to `false`, and the operator continues.
 
 ## Deletion
 

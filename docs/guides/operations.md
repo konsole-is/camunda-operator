@@ -263,7 +263,7 @@ spec:
   pause: true
 ```
 
-The operator changes nothing for this resource. It writes no status, and it records the `Paused` event. The workloads keep running as they are. Use `suspend` to save compute and keep the data. Use `pause` when you must stop the operator from touching the resource, for example while you inspect or repair a workload by hand.
+The operator changes nothing for this resource. It writes no status, and it records the `Paused` event for as long as the pause holds, so the count of that event keeps rising. The workloads keep running as they are. Use `suspend` to save compute and keep the data. Use `pause` when you must stop the operator from touching the resource, for example while you inspect or repair a workload by hand.
 
 ## Grow storage
 

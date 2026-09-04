@@ -221,9 +221,9 @@ kubectl logs -n my-cluster-ns job/my-cluster-pitr-pitr-0
 
 ## Deletion
 
-When you delete the restore, the operator deletes the Jobs it created. A restore that completed already removed them. A restore that failed still has them, and this is how you remove them. The restore wrote nothing to the backup store, so the delete leaves no artifact there.
+When you delete the restore, the operator deletes the Jobs it created. A restore that completed already removed them. A restore that failed still has them, and this is how you remove them. The restore wrote nothing to the backup store, so the delete leaves no artifact there. The recreated broker volumes stay.
 
-A cluster that the restore suspended stays suspended. That is deliberate. Unsuspending it here would start brokers over volumes that the restore already erased. Unsuspend the cluster yourself once you know what its volumes hold.
+A cluster that the restore suspended stays suspended. That is deliberate. Brokers that start over volumes the restore already erased are worse than a cluster that is down. Unsuspend the cluster yourself once you know what its volumes hold.
 
 ## Status
 
