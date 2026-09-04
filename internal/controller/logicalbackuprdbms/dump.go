@@ -38,6 +38,10 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/podstate"
 )
 
+// errClusterReplaced reports that the cluster of a started backup is not the
+// cluster that admitted it. It is terminal: the old cluster is gone for good.
+var errClusterReplaced = errors.New("the CamundaCluster was replaced")
+
 // dump applies the Job once and tracks it to completion. A dependency that
 // stopped resolving holds the backup for the mid-run grace, then fails it.
 // A Running backup must either finish or terminalize. It must never park.
@@ -93,31 +97,6 @@ func (r *LogicalBackupRDBMSReconciler) dump(
 	return r.createJob(ctx, backup)
 }
 
-// adopt tracks a Job found under the Job name of the backup, after it proves
-// that the Job belongs to this backup. A Job that carries another UID is a
-// leftover of a same-named backup that was deleted and recreated, or a
-// foreign Job. The controller must never track it, because its completion
-// lets this backup advance without a dump of its own. That is a hard
-// failure, not a wait. The other Job will not change identity.
-func (r *LogicalBackupRDBMSReconciler) adopt(
-	ctx context.Context,
-	backup *v1.LogicalBackupRDBMS,
-	job *batchv1.Job,
-) (hold, error) {
-	if !components.JobBelongsTo(job, backup) {
-		r.fail(backup, fmt.Sprintf(
-			"Job %s/%s exists but belongs to another backup (label %s=%q); this backup cannot "+
-				"track it and will not create a second Job under the same name",
-			job.Namespace, job.Name, components.BackupUIDLabel, job.Labels[components.BackupUIDLabel],
-		))
-
-		return settle, nil
-	}
-	backup.Status.JobName = job.Name
-
-	return r.trackJob(ctx, backup, job)
-}
-
 // createJob re-resolves the dump dependencies and applies the Job. It runs
 // once per backup. Afterwards the controller tracks the recorded name and
 // never re-applies it.
@@ -168,87 +147,6 @@ func (r *LogicalBackupRDBMSReconciler) createJob(
 	}
 
 	return r.claimJobName(ctx, backup, job)
-}
-
-// claimJobName creates the Job as an identity claim: create-only, never SSA.
-// This deviates from the apply rule of the repo on purpose. A forced apply
-// after a NotFound is not atomic. It overwrites the UID label and the owner
-// reference of a same-named Job that lands in between, before adopt can
-// check them. The API server makes a Create atomic, which is the same
-// reasoning as the claim Lease of the cluster. On AlreadyExists, the
-// controller reads the winner and adopts it only when it carries the UID of
-// this backup. A foreign winner is the existing bounded failure.
-func (r *LogicalBackupRDBMSReconciler) claimJobName(
-	ctx context.Context,
-	backup *v1.LogicalBackupRDBMS,
-	job *batchv1.Job,
-) (hold, error) {
-	err := r.Create(ctx, job)
-	switch {
-	case apierrors.IsAlreadyExists(err):
-		var winner batchv1.Job
-		if err := r.APIReader.Get(
-			ctx, types.NamespacedName{Namespace: job.Namespace, Name: job.Name}, &winner,
-		); err != nil {
-			if apierrors.IsNotFound(err) {
-				// The Job was deleted again in between. The requeue re-enters
-				// the claim.
-				return hold{after: shortly.after}, nil
-			}
-
-			return settle, fmt.Errorf("reading the dump Job that won the name: %w", err)
-		}
-
-		return r.adopt(ctx, backup, &winner)
-	case err != nil:
-		return settle, fmt.Errorf("creating the dump Job: %w", err)
-	}
-
-	backup.Status.JobName = job.Name
-	conditions.Stage(backup, progressing(backup, "the dump Job runs"))
-
-	// The watch on owned Jobs wakes the backup on progress. The poll is the
-	// safety net.
-	return hold{after: r.opts.RetryInterval}, nil
-}
-
-// errClusterReplaced reports that the cluster of a started backup is not the
-// cluster that admitted it. It is terminal: the old cluster is gone for good.
-var errClusterReplaced = errors.New("the CamundaCluster was replaced")
-
-// runningCluster reads the cluster of a started backup and checks that it is
-// the cluster that admitted the backup, by UID. A cluster that was deleted
-// and created again under the same name is another cluster with other
-// primary storage, whatever its config hash says. A gone cluster is a
-// mid-run failure that the grace bounds. A replaced cluster returns
-// errClusterReplaced, and the caller fails the backup at once.
-func (r *LogicalBackupRDBMSReconciler) runningCluster(
-	ctx context.Context,
-	backup *v1.LogicalBackupRDBMS,
-) (*v1.CamundaCluster, *conditions.PreCheckFailure, error) {
-	var cluster v1.CamundaCluster
-	if err := r.APIReader.Get(
-		ctx,
-		types.NamespacedName{Namespace: backup.Namespace, Name: backup.Spec.ClusterRef.Name},
-		&cluster,
-	); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, logicalbackup.InvalidReference(
-				"CamundaCluster %s/%s does not exist", backup.Namespace, backup.Spec.ClusterRef.Name,
-			), nil
-		}
-
-		return nil, nil, fmt.Errorf("reading the cluster: %w", err)
-	}
-	if backup.Status.ClusterUID != "" && cluster.UID != backup.Status.ClusterUID {
-		return nil, nil, fmt.Errorf(
-			"%w: CamundaCluster %s/%s admitted the backup with UID %s and now has UID %s, "+
-				"so the dump and the Zeebe backup would not pair",
-			errClusterReplaced, cluster.Namespace, cluster.Name, backup.Status.ClusterUID, cluster.UID,
-		)
-	}
-
-	return &cluster, nil, nil
 }
 
 // resolveRunning re-resolves what the Dumping step needs. It reuses the
@@ -313,36 +211,106 @@ func (r *LogicalBackupRDBMSReconciler) resolveRunning(
 	})
 }
 
-// holdRunning stages a mid-run failure and decides its fate. Within the
-// grace, it holds the backup on a timer. Past the grace, the backup fails.
-// The grace counts from when the dependency first stopped resolving.
-// holdRunning records that time in status, and recovered clears it. So an
-// hours-old backup gets the same full grace as a fresh one.
-func (r *LogicalBackupRDBMSReconciler) holdRunning(
+// runningCluster reads the cluster of a started backup and checks that it is
+// the cluster that admitted the backup, by UID. A cluster that was deleted
+// and created again under the same name is another cluster with other
+// primary storage, whatever its config hash says. A gone cluster is a
+// mid-run failure that the grace bounds. A replaced cluster returns
+// errClusterReplaced, and the caller fails the backup at once.
+func (r *LogicalBackupRDBMSReconciler) runningCluster(
+	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
-	failure *conditions.PreCheckFailure,
-) (hold, error) {
-	now := metav1.Now()
-	if backup.Status.FirstFailedAt == nil {
-		backup.Status.FirstFailedAt = &now
+) (*v1.CamundaCluster, *conditions.PreCheckFailure, error) {
+	var cluster v1.CamundaCluster
+	if err := r.APIReader.Get(
+		ctx,
+		types.NamespacedName{Namespace: backup.Namespace, Name: backup.Spec.ClusterRef.Name},
+		&cluster,
+	); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, logicalbackup.InvalidReference(
+				"CamundaCluster %s/%s does not exist", backup.Namespace, backup.Spec.ClusterRef.Name,
+			), nil
+		}
+
+		return nil, nil, fmt.Errorf("reading the cluster: %w", err)
 	}
-	if now.Sub(backup.Status.FirstFailedAt.Time) > r.opts.MidRunGrace {
+	if backup.Status.ClusterUID != "" && cluster.UID != backup.Status.ClusterUID {
+		return nil, nil, fmt.Errorf(
+			"%w: CamundaCluster %s/%s admitted the backup with UID %s and now has UID %s, "+
+				"so the dump and the Zeebe backup would not pair",
+			errClusterReplaced, cluster.Namespace, cluster.Name, backup.Status.ClusterUID, cluster.UID,
+		)
+	}
+
+	return &cluster, nil, nil
+}
+
+// claimJobName creates the Job as an identity claim: create-only, never SSA.
+// This deviates from the apply rule of the repo on purpose. A forced apply
+// after a NotFound is not atomic. It overwrites the UID label and the owner
+// reference of a same-named Job that lands in between, before adopt can
+// check them. The API server makes a Create atomic, which is the same
+// reasoning as the claim Lease of the cluster. On AlreadyExists, the
+// controller reads the winner and adopts it only when it carries the UID of
+// this backup. A foreign winner is the existing bounded failure.
+func (r *LogicalBackupRDBMSReconciler) claimJobName(
+	ctx context.Context,
+	backup *v1.LogicalBackupRDBMS,
+	job *batchv1.Job,
+) (hold, error) {
+	err := r.Create(ctx, job)
+	switch {
+	case apierrors.IsAlreadyExists(err):
+		var winner batchv1.Job
+		if err := r.APIReader.Get(
+			ctx, types.NamespacedName{Namespace: job.Namespace, Name: job.Name}, &winner,
+		); err != nil {
+			if apierrors.IsNotFound(err) {
+				// The Job was deleted again in between. The requeue re-enters
+				// the claim.
+				return hold{after: shortly.after}, nil
+			}
+
+			return settle, fmt.Errorf("reading the dump Job that won the name: %w", err)
+		}
+
+		return r.adopt(ctx, backup, &winner)
+	case err != nil:
+		return settle, fmt.Errorf("creating the dump Job: %w", err)
+	}
+
+	backup.Status.JobName = job.Name
+	conditions.Stage(backup, progressing(backup, "the dump Job runs"))
+
+	// The watch on owned Jobs wakes the backup on progress. The poll is the
+	// safety net.
+	return hold{after: r.opts.RetryInterval}, nil
+}
+
+// adopt tracks a Job found under the Job name of the backup, after it proves
+// that the Job belongs to this backup. A Job that carries another UID is a
+// leftover of a same-named backup that was deleted and recreated, or a
+// foreign Job. The controller must never track it, because its completion
+// lets this backup advance without a dump of its own. That is a hard
+// failure, not a wait. The other Job will not change identity.
+func (r *LogicalBackupRDBMSReconciler) adopt(
+	ctx context.Context,
+	backup *v1.LogicalBackupRDBMS,
+	job *batchv1.Job,
+) (hold, error) {
+	if !components.JobBelongsTo(job, backup) {
 		r.fail(backup, fmt.Sprintf(
-			"a dependency stopped resolving and did not recover: %s", failure.Message,
+			"Job %s/%s exists but belongs to another backup (label %s=%q); this backup cannot "+
+				"track it and will not create a second Job under the same name",
+			job.Namespace, job.Name, components.BackupUIDLabel, job.Labels[components.BackupUIDLabel],
 		))
 
 		return settle, nil
 	}
+	backup.Status.JobName = job.Name
 
-	conditions.Stage(backup, conditions.Failed(backup, failure))
-
-	return hold{after: r.opts.RetryInterval}, nil
-}
-
-// recovered clears the mid-run failure clock. The step just succeeded at
-// what it needed, so the next failure gets the full grace again.
-func (r *LogicalBackupRDBMSReconciler) recovered(backup *v1.LogicalBackupRDBMS) {
-	backup.Status.FirstFailedAt = nil
+	return r.trackJob(ctx, backup, job)
 }
 
 // trackJob maps the observed Job onto the backup through the same status
@@ -391,23 +359,6 @@ func (r *LogicalBackupRDBMSReconciler) trackJob(
 	return hold{after: r.opts.RetryInterval}, nil
 }
 
-// podsOf lists the pods of this backup's dump Job in the live API, by the
-// backup UID that the pod template carries.
-func (r *LogicalBackupRDBMSReconciler) podsOf(
-	ctx context.Context,
-	backup *v1.LogicalBackupRDBMS,
-) ([]corev1.Pod, error) {
-	var pods corev1.PodList
-	if err := r.APIReader.List(
-		ctx, &pods, client.InNamespace(backup.Namespace),
-		client.MatchingLabels{components.BackupUIDLabel: string(backup.UID)},
-	); err != nil {
-		return nil, fmt.Errorf("listing the pods of the dump Job: %w", err)
-	}
-
-	return pods.Items, nil
-}
-
 // stuckPod reports the first pod of the backup's Job that cannot start as a
 // mid-run failure that names the pod and the reason. It selects the pods by
 // the backup UID that the pod template carries, so a leftover pod of another
@@ -427,4 +378,53 @@ func (r *LogicalBackupRDBMSReconciler) stuckPod(
 		map[string]string{components.BackupUIDLabel: string(backup.UID)},
 		"the dump Job",
 	)
+}
+
+// holdRunning stages a mid-run failure and decides its fate. Within the
+// grace, it holds the backup on a timer. Past the grace, the backup fails.
+// The grace counts from when the dependency first stopped resolving.
+// holdRunning records that time in status, and recovered clears it. So an
+// hours-old backup gets the same full grace as a fresh one.
+func (r *LogicalBackupRDBMSReconciler) holdRunning(
+	backup *v1.LogicalBackupRDBMS,
+	failure *conditions.PreCheckFailure,
+) (hold, error) {
+	now := metav1.Now()
+	if backup.Status.FirstFailedAt == nil {
+		backup.Status.FirstFailedAt = &now
+	}
+	if now.Sub(backup.Status.FirstFailedAt.Time) > r.opts.MidRunGrace {
+		r.fail(backup, fmt.Sprintf(
+			"a dependency stopped resolving and did not recover: %s", failure.Message,
+		))
+
+		return settle, nil
+	}
+
+	conditions.Stage(backup, conditions.Failed(backup, failure))
+
+	return hold{after: r.opts.RetryInterval}, nil
+}
+
+// recovered clears the mid-run failure clock. The step just succeeded at
+// what it needed, so the next failure gets the full grace again.
+func (r *LogicalBackupRDBMSReconciler) recovered(backup *v1.LogicalBackupRDBMS) {
+	backup.Status.FirstFailedAt = nil
+}
+
+// podsOf lists the pods of this backup's dump Job in the live API, by the
+// backup UID that the pod template carries.
+func (r *LogicalBackupRDBMSReconciler) podsOf(
+	ctx context.Context,
+	backup *v1.LogicalBackupRDBMS,
+) ([]corev1.Pod, error) {
+	var pods corev1.PodList
+	if err := r.APIReader.List(
+		ctx, &pods, client.InNamespace(backup.Namespace),
+		client.MatchingLabels{components.BackupUIDLabel: string(backup.UID)},
+	); err != nil {
+		return nil, fmt.Errorf("listing the pods of the dump Job: %w", err)
+	}
+
+	return pods.Items, nil
 }

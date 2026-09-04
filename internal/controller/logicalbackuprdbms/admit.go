@@ -40,6 +40,24 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/mirror"
 )
 
+// dumpResolution is what the Dumping step needs to render its Job.
+type dumpResolution struct {
+	cluster *v1.CamundaCluster
+	bucket  *v1.ObjectStorageConfig
+	// pod shapes the pod of the Job, and image runs its dump container. They
+	// come from different owners. The pod settings can come from the backup,
+	// but the image always comes from the cluster. podOwned reports that
+	// they come from the backup.
+	pod          *v1.DumpPodSpec
+	podOwned     bool
+	image        string
+	account      string
+	bucketSecret string
+	dbSecret     v1.LocalCredentialsSecretRef
+	server       *v1.DatabaseServerConfig
+	dbConfig     *v1.DatabaseConfig
+}
+
 // admit runs the full pre-checks and starts the backup when they pass. The
 // full pre-checks run only here. A backup that started already owns its
 // resolved identity, and a pre-check that runs again mid-run lets a broken
@@ -134,37 +152,6 @@ func (r *LogicalBackupRDBMSReconciler) admit(
 	return shortly, nil
 }
 
-// highestSiblingBackupID returns the highest backup ID among the other
-// backups of this kind that name the same cluster, terminal ones included, or
-// zero. It arbitrates the ID allocation against the siblings that this
-// controller can see. A clock that stepped backwards then cannot hand out an
-// ID that one of them holds. Nothing arbitrates the IDs of deleted resources
-// for the dump. The Zeebe request carries no id, so the cluster answers no
-// conflict for it. That is why the dump key carries the UID of the backup
-// (components.DumpObjectKey). A reused id can never name the object of
-// another backup.
-func (r *LogicalBackupRDBMSReconciler) highestSiblingBackupID(
-	ctx context.Context,
-	backup *v1.LogicalBackupRDBMS,
-) (int64, error) {
-	var list v1.LogicalBackupRDBMSList
-	if err := r.APIReader.List(ctx, &list, client.InNamespace(backup.Namespace)); err != nil {
-		return 0, fmt.Errorf("listing LogicalBackupRDBMS: %w", err)
-	}
-
-	cluster := clusterKey(backup)
-	var highest int64
-	for i := range list.Items {
-		other := &list.Items[i]
-		if other.UID == backup.UID || clusterKey(other) != cluster {
-			continue
-		}
-		highest = max(highest, other.Status.BackupID)
-	}
-
-	return highest, nil
-}
-
 // parkPending records a pre-check failure as the documented Pending phase and
 // a Ready condition that carries the reason. Nothing watches most of the
 // checked references from here, so the reconcile comes back on a timer.
@@ -207,189 +194,6 @@ func clusterConverged(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
 			cluster.Namespace, cluster.Name, cluster.Generation, observed, readyState,
 		),
 	}
-}
-
-// zeebeWorkload reads the live Zeebe StatefulSet of the cluster. Its pod
-// template says what Zeebe runs. A workload that is not rendered yet is a
-// wait, reported as Progressing.
-func (r *LogicalBackupRDBMSReconciler) zeebeWorkload(
-	ctx context.Context,
-	cluster *v1.CamundaCluster,
-) (*appsv1.StatefulSet, *conditions.PreCheckFailure, error) {
-	var workload appsv1.StatefulSet
-	key := types.NamespacedName{
-		Namespace: cluster.Namespace,
-		Name:      camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
-	}
-	if err := r.APIReader.Get(ctx, key, &workload); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, &conditions.PreCheckFailure{
-				Reason: v1.ReasonProgressing,
-				Message: fmt.Sprintf(
-					"the Zeebe workload %s is not rendered yet; the backup needs the configuration "+
-						"it runs to pin", key,
-				),
-			}, nil
-		}
-
-		return nil, nil, fmt.Errorf("reading the Zeebe workload %s: %w", key, err)
-	}
-
-	return &workload, nil, nil
-}
-
-// zeebeConfigHash reads the config hash that the live Zeebe pod template
-// carries. The hash is the strongest observable identity of the
-// configuration that Zeebe runs. Mutable referents, for example the
-// DatabaseConfig and the DatabaseServerConfig, enter that hash without a
-// bump of the cluster generation. So the converged generation alone cannot
-// prove that Zeebe still runs the database that a dump captures. The backup
-// pins the hash at start and requires it unchanged before the Job and before
-// the Zeebe request.
-func (r *LogicalBackupRDBMSReconciler) zeebeConfigHash(
-	ctx context.Context,
-	cluster *v1.CamundaCluster,
-) (string, *conditions.PreCheckFailure, error) {
-	workload, failure, err := r.zeebeWorkload(ctx, cluster)
-	if err != nil || failure != nil {
-		return "", failure, err
-	}
-
-	hash := workload.Spec.Template.Annotations[camundacluster.ConfigHashAnnotation]
-	if hash == "" {
-		return "", &conditions.PreCheckFailure{
-			Reason: v1.ReasonProgressing,
-			Message: fmt.Sprintf(
-				"the Zeebe workload %s/%s carries no config hash yet; the backup needs the "+
-					"configuration it runs to pin", workload.Namespace, workload.Name,
-			),
-		}, nil
-	}
-
-	return hash, nil, nil
-}
-
-// zeebeRunsDatabase requires the database that a dump captures to be the one
-// that the live Zeebe pod template names. The database of the dump is the
-// DatabaseServerConfig host and port and the DatabaseConfig database name, as
-// resolved now. The pinned config hash proves only that Zeebe did not roll
-// since the start. It cannot tell that the referents changed while the
-// cluster controller did not render them yet. In that window the dump reads
-// the new referents while Zeebe still runs the old database. Then a dump and
-// a Zeebe backup of two databases report one restore point. The template
-// carries the URL that Zeebe runs, so the function compares the two directly.
-// A mismatch is a wait. No dump starts until the cluster rolls to the
-// referenced database or the referents go back.
-func (r *LogicalBackupRDBMSReconciler) zeebeRunsDatabase(
-	ctx context.Context,
-	cluster *v1.CamundaCluster,
-	server *v1.DatabaseServerConfig,
-	dbConfig *v1.DatabaseConfig,
-) (*conditions.PreCheckFailure, error) {
-	workload, failure, err := r.zeebeWorkload(ctx, cluster)
-	if err != nil || failure != nil {
-		return failure, err
-	}
-
-	running, ok := templateEnvValue(&workload.Spec.Template, camundaconfig.KeyRDBMSURL.Env())
-	if !ok {
-		return &conditions.PreCheckFailure{
-			Reason: v1.ReasonProgressing,
-			Message: fmt.Sprintf(
-				"the Zeebe workload %s/%s carries no relational storage URL yet; the backup needs "+
-					"the database it runs to compare against", workload.Namespace, workload.Name,
-			),
-		}, nil
-	}
-
-	wanted := camundacluster.RDBMSURL(server.Spec.Host, server.Spec.Port, dbConfig.Spec.DatabaseName)
-	if running != wanted {
-		return &conditions.PreCheckFailure{
-			Reason: v1.ReasonProgressing,
-			Message: fmt.Sprintf(
-				"Zeebe of CamundaCluster %s/%s runs %s, but DatabaseConfig %s/%s and "+
-					"DatabaseServerConfig %s now resolve to %s; the dump waits until Zeebe runs "+
-					"the database it would capture",
-				cluster.Namespace, cluster.Name, running,
-				dbConfig.Namespace, dbConfig.Name, server.Name, wanted,
-			),
-		}, nil
-	}
-
-	return nil, nil
-}
-
-// templateEnvValue returns the plain value of the environment variable name
-// on any container of the template, and whether one carries it as a value.
-func templateEnvValue(template *corev1.PodTemplateSpec, name string) (string, bool) {
-	for i := range template.Spec.Containers {
-		for _, env := range template.Spec.Containers[i].Env {
-			if env.Name == name && env.ValueFrom == nil {
-				return env.Value, true
-			}
-		}
-	}
-
-	return "", false
-}
-
-// workloadUnchanged requires the live Zeebe workload to still carry the
-// config hash pinned at start. A changed hash means that Zeebe rolled to
-// another configuration, for example a swapped database. A dump paired with
-// a Zeebe backup taken now then reports an unusable restore point as
-// complete.
-func (r *LogicalBackupRDBMSReconciler) workloadUnchanged(
-	ctx context.Context,
-	backup *v1.LogicalBackupRDBMS,
-	cluster *v1.CamundaCluster,
-) (*conditions.PreCheckFailure, error) {
-	hash, failure, err := r.zeebeConfigHash(ctx, cluster)
-	if err != nil || failure != nil {
-		return failure, err
-	}
-	if hash != backup.Status.WorkloadConfigHash {
-		return logicalbackup.InvalidReference(
-			"the Zeebe workload of CamundaCluster %s/%s now runs config hash %s, but the backup "+
-				"pinned %s at start; its configuration — for example the database — changed in "+
-				"between, so the dump and a Zeebe backup taken now would not be one restore point",
-			cluster.Namespace, cluster.Name, hash, backup.Status.WorkloadConfigHash,
-		), nil
-	}
-
-	return nil, nil
-}
-
-// checkManagement checks that the management binding is usable at admission,
-// so a backup never dumps gigabytes that it cannot pair with a Zeebe backup
-// afterwards. The step that needs the client builds it again.
-func (r *LogicalBackupRDBMSReconciler) checkManagement(
-	ctx context.Context,
-	cluster *v1.CamundaCluster,
-) *conditions.PreCheckFailure {
-	_, failure, err := management.NewClient(ctx, r.APIReader, cluster)
-	if err != nil {
-		return &conditions.PreCheckFailure{Reason: v1.ReasonConnectionFailed, Message: err.Error()}
-	}
-
-	return failure
-}
-
-// dumpResolution is what the Dumping step needs to render its Job.
-type dumpResolution struct {
-	cluster *v1.CamundaCluster
-	bucket  *v1.ObjectStorageConfig
-	// pod shapes the pod of the Job, and image runs its dump container. They
-	// come from different owners. The pod settings can come from the backup,
-	// but the image always comes from the cluster. podOwned reports that
-	// they come from the backup.
-	pod          *v1.DumpPodSpec
-	podOwned     bool
-	image        string
-	account      string
-	bucketSecret string
-	dbSecret     v1.LocalCredentialsSecretRef
-	server       *v1.DatabaseServerConfig
-	dbConfig     *v1.DatabaseConfig
 }
 
 // resolveDump resolves everything that the dump Job renders from, one concern
@@ -519,6 +323,56 @@ func serverProbedForCurrentSpec(server *v1.DatabaseServerConfig) bool {
 	return ready != nil &&
 		ready.Status == metav1.ConditionTrue &&
 		ready.ObservedGeneration == server.Generation
+}
+
+// zeebeRunsDatabase requires the database that a dump captures to be the one
+// that the live Zeebe pod template names. The database of the dump is the
+// DatabaseServerConfig host and port and the DatabaseConfig database name, as
+// resolved now. The pinned config hash proves only that Zeebe did not roll
+// since the start. It cannot tell that the referents changed while the
+// cluster controller did not render them yet. In that window the dump reads
+// the new referents while Zeebe still runs the old database. Then a dump and
+// a Zeebe backup of two databases report one restore point. The template
+// carries the URL that Zeebe runs, so the function compares the two directly.
+// A mismatch is a wait. No dump starts until the cluster rolls to the
+// referenced database or the referents go back.
+func (r *LogicalBackupRDBMSReconciler) zeebeRunsDatabase(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+	server *v1.DatabaseServerConfig,
+	dbConfig *v1.DatabaseConfig,
+) (*conditions.PreCheckFailure, error) {
+	workload, failure, err := r.zeebeWorkload(ctx, cluster)
+	if err != nil || failure != nil {
+		return failure, err
+	}
+
+	running, ok := templateEnvValue(&workload.Spec.Template, camundaconfig.KeyRDBMSURL.Env())
+	if !ok {
+		return &conditions.PreCheckFailure{
+			Reason: v1.ReasonProgressing,
+			Message: fmt.Sprintf(
+				"the Zeebe workload %s/%s carries no relational storage URL yet; the backup needs "+
+					"the database it runs to compare against", workload.Namespace, workload.Name,
+			),
+		}, nil
+	}
+
+	wanted := camundacluster.RDBMSURL(server.Spec.Host, server.Spec.Port, dbConfig.Spec.DatabaseName)
+	if running != wanted {
+		return &conditions.PreCheckFailure{
+			Reason: v1.ReasonProgressing,
+			Message: fmt.Sprintf(
+				"Zeebe of CamundaCluster %s/%s runs %s, but DatabaseConfig %s/%s and "+
+					"DatabaseServerConfig %s now resolve to %s; the dump waits until Zeebe runs "+
+					"the database it would capture",
+				cluster.Namespace, cluster.Name, running,
+				dbConfig.Namespace, dbConfig.Name, server.Name, wanted,
+			),
+		}, nil
+	}
+
+	return nil, nil
 }
 
 // resolveCredentials checks the two Secrets that the Job mounts. Both
@@ -656,6 +510,52 @@ func dumpBlock(
 	return nil, false, image
 }
 
+// checkManagement checks that the management binding is usable at admission,
+// so a backup never dumps gigabytes that it cannot pair with a Zeebe backup
+// afterwards. The step that needs the client builds it again.
+func (r *LogicalBackupRDBMSReconciler) checkManagement(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+) *conditions.PreCheckFailure {
+	_, failure, err := management.NewClient(ctx, r.APIReader, cluster)
+	if err != nil {
+		return &conditions.PreCheckFailure{Reason: v1.ReasonConnectionFailed, Message: err.Error()}
+	}
+
+	return failure
+}
+
+// highestSiblingBackupID returns the highest backup ID among the other
+// backups of this kind that name the same cluster, terminal ones included, or
+// zero. It arbitrates the ID allocation against the siblings that this
+// controller can see. A clock that stepped backwards then cannot hand out an
+// ID that one of them holds. Nothing arbitrates the IDs of deleted resources
+// for the dump. The Zeebe request carries no id, so the cluster answers no
+// conflict for it. That is why the dump key carries the UID of the backup
+// (components.DumpObjectKey). A reused id can never name the object of
+// another backup.
+func (r *LogicalBackupRDBMSReconciler) highestSiblingBackupID(
+	ctx context.Context,
+	backup *v1.LogicalBackupRDBMS,
+) (int64, error) {
+	var list v1.LogicalBackupRDBMSList
+	if err := r.APIReader.List(ctx, &list, client.InNamespace(backup.Namespace)); err != nil {
+		return 0, fmt.Errorf("listing LogicalBackupRDBMS: %w", err)
+	}
+
+	cluster := clusterKey(backup)
+	var highest int64
+	for i := range list.Items {
+		other := &list.Items[i]
+		if other.UID == backup.UID || clusterKey(other) != cluster {
+			continue
+		}
+		highest = max(highest, other.Status.BackupID)
+	}
+
+	return highest, nil
+}
+
 // start allocates the identity of the backup, pins the bucket that it writes
 // through, and records the effective restore size of the brokers. The id
 // comes after the highest id that a visible sibling holds, so a clock that
@@ -700,4 +600,104 @@ func (r *LogicalBackupRDBMSReconciler) start(
 		cluster.Namespace,
 		cluster.Name,
 	)
+}
+
+// templateEnvValue returns the plain value of the environment variable name
+// on any container of the template, and whether one carries it as a value.
+func templateEnvValue(template *corev1.PodTemplateSpec, name string) (string, bool) {
+	for i := range template.Spec.Containers {
+		for _, env := range template.Spec.Containers[i].Env {
+			if env.Name == name && env.ValueFrom == nil {
+				return env.Value, true
+			}
+		}
+	}
+
+	return "", false
+}
+
+// workloadUnchanged requires the live Zeebe workload to still carry the
+// config hash pinned at start. A changed hash means that Zeebe rolled to
+// another configuration, for example a swapped database. A dump paired with
+// a Zeebe backup taken now then reports an unusable restore point as
+// complete.
+func (r *LogicalBackupRDBMSReconciler) workloadUnchanged(
+	ctx context.Context,
+	backup *v1.LogicalBackupRDBMS,
+	cluster *v1.CamundaCluster,
+) (*conditions.PreCheckFailure, error) {
+	hash, failure, err := r.zeebeConfigHash(ctx, cluster)
+	if err != nil || failure != nil {
+		return failure, err
+	}
+	if hash != backup.Status.WorkloadConfigHash {
+		return logicalbackup.InvalidReference(
+			"the Zeebe workload of CamundaCluster %s/%s now runs config hash %s, but the backup "+
+				"pinned %s at start; its configuration — for example the database — changed in "+
+				"between, so the dump and a Zeebe backup taken now would not be one restore point",
+			cluster.Namespace, cluster.Name, hash, backup.Status.WorkloadConfigHash,
+		), nil
+	}
+
+	return nil, nil
+}
+
+// zeebeConfigHash reads the config hash that the live Zeebe pod template
+// carries. The hash is the strongest observable identity of the
+// configuration that Zeebe runs. Mutable referents, for example the
+// DatabaseConfig and the DatabaseServerConfig, enter that hash without a
+// bump of the cluster generation. So the converged generation alone cannot
+// prove that Zeebe still runs the database that a dump captures. The backup
+// pins the hash at start and requires it unchanged before the Job and before
+// the Zeebe request.
+func (r *LogicalBackupRDBMSReconciler) zeebeConfigHash(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+) (string, *conditions.PreCheckFailure, error) {
+	workload, failure, err := r.zeebeWorkload(ctx, cluster)
+	if err != nil || failure != nil {
+		return "", failure, err
+	}
+
+	hash := workload.Spec.Template.Annotations[camundacluster.ConfigHashAnnotation]
+	if hash == "" {
+		return "", &conditions.PreCheckFailure{
+			Reason: v1.ReasonProgressing,
+			Message: fmt.Sprintf(
+				"the Zeebe workload %s/%s carries no config hash yet; the backup needs the "+
+					"configuration it runs to pin", workload.Namespace, workload.Name,
+			),
+		}, nil
+	}
+
+	return hash, nil, nil
+}
+
+// zeebeWorkload reads the live Zeebe StatefulSet of the cluster. Its pod
+// template says what Zeebe runs. A workload that is not rendered yet is a
+// wait, reported as Progressing.
+func (r *LogicalBackupRDBMSReconciler) zeebeWorkload(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+) (*appsv1.StatefulSet, *conditions.PreCheckFailure, error) {
+	var workload appsv1.StatefulSet
+	key := types.NamespacedName{
+		Namespace: cluster.Namespace,
+		Name:      camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
+	}
+	if err := r.APIReader.Get(ctx, key, &workload); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, &conditions.PreCheckFailure{
+				Reason: v1.ReasonProgressing,
+				Message: fmt.Sprintf(
+					"the Zeebe workload %s is not rendered yet; the backup needs the configuration "+
+						"it runs to pin", key,
+				),
+			}, nil
+		}
+
+		return nil, nil, fmt.Errorf("reading the Zeebe workload %s: %w", key, err)
+	}
+
+	return &workload, nil, nil
 }

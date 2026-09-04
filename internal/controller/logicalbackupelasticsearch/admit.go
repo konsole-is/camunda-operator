@@ -37,6 +37,14 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
 
+// resolveStorage reads the storage contract of the cluster.
+// errNoStorage marks a cluster that names no storage contract.
+var errNoStorage = errors.New("no storage contract")
+
+// errBucketMoved marks a cluster whose backup store is no longer the bucket
+// the backup pinned, at the location it pinned.
+var errBucketMoved = errors.New("the backup store moved")
+
 // admit runs the full pre-checks and starts the backup. Admission ends when
 // the backup ID is allocated. From then on the backup never returns here. A
 // dependency that breaks mid-run is the state machine's to handle, not a
@@ -115,66 +123,6 @@ func (r *Reconciler) admit(
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
 }
 
-// clusterReplaced reports whether the live cluster is a different resource
-// than the one the backup pinned at its start.
-func clusterReplaced(backup *v1.LogicalBackupElasticsearch, cluster *v1.CamundaCluster) bool {
-	return backup.Status.ClusterUID != "" && string(cluster.UID) != backup.Status.ClusterUID
-}
-
-// failClusterLost ends the backup terminally with message. The cluster that
-// the backup pinned no longer exists: it is gone, or a same-named cluster
-// replaced it. Nothing of this backup is left to resume, so no management
-// call is made. The terminal reason is Failed, never ResumeFailed. A
-// ResumeFailed holder keeps its claim. If a claim is kept for a cluster
-// that is gone, it blocks every backup of a cluster recreated later under
-// the name.
-func (r *Reconciler) failClusterLost(backup *v1.LogicalBackupElasticsearch, message string) {
-	now := metav1.Now()
-	backup.Status.Phase = v1.LogicalBackupFailed
-	backup.Status.TerminalReason = v1.ReasonFailed
-	backup.Status.FailureMessage = message
-	backup.Status.CompletionTime = &now
-	conditions.Stage(backup, terminalReady(backup))
-	r.EventRecorder.Eventf(
-		backup,
-		nil,
-		corev1.EventTypeWarning,
-		eventReasonStepFailed,
-		eventActionBackup,
-		"%s",
-		backup.Status.FailureMessage,
-	)
-}
-
-// highestSiblingBackupID returns the highest backup ID among the other
-// backups of this kind that name the same cluster, or zero. It arbitrates
-// the ID allocation against the siblings that this controller can see. A
-// clock that stepped backwards then cannot hand out an ID that one of them
-// holds. The residual stays with the cluster: the IDs of the other backup
-// kind and of deleted resources are arbitrated only by its own conflict
-// answer.
-func (r *Reconciler) highestSiblingBackupID(
-	ctx context.Context,
-	backup *v1.LogicalBackupElasticsearch,
-) (int64, error) {
-	var list v1.LogicalBackupElasticsearchList
-	if err := r.APIReader.List(ctx, &list, client.InNamespace(backup.Namespace)); err != nil {
-		return 0, fmt.Errorf("listing LogicalBackupElasticsearch: %w", err)
-	}
-
-	cluster := clusterKey(backup)
-	var highest int64
-	for i := range list.Items {
-		other := &list.Items[i]
-		if other.UID == backup.UID || clusterKey(other) != cluster {
-			continue
-		}
-		highest = max(highest, other.Status.BackupID)
-	}
-
-	return highest, nil
-}
-
 // admitBinding checks the management binding of the cluster once, before the
 // start. A broken binding blocks admission with its own reason. Without this
 // check, the first step fails on it instead. done reports that the caller
@@ -211,6 +159,35 @@ func (r *Reconciler) admitBinding(
 	}
 
 	return ctrl.Result{}, false, nil
+}
+
+// highestSiblingBackupID returns the highest backup ID among the other
+// backups of this kind that name the same cluster, or zero. It arbitrates
+// the ID allocation against the siblings that this controller can see. A
+// clock that stepped backwards then cannot hand out an ID that one of them
+// holds. The residual stays with the cluster: the IDs of the other backup
+// kind and of deleted resources are arbitrated only by its own conflict
+// answer.
+func (r *Reconciler) highestSiblingBackupID(
+	ctx context.Context,
+	backup *v1.LogicalBackupElasticsearch,
+) (int64, error) {
+	var list v1.LogicalBackupElasticsearchList
+	if err := r.APIReader.List(ctx, &list, client.InNamespace(backup.Namespace)); err != nil {
+		return 0, fmt.Errorf("listing LogicalBackupElasticsearch: %w", err)
+	}
+
+	cluster := clusterKey(backup)
+	var highest int64
+	for i := range list.Items {
+		other := &list.Items[i]
+		if other.UID == backup.UID || clusterKey(other) != cluster {
+			continue
+		}
+		highest = max(highest, other.Status.BackupID)
+	}
+
+	return highest, nil
 }
 
 // start records the identity of the procedure before the first management
@@ -337,6 +314,37 @@ func (r *Reconciler) run(
 	return r.runStep(ctx, backup, &cluster)
 }
 
+// failClusterLost ends the backup terminally with message. The cluster that
+// the backup pinned no longer exists: it is gone, or a same-named cluster
+// replaced it. Nothing of this backup is left to resume, so no management
+// call is made. The terminal reason is Failed, never ResumeFailed. A
+// ResumeFailed holder keeps its claim. If a claim is kept for a cluster
+// that is gone, it blocks every backup of a cluster recreated later under
+// the name.
+func (r *Reconciler) failClusterLost(backup *v1.LogicalBackupElasticsearch, message string) {
+	now := metav1.Now()
+	backup.Status.Phase = v1.LogicalBackupFailed
+	backup.Status.TerminalReason = v1.ReasonFailed
+	backup.Status.FailureMessage = message
+	backup.Status.CompletionTime = &now
+	conditions.Stage(backup, terminalReady(backup))
+	r.EventRecorder.Eventf(
+		backup,
+		nil,
+		corev1.EventTypeWarning,
+		eventReasonStepFailed,
+		eventActionBackup,
+		"%s",
+		backup.Status.FailureMessage,
+	)
+}
+
+// clusterReplaced reports whether the live cluster is a different resource
+// than the one the backup pinned at its start.
+func clusterReplaced(backup *v1.LogicalBackupElasticsearch, cluster *v1.CamundaCluster) bool {
+	return backup.Status.ClusterUID != "" && string(cluster.UID) != backup.Status.ClusterUID
+}
+
 // backfillStorageSizes fills the restore sizes that start did not compute. It
 // is best effort. A transient blip at start must not leave them empty
 // forever. It runs only while exporting runs: it is a metadata call, and it
@@ -363,39 +371,6 @@ func (r *Reconciler) backfillStorageSizes(
 	logicalbackup.RecordStorageSizes(sizes, computed)
 }
 
-// elasticsearchSize computes the effective Elasticsearch restore size from
-// the node filesystem statistics.
-func (r *Reconciler) elasticsearchSize(
-	ctx context.Context,
-	storage *v1.SecondaryStorageConfig,
-) (*resource.Quantity, error) {
-	es, failure, err := secondarystorageconfig.ElasticsearchAdmin(ctx, r.APIReader, storage)
-	if err != nil {
-		return nil, err
-	}
-	if failure != nil {
-		return nil, errors.New(failure.Message)
-	}
-
-	total, used, err := es.MaxNodeFSTotalAndUsedBytes(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return logicalbackup.ElasticsearchSize(total, used), nil
-}
-
-// resolveStorage reads the storage contract of the cluster.
-// errNoStorage marks a cluster that names no storage contract.
-var errNoStorage = errors.New("no storage contract")
-
-// storageMissing reports whether a resolveStorage error means that the
-// storage contract is gone: the cluster names none, or the named one does
-// not exist. Every other error is a transient read.
-func storageMissing(err error) bool {
-	return errors.Is(err, errNoStorage) || apierrors.IsNotFound(err)
-}
-
 func (r *Reconciler) resolveStorage(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -418,9 +393,34 @@ func (r *Reconciler) resolveStorage(
 	return &storage, nil
 }
 
-// errBucketMoved marks a cluster whose backup store is no longer the bucket
-// the backup pinned, at the location it pinned.
-var errBucketMoved = errors.New("the backup store moved")
+// elasticsearchSize computes the effective Elasticsearch restore size from
+// the node filesystem statistics.
+func (r *Reconciler) elasticsearchSize(
+	ctx context.Context,
+	storage *v1.SecondaryStorageConfig,
+) (*resource.Quantity, error) {
+	es, failure, err := secondarystorageconfig.ElasticsearchAdmin(ctx, r.APIReader, storage)
+	if err != nil {
+		return nil, err
+	}
+	if failure != nil {
+		return nil, errors.New(failure.Message)
+	}
+
+	total, used, err := es.MaxNodeFSTotalAndUsedBytes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return logicalbackup.ElasticsearchSize(total, used), nil
+}
+
+// storageMissing reports whether a resolveStorage error means that the
+// storage contract is gone: the cluster names none, or the named one does
+// not exist. Every other error is a transient read.
+func storageMissing(err error) bool {
+	return errors.Is(err, errNoStorage) || apierrors.IsNotFound(err)
+}
 
 // pinnedBucketCurrent verifies that the cluster still backs up through the
 // ObjectStorageConfig that the backup pinned at its start. It also verifies
