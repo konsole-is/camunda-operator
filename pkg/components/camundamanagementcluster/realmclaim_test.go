@@ -129,9 +129,9 @@ func TestRealmClaimHolderOfRefusesAForeignLease(t *testing.T) {
 
 // TestNewRealmClaimLeaseMatchesTheGolden pins the realm claim Lease against
 // the shape the operator wrote before the protocol moved to pkg/leaseclaim. A
-// claim Lease that changes its name, its labels or its annotations loses the
-// operator every realm it holds, because a running holder meets its claimants
-// on a Lease none of them reads any more.
+// change of its name, its labels or its annotations loses the operator every
+// realm it holds. The running holder keeps a Lease that no later claimant
+// reads.
 func TestNewRealmClaimLeaseMatchesTheGolden(t *testing.T) {
 	cases := map[string]struct {
 		file   string

@@ -65,8 +65,8 @@ func NewClaimLease(namespace, key string, database *v1.Database) *coordinationv1
 
 // ClaimSchema is the shape of the claim Leases of a logical database. The
 // Database controller runs the claim protocol of pkg/leaseclaim over it.
-func ClaimSchema() leaseclaim.Schema {
-	return leaseclaim.Schema{
+func ClaimSchema() leaseclaim.Schema[*v1.Database] {
+	return leaseclaim.Schema[*v1.Database]{
 		Prefix:                    claimLeasePrefix,
 		Noun:                      "claim",
 		HolderNamespaceAnnotation: ClaimHolderNamespaceAnnotation,

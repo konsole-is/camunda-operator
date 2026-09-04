@@ -19,6 +19,8 @@ package leaseclaim
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"fmt"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,12 +46,14 @@ type Holder struct {
 
 // Schema is the shape of the claim Leases of one kind of claim. A caller
 // declares it once beside the names of its own resources, and the Lease
-// shape, the sweep selector and the protocol all read it.
+// shape, the sweep selector and the protocol all read it. T is the kind that
+// takes this claim, so a Schema of one claim never renders a Lease for the
+// holder of another.
 //
 // Two Schema values must never share a Prefix or an annotation key. Each one
-// names a separate claim, and a claimant of one must not read the Leases of
-// the other as its own.
-type Schema struct {
+// names a separate claim. A claimant of one that read the Leases of the other
+// as its own would hand a key to two holders.
+type Schema[T client.Object] struct {
 	// Prefix starts the name of every Lease of this claim. It ends with a
 	// hyphen, and the hash of the claim key follows it.
 	Prefix string
@@ -72,7 +76,7 @@ type Schema struct {
 
 // NewLease builds the Lease that claims key for owner in namespace. The API
 // server serializes the create, so exactly one claimant holds the key.
-func (s Schema) NewLease(namespace, key string, owner client.Object) *coordinationv1.Lease {
+func (s Schema[T]) NewLease(namespace, key string, owner T) *coordinationv1.Lease {
 	identity := labels.BoundedName(
 		owner.GetNamespace()+"/"+owner.GetName(), MaxHolderIdentityLength,
 	)
@@ -99,7 +103,7 @@ func (s Schema) NewLease(namespace, key string, owner client.Object) *coordinati
 // DNS subdomain, so the name is built from a hash of it. Every claimant of
 // one key therefore meets on one Lease, and the key annotation says which key
 // that is.
-func (s Schema) LeaseName(key string) string {
+func (s Schema[T]) LeaseName(key string) string {
 	sum := sha256.Sum256([]byte(key))
 
 	return s.Prefix + hex.EncodeToString(sum[:])[:40]
@@ -108,7 +112,7 @@ func (s Schema) LeaseName(key string) string {
 // HolderOf returns the resource that the annotations of the Lease name, and
 // whether all three of them are there. Only the annotations carry ownership.
 // The holderIdentity of the Lease is a display form for a reader.
-func (s Schema) HolderOf(lease *coordinationv1.Lease) (Holder, bool) {
+func (s Schema[T]) HolderOf(lease *coordinationv1.Lease) (Holder, bool) {
 	annotations := lease.GetAnnotations()
 	holder := Holder{
 		NamespacedName: types.NamespacedName{
@@ -122,4 +126,60 @@ func (s Schema) HolderOf(lease *coordinationv1.Lease) (Holder, bool) {
 	}
 
 	return holder, true
+}
+
+// Validate reports whether the Schema names a claim that a claimant reads
+// back. A missing prefix, a missing annotation key and a missing Labels
+// function each write a Lease that no other claimant recognises as a claim.
+// Two annotation keys that are equal drop one of the values the ownership
+// decision reads.
+func (s Schema[T]) Validate() error {
+	if s.Prefix == "" {
+		return errors.New("the Lease name prefix is empty")
+	}
+	if s.Noun == "" {
+		return errors.New("the noun of the claim is empty")
+	}
+	if s.Labels == nil {
+		return errors.New("the Labels function is nil")
+	}
+
+	seen := make(map[string]string, 4)
+	for _, annotation := range s.annotations() {
+		if annotation.key == "" {
+			return fmt.Errorf("the %s is empty", annotation.field)
+		}
+		if first, taken := seen[annotation.key]; taken {
+			return fmt.Errorf(
+				"the %s and the %s are both %q", first, annotation.field, annotation.key,
+			)
+		}
+		seen[annotation.key] = annotation.field
+	}
+
+	return nil
+}
+
+// schemaAnnotation is one annotation key of a Schema beside the name of the
+// field that holds it, so Validate names the field a caller has to fix.
+type schemaAnnotation struct {
+	field string
+	key   string
+}
+
+// annotations lists the annotation keys of the Schema in a fixed order.
+func (s Schema[T]) annotations() []schemaAnnotation {
+	return []schemaAnnotation{
+		{"HolderNamespaceAnnotation", s.HolderNamespaceAnnotation},
+		{"HolderNameAnnotation", s.HolderNameAnnotation},
+		{"HolderUIDAnnotation", s.HolderUIDAnnotation},
+		{"KeyAnnotation", s.KeyAnnotation},
+	}
+}
+
+// HolderOf is the holder identity of obj: its namespace, its name and its
+// UID. A claimant passes it to say who it is, and a sweep passes it to say
+// whose Leases to read.
+func HolderOf(obj client.Object) Holder {
+	return Holder{NamespacedName: client.ObjectKeyFromObject(obj), UID: obj.GetUID()}
 }

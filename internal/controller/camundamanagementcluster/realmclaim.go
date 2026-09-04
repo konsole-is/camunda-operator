@@ -58,11 +58,12 @@ func (r *Reconciler) claimRealm(
 		return nil, false, nil
 	}
 
+	claims := r.realmClaims()
 	current := components.RealmTarget(res.Input.Provider)
 	var parked *conditions.PreCheckFailure
 	if current != nil {
 		var err error
-		parked, err = r.takeRealmClaim(ctx, mc, *current)
+		parked, err = r.takeRealmClaim(ctx, claims, mc, *current)
 		if err != nil {
 			return nil, false, err
 		}
@@ -70,7 +71,7 @@ func (r *Reconciler) claimRealm(
 
 	// The sweep runs on the parked path too: a claim kept there would block
 	// every later claimant of a realm this plane already left.
-	held, err := r.releaseUnusedRealms(ctx, mc)
+	held, err := r.releaseUnusedRealms(ctx, claims, mc)
 	if err != nil {
 		return nil, false, err
 	}
@@ -79,9 +80,8 @@ func (r *Reconciler) claimRealm(
 }
 
 // realmClaims is the claim protocol on the Keycloak realms, over the Leases
-// of the namespace of the operator. Its reads go through the uncached
-// APIReader, because a claim decided from a cache is no serialization.
-func (r *Reconciler) realmClaims() *leaseclaim.Claim {
+// of the namespace of the operator.
+func (r *Reconciler) realmClaims() *leaseclaim.Claim[*v1.CamundaManagementCluster] {
 	return leaseclaim.New(
 		components.RealmClaimSchema(), r.Client, r.APIReader, r.ClaimNamespace, r.realmHolderKeeps,
 	)
@@ -115,6 +115,7 @@ func (r *Reconciler) realmClaims() *leaseclaim.Claim {
 // the retry interval to give that claim up once the workload is gone.
 func (r *Reconciler) releaseUnusedRealms(
 	ctx context.Context,
+	claims *leaseclaim.Claim[*v1.CamundaManagementCluster],
 	mc *v1.CamundaManagementCluster,
 ) (bool, error) {
 	if mc.Spec.Suspend {
@@ -124,7 +125,7 @@ func (r *Reconciler) releaseUnusedRealms(
 	// The claims are read first. A plane that holds none has nothing to give
 	// back, and the workloads below only say which of them to keep, so their
 	// three reads would answer a question nobody asked.
-	leases, err := r.realmClaimLeases(ctx, mc)
+	leases, err := claims.Held(ctx, leaseclaim.HolderOf(mc))
 	if err != nil || len(leases) == 0 {
 		return false, err
 	}
@@ -147,21 +148,7 @@ func (r *Reconciler) releaseUnusedRealms(
 		}
 	}
 
-	return r.releaseRealmClaims(ctx, leases, keep, workload, unknown)
-}
-
-// realmClaimLeases reads every realm claim Lease of the namespace of the
-// operator that names mc as its holder.
-//
-// The label selector is the one that NewRealmClaimLease writes. It carries the
-// name of the management cluster alone, so the list also holds the claims of a
-// management cluster of another namespace with this name, and of a later one.
-// The holder annotations tell them apart.
-func (r *Reconciler) realmClaimLeases(
-	ctx context.Context,
-	mc *v1.CamundaManagementCluster,
-) ([]coordinationv1.Lease, error) {
-	return r.realmClaims().Held(ctx, realmClaimSelf(mc))
+	return r.releaseRealmClaims(ctx, claims, leases, keep, workload, unknown)
 }
 
 // namesRealm reports whether target names the realm of realm. A nil target
@@ -247,10 +234,11 @@ func (r *Reconciler) identityRealms(
 // the failure names it.
 func (r *Reconciler) takeRealmClaim(
 	ctx context.Context,
+	claims *leaseclaim.Claim[*v1.CamundaManagementCluster],
 	mc *v1.CamundaManagementCluster,
 	target v1.KeycloakRealmTarget,
 ) (*conditions.PreCheckFailure, error) {
-	blocker, err := r.realmClaims().Take(ctx, mc, components.RealmIdentity(target))
+	blocker, err := claims.Take(ctx, mc, components.RealmIdentity(target))
 	if err != nil || blocker == nil {
 		return nil, err
 	}
@@ -311,14 +299,14 @@ func (r *Reconciler) realmHolderKeeps(
 // realm, and each one reads as held by that workload.
 func (r *Reconciler) releaseRealmClaims(
 	ctx context.Context,
+	claims *leaseclaim.Claim[*v1.CamundaManagementCluster],
 	leases []coordinationv1.Lease,
 	keep []*v1.KeycloakRealmTarget,
 	workload []*v1.KeycloakRealmTarget,
 	unknown bool,
 ) (bool, error) {
-	claims := r.realmClaims()
-	kept := leaseNames(keep)
-	held := leaseNames(workload)
+	kept := leaseNames(claims, keep)
+	held := leaseNames(claims, workload)
 
 	var workloadHolds bool
 	for i := range leases {
@@ -345,30 +333,16 @@ func (r *Reconciler) releaseRealmClaims(
 
 // leaseNames is the set of claim Lease names of targets. A nil entry names no
 // realm.
-func leaseNames(targets []*v1.KeycloakRealmTarget) map[string]bool {
+func leaseNames(
+	claims *leaseclaim.Claim[*v1.CamundaManagementCluster],
+	targets []*v1.KeycloakRealmTarget,
+) map[string]bool {
 	names := make(map[string]bool, len(targets))
 	for _, target := range targets {
 		if target != nil {
-			names[components.RealmClaimLeaseName(components.RealmIdentity(*target))] = true
+			names[claims.LeaseName(components.RealmIdentity(*target))] = true
 		}
 	}
 
 	return names
-}
-
-// readRealmClaim reads the claim Lease of target live, and reports whether it
-// is there.
-func (r *Reconciler) readRealmClaim(
-	ctx context.Context,
-	target v1.KeycloakRealmTarget,
-) (*coordinationv1.Lease, bool, error) {
-	return r.realmClaims().Read(ctx, components.RealmIdentity(target))
-}
-
-// realmClaimSelf is the holder identity of mc.
-func realmClaimSelf(mc *v1.CamundaManagementCluster) components.RealmClaimHolder {
-	return components.RealmClaimHolder{
-		NamespacedName: client.ObjectKeyFromObject(mc),
-		UID:            mc.UID,
-	}
 }

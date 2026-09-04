@@ -35,6 +35,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/database"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/leaseclaim"
 )
 
 // The specs of this package name the claim vocabulary of
@@ -369,7 +370,7 @@ func TestClaimReleases(t *testing.T) {
 		require.NoError(t, r.claim(ctx, held, claimKey))
 
 		require.NoError(t, r.releaseHeldClaims(
-			ctx, selfHolder(held), "7000000000000000001/other",
+			ctx, leaseclaim.HolderOf(held), "7000000000000000001/other",
 		))
 
 		_, found := leaseOf(t, r)
@@ -389,7 +390,7 @@ func TestClaimReleases(t *testing.T) {
 		// would leave the old one held until this Database is deleted.
 		moved := database.DeepCopy()
 		require.NoError(t, r.releaseHeldClaims(
-			ctx, selfHolder(moved), "7000000000000000001/other",
+			ctx, leaseclaim.HolderOf(moved), "7000000000000000001/other",
 		))
 
 		_, found := leaseOf(t, r)

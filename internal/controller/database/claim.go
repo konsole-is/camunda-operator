@@ -101,9 +101,8 @@ func (r *DatabaseReconciler) claim(ctx context.Context, database *v1.Database, k
 }
 
 // claims is the claim protocol on the logical databases, over the Leases of
-// the namespace of the operator. Its reads go through the uncached APIReader,
-// because a claim decided from a cache is no serialization.
-func (r *DatabaseReconciler) claims() *leaseclaim.Claim {
+// the namespace of the operator.
+func (r *DatabaseReconciler) claims() *leaseclaim.Claim[*v1.Database] {
 	return leaseclaim.New(
 		components.ClaimSchema(), r.Client, r.APIReader, r.ClaimNamespace, r.holderKeeps,
 	)
@@ -174,7 +173,10 @@ func withSelf(claimants []v1.Database, database *v1.Database) []v1.Database {
 // that carries no holder annotations is not one of ours: it blocks without a
 // takeover, and the failure names it.
 func (r *DatabaseReconciler) takeClaim(
-	ctx context.Context, claims *leaseclaim.Claim, database *v1.Database, key string,
+	ctx context.Context,
+	claims *leaseclaim.Claim[*v1.Database],
+	database *v1.Database,
+	key string,
 ) error {
 	blocker, err := claims.Take(ctx, database, key)
 	if err != nil || blocker == nil {
@@ -234,7 +236,7 @@ func (r *DatabaseReconciler) finalize(ctx context.Context, database *v1.Database
 		return nil
 	}
 
-	if err := r.releaseHeldClaims(ctx, selfHolder(database), ""); err != nil {
+	if err := r.releaseHeldClaims(ctx, leaseclaim.HolderOf(database), ""); err != nil {
 		return err
 	}
 
@@ -266,7 +268,7 @@ func (r *DatabaseReconciler) releaseHeldClaims(
 
 	kept := ""
 	if keep != "" {
-		kept = components.ClaimLeaseName(keep)
+		kept = claims.LeaseName(keep)
 	}
 
 	for i := range leases {
@@ -279,12 +281,4 @@ func (r *DatabaseReconciler) releaseHeldClaims(
 	}
 
 	return nil
-}
-
-// selfHolder is the holder identity of database.
-func selfHolder(database *v1.Database) components.ClaimHolder {
-	return components.ClaimHolder{
-		NamespacedName: client.ObjectKeyFromObject(database),
-		UID:            database.UID,
-	}
 }

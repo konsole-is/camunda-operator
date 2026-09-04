@@ -63,8 +63,8 @@ func NewRealmClaimLease(
 // RealmClaimSchema is the shape of the claim Leases of a Keycloak realm. The
 // CamundaManagementCluster controller runs the claim protocol of
 // pkg/leaseclaim over it.
-func RealmClaimSchema() leaseclaim.Schema {
-	return leaseclaim.Schema{
+func RealmClaimSchema() leaseclaim.Schema[*v1.CamundaManagementCluster] {
+	return leaseclaim.Schema[*v1.CamundaManagementCluster]{
 		Prefix:                    realmClaimLeasePrefix,
 		Noun:                      "realm claim",
 		HolderNamespaceAnnotation: RealmClaimHolderNamespaceAnnotation,

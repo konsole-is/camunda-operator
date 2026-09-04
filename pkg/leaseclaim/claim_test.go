@@ -44,8 +44,8 @@ const testNamespace = "camunda-system"
 
 // testSchema is the claim of these tests. A claimant is a ConfigMap, which
 // stands for any resource that takes a thing outside Kubernetes for itself.
-func testSchema() Schema {
-	return Schema{
+func testSchema() Schema[*corev1.ConfigMap] {
+	return Schema[*corev1.ConfigMap]{
 		Prefix:                    "camunda-test-",
 		Noun:                      "test claim",
 		HolderNamespaceAnnotation: "camunda.io/test-claim-holder-namespace",
@@ -65,24 +65,26 @@ func claimant(namespace, name string, uid types.UID) *corev1.ConfigMap {
 	}}
 }
 
-// holderOf is the holder identity of a claimant.
-func holderOf(owner client.Object) Holder {
-	return Holder{
-		NamespacedName: client.ObjectKeyFromObject(owner),
-		UID:            owner.GetUID(),
-	}
-}
-
 // testClient returns a fake client that holds the given objects and serves
 // the Lease type.
 func testClient(t *testing.T, objects ...client.Object) client.WithWatch {
+	t.Helper()
+
+	return fake.NewClientBuilder().
+		WithScheme(testScheme(t)).
+		WithObjects(objects...).
+		Build()
+}
+
+// testScheme serves the Lease and the ConfigMap that these tests write.
+func testScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 
 	scheme := runtime.NewScheme()
 	require.NoError(t, coordinationv1.AddToScheme(scheme))
 	require.NoError(t, corev1.AddToScheme(scheme))
 
-	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+	return scheme
 }
 
 // keepEvery is the HolderKeeps of a claim whose holders never go away.
@@ -91,9 +93,9 @@ func keepEvery(context.Context, Holder) (bool, error) { return true, nil }
 // keepNone is the HolderKeeps of a claim whose holders are all gone.
 func keepNone(context.Context, Holder) (bool, error) { return false, nil }
 
-// first drops the blocker of a Take that a spec expects to succeed, so the
+// taken drops the blocker of a Take that a spec expects to succeed, so the
 // arrangement of that spec reads as one line.
-func first(_ *Blocker, err error) error { return err }
+func taken(_ *Blocker, err error) error { return err }
 
 // leaseOf reads the claim Lease of key.
 func leaseOf(t *testing.T, c client.Client, key string) (*coordinationv1.Lease, bool) {
@@ -117,21 +119,21 @@ func TestTakeSerializesTwoClaimants(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	first := claimant("alpha", "first", "uid-first")
-	second := claimant("beta", "second", "uid-second")
-	c := testClient(t, first, second)
+	earlier := claimant("alpha", "earlier", "uid-earlier")
+	later := claimant("beta", "later", "uid-later")
+	c := testClient(t, earlier, later)
 	claims := New(testSchema(), c, c, testNamespace, keepEvery)
 
-	blocker, err := claims.Take(ctx, first, "7000000000000000001/camunda")
+	blocker, err := claims.Take(ctx, earlier, "7000000000000000001/camunda")
 	require.NoError(t, err)
 	assert.Nil(t, blocker)
 
-	blocker, err = claims.Take(ctx, second, "7000000000000000001/camunda")
+	blocker, err = claims.Take(ctx, later, "7000000000000000001/camunda")
 
 	require.NoError(t, err)
 	require.NotNil(t, blocker)
 	assert.False(t, blocker.Foreign())
-	assert.Equal(t, holderOf(first), blocker.Holder)
+	assert.Equal(t, HolderOf(earlier), blocker.Holder)
 	assert.Equal(t, testSchema().LeaseName("7000000000000000001/camunda"), blocker.Lease.Name)
 	assert.Equal(t, testNamespace, blocker.Lease.Namespace)
 
@@ -139,7 +141,7 @@ func TestTakeSerializesTwoClaimants(t *testing.T) {
 	require.True(t, found)
 	holder, ours := testSchema().HolderOf(lease)
 	require.True(t, ours)
-	assert.Equal(t, holderOf(first), holder)
+	assert.Equal(t, HolderOf(earlier), holder)
 }
 
 // A reconcile runs again on every event, so the holder reaches its own claim
@@ -152,7 +154,7 @@ func TestTakeIsIdempotentForTheHolder(t *testing.T) {
 	c := testClient(t, owner)
 	claims := New(testSchema(), c, c, testNamespace, keepEvery)
 
-	require.NoError(t, first(claims.Take(ctx, owner, "key")))
+	require.NoError(t, taken(claims.Take(ctx, owner, "key")))
 
 	blocker, err := claims.Take(ctx, owner, "key")
 
@@ -168,19 +170,41 @@ func TestTakeTakesOverAHolderThatKeepsNothing(t *testing.T) {
 	ctx := context.Background()
 	gone := claimant("alpha", "gone", "uid-gone")
 	next := claimant("beta", "next", "uid-next")
-	c := testClient(t, gone, next)
 
-	require.NoError(t, first(New(testSchema(), c, c, testNamespace, keepEvery).Take(ctx, gone, "key")))
+	var deletes int
+	c := fake.NewClientBuilder().
+		WithScheme(testScheme(t)).
+		WithObjects(gone, next, testSchema().NewLease(testNamespace, "key", gone)).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Delete: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				opts ...client.DeleteOption,
+			) error {
+				deletes++
+
+				return c.Delete(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	arranged, found := leaseOf(t, c, "key")
+	require.True(t, found)
+	holder, ours := testSchema().HolderOf(arranged)
+	require.True(t, ours)
+	require.Equal(t, HolderOf(gone), holder, "the stale holder must be arranged")
 
 	blocker, err := New(testSchema(), c, c, testNamespace, keepNone).Take(ctx, next, "key")
 
 	require.NoError(t, err)
 	assert.Nil(t, blocker)
+	assert.Equal(t, 1, deletes, "the stale Lease is deleted rather than reused")
 	lease, found := leaseOf(t, c, "key")
 	require.True(t, found)
-	holder, ours := testSchema().HolderOf(lease)
+	holder, ours = testSchema().HolderOf(lease)
 	require.True(t, ours)
-	assert.Equal(t, holderOf(next), holder)
+	assert.Equal(t, HolderOf(next), holder)
 }
 
 // A holder that cannot be read keeps what it holds. A takeover after a failed
@@ -193,7 +217,9 @@ func TestTakeKeepsTheClaimWhenTheHolderCannotBeRead(t *testing.T) {
 	next := claimant("beta", "next", "uid-next")
 	c := testClient(t, holder, next)
 
-	require.NoError(t, first(New(testSchema(), c, c, testNamespace, keepEvery).Take(ctx, holder, "key")))
+	require.NoError(
+		t, taken(New(testSchema(), c, c, testNamespace, keepEvery).Take(ctx, holder, "key")),
+	)
 
 	unreadable := func(context.Context, Holder) (bool, error) {
 		return false, errors.New("the API server did not answer")
@@ -205,7 +231,7 @@ func TestTakeKeepsTheClaimWhenTheHolderCannotBeRead(t *testing.T) {
 	lease, found := leaseOf(t, c, "key")
 	require.True(t, found)
 	recorded, _ := testSchema().HolderOf(lease)
-	assert.Equal(t, holderOf(holder), recorded)
+	assert.Equal(t, HolderOf(holder), recorded)
 }
 
 // TestTakeBlocksOnAForeignLease pins that the protocol never takes over a
@@ -240,13 +266,10 @@ func TestTakeCreatesAgainWhenTheLeaseGoesAwayMidClaim(t *testing.T) {
 
 	ctx := context.Background()
 	owner := claimant("alpha", "only", "uid-only")
-	scheme := runtime.NewScheme()
-	require.NoError(t, coordinationv1.AddToScheme(scheme))
-	require.NoError(t, corev1.AddToScheme(scheme))
 
 	var creates int
 	c := fake.NewClientBuilder().
-		WithScheme(scheme).
+		WithScheme(testScheme(t)).
 		WithObjects(owner).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Create: func(
@@ -284,12 +307,8 @@ func TestTakeReportsALeaseItCannotRead(t *testing.T) {
 
 	ctx := context.Background()
 	owner := claimant("alpha", "only", "uid-only")
-	scheme := runtime.NewScheme()
-	require.NoError(t, coordinationv1.AddToScheme(scheme))
-	require.NoError(t, corev1.AddToScheme(scheme))
-
 	c := fake.NewClientBuilder().
-		WithScheme(scheme).
+		WithScheme(testScheme(t)).
 		WithObjects(owner).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Create: func(
@@ -311,6 +330,16 @@ func TestTakeReportsALeaseItCannotRead(t *testing.T) {
 	assert.Contains(t, err.Error(), "not readable yet")
 }
 
+// A nil Blocker is the success of Take, and every consumer branches on
+// Foreign before it reads the holder.
+func TestForeignReadsANilBlocker(t *testing.T) {
+	t.Parallel()
+
+	var blocker *Blocker
+
+	assert.False(t, blocker.Foreign())
+}
+
 // TestDropLeavesTheLeaseOfAnotherHolder pins the guard that lets a takeover
 // delete a Lease. A claimant that removes the Lease of another resource hands
 // one key to two of them.
@@ -322,14 +351,14 @@ func TestDropLeavesTheLeaseOfAnotherHolder(t *testing.T) {
 	other := claimant("beta", "other", "uid-other")
 	c := testClient(t, holder, other)
 	claims := New(testSchema(), c, c, testNamespace, keepEvery)
-	require.NoError(t, first(claims.Take(ctx, holder, "key")))
+	require.NoError(t, taken(claims.Take(ctx, holder, "key")))
 
-	require.NoError(t, claims.Drop(ctx, "key", holderOf(other)))
+	require.NoError(t, claims.Drop(ctx, "key", HolderOf(other)))
 
 	_, found := leaseOf(t, c, "key")
 	assert.True(t, found)
 
-	require.NoError(t, claims.Drop(ctx, "key", holderOf(holder)))
+	require.NoError(t, claims.Drop(ctx, "key", HolderOf(holder)))
 
 	_, found = leaseOf(t, c, "key")
 	assert.False(t, found)
@@ -344,7 +373,7 @@ func TestDropLeavesAMissingLeaseAlone(t *testing.T) {
 	c := testClient(t, owner)
 	claims := New(testSchema(), c, c, testNamespace, keepEvery)
 
-	assert.NoError(t, claims.Drop(context.Background(), "key", holderOf(owner)))
+	assert.NoError(t, claims.Drop(context.Background(), "key", HolderOf(owner)))
 }
 
 // TestHeldReadsTheHolderAnnotations pins that the label selector alone does
@@ -359,19 +388,45 @@ func TestHeldReadsTheHolderAnnotations(t *testing.T) {
 	twin := claimant("beta", "shared", "uid-twin")
 	c := testClient(t, owner, twin)
 	claims := New(testSchema(), c, c, testNamespace, keepEvery)
-	require.NoError(t, first(claims.Take(ctx, owner, "first")))
-	require.NoError(t, first(claims.Take(ctx, owner, "second")))
-	require.NoError(t, first(claims.Take(ctx, twin, "third")))
+	require.NoError(t, taken(claims.Take(ctx, owner, "first")))
+	require.NoError(t, taken(claims.Take(ctx, owner, "second")))
+	require.NoError(t, taken(claims.Take(ctx, twin, "third")))
 
-	held, err := claims.Held(ctx, holderOf(owner))
+	held, err := claims.Held(ctx, HolderOf(owner))
 
 	require.NoError(t, err)
 	require.Len(t, held, 2)
 	assert.ElementsMatch(
 		t,
-		[]string{testSchema().LeaseName("first"), testSchema().LeaseName("second")},
+		[]string{claims.LeaseName("first"), claims.LeaseName("second")},
 		[]string{held[0].Name, held[1].Name},
 	)
+}
+
+// TestHoldsReadsTheWholeIdentity pins the predicate that a deletion asks
+// before it writes the thing behind the claim.
+func TestHoldsReadsTheWholeIdentity(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	owner := claimant("alpha", "only", "uid-only")
+	c := testClient(t, owner)
+	claims := New(testSchema(), c, c, testNamespace, keepEvery)
+
+	held, err := claims.Holds(ctx, "key", HolderOf(owner))
+	require.NoError(t, err)
+	assert.False(t, held, "a Lease that is gone holds nothing")
+
+	require.NoError(t, taken(claims.Take(ctx, owner, "key")))
+
+	held, err = claims.Holds(ctx, "key", HolderOf(owner))
+	require.NoError(t, err)
+	assert.True(t, held)
+
+	replacement := claimant("alpha", "only", "uid-replacement")
+	held, err = claims.Holds(ctx, "key", HolderOf(replacement))
+	require.NoError(t, err)
+	assert.False(t, held, "a later resource of the same name holds nothing")
 }
 
 // TestReleaseDeletesUnderThePreconditions pins the guard that keeps a
@@ -383,7 +438,7 @@ func TestReleaseDeletesUnderThePreconditions(t *testing.T) {
 	owner := claimant("alpha", "only", "uid-only")
 	c := testClient(t, owner)
 	claims := New(testSchema(), c, c, testNamespace, keepEvery)
-	require.NoError(t, first(claims.Take(ctx, owner, "key")))
+	require.NoError(t, taken(claims.Take(ctx, owner, "key")))
 
 	lease, found := leaseOf(t, c, "key")
 	require.True(t, found)
@@ -412,6 +467,66 @@ func TestReadReportsAMissingLease(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, found)
 	assert.Nil(t, lease)
+}
+
+// TestNewRefusesWiringThatCannotDecideOwnership pins the guard on the
+// arguments of New. A nil HolderKeeps runs only where two claimants meet,
+// which is the case the package exists for.
+func TestNewRefusesWiringThatCannotDecideOwnership(t *testing.T) {
+	t.Parallel()
+
+	c := testClient(t)
+	cases := map[string]func(){
+		"a Schema with nothing in it": func() {
+			New(Schema[*corev1.ConfigMap]{}, c, c, testNamespace, keepEvery)
+		},
+		"a Schema with two equal annotation keys": func() {
+			schema := testSchema()
+			schema.KeyAnnotation = schema.HolderUIDAnnotation
+			New(schema, c, c, testNamespace, keepEvery)
+		},
+		"no client":      func() { New(testSchema(), nil, c, testNamespace, keepEvery) },
+		"no reader":      func() { New(testSchema(), c, nil, testNamespace, keepEvery) },
+		"no HolderKeeps": func() { New(testSchema(), c, c, testNamespace, nil) },
+	}
+
+	for name, build := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Panics(t, build)
+		})
+	}
+}
+
+// TestSchemaValidate names every field that a claim Lease needs to be read
+// back as a claim.
+func TestSchemaValidate(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, testSchema().Validate())
+
+	cases := map[string]func(*Schema[*corev1.ConfigMap]){
+		"no prefix":             func(s *Schema[*corev1.ConfigMap]) { s.Prefix = "" },
+		"no noun":               func(s *Schema[*corev1.ConfigMap]) { s.Noun = "" },
+		"no Labels":             func(s *Schema[*corev1.ConfigMap]) { s.Labels = nil },
+		"no holder namespace":   func(s *Schema[*corev1.ConfigMap]) { s.HolderNamespaceAnnotation = "" },
+		"no holder name":        func(s *Schema[*corev1.ConfigMap]) { s.HolderNameAnnotation = "" },
+		"no holder uid":         func(s *Schema[*corev1.ConfigMap]) { s.HolderUIDAnnotation = "" },
+		"no key":                func(s *Schema[*corev1.ConfigMap]) { s.KeyAnnotation = "" },
+		"two equal holder keys": func(s *Schema[*corev1.ConfigMap]) { s.HolderNameAnnotation = s.HolderUIDAnnotation },
+	}
+
+	for name, breakSchema := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			schema := testSchema()
+			breakSchema(&schema)
+
+			assert.Error(t, schema.Validate())
+		})
+	}
 }
 
 // TestLeaseName pins the name that every claimant of one key meets on. A

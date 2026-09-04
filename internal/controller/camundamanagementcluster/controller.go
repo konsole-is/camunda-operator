@@ -423,7 +423,7 @@ func (r *Reconciler) reconcileUnresolved(
 
 	// The sweep runs before the withdrawal, where the claim step runs before
 	// it on the resolved path, so that it still reads the recorded realm.
-	heldRealm, sweepErr := r.releaseUnusedRealms(ctx, mc)
+	heldRealm, sweepErr := r.releaseUnusedRealms(ctx, r.realmClaims(), mc)
 	sweepErr = stepClaimRealm.wrap(sweepErr)
 	retry, withdrawErr := r.withdrawStopped(
 		ctx, mc, "the identity provider of the spec is not resolved",

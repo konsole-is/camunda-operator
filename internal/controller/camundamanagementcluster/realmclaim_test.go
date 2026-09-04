@@ -469,7 +469,7 @@ func TestReleaseUnusedRealmsKeepsTheRealmOfTheKeycloakMode(t *testing.T) {
 	lease := components.NewRealmClaimLease(testClaimNamespace, *target, mc)
 	r, _ := fakeReconciler(t, mc, lease)
 
-	held, err := r.releaseUnusedRealms(context.Background(), mc)
+	held, err := r.releaseUnusedRealms(context.Background(), r.realmClaims(), mc)
 
 	require.NoError(t, err)
 	assert.False(t, held)
@@ -587,7 +587,7 @@ func TestIdentityRealmsReadsADeploymentOfAnotherOwner(t *testing.T) {
 	require.Len(t, realms, 1)
 	assert.True(t, components.SameRealm(finalizerRealm, realms[0]))
 
-	held, err := r.releaseUnusedRealms(context.Background(), mc)
+	held, err := r.releaseUnusedRealms(context.Background(), r.realmClaims(), mc)
 
 	require.NoError(t, err)
 	assert.True(t, held, "the workload holds the claim of a realm the spec left")

@@ -220,10 +220,9 @@ func TestClaimLeaseLabelsSelectOneDatabase(t *testing.T) {
 }
 
 // TestNewClaimLeaseMatchesTheGolden pins the claim Lease against the shape
-// the operator wrote before the protocol moved to pkg/leaseclaim. A claim
-// Lease that changes its name, its labels or its annotations loses the
-// operator every claim it holds, because a running holder meets its claimants
-// on a Lease none of them reads any more.
+// the operator wrote before the protocol moved to pkg/leaseclaim. A change of
+// its name, its labels or its annotations loses the operator every claim it
+// holds. The running holder keeps a Lease that no later claimant reads.
 func TestNewClaimLeaseMatchesTheGolden(t *testing.T) {
 	cases := map[string]struct {
 		file     string

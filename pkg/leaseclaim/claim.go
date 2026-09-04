@@ -22,9 +22,9 @@ limitations under the License.
 // The claim is a coordination.k8s.io Lease in the namespace of the operator,
 // one per claim key, named from a hash of that key. The API server creates it
 // atomically: the first Create wins and every later Create answers
-// AlreadyExists, so of two claimants that reach the claim together exactly
-// one holds it. A rule that a caller runs before the claim stays a preference
-// in front of the Lease. It decides who tries first, never who holds.
+// AlreadyExists. Of two claimants that reach one key together, exactly one
+// holds it. A rule that a caller runs before the claim stays a preference in
+// front of the Lease. It decides who tries first, never who holds.
 //
 // Ownership lives in the three holder annotations of the Lease, never in its
 // holderIdentity, which is a bounded display form for a reader. A Lease
@@ -34,11 +34,11 @@ limitations under the License.
 // replaced under its name, is taken over, so a crash between the claim and
 // the release never blocks a key forever.
 //
-// Every read goes through the reader that the caller passes, and that reader
-// must read the API server directly. A controller passes its uncached API
-// reader, never the cached manager client: a claim decided from a stale cache
-// is no mutual exclusion, and the resourceVersion that guards a takeover
-// comes from the same read.
+// Every read goes through the reader that the caller passes. That reader must
+// read the API server directly, so a controller passes its uncached API
+// reader and never the cached manager client. A claim decided from a stale
+// cache is no mutual exclusion, and the resourceVersion that guards a
+// takeover comes from the same read.
 package leaseclaim
 
 import (
@@ -66,16 +66,10 @@ type Blocker struct {
 	Lease types.NamespacedName
 }
 
-// Foreign reports whether the Lease that blocks the claim records no holder.
-// Such a Lease is not one of ours and is never taken over.
-func (b *Blocker) Foreign() bool {
-	return b.Holder == Holder{}
-}
-
 // Claim runs the claim protocol of one Schema over the claim Leases of one
-// namespace.
-type Claim struct {
-	schema      Schema
+// namespace. T is the kind that takes the claim.
+type Claim[T client.Object] struct {
+	schema      Schema[T]
 	client      client.Client
 	reader      client.Reader
 	namespace   string
@@ -87,14 +81,27 @@ type Claim struct {
 //
 // Writes go through c. Every read goes through reader, which must read the
 // API server directly and never a cache.
-func New(
-	schema Schema,
+//
+// New panics on a schema that Validate rejects, and on a nil c, reader or
+// holderKeeps. A controller passes all four once at the top of a reconcile,
+// so a wrong one is a programmer error that the first pass reports. A nil
+// holderKeeps runs only where two claimants meet, which is the case the
+// package exists for and the worst place to learn of it.
+func New[T client.Object](
+	schema Schema[T],
 	c client.Client,
 	reader client.Reader,
 	namespace string,
 	holderKeeps HolderKeeps,
-) *Claim {
-	return &Claim{
+) *Claim[T] {
+	if err := schema.Validate(); err != nil {
+		panic("leaseclaim: the claim Schema is not usable: " + err.Error())
+	}
+	if c == nil || reader == nil || holderKeeps == nil {
+		panic("leaseclaim: a claim needs a client, a reader and a HolderKeeps")
+	}
+
+	return &Claim[T]{
 		schema:      schema,
 		client:      c,
 		reader:      reader,
@@ -110,7 +117,7 @@ func New(
 //
 // A holder that HolderKeeps answers for is taken over: the Lease goes under
 // its UID and its resourceVersion, and the create runs once more.
-func (c *Claim) Take(ctx context.Context, owner client.Object, key string) (*Blocker, error) {
+func (c *Claim[T]) Take(ctx context.Context, owner T, key string) (*Blocker, error) {
 	blocker, err := c.create(ctx, owner, key)
 	if err != nil || blocker == nil || blocker.Foreign() {
 		return blocker, err
@@ -131,11 +138,30 @@ func (c *Claim) Take(ctx context.Context, owner client.Object, key string) (*Blo
 	return c.create(ctx, owner, key)
 }
 
+// Foreign reports whether the Lease that blocks the claim records no holder.
+// Such a Lease is not one of ours and is never taken over. A nil Blocker
+// blocks nothing, so it is not foreign either.
+func (b *Blocker) Foreign() bool {
+	return b != nil && b.Holder == Holder{}
+}
+
+// Holds reports whether the claim Lease of key records holder. A Lease that
+// is gone, and one that records another resource, both answer no. A read that
+// fails is an error and never a no.
+func (c *Claim[T]) Holds(ctx context.Context, key string, holder Holder) (bool, error) {
+	lease, found, err := c.Read(ctx, key)
+	if err != nil || !found {
+		return false, err
+	}
+
+	recorded, ours := c.schema.HolderOf(lease)
+
+	return ours && recorded == holder, nil
+}
+
 // create creates the claim Lease of key for owner. It returns nil when owner
 // holds the claim after the call, and what blocks it otherwise.
-func (c *Claim) create(
-	ctx context.Context, owner client.Object, key string,
-) (*Blocker, error) {
+func (c *Claim[T]) create(ctx context.Context, owner T, key string) (*Blocker, error) {
 	// The Lease can go away between the create and the read, when a release
 	// or a takeover races this claimant. The second pass then creates it.
 	for range 2 {
@@ -156,7 +182,7 @@ func (c *Claim) create(
 		}
 
 		holder, ours := c.schema.HolderOf(lease)
-		if ours && holder.UID == owner.GetUID() {
+		if ours && holder == HolderOf(owner) {
 			return nil, nil
 		}
 
@@ -174,7 +200,7 @@ func (c *Claim) create(
 }
 
 // Read reads the claim Lease of key live, and reports whether it is there.
-func (c *Claim) Read(ctx context.Context, key string) (*coordinationv1.Lease, bool, error) {
+func (c *Claim[T]) Read(ctx context.Context, key string) (*coordinationv1.Lease, bool, error) {
 	name := types.NamespacedName{Namespace: c.namespace, Name: c.schema.LeaseName(key)}
 
 	var lease coordinationv1.Lease
@@ -192,7 +218,8 @@ func (c *Claim) Read(ctx context.Context, key string) (*coordinationv1.Lease, bo
 // Drop deletes the claim Lease of key while its annotations still name
 // holder. A Lease that is gone, and one that another resource holds, is left
 // alone.
-func (c *Claim) Drop(ctx context.Context, key string, holder Holder) error {
+
+func (c *Claim[T]) Drop(ctx context.Context, key string, holder Holder) error {
 	lease, found, err := c.Read(ctx, key)
 	if err != nil || !found {
 		return err
@@ -211,8 +238,8 @@ func (c *Claim) Drop(ctx context.Context, key string, holder Holder) error {
 // A Lease that changed in between fails the preconditions, which means it was
 // not deleted. The error goes back to the caller, so a release keeps its
 // finalizer and reads the Lease again on the next look. To report a conflict
-// as a release would let the holder go while its claim stayed.
-func (c *Claim) Release(ctx context.Context, lease *coordinationv1.Lease) error {
+// as a release lets the holder go while its claim stays.
+func (c *Claim[T]) Release(ctx context.Context, lease *coordinationv1.Lease) error {
 	err := c.client.Delete(ctx, lease, client.Preconditions{
 		UID: &lease.UID, ResourceVersion: &lease.ResourceVersion,
 	})
@@ -231,7 +258,7 @@ func (c *Claim) Release(ctx context.Context, lease *coordinationv1.Lease) error 
 // The label selector carries the name of the holder alone, so the list also
 // holds the claims of a resource of another namespace with this name, and of
 // a later resource. The holder annotations tell them apart.
-func (c *Claim) Held(ctx context.Context, holder Holder) ([]coordinationv1.Lease, error) {
+func (c *Claim[T]) Held(ctx context.Context, holder Holder) ([]coordinationv1.Lease, error) {
 	var leases coordinationv1.LeaseList
 	err := c.reader.List(
 		ctx, &leases,
@@ -252,4 +279,10 @@ func (c *Claim) Held(ctx context.Context, holder Holder) ([]coordinationv1.Lease
 	}
 
 	return held, nil
+}
+
+// LeaseName returns the name of the Lease that claims key, so a caller that
+// holds a Claim names a Lease without the Schema behind it.
+func (c *Claim[T]) LeaseName(key string) string {
+	return c.schema.LeaseName(key)
 }
