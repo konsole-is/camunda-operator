@@ -19,9 +19,3 @@ rules:
   - camundaclusterpresets
   verbs:
   - '*'
-- apiGroups:
-  - core.camunda.io
-  resources:
-  - camundaclusterpresets/status
-  verbs:
-  - get
