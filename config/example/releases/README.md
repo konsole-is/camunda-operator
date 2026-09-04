@@ -57,10 +57,10 @@ Raise `spec.version` in this one file, and every cluster that names
 `camunda-8-9` rolls to the new version on its next reconcile. That is the
 point of a release: the version set of a platform lives in one place.
 
-To roll in steps, create a second release named for its rollout, for example
-`camunda-8-9-19`, and move clusters to it one at a time by changing
-`releaseRef`. That is the name the presets guide gives two releases that stand
-side by side.
+To roll in steps, create a second release and move clusters to it one at a
+time by changing `releaseRef`. Name that second release for the version it
+runs, `camunda-8-9-19` for Camunda 8.9.19, which is the convention the presets
+guide states for two releases side by side.
 
 A cluster whose brokers run a higher version refuses a lower one and reports
 `Ready: False` with the reason `VersionDowngradeRefused`. The
