@@ -98,9 +98,9 @@ The operator creates no backup when:
 - `spec.schedule` is not a valid cron expression. No trigger fires at all, and `Ready` names `spec.schedule`. Correct the expression.
 - More than one trigger passed unconsumed, for example while the operator was not running. The schedule takes the latest of them and skips the earlier ones. See [The cron expression](#the-cron-expression).
 
-The first two cases record the Normal event `TriggerSkipped`. A name that belongs to something else records the Warning event `BackupNameTaken`. The other three record no event. An unresolved reference and an invalid cron expression stand on the `Ready` condition of the schedule, and unconsumed triggers record nothing at all.
+The first two cases record the Normal event `TriggerSkipped`. A name that belongs to something else records the Warning event `BackupNameTaken`. The other three record no event. An unresolved reference and an invalid cron expression appear on the `Ready` condition of the schedule, and unconsumed triggers record nothing at all.
 
-A skipped trigger is consumed: `status.lastScheduleTime` moves to it. The operator does not retry it and does not create the backup later. The next backup runs at the next trigger of the cron expression. When `status.lastScheduleTime` jumps over several triggers of the cron expression, the schedule consumed none of them. An operator that was not running is the usual cause.
+A skipped trigger is consumed: `status.lastScheduleTime` moves to it. The operator does not retry it and does not create the backup later. The next backup runs at the next trigger of the cron expression. When `status.lastScheduleTime` jumps over several triggers of the cron expression, the schedule took only the last of them. An operator that was not running is the usual cause.
 
 `kubectl describe backupschedule my-cluster-schedule -n my-cluster-ns` shows the events:
 
