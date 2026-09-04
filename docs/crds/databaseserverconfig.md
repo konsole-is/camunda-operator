@@ -120,6 +120,11 @@ spec:
 The answer comes back in `pitr.lastRecovery`, and it repeats the request it answers:
 
 ```yaml
+apiVersion: core.camunda.io/v1
+kind: DatabaseServerConfig
+metadata:
+  name: my-db-server
+  namespace: my-cluster-ns
 spec:
   pitr:
     lastRecovery:

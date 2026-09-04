@@ -72,7 +72,7 @@ Every claimant records this field, the one that loses included, so it shows the 
 
 ## Changes
 
-All SQL is idempotent, so every reconcile can run it again. If you rename a binding, the operator publishes the object under the new name and leaves the object under the old name in place. If you clear `spec.secondaryStorageConfig`, the existing `SecondaryStorageConfig` stays in the same way. Both objects stay until you delete the `Database`. A `Database` that loses its claim removes them sooner. See [Uniqueness](#uniqueness).
+All SQL is idempotent, so the operator can run it again safely. If you rename a binding, the operator publishes the object under the new name and leaves the object under the old name in place. If you clear `spec.secondaryStorageConfig`, the existing `SecondaryStorageConfig` stays in the same way. Both objects stay until you delete the `Database`. A `Database` that loses its claim removes them sooner. See [Uniqueness](#uniqueness).
 
 ## Deletion
 
