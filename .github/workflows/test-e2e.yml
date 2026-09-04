@@ -85,6 +85,17 @@ jobs:
         run: |
           cat > "${RUNNER_TEMP}/sample-node-pressure.sh" <<'SAMPLER'
           #!/usr/bin/env bash
+          # Busy and idle jiffies of the aggregate CPU line. iowait counts as
+          # idle, so the figure answers "was the node out of CPU".
+          cpu_jiffies() {
+            awk '/^cpu / {
+              total = 0
+              for (i = 2; i <= 9 && i <= NF; i++) { total += $i }
+              print total, $5 + $6
+            }' /proc/stat
+          }
+          cores=$(nproc)
+          read -r previous_total previous_idle <<< "$(cpu_jiffies)"
           while true; do
             {
               echo "=== $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -94,9 +105,23 @@ jobs:
               docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}' || true
             } >> "${RUNNER_TEMP}/node-pressure.log" 2>&1
             memory=$(free -m | awk '/^Mem:/ {print "free=" $4 "MiB avail=" $7 "MiB"}')
+            # Each line reports the span since the line before it. The first
+            # line covers the time the first pass of the loop took.
+            read -r total idle <<< "$(cpu_jiffies)"
+            span=$((total - previous_total))
+            busy=$((span - idle + previous_idle))
+            previous_total=${total}
+            previous_idle=${idle}
+            cpu="n/a"
+            if [ "${span}" -gt 0 ]; then
+              cpu=$(awk -v b="${busy}" -v s="${span}" \
+                'BEGIN {printf "%.0f%%", b * 100 / s}')
+            fi
+            read -r load1 _ < /proc/loadavg
+            host="cpu=${cpu} load1=${load1} cores=${cores}"
             top=$(ps -eo rss=,comm= --sort=-rss | head -5 | awk '{printf "%s=%dMiB ", $2, $1 / 1024}')
             busiest=$(docker stats --no-stream --format '{{.Name}}={{.MemUsage}}' 2>/dev/null | tr '\n' ' ')
-            echo "[node] $(date -u +%H:%M:%SZ) ${memory} | top: ${top}| docker: ${busiest}"
+            echo "[node] $(date -u +%H:%M:%SZ) ${memory} ${host} | top: ${top}| docker: ${busiest}"
             sleep 30
           done
           SAMPLER
