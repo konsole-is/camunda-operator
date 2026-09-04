@@ -97,51 +97,30 @@ type rotationFailure struct {
 	message string
 }
 
-// recordRotation writes the adminPassword block on cluster from the rotation
-// that the admin Secret already publishes. A rotation whose Secret apply
-// failed is therefore never reported as complete, and a status write that
-// was lost is rebuilt from the Secret on the next reconcile.
-func (c adminCredential) recordRotation(cluster *v1.CamundaCluster) {
-	if c.publishedRotation == "" {
-		cluster.Status.AdminPassword = nil
-		return
-	}
-
-	cluster.Status.AdminPassword = &v1.AdminPasswordStatus{Rotation: c.publishedRotation}
+// adminSecretRead is the admin Secret as one reconcile found it. A Secret
+// that is missing and one that lost its password read the same, because the
+// operator answers both the same way: it generates a password, and asks the
+// cluster whether it takes it.
+type adminSecretRead struct {
+	current credentials.Password
+	pending pendingRotation
+	applied appliedIdentity
 }
 
-// stageFailure overwrites the AdminSecretReady condition of cluster, in
-// memory, with the failure of this reconcile. prior is that condition as the
-// reconcile read it, before the components staged their own. The admin Secret component has
-// already reconciled and reported the unchanged Secret as healthy, but the
-// requested rotation is not applied, so the component condition must say
-// why. The deferred FlushStatus persists the staged value, and the Ready
-// aggregate reads it from the in-memory cluster.
-func (c adminCredential) stageFailure(cluster *v1.CamundaCluster, prior *metav1.Condition) {
-	if c.failure == nil {
-		return
-	}
+// appliedIdentity is what the admin Secret records about the admin user as
+// the orchestration cluster holds it: the rotation that produced the active
+// password, and the address that the cluster was last told.
+type appliedIdentity struct {
+	rotation string
+	email    string
+}
 
-	cond := metav1.Condition{
-		Type:               v1.ConditionAdminSecretReady,
-		Status:             metav1.ConditionFalse,
-		Reason:             c.failure.reason,
-		Message:            conditions.BoundMessage(c.failure.message),
-		ObservedGeneration: cluster.Generation,
-	}
-	// The component reported the unchanged Secret as healthy a moment ago,
-	// so staging the failure flips the condition back and would stamp a new
-	// transition time on it. The time belongs to the status, and the status
-	// never left False, so it keeps the one it carries. A failure that is
-	// unchanged in every field then stages a status that matches the server
-	// exactly, the flush writes nothing, and the retry waits for its timer
-	// instead of being enqueued again by its own status write. A new reason
-	// or message still travels, and still writes.
-	if prior != nil && prior.Status == cond.Status {
-		cond.LastTransitionTime = prior.LastTransitionTime
-	}
-
-	meta.SetStatusCondition(cluster.GetStatusConditions(), cond)
+// pendingRotation is the rotation that the admin Secret has staged but not
+// applied: the requested password and the value that asked for it. The zero
+// value is no rotation in flight.
+type pendingRotation struct {
+	password string
+	rotation string
 }
 
 // resolveAdminCredential resolves what the admin Secret publishes this
@@ -399,30 +378,43 @@ func (r *CamundaClusterReconciler) readAdminSecret(
 	return read, nil
 }
 
-// adminSecretRead is the admin Secret as one reconcile found it. A Secret
-// that is missing and one that lost its password read the same, because the
-// operator answers both the same way: it generates a password, and asks the
-// cluster whether it takes it.
-type adminSecretRead struct {
-	current credentials.Password
-	pending pendingRotation
-	applied appliedIdentity
+// publishedBefore reports whether an admin user of this cluster may already
+// exist with a password that the operator no longer holds. It reads the
+// brokers, and not the status of the cluster: the flush that would record it
+// lands after the components have created the Secret and the workloads, so a
+// manager that stops in between, while somebody deletes the Secret, would
+// forget that it ever published and take the replacement for a first
+// password.
+//
+// The brokers are the evidence twice over. The admin Secret is applied
+// before the StatefulSet, so a cluster whose brokers run has had one. And
+// the users live in the broker state, so volumes that outlived a deleted
+// cluster carry the admin user into the cluster that reattaches them, which
+// spec.zeebe.persistentVolumeClaimRetentionPolicy exists to allow. Either
+// one means the operator must ask the user API rather than assume its
+// password is the first.
+func publishedBefore(storage brokerStorage) bool {
+	return storage.statefulSet != nil || len(storage.claims) > 0
 }
 
-// appliedIdentity is what the admin Secret records about the admin user as
-// the orchestration cluster holds it: the rotation that produced the active
-// password, and the address that the cluster was last told.
-type appliedIdentity struct {
-	rotation string
-	email    string
-}
+// updateAdminProfile sets email on the admin user through the user API,
+// authenticated with the active password, and leaves the password alone. It
+// runs when the spec asks for an address that the cluster does not hold and
+// no rotation is carrying one. It returns nil on success and the failure to
+// report otherwise.
+func (r *CamundaClusterReconciler) updateAdminProfile(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+	in components.Input,
+	active string,
+	email string,
+) *rotationFailure {
+	endpoint := components.RESTEndpoint(cluster, in.Effective)
+	if r.RESTEndpoint != nil {
+		endpoint = r.RESTEndpoint(cluster, in.Effective)
+	}
 
-// pendingRotation is the rotation that the admin Secret has staged but not
-// applied: the requested password and the value that asked for it. The zero
-// value is no rotation in flight.
-type pendingRotation struct {
-	password string
-	rotation string
+	return rotationFailureFor(putAdminUser(ctx, endpoint, in.Effective.Version, active, email, ""))
 }
 
 // updateAdminPassword sets pending as the password of the admin user through
@@ -465,6 +457,53 @@ func (r *CamundaClusterReconciler) updateAdminPassword(
 	return rotationFailureFor(err)
 }
 
+// recordRotation writes the adminPassword block on cluster from the rotation
+// that the admin Secret already publishes. A rotation whose Secret apply
+// failed is therefore never reported as complete, and a status write that
+// was lost is rebuilt from the Secret on the next reconcile.
+func (c adminCredential) recordRotation(cluster *v1.CamundaCluster) {
+	if c.publishedRotation == "" {
+		cluster.Status.AdminPassword = nil
+		return
+	}
+
+	cluster.Status.AdminPassword = &v1.AdminPasswordStatus{Rotation: c.publishedRotation}
+}
+
+// stageFailure overwrites the AdminSecretReady condition of cluster, in
+// memory, with the failure of this reconcile. prior is that condition as the
+// reconcile read it, before the components staged their own. The admin Secret component has
+// already reconciled and reported the unchanged Secret as healthy, but the
+// requested rotation is not applied, so the component condition must say
+// why. The deferred FlushStatus persists the staged value, and the Ready
+// aggregate reads it from the in-memory cluster.
+func (c adminCredential) stageFailure(cluster *v1.CamundaCluster, prior *metav1.Condition) {
+	if c.failure == nil {
+		return
+	}
+
+	cond := metav1.Condition{
+		Type:               v1.ConditionAdminSecretReady,
+		Status:             metav1.ConditionFalse,
+		Reason:             c.failure.reason,
+		Message:            conditions.BoundMessage(c.failure.message),
+		ObservedGeneration: cluster.Generation,
+	}
+	// The component reported the unchanged Secret as healthy a moment ago,
+	// so staging the failure flips the condition back and would stamp a new
+	// transition time on it. The time belongs to the status, and the status
+	// never left False, so it keeps the one it carries. A failure that is
+	// unchanged in every field then stages a status that matches the server
+	// exactly, the flush writes nothing, and the retry waits for its timer
+	// instead of being enqueued again by its own status write. A new reason
+	// or message still travels, and still writes.
+	if prior != nil && prior.Status == cond.Status {
+		cond.LastTransitionTime = prior.LastTransitionTime
+	}
+
+	meta.SetStatusCondition(cluster.GetStatusConditions(), cond)
+}
+
 // rotationFailureFor maps the error of a user API call onto the
 // AdminSecretReady reason that reports it. A nil error is no failure. The
 // reasons separate the three answers a caller acts on differently: no answer
@@ -486,26 +525,6 @@ func rotationFailureFor(err error) *rotationFailure {
 	default:
 		return &rotationFailure{reason: v1.ReasonInvalidReference, message: err.Error()}
 	}
-}
-
-// updateAdminProfile sets email on the admin user through the user API,
-// authenticated with the active password, and leaves the password alone. It
-// runs when the spec asks for an address that the cluster does not hold and
-// no rotation is carrying one. It returns nil on success and the failure to
-// report otherwise.
-func (r *CamundaClusterReconciler) updateAdminProfile(
-	ctx context.Context,
-	cluster *v1.CamundaCluster,
-	in components.Input,
-	active string,
-	email string,
-) *rotationFailure {
-	endpoint := components.RESTEndpoint(cluster, in.Effective)
-	if r.RESTEndpoint != nil {
-		endpoint = r.RESTEndpoint(cluster, in.Effective)
-	}
-
-	return rotationFailureFor(putAdminUser(ctx, endpoint, in.Effective.Version, active, email, ""))
 }
 
 // putAdminUser sends one update of the admin user, authenticated as that user
@@ -532,23 +551,4 @@ func putAdminUser(ctx context.Context, endpoint, version, authPassword, email, p
 	}
 
 	return users.UpdateUserPassword(ctx, user, password)
-}
-
-// publishedBefore reports whether an admin user of this cluster may already
-// exist with a password that the operator no longer holds. It reads the
-// brokers, and not the status of the cluster: the flush that would record it
-// lands after the components have created the Secret and the workloads, so a
-// manager that stops in between, while somebody deletes the Secret, would
-// forget that it ever published and take the replacement for a first
-// password.
-//
-// The brokers are the evidence twice over. The admin Secret is applied
-// before the StatefulSet, so a cluster whose brokers run has had one. And
-// the users live in the broker state, so volumes that outlived a deleted
-// cluster carry the admin user into the cluster that reattaches them, which
-// spec.zeebe.persistentVolumeClaimRetentionPolicy exists to allow. Either
-// one means the operator must ask the user API rather than assume its
-// password is the first.
-func publishedBefore(storage brokerStorage) bool {
-	return storage.statefulSet != nil || len(storage.claims) > 0
 }

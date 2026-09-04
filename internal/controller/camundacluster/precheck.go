@@ -299,6 +299,39 @@ func (res *resolver) resolveRDBMSStorage(
 	return nil
 }
 
+// checkDumpCredentials reports the backup user of the database as a Warning
+// event when it does not resolve. Only dump Jobs consume it, so the cluster
+// neither parks nor rolls its pods on it, and the backup that needs it fails
+// its own pre-check. The Secret is no hash input. A nil reference means that
+// the database takes no dumps.
+func (res *resolver) checkDumpCredentials(
+	ctx context.Context,
+	ref *v1.LocalCredentialsSecretRef,
+) error {
+	if ref == nil {
+		return nil
+	}
+
+	key := client.ObjectKey{Namespace: res.cluster.Namespace, Name: ref.Name}
+	msg, err := secretref.CheckKeys(ctx, res.reader, key, ref.UsernameKey, ref.PasswordKey)
+	if err != nil {
+		return fmt.Errorf("reading Secret %q: %w", key, err)
+	}
+	if msg != "" {
+		res.recorder.Eventf(
+			res.cluster,
+			nil,
+			corev1.EventTypeWarning,
+			eventReasonDumpCredentials,
+			eventActionReconcile,
+			"The dump credentials do not resolve, so backups of this cluster will park: %s",
+			msg,
+		)
+	}
+
+	return nil
+}
+
 // warnReferencedJavaToolOptions warns about every process that needs the JVM
 // trust store but reads JAVA_TOOL_OPTIONS from a reference. It needs
 // in.Effective and in.Storage, and it never fails: the referenced value can
@@ -368,39 +401,6 @@ func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose
 		return err
 	}
 	ref.Name, ref.Namespace = local.Name, local.Namespace
-
-	return nil
-}
-
-// checkDumpCredentials reports the backup user of the database as a Warning
-// event when it does not resolve. Only dump Jobs consume it, so the cluster
-// neither parks nor rolls its pods on it, and the backup that needs it fails
-// its own pre-check. The Secret is no hash input. A nil reference means that
-// the database takes no dumps.
-func (res *resolver) checkDumpCredentials(
-	ctx context.Context,
-	ref *v1.LocalCredentialsSecretRef,
-) error {
-	if ref == nil {
-		return nil
-	}
-
-	key := client.ObjectKey{Namespace: res.cluster.Namespace, Name: ref.Name}
-	msg, err := secretref.CheckKeys(ctx, res.reader, key, ref.UsernameKey, ref.PasswordKey)
-	if err != nil {
-		return fmt.Errorf("reading Secret %q: %w", key, err)
-	}
-	if msg != "" {
-		res.recorder.Eventf(
-			res.cluster,
-			nil,
-			corev1.EventTypeWarning,
-			eventReasonDumpCredentials,
-			eventActionReconcile,
-			"The dump credentials do not resolve, so backups of this cluster will park: %s",
-			msg,
-		)
-	}
 
 	return nil
 }

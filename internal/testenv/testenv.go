@@ -180,6 +180,17 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 	return &Env{Ctx: ctx, Cfg: cfg, Client: apiClient, cancel: cancel, control: control}
 }
 
+// crdPath resolves one CRD directory through resolve and fails the suite when
+// it cannot, so a control plane never boots without a schema its specs need.
+func crdPath(resolve func() (string, error)) string {
+	ginkgo.GinkgoHelper()
+
+	path, err := resolve()
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+	return path
+}
+
 // Stop cancels the context of the manager and tears the control plane down.
 // It is safe to retry. Callers retry it because the shutdown of envtest is
 // sometimes slow to release its ports.
@@ -194,17 +205,6 @@ func (e *Env) Stop() error {
 
 	e.cancel()
 	return e.control.Stop()
-}
-
-// crdPath resolves one CRD directory through resolve and fails the suite when
-// it cannot, so a control plane never boots without a schema its specs need.
-func crdPath(resolve func() (string, error)) string {
-	ginkgo.GinkgoHelper()
-
-	path, err := resolve()
-	gomega.Expect(err).NotTo(gomega.HaveOccurred())
-
-	return path
 }
 
 // PodOfJob returns the pod that the Job controller creates from the template

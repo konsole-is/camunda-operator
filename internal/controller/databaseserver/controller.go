@@ -165,30 +165,6 @@ type serverComponents struct {
 	archiveDestination *concepts.Data[string]
 }
 
-// all returns the components in reconcile order. FlushStatus owns every one of
-// their condition types.
-func (c serverComponents) all() []*component.Component {
-	return []*component.Component{c.cluster, c.archive, c.contract, c.monitoring}
-}
-
-// applying returns the components to reconcile, in the same order. It leaves
-// the archive out while the server holds it: the ObjectStore is one object,
-// and rewriting it while a recovery reads the archive it describes points the
-// cluster that is recovering somewhere that archive is not.
-//
-// A cluster that another owner holds is not a reason to leave a component out.
-// The contract, the base backup schedule, and the PodMonitor all name the
-// cluster of that name, and the ones the server applied before it lost the
-// cluster are still there. Each of those components withdraws its own objects
-// while the name is held, and withdrawing takes a reconcile.
-func (c serverComponents) applying(holdArchive bool) []*component.Component {
-	if !holdArchive {
-		return c.all()
-	}
-
-	return []*component.Component{c.cluster, c.contract, c.monitoring}
-}
-
 // DatabaseServerReconciler runs a PostgreSQL server through the external
 // CloudNativePG operator. It renders a CloudNativePG cluster, archives it to
 // the bucket that spec.archive names, and publishes a DatabaseServerConfig in
@@ -444,6 +420,30 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	return ctrl.Result{RequeueAfter: r.requeueAfter(&server, resolved, derived, recovering)}, nil
+}
+
+// all returns the components in reconcile order. FlushStatus owns every one of
+// their condition types.
+func (c serverComponents) all() []*component.Component {
+	return []*component.Component{c.cluster, c.archive, c.contract, c.monitoring}
+}
+
+// applying returns the components to reconcile, in the same order. It leaves
+// the archive out while the server holds it: the ObjectStore is one object,
+// and rewriting it while a recovery reads the archive it describes points the
+// cluster that is recovering somewhere that archive is not.
+//
+// A cluster that another owner holds is not a reason to leave a component out.
+// The contract, the base backup schedule, and the PodMonitor all name the
+// cluster of that name, and the ones the server applied before it lost the
+// cluster are still there. Each of those components withdraws its own objects
+// while the name is held, and withdrawing takes a reconcile.
+func (c serverComponents) applying(holdArchive bool) []*component.Component {
+	if !holdArchive {
+		return c.all()
+	}
+
+	return []*component.Component{c.cluster, c.contract, c.monitoring}
 }
 
 // preCheck resolves the preset, validates the merged spec, and resolves the
@@ -836,99 +836,6 @@ func (r *DatabaseServerReconciler) resolveArchiveStorage(
 	archive.Credentials = credentials
 
 	return archive, nil
-}
-
-// contractTaken says why the DatabaseServerConfig the merged spec names is not
-// this server's to publish, and returns the empty string when it is: the
-// object does not exist, or this server controls it.
-//
-// A contract that exists and carries no controller is taken, the way a
-// CloudNativePG cluster of the same shape is: it is the bring-your-own-server
-// API, so a person wrote it for a PostgreSQL server the operator does not run.
-// The guard of the contract component reads this message, because
-// component.BlockOnForeignController blocks on a controller of somebody else
-// and that contract carries none.
-//
-// The read also reaches the holder on a pass where the block never fires: the
-// contract sits behind the superuser Secret, and a blocked resource stops
-// every resource after it, so a server still waiting for that Secret would
-// report the wait and never the holder.
-func (r *DatabaseServerReconciler) contractTaken(
-	ctx context.Context,
-	server *v1.DatabaseServer,
-	merged v1.DatabaseServerSpec,
-) (string, error) {
-	if merged.DatabaseServerConfig == "" {
-		return "", nil
-	}
-
-	key := types.NamespacedName{Namespace: server.Namespace, Name: merged.DatabaseServerConfig}
-
-	var contract v1.DatabaseServerConfig
-	if err := r.APIReader.Get(ctx, key, &contract); err != nil {
-		if apierrors.IsNotFound(err) {
-			return "", nil
-		}
-
-		return "", fmt.Errorf("reading DatabaseServerConfig %s: %w", key, err)
-	}
-
-	// The controller reference alone, not ownedByServer. A contract that
-	// carries our reference and lost its label is ours to repair, and holding
-	// it against ourselves would name this server as its own holder.
-	holder := metav1.GetControllerOf(&contract)
-	if holder != nil && holder.UID == server.UID {
-		return "", nil
-	}
-
-	return components.ContractTakenMessage(merged.DatabaseServerConfig, holder), nil
-}
-
-// archiveTaken says why the Barman Cloud ObjectStore of the name the server
-// derives is not this server's to write, and returns the empty string when it
-// is: the spec asks for no archive, no object of that name exists, nothing
-// controls it, or this server controls it.
-//
-// An ObjectStore that nothing controls is adopted, where a contract and a
-// CloudNativePG cluster of the same shape are refused. It carries the location
-// of an archive and the way the plugin reaches it, both of which this server
-// resolves from its own ObjectStorageConfig, so the apply takes no data of
-// anybody. It is also what component.BlockOnForeignController does with one,
-// so a message here names a holder that the apply then writes over on the
-// same pass.
-//
-// The read is what keeps the cluster off the bucket of another owner. The
-// archive plugin entry of the cluster names this ObjectStore, so the apply of
-// the cluster runs before the block on the ObjectStore is ever reached, and
-// CloudNativePG writes the write-ahead log of this server through whatever
-// object holds the name.
-func (r *DatabaseServerReconciler) archiveTaken(
-	ctx context.Context,
-	server *v1.DatabaseServer,
-	merged v1.DatabaseServerSpec,
-) (string, error) {
-	if !components.Archiving(merged) {
-		return "", nil
-	}
-
-	name := components.ObjectStoreName(server)
-	key := types.NamespacedName{Namespace: server.Namespace, Name: name}
-
-	var store barmanobjectstore.ObjectStore
-	if err := r.APIReader.Get(ctx, key, &store); err != nil {
-		if apierrors.IsNotFound(err) {
-			return "", nil
-		}
-
-		return "", fmt.Errorf("reading the Barman Cloud ObjectStore %s: %w", key, err)
-	}
-
-	holder := metav1.GetControllerOf(&store)
-	if holder == nil || holder.UID == server.UID {
-		return "", nil
-	}
-
-	return components.ArchiveTakenMessage(name, *holder), nil
 }
 
 // derivedCluster is what a live read of the CloudNativePG cluster of the name
@@ -1645,6 +1552,99 @@ func stageTakenNames(server *v1.DatabaseServer, resolved resolvedSpec) {
 	}
 }
 
+// archiveTaken says why the Barman Cloud ObjectStore of the name the server
+// derives is not this server's to write, and returns the empty string when it
+// is: the spec asks for no archive, no object of that name exists, nothing
+// controls it, or this server controls it.
+//
+// An ObjectStore that nothing controls is adopted, where a contract and a
+// CloudNativePG cluster of the same shape are refused. It carries the location
+// of an archive and the way the plugin reaches it, both of which this server
+// resolves from its own ObjectStorageConfig, so the apply takes no data of
+// anybody. It is also what component.BlockOnForeignController does with one,
+// so a message here names a holder that the apply then writes over on the
+// same pass.
+//
+// The read is what keeps the cluster off the bucket of another owner. The
+// archive plugin entry of the cluster names this ObjectStore, so the apply of
+// the cluster runs before the block on the ObjectStore is ever reached, and
+// CloudNativePG writes the write-ahead log of this server through whatever
+// object holds the name.
+func (r *DatabaseServerReconciler) archiveTaken(
+	ctx context.Context,
+	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
+) (string, error) {
+	if !components.Archiving(merged) {
+		return "", nil
+	}
+
+	name := components.ObjectStoreName(server)
+	key := types.NamespacedName{Namespace: server.Namespace, Name: name}
+
+	var store barmanobjectstore.ObjectStore
+	if err := r.APIReader.Get(ctx, key, &store); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("reading the Barman Cloud ObjectStore %s: %w", key, err)
+	}
+
+	holder := metav1.GetControllerOf(&store)
+	if holder == nil || holder.UID == server.UID {
+		return "", nil
+	}
+
+	return components.ArchiveTakenMessage(name, *holder), nil
+}
+
+// contractTaken says why the DatabaseServerConfig the merged spec names is not
+// this server's to publish, and returns the empty string when it is: the
+// object does not exist, or this server controls it.
+//
+// A contract that exists and carries no controller is taken, the way a
+// CloudNativePG cluster of the same shape is: it is the bring-your-own-server
+// API, so a person wrote it for a PostgreSQL server the operator does not run.
+// The guard of the contract component reads this message, because
+// component.BlockOnForeignController blocks on a controller of somebody else
+// and that contract carries none.
+//
+// The read also reaches the holder on a pass where the block never fires: the
+// contract sits behind the superuser Secret, and a blocked resource stops
+// every resource after it, so a server still waiting for that Secret would
+// report the wait and never the holder.
+func (r *DatabaseServerReconciler) contractTaken(
+	ctx context.Context,
+	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
+) (string, error) {
+	if merged.DatabaseServerConfig == "" {
+		return "", nil
+	}
+
+	key := types.NamespacedName{Namespace: server.Namespace, Name: merged.DatabaseServerConfig}
+
+	var contract v1.DatabaseServerConfig
+	if err := r.APIReader.Get(ctx, key, &contract); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("reading DatabaseServerConfig %s: %w", key, err)
+	}
+
+	// The controller reference alone, not ownedByServer. A contract that
+	// carries our reference and lost its label is ours to repair, and holding
+	// it against ourselves would name this server as its own holder.
+	holder := metav1.GetControllerOf(&contract)
+	if holder != nil && holder.UID == server.UID {
+		return "", nil
+	}
+
+	return components.ContractTakenMessage(merged.DatabaseServerConfig, holder), nil
+}
+
 // stageFailure puts a reason and a remedy on the condition of one component,
 // over whatever ocf reported there. ocf answers a blocked apply with Blocked
 // and the object it stopped at, which carries no remedy and reads the same as
@@ -1909,19 +1909,6 @@ func (r *DatabaseServerReconciler) podMonitorSupported() bool {
 	return r.served("monitoring.coreos.com", "PodMonitor", "v1")
 }
 
-// served reports whether the cluster serves the given kind at the given
-// version. The version is named on purpose: a cluster that serves only another
-// version would pass an any-version check and then fail at apply.
-func (r *DatabaseServerReconciler) served(group, kind, version string) bool {
-	if r.restMapper == nil {
-		return false
-	}
-
-	_, err := r.restMapper.RESTMapping(schema.GroupKind{Group: group, Kind: kind}, version)
-
-	return err == nil
-}
-
 // SetupWithManager registers the controller, ownership watches on the
 // CloudNativePG cluster, the ObjectStore, the ScheduledBackup, the PodMonitor,
 // and the published contract, a preset watch through a field index on
@@ -1962,4 +1949,17 @@ func (r *DatabaseServerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	return r.watches(mgr)
+}
+
+// served reports whether the cluster serves the given kind at the given
+// version. The version is named on purpose: a cluster that serves only another
+// version would pass an any-version check and then fail at apply.
+func (r *DatabaseServerReconciler) served(group, kind, version string) bool {
+	if r.restMapper == nil {
+		return false
+	}
+
+	_, err := r.restMapper.RESTMapping(schema.GroupKind{Group: group, Kind: kind}, version)
+
+	return err == nil
 }

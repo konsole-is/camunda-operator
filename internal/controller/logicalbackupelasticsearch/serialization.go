@@ -74,10 +74,20 @@ func (r *Reconciler) inProgress(backup *v1.LogicalBackupElasticsearch) logicalba
 	}
 }
 
-// claimant is the identity under which the backup holds the claim on its
-// cluster.
-func claimant(backup *v1.LogicalBackupElasticsearch) clusterclaim.Claimant {
-	return clusterclaim.Claimant{Kind: backup.GetKind(), Name: backup.Name, UID: backup.UID}
+// blocks reports whether other must run before backup. A sibling that holds
+// an ID has begun work worth waiting for. Between two backups that have not
+// started, the older one goes first, and the smaller name breaks a tie in
+// the creation time. Both backups live in the namespace of the cluster, so
+// the name is unique among them. The order is total, so two waiting backups
+// can never deadlock on each other.
+func blocks(other, backup *v1.LogicalBackupElasticsearch) bool {
+	if other.Status.BackupID != 0 {
+		return true
+	}
+	if !other.CreationTimestamp.Equal(&backup.CreationTimestamp) {
+		return other.CreationTimestamp.Before(&backup.CreationTimestamp)
+	}
+	return other.Name < backup.Name
 }
 
 // claimCluster takes the claim on the cluster for the backup. It returns
@@ -137,18 +147,8 @@ func (r *Reconciler) releaseClaim(ctx context.Context, backup *v1.LogicalBackupE
 	return nil
 }
 
-// blocks reports whether other must run before backup. A sibling that holds
-// an ID has begun work worth waiting for. Between two backups that have not
-// started, the older one goes first, and the smaller name breaks a tie in
-// the creation time. Both backups live in the namespace of the cluster, so
-// the name is unique among them. The order is total, so two waiting backups
-// can never deadlock on each other.
-func blocks(other, backup *v1.LogicalBackupElasticsearch) bool {
-	if other.Status.BackupID != 0 {
-		return true
-	}
-	if !other.CreationTimestamp.Equal(&backup.CreationTimestamp) {
-		return other.CreationTimestamp.Before(&backup.CreationTimestamp)
-	}
-	return other.Name < backup.Name
+// claimant is the identity under which the backup holds the claim on its
+// cluster.
+func claimant(backup *v1.LogicalBackupElasticsearch) clusterclaim.Claimant {
+	return clusterclaim.Claimant{Kind: backup.GetKind(), Name: backup.Name, UID: backup.UID}
 }
