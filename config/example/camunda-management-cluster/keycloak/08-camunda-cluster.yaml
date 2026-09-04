@@ -2,9 +2,12 @@
 # environment: production is what the clusterSelector of my-management
 # matches. Without it the management plane leaves this cluster alone.
 #
-# presetRef names the shared CamundaClusterPreset small. One preset serves
-# every cluster of this shape, so a second cluster is this manifest again
-# with another name.
+# presetRef names the shared CamundaClusterPreset small, and releaseRef names
+# the shared CamundaRelease camunda-8-9. One preset serves every cluster of
+# this shape, and one release serves every cluster on this version. A second
+# cluster is this manifest again with another name.
+#
+# spec.version is unset, so the cluster runs the version of the release.
 apiVersion: core.camunda.io/v1
 kind: CamundaCluster
 metadata:
@@ -14,7 +17,7 @@ metadata:
     environment: production
 spec:
   presetRef: small
-  version: "8.9.17"
+  releaseRef: camunda-8-9
   platformConfigRef: my-platform-config
   storageRef: my-storage-config
   externalUrl: "https://my-cluster.camunda.example.com"

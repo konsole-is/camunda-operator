@@ -1,0 +1,6 @@
+# CamundaRelease is cluster scoped and passive. No controller reconciles it,
+# and nothing here depends on anything else, so the file carries no number.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- camunda-release.yaml
