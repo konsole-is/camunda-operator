@@ -834,7 +834,8 @@ spec:
     # object. Optional. Connect to a Keycloak that you run.
     externalKeycloak:
       # string. Required. URL of Keycloak, including the /auth path when it has one. It must resolve from inside the Kubernetes cluster.
-      # It carries no query, no fragment, no user, and no password.
+      # It carries no query, no fragment, no user, and no password. The operator does not support a Keycloak
+      # behind a proxy that needs basic authentication.
       url: "https://keycloak.example.com/auth"
       # string. Optional, default: camunda-platform. The realm that Management Identity uses and creates.
       # Letters, digits, dots, hyphens, and underscores only. It starts and ends with a letter or a digit.
