@@ -13,7 +13,7 @@ metadata:
   name: my-cluster-optimize
   namespace: my-cluster-ns
 spec:
-  version: "8.9.17"
+  version: "8.9.18"
   managementAuthRef: my-management
   externalUrl: "https://optimize.camunda.example.com"
   clusterRef:

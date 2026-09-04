@@ -93,6 +93,16 @@ func (s step) stop(mc *v1.CamundaManagementCluster, err error) error {
 	return failed
 }
 
+// condition is the Ready condition of the failed step.
+func (e *stepError) condition(mc *v1.CamundaManagementCluster) metav1.Condition {
+	return conditions.Ready(
+		metav1.ConditionFalse,
+		e.reason,
+		fmt.Sprintf("Could not %s: %s", e.step, e.err),
+		mc.GetGeneration(),
+	)
+}
+
 // firstStep returns the failure of the first step of errs that failed, or nil
 // when none of them did. The caller passes the errors in reconcile order, so
 // the step that failed first is the one Ready names. An error that is not a
@@ -106,16 +116,6 @@ func firstStep(errs ...error) *stepError {
 	}
 
 	return nil
-}
-
-// condition is the Ready condition of the failed step.
-func (e *stepError) condition(mc *v1.CamundaManagementCluster) metav1.Condition {
-	return conditions.Ready(
-		metav1.ConditionFalse,
-		e.reason,
-		fmt.Sprintf("Could not %s: %s", e.step, e.err),
-		mc.GetGeneration(),
-	)
 }
 
 // Error names the step and what the call answered.

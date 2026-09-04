@@ -1,0 +1,23 @@
+# What the orchestration clusters of these inventories run. A CamundaRelease
+# is cluster scoped and passive, like a preset. Every CamundaCluster that
+# names it in spec.releaseRef takes these versions, so one edit here rolls
+# every one of them.
+#
+# The versions are the ones the end-to-end suite of this repository runs,
+# which test/e2e/matrix/8.9.env pins. Keep the two in step when you raise one.
+#
+# connectors.version is here for a cluster that turns connectors on. The
+# bundle has a patch line of its own, so it does not follow spec.version. No
+# inventory here enables connectors.
+#
+# A release also carries pinned images and the environment that a version
+# needs. Neither is set here, because no inventory needs one. The
+# CamundaRelease page shows both.
+apiVersion: core.camunda.io/v1
+kind: CamundaRelease
+metadata:
+  name: camunda-8-9
+spec:
+  version: "8.9.18"
+  connectors:
+    version: "8.9.9"

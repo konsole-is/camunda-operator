@@ -21,9 +21,3 @@ rules:
   - get
   - list
   - watch
-- apiGroups:
-  - core.camunda.io
-  resources:
-  - elasticsearchclusterpresets/status
-  verbs:
-  - get

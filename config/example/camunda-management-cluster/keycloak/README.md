@@ -13,6 +13,13 @@ The sizing lives in [`config/example/presets`](../../presets). The
 and the `CamundaCluster` names `small`. `CamundaManagementCluster` and
 `CamundaOptimize` have no preset kind, so every value on them is their own.
 
+The version of the orchestration cluster lives in
+[`config/example/releases`](../../releases). The `CamundaCluster` names the
+release `camunda-8-9` and sets no `version` of its own. Raise `spec.version`
+in that one file, and every cluster that names the release follows. The
+management plane keeps its versions on itself, because Management Identity,
+Console, and Web Modeler each carry a patch line of their own.
+
 ## Before you start
 
 - Install the Keycloak Operator, the CloudNativePG operator, the ECK
@@ -32,19 +39,20 @@ and the `CamundaCluster` names `small`. `CamundaManagementCluster` and
 
 ## Apply
 
-One command applies the whole inventory, presets included:
+One command applies the whole inventory, presets and release included:
 
 ```sh
 kubectl apply -k config/example/camunda-management-cluster/keycloak
 ```
 
-To see each resource become ready, apply the presets once, then the files in
-their number order:
+To see each resource become ready, apply the shared resources once, then the
+files in their number order:
 
-1. The shared presets, once per Kubernetes cluster:
+1. The shared presets and the shared release, once per Kubernetes cluster:
 
     ```sh
     kubectl apply -k config/example/presets
+    kubectl apply -k config/example/releases
     ```
 
 2. `01-namespaces.yaml` creates both namespaces.
@@ -71,7 +79,7 @@ their number order:
 8. `07-elasticsearch-cluster.yaml` creates the `ElasticsearchCluster`
    `my-cluster-es`, which inherits the preset `standard`.
 9. `08-camunda-cluster.yaml` creates the `CamundaCluster` `my-cluster`, which
-   inherits the preset `small`. Wait for it:
+   inherits the preset `small` and the release `camunda-8-9`. Wait for it:
 
     ```sh
     kubectl wait camundacluster/my-cluster -n my-cluster-ns \
@@ -98,9 +106,9 @@ their number order:
 ## Add a second cluster
 
 `clusterSelector` matches on labels, so a second cluster joins this plane by
-carrying `environment: production`. With the preset `small` in place, that
-cluster is `08-camunda-cluster.yaml` again with another name and its own
-storage. Nothing on `my-management` changes.
+carrying `environment: production`. With the preset `small` and the release
+`camunda-8-9` in place, that cluster is `08-camunda-cluster.yaml` again with
+another name and its own storage. Nothing on `my-management` changes.
 
 ## Why the cluster runs on Elasticsearch
 
@@ -122,11 +130,13 @@ kubectl delete camundaplatformconfig/my-platform-config
 kubectl delete namespace my-management-ns my-cluster-ns
 ```
 
-The presets are shared, so leave them unless no inventory uses them any more.
+The presets and the release are shared, so leave them unless no inventory uses
+them any more.
 
 ## Related
 
 - [Presets](https://konsole-is.github.io/camunda-operator/guides/presets/)
+- [CamundaRelease](https://konsole-is.github.io/camunda-operator/crds/camundarelease/)
 - [Management plane](https://konsole-is.github.io/camunda-operator/guides/management-plane/#step-3a-the-operator-runs-keycloak)
 - [CamundaManagementCluster](https://konsole-is.github.io/camunda-operator/crds/camundamanagementcluster/)
 - [CamundaOptimize](https://konsole-is.github.io/camunda-operator/crds/camundaoptimize/)

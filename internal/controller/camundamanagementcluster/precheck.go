@@ -351,21 +351,6 @@ func (res *resolver) resolveWebModeler(ctx context.Context, out *resolved) error
 	return nil
 }
 
-// forComponent runs read and records every hash input it produces under comp
-// rather than in the shared inputs. A failed read keeps what it recorded up to
-// the failure, the way the shared inputs do.
-func (res *resolver) forComponent(comp string, read func() error) error {
-	shared := res.inputs
-	res.inputs = nil
-
-	err := read()
-
-	res.componentInputs[comp] = append(res.componentInputs[comp], res.inputs...)
-	res.inputs = shared
-
-	return err
-}
-
 // resolvePusher reads the credentials that the two Web Modeler processes
 // authenticate their WebSocket connection with, and generates them when the
 // Secret that holds them is absent. Deleting that Secret therefore rotates
@@ -386,6 +371,21 @@ func (res *resolver) resolvePusher(ctx context.Context) (components.PusherCreden
 	}
 
 	return components.PusherCredentials{Key: appKey, Secret: appSecret}, nil
+}
+
+// forComponent runs read and records every hash input it produces under comp
+// rather than in the shared inputs. A failed read keeps what it recorded up to
+// the failure, the way the shared inputs do.
+func (res *resolver) forComponent(comp string, read func() error) error {
+	shared := res.inputs
+	res.inputs = nil
+
+	err := read()
+
+	res.componentInputs[comp] = append(res.componentInputs[comp], res.inputs...)
+	res.inputs = shared
+
+	return err
 }
 
 // resolveDatabase reads one DatabaseConfig of the management namespace, the
@@ -443,6 +443,17 @@ func (res *resolver) get(ctx context.Context, key client.ObjectKey, obj client.O
 	return nil
 }
 
+// objectKind returns the kind of obj from the scheme. A typed read leaves
+// TypeMeta empty, so the object cannot tell.
+func (res *resolver) objectKind(obj client.Object) string {
+	gvk, err := apiutil.GVKForObject(obj, res.scheme)
+	if err != nil {
+		return fmt.Sprintf("%T", obj)
+	}
+
+	return gvk.Kind
+}
+
 // localize checks the Secret of ref through secret and rewrites ref to its
 // local key.
 func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose components.MirrorPurpose) error {
@@ -455,15 +466,6 @@ func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose
 	ref.Name, ref.Namespace = local.Name, local.Namespace
 
 	return nil
-}
-
-// checkLocalSecret checks that the Secret named name in the management
-// namespace carries keys, and records its resource version as a hash input.
-// Every reference of a namespaced kind resolves here, so no copy is involved.
-func (res *resolver) checkLocalSecret(ctx context.Context, name string, keys ...string) error {
-	_, err := res.secret(ctx, client.ObjectKey{Namespace: res.mc.Namespace, Name: name}, keys...)
-
-	return err
 }
 
 // secretFor is secret, plus the copy that a Secret outside the management
@@ -491,6 +493,15 @@ func (res *resolver) secretFor(
 		Namespace: res.mc.Namespace,
 		Name:      components.LocalSecretName(res.mc, key.Namespace, key.Name, purpose),
 	}, nil
+}
+
+// checkLocalSecret checks that the Secret named name in the management
+// namespace carries keys, and records its resource version as a hash input.
+// Every reference of a namespaced kind resolves here, so no copy is involved.
+func (res *resolver) checkLocalSecret(ctx context.Context, name string, keys ...string) error {
+	_, err := res.secret(ctx, client.ObjectKey{Namespace: res.mc.Namespace, Name: name}, keys...)
+
+	return err
 }
 
 // secret checks that the Secret at key carries every one of keys and returns
@@ -522,15 +533,4 @@ func objectPath(key client.ObjectKey) string {
 	}
 
 	return key.Namespace + "/" + key.Name
-}
-
-// objectKind returns the kind of obj from the scheme. A typed read leaves
-// TypeMeta empty, so the object cannot tell.
-func (res *resolver) objectKind(obj client.Object) string {
-	gvk, err := apiutil.GVKForObject(obj, res.scheme)
-	if err != nil {
-		return fmt.Sprintf("%T", obj)
-	}
-
-	return gvk.Kind
 }

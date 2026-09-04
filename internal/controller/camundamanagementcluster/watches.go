@@ -152,6 +152,119 @@ func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
+// enqueueForDatabaseServer maps an event on a DatabaseServerConfig to every
+// management cluster that reaches it. The reference is two hops away: a
+// DatabaseConfig names the server, and a management cluster names the
+// DatabaseConfig. The host and the port of the server reach the containers, so
+// a change to them must roll the pods.
+func (r *Reconciler) enqueueForDatabaseServer() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		var configs v1.DatabaseConfigList
+		if err := r.List(ctx, &configs); err != nil {
+			logf.FromContext(ctx).Error(err, "Listing DatabaseConfigs for a server enqueue")
+			return nil
+		}
+
+		set := requestSet{}
+		for _, cfg := range configs.Items {
+			if cfg.Namespace != o.GetNamespace() || cfg.Spec.ServerRef != o.GetName() {
+				continue
+			}
+			set.addList(ctx, r.Client, client.MatchingFields{
+				DatabaseConfigRefsField: refindex.NamespacedKey(cfg.Namespace, cfg.Name),
+			})
+		}
+
+		return set.requests()
+	})
+}
+
+// enqueueForCluster maps an event on a CamundaCluster to every management
+// cluster that the event concerns: the ones whose selector matches its labels,
+// and the one that holds its claim. The holder is enqueued as well, because a
+// cluster that is relabeled out of a selector no longer matches the management
+// cluster that has to withdraw the claim.
+func (r *Reconciler) enqueueForCluster() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		set := requestSet{}
+		for _, mc := range managementClusters(ctx, r.Client) {
+			selector, err := metav1.LabelSelectorAsSelector(mc.Spec.ClusterSelector)
+			if err != nil {
+				continue
+			}
+			if selector.Matches(k8slabels.Set(o.GetLabels())) || holdsClaim(o, &mc) {
+				set[client.ObjectKeyFromObject(&mc)] = struct{}{}
+			}
+		}
+
+		return set.requests()
+	})
+}
+
+// holdsClaim reports whether mc is the management cluster that the claim
+// annotation of an orchestration cluster names.
+func holdsClaim(cluster client.Object, mc *v1.CamundaManagementCluster) bool {
+	return cluster.GetAnnotations()[components.ClaimAnnotation] == ClaimValue(mc)
+}
+
+// enqueueForNamespace reconciles every management cluster whose
+// namespaceSelector puts a bound on the namespace: a changed namespace label
+// can move clusters into or out of that bound.
+func (r *Reconciler) enqueueForNamespace() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, _ client.Object) []reconcile.Request {
+		set := requestSet{}
+		for _, mc := range managementClusters(ctx, r.Client) {
+			spec := mc.Spec.NamespaceSelector
+			if spec == nil || (len(spec.MatchLabels) == 0 && len(spec.MatchExpressions) == 0) {
+				continue
+			}
+			set[client.ObjectKeyFromObject(&mc)] = struct{}{}
+		}
+
+		return set.requests()
+	})
+}
+
+// enqueueForSecret maps a Secret event to every management cluster that can
+// reference it: every one of the Secret namespace, every one that names it in
+// its own spec, and every one that reaches it through a platform config or a
+// DatabaseConfig. A Secret in another namespace is copied into the management
+// namespace, so an event on it must refresh that copy. The reads go through
+// the cached client; the Secret watch is metadata-only.
+func (r *Reconciler) enqueueForSecret() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		key := refindex.ObjectNamespacedName(o)
+		set := requestSet{}
+
+		set.addList(ctx, r.Client, client.InNamespace(o.GetNamespace()))
+		set.addList(ctx, r.Client, client.MatchingFields{SecretRefsField: key})
+
+		var configs v1.CamundaPlatformConfigList
+		if err := r.List(
+			ctx, &configs, client.MatchingFields{camundaplatformconfig.SecretRefsField: key},
+		); err != nil {
+			logf.FromContext(ctx).Error(err, "Listing platform configs for a Secret enqueue", "secret", key)
+		}
+		for _, cfg := range configs.Items {
+			set.addList(ctx, r.Client, client.MatchingFields{PlatformConfigRefField: cfg.Name})
+		}
+
+		var databases v1.DatabaseConfigList
+		if err := r.List(
+			ctx, &databases, client.MatchingFields{databaseconfig.SecretRefsField: key},
+		); err != nil {
+			logf.FromContext(ctx).Error(err, "Listing DatabaseConfigs for a Secret enqueue", "secret", key)
+		}
+		for _, cfg := range databases.Items {
+			set.addList(ctx, r.Client, client.MatchingFields{
+				DatabaseConfigRefsField: refindex.NamespacedKey(cfg.Namespace, cfg.Name),
+			})
+		}
+
+		return set.requests()
+	})
+}
+
 // optimizeContractName keys a CamundaOptimize by the ManagementAuthConfig it
 // names, which is the key of the ContractNameField index. An event on a
 // CamundaOptimize therefore reaches the management cluster that writes that
@@ -204,119 +317,6 @@ func databaseConfigRefs(mc *v1.CamundaManagementCluster) []string {
 	}
 
 	return refs
-}
-
-// enqueueForCluster maps an event on a CamundaCluster to every management
-// cluster that the event concerns: the ones whose selector matches its labels,
-// and the one that holds its claim. The holder is enqueued as well, because a
-// cluster that is relabeled out of a selector no longer matches the management
-// cluster that has to withdraw the claim.
-func (r *Reconciler) enqueueForCluster() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-		set := requestSet{}
-		for _, mc := range managementClusters(ctx, r.Client) {
-			selector, err := metav1.LabelSelectorAsSelector(mc.Spec.ClusterSelector)
-			if err != nil {
-				continue
-			}
-			if selector.Matches(k8slabels.Set(o.GetLabels())) || holdsClaim(o, &mc) {
-				set[client.ObjectKeyFromObject(&mc)] = struct{}{}
-			}
-		}
-
-		return set.requests()
-	})
-}
-
-// enqueueForNamespace reconciles every management cluster whose
-// namespaceSelector puts a bound on the namespace: a changed namespace label
-// can move clusters into or out of that bound.
-func (r *Reconciler) enqueueForNamespace() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, _ client.Object) []reconcile.Request {
-		set := requestSet{}
-		for _, mc := range managementClusters(ctx, r.Client) {
-			spec := mc.Spec.NamespaceSelector
-			if spec == nil || (len(spec.MatchLabels) == 0 && len(spec.MatchExpressions) == 0) {
-				continue
-			}
-			set[client.ObjectKeyFromObject(&mc)] = struct{}{}
-		}
-
-		return set.requests()
-	})
-}
-
-// holdsClaim reports whether mc is the management cluster that the claim
-// annotation of an orchestration cluster names.
-func holdsClaim(cluster client.Object, mc *v1.CamundaManagementCluster) bool {
-	return cluster.GetAnnotations()[components.ClaimAnnotation] == ClaimValue(mc)
-}
-
-// enqueueForDatabaseServer maps an event on a DatabaseServerConfig to every
-// management cluster that reaches it. The reference is two hops away: a
-// DatabaseConfig names the server, and a management cluster names the
-// DatabaseConfig. The host and the port of the server reach the containers, so
-// a change to them must roll the pods.
-func (r *Reconciler) enqueueForDatabaseServer() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-		var configs v1.DatabaseConfigList
-		if err := r.List(ctx, &configs); err != nil {
-			logf.FromContext(ctx).Error(err, "Listing DatabaseConfigs for a server enqueue")
-			return nil
-		}
-
-		set := requestSet{}
-		for _, cfg := range configs.Items {
-			if cfg.Namespace != o.GetNamespace() || cfg.Spec.ServerRef != o.GetName() {
-				continue
-			}
-			set.addList(ctx, r.Client, client.MatchingFields{
-				DatabaseConfigRefsField: refindex.NamespacedKey(cfg.Namespace, cfg.Name),
-			})
-		}
-
-		return set.requests()
-	})
-}
-
-// enqueueForSecret maps a Secret event to every management cluster that can
-// reference it: every one of the Secret namespace, every one that names it in
-// its own spec, and every one that reaches it through a platform config or a
-// DatabaseConfig. A Secret in another namespace is copied into the management
-// namespace, so an event on it must refresh that copy. The reads go through
-// the cached client; the Secret watch is metadata-only.
-func (r *Reconciler) enqueueForSecret() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-		key := refindex.ObjectNamespacedName(o)
-		set := requestSet{}
-
-		set.addList(ctx, r.Client, client.InNamespace(o.GetNamespace()))
-		set.addList(ctx, r.Client, client.MatchingFields{SecretRefsField: key})
-
-		var configs v1.CamundaPlatformConfigList
-		if err := r.List(
-			ctx, &configs, client.MatchingFields{camundaplatformconfig.SecretRefsField: key},
-		); err != nil {
-			logf.FromContext(ctx).Error(err, "Listing platform configs for a Secret enqueue", "secret", key)
-		}
-		for _, cfg := range configs.Items {
-			set.addList(ctx, r.Client, client.MatchingFields{PlatformConfigRefField: cfg.Name})
-		}
-
-		var databases v1.DatabaseConfigList
-		if err := r.List(
-			ctx, &databases, client.MatchingFields{databaseconfig.SecretRefsField: key},
-		); err != nil {
-			logf.FromContext(ctx).Error(err, "Listing DatabaseConfigs for a Secret enqueue", "secret", key)
-		}
-		for _, cfg := range databases.Items {
-			set.addList(ctx, r.Client, client.MatchingFields{
-				DatabaseConfigRefsField: refindex.NamespacedKey(cfg.Namespace, cfg.Name),
-			})
-		}
-
-		return set.requests()
-	})
 }
 
 // managementClusters lists every CamundaManagementCluster. A list failure is

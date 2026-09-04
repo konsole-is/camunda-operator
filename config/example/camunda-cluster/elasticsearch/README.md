@@ -7,9 +7,11 @@ The manifests use the names of
 [Getting started](https://konsole-is.github.io/camunda-operator/getting-started/).
 The sizes suit one small test cluster, such as kind.
 
-This inventory sets every field inline and names no preset. It is the one
-example of the explicit shape. The other three inherit their sizing from
-[`config/example/presets`](../../presets). Compare its `CamundaCluster` with
+This inventory sets every field inline and names neither a preset nor a
+release. It is the one example of the explicit shape. The other three inherit
+their sizing from [`config/example/presets`](../../presets), and the two with
+a `CamundaCluster` take their version from
+[`config/example/releases`](../../releases). Compare its `CamundaCluster` with
 the one in [`camunda-cluster/rdbms`](../rdbms) to see the difference.
 
 ## Before you start

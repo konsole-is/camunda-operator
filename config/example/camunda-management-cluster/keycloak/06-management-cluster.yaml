@@ -27,17 +27,17 @@ spec:
       externalUrl: "https://camunda.example.com/auth"
       databaseConfigRef: my-keycloak-db
   identity:
-    version: "8.9.8"
+    version: "8.9.9"
     externalUrl: "https://identity.camunda.example.com"
     databaseConfigRef: my-identity-db
     admin:
       username: admin
       email: admin@example.com
   console:
-    version: "8.9.88"
+    version: "8.9.93"
     externalUrl: "https://console.camunda.example.com"
   webModeler:
-    version: "8.9.7"
+    version: "8.9.8"
     externalUrl: "https://modeler.camunda.example.com"
     websocketsExternalUrl: "https://modeler.camunda.example.com/ws"
     databaseConfigRef: my-web-modeler-db

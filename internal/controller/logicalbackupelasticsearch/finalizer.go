@@ -249,50 +249,128 @@ func (r *Reconciler) deleteArtifacts(
 	return r.deleteRuntimeBackup(ctx, backup, mgmt)
 }
 
-// deleteRuntimeBackup deletes the runtime backup that this backup owns. It
-// reports released=false when the deletion must wait: the backup is
-// accepted but not registered yet, or the cluster refuses the delete.
-func (r *Reconciler) deleteRuntimeBackup(
+// sweepPinnedSnapshots deletes the snapshots that this backup owns from the
+// pinned storage. Those are the recorded history snapshots when their
+// backup was accepted, and the records snapshot when it carries the UID. It
+// is best effort for a cluster that no longer exists. An unreachable or
+// repointed storage abandons the sweep, and the caller releases anyway. The
+// storage is the Elasticsearch contract and endpoint, and the pinned bucket
+// contract. A bucket contract that points elsewhere aims every delete at
+// another bucket. The repository under the pinned name can be registered
+// against that bucket by then. The sweep then deletes nothing.
+func (r *Reconciler) sweepPinnedSnapshots(ctx context.Context, backup *v1.LogicalBackupElasticsearch) error {
+	pinned := backup.Status.Storage
+	if pinned == nil {
+		return nil
+	}
+
+	storage := &v1.SecondaryStorageConfig{}
+	key := types.NamespacedName{Namespace: backup.Namespace, Name: pinned.SecondaryStorageConfig}
+	if err := r.APIReader.Get(ctx, key, storage); err != nil {
+		return fmt.Errorf("resolving the pinned SecondaryStorageConfig %q: %w", key.Name, err)
+	}
+	if err := pinnedStorageMatches(backup, storage); err != nil {
+		return err
+	}
+	if err := r.pinnedBucketLocationCurrent(ctx, backup.Namespace, pinned); err != nil {
+		return err
+	}
+	es, failure, err := secondarystorageconfig.ElasticsearchAdmin(ctx, r.APIReader, storage)
+	if err != nil {
+		return fmt.Errorf("building the Elasticsearch client: %w", err)
+	}
+	if failure != nil {
+		return errors.New(failure.Message)
+	}
+
+	repository := backup.Status.Repository
+	if backup.Status.HistoryAcceptedTime != nil {
+		for _, name := range backup.Status.HistorySnapshots {
+			if err := es.DeleteSnapshot(ctx, repository, name); err != nil {
+				return fmt.Errorf("deleting snapshot %q: %w", name, err)
+			}
+		}
+	}
+
+	records := logicalbackup.RecordsSnapshotName(backup.Status.BackupID)
+	snapshot, err := es.SnapshotStatus(ctx, repository, records)
+	if err != nil {
+		return fmt.Errorf("querying snapshot %q: %w", records, err)
+	}
+	if snapshot.State != esadmin.SnapshotMissing && snapshotOwnedBy(snapshot, backup) {
+		if err := es.DeleteSnapshot(ctx, repository, records); err != nil {
+			return fmt.Errorf("deleting snapshot %q: %w", records, err)
+		}
+	}
+
+	return nil
+}
+
+// mayHoldExportingPaused reports whether the backup can have left exporting
+// paused: it started and is not terminal, or it ended as ResumeFailed.
+func mayHoldExportingPaused(backup *v1.LogicalBackupElasticsearch) bool {
+	if backup.Status.Step == "" {
+		return false
+	}
+	return !backup.Terminal() || backup.Status.TerminalReason == v1.ReasonResumeFailed
+}
+
+// finalizerElasticsearch builds the Elasticsearch client for the finalizer. A
+// storage contract or a Secret that is gone releases the finalizer with an
+// event, because the artifacts are not reachable by construction. Every
+// failure to build the client either releases or returns an error. A nil
+// client with released=false and no error does not occur.
+func (r *Reconciler) finalizerElasticsearch(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
-	mgmt *camundaadmin.Client,
-) (released bool, err error) {
-	// The partitions register an accepted backup asynchronously, and the
-	// delete of an unregistered one answers as if it never existed. If the
-	// deletion releases on that answer, the finalizer is gone while the
-	// backup registers after it. Within the registration grace of the
-	// acceptance the deletion waits. Past the grace, the backup never
-	// registered and there is nothing to delete.
-	status, err := mgmt.RuntimeBackupStatus(ctx, backup.Status.BackupID)
+	cluster *v1.CamundaCluster,
+) (es *esadmin.Client, released bool, err error) {
+	storage, err := r.resolvePinnedStorage(ctx, backup, cluster)
 	if err != nil {
-		return false, fmt.Errorf("querying the runtime backup %d: %w", backup.Status.BackupID, err)
-	}
-	if status.State == camundaadmin.StateDoesNotExist {
-		if r.registering(backup.Status.RuntimeAcceptedTime) {
-			r.holdDeletion(backup, fmt.Sprintf(
-				"runtime backup %d was accepted and is not registered yet; the deletion waits for the registration grace",
-				backup.Status.BackupID,
-			))
-			return false, nil
+		if storageMissing(err) {
+			r.releaseWithoutCleanup(backup, err.Error())
+			return nil, true, nil
 		}
-		return true, nil
+		return nil, false, err
+	}
+	if err := pinnedStorageMatches(backup, storage); err != nil {
+		// The artifacts live on the pinned cluster. To delete against a
+		// different one hits the wrong data. Hold until the contract points
+		// back, or the operator removes the finalizer by hand.
+		return nil, false, fmt.Errorf("the pinned storage no longer matches: %w", err)
 	}
 
-	if err := mgmt.DeleteRuntimeBackup(ctx, backup.Status.BackupID); err != nil {
-		// Any rejected delete holds the deletion. A backup that is still in
-		// progress is the documented case. Every rejection means that the
-		// cluster refuses for a reason worth waiting out, rather than
-		// hammering the endpoint on error backoff.
-		if errors.Is(err, camundaadmin.ErrRejected) {
-			r.holdDeletion(backup, fmt.Sprintf(
-				"runtime backup %d cannot be deleted yet: %v", backup.Status.BackupID, err,
-			))
-			return false, nil
-		}
-		return false, fmt.Errorf("deleting runtime backup %d: %w", backup.Status.BackupID, err)
+	es, failure, err := secondarystorageconfig.ElasticsearchAdmin(ctx, r.APIReader, storage)
+	if err != nil {
+		return nil, false, fmt.Errorf("building the Elasticsearch client: %w", err)
+	}
+	if failure != nil {
+		r.releaseWithoutCleanup(backup, failure.Message)
+		return nil, true, nil
 	}
 
-	return true, nil
+	return es, false, nil
+}
+
+// resolvePinnedStorage resolves the storage contract that the backup pinned
+// when it started. A backup that never started has no pin, so it resolves the
+// storage of the cluster.
+func (r *Reconciler) resolvePinnedStorage(
+	ctx context.Context,
+	backup *v1.LogicalBackupElasticsearch,
+	cluster *v1.CamundaCluster,
+) (*v1.SecondaryStorageConfig, error) {
+	if backup.Status.Storage == nil {
+		return r.resolveStorage(ctx, cluster)
+	}
+
+	storage := &v1.SecondaryStorageConfig{}
+	key := types.NamespacedName{Namespace: backup.Namespace, Name: backup.Status.Storage.SecondaryStorageConfig}
+	if err := r.APIReader.Get(ctx, key, storage); err != nil {
+		return nil, fmt.Errorf("resolving the pinned SecondaryStorageConfig %q: %w", key.Name, err)
+	}
+
+	return storage, nil
 }
 
 // deleteHistorySnapshots deletes the snapshots of the history backup that
@@ -363,71 +441,50 @@ func (r *Reconciler) deleteHistorySnapshots(
 	return true, nil
 }
 
-// finalizerElasticsearch builds the Elasticsearch client for the finalizer. A
-// storage contract or a Secret that is gone releases the finalizer with an
-// event, because the artifacts are not reachable by construction. Every
-// failure to build the client either releases or returns an error. A nil
-// client with released=false and no error does not occur.
-func (r *Reconciler) finalizerElasticsearch(
+// deleteRuntimeBackup deletes the runtime backup that this backup owns. It
+// reports released=false when the deletion must wait: the backup is
+// accepted but not registered yet, or the cluster refuses the delete.
+func (r *Reconciler) deleteRuntimeBackup(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
-	cluster *v1.CamundaCluster,
-) (es *esadmin.Client, released bool, err error) {
-	storage, err := r.resolvePinnedStorage(ctx, backup, cluster)
+	mgmt *camundaadmin.Client,
+) (released bool, err error) {
+	// The partitions register an accepted backup asynchronously, and the
+	// delete of an unregistered one answers as if it never existed. If the
+	// deletion releases on that answer, the finalizer is gone while the
+	// backup registers after it. Within the registration grace of the
+	// acceptance the deletion waits. Past the grace, the backup never
+	// registered and there is nothing to delete.
+	status, err := mgmt.RuntimeBackupStatus(ctx, backup.Status.BackupID)
 	if err != nil {
-		if storageMissing(err) {
-			r.releaseWithoutCleanup(backup, err.Error())
-			return nil, true, nil
+		return false, fmt.Errorf("querying the runtime backup %d: %w", backup.Status.BackupID, err)
+	}
+	if status.State == camundaadmin.StateDoesNotExist {
+		if r.registering(backup.Status.RuntimeAcceptedTime) {
+			r.holdDeletion(backup, fmt.Sprintf(
+				"runtime backup %d was accepted and is not registered yet; the deletion waits for the registration grace",
+				backup.Status.BackupID,
+			))
+			return false, nil
 		}
-		return nil, false, err
-	}
-	if err := pinnedStorageMatches(backup, storage); err != nil {
-		// The artifacts live on the pinned cluster. To delete against a
-		// different one hits the wrong data. Hold until the contract points
-		// back, or the operator removes the finalizer by hand.
-		return nil, false, fmt.Errorf("the pinned storage no longer matches: %w", err)
+		return true, nil
 	}
 
-	es, failure, err := secondarystorageconfig.ElasticsearchAdmin(ctx, r.APIReader, storage)
-	if err != nil {
-		return nil, false, fmt.Errorf("building the Elasticsearch client: %w", err)
-	}
-	if failure != nil {
-		r.releaseWithoutCleanup(backup, failure.Message)
-		return nil, true, nil
-	}
-
-	return es, false, nil
-}
-
-// resolvePinnedStorage resolves the storage contract that the backup pinned
-// when it started. A backup that never started has no pin, so it resolves the
-// storage of the cluster.
-func (r *Reconciler) resolvePinnedStorage(
-	ctx context.Context,
-	backup *v1.LogicalBackupElasticsearch,
-	cluster *v1.CamundaCluster,
-) (*v1.SecondaryStorageConfig, error) {
-	if backup.Status.Storage == nil {
-		return r.resolveStorage(ctx, cluster)
+	if err := mgmt.DeleteRuntimeBackup(ctx, backup.Status.BackupID); err != nil {
+		// Any rejected delete holds the deletion. A backup that is still in
+		// progress is the documented case. Every rejection means that the
+		// cluster refuses for a reason worth waiting out, rather than
+		// hammering the endpoint on error backoff.
+		if errors.Is(err, camundaadmin.ErrRejected) {
+			r.holdDeletion(backup, fmt.Sprintf(
+				"runtime backup %d cannot be deleted yet: %v", backup.Status.BackupID, err,
+			))
+			return false, nil
+		}
+		return false, fmt.Errorf("deleting runtime backup %d: %w", backup.Status.BackupID, err)
 	}
 
-	storage := &v1.SecondaryStorageConfig{}
-	key := types.NamespacedName{Namespace: backup.Namespace, Name: backup.Status.Storage.SecondaryStorageConfig}
-	if err := r.APIReader.Get(ctx, key, storage); err != nil {
-		return nil, fmt.Errorf("resolving the pinned SecondaryStorageConfig %q: %w", key.Name, err)
-	}
-
-	return storage, nil
-}
-
-// mayHoldExportingPaused reports whether the backup can have left exporting
-// paused: it started and is not terminal, or it ended as ResumeFailed.
-func mayHoldExportingPaused(backup *v1.LogicalBackupElasticsearch) bool {
-	if backup.Status.Step == "" {
-		return false
-	}
-	return !backup.Terminal() || backup.Status.TerminalReason == v1.ReasonResumeFailed
+	return true, nil
 }
 
 // registering reports whether an accepted backup can still be registering:
@@ -453,63 +510,6 @@ func (r *Reconciler) holdDeletion(backup *v1.LogicalBackupElasticsearch, reason 
 // releaseWithoutCleanup records that the artifacts are not reachable. The
 // finalizer releases anyway. A deleted cluster must not pin its backups
 // forever.
-// sweepPinnedSnapshots deletes the snapshots that this backup owns from the
-// pinned storage. Those are the recorded history snapshots when their
-// backup was accepted, and the records snapshot when it carries the UID. It
-// is best effort for a cluster that no longer exists. An unreachable or
-// repointed storage abandons the sweep, and the caller releases anyway. The
-// storage is the Elasticsearch contract and endpoint, and the pinned bucket
-// contract. A bucket contract that points elsewhere aims every delete at
-// another bucket. The repository under the pinned name can be registered
-// against that bucket by then. The sweep then deletes nothing.
-func (r *Reconciler) sweepPinnedSnapshots(ctx context.Context, backup *v1.LogicalBackupElasticsearch) error {
-	pinned := backup.Status.Storage
-	if pinned == nil {
-		return nil
-	}
-
-	storage := &v1.SecondaryStorageConfig{}
-	key := types.NamespacedName{Namespace: backup.Namespace, Name: pinned.SecondaryStorageConfig}
-	if err := r.APIReader.Get(ctx, key, storage); err != nil {
-		return fmt.Errorf("resolving the pinned SecondaryStorageConfig %q: %w", key.Name, err)
-	}
-	if err := pinnedStorageMatches(backup, storage); err != nil {
-		return err
-	}
-	if err := r.pinnedBucketLocationCurrent(ctx, backup.Namespace, pinned); err != nil {
-		return err
-	}
-	es, failure, err := secondarystorageconfig.ElasticsearchAdmin(ctx, r.APIReader, storage)
-	if err != nil {
-		return fmt.Errorf("building the Elasticsearch client: %w", err)
-	}
-	if failure != nil {
-		return errors.New(failure.Message)
-	}
-
-	repository := backup.Status.Repository
-	if backup.Status.HistoryAcceptedTime != nil {
-		for _, name := range backup.Status.HistorySnapshots {
-			if err := es.DeleteSnapshot(ctx, repository, name); err != nil {
-				return fmt.Errorf("deleting snapshot %q: %w", name, err)
-			}
-		}
-	}
-
-	records := logicalbackup.RecordsSnapshotName(backup.Status.BackupID)
-	snapshot, err := es.SnapshotStatus(ctx, repository, records)
-	if err != nil {
-		return fmt.Errorf("querying snapshot %q: %w", records, err)
-	}
-	if snapshot.State != esadmin.SnapshotMissing && snapshotOwnedBy(snapshot, backup) {
-		if err := es.DeleteSnapshot(ctx, repository, records); err != nil {
-			return fmt.Errorf("deleting snapshot %q: %w", records, err)
-		}
-	}
-
-	return nil
-}
-
 func (r *Reconciler) releaseWithoutCleanup(backup *v1.LogicalBackupElasticsearch, reason string) {
 	r.EventRecorder.Eventf(
 		backup,

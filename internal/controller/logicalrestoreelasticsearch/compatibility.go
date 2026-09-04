@@ -28,6 +28,36 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/restore"
 )
 
+// compatibility is what the ValidatingCompatibility phase compares: the facts
+// of the backup against the facts of the target. The target facts come from
+// the live broker StatefulSet and the storage contract of the target, because
+// the management binding of a suspended cluster is unset.
+type compatibility struct {
+	// TargetStorageType is the type of the storage contract of the target. An
+	// Elasticsearch backup restores into Elasticsearch alone.
+	TargetStorageType v1.SecondaryStorageType
+	// BackupCluster is the cluster that the backup was taken from.
+	BackupCluster string
+	// TargetCluster is the cluster that the restore writes into.
+	TargetCluster string
+	// BackupPartitions is the partition count that the backup recorded.
+	BackupPartitions int32
+	// TargetPartitions is CAMUNDA_CLUSTER_PARTITIONCOUNT of the target.
+	TargetPartitions int32
+	// BackupBucket is the ObjectStorageConfig that the backup wrote to.
+	BackupBucket string
+	// TargetBucket is the spec.backupStorageRef of the target.
+	TargetBucket string
+	// BackupVersion is the Camunda version that the backup recorded.
+	BackupVersion string
+	// TargetVersion is the tag of the broker image of the target.
+	TargetVersion string
+}
+
+// errNotVersion says that a value is not a Camunda version. It reads as the
+// tail of "the version %q, which ...".
+var errNotVersion = errors.New("is not a version of the form x.y.z")
+
 // validate compares the backup against the target and fails the restore when
 // the target cannot hold it. It runs before the first destructive step, so a
 // mismatch costs nothing but the resource.
@@ -67,32 +97,6 @@ func (r *Reconciler) validate(
 	r.progressing(lres, "the restore writes the backup into the secondary storage of the target")
 
 	return restore.Outcome{Wait: restore.Shortly}, nil
-}
-
-// compatibility is what the ValidatingCompatibility phase compares: the facts
-// of the backup against the facts of the target. The target facts come from
-// the live broker StatefulSet and the storage contract of the target, because
-// the management binding of a suspended cluster is unset.
-type compatibility struct {
-	// TargetStorageType is the type of the storage contract of the target. An
-	// Elasticsearch backup restores into Elasticsearch alone.
-	TargetStorageType v1.SecondaryStorageType
-	// BackupCluster is the cluster that the backup was taken from.
-	BackupCluster string
-	// TargetCluster is the cluster that the restore writes into.
-	TargetCluster string
-	// BackupPartitions is the partition count that the backup recorded.
-	BackupPartitions int32
-	// TargetPartitions is CAMUNDA_CLUSTER_PARTITIONCOUNT of the target.
-	TargetPartitions int32
-	// BackupBucket is the ObjectStorageConfig that the backup wrote to.
-	BackupBucket string
-	// TargetBucket is the spec.backupStorageRef of the target.
-	TargetBucket string
-	// BackupVersion is the Camunda version that the backup recorded.
-	BackupVersion string
-	// TargetVersion is the tag of the broker image of the target.
-	TargetVersion string
 }
 
 // check reports the first reason why the target cannot hold the backup, or
@@ -172,10 +176,6 @@ func checkVersions(in compatibility) *conditions.PreCheckFailure {
 
 	return nil
 }
-
-// errNotVersion says that a value is not a Camunda version. It reads as the
-// tail of "the version %q, which ...".
-var errNotVersion = errors.New("is not a version of the form x.y.z")
 
 // parseVersion reads a version of the form x.y.z and returns its three
 // numbers. The exact-version rule compares the recorded strings, so the parse
