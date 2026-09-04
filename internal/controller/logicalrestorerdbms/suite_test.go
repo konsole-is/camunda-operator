@@ -47,13 +47,15 @@ const cliImage = "ghcr.io/konsole-is/camunda-operator-cli:test"
 // grace runs out finish inside the test timeout.
 const midRunGrace = 3 * time.Second
 
-// retryInterval paces a hold that no watch resolves. It is short enough that
-// a spec which waits the timer out fits in the test timeout, and long enough
-// that watchWindow can tell a watch from the timer.
+// retryInterval paces a hold in Pending that no watch resolves. It stays under
+// the test timeout, so a spec that waits for the timer still finishes. It stays
+// above watchWindow, so watchWindow tells a watch from the timer.
 const retryInterval = 5 * time.Second
 
-// watchWindow is shorter than retryInterval. A hold that resolves inside it
-// therefore proves that a watch woke the restore, and not the timer.
+// watchWindow is the budget of a wake that a watch delivers. The chain is the
+// watch event, the enqueue, one reconcile, and the status write. The queue of
+// the restores that the earlier specs left running sits in front of it. The
+// window stays under retryInterval, so only a watch ends a hold inside it.
 const watchWindow = 2 * time.Second
 
 var (
