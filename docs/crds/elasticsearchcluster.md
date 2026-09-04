@@ -39,7 +39,7 @@ If `spec.presetRef` names an `ElasticsearchClusterPreset`, the preset is the bas
 
 ## Storage
 
-You can increase `spec.storageSize` at any time. You cannot decrease it. Admission rejects a lower inline value. If a preset lowers the size under a running cluster, the operator keeps the current size and records a Warning event with reason `StorageShrinkIgnored`. To get a smaller volume, delete and recreate the cluster.
+You can increase `spec.storageSize` at any time. You cannot decrease it. The API server rejects a lower inline value. If a preset lowers the size under a running cluster, the operator keeps the current size and records a Warning event with reason `StorageShrinkIgnored`. To get a smaller volume, delete and recreate the cluster.
 
 ## Snapshot repository
 
@@ -180,10 +180,10 @@ spec:
 ### Validation rules
 
 - `spec.secondaryStorageConfig` is required.
-- `spec.storageSize` cannot shrink. Admission rejects a value that is lower than the previous inline value.
+- `spec.storageSize` cannot shrink. The API server rejects a value that is lower than the previous inline value.
 - `spec.version` must have three segments (`9.2.4`, not `9.2`). The operator then requires Elasticsearch 8.19+ or 9.2+ on the merged spec.
 - `spec.replicas` must be at least 1.
-- When `spec.presetRef` is unset, `version`, `replicas`, and `storageSize` must be set inline. With a preset, the merged result must contain them. The operator enforces this rule, not admission.
+- When `spec.presetRef` is unset, `version`, `replicas`, and `storageSize` must be set inline. With a preset, the merged result must contain them. The operator enforces this rule, not the API server.
 - `spec.secondaryStorageConfig`, `spec.snapshotStorageRef`, and `spec.serviceAccount.name` must be valid resource names.
 - `spec.persistentVolumeClaimRetentionPolicy.whenDeleted` must be `Retain` or `Delete`.
 

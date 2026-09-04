@@ -131,7 +131,7 @@ spec:
 
 - `spec.databaseName` must match `^[a-z_][a-z0-9_]{0,62}$`: a lowercase PostgreSQL identifier of at most 63 characters.
 - `spec.databaseConfig` and `spec.secondaryStorageConfig` must be valid resource names.
-- The uniqueness of the logical database name per server is enforced by the operator, not by admission. See `InvalidReference` above.
+- The operator enforces the uniqueness of the logical database name per server, and the API server does not. See `InvalidReference` above.
 
 ### A production-shaped example
 

@@ -172,7 +172,7 @@ Most fields merge like this, value by value. A few blocks replace as a whole, be
 
 ## Change a fleet
 
-When you edit a preset, every cluster that references it takes the new baseline soon after. The change is not instant. A larger `storageSize` grows the volumes of every cluster in place. A lower `storageSize` is ignored for a running cluster, which keeps its volumes and records the event `StorageShrinkIgnored`.
+When you edit a preset, every cluster that references it takes the new baseline. A larger `storageSize` grows the volumes of every cluster in place. A lower `storageSize` is ignored for a running cluster, which keeps its volumes and records the event `StorageShrinkIgnored`.
 
 To roll a fleet to a new version, edit the release. Every cluster that references it rolls its pods, whatever preset sizes it. To roll in steps, create a second release, for example `camunda-8-9-5`, and move clusters to it one at a time by changing `releaseRef`. When every cluster is on the new release, delete the old one.
 
