@@ -37,6 +37,27 @@ type Effective struct {
 	v1.CamundaClusterSpec
 }
 
+// PrimaryStorageBackupPolicy is the resolved primary-storage backup policy:
+// every field with its documented default applied, so a consumer never
+// repeats a default. The renderer reads it, and the BackupSchedule controller
+// reads it to compare its own retention against the window of the cluster.
+type PrimaryStorageBackupPolicy struct {
+	// Continuous reports whether Zeebe holds every log segment until it is
+	// backed up.
+	Continuous bool
+	// Schedule is the interval of the Zeebe backup scheduler, or ScheduleNone.
+	Schedule string
+	// CheckpointInterval is the granularity of a point-in-time restore, as an
+	// ISO 8601 duration.
+	CheckpointInterval string
+	// RetentionWindow is how far back the primary-storage backups stay
+	// available, as an ISO 8601 duration of days and time.
+	RetentionWindow string
+	// CleanupSchedule is the interval at which Zeebe prunes backups outside
+	// the window, or ScheduleNone, which never prunes.
+	CleanupSchedule string
+}
+
 // NewEffective wraps a merged spec (preset, release, cluster). It copies
 // nothing: the accessors
 // read the spec on every call.
@@ -127,14 +148,6 @@ func (e Effective) Replicas(component string) int32 {
 	return *workload.Replicas
 }
 
-// Workload returns the per-component block of the named component, one of
-// the Component constants. It returns the zero value when the block is unset
-// or the name is unknown.
-func (e Effective) Workload(component string) v1.WorkloadSpec {
-	workload, _ := e.workload(component)
-	return workload
-}
-
 // workload reports false for a name that is not a component of the cluster,
 // so Replicas can tell an unknown name from an unset block.
 func (e Effective) workload(component string) (v1.WorkloadSpec, bool) {
@@ -170,25 +183,12 @@ func (e Effective) workload(component string) (v1.WorkloadSpec, bool) {
 	return v1.WorkloadSpec{}, true
 }
 
-// PrimaryStorageBackupPolicy is the resolved primary-storage backup policy:
-// every field with its documented default applied, so a consumer never
-// repeats a default. The renderer reads it, and the BackupSchedule controller
-// reads it to compare its own retention against the window of the cluster.
-type PrimaryStorageBackupPolicy struct {
-	// Continuous reports whether Zeebe holds every log segment until it is
-	// backed up.
-	Continuous bool
-	// Schedule is the interval of the Zeebe backup scheduler, or ScheduleNone.
-	Schedule string
-	// CheckpointInterval is the granularity of a point-in-time restore, as an
-	// ISO 8601 duration.
-	CheckpointInterval string
-	// RetentionWindow is how far back the primary-storage backups stay
-	// available, as an ISO 8601 duration of days and time.
-	RetentionWindow string
-	// CleanupSchedule is the interval at which Zeebe prunes backups outside
-	// the window, or ScheduleNone, which never prunes.
-	CleanupSchedule string
+// Workload returns the per-component block of the named component, one of
+// the Component constants. It returns the zero value when the block is unset
+// or the name is unknown.
+func (e Effective) Workload(component string) v1.WorkloadSpec {
+	workload, _ := e.workload(component)
+	return workload
 }
 
 // PrimaryStorageBackup returns the primary-storage backup policy with the

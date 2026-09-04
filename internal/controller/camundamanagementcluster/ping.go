@@ -107,56 +107,21 @@ func (r *Reconciler) syncPing(
 	return errors.Join(append(errs, r.withdrawPingUnserved(ctx, mc, clusters, served))...)
 }
 
-// withdrawPingUnserved removes the ping settings of mc from every cluster that
-// is not in served.
-//
-// The reconcile that stops at a failed pre-check calls it on its own: a
-// cluster that left the selector must stop reporting to a Console that no
-// longer lists it, and the withdrawal reads no reference of the management
-// cluster.
-func (r *Reconciler) withdrawPingUnserved(
-	ctx context.Context,
-	mc *v1.CamundaManagementCluster,
-	clusters []v1.CamundaCluster,
-	served map[client.ObjectKey]bool,
-) error {
-	consoleURL := components.ConsoleServiceURL(mc)
-	for i := range clusters {
-		cluster := &clusters[i]
-		// The entries are what says the ping is still there. The claim is no
-		// signal: a deselected cluster may have lost it in an earlier pass.
-		if served[client.ObjectKeyFromObject(cluster)] ||
-			!components.PingsConsole(cluster.Spec.ExtraEnv, consoleURL) {
+// reportPingFailure records a refused ping in the status row of one cluster.
+// Console lists a cluster only once the cluster reports to it, so a cluster
+// that carries no ping is not attached.
+func reportPingFailure(mc *v1.CamundaManagementCluster, cluster client.ObjectKey, err error) {
+	for i := range mc.Status.Clusters {
+		row := &mc.Status.Clusters[i]
+		if row.Name != cluster.Name || row.Namespace != cluster.Namespace {
 			continue
 		}
-		if err := r.withdrawPingFrom(ctx, cluster); err != nil {
-			return err
-		}
+		row.Attached = false
+		row.Reason = v1.ReasonWriteFailed
+		row.Message = conditions.BoundMessage(err.Error())
+
+		return
 	}
-
-	return nil
-}
-
-// withdrawPing removes the ping settings of mc from every orchestration
-// cluster. The finalizer calls it, so a deleted management cluster leaves no
-// cluster reporting to a Console that is gone.
-func (r *Reconciler) withdrawPing(
-	ctx context.Context,
-	mc *v1.CamundaManagementCluster,
-	clusters []v1.CamundaCluster,
-) error {
-	return r.withdrawPingUnserved(ctx, mc, clusters, nil)
-}
-
-// withdrawPingFrom removes the ping settings from one cluster. A cluster that
-// went between the list and the apply needs no withdrawal.
-func (r *Reconciler) withdrawPingFrom(ctx context.Context, cluster *v1.CamundaCluster) error {
-	err := r.applyPing(ctx, client.ObjectKeyFromObject(cluster), cluster.UID, nil)
-	if apierrors.IsConflict(err) || apierrors.IsNotFound(err) {
-		return nil
-	}
-
-	return err
 }
 
 // replacePing writes the ping settings of mc on one attached cluster. An
@@ -254,6 +219,58 @@ func managerNames(managers []string) string {
 	}
 }
 
+// withdrawPing removes the ping settings of mc from every orchestration
+// cluster. The finalizer calls it, so a deleted management cluster leaves no
+// cluster reporting to a Console that is gone.
+func (r *Reconciler) withdrawPing(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	clusters []v1.CamundaCluster,
+) error {
+	return r.withdrawPingUnserved(ctx, mc, clusters, nil)
+}
+
+// withdrawPingUnserved removes the ping settings of mc from every cluster that
+// is not in served.
+//
+// The reconcile that stops at a failed pre-check calls it on its own: a
+// cluster that left the selector must stop reporting to a Console that no
+// longer lists it, and the withdrawal reads no reference of the management
+// cluster.
+func (r *Reconciler) withdrawPingUnserved(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	clusters []v1.CamundaCluster,
+	served map[client.ObjectKey]bool,
+) error {
+	consoleURL := components.ConsoleServiceURL(mc)
+	for i := range clusters {
+		cluster := &clusters[i]
+		// The entries are what says the ping is still there. The claim is no
+		// signal: a deselected cluster may have lost it in an earlier pass.
+		if served[client.ObjectKeyFromObject(cluster)] ||
+			!components.PingsConsole(cluster.Spec.ExtraEnv, consoleURL) {
+			continue
+		}
+		if err := r.withdrawPingFrom(ctx, cluster); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// withdrawPingFrom removes the ping settings from one cluster. A cluster that
+// went between the list and the apply needs no withdrawal.
+func (r *Reconciler) withdrawPingFrom(ctx context.Context, cluster *v1.CamundaCluster) error {
+	err := r.applyPing(ctx, client.ObjectKeyFromObject(cluster), cluster.UID, nil)
+	if apierrors.IsConflict(err) || apierrors.IsNotFound(err) {
+		return nil
+	}
+
+	return err
+}
+
 // applyPing applies the minimal CamundaCluster object that carries env in the
 // top-level spec.extraEnv under the ping field manager. Nil entries remove
 // what that manager owns and leave every other entry alone. ForceOwnership
@@ -290,21 +307,4 @@ func (r *Reconciler) applyPing(
 	}
 
 	return nil
-}
-
-// reportPingFailure records a refused ping in the status row of one cluster.
-// Console lists a cluster only once the cluster reports to it, so a cluster
-// that carries no ping is not attached.
-func reportPingFailure(mc *v1.CamundaManagementCluster, cluster client.ObjectKey, err error) {
-	for i := range mc.Status.Clusters {
-		row := &mc.Status.Clusters[i]
-		if row.Name != cluster.Name || row.Namespace != cluster.Namespace {
-			continue
-		}
-		row.Attached = false
-		row.Reason = v1.ReasonWriteFailed
-		row.Message = conditions.BoundMessage(err.Error())
-
-		return
-	}
 }

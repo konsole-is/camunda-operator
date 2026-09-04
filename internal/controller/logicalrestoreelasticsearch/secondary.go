@@ -124,52 +124,6 @@ func (r *Reconciler) startRestore(
 	return restore.Outcome{Wait: restore.Shortly}, nil
 }
 
-// trackRestore polls the recovery of the restored indices. The restore of a
-// snapshot is asynchronous, and the recovery is what says that the data
-// arrived.
-func (r *Reconciler) trackRestore(
-	ctx context.Context,
-	lres *v1.LogicalRestoreElasticsearch,
-	resolved *resolution,
-	admin *esadmin.Client,
-) (restore.Outcome, error) {
-	patterns := restoredIndexPatterns(resolved.backup)
-
-	// The recovery answers for the indices that exist. Right after the restore
-	// requests were accepted, Elasticsearch has not created them yet, and a
-	// recovery of nothing reads as a recovery that finished. The indices are
-	// therefore the first half of the answer.
-	indices, err := admin.ResolveIndices(ctx, patterns)
-	if err != nil {
-		return r.holdStarted(lres, elasticsearchFailure(
-			"reading the restored indices", err,
-		)), nil
-	}
-	if len(indices) == 0 {
-		r.progressing(lres, "Elasticsearch did not create the restored indices yet")
-
-		return restore.Outcome{Wait: r.opts.PollInterval}, nil
-	}
-
-	state, err := admin.RestoreProgress(ctx, patterns)
-	if err != nil {
-		return r.holdStarted(lres, elasticsearchFailure(
-			"reading the recovery of the restored indices", err,
-		)), nil
-	}
-
-	if state == esadmin.RestoreInProgress {
-		r.progressing(lres, "Elasticsearch is still recovering the restored indices")
-
-		return restore.Outcome{Wait: r.opts.PollInterval}, nil
-	}
-
-	lres.Status.Phase = v1.LogicalRestoreRestoringPrimaryStorage
-	r.progressing(lres, "the secondary storage is restored. The broker volumes come next")
-
-	return restore.Outcome{Wait: restore.Shortly}, nil
-}
-
 // ensureRepository makes sure that the Elasticsearch of the target holds the
 // snapshot repository that the backup recorded, and returns its name.
 //
@@ -243,12 +197,6 @@ func (r *Reconciler) ensureRepository(
 	return repository, nil, nil
 }
 
-// restoredIndexPatterns are the index patterns that the restore replaces on
-// the target.
-func restoredIndexPatterns(source *backup) []string {
-	return logicalbackup.CamundaIndexPatterns(logicalbackup.HasOptimizeSnapshot(source.HistorySnapshots))
-}
-
 // restoredSnapshots names every snapshot that the restore asks Elasticsearch
 // for: the web-application snapshots that the backup recorded, and the record
 // snapshot that the backup id names.
@@ -256,6 +204,58 @@ func restoredSnapshots(source *backup, id int64) []string {
 	snapshots := slices.Clone(source.HistorySnapshots)
 
 	return append(snapshots, logicalbackup.RecordsSnapshotName(id))
+}
+
+// trackRestore polls the recovery of the restored indices. The restore of a
+// snapshot is asynchronous, and the recovery is what says that the data
+// arrived.
+func (r *Reconciler) trackRestore(
+	ctx context.Context,
+	lres *v1.LogicalRestoreElasticsearch,
+	resolved *resolution,
+	admin *esadmin.Client,
+) (restore.Outcome, error) {
+	patterns := restoredIndexPatterns(resolved.backup)
+
+	// The recovery answers for the indices that exist. Right after the restore
+	// requests were accepted, Elasticsearch has not created them yet, and a
+	// recovery of nothing reads as a recovery that finished. The indices are
+	// therefore the first half of the answer.
+	indices, err := admin.ResolveIndices(ctx, patterns)
+	if err != nil {
+		return r.holdStarted(lres, elasticsearchFailure(
+			"reading the restored indices", err,
+		)), nil
+	}
+	if len(indices) == 0 {
+		r.progressing(lres, "Elasticsearch did not create the restored indices yet")
+
+		return restore.Outcome{Wait: r.opts.PollInterval}, nil
+	}
+
+	state, err := admin.RestoreProgress(ctx, patterns)
+	if err != nil {
+		return r.holdStarted(lres, elasticsearchFailure(
+			"reading the recovery of the restored indices", err,
+		)), nil
+	}
+
+	if state == esadmin.RestoreInProgress {
+		r.progressing(lres, "Elasticsearch is still recovering the restored indices")
+
+		return restore.Outcome{Wait: r.opts.PollInterval}, nil
+	}
+
+	lres.Status.Phase = v1.LogicalRestoreRestoringPrimaryStorage
+	r.progressing(lres, "the secondary storage is restored. The broker volumes come next")
+
+	return restore.Outcome{Wait: restore.Shortly}, nil
+}
+
+// restoredIndexPatterns are the index patterns that the restore replaces on
+// the target.
+func restoredIndexPatterns(source *backup) []string {
+	return logicalbackup.CamundaIndexPatterns(logicalbackup.HasOptimizeSnapshot(source.HistorySnapshots))
 }
 
 // elasticsearchFailure maps a client error to the failure a user sees. Both

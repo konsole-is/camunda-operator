@@ -18,6 +18,7 @@ package cnpgcluster_test
 
 import (
 	"testing"
+	"time"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/stretchr/testify/assert"
@@ -172,6 +173,13 @@ func startControlPlane(t *testing.T) (client.Client, *runtime.Scheme) {
 		CRDDirectoryPaths:     []string{crdPath(t, utils.CNPGCRDPath), crdPath(t, utils.BarmanCRDPath)},
 		ErrorIfCRDPathMissing: true,
 		BinaryAssetsDirectory: utils.EnvtestBinaryDir(),
+		// A full run starts one control plane per suite, and several of them
+		// boot at once on one machine. Two budgets of envtest are not enough
+		// under that load: twenty seconds for the control plane, and ten for
+		// the wait until the CRDs above answer as API resources.
+		// internal/testenv gives the suites it starts the same two.
+		ControlPlaneStartTimeout: 2 * time.Minute,
+		CRDInstallOptions:        envtest.CRDInstallOptions{MaxTime: time.Minute},
 	}
 
 	cfg, err := control.Start()

@@ -36,20 +36,10 @@ const PreconditionAnnotation = "credentials.camunda.io/expected-uid"
 //
 // The API server accepts such a patch only when the named object is still on
 // the server. If it was deleted, the apply is rejected with a conflict and
-// nothing is created. That is what a controller needs when it republishes a
-// password it read earlier in the same reconcile: without the precondition the
-// apply recreates the Secret with the old password, and every later reconcile
-// reads that password back and keeps it, so the delete never rotates anything.
-// With the precondition the reconcile fails, and the reconcile that the delete
-// enqueues finds no Secret and generates a new password.
+// nothing is created.
 //
-// metadata.resourceVersion cannot do this work. The API server enforces it on
-// an apply that updates an object, but ignores it on an apply that creates
-// one, which is the case this precondition exists to reject. The ocf apply path
-// also clears both fields from the patch object before it sends it, so a
-// component cannot set metadata.uid itself. A controller that publishes a
-// credential Secret must therefore place this wrapper in the Client of its
-// ocf ReconcileContext.
+// A controller that publishes a credential Secret must place this wrapper in
+// the Client of its ocf ReconcileContext.
 func NewApplyClient(c client.Client) client.Client {
 	return &applyClient{Client: c}
 }

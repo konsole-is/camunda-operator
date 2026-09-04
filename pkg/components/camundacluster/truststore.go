@@ -117,24 +117,6 @@ if [ "$count" -eq 0 ]; then
 fi
 `
 
-// usesTrustStore reports whether a process runs with the JVM trust store: its
-// secondary storage is an Elasticsearch that names a certificate authority.
-//
-// The gate is the caSecretRef of the binding, not the kind of resource that
-// published it. An ElasticsearchCluster always names one, and a hand-written
-// contract that points at any private-CA endpoint gets the same trust store.
-//
-// Connectors are left out. They talk to the gateway alone, they never read
-// the secondary storage, and render gives them no CA mount to read.
-func usesTrustStore(in Input, p Process) bool {
-	if p.Component == ComponentConnectors {
-		return false
-	}
-
-	es := in.Storage.Elasticsearch
-	return in.Storage.Type == v1.SecondaryStorageTypeElasticsearch && es != nil && es.CASecretRef != nil
-}
-
 // trustStoreMutation adds the trust store to a workload: the emptyDir that
 // carries it, the init container that builds it from the mounted CA, and the
 // read-only mount of it on the process container.
@@ -169,6 +151,24 @@ func trustStoreMutation(in Input, p Process) workloadMutation {
 			return nil
 		},
 	}
+}
+
+// usesTrustStore reports whether a process runs with the JVM trust store: its
+// secondary storage is an Elasticsearch that names a certificate authority.
+//
+// The gate is the caSecretRef of the binding, not the kind of resource that
+// published it. An ElasticsearchCluster always names one, and a hand-written
+// contract that points at any private-CA endpoint gets the same trust store.
+//
+// Connectors are left out. They talk to the gateway alone, they never read
+// the secondary storage, and render gives them no CA mount to read.
+func usesTrustStore(in Input, p Process) bool {
+	if p.Component == ComponentConnectors {
+		return false
+	}
+
+	es := in.Storage.Elasticsearch
+	return in.Storage.Type == v1.SecondaryStorageTypeElasticsearch && es != nil && es.CASecretRef != nil
 }
 
 // trustStoreInitContainer builds the init container that writes the trust
@@ -230,17 +230,9 @@ func ensureTrustStoreMount(container *corev1.Container) {
 // appendTrustStoreOptions appends the trust store options to the
 // JAVA_TOOL_OPTIONS entry of env, in place.
 //
-// It runs after the user layer, because JAVA_TOOL_OPTIONS is the one variable
-// the JVM reads for its options. A user who tunes the heap replaces the value
-// of the operator. The pods then carry the trust store and never read it, and
-// the export fails again without a sign. That is the failure this removes.
-//
-// A value that already names a trust store file is left alone. That user
-// states an intent, not an accident, and the operator honors it. The user
+// A value that already names a trust store file is left alone. The user
 // then owns the trust of the JVM, and the Elasticsearch CA must be in that
-// store. It is also the only way to trust a second private authority, for
-// example an OIDC provider or a backup store, because the spec carries no CA
-// bundle field.
+// store.
 //
 // An entry that reads its value from a reference is left alone too, because a
 // variable holds a value or a reference, never both. The controller warns

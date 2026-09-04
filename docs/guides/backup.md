@@ -88,7 +88,7 @@ spec:
   snapshotStorageRef: my-backup-bucket
 ```
 
-The operator registers the repository `my-cluster-ns.my-cluster-es` in Elasticsearch, under the same prefix layout as every other backup object. The name carries the namespace, so two `ElasticsearchCluster` resources of one name in two namespaces never share one repository. The operator then publishes the name in the `SecondaryStorageConfig` as `snapshotRepository`, and the `CamundaCluster` configures its components with it.
+The operator registers the repository `my-cluster-ns.my-cluster-es` in Elasticsearch, under the same prefix layout as every other backup object. The name carries the namespace, so two `ElasticsearchCluster` resources of one name in two namespaces never share one repository. The operator then publishes the name in the `SecondaryStorageConfig` as `snapshotRepository`, and the `CamundaCluster` points Camunda at it.
 
 Make sure that the repository is ready before you take a backup. The `ElasticsearchCluster` reports it:
 
@@ -324,7 +324,7 @@ See [When a backup fails](#when-a-backup-fails).
 
 These are the effects that you notice while a backup runs.
 
-- On the Elasticsearch path, the operator pauses exporting on the cluster first. Zeebe keeps processing. The operator resumes exporting when the set is written, and also when a step fails.
+- On the Elasticsearch path, the operator soft pauses exporting on the cluster first. Zeebe keeps processing, and broker disk usage grows while the backup runs. Camunda describes the mode in [Management API](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/zeebe/operations/management-api/). The operator resumes exporting when the set is written, and also when a step fails.
 - On the PostgreSQL path, a Job named `<backup>-dump` runs in the namespace of the cluster. It runs under the ServiceAccount of the cluster. When the dump is uploaded, the operator requests one Zeebe backup and waits for it. A Job that succeeded is removed. A Job that failed stays, so that you can read its logs.
 - The operator runs one backup of a cluster at a time, across both kinds. A second backup waits as `Pending` with reason `BackupInProgress` and starts when the first one ends.
 - If the cluster is suspended, the backup waits with reason `ClusterSuspended`. The management API of a suspended cluster is not reachable.
@@ -336,7 +336,7 @@ A backup records the Camunda version it was taken with, in `status.version`. Eve
 The two storage paths differ:
 
 - **Elasticsearch.** A `LogicalRestoreElasticsearch` needs the exact version. Elasticsearch carries that version in the name of every snapshot, so a cluster one patch release newer cannot read a snapshot of the older one.
-- **PostgreSQL.** A `LogicalRestoreRDBMS` accepts the same Camunda minor as the backup, or one minor newer. Camunda migrates its own schema one minor at a time.
+- **PostgreSQL.** A `LogicalRestoreRDBMS` accepts the same Camunda minor as the backup, or one minor newer. Camunda migrates its own schema one minor at a time, as [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/) states.
 
 **The restore carries the cluster back to the version of the backup.** You do not lower `spec.version` by hand, and you do not suspend the cluster by hand. Create the restore against the cluster as it is.
 
@@ -351,7 +351,7 @@ Two things follow that are worth knowing:
 
 ## Delete a backup
 
-Deleting a backup resource removes what the backup wrote. A finalizer holds the resource until the artifacts are gone.
+Deleting a backup resource removes what the backup wrote. The resource stays until the artifacts are gone.
 
 - On the Elasticsearch path, the operator deletes the snapshots that this backup created and the Zeebe backup under its id.
 - On the PostgreSQL path, the operator deletes the dump object. It never deletes Zeebe backups. They belong to the continuous range that Zeebe keeps under `spec.backup.primaryStorage.retention`.

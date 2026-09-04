@@ -16,6 +16,10 @@ limitations under the License.
 
 package barmanobjectstore
 
+// This file mirrors the upstream ObjectStore API of the CloudNativePG
+// barman-cloud plugin, in the order upstream declares it. The file order rule
+// of how-we-write-go does not apply to it.
+
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

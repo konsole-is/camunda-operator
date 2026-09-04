@@ -4,9 +4,9 @@
 
 A preset lets a platform team define a standard cluster shape once: sizing, topology, environment variables, and backup policy. Each `CamundaCluster` opts in by name through `presetRef`, so individual clusters stay small and consistent. Typical presets are named for their size, for example `small`, `medium`, and `large`. What runs on that shape, the versions and the pinned images, lives in a [CamundaRelease](camundarelease.md), so a version roll never edits a preset.
 
-A preset is passive data. No controller reconciles it, it creates nothing, and it reports no status. `kubectl get camundaclusterpreset` shows the version it holds and the age. A cluster that fits no preset leaves `presetRef` unset and configures everything inline.
+A preset is passive data. It creates nothing, and it reports no status. `kubectl get camundaclusterpreset` shows the version it holds and the age. A cluster that fits no preset leaves `presetRef` unset and configures everything inline.
 
-The operator creates no resources from this kind. A `CamundaCluster` that references it reads the preset on every reconcile and merges its own spec over `spec.cluster`. When you edit a preset, every referencing cluster picks up the change on its next reconcile.
+The operator creates no resources from this kind. A `CamundaCluster` that references it merges its own spec over `spec.cluster`. When you edit a preset, every referencing cluster picks up the change.
 
 The smallest preset sets a broker baseline:
 

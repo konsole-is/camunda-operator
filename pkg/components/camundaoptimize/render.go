@@ -178,6 +178,39 @@ func elasticsearchEnv(in Input) []corev1.EnvVar {
 	return env
 }
 
+// endpointParts splits an Elasticsearch endpoint into the host, the port, and
+// whether the connection is TLS. A URL without a port takes the default port
+// of its scheme. An endpoint that does not parse yields empty parts; CEL on
+// the storage contract rejects one, so this only guards the zero value.
+func endpointParts(endpoint string) (host, port string, secure bool) {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return "", "", false
+	}
+
+	secure = parsed.Scheme == "https"
+	port = parsed.Port()
+	if port == "" {
+		port = defaultHTTPPort
+		if secure {
+			port = defaultHTTPSPort
+		}
+	}
+
+	return parsed.Hostname(), port, secure
+}
+
+// secretSource builds the source of an environment variable that reads one key
+// of a Secret in the pod's namespace. Every reference in Input already points
+// at a Secret of that namespace, because the controller copies the ones that
+// live elsewhere.
+func secretSource(name, key string) *corev1.EnvVarSource {
+	return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+		LocalObjectReference: corev1.LocalObjectReference{Name: name},
+		Key:                  key,
+	}}
+}
+
 // zeebeEnv renders the import of the exported cluster records: the switch, the
 // index prefix, and the partition count.
 func zeebeEnv(in Input, importEnabled bool) []corev1.EnvVar {
@@ -217,28 +250,6 @@ func identityEnv(in Input) []corev1.EnvVar {
 	}
 }
 
-// endpointParts splits an Elasticsearch endpoint into the host, the port, and
-// whether the connection is TLS. A URL without a port takes the default port
-// of its scheme. An endpoint that does not parse yields empty parts; CEL on
-// the storage contract rejects one, so this only guards the zero value.
-func endpointParts(endpoint string) (host, port string, secure bool) {
-	parsed, err := url.Parse(endpoint)
-	if err != nil {
-		return "", "", false
-	}
-
-	secure = parsed.Scheme == "https"
-	port = parsed.Port()
-	if port == "" {
-		port = defaultHTTPPort
-		if secure {
-			port = defaultHTTPSPort
-		}
-	}
-
-	return parsed.Hostname(), port, secure
-}
-
 // caVolumes returns the volume that carries the Elasticsearch CA, or nothing
 // when the storage contract names none.
 func caVolumes(in Input) []corev1.Volume {
@@ -264,15 +275,4 @@ func caMounts(in Input) []corev1.VolumeMount {
 	}
 
 	return []corev1.VolumeMount{{Name: caVolumeName, MountPath: CAMountPath, ReadOnly: true}}
-}
-
-// secretSource builds the source of an environment variable that reads one key
-// of a Secret in the pod's namespace. Every reference in Input already points
-// at a Secret of that namespace, because the controller copies the ones that
-// live elsewhere.
-func secretSource(name, key string) *corev1.EnvVarSource {
-	return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-		LocalObjectReference: corev1.LocalObjectReference{Name: name},
-		Key:                  key,
-	}}
 }

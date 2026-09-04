@@ -276,28 +276,6 @@ func (r *LogicalBackupRDBMSReconciler) deleteObject(
 	return "", nil
 }
 
-// releaseFinalizer removes the finalizer against the live object and retries
-// a write conflict. The deletion itself updates the object concurrently, and
-// cleanup must not run again over a resolvable conflict.
-func (r *LogicalBackupRDBMSReconciler) releaseFinalizer(
-	ctx context.Context,
-	backup *v1.LogicalBackupRDBMS,
-) error {
-	key := client.ObjectKeyFromObject(backup)
-
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		var current v1.LogicalBackupRDBMS
-		if err := r.Get(ctx, key, &current); err != nil {
-			return client.IgnoreNotFound(err)
-		}
-		if !controllerutil.RemoveFinalizer(&current, logicalbackup.Finalizer) {
-			return nil
-		}
-
-		return r.Update(ctx, &current)
-	})
-}
-
 // cleanupWithJob removes the dump object through a cleanup Job in the
 // namespace of the backup. The Job runs under the cluster ServiceAccount that
 // the workload identity of the bucket is bound to. The Job name is
@@ -404,6 +382,28 @@ func (r *LogicalBackupRDBMSReconciler) watchCleanupJob(
 	}
 
 	return "", errCleanupRunning
+}
+
+// releaseFinalizer removes the finalizer against the live object and retries
+// a write conflict. The deletion itself updates the object concurrently, and
+// cleanup must not run again over a resolvable conflict.
+func (r *LogicalBackupRDBMSReconciler) releaseFinalizer(
+	ctx context.Context,
+	backup *v1.LogicalBackupRDBMS,
+) error {
+	key := client.ObjectKeyFromObject(backup)
+
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var current v1.LogicalBackupRDBMS
+		if err := r.Get(ctx, key, &current); err != nil {
+			return client.IgnoreNotFound(err)
+		}
+		if !controllerutil.RemoveFinalizer(&current, logicalbackup.Finalizer) {
+			return nil
+		}
+
+		return r.Update(ctx, &current)
+	})
 }
 
 // cleanupEvent records why the deletion is held, so the hold is visible.

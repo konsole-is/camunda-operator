@@ -26,24 +26,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+type applyClient struct {
+	client.Client
+}
+
 // NewApplyClient wraps c so that Server-Side Apply patches of typed
 // Elasticsearch objects are serialized without the fields that the ECK CRD
-// schema does not declare. The ECK CRDs prune status and creationTimestamp
-// from the volumeClaimTemplate schema, and SSA rejects undeclared fields. The
-// PersistentVolumeClaim entries of a typed esv1.Elasticsearch always serialize
-// those zero-value fields, so a typed apply fails against a real ECK
-// installation. The wrapper converts such a patch to sanitized unstructured
-// content, applies it, and decodes the server response back into the typed
-// object. Every other call passes through unchanged.
+// does not accept. The wrapper converts such a patch to sanitized
+// unstructured content, applies it, and decodes the server response back into
+// the typed object. Every other call passes through unchanged.
 //
 // A controller that reconciles the Elasticsearch Resource through an ocf
 // component must place this wrapper in the Client of the ReconcileContext.
 func NewApplyClient(c client.Client) client.Client {
 	return &applyClient{Client: c}
-}
-
-type applyClient struct {
-	client.Client
 }
 
 // Patch converts Server-Side Apply patches of *esv1.Elasticsearch to

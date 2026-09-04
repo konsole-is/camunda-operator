@@ -78,20 +78,6 @@ const (
 	jobNameSuffix = "-dump"
 )
 
-// DumpObjectKey returns the key of the dump of one backup in the bucket:
-// <basePath>/<namespace>/<cluster>/<id>/<uid>/camunda.dump. The backup id
-// groups the dump with the Zeebe backup that it pairs with. The UID of the
-// backup resource makes the key unique to this backup. Nothing arbitrates
-// the id of a dump against the ids of deleted backups, because the Zeebe
-// request carries no id. A clock that stepped backwards can therefore
-// allocate an id again. A key of the id alone then overwrites the dump that
-// a deleted backup left behind, and the finalizer deletes it as its own.
-// With the UID in the key, a backup writes only its own object, and the
-// finalizer deletes only that object.
-func DumpObjectKey(basePath, namespace, cluster string, id int64, uid types.UID) string {
-	return logicalbackup.ObjectKeyPrefix(basePath, namespace, cluster, id) + "/" + string(uid) + "/" + DumpFileName
-}
-
 // reservedEnvPrefixes start the environment variables that a per-backup
 // dump block must not supply: everything that libpq reads (PG*) and the
 // whole upload contract (UPLOAD_*). The rule is prefix-based and
@@ -184,94 +170,6 @@ type JobInput struct {
 	CLIImage string
 }
 
-// JobName returns the name of the Job of one backup. It derives from the
-// backup name alone. The Job lives in the backup's own namespace, where that
-// name is unique. A reconcile that re-enters after a crash therefore adopts
-// the Job that it already created instead of a second one. A backup name can
-// be a full DNS subdomain, but a Job name is a DNS label. BoundedName
-// therefore truncates a long name deterministically and keeps it unique with
-// a hash of the whole name.
-func JobName(backup *v1.LogicalBackupRDBMS) string {
-	return labels.BoundedName(backup.Name, validation.DNS1123LabelMaxLength-len(jobNameSuffix)) + jobNameSuffix
-}
-
-// JobBelongsTo reports whether job carries the identity of backup, that is
-// the UID label that BuildJob stamps. A Job found by name with another UID
-// is a leftover of a deleted and recreated backup of the same name, or a
-// foreign Job. The reconcile must not adopt or delete it for this backup.
-func JobBelongsTo(job *batchv1.Job, backup *v1.LogicalBackupRDBMS) bool {
-	return job.Labels[BackupUIDLabel] == string(backup.UID)
-}
-
-// ReservedEnv returns the names in the extraEnv of a per-backup dump block
-// that the Job reserves for itself, in the order they appear. A reserved
-// name is any name under a reserved prefix. It returns nothing when the
-// block is clean. The controller rejects a per-backup block that names one
-// at admission, with the names in the message. Callers run it on the
-// backup's own spec.dump, never on the cluster's block.
-func ReservedEnv(dump *v1.DumpPodSpec) []string {
-	if dump == nil {
-		return nil
-	}
-	var reserved []string
-	for _, env := range dump.ExtraEnv {
-		if isReservedEnv(env.Name) && !slices.Contains(reserved, env.Name) {
-			reserved = append(reserved, env.Name)
-		}
-	}
-
-	return reserved
-}
-
-func isReservedEnv(name string) bool {
-	for _, prefix := range reservedEnvPrefixes {
-		if strings.HasPrefix(name, prefix) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// UnsafeEnvFrom returns the extraEnvFrom sources of a per-backup dump block
-// whose prefix does not neutralize the keys of the referenced Secret or
-// ConfigMap. It describes each source as "source <i>". The writer of the
-// referenced object chooses the envFrom keys. Without a safe prefix, a
-// source can therefore supply PGHOSTADDR, which libpq prefers over the Job's
-// own PGHOST, and redirect the dump with the injected credentials. The CRD
-// schema enforces the same rule. This function is the second layer. Callers
-// run it on the backup's own spec.dump, never on the cluster's block.
-func UnsafeEnvFrom(dump *v1.DumpPodSpec) []string {
-	if dump == nil {
-		return nil
-	}
-	var unsafe []string
-	for i, source := range dump.ExtraEnvFrom {
-		if !SafeEnvFromPrefix(source.Prefix) {
-			unsafe = append(unsafe, fmt.Sprintf("source %d (prefix %q)", i, source.Prefix))
-		}
-	}
-
-	return unsafe
-}
-
-// SafeEnvFromPrefix reports whether prefix guarantees that no key of an
-// envFrom source can land on a reserved name. A safe prefix is non-empty,
-// starts with no reserved prefix, and is no head of one. For example, the
-// prefix "P" plus the key "GHOST" spells PGHOST.
-func SafeEnvFromPrefix(prefix string) bool {
-	if prefix == "" {
-		return false
-	}
-	for _, reserved := range reservedEnvPrefixes {
-		if strings.HasPrefix(prefix, reserved) || strings.HasPrefix(reserved, prefix) {
-			return false
-		}
-	}
-
-	return true
-}
-
 // BuildJob renders the Job that dumps the logical database and uploads the
 // archive. An initContainer runs pg_dump into the scratch volume. The main
 // container streams the file to the bucket, so the Job succeeds only when
@@ -361,16 +259,6 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 	}, nil
 }
 
-// activeDeadline returns the deadline of the dump block, or the production
-// default when it sets none.
-func activeDeadline(dump *v1.DumpPodSpec) *int64 {
-	if dump.ActiveDeadlineSeconds != nil {
-		return dump.ActiveDeadlineSeconds
-	}
-
-	return new(DefaultActiveDeadlineSeconds)
-}
-
 // dumpContainer runs pg_dump of the entire logical database into the scratch
 // volume. The archive format (-Fc) restores with pg_restore and compresses
 // by default.
@@ -407,6 +295,48 @@ func dumpContainer(in JobInput, dump *v1.DumpPodSpec) corev1.Container {
 	}
 
 	return container
+}
+
+func secretEnv(name, secret, key string) corev1.EnvVar {
+	return corev1.EnvVar{
+		Name: name,
+		ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: secret},
+				Key:                  key,
+			},
+		},
+	}
+}
+
+// mergeEnv combines the variables that the Job sets with the extras of the
+// dump block, by name. The Job's own values always win, and a name appears
+// once. A duplicate can therefore neither redirect the dump nor make the
+// apply fail on a duplicate list-map key. Admission already rejects reserved
+// names. This function is the second layer.
+func mergeEnv(own, extra []corev1.EnvVar) []corev1.EnvVar {
+	merged := make([]corev1.EnvVar, 0, len(own)+len(extra))
+	merged = append(merged, own...)
+	for _, env := range extra {
+		if slices.ContainsFunc(own, func(o corev1.EnvVar) bool { return o.Name == env.Name }) {
+			continue
+		}
+		merged = append(merged, env)
+	}
+
+	return merged
+}
+
+// containerSecurity is the restricted-profile security context of one
+// container that runs as the given non-root uid.
+func containerSecurity(uid int64) *corev1.SecurityContext {
+	return &corev1.SecurityContext{
+		RunAsUser:                new(uid),
+		RunAsGroup:               new(uid),
+		RunAsNonRoot:             new(true),
+		AllowPrivilegeEscalation: new(false),
+		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+	}
 }
 
 // uploadContainer streams the archive to the bucket through the upload
@@ -471,24 +401,6 @@ func credentialEnv(in JobInput) []corev1.EnvVar {
 	return env
 }
 
-// mergeEnv combines the variables that the Job sets with the extras of the
-// dump block, by name. The Job's own values always win, and a name appears
-// once. A duplicate can therefore neither redirect the dump nor make the
-// apply fail on a duplicate list-map key. Admission already rejects reserved
-// names. This function is the second layer.
-func mergeEnv(own, extra []corev1.EnvVar) []corev1.EnvVar {
-	merged := make([]corev1.EnvVar, 0, len(own)+len(extra))
-	merged = append(merged, own...)
-	for _, env := range extra {
-		if slices.ContainsFunc(own, func(o corev1.EnvVar) bool { return o.Name == env.Name }) {
-			continue
-		}
-		merged = append(merged, env)
-	}
-
-	return merged
-}
-
 // scratchVolume returns the volume that holds the dump. It is an emptyDir
 // bounded by sizeLimit, or a generic ephemeral PersistentVolumeClaim when a
 // storage class is set. The claim lets a dump larger than the node's
@@ -520,26 +432,114 @@ func scratchVolume(dump *v1.DumpPodSpec) corev1.Volume {
 	return scratch
 }
 
-// containerSecurity is the restricted-profile security context of one
-// container that runs as the given non-root uid.
-func containerSecurity(uid int64) *corev1.SecurityContext {
-	return &corev1.SecurityContext{
-		RunAsUser:                new(uid),
-		RunAsGroup:               new(uid),
-		RunAsNonRoot:             new(true),
-		AllowPrivilegeEscalation: new(false),
-		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-	}
+// JobName returns the name of the Job of one backup. It derives from the
+// backup name alone. The Job lives in the backup's own namespace, where that
+// name is unique. A reconcile that re-enters after a crash therefore adopts
+// the Job that it already created instead of a second one. A backup name can
+// be a full DNS subdomain, but a Job name is a DNS label. BoundedName
+// therefore truncates a long name deterministically and keeps it unique with
+// a hash of the whole name.
+func JobName(backup *v1.LogicalBackupRDBMS) string {
+	return labels.BoundedName(backup.Name, validation.DNS1123LabelMaxLength-len(jobNameSuffix)) + jobNameSuffix
 }
 
-func secretEnv(name, secret, key string) corev1.EnvVar {
-	return corev1.EnvVar{
-		Name: name,
-		ValueFrom: &corev1.EnvVarSource{
-			SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: secret},
-				Key:                  key,
-			},
-		},
+// activeDeadline returns the deadline of the dump block, or the production
+// default when it sets none.
+func activeDeadline(dump *v1.DumpPodSpec) *int64 {
+	if dump.ActiveDeadlineSeconds != nil {
+		return dump.ActiveDeadlineSeconds
 	}
+
+	return new(DefaultActiveDeadlineSeconds)
+}
+
+// DumpObjectKey returns the key of the dump of one backup in the bucket:
+// <basePath>/<namespace>/<cluster>/<id>/<uid>/camunda.dump. The backup id
+// groups the dump with the Zeebe backup that it pairs with. The UID of the
+// backup resource makes the key unique to this backup. Nothing arbitrates
+// the id of a dump against the ids of deleted backups, because the Zeebe
+// request carries no id. A clock that stepped backwards can therefore
+// allocate an id again. A key of the id alone then overwrites the dump that
+// a deleted backup left behind, and the finalizer deletes it as its own.
+// With the UID in the key, a backup writes only its own object, and the
+// finalizer deletes only that object.
+func DumpObjectKey(basePath, namespace, cluster string, id int64, uid types.UID) string {
+	return logicalbackup.ObjectKeyPrefix(basePath, namespace, cluster, id) + "/" + string(uid) + "/" + DumpFileName
+}
+
+// JobBelongsTo reports whether job carries the identity of backup, that is
+// the UID label that BuildJob stamps. A Job found by name with another UID
+// is a leftover of a deleted and recreated backup of the same name, or a
+// foreign Job. The reconcile must not adopt or delete it for this backup.
+func JobBelongsTo(job *batchv1.Job, backup *v1.LogicalBackupRDBMS) bool {
+	return job.Labels[BackupUIDLabel] == string(backup.UID)
+}
+
+// ReservedEnv returns the names in the extraEnv of a per-backup dump block
+// that the Job reserves for itself, in the order they appear. A reserved
+// name is any name under a reserved prefix. It returns nothing when the
+// block is clean. The controller rejects a per-backup block that names one
+// at admission, with the names in the message. Callers run it on the
+// backup's own spec.dump, never on the cluster's block.
+func ReservedEnv(dump *v1.DumpPodSpec) []string {
+	if dump == nil {
+		return nil
+	}
+	var reserved []string
+	for _, env := range dump.ExtraEnv {
+		if isReservedEnv(env.Name) && !slices.Contains(reserved, env.Name) {
+			reserved = append(reserved, env.Name)
+		}
+	}
+
+	return reserved
+}
+
+func isReservedEnv(name string) bool {
+	for _, prefix := range reservedEnvPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// UnsafeEnvFrom returns the extraEnvFrom sources of a per-backup dump block
+// whose prefix does not neutralize the keys of the referenced Secret or
+// ConfigMap. It describes each source as "source <i>". The writer of the
+// referenced object chooses the envFrom keys. Without a safe prefix, a
+// source can therefore supply PGHOSTADDR, which libpq prefers over the Job's
+// own PGHOST, and redirect the dump with the injected credentials. The CRD
+// schema enforces the same rule. This function is the second layer. Callers
+// run it on the backup's own spec.dump, never on the cluster's block.
+func UnsafeEnvFrom(dump *v1.DumpPodSpec) []string {
+	if dump == nil {
+		return nil
+	}
+	var unsafe []string
+	for i, source := range dump.ExtraEnvFrom {
+		if !SafeEnvFromPrefix(source.Prefix) {
+			unsafe = append(unsafe, fmt.Sprintf("source %d (prefix %q)", i, source.Prefix))
+		}
+	}
+
+	return unsafe
+}
+
+// SafeEnvFromPrefix reports whether prefix guarantees that no key of an
+// envFrom source can land on a reserved name. A safe prefix is non-empty,
+// starts with no reserved prefix, and is no head of one. For example, the
+// prefix "P" plus the key "GHOST" spells PGHOST.
+func SafeEnvFromPrefix(prefix string) bool {
+	if prefix == "" {
+		return false
+	}
+	for _, reserved := range reservedEnvPrefixes {
+		if strings.HasPrefix(prefix, reserved) || strings.HasPrefix(reserved, prefix) {
+			return false
+		}
+	}
+
+	return true
 }

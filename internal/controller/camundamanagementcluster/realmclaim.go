@@ -78,175 +78,6 @@ func (r *Reconciler) claimRealm(
 	return parked, held, nil
 }
 
-// releaseUnusedRealms gives back every realm claim of mc that nothing of it
-// names any more. Three things name a realm, and each of them keeps its
-// claim:
-//
-// The realm of the spec, read from the spec alone, so a pass that resolved
-// nothing sweeps the same way as one that resolved everything. The oidc mode
-// names none, so a plane that moves to it gives its realm back.
-//
-// status.callbackRealm, which still carries the login callbacks of this
-// plane. Its claim goes once the withdrawal has cleared the record, which the
-// next pass reads from the persisted status. Releasing it in the pass that
-// cleared it would hand the realm on before the record of the withdrawal
-// survives a crash.
-//
-// A Management Identity workload of the plane, because a start against that
-// realm writes its clients again. A workload that writes a realm it does not
-// name keeps every claim of the plane, because none of them can be shown to
-// be unused.
-//
-// A suspended plane sweeps nothing. It touches no claim at all, so the realms
-// it holds stay held until it resumes.
-//
-// It reports whether a claim of this plane stayed only because a workload
-// names its realm. Nothing watches the pods or the ReplicaSets of the plane,
-// and Kubernetes collects them in the background, so the caller comes back on
-// the retry interval to give that claim up once the workload is gone.
-func (r *Reconciler) releaseUnusedRealms(
-	ctx context.Context,
-	mc *v1.CamundaManagementCluster,
-) (bool, error) {
-	if mc.Spec.Suspend {
-		return false, nil
-	}
-
-	// The claims are read first. A plane that holds none has nothing to give
-	// back, and the workloads below only say which of them to keep, so their
-	// three reads would answer a question nobody asked.
-	leases, err := r.realmClaimLeases(ctx, mc)
-	if err != nil || len(leases) == 0 {
-		return false, err
-	}
-
-	current, err := specRealmTarget(mc)
-	if err != nil {
-		return false, err
-	}
-
-	keep := []*v1.KeycloakRealmTarget{current, mc.Status.CallbackRealm}
-	pointed, unknown, err := r.identityRealms(ctx, mc)
-	if err != nil {
-		return false, err
-	}
-	var workload []*v1.KeycloakRealmTarget
-	for i := range pointed {
-		keep = append(keep, &pointed[i])
-		if !namesRealm(current, pointed[i]) && !namesRealm(mc.Status.CallbackRealm, pointed[i]) {
-			workload = append(workload, &pointed[i])
-		}
-	}
-
-	return r.releaseRealmClaims(ctx, leases, keep, workload, unknown)
-}
-
-// realmClaimLeases reads every realm claim Lease of the namespace of the
-// operator that names mc as its holder.
-//
-// The label selector is the one that NewRealmClaimLease writes. It carries the
-// name of the management cluster alone, so the list also holds the claims of a
-// management cluster of another namespace with this name, and of a later one.
-// The holder annotations tell them apart.
-func (r *Reconciler) realmClaimLeases(
-	ctx context.Context,
-	mc *v1.CamundaManagementCluster,
-) ([]coordinationv1.Lease, error) {
-	var leases coordinationv1.LeaseList
-	err := r.APIReader.List(
-		ctx, &leases,
-		client.InNamespace(r.ClaimNamespace),
-		client.MatchingLabels(components.RealmClaimLeaseLabels(mc.Name)),
-	)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"listing the realm claim Leases of %s: %w", client.ObjectKeyFromObject(mc), err,
-		)
-	}
-
-	self := realmClaimSelf(mc)
-	var held []coordinationv1.Lease
-	for i := range leases.Items {
-		if recorded, ours := components.RealmClaimHolderOf(&leases.Items[i]); ours && recorded == self {
-			held = append(held, leases.Items[i])
-		}
-	}
-
-	return held, nil
-}
-
-// namesRealm reports whether target names the realm of realm. A nil target
-// names none.
-func namesRealm(target *v1.KeycloakRealmTarget, realm v1.KeycloakRealmTarget) bool {
-	return target != nil && components.SameRealm(*target, realm)
-}
-
-// identityRealms returns the realm of every Management Identity workload of
-// mc that can still start against a Keycloak: the pod template of the
-// Deployment at its derived name, every ReplicaSet of it that can still
-// create a pod, and every pod of it that is not done. It also reports whether
-// one of them writes a realm that the workload does not name. The reads go
-// through APIReader, for the reason startedInitialClaim gives.
-//
-// The three sources answer for one another. A parked plane renders nothing,
-// so the Deployment it ran before keeps its old realm and starts a pod
-// against that realm whenever one goes. A rollout leaves the old ReplicaSet
-// behind, which keeps the template the Deployment has moved on from. A pod
-// outlives the ReplicaSet that made it.
-func (r *Reconciler) identityRealms(
-	ctx context.Context,
-	mc *v1.CamundaManagementCluster,
-) ([]v1.KeycloakRealmTarget, bool, error) {
-	var realms []v1.KeycloakRealmTarget
-	var unknown bool
-
-	key := client.ObjectKey{Namespace: mc.Namespace, Name: components.IdentityName(mc)}
-	var identity appsv1.Deployment
-	switch err := r.APIReader.Get(ctx, key, &identity); {
-	case err == nil:
-		// The owner is not read here, for the reason the ReplicaSets below
-		// give: a Deployment at this name starts a pod against the realm its
-		// template names whoever owns it.
-		templateRealms, templateUnknown := components.IdentityTemplateRealms(&identity)
-		realms = append(realms, templateRealms...)
-		unknown = unknown || templateUnknown
-	case !apierrors.IsNotFound(err):
-		return nil, false, fmt.Errorf("reading Deployment %q: %w", key, err)
-	}
-
-	// A ReplicaSet carries the labels of the pod template it holds, so one
-	// selector reads both. The labels alone are enough to keep a claim, where
-	// the finalizer reads the owner reference before it deletes: a workload
-	// that runs Management Identity against a realm writes its clients
-	// whoever owns it, and keeping the claim of that realm is the safe answer
-	// either way.
-	var sets appsv1.ReplicaSetList
-	if err := r.APIReader.List(
-		ctx,
-		&sets,
-		client.InNamespace(mc.Namespace),
-		client.MatchingLabels(components.IdentityPodLabels(mc)),
-	); err != nil {
-		return nil, false, fmt.Errorf("listing the Management Identity ReplicaSets: %w", err)
-	}
-	setRealms, setUnknown := components.IdentityReplicaSetRealms(sets.Items)
-	realms = append(realms, setRealms...)
-	unknown = unknown || setUnknown
-
-	var pods corev1.PodList
-	if err := r.APIReader.List(
-		ctx,
-		&pods,
-		client.InNamespace(mc.Namespace),
-		client.MatchingLabels(components.IdentityPodLabels(mc)),
-	); err != nil {
-		return nil, false, fmt.Errorf("listing the Management Identity pods: %w", err)
-	}
-	podRealms, podUnknown := components.IdentityRealms(pods.Items)
-
-	return append(realms, podRealms...), unknown || podUnknown, nil
-}
-
 // takeRealmClaim creates the claim Lease of the realm that target names. The
 // API server serializes the create, so of two management clusters that reach
 // this together exactly one holds the realm.
@@ -367,6 +198,203 @@ func (r *Reconciler) realmHolderKeeps(
 	return other.UID == holder.UID, nil
 }
 
+// dropRealmClaim deletes the claim Lease of target while its annotations
+// still name holder. A Lease that is gone, or that another management cluster
+// holds, is left alone.
+func (r *Reconciler) dropRealmClaim(
+	ctx context.Context,
+	target v1.KeycloakRealmTarget,
+	holder components.RealmClaimHolder,
+) error {
+	lease, found, err := r.readRealmClaim(ctx, target)
+	if err != nil || !found {
+		return err
+	}
+
+	if recorded, ours := components.RealmClaimHolderOf(lease); !ours || recorded != holder {
+		return nil
+	}
+
+	return r.deleteRealmClaim(ctx, lease)
+}
+
+// releaseUnusedRealms gives back every realm claim of mc that nothing of it
+// names any more. Three things name a realm, and each of them keeps its
+// claim:
+//
+// The realm of the spec, read from the spec alone, so a pass that resolved
+// nothing sweeps the same way as one that resolved everything. The oidc mode
+// names none, so a plane that moves to it gives its realm back.
+//
+// status.callbackRealm, which still carries the login callbacks of this
+// plane. Its claim goes once the withdrawal has cleared the record, which the
+// next pass reads from the persisted status. Releasing it in the pass that
+// cleared it would hand the realm on before the record of the withdrawal
+// survives a crash.
+//
+// A Management Identity workload of the plane, because a start against that
+// realm writes its clients again. A workload that writes a realm it does not
+// name keeps every claim of the plane, because none of them can be shown to
+// be unused.
+//
+// A suspended plane sweeps nothing. It touches no claim at all, so the realms
+// it holds stay held until it resumes.
+//
+// It reports whether a claim of this plane stayed only because a workload
+// names its realm. Nothing watches the pods or the ReplicaSets of the plane,
+// and Kubernetes collects them in the background, so the caller comes back on
+// the retry interval to give that claim up once the workload is gone.
+func (r *Reconciler) releaseUnusedRealms(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) (bool, error) {
+	if mc.Spec.Suspend {
+		return false, nil
+	}
+
+	// The claims are read first. A plane that holds none has nothing to give
+	// back, and the workloads below only say which of them to keep, so their
+	// three reads would answer a question nobody asked.
+	leases, err := r.realmClaimLeases(ctx, mc)
+	if err != nil || len(leases) == 0 {
+		return false, err
+	}
+
+	current, err := specRealmTarget(mc)
+	if err != nil {
+		return false, err
+	}
+
+	keep := []*v1.KeycloakRealmTarget{current, mc.Status.CallbackRealm}
+	pointed, unknown, err := r.identityRealms(ctx, mc)
+	if err != nil {
+		return false, err
+	}
+	var workload []*v1.KeycloakRealmTarget
+	for i := range pointed {
+		keep = append(keep, &pointed[i])
+		if !namesRealm(current, pointed[i]) && !namesRealm(mc.Status.CallbackRealm, pointed[i]) {
+			workload = append(workload, &pointed[i])
+		}
+	}
+
+	return r.releaseRealmClaims(ctx, leases, keep, workload, unknown)
+}
+
+// realmClaimLeases reads every realm claim Lease of the namespace of the
+// operator that names mc as its holder.
+//
+// The label selector is the one that NewRealmClaimLease writes. It carries the
+// name of the management cluster alone, so the list also holds the claims of a
+// management cluster of another namespace with this name, and of a later one.
+// The holder annotations tell them apart.
+func (r *Reconciler) realmClaimLeases(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) ([]coordinationv1.Lease, error) {
+	var leases coordinationv1.LeaseList
+	err := r.APIReader.List(
+		ctx, &leases,
+		client.InNamespace(r.ClaimNamespace),
+		client.MatchingLabels(components.RealmClaimLeaseLabels(mc.Name)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"listing the realm claim Leases of %s: %w", client.ObjectKeyFromObject(mc), err,
+		)
+	}
+
+	self := realmClaimSelf(mc)
+	var held []coordinationv1.Lease
+	for i := range leases.Items {
+		if recorded, ours := components.RealmClaimHolderOf(&leases.Items[i]); ours && recorded == self {
+			held = append(held, leases.Items[i])
+		}
+	}
+
+	return held, nil
+}
+
+// realmClaimSelf is the holder identity of mc.
+func realmClaimSelf(mc *v1.CamundaManagementCluster) components.RealmClaimHolder {
+	return components.RealmClaimHolder{
+		NamespacedName: client.ObjectKeyFromObject(mc),
+		UID:            mc.UID,
+	}
+}
+
+// identityRealms returns the realm of every Management Identity workload of
+// mc that can still start against a Keycloak: the pod template of the
+// Deployment at its derived name, every ReplicaSet of it that can still
+// create a pod, and every pod of it that is not done. It also reports whether
+// one of them writes a realm that the workload does not name. The reads go
+// through APIReader, for the reason startedInitialClaim gives.
+//
+// The three sources answer for one another. A parked plane renders nothing,
+// so the Deployment it ran before keeps its old realm and starts a pod
+// against that realm whenever one goes. A rollout leaves the old ReplicaSet
+// behind, which keeps the template the Deployment has moved on from. A pod
+// outlives the ReplicaSet that made it.
+func (r *Reconciler) identityRealms(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) ([]v1.KeycloakRealmTarget, bool, error) {
+	var realms []v1.KeycloakRealmTarget
+	var unknown bool
+
+	key := client.ObjectKey{Namespace: mc.Namespace, Name: components.IdentityName(mc)}
+	var identity appsv1.Deployment
+	switch err := r.APIReader.Get(ctx, key, &identity); {
+	case err == nil:
+		// The owner is not read here, for the reason the ReplicaSets below
+		// give: a Deployment at this name starts a pod against the realm its
+		// template names whoever owns it.
+		templateRealms, templateUnknown := components.IdentityTemplateRealms(&identity)
+		realms = append(realms, templateRealms...)
+		unknown = unknown || templateUnknown
+	case !apierrors.IsNotFound(err):
+		return nil, false, fmt.Errorf("reading Deployment %q: %w", key, err)
+	}
+
+	// A ReplicaSet carries the labels of the pod template it holds, so one
+	// selector reads both. The labels alone are enough to keep a claim, where
+	// the finalizer reads the owner reference before it deletes: a workload
+	// that runs Management Identity against a realm writes its clients
+	// whoever owns it, and keeping the claim of that realm is the safe answer
+	// either way.
+	var sets appsv1.ReplicaSetList
+	if err := r.APIReader.List(
+		ctx,
+		&sets,
+		client.InNamespace(mc.Namespace),
+		client.MatchingLabels(components.IdentityPodLabels(mc)),
+	); err != nil {
+		return nil, false, fmt.Errorf("listing the Management Identity ReplicaSets: %w", err)
+	}
+	setRealms, setUnknown := components.IdentityReplicaSetRealms(sets.Items)
+	realms = append(realms, setRealms...)
+	unknown = unknown || setUnknown
+
+	var pods corev1.PodList
+	if err := r.APIReader.List(
+		ctx,
+		&pods,
+		client.InNamespace(mc.Namespace),
+		client.MatchingLabels(components.IdentityPodLabels(mc)),
+	); err != nil {
+		return nil, false, fmt.Errorf("listing the Management Identity pods: %w", err)
+	}
+	podRealms, podUnknown := components.IdentityRealms(pods.Items)
+
+	return append(realms, podRealms...), unknown || podUnknown, nil
+}
+
+// namesRealm reports whether target names the realm of realm. A nil target
+// names none.
+func namesRealm(target *v1.KeycloakRealmTarget, realm v1.KeycloakRealmTarget) bool {
+	return target != nil && components.SameRealm(*target, realm)
+}
+
 // releaseRealmClaims deletes every Lease of leases, which realmClaimLeases
 // read, except the ones of the realms that keep names. A nil entry of keep
 // names no realm. The finalizer passes none, so a deleted management cluster
@@ -427,26 +455,6 @@ func leaseNames(targets []*v1.KeycloakRealmTarget) map[string]bool {
 	return names
 }
 
-// dropRealmClaim deletes the claim Lease of target while its annotations
-// still name holder. A Lease that is gone, or that another management cluster
-// holds, is left alone.
-func (r *Reconciler) dropRealmClaim(
-	ctx context.Context,
-	target v1.KeycloakRealmTarget,
-	holder components.RealmClaimHolder,
-) error {
-	lease, found, err := r.readRealmClaim(ctx, target)
-	if err != nil || !found {
-		return err
-	}
-
-	if recorded, ours := components.RealmClaimHolderOf(lease); !ours || recorded != holder {
-		return nil
-	}
-
-	return r.deleteRealmClaim(ctx, lease)
-}
-
 // deleteRealmClaim deletes lease under the UID and the resourceVersion that it
 // was read with. A Lease that is gone is left alone, and one that changed in
 // between fails the preconditions and returns the error, so the caller reads
@@ -485,12 +493,4 @@ func (r *Reconciler) readRealmClaim(
 	}
 
 	return &lease, true, nil
-}
-
-// realmClaimSelf is the holder identity of mc.
-func realmClaimSelf(mc *v1.CamundaManagementCluster) components.RealmClaimHolder {
-	return components.RealmClaimHolder{
-		NamespacedName: client.ObjectKeyFromObject(mc),
-		UID:            mc.UID,
-	}
 }

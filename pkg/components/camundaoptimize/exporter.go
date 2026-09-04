@@ -52,19 +52,12 @@ const ExporterClassName = "io.camunda.zeebe.exporter.ElasticsearchExporter"
 // the contract names another namespace. Passing the copy that this controller
 // makes for the Optimize pods names a Secret the broker cannot read.
 //
-// The set carries no TLS setting, because the exporter has none. Its
-// configuration class holds the URL, the timeout, the index, bulk, retention,
-// authentication, and proxy blocks and nothing else, and its client is built
-// without an SSL context, so it trusts what the JVM trusts
-// (ElasticsearchClientFactory.java). This differs from the secondary storage
-// of the same broker: that connection is the Camunda search client, which
-// takes camunda.data.secondary-storage.elasticsearch.security.certificate-path
-// and reads the CA that pkg/components/camundacluster mounts. An Elasticsearch
-// with a private CA therefore needs that CA in the JVM trust store of the
-// broker before the exporter can reach it; Camunda documents the trust store
-// as the only way (camunda/camunda#9839). pkg/components/camundacluster builds
-// that trust store for every binding that names a certificate authority, so
-// this exporter reaches such an endpoint without a setting of its own.
+// The set carries no TLS setting, because the exporter has none. An
+// Elasticsearch with a private CA therefore needs that CA in the JVM trust
+// store of the broker before the exporter can reach it
+// (camunda/camunda#9839). pkg/components/camundacluster builds that trust
+// store for every binding that names a certificate authority. This exporter
+// then reaches such an endpoint without a setting of its own.
 func ExporterEnv(storage v1.ElasticsearchStorage) []corev1.EnvVar {
 	creds := storage.CredentialsSecretRef
 

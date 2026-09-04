@@ -31,19 +31,6 @@ import (
 // PodMonitor that scrapes the instance pods.
 const podMonitorSuffix = "-metrics"
 
-// PodMonitorName returns the name of the PodMonitor that scrapes the instance
-// pods of the server.
-func PodMonitorName(server *v1.DatabaseServer) string {
-	return server.Name + podMonitorSuffix
-}
-
-// MonitoringEnabled reports whether the spec asks for Prometheus scraping.
-func MonitoringEnabled(merged v1.DatabaseServerSpec) bool {
-	return merged.Monitoring != nil &&
-		merged.Monitoring.PodMonitor != nil &&
-		merged.Monitoring.PodMonitor.Enabled
-}
-
 // MonitoringComponent builds the monitoring component: the PodMonitor that
 // scrapes the metrics endpoint of every instance pod. CloudNativePG serves
 // those metrics itself, so nothing else is deployed. The component is
@@ -111,4 +98,17 @@ func podMonitor(server *v1.DatabaseServer, merged v1.DatabaseServerSpec) *monito
 			}},
 		},
 	}
+}
+
+// PodMonitorName returns the name of the PodMonitor that scrapes the instance
+// pods of the server.
+func PodMonitorName(server *v1.DatabaseServer) string {
+	return server.Name + podMonitorSuffix
+}
+
+// MonitoringEnabled reports whether the spec asks for Prometheus scraping.
+func MonitoringEnabled(merged v1.DatabaseServerSpec) bool {
+	return merged.Monitoring != nil &&
+		merged.Monitoring.PodMonitor != nil &&
+		merged.Monitoring.PodMonitor.Enabled
 }

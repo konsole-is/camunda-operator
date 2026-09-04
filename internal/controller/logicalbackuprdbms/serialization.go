@@ -88,12 +88,6 @@ func blocks(other, backup *v1.LogicalBackupRDBMS) bool {
 	return other.Name < backup.Name
 }
 
-// claimant is the identity under which the backup holds the claim on its
-// cluster.
-func claimant(backup *v1.LogicalBackupRDBMS) clusterclaim.Claimant {
-	return clusterclaim.Claimant{Kind: backup.GetKind(), Name: backup.Name, UID: backup.UID}
-}
-
 // claimCluster takes the claim on the cluster for the backup. It returns
 // the display name of the holder that blocks, or "" when the backup holds
 // the claim. It runs before the controller allocates and flushes the backup
@@ -136,6 +130,12 @@ func (r *LogicalBackupRDBMSReconciler) releaseClaim(
 	}
 
 	return nil
+}
+
+// claimant is the identity under which the backup holds the claim on its
+// cluster.
+func claimant(backup *v1.LogicalBackupRDBMS) clusterclaim.Claimant {
+	return clusterclaim.Claimant{Kind: backup.GetKind(), Name: backup.Name, UID: backup.UID}
 }
 
 // clusterKey is the index value of one backup: the namespace and name of the

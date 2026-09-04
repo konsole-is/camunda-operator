@@ -8,49 +8,55 @@ resources already made.
 | Inventory | What it stands up | Shape |
 | --- | --- | --- |
 | [`presets`](presets) | The three preset kinds, shared by the inventories below. | Applied once |
+| [`releases`](releases) | One `CamundaRelease`, named by the clusters of `camunda-cluster/rdbms` and `camunda-management-cluster/keycloak`. | Applied once |
 | [`camunda-cluster/elasticsearch`](camunda-cluster/elasticsearch) | One orchestration cluster with Elasticsearch as its secondary storage. | Every field inline |
-| [`camunda-cluster/rdbms`](camunda-cluster/rdbms) | One orchestration cluster with PostgreSQL as its secondary storage, run by CloudNativePG. | Presets |
-| [`camunda-management-cluster/keycloak`](camunda-management-cluster/keycloak) | A management plane whose Keycloak the operator runs, one cluster it serves, and Optimize. | Presets |
+| [`camunda-cluster/rdbms`](camunda-cluster/rdbms) | One orchestration cluster with PostgreSQL as its secondary storage, run by CloudNativePG. | Presets and release |
+| [`camunda-management-cluster/keycloak`](camunda-management-cluster/keycloak) | A management plane whose Keycloak the operator runs, one cluster it serves, and Optimize. | Presets and release |
 | [`camunda-management-cluster/oidc`](camunda-management-cluster/oidc) | A management plane against an identity provider you run. | Presets |
 
 Each directory carries a README with the apply order and a link to the guide
 it condenses.
 
-## Why the presets come first
+## Why the presets and the release come first
 
 A preset is the shape of a resource: the sizing, the topology, the resources.
-It is cluster scoped, and it is written once. The three inventories that use
-presets share the one copy in [`presets`](presets), so a `CamundaCluster`
-shrinks to its references and its version:
+A release is what runs on that shape: the Camunda version and the connectors
+version. Both kinds are cluster scoped, and both are written once. The
+inventories share the one copy in [`presets`](presets) and the one copy in
+[`releases`](releases), so a `CamundaCluster` shrinks to its references:
 
 ```yaml
 spec:
   presetRef: small
-  version: "8.9.17"
+  releaseRef: camunda-8-9
   platformConfigRef: my-platform-config
   storageRef: my-storage-config
 ```
 
-That is the point of a preset. A platform team writes `small` once, and a
-second cluster of the same shape is the four lines above with another name.
-Change `small`, and every cluster that names it follows.
+That is the point. A platform team writes `small` and `camunda-8-9` once, and
+a second cluster of the same shape is the four lines above with another name.
+Change `small`, and every cluster that names it follows. Raise the version in
+`camunda-8-9`, and every cluster that names it rolls.
 
-Because a preset is cluster scoped, one copy per inventory would collide by
-name and would undo that. There is one copy, and the inventories point at it.
+Both kinds are cluster scoped, so a copy in each inventory collides by name.
+That collision undoes the sharing. There is one copy of each, and the
+inventories point at them.
 
 `camunda-cluster/elasticsearch` deliberately sets every field inline and names
-no preset. It is the one example of the explicit shape, so a reader sees both
-and can compare its `CamundaCluster` with the one in `camunda-cluster/rdbms`.
+neither a preset nor a release. It is the one example of the explicit shape,
+so a reader sees both and can compare its `CamundaCluster` with the one in
+`camunda-cluster/rdbms`.
 
 ## How to read a directory
 
 - The manifests are numbered in the order the README applies them. One file
-  holds one step of the chain. The files in [`presets`](presets) carry no
-  numbers, because nothing there depends on anything else.
+  holds one step of the chain. The files in [`presets`](presets) and
+  [`releases`](releases) carry no numbers, because nothing there depends on
+  anything else.
 - A `kustomization.yaml` lists the same files in the same order, so
   `kubectl apply -k <directory>` applies the whole inventory at once. An
-  inventory that uses presets lists `../../presets` first, so one command is
-  still enough.
+  inventory that uses a shared kind lists its directory first, `../../presets`
+  or `../../releases`, so one command is still enough.
 - A resource that the operator publishes has no file. The
   `SecondaryStorageConfig` of an `ElasticsearchCluster`, the
   `DatabaseServerConfig` of a `DatabaseServer`, the `DatabaseConfig` of a
@@ -61,14 +67,15 @@ and can compare its `CamundaCluster` with the one in `camunda-cluster/rdbms`.
 ## Before you apply
 
 - Get the files. Clone this repository, or point `kubectl apply -k` at the
-  directory on GitHub and name the release you run:
+  directory on GitHub and name the operator version you run:
 
     ```sh
     kubectl apply -k "https://github.com/konsole-is/camunda-operator//config/example/camunda-cluster/rdbms?ref=<version>"
     ```
 
-    The remote form reads the shared presets too, so one command is still
-    enough. Every other command below assumes a local clone.
+    The remote form reads the shared presets and the shared release too, so
+    one command is still enough. Every other command below assumes a local
+    clone.
 
 - Install the operator, and the third-party operators the inventory needs.
   Each README names them. See
@@ -77,16 +84,23 @@ and can compare its `CamundaCluster` with the one in `camunda-cluster/rdbms`.
   `<your Camunda license key>`, is not valid.
 - The four scenarios are alternatives. Each one creates the cluster-scoped
   `CamundaPlatformConfig` `my-platform-config` with contents of its own, so
-  apply one at a time. The presets are the exception: all four agree on them,
-  so they are shared.
+  apply one at a time. The presets and the release are the exception: every
+  inventory that names them agrees on them, so they are shared.
 
 ## Versions
 
-The `version` fields hold the versions that the end-to-end suite of this
-repository runs, which `test/e2e/matrix/8.9.env` pins. Keep the two in step
-when you raise one.
+Every version here is one that the end-to-end suite of this repository runs,
+which `test/e2e/matrix/8.9.env` pins. Keep the two in step when you raise one.
 
-In these inventories a version stays on the instance, so one cluster can move
-before the fleet does. A preset can carry `cluster.version` instead, and the
-[presets guide](https://konsole-is.github.io/camunda-operator/guides/presets/)
-shows that shape.
+The Camunda version of an orchestration cluster is in the shared release
+[`releases/camunda-release.yaml`](releases/camunda-release.yaml). The
+`CamundaCluster` of `camunda-cluster/rdbms` and the one of
+`camunda-management-cluster/keycloak` name it, and one edit to that file rolls
+both. A cluster that must move before the fleet does sets `spec.version`,
+which wins over the release. The `CamundaCluster` of
+`camunda-cluster/elasticsearch` names no release and pins its version inline.
+
+The other versions stay on the instance. `ElasticsearchCluster`,
+`DatabaseServer`, and `CamundaOptimize` pin their own. Management Identity,
+Console, and Web Modeler each carry a patch line of their own on the
+`CamundaManagementCluster`.

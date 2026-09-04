@@ -36,6 +36,10 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
 
+// snapshotOwnerUIDKey is the metadata key under which every snapshot that
+// this controller creates carries the UID of its backup resource.
+const snapshotOwnerUIDKey = "camunda-operator/backup-uid"
+
 // runStep executes the step that status.step records. It advances at most one
 // step, so every transition is persisted before the next side effect. Every
 // step queries the current state before it acts. A crash re-enters without a
@@ -61,29 +65,6 @@ func (r *Reconciler) runStep(
 	default:
 		return ctrl.Result{}, fmt.Errorf("unknown step %q", backup.Status.Step)
 	}
-}
-
-// management builds the management client of the cluster for one running
-// step. A binding that broke mid-run fails the step through resume: the
-// credentials Secret is gone, or the version is not supported. Only a
-// transient read error comes back as an error.
-func (r *Reconciler) management(
-	ctx context.Context,
-	backup *v1.LogicalBackupElasticsearch,
-	cluster *v1.CamundaCluster,
-	step string,
-	part *v1.BackupPart,
-) (*camundaadmin.Client, ctrl.Result, error) {
-	mgmt, failure, err := management.NewClient(ctx, r.APIReader, cluster)
-	if err != nil {
-		return nil, ctrl.Result{}, err
-	}
-	if failure != nil {
-		r.failStep(backup, step, part, errors.New(failure.Message))
-		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
-	}
-
-	return mgmt, ctrl.Result{}, nil
 }
 
 // pauseExporting soft-pauses exporting. Records keep flowing, log compaction
@@ -194,20 +175,6 @@ func (r *Reconciler) backupHistory(
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
 }
 
-// unownedHistoryBackup is the failure of a history backup that exists under
-// the ID of this backup without an accepted request of this backup.
-func unownedHistoryBackup(backup *v1.LogicalBackupElasticsearch) error {
-	whose := "it belongs to another actor"
-	if backup.Status.HistoryRequestedTime != nil {
-		whose = "it can be the backup that this resource requested with a lost response, or one of another actor"
-	}
-	return fmt.Errorf(
-		"a history backup %d exists that this backup did not see accepted: %s; "+
-			"it is not adopted, and the finalizer will not delete its snapshots; remove it by hand if it is not wanted",
-		backup.Status.BackupID, whose,
-	)
-}
-
 // requestHistoryBackup drives an absent history backup to a request, the
 // same way requestRuntimeBackup drives the runtime one. The intent is
 // written one reconcile before the request. Only an observed 200 records
@@ -273,6 +240,17 @@ func (r *Reconciler) requestHistoryBackup(
 	}
 
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
+}
+
+// recordHistorySnapshots merges the snapshot names that the cluster reports
+// into status, so they survive the cluster.
+func recordHistorySnapshots(backup *v1.LogicalBackupElasticsearch, status camundaadmin.BackupStatus) (added bool) {
+	names := make([]string, 0, len(status.Details))
+	for _, detail := range status.Details {
+		names = append(names, detail.Name)
+	}
+
+	return recordHistorySnapshotNames(backup, names)
 }
 
 // snapshotRecords snapshots the exported Zeebe record indices directly in
@@ -351,14 +329,27 @@ func (r *Reconciler) snapshotRecords(
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
 }
 
-// snapshotOwnerUIDKey is the metadata key under which every snapshot that
-// this controller creates carries the UID of its backup resource.
-const snapshotOwnerUIDKey = "camunda-operator/backup-uid"
+// elasticsearch builds the Elasticsearch client of a verified storage
+// contract for one running step. A Secret that is gone or unusable mid-run
+// fails the step through resume. Only a transient read error comes back as
+// an error.
+func (r *Reconciler) elasticsearch(
+	ctx context.Context,
+	backup *v1.LogicalBackupElasticsearch,
+	storage *v1.SecondaryStorageConfig,
+	step string,
+	part *v1.BackupPart,
+) (*esadmin.Client, ctrl.Result, error) {
+	es, failure, err := secondarystorageconfig.ElasticsearchAdmin(ctx, r.APIReader, storage)
+	if err != nil {
+		return nil, ctrl.Result{}, err
+	}
+	if failure != nil {
+		r.failStep(backup, step, part, errors.New(failure.Message))
+		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
 
-// snapshotMetadata returns the user metadata of a snapshot of backup: the
-// UID that proves ownership when the deterministic name is met again.
-func snapshotMetadata(backup *v1.LogicalBackupElasticsearch) map[string]string {
-	return map[string]string{snapshotOwnerUIDKey: string(backup.UID)}
+	return es, ctrl.Result{}, nil
 }
 
 // snapshotOwnedBy reports whether the snapshot carries the UID of backup. Only
@@ -381,75 +372,10 @@ func unownedSnapshot(name string) error {
 	)
 }
 
-// destination verifies that the cluster still writes to the destination
-// that the backup pinned at its start. That is the snapshot repository of
-// the binding, the storage contract, and its Elasticsearch endpoint. It returns
-// the resolved contract when everything matches. A destination that moved,
-// or a contract that is gone, fails the step through resume and returns a
-// nil contract with the result to return. Only a transient read of the
-// contract comes back as an error.
-func (r *Reconciler) destination(
-	ctx context.Context,
-	backup *v1.LogicalBackupElasticsearch,
-	cluster *v1.CamundaCluster,
-	step string,
-	part *v1.BackupPart,
-) (*v1.SecondaryStorageConfig, ctrl.Result, error) {
-	if repointed := cluster.Status.Management.BackupRepository; repointed != backup.Status.Repository {
-		r.failStep(backup, step, part, fmt.Errorf(
-			"the snapshot repository of the cluster changed from %q to %q mid-run; the set must stay in one repository",
-			backup.Status.Repository, repointed,
-		))
-		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
-	}
-
-	storage, err := r.resolveStorage(ctx, cluster)
-	if err != nil {
-		if !storageMissing(err) {
-			// A transient read of the contract is not a state of the
-			// backup. Controller-runtime retries it with backoff.
-			return nil, ctrl.Result{}, err
-		}
-		r.failStep(backup, step, part, err)
-		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
-	}
-	if err := pinnedStorageMatches(backup, storage); err != nil {
-		r.failStep(backup, step, part, err)
-		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
-	}
-
-	if err := r.pinnedBucketCurrent(ctx, backup, cluster); err != nil {
-		if !errors.Is(err, errBucketMoved) && !apierrors.IsNotFound(err) {
-			return nil, ctrl.Result{}, err
-		}
-		r.failStep(backup, step, part, err)
-		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
-	}
-
-	return storage, ctrl.Result{}, nil
-}
-
-// elasticsearch builds the Elasticsearch client of a verified storage
-// contract for one running step. A Secret that is gone or unusable mid-run
-// fails the step through resume. Only a transient read error comes back as
-// an error.
-func (r *Reconciler) elasticsearch(
-	ctx context.Context,
-	backup *v1.LogicalBackupElasticsearch,
-	storage *v1.SecondaryStorageConfig,
-	step string,
-	part *v1.BackupPart,
-) (*esadmin.Client, ctrl.Result, error) {
-	es, failure, err := secondarystorageconfig.ElasticsearchAdmin(ctx, r.APIReader, storage)
-	if err != nil {
-		return nil, ctrl.Result{}, err
-	}
-	if failure != nil {
-		r.failStep(backup, step, part, errors.New(failure.Message))
-		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
-	}
-
-	return es, ctrl.Result{}, nil
+// snapshotMetadata returns the user metadata of a snapshot of backup: the
+// UID that proves ownership when the deterministic name is met again.
+func snapshotMetadata(backup *v1.LogicalBackupElasticsearch) map[string]string {
+	return map[string]string{snapshotOwnerUIDKey: string(backup.UID)}
 }
 
 // backupRuntime drives the backup of the Zeebe partitions under the same ID
@@ -515,22 +441,6 @@ func (r *Reconciler) backupRuntime(
 	}
 
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
-}
-
-// unownedRuntimeBackup is the failure of a runtime backup that exists under
-// the ID of this backup without an accepted request of this backup. The
-// message says what the user needs: whose it can be, that it is not
-// adopted, and that the finalizer leaves it alone.
-func unownedRuntimeBackup(backup *v1.LogicalBackupElasticsearch) error {
-	whose := "it belongs to another actor"
-	if backup.Status.RuntimeRequestedTime != nil {
-		whose = "it can be the backup that this resource requested with a lost response, or one of another actor"
-	}
-	return fmt.Errorf(
-		"a runtime backup %d exists that this backup did not see accepted: %s; "+
-			"it is not adopted, and the finalizer will not delete it; remove it by hand if it is not wanted",
-		backup.Status.BackupID, whose,
-	)
 }
 
 // requestRuntimeBackup drives an absent runtime backup to a request. The
@@ -613,6 +523,135 @@ func (r *Reconciler) requestRuntimeBackup(
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
 }
 
+// management builds the management client of the cluster for one running
+// step. A binding that broke mid-run fails the step through resume: the
+// credentials Secret is gone, or the version is not supported. Only a
+// transient read error comes back as an error.
+func (r *Reconciler) management(
+	ctx context.Context,
+	backup *v1.LogicalBackupElasticsearch,
+	cluster *v1.CamundaCluster,
+	step string,
+	part *v1.BackupPart,
+) (*camundaadmin.Client, ctrl.Result, error) {
+	mgmt, failure, err := management.NewClient(ctx, r.APIReader, cluster)
+	if err != nil {
+		return nil, ctrl.Result{}, err
+	}
+	if failure != nil {
+		r.failStep(backup, step, part, errors.New(failure.Message))
+		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+
+	return mgmt, ctrl.Result{}, nil
+}
+
+// unownedHistoryBackup is the failure of a history backup that exists under
+// the ID of this backup without an accepted request of this backup.
+func unownedHistoryBackup(backup *v1.LogicalBackupElasticsearch) error {
+	whose := "it belongs to another actor"
+	if backup.Status.HistoryRequestedTime != nil {
+		whose = "it can be the backup that this resource requested with a lost response, or one of another actor"
+	}
+	return fmt.Errorf(
+		"a history backup %d exists that this backup did not see accepted: %s; "+
+			"it is not adopted, and the finalizer will not delete its snapshots; remove it by hand if it is not wanted",
+		backup.Status.BackupID, whose,
+	)
+}
+
+// destination verifies that the cluster still writes to the destination
+// that the backup pinned at its start. That is the snapshot repository of
+// the binding, the storage contract, and its Elasticsearch endpoint. It returns
+// the resolved contract when everything matches. A destination that moved,
+// or a contract that is gone, fails the step through resume and returns a
+// nil contract with the result to return. Only a transient read of the
+// contract comes back as an error.
+func (r *Reconciler) destination(
+	ctx context.Context,
+	backup *v1.LogicalBackupElasticsearch,
+	cluster *v1.CamundaCluster,
+	step string,
+	part *v1.BackupPart,
+) (*v1.SecondaryStorageConfig, ctrl.Result, error) {
+	if repointed := cluster.Status.Management.BackupRepository; repointed != backup.Status.Repository {
+		r.failStep(backup, step, part, fmt.Errorf(
+			"the snapshot repository of the cluster changed from %q to %q mid-run; the set must stay in one repository",
+			backup.Status.Repository, repointed,
+		))
+		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+
+	storage, err := r.resolveStorage(ctx, cluster)
+	if err != nil {
+		if !storageMissing(err) {
+			// A transient read of the contract is not a state of the
+			// backup. Controller-runtime retries it with backoff.
+			return nil, ctrl.Result{}, err
+		}
+		r.failStep(backup, step, part, err)
+		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+	if err := pinnedStorageMatches(backup, storage); err != nil {
+		r.failStep(backup, step, part, err)
+		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+
+	if err := r.pinnedBucketCurrent(ctx, backup, cluster); err != nil {
+		if !errors.Is(err, errBucketMoved) && !apierrors.IsNotFound(err) {
+			return nil, ctrl.Result{}, err
+		}
+		r.failStep(backup, step, part, err)
+		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+
+	return storage, ctrl.Result{}, nil
+}
+
+// pinnedStorageMatches reports an error when the storage contract no longer
+// matches the destination that start pinned. The repository name alone does
+// not identify a cluster. A repointed contract or endpoint with the same
+// repository name splits the set across two clusters. Endpoints compare in
+// the form the client reaches. esadmin.New trims trailing slashes. An
+// endpoint that differs by one slash is therefore the same cluster, not a
+// retarget.
+func pinnedStorageMatches(backup *v1.LogicalBackupElasticsearch, storage *v1.SecondaryStorageConfig) error {
+	pinned := backup.Status.Storage
+	if pinned == nil {
+		return nil
+	}
+	if storage.Name != pinned.SecondaryStorageConfig {
+		return fmt.Errorf(
+			"the storage contract of the cluster changed from %q to %q mid-run; the set must stay on one cluster",
+			pinned.SecondaryStorageConfig, storage.Name,
+		)
+	}
+	if es := storage.Spec.Elasticsearch; es == nil ||
+		strings.TrimRight(es.Endpoint, "/") != strings.TrimRight(pinned.Endpoint, "/") {
+		return fmt.Errorf(
+			"the Elasticsearch endpoint of %q changed from %q mid-run; the set must stay on one cluster",
+			pinned.SecondaryStorageConfig, pinned.Endpoint,
+		)
+	}
+	return nil
+}
+
+// unownedRuntimeBackup is the failure of a runtime backup that exists under
+// the ID of this backup without an accepted request of this backup. The
+// message says what the user needs: whose it can be, that it is not
+// adopted, and that the finalizer leaves it alone.
+func unownedRuntimeBackup(backup *v1.LogicalBackupElasticsearch) error {
+	whose := "it belongs to another actor"
+	if backup.Status.RuntimeRequestedTime != nil {
+		whose = "it can be the backup that this resource requested with a lost response, or one of another actor"
+	}
+	return fmt.Errorf(
+		"a runtime backup %d exists that this backup did not see accepted: %s; "+
+			"it is not adopted, and the finalizer will not delete it; remove it by hand if it is not wanted",
+		backup.Status.BackupID, whose,
+	)
+}
+
 // failureReason returns the failure reason of a backup status. It joins the
 // aggregate reason with every per-part reason that names its part, so the
 // message says which snapshot or partition failed and why. When the endpoint
@@ -686,45 +725,6 @@ func (r *Reconciler) stageUnreachable(
 // forever with exporting paused.
 func answered(backup *v1.LogicalBackupElasticsearch) {
 	backup.Status.UnreachableSince = nil
-}
-
-// pinnedStorageMatches reports an error when the storage contract no longer
-// matches the destination that start pinned. The repository name alone does
-// not identify a cluster. A repointed contract or endpoint with the same
-// repository name splits the set across two clusters. Endpoints compare in
-// the form the client reaches. esadmin.New trims trailing slashes. An
-// endpoint that differs by one slash is therefore the same cluster, not a
-// retarget.
-func pinnedStorageMatches(backup *v1.LogicalBackupElasticsearch, storage *v1.SecondaryStorageConfig) error {
-	pinned := backup.Status.Storage
-	if pinned == nil {
-		return nil
-	}
-	if storage.Name != pinned.SecondaryStorageConfig {
-		return fmt.Errorf(
-			"the storage contract of the cluster changed from %q to %q mid-run; the set must stay on one cluster",
-			pinned.SecondaryStorageConfig, storage.Name,
-		)
-	}
-	if es := storage.Spec.Elasticsearch; es == nil ||
-		strings.TrimRight(es.Endpoint, "/") != strings.TrimRight(pinned.Endpoint, "/") {
-		return fmt.Errorf(
-			"the Elasticsearch endpoint of %q changed from %q mid-run; the set must stay on one cluster",
-			pinned.SecondaryStorageConfig, pinned.Endpoint,
-		)
-	}
-	return nil
-}
-
-// recordHistorySnapshots merges the snapshot names that the cluster reports
-// into status, so they survive the cluster.
-func recordHistorySnapshots(backup *v1.LogicalBackupElasticsearch, status camundaadmin.BackupStatus) (added bool) {
-	names := make([]string, 0, len(status.Details))
-	for _, detail := range status.Details {
-		names = append(names, detail.Name)
-	}
-
-	return recordHistorySnapshotNames(backup, names)
 }
 
 // recordHistorySnapshotNames merges names into status.historySnapshots. It

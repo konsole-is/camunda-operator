@@ -10,7 +10,7 @@ The operator has three preset kinds:
 | `ElasticsearchClusterPreset` | `ElasticsearchCluster` | `spec.presetRef` |
 | `DatabaseServerPreset` | `DatabaseServer` | `spec.presetRef` |
 
-All three are cluster-scoped. No controller reconciles them, and they create nothing. The resource that references a preset reads it on every reconcile and merges its own spec over the baseline the preset holds. That baseline is `spec.cluster` on the two cluster presets, and `spec.server` on `DatabaseServerPreset`.
+All three are cluster-scoped. They are passive data, and they create nothing. The resource that references a preset merges its own spec over the baseline the preset holds. That baseline is `spec.cluster` on the two cluster presets, and `spec.server` on `DatabaseServerPreset`.
 
 ## The four layers of a Camunda cluster
 
@@ -146,7 +146,9 @@ A `DatabaseServerPreset` carries the shape of a PostgreSQL server under `spec.se
 
 The [CamundaClusterPreset](../crds/camundaclusterpreset.md), [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md), and [DatabaseServerPreset](../crds/databaseserverpreset.md) pages list every field.
 
-Three ready-to-apply presets are in [`config/example/presets`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/presets). The [example inventories](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example) next to it name them.
+Three ready-to-apply presets are in [`config/example/presets`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/presets), and the release that the example clusters name is in [`config/example/releases`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/releases). The [example inventories](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example) next to them name both. A `CamundaCluster` there keeps its references and the fields that belong to that one cluster.
+
+That release carries the name of the minor line, `camunda-8-9`, because you edit that one release in place. When you want two releases side by side, name each one for the version it runs, such as `camunda-8-9-4` for Camunda 8.9.4.
 
 ## Override one field
 
@@ -172,7 +174,7 @@ Most fields merge like this, value by value. A few blocks replace as a whole, be
 
 ## Change a fleet
 
-When you edit a preset, every cluster that references it reads the new baseline on its next reconcile. A larger `storageSize` grows the volumes of every cluster in place. A lower `storageSize` is ignored for a running cluster, which keeps its volumes and records the event `StorageShrinkIgnored`.
+When you edit a preset, every cluster that references it takes the new baseline. A larger `storageSize` grows the volumes of every cluster in place. A lower `storageSize` is ignored for a running cluster, which keeps its volumes and records the event `StorageShrinkIgnored`.
 
 To roll a fleet to a new version, edit the release. Every cluster that references it rolls its pods, whatever preset sizes it. To roll in steps, create a second release, for example `camunda-8-9-5`, and move clusters to it one at a time by changing `releaseRef`. When every cluster is on the new release, delete the old one.
 

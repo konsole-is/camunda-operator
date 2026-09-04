@@ -749,6 +749,8 @@ A file is read top to bottom, once, by someone who has never seen it. Order it s
 3. Every other function, in the order the entry point reaches them — its own calls first, then theirs. An exported function that other packages call is placed by this rule too. Being exported does not lift a function above the entry point.
 4. A helper with one caller sits directly under that caller, never at the end of the file.
 
+A method of a small value type, and the constructor of a type, stay directly under that type: they are part of what the type is, and a reader who meets `Options` wants `withDefaults` in the same view. Rule 3 orders the functions the entry point reaches, not these.
+
 ```go
 const ComponentName = "optimize"              // 1. shared surface
 type TrustStore struct{ ... }                 // 1. read by secrets.go and the controller
@@ -770,11 +772,13 @@ func readinessProbe() *corev1.Probe           // 3. called by container
 
 When no order makes the file read straight through, the file holds more than one concern. Split it by concern, as above.
 
+**Generated files keep the order their generator writes.** This section does not apply to `zz_generated*` files, or to the `builder.go`, `mutator.go` and `resource.go` files under `pkg/wrappers/`. `ocf scaffold wrapper --force` writes those three from a template, so the next run drops a hand reorder. Every other file in a wrapper package is hand-written and takes the order above.
+
 **Red flags in your own diff:**
 
 - The first function in the file is not the one the file exists for.
 - You added a function at the end of the file and its caller is somewhere above it.
-- A constructor or a resolver sits above the code that consumes it because it is exported.
+- A resolver sits above the code that consumes it because it is exported. A constructor is different: it stays under its type.
 
 ## Common mistakes
 

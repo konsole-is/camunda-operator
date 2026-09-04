@@ -65,9 +65,6 @@ type Bucket struct {
 	bucket *blob.Bucket
 }
 
-// newBucket wraps an open blob bucket.
-func newBucket(bucket *blob.Bucket) *Bucket { return &Bucket{bucket: bucket} }
-
 // Open opens the bucket that cfg describes. With auth type credentials the
 // caller passes the resolved values in creds; with workload identity creds is
 // nil and the provider default chain authenticates. The caller must Close the
@@ -104,6 +101,138 @@ func missingBlock(cfg *v1.ObjectStorageConfig, block string) error {
 		cfg.Name, cfg.Spec.Type, block,
 	)
 }
+
+// openS3 opens an S3 or S3-compatible bucket.
+func openS3(ctx context.Context, spec *v1.S3Storage, creds *Credentials) (*Bucket, error) {
+	var opts []func(*awsconfig.LoadOptions) error
+	// The SDK requires a region even when a custom endpoint routes every
+	// request, and SigningRegion answers with the placeholder for a contract
+	// that carries an endpoint and no region. It answers with nothing only
+	// for a contract that carries neither, which the CRD does not admit. The
+	// region chain of the pod resolves the region then.
+	if region := spec.SigningRegion(); region != "" {
+		opts = append(opts, awsconfig.WithRegion(region))
+	}
+
+	if spec.Auth.Type == v1.ObjectStorageAuthTypeCredentials {
+		if creds == nil || creds.AccessKeyID == "" || creds.SecretAccessKey == "" {
+			return nil, errors.New("s3 auth type is credentials, but no resolved credentials were passed")
+		}
+		opts = append(opts, awsconfig.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(creds.AccessKeyID, creds.SecretAccessKey, ""),
+		))
+	}
+
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("loading AWS configuration: %w", err)
+	}
+
+	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		if spec.Endpoint != "" {
+			o.BaseEndpoint = &spec.Endpoint
+		}
+		o.UsePathStyle = spec.ForcePathStyle
+	})
+
+	bucket, err := s3blob.OpenBucketV2(ctx, client, spec.BucketName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("opening s3 bucket %q: %w", spec.BucketName, err)
+	}
+
+	return newBucket(bucket), nil
+}
+
+// openGCS opens a Google Cloud Storage bucket.
+func openGCS(ctx context.Context, spec *v1.GCSStorage, creds *Credentials) (*Bucket, error) {
+	var tokenSource gcp.TokenSource
+
+	if spec.Auth.Type == v1.ObjectStorageAuthTypeCredentials {
+		if creds == nil || len(creds.ServiceAccountJSON) == 0 {
+			return nil, errors.New("gcs auth type is credentials, but no resolved credentials were passed")
+		}
+		// The type is asserted, not inferred: the key arrives from a Secret
+		// that the contract names, and an unvalidated credential
+		// configuration from outside the operator must never reach the
+		// Google libraries.
+		googleCreds, err := google.CredentialsFromJSONWithType(
+			ctx,
+			creds.ServiceAccountJSON,
+			google.ServiceAccount,
+			"https://www.googleapis.com/auth/devstorage.read_write",
+		)
+		if err != nil {
+			return nil, fmt.Errorf("parsing GCS service-account key: %w", err)
+		}
+		tokenSource = googleCreds.TokenSource
+	} else {
+		googleCreds, err := gcp.DefaultCredentials(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("loading GCS default credentials: %w", err)
+		}
+		tokenSource = googleCreds.TokenSource
+	}
+
+	client, err := gcp.NewHTTPClient(gcp.DefaultTransport(), tokenSource)
+	if err != nil {
+		return nil, fmt.Errorf("building GCS client: %w", err)
+	}
+
+	bucket, err := gcsblob.OpenBucket(ctx, client, spec.BucketName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("opening gcs bucket %q: %w", spec.BucketName, err)
+	}
+
+	return newBucket(bucket), nil
+}
+
+// openAzureBlob opens an Azure Blob Storage container.
+func openAzureBlob(ctx context.Context, spec *v1.AzureBlobStorage, creds *Credentials) (*Bucket, error) {
+	containerURL := azureContainerURL(spec)
+
+	var client *azcontainer.Client
+
+	if spec.Auth.Type == v1.ObjectStorageAuthTypeCredentials {
+		if creds == nil || creds.AccountKey == "" {
+			return nil, errors.New("azureBlob auth type is credentials, but no resolved credentials were passed")
+		}
+		sharedKey, err := azblob.NewSharedKeyCredential(spec.AccountName, creds.AccountKey)
+		if err != nil {
+			return nil, fmt.Errorf("building Azure shared-key credential: %w", err)
+		}
+		client, err = azcontainer.NewClientWithSharedKeyCredential(containerURL, sharedKey, nil)
+		if err != nil {
+			return nil, fmt.Errorf("building Azure container client: %w", err)
+		}
+	} else {
+		cred, err := azidentity.NewDefaultAzureCredential(nil)
+		if err != nil {
+			return nil, fmt.Errorf("loading Azure default credentials: %w", err)
+		}
+		client, err = azcontainer.NewClient(containerURL, azcore.TokenCredential(cred), nil)
+		if err != nil {
+			return nil, fmt.Errorf("building Azure container client: %w", err)
+		}
+	}
+
+	bucket, err := azureblob.OpenBucket(ctx, client, nil)
+	if err != nil {
+		return nil, fmt.Errorf("opening azure container %q: %w", spec.Container, err)
+	}
+
+	return newBucket(bucket), nil
+}
+
+// azureContainerURL is the URL of the container of spec. A trailing slash on
+// the endpoint would double the separator, and the request signature is
+// computed over the canonical resource — Azure then answers 403, which reads
+// as bad credentials instead of a bad URL.
+func azureContainerURL(spec *v1.AzureBlobStorage) string {
+	return spec.ServiceEndpoint() + "/" + spec.Container
+}
+
+// newBucket wraps an open blob bucket.
+func newBucket(bucket *blob.Bucket) *Bucket { return &Bucket{bucket: bucket} }
 
 // CredentialsFrom maps the data of the Secret that CredentialsSecret names
 // onto the credentials of the contract's storage type. It returns nil when
@@ -267,132 +396,3 @@ func (b *Bucket) Walk(ctx context.Context, prefix string, fn func(key string) er
 
 // Close releases the bucket.
 func (b *Bucket) Close() { _ = b.bucket.Close() }
-
-// openS3 opens an S3 or S3-compatible bucket.
-func openS3(ctx context.Context, spec *v1.S3Storage, creds *Credentials) (*Bucket, error) {
-	var opts []func(*awsconfig.LoadOptions) error
-	// The SDK requires a region even when a custom endpoint routes every
-	// request, and SigningRegion answers with the placeholder for a contract
-	// that carries an endpoint and no region. It answers with nothing only
-	// for a contract that carries neither, which the CRD does not admit. The
-	// region chain of the pod resolves the region then.
-	if region := spec.SigningRegion(); region != "" {
-		opts = append(opts, awsconfig.WithRegion(region))
-	}
-
-	if spec.Auth.Type == v1.ObjectStorageAuthTypeCredentials {
-		if creds == nil || creds.AccessKeyID == "" || creds.SecretAccessKey == "" {
-			return nil, errors.New("s3 auth type is credentials, but no resolved credentials were passed")
-		}
-		opts = append(opts, awsconfig.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(creds.AccessKeyID, creds.SecretAccessKey, ""),
-		))
-	}
-
-	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("loading AWS configuration: %w", err)
-	}
-
-	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-		if spec.Endpoint != "" {
-			o.BaseEndpoint = &spec.Endpoint
-		}
-		o.UsePathStyle = spec.ForcePathStyle
-	})
-
-	bucket, err := s3blob.OpenBucketV2(ctx, client, spec.BucketName, nil)
-	if err != nil {
-		return nil, fmt.Errorf("opening s3 bucket %q: %w", spec.BucketName, err)
-	}
-
-	return newBucket(bucket), nil
-}
-
-// openGCS opens a Google Cloud Storage bucket.
-func openGCS(ctx context.Context, spec *v1.GCSStorage, creds *Credentials) (*Bucket, error) {
-	var tokenSource gcp.TokenSource
-
-	if spec.Auth.Type == v1.ObjectStorageAuthTypeCredentials {
-		if creds == nil || len(creds.ServiceAccountJSON) == 0 {
-			return nil, errors.New("gcs auth type is credentials, but no resolved credentials were passed")
-		}
-		// The type is asserted, not inferred: the key arrives from a Secret
-		// that the contract names, and an unvalidated credential
-		// configuration from outside the operator must never reach the
-		// Google libraries.
-		googleCreds, err := google.CredentialsFromJSONWithType(
-			ctx,
-			creds.ServiceAccountJSON,
-			google.ServiceAccount,
-			"https://www.googleapis.com/auth/devstorage.read_write",
-		)
-		if err != nil {
-			return nil, fmt.Errorf("parsing GCS service-account key: %w", err)
-		}
-		tokenSource = googleCreds.TokenSource
-	} else {
-		googleCreds, err := gcp.DefaultCredentials(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("loading GCS default credentials: %w", err)
-		}
-		tokenSource = googleCreds.TokenSource
-	}
-
-	client, err := gcp.NewHTTPClient(gcp.DefaultTransport(), tokenSource)
-	if err != nil {
-		return nil, fmt.Errorf("building GCS client: %w", err)
-	}
-
-	bucket, err := gcsblob.OpenBucket(ctx, client, spec.BucketName, nil)
-	if err != nil {
-		return nil, fmt.Errorf("opening gcs bucket %q: %w", spec.BucketName, err)
-	}
-
-	return newBucket(bucket), nil
-}
-
-// azureContainerURL is the URL of the container of spec. A trailing slash on
-// the endpoint would double the separator, and the request signature is
-// computed over the canonical resource — Azure then answers 403, which reads
-// as bad credentials instead of a bad URL.
-func azureContainerURL(spec *v1.AzureBlobStorage) string {
-	return spec.ServiceEndpoint() + "/" + spec.Container
-}
-
-// openAzureBlob opens an Azure Blob Storage container.
-func openAzureBlob(ctx context.Context, spec *v1.AzureBlobStorage, creds *Credentials) (*Bucket, error) {
-	containerURL := azureContainerURL(spec)
-
-	var client *azcontainer.Client
-
-	if spec.Auth.Type == v1.ObjectStorageAuthTypeCredentials {
-		if creds == nil || creds.AccountKey == "" {
-			return nil, errors.New("azureBlob auth type is credentials, but no resolved credentials were passed")
-		}
-		sharedKey, err := azblob.NewSharedKeyCredential(spec.AccountName, creds.AccountKey)
-		if err != nil {
-			return nil, fmt.Errorf("building Azure shared-key credential: %w", err)
-		}
-		client, err = azcontainer.NewClientWithSharedKeyCredential(containerURL, sharedKey, nil)
-		if err != nil {
-			return nil, fmt.Errorf("building Azure container client: %w", err)
-		}
-	} else {
-		cred, err := azidentity.NewDefaultAzureCredential(nil)
-		if err != nil {
-			return nil, fmt.Errorf("loading Azure default credentials: %w", err)
-		}
-		client, err = azcontainer.NewClient(containerURL, azcore.TokenCredential(cred), nil)
-		if err != nil {
-			return nil, fmt.Errorf("building Azure container client: %w", err)
-		}
-	}
-
-	bucket, err := azureblob.OpenBucket(ctx, client, nil)
-	if err != nil {
-		return nil, fmt.Errorf("opening azure container %q: %w", spec.Container, err)
-	}
-
-	return newBucket(bucket), nil
-}

@@ -269,16 +269,6 @@ func pendingRequest(
 	return *contract.Spec.Recovery, true
 }
 
-// publishedOutcome returns the answer that the contract carries, or nil when it
-// carries none.
-func publishedOutcome(contract *v1.DatabaseServerConfig) *v1.RecoveryOutcome {
-	if contract.Spec.PITR == nil {
-		return nil
-	}
-
-	return contract.Spec.PITR.LastRecovery
-}
-
 // recordPublishedOutcome writes the published answer into the record. The name
 // of the cluster the recovery built is kept when the record already names one:
 // it is the only place that holds it, and the cleanup reads it.
@@ -332,41 +322,6 @@ func (r *DatabaseServerReconciler) recordPublishedOutcome(
 	server.Status.Recovery = answered
 
 	return nil
-}
-
-// answeredRecovery builds the record of an answered recovery. The request and
-// the outcome carry every part but three. Those three live only in the record
-// of the running recovery. They are the cluster it built, the cluster it came
-// from, and the archive it read. carry is that record when it belongs to this
-// request, and nil when it belongs to another one.
-//
-// Both writers of status.recovery build the record here, so neither of them
-// can drop a part that the other keeps.
-func answeredRecovery(
-	carry *v1.DatabaseServerRecoveryStatus,
-	request v1.RecoveryRequest,
-	contract string,
-	result v1.RecoveryResult,
-	message string,
-	completedAt metav1.Time,
-) *v1.DatabaseServerRecoveryStatus {
-	answered := &v1.DatabaseServerRecoveryStatus{
-		RequestID:   request.RequestID,
-		Contract:    contract,
-		RequestedBy: request.RequestedBy,
-		TargetTime:  request.TargetTime,
-		Result:      result,
-		Message:     message,
-		CompletedAt: &completedAt,
-	}
-
-	if carry != nil {
-		answered.Cluster = carry.Cluster
-		answered.PreviousCluster = carry.PreviousCluster
-		answered.Archive = carry.Archive
-	}
-
-	return answered
 }
 
 // recoveredClusterOf returns the cluster of this server that the endpoint of
@@ -423,15 +378,6 @@ func (r *DatabaseServerReconciler) recoveredClusterOf(
 	return name, nil
 }
 
-// recordedRequest returns the request that the record holds.
-func recordedRequest(recorded *v1.DatabaseServerRecoveryStatus) v1.RecoveryRequest {
-	return v1.RecoveryRequest{
-		RequestID:   recorded.RequestID,
-		RequestedBy: recorded.RequestedBy,
-		TargetTime:  recorded.TargetTime,
-	}
-}
-
 // republishRecoveryOutcome publishes the recorded answer on the contract when
 // the contract does not already carry it. A contract that somebody deleted and
 // created again under its name carries no answer at all, and whoever asked
@@ -453,6 +399,25 @@ func (r *DatabaseServerReconciler) republishRecoveryOutcome(
 		Result:      answered.Result,
 		Message:     answered.Message,
 	})
+}
+
+// recordedRequest returns the request that the record holds.
+func recordedRequest(recorded *v1.DatabaseServerRecoveryStatus) v1.RecoveryRequest {
+	return v1.RecoveryRequest{
+		RequestID:   recorded.RequestID,
+		RequestedBy: recorded.RequestedBy,
+		TargetTime:  recorded.TargetTime,
+	}
+}
+
+// publishedOutcome returns the answer that the contract carries, or nil when it
+// carries none.
+func publishedOutcome(contract *v1.DatabaseServerConfig) *v1.RecoveryOutcome {
+	if contract.Spec.PITR == nil {
+		return nil
+	}
+
+	return contract.Spec.PITR.LastRecovery
 }
 
 // cleanUpAnsweredRecovery removes what the answered recovery left behind: the
@@ -506,27 +471,10 @@ func (r *DatabaseServerReconciler) removeAbandonedRecoveryCluster(
 	return nil
 }
 
-// ownedByServer reports whether server is the controller of obj and labelled
-// it. Both are what the operator writes on everything it builds, so an object
-// that carries neither is somebody else's, whatever its name is.
-func ownedByServer(server *v1.DatabaseServer, obj client.Object) bool {
-	return metav1.IsControlledBy(obj, server) &&
-		obj.GetLabels()[labels.DatabaseServerKey] == labels.OwnerName(server.Name)
-}
-
 // recoveryAnswered reports whether the server already published the answer to
 // request.
 func recoveryAnswered(recorded *v1.DatabaseServerRecoveryStatus, request v1.RecoveryRequest) bool {
 	return recoveryMatches(recorded, request) && recorded.CompletedAt != nil
-}
-
-// recoveryMatches reports whether the recorded recovery is the one that
-// request asks for.
-func recoveryMatches(recorded *v1.DatabaseServerRecoveryStatus, request v1.RecoveryRequest) bool {
-	return recorded != nil &&
-		recorded.RequestID == request.RequestID &&
-		recorded.RequestedBy == request.RequestedBy &&
-		recorded.TargetTime == request.TargetTime
 }
 
 // recoverySource returns the archive that a recovery to the requested point
@@ -979,6 +927,14 @@ func (r *DatabaseServerReconciler) removeSupersededCluster(
 	return nil
 }
 
+// ownedByServer reports whether server is the controller of obj and labelled
+// it. Both are what the operator writes on everything it builds, so an object
+// that carries neither is somebody else's, whatever its name is.
+func ownedByServer(server *v1.DatabaseServer, obj client.Object) bool {
+	return metav1.IsControlledBy(obj, server) &&
+		obj.GetLabels()[labels.DatabaseServerKey] == labels.OwnerName(server.Name)
+}
+
 // deleteOwned deletes the object that the caller read, and no other object of
 // its name. A name that this server derives is a name it takes again, so the
 // delete carries the identity of what was read.
@@ -1025,6 +981,50 @@ func (r *DatabaseServerReconciler) answerRecovery(
 	r.recordRecoveryOutcome(server, request, result, message)
 
 	return nil
+}
+
+// recoveryMatches reports whether the recorded recovery is the one that
+// request asks for.
+func recoveryMatches(recorded *v1.DatabaseServerRecoveryStatus, request v1.RecoveryRequest) bool {
+	return recorded != nil &&
+		recorded.RequestID == request.RequestID &&
+		recorded.RequestedBy == request.RequestedBy &&
+		recorded.TargetTime == request.TargetTime
+}
+
+// answeredRecovery builds the record of an answered recovery. The request and
+// the outcome carry every part but three. Those three live only in the record
+// of the running recovery. They are the cluster it built, the cluster it came
+// from, and the archive it read. carry is that record when it belongs to this
+// request, and nil when it belongs to another one.
+//
+// Both writers of status.recovery build the record here, so neither of them
+// can drop a part that the other keeps.
+func answeredRecovery(
+	carry *v1.DatabaseServerRecoveryStatus,
+	request v1.RecoveryRequest,
+	contract string,
+	result v1.RecoveryResult,
+	message string,
+	completedAt metav1.Time,
+) *v1.DatabaseServerRecoveryStatus {
+	answered := &v1.DatabaseServerRecoveryStatus{
+		RequestID:   request.RequestID,
+		Contract:    contract,
+		RequestedBy: request.RequestedBy,
+		TargetTime:  request.TargetTime,
+		Result:      result,
+		Message:     message,
+		CompletedAt: &completedAt,
+	}
+
+	if carry != nil {
+		answered.Cluster = carry.Cluster
+		answered.PreviousCluster = carry.PreviousCluster
+		answered.Archive = carry.Archive
+	}
+
+	return answered
 }
 
 // publishRecoveryOutcome applies outcome on the contract that the caller read.

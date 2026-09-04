@@ -95,6 +95,22 @@ type Bindings struct {
 	BackupPassword credentials.Password
 }
 
+// PublishedBindings names the objects that a Database published and can
+// withdraw. Every name is a name in the namespace of that Database.
+//
+// The controller reads the names off the cluster rather than off the spec. One
+// edit can rename a binding and move the Database onto the logical database of
+// another at the same time, and the object then keeps the name from before that
+// edit.
+type PublishedBindings struct {
+	// Secrets names the published credential Secrets.
+	Secrets []string
+	// DatabaseConfigs names the published DatabaseConfigs.
+	DatabaseConfigs []string
+	// SecondaryStorageConfigs names the published SecondaryStorageConfigs.
+	SecondaryStorageConfigs []string
+}
+
 // ResolveBindings applies the documented defaults to the binding names of db.
 // The credential Secrets default to "<name>-credentials" and
 // "<name>-backup-credentials". The DatabaseConfig defaults to the CR name.
@@ -215,20 +231,81 @@ func BindingsComponent(db *v1.Database, rb Bindings) (*component.Component, erro
 	return builder.Build()
 }
 
-// PublishedBindings names the objects that a Database published and can
-// withdraw. Every name is a name in the namespace of that Database.
-//
-// The controller reads the names off the cluster rather than off the spec. One
-// edit can rename a binding and move the Database onto the logical database of
-// another at the same time, and the object then keeps the name from before that
-// edit.
-type PublishedBindings struct {
-	// Secrets names the published credential Secrets.
-	Secrets []string
-	// DatabaseConfigs names the published DatabaseConfigs.
-	DatabaseConfigs []string
-	// SecondaryStorageConfigs names the published SecondaryStorageConfigs.
-	SecondaryStorageConfigs []string
+// credentialSecret builds the baseline for a published credential Secret. A
+// reused password carries its apply precondition onto the Secret, so a delete
+// of the Secret always rotates the password.
+func credentialSecret(
+	db *v1.Database,
+	key types.NamespacedName,
+	username string,
+	password credentials.Password,
+) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        key.Name,
+			Namespace:   key.Namespace,
+			Labels:      bindingLabels(db),
+			Annotations: password.PreconditionAnnotations(),
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{
+			CredentialUsernameKey: []byte(username),
+			CredentialPasswordKey: []byte(password.Value),
+		},
+	}
+}
+
+// bindingLabels returns the labels of every binding that db publishes.
+func bindingLabels(db *v1.Database) map[string]string {
+	return labels.Managed(labels.Database(db.Name), bindingsComponentLabel)
+}
+
+// bindingMeta locates a binding of db by name in the namespace of db, with the
+// labels that every binding carries.
+func bindingMeta(db *v1.Database, name string) metav1.ObjectMeta {
+	return metav1.ObjectMeta{
+		Name:      name,
+		Namespace: db.Namespace,
+		Labels:    bindingLabels(db),
+	}
+}
+
+// credentialsSecretRef points a contract at a published credential Secret.
+// The contract and the Secret share the namespace of the Database, so the
+// reference carries the name alone.
+func credentialsSecretRef(name string) v1.LocalCredentialsSecretRef {
+	return v1.LocalCredentialsSecretRef{
+		Name:        name,
+		UsernameKey: CredentialUsernameKey,
+		PasswordKey: CredentialPasswordKey,
+	}
+}
+
+// backupCredentialsRefMutation sets the backup credentials Secret reference on
+// the DatabaseConfig while backup is enabled.
+func backupCredentialsRefMutation(rb Bindings) databaseconfig.Mutation {
+	return databaseconfig.Mutation{
+		Name:    "BackupCredentialsRef",
+		Feature: feature.NewBooleanGate(rb.BackupEnabled),
+		Mutate: func(m *databaseconfig.Mutator) error {
+			m.Edit(func(cfg *v1.DatabaseConfig) error {
+				ref := credentialsSecretRef(rb.BackupSecret.Name)
+				cfg.Spec.BackupCredentialsSecretRef = &ref
+				return nil
+			})
+			return nil
+		},
+	}
+}
+
+// bindingsComponentBuilder returns the builder that both constructors start
+// from. The name and the condition type are the same for a Database that
+// publishes its bindings and for one that gives them back, so one condition
+// carries both states.
+func bindingsComponentBuilder() *component.Builder {
+	return component.NewComponentBuilder().
+		WithName("bindings").
+		WithConditionType(ConditionBindings)
 }
 
 // WithdrawnBindingsComponent assembles the bindings component with its feature
@@ -276,86 +353,9 @@ func WithdrawnBindingsComponent(
 	return builder.Build()
 }
 
-// bindingsComponentBuilder returns the builder that both constructors start
-// from. The name and the condition type are the same for a Database that
-// publishes its bindings and for one that gives them back, so one condition
-// carries both states.
-func bindingsComponentBuilder() *component.Builder {
-	return component.NewComponentBuilder().
-		WithName("bindings").
-		WithConditionType(ConditionBindings)
-}
-
 // BindingSelector returns the labels that identify the bindings of db. It
 // selects them under any name, so a reader finds an object that db published
 // before an edit renamed it.
 func BindingSelector(db *v1.Database) map[string]string {
 	return labels.Discovery(labels.Database(db.Name), bindingsComponentLabel)
-}
-
-// bindingMeta locates a binding of db by name in the namespace of db, with the
-// labels that every binding carries.
-func bindingMeta(db *v1.Database, name string) metav1.ObjectMeta {
-	return metav1.ObjectMeta{
-		Name:      name,
-		Namespace: db.Namespace,
-		Labels:    bindingLabels(db),
-	}
-}
-
-// bindingLabels returns the labels of every binding that db publishes.
-func bindingLabels(db *v1.Database) map[string]string {
-	return labels.Managed(labels.Database(db.Name), bindingsComponentLabel)
-}
-
-// credentialSecret builds the baseline for a published credential Secret. A
-// reused password carries its apply precondition onto the Secret, so a delete
-// of the Secret always rotates the password.
-func credentialSecret(
-	db *v1.Database,
-	key types.NamespacedName,
-	username string,
-	password credentials.Password,
-) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        key.Name,
-			Namespace:   key.Namespace,
-			Labels:      bindingLabels(db),
-			Annotations: password.PreconditionAnnotations(),
-		},
-		Type: corev1.SecretTypeOpaque,
-		Data: map[string][]byte{
-			CredentialUsernameKey: []byte(username),
-			CredentialPasswordKey: []byte(password.Value),
-		},
-	}
-}
-
-// credentialsSecretRef points a contract at a published credential Secret.
-// The contract and the Secret share the namespace of the Database, so the
-// reference carries the name alone.
-func credentialsSecretRef(name string) v1.LocalCredentialsSecretRef {
-	return v1.LocalCredentialsSecretRef{
-		Name:        name,
-		UsernameKey: CredentialUsernameKey,
-		PasswordKey: CredentialPasswordKey,
-	}
-}
-
-// backupCredentialsRefMutation sets the backup credentials Secret reference on
-// the DatabaseConfig while backup is enabled.
-func backupCredentialsRefMutation(rb Bindings) databaseconfig.Mutation {
-	return databaseconfig.Mutation{
-		Name:    "BackupCredentialsRef",
-		Feature: feature.NewBooleanGate(rb.BackupEnabled),
-		Mutate: func(m *databaseconfig.Mutator) error {
-			m.Edit(func(cfg *v1.DatabaseConfig) error {
-				ref := credentialsSecretRef(rb.BackupSecret.Name)
-				cfg.Spec.BackupCredentialsSecretRef = &ref
-				return nil
-			})
-			return nil
-		},
-	}
 }

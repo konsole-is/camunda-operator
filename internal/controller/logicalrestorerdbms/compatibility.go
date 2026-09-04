@@ -28,6 +28,46 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/restore"
 )
 
+// compatibility is what the ValidatingCompatibility phase compares: the facts
+// of the backup against the facts of the target. The target facts come from
+// the live broker StatefulSet and the storage contract of the target, because
+// the management binding of a suspended cluster is unset.
+//
+// A relational backup records no partition count, so the rules compare none.
+// The restore application reads the exporter position from the restored
+// database and aligns the partitions itself.
+type compatibility struct {
+	// TargetStorageType is the type of the storage contract of the target.
+	// Only a relational target can hold a relational backup.
+	TargetStorageType v1.SecondaryStorageType
+	// BackupCluster is the name of the CamundaCluster the backup was taken
+	// from.
+	BackupCluster string
+	// TargetCluster is the name of the CamundaCluster the restore writes into.
+	TargetCluster string
+	// BackupBucket is the ObjectStorageConfig that the backup wrote to.
+	BackupBucket string
+	// TargetBucket is the spec.backupStorageRef of the target.
+	TargetBucket string
+	// BackupVersion is the Camunda version that the backup recorded.
+	BackupVersion string
+	// TargetVersion is the tag of the broker image of the target.
+	TargetVersion string
+}
+
+// version is a Camunda version as the rule reads it. The patch level is
+// parsed so that a version that is not of the form x.y.z is refused, and it
+// takes part in no comparison: the rule is written on the major and the minor.
+type version struct {
+	major int
+	minor int
+	patch int
+}
+
+// errNotVersion says that a value is not a Camunda version. It reads as the
+// tail of "the version %q, which ...".
+var errNotVersion = errors.New("is not a version of the form x.y.z")
+
 // validate compares the backup against the target and fails the restore when
 // the target cannot hold it. It runs before the first destructive step, so a
 // mismatch costs nothing but the resource.
@@ -65,33 +105,6 @@ func (r *Reconciler) validate(
 	r.progressing(lrr, "the restore writes the dump into the logical database of the target")
 
 	return restore.Outcome{Wait: restore.Shortly}, nil
-}
-
-// compatibility is what the ValidatingCompatibility phase compares: the facts
-// of the backup against the facts of the target. The target facts come from
-// the live broker StatefulSet and the storage contract of the target, because
-// the management binding of a suspended cluster is unset.
-//
-// A relational backup records no partition count, so the rules compare none.
-// The restore application reads the exporter position from the restored
-// database and aligns the partitions itself.
-type compatibility struct {
-	// TargetStorageType is the type of the storage contract of the target.
-	// Only a relational target can hold a relational backup.
-	TargetStorageType v1.SecondaryStorageType
-	// BackupCluster is the name of the CamundaCluster the backup was taken
-	// from.
-	BackupCluster string
-	// TargetCluster is the name of the CamundaCluster the restore writes into.
-	TargetCluster string
-	// BackupBucket is the ObjectStorageConfig that the backup wrote to.
-	BackupBucket string
-	// TargetBucket is the spec.backupStorageRef of the target.
-	TargetBucket string
-	// BackupVersion is the Camunda version that the backup recorded.
-	BackupVersion string
-	// TargetVersion is the tag of the broker image of the target.
-	TargetVersion string
 }
 
 // check reports the first reason why the target cannot hold the backup, or
@@ -165,19 +178,6 @@ func checkVersions(in compatibility) *conditions.PreCheckFailure {
 
 	return nil
 }
-
-// version is a Camunda version as the rule reads it. The patch level is
-// parsed so that a version that is not of the form x.y.z is refused, and it
-// takes part in no comparison: the rule is written on the major and the minor.
-type version struct {
-	major int
-	minor int
-	patch int
-}
-
-// errNotVersion says that a value is not a Camunda version. It reads as the
-// tail of "the version %q, which ...".
-var errNotVersion = errors.New("is not a version of the form x.y.z")
 
 // parseVersion reads a version of the form x.y.z. The error reads as the tail
 // of "the version %q, which ...", so the caller names the version once.

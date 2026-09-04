@@ -36,38 +36,6 @@ var isoDuration = regexp.MustCompile(
 	`^P(?:([0-9]+)D)?(?:T(?:([0-9]+)H)?(?:([0-9]+)M)?(?:([0-9]+(?:\.[0-9]+)?)S)?)?$`,
 )
 
-// parseISODuration parses an ISO 8601 duration of days and time, for example
-// P7D, PT12H, or P1DT6H. It rejects the week, month, and year units that
-// Camunda rejects too, and a duration that names no unit at all.
-func parseISODuration(s string) (time.Duration, error) {
-	match := isoDuration.FindStringSubmatch(s)
-	timeless := match != nil && match[2] == "" && match[3] == "" && match[4] == ""
-	if match == nil || (timeless && match[1] == "") || (timeless && strings.Contains(s, "T")) {
-		return 0, fmt.Errorf("%q is not an ISO 8601 duration of days and time", s)
-	}
-
-	var total time.Duration
-	for i, unit := range []time.Duration{24 * time.Hour, time.Hour, time.Minute} {
-		if match[i+1] == "" {
-			continue
-		}
-		n, err := strconv.Atoi(match[i+1])
-		if err != nil {
-			return 0, fmt.Errorf("parsing %q: %w", s, err)
-		}
-		total += time.Duration(n) * unit
-	}
-	if match[4] != "" {
-		seconds, err := strconv.ParseFloat(match[4], 64)
-		if err != nil {
-			return 0, fmt.Errorf("parsing %q: %w", s, err)
-		}
-		total += time.Duration(seconds * float64(time.Second))
-	}
-
-	return total, nil
-}
-
 // triggerInterval estimates the time between two triggers of sched: the gap
 // between the next two triggers after from. An irregular schedule answers
 // with whichever gap comes next, which is an estimate on purpose. The value
@@ -119,4 +87,36 @@ func retentionWindowWarning(
 		lifetime,
 		policy.RetentionWindow,
 	)
+}
+
+// parseISODuration parses an ISO 8601 duration of days and time, for example
+// P7D, PT12H, or P1DT6H. It rejects the week, month, and year units that
+// Camunda rejects too, and a duration that names no unit at all.
+func parseISODuration(s string) (time.Duration, error) {
+	match := isoDuration.FindStringSubmatch(s)
+	timeless := match != nil && match[2] == "" && match[3] == "" && match[4] == ""
+	if match == nil || (timeless && match[1] == "") || (timeless && strings.Contains(s, "T")) {
+		return 0, fmt.Errorf("%q is not an ISO 8601 duration of days and time", s)
+	}
+
+	var total time.Duration
+	for i, unit := range []time.Duration{24 * time.Hour, time.Hour, time.Minute} {
+		if match[i+1] == "" {
+			continue
+		}
+		n, err := strconv.Atoi(match[i+1])
+		if err != nil {
+			return 0, fmt.Errorf("parsing %q: %w", s, err)
+		}
+		total += time.Duration(n) * unit
+	}
+	if match[4] != "" {
+		seconds, err := strconv.ParseFloat(match[4], 64)
+		if err != nil {
+			return 0, fmt.Errorf("parsing %q: %w", s, err)
+		}
+		total += time.Duration(seconds * float64(time.Second))
+	}
+
+	return total, nil
 }

@@ -66,13 +66,6 @@ const (
 	exporterPasswordEnv = "ES_PASSWORD"
 )
 
-// MonitoringEnabled reports whether the spec asks for Prometheus scraping.
-func MonitoringEnabled(merged v1.ElasticsearchClusterSpec) bool {
-	return merged.Monitoring != nil &&
-		merged.Monitoring.ServiceMonitor != nil &&
-		merged.Monitoring.ServiceMonitor.Enabled
-}
-
 // MetricsComponent builds the metrics component: the elasticsearch_exporter
 // Deployment, the Service that exposes its metrics port, and the
 // ServiceMonitor that scrapes that Service. Elasticsearch serves no Prometheus
@@ -114,21 +107,6 @@ func MetricsComponent(
 		IncludeWhen(serviceMonitorSupported, func() component.Resource { return monitor }).
 		Suspend(merged.Suspend).
 		Build()
-}
-
-// exporterLabels returns the labels of the exporter Deployment and its
-// Service. They differ from the Elasticsearch labels in the component, so the
-// ServiceMonitor selects the exporter and not the Elasticsearch pods.
-func exporterLabels(cluster *v1.ElasticsearchCluster) map[string]string {
-	return labels.Managed(labels.ElasticsearchCluster(cluster.Name), exporterComponentLabel)
-}
-
-// exporterSelector returns the labels that the Deployment and the Service
-// select the exporter pods by, and that the ServiceMonitor selects the Service
-// by. A selector is immutable on a Deployment, so it carries only the owner
-// and component.
-func exporterSelector(cluster *v1.ElasticsearchCluster) map[string]string {
-	return labels.Discovery(labels.ElasticsearchCluster(cluster.Name), exporterComponentLabel)
 }
 
 // exporterDeployment renders the elasticsearch_exporter Deployment. It talks
@@ -216,6 +194,21 @@ func exporterDeployment(cluster *v1.ElasticsearchCluster, merged v1.Elasticsearc
 	}
 }
 
+// exporterLabels returns the labels of the exporter Deployment and its
+// Service. They differ from the Elasticsearch labels in the component, so the
+// ServiceMonitor selects the exporter and not the Elasticsearch pods.
+func exporterLabels(cluster *v1.ElasticsearchCluster) map[string]string {
+	return labels.Managed(labels.ElasticsearchCluster(cluster.Name), exporterComponentLabel)
+}
+
+// exporterSelector returns the labels that the Deployment and the Service
+// select the exporter pods by, and that the ServiceMonitor selects the Service
+// by. A selector is immutable on a Deployment, so it carries only the owner
+// and component.
+func exporterSelector(cluster *v1.ElasticsearchCluster) map[string]string {
+	return labels.Discovery(labels.ElasticsearchCluster(cluster.Name), exporterComponentLabel)
+}
+
 // metricsService renders the Service that exposes the exporter metrics port.
 func metricsService(cluster *v1.ElasticsearchCluster) *corev1.Service {
 	return &corev1.Service{
@@ -258,4 +251,11 @@ func serviceMonitor(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClu
 			Endpoints: []monitoringv1.Endpoint{{Port: metricsPortName}},
 		},
 	}
+}
+
+// MonitoringEnabled reports whether the spec asks for Prometheus scraping.
+func MonitoringEnabled(merged v1.ElasticsearchClusterSpec) bool {
+	return merged.Monitoring != nil &&
+		merged.Monitoring.ServiceMonitor != nil &&
+		merged.Monitoring.ServiceMonitor.Enabled
 }

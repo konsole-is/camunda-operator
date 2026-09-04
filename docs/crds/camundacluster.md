@@ -127,7 +127,7 @@ The brokers keep their data on one PersistentVolumeClaim per pod. `spec.zeebe.st
 
 One `CamundaCluster` uses one contract. Camunda fixes the index names and the tables. Two clusters on one backend write each other's data, and a restore of one deletes the data of the other.
 
-The claim goes to the cluster whose reconcile patches the contract first. This is reconcile order, not creation order. When two clusters already name one contract, for example right after an upgrade, either one can win. The operator writes `camunda.io/claim-holder` and `camunda.io/claim-holder-uid` on the contract to record the claim.
+The claim goes to the first cluster that the operator reaches, which is not always the one you created first. When two clusters already name one contract, for example right after an upgrade, either one can win. The operator writes `camunda.io/claim-holder` and `camunda.io/claim-holder-uid` on the contract to record the claim.
 
 The API server accepts a second cluster that names a held contract. That cluster is suspended: every workload at zero and the volumes kept. Its `Ready` is `False` with reason `StorageAlreadyAttached`, and the message names the holder and the contract.
 
@@ -200,9 +200,9 @@ The pods run under the ServiceAccount `<name>-camunda`, or `spec.serviceAccount.
 
 The operator renders its own configuration first, then the user entries in this order: the top-level `extraEnv`, the `extraEnv` of the embedded gateway (on the brokers), the `extraEnv` of every embedded web application that the process hosts, and the `extraEnv` of the process itself. A later entry with the same name wins, and an entry replaces an operator entry with the same name. `extraEnvFrom` sources are concatenated in the same order. Connectors get the top-level entries and their own block only.
 
-The per-process `extraEnv` blocks and the top-level `spec.extraEnv` merge by name under server-side apply. A field manager owns only the entries that it applies. An extension controller can therefore add an entry next to yours, and neither side removes the other. A [CamundaManagementCluster](camundamanagementcluster.md) that serves this cluster owns the four `CAMUNDA_CONSOLE_PING_*` entries (`CAMUNDA_HUB_PING_*` on Camunda 8.10 and later) and replaces what you set under those names. One applied manifest cannot hold two entries with the same name, and the API server rejects one that does. `spec.backup.dump.extraEnv` stays an atomic list, because the backup kinds share that block. Every `extraEnvFrom` stays atomic too, because a source carries no name to merge on.
+The per-process `extraEnv` blocks and the top-level `spec.extraEnv` merge by name under server-side apply. A field manager owns only the entries that it applies. Another operator can therefore add an entry next to yours, and neither side removes the other. A [CamundaManagementCluster](camundamanagementcluster.md) that serves this cluster owns the four `CAMUNDA_CONSOLE_PING_*` entries (`CAMUNDA_HUB_PING_*` on Camunda 8.10 and later) and replaces what you set under those names. One applied manifest cannot hold two entries with the same name, and the API server rejects one that does. `spec.backup.dump.extraEnv` stays an atomic list, because the backup kinds share that block. Every `extraEnvFrom` stays atomic too, because a source carries no name to merge on.
 
-Two field managers that apply the same name do not collide. The merge is per field inside the entry, so one manager can own `value` while the other owns `valueFrom`. The result would be one entry that carries both, which a container rejects. The API server refuses to store that combination, so the second apply fails with a clear message instead of stalling a rollout. The four ping names are the exception. The management plane owns them, and it removes an entry under one of those names that carries `valueFrom`. Give your entry a name that no operator writes, or let the operator own the name.
+Two field managers that apply the same name do not collide. The merge is per field inside the entry, so one manager can own `value` while the other owns `valueFrom`. One entry cannot carry both, and the API server refuses to store that combination. The second apply then fails with a clear message instead of stalling a rollout. The four ping names are the exception. The management plane owns them, and it removes an entry under one of those names that carries `valueFrom`. Give your entry a name that no operator writes, or let the operator own the name.
 
 Every unified process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError`, so the kubelet restarts a pod after an OutOfMemoryError. Heap size comes from the container-aware defaults of the JVM. To change the JVM options, set `JAVA_TOOL_OPTIONS` in `extraEnv` of the process. When the storage contract names a certificate authority, the trust store options go on the same variable after your value. Heap tuning and the trust store work together.
 
@@ -263,7 +263,7 @@ When `spec.monitoring.serviceMonitor.enabled` is true, the operator creates one 
 
 A change to the cluster, to a referenced resource, or to a referenced Secret rolls out to the pods on its own. The [CamundaPlatformConfig](camundaplatformconfig.md) is cluster-scoped, so the Secrets it names are copied into the namespace of the cluster, and each copy follows its source.
 
-The operator checks every reference at reconcile time, not at admission, so you can create the resources in any order. A missing `CamundaPlatformConfig`, `CamundaClusterPreset`, `CamundaRelease`, `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` sets `Ready` to `False` with reason `InvalidReference`. A missing Secret or key sets reason `MissingSecret`.
+The API server accepts a cluster that names something you did not create yet, so you can create the resources in any order. A missing `CamundaPlatformConfig`, `CamundaClusterPreset`, `CamundaRelease`, `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` sets `Ready` to `False` with reason `InvalidReference`. A missing Secret or key sets reason `MissingSecret`.
 
 When any of these checks fails for a running cluster, the cluster is suspended: every workload scales to zero and the volumes stay. Pods that keep running can write a backend that the cluster no longer resolves. `Ready` keeps the failure reason, and the message says what happened to the workloads. The per-process conditions report `Suspending` while the pods stop, then `Suspended`. The cluster records the event `WorkloadsSuspended` for each workload it scales, and `status.gateway` and `status.management` are cleared. When the check passes again, the cluster resumes on its own.
 
@@ -288,9 +288,9 @@ status:
 
 The operator also suspends a cluster on its own. `spec.suspend` stays yours. A cluster whose storage contract another cluster holds reports `StorageAlreadyAttached`, a cluster that waits for the pods of a previous holder reports `WaitingForHandover` (see [Secondary storage](#secondary-storage)), and a cluster whose reference check fails reports `InvalidReference` or `MissingSecret` (see [Changes and referenced Secrets](#changes-and-referenced-secrets)). Each of these suspensions ends on its own when its cause is gone.
 
-`suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it, and starts them again when you clear the field. The Optimize importer reads Elasticsearch directly, so without this it would keep importing while the cluster is down. Every suspension by the operator reaches them the same way: a `CamundaOptimize` attached to a suspended cluster scales to zero, and a backup of it waits with reason `ClusterSuspended`.
+`suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it, and starts them again when you clear the field. The Optimize importer reads Elasticsearch directly. Without this, it keeps importing while the cluster is down. Every suspension by the operator reaches them the same way: a `CamundaOptimize` attached to a suspended cluster scales to zero, and a backup of it waits with reason `ClusterSuspended`.
 
-`spec.pause: true` stops all reconciliation of this resource. The operator records one `Paused` event and writes nothing, not even status, until `pause` is false again.
+`spec.pause: true` freezes the cluster. The operator changes nothing that it manages for this cluster, and it writes no status. It records a `Paused` event each time it looks at the resource. Set `pause` back to `false`, and the operator continues.
 
 ## Deletion
 
@@ -593,7 +593,7 @@ spec:
       annotations: {}
   # boolean. Optional, default: false. Scales every workload to zero and keeps the data.
   suspend: false
-  # boolean. Optional, default: false. Stops all reconciliation of this resource.
+  # boolean. Optional, default: false. The operator changes nothing for this cluster and writes no status.
   pause: false
 ```
 
