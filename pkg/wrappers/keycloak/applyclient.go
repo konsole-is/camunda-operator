@@ -31,13 +31,9 @@ type applyClient struct {
 
 // NewApplyClient wraps c so that Server-Side Apply patches of typed Keycloak
 // objects are serialized without the zero values that the Keycloak CRD schema
-// refuses. The pod template of spec.unsupported is a corev1.PodTemplateSpec,
-// and the typed struct always serializes its creationTimestamp, which the CRD
-// does not declare, and a null container list, which the CRD declares as an
-// array. Server-Side Apply refuses either one. The wrapper converts such a
-// patch to sanitized unstructured content, applies it, and decodes the server
-// response back into the typed object. Every other call passes through
-// unchanged.
+// refuses. The wrapper converts such a patch to sanitized unstructured
+// content, applies it, and decodes the server response back into the typed
+// object. Every other call passes through unchanged.
 //
 // A controller that reconciles the Keycloak Resource through an ocf component
 // must place this wrapper in the Client of the ReconcileContext.

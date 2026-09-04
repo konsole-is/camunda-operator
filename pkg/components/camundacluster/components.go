@@ -403,24 +403,15 @@ func probe(port, path string, periodSeconds, failureThreshold int32) *corev1.Pro
 // connectorsProbes sets the probes of the connectors container. The runtime
 // serves them on its HTTP port, not on a management port, and it groups its
 // health indicators differently from the unified binary.
-//
-// It gets no liveness probe. The liveness group of the runtime holds one
-// indicator, zeebeClient, so the probe reports whether the gateway answers,
-// not whether the container is healthy. A gateway that is away for 90
-// seconds, which one rolling update of the gateway can take, then kills a
-// connectors container that works correctly, and the restart does not bring
-// the gateway back. The Camunda chart ships connectors.livenessProbe.enabled
-// false for the same reason.
-//
-// It gets a startup probe on the startup group, which holds startupCheck
-// alone. That group answers from the process, so it reports when the runtime
-// is up and says nothing about the gateway. Kubernetes runs no readiness
-// probe until a startup probe succeeds, so the boot of the JVM is measured
-// against the budget of this probe, 60 tries five seconds apart, rather than
-// against the readiness probe.
 func connectorsProbes(c *corev1.Container) {
+	// The startup group holds startupCheck alone. That group answers from the
+	// process, so it reports when the runtime is up and says nothing about the
+	// gateway.
 	c.StartupProbe = probe(portNameHTTP, healthStartupPath, startupPeriodSeconds, startupFailureThreshold)
 	c.ReadinessProbe = probe(portNameHTTP, healthReadinessPath, readinessPeriodSeconds, 0)
+	// The liveness group of the runtime holds one indicator, zeebeClient, so
+	// the probe reports whether the gateway answers, not whether the container
+	// is healthy.
 	c.LivenessProbe = nil
 }
 

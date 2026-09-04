@@ -230,17 +230,9 @@ func ensureTrustStoreMount(container *corev1.Container) {
 // appendTrustStoreOptions appends the trust store options to the
 // JAVA_TOOL_OPTIONS entry of env, in place.
 //
-// It runs after the user layer, because JAVA_TOOL_OPTIONS is the one variable
-// the JVM reads for its options. A user who tunes the heap replaces the value
-// of the operator. The pods then carry the trust store and never read it, and
-// the export fails again without a sign. That is the failure this removes.
-//
-// A value that already names a trust store file is left alone. That user
-// states an intent, not an accident, and the operator honors it. The user
+// A value that already names a trust store file is left alone. The user
 // then owns the trust of the JVM, and the Elasticsearch CA must be in that
-// store. It is also the only way to trust a second private authority, for
-// example an OIDC provider or a backup store, because the spec carries no CA
-// bundle field.
+// store.
 //
 // An entry that reads its value from a reference is left alone too, because a
 // variable holds a value or a reference, never both. The controller warns

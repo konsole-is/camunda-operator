@@ -473,14 +473,8 @@ func (s *SnapshotStorage) keystore() bool {
 // RepositoryConfig returns the settings of the snapshot repository that the
 // operator registers for the cluster in Elasticsearch. Every
 // ElasticsearchCluster writes under its own namespace and name prefix of the
-// shared bucket. RepositoryName carries that same namespace and name, so
-// RepositoryBasePath reads this prefix back out of the registered name. The
-// credentials are not part of the settings: they reach the nodes through the
-// keystore.
-//
-// An s3 repository carries the region of the contract, so the nodes sign
-// their requests for the region the other consumers of the bucket sign for
-// rather than for one they resolved on their own.
+// shared bucket. The credentials are not part of the settings: they reach the
+// nodes through the keystore.
 //
 // A bucket that does not resolve yields the zero value, which esadmin
 // rejects before it reaches Elasticsearch.

@@ -158,18 +158,11 @@ func AdminSecretName(cluster *v1.CamundaCluster) string {
 //
 // The pods need a named account only when something binds one: the spec asks
 // for one, or a referenced bucket authenticates through workload identity.
-// With static credentials nothing does. The credentials arrive in a Secret,
-// so the pods carry no cloud identity and the operator renders no account.
 //
-// It takes the whole Input, so a bucket that a later spec adds reaches this
-// rule through the field the controller already fills. A consumer outside
-// this package never asks it: the controller publishes the answer on
-// status.serviceAccountName, and the consumer reads that field.
-//
+// A consumer outside this package never asks it: the controller publishes the
+// answer on status.serviceAccountName, and the consumer reads that field.
 // ServiceAccountName answers a different question: the name the account
-// carries when the cluster has one. The site that names the ServiceAccount
-// resource keeps using it. So does any site that is already gated on whether
-// the cluster renders one.
+// carries when the cluster has one.
 func PodServiceAccountName(in Input) string {
 	if in.Effective.ServiceAccount == nil &&
 		!bucketUsesWorkloadIdentity(in.Backup) && !bucketUsesWorkloadIdentity(in.Documents) {

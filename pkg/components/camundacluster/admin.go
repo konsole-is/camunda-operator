@@ -73,16 +73,12 @@ type AdminSecretState struct {
 //
 // While a password rotation is in flight, pendingPassword carries the
 // requested password and the Secret publishes it under password-pending,
-// next to the active one. The key makes the requested password durable
-// before the controller sets it through the user API, so a crash between
-// the call and the publish can never lose it. An empty pendingPassword
-// leaves the key out, which removes it when the rotation completes.
+// next to the active one. An empty pendingPassword leaves the key out, which
+// removes it when the rotation completes.
 //
 // rotation is the spec.auth.basic.passwordRotation value that produced the
-// password, published under password-rotation. It travels in the same apply
-// as the password it answers, so the record of which request is applied is
-// durable and can never disagree with the password beside it. The
-// controller reads it back to decide whether a rotation is still needed.
+// password, published under password-rotation. The controller reads it back
+// to decide whether a rotation is still needed.
 //
 // A reused password carries its apply precondition onto the Secret, so a
 // delete of the Secret always rotates the password. The controller must

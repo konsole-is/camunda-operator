@@ -354,12 +354,12 @@ func SameRealm(a, b v1.KeycloakRealmTarget) bool {
 // a user in the URL, a default port (443 on https, 80 on http), a terminal
 // dot of the host, the spelling of an IP literal, of an internationalized host
 // or of a port, a percent escape of the path, and every trailing slash make no
-// difference. The case
-// of the path and of the realm does make one, because Keycloak treats both as
-// case-sensitive. The administrator and the certificate authority take no
-// part in it. The result is deterministic, so a name derived from it (a hash,
-// for example) identifies the realm across resources, and it is safe to read,
-// so a claim can name the realm it holds in the clear.
+// difference. The case of the path and of the realm does make one, because
+// Keycloak treats both as case-sensitive. The administrator and the
+// certificate authority take no part in it. The result is deterministic, so a
+// name derived from it (a hash, for example) identifies the realm across
+// resources, and it is safe to read, so a claim can name the realm it holds
+// in the clear.
 func RealmIdentity(target v1.KeycloakRealmTarget) string {
 	return normalizeKeycloakURL(target.URL) + keycloakRealmPath + target.Realm
 }
@@ -440,13 +440,6 @@ func IdentityTemplateRealms(deployment *appsv1.Deployment) ([]v1.KeycloakRealmTa
 // flight, and that pod starts against the realm of the template.
 //
 // An unset replica count is one replica, as Kubernetes reads it.
-//
-// The withdrawal wait of stopOldIdentityWriters asks the same question of a
-// ReplicaSet and answers it on the replica count alone. It must, because that
-// wait holds status.callbackRealm: a rule that waits for a controller to catch
-// up would keep a plane in the realm it is leaving whenever the count never
-// gets read. A claim that is held too long only makes the next claimant wait
-// for its retry, so this rule takes the safer side of the same question.
 func scaledDown(replicas *int32, generation, observed int64, held int32) bool {
 	return replicas != nil && *replicas == 0 && observed >= generation && held == 0
 }

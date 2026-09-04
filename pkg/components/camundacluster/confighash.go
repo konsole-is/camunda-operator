@@ -42,10 +42,8 @@ const configHashLength = 16
 // The hash of connectors also takes in.AdminPasswordHash, the digest of the
 // admin password that the admin Secret publishes. Connectors authenticate
 // every call with that password at runtime, so they must restart when it
-// changes. The unified
-// processes read it once, as the create-once initial user seed, so the
-// digest stays out of their hashes and a rotation does not restart the
-// brokers.
+// changes. The unified processes read it once, as the create-once initial
+// user seed, so a rotation does not restart the brokers.
 func ConfigHash(in Input, p Process) string {
 	return configHash(in, p, render(in, p))
 }
