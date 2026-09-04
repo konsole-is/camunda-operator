@@ -5,8 +5,8 @@
 #
 # The example flow of the e2e suite applies this overlay and waits for the
 # CamundaCluster to report Ready=False InvalidReference. That is the answer the
-# Ready wait of every other spec of the flow would time out on, so the flow
-# fails when an inventory carries a dangling reference.
+# Ready wait of every other spec times out on, so the flow fails when an
+# inventory carries a dangling reference.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:

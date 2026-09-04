@@ -20,6 +20,7 @@ limitations under the License.
 package e2e
 
 import (
+	"fmt"
 	"path/filepath"
 	"time"
 
@@ -58,8 +59,9 @@ const (
 	// broken.
 	exBrokenInventory = "test/e2e/testdata/broken-example"
 
-	// exParkTimeout bounds the wait for a resource that cannot converge to
-	// report why. A pre-check failure needs one reconcile, not an image pull.
+	// exParkTimeout bounds the wait for a resource that cannot converge, so
+	// it reports why instead. A pre-check failure needs one reconcile, not an
+	// image pull.
 	exParkTimeout = 3 * time.Minute
 	// exDatabaseTimeout bounds the wait for a logical database on a server
 	// that already runs.
@@ -76,10 +78,18 @@ const (
 // against real ones.
 var (
 	exKeycloakStorageFiles = []string{
-		"01-namespaces.yaml", "02-secrets.yaml", "03-database-server.yaml", "04-databases.yaml",
+		"01-namespaces.yaml",
+		"02-secrets.yaml",
+		"03-database-server.yaml",
+		"04-databases.yaml",
+		"05-platform-config.yaml",
 	}
 	exOIDCStorageFiles = []string{
-		"01-namespace.yaml", "02-secrets.yaml", "03-database-server.yaml", "04-databases.yaml",
+		"01-namespace.yaml",
+		"02-secrets.yaml",
+		"03-database-server.yaml",
+		"04-databases.yaml",
+		"05-platform-config.yaml",
 	}
 )
 
@@ -185,6 +195,71 @@ var _ = Describe("Example inventories", Ordered, Label(utils.LabelExample), func
 	})
 })
 
+// removeInventory deletes the namespaces of an inventory and the
+// CamundaPlatformConfig that every inventory writes under one name, then waits
+// until all of them are gone. The next spec creates its resources under the
+// same names, and an object that still terminates accepts no create.
+//
+// The presets and the release stay. They are cluster scoped, every inventory
+// agrees on them, and a user applies them once.
+func removeInventory(namespaces []string) {
+	GinkgoHelper()
+
+	for _, ns := range namespaces {
+		_, _ = utils.Kubectl("delete", "ns", ns, "--ignore-not-found", "--wait=false")
+	}
+
+	_, _ = utils.Kubectl(
+		"delete", ccPlatformResource, exPlatformConfig, "--ignore-not-found", "--wait=false",
+	)
+
+	// A namespace that never goes takes every later spec of the container with
+	// it, and the report names the namespace and nothing else. The failure is
+	// intercepted so that the dump reads the objects that hold it while they
+	// are still there.
+	failure := InterceptGomegaFailure(func() {
+		Eventually(func(g Gomega) {
+			expectGone(g, ccPlatformResource, exPlatformConfig, "")
+			for _, ns := range namespaces {
+				expectGone(g, "namespaces", ns, "")
+			}
+		}, exTeardownTimeout, 10*time.Second).Should(Succeed())
+	})
+	if failure != nil {
+		dumpTeardown(namespaces)
+		Fail(failure.Error())
+	}
+}
+
+// dumpTeardown writes what holds a teardown that did not finish: each
+// namespace with its conditions, which name the API groups that still have
+// content, the custom resources left in it, and the manager logs.
+//
+// dumpDiagnostics answers this question for a spec that failed. It reads the
+// report of the spec and writes nothing while the failure is intercepted, so
+// the teardown carries a dump of its own.
+func dumpTeardown(namespaces []string) {
+	for _, ns := range namespaces {
+		out, err := utils.Kubectl("get", "ns", ns, "-o", "yaml")
+		if err != nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get namespace %s: %s\n", ns, err)
+		} else {
+			_, _ = fmt.Fprintf(GinkgoWriter, "namespace %s:\n%s\n", ns, out)
+		}
+
+		dumpCustomResources(ns)
+	}
+
+	out, err := utils.Kubectl(
+		"logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1",
+	)
+	if err != nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get the controller-manager logs: %s\n", err)
+		return
+	}
+	_, _ = fmt.Fprintf(GinkgoWriter, "controller-manager logs:\n%s\n", out)
+}
+
 // applyInventoryStorage applies the shared presets and then the named files of
 // the inventory. The kustomization of a management inventory covers its plane
 // as well, so this flow applies the files instead.
@@ -220,30 +295,4 @@ func expectManagementStorage(databases ...string) {
 			expectReady(g, dbResource, database, exManagementNamespace, v1.ReasonHealthy)
 		}, exDatabaseTimeout, 5*time.Second).Should(Succeed())
 	}
-}
-
-// removeInventory deletes the namespaces of an inventory and the
-// CamundaPlatformConfig that every inventory writes under one name, then waits
-// until all of them are gone. The next spec creates its resources under the
-// same names, and an object that still terminates accepts no create.
-//
-// The presets and the release stay. They are cluster scoped, every inventory
-// agrees on them, and a user applies them once.
-func removeInventory(namespaces []string) {
-	GinkgoHelper()
-
-	for _, ns := range namespaces {
-		_, _ = utils.Kubectl("delete", "ns", ns, "--ignore-not-found", "--wait=false")
-	}
-
-	_, _ = utils.Kubectl(
-		"delete", ccPlatformResource, exPlatformConfig, "--ignore-not-found", "--wait=false",
-	)
-
-	Eventually(func(g Gomega) {
-		expectGone(g, ccPlatformResource, exPlatformConfig, "")
-		for _, ns := range namespaces {
-			expectGone(g, "namespaces", ns, "")
-		}
-	}, exTeardownTimeout, 10*time.Second).Should(Succeed())
 }
