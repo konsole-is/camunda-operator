@@ -17,24 +17,15 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-
 	coordinationv1 "k8s.io/api/coordination/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/leaseclaim"
 )
 
 // realmClaimLeasePrefix starts the name of every realm claim Lease.
 const realmClaimLeasePrefix = "camunda-realm-"
-
-// maxHolderIdentityLength bounds the holderIdentity field of a realm claim
-// Lease. The field is a display form for a reader, and the exact holder lives
-// in the annotations, which every decision about ownership reads.
-const maxHolderIdentityLength = 128
 
 // The annotations of a realm claim Lease name the CamundaManagementCluster
 // that holds it, and the realm it holds. Every decision about ownership reads
@@ -55,10 +46,7 @@ const (
 // RealmClaimHolder is the CamundaManagementCluster that a realm claim Lease
 // records. The UID tells it apart from a later management cluster of the same
 // name.
-type RealmClaimHolder struct {
-	types.NamespacedName
-	UID types.UID
-}
+type RealmClaimHolder = leaseclaim.Holder
 
 // NewRealmClaimLease builds the Lease that claims the realm of target for mc.
 // The API server serializes the create, so exactly one management cluster
@@ -69,23 +57,21 @@ func NewRealmClaimLease(
 	target v1.KeycloakRealmTarget,
 	mc *v1.CamundaManagementCluster,
 ) *coordinationv1.Lease {
-	holder := labels.BoundedName(mc.Namespace+"/"+mc.Name, maxHolderIdentityLength)
-	identity := RealmIdentity(target)
-	now := metav1.NowMicro()
+	return RealmClaimSchema().NewLease(namespace, RealmIdentity(target), mc)
+}
 
-	return &coordinationv1.Lease{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      RealmClaimLeaseName(identity),
-			Labels:    RealmClaimLeaseLabels(mc.Name),
-			Annotations: map[string]string{
-				RealmClaimHolderNamespaceAnnotation: mc.Namespace,
-				RealmClaimHolderNameAnnotation:      mc.Name,
-				RealmClaimHolderUIDAnnotation:       string(mc.UID),
-				RealmClaimRealmAnnotation:           identity,
-			},
-		},
-		Spec: coordinationv1.LeaseSpec{HolderIdentity: &holder, AcquireTime: &now},
+// RealmClaimSchema is the shape of the claim Leases of a Keycloak realm. The
+// CamundaManagementCluster controller runs the claim protocol of
+// pkg/leaseclaim over it.
+func RealmClaimSchema() leaseclaim.Schema {
+	return leaseclaim.Schema{
+		Prefix:                    realmClaimLeasePrefix,
+		Noun:                      "realm claim",
+		HolderNamespaceAnnotation: RealmClaimHolderNamespaceAnnotation,
+		HolderNameAnnotation:      RealmClaimHolderNameAnnotation,
+		HolderUIDAnnotation:       RealmClaimHolderUIDAnnotation,
+		KeyAnnotation:             RealmClaimRealmAnnotation,
+		Labels:                    RealmClaimLeaseLabels,
 	}
 }
 
@@ -95,9 +81,7 @@ func NewRealmClaimLease(
 // name is built from a hash of it. Every claimant of one realm therefore
 // meets on one Lease, and the realm annotation says which realm that is.
 func RealmClaimLeaseName(identity string) string {
-	sum := sha256.Sum256([]byte(identity))
-
-	return realmClaimLeasePrefix + hex.EncodeToString(sum[:])[:40]
+	return RealmClaimSchema().LeaseName(identity)
 }
 
 // RealmClaimLeaseLabels returns the labels of the realm claim Leases of the
@@ -114,17 +98,5 @@ func RealmClaimLeaseLabels(name string) map[string]string {
 // annotations carry ownership. The holderIdentity of the Lease is a display
 // form for a reader.
 func RealmClaimHolderOf(lease *coordinationv1.Lease) (RealmClaimHolder, bool) {
-	annotations := lease.GetAnnotations()
-	holder := RealmClaimHolder{
-		NamespacedName: types.NamespacedName{
-			Namespace: annotations[RealmClaimHolderNamespaceAnnotation],
-			Name:      annotations[RealmClaimHolderNameAnnotation],
-		},
-		UID: types.UID(annotations[RealmClaimHolderUIDAnnotation]),
-	}
-	if holder.Namespace == "" || holder.Name == "" || holder.UID == "" {
-		return RealmClaimHolder{}, false
-	}
-
-	return holder, true
+	return RealmClaimSchema().HolderOf(lease)
 }

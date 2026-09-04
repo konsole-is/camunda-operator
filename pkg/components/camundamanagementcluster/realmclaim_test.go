@@ -17,6 +17,9 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -29,6 +32,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/leaseclaim"
 )
 
 // realmClaimHolder is a management cluster that claims a realm in these tests.
@@ -92,7 +96,7 @@ func TestNewRealmClaimLeaseBoundsTheHolderIdentity(t *testing.T) {
 	lease := NewRealmClaimLease("camunda-system", v1.KeycloakRealmTarget{URL: "https://k", Realm: "r"}, holder)
 
 	require.NotNil(t, lease.Spec.HolderIdentity)
-	assert.LessOrEqual(t, len(*lease.Spec.HolderIdentity), maxHolderIdentityLength)
+	assert.LessOrEqual(t, len(*lease.Spec.HolderIdentity), leaseclaim.MaxHolderIdentityLength)
 	assert.Equal(t, long, lease.Annotations[RealmClaimHolderNameAnnotation])
 }
 
@@ -121,4 +125,58 @@ func TestRealmClaimHolderOfRefusesAForeignLease(t *testing.T) {
 			assert.False(t, ours)
 		})
 	}
+}
+
+// TestNewRealmClaimLeaseMatchesTheGolden pins the realm claim Lease against
+// the shape the operator wrote before the protocol moved to pkg/leaseclaim. A
+// claim Lease that changes its name, its labels or its annotations loses the
+// operator every realm it holds, because a running holder meets its claimants
+// on a Lease none of them reads any more.
+func TestNewRealmClaimLeaseMatchesTheGolden(t *testing.T) {
+	cases := map[string]struct {
+		file   string
+		target v1.KeycloakRealmTarget
+		mc     *v1.CamundaManagementCluster
+	}{
+		"realmclaimlease": {
+			file: "realmclaimlease.json",
+			target: v1.KeycloakRealmTarget{
+				URL: "https://keycloak.example.com/auth/", Realm: "camunda-platform",
+			},
+			mc: realmClaimHolder("apps", "plane", "uid-1"),
+		},
+		"a name that the bounds cut": {
+			file:   "realmclaimlease-longname.json",
+			target: v1.KeycloakRealmTarget{URL: "https://second.example.com/auth", Realm: "other"},
+			mc:     realmClaimHolder(strings.Repeat("s", 60), strings.Repeat("n", 200), "uid-2"),
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			lease := NewRealmClaimLease("camunda-system", tc.target, tc.mc)
+
+			assertLeaseGolden(t, tc.file, lease)
+		})
+	}
+}
+
+// assertLeaseGolden compares lease with the fixture in testdata. The acquire
+// time is the wall clock of the render, so it is left out.
+func assertLeaseGolden(t *testing.T, file string, lease *coordinationv1.Lease) {
+	t.Helper()
+
+	raw, err := json.Marshal(lease)
+	require.NoError(t, err)
+	var rendered map[string]any
+	require.NoError(t, json.Unmarshal(raw, &rendered))
+	delete(rendered["spec"].(map[string]any), "acquireTime")
+
+	want, err := os.ReadFile(filepath.Join("testdata", file))
+	require.NoError(t, err)
+	got, err := json.Marshal(rendered)
+	require.NoError(t, err)
+
+	assert.JSONEq(t, string(want), string(got))
+	require.NotNil(t, lease.Spec.AcquireTime)
 }

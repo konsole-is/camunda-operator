@@ -1,0 +1,20 @@
+{
+  "metadata": {
+    "annotations": {
+      "camunda.io/realm-claim-holder-name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+      "camunda.io/realm-claim-holder-namespace": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "camunda.io/realm-claim-holder-uid": "uid-2",
+      "camunda.io/realm-claim-realm": "https://second.example.com/auth/realms/other"
+    },
+    "labels": {
+      "app.kubernetes.io/managed-by": "camunda-operator",
+      "camunda.io/component": "realm-claim",
+      "camunda.io/management-cluster": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn-1be63cc0bd"
+    },
+    "name": "camunda-realm-926c535cd18aec25990a5ef789ea46a815843e20",
+    "namespace": "camunda-system"
+  },
+  "spec": {
+    "holderIdentity": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn-134b74ed3b"
+  }
+}

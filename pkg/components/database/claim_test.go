@@ -18,6 +18,9 @@ package database
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -214,4 +217,62 @@ func TestClaimLeaseLabelsSelectOneDatabase(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, leases.Items, 1)
 	assert.Equal(t, ClaimLeaseName("7000000000000000001/camunda"), leases.Items[0].Name)
+}
+
+// TestNewClaimLeaseMatchesTheGolden pins the claim Lease against the shape
+// the operator wrote before the protocol moved to pkg/leaseclaim. A claim
+// Lease that changes its name, its labels or its annotations loses the
+// operator every claim it holds, because a running holder meets its claimants
+// on a Lease none of them reads any more.
+func TestNewClaimLeaseMatchesTheGolden(t *testing.T) {
+	cases := map[string]struct {
+		file     string
+		key      string
+		database *v1.Database
+	}{
+		"claimlease": {
+			file: "claimlease.json",
+			key:  "7000000000000000001/camunda",
+			database: &v1.Database{ObjectMeta: metav1.ObjectMeta{
+				Namespace: "apps", Name: "orders", UID: "uid-1",
+			}},
+		},
+		"a name that the bounds cut": {
+			file: "claimlease-longname.json",
+			key:  "7000000000000000002/other",
+			database: &v1.Database{ObjectMeta: metav1.ObjectMeta{
+				Namespace: strings.Repeat("s", 60),
+				Name:      strings.Repeat("n", 200),
+				UID:       "uid-2",
+			}},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			lease := NewClaimLease("camunda-system", tc.key, tc.database)
+
+			assertLeaseGolden(t, tc.file, lease)
+		})
+	}
+}
+
+// assertLeaseGolden compares lease with the fixture in testdata. The acquire
+// time is the wall clock of the render, so it is left out.
+func assertLeaseGolden(t *testing.T, file string, lease *coordinationv1.Lease) {
+	t.Helper()
+
+	raw, err := json.Marshal(lease)
+	require.NoError(t, err)
+	var rendered map[string]any
+	require.NoError(t, json.Unmarshal(raw, &rendered))
+	delete(rendered["spec"].(map[string]any), "acquireTime")
+
+	want, err := os.ReadFile(filepath.Join("testdata", file))
+	require.NoError(t, err)
+	got, err := json.Marshal(rendered)
+	require.NoError(t, err)
+
+	assert.JSONEq(t, string(want), string(got))
+	require.NotNil(t, lease.Spec.AcquireTime)
 }
