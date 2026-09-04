@@ -91,10 +91,10 @@ const (
 	mcOptimizeClientJSON = `"clientId":"` + mcOptimizeClientID + `"`
 
 	// handoffWatchSeconds bounds the watch of the two realms inside the pod,
-	// and handoffPodTimeout bounds the pod itself. A move costs the
-	// withdrawal, the stop of the Management Identity of the old realm, and
-	// the start of the one of the new realm, which is about 80 seconds when
-	// the node is not loaded.
+	// and handoffPodTimeout bounds the pod itself. Both cover a whole move:
+	// the withdrawal from the old realm, the stop of every Management Identity
+	// that points at it, and the start of the one of the new realm, which
+	// registers the login callbacks while it starts.
 	handoffWatchSeconds = 480
 	handoffPodTimeout   = 10 * time.Minute
 )
