@@ -152,6 +152,7 @@ spec:
 
 ## Related
 
+- [`config/example/releases`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/releases): a ready-to-apply release that the example inventories name.
 - [CamundaCluster](camundacluster.md): references this resource through `releaseRef` and runs what it names.
 - [CamundaClusterPreset](camundaclusterpreset.md): the shape of a cluster. The release sits between the preset and the cluster in the merge.
 - [CamundaPlatformConfig](camundaplatformconfig.md): renames image repositories for every cluster of an environment.

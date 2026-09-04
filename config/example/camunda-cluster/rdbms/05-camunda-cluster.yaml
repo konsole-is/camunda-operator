@@ -2,8 +2,13 @@
 # the Database publishes.
 #
 # presetRef names the shared CamundaClusterPreset small, which carries the
-# broker count, the partitions, the volumes, and the resources. What stays
-# here is what belongs to this one cluster: its references and its version.
+# broker count, the partitions, the volumes, and the resources. releaseRef
+# names the shared CamundaRelease camunda-8-9, which carries the version. What
+# stays here is what belongs to this one cluster: its references.
+#
+# spec.version is unset, so the cluster runs the version of the release. A
+# cluster that must move before the fleet does sets spec.version, which wins
+# over the release.
 apiVersion: core.camunda.io/v1
 kind: CamundaCluster
 metadata:
@@ -11,6 +16,6 @@ metadata:
   namespace: my-cluster-ns
 spec:
   presetRef: small
-  version: "8.9.17"
+  releaseRef: camunda-8-9
   platformConfigRef: my-platform-config
   storageRef: my-storage-config

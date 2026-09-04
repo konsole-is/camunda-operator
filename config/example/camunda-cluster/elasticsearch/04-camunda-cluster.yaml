@@ -1,16 +1,17 @@
 # The orchestration cluster. storageRef names the SecondaryStorageConfig that
 # the ElasticsearchCluster publishes.
 #
-# Every size is inline here. Compare with
+# Every size and the version are inline here. Compare with
 # config/example/camunda-cluster/rdbms/05-camunda-cluster.yaml, which inherits
-# the same sizes from the preset small.
+# the same sizes from the preset small and the same version from the release
+# camunda-8-9.
 apiVersion: core.camunda.io/v1
 kind: CamundaCluster
 metadata:
   name: my-cluster
   namespace: my-cluster-ns
 spec:
-  version: "8.9.17"
+  version: "8.9.18"
   platformConfigRef: my-platform-config
   storageRef: my-storage-config
   zeebe:

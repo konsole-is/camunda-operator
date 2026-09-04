@@ -1,7 +1,7 @@
 # The resources are listed in the order the README applies them. This
-# inventory references no preset, so it does not list config/example/presets.
-# Do not add a namespace transformer here: CamundaPlatformConfig is cluster
-# scoped.
+# inventory references no preset and no release, so it lists neither
+# config/example/presets nor config/example/releases. Do not add a namespace
+# transformer here: CamundaPlatformConfig is cluster scoped.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:

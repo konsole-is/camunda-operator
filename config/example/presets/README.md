@@ -5,6 +5,9 @@ preset holds the shape of a resource: the sizing, the topology, and the
 resources. A platform team writes it. Each cluster then names it and sets only
 what belongs to that one cluster.
 
+What runs on that shape is in [`config/example/releases`](../releases), which
+holds one `CamundaRelease`.
+
 | File | Kind | Name | Inherited through |
 | --- | --- | --- | --- |
 | `camunda-cluster-preset.yaml` | `CamundaClusterPreset` | `small` | `CamundaCluster.spec.presetRef` |
@@ -35,10 +38,11 @@ copy.
   `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, and
   `pause`. The other two reject `presetRef`, `suspend`, and the name of the
   contract they publish.
-- **The version.** These presets set no `version`, so each instance pins its
-  own. That lets one cluster move before the fleet does. A preset *may* carry
-  a version, and the [presets guide](https://konsole-is.github.io/camunda-operator/guides/presets/)
-  shows that shape.
+- **The version of a cluster.** `CamundaClusterPreset` rejects `version` and
+  `connectors.version`. Both belong to a `CamundaRelease`, which
+  [`config/example/releases`](../releases) holds. The
+  `ElasticsearchClusterPreset` and the `DatabaseServerPreset` still accept a
+  version, and these two set none, so each instance pins its own.
 
 ## Change the fleet
 
@@ -49,6 +53,7 @@ its next reconcile. To roll out in steps, create a second preset, for example
 ## Related
 
 - [Presets](https://konsole-is.github.io/camunda-operator/guides/presets/)
+- [Shared release](../releases): the versions the clusters of these inventories run.
 - [CamundaClusterPreset](https://konsole-is.github.io/camunda-operator/crds/camundaclusterpreset/)
 - [ElasticsearchClusterPreset](https://konsole-is.github.io/camunda-operator/crds/elasticsearchclusterpreset/)
 - [DatabaseServerPreset](https://konsole-is.github.io/camunda-operator/crds/databaseserverpreset/)

@@ -7,8 +7,9 @@
 # documentStorageRef, monitoring, suspend, and pause. Each one belongs to a
 # single cluster, so each cluster sets it.
 #
-# version is not set here on purpose. Each cluster pins its own, so one
-# cluster can move before the fleet does.
+# version and connectors.version are rejected here. They belong to a
+# CamundaRelease, which config/example/releases holds. A preset carries the
+# shape, and a release carries what runs on it.
 #
 # These sizes suit one small test cluster, such as kind. The docs name a
 # preset for the shape it describes, for example small, medium, and large.

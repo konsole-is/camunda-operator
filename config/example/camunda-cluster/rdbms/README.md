@@ -12,6 +12,11 @@ The sizing lives in [`config/example/presets`](../../presets). The
 `DatabaseServer` names the preset `standard`, the `CamundaCluster` names
 `small`, and each one keeps only what belongs to it.
 
+The version lives in [`config/example/releases`](../../releases). The
+`CamundaCluster` names the release `camunda-8-9` and sets no `version` of its
+own. Raise `spec.version` in that one file, and every cluster that names the
+release follows.
+
 ## Before you start
 
 - Install the CloudNativePG operator and the Camunda operator. See
@@ -24,19 +29,20 @@ an `ObjectStorageConfig` for the bucket.
 
 ## Apply
 
-One command applies the whole inventory, presets included:
+One command applies the whole inventory, presets and release included:
 
 ```sh
 kubectl apply -k config/example/camunda-cluster/rdbms
 ```
 
-To see each resource become ready, apply the presets once, then the files in
-their number order:
+To see each resource become ready, apply the shared resources once, then the
+files in their number order:
 
-1. The shared presets, once per Kubernetes cluster:
+1. The shared presets and the shared release, once per Kubernetes cluster:
 
     ```sh
     kubectl apply -k config/example/presets
+    kubectl apply -k config/example/releases
     ```
 
 2. `01-namespace.yaml` creates the namespace `my-cluster-ns`.
@@ -60,7 +66,8 @@ their number order:
    `CamundaPlatformConfig` `my-platform-config`.
 6. `05-camunda-cluster.yaml` creates the `CamundaCluster` `my-cluster`. It
    inherits the broker count, the partitions, the volumes, and the resources
-   from the preset `small`. Wait for it:
+   from the preset `small`, and its version from the release `camunda-8-9`.
+   Wait for it:
 
     ```sh
     kubectl wait camundacluster/my-cluster -n my-cluster-ns \
@@ -81,9 +88,10 @@ their number order:
 
 ## Add a second cluster
 
-The preset is the point. A second cluster of the same shape is
-`05-camunda-cluster.yaml` again with another name, another `storageRef`, and
-its own `Database`. The sizing stays in `small`.
+The preset and the release are the point. A second cluster of the same shape
+is `05-camunda-cluster.yaml` again with another name, another `storageRef`,
+and its own `Database`. The sizing stays in `small`, and the version stays in
+`camunda-8-9`.
 
 ## Remove
 
@@ -100,11 +108,13 @@ kubectl delete namespace my-cluster-ns
 Deletion of the `Database` removes the published contracts and Secrets. It
 never drops the database or its roles.
 
-The presets are shared, so leave them unless no inventory uses them any more.
+The presets and the release are shared, so leave them unless no inventory uses
+them any more.
 
 ## Related
 
 - [Presets](https://konsole-is.github.io/camunda-operator/guides/presets/)
+- [CamundaRelease](https://konsole-is.github.io/camunda-operator/crds/camundarelease/)
 - [Secondary storage](https://konsole-is.github.io/camunda-operator/guides/secondary-storage/#postgresql)
 - [DatabaseServer](https://konsole-is.github.io/camunda-operator/crds/databaseserver/)
 - [Database](https://konsole-is.github.io/camunda-operator/crds/database/)
