@@ -21,7 +21,6 @@ package e2e
 
 import (
 	"path/filepath"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -65,8 +64,8 @@ const (
 	// exDatabaseTimeout bounds the wait for a logical database on a server
 	// that already runs.
 	exDatabaseTimeout = 5 * time.Minute
-	// exTeardownTimeout bounds the removal of the namespaces of one
-	// inventory, the volumes of a storage backend included.
+	// exTeardownTimeout bounds the removal of one inventory, the volumes of
+	// its storage backend included.
 	exTeardownTimeout = 10 * time.Minute
 )
 
@@ -225,8 +224,8 @@ func expectManagementStorage(databases ...string) {
 
 // removeInventory deletes the namespaces of an inventory and the
 // CamundaPlatformConfig that every inventory writes under one name, then waits
-// until the namespaces are gone. The next spec creates its resources under the
-// same names, and a namespace that still terminates accepts no create.
+// until all of them are gone. The next spec creates its resources under the
+// same names, and an object that still terminates accepts no create.
 //
 // The presets and the release stay. They are cluster scoped, every inventory
 // agrees on them, and a user applies them once.
@@ -241,11 +240,10 @@ func removeInventory(namespaces []string) {
 		"delete", ccPlatformResource, exPlatformConfig, "--ignore-not-found", "--wait=false",
 	)
 
-	for _, ns := range namespaces {
-		Eventually(func(g Gomega) {
-			out, err := utils.Kubectl("get", "ns", ns, "--ignore-not-found", "-o", "name")
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(strings.TrimSpace(out)).To(BeEmpty(), "namespace %s is still terminating", ns)
-		}, exTeardownTimeout, 10*time.Second).Should(Succeed())
-	}
+	Eventually(func(g Gomega) {
+		expectGone(g, ccPlatformResource, exPlatformConfig, "")
+		for _, ns := range namespaces {
+			expectGone(g, "namespaces", ns, "")
+		}
+	}, exTeardownTimeout, 10*time.Second).Should(Succeed())
 }
