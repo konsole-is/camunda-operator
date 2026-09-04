@@ -259,9 +259,15 @@ type ExternalKeycloakSpec struct {
 	// The operator appends /realms/<realm> to this URL, so the URL carries no
 	// query and no fragment. The URL also lands in the annotations of the
 	// Lease that claims the realm, so it is bounded.
+	//
+	// The URL carries no user and no password. The operator records it in
+	// status.callbackRealm and reaches the realm again from that record, and
+	// a password must not reach a status. A Keycloak behind a proxy that
+	// needs basic authentication is not supported.
 	// +kubebuilder:validation:MaxLength=2048
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="url must be a valid http or https URL"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('?') && !self.contains('#')",message="url must carry no query and no fragment"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^[a-zA-Z][a-zA-Z0-9+.-]*://[^/?#]*@')",message="url must carry no user and no password, for example https://keycloak.example.com/auth. A Keycloak behind a proxy that needs basic authentication is not supported"
 	URL string `json:"url"`
 	// Realm is the realm that Management Identity uses and creates. Empty
 	// means camunda-platform. The realm lands in the issuer, the token, and

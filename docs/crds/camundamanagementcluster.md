@@ -120,7 +120,7 @@ spec:
   # ... the rest of your management cluster
 ```
 
-`url` serves browsers and containers alike, so it must resolve from inside the Kubernetes cluster. If your Keycloak serves under the `/auth` path, include that path. The operator appends `/realms/<realm>` to this URL, so it must carry no query and no fragment.
+`url` serves browsers and containers alike, so it must resolve from inside the Kubernetes cluster. If your Keycloak serves under the `/auth` path, include that path. The operator appends `/realms/<realm>` to this URL, so it must carry no query and no fragment. It must also carry no user and no password. A Keycloak behind a proxy that needs basic authentication is not supported.
 
 `realm` defaults to `camunda-platform`. The realm lands in the issuer, the token, and the JWKS path that Management Identity builds. It holds letters, digits, dots, hyphens, and underscores only, and it starts and ends with a letter or a digit.
 
@@ -834,7 +834,7 @@ spec:
     # object. Optional. Connect to a Keycloak that you run.
     externalKeycloak:
       # string. Required. URL of Keycloak, including the /auth path when it has one. It must resolve from inside the Kubernetes cluster.
-      # It carries no query and no fragment.
+      # It carries no query, no fragment, no user, and no password.
       url: "https://keycloak.example.com/auth"
       # string. Optional, default: camunda-platform. The realm that Management Identity uses and creates.
       # Letters, digits, dots, hyphens, and underscores only. It starts and ends with a letter or a digit.
@@ -958,6 +958,7 @@ The API server refuses an apply that breaks one of these:
 - `spec.identity.admin.claimName` holds no equals sign.
 - Every `externalUrl`, `websocketsExternalUrl`, and `url` is an `http` or `https` URL. `spec.identityProvider.keycloak.externalUrl` must carry the `/auth` path.
 - `spec.identityProvider.keycloak.externalUrl` and `spec.identityProvider.externalKeycloak.url` carry no query and no fragment.
+- `spec.identityProvider.externalKeycloak.url` carries no user and no password. A Keycloak behind a proxy that needs basic authentication is not supported.
 - `spec.identityProvider.externalKeycloak.realm` holds letters, digits, dots, hyphens, and underscores. It starts and ends with a letter or a digit.
 - Every `version` is three numbers separated by dots, for example `8.9.0`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both. The rule binds `spec.identity`, `spec.console`, `spec.webModeler.restapi`, and `spec.webModeler.websockets`.
