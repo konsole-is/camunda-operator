@@ -23,8 +23,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -42,10 +45,16 @@ type call struct {
 
 // fakeKeycloak is a Keycloak that serves the token endpoint and the clients
 // collection of one realm. handler answers everything under /admin.
+//
+// token and handler are set before the server starts. The recorded calls are
+// written by the goroutine of the server and read by the test, so they go
+// through mu.
 type fakeKeycloak struct {
 	token   string
-	calls   []call
 	handler func(w http.ResponseWriter, r *http.Request, body string)
+
+	mu    sync.Mutex
+	calls []call
 }
 
 // start runs the fake behind an httptest server and returns its base URL.
@@ -66,6 +75,8 @@ func (f *fakeKeycloak) serve(t *testing.T) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		raw, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
+
+		f.mu.Lock()
 		f.calls = append(f.calls, call{
 			method: r.Method,
 			path:   r.URL.Path,
@@ -73,6 +84,7 @@ func (f *fakeKeycloak) serve(t *testing.T) http.HandlerFunc {
 			auth:   r.Header.Get("Authorization"),
 			body:   string(raw),
 		})
+		f.mu.Unlock()
 
 		if r.URL.Path == "/auth/realms/master/protocol/openid-connect/token" {
 			w.Header().Set("Content-Type", "application/json")
@@ -83,6 +95,14 @@ func (f *fakeKeycloak) serve(t *testing.T) http.HandlerFunc {
 
 		f.handler(w, r, string(raw))
 	}
+}
+
+// recorded returns the requests that the fake Keycloak has answered.
+func (f *fakeKeycloak) recorded() []call {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return slices.Clone(f.calls)
 }
 
 func TestFindClient(t *testing.T) {
@@ -101,14 +121,15 @@ func TestFindClient(t *testing.T) {
 	assert.Equal(t, "6c4c", stored.ID())
 	assert.Equal(t, []string{"https://a/cb"}, stored.RedirectURIs())
 
-	require.Len(t, fake.calls, 2)
-	assert.Contains(t, fake.calls[0].body, "grant_type=password")
-	assert.Contains(t, fake.calls[0].body, "client_id=admin-cli")
-	assert.Contains(t, fake.calls[0].body, "username=admin")
-	assert.Contains(t, fake.calls[0].body, "password=secret")
-	assert.Equal(t, "/auth/admin/realms/camunda-platform/clients", fake.calls[1].path)
-	assert.Equal(t, "clientId=optimize", fake.calls[1].query)
-	assert.Equal(t, "Bearer an-access-token", fake.calls[1].auth)
+	calls := fake.recorded()
+	require.Len(t, calls, 2)
+	assert.Contains(t, calls[0].body, "grant_type=password")
+	assert.Contains(t, calls[0].body, "client_id=admin-cli")
+	assert.Contains(t, calls[0].body, "username=admin")
+	assert.Contains(t, calls[0].body, "password=secret")
+	assert.Equal(t, "/auth/admin/realms/camunda-platform/clients", calls[1].path)
+	assert.Equal(t, "clientId=optimize", calls[1].query)
+	assert.Equal(t, "Bearer an-access-token", calls[1].auth)
 }
 
 // A realm that Management Identity has not bootstrapped yet holds no Optimize
@@ -154,7 +175,8 @@ func TestUpdateClientSendsTheWholeRepresentation(t *testing.T) {
 	stored.SetRedirectURIs([]string{"https://a/cb", "https://b/cb"})
 	require.NoError(t, client.UpdateClient(ctx, stored))
 
-	update := fake.calls[len(fake.calls)-1]
+	calls := fake.recorded()
+	update := calls[len(calls)-1]
 	assert.Equal(t, http.MethodPut, update.method)
 	assert.Equal(t, "/auth/admin/realms/camunda-platform/clients/6c4c", update.path)
 
@@ -183,7 +205,7 @@ func TestClientSignsInOnce(t *testing.T) {
 	require.NoError(t, err)
 
 	tokenCalls := 0
-	for _, c := range fake.calls {
+	for _, c := range fake.recorded() {
 		if c.path == "/auth/realms/master/protocol/openid-connect/token" {
 			tokenCalls++
 		}
@@ -230,17 +252,18 @@ func TestSignInCarriesTheRefusalOfKeycloak(t *testing.T) {
 func TestUpdateClientRetriesOnceAfterARefusedToken(t *testing.T) {
 	t.Parallel()
 
-	tokens := 0
-	refused := false
+	// The handler runs on the goroutine of the server and the test reads the
+	// count, so both counters are atomic.
+	var tokens atomic.Int64
+	var refused atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/protocol/openid-connect/token") {
-			tokens++
-			_, _ = w.Write([]byte(`{"access_token":"token-` + strconv.Itoa(tokens) + `"}`))
+			issued := strconv.FormatInt(tokens.Add(1), 10)
+			_, _ = w.Write([]byte(`{"access_token":"token-` + issued + `"}`))
 
 			return
 		}
-		if !refused {
-			refused = true
+		if !refused.Swap(true) {
 			w.WriteHeader(http.StatusUnauthorized)
 
 			return
@@ -264,7 +287,7 @@ func TestUpdateClientRetriesOnceAfterARefusedToken(t *testing.T) {
 
 	require.NoError(t, New(server.URL, "camunda-platform", "admin", "secret").
 		UpdateClient(context.Background(), rep))
-	assert.Equal(t, 2, tokens)
+	assert.Equal(t, int64(2), tokens.Load())
 }
 
 // A Keycloak that the operator does not run is on the other end, so an answer
@@ -294,11 +317,13 @@ func TestFindClientRefusesAnOversizedAnswer(t *testing.T) {
 func TestSignInRefusesToFollowARedirect(t *testing.T) {
 	t.Parallel()
 
-	leaked := false
+	// The client never follows the redirect, so nothing orders the handler of
+	// the redirect target against the test. The flag is therefore atomic.
+	var leaked atomic.Bool
 	elsewhere := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		if strings.Contains(string(raw), "password=secret") {
-			leaked = true
+			leaked.Store(true)
 		}
 	}))
 	t.Cleanup(elsewhere.Close)
@@ -312,7 +337,9 @@ func TestSignInRefusesToFollowARedirect(t *testing.T) {
 		FindClient(context.Background(), "optimize")
 
 	require.Error(t, err)
-	assert.False(t, leaked, "the administrator credentials were replayed at the redirect target")
+	assert.False(
+		t, leaked.Load(), "the administrator credentials were replayed at the redirect target",
+	)
 }
 
 func TestUpdateClientWithoutAnID(t *testing.T) {

@@ -258,7 +258,7 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 
 	It("reports WriteFailed while Keycloak refuses the change to the client", func() {
 		keycloak := startFakeKeycloak(withOptimizeClient())
-		keycloak.refuseUpdate = true
+		keycloak.setRefuseUpdate(true)
 		s := newScenario(withFakeKeycloak(keycloak))
 
 		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
@@ -1309,7 +1309,7 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 
 	It("reports ConnectionFailed while Keycloak refuses the administrator", func() {
 		keycloak := startFakeKeycloak(withOptimizeClient())
-		keycloak.refuse = true
+		keycloak.setRefuse(true)
 		s := newScenario(withFakeKeycloak(keycloak))
 
 		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
@@ -1592,10 +1592,6 @@ func withFakeKeycloak(keycloak *fakeKeycloak) func(f *fixture) {
 	}
 }
 
-// fakeKeycloak is a Keycloak that serves the token endpoint, the Optimize
-// client of one realm, and the users and realm roles of that realm. It records
-// the redirect URIs and the role mappings that the operator writes.
-
 // withFakeKeycloakTLS turns a scenario into the externalKeycloak mode against
 // a fake Keycloak that serves https. bundle is what the Secret of
 // caBundleSecretRef holds, and an empty one names no Secret at all, so a spec
@@ -1615,20 +1611,24 @@ func withFakeKeycloakTLS(keycloak *fakeKeycloak, bundle string) func(f *fixture)
 	}
 }
 
-// fakeKeycloak is a Keycloak that serves the token endpoint and the Optimize
-// client of one realm. It records the redirect URIs that the operator writes.
+// fakeKeycloak is a Keycloak that serves the token endpoint, the Optimize
+// client of one realm, and the users and realm roles of that realm. It records
+// the redirect URIs and the role mappings that the operator writes.
+//
+// url is set before the server answers anything. The test and the goroutine of
+// the server both touch every other field, so they all go through mu.
 type fakeKeycloak struct {
 	url string
+
+	mu sync.Mutex
 	// refuse answers every administration call with 401, the way a Keycloak
 	// that does not know the administrator does.
 	refuse bool
 	// refuseUpdate answers the client update with 403, the way a Keycloak does
 	// for an administrator that cannot change a client of the realm.
 	refuseUpdate bool
-
-	mu       sync.Mutex
-	stored   keycloakadmin.Representation
-	answered int
+	stored       keycloakadmin.Representation
+	answered     int
 	// users maps the username of every user of the realm to the internal id
 	// that a role mapping is written by.
 	users map[string]string
@@ -1795,6 +1795,14 @@ func (f *fakeKeycloak) setRedirectURIs(uris []string) {
 	f.stored.SetRedirectURIs(uris)
 }
 
+// setRefuse turns the refusal of every administration call on and off.
+func (f *fakeKeycloak) setRefuse(refuse bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.refuse = refuse
+}
+
 // setRefuseUpdate turns the refusal of the client update on and off.
 func (f *fakeKeycloak) setRefuseUpdate(refuse bool) {
 	f.mu.Lock()
@@ -1813,8 +1821,9 @@ func (f *fakeKeycloak) requests() int {
 
 func (f *fakeKeycloak) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	f.answered++
-	f.mu.Unlock()
 
 	if strings.HasSuffix(r.URL.Path, "/protocol/openid-connect/token") {
 		w.Header().Set("Content-Type", "application/json")
@@ -1827,9 +1836,6 @@ func (f *fakeKeycloak) serve(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	switch {
