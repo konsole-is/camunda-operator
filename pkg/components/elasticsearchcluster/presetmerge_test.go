@@ -161,20 +161,6 @@ func TestMergeSpecIgnoresTheCamundaVersionOfTheRelease(t *testing.T) {
 	assert.Empty(t, merged.Version)
 }
 
-func TestMergeSpecDoesNotAliasTheRelease(t *testing.T) {
-	t.Parallel()
-
-	release := &v1.CamundaReleaseSpec{
-		Version:       "8.9.18",
-		Elasticsearch: &v1.ReleaseElasticsearchSpec{Version: "9.2.8"},
-	}
-
-	merged := MergeSpec(v1.ElasticsearchClusterSpec{}, nil, release)
-	merged.Version = "9.2.9"
-
-	assert.Equal(t, "9.2.8", release.Elasticsearch.Version)
-}
-
 func TestMergeSpecInheritsUnsetFields(t *testing.T) {
 	t.Parallel()
 

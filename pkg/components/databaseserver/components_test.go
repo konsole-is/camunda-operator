@@ -65,7 +65,8 @@ func goldenScheme(t *testing.T) *runtime.Scheme {
 const goldenServerUID = "b7e4d2a1-3c58-4f60-9a1d-2e5f8c0b4d71"
 
 // goldenMinimalDatabaseServer is the minimal example of the CRD doc with a
-// deterministic name, resolved against the "standard" preset of the doc.
+// deterministic name, resolved against the "standard" preset and the
+// "camunda-8-9" release of the doc.
 func goldenMinimalDatabaseServer() (
 	*v1.DatabaseServer,
 	*v1.DatabaseServerPresetSpec,

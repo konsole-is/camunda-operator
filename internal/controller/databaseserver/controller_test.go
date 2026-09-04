@@ -2284,6 +2284,21 @@ var _ = Describe("DatabaseServer controller", func() {
 		Expect(cluster.Spec.Instances).To(Equal(1))
 	})
 
+	// The data directory does not exist yet, so nothing refuses the change and
+	// the applied cluster shows which layer won.
+	It("runs its own version over the one the release names", func() {
+		server, _, _ := serverOnPreset("")
+
+		setVersion(server, "18")
+
+		clusterKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+		Eventually(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.ImageName).To(HaveSuffix(":18"))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("reports InvalidReference for a dangling releaseRef", func() {
 		server, _, release := serverOnPreset("")
 		Expect(k8sClient.Delete(ctx, release)).To(Succeed())

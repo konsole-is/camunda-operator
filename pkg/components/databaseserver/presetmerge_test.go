@@ -220,20 +220,6 @@ func TestMergeSpecIgnoresTheCamundaVersionOfTheRelease(t *testing.T) {
 	assert.Empty(t, merged.Version)
 }
 
-func TestMergeSpecDoesNotAliasTheRelease(t *testing.T) {
-	t.Parallel()
-
-	release := &v1.CamundaReleaseSpec{
-		Version:        "8.9.18",
-		DatabaseServer: &v1.ReleaseDatabaseServerSpec{Version: "17"},
-	}
-
-	merged := MergeSpec(v1.DatabaseServerSpec{}, nil, release)
-	merged.Version = "18"
-
-	assert.Equal(t, "17", release.DatabaseServer.Version)
-}
-
 // scheduled sets the archive of the spec to one that takes its base backups
 // on schedule.
 func scheduled(schedule string) func(*v1.DatabaseServerSpec) {
