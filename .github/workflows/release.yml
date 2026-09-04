@@ -85,7 +85,7 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v5.0.1
         with:
-          version: v4.1.4
+          version: v4.2.4
 
       # cosign-installer v4 is the first major that can install cosign v3.
       - name: Install cosign
