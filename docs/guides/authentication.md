@@ -39,15 +39,21 @@ A platform config with no `auth` block has the same effect.
 Set `spec.auth.basic.passwordRotation` on the `CamundaCluster` to a value that differs from the last one, for example a date:
 
 ```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
 spec:
+  # ... the rest of your cluster
   auth:
     basic:
       passwordRotation: "2026-08"
 ```
 
-The operator generates a new password, sets it on the `admin` user through the user API of the running cluster, and publishes it in the Secret. The connectors Deployment restarts with the new password; the brokers, the gateway, and the web applications keep running. Every other user keeps its password. `status.adminPassword.rotation` shows the value when the rotation is complete. The same value never rotates twice, so a GitOps tool can apply it repeatedly. A suspended cluster serves no user API, so a requested rotation waits and applies after the cluster resumes.
+The operator generates a new password, sets it on the `admin` user through the user API of the running cluster, and publishes it in the Secret. The connectors Deployment restarts with the new password. The brokers, the gateway, and the web applications keep running. Every other user keeps its password. `status.adminPassword.rotation` shows the value when the rotation is complete. The same value never rotates twice, so a GitOps tool can apply it repeatedly. A suspended cluster serves no user API, so a requested rotation waits and applies after the cluster resumes.
 
-If the call fails, the Secret keeps the active password and the operator retries until the call succeeds. `AdminSecretReady` reports which of the three failures it is, and each one asks for something different from you. The same three reasons report a failed change of `adminEmail`, because that is an update of the same user.
+If the call fails, the Secret keeps the active password, and the operator calls again until it succeeds. `AdminSecretReady` reports which of the three failures it is, and each one asks for something different from you. The same three reasons report a failed change of `adminEmail`, because that is an update of the same user.
 
 | Reason | What happened | What to do |
 | --- | --- | --- |
@@ -68,7 +74,13 @@ The extra steps of a deletion come from the orchestration cluster, not from the 
 The operator gives the `admin` user an email address, because the orchestration cluster stores one on every user and the Admin web application shows it. Name the address of the person or the team that owns the cluster:
 
 ```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
 spec:
+  # ... the rest of your cluster
   auth:
     basic:
       adminEmail: platform-team@example.com
@@ -76,11 +88,11 @@ spec:
 
 An unset value publishes `admin@example.com`. That domain is reserved for documentation, so an operator that never asked for an address does not claim one that somebody owns.
 
-A changed value is applied to the running cluster. The operator publishes the new address in the Secret at once, for the processes to seed from, and calls the user API. It leaves the password alone, and records the address under `email-applied` only after the cluster accepts it, which is what tells it to stop calling. The workloads read `email` from the Secret, so a change restarts nothing. The user API validates the address and refuses a domain without a dot; a refused address surfaces on `AdminSecretReady` with the answer of the cluster. `email` still shows the address you asked for, and `email-applied` still shows the one the cluster holds, until a call succeeds and the two agree again.
+A changed value is applied to the running cluster. The operator publishes the new address in the Secret at once, for the processes to seed from, and calls the user API. It leaves the password alone, and records the address under `email-applied` only after the cluster accepts it, which is what tells it to stop calling. The workloads read `email` from the Secret, so a change restarts nothing. The user API validates the address and refuses a domain without a dot. A refused address shows on `AdminSecretReady` with the answer of the cluster. `email` still shows the address you asked for, and `email-applied` still shows the one the cluster holds, until a call succeeds and the two agree again.
 
 ## OIDC
 
-Under OIDC an external identity provider authenticates every caller, and the orchestration cluster stores no users. A person signs in through the browser and gets a token. A machine client gets a token with its client credentials. The cluster reads the token and decides who the caller is. The provider authenticates the caller. It does not authorize the caller. A new OIDC cluster has no administrator until you name one on the `CamundaCluster` or on its preset.
+Under OIDC an external identity provider authenticates every caller, and the orchestration cluster stores no users. Camunda describes the mode and what it needs from a provider in [Connect Camunda to any OIDC provider](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/authentication-and-authorization/generic-oidc-provider/). The provider authenticates the caller. It does not authorize the caller. A new OIDC cluster has no administrator until you name one on the `CamundaCluster` or on its preset.
 
 ### Configure the identity provider
 
@@ -144,7 +156,7 @@ spec:
         key: client-secret
 ```
 
-The platform config is cluster-scoped, so this Secret can live in any namespace. If it is not in the namespace of a cluster, the operator copies the key into that namespace as the Secret `<name>-camunda-oidc-client`. The operator watches the source Secret. When you change the client secret there, the operator updates the copy and rolls the pods that read it. You do not restart anything.
+The platform config is cluster-scoped, so this Secret can live in any namespace. If it is not in the namespace of a cluster, the operator copies the key into that namespace as the Secret `<name>-camunda-oidc-client`. When you change the client secret there, the operator updates the copy and rolls the pods that read it. You do not restart anything.
 
 ### How a token becomes a person or a client
 
