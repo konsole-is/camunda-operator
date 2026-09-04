@@ -984,6 +984,16 @@ func (r *DatabaseServerReconciler) requeueAfter(
 	return slices.Min(waits)
 }
 
+// retryInterval returns the wait before the superuser Secret is looked at
+// again.
+func (r *DatabaseServerReconciler) retryInterval() time.Duration {
+	if r.RetryInterval > 0 {
+		return r.RetryInterval
+	}
+
+	return defaultRetryInterval
+}
+
 // pendingArchiveOutageWait returns what is left of the grace period of a stop
 // in the write-ahead log uploads that the server does not report on yet, or
 // zero when it has none to wait out.
@@ -1891,16 +1901,6 @@ func closeArchiveRecord(server *v1.DatabaseServer, serverName string, at metav1.
 			record.To = &at
 		}
 	}
-}
-
-// retryInterval returns the wait before the superuser Secret is looked at
-// again.
-func (r *DatabaseServerReconciler) retryInterval() time.Duration {
-	if r.RetryInterval > 0 {
-		return r.RetryInterval
-	}
-
-	return defaultRetryInterval
 }
 
 // podMonitorSupported reports whether the cluster serves the PodMonitor kind.
