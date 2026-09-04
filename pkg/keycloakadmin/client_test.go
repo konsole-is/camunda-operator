@@ -72,9 +72,15 @@ func (f *fakeKeycloak) start(t *testing.T) string {
 func (f *fakeKeycloak) serve(t *testing.T) http.HandlerFunc {
 	t.Helper()
 
+	// t.FailNow is only for the goroutine of the test, so this handler reports
+	// through assert and answers the request itself.
 	return func(w http.ResponseWriter, r *http.Request) {
 		raw, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
+		if !assert.NoError(t, err) {
+			w.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
 
 		f.mu.Lock()
 		f.calls = append(f.calls, call{
@@ -270,12 +276,20 @@ func TestUpdateClientRetriesOnceAfterARefusedToken(t *testing.T) {
 		}
 
 		raw, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
+		if !assert.NoError(t, err) {
+			w.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
 		assert.Equal(t, http.MethodPut, r.Method)
 		assert.Equal(t, "Bearer token-2", r.Header.Get("Authorization"))
 
 		var sent map[string]any
-		require.NoError(t, json.Unmarshal(raw, &sent))
+		if !assert.NoError(t, json.Unmarshal(raw, &sent)) {
+			w.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
 		assert.Equal(t, []any{"https://a/cb"}, sent["redirectUris"])
 
 		w.WriteHeader(http.StatusNoContent)
