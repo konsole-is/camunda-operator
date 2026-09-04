@@ -37,6 +37,7 @@ const (
 	envConsoleVersion       = "CAMUNDA_CONSOLE_VERSION"
 	envWebModelerVersion    = "CAMUNDA_WEB_MODELER_VERSION"
 	envKeycloakVersion      = "KEYCLOAK_VERSION"
+	envPostgresVersion      = "POSTGRES_VERSION"
 	envLabels               = "E2E_LABELS"
 )
 
@@ -51,6 +52,7 @@ var versionEnv = []string{
 	envConsoleVersion,
 	envWebModelerVersion,
 	envKeycloakVersion,
+	envPostgresVersion,
 	utils.EnvCNPGVersion,
 	utils.EnvBarmanPluginVersion,
 }

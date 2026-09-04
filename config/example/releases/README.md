@@ -61,7 +61,9 @@ spec:
 
 The Camunda, connectors, and Elasticsearch versions are the ones the
 end-to-end suite of this repository runs, which `test/e2e/matrix/8.9.env`
-pins. The PostgreSQL major is the one that suite runs as well.
+pins. The PostgreSQL major is the one that suite runs as well. Renovate raises
+these versions and that file together, and `make lint` fails when the two
+differ.
 
 The release sets no `images` and no `extraEnv`. A release also pins an exact
 image reference per process, and carries the environment that a version needs,

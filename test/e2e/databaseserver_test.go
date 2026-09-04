@@ -48,10 +48,8 @@ const (
 	dsStorageConfig = "camunda-cnpg-storage"
 	// dsPlatform is the cluster-scoped platform config of this flow.
 	dsPlatform = "databaseserver-e2e"
-	// dsVersion is the PostgreSQL major the server runs.
-	dsVersion = "17"
-	// dsRelease carries that major, so the server runs the layered
-	// configuration that a fleet uses.
+	// dsRelease carries the PostgreSQL major of the matrix entry, so the
+	// server runs the layered configuration that a fleet uses.
 	dsRelease = "databaseserver-e2e-release"
 	// dsRetentionDays is how far back the archive of the server reaches. The
 	// point this flow restores to is minutes old, so one day is enough, and a
@@ -77,7 +75,9 @@ var _ = Describe("DatabaseServer", Ordered, Label(utils.LabelDatabaseServer), fu
 			ObjectMeta: metav1.ObjectMeta{Name: dsRelease},
 			Spec: v1.CamundaReleaseSpec{
 				Version:        os.Getenv(envCamundaVersion),
-				DatabaseServer: &v1.ReleaseDatabaseServerSpec{Version: dsVersion},
+				DatabaseServer: &v1.ReleaseDatabaseServerSpec{
+					Version: os.Getenv(envPostgresVersion),
+				},
 			},
 		}
 		server = &v1.DatabaseServer{
@@ -189,7 +189,7 @@ var _ = Describe("DatabaseServer", Ordered, Label(utils.LabelDatabaseServer), fu
 			var probed v1.DatabaseServerConfig
 			g.Expect(utils.Get(dbServerResource, dsServer, dsNamespace, &probed)).To(Succeed())
 			g.Expect(probed.Status.SystemIdentifier).To(Equal(current.Status.SystemIdentifier))
-			g.Expect(probed.Status.ServerVersion).To(Equal(dsVersion))
+			g.Expect(probed.Status.ServerVersion).To(Equal(os.Getenv(envPostgresVersion)))
 			expectReady(g, dbServerResource, dsServer, dsNamespace, v1.ReasonHealthy)
 		}, 3*time.Minute, 5*time.Second).Should(Succeed())
 	})
@@ -202,7 +202,9 @@ var _ = Describe("DatabaseServer", Ordered, Label(utils.LabelDatabaseServer), fu
 		Expect(lines).To(HaveLen(2), out)
 		Expect(strings.Fields(lines[0])).To(Equal([]string{"NAME", "READY", "REASON", "VERSION", "AGE"}), out)
 		Expect(strings.Fields(lines[1])).To(
-			HaveExactElements(dsServer, "True", v1.ReasonHealthy, dsVersion, Not(BeEmpty())), out,
+			HaveExactElements(
+				dsServer, "True", v1.ReasonHealthy, os.Getenv(envPostgresVersion), Not(BeEmpty()),
+			), out,
 		)
 	})
 
