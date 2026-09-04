@@ -14,7 +14,7 @@ The operator also manages what a cluster needs around it: an Elasticsearch clust
 | `CamundaCluster` | One orchestration cluster: Zeebe brokers, gateway, Operate, Tasklist, Admin, and optionally Connectors. |
 | `CamundaPlatformConfig` | Settings that all clusters in an environment share: authentication, license, image repositories. |
 | `CamundaClusterPreset` | A reusable baseline (sizing, topology) that clusters inherit. |
-| `CamundaRelease` | Every version of the platform, the pinned images, and the environment they run. |
+| `CamundaRelease` | Every version of the platform, the pinned images, and the environment those versions need. |
 | `ElasticsearchCluster` | An Elasticsearch cluster run by ECK, with a generated user, ready to be used as secondary storage. |
 | `DatabaseServer` | A PostgreSQL server run by CloudNativePG, with a continuous archive in a bucket that a point-in-time restore replays. |
 | `Database` | A logical database and its users on a PostgreSQL server. |
