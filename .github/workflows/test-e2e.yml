@@ -22,10 +22,10 @@ jobs:
       # minor, and each holds the Ginkgo label filter that selects its flows.
       # Adopting a new minor adds the file and four entries.
       #
-      # The split keeps one storage operator off each job. One kind node
-      # carries a whole job. eckInstallSkip and cnpgInstallSkip say which
-      # operator a job installs. The management plane job fills its node with
-      # Keycloak, Management Identity, Console, and two Web Modeler
+      # The split keeps one storage operator off each of the first three jobs.
+      # One kind node carries a whole job. eckInstallSkip and cnpgInstallSkip
+      # say which operator a job installs. The management plane job fills its
+      # node with Keycloak, Management Identity, Console, and two Web Modeler
       # processes, so it installs neither CloudNativePG nor the Barman Cloud
       # plugin.
       #
