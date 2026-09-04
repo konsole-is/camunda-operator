@@ -84,8 +84,8 @@ so a reader sees both and can compare its `CamundaCluster` with the one in
   `<your Camunda license key>`, is not valid.
 - The four scenarios are alternatives. Each one creates the cluster-scoped
   `CamundaPlatformConfig` `my-platform-config` with contents of its own, so
-  apply one at a time. The presets and the release are the exception: all four
-  agree on them, so they are shared.
+  apply one at a time. The presets and the release are the exception: every
+  inventory that names them agrees on them, so they are shared.
 
 ## Versions
 
