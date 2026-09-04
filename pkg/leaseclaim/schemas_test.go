@@ -73,9 +73,17 @@ func TestTheShippedSchemasNameSeparateClaims(t *testing.T) {
 		},
 	}
 
-	// Held lists on the selector alone, so two claims of one holder name must
-	// not select each other's Leases.
-	assert.NotEqual(t, shipped[0].selector, shipped[1].selector)
+	// Held lists on the selector alone, and a label selector matches every
+	// Lease that carries at least its labels. A selector inside another one
+	// therefore lists the Leases of that other claim.
+	assert.Falsef(
+		t, selects(shipped[0].selector, shipped[1].selector),
+		"%s selects the Leases of %s", shipped[0].claim, shipped[1].claim,
+	)
+	assert.Falsef(
+		t, selects(shipped[1].selector, shipped[0].selector),
+		"%s selects the Leases of %s", shipped[1].claim, shipped[0].claim,
+	)
 
 	prefixes := make(map[string]string, len(shipped))
 	annotations := make(map[string]string, 4*len(shipped))
@@ -92,4 +100,15 @@ func TestTheShippedSchemasNameSeparateClaims(t *testing.T) {
 			annotations[annotation] = naming.claim
 		}
 	}
+}
+
+// selects reports whether a Lease that carries labels matches the selector.
+func selects(selector, labels map[string]string) bool {
+	for key, want := range selector {
+		if labels[key] != want {
+			return false
+		}
+	}
+
+	return true
 }
