@@ -37,7 +37,7 @@ A preset can set `snapshotStorageRef`, `serviceAccount`, `secureSettings`, and `
 
 ## Changes
 
-An edit of a preset reaches every `ElasticsearchCluster` that references it. A lower `storageSize` in the preset does not shrink a running cluster. That cluster keeps its current size and records a Warning event with reason `StorageShrinkIgnored`. A new cluster uses the new baseline.
+An edit of a preset reaches every `ElasticsearchCluster` that references it soon after, and not at once. A lower `storageSize` in the preset does not shrink a running cluster. That cluster keeps its current size and records a Warning event with reason `StorageShrinkIgnored`. A new cluster uses the new baseline.
 
 ## Deletion
 
