@@ -130,7 +130,33 @@ The claim goes to the cluster whose reconcile patches the contract first. This i
 
 The API server accepts a second cluster that names a held contract. That cluster is suspended: every workload at zero and the volumes kept. Its `Ready` is `False` with reason `StorageAlreadyAttached`, and the message names the holder and the contract.
 
-The suspended cluster looks again every 30 seconds. When the holder is deleted or names another contract, the suspended cluster takes the claim and resumes on its own. A paused holder keeps its claim until you unpause it. After a repoint, the pods of the previous holder reach their new backend only when its rollout finishes. For that time both clusters write the old backend. If that overlap matters, stop the holder first. Do not remove the two claim annotations by hand while two clusters name the contract. Both clusters then race for the free contract, and the holder can lose it and be suspended.
+The suspended cluster looks again every 30 seconds. When the holder is deleted or names another contract, the suspended cluster takes the claim and resumes on its own. A paused holder keeps its claim until you unpause it. Do not remove the two claim annotations by hand while two clusters name the contract. Both clusters then race for the free contract, and the holder can lose it and be suspended.
+
+The cluster that takes the contract stays at zero while pods of the previous holder still run on it. The pods of a deleted holder go after the cluster, and the pods of a repointed holder go when its rollout replaces them. Until then, its `Ready` is `False` with reason `WaitingForHandover`, and the message names the previous holder and its pods. The state clears on its own.
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: WaitingForHandover
+      message: >-
+        Pods of the previous holder CamundaCluster "my-cluster-ns/my-other-cluster"
+        still run on SecondaryStorageConfig "my-cluster-ns/my-storage-config":
+        my-other-cluster-zeebe-0. This cluster starts when they are gone
+```
+
+Every pod carries the label `camunda.io/storage-contract` with the contract it runs on. The pods of an [Optimize instance](camundaoptimize.md) attached to the cluster carry it too, because its importer writes that backend as well. A label value stops at 63 characters, so the operator shortens a longer contract name and adds a hash to it. Print the label as a column to read it for a name of any length:
+
+```bash
+kubectl get pods -n my-cluster-ns -L camunda.io/storage-contract
+```
+
+If the contract name is 63 characters or shorter, you can select on it:
+
+```bash
+kubectl get pods -n my-cluster-ns -l camunda.io/storage-contract=my-storage-config
+```
 
 A recreated contract is a new claim. If the producer deletes the contract and creates it again, the holder and a suspended cluster race for the new claim. The holder can lose that race. Do not recreate a contract while two clusters name it.
 
@@ -146,6 +172,8 @@ status:
         CamundaCluster uses one secondary storage contract, so this cluster
         stays suspended until that one releases it
 ```
+
+Do not point `storageRef` of a holder at another contract and back while a second cluster waits for the handover. A holder that returns at that moment can start pods next to the second cluster. The operator then suspends the cluster that lost the claim, but both write the backend until the pods of that cluster stop.
 
 The operator compares contracts, not endpoints. Give one contract to one backend. Two hand-written contracts that name one Elasticsearch are not caught.
 
@@ -236,13 +264,30 @@ A change to the cluster, to a referenced resource, or to a referenced Secret rol
 
 The operator checks every reference at reconcile time, not at admission, so you can create the resources in any order. A missing `CamundaPlatformConfig`, `CamundaClusterPreset`, `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` sets `Ready` to `False` with reason `InvalidReference`. A missing Secret or key sets reason `MissingSecret`.
 
+When any of these checks fails for a running cluster, the cluster is suspended: every workload scales to zero and the volumes stay. Pods that keep running can write a backend that the cluster no longer resolves. `Ready` keeps the failure reason, and the message says what happened to the workloads. The per-process conditions report `Suspending` while the pods stop, then `Suspended`. The cluster records the event `WorkloadsSuspended` for each workload it scales, and `status.gateway` and `status.management` are cleared. When the check passes again, the cluster resumes on its own.
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: MissingSecret
+      message: >-
+        Secret my-cluster-ns/my-storage-credentials not found. The workloads
+        are scaled to zero, with the volumes kept, until the pre-check passes
+    - type: ZeebeReady
+      status: "True"
+      reason: Suspended
+      message: Scaled to zero while the pre-check of the cluster fails
+```
+
 ## Suspend and pause
 
 `spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` is empty. When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
 
-The operator also suspends a cluster whose storage contract another cluster holds, see [Secondary storage](#secondary-storage). `spec.suspend` stays yours. That suspension shows in the `Ready` reason `StorageAlreadyAttached` and ends when the holder releases the contract.
+The operator also suspends a cluster on its own. `spec.suspend` stays yours. A cluster whose storage contract another cluster holds reports `StorageAlreadyAttached`, a cluster that waits for the pods of a previous holder reports `WaitingForHandover` (see [Secondary storage](#secondary-storage)), and a cluster whose reference check fails reports `InvalidReference` or `MissingSecret` (see [Changes and referenced Secrets](#changes-and-referenced-secrets)). Each of these suspensions ends on its own when its cause is gone.
 
-`suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it, and starts them again when you clear the field. The Optimize importer reads Elasticsearch directly, so without this it would keep importing while the cluster is down. The suspension of a cluster whose storage contract another cluster holds reaches them too. A `CamundaOptimize` attached to that cluster scales to zero, and a backup of it waits with reason `ClusterSuspended`.
+`suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it, and starts them again when you clear the field. The Optimize importer reads Elasticsearch directly, so without this it would keep importing while the cluster is down. Every suspension by the operator reaches them the same way: a `CamundaOptimize` attached to a suspended cluster scales to zero, and a backup of it waits with reason `ClusterSuspended`.
 
 `spec.pause: true` stops all reconciliation of this resource. The operator records one `Paused` event and writes nothing, not even status, until `pause` is false again.
 
@@ -273,8 +318,9 @@ Deleting the cluster removes every resource that the operator created for it. Th
 | `Ready` | `Degraded` / `Down` | Some or no replicas of a component are ready after the grace period. | Read the pods and events of the named component. |
 | `Ready` | `Suspended` | `spec.suspend` is true and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to resume. |
 | `Ready` | `StorageAlreadyAttached` | Another `CamundaCluster` holds the `SecondaryStorageConfig` that `storageRef` names. This cluster is suspended. | Give this cluster a contract of its own, or delete the holder. The message names both, and the last apply error of the workloads when one occurred. |
-| `Ready` | `InvalidReference` | A referenced resource does not exist, a ServiceAccount with `create: false` is absent, two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. | Read the message. Create the missing resource or correct the field it names. |
-| `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. | Create the Secret with the named key. |
+| `Ready` | `WaitingForHandover` | This cluster takes over the `SecondaryStorageConfig` that `storageRef` names, and pods of the previous holder still run on it. This cluster stays at zero. | Wait. The message names the previous holder and its pods. The state clears on its own. If the pods never go, delete them. |
+| `Ready` | `InvalidReference` | A referenced resource does not exist, a ServiceAccount with `create: false` is absent, two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. A running cluster is scaled to zero, with the volumes kept. | Read the message. Create the missing resource or correct the field it names. The cluster resumes on its own. |
+| `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. A running cluster is scaled to zero, with the volumes kept. | Create the Secret with the named key. The cluster resumes on its own. |
 | `Ready` | `VersionDowngradeRefused` | The effective version is below the version the brokers run, and no annotation sanctions the move. The operator applies nothing, and the brokers keep the version they have. | Read [Version](#version). Set the version forward again, or sanction the downgrade. |
 
 `status.management` publishes the address of the management API, so a backup kind calls it without knowing which process hosts it. It is empty while the cluster is suspended.

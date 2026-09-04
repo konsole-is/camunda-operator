@@ -27,6 +27,7 @@ spec:
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: zeebe
+        camunda.io/storage-contract: my-storage-config
     spec:
       containers:
       - command:

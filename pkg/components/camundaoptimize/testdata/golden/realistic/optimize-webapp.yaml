@@ -23,6 +23,7 @@ spec:
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: optimize-webapp
+        camunda.io/storage-contract: my-storage-config
         team: platform
     spec:
       containers:

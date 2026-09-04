@@ -33,6 +33,7 @@ const (
 	fixtureNamespace = "camunda"
 	fixtureCluster   = "my-cluster"
 	fixtureVersion   = "8.9.4"
+	fixtureContract  = "my-storage-config"
 )
 
 // newInput returns the minimal render input, with mutate applied to it.
@@ -48,8 +49,9 @@ func newInput(t *testing.T, mutate func(in *Input)) Input {
 				ClusterRef:        v1.ClusterRef{Name: fixtureCluster},
 			},
 		},
-		ClusterName: fixtureCluster,
-		Partitions:  1,
+		ClusterName:     fixtureCluster,
+		StorageContract: fixtureContract,
+		Partitions:      1,
 		Storage: v1.ElasticsearchStorage{
 			Endpoint: "http://elasticsearch.camunda.svc:9200",
 			CredentialsSecretRef: v1.LocalCredentialsSecretRef{

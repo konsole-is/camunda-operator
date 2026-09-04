@@ -49,6 +49,11 @@ type Input struct {
 	// the referenced cluster names, with every Secret reference already
 	// pointed at its copy in the CamundaOptimize namespace.
 	Storage v1.ElasticsearchStorage
+	// StorageContract is the name of that SecondaryStorageConfig. It is the
+	// camunda.io/storage-contract label value of the pods, so a cluster that
+	// takes the contract over waits for the importer of the previous holder
+	// as it waits for the pods of that cluster. It is always set.
+	StorageContract string
 	// Auth is the ManagementAuthConfig that spec.managementAuthRef names, with
 	// its client secret reference already pointed at its copy in the
 	// CamundaOptimize namespace.

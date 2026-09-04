@@ -58,6 +58,18 @@ func TestMergeLetsOperatorLabelsWin(t *testing.T) {
 	assert.Equal(t, "someone-else", user["camunda.io/elasticsearch-cluster"], "the input is not mutated")
 }
 
+func TestMergeLetsALaterMapWin(t *testing.T) {
+	t.Parallel()
+
+	merged := Merge(
+		map[string]string{"a": "user", "b": "user"},
+		map[string]string{"a": "first", "c": "first"},
+		map[string]string{"a": "second"},
+	)
+
+	assert.Equal(t, map[string]string{"a": "second", "b": "user", "c": "first"}, merged)
+}
+
 func TestRestoreOwners(t *testing.T) {
 	assert.Equal(t, Owner{Key: LogicalRestoreRDBMSKey, Name: "r"}, LogicalRestoreRDBMS("r"))
 	assert.Equal(t, "camunda.io/logical-restore-rdbms", LogicalRestoreRDBMSKey)

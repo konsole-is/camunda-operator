@@ -17,6 +17,8 @@ limitations under the License.
 package v1
 
 import (
+	"slices"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -610,14 +612,31 @@ func (in *CamundaCluster) SetObservedGeneration(generation int64) {
 	in.Status.ObservedGeneration = generation
 }
 
+// suspendedReadyReasons are the Ready reasons under which the operator holds
+// every workload of the cluster at zero: another cluster holds the storage
+// contract, the cluster waits for the pods of the previous holder of a
+// contract it takes over, or a pre-check failed on a dangling reference or a
+// missing Secret. VersionDowngradeRefused is not one of them: a refused
+// cluster keeps running on the version it has.
+var suspendedReadyReasons = []string{
+	ReasonStorageAlreadyAttached,
+	ReasonWaitingForHandover,
+	ReasonInvalidReference,
+	ReasonMissingSecret,
+}
+
 // Suspended reports whether the operator scales every workload of the cluster
-// to zero: spec.suspend is set, or another cluster holds the storage contract
-// and Ready carries reason StorageAlreadyAttached. An extension attached to
-// the cluster follows this, not spec.suspend alone.
+// to zero: spec.suspend is set, or Ready carries one of the
+// suspendedReadyReasons. An extension attached to the cluster follows this,
+// not spec.suspend alone.
 func (in *CamundaCluster) Suspended() bool {
+	if in.Spec.Suspend {
+		return true
+	}
+
 	ready := meta.FindStatusCondition(in.Status.Conditions, ConditionReady)
 
-	return in.Spec.Suspend || (ready != nil && ready.Reason == ReasonStorageAlreadyAttached)
+	return ready != nil && slices.Contains(suspendedReadyReasons, ready.Reason)
 }
 
 // +kubebuilder:object:root=true

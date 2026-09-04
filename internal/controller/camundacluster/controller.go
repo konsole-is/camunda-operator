@@ -134,6 +134,7 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups="",resources=pods,verbs=list
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
@@ -142,10 +143,14 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // Reconcile converges a CamundaCluster. A paused cluster records one Paused
 // event and returns before anything is read or written, status included.
 // Otherwise the pre-checks resolve every reference into the render input; a
-// failed pre-check reports its Ready reason and stops. A cluster whose
+// failed pre-check reports its Ready reason, scales every workload of the
+// cluster to zero with the volumes kept, and stops. The cluster resumes on
+// its own when the pre-check passes again. A cluster whose
 // storage contract another cluster holds renders suspended, reports
 // StorageAlreadyAttached instead of the aggregate, and looks again on a
-// timer. An effective version below the one the brokers run is refused
+// timer. A cluster that takes a contract over reports WaitingForHandover on
+// the same timer while a pod of the previous holder still runs on it. An
+// effective version below the one the brokers run is refused
 // before anything is applied, unless the annotation
 // camunda.io/allow-version-downgrade names it. A cluster that is parked on a
 // held contract renders at zero on the running version first, and the
@@ -215,7 +220,24 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	in, mirrors, err := r.preCheck(ctx, &cluster)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
+		// A running cluster stops while its pre-check fails: its workloads
+		// scale to zero and its volumes stay, because they can keep writing
+		// a backend that the cluster no longer resolves. The failure stays
+		// the Ready reason, and the message says what happened to the
+		// workloads.
+		suspended, suspendErr := r.suspendWorkloads(ctx, &cluster)
+		if suspended && suspendErr == nil {
+			failure.Message += ". The workloads are scaled to zero, with the volumes kept, until the pre-check passes"
+		}
+		// The bindings are nil while the cluster is suspended, see binding.go.
+		// The endpoints of the scaled workloads answer nothing, so a consumer
+		// must see a cluster that is not ready, not a stale endpoint.
+		cluster.Status.Management = nil
+		cluster.Status.Gateway = nil
 		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
+		if suspendErr != nil {
+			return ctrl.Result{}, suspendErr
+		}
 
 		// Only an unwatched failure needs a timer; everything else the
 		// pre-checks resolve re-enqueues through a watch.

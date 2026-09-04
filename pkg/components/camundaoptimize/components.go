@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/workloadmutations"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/servicemonitor"
@@ -130,6 +131,19 @@ func discoveryLabels(in Input, comp string) map[string]string {
 	return labels.Discovery(labels.Cluster(in.ClusterName), comp)
 }
 
+// podLabels returns the labels of the pods of a component: the discovery
+// labels and the SecondaryStorageConfig they run on. The importer writes the
+// analytics indices of that contract, so a cluster that takes the contract
+// over finds these pods with the same selector as the pods of the previous
+// holder. The label is on the pods, never on the selector, so a repoint of
+// the cluster rolls them and the new ones carry the new value.
+func podLabels(in Input, comp string) map[string]string {
+	return labels.Merge(
+		discoveryLabels(in, comp),
+		clustercomponents.StoragePodLabels(in.ClusterName, in.StorageContract),
+	)
+}
+
 // deploymentFor renders the base Deployment of a component.
 // workloadmutations.Mutations layers the overrides on top.
 func deploymentFor(in Input, comp string) *appsv1.Deployment {
@@ -166,7 +180,7 @@ func strategyFor(comp string) appsv1.DeploymentStrategyType {
 func podTemplate(in Input, comp string) corev1.PodTemplateSpec {
 	return corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
-			Labels:      discoveryLabels(in, comp),
+			Labels:      podLabels(in, comp),
 			Annotations: map[string]string{ConfigHashAnnotation: ConfigHash(in, comp)},
 		},
 		Spec: corev1.PodSpec{
