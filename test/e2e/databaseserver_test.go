@@ -48,9 +48,7 @@ const (
 	dsStorageConfig = "camunda-cnpg-storage"
 	// dsPlatform is the cluster-scoped platform config of this flow.
 	dsPlatform = "databaseserver-e2e"
-	// dsVersion is the PostgreSQL major the server runs.
-	dsVersion = "17"
-	// dsRelease carries that major, so the server runs the layered
+	// dsRelease carries the PostgreSQL major, so the server runs the layered
 	// configuration that a fleet uses.
 	dsRelease = "databaseserver-e2e-release"
 	// dsRetentionDays is how far back the archive of the server reaches. The
@@ -72,6 +70,10 @@ const (
 
 var _ = Describe("DatabaseServer", Ordered, Label(utils.LabelDatabaseServer), func() {
 	var (
+		// dsVersion is the PostgreSQL major of the matrix entry, which the
+		// server runs and the contract reports back.
+		dsVersion = os.Getenv(envPostgresVersion)
+
 		release = &v1.CamundaRelease{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaRelease"},
 			ObjectMeta: metav1.ObjectMeta{Name: dsRelease},

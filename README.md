@@ -76,7 +76,7 @@ root module.
 
 ```bash
 make test           # unit and envtest suites (needs Docker for the PostgreSQL testcontainer)
-make lint           # golangci-lint
+make lint           # golangci-lint, callsplit, and the version pins of config/example
 make all            # generate manifests and deepcopy, fmt, vet, build
 make test-e2e       # kind cluster with ECK, CloudNativePG, PostgreSQL, and MinIO (needs Docker and kind)
 make helm-generate  # regenerate dist/chart/ from config/

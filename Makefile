@@ -183,8 +183,12 @@ test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expect
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
 
+.PHONY: lint-examples
+lint-examples: ## Check the version pins of config/example against the matrix entry of E2E_CAMUNDA_MINOR.
+	go run ./hack/exampleversions -matrix test/e2e/matrix/$(E2E_CAMUNDA_MINOR).env config/example
+
 .PHONY: lint
-lint: golangci-lint ## Run callsplit in check mode, then golangci-lint.
+lint: golangci-lint lint-examples ## Check the example version pins and run callsplit, then golangci-lint.
 	go run ./hack/callsplit -check ./api ./cmd ./internal ./pkg ./test
 	@for m in $(MODULES); do (cd $$m && "$(GOLANGCI_LINT)" run) || exit 1; done
 

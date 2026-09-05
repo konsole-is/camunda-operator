@@ -37,14 +37,20 @@ kind: CamundaRelease
 metadata:
   name: camunda-8-9
 spec:
+  # renovate: datasource=docker depName=camunda/camunda
   version: "8.9.18"
   connectors:
+    # renovate: datasource=docker depName=camunda/connectors-bundle
     version: "8.9.9"
   elasticsearch:
+    # renovate: datasource=docker depName=docker.elastic.co/elasticsearch/elasticsearch
     version: "9.2.8"
   databaseServer:
     version: "17"
 ```
+
+The `# renovate` comments are in the file. Renovate reads them and raises the
+version below each one.
 
 - **`version`** is the Camunda version of the orchestration cluster processes.
   A cluster that names this release runs it and leaves `spec.version` unset.
@@ -61,7 +67,11 @@ spec:
 
 The Camunda, connectors, and Elasticsearch versions are the ones the
 end-to-end suite of this repository runs, which `test/e2e/matrix/8.9.env`
-pins. The PostgreSQL major is the one that suite runs as well.
+pins. The PostgreSQL major is the one that suite runs as well. Renovate raises
+the Camunda, connectors, and Elasticsearch versions together with that file.
+The PostgreSQL major carries no marker, because a new major is a step you take
+on purpose. `make lint` fails when any of the four and the matrix entry
+differ.
 
 The release sets no `images` and no `extraEnv`. A release also pins an exact
 image reference per process, and carries the environment that a version needs,
