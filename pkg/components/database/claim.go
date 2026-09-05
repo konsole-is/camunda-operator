@@ -71,8 +71,8 @@ func ClaimSchema() leaseclaim.Schema[*v1.Database] {
 
 // ClaimLeaseLabels returns the labels of the claim Leases of the Databases
 // named name. They carry the name alone, so two Databases of two namespaces
-// that share a name share these labels. A caller reads ClaimHolderOf on a
-// listed Lease to learn which Database holds it.
+// that share a name share these labels. A caller reads HolderOf of
+// ClaimSchema on a listed Lease to learn which Database holds it.
 func ClaimLeaseLabels(name string) map[string]string {
 	return labels.Managed(labels.Database(name), ClaimComponent)
 }
@@ -99,7 +99,7 @@ func ListClaims(ctx context.Context, reader client.Reader, namespace string) ([]
 	claims := make([]Claim, 0, len(leases.Items))
 	for i := range leases.Items {
 		lease := &leases.Items[i]
-		holder, ours := ClaimHolderOf(lease)
+		holder, ours := ClaimSchema().HolderOf(lease)
 		if key := lease.Annotations[ClaimKeyAnnotation]; ours && key != "" {
 			claims = append(claims, Claim{Holder: holder, Key: key})
 		}
@@ -114,11 +114,4 @@ func claimLeaseSelector() map[string]string {
 		labels.ComponentKey: ClaimComponent,
 		labels.ManagedByKey: labels.ManagedBy,
 	}
-}
-
-// ClaimHolderOf returns the Database that the annotations of the Lease name,
-// and whether all three of them are there. Only the annotations carry
-// ownership. The holderIdentity of the Lease is a display form for a reader.
-func ClaimHolderOf(lease *coordinationv1.Lease) (ClaimHolder, bool) {
-	return ClaimSchema().HolderOf(lease)
 }

@@ -84,7 +84,7 @@ func TestNewClaimLease(t *testing.T) {
 	assert.Equal(t, "apps/orders", *lease.Spec.HolderIdentity)
 }
 
-func TestClaimHolderOf(t *testing.T) {
+func TestClaimSchemaHolderOf(t *testing.T) {
 	holder := testHolder("apps", "orders", "uid-1")
 	lease := claimLease("camunda-system", "7000000000000000001/camunda", holder)
 
@@ -94,7 +94,7 @@ func TestClaimHolderOf(t *testing.T) {
 	assert.Equal(t, holder, recorded)
 }
 
-func TestClaimHolderOfRejectsAPartialRecord(t *testing.T) {
+func TestClaimSchemaHolderOfRejectsAPartialRecord(t *testing.T) {
 	for _, missing := range []string{
 		ClaimHolderNamespaceAnnotation,
 		ClaimHolderNameAnnotation,
