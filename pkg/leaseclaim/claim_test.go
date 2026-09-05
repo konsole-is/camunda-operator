@@ -785,6 +785,31 @@ func TestOwnerExists(t *testing.T) {
 	assert.False(t, kept, "a resource that is gone keeps nothing")
 }
 
+// A Schema whose T is an interface names no struct to read a holder into.
+// OwnerExists answers with an error inside a reconcile, and Validate reports
+// the same Schema at start-up, so it never reaches a reconcile.
+func TestOwnerExistsRefusesAClaimantThatIsNoPointer(t *testing.T) {
+	t.Parallel()
+
+	schema := Schema[client.Object]{
+		Prefix:                    "camunda-test-",
+		Noun:                      "test claim",
+		HolderNamespaceAnnotation: "camunda.io/test-claim-holder-namespace",
+		HolderNameAnnotation:      "camunda.io/test-claim-holder-name",
+		HolderUIDAnnotation:       "camunda.io/test-claim-holder-uid",
+		KeyAnnotation:             "camunda.io/test-claim-key",
+		Labels:                    testSchema().Labels,
+	}
+	c := testClient(t)
+
+	kept, err := OwnerExists(c, schema)(context.Background(), holderOf(claimant("alpha", "x", "uid")))
+
+	require.Error(t, err)
+	assert.False(t, kept)
+	assert.Contains(t, err.Error(), "no pointer to a struct")
+	require.ErrorContains(t, schema.Validate(), "no pointer to a struct")
+}
+
 func TestOwnerExistsReportsAReadThatFails(t *testing.T) {
 	t.Parallel()
 

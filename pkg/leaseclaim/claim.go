@@ -128,7 +128,10 @@ func New[T client.Object](
 // the error of a read that fails.
 func OwnerExists[T client.Object](reader client.Reader, schema Schema[T]) HolderKeeps {
 	return func(ctx context.Context, holder Holder) (bool, error) {
-		owner := newOwner[T]()
+		owner, err := newOwner[T]()
+		if err != nil {
+			return false, err
+		}
 		if err := reader.Get(ctx, holder.NamespacedName, owner); err != nil {
 			if apierrors.IsNotFound(err) {
 				return false, nil
@@ -145,14 +148,21 @@ func OwnerExists[T client.Object](reader client.Reader, schema Schema[T]) Holder
 
 // newOwner returns an empty resource of the kind that takes the claim, for a
 // read to fill. T is a pointer to a struct, so its zero value points nowhere
-// and a read into it fails: the struct behind it is allocated here.
-func newOwner[T client.Object]() T {
-	var zero T
-	// reflect.New of the element of a pointer type is that pointer type, so
-	// the assertion holds for every T that a Schema names.
-	owner, _ := reflect.New(reflect.TypeOf(zero).Elem()).Interface().(T)
+// and a read into it fails: the struct behind it is allocated here. A T that
+// is no pointer, an interface for one, is an error and never a panic, because
+// this runs inside a reconcile. Validate reports the same T at start-up.
+func newOwner[T client.Object]() (T, error) {
+	kind := reflect.TypeFor[T]()
+	if kind.Kind() != reflect.Pointer {
+		var zero T
 
-	return owner
+		return zero, fmt.Errorf("the claimant type %s is no pointer to a struct", kind)
+	}
+	// reflect.New of the element of a pointer type is that pointer type, so
+	// the assertion holds for every T that reaches this line.
+	owner, _ := reflect.New(kind.Elem()).Interface().(T)
+
+	return owner, nil
 }
 
 // Take takes the claim on key for owner. It returns nil when owner holds the
