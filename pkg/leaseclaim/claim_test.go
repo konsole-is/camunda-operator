@@ -861,8 +861,8 @@ func TestHeldReadsTheHolderAnnotations(t *testing.T) {
 }
 
 // A holder that reads a claim as its own must be able to give it back. The
-// UID decides both, so a name annotation that somebody edited by hand leaves
-// no claim that this resource holds and never sweeps.
+// UID decides both, so a name annotation that somebody edited by hand still
+// leaves the claim held by this resource, and the sweep still lists it.
 func TestHeldListsAClaimWhoseNameAnnotationChanged(t *testing.T) {
 	t.Parallel()
 
