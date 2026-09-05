@@ -291,10 +291,10 @@ func realmCallbackHandoff(
 }
 
 // watchRealmCallbacksScript samples the client of both realms every three
-// seconds and prints one line for each sample. The deadline is read before
-// each sample, so no sample and no call reaches Keycloak after it. The first
-// sample takes the token of the prelude, and each sleep is followed by a token
-// of its own, because the watch outlives the lifespan of one.
+// seconds and prints one line for each sample. It reads its deadline before
+// each sample, so it starts none after it. The first sample takes the token of
+// the prelude, and each sleep is followed by a token of its own, because the
+// watch outlives the lifespan of one.
 //
 // A probe exits the script through its command substitution: an unexpected
 // status from Keycloak ends the watch rather than reading as an absent
@@ -341,12 +341,21 @@ func expectCallbackHandoff(samples, realmFrom, realmTo string) {
 	GinkgoHelper()
 
 	lines := strings.Split(strings.TrimSpace(samples), "\n")
-	Expect(lines[0]).To(HaveSuffix(realmTo+"=0"), "the watch of the two realms started too late:\n%s", samples)
-
-	var both string
+	taken := make([][]string, 0, len(lines))
 	for _, line := range lines {
-		if strings.Contains(line, realmFrom+"=1") && strings.Contains(line, realmTo+"=1") {
-			both = line
+		fields := strings.Fields(line)
+		Expect(fields).To(HaveLen(3), "the watch of the two realms wrote %q", line)
+		taken = append(taken, fields)
+	}
+
+	Expect(taken[0][2]).To(
+		Equal(realmTo+"=0"), "the watch of the two realms started too late:\n%s", samples,
+	)
+
+	var both []string
+	for _, fields := range taken {
+		if fields[1] == realmFrom+"=1" && fields[2] == realmTo+"=1" {
+			both = fields
 
 			break
 		}
@@ -357,8 +366,8 @@ func expectCallbackHandoff(samples, realmFrom, realmTo string) {
 		realmTo, realmFrom, samples,
 	)
 
-	Expect(lines[len(lines)-1]).To(
-		HaveSuffix(realmTo+"=1"),
+	Expect(taken[len(taken)-1][2]).To(
+		Equal(realmTo+"=1"),
 		"the watch ended without the login callback in realm %q:\n%s", realmTo, samples,
 	)
 }
