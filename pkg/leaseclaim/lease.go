@@ -157,6 +157,7 @@ func (s Schema[T]) heldBy(lease *coordinationv1.Lease, uid types.UID) bool {
 // back, and whether T is a pointer to a struct, which OwnerExists allocates.
 // A missing prefix, a missing annotation key and a Labels function that gives
 // no label each write a Lease that no other claimant recognises as a claim.
+// A label or an annotation key the API server refuses writes no Lease at all.
 // Two annotation keys that are equal drop one of the values the ownership
 // decision reads.
 //
@@ -187,14 +188,31 @@ func (s Schema[T]) Validate() error {
 	}
 	// Held lists on the selector alone, so a claim with no label reads every
 	// Lease of the namespace as its own.
-	if len(s.Labels("any-holder")) == 0 {
+	selector := s.Labels("any-holder")
+	if len(selector) == 0 {
 		return errors.New("the Labels function returns no label")
+	}
+	// The API server refuses a Lease with a malformed key or value on every
+	// create, which a claimant meets on its first reconcile and not here.
+	for key, value := range selector {
+		if problems := validation.IsQualifiedName(key); len(problems) > 0 {
+			return fmt.Errorf("the label key %q is no qualified name: %s", key, strings.Join(problems, "; "))
+		}
+		if problems := validation.IsValidLabelValue(value); len(problems) > 0 {
+			return fmt.Errorf("the label value %q of %q is invalid: %s", value, key, strings.Join(problems, "; "))
+		}
 	}
 
 	seen := make(map[string]string, 4)
 	for _, annotation := range s.annotations() {
 		if annotation.key == "" {
 			return fmt.Errorf("the %s is empty", annotation.field)
+		}
+		if problems := validation.IsQualifiedName(annotation.key); len(problems) > 0 {
+			return fmt.Errorf(
+				"the %s %q is no qualified name: %s",
+				annotation.field, annotation.key, strings.Join(problems, "; "),
+			)
 		}
 		if first, taken := seen[annotation.key]; taken {
 			return fmt.Errorf(

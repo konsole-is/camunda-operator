@@ -1010,13 +1010,20 @@ func TestSchemaValidate(t *testing.T) {
 		"no prefix":               func(s *Schema[*corev1.ConfigMap]) { s.Prefix = "" },
 		"a prefix with no hyphen": func(s *Schema[*corev1.ConfigMap]) { s.Prefix = "camunda" },
 		"an uppercase prefix":     func(s *Schema[*corev1.ConfigMap]) { s.Prefix = "Camunda-" },
-		"no noun":                 func(s *Schema[*corev1.ConfigMap]) { s.Noun = "" },
-		"no Labels":               func(s *Schema[*corev1.ConfigMap]) { s.Labels = nil },
-		"no holder namespace":     func(s *Schema[*corev1.ConfigMap]) { s.HolderNamespaceAnnotation = "" },
-		"no holder name":          func(s *Schema[*corev1.ConfigMap]) { s.HolderNameAnnotation = "" },
-		"no holder uid":           func(s *Schema[*corev1.ConfigMap]) { s.HolderUIDAnnotation = "" },
-		"no key":                  func(s *Schema[*corev1.ConfigMap]) { s.KeyAnnotation = "" },
-		"two equal holder keys":   func(s *Schema[*corev1.ConfigMap]) { s.HolderNameAnnotation = s.HolderUIDAnnotation },
+		"a malformed label key": func(s *Schema[*corev1.ConfigMap]) {
+			s.Labels = func(string) map[string]string { return map[string]string{"camunda.io/bad key": "x"} }
+		},
+		"a malformed label value": func(s *Schema[*corev1.ConfigMap]) {
+			s.Labels = func(string) map[string]string { return map[string]string{"camunda.io/claim": "bad value"} }
+		},
+		"a malformed annotation key": func(s *Schema[*corev1.ConfigMap]) { s.KeyAnnotation = "camunda.io/bad key" },
+		"no noun":                    func(s *Schema[*corev1.ConfigMap]) { s.Noun = "" },
+		"no Labels":                  func(s *Schema[*corev1.ConfigMap]) { s.Labels = nil },
+		"no holder namespace":        func(s *Schema[*corev1.ConfigMap]) { s.HolderNamespaceAnnotation = "" },
+		"no holder name":             func(s *Schema[*corev1.ConfigMap]) { s.HolderNameAnnotation = "" },
+		"no holder uid":              func(s *Schema[*corev1.ConfigMap]) { s.HolderUIDAnnotation = "" },
+		"no key":                     func(s *Schema[*corev1.ConfigMap]) { s.KeyAnnotation = "" },
+		"two equal holder keys":      func(s *Schema[*corev1.ConfigMap]) { s.HolderNameAnnotation = s.HolderUIDAnnotation },
 	}
 
 	for name, breakSchema := range cases {
