@@ -19,6 +19,7 @@ package leaseclaim
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -539,7 +540,7 @@ func TestTakeReportsALeaseItCannotRead(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "test claim Lease")
-	assert.Contains(t, err.Error(), "not readable yet")
+	assert.Contains(t, err.Error(), "went away twice")
 }
 
 // A nil Blocker is the success of Take, and every consumer branches on
@@ -559,18 +560,30 @@ func TestTakeOverLeavesTheLeaseOfAnotherHolder(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
+	schema := testSchema()
 	holder := claimant("alpha", "holder", "uid-holder")
 	other := claimant("beta", "other", "uid-other")
 	c := testClient(t, holder, other)
-	claims := New(testSchema(), c, c, testNamespace, keepEvery)
+	claims := New(schema, c, c, testNamespace, keepEvery)
 	require.NoError(t, taken(claims.Take(ctx, holder, "key")))
+	stale, found := leaseOf(t, c, "key")
+	require.True(t, found)
 
-	require.NoError(t, claims.takeOver(ctx, "key", holderOf(other)))
+	// The other claimant takes the Lease over after the read, so the
+	// preconditions of the delete no longer hold.
+	moved := stale.DeepCopy()
+	moved.Annotations[schema.HolderNamespaceAnnotation] = other.Namespace
+	moved.Annotations[schema.HolderNameAnnotation] = other.Name
+	moved.Annotations[schema.HolderUIDAnnotation] = string(other.UID)
+	require.NoError(t, c.Update(ctx, moved))
 
-	_, found := leaseOf(t, c, "key")
-	assert.True(t, found)
+	require.NoError(t, claims.takeOver(ctx, "key", stale))
 
-	require.NoError(t, claims.takeOver(ctx, "key", holderOf(holder)))
+	lease, found := leaseOf(t, c, "key")
+	require.True(t, found, "the Lease of the other holder survives")
+	assert.True(t, schema.heldBy(lease, other.UID))
+
+	require.NoError(t, claims.takeOver(ctx, "key", lease))
 
 	_, found = leaseOf(t, c, "key")
 	assert.False(t, found)
@@ -581,11 +594,192 @@ func TestTakeOverLeavesTheLeaseOfAnotherHolder(t *testing.T) {
 func TestTakeOverLeavesAMissingLeaseAlone(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	owner := claimant("alpha", "only", "uid-only")
 	c := testClient(t, owner)
 	claims := New(testSchema(), c, c, testNamespace, keepEvery)
+	require.NoError(t, taken(claims.Take(ctx, owner, "key")))
+	lease, found := leaseOf(t, c, "key")
+	require.True(t, found)
+	require.NoError(t, claims.Release(ctx, lease))
 
-	assert.NoError(t, claims.takeOver(context.Background(), "key", holderOf(owner)))
+	assert.NoError(t, claims.takeOver(ctx, "key", lease))
+}
+
+// A holder that the create discovers, after the read found no Lease, is
+// judged like one the read found. A claimant that crashed between its create
+// and its release must not block the key for a pass.
+func TestTakeTakesOverAHolderThatTheCreateDiscovers(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	schema := testSchema()
+	gone := claimant("alpha", "gone", "uid-gone")
+	next := claimant("beta", "next", "uid-next")
+
+	var creates, deletes int
+	c := fake.NewClientBuilder().
+		WithScheme(testScheme(t)).
+		WithObjects(next).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				opts ...client.CreateOption,
+			) error {
+				creates++
+				// The gone claimant wins the first create in the window
+				// between the read and this create, and is deleted right
+				// after.
+				if creates == 1 {
+					if err := c.Create(ctx, schema.NewLease(testNamespace, "key", gone)); err != nil {
+						return err
+					}
+
+					return apierrors.NewAlreadyExists(
+						coordinationv1.Resource("leases"), obj.GetName(),
+					)
+				}
+
+				return c.Create(ctx, obj, opts...)
+			},
+			Delete: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				opts ...client.DeleteOption,
+			) error {
+				deletes++
+
+				return c.Delete(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	blocker, err := New(schema, c, c, testNamespace, keepNone).Take(ctx, next, "key")
+
+	require.NoError(t, err)
+	assert.Nil(t, blocker, "the dead holder is taken over in the same pass")
+	assert.Equal(t, 1, deletes)
+	assert.Equal(t, 2, creates)
+	lease, found := leaseOf(t, c, "key")
+	require.True(t, found)
+	assert.True(t, schema.heldBy(lease, next.UID))
+}
+
+// The rule of TakeUnclaimed runs only while no Lease holds the key, and its
+// error stops the claim before any write.
+func TestTakeUnclaimedRunsTheRuleOnAFreeKeyOnly(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	holder := claimant("alpha", "holder", "uid-holder")
+	waiting := claimant("beta", "waiting", "uid-waiting")
+	c := testClient(t, holder, waiting)
+	claims := New(testSchema(), c, c, testNamespace, keepEvery)
+
+	var runs int
+	count := func(context.Context) error {
+		runs++
+
+		return nil
+	}
+
+	require.NoError(t, taken(claims.TakeUnclaimed(ctx, holder, "key", count)))
+	assert.Equal(t, 1, runs, "a free key runs the rule")
+
+	require.NoError(t, taken(claims.TakeUnclaimed(ctx, holder, "key", count)))
+	assert.Equal(t, 1, runs, "the holder of the key runs no rule")
+
+	blocker, err := claims.TakeUnclaimed(ctx, waiting, "key", count)
+	require.NoError(t, err)
+	require.NotNil(t, blocker)
+	assert.Equal(t, holderOf(holder), blocker.Holder)
+	assert.Equal(t, 1, runs, "a held key runs no rule")
+}
+
+// errNotFirst stands for the order a caller puts in front of the claim.
+var errNotFirst = errors.New("another claimant goes first")
+
+func TestTakeUnclaimedReturnsTheErrorOfTheRule(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	owner := claimant("alpha", "only", "uid-only")
+
+	var creates int
+	c := fake.NewClientBuilder().
+		WithScheme(testScheme(t)).
+		WithObjects(owner).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				opts ...client.CreateOption,
+			) error {
+				creates++
+
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+	claims := New(testSchema(), c, c, testNamespace, keepEvery)
+
+	blocker, err := claims.TakeUnclaimed(ctx, owner, "key", func(context.Context) error {
+		return fmt.Errorf("ordering the claimants: %w", errNotFirst)
+	})
+
+	require.ErrorIs(t, err, errNotFirst)
+	assert.Nil(t, blocker)
+	assert.Zero(t, creates, "a refused order writes nothing")
+}
+
+// OwnerExists answers for a holder by its UID: the resource that stands under
+// the recorded name keeps the claim only while it is the recorded one.
+func TestOwnerExists(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	owner := claimant("alpha", "owner", "uid-owner")
+	c := testClient(t, owner)
+	keeps := OwnerExists(c, testSchema())
+
+	kept, err := keeps(ctx, holderOf(owner))
+	require.NoError(t, err)
+	assert.True(t, kept, "the recorded resource keeps the claim")
+
+	kept, err = keeps(ctx, holderOf(claimant("alpha", "owner", "uid-later")))
+	require.NoError(t, err)
+	assert.False(t, kept, "a later resource of the same name keeps nothing")
+
+	kept, err = keeps(ctx, holderOf(claimant("alpha", "gone", "uid-gone")))
+	require.NoError(t, err)
+	assert.False(t, kept, "a resource that is gone keeps nothing")
+}
+
+func TestOwnerExistsReportsAReadThatFails(t *testing.T) {
+	t.Parallel()
+
+	owner := claimant("alpha", "owner", "uid-owner")
+	c := fake.NewClientBuilder().
+		WithScheme(testScheme(t)).
+		WithObjects(owner).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(
+				context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption,
+			) error {
+				return errors.New("the API server is away")
+			},
+		}).
+		Build()
+
+	kept, err := OwnerExists(c, testSchema())(context.Background(), holderOf(owner))
+
+	require.Error(t, err)
+	assert.False(t, kept)
+	assert.Contains(t, err.Error(), "reading the test claim holder alpha/owner")
 }
 
 // TestHeldReadsTheHolderAnnotations pins that the label selector alone does

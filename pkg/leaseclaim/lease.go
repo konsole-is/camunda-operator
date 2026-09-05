@@ -136,6 +136,14 @@ func (s Schema[T]) HolderOf(lease *coordinationv1.Lease) (Holder, bool) {
 	return holder, true
 }
 
+// heldBy reports whether the annotations of the Lease record the holder with
+// this UID.
+func (s Schema[T]) heldBy(lease *coordinationv1.Lease, uid types.UID) bool {
+	holder, ours := s.HolderOf(lease)
+
+	return ours && holder.UID == uid
+}
+
 // Validate reports whether the Schema names a claim that a claimant reads
 // back. A missing prefix, a missing annotation key and a Labels function that
 // gives no label each write a Lease that no other claimant recognises as a

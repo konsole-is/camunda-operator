@@ -59,6 +59,30 @@ import (
 // stops the claim, so a holder that cannot be read keeps what it holds.
 type HolderKeeps func(ctx context.Context, holder Holder) (bool, error)
 
+// OwnerExists is the HolderKeeps of a claim whose holder keeps it while the
+// resource exists under the recorded UID. It reads the holder through reader,
+// which must read the API server directly, and names the claim of schema in
+// the error of a read that fails.
+func OwnerExists[T any, PT interface {
+	*T
+	client.Object
+}](reader client.Reader, schema Schema[PT]) HolderKeeps {
+	return func(ctx context.Context, holder Holder) (bool, error) {
+		var owner T
+		if err := reader.Get(ctx, holder.NamespacedName, PT(&owner)); err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+
+			return false, fmt.Errorf(
+				"reading the %s holder %s: %w", schema.Noun, holder.NamespacedName, err,
+			)
+		}
+
+		return PT(&owner).GetUID() == holder.UID, nil
+	}
+}
+
 // Unclaimed runs while nothing holds a key, before the claimant creates the
 // Lease. A caller passes a rule that only orders claimants of a free key, and
 // the rule never runs against a Lease that exists. An error stops the claim.
@@ -120,11 +144,9 @@ func New[T client.Object](
 // already. Otherwise it returns what blocks the claim, and the caller reports
 // it: only a failure of the Kubernetes API comes back as an error.
 //
-// A holder that HolderKeeps answers for is taken over: the Lease goes under
-// its UID and its resourceVersion, and the create runs once more.
-//
-// A Lease that a live holder took between the read and the answer reads as
-// blocked for this pass. The caller looks again on its retry interval.
+// A holder that HolderKeeps answers for is taken over in the same call. A
+// Lease that a live holder took between the read and the answer reads as
+// blocked for this pass, and the caller looks again on its retry interval.
 func (c *Claim[T]) Take(ctx context.Context, owner T, key string) (*Blocker, error) {
 	return c.take(ctx, owner, key, nil)
 }
@@ -157,21 +179,18 @@ func (c *Claim[T]) take(
 			}
 		}
 
-		return c.create(ctx, owner, key)
+		lease, err = c.create(ctx, owner, key)
+		if err != nil || lease == nil {
+			return nil, err
+		}
 	}
 
-	holder, ours := c.schema.HolderOf(lease)
-	if ours && holder.UID == owner.GetUID() {
-		return nil, nil
-	}
-
-	blocker := &Blocker{Lease: client.ObjectKeyFromObject(lease)}
-	if !ours {
+	blocker := c.blockerFor(lease, owner)
+	if blocker == nil || blocker.Foreign() {
 		return blocker, nil
 	}
-	blocker.Holder = holder
 
-	keeps, err := c.holderKeeps(ctx, holder)
+	keeps, err := c.holderKeeps(ctx, blocker.Holder)
 	if err != nil {
 		return nil, err
 	}
@@ -179,51 +198,17 @@ func (c *Claim[T]) take(
 		return blocker, nil
 	}
 
-	if err := c.takeOver(ctx, key, holder); err != nil {
+	// One takeover per pass. A claimant that reaches the key between the
+	// delete and the create holds it, and the next pass judges that one.
+	if err := c.takeOver(ctx, key, lease); err != nil {
+		return nil, err
+	}
+	lease, err = c.create(ctx, owner, key)
+	if err != nil || lease == nil {
 		return nil, err
 	}
 
-	return c.create(ctx, owner, key)
-}
-
-// create creates the claim Lease of key for owner. It returns nil when owner
-// holds the claim after the call, and what blocks it otherwise.
-func (c *Claim[T]) create(ctx context.Context, owner T, key string) (*Blocker, error) {
-	// The Lease can go away between the create and the read, when a release
-	// or a takeover races this claimant. The second pass then creates it.
-	for range 2 {
-		err := c.client.Create(ctx, c.schema.NewLease(c.namespace, key, owner))
-		if err == nil {
-			return nil, nil
-		}
-		if !apierrors.IsAlreadyExists(err) {
-			return nil, fmt.Errorf("creating the %s Lease of %q: %w", c.schema.Noun, key, err)
-		}
-
-		lease, found, err := c.Read(ctx, key)
-		if err != nil {
-			return nil, err
-		}
-		if !found {
-			continue
-		}
-
-		holder, ours := c.schema.HolderOf(lease)
-		if ours && holder.UID == owner.GetUID() {
-			return nil, nil
-		}
-
-		blocker := &Blocker{Lease: client.ObjectKeyFromObject(lease)}
-		if ours {
-			blocker.Holder = holder
-		}
-
-		return blocker, nil
-	}
-
-	return nil, fmt.Errorf(
-		"the %s Lease of %q exists but is not readable yet", c.schema.Noun, key,
-	)
+	return c.blockerFor(lease, owner), nil
 }
 
 // Read reads the claim Lease of key live, and reports whether it is there.
@@ -242,34 +227,65 @@ func (c *Claim[T]) Read(ctx context.Context, key string) (*coordinationv1.Lease,
 	return &lease, true, nil
 }
 
-// Holds reports whether the claim Lease of key records owner. A Lease that is
-// gone, and one that records another resource, both answer no. A read that
-// fails is an error and never a no.
-func (c *Claim[T]) Holds(ctx context.Context, key string, owner T) (bool, error) {
-	lease, found, err := c.Read(ctx, key)
-	if err != nil || !found {
-		return false, err
+// create creates the claim Lease of key for owner. It returns nil when owner
+// created it, and the Lease that stands in the way otherwise. The caller
+// judges that Lease: it is one owner holds already as often as one of another
+// claimant.
+func (c *Claim[T]) create(ctx context.Context, owner T, key string) (*coordinationv1.Lease, error) {
+	// The Lease can go away between the create and the read, when a release
+	// or a takeover races this claimant. The second pass then creates it.
+	for range 2 {
+		err := c.client.Create(ctx, c.schema.NewLease(c.namespace, key, owner))
+		if err == nil {
+			return nil, nil
+		}
+		if !apierrors.IsAlreadyExists(err) {
+			return nil, fmt.Errorf("creating the %s Lease of %q: %w", c.schema.Noun, key, err)
+		}
+
+		lease, found, err := c.Read(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			return lease, nil
+		}
 	}
 
-	recorded, ours := c.schema.HolderOf(lease)
-
-	return ours && recorded.UID == owner.GetUID(), nil
+	return nil, fmt.Errorf(
+		"the %s Lease of %q went away twice during the claim: a release or a takeover "+
+			"races this claimant",
+		c.schema.Noun, key,
+	)
 }
 
-// takeOver deletes the claim Lease of key while its annotations still name
-// holder, so the claimant can create it again. A Lease that is gone, and one
-// that another resource holds, is left alone.
-func (c *Claim[T]) takeOver(ctx context.Context, key string, holder Holder) error {
-	lease, found, err := c.Read(ctx, key)
-	if err != nil || !found {
-		return err
-	}
-
-	if recorded, ours := c.schema.HolderOf(lease); !ours || recorded.UID != holder.UID {
+// blockerFor judges lease for owner. It returns nil when lease records owner,
+// and what blocks the claim otherwise.
+func (c *Claim[T]) blockerFor(lease *coordinationv1.Lease, owner T) *Blocker {
+	holder, ours := c.schema.HolderOf(lease)
+	if ours && holder.UID == owner.GetUID() {
 		return nil
 	}
 
-	err = c.Release(ctx, lease)
+	blocker := &Blocker{Lease: client.ObjectKeyFromObject(lease)}
+	if ours {
+		blocker.Holder = holder
+	}
+
+	return blocker
+}
+
+// takeOver deletes lease, the claim Lease of key that its caller read and
+// found held by a holder that keeps nothing, so the claimant can create it
+// again. A Lease that is
+// gone, and one that another holder took in between, is left alone.
+//
+// The delete goes under the resourceVersion of the read, with no read in
+// between. A write that changes nothing but the resourceVersion, while the
+// holder is being judged, refuses the delete for this pass, and the next pass
+// takes the Lease over.
+func (c *Claim[T]) takeOver(ctx context.Context, key string, lease *coordinationv1.Lease) error {
+	err := c.Release(ctx, lease)
 	if err == nil || !apierrors.IsConflict(err) {
 		return err
 	}
@@ -278,18 +294,16 @@ func (c *Claim[T]) takeOver(ctx context.Context, key string, holder Holder) erro
 	// change of the holder decides the claim. Any other write leaves the
 	// holder that keeps nothing in place, and reporting that as a takeover
 	// names a dead holder to the caller as a live one.
+	holder, _ := c.schema.HolderOf(lease)
 	current, found, readErr := c.Read(ctx, key)
 	if readErr != nil {
 		return readErr
 	}
-	if !found {
+	if !found || !c.schema.heldBy(current, holder.UID) {
 		return nil
 	}
-	if recorded, ours := c.schema.HolderOf(current); ours && recorded.UID == holder.UID {
-		return err
-	}
 
-	return nil
+	return err
 }
 
 // Release deletes lease under the UID and the resourceVersion that it was
@@ -311,6 +325,18 @@ func (c *Claim[T]) Release(ctx context.Context, lease *coordinationv1.Lease) err
 	}
 
 	return nil
+}
+
+// Holds reports whether the claim Lease of key records owner. A Lease that is
+// gone, and one that records another resource, both answer no. A read that
+// fails is an error and never a no.
+func (c *Claim[T]) Holds(ctx context.Context, key string, owner T) (bool, error) {
+	lease, found, err := c.Read(ctx, key)
+	if err != nil || !found {
+		return false, err
+	}
+
+	return c.schema.heldBy(lease, owner.GetUID()), nil
 }
 
 // Held returns every claim Lease of the namespace that records the UID of
@@ -336,7 +362,7 @@ func (c *Claim[T]) Held(ctx context.Context, owner T) ([]coordinationv1.Lease, e
 
 	var held []coordinationv1.Lease
 	for i := range leases.Items {
-		if recorded, ours := c.schema.HolderOf(&leases.Items[i]); ours && recorded.UID == holder.UID {
+		if c.schema.heldBy(&leases.Items[i], holder.UID) {
 			held = append(held, leases.Items[i])
 		}
 	}
