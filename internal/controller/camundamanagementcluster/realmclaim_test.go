@@ -106,7 +106,8 @@ var _ = Describe("CamundaManagementCluster controller and the claim on the realm
 		ghost := &v1.CamundaManagementCluster{ObjectMeta: metav1.ObjectMeta{
 			Namespace: "gone-ns", Name: "gone", UID: "gone-uid",
 		}}
-		stale := components.NewRealmClaimLease(testClaimNamespace, externalRealmTarget(), ghost)
+		stale := components.RealmClaimSchema().
+			NewLease(testClaimNamespace, components.RealmIdentity(externalRealmTarget()), ghost)
 		Expect(k8sClient.Create(ctx, stale)).To(Succeed())
 		DeferCleanup(func() {
 			_ = client.IgnoreNotFound(k8sClient.Delete(ctx, stale))
@@ -466,10 +467,10 @@ func TestReleaseUnusedRealmsKeepsTheRealmOfTheKeycloakMode(t *testing.T) {
 	target := components.RealmTarget(provider)
 	require.NotNil(t, target)
 
-	lease := components.NewRealmClaimLease(testClaimNamespace, *target, mc)
+	lease := components.RealmClaimSchema().NewLease(testClaimNamespace, components.RealmIdentity(*target), mc)
 	r, _ := fakeReconciler(t, mc, lease)
 
-	held, err := r.releaseUnusedRealms(context.Background(), mc)
+	held, err := r.releaseUnusedRealms(context.Background(), r.realmClaims(), mc)
 
 	require.NoError(t, err)
 	assert.False(t, held)
@@ -546,7 +547,7 @@ func fakeRealmTarget(keycloak *fakeKeycloak) v1.KeycloakRealmTarget {
 func realmLeaseKey(target v1.KeycloakRealmTarget) client.ObjectKey {
 	return client.ObjectKey{
 		Namespace: testClaimNamespace,
-		Name:      components.RealmClaimLeaseName(components.RealmIdentity(target)),
+		Name:      components.RealmClaimSchema().LeaseName(components.RealmIdentity(target)),
 	}
 }
 
@@ -559,7 +560,7 @@ func expectRealmClaimHolder(target v1.KeycloakRealmTarget, mc *v1.CamundaManagem
 		var lease coordinationv1.Lease
 		g.Expect(k8sClient.Get(ctx, realmLeaseKey(target), &lease)).To(Succeed())
 
-		holder, ours := components.RealmClaimHolderOf(&lease)
+		holder, ours := components.RealmClaimSchema().HolderOf(&lease)
 		g.Expect(ours).To(BeTrue())
 		g.Expect(holder.Namespace).To(Equal(mc.Namespace))
 		g.Expect(holder.Name).To(Equal(mc.Name))
@@ -577,7 +578,7 @@ func TestIdentityRealmsReadsADeploymentOfAnotherOwner(t *testing.T) {
 	identity := ownedIdentity(mc)
 	identity.OwnerReferences = nil
 	pointIdentityAtRealm(identity, finalizerRealm)
-	lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
+	lease := components.RealmClaimSchema().NewLease(testClaimNamespace, components.RealmIdentity(finalizerRealm), mc)
 	r, _ := fakeReconciler(t, mc, identity, lease)
 
 	realms, unknown, err := r.identityRealms(context.Background(), mc)
@@ -587,7 +588,7 @@ func TestIdentityRealmsReadsADeploymentOfAnotherOwner(t *testing.T) {
 	require.Len(t, realms, 1)
 	assert.True(t, components.SameRealm(finalizerRealm, realms[0]))
 
-	held, err := r.releaseUnusedRealms(context.Background(), mc)
+	held, err := r.releaseUnusedRealms(context.Background(), r.realmClaims(), mc)
 
 	require.NoError(t, err)
 	assert.True(t, held, "the workload holds the claim of a realm the spec left")

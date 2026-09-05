@@ -251,7 +251,7 @@ func clearProbe(server *v1.DatabaseServerConfig) {
 func holdClaim(database *v1.Database, identifier string) {
 	GinkgoHelper()
 	key := databasecomponents.CollisionKey(identifier, database.Spec.DatabaseName)
-	lease := databasecomponents.NewClaimLease(testClaimNamespace, key, database)
+	lease := databasecomponents.ClaimSchema().NewLease(testClaimNamespace, key, database)
 	Expect(k8sClient.Create(ctx, lease)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, lease) })
 }
@@ -264,7 +264,7 @@ func releaseClaim(database *v1.Database, identifier string) {
 	Expect(k8sClient.Delete(ctx, &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: testClaimNamespace,
-			Name:      databasecomponents.ClaimLeaseName(key),
+			Name:      databasecomponents.ClaimSchema().LeaseName(key),
 		},
 	})).To(Succeed())
 }

@@ -152,7 +152,7 @@ func TestWithdrawalRealmsKeepTheRecordOfAnotherRealm(t *testing.T) {
 func TestWithdrawalRealmsFallBackToTheSpec(t *testing.T) {
 	mc := externalKeycloakCluster("https://kc.example.com/auth", "keycloak-admin")
 	target := v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: "camunda-platform"}
-	lease := components.NewRealmClaimLease(testClaimNamespace, target, mc)
+	lease := components.RealmClaimSchema().NewLease(testClaimNamespace, components.RealmIdentity(target), mc)
 	r, _ := fakeReconciler(t, mc, lease)
 
 	realms, err := r.withdrawalRealms(context.Background(), mc)
@@ -200,7 +200,7 @@ func TestWithdrawalRealmsOfTheKeycloakModeNeedNoClaim(t *testing.T) {
 func TestWithdrawalRealmsFailWhenTheClaimCannotBeRead(t *testing.T) {
 	mc := externalKeycloakCluster("https://kc.example.com/auth", "keycloak-admin")
 	target := v1.KeycloakRealmTarget{URL: "https://kc.example.com/auth", Realm: "camunda-platform"}
-	lease := components.NewRealmClaimLease(testClaimNamespace, target, mc)
+	lease := components.RealmClaimSchema().NewLease(testClaimNamespace, components.RealmIdentity(target), mc)
 	r, log := fakeReconciler(t, mc, lease)
 	log.getFails = lease.Name
 
@@ -243,7 +243,8 @@ func TestFinalizeStopsIdentityBeforeTheRealm(t *testing.T) {
 		mc := finalizingCluster()
 		identity := ownedIdentity(mc)
 		set := ownedIdentitySet(mc, identity)
-		lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
+		lease := components.RealmClaimSchema().
+			NewLease(testClaimNamespace, components.RealmIdentity(finalizerRealm), mc)
 		r, deletes := fakeReconciler(t, mc, identity, set, lease)
 
 		require.NoError(t, r.finalize(context.Background(), mc))
@@ -265,7 +266,8 @@ func TestFinalizeStopsIdentityBeforeTheRealm(t *testing.T) {
 		identity := ownedIdentity(mc)
 		set := ownedIdentitySet(mc, identity)
 		identity.OwnerReferences = nil
-		lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
+		lease := components.RealmClaimSchema().
+			NewLease(testClaimNamespace, components.RealmIdentity(finalizerRealm), mc)
 		r, _ := fakeReconciler(t, mc, identity, set, lease)
 
 		require.Error(t, r.finalize(context.Background(), mc))
@@ -282,7 +284,8 @@ func TestFinalizeStopsIdentityBeforeTheRealm(t *testing.T) {
 	t.Run("a pass that stopped after the Deployment still stops the ReplicaSets", func(t *testing.T) {
 		mc := finalizingCluster()
 		set := ownedIdentitySet(mc, ownedIdentity(mc))
-		lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
+		lease := components.RealmClaimSchema().
+			NewLease(testClaimNamespace, components.RealmIdentity(finalizerRealm), mc)
 		r, deletes := fakeReconciler(t, mc, set, lease)
 
 		require.NoError(t, r.finalize(context.Background(), mc))
@@ -297,7 +300,8 @@ func TestFinalizeStopsIdentityBeforeTheRealm(t *testing.T) {
 	t.Run("a replaced Deployment keeps the realm claim", func(t *testing.T) {
 		mc := finalizingCluster()
 		identity := ownedIdentity(mc)
-		lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
+		lease := components.RealmClaimSchema().
+			NewLease(testClaimNamespace, components.RealmIdentity(finalizerRealm), mc)
 		r, deletes := fakeReconciler(t, mc, identity, lease)
 		deletes.conflictOn = identity.Name
 
@@ -325,7 +329,7 @@ func TestFinalizeStopsWhenTheWithdrawalCannotReadKubernetes(t *testing.T) {
 		},
 	}
 	mc.Status.CallbackRealm = &recorded
-	lease := components.NewRealmClaimLease(testClaimNamespace, recorded, mc)
+	lease := components.RealmClaimSchema().NewLease(testClaimNamespace, components.RealmIdentity(recorded), mc)
 	r, deletes := fakeReconciler(t, mc, lease)
 	deletes.getFails = recorded.AdminCredentialsSecretRef.Name
 
@@ -345,7 +349,8 @@ func TestFinalizeStopsWhenTheWithdrawalCannotReadKubernetes(t *testing.T) {
 func TestFinalizeClearsTheRecordBeforeTheRealmClaim(t *testing.T) {
 	t.Run("the claim stays while the record is still on the API server", func(t *testing.T) {
 		mc := recordingCluster()
-		lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
+		lease := components.RealmClaimSchema().
+			NewLease(testClaimNamespace, components.RealmIdentity(finalizerRealm), mc)
 		r, deletes := fakeReconciler(t, mc, lease)
 		deletes.statusFails = mc.Name
 
@@ -357,7 +362,8 @@ func TestFinalizeClearsTheRecordBeforeTheRealmClaim(t *testing.T) {
 
 	t.Run("a pass that runs again after the release withdraws from nothing", func(t *testing.T) {
 		mc := recordingCluster()
-		lease := components.NewRealmClaimLease(testClaimNamespace, finalizerRealm, mc)
+		lease := components.RealmClaimSchema().
+			NewLease(testClaimNamespace, components.RealmIdentity(finalizerRealm), mc)
 		r, deletes := fakeReconciler(t, mc, lease)
 		deletes.updateFails = mc.Name
 

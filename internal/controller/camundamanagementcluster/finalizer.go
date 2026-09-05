@@ -114,11 +114,12 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	// The realm claim goes last of all. Once it is gone a plane parked on the
 	// realm claims it and runs its own Management Identity against clients
 	// this withdrawal may still be writing.
-	leases, err := r.realmClaimLeases(ctx, mc)
+	claims := r.realmClaims()
+	leases, err := claims.Held(ctx, mc)
 	if err != nil {
 		return err
 	}
-	if _, err := r.releaseRealmClaims(ctx, leases, nil, nil, false); err != nil {
+	if _, err := r.releaseRealmClaims(ctx, claims, leases, nil, nil, false); err != nil {
 		return err
 	}
 	r.EventRecorder.Eventf(
@@ -454,13 +455,7 @@ func (r *Reconciler) holdsRealmClaim(
 	mc *v1.CamundaManagementCluster,
 	target v1.KeycloakRealmTarget,
 ) (bool, error) {
-	lease, found, err := r.readRealmClaim(ctx, target)
-	if err != nil || !found {
-		return false, err
-	}
-	holder, ours := components.RealmClaimHolderOf(lease)
-
-	return ours && holder == realmClaimSelf(mc), nil
+	return r.realmClaims().Holds(ctx, components.RealmIdentity(target), mc)
 }
 
 // clearCallbackRealm takes the record of the realm off the API server. It
