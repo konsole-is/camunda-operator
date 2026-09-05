@@ -168,7 +168,8 @@ func newOwner[T client.Object]() (T, error) {
 // Take takes the claim on key for owner. It returns nil when owner holds the
 // claim after the call, which covers the Lease it created and the one it held
 // already. Otherwise it returns what blocks the claim, and the caller reports
-// it: only a failure of the Kubernetes API comes back as an error. A caller
+// it. An error is a failure of the Kubernetes API, or the error of the
+// HolderKeeps that judged a holder, which then keeps what it holds. A caller
 // that orders the claimants of a free key reads TakeUnclaimed, whose rule
 // adds one more source of errors.
 //
