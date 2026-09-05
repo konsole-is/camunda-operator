@@ -9,8 +9,10 @@ The manifests use the names of
 [Management plane](https://konsole-is.github.io/camunda-operator/guides/management-plane/#step-3c-your-own-oidc-provider).
 
 The `DatabaseServer` inherits its sizing from the preset `standard` in
-[`config/example/presets`](../../presets). `CamundaManagementCluster` has no
-preset kind, so every value on it is its own.
+[`config/example/presets`](../../presets) and its PostgreSQL version from the
+release `camunda-8-9` in [`config/example/releases`](../../releases).
+`CamundaManagementCluster` has no preset kind, so every value on it is its
+own.
 
 ## Before you start
 
@@ -40,26 +42,27 @@ preset kind, so every value on it is its own.
 
 ## Apply
 
-One command applies the whole inventory, presets included:
+One command applies the whole inventory, presets and release included:
 
 ```sh
 kubectl apply -k config/example/camunda-management-cluster/oidc
 ```
 
-To see each resource become ready, apply the presets once, then the files in
-their number order:
+To see each resource become ready, apply the shared kinds once, then the files
+in their number order:
 
-1. The shared presets, once per Kubernetes cluster:
+1. The shared presets and the shared release, once per Kubernetes cluster:
 
     ```sh
     kubectl apply -k config/example/presets
+    kubectl apply -k config/example/releases
     ```
 
 2. `01-namespace.yaml` creates the namespace `my-management-ns`.
 3. `02-secrets.yaml` creates the four client Secrets, the SMTP Secret, and the
    license Secret.
 4. `03-database-server.yaml` creates the `DatabaseServer` `my-db`, which
-   inherits the preset `standard`. Wait for it:
+   inherits the preset `standard` and the release `camunda-8-9`. Wait for it:
 
     ```sh
     kubectl wait databaseserver/my-db -n my-management-ns \
@@ -155,11 +158,13 @@ kubectl delete camundaplatformconfig/my-platform-config
 kubectl delete namespace my-management-ns
 ```
 
-The presets are shared, so leave them unless no inventory uses them any more.
+The presets and the release are shared, so leave them unless no inventory uses
+them any more.
 
 ## Related
 
 - [Presets](https://konsole-is.github.io/camunda-operator/guides/presets/)
+- [CamundaRelease](https://konsole-is.github.io/camunda-operator/crds/camundarelease/)
 - [Management plane](https://konsole-is.github.io/camunda-operator/guides/management-plane/#step-3c-your-own-oidc-provider)
 - [The clients of the management plane](https://konsole-is.github.io/camunda-operator/crds/camundaplatformconfig/#the-clients-of-the-management-plane)
 - [CamundaManagementCluster](https://konsole-is.github.io/camunda-operator/crds/camundamanagementcluster/)

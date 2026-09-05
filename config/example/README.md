@@ -8,11 +8,11 @@ resources already made.
 | Inventory | What it stands up | Shape |
 | --- | --- | --- |
 | [`presets`](presets) | The three preset kinds, shared by the inventories below. | Applied once |
-| [`releases`](releases) | One `CamundaRelease`, named by the clusters of `camunda-cluster/rdbms` and `camunda-management-cluster/keycloak`. | Applied once |
+| [`releases`](releases) | One `CamundaRelease`, named by the clusters and the storage of the three inventories below it. | Applied once |
 | [`camunda-cluster/elasticsearch`](camunda-cluster/elasticsearch) | One orchestration cluster with Elasticsearch as its secondary storage. | Every field inline |
 | [`camunda-cluster/rdbms`](camunda-cluster/rdbms) | One orchestration cluster with PostgreSQL as its secondary storage, run by CloudNativePG. | Presets and release |
 | [`camunda-management-cluster/keycloak`](camunda-management-cluster/keycloak) | A management plane whose Keycloak the operator runs, one cluster it serves, and Optimize. | Presets and release |
-| [`camunda-management-cluster/oidc`](camunda-management-cluster/oidc) | A management plane against an identity provider you run. | Presets |
+| [`camunda-management-cluster/oidc`](camunda-management-cluster/oidc) | A management plane against an identity provider you run. | Presets and release |
 
 Each directory carries a README with the apply order and a link to the guide
 it condenses.
@@ -20,10 +20,11 @@ it condenses.
 ## Why the presets and the release come first
 
 A preset is the shape of a resource: the sizing, the topology, the resources.
-A release is what runs on that shape: the Camunda version and the connectors
-version. Both kinds are cluster scoped, and both are written once. The
-inventories share the one copy in [`presets`](presets) and the one copy in
-[`releases`](releases), so a `CamundaCluster` shrinks to its references:
+A release is what runs on that shape: the Camunda version, the connectors
+version, the Elasticsearch version, and the PostgreSQL version. Both kinds are
+cluster scoped, and both are written once. The inventories share the one copy
+in [`presets`](presets) and the one copy in [`releases`](releases), so a
+`CamundaCluster` shrinks to its references:
 
 ```yaml
 spec:
@@ -92,15 +93,14 @@ so a reader sees both and can compare its `CamundaCluster` with the one in
 Every version here is one that the end-to-end suite of this repository runs,
 which `test/e2e/matrix/8.9.env` pins. Keep the two in step when you raise one.
 
-The Camunda version of an orchestration cluster is in the shared release
-[`releases/camunda-release.yaml`](releases/camunda-release.yaml). The
-`CamundaCluster` of `camunda-cluster/rdbms` and the one of
-`camunda-management-cluster/keycloak` name it, and one edit to that file rolls
-both. A cluster that must move before the fleet does sets `spec.version`,
-which wins over the release. The `CamundaCluster` of
-`camunda-cluster/elasticsearch` names no release and pins its version inline.
+The Camunda, Elasticsearch, and PostgreSQL versions are in the shared release
+[`releases/camunda-release.yaml`](releases/camunda-release.yaml). Every
+`CamundaCluster`, `ElasticsearchCluster`, and `DatabaseServer` that names it
+takes them, and one edit to that file rolls all of them. An instance that must
+move before the fleet does sets `spec.version`, which wins over the release.
+The `ElasticsearchCluster` and the `CamundaCluster` of
+`camunda-cluster/elasticsearch` name no release and pin their versions inline.
 
-The other versions stay on the instance. `ElasticsearchCluster`,
-`DatabaseServer`, and `CamundaOptimize` pin their own. Management Identity,
-Console, and Web Modeler each carry a patch line of their own on the
-`CamundaManagementCluster`.
+The other versions stay on the instance. `CamundaOptimize` pins its own.
+Management Identity, Console, and Web Modeler each carry a patch line of their
+own on the `CamundaManagementCluster`.

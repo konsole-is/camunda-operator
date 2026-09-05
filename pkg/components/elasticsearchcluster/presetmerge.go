@@ -24,28 +24,38 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// MergePreset resolves an ElasticsearchCluster spec against its preset
-// baseline. A field set inline overrides the value of the preset for that
-// field wholesale. A field left unset inherits from the preset. An empty list
-// or map (extraEnv, extraEnvFrom, podLabels, podAnnotations) counts as unset:
-// the API drops an empty value on the way in, so the merge cannot see it. To
-// drop a list that the preset provides, override it with the list you want,
-// or reference a preset without it. The scheduling block is replaced
-// entirely, never merged field by field, and so is the monitoring block, and
-// so is the secureSettings list. A preset may carry snapshotStorageRef: one
-// bucket serves a fleet, because every cluster writes under its own base path.
-// The instance-bound fields (presetRef, secondaryStorageConfig, suspend) always
-// come from spec, and a preset cannot set them. A nil preset returns spec unchanged.
-// The result shares no memory with preset, so callers can mutate it freely.
-func MergePreset(
+// MergeSpec resolves an ElasticsearchCluster spec against its baselines: the
+// preset, then the release over it, then spec over both. A field set by a
+// higher layer overrides the value of the lower one for that field wholesale.
+// A field left unset inherits. An empty list or map (extraEnv, extraEnvFrom,
+// podLabels, podAnnotations) counts as unset: the API drops an empty value on
+// the way in, so the merge cannot see it. To drop a list that the preset
+// provides, override it with the list you want, or reference a preset without
+// it. The scheduling block is replaced entirely, never merged field by field,
+// and so is the monitoring block, and so is the secureSettings list. A preset
+// can carry snapshotStorageRef: one bucket serves a fleet, because every
+// cluster writes under its own base path. A release carries the version alone,
+// so it takes part in the version rule alone. The instance-bound fields
+// (presetRef, releaseRef, secondaryStorageConfig, suspend) always come from
+// spec, and a preset cannot set them. A nil preset or release is an empty
+// layer. The result shares no memory with preset or release, so callers can
+// mutate it freely.
+func MergeSpec(
 	spec v1.ElasticsearchClusterSpec,
 	preset *v1.ElasticsearchClusterPresetSpec,
+	release *v1.CamundaReleaseSpec,
 ) v1.ElasticsearchClusterSpec {
-	if preset == nil {
+	if preset == nil && release == nil {
 		return spec
 	}
 
-	merged := *preset.Cluster.DeepCopy()
+	var merged v1.ElasticsearchClusterSpec
+	if preset != nil {
+		merged = *preset.Cluster.DeepCopy()
+	}
+	if release != nil && release.Elasticsearch != nil && release.Elasticsearch.Version != "" {
+		merged.Version = release.Elasticsearch.Version
+	}
 
 	if spec.Version != "" {
 		merged.Version = spec.Version
@@ -94,17 +104,19 @@ func MergePreset(
 	}
 
 	merged.PresetRef = spec.PresetRef
+	merged.ReleaseRef = spec.ReleaseRef
 	merged.SecondaryStorageConfig = spec.SecondaryStorageConfig
 	merged.Suspend = spec.Suspend
 
 	return merged
 }
 
-// ValidateMerged checks the preset-merged spec for the cross-resource rules
-// that admission cannot enforce. Version, replicas, and storageSize must be
-// present. The version must meet the Camunda 8.9 floor of Elasticsearch 8.19
-// or 9.2, and any later major is above the floor. The error names every
-// missing field and, when set, the rejected version.
+// ValidateMerged checks the merged spec for the cross-resource rules that
+// admission cannot enforce, because a preset or a release can provide the
+// values. Version, replicas, and storageSize must be present. The version must
+// meet the Camunda 8.9 floor of Elasticsearch 8.19 or 9.2, and any later major
+// is above the floor. The error names every missing field and, when set, the
+// rejected version.
 func ValidateMerged(spec v1.ElasticsearchClusterSpec) error {
 	var problems []string
 
@@ -119,7 +131,7 @@ func ValidateMerged(spec v1.ElasticsearchClusterSpec) error {
 		missing = append(missing, "storageSize")
 	}
 	if len(missing) > 0 {
-		problems = append(problems, "missing required fields after preset merge: "+strings.Join(missing, ", "))
+		problems = append(problems, "missing required fields: "+strings.Join(missing, ", "))
 	}
 
 	if spec.Version != "" {

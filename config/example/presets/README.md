@@ -36,13 +36,12 @@ copy.
   one resource. `CamundaClusterPreset` rejects `platformConfigRef`,
   `presetRef`, `releaseRef`, `externalUrl`, `serviceAccount`, `storageRef`,
   `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, and
-  `pause`. The other two reject `presetRef`, `suspend`, and the name of the
-  contract they publish.
-- **The version of a cluster.** `CamundaClusterPreset` rejects `version` and
-  `connectors.version`. Both belong to a `CamundaRelease`, which
-  [`config/example/releases`](../releases) holds. The
-  `ElasticsearchClusterPreset` and the `DatabaseServerPreset` still accept a
-  version, and these two set none, so each instance pins its own.
+  `pause`. The other two reject `presetRef`, `releaseRef`, `suspend`, and the
+  name of the contract they publish.
+- **A version.** All three preset kinds reject one. `CamundaClusterPreset`
+  rejects `version` and `connectors.version`, and the other two reject
+  `version`. Every version belongs to a `CamundaRelease`, which
+  [`config/example/releases`](../releases) holds.
 
 ## Change the fleet
 
@@ -53,7 +52,7 @@ its next reconcile. To roll out in steps, create a second preset, for example
 ## Related
 
 - [Presets](https://konsole-is.github.io/camunda-operator/guides/presets/)
-- [Shared release](../releases): the versions the clusters of these inventories run.
+- [Shared release](../releases): the versions the resources of these inventories run.
 - [CamundaClusterPreset](https://konsole-is.github.io/camunda-operator/crds/camundaclusterpreset/)
 - [ElasticsearchClusterPreset](https://konsole-is.github.io/camunda-operator/crds/elasticsearchclusterpreset/)
 - [DatabaseServerPreset](https://konsole-is.github.io/camunda-operator/crds/databaseserverpreset/)

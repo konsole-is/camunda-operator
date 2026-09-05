@@ -123,15 +123,21 @@ type DatabaseServerArchiveSpec struct {
 // DatabaseServerSpec defines the desired state of DatabaseServer.
 //
 // The type doubles as the configuration baseline of a DatabaseServerPreset,
-// so the field that is required on a DatabaseServer — databaseServerConfig —
-// is optional at the schema level here and enforced on the DatabaseServer
-// usage instead.
+// so the field that is required on a DatabaseServer, databaseServerConfig, is
+// optional at the schema level here and enforced on the DatabaseServer usage
+// instead. The instance-bound fields are server-only and rejected in a preset,
+// and so is the version, which belongs to a CamundaRelease.
 type DatabaseServerSpec struct {
 	// PresetRef names a cluster-scoped DatabaseServerPreset used as the
 	// configuration baseline; fields set inline override the preset's value
 	// for that field wholesale.
 	// +optional
 	PresetRef string `json:"presetRef,omitempty"`
+	// ReleaseRef names a cluster-scoped CamundaRelease that provides the
+	// PostgreSQL major version. It merges over the preset and under this spec.
+	// Forbidden in a preset.
+	// +optional
+	ReleaseRef string `json:"releaseRef,omitempty"`
 	// PlatformConfigRef names a cluster-scoped CamundaPlatformConfig. Only
 	// its image settings are read: spec.images.postgres decides where the
 	// PostgreSQL image is pulled from, which is what an air-gapped cluster
@@ -142,13 +148,14 @@ type DatabaseServerSpec struct {
 	PlatformConfigRef string `json:"platformConfigRef,omitempty"`
 	// Version is the PostgreSQL major version to run, as a bare number such
 	// as "17". It selects the image tag. Camunda 8.9 supports PostgreSQL 14
-	// and later; the floor is enforced by the controller on the
-	// preset-merged result. Required unless the resolved preset provides it.
+	// and later. The controller enforces that floor on the merged result.
+	// Required unless the resolved release provides it, and forbidden in a
+	// preset.
 	//
 	// The major of a running server cannot change. A value that names another
 	// major, higher or lower, is refused on the Ready condition with reason
 	// VersionChangeRefused, and the server keeps running the major it has. A
-	// preset can raise it the same way and is refused the same way. To run
+	// release can raise it the same way and is refused the same way. To run
 	// another major, create a server on it and move the data over.
 	// +kubebuilder:validation:Pattern=`^\d+$`
 	// +optional
@@ -491,6 +498,14 @@ type DatabaseServerStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Version is the PostgreSQL major version that the server runs, as a bare
+	// number such as "17". It is the version of the merged spec, so it names
+	// what runs whether the release, the preset, or the server supplies it,
+	// and it stays on the major of the data directory while a version change
+	// is refused. It is empty until the first reconcile resolves the
+	// references of the server.
+	// +optional
+	Version string `json:"version,omitempty"`
 	// Cluster is the CloudNativePG cluster that the published contract points
 	// at. It is the name of the server until a recovery replaces it.
 	// +optional
@@ -542,7 +557,7 @@ type DatabaseServerStatus struct {
 // +kubebuilder:resource:scope=Namespaced
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
-// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.version`
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.version`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:validation:XValidation:rule="oldSelf.hasValue() || (self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$') && self.metadata.name.size() <= 46)",message="metadata.name must be a DNS-1035 label of at most 46 characters, because it names the CloudNativePG cluster of the server",optionalOldSelf=true
 

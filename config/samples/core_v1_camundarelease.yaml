@@ -9,6 +9,10 @@ spec:
   version: "8.9.0"
   connectors:
     version: "8.9.7"
+  elasticsearch:
+    version: "9.2.4"
+  databaseServer:
+    version: "17"
   extraEnv:
     - name: CAMUNDA_FEATURE_FLAG
       value: "true"

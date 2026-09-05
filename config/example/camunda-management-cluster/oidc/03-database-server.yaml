@@ -2,7 +2,8 @@
 # DatabaseServerConfig my-db-server from it. This mode runs no Keycloak, so
 # only Management Identity and Web Modeler need a database.
 #
-# presetRef names the shared DatabaseServerPreset standard.
+# presetRef names the shared DatabaseServerPreset standard, and releaseRef the
+# shared CamundaRelease camunda-8-9, which carries the PostgreSQL version.
 apiVersion: core.camunda.io/v1
 kind: DatabaseServer
 metadata:
@@ -10,5 +11,5 @@ metadata:
   namespace: my-management-ns
 spec:
   presetRef: standard
-  version: "17"
+  releaseRef: camunda-8-9
   databaseServerConfig: my-db-server

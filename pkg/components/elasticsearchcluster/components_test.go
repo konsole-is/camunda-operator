@@ -61,25 +61,33 @@ func goldenScheme(t *testing.T) *runtime.Scheme {
 }
 
 // goldenMinimalElasticsearchCluster is the minimal example of the CRD doc
-// with a deterministic name, resolved against the "standard" preset of the
-// doc.
-func goldenMinimalElasticsearchCluster() (*v1.ElasticsearchCluster, *v1.ElasticsearchClusterPresetSpec) {
+// with a deterministic name, resolved against the "standard" preset and the
+// "camunda-8-9" release of the doc.
+func goldenMinimalElasticsearchCluster() (
+	*v1.ElasticsearchCluster,
+	*v1.ElasticsearchClusterPresetSpec,
+	*v1.CamundaReleaseSpec,
+) {
 	cluster := &v1.ElasticsearchCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-es", Namespace: "my-cluster-ns"},
 		Spec: v1.ElasticsearchClusterSpec{
 			PresetRef:              "standard",
+			ReleaseRef:             "camunda-8-9",
 			SecondaryStorageConfig: "my-storage-config",
 		},
 	}
 	preset := &v1.ElasticsearchClusterPresetSpec{
 		Cluster: v1.ElasticsearchClusterSpec{
-			Version:     "9.2.4",
 			Replicas:    new(int32(3)),
 			StorageSize: new(resource.MustParse("64Gi")),
 		},
 	}
+	release := &v1.CamundaReleaseSpec{
+		Version:       "8.9.18",
+		Elasticsearch: &v1.ReleaseElasticsearchSpec{Version: "9.2.4"},
+	}
 
-	return cluster, preset
+	return cluster, preset, release
 }
 
 // goldenRealisticElasticsearchCluster is the realistic example of the CRD doc
@@ -196,9 +204,9 @@ func assertElasticsearchClusterGoldens(
 func TestElasticsearchClusterGoldenMinimal(t *testing.T) {
 	t.Parallel()
 
-	cluster, preset := goldenMinimalElasticsearchCluster()
+	cluster, preset, release := goldenMinimalElasticsearchCluster()
 
-	assertElasticsearchClusterGoldens(t, "minimal", cluster, MergePreset(cluster.Spec, preset), nil)
+	assertElasticsearchClusterGoldens(t, "minimal", cluster, MergeSpec(cluster.Spec, preset, release), nil)
 }
 
 // The 8.19 line is the other supported version family. Its rendering is
@@ -206,10 +214,10 @@ func TestElasticsearchClusterGoldenMinimal(t *testing.T) {
 func TestElasticsearchClusterGoldenMinimalES8(t *testing.T) {
 	t.Parallel()
 
-	cluster, preset := goldenMinimalElasticsearchCluster()
-	preset.Cluster.Version = "8.19.0"
+	cluster, preset, release := goldenMinimalElasticsearchCluster()
+	release.Elasticsearch.Version = "8.19.0"
 
-	assertElasticsearchClusterGoldens(t, "minimal-es8", cluster, MergePreset(cluster.Spec, preset), nil)
+	assertElasticsearchClusterGoldens(t, "minimal-es8", cluster, MergeSpec(cluster.Spec, preset, release), nil)
 }
 
 func TestElasticsearchClusterGoldenRealistic(t *testing.T) {
@@ -217,7 +225,7 @@ func TestElasticsearchClusterGoldenRealistic(t *testing.T) {
 
 	cluster := goldenRealisticElasticsearchCluster()
 
-	assertElasticsearchClusterGoldens(t, "realistic", cluster, MergePreset(cluster.Spec, nil), nil)
+	assertElasticsearchClusterGoldens(t, "realistic", cluster, MergeSpec(cluster.Spec, nil, nil), nil)
 }
 
 // The suspended variant must render the same desired content as its
@@ -228,10 +236,10 @@ func TestElasticsearchClusterGoldenRealistic(t *testing.T) {
 func TestElasticsearchClusterGoldenSuspended(t *testing.T) {
 	t.Parallel()
 
-	cluster, preset := goldenMinimalElasticsearchCluster()
+	cluster, preset, release := goldenMinimalElasticsearchCluster()
 	cluster.Spec.Suspend = true
 
-	assertElasticsearchClusterGoldens(t, "suspended", cluster, MergePreset(cluster.Spec, preset), nil)
+	assertElasticsearchClusterGoldens(t, "suspended", cluster, MergeSpec(cluster.Spec, preset, release), nil)
 }
 
 // goldenBucketName is the bucket contract that the golden cases reference.
@@ -261,7 +269,7 @@ func snapshotBucket(auth v1.S3StorageAuth) *v1.ObjectStorageConfig {
 func TestElasticsearchClusterGoldenSnapshotWorkloadIdentity(t *testing.T) {
 	t.Parallel()
 
-	cluster, preset := goldenMinimalElasticsearchCluster()
+	cluster, preset, release := goldenMinimalElasticsearchCluster()
 	cluster.Spec.SnapshotStorageRef = goldenBucketName
 	storage := &SnapshotStorage{
 		Config: snapshotBucket(v1.S3StorageAuth{
@@ -271,7 +279,7 @@ func TestElasticsearchClusterGoldenSnapshotWorkloadIdentity(t *testing.T) {
 	}
 
 	assertElasticsearchClusterGoldens(
-		t, "snapshot-workload-identity", cluster, MergePreset(cluster.Spec, preset), storage,
+		t, "snapshot-workload-identity", cluster, MergeSpec(cluster.Spec, preset, release), storage,
 	)
 }
 
@@ -281,7 +289,7 @@ func TestElasticsearchClusterGoldenSnapshotWorkloadIdentity(t *testing.T) {
 func TestElasticsearchClusterGoldenSnapshotCredentials(t *testing.T) {
 	t.Parallel()
 
-	cluster, preset := goldenMinimalElasticsearchCluster()
+	cluster, preset, release := goldenMinimalElasticsearchCluster()
 	cluster.Spec.SnapshotStorageRef = goldenBucketName
 	cluster.Spec.SecureSettings = []v1.SecureSettingsSource{{
 		SecretName: "extra-keystore-entries",
@@ -303,7 +311,7 @@ func TestElasticsearchClusterGoldenSnapshotCredentials(t *testing.T) {
 	}
 
 	assertElasticsearchClusterGoldens(
-		t, "snapshot-credentials", cluster, MergePreset(cluster.Spec, preset), storage,
+		t, "snapshot-credentials", cluster, MergeSpec(cluster.Spec, preset, release), storage,
 	)
 }
 
@@ -312,10 +320,10 @@ func TestElasticsearchClusterGoldenSnapshotCredentials(t *testing.T) {
 func TestForeignServiceAccountIsNamedButNotRendered(t *testing.T) {
 	t.Parallel()
 
-	cluster, preset := goldenMinimalElasticsearchCluster()
+	cluster, preset, release := goldenMinimalElasticsearchCluster()
 	no := false
 	cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-es", Create: &no}
-	merged := MergePreset(cluster.Spec, preset)
+	merged := MergeSpec(cluster.Spec, preset, release)
 
 	comp, err := ElasticsearchComponent(cluster, merged, nil)
 	require.NoError(t, err)
@@ -375,9 +383,9 @@ func TestPublishedRepositoryName(t *testing.T) {
 func TestPodIdentityRendersTheServiceAccount(t *testing.T) {
 	t.Parallel()
 
-	cluster, preset := goldenMinimalElasticsearchCluster()
+	cluster, preset, release := goldenMinimalElasticsearchCluster()
 	cluster.Spec.SnapshotStorageRef = goldenBucketName
-	merged := MergePreset(cluster.Spec, preset)
+	merged := MergeSpec(cluster.Spec, preset, release)
 	storage := &SnapshotStorage{Config: snapshotBucket(v1.S3StorageAuth{
 		Type: v1.ObjectStorageAuthTypeWorkloadIdentity,
 	})}
@@ -429,7 +437,7 @@ func TestMetricsComponentOmitsUnsupportedServiceMonitor(t *testing.T) {
 func TestCredentialsComponentCarriesThePassword(t *testing.T) {
 	t.Parallel()
 
-	cluster, _ := goldenMinimalElasticsearchCluster()
+	cluster, _, _ := goldenMinimalElasticsearchCluster()
 
 	comp, err := CredentialsComponent(cluster, credentials.Password{Value: "s3cret"})
 	require.NoError(t, err)
@@ -468,7 +476,7 @@ func TestCredentialsComponentCarriesThePassword(t *testing.T) {
 func TestCredentialsComponentCarriesTheApplyPrecondition(t *testing.T) {
 	t.Parallel()
 
-	cluster, _ := goldenMinimalElasticsearchCluster()
+	cluster, _, _ := goldenMinimalElasticsearchCluster()
 
 	reused := credentials.Password{Value: "s3cret", SourceUID: "uid-1"}
 	comp, err := CredentialsComponent(cluster, reused)
@@ -535,7 +543,7 @@ func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
 func TestElasticsearchClusterGoldenSnapshotGCSCredentials(t *testing.T) {
 	t.Parallel()
 
-	cluster, preset := goldenMinimalElasticsearchCluster()
+	cluster, preset, release := goldenMinimalElasticsearchCluster()
 	cluster.Spec.SnapshotStorageRef = goldenBucketName
 	config := gcsBucket(v1.GCSStorageAuth{
 		Type: v1.ObjectStorageAuthTypeCredentials,
@@ -552,7 +560,7 @@ func TestElasticsearchClusterGoldenSnapshotGCSCredentials(t *testing.T) {
 	}
 
 	assertElasticsearchClusterGoldens(
-		t, "snapshot-gcs-credentials", cluster, MergePreset(cluster.Spec, preset), storage,
+		t, "snapshot-gcs-credentials", cluster, MergeSpec(cluster.Spec, preset, release), storage,
 	)
 }
 
@@ -562,7 +570,7 @@ func TestElasticsearchClusterGoldenSnapshotGCSCredentials(t *testing.T) {
 func TestElasticsearchClusterGoldenSnapshotAzureCredentials(t *testing.T) {
 	t.Parallel()
 
-	cluster, preset := goldenMinimalElasticsearchCluster()
+	cluster, preset, release := goldenMinimalElasticsearchCluster()
 	cluster.Spec.SnapshotStorageRef = goldenBucketName
 	config := azureBucket(v1.AzureBlobStorageAuth{
 		Type: v1.ObjectStorageAuthTypeCredentials,
@@ -577,7 +585,7 @@ func TestElasticsearchClusterGoldenSnapshotAzureCredentials(t *testing.T) {
 	}
 
 	assertElasticsearchClusterGoldens(
-		t, "snapshot-azure-credentials", cluster, MergePreset(cluster.Spec, preset), storage,
+		t, "snapshot-azure-credentials", cluster, MergeSpec(cluster.Spec, preset, release), storage,
 	)
 }
 
@@ -588,7 +596,7 @@ func TestElasticsearchClusterGoldenSnapshotAzureCredentials(t *testing.T) {
 func TestElasticsearchClusterGoldenSnapshotAzureWorkloadIdentity(t *testing.T) {
 	t.Parallel()
 
-	cluster, preset := goldenMinimalElasticsearchCluster()
+	cluster, preset, release := goldenMinimalElasticsearchCluster()
 	cluster.Spec.SnapshotStorageRef = goldenBucketName
 	config := azureBucket(v1.AzureBlobStorageAuth{
 		Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
@@ -598,6 +606,6 @@ func TestElasticsearchClusterGoldenSnapshotAzureWorkloadIdentity(t *testing.T) {
 
 	assertElasticsearchClusterGoldens(
 		t, "snapshot-azure-workload-identity", cluster,
-		MergePreset(cluster.Spec, preset), &SnapshotStorage{Config: config},
+		MergeSpec(cluster.Spec, preset, release), &SnapshotStorage{Config: config},
 	)
 }

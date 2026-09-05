@@ -15,9 +15,6 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.cluster.version
-      name: Version
-      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -54,12 +51,13 @@ spec:
                 description: |-
                   Cluster is the full configuration baseline consumers inherit. It reuses
                   the ElasticsearchCluster spec type so the two never drift apart. The
-                  instance-bound fields of that type, presetRef, secondaryStorageConfig,
-                  and suspend, must be left unset inside a preset. Explicit zero values
-                  (an empty presetRef, suspend: false), as templated YAML renders unset
-                  fields, count as unset. monitoring is a baseline like any other field:
-                  a preset can enable scraping and pin the exporter image and resources
-                  for every cluster that references it.
+                  instance-bound fields of that type, presetRef, releaseRef,
+                  secondaryStorageConfig, and suspend, must be left unset inside a preset,
+                  and so must the version, which belongs to a CamundaRelease. Explicit
+                  zero values (an empty presetRef, suspend: false), as templated YAML
+                  renders unset fields, count as unset. monitoring is a baseline like any
+                  other field: a preset can enable scraping and pin the exporter image and
+                  resources for every cluster that references it.
                 properties:
                   extraEnv:
                     description: ExtraEnv are extra environment variables for every
@@ -401,6 +399,12 @@ spec:
                       PresetRef names a cluster-scoped ElasticsearchClusterPreset used as the
                       configuration baseline; fields set inline override the preset's value
                       for that field wholesale.
+                    type: string
+                  releaseRef:
+                    description: |-
+                      ReleaseRef names a cluster-scoped CamundaRelease that provides the
+                      Elasticsearch version. It merges over the preset and under this spec.
+                      Forbidden in a preset.
                     type: string
                   replicas:
                     description: |-
@@ -1203,19 +1207,23 @@ spec:
                   version:
                     description: |-
                       Version is the Elasticsearch version to deploy, as a full semantic
-                      version. Camunda 8.9 supports Elasticsearch 8.19+ and 9.2+; the floor is
-                      enforced by the controller on the preset-merged result, the schema pins
-                      only the three-segment shape. Required unless the resolved preset
-                      provides it.
+                      version. Camunda 8.9 supports Elasticsearch 8.19+ and 9.2+. The
+                      controller enforces that floor on the merged result, and the schema
+                      pins only the three-segment shape. Required unless the resolved release
+                      provides it, and forbidden in a preset.
                     pattern: ^\d+\.\d+\.\d+$
                     type: string
                 type: object
                 x-kubernetes-validations:
-                - message: instance-bound fields (presetRef, secondaryStorageConfig,
+                - message: instance-bound fields (presetRef, releaseRef, secondaryStorageConfig,
                     suspend) must not be set in a preset
-                  rule: (!has(self.presetRef) || self.presetRef == '') && (!has(self.secondaryStorageConfig)
+                  rule: (!has(self.presetRef) || self.presetRef == '') && (!has(self.releaseRef)
+                    || self.releaseRef == '') && (!has(self.secondaryStorageConfig)
                     || self.secondaryStorageConfig == '') && (!has(self.suspend) ||
                     !self.suspend)
+                - message: version belongs to a CamundaRelease and must not be set
+                    in a preset
+                  rule: '!has(self.version) || self.version == '''''
             required:
             - cluster
             type: object

@@ -24,20 +24,21 @@ import (
 type DatabaseServerPresetSpec struct {
 	// Server is the full configuration baseline consumers inherit. It reuses
 	// the DatabaseServer spec type so the two never drift apart. The
-	// instance-bound fields of that type, presetRef, databaseServerConfig,
-	// and suspend, must be left unset inside a preset. Explicit zero values
-	// (an empty presetRef, suspend: false), as templated YAML renders unset
-	// fields, count as unset. archive is a baseline like any other field: one
-	// bucket serves a fleet, because every server writes under a prefix of
-	// its own.
-	// +kubebuilder:validation:XValidation:rule="(!has(self.presetRef) || self.presetRef == '') && (!has(self.databaseServerConfig) || self.databaseServerConfig == '') && (!has(self.suspend) || !self.suspend)",message="instance-bound fields (presetRef, databaseServerConfig, suspend) must not be set in a preset"
+	// instance-bound fields of that type, presetRef, releaseRef,
+	// databaseServerConfig, and suspend, must be left unset inside a preset,
+	// and so must the version, which belongs to a CamundaRelease. Explicit
+	// zero values (an empty presetRef, suspend: false), as templated YAML
+	// renders unset fields, count as unset. archive is a baseline like any
+	// other field: one bucket serves a fleet, because every server writes
+	// under a prefix of its own.
+	// +kubebuilder:validation:XValidation:rule="(!has(self.presetRef) || self.presetRef == '') && (!has(self.releaseRef) || self.releaseRef == '') && (!has(self.databaseServerConfig) || self.databaseServerConfig == '') && (!has(self.suspend) || !self.suspend)",message="instance-bound fields (presetRef, releaseRef, databaseServerConfig, suspend) must not be set in a preset"
+	// +kubebuilder:validation:XValidation:rule="!has(self.version) || self.version == ''",message="version belongs to a CamundaRelease and must not be set in a preset"
 	// +required
 	Server DatabaseServerSpec `json:"server"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster
-// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.server.version`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // DatabaseServerPreset is a cluster-scoped, passive baseline configuration
