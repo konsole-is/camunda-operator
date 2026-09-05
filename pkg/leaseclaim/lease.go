@@ -156,8 +156,9 @@ func (s Schema[T]) heldBy(lease *coordinationv1.Lease, uid types.UID) bool {
 // Validate reports whether the Schema names a claim that a claimant reads
 // back, and whether T is a pointer to a struct, which OwnerExists allocates.
 // A missing prefix, a missing annotation key and a Labels function that gives
-// no label each write a Lease that no other claimant recognises as a claim. Two annotation keys that are equal drop one of the values the
-// ownership decision reads.
+// no label each write a Lease that no other claimant recognises as a claim.
+// Two annotation keys that are equal drop one of the values the ownership
+// decision reads.
 //
 // A caller runs it once where a failure stops the operator, and never on a
 // reconcile path.
