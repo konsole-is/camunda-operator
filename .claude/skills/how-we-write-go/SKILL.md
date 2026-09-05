@@ -725,7 +725,7 @@ Put the following in `pkg/components/<crd>/`:
 
 ```
 pkg/components/database/             ← ResolveBindings, BackupUserName, BindingsComponent, collision rule
-pkg/components/elasticsearchcluster/ ← MergePreset, ValidateMerged, the three components
+pkg/components/elasticsearchcluster/ ← MergeSpec, ValidateMerged, the three components
 pkg/pgbootstrap/                     ← SQL layer
 pkg/credentials/, pkg/conditions/    ← shared primitives
 ```

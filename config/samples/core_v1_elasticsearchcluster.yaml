@@ -7,4 +7,5 @@ metadata:
   name: elasticsearchcluster-sample
 spec:
   presetRef: elasticsearchclusterpreset-sample
+  releaseRef: camunda-8-9-0
   secondaryStorageConfig: elasticsearchcluster-sample-storage

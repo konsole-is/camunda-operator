@@ -41,25 +41,37 @@ var baseBackupScheduleParser = cron.NewParser(
 		cron.Descriptor,
 )
 
-// MergePreset resolves a DatabaseServer spec against its preset baseline. A
-// field set inline overrides the value of the preset for that field
-// wholesale. A field left unset inherits from the preset. An empty map
-// (podLabels, podAnnotations) counts as unset: the API drops an empty value on
-// the way in, so the merge cannot see it. To drop a map that the preset
-// provides, override it with the one you want, or reference a preset without
-// it. The scheduling block is replaced entirely, never merged field by field,
-// and so are the monitoring block and the archive block. A preset may carry
-// archive: one bucket serves a fleet, because every server writes under a
-// prefix of its own. The instance-bound fields (presetRef, databaseServerConfig,
-// suspend) always come from spec, and a preset cannot set them. A nil preset
-// returns spec unchanged. The result shares no memory with preset, so callers
-// can mutate it freely.
-func MergePreset(spec v1.DatabaseServerSpec, preset *v1.DatabaseServerPresetSpec) v1.DatabaseServerSpec {
-	if preset == nil {
+// MergeSpec resolves a DatabaseServer spec against its baselines: the preset,
+// then the release over it, then spec over both. A field set by a higher layer
+// overrides the value of the lower one for that field wholesale. A field left
+// unset inherits. An empty map (podLabels, podAnnotations) counts as unset:
+// the API drops an empty value on the way in, so the merge cannot see it. To
+// drop a map that the preset provides, override it with the one you want, or
+// reference a preset without it. The scheduling block is replaced entirely,
+// never merged field by field, and so are the monitoring block and the archive
+// block. A preset can carry archive: one bucket serves a fleet, because every
+// server writes under a prefix of its own. A release carries the version alone,
+// so it takes part in the version rule alone. The instance-bound fields
+// (presetRef, releaseRef, databaseServerConfig, suspend) always come from spec,
+// and a preset cannot set them. A nil preset or release is an empty layer. The
+// result shares no memory with preset or release, so callers can mutate it
+// freely.
+func MergeSpec(
+	spec v1.DatabaseServerSpec,
+	preset *v1.DatabaseServerPresetSpec,
+	release *v1.CamundaReleaseSpec,
+) v1.DatabaseServerSpec {
+	if preset == nil && release == nil {
 		return spec
 	}
 
-	merged := *preset.Server.DeepCopy()
+	var merged v1.DatabaseServerSpec
+	if preset != nil {
+		merged = *preset.Server.DeepCopy()
+	}
+	if release != nil && release.DatabaseServer != nil && release.DatabaseServer.Version != "" {
+		merged.Version = release.DatabaseServer.Version
+	}
 
 	if spec.PlatformConfigRef != "" {
 		merged.PlatformConfigRef = spec.PlatformConfigRef
@@ -102,17 +114,18 @@ func MergePreset(spec v1.DatabaseServerSpec, preset *v1.DatabaseServerPresetSpec
 	}
 
 	merged.PresetRef = spec.PresetRef
+	merged.ReleaseRef = spec.ReleaseRef
 	merged.DatabaseServerConfig = spec.DatabaseServerConfig
 	merged.Suspend = spec.Suspend
 
 	return merged
 }
 
-// ValidateMerged checks the preset-merged spec for the rules that admission
-// cannot enforce. Version, storageSize, and databaseServerConfig must be
-// present, the version must meet the Camunda 8.9 floor, and the base backup
-// schedule must be one CloudNativePG can read. Admission cannot see version
-// and storageSize because a preset may supply them, it cannot range-check a
+// ValidateMerged checks the merged spec for the rules that admission cannot
+// enforce. Version, storageSize, and databaseServerConfig must be present, the
+// version must meet the Camunda 8.9 floor, and the base backup schedule must
+// be one CloudNativePG can read. Admission cannot see version and storageSize
+// because a release or a preset can supply them, it cannot range-check a
 // version because the pattern only fixes the shape, and it cannot compare the
 // two ends of a range in a schedule. The error names every missing field and,
 // when set, the rejected version and the rejected schedule.
@@ -130,7 +143,7 @@ func ValidateMerged(spec v1.DatabaseServerSpec) error {
 		missing = append(missing, "databaseServerConfig")
 	}
 	if len(missing) > 0 {
-		problems = append(problems, "missing required fields after preset merge: "+strings.Join(missing, ", "))
+		problems = append(problems, "missing required fields: "+strings.Join(missing, ", "))
 	}
 
 	if spec.Version != "" {

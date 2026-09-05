@@ -41,6 +41,7 @@ func validDatabaseServer() *v1.DatabaseServer {
 		ObjectMeta: metav1.ObjectMeta{Name: "dbs-" + utilrand.String(8)},
 		Spec: v1.DatabaseServerSpec{
 			PresetRef:            "standard",
+			ReleaseRef:           "camunda-8-9-4",
 			DatabaseServerConfig: "my-database-server",
 		},
 	}

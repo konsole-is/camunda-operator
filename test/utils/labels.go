@@ -35,6 +35,7 @@ const (
 	LabelDatabaseServer       = "databaseserver"
 	LabelManagementKeycloak   = "management-keycloak"
 	LabelManagementOIDC       = "management-oidc"
+	LabelExample              = "example"
 )
 
 // AllLabels is every label above. A name outside it names no flow, and both
@@ -50,6 +51,7 @@ var AllLabels = []string{
 	LabelDatabaseServer,
 	LabelManagementKeycloak,
 	LabelManagementOIDC,
+	LabelExample,
 }
 
 // LabelFilter turns a comma-separated list of Ginkgo labels into a label

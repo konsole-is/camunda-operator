@@ -15,10 +15,11 @@ limitations under the License.
 */
 
 // Package databaseserver reconciles the DatabaseServer CR. The controller
-// merges the preset into the spec, drives the external CloudNativePG operator
-// through a rendered cluster, archives the server to an object storage bucket
-// through the Barman Cloud plugin, and publishes the DatabaseServerConfig
-// contract that a Database and a PointInTimeRestore consume.
+// merges the preset and the release into the spec, drives the external
+// CloudNativePG operator through a rendered cluster, archives the server to an
+// object storage bucket through the Barman Cloud plugin, and publishes the
+// DatabaseServerConfig contract that a Database and a PointInTimeRestore
+// consume.
 package databaseserver
 
 import (
@@ -81,7 +82,7 @@ const eventReasonWALStorageKept = "WALStorageKept"
 const eventActionResize = "Resize"
 
 // resolvedSpec is everything the pre-checks resolved for one reconcile: the
-// preset-merged spec, the platform config whose image settings rename the
+// merged spec, the platform config whose image settings rename the
 // PostgreSQL image, and the archive bucket. Resolving each of them once is
 // what keeps the components from re-reading the same objects per method.
 type resolvedSpec struct {
@@ -207,6 +208,7 @@ type DatabaseServerReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseservers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseservers/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseserverpresets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=camundareleases,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseserverconfigs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=clusters;scheduledbackups,verbs=get;list;watch;create;update;patch;delete
@@ -217,9 +219,9 @@ type DatabaseServerReconciler struct {
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
-// Reconcile converges a DatabaseServer. It resolves the preset, runs the
-// pre-checks, reconciles the cluster, archive, contract, and monitoring
-// components, and derives the CR-level Ready condition.
+// Reconcile converges a DatabaseServer. It resolves the preset and the
+// release, runs the pre-checks, reconciles the cluster, archive, contract, and
+// monitoring components, and derives the CR-level Ready condition.
 //
 // Status is written once per reconcile. The components and conditions.Stage
 // stage conditions on the in-memory server, and the deferred FlushStatus
@@ -285,6 +287,10 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+
+	// After the guard, so the published version is the major the instances
+	// run rather than the one a refused change asks for.
+	server.Status.Version = resolved.merged.Version
 
 	// Read once and used twice: the clamp below, and status.Volumes further
 	// down. Nothing this reconcile applies creates a claim, so the second
@@ -446,14 +452,14 @@ func (c serverComponents) applying(holdArchive bool) []*component.Component {
 	return []*component.Component{c.cluster, c.contract, c.monitoring}
 }
 
-// preCheck resolves the preset, validates the merged spec, and resolves the
-// archive bucket. A failed check returns a *conditions.PreCheckFailure that
-// carries its Ready reason. An operator that started without the CloudNativePG
-// CRDs reports CNPGNotInstalled, and a server that asks for an archive on a
-// cluster without the plugin CRD reports BarmanPluginNotInstalled. A dangling
-// presetRef, an incomplete merge, a version below the floor, and a bucket the
-// plugin cannot address all report InvalidReference. Any other error is a
-// transient API failure.
+// preCheck resolves the preset and the release, validates the merged spec, and
+// resolves the archive bucket. A failed check returns a
+// *conditions.PreCheckFailure that carries its Ready reason. An operator that
+// started without the CloudNativePG CRDs reports CNPGNotInstalled, and a server
+// that asks for an archive on a cluster without the plugin CRD reports
+// BarmanPluginNotInstalled. A dangling presetRef or releaseRef, an incomplete
+// merge, a version below the floor, and a bucket the plugin cannot address all
+// report InvalidReference. Any other error is a transient API failure.
 //
 // A bucket that stops resolving under a server whose instances are already
 // down is neither: the result carries holdForSuspension, and the caller stops
@@ -471,6 +477,7 @@ func (r *DatabaseServerReconciler) preCheck(
 		}
 	}
 
+	var presetSpec *v1.DatabaseServerPresetSpec
 	if server.Spec.PresetRef != "" {
 		var preset v1.DatabaseServerPreset
 		if err := r.APIReader.Get(ctx, types.NamespacedName{Name: server.Spec.PresetRef}, &preset); err != nil {
@@ -482,8 +489,25 @@ func (r *DatabaseServerReconciler) preCheck(
 			}
 			return resolved, fmt.Errorf("resolving preset %q: %w", server.Spec.PresetRef, err)
 		}
-		resolved.merged = components.MergePreset(server.Spec, &preset.Spec)
+		presetSpec = &preset.Spec
 	}
+
+	var releaseSpec *v1.CamundaReleaseSpec
+	if server.Spec.ReleaseRef != "" {
+		var release v1.CamundaRelease
+		if err := r.APIReader.Get(ctx, types.NamespacedName{Name: server.Spec.ReleaseRef}, &release); err != nil {
+			if apierrors.IsNotFound(err) {
+				return resolved, &conditions.PreCheckFailure{
+					Reason:  v1.ReasonInvalidReference,
+					Message: fmt.Sprintf("CamundaRelease %q not found", server.Spec.ReleaseRef),
+				}
+			}
+			return resolved, fmt.Errorf("resolving release %q: %w", server.Spec.ReleaseRef, err)
+		}
+		releaseSpec = &release.Spec
+	}
+
+	resolved.merged = components.MergeSpec(server.Spec, presetSpec, releaseSpec)
 
 	if err := components.ValidateMerged(resolved.merged); err != nil {
 		return resolved, &conditions.PreCheckFailure{

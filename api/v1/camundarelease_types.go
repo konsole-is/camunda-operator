@@ -21,9 +21,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// CamundaReleaseSpec holds what runs on a CamundaCluster: the versions, the
-// image references that replace the ones the versions produce, and the
-// environment that a version needs.
+// CamundaReleaseSpec holds what a platform runs: the version of the
+// orchestration cluster, the versions of the storage it runs on, the image
+// references that replace the ones the versions produce, and the environment
+// that a version needs.
 type CamundaReleaseSpec struct {
 	// Version is the Camunda version of the orchestration cluster processes,
 	// as a full semantic version. The floor of 8.9.0 is enforced by the
@@ -35,6 +36,14 @@ type CamundaReleaseSpec struct {
 	// runtime.
 	// +optional
 	Connectors *ReleaseConnectorsSpec `json:"connectors,omitempty"`
+	// Elasticsearch holds the version of the Elasticsearch clusters of this
+	// release. An ElasticsearchCluster takes it through its releaseRef.
+	// +optional
+	Elasticsearch *ReleaseElasticsearchSpec `json:"elasticsearch,omitempty"`
+	// DatabaseServer holds the version of the PostgreSQL servers of this
+	// release. A DatabaseServer takes it through its releaseRef.
+	// +optional
+	DatabaseServer *ReleaseDatabaseServerSpec `json:"databaseServer,omitempty"`
 	// Images replaces the image reference of a process. An entry is used as
 	// it is, tag or digest included. It changes only what is pulled: the
 	// version above stays the version that the operator believes the process
@@ -99,6 +108,30 @@ type ReleaseConnectorsSpec struct {
 	ReleaseEnvSpec `       json:",inline"`
 }
 
+// ReleaseElasticsearchSpec is the Elasticsearch of a release.
+type ReleaseElasticsearchSpec struct {
+	// Version is the Elasticsearch version of the clusters of this release,
+	// as a full semantic version. Elasticsearch has a patch line of its own,
+	// so it does not follow the Camunda version. The floor of Elasticsearch
+	// 8.19 or 9.2 is enforced by the controller of each referencing cluster
+	// on the merged spec.
+	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
+	// +optional
+	Version string `json:"version,omitempty"`
+}
+
+// ReleaseDatabaseServerSpec is the PostgreSQL server of a release.
+type ReleaseDatabaseServerSpec struct {
+	// Version is the PostgreSQL major version of the servers of this release,
+	// as a bare number such as "17". The floor of PostgreSQL 14 is enforced
+	// by the controller of each referencing server on the merged spec. A
+	// server that already runs another major refuses the change and keeps the
+	// major it has.
+	// +kubebuilder:validation:Pattern=`^\d+$`
+	// +optional
+	Version string `json:"version,omitempty"`
+}
+
 // ReleaseImagesSpec holds the image references that a release pins. Each
 // value is a complete reference, with its tag or digest.
 type ReleaseImagesSpec struct {
@@ -119,13 +152,16 @@ type ReleaseImagesSpec struct {
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.version`
 // +kubebuilder:printcolumn:name="Connectors",type=string,JSONPath=`.spec.connectors.version`,priority=1
+// +kubebuilder:printcolumn:name="Elasticsearch",type=string,JSONPath=`.spec.elasticsearch.version`,priority=1
+// +kubebuilder:printcolumn:name="PostgreSQL",type=string,JSONPath=`.spec.databaseServer.version`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// CamundaRelease is a cluster-scoped, passive description of what runs on a
-// CamundaCluster: the versions, the pinned images, and the environment a
-// version needs. No controller reconciles it, it provisions nothing and
-// reports no status. A CamundaCluster resolves it through its releaseRef and
-// merges it between its preset and its own spec.
+// CamundaRelease is a cluster-scoped, passive description of what a platform
+// runs: the versions, the pinned images, and the environment a version needs.
+// No controller reconciles it, it provisions nothing and reports no status. A
+// CamundaCluster, an ElasticsearchCluster, and a DatabaseServer each resolve
+// it through their releaseRef and merge it between their preset and their own
+// spec.
 type CamundaRelease struct {
 	metav1.TypeMeta `json:",inline"`
 

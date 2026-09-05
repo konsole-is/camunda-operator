@@ -35,7 +35,6 @@ func validDatabaseServerPreset() *v1.DatabaseServerPreset {
 		ObjectMeta: metav1.ObjectMeta{Name: "dbsp-" + utilrand.String(8)},
 		Spec: v1.DatabaseServerPresetSpec{
 			Server: v1.DatabaseServerSpec{
-				Version:     "17",
 				Instances:   new(int32(2)),
 				StorageSize: new(resource.MustParse("20Gi")),
 			},
@@ -109,6 +108,18 @@ var _ = Describe("DatabaseServerPreset schema", func() {
 			}, "instance-bound",
 		),
 		Entry(
+			"rejects a releaseRef inside a preset",
+			validDatabaseServerPreset, func(o *v1.DatabaseServerPreset) {
+				o.Spec.Server.ReleaseRef = "camunda-8-9-4"
+			}, "instance-bound",
+		),
+		Entry(
+			"rejects a version inside a preset",
+			validDatabaseServerPreset, func(o *v1.DatabaseServerPreset) {
+				o.Spec.Server.Version = "17"
+			}, "belongs to a CamundaRelease",
+		),
+		Entry(
 			"rejects databaseServerConfig inside a preset",
 			validDatabaseServerPreset, func(o *v1.DatabaseServerPreset) {
 				o.Spec.Server.DatabaseServerConfig = "my-database-server"
@@ -143,10 +154,10 @@ var _ = Describe("DatabaseServerPreset schema", func() {
 			"metadata":   map[string]any{"name": "dbsp-" + utilrand.String(8)},
 			"spec": map[string]any{
 				"server": map[string]any{
-					"version":     "17",
 					"instances":   int64(2),
 					"storageSize": "20Gi",
 					"presetRef":   "",
+					"releaseRef":  "",
 					"suspend":     false,
 					"monitoring":  map[string]any{},
 				},
@@ -157,6 +168,25 @@ var _ = Describe("DatabaseServerPreset schema", func() {
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
 	})
 
+	// A preset omits version. An empty string is not the same thing: the
+	// bare-major pattern of the field refuses it before the CEL rule runs.
+	It("rejects an empty-string version by the pattern", func() {
+		obj := &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "core.camunda.io/v1",
+			"kind":       "DatabaseServerPreset",
+			"metadata":   map[string]any{"name": "dbsp-" + utilrand.String(8)},
+			"spec": map[string]any{
+				"server": map[string]any{
+					"instances":   int64(2),
+					"storageSize": "20Gi",
+					"version":     "",
+				},
+			},
+		}}
+
+		Expect(k8sClient.Create(ctx, obj)).To(MatchError(ContainSubstring("should match")))
+	})
+
 	It("rejects an empty-string databaseServerConfig by the name pattern", func() {
 		obj := &unstructured.Unstructured{Object: map[string]any{
 			"apiVersion": "core.camunda.io/v1",
@@ -164,7 +194,6 @@ var _ = Describe("DatabaseServerPreset schema", func() {
 			"metadata":   map[string]any{"name": "dbsp-" + utilrand.String(8)},
 			"spec": map[string]any{
 				"server": map[string]any{
-					"version":              "17",
 					"instances":            int64(2),
 					"storageSize":          "20Gi",
 					"databaseServerConfig": "",

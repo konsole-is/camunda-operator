@@ -15,19 +15,25 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # Three jobs per supported Camunda minor: one for each storage
-      # backend of the orchestration cluster, and one for the management
-      # plane. All three name the same file test/e2e/matrix/<minor>.env,
-      # which holds the image versions of the minor, and each holds the
-      # Ginkgo label filter that selects its flows. Adopting a new minor adds
-      # the file and three entries.
+      # Four jobs per supported Camunda minor: one for each storage backend
+      # of the orchestration cluster, one for the management plane, and one
+      # for the example inventories. All four name the same file
+      # test/e2e/matrix/<minor>.env, which holds the image versions of the
+      # minor, and each holds the Ginkgo label filter that selects its flows.
+      # Adopting a new minor adds the file and four entries.
       #
-      # The split keeps one storage operator off each job. One kind node
-      # carries a whole job, and no flow needs both ECK and CloudNativePG.
-      # eckInstallSkip and cnpgInstallSkip say which operator a job installs.
-      # The management plane job fills its node with Keycloak, Management
-      # Identity, Console, and two Web Modeler processes, so it installs
-      # neither CloudNativePG nor the Barman Cloud plugin.
+      # The split keeps one storage operator off each of the first three jobs.
+      # One kind node carries a whole job. eckInstallSkip and cnpgInstallSkip
+      # say which operator a job installs. The management plane job fills its
+      # node with Keycloak, Management Identity, Console, and two Web Modeler
+      # processes, so it installs neither CloudNativePG nor the Barman Cloud
+      # plugin.
+      #
+      # The example job installs both storage operators, because
+      # config/example holds an inventory for each backend. Its specs run one
+      # at a time, and each one removes its namespaces before the next one
+      # applies, so one backend runs at a time. The inventories carry fixed
+      # resource names, which is the second reason the job stands alone.
       #
       # Every label of the suite belongs to exactly one entry. The test
       # TestWorkflowJobsClaimEveryLabel in test/utils reads this file and
@@ -49,6 +55,11 @@ jobs:
             labels: "management-keycloak || management-oidc"
             eckInstallSkip: "false"
             cnpgInstallSkip: "true"
+          - minor: "8.9"
+            suffix: " examples"
+            labels: "example"
+            eckInstallSkip: "false"
+            cnpgInstallSkip: "false"
     steps:
       - name: Clone the code
         uses: actions/checkout@v7

@@ -2,11 +2,11 @@
 
 `DatabaseServerPreset` is a cluster-scoped baseline configuration for [DatabaseServer](databaseserver.md) resources. You create it, or another tool creates it for you.
 
-A preset holds one PostgreSQL sizing as data: version, instance count, resources, storage, scheduling, monitoring, and the archive bucket. Each `DatabaseServer` that references it stays small and consistent. A platform team can publish a set of presets, for example `small`, `standard`, and `large`, and each team picks one.
+A preset holds one PostgreSQL sizing as data: instance count, resources, storage, scheduling, monitoring, and the archive bucket. Each `DatabaseServer` that references it stays small and consistent. A platform team can publish a set of presets, for example `small`, `standard`, and `large`, and each team picks one. What runs on that shape, the PostgreSQL major version, lives in a [CamundaRelease](camundarelease.md), so a version roll never edits a preset.
 
-A preset is passive data. It creates nothing and reports no status. `kubectl get databaseserverpreset` shows the version it holds and the age. A `DatabaseServer` uses it through `spec.presetRef`.
+A preset is passive data. It creates nothing and reports no status. A `DatabaseServer` uses it through `spec.presetRef`.
 
-The smallest preset sets a version, an instance count, and a volume size:
+The smallest preset sets an instance count and a volume size:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -15,7 +15,6 @@ metadata:
   name: standard
 spec:
   server:
-    version: "17"
     instances: 2
     storageSize: "64Gi"
 ```
@@ -23,13 +22,16 @@ spec:
 ```mermaid
 graph LR
     DBS[DatabaseServer] -.->|presetRef| DBSP[DatabaseServerPreset]
+    DBS -.->|releaseRef| CR[CamundaRelease]
 ```
 
 ## Merge rules
 
-`spec.server` of the preset is the baseline. A field set on the `DatabaseServer` replaces the value of the preset for that field. A field left unset on the server comes from the preset. An empty map (`podLabels`, `podAnnotations`) counts as unset. To remove a map that the preset provides, set the one you want on the server, or reference a preset without it.
+`spec.server` of the preset is the baseline. The [CamundaRelease](camundarelease.md) of `releaseRef` merges over it, and the server spec merges over both. A field set on the `DatabaseServer` replaces the value of the layer below for that field. A field left unset on the server comes from the layer below. An empty map (`podLabels`, `podAnnotations`) counts as unset. To remove a map that the preset provides, set the one you want on the server, or reference a preset without it.
 
 The blocks `scheduling`, `monitoring`, `serviceAccount`, `resources`, and `archive` are replaced as a whole, never merged field by field. A server that sets its own `archive` block drops the bucket and the retention of the preset with it.
+
+`version` is not part of a preset. It belongs to a [CamundaRelease](camundarelease.md) or to the server. An apply that sets it is rejected by the API server with `version belongs to a CamundaRelease and must not be set in a preset`. Move the version to a release, and point every server at it with `releaseRef`.
 
 ## Fleet settings
 
@@ -38,8 +40,6 @@ A preset can set `archive` and `platformConfigRef`. One bucket then serves every
 ## Changes
 
 An edit of a preset reaches every `DatabaseServer` that references it. A lower `storageSize` or `walStorageSize` in the preset does not shrink a running server. That server keeps its current size and records a Warning event with reason `StorageShrinkIgnored`. A preset that clears `walStorageSize` does not remove the write-ahead log volume of a running server either. That server keeps the volume and records a Warning event with reason `WALStorageKept`. A new server uses the new baseline.
-
-A new `version` in the preset does not move a running server to another PostgreSQL major. That server reports `Ready` `False` with reason `VersionChangeRefused` until the preset names its major again. A new server uses the new baseline. See [The PostgreSQL version](databaseserver.md#the-postgresql-version).
 
 ## Deletion
 
@@ -51,7 +51,7 @@ A preset has no status. It reports no conditions and no `status.observedGenerati
 
 ## Spec reference
 
-`spec.server` has the same type as the spec of `DatabaseServer`. The fields `presetRef`, `databaseServerConfig`, and `suspend` belong to one server and must stay unset in a preset. Every other field is inheritable.
+`spec.server` has the same type as the spec of `DatabaseServer`. The fields `presetRef`, `releaseRef`, `databaseServerConfig`, and `suspend` belong to one server and must stay unset in a preset, and so must `version`. Every other field is inheritable.
 
 Every field, with its type, whether it is required, and its default:
 
@@ -65,9 +65,6 @@ spec:
   server:
     # string. Optional. Name of a cluster-scoped CamundaPlatformConfig. Only its image settings are read.
     platformConfigRef: "my-platform-config"
-    # string. Optional. PostgreSQL major version, 14 or later.
-    # A new value does not move a server that already runs another major.
-    version: "17"
     # integer. Optional, default: 1. Number of PostgreSQL instances, at least 1.
     instances: 2
     # object (corev1.ResourceRequirements). Optional. CPU and memory of each instance.
@@ -119,11 +116,12 @@ spec:
 
 ### Validation rules
 
-- `spec.server` must not set `presetRef`, `databaseServerConfig`, or `suspend`. An empty `presetRef` and `suspend: false` count as unset, so templated YAML that renders zero values still applies. An empty `databaseServerConfig` is rejected by the name pattern. Omit the field instead.
+- `spec.server` must not set `presetRef`, `releaseRef`, `databaseServerConfig`, or `suspend`. An empty `presetRef` and `suspend: false` count as unset, so templated YAML that renders zero values still applies. An empty `databaseServerConfig` is rejected by the name pattern. Omit the field instead.
+- `version` is rejected in `spec.server`. It belongs to a [CamundaRelease](camundarelease.md) or to the server. An empty `version` is rejected by the bare-major pattern. Omit the field instead.
 - The no-shrink rule of `DatabaseServer` for `storageSize` and `walStorageSize` does not bind a preset. You can lower the baseline at any time. You can also clear `walStorageSize`. Neither edit changes a server that already runs.
 - Whether the merged configuration is complete is checked on the `DatabaseServer`, not on the preset.
 - An edit of `spec.server.archive` is held while a server that reads this preset runs a rollback. That server reports `InvalidReference` and keeps the archive its rollback reads. The edit reaches it once the rollback is answered.
-- Every other rule of the `DatabaseServer` schema applies to `spec.server`: a bare major `version`, `instances` at least 1, `archive.retentionPeriodDays` at least 1, an `archive.baseBackupSchedule` that is a six-field cron or one of the `@yearly` to `@hourly` descriptors, and valid resource names.
+- Every other rule of the `DatabaseServer` schema applies to `spec.server`: `instances` at least 1, `archive.retentionPeriodDays` at least 1, an `archive.baseBackupSchedule` that is a six-field cron or one of the `@yearly` to `@hourly` descriptors, and valid resource names.
 
 ### A production-shaped example
 
@@ -135,7 +133,6 @@ metadata:
 spec:
   server:
     platformConfigRef: my-platform-config
-    version: "17"
     instances: 3
     resources:
       requests: { cpu: "4", memory: "8Gi" }
@@ -162,6 +159,7 @@ spec:
 ## Related
 
 - [DatabaseServer](databaseserver.md): references a preset through `spec.presetRef` and inherits `spec.server`.
+- [CamundaRelease](camundarelease.md): the PostgreSQL version that runs on this shape. It merges between the preset and the server.
 - [ObjectStorageConfig](objectstorageconfig.md): the archive bucket that `spec.server.archive.objectStorageRef` names.
 - [CamundaPlatformConfig](camundaplatformconfig.md): the image settings that `spec.server.platformConfigRef` names.
 - [Secondary storage guide](../guides/secondary-storage.md): how to choose and connect secondary storage.

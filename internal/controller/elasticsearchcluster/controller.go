@@ -15,9 +15,9 @@ limitations under the License.
 */
 
 // Package elasticsearchcluster reconciles the ElasticsearchCluster CR. The
-// controller merges the preset into the spec, drives the ECK operator through
-// a rendered Elasticsearch CR, generates the file-realm credentials, and
-// publishes the SecondaryStorageConfig binding.
+// controller merges the preset and the release into the spec, drives the ECK
+// operator through a rendered Elasticsearch CR, generates the file-realm
+// credentials, and publishes the SecondaryStorageConfig binding.
 package elasticsearchcluster
 
 import (
@@ -63,6 +63,10 @@ const controllerName = "elasticsearchcluster"
 // elasticsearchClusterPresetRefField indexes ElasticsearchClusters by
 // spec.presetRef, so a preset edit enqueues every cluster that references it.
 const elasticsearchClusterPresetRefField = "elasticsearchcluster.spec.presetRef"
+
+// elasticsearchClusterReleaseRefField indexes ElasticsearchClusters by
+// spec.releaseRef, so a release edit enqueues every cluster that references it.
+const elasticsearchClusterReleaseRefField = "elasticsearchcluster.spec.releaseRef"
 
 // eventReasonStorageShrinkIgnored is the Warning event that the controller
 // records when the merged storageSize is below the applied data volume size.
@@ -136,6 +140,7 @@ type ElasticsearchClusterReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusters/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusterpresets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=camundareleases,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=elasticsearch.k8s.elastic.co,resources=elasticsearches,verbs=get;list;watch;create;update;patch;delete
@@ -147,10 +152,10 @@ type ElasticsearchClusterReconciler struct {
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 
-// Reconcile converges an ElasticsearchCluster. It resolves the preset, runs
-// the pre-checks, reconciles the credentials, elasticsearch, storage-contract,
-// and metrics components in dependency order, and derives the CR-level Ready
-// condition.
+// Reconcile converges an ElasticsearchCluster. It resolves the preset and the
+// release, runs the pre-checks, reconciles the credentials, elasticsearch,
+// storage-contract, and metrics components in dependency order, and derives
+// the CR-level Ready condition.
 //
 // Status is written once per reconcile. The components and conditions.Stage
 // stage conditions on the in-memory cluster, and the deferred FlushStatus
@@ -204,6 +209,8 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
+	cluster.Status.Version = merged.Version
+
 	if err := r.keepAppliedStorageSize(ctx, &cluster, &merged); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -256,12 +263,12 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	return ctrl.Result{}, reconcileErr
 }
 
-// preCheck resolves the preset and validates the merged spec. It returns the
-// preset-merged spec. A failed check returns a *conditions.PreCheckFailure
-// that carries its Ready reason. An operator that started without the ECK
-// CRDs reports ECKNotInstalled. A dangling presetRef, an incomplete merge,
-// and a version below the floor all report InvalidReference. Any other error
-// is a transient API failure.
+// preCheck resolves the preset and the release and validates the merged spec.
+// It returns the merged spec. A failed check returns a
+// *conditions.PreCheckFailure that carries its Ready reason. An operator that
+// started without the ECK CRDs reports ECKNotInstalled. A dangling presetRef
+// or releaseRef, an incomplete merge, and a version below the floor all report
+// InvalidReference. Any other error is a transient API failure.
 func (r *ElasticsearchClusterReconciler) preCheck(
 	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
@@ -275,6 +282,7 @@ func (r *ElasticsearchClusterReconciler) preCheck(
 		}
 	}
 
+	var presetSpec *v1.ElasticsearchClusterPresetSpec
 	if cluster.Spec.PresetRef != "" {
 		var preset v1.ElasticsearchClusterPreset
 		if err := r.APIReader.Get(ctx, types.NamespacedName{Name: cluster.Spec.PresetRef}, &preset); err != nil {
@@ -286,8 +294,25 @@ func (r *ElasticsearchClusterReconciler) preCheck(
 			}
 			return merged, nil, fmt.Errorf("resolving preset %q: %w", cluster.Spec.PresetRef, err)
 		}
-		merged = components.MergePreset(cluster.Spec, &preset.Spec)
+		presetSpec = &preset.Spec
 	}
+
+	var releaseSpec *v1.CamundaReleaseSpec
+	if cluster.Spec.ReleaseRef != "" {
+		var release v1.CamundaRelease
+		if err := r.APIReader.Get(ctx, types.NamespacedName{Name: cluster.Spec.ReleaseRef}, &release); err != nil {
+			if apierrors.IsNotFound(err) {
+				return merged, nil, &conditions.PreCheckFailure{
+					Reason:  v1.ReasonInvalidReference,
+					Message: fmt.Sprintf("CamundaRelease %q not found", cluster.Spec.ReleaseRef),
+				}
+			}
+			return merged, nil, fmt.Errorf("resolving release %q: %w", cluster.Spec.ReleaseRef, err)
+		}
+		releaseSpec = &release.Spec
+	}
+
+	merged = components.MergeSpec(cluster.Spec, presetSpec, releaseSpec)
 
 	if err := components.ValidateMerged(merged); err != nil {
 		return merged, nil, &conditions.PreCheckFailure{
@@ -608,6 +633,18 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		return err
 	}
 
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &v1.ElasticsearchCluster{},
+		elasticsearchClusterReleaseRefField, func(o client.Object) []string {
+			if ref := o.(*v1.ElasticsearchCluster).Spec.ReleaseRef; ref != "" {
+				return []string{ref}
+			}
+			return nil
+		},
+	); err != nil {
+		return err
+	}
+
 	if err := refindex.EnsureObjectStorageConfigSecretIndex(mgr); err != nil {
 		return err
 	}
@@ -632,6 +669,13 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 			refindex.Enqueue(
 				mgr.GetClient(), &v1.ElasticsearchClusterList{},
 				elasticsearchClusterPresetRefField, refindex.ObjectName,
+			),
+		).
+		Watches(
+			&v1.CamundaRelease{},
+			refindex.Enqueue(
+				mgr.GetClient(), &v1.ElasticsearchClusterList{},
+				elasticsearchClusterReleaseRefField, refindex.ObjectName,
 			),
 		).
 		Watches(&v1.ObjectStorageConfig{}, r.enqueueForSnapshotStorage()).

@@ -12,6 +12,7 @@ metadata:
   name: my-cluster-es
   namespace: my-cluster-ns
 spec:
+  # renovate: datasource=docker depName=docker.elastic.co/elasticsearch/elasticsearch
   version: "9.2.8"
   replicas: 1
   storageSize: 1Gi

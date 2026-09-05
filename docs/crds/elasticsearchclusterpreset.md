@@ -2,11 +2,11 @@
 
 `ElasticsearchClusterPreset` is a cluster-scoped baseline configuration for `ElasticsearchCluster` resources. You create it, or another tool creates it for you.
 
-A preset holds one Elasticsearch sizing as data: version, node count, resources, storage, scheduling, and more. Each `ElasticsearchCluster` that references it stays small and consistent. A platform team can publish a set of presets, for example `small`, `standard`, and `large`, and each team picks one.
+A preset holds one Elasticsearch sizing as data: node count, resources, storage, scheduling, and more. Each `ElasticsearchCluster` that references it stays small and consistent. A platform team can publish a set of presets, for example `small`, `standard`, and `large`, and each team picks one. What runs on that shape, the Elasticsearch version, lives in a [CamundaRelease](camundarelease.md), so a version roll never edits a preset.
 
-A preset is passive data. It creates nothing and reports no status. `kubectl get elasticsearchclusterpreset` shows the version it holds and the age. An `ElasticsearchCluster` uses it through `spec.presetRef`.
+A preset is passive data. It creates nothing and reports no status. An `ElasticsearchCluster` uses it through `spec.presetRef`.
 
-The smallest preset sets a version, a node count, and a volume size:
+The smallest preset sets a node count and a volume size:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -15,7 +15,6 @@ metadata:
   name: standard
 spec:
   cluster:
-    version: "9.2.4"
     replicas: 3
     storageSize: "64Gi"
 ```
@@ -23,13 +22,16 @@ spec:
 ```mermaid
 graph LR
     ESC[ElasticsearchCluster] -.->|presetRef| ESCP[ElasticsearchClusterPreset]
+    ESC -.->|releaseRef| CR[CamundaRelease]
 ```
 
 ## Merge rules
 
-`spec.cluster` of the preset is the baseline. A field set on the `ElasticsearchCluster` replaces the value of the preset for that field. A field left unset on the cluster comes from the preset. An empty list or map (`extraEnv`, `extraEnvFrom`, `podLabels`, `podAnnotations`, `secureSettings`) counts as unset. To remove a list that the preset provides, set the list you want on the cluster, or reference a preset without it.
+`spec.cluster` of the preset is the baseline. The [CamundaRelease](camundarelease.md) of `releaseRef` merges over it, and the cluster spec merges over both. A field set on the `ElasticsearchCluster` replaces the value of the layer below for that field. A field left unset on the cluster comes from the layer below. An empty list or map (`extraEnv`, `extraEnvFrom`, `podLabels`, `podAnnotations`, `secureSettings`) counts as unset. To remove a list that the preset provides, set the list you want on the cluster, or reference a preset without it.
 
 The blocks `scheduling`, `monitoring`, `serviceAccount`, `resources`, and `persistentVolumeClaimRetentionPolicy` are replaced as a whole, never merged field by field. A cluster that sets its own `scheduling` block drops every scheduling rule of the preset.
+
+`version` is not part of a preset. It belongs to a [CamundaRelease](camundarelease.md) or to the cluster. An apply that sets it is rejected by the API server with `version belongs to a CamundaRelease and must not be set in a preset`. Move the version to a release, and point every cluster at it with `releaseRef`.
 
 ## Fleet settings
 
@@ -49,7 +51,7 @@ A preset has no status. It reports no conditions and no `status.observedGenerati
 
 ## Spec reference
 
-`spec.cluster` has the same type as the spec of `ElasticsearchCluster`. The fields `presetRef`, `secondaryStorageConfig`, and `suspend` belong to one cluster and must stay unset in a preset. Every other field is inheritable.
+`spec.cluster` has the same type as the spec of `ElasticsearchCluster`. The fields `presetRef`, `releaseRef`, `secondaryStorageConfig`, and `suspend` belong to one cluster and must stay unset in a preset, and so must `version`. Every other field is inheritable.
 
 Every field, with its type, whether it is required, and its default:
 
@@ -61,8 +63,6 @@ metadata:
 spec:
   # object (ElasticsearchCluster spec type). Required. The baseline that clusters inherit.
   cluster:
-    # string. Optional. Elasticsearch version as three segments. Camunda 8.9 supports 8.19+ and 9.2+.
-    version: "9.2.4"
     # integer. Optional. Number of Elasticsearch nodes, at least 1.
     replicas: 3
     # object (corev1.ResourceRequirements). Optional. CPU and memory of each Elasticsearch node.
@@ -123,10 +123,11 @@ spec:
 
 ### Validation rules
 
-- `spec.cluster` must not set `presetRef`, `secondaryStorageConfig`, or `suspend`. An empty `presetRef` and `suspend: false` count as unset, so templated YAML that renders zero values still applies. An empty `secondaryStorageConfig` is rejected by the name pattern. Omit the field instead.
+- `spec.cluster` must not set `presetRef`, `releaseRef`, `secondaryStorageConfig`, or `suspend`. An empty `presetRef` and `suspend: false` count as unset, so templated YAML that renders zero values still applies. An empty `secondaryStorageConfig` is rejected by the name pattern. Omit the field instead.
+- `version` is rejected in `spec.cluster`. It belongs to a [CamundaRelease](camundarelease.md) or to the cluster. An empty `version` is rejected by the three-segment pattern. Omit the field instead.
 - The no-shrink rule of `ElasticsearchCluster` for `storageSize` does not bind a preset. You can lower the baseline at any time.
 - Whether the merged configuration is complete is checked on the `ElasticsearchCluster`, not on the preset.
-- Every other rule of the `ElasticsearchCluster` schema applies to `spec.cluster`: the three-segment `version`, `replicas` at least 1, and valid resource names.
+- Every other rule of the `ElasticsearchCluster` schema applies to `spec.cluster`: `replicas` at least 1, and valid resource names.
 
 ### A production-shaped example
 
@@ -137,7 +138,6 @@ metadata:
   name: large
 spec:
   cluster:
-    version: "9.2.4"
     replicas: 5
     resources:
       requests: { cpu: "4", memory: "8Gi" }
@@ -163,6 +163,7 @@ spec:
 ## Related
 
 - [ElasticsearchCluster](elasticsearchcluster.md): references a preset through `spec.presetRef` and inherits `spec.cluster`.
+- [CamundaRelease](camundarelease.md): the Elasticsearch version that runs on this shape. It merges between the preset and the cluster.
 - [ObjectStorageConfig](objectstorageconfig.md): the snapshot bucket that `spec.cluster.snapshotStorageRef` names.
 - [Secondary storage guide](../guides/secondary-storage.md): how to choose and connect secondary storage.
 - [Getting started](../getting-started.md): the first cluster, end to end.

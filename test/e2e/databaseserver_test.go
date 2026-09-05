@@ -20,6 +20,7 @@ limitations under the License.
 package e2e
 
 import (
+	"os"
 	"strings"
 	"time"
 
@@ -47,8 +48,9 @@ const (
 	dsStorageConfig = "camunda-cnpg-storage"
 	// dsPlatform is the cluster-scoped platform config of this flow.
 	dsPlatform = "databaseserver-e2e"
-	// dsVersion is the PostgreSQL major the server runs.
-	dsVersion = "17"
+	// dsRelease carries the PostgreSQL major, so the server runs the layered
+	// configuration that a fleet uses.
+	dsRelease = "databaseserver-e2e-release"
 	// dsRetentionDays is how far back the archive of the server reaches. The
 	// point this flow restores to is minutes old, so one day is enough, and a
 	// short retention keeps the bucket small.
@@ -68,11 +70,23 @@ const (
 
 var _ = Describe("DatabaseServer", Ordered, Label(utils.LabelDatabaseServer), func() {
 	var (
+		// dsVersion is the PostgreSQL major of the matrix entry, which the
+		// server runs and the contract reports back.
+		dsVersion = os.Getenv(envPostgresVersion)
+
+		release = &v1.CamundaRelease{
+			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaRelease"},
+			ObjectMeta: metav1.ObjectMeta{Name: dsRelease},
+			Spec: v1.CamundaReleaseSpec{
+				Version:        os.Getenv(envCamundaVersion),
+				DatabaseServer: &v1.ReleaseDatabaseServerSpec{Version: dsVersion},
+			},
+		}
 		server = &v1.DatabaseServer{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "DatabaseServer"},
 			ObjectMeta: metav1.ObjectMeta{Name: dsServer, Namespace: dsNamespace},
 			Spec: v1.DatabaseServerSpec{
-				Version:              dsVersion,
+				ReleaseRef:           dsRelease,
 				Instances:            new(int32(1)),
 				Resources:            requests("250m", "512Mi"),
 				StorageSize:          new(resource.MustParse("2Gi")),
@@ -114,6 +128,9 @@ var _ = Describe("DatabaseServer", Ordered, Label(utils.LabelDatabaseServer), fu
 
 		createBackupStorage(dsNamespace)
 
+		By("creating the release that names the PostgreSQL major")
+		Expect(apply(release)).To(Succeed())
+
 		By("creating the DatabaseServer")
 		Expect(apply(server)).To(Succeed())
 
@@ -131,6 +148,7 @@ var _ = Describe("DatabaseServer", Ordered, Label(utils.LabelDatabaseServer), fu
 		_, _ = utils.Kubectl("delete", dbResource, dsDatabase, "-n", dsNamespace, "--ignore-not-found")
 		_, _ = utils.Kubectl("delete", dsResource, dsServer, "-n", dsNamespace, "--ignore-not-found", "--wait=false")
 		_, _ = utils.Kubectl("delete", ccPlatformResource, dsPlatform, "--ignore-not-found")
+		_, _ = utils.Kubectl("delete", ccReleaseResource, dsRelease, "--ignore-not-found")
 		_, _ = utils.Kubectl("delete", "ns", dsNamespace, "--wait=false")
 	})
 

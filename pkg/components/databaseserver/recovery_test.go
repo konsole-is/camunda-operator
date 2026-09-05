@@ -371,8 +371,13 @@ func TestRecoveryNameFitsCloudNativePG(t *testing.T) {
 // recoveryServer is the server of the recovery cases: it archives to a bucket
 // with static keys, it runs from its original cluster, and it records the
 // recovery it is about to build.
-func recoveryServer() (*v1.DatabaseServer, *v1.DatabaseServerPresetSpec, *ArchiveStorage) {
-	server, preset := goldenMinimalDatabaseServer()
+func recoveryServer() (
+	*v1.DatabaseServer,
+	*v1.DatabaseServerPresetSpec,
+	*v1.CamundaReleaseSpec,
+	*ArchiveStorage,
+) {
+	server, preset, release := goldenMinimalDatabaseServer()
 	server.Spec.Archive = archiveSpec()
 	server.Status = v1.DatabaseServerStatus{
 		Cluster: server.Name,
@@ -395,7 +400,7 @@ func recoveryServer() (*v1.DatabaseServer, *v1.DatabaseServerPresetSpec, *Archiv
 		}),
 	}
 
-	return server, preset, archive
+	return server, preset, release, archive
 }
 
 // The recovered cluster carries the whole shape of the running one, plus the
@@ -404,11 +409,11 @@ func recoveryServer() (*v1.DatabaseServer, *v1.DatabaseServerPresetSpec, *Archiv
 func TestRecoveryClusterGolden(t *testing.T) {
 	t.Parallel()
 
-	server, preset, archive := recoveryServer()
+	server, preset, release, archive := recoveryServer()
 	source := server.Status.Archive.History[0]
 
 	recovered, err := RecoveryCluster(
-		server, MergePreset(server.Spec, preset), archive, "", nil, source, "2026-08-20T14:30:00Z",
+		server, MergeSpec(server.Spec, preset, release), archive, "", nil, source, "2026-08-20T14:30:00Z",
 	)
 	require.NoError(t, err)
 
@@ -458,12 +463,12 @@ func (r recoveryPreview) Preview() ([]client.Object, error) {
 func TestRecoveryClusterNeedsTheRecordFirst(t *testing.T) {
 	t.Parallel()
 
-	server, preset, archive := recoveryServer()
+	server, preset, release, archive := recoveryServer()
 	source := server.Status.Archive.History[0]
 	server.Status.Recovery = nil
 
 	_, err := RecoveryCluster(
-		server, MergePreset(server.Spec, preset), archive, "", nil, source, "2026-08-20T14:30:00Z",
+		server, MergeSpec(server.Spec, preset, release), archive, "", nil, source, "2026-08-20T14:30:00Z",
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "records no recovery cluster")
@@ -529,8 +534,8 @@ func TestHeldIdentityStaysOnBothClusters(t *testing.T) {
 	const held = "arn:aws:iam::123456789012:role/held"
 	const moved = "arn:aws:iam::123456789012:role/moved"
 
-	server, preset, _ := recoveryServer()
-	merged := MergePreset(server.Spec, preset)
+	server, preset, release, _ := recoveryServer()
+	merged := MergeSpec(server.Spec, preset, release)
 	source := server.Status.Archive.History[0]
 
 	archive := &ArchiveStorage{

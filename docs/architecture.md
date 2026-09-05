@@ -86,6 +86,7 @@ graph LR
     BUCKET["Bucket (external)"]
 
     ESC -.->|presetRef| ESCP
+    ESC -.->|releaseRef| CR
     ESC -->|creates| ECK
     ESC -->|creates| SSC
     ESC -.->|snapshotStorageRef| OSC

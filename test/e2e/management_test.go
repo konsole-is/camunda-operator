@@ -29,10 +29,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8slabels "k8s.io/apimachinery/pkg/labels"
@@ -163,16 +161,24 @@ const (
 	mcOIDCAdminClaimValue = "ada@example.com"
 )
 
-// keycloakTokenScript reads an administrator token of the master realm into
-// KC_TOKEN, and every script of the suite that calls the Keycloak admin API
-// starts with it. The curl image carries no jq, so the token is cut out with
-// sed. The name and the password go through --data-urlencode, so a reserved
-// character in either one reaches Keycloak whole.
-const keycloakTokenScript = `KC_TOKEN=$(curl -sS ` +
+// keycloakTokenScript declares keycloak_token and puts an administrator token
+// of the master realm in KC_TOKEN, and every script of the suite that calls
+// the Keycloak admin API starts with it. A script that runs longer than the
+// lifespan of a token calls keycloak_token again.
+//
+// The curl image carries no jq, so the token is cut out with sed. The name and
+// the password go through --data-urlencode, so a reserved character in either
+// one reaches Keycloak whole. A refused connection is retried, because a
+// Keycloak that is rolling a pod refuses one for a moment and the caller runs
+// under set -e, where a curl that gives up ends the script.
+const keycloakTokenScript = `keycloak_token() {
+  curl -sS --retry 3 --retry-connrefused --retry-delay 1 ` +
 	`-d grant_type=password -d client_id=admin-cli ` +
 	`--data-urlencode "username=$KC_USER" --data-urlencode "password=$KC_PASSWORD" ` +
 	`"$KC_URL/realms/master/protocol/openid-connect/token" | ` +
-	`sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	`sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+}
+KC_TOKEN=$(keycloak_token)
 if [ -z "$KC_TOKEN" ]; then echo "no access_token from $KC_URL" >&2; exit 1; fi
 `
 
@@ -427,38 +433,19 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.
 		)
 		Expect(err).NotTo(HaveOccurred())
 
-		// The plane empties realm A in the pass that reads the new spec, and
-		// it stays there until every Management Identity that can fill that
-		// realm again is gone. The message of that state says the realm is
-		// empty, and the record still names realm A while it lasts.
-		By("holding the plane on realm A until nothing of it can write that realm")
-		Eventually(func(g Gomega) {
-			plane := managementPlane(g, mcRetargetName)
-			expectCallbackRealm(g, plane, mcRealmA)
-
-			cond := meta.FindStatusCondition(plane.Status.Conditions, v1.ConditionOptimizeCallbacksReady)
-			g.Expect(cond).NotTo(BeNil(), "the plane reports no %s yet", v1.ConditionOptimizeCallbacksReady)
-			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse), cond.Message)
-			g.Expect(cond.Reason).To(Equal(string(component.PrerequisiteNotMet)), cond.Message)
-			g.Expect(cond.Message).To(ContainSubstring("holds no login callback"), cond.Message)
-		}, 5*time.Minute, time.Second).Should(Succeed())
-
-		// Realm B is read first. The checkpoint above lasts until the pods of
-		// the old realm are gone, and each read costs a helper pod, so a read
-		// of realm B taken second is a read that the end of the drain can
-		// reach. Realm A holds still either way: once it is empty, nothing of
-		// this plane points at it again.
-		By("creating nothing in realm B and leaving no login callback in realm A")
-		client, err = realmClient(mc, mcRealmB, mcOptimizeClientID)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(client).To(
-			BeEmpty(), "Keycloak serves realm %q while the plane is still leaving realm %q", mcRealmB, mcRealmA,
+		// The plane empties the client of realm A before anything of it reaches
+		// realm B, and it holds itself in realm A until every Management
+		// Identity that can fill that realm again is gone. The watch below
+		// samples the client of both realms while that runs, so the order
+		// comes from what every sample carries. The states the plane reports
+		// while it drains last as long as the drain does, and a wait on one of
+		// them reads nothing at all when the drain is quick.
+		By("watching the login callback leave realm A before it reaches realm B")
+		samples, err := realmCallbackHandoff(
+			mc, mcRealmA, mcRealmB, mcOptimizeClientID, retargetCallbackURL(),
 		)
-
-		client, err = realmClient(mc, mcRealmA, mcOptimizeClientID)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(client).To(ContainSubstring(mcOptimizeClientJSON), "realm %q holds no Optimize client", mcRealmA)
-		Expect(client).NotTo(ContainSubstring(retargetCallbackURL()))
+		Expect(err).NotTo(HaveOccurred(), samples)
+		expectCallbackHandoff(samples, mcRealmA, mcRealmB)
 
 		By("recording realm B and registering the login callbacks there")
 		Eventually(func(g Gomega) {

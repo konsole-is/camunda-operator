@@ -3,12 +3,23 @@
 # names it in spec.releaseRef takes these versions, so one edit here rolls
 # every one of them.
 #
-# The versions are the ones the end-to-end suite of this repository runs,
-# which test/e2e/matrix/8.9.env pins. Keep the two in step when you raise one.
+# The Camunda, connectors, and Elasticsearch versions are the ones the
+# end-to-end suite of this repository runs, which test/e2e/matrix/8.9.env pins.
+# The PostgreSQL major is the one that suite runs as well. Renovate reads the
+# marker above a version and raises it in the same pull request as the matrix
+# file. Leave the markers in place. databaseServer.version carries none,
+# because a new PostgreSQL major is a step you take on purpose. `make lint`
+# fails when any version here and the matrix entry differ.
 #
 # connectors.version is here for a cluster that turns connectors on. The
 # bundle has a patch line of its own, so it does not follow spec.version. No
 # inventory here enables connectors.
+#
+# elasticsearch.version and databaseServer.version are what the storage of
+# these inventories runs. Every ElasticsearchCluster and every DatabaseServer
+# that names this release in spec.releaseRef takes them. Neither follows
+# spec.version: Elasticsearch moves on a line of its own, and
+# databaseServer.version is a bare PostgreSQL major such as 17.
 #
 # A release also carries pinned images and the environment that a version
 # needs. Neither is set here, because no inventory needs one. The
@@ -18,6 +29,13 @@ kind: CamundaRelease
 metadata:
   name: camunda-8-9
 spec:
+  # renovate: datasource=docker depName=camunda/camunda
   version: "8.9.18"
   connectors:
+    # renovate: datasource=docker depName=camunda/connectors-bundle
     version: "8.9.9"
+  elasticsearch:
+    # renovate: datasource=docker depName=docker.elastic.co/elasticsearch/elasticsearch
+    version: "9.2.8"
+  databaseServer:
+    version: "17"
