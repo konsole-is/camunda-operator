@@ -110,13 +110,7 @@ func (r *DatabaseReconciler) claim(ctx context.Context, database *v1.Database, k
 // claims is the claim protocol on the logical databases, over the Leases of
 // the namespace of the operator.
 func (r *DatabaseReconciler) claims() *leaseclaim.Claim[*v1.Database] {
-	return leaseclaim.New(
-		components.ClaimSchema(),
-		r.Client,
-		r.APIReader,
-		r.ClaimNamespace,
-		leaseclaim.OwnerExists(r.APIReader, components.ClaimSchema()),
-	)
+	return components.ClaimSchema().NewClaim(r.Client, r.APIReader, r.ClaimNamespace)
 }
 
 // checkCollision orders the claimants of the logical database that key names

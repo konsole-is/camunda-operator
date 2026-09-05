@@ -82,13 +82,7 @@ func (r *Reconciler) claimRealm(
 // realmClaims is the claim protocol on the Keycloak realms, over the Leases
 // of the namespace of the operator.
 func (r *Reconciler) realmClaims() *leaseclaim.Claim[*v1.CamundaManagementCluster] {
-	return leaseclaim.New(
-		components.RealmClaimSchema(),
-		r.Client,
-		r.APIReader,
-		r.ClaimNamespace,
-		leaseclaim.OwnerExists(r.APIReader, components.RealmClaimSchema()),
-	)
+	return components.RealmClaimSchema().NewClaim(r.Client, r.APIReader, r.ClaimNamespace)
 }
 
 // takeRealmClaim takes the claim Lease of the realm that target names, and
@@ -269,8 +263,9 @@ func namesRealm(target *v1.KeycloakRealmTarget, realm v1.KeycloakRealmTarget) bo
 	return target != nil && components.SameRealm(*target, realm)
 }
 
-// releaseRealmClaims deletes every Lease of leases, which Held read, except the ones of the realms that keep names. A nil entry of keep
-// names no realm. The finalizer passes none, so a deleted management cluster
+// releaseRealmClaims deletes every Lease of leases, which Claim.Held
+// returned, except the ones of the realms that keep names. A nil entry of
+// keep names no realm. The finalizer passes none, so a deleted management cluster
 // gives back every realm it holds.
 //
 // workload names the realms that only a Management Identity workload of the
