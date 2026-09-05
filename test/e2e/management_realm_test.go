@@ -256,8 +256,7 @@ esac`
 // so a realm that Management Identity has not created yet is no failure.
 //
 // The result outlives the move, so a caller reads the order of the two realms
-// from it whatever the plane did between two samples. expectCallbackHandoff is
-// what reads it.
+// from it whatever the plane did between two samples.
 func realmCallbackHandoff(
 	keycloak *v1.CamundaManagementCluster,
 	realmFrom, realmTo, clientID, callback string,
@@ -298,10 +297,13 @@ func realmCallbackHandoff(
 //
 // A probe exits the script through its command substitution: an unexpected
 // status from Keycloak ends the watch rather than reading as an absent
-// callback. Every branch of the loop is an if, because a bare test at the end
-// of an iteration would end the script under set -e.
+// callback. A refused connection is retried instead, because the watch makes
+// hundreds of requests and one of them meets a Keycloak that is busy. Every
+// branch of the loop is an if, because a bare test at the end of an iteration
+// would end the script under set -e.
 const watchRealmCallbacksScript = keycloakTokenScript + `probe() {
-  code=$(curl -sS -o /tmp/probe -w '%{http_code}' -H "Authorization: Bearer $KC_TOKEN" ` +
+  code=$(curl -sS --retry 3 --retry-connrefused --retry-delay 1 ` +
+	`-o /tmp/probe -w '%{http_code}' -H "Authorization: Bearer $KC_TOKEN" ` +
 	`"$KC_URL/admin/realms/$1/clients?clientId=$KC_CLIENT_ID")
   case "$code" in
     200) if grep -qF -- "$KC_CALLBACK" /tmp/probe; then echo 1; else echo 0; fi ;;
@@ -326,17 +328,8 @@ while :; do
 done`
 
 // expectCallbackHandoff asserts the order of the two realms from the samples
-// that realmCallbackHandoff took: no sample found the login callback in both
-// realms, and the last one found it in realmTo.
-//
-// A sample that finds it in both is a registration that arrived before the
-// withdrawal. That state stands until the withdrawal runs, so the samples
-// carry it however long the drain takes, which is what a wait on the drain
-// itself cannot promise.
-//
-// The first sample must find realmTo without the callback. A watch that starts
-// after the callbacks arrived there saw no order at all, and it passes every
-// assertion above without proving one.
+// that realmCallbackHandoff took: no sample carries the login callback in both
+// realms, one carries it in neither, and the last one carries it in realmTo.
 func expectCallbackHandoff(samples, realmFrom, realmTo string) {
 	GinkgoHelper()
 
@@ -348,22 +341,35 @@ func expectCallbackHandoff(samples, realmFrom, realmTo string) {
 		taken = append(taken, fields)
 	}
 
+	// A watch that started after the callbacks reached realmTo saw no order at
+	// all, and it passes every assertion below without proving one.
 	Expect(taken[0][2]).To(
 		Equal(realmTo+"=0"), "the watch of the two realms started too late:\n%s", samples,
 	)
 
-	var both []string
+	var both, neither []string
 	for _, fields := range taken {
-		if fields[1] == realmFrom+"=1" && fields[2] == realmTo+"=1" {
+		if both == nil && fields[1] == realmFrom+"=1" && fields[2] == realmTo+"=1" {
 			both = fields
-
-			break
+		}
+		if neither == nil && fields[1] == realmFrom+"=0" && fields[2] == realmTo+"=0" {
+			neither = fields
 		}
 	}
 	Expect(both).To(
 		BeEmpty(),
 		"realm %q carried the login callback while realm %q still carried it:\n%s",
 		realmTo, realmFrom, samples,
+	)
+	// The plane empties the old realm, stops every Management Identity that
+	// points at it, and starts the one of the new realm, which registers the
+	// callbacks while it starts. The two realms are therefore empty for a
+	// Management Identity start, and a watch that never read that state read
+	// something other than a handoff.
+	Expect(neither).NotTo(
+		BeEmpty(),
+		"no sample found the login callback gone from realm %q and not yet in realm %q:\n%s",
+		realmFrom, realmTo, samples,
 	)
 
 	Expect(taken[len(taken)-1][2]).To(

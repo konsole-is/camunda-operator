@@ -168,9 +168,11 @@ const (
 //
 // The curl image carries no jq, so the token is cut out with sed. The name and
 // the password go through --data-urlencode, so a reserved character in either
-// one reaches Keycloak whole.
+// one reaches Keycloak whole. A refused connection is retried, because a
+// Keycloak that is rolling a pod refuses one for a moment and the caller runs
+// under set -e, where a curl that gives up ends the script.
 const keycloakTokenScript = `keycloak_token() {
-  curl -sS ` +
+  curl -sS --retry 3 --retry-connrefused --retry-delay 1 ` +
 	`-d grant_type=password -d client_id=admin-cli ` +
 	`--data-urlencode "username=$KC_USER" --data-urlencode "password=$KC_PASSWORD" ` +
 	`"$KC_URL/realms/master/protocol/openid-connect/token" | ` +
