@@ -153,7 +153,7 @@ func OwnerExists[T client.Object](reader client.Reader, schema Schema[T]) Holder
 // this runs inside a reconcile. Validate reports the same T at start-up.
 func newOwner[T client.Object]() (T, error) {
 	kind := reflect.TypeFor[T]()
-	if kind.Kind() != reflect.Pointer {
+	if kind.Kind() != reflect.Pointer || kind.Elem().Kind() != reflect.Struct {
 		var zero T
 
 		return zero, fmt.Errorf("the claimant type %s is no pointer to a struct", kind)
