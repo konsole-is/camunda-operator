@@ -83,7 +83,11 @@ func (r *Reconciler) claimRealm(
 // of the namespace of the operator.
 func (r *Reconciler) realmClaims() *leaseclaim.Claim[*v1.CamundaManagementCluster] {
 	return leaseclaim.New(
-		components.RealmClaimSchema(), r.Client, r.APIReader, r.ClaimNamespace, r.realmHolderKeeps,
+		components.RealmClaimSchema(),
+		r.Client,
+		r.APIReader,
+		r.ClaimNamespace,
+		leaseclaim.OwnerExists(r.APIReader, components.RealmClaimSchema()),
 	)
 }
 
@@ -127,24 +131,6 @@ func (r *Reconciler) takeRealmClaim(
 			blocker.Holder.NamespacedName, target.Realm, components.RealmURL(target),
 		),
 	}, nil
-}
-
-// realmHolderKeeps reports whether the management cluster that the Lease
-// names still owns the claim. It does while it exists under the recorded UID.
-func (r *Reconciler) realmHolderKeeps(
-	ctx context.Context,
-	holder leaseclaim.Holder,
-) (bool, error) {
-	var other v1.CamundaManagementCluster
-	if err := r.APIReader.Get(ctx, holder.NamespacedName, &other); err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-
-		return false, fmt.Errorf("reading the realm claim holder %s: %w", holder.NamespacedName, err)
-	}
-
-	return other.UID == holder.UID, nil
 }
 
 // releaseUnusedRealms gives back every realm claim of mc that nothing of it
@@ -283,8 +269,7 @@ func namesRealm(target *v1.KeycloakRealmTarget, realm v1.KeycloakRealmTarget) bo
 	return target != nil && components.SameRealm(*target, realm)
 }
 
-// releaseRealmClaims deletes every Lease of leases, which realmClaimLeases
-// read, except the ones of the realms that keep names. A nil entry of keep
+// releaseRealmClaims deletes every Lease of leases, which Held read, except the ones of the realms that keep names. A nil entry of keep
 // names no realm. The finalizer passes none, so a deleted management cluster
 // gives back every realm it holds.
 //

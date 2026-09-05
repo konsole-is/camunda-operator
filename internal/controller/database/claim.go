@@ -111,7 +111,11 @@ func (r *DatabaseReconciler) claim(ctx context.Context, database *v1.Database, k
 // the namespace of the operator.
 func (r *DatabaseReconciler) claims() *leaseclaim.Claim[*v1.Database] {
 	return leaseclaim.New(
-		components.ClaimSchema(), r.Client, r.APIReader, r.ClaimNamespace, r.holderKeeps,
+		components.ClaimSchema(),
+		r.Client,
+		r.APIReader,
+		r.ClaimNamespace,
+		leaseclaim.OwnerExists(r.APIReader, components.ClaimSchema()),
 	)
 }
 
@@ -167,28 +171,6 @@ func withSelf(claimants []v1.Database, database *v1.Database) []v1.Database {
 	}
 
 	return append(claimants, *database)
-}
-
-// holderKeeps reports whether the Database that the Lease names still owns
-// the claim. It does while it exists under the recorded UID.
-//
-// A holder that is there keeps the claim against every other claimant, even
-// an older one. The logical database it bootstrapped is in use, and its
-// passwords are the ones the published Secrets carry. To hand it on would
-// reset those passwords under a running cluster.
-func (r *DatabaseReconciler) holderKeeps(
-	ctx context.Context, holder leaseclaim.Holder,
-) (bool, error) {
-	var other v1.Database
-	if err := r.APIReader.Get(ctx, holder.NamespacedName, &other); err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-
-		return false, fmt.Errorf("reading the claim holder %s: %w", holder.NamespacedName, err)
-	}
-
-	return other.UID == holder.UID, nil
 }
 
 // finalize releases the claims of a deleted Database and removes the claim
