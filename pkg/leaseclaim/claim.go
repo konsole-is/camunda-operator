@@ -173,9 +173,11 @@ func newOwner[T client.Object]() (T, error) {
 // that orders the claimants of a free key reads TakeUnclaimed, whose rule
 // adds one more source of errors.
 //
-// A holder that HolderKeeps answers for is taken over in the same call. A
-// Lease that a live holder took between the read and the answer reads as
-// blocked for this pass, and the caller looks again on its retry interval.
+// A holder that HolderKeeps answers false for is taken over in the same
+// call. One it answers true for keeps the claim and comes back as the
+// Blocker. A Lease that a live holder took between the read and the answer
+// reads as blocked for this pass, and the caller looks again on its retry
+// interval.
 func (c *Claim[T]) Take(ctx context.Context, owner T, key string) (*Blocker, error) {
 	return c.take(ctx, owner, key, nil)
 }
