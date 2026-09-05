@@ -26,6 +26,7 @@ import (
 	coordinationv1 "k8s.io/api/coordination/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -80,6 +81,14 @@ type Schema[T client.Object] struct {
 	// name. They carry the name alone, so two resources of two namespaces
 	// that share a name share these labels.
 	Labels func(name string) map[string]string
+}
+
+// NewClaim returns the claim protocol of the Schema over the claim Leases of
+// namespace, with OwnerExists as its HolderKeeps. It is New for a controller,
+// which wires its client, its uncached API reader and the namespace of the
+// operator and runs no policy of its own.
+func (s Schema[T]) NewClaim(c client.Client, reader client.Reader, namespace string) *Claim[T] {
+	return New(s, c, reader, namespace, nil)
 }
 
 // NewLease builds the Lease that claims key for owner in namespace. The API
@@ -160,6 +169,11 @@ func (s Schema[T]) Validate() error {
 	// that starts another one can name the Lease of that other claim.
 	if !strings.HasSuffix(s.Prefix, "-") {
 		return fmt.Errorf("the Lease name prefix %q does not end with a hyphen", s.Prefix)
+	}
+	if problems := validation.IsDNS1123Subdomain(s.LeaseName("probe")); len(problems) > 0 {
+		return fmt.Errorf(
+			"the Lease name prefix %q names no Lease: %s", s.Prefix, strings.Join(problems, "; "),
+		)
 	}
 	if s.Noun == "" {
 		return errors.New("the noun of the claim is empty")

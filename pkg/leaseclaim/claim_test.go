@@ -736,6 +736,32 @@ func TestTakeUnclaimedReturnsTheErrorOfTheRule(t *testing.T) {
 	assert.Zero(t, creates, "a refused order writes nothing")
 }
 
+// A nil HolderKeeps is OwnerExists, so a consumer that passes none takes a
+// dead holder over on the first contended key rather than panicking there.
+func TestNewDefaultsToOwnerExists(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	schema := testSchema()
+	gone := claimant("alpha", "gone", "uid-gone")
+	next := claimant("beta", "next", "uid-next")
+	c := testClient(t, next, schema.NewLease(testNamespace, "key", gone))
+
+	blocker, err := schema.NewClaim(c, c, testNamespace).Take(ctx, next, "key")
+
+	require.NoError(t, err)
+	assert.Nil(t, blocker, "the holder that is gone keeps nothing under the default")
+	lease, found := leaseOf(t, c, "key")
+	require.True(t, found)
+	assert.True(t, schema.heldBy(lease, next.UID))
+
+	blocker, err = New(schema, c, c, testNamespace, nil).Take(ctx, gone, "key")
+
+	require.NoError(t, err)
+	require.NotNil(t, blocker)
+	assert.Equal(t, holderOf(next), blocker.Holder, "a holder that exists keeps its claim")
+}
+
 // OwnerExists answers for a holder by its UID: the resource that stands under
 // the recorded name keeps the claim only while it is the recorded one.
 func TestOwnerExists(t *testing.T) {
@@ -958,6 +984,7 @@ func TestSchemaValidate(t *testing.T) {
 	cases := map[string]func(*Schema[*corev1.ConfigMap]){
 		"no prefix":               func(s *Schema[*corev1.ConfigMap]) { s.Prefix = "" },
 		"a prefix with no hyphen": func(s *Schema[*corev1.ConfigMap]) { s.Prefix = "camunda" },
+		"an uppercase prefix":     func(s *Schema[*corev1.ConfigMap]) { s.Prefix = "Camunda-" },
 		"no noun":                 func(s *Schema[*corev1.ConfigMap]) { s.Noun = "" },
 		"no Labels":               func(s *Schema[*corev1.ConfigMap]) { s.Labels = nil },
 		"no holder namespace":     func(s *Schema[*corev1.ConfigMap]) { s.HolderNamespaceAnnotation = "" },

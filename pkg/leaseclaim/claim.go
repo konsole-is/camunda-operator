@@ -46,6 +46,7 @@ package leaseclaim
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -58,30 +59,6 @@ import (
 // replaced under the same name, keeps nothing and is taken over. An error
 // stops the claim, so a holder that cannot be read keeps what it holds.
 type HolderKeeps func(ctx context.Context, holder Holder) (bool, error)
-
-// OwnerExists is the HolderKeeps of a claim whose holder keeps it while the
-// resource exists under the recorded UID. It reads the holder through reader,
-// which must read the API server directly, and names the claim of schema in
-// the error of a read that fails.
-func OwnerExists[T any, PT interface {
-	*T
-	client.Object
-}](reader client.Reader, schema Schema[PT]) HolderKeeps {
-	return func(ctx context.Context, holder Holder) (bool, error) {
-		var owner T
-		if err := reader.Get(ctx, holder.NamespacedName, PT(&owner)); err != nil {
-			if apierrors.IsNotFound(err) {
-				return false, nil
-			}
-
-			return false, fmt.Errorf(
-				"reading the %s holder %s: %w", schema.Noun, holder.NamespacedName, err,
-			)
-		}
-
-		return PT(&owner).GetUID() == holder.UID, nil
-	}
-}
 
 // Unclaimed runs while nothing holds a key, before the claimant creates the
 // Lease. A caller passes a rule that only orders claimants of a free key, and
@@ -118,11 +95,13 @@ type Claim[T client.Object] struct {
 // namespace, which is the namespace the operator runs in.
 //
 // Writes go through c. Every read goes through reader, which must read the
-// API server directly and never a cache.
+// API server directly and never a cache. A nil holderKeeps is OwnerExists of
+// reader and schema, which is the rule both consumers run; a test passes its
+// own policy.
 //
-// A controller builds this on every pass, so New checks nothing. Its caller
-// runs Validate on the schema once, where a failure stops the manager rather
-// than one reconcile.
+// A controller builds this on every pass, so New checks nothing else. Its
+// caller runs Validate on the schema once, where a failure stops the manager
+// rather than one reconcile.
 func New[T client.Object](
 	schema Schema[T],
 	c client.Client,
@@ -130,6 +109,10 @@ func New[T client.Object](
 	namespace string,
 	holderKeeps HolderKeeps,
 ) *Claim[T] {
+	if holderKeeps == nil {
+		holderKeeps = OwnerExists(reader, schema)
+	}
+
 	return &Claim[T]{
 		schema:      schema,
 		client:      c,
@@ -139,10 +122,45 @@ func New[T client.Object](
 	}
 }
 
+// OwnerExists is the HolderKeeps of a claim whose holder keeps it while the
+// resource exists under the recorded UID. It reads the holder through reader,
+// which must read the API server directly, and names the claim of schema in
+// the error of a read that fails.
+func OwnerExists[T client.Object](reader client.Reader, schema Schema[T]) HolderKeeps {
+	return func(ctx context.Context, holder Holder) (bool, error) {
+		owner := newOwner[T]()
+		if err := reader.Get(ctx, holder.NamespacedName, owner); err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+
+			return false, fmt.Errorf(
+				"reading the %s holder %s: %w", schema.Noun, holder.NamespacedName, err,
+			)
+		}
+
+		return owner.GetUID() == holder.UID, nil
+	}
+}
+
+// newOwner returns an empty resource of the kind that takes the claim, for a
+// read to fill. T is a pointer to a struct, so its zero value points nowhere
+// and a read into it fails: the struct behind it is allocated here.
+func newOwner[T client.Object]() T {
+	var zero T
+	// reflect.New of the element of a pointer type is that pointer type, so
+	// the assertion holds for every T that a Schema names.
+	owner, _ := reflect.New(reflect.TypeOf(zero).Elem()).Interface().(T)
+
+	return owner
+}
+
 // Take takes the claim on key for owner. It returns nil when owner holds the
 // claim after the call, which covers the Lease it created and the one it held
 // already. Otherwise it returns what blocks the claim, and the caller reports
-// it: only a failure of the Kubernetes API comes back as an error.
+// it: only a failure of the Kubernetes API comes back as an error. A caller
+// that orders the claimants of a free key reads TakeUnclaimed, whose rule
+// adds one more source of errors.
 //
 // A holder that HolderKeeps answers for is taken over in the same call. A
 // Lease that a live holder took between the read and the answer reads as
@@ -154,6 +172,11 @@ func (c *Claim[T]) Take(ctx context.Context, owner T, key string) (*Blocker, err
 // TakeUnclaimed takes the claim on key for owner and runs unclaimed first
 // when no Lease holds the key. It is Take for a caller that orders the
 // claimants of a free key, and the order never reaches a key that is held.
+//
+// An error of unclaimed comes back as it is, with nothing wrapped around it,
+// and no Lease is written. The caller owns that error: it tells its own
+// sentinel, an order rather than a loss, from a failure of the Kubernetes API
+// with errors.Is.
 func (c *Claim[T]) TakeUnclaimed(
 	ctx context.Context, owner T, key string, unclaimed Unclaimed,
 ) (*Blocker, error) {
