@@ -70,6 +70,15 @@ func StorageClaimLeaseLabels(name string) map[string]string {
 	return labels.Managed(labels.Cluster(name), StorageClaimComponent)
 }
 
+// StorageClaimPodSelector matches every pod that writes the backend of the
+// storage claim named claim, whatever cluster it belongs to. A caller tells
+// its own pods from the rest by the camunda.io/cluster-uid label, see
+// StoragePodLabels. Both gates of a handover select with this, so neither can
+// wait for a set of pods the other does not see.
+func StorageClaimPodSelector(claim string) map[string]string {
+	return map[string]string{labels.StorageClaimKey: labels.OwnerName(claim)}
+}
+
 // StorageClaimKey returns the backend that storage addresses, as the key of
 // its storage claim. Two contracts that name one address give one key, and a
 // contract that is edited to another address gives another key.

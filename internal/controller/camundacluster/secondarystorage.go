@@ -164,7 +164,7 @@ func (res *resolver) otherPodsOnClaim(ctx context.Context, claim string) ([]stri
 	if err := res.reader.List(
 		ctx,
 		&pods,
-		client.MatchingLabels(map[string]string{labels.StorageClaimKey: labels.OwnerName(claim)}),
+		client.MatchingLabels(components.StorageClaimPodSelector(claim)),
 	); err != nil {
 		return nil, fmt.Errorf("listing the pods on storage claim %q: %w", claim, err)
 	}

@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -33,6 +34,7 @@ import (
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
@@ -177,12 +179,25 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	if err != nil {
 		return out, err
 	}
-	// A cluster that does not hold the claim of its backend is parked, or it
-	// waits for a handover. Its Ready carries the state of the pass that read
-	// the claim, so a storageRef edit reaches this controller before that
-	// reason does. The importer must not write the backend of another cluster
-	// whatever the last Ready says.
-	out.Input.Suspended = out.Input.Suspended || !held
+	// A cluster that does not hold the claim of its backend is parked. Its
+	// Ready carries the state of the pass that read the claim, so a storageRef
+	// edit reaches this controller before that reason does. The importer must
+	// not write the backend of another cluster whatever the last Ready says.
+	if !held {
+		out.Input.Suspended = true
+	} else {
+		// The cluster takes the claim of a new backend and records the pods it
+		// waits for in one pass, and its Ready reaches the API server at the
+		// end of that pass. A read in between finds the claim held and the
+		// previous reason, so the pods decide here as they do for the cluster.
+		writing, err := r.otherPodOnClaim(ctx, out.Input.StorageClaim, &cluster)
+		if err != nil {
+			return out, err
+		}
+		if writing {
+			out.Input.Suspended = true
+		}
+	}
 
 	effective, err := res.resolveEffective(ctx, &cluster)
 	if err != nil {
@@ -243,6 +258,34 @@ func (res *resolver) resolveStorage(
 	}
 
 	return &binding, nil
+}
+
+// otherPodOnClaim reports whether a pod of a cluster other than cluster
+// carries the storage claim named claim. Such a pod writes the backend, so the
+// importer must stay at zero beside it. The list covers every namespace,
+// because two clusters of two namespaces can resolve one backend.
+func (r *Reconciler) otherPodOnClaim(
+	ctx context.Context,
+	claim string,
+	cluster *v1.CamundaCluster,
+) (bool, error) {
+	var pods corev1.PodList
+	err := r.APIReader.List(
+		ctx,
+		&pods,
+		client.MatchingLabels(clustercomponents.StorageClaimPodSelector(claim)),
+	)
+	if err != nil {
+		return false, fmt.Errorf("listing the pods on storage claim %q: %w", claim, err)
+	}
+
+	for i := range pods.Items {
+		if pods.Items[i].Labels[labels.ClusterUIDKey] != string(cluster.UID) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // resolveEffective merges the preset and the release of the cluster under
