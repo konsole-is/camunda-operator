@@ -77,6 +77,11 @@ type CamundaClusterReconciler struct {
 	// Metrics records the condition gauge and the apply counters of the
 	// framework. SetupWithManager sets it when it is nil.
 	Metrics component.MetricsRecorder
+	// ClaimNamespace holds the storage claim Leases of every cluster. One
+	// namespace for all of them, so two clusters in two namespaces that
+	// resolve one backend meet on one Lease. SetupWithManager refuses an
+	// empty value.
+	ClaimNamespace string
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used
@@ -130,6 +135,7 @@ const defaultRetryInterval = 30 * time.Second
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile converges a CamundaCluster. A paused cluster records one Paused
 // event and returns before anything is read or written, status included.

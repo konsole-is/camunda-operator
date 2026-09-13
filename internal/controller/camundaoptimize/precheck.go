@@ -155,7 +155,21 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	if err != nil {
 		return out, err
 	}
-	out.Input.StorageContract = binding.Name
+	key, err := clustercomponents.StorageClaimKey(clustercomponents.Storage{
+		Type:          v1.SecondaryStorageTypeElasticsearch,
+		Elasticsearch: binding.Spec.Elasticsearch,
+	})
+	if err != nil {
+		return out, &conditions.PreCheckFailure{
+			Reason: v1.ReasonInvalidReference,
+			Message: fmt.Sprintf(
+				"SecondaryStorageConfig %q: %s",
+				objectPath(client.ObjectKeyFromObject(binding)), err,
+			),
+		}
+	}
+	out.Input.StorageClaim = clustercomponents.StorageClaimSchema().LeaseName(key)
+	out.Input.ClusterUID = cluster.UID
 
 	effective, err := res.resolveEffective(ctx, &cluster)
 	if err != nil {

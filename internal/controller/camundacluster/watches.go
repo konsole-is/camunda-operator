@@ -18,6 +18,7 @@ package camundacluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -36,6 +37,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
@@ -118,6 +120,13 @@ var indexers = map[string]client.IndexerFunc{
 // configuration changed. It also sets EventRecorder, Metrics, and the uncached
 // component client when they are nil.
 func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.ClaimNamespace == "" {
+		return errors.New("the namespace of the storage claim Leases is required")
+	}
+	if err := components.StorageClaimSchema().Validate(); err != nil {
+		return fmt.Errorf("the storage claim Schema of CamundaCluster: %w", err)
+	}
+
 	if r.EventRecorder == nil {
 		r.EventRecorder = mgr.GetEventRecorder(controllerName)
 	}

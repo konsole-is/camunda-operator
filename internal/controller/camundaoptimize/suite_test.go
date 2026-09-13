@@ -42,6 +42,11 @@ const (
 	interval = testenv.Interval
 )
 
+// testClaimNamespace holds the storage claim Leases of this suite. In a
+// cluster this is the namespace of the operator, which always exists, like
+// this one.
+const testClaimNamespace = "default"
+
 var (
 	env       *testenv.Env
 	ctx       context.Context
@@ -63,9 +68,10 @@ var _ = BeforeSuite(func() {
 	// those controllers own.
 	env = testenv.Start(func(mgr ctrl.Manager) error {
 		if err := (&camundacluster.CamundaClusterReconciler{
-			Client:    mgr.GetClient(),
-			APIReader: mgr.GetAPIReader(),
-			Scheme:    mgr.GetScheme(),
+			Client:         mgr.GetClient(),
+			APIReader:      mgr.GetAPIReader(),
+			Scheme:         mgr.GetScheme(),
+			ClaimNamespace: testClaimNamespace,
 			// The handover spec waits for the cluster to look at the pods of
 			// the previous holder again, which happens on this timer.
 			RetryInterval: time.Second,
