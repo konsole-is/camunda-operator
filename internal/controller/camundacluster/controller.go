@@ -143,10 +143,10 @@ const defaultRetryInterval = 30 * time.Second
 // Ready is True only when every component the cluster needs is True. Its
 // reason and message come from the governing component, which is the
 // highest-priority component that is not True, or the highest-priority of all
-// of them when they all are. A cluster whose storage contract another cluster
-// holds reports StorageAlreadyAttached instead of the aggregate. A cluster
-// that takes a contract over reports WaitingForHandover while a pod of the
-// previous holder still runs on it. Both look again on a timer.
+// of them when they all are. A cluster whose backend another cluster holds
+// reports StorageAlreadyAttached instead of the aggregate. A cluster that
+// holds the backend reports WaitingForHandover while a pod of another cluster
+// still writes it. Both look again on a timer.
 //
 // Status is written once per reconcile: the components and conditions.Stage
 // stage conditions on the in-memory cluster, and the deferred FlushStatus

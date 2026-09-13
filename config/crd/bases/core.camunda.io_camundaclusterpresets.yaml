@@ -5890,10 +5890,11 @@ spec:
                     description: |-
                       StorageRef names the SecondaryStorageConfig, in the namespace of this
                       cluster, that describes the secondary storage backend. Required on a
-                      CamundaCluster, forbidden in a preset. One CamundaCluster uses one
-                      contract. If another cluster already holds the contract, the operator
-                      suspends this cluster and reports Ready reason StorageAlreadyAttached
-                      until that cluster releases it.
+                      CamundaCluster, forbidden in a preset. One CamundaCluster holds one
+                      backend, and two contracts that name one address are one backend. If
+                      another cluster already holds the backend, the operator suspends this
+                      cluster and reports Ready reason StorageAlreadyAttached until that
+                      cluster moves to another backend or is deleted.
                     type: string
                   suspend:
                     description: |-
