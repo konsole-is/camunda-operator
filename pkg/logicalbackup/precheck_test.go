@@ -263,11 +263,14 @@ func TestPreCheckFailures(t *testing.T) {
 	}
 }
 
-// A cluster whose reference check failed keeps its workloads, so it is not
-// suspended and this pre-check does not stop a backup of it. Each backup kind
-// gates on its own after this: LogicalBackupRDBMS also requires the cluster to
-// run the spec it declares.
-func TestPreCheckDoesNotReportClusterSuspendedForADanglingReference(t *testing.T) {
+// The Ready condition of the cluster carries InvalidReference from a check of
+// its own that failed. Every resource this pre-check reads is present, so what
+// it proves is that it does not turn that reason into ClusterSuspended: a
+// cluster on a failed check keeps its workloads, so it is not suspended.
+//
+// Each backup kind gates on its own after this. LogicalBackupRDBMS also
+// requires the cluster to run the spec it declares.
+func TestPreCheckDoesNotReportClusterSuspendedForAFailedReferenceCheck(t *testing.T) {
 	c := cluster()
 	c.Status.Conditions = []metav1.Condition{{
 		Type:               v1.ConditionReady,
