@@ -173,7 +173,12 @@ role should not change. `make manifests` decides.
 ## No suspension on a failed pre-check
 
 The pre-check failure branch of both controllers returns to the shape before #319: stage
-`Failed` on `Ready`, requeue on a timer for an unwatched failure, return.
+`Failed` on `Ready`, requeue on a timer for an unwatched failure, return. Two exceptions keep
+a parked cluster parked, because its workloads are at zero and `Suspended()` must keep
+reading true for it: the storage steps run first in the pre-check, and a failure after a
+found holder keeps `StorageAlreadyAttached` with the failure in the message; a failure in
+the storage steps themselves keeps a standing `StorageAlreadyAttached` the same way, since
+the park ends only when the claim step decides again.
 
 What goes:
 
@@ -196,8 +201,11 @@ workloads that belong to the instance that holds the cluster.
 
 `suspendedReadyReasons` in `api/v1` narrows to `StorageAlreadyAttached` and
 `WaitingForHandover`. `Suspended()` then answers true for `spec.suspend` and for the two
-states in the table above, and nothing else. Its three readers change behavior without a
-code change:
+states in the table above, and nothing else. It reports that the attachments of the cluster
+must hold, not that every workload is at zero: a running cluster that repoints into a
+handover keeps its workloads on the previous backend until the wait ends, and its Optimize
+importer and its backups wait meanwhile, because they would touch the new backend. Its three
+readers change behavior without a code change:
 
 - `CamundaOptimize` scales to zero with the cluster in those states only.
 - A logical backup waits with `ClusterSuspended` in those states only. A cluster on a
