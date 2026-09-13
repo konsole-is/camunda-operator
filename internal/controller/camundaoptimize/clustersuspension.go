@@ -76,10 +76,11 @@ func wasSuspending(optimize *v1.CamundaOptimize) bool {
 // same reason that a suspended CamundaCluster reports.
 //
 // before is what wasSuspending read at the top of the reconcile, and suspended
-// is spec.suspend of the referenced cluster. The caller runs this after it
-// stages the new Ready, so a reconcile that returns early on an error records
-// nothing: it changed no workload, and the next reconcile still sees the same
-// transition to record.
+// is CamundaCluster.Suspended of the referenced cluster, which covers
+// spec.suspend and the states in which the operator holds that cluster at
+// zero. The caller runs this after it stages the new Ready, so a reconcile
+// that returns early on an error records nothing: it changed no workload, and
+// the next reconcile still sees the same transition to record.
 func (r *Reconciler) recordSuspensionChange(
 	optimize *v1.CamundaOptimize,
 	before, suspended bool,
