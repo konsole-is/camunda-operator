@@ -592,6 +592,44 @@ var _ = Describe("CamundaCluster controller", func() {
 		Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(Equal(int32(1)))
 	})
 
+	// spec.suspend is the instruction of the user, and a broken Secret is
+	// exactly when a user reaches for it. It must not wait for the reference
+	// to resolve.
+	It("suspends a cluster whose reference check fails at the same time", func() {
+		ns := newNamespace()
+		binding := createBinding(ns, true)
+		cluster := newCluster(ns, createPlatformConfig(), binding)
+		createCluster(cluster)
+		zeebeKey := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"}
+		Eventually(func(g Gomega) {
+			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(Equal(int32(1)))
+		}, timeout, interval).Should(Succeed())
+
+		By("suspending the cluster and deleting its credentials Secret in one step")
+		name := binding.Spec.Elasticsearch.CredentialsSecretRef.Name
+		Expect(k8sClient.Delete(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+		})).To(Succeed())
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Suspend = true })
+
+		expectReady(
+			cluster,
+			metav1.ConditionFalse,
+			Equal(v1.ReasonMissingSecret),
+			And(
+				ContainSubstring(name),
+				ContainSubstring("The workloads are scaled to zero because spec.suspend is set"),
+			),
+		)
+		Eventually(func(g Gomega) {
+			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
+		}, timeout, interval).Should(Succeed(), "the broker StatefulSet is scaled, not deleted")
+
+		By("recreating the Secret")
+		createSecret(ns, name, map[string]string{"username": "camunda", "password": "es-password"})
+		expectReady(cluster, metav1.ConditionTrue, Equal(string(component.Suspended)), Not(BeEmpty()))
+	})
+
 	It("keeps the admin password stable across reconciles and regenerates it when the Secret is deleted", func() {
 		cluster := createDefaultCluster()
 		adminKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-camunda-admin"}

@@ -192,7 +192,18 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// A running cluster keeps its workloads while its pre-check fails:
 		// they run on the configuration of the last pass, and the storage
 		// claim keeps its backend for it. Ready reports the failure.
+		//
+		// spec.suspend is the exception. It is the instruction of the user,
+		// and the suspended render is what a failed pre-check skips, so the
+		// workloads stop here instead, see suspendExplicitly.
+		suspendErr := r.suspendExplicitly(ctx, &cluster)
+		if cluster.Spec.Suspend && suspendErr == nil {
+			failure.Message += suspendNote
+		}
 		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
+		if suspendErr != nil {
+			return ctrl.Result{}, suspendErr
+		}
 
 		// Only an unwatched failure needs a timer; everything else the
 		// pre-checks resolve re-enqueues through a watch.

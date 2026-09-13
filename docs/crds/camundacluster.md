@@ -283,6 +283,19 @@ status:
 
 `spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` is empty. When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
 
+`suspend` stops the workloads while a reference check fails as well. You do not have to correct the reference first. `Ready` then reports the failure, and the message says that the workloads are at zero because you set the field.
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: MissingSecret
+      message: >-
+        Secret my-cluster-ns/my-storage-credentials not found. The workloads
+        are scaled to zero because spec.suspend is set
+```
+
 The operator also suspends a cluster on its own, and only to keep two clusters off one backend. `spec.suspend` stays yours. A cluster whose backend another cluster holds reports `StorageAlreadyAttached`, and a cluster that waits for the pods of a previous holder reports `WaitingForHandover` (see [Secondary storage](#secondary-storage)). These are the only two. Each of them ends on its own when its cause is gone. Every other failure leaves the workloads up.
 
 `suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it, and starts them again when you clear the field. The Optimize importer reads Elasticsearch directly. Without this, it keeps importing while the cluster is down. Every suspension by the operator reaches them the same way: a `CamundaOptimize` attached to a suspended cluster scales to zero, and a backup of it waits with reason `ClusterSuspended`.
