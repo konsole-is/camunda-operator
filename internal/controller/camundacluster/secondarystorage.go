@@ -195,7 +195,7 @@ func claimSuspends(storage components.Storage) bool {
 // the last apply.
 func storageHeld(cluster *v1.CamundaCluster, holder *components.StorageHolder, applyErr error) metav1.Condition {
 	message := fmt.Sprintf(
-		"CamundaCluster %q already writes the backend %q. One CamundaCluster writes one backend, "+
+		"CamundaCluster %q already holds the backend %q. One CamundaCluster holds one backend, "+
 			"so this cluster stays suspended until that cluster moves to another backend or is deleted",
 		objectPath(holder.Cluster), holder.Backend,
 	)

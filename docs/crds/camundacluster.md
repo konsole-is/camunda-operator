@@ -138,9 +138,9 @@ status:
       status: "False"
       reason: StorageAlreadyAttached
       message: >-
-        CamundaCluster "my-cluster-ns/my-other-cluster" already writes the
+        CamundaCluster "my-cluster-ns/my-other-cluster" already holds the
         backend "elasticsearch|https://es-http.my-cluster-ns.svc:9200". One
-        CamundaCluster writes one backend, so this cluster stays suspended
+        CamundaCluster holds one backend, so this cluster stays suspended
         until that cluster moves to another backend or is deleted
 ```
 
