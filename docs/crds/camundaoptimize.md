@@ -161,7 +161,7 @@ The effective version of the cluster is `spec.version` of the `CamundaCluster`, 
 
 The importer reads Elasticsearch directly. It does not go through the orchestration cluster, so it keeps reading whether or not that cluster runs.
 
-`spec.suspend` on the referenced `CamundaCluster` therefore reaches the Optimize workloads too. The operator scales the webapp and the importer to zero with the workloads of the cluster, and starts them again when you clear the field. `suspend` means "stop everything attached to this cluster", not "stop the workloads of this cluster". The operator also suspends a cluster on its own while another cluster holds its backend, and the Optimize workloads follow that suspension the same way.
+`spec.suspend` on the referenced `CamundaCluster` therefore reaches the Optimize workloads too. The operator scales the webapp and the importer to zero with the workloads of the cluster, and starts them again when you clear the field. `suspend` means "stop everything attached to this cluster", not "stop the workloads of this cluster". The operator also suspends a cluster on its own while another cluster holds its backend, and while it waits for the pods of a previous holder to leave that backend. The Optimize workloads follow both suspensions the same way.
 
 `Ready` reads `True` with reason `Suspended` while the suspension holds. A cluster with `spec.suspend` reports the same. A cluster that another cluster parked reports `Ready` `False` with reason `StorageAlreadyAttached` instead, see [CamundaCluster](camundacluster.md#secondary-storage). Zero replicas is the state you asked for, so the Optimize condition is not an error. The condition does not name the cluster, but the events do: `kubectl describe camundaoptimize <name>` shows `ClusterSuspended` when the workloads go to zero and `ClusterResumed` when they start again.
 
@@ -228,7 +228,7 @@ A `CamundaOptimize` that never held the attachment removes nothing from the clus
 | `WebappReady` | `Healthy` | Every webapp replica is ready. | Nothing. |
 | `ImporterReady` | `Healthy` | The importer replica is ready, or `spec.importer.replicas` is `0`. | Nothing. |
 | `WebappReady` / `ImporterReady` | `Creating` / `Updating` / `Scaling` | The Deployment rolls out or scales. | Wait. |
-| `WebappReady` / `ImporterReady` | `Suspending` / `Suspended` | The referenced cluster is suspended, or a check of this resource failed, so the Deployment stops or is at zero. | Nothing. See [Suspension](#suspension). |
+| `WebappReady` / `ImporterReady` | `Suspending` / `Suspended` | The referenced cluster is suspended, so the Deployment stops or is at zero. | Nothing. See [Suspension](#suspension). |
 | `WebappReady` / `ImporterReady` | `Failing` | The Deployment has replicas that do not become ready. | Read the pods of the named Deployment. |
 | `WebappReady` / `ImporterReady` | `Degraded` / `Down` | Some or no replicas are ready after the grace period. | Read the pods and events of the named Deployment. |
 | `Ready` | `Healthy` | Every condition that takes part is healthy. | Nothing. |
