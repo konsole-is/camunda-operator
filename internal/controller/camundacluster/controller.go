@@ -226,12 +226,12 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	// A cluster whose storage contract another cluster holds renders
-	// suspended: every workload at zero and the volumes kept, until the
-	// holder releases it.
+	// A cluster that does not write its backend alone renders suspended: every
+	// workload at zero and the volumes kept, until the other cluster releases
+	// the backend or its pods are gone.
 	// The suspension also idles the admin rotation and clears the management
 	// binding, as a user suspension does.
-	if in.Storage.Holder != nil {
+	if claimSuspends(in.Storage) {
 		in.Effective.Suspend = true
 	}
 
@@ -253,7 +253,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// A refused downgrade re-enqueues through the watches on the cluster, the
 	// preset, and the owned StatefulSet, so no timer is needed.
 	if failure := refuseDowngrade(&cluster, in, storage); failure != nil {
-		if in.Storage.Holder == nil {
+		if !claimSuspends(in.Storage) {
 			refused := conditions.Failed(&cluster, failure)
 			r.recordRefusedDowngrade(&cluster, refused)
 			conditions.Stage(&cluster, refused)
@@ -261,8 +261,8 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, nil
 		}
 
-		// A parked cluster must stop, refused or not: its brokers write the
-		// contract it left, which the next cluster can claim. The guard reads
+		// A cluster the claim suspends must stop, refused or not: its brokers
+		// write the backend it left, which the next cluster can claim. The guard reads
 		// its baseline from the applied StatefulSet, so the parking renders
 		// the running version, with no pinned image over it, and the refusal
 		// stands when the holder releases.
@@ -305,12 +305,15 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
 
 	cred.stageFailure(&cluster, priorAdminSecret)
-	if in.Storage.Holder != nil {
-		// The parked reason is the gate that Suspended reports to extensions and
-		// backups, so it stays while the apply fails. The message carries the
-		// error, and the component conditions carry the state of each workload.
+	// The claim reason is the gate that Suspended reports to extensions and
+	// backups, so it stays while the apply fails. The message carries the
+	// error, and the component conditions carry the state of each workload.
+	switch {
+	case in.Storage.Holder != nil:
 		conditions.Stage(&cluster, storageHeld(&cluster, in.Storage.Holder, reconcileErr))
-	} else {
+	case in.Storage.Handover != nil:
+		conditions.Stage(&cluster, storageHandover(&cluster, in.Storage.Handover, reconcileErr))
+	default:
 		conditions.Stage(&cluster, conditions.Aggregate(&cluster, built.ready...))
 	}
 	cluster.Status.Volumes = storage.volumes()
@@ -327,9 +330,10 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 
-	// A parked cluster takes a stale claim on a timer: nothing watches its
-	// holder for it, and nothing should.
-	if in.Storage.Holder != nil && reconcileErr == nil {
+	// A cluster the claim suspends looks again on a timer: nothing watches the
+	// holder of its backend, or the pods of another cluster on it, and nothing
+	// should.
+	if claimSuspends(in.Storage) && reconcileErr == nil {
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 

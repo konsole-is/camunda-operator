@@ -43,6 +43,11 @@ type Storage struct {
 	// backend, so the controller renders a cluster with a Holder suspended
 	// and reports the holder on Ready. Nil when this cluster holds the claim.
 	Holder *StorageHolder
+	// Handover is set when this cluster holds the storage claim and pods of
+	// other clusters still carry it. Those pods write the backend, so the
+	// controller renders a cluster with a Handover suspended and reports the
+	// pods on Ready. Nil when no such pod exists.
+	Handover *StorageHandover
 }
 
 // StorageHolder is the CamundaCluster that holds the storage claim of the
@@ -52,6 +57,16 @@ type StorageHolder struct {
 	Cluster types.NamespacedName
 	// Backend is the claim key of the backend, see StorageClaimKey.
 	Backend string
+}
+
+// StorageHandover is the wait for the pods of other clusters that still write
+// the backend this cluster took over.
+type StorageHandover struct {
+	// Backend is the claim key of the backend, see StorageClaimKey.
+	Backend string
+	// Pods are the pods of other clusters that carry the storage claim, as
+	// "namespace/name" paths.
+	Pods []string
 }
 
 // RDBMSStorage is the DatabaseConfig and DatabaseServerConfig chain of an

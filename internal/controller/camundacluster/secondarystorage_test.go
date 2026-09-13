@@ -203,6 +203,43 @@ func TestStorageHeld(t *testing.T) {
 	})
 }
 
+// TestStorageHandover covers the Ready condition storageHandover builds for a
+// cluster that holds the claim and waits for the pods of another cluster, with
+// and without an apply error, and that the result keeps
+// CamundaCluster.Suspended true either way.
+func TestStorageHandover(t *testing.T) {
+	handover := &components.StorageHandover{
+		Backend: "elasticsearch|https://es:9200",
+		Pods:    []string{"ns/old-zeebe-0", "ns/old-zeebe-1"},
+	}
+	cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Generation: 3}}
+
+	t.Run("without an apply error", func(t *testing.T) {
+		cond := storageHandover(cluster, handover, nil)
+		assert.Equal(t, metav1.ConditionFalse, cond.Status)
+		assert.Equal(t, v1.ReasonWaitingForHandover, cond.Reason)
+		assert.Equal(t, cluster.Generation, cond.ObservedGeneration)
+		assert.Contains(t, cond.Message, "elasticsearch|https://es:9200")
+		assert.Contains(t, cond.Message, "ns/old-zeebe-0, ns/old-zeebe-1")
+		assert.NotContains(t, cond.Message, "failed")
+	})
+
+	t.Run("with an apply error", func(t *testing.T) {
+		cond := storageHandover(cluster, handover, errors.New("apply exploded"))
+		assert.Equal(t, v1.ReasonWaitingForHandover, cond.Reason)
+		assert.Contains(t, cond.Message, "The last apply of the suspended workloads failed: apply exploded")
+	})
+
+	t.Run("the gate", func(t *testing.T) {
+		for _, applyErr := range []error{nil, errors.New("apply exploded")} {
+			gated := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Generation: 3}}
+			cond := storageHandover(gated, handover, applyErr)
+			meta.SetStatusCondition(&gated.Status.Conditions, cond)
+			assert.True(t, gated.Suspended())
+		}
+	})
+}
+
 // newNamedCluster is newCluster with a name prefix, so a spec that creates
 // two clusters on one contract can tell them apart in the output.
 func newNamedCluster(
@@ -319,12 +356,11 @@ func createBindingAt(namespace, endpoint string) *v1.SecondaryStorageConfig {
 
 // createStorageLeaseFor writes a storage claim Lease that records holder, the
 // way a cluster that is gone leaves one behind.
-func createStorageLeaseFor(key string, holder *v1.CamundaCluster) *coordinationv1.Lease {
+func createStorageLeaseFor(key string, holder *v1.CamundaCluster) {
 	GinkgoHelper()
-	lease := components.StorageClaimSchema().NewLease(testClaimNamespace, key, holder)
-	Expect(k8sClient.Create(ctx, lease)).To(Succeed())
-
-	return lease
+	Expect(k8sClient.Create(
+		ctx, components.StorageClaimSchema().NewLease(testClaimNamespace, key, holder),
+	)).To(Succeed())
 }
 
 // expectHolds polls until cluster reports a Ready reason other than
@@ -591,6 +627,31 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		Expect(k8sClient.Create(ctx, recreated)).To(Succeed())
 		expectHolds(second)
 		expectClaimedBy(recreated, second)
+	})
+
+	// A running cluster that repoints into a backend whose previous holder
+	// left pods behind must stop. It holds the claim of that backend, and its
+	// own workloads still write the backend it left.
+	It("scales a running cluster to zero while it waits for a handover", func() {
+		ns := newNamespace()
+		own := createBinding(ns, true)
+		cluster := newNamedCluster("cc-a-", ns, createPlatformConfig(), own)
+		createCluster(cluster)
+		expectHolds(cluster)
+
+		target := createBinding(ns, true)
+		ghost := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "ghost", UID: "ghost-uid"},
+		}
+		createStorageLeaseFor(storageKeyOf(target), ghost)
+		pod := createStoragePod(ghost, target)
+
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.StorageRef = target.Name })
+		expectWaitingForHandover(cluster, target, pod)
+
+		Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
+		expectHolds(cluster)
+		expectClaimedBy(target, cluster)
 	})
 
 	// A repoint holds two claims for one pass. The old one must go, or the

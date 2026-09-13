@@ -43,9 +43,10 @@ const eventReasonStorageClaimed = "StorageClaimed"
 // holder that is gone is taken over. A live holder lands on
 // in.Storage.Holder and the controller renders this cluster suspended. Either
 // way the cluster releases every other storage claim it holds, so a repoint
-// frees the old backend. A cluster that holds the claim then waits for the
-// pods of other clusters that still write this one. It needs in.Storage from
-// resolveStorage.
+// frees the old backend. A cluster that holds the claim while pods of other
+// clusters still carry it lands on in.Storage.Handover, and the controller
+// renders it suspended too: those pods write the backend. It needs in.Storage
+// from resolveStorage.
 func (res *resolver) claimStorage(ctx context.Context, in *components.Input) error {
 	key, err := components.StorageClaimKey(in.Storage)
 	if err != nil {
@@ -115,7 +116,18 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 		return err
 	}
 
-	return res.waitForHandover(ctx, in.Storage.Claim, key)
+	// The list is read once, before the render. A previous holder that is
+	// pointed back at the backend in that moment can start pods next to this
+	// cluster, and it stops again as soon as it meets the claim.
+	pods, err := res.otherPodsOnClaim(ctx, in.Storage.Claim)
+	if err != nil {
+		return err
+	}
+	if len(pods) > 0 {
+		in.Storage.Handover = &components.StorageHandover{Backend: key, Pods: pods}
+	}
+
+	return nil
 }
 
 // releaseOtherClaims gives back every storage claim of the cluster except
@@ -137,34 +149,6 @@ func (res *resolver) releaseOtherClaims(ctx context.Context, keep string) error 
 	}
 
 	return nil
-}
-
-// waitForHandover fails with WaitingForHandover while a pod of another
-// cluster still carries the storage claim: a deleted holder leaves its pods
-// to the garbage collector, and a repointed one replaces them through a
-// rollout. Nothing watches those pods for this cluster, so the failure is
-// unwatched and the controller looks again on its timer.
-//
-// The list is read once, before the render. A previous holder that is pointed
-// back at the backend in that moment can start pods next to this cluster, and
-// it stops again as soon as it meets the claim.
-func (res *resolver) waitForHandover(ctx context.Context, claim, key string) error {
-	pods, err := res.otherPodsOnClaim(ctx, claim)
-	if err != nil {
-		return err
-	}
-	if len(pods) == 0 {
-		return nil
-	}
-
-	return conditions.NewUnwatchedFailure(
-		v1.ReasonWaitingForHandover,
-		fmt.Sprintf(
-			"Pods of another CamundaCluster still write the backend %q: %s. "+
-				"This cluster starts when they are gone",
-			key, strings.Join(pods, ", "),
-		),
-	)
 }
 
 // otherPodsOnClaim returns the pods that carry the storage claim and another
@@ -197,6 +181,14 @@ func (res *resolver) otherPodsOnClaim(ctx context.Context, claim string) ([]stri
 	return names, nil
 }
 
+// claimSuspends reports whether the storage claim keeps this cluster at zero:
+// another cluster holds the backend, or pods of another cluster still write
+// the one this cluster took over. Nothing watches either of them for this
+// cluster, so the controller looks again on its timer while it holds.
+func claimSuspends(storage components.Storage) bool {
+	return storage.Holder != nil || storage.Handover != nil
+}
+
 // storageHeld builds the Ready condition of a cluster whose backend another
 // cluster holds. When applyErr is set, the message carries it as the error of
 // the last apply.
@@ -211,4 +203,26 @@ func storageHeld(cluster *v1.CamundaCluster, holder *components.StorageHolder, a
 	}
 
 	return conditions.Ready(metav1.ConditionFalse, v1.ReasonStorageAlreadyAttached, message, cluster.Generation)
+}
+
+// storageHandover builds the Ready condition of a cluster that holds the
+// storage claim and waits for the pods of other clusters on that backend. A
+// deleted holder leaves its pods to the garbage collector, and a holder that
+// moved replaces them through a rollout. When applyErr is set, the message
+// carries it as the error of the last apply.
+func storageHandover(
+	cluster *v1.CamundaCluster,
+	handover *components.StorageHandover,
+	applyErr error,
+) metav1.Condition {
+	message := fmt.Sprintf(
+		"Pods of another CamundaCluster still write the backend %q: %s. "+
+			"This cluster starts when they are gone",
+		handover.Backend, strings.Join(handover.Pods, ", "),
+	)
+	if applyErr != nil {
+		message += fmt.Sprintf(". The last apply of the suspended workloads failed: %s", applyErr)
+	}
+
+	return conditions.Ready(metav1.ConditionFalse, v1.ReasonWaitingForHandover, message, cluster.Generation)
 }
