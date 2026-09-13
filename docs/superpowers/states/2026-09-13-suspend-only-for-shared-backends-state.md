@@ -23,7 +23,7 @@ status: foundational-wave
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #369 | feat/suspend-only-for-shared-backends--storage-claim-on-a-lease | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/storage-claim-on-a-lease | — → fix/suspend-only-for-shared-backends | in-progress |
-| #370 | fix/suspend-only-for-shared-backends--keep-workloads-on-precheck-failure | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/keep-workloads-on-precheck-failure | — → fix/suspend-only-for-shared-backends | in-progress |
+| #370 | fix/suspend-only-for-shared-backends--keep-workloads-on-precheck-failure | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/keep-workloads-on-precheck-failure | #371 → fix/suspend-only-for-shared-backends | ready |
 
 ## Contracts
 
@@ -33,7 +33,8 @@ status: foundational-wave
 
 ## Bubble-up log
 
-- _No concerns yet._
+- 2026-09-13, #370 agent: two parallel agents share one scratchpad directory and one overwrote the other's helper script. Resolution: later dispatches name scratch files by issue number. Propagated to the #369 dispatch prompt only if it reports the same; no code impact.
+- 2026-09-13, #370 agent: docs on that branch already say "storage claim of its backend" (the #369 vocabulary), and the cluster reason table has adjacent edits from both PRs. Resolution: expected, reconciled in the merge-forward of whichever PR lands second.
 
 ## Pending snapshot
 
