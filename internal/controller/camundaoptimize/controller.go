@@ -171,6 +171,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	res, err := r.preCheck(ctx, &optimize)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
+		// Read before anything stages a new condition, as the success path
+		// does, and off the workload conditions rather than Ready, see
+		// followsSuspendedCluster.
+		suspendedBefore := followsSuspendedCluster(&optimize)
 		// A CamundaOptimize that lost the attachment, or whose cluster is
 		// gone, must not keep the workloads it built, see releaseWorkloads.
 		// Every other failed check keeps them on the configuration of the
@@ -200,6 +204,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			}
 		}
 		conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
+		if suspendErr == nil {
+			r.recordSuspensionChange(&optimize, suspendedBefore, res.Input.Suspended)
+		}
 
 		return ctrl.Result{}, suspendErr
 	}

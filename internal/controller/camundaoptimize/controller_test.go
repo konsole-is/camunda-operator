@@ -576,6 +576,21 @@ func suspensionEvents(optimize *v1.CamundaOptimize) []string {
 	return reasons
 }
 
+// clusterSuspendedEvents returns the ClusterSuspended events of optimize, one
+// entry per recorded occurrence. suspensionEvents carries every event of the
+// suspend action, WorkloadsSuspended among them.
+func clusterSuspendedEvents(optimize *v1.CamundaOptimize) []string {
+	GinkgoHelper()
+	var only []string
+	for _, reason := range suspensionEvents(optimize) {
+		if reason == eventReasonClusterSuspended {
+			only = append(only, reason)
+		}
+	}
+
+	return only
+}
+
 var _ = Describe("CamundaOptimize controller", func() {
 	Context("with every reference resolved", func() {
 		It("deploys the workloads, patches the exporter, and reports Ready", func() {
@@ -667,6 +682,14 @@ var _ = Describe("CamundaOptimize controller", func() {
 				g.Expect(ready.Message).To(ContainSubstring("scaled to zero"))
 			}, timeout, interval).Should(Succeed())
 			expectCondition(s.optimize, v1.ConditionImporterReady, Equal(string(component.Suspended)))
+
+			By("recording the transition once, however often the failure repeats")
+			Eventually(func(g Gomega) {
+				g.Expect(clusterSuspendedEvents(s.optimize)).To(HaveLen(1))
+			}, timeout, interval).Should(Succeed())
+			Consistently(func(g Gomega) {
+				g.Expect(clusterSuspendedEvents(s.optimize)).To(HaveLen(1))
+			}, "3s", interval).Should(Succeed())
 		})
 
 		It("follows the suspension of its cluster to zero replicas and back", func() {

@@ -61,6 +61,24 @@ var workloadConditions = map[string]string{
 	components.ComponentImporter: v1.ConditionImporterReady,
 }
 
+// followsSuspendedCluster reports whether the last pass already had the
+// Optimize workloads following a suspension of the referenced cluster.
+//
+// wasSuspending does not serve on the pre-check failure path: Ready carries the
+// failure there, never a suspension reason, so it reads false on every pass and
+// the transition event repeats. The condition of a workload carries the state
+// instead, because followSuspension is what writes it.
+func followsSuspendedCluster(optimize *v1.CamundaOptimize) bool {
+	for _, conditionType := range []string{v1.ConditionImporterReady, v1.ConditionWebappReady} {
+		condition := meta.FindStatusCondition(optimize.Status.Conditions, conditionType)
+		if condition != nil && condition.Reason == string(component.Suspended) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // followSuspension scales the webapp and the importer to zero and keeps
 // everything else: the Deployments, the Services, and the copies of the
 // referenced Secrets. It reports whether it found a Deployment that this
