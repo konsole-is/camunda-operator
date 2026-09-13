@@ -135,6 +135,8 @@ The suspended cluster looks again every 30 seconds. When the holder is deleted o
 
 The cluster that takes the contract stays at zero while pods of the previous holder still run on it. The pods of a deleted holder go after the cluster, and the pods of a repointed holder go when its rollout replaces them. Until then, its `Ready` is `False` with reason `WaitingForHandover`, and the message names the previous holder and its pods. The state clears on its own.
 
+A running cluster that repoints `storageRef` to a contract in handover keeps its workloads on the previous backend. It moves to the new one when the wait ends. The extensions attached to it hold meanwhile, because the new backend is the one they would read.
+
 ```yaml
 status:
   conditions:
@@ -285,7 +287,7 @@ status:
 
 `spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` is empty. When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
 
-The operator also suspends a cluster on its own, and only to keep two clusters off one backend. `spec.suspend` stays yours. A cluster whose backend another cluster holds reports `StorageAlreadyAttached`, and a cluster that waits for the pods of a previous holder reports `WaitingForHandover` (see [Secondary storage](#secondary-storage)). These are the only two. Each of them ends on its own when its cause is gone. Every other failure leaves the workloads up.
+The operator also suspends a cluster on its own, and only to keep two clusters off one backend. `spec.suspend` stays yours. A cluster whose backend another cluster holds reports `StorageAlreadyAttached` and runs no workload. A cluster that waits for the pods of a previous holder reports `WaitingForHandover` (see [Secondary storage](#secondary-storage)). It runs no workload on the new backend, and a running cluster that repointed keeps its workloads on the previous one. These are the only two. Each of them ends on its own when its cause is gone. Every other failure leaves the workloads up.
 
 `suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it, and starts them again when you clear the field. The Optimize importer reads Elasticsearch directly. Without this, it keeps importing while the cluster is down. Every suspension by the operator reaches them the same way: a `CamundaOptimize` attached to a suspended cluster scales to zero, and a backup of it waits with reason `ClusterSuspended`.
 

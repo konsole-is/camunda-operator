@@ -617,10 +617,10 @@ func (in *CamundaCluster) SetObservedGeneration(generation int64) {
 	in.Status.ObservedGeneration = generation
 }
 
-// suspendedReadyReasons are the Ready reasons under which the operator holds
-// every workload of the cluster at zero: another cluster holds the storage
-// claim of its backend, or the cluster waits for the pods of another cluster
-// to leave that backend. A failed reference check is not one of them: the
+// suspendedReadyReasons are the Ready reasons under which the attachments of
+// the cluster must hold: another cluster holds the storage claim of its
+// backend, or this cluster waits for the pods of another cluster to leave a
+// backend it moves to. A failed reference check is not one of them: the
 // cluster keeps running on its last configuration. Neither is
 // VersionDowngradeRefused: a refused cluster keeps running on the version
 // it has.
@@ -629,10 +629,15 @@ var suspendedReadyReasons = []string{
 	ReasonWaitingForHandover,
 }
 
-// Suspended reports whether the operator scales every workload of the cluster
-// to zero: spec.suspend is set, or Ready carries one of the
-// suspendedReadyReasons. An extension attached to the cluster follows this,
-// not spec.suspend alone.
+// Suspended reports whether the attachments of the cluster must hold:
+// spec.suspend is set, or Ready carries one of the suspendedReadyReasons. An
+// extension attached to the cluster follows this, not spec.suspend alone.
+//
+// It does not always mean that the workloads of the cluster are at zero. A
+// running cluster that repoints spec.storageRef to a backend in handover
+// reports WaitingForHandover and keeps its workloads on the previous backend
+// until that wait ends. Its attachments hold through it, because the new
+// backend is the one they would read.
 func (in *CamundaCluster) Suspended() bool {
 	if in.Spec.Suspend {
 		return true
