@@ -87,9 +87,10 @@ namespace, so two clusters in two namespaces that name one backend meet on one L
 `StorageClaimKey(storage components.Storage) string` returns the backend a resolved chain
 addresses:
 
-- Elasticsearch: `elasticsearch|<scheme>://<host>:<port><path>`, with the scheme and the host
-  lowercased, the port explicit (80 or 443 when the URL names none), and no trailing slash on
-  the path.
+- Elasticsearch: `elasticsearch|<scheme>://<host>:<port>`, with the scheme and the host
+  lowercased and the port explicit (80 or 443 when the URL names none). The path is not part
+  of the key: Optimize renders host and port only, so two endpoints that differ in a path
+  prefix reach one Elasticsearch for at least one writer.
 - RDBMS: `rdbms|<host>:<port>/<database>`, with the host lowercased.
 
 The key is what the contract resolves to, not the contract. Two contracts on one address
@@ -256,9 +257,9 @@ three readers change behavior without a code change:
 - **A key change of the Elasticsearch normalization changes every Lease name.** The
   normalization is pinned by a unit test with the documented cases, so a later edit is a
   visible decision.
-- **The handover gate reads pods once, before render.** The bound stated on
-  `waitForHandover` today, a holder pointed back at its backend between the list and the
-  render, is unchanged.
+- **The handover gate reads pods once, before render.** It protects against pods the
+  previous holder started before it lost the claim. A holder that points back at the backend
+  meets the claim the waiter holds and parks, so it starts nothing beside the waiter.
 
 ## Alternatives considered
 
