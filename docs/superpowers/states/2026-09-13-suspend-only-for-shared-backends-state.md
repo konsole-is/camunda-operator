@@ -46,7 +46,7 @@ status: foundational-wave
 ## Pending snapshot
 
 1. Dispatch #369 (plan Tasks 1 to 6) and #370 (plan Tasks 7 to 11) in parallel into their sub-worktrees under the feature worktree; `feature-dev-workflow:fanning-out-with-worktrees` owns the dispatch. Gate per sub-PR: every command in plan Task 6 Step 1 passes, Copilot review loop clean, self-merge into `fix/suspend-only-for-shared-backends`, `gh issue close <n>`.
-2. The second sub-PR to ripen merges the feature branch forward, resolves the two shared test files, adds the contract-deleted Lease assertion, and re-runs the gates before its self-merge.
+2. The second sub-PR to ripen merges the feature branch forward, resolves the two shared test files and the pre-check failure branch of `internal/controller/camundacluster/controller.go` (#369 stages `WaitingForHandover` from the render path, #370 adds the explicit-suspend scale on the failure branch), adds the contract-deleted Lease assertion, fixes the `Suspended` GoDoc in `pkg/components/camundaoptimize/input.go:37` (it names one operator-driven state and says "storage contract"), and re-runs the gates before its self-merge.
 3. `feature-dev-workflow:reviewing-feature-progress`, then the integration PR from `fix/suspend-only-for-shared-backends` to `main` with `Closes #368`. The user merges to main. Delete this file and the plan in the last commit before the merge; keep the spec.
 
 ## Resume checklist
