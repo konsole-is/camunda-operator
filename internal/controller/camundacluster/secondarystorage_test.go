@@ -615,6 +615,29 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		}, timeout, interval).Should(Succeed(), "the claim of the old backend is released")
 	})
 
+	// Two clusters that swap backends in one step meet each other's claim. A
+	// parked cluster writes nothing, so it gives its previous backend back,
+	// and the two never block each other for good.
+	It("lets two clusters swap their backends in one step", func() {
+		ns := newNamespace()
+		first := createBinding(ns, true)
+		second := createBinding(ns, true)
+		a := newNamedCluster("cc-a-", ns, createPlatformConfig(), first)
+		createCluster(a)
+		b := newNamedCluster("cc-b-", ns, createPlatformConfig(), second)
+		createCluster(b)
+		expectClaimedBy(first, a)
+		expectClaimedBy(second, b)
+
+		updateCluster(a, func(c *v1.CamundaCluster) { c.Spec.StorageRef = second.Name })
+		updateCluster(b, func(c *v1.CamundaCluster) { c.Spec.StorageRef = first.Name })
+
+		expectClaimedBy(second, a)
+		expectClaimedBy(first, b)
+		expectHolds(a)
+		expectHolds(b)
+	})
+
 	// A claim whose holder never existed, or was deleted before the operator
 	// ran, must not park every later cluster forever.
 	It("takes over a claim whose holder does not exist", func() {

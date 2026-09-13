@@ -41,10 +41,10 @@ const eventReasonStorageClaimed = "StorageClaimed"
 // backend, so two contracts that name one address meet on one Lease. The
 // first CamundaCluster that takes the claim holds it while it exists; a
 // holder that is gone is taken over. A live holder lands on
-// in.Storage.Holder and the controller renders this cluster suspended. A
-// cluster that holds the claim releases every other storage claim it holds,
-// so a repoint frees the old backend, and then waits for the pods of other
-// clusters that still write this one. It needs in.Storage from
+// in.Storage.Holder and the controller renders this cluster suspended. Either
+// way the cluster releases every other storage claim it holds, so a repoint
+// frees the old backend. A cluster that holds the claim then waits for the
+// pods of other clusters that still write this one. It needs in.Storage from
 // resolveStorage.
 func (res *resolver) claimStorage(ctx context.Context, in *components.Input) error {
 	key, err := components.StorageClaimKey(in.Storage)
@@ -80,6 +80,15 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 					blocker.Lease, key,
 				),
 			)
+		}
+		// A parked cluster renders nothing, so it gives its previous backend
+		// back here too. Two clusters that swap backends in one step meet
+		// each other's claim, and each one keeps the other parked forever
+		// while it holds a backend it no longer writes. Its pods still carry
+		// the previous claim, so the next cluster on that backend waits for
+		// them.
+		if err := res.releaseOtherClaims(ctx, in.Storage.Claim); err != nil {
+			return err
 		}
 		in.Storage.Holder = &components.StorageHolder{
 			Cluster: blocker.Holder.NamespacedName,
