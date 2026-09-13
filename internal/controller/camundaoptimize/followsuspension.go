@@ -95,14 +95,17 @@ func (r *Reconciler) followSuspension(
 			continue
 		}
 		found = true
-		stageSuspension(optimize, comp)
 
-		if deployment.Spec.Replicas != nil && *deployment.Spec.Replicas == 0 {
-			continue
+		if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != 0 {
+			if err := r.scaleToZero(ctx, optimize, &deployment); err != nil {
+				errs = append(errs, err)
+
+				continue
+			}
 		}
-		if err := r.scaleToZero(ctx, optimize, &deployment); err != nil {
-			errs = append(errs, err)
-		}
+		// Only a workload that reached zero reports the suspension: a rejected
+		// patch leaves its pods running.
+		stageSuspension(optimize, comp)
 	}
 
 	return found, errors.Join(errs...)

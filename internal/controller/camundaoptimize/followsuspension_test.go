@@ -1,0 +1,170 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package camundaoptimize
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	apitypes "k8s.io/apimachinery/pkg/types"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/events"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
+)
+
+// TestFollowSuspensionJoinsPatchErrors covers the error path: the importer is
+// the workload that writes Elasticsearch, so a webapp that a conflict keeps up
+// must not keep the importer up with it. A workload whose patch was rejected
+// keeps its pods, so it reports no suspension.
+func TestFollowSuspensionJoinsPatchErrors(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	optimize := &v1.CamundaOptimize{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "co-a", Namespace: "team-a", UID: "uid-1", Generation: 3,
+		},
+		Spec: v1.CamundaOptimizeSpec{ClusterRef: v1.ClusterRef{Name: "my-cluster"}},
+	}
+	webappName := components.WorkloadName(optimize, components.ComponentWebapp)
+	importerName := components.WorkloadName(optimize, components.ComponentImporter)
+	boom := errors.New("admission webhook denied the request")
+
+	deployment := func(name string) *appsv1.Deployment {
+		return &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: optimize.Namespace,
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: v1.GroupVersion.String(),
+					Kind:       "CamundaOptimize",
+					Name:       optimize.Name,
+					UID:        optimize.UID,
+					Controller: new(true),
+				}},
+			},
+			Spec: appsv1.DeploymentSpec{Replicas: new(int32(1))},
+		}
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(deployment(webappName), deployment(importerName)).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(
+				ctx context.Context,
+				cl client.WithWatch,
+				obj client.Object,
+				patch client.Patch,
+				opts ...client.PatchOption,
+			) error {
+				if obj.GetName() == webappName {
+					return boom
+				}
+
+				return cl.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+	r := &Reconciler{
+		Client:        fakeClient,
+		APIReader:     fakeClient,
+		Scheme:        scheme,
+		EventRecorder: events.NewFakeRecorder(10),
+	}
+
+	found, err := r.followSuspension(context.Background(), optimize)
+
+	require.ErrorIs(t, err, boom)
+	assert.True(t, found)
+	assert.Contains(t, err.Error(), webappName, "the error names the workload that stayed up")
+
+	var importer appsv1.Deployment
+	require.NoError(t, fakeClient.Get(
+		context.Background(),
+		client.ObjectKey{Namespace: optimize.Namespace, Name: importerName},
+		&importer,
+	))
+	assert.Equal(t, int32(0), *importer.Spec.Replicas, "the importer is scaled anyway")
+
+	assert.Nil(
+		t,
+		meta.FindStatusCondition(optimize.Status.Conditions, v1.ConditionWebappReady),
+		"a workload whose patch was rejected keeps its pods, so it reports no suspension",
+	)
+	staged := meta.FindStatusCondition(optimize.Status.Conditions, v1.ConditionImporterReady)
+	require.NotNil(t, staged)
+	assert.Equal(t, string(component.Suspended), staged.Reason)
+}
+
+// TestFollowSuspensionFindsNoWorkloadOfAnotherOwner covers the owner guard: two
+// CamundaOptimizes of one cluster carry the same managed labels, so only the
+// owner reference tells their Deployments apart.
+func TestFollowSuspensionFindsNoWorkloadOfAnotherOwner(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	optimize := &v1.CamundaOptimize{ObjectMeta: metav1.ObjectMeta{
+		Name: "co-a", Namespace: "team-a", UID: "uid-1",
+	}}
+	foreign := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      components.WorkloadName(optimize, components.ComponentImporter),
+			Namespace: optimize.Namespace,
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: v1.GroupVersion.String(),
+				Kind:       "CamundaOptimize",
+				Name:       "co-b",
+				UID:        apitypes.UID("uid-2"),
+				Controller: new(true),
+			}},
+		},
+		Spec: appsv1.DeploymentSpec{Replicas: new(int32(1))},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(foreign).Build()
+	r := &Reconciler{
+		Client:        fakeClient,
+		APIReader:     fakeClient,
+		Scheme:        scheme,
+		EventRecorder: events.NewFakeRecorder(10),
+	}
+
+	found, err := r.followSuspension(context.Background(), optimize)
+
+	require.NoError(t, err)
+	assert.False(t, found)
+
+	var kept appsv1.Deployment
+	require.NoError(t, fakeClient.Get(context.Background(), client.ObjectKeyFromObject(foreign), &kept))
+	assert.Equal(t, int32(1), *kept.Spec.Replicas)
+}

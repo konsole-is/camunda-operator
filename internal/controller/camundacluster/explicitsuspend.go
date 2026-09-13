@@ -91,17 +91,18 @@ func (r *CamundaClusterReconciler) suspendExplicitly(
 		}
 		found = true
 
+		if replicas == nil || *replicas != 0 {
+			if err := r.scaleToZero(ctx, cluster, obj); err != nil {
+				errs = append(errs, err)
+
+				return
+			}
+		}
 		// The components do not run on this path, so nothing else refreshes
 		// the per-process conditions and they would report health over zero
-		// pods.
+		// pods. Only a workload that reached zero reports the suspension: a
+		// rejected patch leaves its pods running.
 		stageSuspension(cluster, obj.GetLabels()[labels.ComponentKey])
-
-		if replicas != nil && *replicas == 0 {
-			return
-		}
-		if err := r.scaleToZero(ctx, cluster, obj); err != nil {
-			errs = append(errs, err)
-		}
 	}
 
 	selector := []client.ListOption{

@@ -21,9 +21,11 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -245,6 +247,15 @@ func TestSuspendExplicitlyJoinsPatchErrors(t *testing.T) {
 			t, fakeClient, client.ObjectKey{Namespace: cluster.Namespace, Name: "my-cluster-operate"},
 		), "the other workload is scaled anyway",
 	)
+
+	assert.Nil(
+		t,
+		meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionZeebeReady),
+		"a workload whose patch was rejected keeps its pods, so it reports no suspension",
+	)
+	operate := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionOperateReady)
+	require.NotNil(t, operate)
+	assert.Equal(t, string(component.Suspended), operate.Reason)
 }
 
 // TestSuspendExplicitlyReportsAFailedList covers a listing that fails: the
