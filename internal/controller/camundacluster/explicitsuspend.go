@@ -16,9 +16,9 @@ limitations under the License.
 
 // This file stops the workloads of a cluster that spec.suspend suspends while
 // its pre-check fails. A failed pre-check leaves nothing to render from, so the
-// suspended render never runs, and the instruction of the user would wait for a
-// reference it does not depend on. A broken Secret is exactly when a user
-// reaches for suspend.
+// suspended render never runs. Without this, the instruction of the user waits
+// for a reference that it does not depend on. A broken Secret is exactly when a
+// user reaches for suspend.
 
 package camundacluster
 

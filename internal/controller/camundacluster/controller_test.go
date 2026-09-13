@@ -246,17 +246,23 @@ func expectControlledBy(obj client.Object, cluster *v1.CamundaCluster) {
 }
 
 // expectEvent polls until an event with the given reason and type exists for
-// cluster.
-func expectEvent(cluster *v1.CamundaCluster, reason, eventType string) {
+// cluster. Every extra matcher must match that same event.
+func expectEvent(
+	cluster *v1.CamundaCluster,
+	reason, eventType string,
+	extra ...types.GomegaMatcher,
+) {
 	GinkgoHelper()
+	matchers := append([]types.GomegaMatcher{
+		HaveField("Reason", reason),
+		HaveField("InvolvedObject.Name", cluster.Name),
+		HaveField("Type", eventType),
+	}, extra...)
+
 	Eventually(func(g Gomega) {
 		var events corev1.EventList
 		g.Expect(k8sClient.List(ctx, &events, client.InNamespace(cluster.Namespace))).To(Succeed())
-		g.Expect(events.Items).To(ContainElement(SatisfyAll(
-			HaveField("Reason", reason),
-			HaveField("InvolvedObject.Name", cluster.Name),
-			HaveField("Type", eventType),
-		)))
+		g.Expect(events.Items).To(ContainElement(SatisfyAll(matchers...)))
 	}, timeout, interval).Should(Succeed())
 }
 
@@ -631,23 +637,19 @@ var _ = Describe("CamundaCluster controller", func() {
 			g.Expect(latest.Status.Management).To(BeNil(), "a suspended cluster publishes no endpoints")
 			g.Expect(latest.Status.Gateway).To(BeNil())
 		}, timeout, interval).Should(Succeed())
-		// The reason, the action, and the note are what a user reads in
-		// kubectl describe, so they are pinned as literals: an assertion
-		// against the constants would follow a rename of them.
-		Eventually(func(g Gomega) {
-			var events corev1.EventList
-			g.Expect(k8sClient.List(ctx, &events, client.InNamespace(ns))).To(Succeed())
-			g.Expect(events.Items).To(ContainElement(SatisfyAll(
-				HaveField("Reason", "WorkloadsSuspended"),
-				HaveField("InvolvedObject.Name", cluster.Name),
-				HaveField("Type", corev1.EventTypeNormal),
-				HaveField("Action", "Reconcile"),
-				HaveField("Message", SatisfyAll(
-					ContainSubstring(cluster.Name+"-zeebe"),
-					ContainSubstring("because spec.suspend is set"),
-				)),
-			)))
-		}, timeout, interval).Should(Succeed())
+		// The reason, the action, and the note are API surface: a user reads
+		// them in kubectl describe. Literals here catch a rename of the
+		// constants that the code records.
+		expectEvent(
+			cluster,
+			"WorkloadsSuspended",
+			corev1.EventTypeNormal,
+			HaveField("Action", "Reconcile"),
+			HaveField("Message", SatisfyAll(
+				ContainSubstring(cluster.Name+"-zeebe"),
+				ContainSubstring("because spec.suspend is set"),
+			)),
+		)
 
 		By("recreating the Secret")
 		createSecret(ns, name, map[string]string{"username": "camunda", "password": "es-password"})
