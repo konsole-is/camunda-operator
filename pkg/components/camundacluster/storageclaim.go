@@ -133,8 +133,8 @@ func normalizeEndpoint(endpoint string) (string, error) {
 	if scheme == "https" {
 		port = 443
 	}
-	// Port keeps the spelling of the endpoint, so ":09200" and ":9200" are one
-	// backend under two keys until the number is rendered again.
+	// The number renders one spelling for ":09200" and ":9200", so one address
+	// gives one key.
 	if written := parsed.Port(); written != "" {
 		port, err = strconv.Atoi(written)
 		if err != nil {
