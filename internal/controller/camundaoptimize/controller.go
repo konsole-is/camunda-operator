@@ -111,8 +111,8 @@ type Reconciler struct {
 // Reconcile converges a CamundaOptimize. A CR under deletion withdraws the
 // exporter patch and releases the finalizer. Otherwise the finalizer is added
 // before the first side effect, the pre-checks resolve every reference into
-// the render input, and a failed pre-check reports its Ready reason and stops.
-// The webapp and the importer keep running on the configuration of the last
+// the render input, and a failed pre-check reports its Ready reason and
+// returns. The webapp and the importer keep the configuration of the last
 // pass. A CamundaOptimize that lost the attachment deletes those workloads
 // instead, because they belong to the instance that holds it now.
 // Then the exporter patch turns the Elasticsearch exporter of the referenced
