@@ -167,7 +167,9 @@ The importer reads Elasticsearch directly. It does not go through the orchestrat
 
 The operator keeps the exporter settings on the cluster while the suspension holds. A suspension is not a detachment, and the brokers are at zero, so nothing exports. Only deletion withdraws the settings.
 
-A failed check of a reference does not stop a running instance. The webapp and the importer keep the configuration that the operator applied last, and `Ready` carries the failure reason. When you correct the reference, the operator takes the change. An instance whose first check fails has no workloads yet, and it creates them when the check passes.
+A failed check of a reference does not stop a running instance. The webapp and the importer keep the configuration that the operator applied last, and `Ready` carries the failure reason. An instance whose first check fails has no workloads yet, and it creates them when the check passes. This holds while the cluster is suspended or parked as well, so an instance on a failed check does not follow the cluster: correct the reference, and it follows the cluster again.
+
+The importer never starts while the cluster does not hold the storage claim of its backend. Another cluster writes that backend in this state, and two importers on one set of analytics indices overwrite each other.
 
 ```yaml
 status:
