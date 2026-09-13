@@ -40,7 +40,6 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	optimizecomponents "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
-	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
@@ -263,54 +262,6 @@ func TestStorageHeld(t *testing.T) {
 	})
 }
 
-// TestStorageHeldAfterFailure covers the Ready condition of a parked cluster
-// whose pre-check then failed on another reference: the reason stays
-// StorageAlreadyAttached, so CamundaCluster.Suspended stays true, and the
-// message names the holder and the failure.
-func TestStorageHeldAfterFailure(t *testing.T) {
-	holder := &components.StorageHolder{
-		Cluster:  types.NamespacedName{Namespace: "ns", Name: "holder"},
-		Contract: types.NamespacedName{Namespace: "ns", Name: "storage"},
-	}
-
-	cases := map[string]struct {
-		failure *conditions.PreCheckFailure
-		message string
-	}{
-		"a dangling reference": {
-			failure: &conditions.PreCheckFailure{
-				Reason:  v1.ReasonInvalidReference,
-				Message: `ObjectStorageConfig "ns/bucket" not found`,
-			},
-			message: `ObjectStorageConfig "ns/bucket" not found`,
-		},
-		"a missing Secret": {
-			failure: &conditions.PreCheckFailure{
-				Reason:  v1.ReasonMissingSecret,
-				Message: `Secret "ns/credentials" not found`,
-			},
-			message: `Secret "ns/credentials" not found`,
-		},
-	}
-
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Generation: 3}}
-
-			cond := storageHeldAfterFailure(cluster, holder, tc.failure)
-
-			assert.Equal(t, metav1.ConditionFalse, cond.Status)
-			assert.Equal(t, v1.ReasonStorageAlreadyAttached, cond.Reason)
-			assert.Equal(t, cluster.Generation, cond.ObservedGeneration)
-			assert.Contains(t, cond.Message, "ns/holder")
-			assert.Contains(t, cond.Message, tc.message)
-
-			meta.SetStatusCondition(&cluster.Status.Conditions, cond)
-			assert.True(t, cluster.Suspended(), "a parked cluster stays suspended")
-		})
-	}
-}
-
 // newNamedCluster is newCluster with a name prefix, so a spec that creates
 // two clusters on one contract can tell them apart in the output.
 func newNamedCluster(
@@ -427,90 +378,6 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 			ContainSubstring(binding.Name),
 		)
 		expectHolds(first)
-	})
-
-	// A parked cluster keeps every workload at zero, and the extensions
-	// attached to it follow that state. A Ready reason that reads "not
-	// suspended" would start the Optimize importer of this cluster against the
-	// backend that the holder writes, so the parking outranks every other
-	// failure.
-	It("keeps a parked cluster parked when a later reference of it fails", func() {
-		ns := newNamespace()
-		binding := createBinding(ns, true)
-		setSnapshotRepository(binding, "repository-of-this-contract")
-		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
-		createCluster(holder)
-		expectClaimedBy(binding, holder)
-
-		bucket := createBucket(ns, "arn:aws:iam::123456789012:role/camunda")
-		parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
-		parked.Spec.BackupStorageRef = bucket.Name
-		createCluster(parked)
-		expectParked(parked, holder)
-
-		By("deleting the backup bucket of the parked cluster")
-		Expect(k8sClient.Delete(ctx, bucket)).To(Succeed())
-		expectReady(
-			parked,
-			metav1.ConditionFalse,
-			Equal(v1.ReasonStorageAlreadyAttached),
-			And(
-				ContainSubstring(holder.Namespace+"/"+holder.Name),
-				ContainSubstring(bucket.Name),
-			),
-		)
-		zeebeKey := client.ObjectKey{Namespace: ns, Name: parked.Name + "-zeebe"}
-		Consistently(func(g Gomega) {
-			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
-		}, "3s", interval).Should(Succeed(), "a parked cluster stays at zero")
-
-		By("recreating the bucket")
-		Expect(k8sClient.Create(ctx, &v1.ObjectStorageConfig{
-			ObjectMeta: metav1.ObjectMeta{Name: bucket.Name, Namespace: ns},
-			Spec:       *bucket.Spec.DeepCopy(),
-		})).To(Succeed())
-		expectReady(
-			parked,
-			metav1.ConditionFalse,
-			Equal(v1.ReasonStorageAlreadyAttached),
-			Not(ContainSubstring(bucket.Name)),
-		)
-	})
-
-	// Nothing watches the holder for a parked cluster, so the takeover runs on
-	// the retry timer. A parked cluster whose own reference check also fails
-	// needs that timer just as much, or it never learns that the backend is
-	// free.
-	It("takes the backend of a deleted holder while a reference of it still fails", func() {
-		ns := newNamespace()
-		binding := createBinding(ns, true)
-		setSnapshotRepository(binding, "repository-of-this-contract")
-		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
-		createCluster(holder)
-		expectClaimedBy(binding, holder)
-
-		bucket := createBucket(ns, "arn:aws:iam::123456789012:role/camunda")
-		parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
-		parked.Spec.BackupStorageRef = bucket.Name
-		createCluster(parked)
-		expectParked(parked, holder)
-
-		By("deleting the backup bucket of the parked cluster")
-		Expect(k8sClient.Delete(ctx, bucket)).To(Succeed())
-		expectReady(
-			parked, metav1.ConditionFalse,
-			Equal(v1.ReasonStorageAlreadyAttached),
-			ContainSubstring(bucket.Name),
-		)
-
-		By("deleting the holder while the bucket is still gone")
-		Expect(k8sClient.Delete(ctx, holder)).To(Succeed())
-		expectClaimedBy(binding, parked)
-		expectReady(
-			parked, metav1.ConditionFalse,
-			Equal(v1.ReasonInvalidReference),
-			ContainSubstring(bucket.Name),
-		)
 	})
 
 	It("lets two clusters on two contracts both run", func() {

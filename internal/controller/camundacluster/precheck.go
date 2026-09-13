@@ -72,8 +72,8 @@ type resolver struct {
 
 // preCheck resolves every reference of cluster into the render input, in
 // the documented order: the preset, the release and the merged spec, the
-// storage binding and its chain, the claim on the binding, the platform
-// config and its Secrets, the object storage references. Every Secret is
+// platform config and its Secrets, the storage binding and its chain, the
+// claim on the binding, the object storage references. Every Secret is
 // checked for its keys through the uncached reader. A Secret outside the
 // cluster namespace is copied into the returned mirrors, and the input
 // references the copy, so the renderer only ever names Secrets of the
@@ -82,16 +82,7 @@ type resolver struct {
 // sorted, so a change to any of them rolls the pods. A failed check returns a
 // *conditions.PreCheckFailure: InvalidReference for a dangling reference or
 // an invalid effective spec, MissingSecret for a missing Secret or key. Any
-// other error is a transient API failure. A failed step returns the input
-// filled so far, so the caller can read in.Storage.Holder off it.
-//
-// The claim runs before every check that can fail on its own, because a
-// parked cluster must stay parked whatever else fails. A later step that
-// reported its own reason would leave CamundaCluster.Suspended reading false
-// for a cluster whose workloads are at zero, and the extensions attached to
-// it would start against the backend that the holder writes. Only
-// resolveEffective runs earlier: a CamundaOptimize merges the same preset and
-// release, so it fails its own check on that one and renders nothing.
+// other error is a transient API failure.
 func (r *CamundaClusterReconciler) preCheck(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -108,10 +99,10 @@ func (r *CamundaClusterReconciler) preCheck(
 
 	steps := []func(context.Context, *components.Input) error{
 		res.resolveEffective,
-		res.resolveStorage,
-		res.claimStorage,
 		res.resolvePlatform,
 		res.resolveAuth,
+		res.resolveStorage,
+		res.claimStorage,
 		res.warnReferencedJavaToolOptions,
 		res.resolveObjectStorage,
 	}

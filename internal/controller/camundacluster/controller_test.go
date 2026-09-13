@@ -470,6 +470,7 @@ var _ = Describe("CamundaCluster controller", func() {
 		func() {
 			ns := newNamespace()
 			cfg := createPlatformConfig()
+			binding := createBinding(ns, true)
 			missing := "missing-" + utilrand.String(8)
 
 			rdbmsBinding := &v1.SecondaryStorageConfig{
@@ -507,11 +508,8 @@ var _ = Describe("CamundaCluster controller", func() {
 				},
 				"ObjectStorageConfig": func(c *v1.CamundaCluster) { c.Spec.BackupStorageRef = missing },
 			}
-			// Each case gets a contract of its own. Two clusters on one
-			// contract park the later one, and a parked cluster reports
-			// StorageAlreadyAttached rather than the reference under test.
 			for kind, mutate := range cases {
-				cluster := newCluster(ns, cfg, createBinding(ns, true))
+				cluster := newCluster(ns, cfg, binding)
 				mutate(cluster)
 				createCluster(cluster)
 
