@@ -146,20 +146,27 @@ type MonitoringSpec struct {
 // ElasticsearchClusterSpec defines the desired state of ElasticsearchCluster.
 //
 // The type doubles as the configuration baseline of an
-// ElasticsearchClusterPreset, so fields that are required on an
-// ElasticsearchCluster — secondaryStorageConfig — are optional at the schema
-// level here and enforced on the ElasticsearchCluster usage instead.
+// ElasticsearchClusterPreset, so the field that is required on an
+// ElasticsearchCluster, secondaryStorageConfig, is optional at the schema
+// level here and enforced on the ElasticsearchCluster usage instead. The
+// instance-bound fields are cluster-only and rejected in a preset, and so is
+// the version, which belongs to a CamundaRelease.
 type ElasticsearchClusterSpec struct {
 	// PresetRef names a cluster-scoped ElasticsearchClusterPreset used as the
 	// configuration baseline; fields set inline override the preset's value
 	// for that field wholesale.
 	// +optional
 	PresetRef string `json:"presetRef,omitempty"`
+	// ReleaseRef names a cluster-scoped CamundaRelease that provides the
+	// Elasticsearch version. It merges over the preset and under this spec.
+	// Forbidden in a preset.
+	// +optional
+	ReleaseRef string `json:"releaseRef,omitempty"`
 	// Version is the Elasticsearch version to deploy, as a full semantic
-	// version. Camunda 8.9 supports Elasticsearch 8.19+ and 9.2+; the floor is
-	// enforced by the controller on the preset-merged result, the schema pins
-	// only the three-segment shape. Required unless the resolved preset
-	// provides it.
+	// version. Camunda 8.9 supports Elasticsearch 8.19+ and 9.2+. The
+	// controller enforces that floor on the merged result, and the schema
+	// pins only the three-segment shape. Required unless the resolved release
+	// provides it, and forbidden in a preset.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	// +optional
 	Version string `json:"version,omitempty"`
@@ -294,6 +301,12 @@ type ElasticsearchClusterStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Version is the Elasticsearch version that the cluster runs, as a full
+	// semantic version. It is the version of the merged spec, so it names what
+	// runs whether the release, the preset, or the cluster supplies it. It is
+	// empty until the first reconcile resolves the references of the cluster.
+	// +optional
+	Version string `json:"version,omitempty"`
 	// Volumes lists the bound data PersistentVolumeClaims of the cluster and
 	// the capacity that each one reports, sorted by name.
 	// +listType=map
@@ -323,6 +336,7 @@ type ElasticsearchClusterStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.version`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // ElasticsearchCluster provisions and operates an Elasticsearch cluster for

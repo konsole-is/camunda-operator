@@ -485,6 +485,36 @@ var _ = Describe("CamundaRelease schema", func() {
 			"spec.connectors.version",
 		),
 		Entry(
+			"accepts the storage versions",
+			func(o *v1.CamundaRelease) {
+				o.Spec.Elasticsearch = &v1.ReleaseElasticsearchSpec{Version: "9.2.8"}
+				o.Spec.DatabaseServer = &v1.ReleaseDatabaseServerSpec{Version: "17"}
+			},
+			"",
+		),
+		Entry(
+			"rejects an elasticsearch version that is not x.y.z",
+			func(o *v1.CamundaRelease) {
+				o.Spec.Elasticsearch = &v1.ReleaseElasticsearchSpec{Version: "9.2"}
+			},
+			"spec.elasticsearch.version",
+		),
+		Entry(
+			"rejects a databaseServer version that is not a bare major",
+			func(o *v1.CamundaRelease) {
+				o.Spec.DatabaseServer = &v1.ReleaseDatabaseServerSpec{Version: "17.2"}
+			},
+			"spec.databaseServer.version",
+		),
+		Entry(
+			"accepts empty storage blocks",
+			func(o *v1.CamundaRelease) {
+				o.Spec.Elasticsearch = &v1.ReleaseElasticsearchSpec{}
+				o.Spec.DatabaseServer = &v1.ReleaseDatabaseServerSpec{}
+			},
+			"",
+		),
+		Entry(
 			"rejects an extraEnv entry with value and valueFrom",
 			func(o *v1.CamundaRelease) {
 				o.Spec.ExtraEnv = []corev1.EnvVar{{

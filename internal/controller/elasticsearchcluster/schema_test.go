@@ -29,13 +29,16 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
-// validElasticsearchCluster returns the minimal example of the CRD doc with a
-// unique name. The caller chooses the namespace.
+// validElasticsearchCluster returns a minimal, admissible ElasticsearchCluster
+// with a unique name. The caller chooses the namespace. It pins the version
+// inline, where the minimal example of the CRD doc takes it from a release,
+// because most specs that build on it pair it with a preset alone.
 func validElasticsearchCluster() *v1.ElasticsearchCluster {
 	return &v1.ElasticsearchCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "esc-" + utilrand.String(8)},
 		Spec: v1.ElasticsearchClusterSpec{
 			PresetRef:              "standard",
+			Version:                "9.2.4",
 			SecondaryStorageConfig: "my-storage-config",
 		},
 	}
@@ -109,6 +112,13 @@ var _ = Describe("ElasticsearchCluster schema", func() {
 		Entry(
 			"accepts the realistic doc example",
 			realisticElasticsearchCluster, func(*v1.ElasticsearchCluster) {}, "",
+		),
+		Entry(
+			"accepts a releaseRef beside a presetRef",
+			validElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
+				o.Spec.ReleaseRef = "camunda-8-9-4"
+				o.Spec.Version = ""
+			}, "",
 		),
 		Entry(
 			"rejects a missing secondaryStorageConfig",

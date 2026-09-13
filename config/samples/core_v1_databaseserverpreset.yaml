@@ -7,7 +7,6 @@ metadata:
   name: databaseserverpreset-sample
 spec:
   server:
-    version: "17"
     instances: 2
     storageSize: "20Gi"
     monitoring:

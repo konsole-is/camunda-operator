@@ -25,20 +25,21 @@ import (
 type ElasticsearchClusterPresetSpec struct {
 	// Cluster is the full configuration baseline consumers inherit. It reuses
 	// the ElasticsearchCluster spec type so the two never drift apart. The
-	// instance-bound fields of that type, presetRef, secondaryStorageConfig,
-	// and suspend, must be left unset inside a preset. Explicit zero values
-	// (an empty presetRef, suspend: false), as templated YAML renders unset
-	// fields, count as unset. monitoring is a baseline like any other field:
-	// a preset can enable scraping and pin the exporter image and resources
-	// for every cluster that references it.
-	// +kubebuilder:validation:XValidation:rule="(!has(self.presetRef) || self.presetRef == '') && (!has(self.secondaryStorageConfig) || self.secondaryStorageConfig == '') && (!has(self.suspend) || !self.suspend)",message="instance-bound fields (presetRef, secondaryStorageConfig, suspend) must not be set in a preset"
+	// instance-bound fields of that type, presetRef, releaseRef,
+	// secondaryStorageConfig, and suspend, must be left unset inside a preset,
+	// and so must the version, which belongs to a CamundaRelease. Explicit
+	// zero values (an empty presetRef, suspend: false), as templated YAML
+	// renders unset fields, count as unset. monitoring is a baseline like any
+	// other field: a preset can enable scraping and pin the exporter image and
+	// resources for every cluster that references it.
+	// +kubebuilder:validation:XValidation:rule="(!has(self.presetRef) || self.presetRef == '') && (!has(self.releaseRef) || self.releaseRef == '') && (!has(self.secondaryStorageConfig) || self.secondaryStorageConfig == '') && (!has(self.suspend) || !self.suspend)",message="instance-bound fields (presetRef, releaseRef, secondaryStorageConfig, suspend) must not be set in a preset"
+	// +kubebuilder:validation:XValidation:rule="!has(self.version) || self.version == ''",message="version belongs to a CamundaRelease and must not be set in a preset"
 	// +required
 	Cluster ElasticsearchClusterSpec `json:"cluster"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster
-// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.cluster.version`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // ElasticsearchClusterPreset is a cluster-scoped, passive baseline

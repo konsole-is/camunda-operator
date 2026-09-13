@@ -12,10 +12,10 @@ The sizing lives in [`config/example/presets`](../../presets). The
 `DatabaseServer` names the preset `standard`, the `CamundaCluster` names
 `small`, and each one keeps only what belongs to it.
 
-The version lives in [`config/example/releases`](../../releases). The
-`CamundaCluster` names the release `camunda-8-9` and sets no `version` of its
-own. Raise `spec.version` in that one file, and every cluster that names the
-release follows.
+The versions live in [`config/example/releases`](../../releases). The
+`CamundaCluster` and the `DatabaseServer` both name the release `camunda-8-9`
+and set no `version` of their own. Raise a version in that one file, and every
+resource that names the release follows.
 
 ## Before you start
 
@@ -48,7 +48,8 @@ files in their number order:
 2. `01-namespace.yaml` creates the namespace `my-cluster-ns`.
 3. `02-database-server.yaml` creates the `DatabaseServer` `my-db`. It inherits
    the instance count, the volume size, and the resources from the preset
-   `standard`. Wait for it:
+   `standard`, and its PostgreSQL version from the release `camunda-8-9`. Wait
+   for it:
 
     ```sh
     kubectl wait databaseserver/my-db -n my-cluster-ns \
@@ -90,7 +91,7 @@ files in their number order:
 
 The preset and the release are the point. A second cluster of the same shape
 is `05-camunda-cluster.yaml` again with another name, another `storageRef`,
-and its own `Database`. The sizing stays in `small`, and the version stays in
+and its own `Database`. The sizing stays in `small`, and the versions stay in
 `camunda-8-9`.
 
 ## Remove

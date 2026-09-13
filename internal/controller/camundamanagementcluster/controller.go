@@ -364,7 +364,7 @@ func (r *Reconciler) reconcileUnresolved(
 
 	// The sweep runs before the withdrawal, where the claim step runs before
 	// it on the resolved path, so that it still reads the recorded realm.
-	heldRealm, sweepErr := r.releaseUnusedRealms(ctx, mc)
+	heldRealm, sweepErr := r.releaseUnusedRealms(ctx, r.realmClaims(), mc)
 	sweepErr = stepClaimRealm.wrap(sweepErr)
 	retry, withdrawErr := r.withdrawStopped(
 		ctx, mc, "the identity provider of the spec is not resolved",
@@ -768,6 +768,10 @@ func (r *Reconciler) removeAnnotation(
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.ClaimNamespace == "" {
 		return errors.New("the namespace of the realm claim Leases is required")
+	}
+
+	if err := components.RealmClaimSchema().Validate(); err != nil {
+		return fmt.Errorf("the realm claim Schema of CamundaManagementCluster: %w", err)
 	}
 
 	if r.EventRecorder == nil {

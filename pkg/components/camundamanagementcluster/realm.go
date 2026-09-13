@@ -52,7 +52,7 @@ const (
 // mode, so there would be nothing to withdraw from.
 //
 // The URL is recorded as RealmIdentity folds it, so two spellings of one realm
-// record one value and a user in the URL reaches no status.
+// record one value.
 //
 // The oidc mode administers no realm, and a provider that names no
 // administrator gives the operator nothing to sign in with, so both record
@@ -63,10 +63,6 @@ func RealmTarget(provider IdentityProvider) *v1.KeycloakRealmTarget {
 	}
 
 	return &v1.KeycloakRealmTarget{
-		// The CEL rules on url admit a user with a password in it. The record
-		// is written to the API server, so it holds the folded URL, which the
-		// operator reaches the same realm with and signs in to with the
-		// administrator Secret the record names.
 		URL:                       normalizeKeycloakURL(provider.KeycloakURL),
 		Realm:                     provider.Realm,
 		AdminCredentialsSecretRef: *provider.AdminCredentials.DeepCopy(),

@@ -5,8 +5,9 @@
 # that already exists is refused with the reason ContractTaken.
 #
 # presetRef names the shared DatabaseServerPreset standard, which carries the
-# instance count, the volume size, and the resources. Only the fields that
-# belong to this one server stay here.
+# instance count, the volume size, and the resources. releaseRef names the
+# shared CamundaRelease camunda-8-9, which carries the PostgreSQL version.
+# Only the fields that belong to this one server stay here.
 apiVersion: core.camunda.io/v1
 kind: DatabaseServer
 metadata:
@@ -14,5 +15,5 @@ metadata:
   namespace: my-cluster-ns
 spec:
   presetRef: standard
-  version: "17"
+  releaseRef: camunda-8-9
   databaseServerConfig: my-db-server

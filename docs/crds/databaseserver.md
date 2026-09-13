@@ -33,6 +33,7 @@ A rollback builds its cluster under the name of the server plus that suffix. The
 ```mermaid
 graph LR
     DBS[DatabaseServer] -.->|presetRef| DBSP[DatabaseServerPreset]
+    DBS -.->|releaseRef| CR[CamundaRelease]
     DBS -.->|archive.objectStorageRef| OSC[ObjectStorageConfig]
     DBS -->|creates| PG["PostgreSQL instances"]
     DBS -->|creates| ARC["Archive in the bucket"]
@@ -240,9 +241,15 @@ The published contract stays. A consumer that reads it reaches a server that doe
 
 Set the field back to `false` and the instances come back on the same volumes.
 
-## Presets
+## Presets and releases
 
-`spec.presetRef` names a cluster-scoped [DatabaseServerPreset](databaseserverpreset.md). A field you set on the server replaces the value of the preset for that field. A field you leave unset comes from the preset.
+Three layers make the configuration of a server. Each later layer wins over the one before it:
+
+1. The [DatabaseServerPreset](databaseserverpreset.md) that `spec.presetRef` names holds the shape: the instance count, the volume sizes, the resources.
+2. The [CamundaRelease](camundarelease.md) that `spec.releaseRef` names holds the version, in `spec.databaseServer.version`.
+3. The `DatabaseServer` itself holds what belongs to this one server, and it overrides both.
+
+A field you set on the server replaces the value of the layer below for that field. A field you leave unset comes from the layer below.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -252,8 +259,11 @@ metadata:
   namespace: my-cluster-ns
 spec:
   presetRef: standard
+  releaseRef: camunda-8-9-4
   databaseServerConfig: my-db-server
 ```
+
+A preset rejects `version`. A server that follows a fleet version leaves `spec.version` unset and names a release.
 
 ## The PostgreSQL version
 
@@ -273,7 +283,7 @@ spec:
   # ... the rest of your server
 ```
 
-A preset carries the version too, so a new `spec.server.version` on a [DatabaseServerPreset](databaseserverpreset.md) reaches every server that reads it. Set the version back, on the server or on the preset, and the refusal clears. No annotation lets the change through.
+A release carries the version too, so a new `spec.databaseServer.version` on a [CamundaRelease](camundarelease.md) reaches every server that reads it, and it is refused the same way. Set the version back, on the server or on the release, and the refusal clears. No annotation lets the change through.
 
 To run a later major, create a `DatabaseServer` on that version and move the data to it. A point-in-time restore is no help here: only the major that wrote an archive can read it back.
 
@@ -308,6 +318,7 @@ The objects already in the bucket stay. Remove them yourself when you no longer 
 ```yaml
 status:
   observedGeneration: 3
+  version: "17"
   cluster: my-db
   systemIdentifier: "7370000000000000001"
   archive:
@@ -378,6 +389,8 @@ status:
 
 A part that the spec switches off is reported on its own condition and never on `Ready`. `MonitoringReady` stays out of `Ready` always, and `ArchiveReady` stays out of it on a server with no `archive` block. A server that runs therefore reads `Ready: Healthy` whether or not it scrapes, and so does a server with no `archive` block. A server that asks for an archive reads `Ready: Blocked` until its first base backup completes.
 
+`status.version` is the PostgreSQL major the server runs. It is the merged version, so it names what runs whether the release, the preset, or the server supplies it, and `kubectl get databaseserver` prints it in the `VERSION` column. While a version change is refused it stays on the major of the data directory, not the one the spec asks for. It is empty until the first reconcile resolves the references of the server.
+
 `status.cluster` is the CloudNativePG cluster that the contract points at. `status.systemIdentifier` is the identity of the PostgreSQL instance behind it, which a [Database](database.md) uses to tell two servers apart. `status.observedGeneration` is the last generation the operator reconciled.
 
 `status.recovery` is the rollback request the server works on now, or the last one it answered. `contract` is the `DatabaseServerConfig` that asked. `cluster` is the CloudNativePG cluster it builds, and it is empty for a request the server refused before it built one. `archive` is the archive it recovers out of: `serverName` and `location` say where it is, and `objectStorageRef`, `retentionPeriodDays`, and `baseBackupSchedule` are the settings the server had when the rollback started. Those three are what an edit of `spec.archive` is held against, and what the server keeps rendering until the rollback is answered. `identity` is the workload identity of that bucket at the same moment. The server holds it together with those three settings, and it is unset for a bucket that holds static credentials. `completedAt` and `result` are unset while the rollback runs. The same answer is published on the contract, in `spec.pitr.lastRecovery`, and the server writes it there again if the contract loses it.
@@ -395,9 +408,11 @@ metadata:
 spec:
   # string. Optional. Name of a cluster-scoped DatabaseServerPreset used as the baseline.
   presetRef: "standard"
+  # string. Optional. Name of a cluster-scoped CamundaRelease that supplies the version. It wins over the preset and loses to this spec.
+  releaseRef: "camunda-8-9-4"
   # string. Optional. Name of a cluster-scoped CamundaPlatformConfig. Only its image settings are read.
   platformConfigRef: "my-platform-config"
-  # string. Required, unless the preset provides it. PostgreSQL major version, 14 or later.
+  # string. Required, unless the release provides it. PostgreSQL major version, 14 or later. Rejected in a preset.
   # It cannot move to another major once the server runs.
   version: "17"
   # integer. Optional, default: 1. Number of PostgreSQL instances, at least 1.
@@ -464,7 +479,7 @@ spec:
 - `version` cannot move to another major once the server runs. See [The PostgreSQL version](#the-postgresql-version).
 - `archive.retentionPeriodDays` must be from 1 to 36500. The upper bound is a hundred years. It keeps the reachable window that the operator computes from the retention inside the range its clock arithmetic can hold.
 - `archive.baseBackupSchedule` must be a six-field cron or a descriptor, and every range in it must read upward. See [The archive](#the-archive).
-- `version` and `storageSize` must be present after the preset merge. A missing field is reported on `Ready` with reason `InvalidReference`.
+- `version` and `storageSize` must be present after the merge. Set them inline, or take `storageSize` from a preset and `version` from a release. A missing field is reported on `Ready` with reason `InvalidReference`.
 
 ### A production-shaped example
 
@@ -476,6 +491,7 @@ metadata:
   namespace: my-cluster-ns
 spec:
   presetRef: standard
+  releaseRef: camunda-8-9-4
   platformConfigRef: my-platform-config
   databaseServerConfig: my-db-server
   archive:
@@ -486,6 +502,7 @@ spec:
 ## Related
 
 - [DatabaseServerPreset](databaseserverpreset.md): the cluster-scoped baseline that `spec.presetRef` names.
+- [CamundaRelease](camundarelease.md): the version that `spec.releaseRef` names.
 - [DatabaseServerConfig](databaseserverconfig.md): the contract this kind publishes.
 - [Database](database.md): creates the logical database and its users on the published contract.
 - [ObjectStorageConfig](objectstorageconfig.md): the bucket that `spec.archive.objectStorageRef` names.

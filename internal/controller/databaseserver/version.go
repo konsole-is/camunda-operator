@@ -40,7 +40,7 @@ const msgVersionChangeRefused = "The version %s that the spec asks for is not th
 	"CloudNativePG stops every instance to upgrade the data directory in place. No " +
 	"point-in-time restore reaches across a major. The archive of a new major needs a directory " +
 	"of its own in the bucket. The server keeps running %d until the version names that major " +
-	"again, on the server or on the preset it reads. To run PostgreSQL %s, create a " +
+	"again, on the server or on the release it reads. To run PostgreSQL %s, create a " +
 	"DatabaseServer on that version and move the data to it. A supported upgrade path comes in a " +
 	"later release, and no annotation lets this change through before then"
 

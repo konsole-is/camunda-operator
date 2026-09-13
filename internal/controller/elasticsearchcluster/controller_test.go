@@ -55,11 +55,10 @@ func newElasticsearchClusterNamespace() string {
 	return ns.Name
 }
 
-// smallClusterSpec is a complete single-node baseline that presets use as
-// their cluster block.
+// smallClusterSpec is a single-node shape that presets use as their cluster
+// block. It carries no version, which a preset rejects.
 func smallClusterSpec() v1.ElasticsearchClusterSpec {
 	return v1.ElasticsearchClusterSpec{
-		Version:     "9.2.4",
 		Replicas:    new(int32(1)),
 		StorageSize: new(resource.MustParse("1Gi")),
 	}
@@ -76,6 +75,22 @@ func createElasticsearchClusterPreset(spec v1.ElasticsearchClusterSpec) *v1.Elas
 	Expect(k8sClient.Create(ctx, preset)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
 	return preset
+}
+
+// createElasticsearchRelease creates a uniquely named CamundaRelease that
+// names the given Elasticsearch version, and registers its deletion.
+func createElasticsearchRelease(version string) *v1.CamundaRelease {
+	GinkgoHelper()
+	release := &v1.CamundaRelease{
+		ObjectMeta: metav1.ObjectMeta{Name: "esr-" + utilrand.String(8)},
+		Spec: v1.CamundaReleaseSpec{
+			Version:       "8.9.18",
+			Elasticsearch: &v1.ReleaseElasticsearchSpec{Version: version},
+		},
+	}
+	Expect(k8sClient.Create(ctx, release)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, release) })
+	return release
 }
 
 // createElasticsearchCluster creates cluster in its own fresh namespace,
@@ -1177,7 +1192,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 	})
 
 	It("names every missing field of an incomplete merge", func() {
-		preset := createElasticsearchClusterPreset(v1.ElasticsearchClusterSpec{Version: "9.2.4"})
+		preset := createElasticsearchClusterPreset(v1.ElasticsearchClusterSpec{})
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
 		createElasticsearchCluster(cluster)
@@ -1187,6 +1202,95 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			Equal(v1.ReasonInvalidReference),
 			And(ContainSubstring("replicas"), ContainSubstring("storageSize")),
 		)
+	})
+
+	It("runs the version of the release when the cluster sets none", func() {
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		release := createElasticsearchRelease("9.2.4")
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.ReleaseRef = release.Name
+		cluster.Spec.Version = ""
+		createElasticsearchCluster(cluster)
+
+		es := fetchOwnedElasticsearch(cluster)
+		Expect(es.Spec.Version).To(Equal("9.2.4"))
+
+		By("publishing it in status.version, which the Version column reads")
+		Eventually(func(g Gomega) {
+			var latest v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			g.Expect(latest.Status.Version).To(Equal("9.2.4"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("runs its own version over the one the release names", func() {
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		release := createElasticsearchRelease("9.2.4")
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.ReleaseRef = release.Name
+		cluster.Spec.Version = "9.2.5"
+		createElasticsearchCluster(cluster)
+
+		es := fetchOwnedElasticsearch(cluster)
+		Expect(es.Spec.Version).To(Equal("9.2.5"))
+	})
+
+	It("reports InvalidReference for a dangling releaseRef and applies nothing", func() {
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.ReleaseRef = "does-not-exist-" + utilrand.String(8)
+		cluster.Spec.Version = ""
+		createElasticsearchCluster(cluster)
+
+		expectElasticsearchClusterReady(
+			cluster, metav1.ConditionFalse,
+			Equal(v1.ReasonInvalidReference), ContainSubstring(cluster.Spec.ReleaseRef),
+		)
+
+		var es esv1.Elasticsearch
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).NotTo(Succeed())
+	})
+
+	It("enforces the version floor on a version the release names", func() {
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		release := createElasticsearchRelease(versionBelowFloor)
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.ReleaseRef = release.Name
+		cluster.Spec.Version = ""
+		createElasticsearchCluster(cluster)
+
+		expectElasticsearchClusterReady(
+			cluster, metav1.ConditionFalse,
+			Equal(v1.ReasonInvalidReference), ContainSubstring(versionBelowFloor),
+		)
+	})
+
+	It("flows a release edit to referencing clusters", func() {
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		release := createElasticsearchRelease("9.2.4")
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.ReleaseRef = release.Name
+		cluster.Spec.Version = ""
+		createElasticsearchCluster(cluster)
+		fetchOwnedElasticsearch(cluster)
+
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaRelease
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(release), &latest)).To(Succeed())
+			latest.Spec.Elasticsearch.Version = "9.2.5"
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			var es esv1.Elasticsearch
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())
+			g.Expect(es.Spec.Version).To(Equal("9.2.5"))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("enforces the version floor on the merged result", func() {

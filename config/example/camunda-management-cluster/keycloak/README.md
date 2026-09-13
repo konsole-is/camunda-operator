@@ -13,10 +13,10 @@ The sizing lives in [`config/example/presets`](../../presets). The
 and the `CamundaCluster` names `small`. `CamundaManagementCluster` and
 `CamundaOptimize` have no preset kind, so every value on them is their own.
 
-The version of the orchestration cluster lives in
-[`config/example/releases`](../../releases). The `CamundaCluster` names the
-release `camunda-8-9` and sets no `version` of its own. Raise `spec.version`
-in that one file, and every cluster that names the release follows. The
+The versions live in [`config/example/releases`](../../releases). The
+`CamundaCluster`, the `ElasticsearchCluster`, and the `DatabaseServer` all name
+the release `camunda-8-9` and set no `version` of their own. Raise a version in
+that one file, and every resource that names the release follows. The
 management plane keeps its versions on itself, because Management Identity,
 Console, and Web Modeler each carry a patch line of their own.
 
@@ -58,7 +58,7 @@ files in their number order:
 2. `01-namespaces.yaml` creates both namespaces.
 3. `02-secrets.yaml` creates the license Secret and the SMTP Secret.
 4. `03-database-server.yaml` creates the `DatabaseServer` `my-db`, which
-   inherits the preset `standard`. Wait for it:
+   inherits the preset `standard` and the release `camunda-8-9`. Wait for it:
 
     ```sh
     kubectl wait databaseserver/my-db -n my-management-ns \
@@ -77,7 +77,8 @@ files in their number order:
     ```
 
 8. `07-elasticsearch-cluster.yaml` creates the `ElasticsearchCluster`
-   `my-cluster-es`, which inherits the preset `standard`.
+   `my-cluster-es`, which inherits the preset `standard` and the release
+   `camunda-8-9`.
 9. `08-camunda-cluster.yaml` creates the `CamundaCluster` `my-cluster`, which
    inherits the preset `small` and the release `camunda-8-9`. Wait for it:
 

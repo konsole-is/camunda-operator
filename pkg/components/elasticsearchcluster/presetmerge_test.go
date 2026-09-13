@@ -35,7 +35,6 @@ const versionBelowFloor = "8.18.0"
 func fullPresetSpec() *v1.ElasticsearchClusterPresetSpec {
 	return &v1.ElasticsearchClusterPresetSpec{
 		Cluster: v1.ElasticsearchClusterSpec{
-			Version:  "9.2.4",
 			Replicas: new(int32(3)),
 			Resources: &corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
@@ -73,17 +72,96 @@ func fullPresetSpec() *v1.ElasticsearchClusterPresetSpec {
 	}
 }
 
-func TestMergePresetNilPresetPassesSpecThrough(t *testing.T) {
+func TestMergeSpecNoBaselinePassesSpecThrough(t *testing.T) {
 	t.Parallel()
 
 	spec := goldenRealisticElasticsearchCluster().Spec
 
-	merged := MergePreset(spec, nil)
+	merged := MergeSpec(spec, nil, nil)
 
 	assert.Equal(t, spec, merged)
 }
 
-func TestMergePresetInheritsUnsetFields(t *testing.T) {
+func TestMergeSpecTakesTheVersionFromTheRelease(t *testing.T) {
+	t.Parallel()
+
+	spec := v1.ElasticsearchClusterSpec{
+		PresetRef:              "standard",
+		ReleaseRef:             "camunda-8-9",
+		SecondaryStorageConfig: "my-storage-config",
+	}
+	release := &v1.CamundaReleaseSpec{
+		Version:       "8.9.18",
+		Elasticsearch: &v1.ReleaseElasticsearchSpec{Version: "9.2.8"},
+	}
+
+	merged := MergeSpec(spec, fullPresetSpec(), release)
+
+	assert.Equal(t, "9.2.8", merged.Version)
+	assert.Equal(t, fullPresetSpec().Cluster.Replicas, merged.Replicas, "the preset still supplies the shape")
+}
+
+// A release alone must be enough, so a cluster that names no preset still
+// follows the fleet version.
+func TestMergeSpecTakesTheVersionFromTheReleaseWithoutAPreset(t *testing.T) {
+	t.Parallel()
+
+	release := &v1.CamundaReleaseSpec{
+		Version:       "8.9.18",
+		Elasticsearch: &v1.ReleaseElasticsearchSpec{Version: "9.2.8"},
+	}
+
+	merged := MergeSpec(v1.ElasticsearchClusterSpec{ReleaseRef: "camunda-8-9"}, nil, release)
+
+	assert.Equal(t, "9.2.8", merged.Version)
+}
+
+func TestMergeSpecInlineVersionWinsOverTheRelease(t *testing.T) {
+	t.Parallel()
+
+	spec := v1.ElasticsearchClusterSpec{ReleaseRef: "camunda-8-9", Version: "9.2.9"}
+	release := &v1.CamundaReleaseSpec{
+		Version:       "8.9.18",
+		Elasticsearch: &v1.ReleaseElasticsearchSpec{Version: "9.2.8"},
+	}
+
+	merged := MergeSpec(spec, nil, release)
+
+	assert.Equal(t, "9.2.9", merged.Version)
+}
+
+// An empty block is what templated YAML renders for a release that names no
+// Elasticsearch version. It must leave the version to the layers below.
+func TestMergeSpecEmptyReleaseElasticsearchBlockIsUnset(t *testing.T) {
+	t.Parallel()
+
+	spec := v1.ElasticsearchClusterSpec{ReleaseRef: "camunda-8-9", Version: "9.2.9"}
+
+	empty := MergeSpec(spec, nil, &v1.CamundaReleaseSpec{
+		Version:       "8.9.18",
+		Elasticsearch: &v1.ReleaseElasticsearchSpec{},
+	})
+	assert.Equal(t, "9.2.9", empty.Version)
+
+	absent := MergeSpec(spec, nil, &v1.CamundaReleaseSpec{Version: "8.9.18"})
+	assert.Equal(t, "9.2.9", absent.Version)
+}
+
+// The Camunda version of a release governs the orchestration cluster. An
+// Elasticsearch cluster must never read it.
+func TestMergeSpecIgnoresTheCamundaVersionOfTheRelease(t *testing.T) {
+	t.Parallel()
+
+	merged := MergeSpec(
+		v1.ElasticsearchClusterSpec{ReleaseRef: "camunda-8-9"},
+		nil,
+		&v1.CamundaReleaseSpec{Version: "8.9.18"},
+	)
+
+	assert.Empty(t, merged.Version)
+}
+
+func TestMergeSpecInheritsUnsetFields(t *testing.T) {
 	t.Parallel()
 
 	spec := v1.ElasticsearchClusterSpec{
@@ -92,9 +170,8 @@ func TestMergePresetInheritsUnsetFields(t *testing.T) {
 	}
 	preset := fullPresetSpec()
 
-	merged := MergePreset(spec, preset)
+	merged := MergeSpec(spec, preset, nil)
 
-	assert.Equal(t, preset.Cluster.Version, merged.Version)
 	assert.Equal(t, preset.Cluster.Replicas, merged.Replicas)
 	assert.Equal(t, preset.Cluster.Resources, merged.Resources)
 	assert.Equal(t, preset.Cluster.StorageSize, merged.StorageSize)
@@ -112,7 +189,7 @@ func TestMergePresetInheritsUnsetFields(t *testing.T) {
 	)
 }
 
-func TestMergePresetRetentionPolicyIsOverriddenInline(t *testing.T) {
+func TestMergeSpecRetentionPolicyIsOverriddenInline(t *testing.T) {
 	t.Parallel()
 
 	spec := v1.ElasticsearchClusterSpec{
@@ -120,12 +197,12 @@ func TestMergePresetRetentionPolicyIsOverriddenInline(t *testing.T) {
 			WhenDeleted: v1.DeletePersistentVolumeClaimRetentionPolicyType,
 		},
 	}
-	merged := MergePreset(spec, fullPresetSpec())
+	merged := MergeSpec(spec, fullPresetSpec(), nil)
 
 	assert.Equal(t, spec.PersistentVolumeClaimRetentionPolicy, merged.PersistentVolumeClaimRetentionPolicy)
 }
 
-func TestMergePresetOverridesInlineFieldsWholesale(t *testing.T) {
+func TestMergeSpecOverridesInlineFieldsWholesale(t *testing.T) {
 	t.Parallel()
 
 	spec := v1.ElasticsearchClusterSpec{
@@ -148,7 +225,7 @@ func TestMergePresetOverridesInlineFieldsWholesale(t *testing.T) {
 	}
 	preset := fullPresetSpec()
 
-	merged := MergePreset(spec, preset)
+	merged := MergeSpec(spec, preset, nil)
 
 	assert.Equal(t, spec.Version, merged.Version)
 	assert.Equal(t, spec.Replicas, merged.Replicas)
@@ -162,7 +239,7 @@ func TestMergePresetOverridesInlineFieldsWholesale(t *testing.T) {
 	assert.Equal(t, spec.PodAnnotations, merged.PodAnnotations)
 }
 
-func TestMergePresetReplacesSchedulingBlockEntirely(t *testing.T) {
+func TestMergeSpecReplacesSchedulingBlockEntirely(t *testing.T) {
 	t.Parallel()
 
 	inline := &v1.SchedulingSpec{
@@ -182,7 +259,7 @@ func TestMergePresetReplacesSchedulingBlockEntirely(t *testing.T) {
 		SecondaryStorageConfig: "my-storage-config",
 	}
 
-	merged := MergePreset(spec, fullPresetSpec())
+	merged := MergeSpec(spec, fullPresetSpec(), nil)
 
 	require.NotNil(t, merged.Scheduling)
 	assert.Equal(t, inline, merged.Scheduling)
@@ -192,23 +269,25 @@ func TestMergePresetReplacesSchedulingBlockEntirely(t *testing.T) {
 	)
 }
 
-func TestMergePresetKeepsInstanceBoundFieldsFromSpec(t *testing.T) {
+func TestMergeSpecKeepsInstanceBoundFieldsFromSpec(t *testing.T) {
 	t.Parallel()
 
 	spec := v1.ElasticsearchClusterSpec{
 		PresetRef:              "standard",
+		ReleaseRef:             "camunda-8-9",
 		SecondaryStorageConfig: "my-storage-config",
 		Suspend:                true,
 	}
 
-	merged := MergePreset(spec, fullPresetSpec())
+	merged := MergeSpec(spec, fullPresetSpec(), nil)
 
 	assert.Equal(t, spec.PresetRef, merged.PresetRef)
+	assert.Equal(t, spec.ReleaseRef, merged.ReleaseRef)
 	assert.Equal(t, spec.SecondaryStorageConfig, merged.SecondaryStorageConfig)
 	assert.Equal(t, spec.Suspend, merged.Suspend)
 }
 
-func TestMergePresetMonitoringIsInheritedAndOverriddenWholesale(t *testing.T) {
+func TestMergeSpecMonitoringIsInheritedAndOverriddenWholesale(t *testing.T) {
 	t.Parallel()
 
 	preset := &v1.ElasticsearchClusterPresetSpec{Cluster: v1.ElasticsearchClusterSpec{
@@ -218,13 +297,13 @@ func TestMergePresetMonitoringIsInheritedAndOverriddenWholesale(t *testing.T) {
 		},
 	}}
 
-	inherited := MergePreset(v1.ElasticsearchClusterSpec{}, preset)
+	inherited := MergeSpec(v1.ElasticsearchClusterSpec{}, preset, nil)
 	assert.Equal(t, preset.Cluster.Monitoring, inherited.Monitoring, "an unset monitoring block inherits the preset")
 
 	override := v1.ElasticsearchClusterSpec{Monitoring: &v1.MonitoringSpec{
 		ServiceMonitor: &v1.ServiceMonitorSpec{Enabled: false},
 	}}
-	merged := MergePreset(override, preset)
+	merged := MergeSpec(override, preset, nil)
 	assert.Equal(
 		t,
 		override.Monitoring,
@@ -234,14 +313,14 @@ func TestMergePresetMonitoringIsInheritedAndOverriddenWholesale(t *testing.T) {
 	assert.Nil(t, merged.Monitoring.Exporter, "the exporter image of the preset does not survive a wholesale override")
 }
 
-func TestMergePresetDoesNotAliasThePresetBaseline(t *testing.T) {
+func TestMergeSpecDoesNotAliasThePresetBaseline(t *testing.T) {
 	t.Parallel()
 
 	preset := fullPresetSpec()
 
-	merged := MergePreset(v1.ElasticsearchClusterSpec{
+	merged := MergeSpec(v1.ElasticsearchClusterSpec{
 		SecondaryStorageConfig: "my-storage-config",
-	}, preset)
+	}, preset, nil)
 	merged.PodLabels["mutated"] = "yes"
 
 	assert.NotContains(
@@ -253,7 +332,7 @@ func TestMergePresetDoesNotAliasThePresetBaseline(t *testing.T) {
 // A cluster that names its own bucket and keystore sources must keep them:
 // dropping either would silently disable backups for every cluster that uses
 // a preset.
-func TestMergePresetKeepsTheSnapshotBucketAndSecureSettings(t *testing.T) {
+func TestMergeSpecKeepsTheSnapshotBucketAndSecureSettings(t *testing.T) {
 	t.Parallel()
 
 	preset := &v1.ElasticsearchClusterPresetSpec{Cluster: v1.ElasticsearchClusterSpec{
@@ -261,14 +340,14 @@ func TestMergePresetKeepsTheSnapshotBucketAndSecureSettings(t *testing.T) {
 		SecureSettings:     []v1.SecureSettingsSource{{SecretName: "fleet-keystore"}},
 	}}
 
-	inherited := MergePreset(v1.ElasticsearchClusterSpec{}, preset)
+	inherited := MergeSpec(v1.ElasticsearchClusterSpec{}, preset, nil)
 	assert.Equal(t, "fleet-bucket", inherited.SnapshotStorageRef)
 	assert.Equal(t, "fleet-keystore", inherited.SecureSettings[0].SecretName)
 
-	overridden := MergePreset(v1.ElasticsearchClusterSpec{
+	overridden := MergeSpec(v1.ElasticsearchClusterSpec{
 		SnapshotStorageRef: "team-bucket",
 		SecureSettings:     []v1.SecureSettingsSource{{SecretName: "team-keystore"}},
-	}, preset)
+	}, preset, nil)
 	assert.Equal(t, "team-bucket", overridden.SnapshotStorageRef)
 	assert.Len(t, overridden.SecureSettings, 1)
 	assert.Equal(t, "team-keystore", overridden.SecureSettings[0].SecretName)

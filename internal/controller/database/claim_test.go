@@ -41,7 +41,7 @@ import (
 // pkg/components/database under its short form.
 const claimHolderNameAnnotation = components.ClaimHolderNameAnnotation
 
-func claimLeaseName(key string) string { return components.ClaimLeaseName(key) }
+func claimLeaseName(key string) string { return components.ClaimSchema().LeaseName(key) }
 
 // unclaimed returns a Database that has not recorded a claim yet, as it
 // stands on the cluster before the reconcile that resolves its server. The
@@ -159,7 +159,7 @@ func TestClaimSerializesTwoFirstReconciles(t *testing.T) {
 
 		lease, found := leaseOf(t, r)
 		require.True(t, found)
-		holder, ours := components.ClaimHolderOf(lease)
+		holder, ours := components.ClaimSchema().HolderOf(lease)
 		require.True(t, ours)
 		assert.Equal(t, "beta/newer", holder.String(), "the Lease must stay with its holder")
 	})
@@ -240,7 +240,7 @@ func TestClaimTakesOverAHolderThatIsGone(t *testing.T) {
 
 	lease, found := leaseOf(t, r)
 	require.True(t, found)
-	holder, ours := components.ClaimHolderOf(lease)
+	holder, ours := components.ClaimSchema().HolderOf(lease)
 	require.True(t, ours)
 	assert.Equal(t, "beta/next", holder.String())
 }
@@ -278,7 +278,7 @@ func TestClaimTakesOverAReplacedHolder(t *testing.T) {
 
 	lease, found := leaseOf(t, r)
 	require.True(t, found)
-	holder, ours := components.ClaimHolderOf(lease)
+	holder, ours := components.ClaimSchema().HolderOf(lease)
 	require.True(t, ours)
 	assert.Equal(t, "beta/next", holder.String())
 }
@@ -369,7 +369,7 @@ func TestClaimReleases(t *testing.T) {
 		require.NoError(t, r.claim(ctx, held, claimKey))
 
 		require.NoError(t, r.releaseHeldClaims(
-			ctx, selfHolder(held), "7000000000000000001/other",
+			ctx, held, "7000000000000000001/other",
 		))
 
 		_, found := leaseOf(t, r)
@@ -389,7 +389,7 @@ func TestClaimReleases(t *testing.T) {
 		// would leave the old one held until this Database is deleted.
 		moved := database.DeepCopy()
 		require.NoError(t, r.releaseHeldClaims(
-			ctx, selfHolder(moved), "7000000000000000001/other",
+			ctx, moved, "7000000000000000001/other",
 		))
 
 		_, found := leaseOf(t, r)

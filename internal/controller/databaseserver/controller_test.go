@@ -145,18 +145,22 @@ func boundClaim(namespace, name, capacity string) {
 	Expect(k8sClient.Status().Update(ctx, claim)).To(Succeed())
 }
 
-// serverOnPreset creates a namespace, a cluster-scoped preset that holds the
-// version, a data volume of presetStorageSize, and the write-ahead log volume,
-// and a DatabaseServer that inherits them. An empty walStorageSize leaves the
-// write-ahead log on the data volume. It returns the server and the preset.
-func serverOnPreset(walStorageSize string) (*v1.DatabaseServer, *v1.DatabaseServerPreset) {
+// serverOnPreset creates a namespace, a cluster-scoped preset that holds a
+// data volume of presetStorageSize and the write-ahead log volume, a
+// cluster-scoped release that holds the version, and a DatabaseServer that
+// inherits both. An empty walStorageSize leaves the write-ahead log on the data
+// volume. It returns the server, the preset, and the release.
+func serverOnPreset(walStorageSize string) (
+	*v1.DatabaseServer,
+	*v1.DatabaseServerPreset,
+	*v1.CamundaRelease,
+) {
 	GinkgoHelper()
 
 	preset := &v1.DatabaseServerPreset{
 		ObjectMeta: metav1.ObjectMeta{Name: "dbsp-" + utilrand.String(8)},
 		Spec: v1.DatabaseServerPresetSpec{
 			Server: v1.DatabaseServerSpec{
-				Version:     "17",
 				Instances:   new(int32(1)),
 				StorageSize: new(resource.MustParse(presetStorageSize)),
 			},
@@ -168,6 +172,8 @@ func serverOnPreset(walStorageSize string) (*v1.DatabaseServer, *v1.DatabaseServ
 	Expect(k8sClient.Create(ctx, preset)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
 
+	release := createDatabaseServerRelease("17")
+
 	namespace := "dbs-" + utilrand.String(8)
 	Expect(k8sClient.Create(ctx, &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: namespace},
@@ -177,12 +183,43 @@ func serverOnPreset(walStorageSize string) (*v1.DatabaseServer, *v1.DatabaseServ
 		ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: namespace},
 		Spec: v1.DatabaseServerSpec{
 			PresetRef:            preset.Name,
+			ReleaseRef:           release.Name,
 			DatabaseServerConfig: "camunda",
 		},
 	}
 	Expect(k8sClient.Create(ctx, server)).To(Succeed())
 
-	return server, preset
+	return server, preset, release
+}
+
+// createDatabaseServerRelease creates a uniquely named CamundaRelease that
+// names the given PostgreSQL major, and registers its deletion.
+func createDatabaseServerRelease(version string) *v1.CamundaRelease {
+	GinkgoHelper()
+
+	release := &v1.CamundaRelease{
+		ObjectMeta: metav1.ObjectMeta{Name: "dbsr-" + utilrand.String(8)},
+		Spec: v1.CamundaReleaseSpec{
+			Version:        "8.9.18",
+			DatabaseServer: &v1.ReleaseDatabaseServerSpec{Version: version},
+		},
+	}
+	Expect(k8sClient.Create(ctx, release)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, release) })
+
+	return release
+}
+
+// updateRelease applies mutate to the latest revision of the release.
+func updateRelease(release *v1.CamundaRelease, mutate func(*v1.CamundaRelease)) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var latest v1.CamundaRelease
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(release), &latest)).To(Succeed())
+		mutate(&latest)
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 }
 
 // updatePreset applies mutate to the latest revision of the preset.
@@ -2129,7 +2166,7 @@ var _ = Describe("DatabaseServer controller", func() {
 	// Admission cannot catch this shrink. The CEL transition rules bind the
 	// spec of the server, and lowering a preset never touches it.
 	It("keeps the applied storage size when a preset lowers it", func() {
-		server, preset := serverOnPreset("")
+		server, preset, _ := serverOnPreset("")
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000009")
 
@@ -2164,7 +2201,7 @@ var _ = Describe("DatabaseServer controller", func() {
 	// data claims for it raises walStorageSize to the data size, which is
 	// larger here on purpose.
 	It("keeps the applied write-ahead log size when a preset lowers it", func() {
-		server, preset := serverOnPreset("4Gi")
+		server, preset, _ := serverOnPreset("4Gi")
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000012")
 
@@ -2199,7 +2236,7 @@ var _ = Describe("DatabaseServer controller", func() {
 	// with "walStorage cannot be disabled once configured". A preset that
 	// clears the field must therefore not reach it.
 	It("keeps the write-ahead log volume a preset tries to remove", func() {
-		server, preset := serverOnPreset("4Gi")
+		server, preset, _ := serverOnPreset("4Gi")
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000015")
 
@@ -2233,18 +2270,67 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, 2*time.Second, interval).Should(Succeed())
 	})
 
-	// Admission cannot catch this either: a preset can raise the version, and
+	It("runs the major that the release names, with the shape of the preset", func() {
+		server, _, _ := serverOnPreset("")
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000018")
+
+		expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
+
+		var cluster cnpgv1.Cluster
+		clusterKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+		Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+		Expect(cluster.Spec.ImageName).To(HaveSuffix(":17"))
+		Expect(cluster.Spec.Instances).To(Equal(1))
+
+		By("publishing it in status.version, which the Version column reads")
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			g.Expect(latest.Status.Version).To(Equal("17"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// The data directory does not exist yet, so nothing refuses the change and
+	// the applied cluster shows which layer won.
+	It("runs its own version over the one the release names", func() {
+		server, _, _ := serverOnPreset("")
+
+		setVersion(server, "18")
+
+		clusterKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+		Eventually(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.ImageName).To(HaveSuffix(":18"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("reports InvalidReference for a dangling releaseRef", func() {
+		server, _, release := serverOnPreset("")
+		Expect(k8sClient.Delete(ctx, release)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			ready := conditionOf(server, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+			g.Expect(ready.Message).To(ContainSubstring(release.Name))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// Admission cannot catch this either: a release can raise the version, and
 	// the major the data directory runs is on the CloudNativePG cluster rather
 	// than on the spec.
 	It("refuses a major version change and keeps the image the server runs", func() {
-		server, preset := serverOnPreset("")
+		server, _, release := serverOnPreset("")
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000014")
 
 		expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
 
-		updatePreset(preset, func(p *v1.DatabaseServerPreset) {
-			p.Spec.Server.Version = "18"
+		updateRelease(release, func(r *v1.CamundaRelease) {
+			r.Spec.DatabaseServer.Version = "18"
 		})
 
 		Eventually(func(g Gomega) {
@@ -2272,6 +2358,11 @@ var _ = Describe("DatabaseServer controller", func() {
 			HaveField("InvolvedObject.Name", server.Name),
 			HaveField("Type", corev1.EventTypeWarning),
 		)))
+
+		By("keeping the running major in status.version, not the refused one")
+		var latest v1.DatabaseServer
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+		Expect(latest.Status.Version).To(Equal("17"))
 	})
 
 	// The refusal is one thing that happened, and it stands until the version
@@ -2279,14 +2370,14 @@ var _ = Describe("DatabaseServer controller", func() {
 	// reader who runs kubectl describe sees the refusal rather than a page of
 	// copies of it.
 	It("records the version refusal once while it stands", func() {
-		server, preset := serverOnPreset("")
+		server, _, release := serverOnPreset("")
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000017")
 
 		expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
 
-		updatePreset(preset, func(p *v1.DatabaseServerPreset) {
-			p.Spec.Server.Version = "18"
+		updateRelease(release, func(r *v1.CamundaRelease) {
+			r.Spec.DatabaseServer.Version = "18"
 		})
 
 		Eventually(func(g Gomega) {

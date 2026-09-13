@@ -314,6 +314,31 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			}, "url must carry no query and no fragment",
 		),
 		Entry(
+			"rejects an external Keycloak url with a user and a password",
+			externalKeycloakManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.ExternalKeycloak.URL =
+					"https://admin:secret@kc.example.com/auth"
+			}, "url must carry no user and no password",
+		),
+		Entry(
+			"rejects an external Keycloak url with a user and no password",
+			externalKeycloakManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.ExternalKeycloak.URL = "https://admin@kc.example.com/auth"
+			}, "url must carry no user and no password",
+		),
+		Entry(
+			"accepts an external Keycloak url with an at sign in the path",
+			externalKeycloakManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.ExternalKeycloak.URL = "https://kc.example.com/auth@v2"
+			}, "",
+		),
+		Entry(
+			"accepts an external Keycloak url with a port",
+			externalKeycloakManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.ExternalKeycloak.URL = "https://kc.example.com:8443/auth"
+			}, "",
+		),
+		Entry(
 			// The url lands in the annotations of the Lease that claims the
 			// realm, and the annotations of an object are bounded, so an
 			// unbounded url would make every create of the claim fail.

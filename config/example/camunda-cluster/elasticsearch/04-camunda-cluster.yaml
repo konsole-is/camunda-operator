@@ -11,6 +11,7 @@ metadata:
   name: my-cluster
   namespace: my-cluster-ns
 spec:
+  # renovate: datasource=docker depName=camunda/camunda
   version: "8.9.18"
   platformConfigRef: my-platform-config
   storageRef: my-storage-config

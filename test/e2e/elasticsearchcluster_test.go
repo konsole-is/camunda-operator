@@ -40,6 +40,9 @@ import (
 const (
 	esNamespace = "elasticsearch-e2e"
 	esName      = "camunda-es"
+	// esRelease carries the Elasticsearch version of this flow, so the
+	// cluster runs the layered configuration that a fleet uses.
+	esRelease = "elasticsearch-e2e-release"
 	// esStorageConfig is the SecondaryStorageConfig that the cluster publishes.
 	esStorageConfig = "camunda-es-storage"
 	// esStorageSize is small: kind binds it from the local-path provisioner.
@@ -73,11 +76,21 @@ func esHeapEnv() []corev1.EnvVar {
 
 var _ = Describe("ElasticsearchCluster", Ordered, Label(utils.LabelElasticsearchCluster), func() {
 	var (
+		release = &v1.CamundaRelease{
+			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaRelease"},
+			ObjectMeta: metav1.ObjectMeta{Name: esRelease},
+			Spec: v1.CamundaReleaseSpec{
+				Version: os.Getenv(envCamundaVersion),
+				Elasticsearch: &v1.ReleaseElasticsearchSpec{
+					Version: os.Getenv(envElasticsearchVersion),
+				},
+			},
+		}
 		cluster = &v1.ElasticsearchCluster{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "ElasticsearchCluster"},
 			ObjectMeta: metav1.ObjectMeta{Name: esName, Namespace: esNamespace},
 			Spec: v1.ElasticsearchClusterSpec{
-				Version:     os.Getenv(envElasticsearchVersion),
+				ReleaseRef:  esRelease,
 				Replicas:    new(int32(1)),
 				StorageSize: new(resource.MustParse(esStorageSize)),
 				// This flow runs Elasticsearch alone, and it indexes one
@@ -99,10 +112,14 @@ var _ = Describe("ElasticsearchCluster", Ordered, Label(utils.LabelElasticsearch
 		By("creating the test namespace")
 		_, err := utils.Kubectl("create", "ns", esNamespace)
 		Expect(err).NotTo(HaveOccurred())
+
+		By("creating the release that names the Elasticsearch version")
+		Expect(apply(release)).To(Succeed())
 	})
 
 	AfterAll(func() {
-		By("removing the test namespace")
+		By("removing the release and the test namespace")
+		_, _ = utils.Kubectl("delete", ccReleaseResource, esRelease, "--ignore-not-found")
 		_, _ = utils.Kubectl("delete", "ns", esNamespace, "--wait=false")
 	})
 

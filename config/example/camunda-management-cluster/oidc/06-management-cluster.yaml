@@ -25,6 +25,7 @@ spec:
   identityProvider:
     oidc: {}
   identity:
+    # renovate: datasource=docker depName=camunda/identity
     version: "8.9.9"
     externalUrl: "https://identity.camunda.example.com"
     databaseConfigRef: my-identity-db
@@ -32,9 +33,11 @@ spec:
       claimName: "oid"
       claimValue: "<the claim value of your first administrator>"
   console:
+    # renovate: datasource=docker depName=camunda/console
     version: "8.9.93"
     externalUrl: "https://console.camunda.example.com"
   webModeler:
+    # renovate: datasource=docker depName=camunda/web-modeler-restapi
     version: "8.9.8"
     externalUrl: "https://modeler.camunda.example.com"
     websocketsExternalUrl: "https://modeler.camunda.example.com/ws"

@@ -38,7 +38,6 @@ func validElasticsearchClusterPreset() *v1.ElasticsearchClusterPreset {
 		ObjectMeta: metav1.ObjectMeta{Name: "escp-" + utilrand.String(8)},
 		Spec: v1.ElasticsearchClusterPresetSpec{
 			Cluster: v1.ElasticsearchClusterSpec{
-				Version:     "9.2.4",
 				Replicas:    &replicas,
 				StorageSize: &storageSize,
 			},
@@ -107,6 +106,18 @@ var _ = Describe("ElasticsearchClusterPreset schema", func() {
 			}, "instance-bound",
 		),
 		Entry(
+			"rejects a releaseRef inside a preset",
+			validElasticsearchClusterPreset, func(o *v1.ElasticsearchClusterPreset) {
+				o.Spec.Cluster.ReleaseRef = "camunda-8-9-4"
+			}, "instance-bound",
+		),
+		Entry(
+			"rejects a version inside a preset",
+			validElasticsearchClusterPreset, func(o *v1.ElasticsearchClusterPreset) {
+				o.Spec.Cluster.Version = "9.2.4"
+			}, "belongs to a CamundaRelease",
+		),
+		Entry(
 			"rejects secondaryStorageConfig inside a preset",
 			validElasticsearchClusterPreset, func(o *v1.ElasticsearchClusterPreset) {
 				o.Spec.Cluster.SecondaryStorageConfig = "my-storage-config"
@@ -153,10 +164,10 @@ var _ = Describe("ElasticsearchClusterPreset schema", func() {
 			"metadata":   map[string]any{"name": "escp-" + utilrand.String(8)},
 			"spec": map[string]any{
 				"cluster": map[string]any{
-					"version":     "9.2.4",
 					"replicas":    int64(3),
 					"storageSize": "64Gi",
 					"presetRef":   "",
+					"releaseRef":  "",
 					"suspend":     false,
 					"monitoring":  map[string]any{},
 				},
@@ -167,6 +178,25 @@ var _ = Describe("ElasticsearchClusterPreset schema", func() {
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
 	})
 
+	// A preset omits version. An empty string is not the same thing: the
+	// three-segment pattern of the field refuses it before the CEL rule runs.
+	It("rejects an empty-string version by the pattern", func() {
+		obj := &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "core.camunda.io/v1",
+			"kind":       "ElasticsearchClusterPreset",
+			"metadata":   map[string]any{"name": "escp-" + utilrand.String(8)},
+			"spec": map[string]any{
+				"cluster": map[string]any{
+					"replicas":    int64(3),
+					"storageSize": "64Gi",
+					"version":     "",
+				},
+			},
+		}}
+
+		Expect(k8sClient.Create(ctx, obj)).To(MatchError(ContainSubstring("should match")))
+	})
+
 	It("rejects an empty-string secondaryStorageConfig by the name pattern", func() {
 		obj := &unstructured.Unstructured{Object: map[string]any{
 			"apiVersion": "core.camunda.io/v1",
@@ -174,7 +204,6 @@ var _ = Describe("ElasticsearchClusterPreset schema", func() {
 			"metadata":   map[string]any{"name": "escp-" + utilrand.String(8)},
 			"spec": map[string]any{
 				"cluster": map[string]any{
-					"version":                "9.2.4",
 					"replicas":               int64(3),
 					"storageSize":            "64Gi",
 					"secondaryStorageConfig": "",

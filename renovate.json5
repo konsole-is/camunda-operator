@@ -12,6 +12,13 @@
 //
 //   # renovate: datasource=docker depName=camunda/camunda
 //   CAMUNDA_VERSION=8.9.17
+//
+// The example inventories under config/example/ run the versions the matrix
+// entry tests, so a version field of a manifest carries the same marker. One
+// pull request moves both, because every marked pin belongs to the group
+// e2e-image-pins below. The PostgreSQL major of the inventories carries no
+// marker, and `make lint` fails when any version of an inventory and the
+// matrix entry differ.
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["config:recommended"],
@@ -46,6 +53,19 @@
       managerFilePatterns: ["/^test/e2e/testdata/.*\\.yaml$/"],
       matchStrings: [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s*\\n\\s*image:\\s*\\S+:(?<currentValue>\\S+)",
+      ],
+    },
+    {
+      // A version field of an example inventory: the marker, then
+      // `version: "<version>"` on the next line. The inventories name a
+      // version, not an image, because each kind of this operator builds the
+      // pull reference from it. A README of an inventory repeats a manifest
+      // inside a fenced block, marker included, so the pages move with the
+      // manifests.
+      customType: "regex",
+      managerFilePatterns: ["/^config/example/.*\\.yaml$/", "/^config/example/.*\\.md$/"],
+      matchStrings: [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s*\\n\\s*version:\\s*\"(?<currentValue>[^\"]+)\"",
       ],
     },
   ],
@@ -91,9 +111,11 @@
     {
       // One pull request carries every e2e image patch of the schedule: each
       // pull request costs a full e2e run, and the pins are independent of
-      // each other. separateMinorPatch keeps the patch alive when a newer
-      // minor exists; without it the minor and the patch share one update,
-      // and the rule above drops it whole.
+      // each other. The example inventories join the group, so the manifests
+      // a user applies move with the matrix that tests them.
+      // separateMinorPatch keeps the patch alive when a newer minor exists;
+      // without it the minor and the patch share one update, and the rule
+      // above drops it whole.
       matchManagers: ["custom.regex"],
       separateMinorPatch: true,
       groupName: "e2e-image-pins",
@@ -112,8 +134,9 @@
       // realm-management client (the fix of CVE-2026-9796,
       // keycloak/keycloak#49624), and Management Identity 8.9 updates that
       // client when it sets up the realm, so it never starts. The bound
-      // lifts when an Identity 8.9 patch starts against 26.7.
-      matchFileNames: ["test/e2e/matrix/8.9.env"],
+      // lifts when an Identity 8.9 patch starts against 26.7. The example
+      // inventories run the same Keycloak, so the bound covers them too.
+      matchFileNames: ["test/e2e/matrix/8.9.env", "config/example/**"],
       matchDepNames: ["camunda/keycloak"],
       versioning: "semver",
       allowedVersions: "<26.7.0",
@@ -171,8 +194,9 @@
       // Docker versioning would not. A new supported minor gets a file
       // test/e2e/matrix/<minor>.env, a pair of matrix entries in
       // .github/workflows/test-e2e.yml, and a rule like this one with its own
-      // bound.
-      matchFileNames: ["test/e2e/matrix/8.9.env"],
+      // bound. The example inventories show one minor at a time. They move to
+      // the rule of the new minor when they adopt it.
+      matchFileNames: ["test/e2e/matrix/8.9.env", "config/example/**"],
       matchDepNames: [
         "camunda/camunda",
         "camunda/connectors-bundle",

@@ -17,18 +17,23 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/testing/golden"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/leaseclaim"
 )
 
 // realmClaimHolder is a management cluster that claims a realm in these tests.
@@ -43,15 +48,15 @@ func TestRealmClaimLeaseName(t *testing.T) {
 		URL: "https://keycloak.example.com/auth", Realm: "camunda-platform",
 	})
 
-	name := RealmClaimLeaseName(identity)
+	name := RealmClaimSchema().LeaseName(identity)
 
 	assert.True(t, strings.HasPrefix(name, "camunda-realm-"))
 	assert.Empty(t, validation.IsDNS1123Subdomain(name))
-	assert.Equal(t, name, RealmClaimLeaseName(identity))
-	assert.NotEqual(t, name, RealmClaimLeaseName(RealmIdentity(v1.KeycloakRealmTarget{
+	assert.Equal(t, name, RealmClaimSchema().LeaseName(identity))
+	assert.NotEqual(t, name, RealmClaimSchema().LeaseName(RealmIdentity(v1.KeycloakRealmTarget{
 		URL: "https://keycloak.example.com/auth", Realm: "other",
 	})))
-	assert.NotEqual(t, name, RealmClaimLeaseName(RealmIdentity(v1.KeycloakRealmTarget{
+	assert.NotEqual(t, name, RealmClaimSchema().LeaseName(RealmIdentity(v1.KeycloakRealmTarget{
 		URL: "https://other.example.com/auth", Realm: "camunda-platform",
 	})))
 }
@@ -60,9 +65,9 @@ func TestNewRealmClaimLease(t *testing.T) {
 	target := v1.KeycloakRealmTarget{URL: "https://keycloak.example.com/auth/", Realm: "camunda-platform"}
 	holder := realmClaimHolder("apps", "plane", "uid-1")
 
-	lease := NewRealmClaimLease("camunda-system", target, holder)
+	lease := RealmClaimSchema().NewLease("camunda-system", RealmIdentity(target), holder)
 
-	assert.Equal(t, RealmClaimLeaseName(RealmIdentity(target)), lease.Name)
+	assert.Equal(t, RealmClaimSchema().LeaseName(RealmIdentity(target)), lease.Name)
 	assert.Equal(t, "camunda-system", lease.Namespace)
 	assert.Equal(t, RealmClaimLeaseLabels("plane"), lease.Labels)
 	assert.Equal(t, labels.ManagedBy, lease.Labels[labels.ManagedByKey])
@@ -75,10 +80,10 @@ func TestNewRealmClaimLease(t *testing.T) {
 	assert.Equal(t, "apps/plane", *lease.Spec.HolderIdentity)
 	require.NotNil(t, lease.Spec.AcquireTime)
 
-	recorded, ours := RealmClaimHolderOf(lease)
+	recorded, ours := RealmClaimSchema().HolderOf(lease)
 	assert.True(t, ours)
 	assert.Equal(
-		t, RealmClaimHolder{
+		t, leaseclaim.Holder{
 			NamespacedName: types.NamespacedName{Namespace: "apps", Name: "plane"},
 			UID:            "uid-1",
 		}, recorded,
@@ -89,10 +94,11 @@ func TestNewRealmClaimLeaseBoundsTheHolderIdentity(t *testing.T) {
 	long := strings.Repeat("n", 200)
 	holder := realmClaimHolder("apps", long, "uid-1")
 
-	lease := NewRealmClaimLease("camunda-system", v1.KeycloakRealmTarget{URL: "https://k", Realm: "r"}, holder)
+	target := v1.KeycloakRealmTarget{URL: "https://k", Realm: "r"}
+	lease := RealmClaimSchema().NewLease("camunda-system", RealmIdentity(target), holder)
 
 	require.NotNil(t, lease.Spec.HolderIdentity)
-	assert.LessOrEqual(t, len(*lease.Spec.HolderIdentity), maxHolderIdentityLength)
+	assert.LessOrEqual(t, len(*lease.Spec.HolderIdentity), leaseclaim.MaxHolderIdentityLength)
 	assert.Equal(t, long, lease.Annotations[RealmClaimHolderNameAnnotation])
 }
 
@@ -116,9 +122,73 @@ func TestRealmClaimHolderOfRefusesAForeignLease(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			lease := &coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{Annotations: annotations}}
 
-			_, ours := RealmClaimHolderOf(lease)
+			_, ours := RealmClaimSchema().HolderOf(lease)
 
 			assert.False(t, ours)
 		})
 	}
+}
+
+// TestNewRealmClaimLeaseMatchesTheGolden pins the realm claim Lease against
+// the shape the operator wrote before the protocol moved to pkg/leaseclaim. A
+// change of its name, its labels or its annotations loses the operator every
+// realm it holds. The running holder keeps a Lease that no later claimant
+// reads.
+func TestNewRealmClaimLeaseMatchesTheGolden(t *testing.T) {
+	cases := map[string]struct {
+		file   string
+		target v1.KeycloakRealmTarget
+		mc     *v1.CamundaManagementCluster
+	}{
+		"realmclaimlease": {
+			file: "realmclaimlease.yaml",
+			target: v1.KeycloakRealmTarget{
+				URL: "https://keycloak.example.com/auth/", Realm: "camunda-platform",
+			},
+			mc: realmClaimHolder("apps", "plane", "uid-1"),
+		},
+		"a name that the bounds cut": {
+			file:   "realmclaimlease-longname.yaml",
+			target: v1.KeycloakRealmTarget{URL: "https://second.example.com/auth", Realm: "other"},
+			mc:     realmClaimHolder(strings.Repeat("s", 60), strings.Repeat("n", 200), "uid-2"),
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			lease := RealmClaimSchema().NewLease("camunda-system", RealmIdentity(tc.target), tc.mc)
+
+			require.NotNil(t, lease.Spec.AcquireTime)
+			golden.AssertYAML(
+				t,
+				filepath.Join("testdata", "golden", tc.file),
+				leasePreview{lease: lease},
+				golden.WithScheme(leaseGoldenScheme(t)),
+				golden.Update(*updateGolden),
+			)
+		})
+	}
+}
+
+// leasePreview renders a claim Lease for the golden comparison. The acquire
+// time is the wall clock of the render, so it is zeroed.
+type leasePreview struct {
+	lease *coordinationv1.Lease
+}
+
+func (p leasePreview) Preview() (client.Object, error) {
+	lease := p.lease.DeepCopy()
+	lease.Spec.AcquireTime = nil
+
+	return lease, nil
+}
+
+// leaseGoldenScheme serves the Lease that the golden serializer renders.
+func leaseGoldenScheme(t *testing.T) *runtime.Scheme {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, coordinationv1.AddToScheme(scheme))
+
+	return scheme
 }

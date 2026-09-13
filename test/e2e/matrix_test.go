@@ -37,11 +37,13 @@ const (
 	envConsoleVersion       = "CAMUNDA_CONSOLE_VERSION"
 	envWebModelerVersion    = "CAMUNDA_WEB_MODELER_VERSION"
 	envKeycloakVersion      = "KEYCLOAK_VERSION"
+	envPostgresVersion      = "POSTGRES_VERSION"
 	envLabels               = "E2E_LABELS"
 )
 
 // versionEnv is every version variable of a matrix entry: the images of the
-// Camunda minor, and the third-party operator releases the suite installs.
+// Camunda minor, the PostgreSQL major of the DatabaseServer flow, and the
+// third-party operator releases the suite installs.
 var versionEnv = []string{
 	envCamundaVersion,
 	envConnectorsVersion,
@@ -51,6 +53,7 @@ var versionEnv = []string{
 	envConsoleVersion,
 	envWebModelerVersion,
 	envKeycloakVersion,
+	envPostgresVersion,
 	utils.EnvCNPGVersion,
 	utils.EnvBarmanPluginVersion,
 }

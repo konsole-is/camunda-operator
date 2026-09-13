@@ -23,10 +23,12 @@ spec:
       environment: production
   identityProvider:
     keycloak:
+      # renovate: datasource=docker depName=camunda/keycloak extractVersion=^quay-optimized-(?<version>\d+\.\d+\.\d+)$
       version: "26.6.4"
       externalUrl: "https://camunda.example.com/auth"
       databaseConfigRef: my-keycloak-db
   identity:
+    # renovate: datasource=docker depName=camunda/identity
     version: "8.9.9"
     externalUrl: "https://identity.camunda.example.com"
     databaseConfigRef: my-identity-db
@@ -34,9 +36,11 @@ spec:
       username: admin
       email: admin@example.com
   console:
+    # renovate: datasource=docker depName=camunda/console
     version: "8.9.93"
     externalUrl: "https://console.camunda.example.com"
   webModeler:
+    # renovate: datasource=docker depName=camunda/web-modeler-restapi
     version: "8.9.8"
     externalUrl: "https://modeler.camunda.example.com"
     websocketsExternalUrl: "https://modeler.camunda.example.com/ws"

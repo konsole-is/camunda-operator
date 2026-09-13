@@ -202,7 +202,7 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 			// this Database, so it gives every claim it holds back. A
 			// Database that kept one would hold a name it no longer uses.
 			if dropErr := r.releaseHeldClaims(
-				ctx, selfHolder(&database), "",
+				ctx, &database, "",
 			); dropErr != nil {
 				return ctrl.Result{}, dropErr
 			}
@@ -323,7 +323,7 @@ func (r *DatabaseReconciler) preCheck(ctx context.Context, database *v1.Database
 	// is written by the flush of this reconcile whether the sweep ran or not,
 	// so it is no record that the release happened, and a sweep that skipped
 	// on it would never run again after one failure.
-	if err := r.releaseHeldClaims(ctx, selfHolder(database), key); err != nil {
+	if err := r.releaseHeldClaims(ctx, database, key); err != nil {
 		bootstrapper.Close()
 
 		return nil, err
@@ -636,6 +636,10 @@ func controls(database *v1.Database, obj client.Object) bool {
 func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.ClaimNamespace == "" {
 		return errors.New("the namespace of the claim Leases is required")
+	}
+
+	if err := components.ClaimSchema().Validate(); err != nil {
+		return fmt.Errorf("the claim Schema of Database: %w", err)
 	}
 
 	if r.EventRecorder == nil {
