@@ -62,7 +62,7 @@ const (
 	// MinIODeployment and minioBucketJob. dumpInstallDiagnostics describes
 	// the pods these match when a wait on the two fails.
 	minioServerSelector    = "app=" + MinIODeployment
-	minioBucketJobSelector = "job-name=" + minioBucketJob
+	minioBucketJobSelector = "batch.kubernetes.io/job-name=" + minioBucketJob
 	// minioManifest is the manifest of all of the above, relative to the
 	// project directory that Run works in.
 	minioManifest = "test/e2e/testdata/minio.yaml"
@@ -89,7 +89,7 @@ func MinIOEndpoint(namespace string) string {
 // This function therefore deletes the Job first. The delete cascades to its
 // pods and waits for them, so the new Job never adopts one.
 //
-// When the rollout or the bucket Job times out, it writes the pod
+// When the wait on the rollout or on the bucket Job fails, it writes the pod
 // descriptions and the events of namespace to the Ginkgo writer before it
 // returns the error.
 func InstallMinIO(namespace string) error {
