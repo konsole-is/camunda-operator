@@ -49,6 +49,8 @@ const suspendNote = ". The workloads are scaled to zero because spec.suspend is 
 // suspendExplicitly scales every workload that cluster controls to zero when
 // spec.suspend is set, and keeps everything else: the volumes, the Services,
 // and the Secrets. It does nothing for a cluster that does not set the field.
+// It reports whether it found a workload that the cluster controls, so a
+// cluster that never rendered one does not claim that any stopped.
 //
 // Every workload is tried and the errors are joined. One workload that a
 // conflict or an admission rule keeps up must not leave the rest of them
@@ -56,14 +58,20 @@ const suspendNote = ". The workloads are scaled to zero because spec.suspend is 
 func (r *CamundaClusterReconciler) suspendExplicitly(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
-) error {
+) (bool, error) {
 	if !cluster.Spec.Suspend {
-		return nil
+		return false, nil
 	}
 
+	var found bool
 	var errs []error
 	suspend := func(obj client.Object, replicas *int32) {
-		if !metav1.IsControlledBy(obj, cluster) || (replicas != nil && *replicas == 0) {
+		if !metav1.IsControlledBy(obj, cluster) {
+			return
+		}
+		found = true
+
+		if replicas != nil && *replicas == 0 {
 			return
 		}
 		if err := r.scaleToZero(ctx, cluster, obj); err != nil {
@@ -95,7 +103,7 @@ func (r *CamundaClusterReconciler) suspendExplicitly(
 		suspend(&deployments.Items[i], deployments.Items[i].Spec.Replicas)
 	}
 
-	return errors.Join(errs...)
+	return found, errors.Join(errs...)
 }
 
 // scaleToZero patches the replicas of a workload to zero and records the

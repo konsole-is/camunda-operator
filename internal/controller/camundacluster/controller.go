@@ -196,12 +196,12 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// spec.suspend is the exception. It is the instruction of the user,
 		// and the suspended render is what a failed pre-check skips, so the
 		// workloads stop here instead, see suspendExplicitly.
-		suspendErr := r.suspendExplicitly(ctx, &cluster)
+		suspended, suspendErr := r.suspendExplicitly(ctx, &cluster)
 		if cluster.Spec.Suspend {
 			// A suspended cluster publishes no endpoints, see binding.go.
 			cluster.Status.Management = nil
 			cluster.Status.Gateway = nil
-			if suspendErr == nil {
+			if suspended && suspendErr == nil {
 				failure.Message += suspendNote
 			}
 		}

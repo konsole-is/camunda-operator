@@ -82,14 +82,30 @@ func TestSuspendExplicitly(t *testing.T) {
 
 	cases := map[string]struct {
 		suspend bool
+		found   bool
+		// noOwned drops the workloads that this cluster controls, leaving only
+		// those of another owner.
+		noOwned bool
 		want    map[string]int32
 	}{
 		"a suspended cluster scales the workloads it controls": {
 			suspend: true,
+			found:   true,
 			want: map[string]int32{
 				"my-cluster-zeebe":    0,
 				"my-cluster-gateway":  0,
 				"my-cluster-operate":  0,
+				"other-cluster-zeebe": 1,
+				"adopted-zeebe":       1,
+			},
+		},
+		// A cluster created with spec.suspend and a dangling reference never
+		// rendered a workload, so Ready must not claim that any stopped.
+		"a suspended cluster that controls no workload finds none": {
+			suspend: true,
+			found:   false,
+			noOwned: true,
+			want: map[string]int32{
 				"other-cluster-zeebe": 1,
 				"adopted-zeebe":       1,
 			},
@@ -146,6 +162,10 @@ func TestSuspendExplicitly(t *testing.T) {
 				labels.ManagedByKey: labels.ManagedBy,
 			})
 
+			if tc.noOwned {
+				objects = objects[3:]
+			}
+
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
 			r := &CamundaClusterReconciler{
 				Client:        fakeClient,
@@ -154,7 +174,9 @@ func TestSuspendExplicitly(t *testing.T) {
 				EventRecorder: events.NewFakeRecorder(10),
 			}
 
-			require.NoError(t, r.suspendExplicitly(context.Background(), cluster))
+			found, err := r.suspendExplicitly(context.Background(), cluster)
+			require.NoError(t, err)
+			assert.Equal(t, tc.found, found)
 
 			for workload, want := range tc.want {
 				key := client.ObjectKey{Namespace: cluster.Namespace, Name: workload}
@@ -209,9 +231,10 @@ func TestSuspendExplicitlyJoinsPatchErrors(t *testing.T) {
 		EventRecorder: events.NewFakeRecorder(10),
 	}
 
-	err := r.suspendExplicitly(context.Background(), cluster)
+	found, err := r.suspendExplicitly(context.Background(), cluster)
 
 	require.ErrorIs(t, err, boom)
+	assert.True(t, found)
 	assert.Contains(t, err.Error(), "my-cluster-zeebe", "the error names the workload that stayed up")
 	assert.Equal(
 		t, int32(0), replicasOf(
@@ -250,9 +273,10 @@ func TestSuspendExplicitlyReportsAFailedList(t *testing.T) {
 		EventRecorder: events.NewFakeRecorder(10),
 	}
 
-	err := r.suspendExplicitly(context.Background(), cluster)
+	found, err := r.suspendExplicitly(context.Background(), cluster)
 
 	require.ErrorIs(t, err, boom)
+	assert.False(t, found, "a listing that failed found nothing")
 	assert.Contains(t, err.Error(), "listing the StatefulSets of the cluster")
 	assert.Equal(
 		t, int32(1), replicasOf(
