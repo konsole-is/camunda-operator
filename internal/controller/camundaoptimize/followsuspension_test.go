@@ -228,3 +228,29 @@ func TestFollowSuspensionReportsTheDrain(t *testing.T) {
 		})
 	}
 }
+
+// TestFollowSuspensionFindsNothingWithoutWorkloads covers an instance that
+// rendered no Deployment yet. found gates the note on Ready, so it must report
+// none and stage no condition.
+func TestFollowSuspensionFindsNothingWithoutWorkloads(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	optimize := &v1.CamundaOptimize{ObjectMeta: metav1.ObjectMeta{
+		Name: "co-a", Namespace: "team-a", UID: "uid-1",
+	}}
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	r := &Reconciler{
+		Client:        fakeClient,
+		APIReader:     fakeClient,
+		Scheme:        scheme,
+		EventRecorder: events.NewFakeRecorder(10),
+	}
+
+	found, err := r.followSuspension(context.Background(), optimize)
+
+	require.NoError(t, err)
+	assert.False(t, found)
+	assert.Empty(t, optimize.Status.Conditions)
+}
