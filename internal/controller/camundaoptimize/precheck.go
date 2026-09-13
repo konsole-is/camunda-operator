@@ -53,12 +53,11 @@ type resolved struct {
 	// ClusterUID is the UID that the exporter patch carries as a
 	// precondition, so an apply cannot put a deleted cluster back.
 	ClusterUID types.UID
-	// AwaitsBackendPods reports that the pod gate of the storage claim parked
-	// the workloads: pods of another cluster still carry the claim of the
-	// backend this instance reads. Nothing tells this controller when those
-	// pods go, so the reconcile that sets this asks for another pass on its
-	// timer.
-	AwaitsBackendPods bool
+	// AwaitsBackendClaim reports that the storage claim of the backend parked
+	// the workloads: the cluster does not hold the claim, or pods of another
+	// cluster still carry it. Nothing tells this controller when either wait
+	// ends, so the reconcile that sets this asks for another pass on its timer.
+	AwaitsBackendClaim bool
 	// ExporterStorage is the storage contract with the credentials reference
 	// as the cluster resolves it. The exporter runs in the broker container,
 	// so it reads the copy that the cluster's own controller makes, not the
@@ -178,31 +177,8 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	out.Input.StorageClaim = clustercomponents.StorageClaimSchema().LeaseName(key)
 	out.Input.ClusterUID = cluster.UID
 
-	held, err := clustercomponents.StorageClaimSchema().
-		NewClaim(r.Client, r.APIReader, r.ClaimNamespace).
-		Holds(ctx, key, &cluster)
-	if err != nil {
+	if err := r.gateOnStorageClaim(ctx, key, &cluster, &out); err != nil {
 		return out, err
-	}
-	// A cluster that does not hold the claim of its backend is parked. Its
-	// Ready carries the state of the pass that read the claim, so a storageRef
-	// edit reaches this controller before that reason does. The importer must
-	// not write the backend of another cluster whatever the last Ready says.
-	if !held {
-		out.Input.Suspended = true
-	} else {
-		// The cluster takes the claim of a new backend and records the pods it
-		// waits for in one pass, and its Ready reaches the API server at the
-		// end of that pass. A read in between finds the claim held and the
-		// previous reason, so the pods decide here as they do for the cluster.
-		writing, err := r.otherPodOnClaim(ctx, out.Input.StorageClaim, &cluster)
-		if err != nil {
-			return out, err
-		}
-		if writing {
-			out.Input.Suspended = true
-			out.AwaitsBackendPods = true
-		}
 	}
 
 	effective, err := res.resolveEffective(ctx, &cluster)
@@ -264,6 +240,48 @@ func (res *resolver) resolveStorage(
 	}
 
 	return &binding, nil
+}
+
+// gateOnStorageClaim parks the workloads of out unless cluster alone writes
+// the backend that key names: it must hold the storage claim, and no pod of
+// another cluster may still carry that claim. Either wait sets
+// AwaitsBackendClaim, because nothing reports the end of one to this
+// controller.
+//
+// The claim alone is not enough. The Ready of the cluster carries the state of
+// the pass that read the claim, so a storageRef edit reaches this controller
+// before the reason does, and the cluster takes the claim and records the pods
+// it waits for inside one pass. A read in between finds the claim held and the
+// previous reason.
+func (r *Reconciler) gateOnStorageClaim(
+	ctx context.Context,
+	key string,
+	cluster *v1.CamundaCluster,
+	out *resolved,
+) error {
+	held, err := clustercomponents.StorageClaimSchema().
+		NewClaim(r.Client, r.APIReader, r.ClaimNamespace).
+		Holds(ctx, key, cluster)
+	if err != nil {
+		return err
+	}
+	if !held {
+		out.Input.Suspended = true
+		out.AwaitsBackendClaim = true
+
+		return nil
+	}
+
+	writing, err := r.otherPodOnClaim(ctx, out.Input.StorageClaim, cluster)
+	if err != nil {
+		return err
+	}
+	if writing {
+		out.Input.Suspended = true
+		out.AwaitsBackendClaim = true
+	}
+
+	return nil
 }
 
 // otherPodOnClaim reports whether a pod of a cluster other than cluster

@@ -236,9 +236,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	conditions.Stage(&optimize, conditions.Aggregate(&optimize, built.ready...))
 	r.recordSuspensionChange(&optimize, suspendedBefore, res.Input.Suspended)
 
-	// No watch reports the pods of another cluster on the backend, so the
-	// workloads they park start again on this timer.
-	if res.AwaitsBackendPods && reconcileErr == nil {
+	// No watch reports the storage claim of the backend, or the pods of
+	// another cluster on it, so the workloads they park start again on this
+	// timer.
+	if res.AwaitsBackendClaim && reconcileErr == nil {
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 

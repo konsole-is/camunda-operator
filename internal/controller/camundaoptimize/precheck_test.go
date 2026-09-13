@@ -88,6 +88,10 @@ func TestPreCheckSuspendsWhileTheClusterDoesNotHoldItsBackend(t *testing.T) {
 				"the claim of the backend is what the pods carry, so the gate ran",
 			)
 			assert.Equal(t, tc.suspended, out.Input.Suspended)
+			assert.Equal(
+				t, tc.suspended, out.AwaitsBackendClaim,
+				"the Lease can come back without a status change of the cluster, so the reconcile requeues",
+			)
 		})
 	}
 }
@@ -147,7 +151,7 @@ func TestPreCheckSuspendsWhileAnotherClusterWritesTheBackend(t *testing.T) {
 			assert.Equal(t, claim, out.Input.StorageClaim, "the gate ran")
 			assert.Equal(t, tc.suspended, out.Input.Suspended)
 			assert.Equal(
-				t, tc.suspended, out.AwaitsBackendPods,
+				t, tc.suspended, out.AwaitsBackendClaim,
 				"nothing wakes this instance when those pods go, so the reconcile requeues on its timer",
 			)
 		})
