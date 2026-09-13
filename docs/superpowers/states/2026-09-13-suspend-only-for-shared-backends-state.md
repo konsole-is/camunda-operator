@@ -22,8 +22,8 @@ status: foundational-wave
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #369 | feat/suspend-only-for-shared-backends--storage-claim-on-a-lease | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/storage-claim-on-a-lease | #372 → fix/suspend-only-for-shared-backends | ready |
-| #370 | fix/suspend-only-for-shared-backends--keep-workloads-on-precheck-failure | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/keep-workloads-on-precheck-failure | #371 → fix/suspend-only-for-shared-backends | ready, Copilot loop clean at ef28014 after 10 rounds |
+| #369 | feat/suspend-only-for-shared-backends--storage-claim-on-a-lease | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/storage-claim-on-a-lease | #372 → fix/suspend-only-for-shared-backends | ready, Copilot round 9 pending at d80f421 |
+| #370 | fix/suspend-only-for-shared-backends--keep-workloads-on-precheck-failure | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/keep-workloads-on-precheck-failure | #371 → fix/suspend-only-for-shared-backends | ready, Copilot clean at ef28014, orchestrator review fixes at e5b67eb, re-review pending |
 
 ## Contracts
 
@@ -47,7 +47,7 @@ status: foundational-wave
 ## Pending snapshot
 
 1. Dispatch #369 (plan Tasks 1 to 6) and #370 (plan Tasks 7 to 11) in parallel into their sub-worktrees under the feature worktree; `feature-dev-workflow:fanning-out-with-worktrees` owns the dispatch. Gate per sub-PR: every command in plan Task 6 Step 1 passes, Copilot review loop clean, self-merge into `fix/suspend-only-for-shared-backends`, `gh issue close <n>`.
-2. The second sub-PR to ripen merges the feature branch forward, resolves the two shared test files and the pre-check failure branch of `internal/controller/camundacluster/controller.go` (#369 stages `WaitingForHandover` from the render path, #370 adds the explicit-suspend scale on the failure branch), adds the contract-deleted Lease assertion, fixes the `Suspended` GoDoc in `pkg/components/camundaoptimize/input.go:37` (it names one operator-driven state and says "storage contract"), and re-runs the gates before its self-merge.
+2. The second sub-PR to ripen merges the feature branch forward, resolves the two shared test files and the pre-check failure branch of `internal/controller/camundacluster/controller.go` (#369 stages `WaitingForHandover` from the render path, #370 adds the explicit-suspend scale on the failure branch), adds the contract-deleted Lease assertion, fixes the `Suspended` GoDoc in `pkg/components/camundaoptimize/input.go:37` (it names one operator-driven state and says "storage contract"), and re-runs the gates before its self-merge. Follow-up candidate, not in scope: `processConditions` in `internal/controller/camundacluster/explicitsuspend.go` duplicates the component-to-condition pairing of `Process.ConditionType`; an exported accessor in `pkg/components/camundacluster` would remove the drift.
 3. `feature-dev-workflow:reviewing-feature-progress`, then the integration PR from `fix/suspend-only-for-shared-backends` to `main` with `Closes #368`. The user merges to main. Delete this file and the plan in the last commit before the merge; keep the spec.
 
 ## Resume checklist
