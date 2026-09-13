@@ -40,8 +40,8 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
-	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	optimizecomponents "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
