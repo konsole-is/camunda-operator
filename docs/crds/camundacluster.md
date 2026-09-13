@@ -141,7 +141,7 @@ status:
         CamundaCluster "my-cluster-ns/my-other-cluster" already writes the
         backend "elasticsearch|https://es-http.my-cluster-ns.svc:9200". One
         CamundaCluster writes one backend, so this cluster stays suspended
-        until that one releases it
+        until that cluster moves to another backend or is deleted
 ```
 
 The suspended cluster looks again every 30 seconds. When you delete the holder, the suspended cluster takes the claim and resumes on its own. When the holder moves to another backend, it releases this one as soon as the new address resolves. A suspended cluster releases the backend it wrote before, so two clusters that swap backends in one step both resume. A paused holder keeps its claim until you unpause it.
