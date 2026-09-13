@@ -158,6 +158,33 @@ func TestPreCheckSuspendsWhileAnotherClusterWritesTheBackend(t *testing.T) {
 	}
 }
 
+// A cluster that reports itself suspended keeps the workloads at zero, so the
+// claim cannot change the answer and is not read. The fixture writes no Lease:
+// a read would find none, park the workloads for that reason, and ask for a
+// pass on the timer that this instance does not need.
+func TestPreCheckLeavesTheClaimUnreadForASuspendedCluster(t *testing.T) {
+	const (
+		namespace = "apps"
+		endpoint  = "https://es-http.apps.svc:9200"
+	)
+
+	scheme, cluster, objects := storageClaimGateFixture(t, namespace, endpoint)
+	cluster.Spec.Suspend = true
+	c := storageClaimPodClient(t, scheme, objects...)
+	r := &Reconciler{Client: c, APIReader: c, Scheme: scheme, ClaimNamespace: "camunda-system"}
+
+	var optimize v1.CamundaOptimize
+	require.NoError(t, c.Get(
+		context.Background(), client.ObjectKey{Namespace: namespace, Name: "my-optimize"}, &optimize,
+	))
+
+	out, err := r.preCheck(context.Background(), &optimize)
+
+	require.NoError(t, err)
+	assert.True(t, out.Input.Suspended, "the cluster is suspended, so the workloads are at zero")
+	assert.False(t, out.AwaitsBackendClaim, "no claim was read, so nothing waits on one")
+}
+
 // storageClaimPodClient builds a fake client for the handover gate. The fake
 // client refuses a "!=" field selector, which the API server serves, so the
 // interceptor asserts that the phase selector reached it and then drops it. An

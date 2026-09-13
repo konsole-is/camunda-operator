@@ -177,8 +177,13 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	out.Input.StorageClaim = clustercomponents.StorageClaimSchema().LeaseName(key)
 	out.Input.ClusterUID = cluster.UID
 
-	if err := r.gateOnStorageClaim(ctx, key, &cluster, &out); err != nil {
-		return out, err
+	// A cluster that already reports itself suspended keeps the workloads at
+	// zero whatever the claim says, so the reads below cannot change the
+	// answer.
+	if !out.Input.Suspended {
+		if err := r.gateOnStorageClaim(ctx, key, &cluster, &out); err != nil {
+			return out, err
+		}
 	}
 
 	effective, err := res.resolveEffective(ctx, &cluster)
