@@ -40,6 +40,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	optimizecomponents "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
@@ -119,6 +120,45 @@ func TestOtherPodsOnClaim(t *testing.T) {
 			assert.Equal(t, tc.pods, pods)
 		})
 	}
+}
+
+// A Lease that carries the name of a storage claim and no holder annotations
+// is somebody else's. No cluster holds the backend, so the failure is a report
+// and not a suspension. Nothing watches that Lease for this cluster, so the
+// failure must be unwatched: its deletion is picked up by the retry timer.
+func TestClaimStorageReportsAForeignLeaseAsUnwatched(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	in := &components.Input{Storage: components.Storage{
+		Type:          v1.SecondaryStorageTypeElasticsearch,
+		Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es.data.svc:9200"},
+	}}
+	key, err := components.StorageClaimKey(in.Storage)
+	require.NoError(t, err)
+	foreign := &coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{
+		Namespace: "camunda-system",
+		Name:      components.StorageClaimSchema().LeaseName(key),
+	}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(foreign).Build()
+
+	res := &resolver{
+		reader:  c,
+		claims:  components.StorageClaimSchema().NewClaim(c, c, "camunda-system"),
+		cluster: &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "orders", UID: "uid-1"}},
+		storage: &v1.SecondaryStorageConfig{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "storage"},
+		},
+	}
+
+	err = res.claimStorage(context.Background(), in)
+
+	var unwatched *conditions.UnwatchedPreCheckFailure
+	require.ErrorAs(t, err, &unwatched)
+	assert.Equal(t, v1.ReasonInvalidReference, unwatched.Failure.Reason)
+	assert.Contains(t, unwatched.Failure.Message, foreign.Name)
+	assert.Nil(t, in.Storage.Holder, "no cluster holds the backend, so the cluster is not suspended")
 }
 
 // TestStorageHeld covers the Ready condition storageHeld builds for a

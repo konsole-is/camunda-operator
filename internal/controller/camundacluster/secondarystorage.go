@@ -70,14 +70,16 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 	}
 	if blocker != nil {
 		if blocker.Foreign() {
-			return &conditions.PreCheckFailure{
-				Reason: v1.ReasonInvalidReference,
-				Message: fmt.Sprintf(
+			// Nothing watches that Lease for this cluster, so its deletion
+			// arrives on the retry timer and not through an event.
+			return conditions.NewUnwatchedFailure(
+				v1.ReasonInvalidReference,
+				fmt.Sprintf(
 					"Lease %s claims the backend %q and names no CamundaCluster. "+
 						"Delete it if nothing uses it",
 					blocker.Lease, key,
 				),
-			}
+			)
 		}
 		in.Storage.Holder = &components.StorageHolder{
 			Cluster: blocker.Holder.NamespacedName,
