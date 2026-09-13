@@ -30,7 +30,8 @@ import (
 
 // MinIOClientImage is the pinned mc image of the helper pods that read the
 // bucket. It carries no shell, so every call passes arguments to mc itself.
-const MinIOClientImage = "minio/mc:RELEASE.2025-08-13T08-35-41Z"
+// It is the mc image of testdata/minio.yaml.
+const MinIOClientImage = "quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z"
 
 // The names that testdata/minio.yaml creates. The manifest is the one
 // definition. These constants mirror it, so a spec repeats no string.
@@ -57,6 +58,11 @@ const (
 	MinIOSecretAccessKey = "camunda-backup-secret"
 	// minioBucketJob creates MinIOBucket once the server answers.
 	minioBucketJob = "minio-bucket"
+	// minioServerSelector and minioBucketJobSelector select the pods of
+	// MinIODeployment and minioBucketJob. dumpInstallDiagnostics describes
+	// the pods these match when a wait on the two fails.
+	minioServerSelector    = "app=" + MinIODeployment
+	minioBucketJobSelector = "job-name=" + minioBucketJob
 	// minioManifest is the manifest of all of the above, relative to the
 	// project directory that Run works in.
 	minioManifest = "test/e2e/testdata/minio.yaml"
@@ -82,6 +88,9 @@ func MinIOEndpoint(namespace string) string {
 //
 // This function therefore deletes the Job first. The delete cascades to its
 // pods and waits for them, so the new Job never adopts one.
+//
+// On a failure it writes the pod descriptions and the events of namespace to
+// the Ginkgo writer before it returns the error.
 func InstallMinIO(namespace string) error {
 	if _, err := Kubectl(
 		"delete", "job/"+minioBucketJob,
@@ -98,14 +107,19 @@ func InstallMinIO(namespace string) error {
 		"rollout", "status", "deployment/"+MinIODeployment,
 		"-n", namespace, "--timeout", "5m",
 	); err != nil {
+		dumpInstallDiagnostics(namespace, minioServerSelector)
 		return err
 	}
 
-	_, err := Kubectl(
+	if _, err := Kubectl(
 		"wait", "--for=condition=complete", "job/"+minioBucketJob,
 		"-n", namespace, "--timeout", "5m",
-	)
-	return err
+	); err != nil {
+		dumpInstallDiagnostics(namespace, minioBucketJobSelector)
+		return err
+	}
+
+	return nil
 }
 
 // MinIOObject is one object of the bucket, as mc reports it. Key is the key

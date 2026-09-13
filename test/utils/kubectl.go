@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,6 +39,23 @@ func KubectlWithStdin(stdin string, args ...string) (string, error) {
 	cmd := exec.Command("kubectl", args...)
 	cmd.Stdin = strings.NewReader(stdin)
 	return Run(cmd)
+}
+
+// dumpInstallDiagnostics writes the pod descriptions of selector and the
+// events of namespace to the Ginkgo writer, so a failed install explains
+// itself instead of leaving only the error message.
+func dumpInstallDiagnostics(namespace, selector string) {
+	pods, err := Kubectl("describe", "pod", "-n", namespace, "-l", selector)
+	if err != nil {
+		pods = err.Error()
+	}
+	_, _ = fmt.Fprintf(GinkgoWriter, "pods matching %q in %s:\n%s\n", selector, namespace, pods)
+
+	events, err := Kubectl("get", "events", "-n", namespace, "--sort-by=.lastTimestamp")
+	if err != nil {
+		events = err.Error()
+	}
+	_, _ = fmt.Fprintf(GinkgoWriter, "events in %s:\n%s\n", namespace, events)
 }
 
 // namespaceArgs returns the -n flag for namespace, or nothing for a
