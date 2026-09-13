@@ -246,7 +246,7 @@ A `CamundaOptimize` that never held the attachment removes nothing from the clus
 
 `WebappReady` and `ImporterReady` always take part. `MirroredSecretsReady` takes part when a referenced Secret lives in another namespace, and reports `Disabled` when none does.
 
-Every reason above that reports a failed check keeps both workloads running, see [Suspension](#suspension). `ClusterAlreadyAttached` is the one exception. The workloads then belong to the resource that holds the cluster, so this one removes its own.
+Every reason above that reports a failed check leaves the workloads as they are, see [Suspension](#suspension). A running instance keeps running. An instance whose first check fails creates nothing until the check passes. `ClusterAlreadyAttached` is the one exception. The workloads then belong to the resource that holds the cluster, so this one removes its own.
 
 `status.observedGeneration` is the last generation the operator reconciled.
 
