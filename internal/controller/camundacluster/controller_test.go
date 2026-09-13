@@ -624,10 +624,28 @@ var _ = Describe("CamundaCluster controller", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
 		}, timeout, interval).Should(Succeed(), "the broker StatefulSet is scaled, not deleted")
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			g.Expect(latest.Status.Management).To(BeNil(), "a suspended cluster publishes no endpoints")
+			g.Expect(latest.Status.Gateway).To(BeNil())
+		}, timeout, interval).Should(Succeed())
 
 		By("recreating the Secret")
 		createSecret(ns, name, map[string]string{"username": "camunda", "password": "es-password"})
 		expectReady(cluster, metav1.ConditionTrue, Equal(string(component.Suspended)), Not(BeEmpty()))
+
+		By("clearing spec.suspend")
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Suspend = false })
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			g.Expect(latest.Status.Management).NotTo(BeNil(), "the endpoints come back with the workloads")
+			g.Expect(latest.Status.Gateway).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(Equal(int32(1)))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("keeps the admin password stable across reconciles and regenerates it when the Secret is deleted", func() {
