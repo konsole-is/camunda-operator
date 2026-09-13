@@ -58,6 +58,20 @@ func TestStorageClaimKey(t *testing.T) {
 			},
 			key: "elasticsearch|https://es.example.com:443",
 		},
+		"elasticsearch renders the port as a number": {
+			storage: Storage{
+				Type:          v1.SecondaryStorageTypeElasticsearch,
+				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es:09200"},
+			},
+			key: "elasticsearch|https://es:9200",
+		},
+		"elasticsearch drops every trailing slash": {
+			storage: Storage{
+				Type:          v1.SecondaryStorageTypeElasticsearch,
+				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es.example.com///"},
+			},
+			key: "elasticsearch|https://es.example.com:443",
+		},
 		"elasticsearch keeps a path prefix": {
 			storage: Storage{
 				Type:          v1.SecondaryStorageTypeElasticsearch,

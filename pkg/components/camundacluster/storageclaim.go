@@ -19,6 +19,7 @@ package camundacluster
 import (
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -73,7 +74,7 @@ func StorageClaimLeaseLabels(name string) map[string]string {
 // contract that is edited to another address gives another key.
 //
 // An Elasticsearch key is the type, then the endpoint with the scheme and
-// the host in lower case, the port written out (80 for http, 443 for https
+// the host in lower case, the port as a number (80 for http, 443 for https
 // when the URL names none), and no trailing slash on the path. An rdbms key
 // is the type, then the host in lower case, the port, and the database name.
 // A chain that names no address, or an endpoint that is no URL, is an error.
@@ -118,13 +119,21 @@ func normalizeEndpoint(endpoint string) (string, error) {
 	}
 
 	scheme := strings.ToLower(parsed.Scheme)
-	port := parsed.Port()
-	if port == "" {
-		port = "80"
-		if scheme == "https" {
-			port = "443"
+	port := 80
+	if scheme == "https" {
+		port = 443
+	}
+	// Port keeps the spelling of the endpoint, so ":09200" and ":9200" are one
+	// backend under two keys until the number is rendered again.
+	if written := parsed.Port(); written != "" {
+		port, err = strconv.Atoi(written)
+		if err != nil {
+			return "", fmt.Errorf("the Elasticsearch endpoint %q has no numeric port: %w", endpoint, err)
 		}
 	}
 
-	return scheme + "://" + strings.ToLower(parsed.Hostname()) + ":" + port + strings.TrimSuffix(parsed.Path, "/"), nil
+	return fmt.Sprintf(
+		"%s://%s:%d%s",
+		scheme, strings.ToLower(parsed.Hostname()), port, strings.TrimRight(parsed.Path, "/"),
+	), nil
 }
