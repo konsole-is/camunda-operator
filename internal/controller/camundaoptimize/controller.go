@@ -112,9 +112,12 @@ type Reconciler struct {
 // exporter patch and releases the finalizer. Otherwise the finalizer is added
 // before the first side effect, the pre-checks resolve every reference into
 // the render input, and a failed pre-check reports its Ready reason and
-// returns. The webapp and the importer keep the configuration of the last
-// pass. A CamundaOptimize that lost the attachment deletes those workloads
-// instead, because they belong to the instance that holds it now.
+// returns. The webapp and the importer keep the configuration of the last pass,
+// with two exceptions. A suspended referenced cluster scales them to zero, so
+// the importer does not read Elasticsearch while that cluster is down. A
+// CamundaOptimize that lost the attachment, or whose cluster is gone, deletes
+// them: they belong to the instance that holds the cluster now, or to no
+// cluster at all.
 // Then the exporter patch turns the Elasticsearch exporter of the referenced
 // cluster on, and the components converge: the copies of referenced Secrets,
 // the webapp, the importer. Ready is True only when every component that takes
