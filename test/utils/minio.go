@@ -89,8 +89,9 @@ func MinIOEndpoint(namespace string) string {
 // This function therefore deletes the Job first. The delete cascades to its
 // pods and waits for them, so the new Job never adopts one.
 //
-// On a failure it writes the pod descriptions and the events of namespace to
-// the Ginkgo writer before it returns the error.
+// When the rollout or the bucket Job times out, it writes the pod
+// descriptions and the events of namespace to the Ginkgo writer before it
+// returns the error.
 func InstallMinIO(namespace string) error {
 	if _, err := Kubectl(
 		"delete", "job/"+minioBucketJob,
