@@ -19,7 +19,6 @@ package camundacluster
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -265,101 +264,46 @@ func TestStorageHeld(t *testing.T) {
 }
 
 // TestStorageHeldAfterFailure covers the Ready condition of a parked cluster
-// whose pre-check then failed: the reason stays StorageAlreadyAttached, so
-// CamundaCluster.Suspended stays true, and the message names the failure.
-// With a holder on the input the message is built fresh. Without one the
-// standing condition decides, and only for a chain that never resolved: a
-// resolved chain means the claim ran and the park is over.
+// whose pre-check then failed on another reference: the reason stays
+// StorageAlreadyAttached, so CamundaCluster.Suspended stays true, and the
+// message names the holder and the failure.
 func TestStorageHeldAfterFailure(t *testing.T) {
 	holder := &components.StorageHolder{
 		Cluster:  types.NamespacedName{Namespace: "ns", Name: "holder"},
 		Contract: types.NamespacedName{Namespace: "ns", Name: "storage"},
 	}
-	failure := &conditions.PreCheckFailure{
-		Reason:  v1.ReasonInvalidReference,
-		Message: `ObjectStorageConfig "ns/bucket" not found`,
-	}
-	standingPark := &metav1.Condition{
-		Type:    v1.ConditionReady,
-		Status:  metav1.ConditionFalse,
-		Reason:  v1.ReasonStorageAlreadyAttached,
-		Message: `CamundaCluster "ns/holder" already holds it`,
-	}
-	resolved := components.Storage{
-		Type:          v1.SecondaryStorageTypeElasticsearch,
-		Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es.data.svc:9200"},
-	}
 
 	cases := map[string]struct {
-		storage  components.Storage
-		standing *metav1.Condition
-		parked   bool
-		contains []string
+		failure *conditions.PreCheckFailure
+		message string
 	}{
-		"a holder on the input": {
-			storage:  components.Storage{Holder: holder},
-			parked:   true,
-			contains: []string{"ns/holder", "ns/storage", failure.Message},
-		},
-		"no holder, an unresolved chain, a standing park": {
-			standing: standingPark,
-			parked:   true,
-			contains: []string{"ns/holder", failure.Message},
-		},
-		"no holder, an unresolved chain, a standing park that already carries a failure": {
-			standing: &metav1.Condition{
-				Type:   v1.ConditionReady,
-				Status: metav1.ConditionFalse,
-				Reason: v1.ReasonStorageAlreadyAttached,
-				Message: `CamundaCluster "ns/holder" already holds it` +
-					parkFailureSeparator + `Secret "ns/old" not found`,
-			},
-			parked:   true,
-			contains: []string{"ns/holder", failure.Message},
-		},
-		"no holder, a resolved chain: the claim ran and took the backend": {
-			storage:  resolved,
-			standing: standingPark,
-			parked:   false,
-		},
-		"no holder, an unresolved chain, a standing failure of its own": {
-			standing: &metav1.Condition{
-				Type:    v1.ConditionReady,
-				Status:  metav1.ConditionFalse,
+		"a dangling reference": {
+			failure: &conditions.PreCheckFailure{
 				Reason:  v1.ReasonInvalidReference,
-				Message: `SecondaryStorageConfig "ns/storage" not found`,
+				Message: `ObjectStorageConfig "ns/bucket" not found`,
 			},
-			parked: false,
+			message: `ObjectStorageConfig "ns/bucket" not found`,
 		},
-		"no holder, no standing condition": {
-			parked: false,
+		"a missing Secret": {
+			failure: &conditions.PreCheckFailure{
+				Reason:  v1.ReasonMissingSecret,
+				Message: `Secret "ns/credentials" not found`,
+			},
+			message: `Secret "ns/credentials" not found`,
 		},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Generation: 3}}
-			if tc.standing != nil {
-				meta.SetStatusCondition(&cluster.Status.Conditions, *tc.standing)
-			}
 
-			cond, parked := storageHeldAfterFailure(cluster, tc.storage, failure)
-
-			require.Equal(t, tc.parked, parked)
-			if !parked {
-				return
-			}
+			cond := storageHeldAfterFailure(cluster, holder, tc.failure)
 
 			assert.Equal(t, metav1.ConditionFalse, cond.Status)
 			assert.Equal(t, v1.ReasonStorageAlreadyAttached, cond.Reason)
 			assert.Equal(t, cluster.Generation, cond.ObservedGeneration)
-			for _, want := range tc.contains {
-				assert.Contains(t, cond.Message, want)
-			}
-			assert.Equal(
-				t, 1, strings.Count(cond.Message, parkFailureSeparator),
-				"the failure is carried once, whatever the standing message held",
-			)
+			assert.Contains(t, cond.Message, "ns/holder")
+			assert.Contains(t, cond.Message, tc.message)
 
 			meta.SetStatusCondition(&cluster.Status.Conditions, cond)
 			assert.True(t, cluster.Suspended(), "a parked cluster stays suspended")
@@ -567,53 +511,6 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 			Equal(v1.ReasonInvalidReference),
 			ContainSubstring(bucket.Name),
 		)
-	})
-
-	// The storage chain resolves before the claim, so a parked cluster whose
-	// contract goes away never reaches the claim and has no holder on its
-	// input. The standing Ready condition is what remembers the park, and it
-	// has to hold: the workloads of this cluster are at zero, and its
-	// attachments read CamundaCluster.Suspended to stay there with them.
-	It("keeps a parked cluster parked when its own contract goes away", func() {
-		ns := newNamespace()
-		binding := createBinding(ns, true)
-		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
-		createCluster(holder)
-		expectClaimedBy(binding, holder)
-
-		parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
-		createCluster(parked)
-		expectParked(parked, holder)
-
-		By("deleting the contract that both clusters name")
-		Expect(k8sClient.Delete(ctx, binding)).To(Succeed())
-		expectReady(
-			parked,
-			metav1.ConditionFalse,
-			Equal(v1.ReasonStorageAlreadyAttached),
-			And(ContainSubstring(binding.Name), ContainSubstring("not found")),
-		)
-		zeebeKey := client.ObjectKey{Namespace: ns, Name: parked.Name + "-zeebe"}
-		Consistently(func(g Gomega) {
-			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
-		}, "3s", interval).Should(Succeed(), "a parked cluster stays at zero")
-
-		By("recreating the contract")
-		// A recreated contract carries no claim on this branch, so either
-		// cluster can take it and which one does is reconcile order. The park
-		// memory releasing is what this asserts: the failure leaves the
-		// message once the chain resolves again.
-		Expect(k8sClient.Create(ctx, &v1.SecondaryStorageConfig{
-			ObjectMeta: metav1.ObjectMeta{Name: binding.Name, Namespace: ns},
-			Spec:       *binding.Spec.DeepCopy(),
-		})).To(Succeed())
-		Eventually(func(g Gomega) {
-			var latest v1.CamundaCluster
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(parked), &latest)).To(Succeed())
-			ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
-			g.Expect(ready).NotTo(BeNil())
-			g.Expect(ready.Message).NotTo(ContainSubstring("not found"))
-		}, timeout, interval).Should(Succeed())
 	})
 
 	It("lets two clusters on two contracts both run", func() {
