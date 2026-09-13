@@ -57,7 +57,7 @@ A workload of the operator stops on its own in exactly two states, both on the s
 | `Ready` reason | State |
 | --- | --- |
 | `StorageAlreadyAttached` | Another live cluster holds the Lease of the backend this cluster resolves. This cluster renders every workload at zero. |
-| `WaitingForHandover` | This cluster holds the Lease, and pods of another cluster still carry its label. This cluster renders nothing until they are gone. |
+| `WaitingForHandover` | This cluster holds the Lease, and pods of another cluster still carry its label. This cluster renders every workload at zero until they are gone. |
 
 Every other `Ready` reason leaves the workloads as the last successful reconcile rendered them.
 `InvalidReference`, `MissingSecret`, `VersionMismatch`, `StorageTypeMismatch`,
@@ -137,12 +137,15 @@ the Lease name (`StorageClaimSchema().LeaseName(key)`, 56 characters, a valid la
 Lease name instead of the contract name. The label stays on the pod template only, never on
 the selector, so a change of backend rolls the pods and the new ones carry the new value.
 
-After `Take` succeeds, the cluster lists the pods of its namespace that carry the Lease name
-and do not belong to it. A pod belongs to it when its `camunda.io/cluster-uid` label names
+After `Take` succeeds, the cluster lists the pods in every namespace that carry the Lease name
+and do not belong to it. The Lease is shared across namespaces, so the pods must be too. A pod belongs to it when its `camunda.io/cluster-uid` label names
 this cluster's UID. The pod templates of the cluster and of Optimize gain that label; today
-only the Web Modeler user Secrets of the management plane carry it. While any
-such pod exists, the step fails with the unwatched `WaitingForHandover` failure it fails with
-today, naming the pods, and the controller looks again on its retry interval. This covers a
+only the Web Modeler user Secrets of the management plane carry it. While any such pod
+exists, the claim step records them on the input and the controller renders the cluster
+suspended, every workload at zero and the volumes kept, with `Ready` False and reason
+`WaitingForHandover` naming the pods. It looks again on its retry interval, as a parked
+cluster does. This is a render, not a pre-check failure: a running cluster that repoints into
+a handover stops, so its old pods leave the previous backend and that handover completes too. This covers a
 previous holder on the same contract, a previous holder on another contract to the same
 address, a deleted cluster whose pods the garbage collector has not reached, and a later
 cluster of the same name.
@@ -179,12 +182,12 @@ role should not change. `make manifests` decides.
 ## No suspension on a failed pre-check
 
 The pre-check failure branch of both controllers returns to the shape before #319: stage
-`Failed` on `Ready`, requeue on a timer for an unwatched failure, return. Two exceptions keep
-a parked cluster parked, because its workloads are at zero and `Suspended()` must keep
-reading true for it: the storage steps run first in the pre-check, and a failure after a
-found holder keeps `StorageAlreadyAttached` with the failure in the message; a failure in
-the storage steps themselves keeps a standing `StorageAlreadyAttached` the same way, since
-the park ends only when the claim step decides again.
+`Failed` on `Ready`, requeue on a timer for an unwatched failure, return. That holds for a
+parked cluster too: a failed reference on it reports the failure, its workloads stay at zero
+because nothing renders, and `Suspended()` reads false. Optimize does not depend on that
+reading for the parked case, because it gates its importer on the storage claim itself. A
+backup of such a cluster fails on connection, which reports a doubly broken cluster
+honestly.
 
 What goes:
 
@@ -207,11 +210,8 @@ workloads that belong to the instance that holds the cluster.
 
 `suspendedReadyReasons` in `api/v1` narrows to `StorageAlreadyAttached` and
 `WaitingForHandover`. `Suspended()` then answers true for `spec.suspend` and for the two
-states in the table above, and nothing else. It reports that the attachments of the cluster
-must hold, not that every workload is at zero: a running cluster that repoints into a
-handover keeps its workloads on the previous backend until the wait ends, and its Optimize
-importer and its backups wait meanwhile, because they would touch the new backend. Its three
-readers change behavior without a code change:
+states in the table above, and nothing else. All three hold every workload at zero. Its
+three readers change behavior without a code change:
 
 - `CamundaOptimize` scales to zero with the cluster in those states only.
 - A logical backup waits with `ClusterSuspended` in those states only. A cluster on a
