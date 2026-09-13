@@ -85,18 +85,13 @@ type resolver struct {
 // other error is a transient API failure. A failed step returns the input
 // filled so far, so the caller can read in.Storage.Holder off it.
 //
-// The claim runs early, because a parked cluster must stay parked whatever
-// else fails. A step that reported its own reason would leave
-// CamundaCluster.Suspended reading false for a cluster whose workloads are at
-// zero, and the extensions attached to it would start against the backend
-// that the holder writes. Every check after the claim therefore keeps the
-// parked reason, off in.Storage.Holder.
-//
-// Two steps run earlier and fail with no holder on the input. resolveEffective
-// is safe: a CamundaOptimize merges the same preset and release, so it fails
-// its own check on that one and renders nothing. resolveStorage is not, so the
-// caller falls back to the standing Ready condition there, see
-// storageHeldAfterFailure.
+// The claim runs before every check that can fail on its own, because a
+// parked cluster must stay parked whatever else fails. A later step that
+// reported its own reason would leave CamundaCluster.Suspended reading false
+// for a cluster whose workloads are at zero, and the extensions attached to
+// it would start against the backend that the holder writes. Only
+// resolveEffective runs earlier: a CamundaOptimize merges the same preset and
+// release, so it fails its own check on that one and renders nothing.
 func (r *CamundaClusterReconciler) preCheck(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
