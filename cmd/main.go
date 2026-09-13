@@ -388,9 +388,10 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&camundaoptimize.Reconciler{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Scheme:    mgr.GetScheme(),
+		Client:         mgr.GetClient(),
+		APIReader:      mgr.GetAPIReader(),
+		Scheme:         mgr.GetScheme(),
+		ClaimNamespace: operatorNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaOptimize")
 		os.Exit(1)

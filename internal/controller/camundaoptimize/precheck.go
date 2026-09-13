@@ -146,9 +146,9 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	}
 	out.ClusterUID = cluster.UID
 	// The Optimize workloads follow the suspension of the cluster they attach
-	// to, by spec.suspend or by the storage claim. spec.suspend is the
-	// cluster's own field: MergeSpec carries it through unchanged, so no
-	// preset can set it.
+	// to. spec.suspend is the cluster's own field: MergeSpec carries it
+	// through unchanged, so no preset can set it. The storage claim of the
+	// cluster is the second half of this decision, below.
 	out.Input.Suspended = cluster.Suspended()
 
 	binding, err := res.resolveStorage(ctx, &cluster)
@@ -170,6 +170,19 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	}
 	out.Input.StorageClaim = clustercomponents.StorageClaimSchema().LeaseName(key)
 	out.Input.ClusterUID = cluster.UID
+
+	held, err := clustercomponents.StorageClaimSchema().
+		NewClaim(r.Client, r.APIReader, r.ClaimNamespace).
+		Holds(ctx, key, &cluster)
+	if err != nil {
+		return out, err
+	}
+	// A cluster that does not hold the claim of its backend is parked, or it
+	// waits for a handover. Its Ready carries the state of the pass that read
+	// the claim, so a storageRef edit reaches this controller before that
+	// reason does. The importer must not write the backend of another cluster
+	// whatever the last Ready says.
+	out.Input.Suspended = out.Input.Suspended || !held
 
 	effective, err := res.resolveEffective(ctx, &cluster)
 	if err != nil {

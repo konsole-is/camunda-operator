@@ -81,6 +81,11 @@ type Reconciler struct {
 	// Metrics records the condition gauge and the apply counters of the
 	// framework. SetupWithManager sets it when it is nil.
 	Metrics component.MetricsRecorder
+	// ClaimNamespace holds the storage claim Leases of every cluster. This
+	// controller reads them to learn whether the cluster it attaches to holds
+	// the backend its importer writes. SetupWithManager refuses an empty
+	// value.
+	ClaimNamespace string
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used
@@ -107,6 +112,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch
 
 // Reconcile converges a CamundaOptimize. A CR under deletion withdraws the
 // exporter patch and releases the finalizer. Otherwise the finalizer is added

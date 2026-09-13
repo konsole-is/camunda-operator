@@ -163,6 +163,8 @@ The importer reads Elasticsearch directly. It does not go through the orchestrat
 
 `spec.suspend` on the referenced `CamundaCluster` therefore reaches the Optimize workloads too. The operator scales the webapp and the importer to zero with the workloads of the cluster, and starts them again when you clear the field. `suspend` means "stop everything attached to this cluster", not "stop the workloads of this cluster". The operator also suspends a cluster on its own, for example while another cluster holds its storage contract or while a reference of the cluster does not resolve, and the Optimize workloads follow every suspension the same way.
 
+The workloads also stay at zero while the cluster does not hold the storage claim of its backend, see [CamundaCluster](camundacluster.md#secondary-storage). A cluster that is parked, or that waits for a handover, never has an importer running beside it.
+
 `Ready` reads `True` with reason `Suspended` while the suspension holds. A cluster with `spec.suspend` reports the same. A cluster that another cluster parked reports `Ready` `False` with reason `StorageAlreadyAttached` instead, see [CamundaCluster](camundacluster.md#secondary-storage). Zero replicas is the state you asked for, so the Optimize condition is not an error. The condition does not name the cluster, but the events do: `kubectl describe camundaoptimize <name>` shows `ClusterSuspended` when the workloads go to zero and `ClusterResumed` when they start again.
 
 The operator keeps the exporter settings on the cluster while the suspension holds. A suspension is not a detachment, and the brokers are at zero, so nothing exports. Only deletion withdraws the settings.
