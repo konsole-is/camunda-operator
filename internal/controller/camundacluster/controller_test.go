@@ -624,6 +624,7 @@ var _ = Describe("CamundaCluster controller", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
 		}, timeout, interval).Should(Succeed(), "the broker StatefulSet is scaled, not deleted")
+		expectCondition(cluster, v1.ConditionZeebeReady, Equal(string(component.Suspended)))
 		Eventually(func(g Gomega) {
 			var latest v1.CamundaCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())

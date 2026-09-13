@@ -27,13 +27,16 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
@@ -45,6 +48,23 @@ const eventReasonWorkloadsSuspended = "WorkloadsSuspended"
 // an explicit suspend stopped, so Ready says both what failed and what
 // happened to the workloads.
 const suspendNote = ". The workloads are scaled to zero because spec.suspend is set"
+
+// suspendedMessage is the message of the per-process condition of a workload
+// that an explicit suspend stopped.
+const suspendedMessage = "Scaled to zero because spec.suspend is set"
+
+// processConditions maps the component label of a workload to the condition
+// that its process reports. It mirrors Process.ConditionType in
+// pkg/components/camundacluster: a failed pre-check has no effective spec to
+// build the topology from, so the pairs are read from the label instead.
+var processConditions = map[string]string{
+	components.ComponentZeebe:      v1.ConditionZeebeReady,
+	components.ComponentGateway:    v1.ConditionGatewayReady,
+	components.ComponentOperate:    v1.ConditionOperateReady,
+	components.ComponentTasklist:   v1.ConditionTasklistReady,
+	components.ComponentAdmin:      v1.ConditionAdminReady,
+	components.ComponentConnectors: v1.ConditionConnectorsReady,
+}
 
 // suspendExplicitly scales every workload that cluster controls to zero when
 // spec.suspend is set, and keeps everything else: the volumes, the Services,
@@ -70,6 +90,11 @@ func (r *CamundaClusterReconciler) suspendExplicitly(
 			return
 		}
 		found = true
+
+		// The components do not run on this path, so nothing else refreshes
+		// the per-process conditions and they would report health over zero
+		// pods.
+		stageSuspension(cluster, obj.GetLabels()[labels.ComponentKey])
 
 		if replicas != nil && *replicas == 0 {
 			return
@@ -145,4 +170,22 @@ func (r *CamundaClusterReconciler) scaleToZero(
 	)
 
 	return nil
+}
+
+// stageSuspension sets the per-process condition of the workload with the
+// given component label, in memory, to the ocf Suspended status. A workload
+// whose component reports no condition changes nothing.
+func stageSuspension(cluster *v1.CamundaCluster, comp string) {
+	conditionType, ok := processConditions[comp]
+	if !ok {
+		return
+	}
+
+	meta.SetStatusCondition(cluster.GetStatusConditions(), metav1.Condition{
+		Type:               conditionType,
+		Status:             metav1.ConditionTrue,
+		Reason:             string(component.Suspended),
+		Message:            suspendedMessage,
+		ObservedGeneration: cluster.Generation,
+	})
 }

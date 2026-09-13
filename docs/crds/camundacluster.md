@@ -265,7 +265,7 @@ A change to the cluster, to a referenced resource, or to a referenced Secret rol
 
 The API server accepts a cluster that names something you did not create yet, so you can create the resources in any order. A missing `CamundaPlatformConfig`, `CamundaClusterPreset`, `CamundaRelease`, `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` sets `Ready` to `False` with reason `InvalidReference`. A missing Secret or key sets reason `MissingSecret`.
 
-When one of these checks fails for a running cluster, the workloads stay up. They keep the configuration that the operator applied last, and they keep serving. `status.gateway` and `status.management` keep their endpoints, and the cluster keeps the storage claim of its backend. `Ready` carries the failure reason. The per-process conditions keep the values they last observed until the check passes. When the check passes again, the cluster takes the change.
+When one of these checks fails for a running cluster, the workloads stay up. They keep the configuration that the operator applied last, and they keep serving. `status.gateway` and `status.management` keep their endpoints, and the cluster keeps the storage claim of its backend. `Ready` carries the failure reason. The per-process conditions keep the values they last observed until the check passes. A workload that `spec.suspend` stopped is the exception: its condition reads `Suspended`. When the check passes again, the cluster takes the change.
 
 ```yaml
 status:
