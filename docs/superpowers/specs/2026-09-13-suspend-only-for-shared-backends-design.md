@@ -239,14 +239,18 @@ three readers change behavior without a code change:
 
 ## Docs
 
-- `docs/crds/camundacluster.md`: the Secondary storage section describes the Lease, the key,
-  the label, the cross-contract case, and the handover. The claim annotations and the
+- `docs/crds/camundacluster.md`: the Secondary storage section describes the backend the
+  operator claims (the address the contract resolves to), the label, the cross-contract case,
+  and the handover. It does not name the Lease or its name pattern: the repository docs skill
+  keeps a Lease off a user page, and the Database page sets the precedent. Only the row for a
+  foreign claim names the Lease the message names, because the user deletes that object. The claim annotations and the
   "recreated contract is a new claim" warning go, because a recreated contract resolves to
   the same key and the holder keeps its Lease. The reference-check section and the
   `InvalidReference` and `MissingSecret` rows say the workloads keep running. The Suspend
   section lists the two operator-driven suspensions.
-- `docs/crds/secondarystorageconfig.md`: the claim paragraphs describe the Lease. "The
-  contract is the unit of the claim, not the endpoint" inverts: the backend is the unit.
+- `docs/crds/secondarystorageconfig.md`: the claim paragraphs describe the claim on the
+  backend, without the Lease. "The contract is the unit of the claim, not the endpoint"
+  inverts: the backend is the unit.
 - `docs/guides/secondary-storage.md`: "One cluster per contract" becomes one cluster per
   backend, and "The operator compares contracts, not endpoints" goes.
 - `docs/crds/camundaoptimize.md`: the label paragraph, the Suspension section, and the
