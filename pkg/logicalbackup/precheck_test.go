@@ -263,9 +263,11 @@ func TestPreCheckFailures(t *testing.T) {
 	}
 }
 
-// A cluster whose reference check failed keeps its workloads, so its
-// management API answers and a backup of it runs.
-func TestPreCheckPassesForAClusterOnADanglingReference(t *testing.T) {
+// A cluster whose reference check failed keeps its workloads, so it is not
+// suspended and this pre-check does not stop a backup of it. Each backup kind
+// gates on its own after this: LogicalBackupRDBMS also requires the cluster to
+// run the spec it declares.
+func TestPreCheckDoesNotReportClusterSuspendedForADanglingReference(t *testing.T) {
 	c := cluster()
 	c.Status.Conditions = []metav1.Condition{{
 		Type:               v1.ConditionReady,
