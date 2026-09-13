@@ -219,10 +219,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	res.Input.ServiceMonitorSupported = r.serviceMonitorSupported()
-	// The previous suspension state lives in Ready, so it is read before
-	// anything stages a new one. The event is recorded at the end, once the
-	// reconcile has acted on the change.
-	suspendedBefore := wasSuspending(&optimize)
+	// The previous suspension state is read before anything stages a new one.
+	// The event is recorded at the end, once the reconcile has acted on the
+	// change.
+	//
+	// Ready carries it for a suspension this path staged, and the workload
+	// conditions carry it for one the pre-check failure path staged. Both count,
+	// or a check that recovers after the cluster resumed pairs no event with the
+	// suspension that window recorded.
+	suspendedBefore := wasSuspending(&optimize) || followsSuspendedCluster(&optimize)
 
 	if err := r.patchExporter(ctx, res); err != nil {
 		return ctrl.Result{}, err

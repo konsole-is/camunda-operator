@@ -577,14 +577,22 @@ func suspensionEvents(optimize *v1.CamundaOptimize) []string {
 }
 
 // clusterSuspendedEvents returns the ClusterSuspended events of optimize, one
-// entry per recorded occurrence. suspensionEvents carries every event of the
-// suspend action, WorkloadsSuspended among them.
+// entry per recorded occurrence.
 func clusterSuspendedEvents(optimize *v1.CamundaOptimize) []string {
 	GinkgoHelper()
+
+	return suspensionEventsOf(optimize, eventReasonClusterSuspended)
+}
+
+// suspensionEventsOf returns the events of optimize with the given reason, one
+// entry per recorded occurrence. suspensionEvents carries every event of the
+// suspend action, WorkloadsSuspended among them.
+func suspensionEventsOf(optimize *v1.CamundaOptimize, reason string) []string {
+	GinkgoHelper()
 	var only []string
-	for _, reason := range suspensionEvents(optimize) {
-		if reason == eventReasonClusterSuspended {
-			only = append(only, reason)
+	for _, recorded := range suspensionEvents(optimize) {
+		if recorded == reason {
+			only = append(only, recorded)
 		}
 	}
 
@@ -690,6 +698,18 @@ var _ = Describe("CamundaOptimize controller", func() {
 			Consistently(func(g Gomega) {
 				g.Expect(clusterSuspendedEvents(s.optimize)).To(HaveLen(1))
 			}, "3s", interval).Should(Succeed())
+
+			By("pairing the resume across the window in which the check failed")
+			setClusterSuspend(s.cluster, false)
+			createSecret(
+				s.auth.Spec.ClientSecretRef.Namespace,
+				s.auth.Spec.ClientSecretRef.Name,
+				map[string]string{s.auth.Spec.ClientSecretRef.Key: "s3cret"},
+			)
+			expectReplicas(1, webappKey, importerKey)
+			Eventually(func(g Gomega) {
+				g.Expect(suspensionEventsOf(s.optimize, eventReasonClusterResumed)).To(HaveLen(1))
+			}, timeout, interval).Should(Succeed())
 		})
 
 		// An instance whose first check fails rendered nothing, so it has no
