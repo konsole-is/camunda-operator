@@ -18,17 +18,14 @@ package database
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/leaseclaim"
 )
 
 // ClaimComponent is the component label value of a claim Lease.
@@ -36,13 +33,6 @@ const ClaimComponent = "database-claim"
 
 // claimLeasePrefix starts the name of every claim Lease.
 const claimLeasePrefix = "camunda-database-"
-
-// maxHolderIdentityLength bounds the holderIdentity field of a claim Lease.
-// The API server of Kubernetes 1.36 accepts a longer value. The field is a
-// display form for a reader, and a documented bound keeps it readable and
-// safe against a stricter server. The exact identity lives in the
-// annotations, which every decision about ownership reads.
-const maxHolderIdentityLength = 128
 
 // The annotations of a claim Lease name the Database that holds it, and the
 // claim it holds. Every decision about ownership reads them. A Lease without
@@ -56,10 +46,7 @@ const (
 
 // ClaimHolder is the Database that a claim Lease records. The UID tells it
 // apart from a later Database of the same name.
-type ClaimHolder struct {
-	types.NamespacedName
-	UID types.UID
-}
+type ClaimHolder = leaseclaim.Holder
 
 // Claim is one logical database that a Database holds. Key is the claim key,
 // so CollisionIdentity gives the PostgreSQL instance behind it.
@@ -68,47 +55,24 @@ type Claim struct {
 	Key    string
 }
 
-// NewClaimLease builds the claim Lease of key for database. The Database
-// controller creates it when the Database reaches its server, and the API
-// server serializes that create, so exactly one claimant holds the logical
-// database that key names.
-func NewClaimLease(namespace, key string, database *v1.Database) *coordinationv1.Lease {
-	holder := labels.BoundedName(
-		database.Namespace+"/"+database.Name, maxHolderIdentityLength,
-	)
-	now := metav1.NowMicro()
-
-	return &coordinationv1.Lease{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      ClaimLeaseName(key),
-			Labels:    ClaimLeaseLabels(database.Name),
-			Annotations: map[string]string{
-				ClaimHolderNamespaceAnnotation: database.Namespace,
-				ClaimHolderNameAnnotation:      database.Name,
-				ClaimHolderUIDAnnotation:       string(database.UID),
-				ClaimKeyAnnotation:             key,
-			},
-		},
-		Spec: coordinationv1.LeaseSpec{HolderIdentity: &holder, AcquireTime: &now},
+// ClaimSchema is the shape of the claim Leases of a logical database. The
+// Database controller runs the claim protocol of pkg/leaseclaim over it.
+func ClaimSchema() leaseclaim.Schema[*v1.Database] {
+	return leaseclaim.Schema[*v1.Database]{
+		Prefix:                    claimLeasePrefix,
+		Noun:                      "claim",
+		HolderNamespaceAnnotation: ClaimHolderNamespaceAnnotation,
+		HolderNameAnnotation:      ClaimHolderNameAnnotation,
+		HolderUIDAnnotation:       ClaimHolderUIDAnnotation,
+		KeyAnnotation:             ClaimKeyAnnotation,
+		Labels:                    ClaimLeaseLabels,
 	}
-}
-
-// ClaimLeaseName returns the name of the Lease that claims key:
-// "camunda-database-<hash of the key>". A claim key holds a system identifier
-// and a database name, which together are no DNS subdomain, so the name is
-// built from a hash of it. Every claimant of one logical database therefore
-// meets on one Lease, and the claim key annotation says which one that is.
-func ClaimLeaseName(key string) string {
-	sum := sha256.Sum256([]byte(key))
-
-	return claimLeasePrefix + hex.EncodeToString(sum[:])[:40]
 }
 
 // ClaimLeaseLabels returns the labels of the claim Leases of the Databases
 // named name. They carry the name alone, so two Databases of two namespaces
-// that share a name share these labels. A caller reads ClaimHolderOf on a
-// listed Lease to learn which Database holds it.
+// that share a name share these labels. A caller reads HolderOf of
+// ClaimSchema on a listed Lease to learn which Database holds it.
 func ClaimLeaseLabels(name string) map[string]string {
 	return labels.Managed(labels.Database(name), ClaimComponent)
 }
@@ -135,7 +99,7 @@ func ListClaims(ctx context.Context, reader client.Reader, namespace string) ([]
 	claims := make([]Claim, 0, len(leases.Items))
 	for i := range leases.Items {
 		lease := &leases.Items[i]
-		holder, ours := ClaimHolderOf(lease)
+		holder, ours := ClaimSchema().HolderOf(lease)
 		if key := lease.Annotations[ClaimKeyAnnotation]; ours && key != "" {
 			claims = append(claims, Claim{Holder: holder, Key: key})
 		}
@@ -150,23 +114,4 @@ func claimLeaseSelector() map[string]string {
 		labels.ComponentKey: ClaimComponent,
 		labels.ManagedByKey: labels.ManagedBy,
 	}
-}
-
-// ClaimHolderOf returns the Database that the annotations of the Lease name,
-// and whether all three of them are there. Only the annotations carry
-// ownership. The holderIdentity of the Lease is a display form for a reader.
-func ClaimHolderOf(lease *coordinationv1.Lease) (ClaimHolder, bool) {
-	annotations := lease.GetAnnotations()
-	holder := ClaimHolder{
-		NamespacedName: types.NamespacedName{
-			Namespace: annotations[ClaimHolderNamespaceAnnotation],
-			Name:      annotations[ClaimHolderNameAnnotation],
-		},
-		UID: types.UID(annotations[ClaimHolderUIDAnnotation]),
-	}
-	if holder.Namespace == "" || holder.Name == "" || holder.UID == "" {
-		return ClaimHolder{}, false
-	}
-
-	return holder, true
 }

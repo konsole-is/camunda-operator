@@ -18,9 +18,11 @@ package database
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/testing/golden"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	coordinationv1 "k8s.io/api/coordination/v1"
@@ -44,7 +46,7 @@ func claimScheme(t *testing.T) *runtime.Scheme {
 
 // claimLease builds the claim Lease of key that holder holds.
 func claimLease(namespace, key string, holder ClaimHolder) *coordinationv1.Lease {
-	return NewClaimLease(namespace, key, &v1.Database{
+	return ClaimSchema().NewLease(namespace, key, &v1.Database{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: holder.Namespace,
 			Name:      holder.Name,
@@ -61,12 +63,12 @@ func testHolder(namespace, name string, uid types.UID) ClaimHolder {
 }
 
 func TestClaimLeaseName(t *testing.T) {
-	name := ClaimLeaseName("7000000000000000001/camunda")
+	name := ClaimSchema().LeaseName("7000000000000000001/camunda")
 
 	assert.True(t, strings.HasPrefix(name, "camunda-database-"))
-	assert.Equal(t, name, ClaimLeaseName("7000000000000000001/camunda"))
-	assert.NotEqual(t, name, ClaimLeaseName("7000000000000000002/camunda"))
-	assert.NotEqual(t, name, ClaimLeaseName("7000000000000000001/other"))
+	assert.Equal(t, name, ClaimSchema().LeaseName("7000000000000000001/camunda"))
+	assert.NotEqual(t, name, ClaimSchema().LeaseName("7000000000000000002/camunda"))
+	assert.NotEqual(t, name, ClaimSchema().LeaseName("7000000000000000001/other"))
 }
 
 func TestNewClaimLease(t *testing.T) {
@@ -74,7 +76,7 @@ func TestNewClaimLease(t *testing.T) {
 
 	lease := claimLease("camunda-system", "7000000000000000001/camunda", holder)
 
-	assert.Equal(t, ClaimLeaseName("7000000000000000001/camunda"), lease.Name)
+	assert.Equal(t, ClaimSchema().LeaseName("7000000000000000001/camunda"), lease.Name)
 	assert.Equal(t, "camunda-system", lease.Namespace)
 	assert.Equal(t, ClaimLeaseLabels("orders"), lease.Labels)
 	assert.Equal(t, "7000000000000000001/camunda", lease.Annotations[ClaimKeyAnnotation])
@@ -82,17 +84,17 @@ func TestNewClaimLease(t *testing.T) {
 	assert.Equal(t, "apps/orders", *lease.Spec.HolderIdentity)
 }
 
-func TestClaimHolderOf(t *testing.T) {
+func TestClaimSchemaHolderOf(t *testing.T) {
 	holder := testHolder("apps", "orders", "uid-1")
 	lease := claimLease("camunda-system", "7000000000000000001/camunda", holder)
 
-	recorded, ours := ClaimHolderOf(lease)
+	recorded, ours := ClaimSchema().HolderOf(lease)
 
 	assert.True(t, ours)
 	assert.Equal(t, holder, recorded)
 }
 
-func TestClaimHolderOfRejectsAPartialRecord(t *testing.T) {
+func TestClaimSchemaHolderOfRejectsAPartialRecord(t *testing.T) {
 	for _, missing := range []string{
 		ClaimHolderNamespaceAnnotation,
 		ClaimHolderNameAnnotation,
@@ -103,7 +105,7 @@ func TestClaimHolderOfRejectsAPartialRecord(t *testing.T) {
 			lease := claimLease("camunda-system", "7000000000000000001/camunda", holder)
 			delete(lease.Annotations, missing)
 
-			recorded, ours := ClaimHolderOf(lease)
+			recorded, ours := ClaimSchema().HolderOf(lease)
 
 			assert.False(t, ours)
 			assert.Equal(t, ClaimHolder{}, recorded)
@@ -213,5 +215,72 @@ func TestClaimLeaseLabelsSelectOneDatabase(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, leases.Items, 1)
-	assert.Equal(t, ClaimLeaseName("7000000000000000001/camunda"), leases.Items[0].Name)
+	assert.Equal(t, ClaimSchema().LeaseName("7000000000000000001/camunda"), leases.Items[0].Name)
+}
+
+// TestNewClaimLeaseMatchesTheGolden pins the claim Lease against the shape
+// the operator wrote before the protocol moved to pkg/leaseclaim. A change of
+// its name, its labels or its annotations loses the operator every claim it
+// holds. The running holder keeps a Lease that no later claimant reads.
+func TestNewClaimLeaseMatchesTheGolden(t *testing.T) {
+	cases := map[string]struct {
+		file     string
+		key      string
+		database *v1.Database
+	}{
+		"claimlease": {
+			file: "claimlease.yaml",
+			key:  "7000000000000000001/camunda",
+			database: &v1.Database{ObjectMeta: metav1.ObjectMeta{
+				Namespace: "apps", Name: "orders", UID: "uid-1",
+			}},
+		},
+		"a name that the bounds cut": {
+			file: "claimlease-longname.yaml",
+			key:  "7000000000000000002/other",
+			database: &v1.Database{ObjectMeta: metav1.ObjectMeta{
+				Namespace: strings.Repeat("s", 60),
+				Name:      strings.Repeat("n", 200),
+				UID:       "uid-2",
+			}},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			lease := ClaimSchema().NewLease("camunda-system", tc.key, tc.database)
+
+			require.NotNil(t, lease.Spec.AcquireTime)
+			golden.AssertYAML(
+				t,
+				filepath.Join("testdata", "golden", tc.file),
+				leasePreview{lease: lease},
+				golden.WithScheme(leaseGoldenScheme(t)),
+				golden.Update(*update),
+			)
+		})
+	}
+}
+
+// leasePreview renders a claim Lease for the golden comparison. The acquire
+// time is the wall clock of the render, so it is zeroed.
+type leasePreview struct {
+	lease *coordinationv1.Lease
+}
+
+func (p leasePreview) Preview() (client.Object, error) {
+	lease := p.lease.DeepCopy()
+	lease.Spec.AcquireTime = nil
+
+	return lease, nil
+}
+
+// leaseGoldenScheme serves the Lease that the golden serializer renders.
+func leaseGoldenScheme(t *testing.T) *runtime.Scheme {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, coordinationv1.AddToScheme(scheme))
+
+	return scheme
 }
