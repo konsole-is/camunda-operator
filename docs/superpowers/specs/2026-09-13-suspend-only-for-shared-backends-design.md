@@ -151,6 +151,12 @@ The Optimize pods carry the same label. `CamundaOptimize` resolves the cluster's
 itself, so it computes the key and the Lease name from that chain, and `Input.StorageContract`
 becomes the Lease name. Its importer writes the same backend, so it is gated the same way.
 
+Optimize also reads the claim itself: it renders its importer only while its cluster holds
+the storage claim of the backend it resolves (`Holds` on the Lease). The cluster's `Ready`
+lags a repoint by one reconcile, so `Suspended()` alone would let the importer start against
+a backend another cluster holds in that window. The claim is the gate; the status is the
+report.
+
 ### What goes
 
 - `pkg/wrappers/secondarystorageconfig/claim.go` and its test: `Claim`, `HolderOf`, `Holder`,
