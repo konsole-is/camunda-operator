@@ -182,6 +182,22 @@ func (res *resolver) holderPods(ctx context.Context, holder secondarystorageconf
 	return names, nil
 }
 
+// storageHeldAfterFailure builds the Ready condition of a parked cluster
+// whose pre-check then failed on another reference. The reason stays
+// StorageAlreadyAttached, so CamundaCluster.Suspended keeps reading true and
+// the extensions attached to this cluster stay at zero with it. The message
+// names the failure, because that is what the user has to correct.
+func storageHeldAfterFailure(
+	cluster *v1.CamundaCluster,
+	holder *components.StorageHolder,
+	failure *conditions.PreCheckFailure,
+) metav1.Condition {
+	condition := storageHeld(cluster, holder, nil)
+	condition.Message += ". A reference check of this cluster also fails: " + failure.Message
+
+	return condition
+}
+
 // storageHeld builds the Ready condition of a cluster whose storage contract
 // another cluster holds. When applyErr is set, the message carries it as the
 // error of the last apply.

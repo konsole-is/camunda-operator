@@ -192,12 +192,22 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// A running cluster keeps its workloads while its pre-check fails:
 		// they run on the configuration of the last pass, and the storage
 		// claim keeps its backend for it. Ready reports the failure.
-		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
+		//
+		// A parked cluster is the exception. Its workloads are already at
+		// zero, so it keeps the reason that says so and adds the failure to
+		// the message, see storageHeldAfterFailure.
+		if in.Storage.Holder != nil {
+			conditions.Stage(&cluster, storageHeldAfterFailure(&cluster, in.Storage.Holder, failure))
+		} else {
+			conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
+		}
 
 		// Only an unwatched failure needs a timer; everything else the
-		// pre-checks resolve re-enqueues through a watch.
+		// pre-checks resolve re-enqueues through a watch. A parked cluster
+		// needs it either way: nothing watches its holder for it, so without
+		// the timer it never learns that the backend is free.
 		var unwatched *conditions.UnwatchedPreCheckFailure
-		if errors.As(err, &unwatched) {
+		if in.Storage.Holder != nil || errors.As(err, &unwatched) {
 			return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 		}
 		return ctrl.Result{}, nil
