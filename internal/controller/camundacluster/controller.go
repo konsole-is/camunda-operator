@@ -189,24 +189,10 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	in, mirrors, err := r.preCheck(ctx, &cluster)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
-		// A running cluster stops while its pre-check fails: its workloads
-		// scale to zero and its volumes stay, because they can keep writing
-		// a backend that the cluster no longer resolves. The failure stays
-		// the Ready reason, and the message says what happened to the
-		// workloads.
-		suspended, suspendErr := r.suspendWorkloads(ctx, &cluster)
-		if suspended && suspendErr == nil {
-			failure.Message += ". The workloads are scaled to zero, with the volumes kept, until the pre-check passes"
-		}
-		// The bindings are nil while the cluster is suspended, see binding.go.
-		// The endpoints of the scaled workloads answer nothing, so a consumer
-		// must see a cluster that is not ready, not a stale endpoint.
-		cluster.Status.Management = nil
-		cluster.Status.Gateway = nil
+		// A running cluster keeps its workloads while its pre-check fails:
+		// they run on the configuration of the last pass, and the storage
+		// claim keeps its backend for it. Ready reports the failure.
 		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
-		if suspendErr != nil {
-			return ctrl.Result{}, suspendErr
-		}
 
 		// Only an unwatched failure needs a timer; everything else the
 		// pre-checks resolve re-enqueues through a watch.

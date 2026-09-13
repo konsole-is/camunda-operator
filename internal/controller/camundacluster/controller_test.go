@@ -559,7 +559,7 @@ var _ = Describe("CamundaCluster controller", func() {
 		expectReady(cluster, metav1.ConditionFalse, Not(Equal(v1.ReasonMissingSecret)), Not(BeEmpty()))
 	})
 
-	It("scales a running cluster to zero when its credentials Secret goes away, and resumes on its return", func() {
+	It("keeps a running cluster on its workloads when its credentials Secret goes away", func() {
 		ns := newNamespace()
 		binding := createBinding(ns, true)
 		cluster := newCluster(ns, createPlatformConfig(), binding)
@@ -575,31 +575,21 @@ var _ = Describe("CamundaCluster controller", func() {
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
 		})).To(Succeed())
 
-		expectReady(
-			cluster,
-			metav1.ConditionFalse,
-			Equal(v1.ReasonMissingSecret),
-			And(
-				ContainSubstring(name),
-				ContainSubstring("The workloads are scaled to zero, with the volumes kept"),
-			),
-		)
-		Eventually(func(g Gomega) {
-			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
-		}, timeout, interval).Should(Succeed())
-		expectEvent(cluster, eventReasonWorkloadsSuspended, corev1.EventTypeNormal)
+		expectReady(cluster, metav1.ConditionFalse, Equal(v1.ReasonMissingSecret), ContainSubstring(name))
+		Consistently(func(g Gomega) {
+			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(Equal(int32(1)))
+		}, "3s", interval).Should(Succeed(), "the broker StatefulSet keeps its replicas")
 		Eventually(func(g Gomega) {
 			var latest v1.CamundaCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
-			g.Expect(latest.Status.Management).To(BeNil(), "no endpoint is published while the workloads are at zero")
-			g.Expect(latest.Status.Gateway).To(BeNil())
+			g.Expect(latest.Status.Gateway).NotTo(BeNil(), "a running cluster keeps publishing its endpoints")
+			g.Expect(latest.Status.Management).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 
 		By("recreating the Secret")
 		createSecret(ns, name, map[string]string{"username": "camunda", "password": "es-password"})
-		Eventually(func(g Gomega) {
-			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(Equal(int32(1)))
-		}, timeout, interval).Should(Succeed(), "the cluster resumes without intervention")
+		expectReady(cluster, metav1.ConditionFalse, Not(Equal(v1.ReasonMissingSecret)), Not(BeEmpty()))
+		Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(Equal(int32(1)))
 	})
 
 	It("keeps the admin password stable across reconciles and regenerates it when the Secret is deleted", func() {

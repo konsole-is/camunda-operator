@@ -532,11 +532,10 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		expectClaimedBy(held, repointed)
 	})
 
-	// Two contracts can name one backend, and the operator compares
-	// contracts, not endpoints. When the holder of one contract loses it and
-	// keeps running, both clusters write the backend. A cluster whose
-	// pre-check fails therefore scales to zero, so the two never both run.
-	It("scales a running cluster to zero when its contract goes away, while the other keeps running", func() {
+	// A cluster whose contract is deleted keeps writing the backend it
+	// resolved on its last pass, so it keeps its workloads and its claim on
+	// that backend. Ready reports the dangling reference.
+	It("keeps a running cluster on its workloads when its contract goes away", func() {
 		ns := newNamespace()
 		first := newNamedCluster("cc-a-", ns, createPlatformConfig(), createBinding(ns, true))
 		createCluster(first)
@@ -552,22 +551,12 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 			second,
 			metav1.ConditionFalse,
 			Equal(v1.ReasonInvalidReference),
-			And(
-				ContainSubstring(binding.Name),
-				ContainSubstring("The workloads are scaled to zero, with the volumes kept"),
-			),
+			ContainSubstring(binding.Name),
 		)
 		zeebeKey := client.ObjectKey{Namespace: ns, Name: second.Name + "-zeebe"}
-		Eventually(func(g Gomega) {
-			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
-		}, timeout, interval).Should(Succeed(), "the broker StatefulSet is scaled, not deleted")
-		Eventually(func(g Gomega) {
-			var latest v1.CamundaCluster
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(second), &latest)).To(Succeed())
-			zeebe := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionZeebeReady)
-			g.Expect(zeebe).NotTo(BeNil())
-			g.Expect(zeebe.Reason).To(Equal("Suspended"))
-		}, timeout, interval).Should(Succeed(), "the broker condition reports the suspension")
+		Consistently(func(g Gomega) {
+			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(Equal(int32(1)))
+		}, "3s", interval).Should(Succeed(), "the broker StatefulSet keeps its replicas")
 		expectHolds(first)
 
 		By("recreating the contract")
