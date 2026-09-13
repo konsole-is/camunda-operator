@@ -171,22 +171,37 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	res, err := r.preCheck(ctx, &optimize)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
-		conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
 		// A CamundaOptimize that lost the attachment, or whose cluster is
 		// gone, must not keep the workloads it built, see releaseWorkloads.
 		// Every other failed check keeps them on the configuration of the
 		// last pass and reports on Ready.
 		if failure.Reason == v1.ReasonClusterAlreadyAttached || errors.Is(err, errClusterGone) {
+			conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
 			// The component conditions describe workloads that the next call
 			// deletes, and comps stays nil on this path, so the flush does not
 			// own those types and would write the stale values back. A parked
 			// CamundaOptimize renders nothing, so it reports nothing about
 			// what it used to render.
 			removeComponentConditions(&optimize)
+
 			return ctrl.Result{}, r.releaseWorkloads(ctx, &optimize)
 		}
 
-		return ctrl.Result{}, nil
+		// A suspended cluster is the exception: its Optimize workloads follow
+		// it to zero, and the render that does that never runs on this path,
+		// see followSuspension. Suspended is false unless the pre-check read
+		// the cluster, so a failure before that leaves the workloads alone.
+		var suspendErr error
+		if res.Input.Suspended {
+			var found bool
+			found, suspendErr = r.followSuspension(ctx, &optimize)
+			if found && suspendErr == nil {
+				failure.Message += fmt.Sprintf(suspendNote, optimize.Spec.ClusterRef.Name)
+			}
+		}
+		conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
+
+		return ctrl.Result{}, suspendErr
 	}
 	if err != nil {
 		return ctrl.Result{}, err

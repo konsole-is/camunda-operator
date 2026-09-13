@@ -633,6 +633,42 @@ var _ = Describe("CamundaOptimize controller", func() {
 			expectStableRender(webappKey, importerKey)
 		})
 
+		// The importer reads Elasticsearch directly, and a logical restore of
+		// that Elasticsearch suspends the cluster to stop it. An instance on a
+		// failed check of its own must follow that suspension anyway, or the
+		// restore writes indices while the importer reads them.
+		It("follows the suspension of its cluster while a check of its own fails", func() {
+			s := newScenario("8.9.4")
+			webappKey := client.ObjectKey{
+				Namespace: s.namespace,
+				Name:      components.WorkloadName(s.optimize, components.ComponentWebapp),
+			}
+			importerKey := client.ObjectKey{
+				Namespace: s.namespace,
+				Name:      components.WorkloadName(s.optimize, components.ComponentImporter),
+			}
+			expectReplicas(1, webappKey, importerKey)
+
+			By("suspending the cluster and deleting the client Secret in one step")
+			Expect(k8sClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+				Name:      s.auth.Spec.ClientSecretRef.Name,
+				Namespace: s.auth.Spec.ClientSecretRef.Namespace,
+			}})).To(Succeed())
+			setClusterSuspend(s.cluster, true)
+
+			expectReplicas(0, webappKey, importerKey)
+			Eventually(func(g Gomega) {
+				var latest v1.CamundaOptimize
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(s.optimize), &latest)).To(Succeed())
+				ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
+				g.Expect(ready).NotTo(BeNil())
+				g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(ready.Reason).To(Equal(v1.ReasonMissingSecret))
+				g.Expect(ready.Message).To(ContainSubstring("scaled to zero"))
+			}, timeout, interval).Should(Succeed())
+			expectCondition(s.optimize, v1.ConditionImporterReady, Equal(string(component.Suspended)))
+		})
+
 		It("follows the suspension of its cluster to zero replicas and back", func() {
 			s := newScenario("8.9.4")
 			webappKey := client.ObjectKey{
