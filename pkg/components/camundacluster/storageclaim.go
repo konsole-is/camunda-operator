@@ -83,11 +83,13 @@ func StorageClaimPodSelector(claim string) map[string]string {
 // its storage claim. Two contracts that name one address give one key, and a
 // contract that is edited to another address gives another key.
 //
-// An Elasticsearch key is the type, then the endpoint with the scheme and
-// the host in lower case, the port as a number (80 for http, 443 for https
-// when the URL names none), and no trailing slash on the path. An rdbms key
-// is the type, then the host in lower case, the port, and the database name.
-// A chain that names no address, or an endpoint that is no URL, is an error.
+// An Elasticsearch key is the type, then the scheme and the host of the
+// endpoint in lower case, and its port as a number (80 for http, 443 for https
+// when the URL names none). The path of the endpoint is left out: the
+// processes connect to the host and the port, so two paths on one address are
+// one Elasticsearch. An rdbms key is the type, then the host in lower case,
+// the port, and the database name. A chain that names no address, or an
+// endpoint that is no URL, is an error.
 func StorageClaimKey(storage Storage) (string, error) {
 	switch storage.Type {
 	case v1.SecondaryStorageTypeElasticsearch:
@@ -117,8 +119,9 @@ func StorageClaimKey(storage Storage) (string, error) {
 	}
 }
 
-// normalizeEndpoint renders an Elasticsearch endpoint the way StorageClaimKey
-// documents it.
+// normalizeEndpoint renders the address of an Elasticsearch endpoint the way
+// StorageClaimKey documents it: the scheme, the host, and the port, and
+// nothing of the path.
 func normalizeEndpoint(endpoint string) (string, error) {
 	parsed, err := url.Parse(endpoint)
 	if err != nil {
@@ -147,5 +150,5 @@ func normalizeEndpoint(endpoint string) (string, error) {
 	// port.
 	host := net.JoinHostPort(strings.ToLower(parsed.Hostname()), strconv.Itoa(port))
 
-	return scheme + "://" + host + strings.TrimRight(parsed.Path, "/"), nil
+	return scheme + "://" + host, nil
 }

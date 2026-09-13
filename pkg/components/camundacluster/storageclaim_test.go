@@ -79,12 +79,21 @@ func TestStorageClaimKey(t *testing.T) {
 			},
 			key: "elasticsearch|https://[::1]:9200",
 		},
-		"elasticsearch keeps a path prefix": {
+		// Optimize connects to the host and the port of the endpoint and drops
+		// the path, so two paths on one host and port are one Elasticsearch.
+		"elasticsearch drops a path prefix": {
 			storage: Storage{
 				Type:          v1.SecondaryStorageTypeElasticsearch,
 				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "http://proxy:8080/es/"},
 			},
-			key: "elasticsearch|http://proxy:8080/es",
+			key: "elasticsearch|http://proxy:8080",
+		},
+		"elasticsearch drops another path prefix on the same address": {
+			storage: Storage{
+				Type:          v1.SecondaryStorageTypeElasticsearch,
+				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "http://proxy:8080/analytics"},
+			},
+			key: "elasticsearch|http://proxy:8080",
 		},
 		"rdbms": {
 			storage: Storage{
