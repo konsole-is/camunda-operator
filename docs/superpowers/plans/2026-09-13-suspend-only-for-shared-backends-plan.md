@@ -23,7 +23,7 @@
 
 ## Contracts
 
-The two PRs are sequential, so no parallel contract is needed. PR 2 branches from the feature branch after PR 1 is self-merged.
+The two PRs run in parallel off the feature branch. They share no code contract: PR 2 removes code that PR 1 does not touch, and PR 1 adds code that PR 2 does not read. Two test files carry hunks from both (`internal/controller/camundacluster/secondarystorage_test.go` and `internal/controller/camundaoptimize/controller_test.go`), so whichever sub-PR lands second merges the feature branch forward and resolves them. The assertion that a cluster keeps its Lease when its contract is deleted needs both PRs, so it is written in that merge-forward step, in the contract-deleted spec of PR 2.
 
 | Name | Producer (issue) | Consumer (issue) | Shape | Realization |
 | --- | --- | --- | --- | --- |
@@ -926,7 +926,7 @@ Add `const testClaimNamespace = "default"` to `suite_test.go` and use it in the 
 	})
 ```
 
-- `scales a running cluster to zero when its contract goes away, while the other keeps running`: keep the scale-to-zero assertions in this PR (PR 2 removes them) and add, after the delete, that a third cluster on a contract with the same endpoint parks with `StorageAlreadyAttached` naming `second`, and that recreating the contract keeps `second` as the holder: `expectClaimedBy(recreated, second)` already says so.
+- `scales a running cluster to zero when its contract goes away, while the other keeps running`: change nothing but what the helper rename forces. PR 2 rewrites this spec, and the merge-forward step of whichever PR lands second adds that a third cluster on a contract with the same endpoint parks with `StorageAlreadyAttached` naming `second`.
 - `takes over a claim whose holder does not exist`: create the ghost Lease instead of annotating the binding:
 
 ```go
@@ -1074,7 +1074,7 @@ Load `feature-dev-workflow:opening-a-pull-request`. Push the branch and open the
 
 ## PR 2: no suspension on a failed pre-check (#370)
 
-Branch: `fix/keep-workloads-on-precheck-failure` off `fix/suspend-only-for-shared-backends` after PR 1 is merged into it. Worktree: `.claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/keep-workloads-on-precheck-failure`. PR targets `fix/suspend-only-for-shared-backends` with `Towards #370`.
+Branch: `fix/keep-workloads-on-precheck-failure` off `fix/suspend-only-for-shared-backends`, in parallel with PR 1. Worktree: `.claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/keep-workloads-on-precheck-failure`. PR targets `fix/suspend-only-for-shared-backends` with `Towards #370`.
 
 ### Task 7: The cluster keeps its workloads on a failed pre-check
 
@@ -1103,7 +1103,7 @@ In `controller_test.go`, rename `scales a running cluster to zero when its crede
 
 and, after the Secret is recreated, that `Ready` leaves `MissingSecret` and the replicas are still 1. Drop every assertion on the `WorkloadsSuspended` event and on a `Suspended` per-process reason.
 
-In `secondarystorage_test.go`, rename `scales a running cluster to zero when its contract goes away, while the other keeps running` to `keeps a running cluster on its workloads when its contract goes away, and keeps its backend claimed` and replace the zero-replica and `Suspended` assertions with `Consistently` replicas at 1 and `expectClaimedBy(binding, second)` reading the Lease that survives the delete (the Lease is in `testClaimNamespace`, not in `ns`, so it is not garbage collected with the contract). Keep the third-cluster-parks assertion from Task 4.
+In `secondarystorage_test.go`, rename `scales a running cluster to zero when its contract goes away, while the other keeps running` to `keeps a running cluster on its workloads when its contract goes away` and replace the zero-replica and `Suspended` assertions with `Consistently` replicas at 1. Leave the claim assertions of the spec as they are on this branch. When this PR merges the feature branch forward after PR 1, add `expectClaimedBy(binding, second)` after the delete, reading the Lease that survives it (the Lease is in `testClaimNamespace`, not in `ns`, so it is not garbage collected with the contract), and the third-cluster-parks assertion from Task 4.
 
 - [ ] **Step 2: Run the two specs to verify they fail**
 

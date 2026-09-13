@@ -16,8 +16,7 @@ status: foundational-wave
 
 ## Phases
 
-- **Phase 1 (foundational)** — `#369`: the storage claim on a Lease keyed by the backend, the pod labels, the handover gate, and their docs.
-- **Phase 2 (consumer)** — `#370`: no suspension on a failed pre-check, `Suspended()` narrowed, and their docs. Branches off the feature branch after #369 is self-merged, so the two-writer guard is closed at every commit.
+- **Phase 1 (one wave, parallel)** — `#369`: the storage claim on a Lease keyed by the backend, the pod labels, the handover gate, and their docs. `#370`: no suspension on a failed pre-check, `Suspended()` narrowed, and their docs. Both branch off the feature branch. The second to land merges the feature branch forward and resolves `internal/controller/camundacluster/secondarystorage_test.go` and `internal/controller/camundaoptimize/controller_test.go`, and adds the contract-deleted Lease assertion (plan Task 7 Step 1).
 
 ## PRs / worktrees
 
@@ -38,8 +37,8 @@ status: foundational-wave
 
 ## Pending snapshot
 
-1. Dispatch #369 (plan Tasks 1 to 6) into its sub-worktree under the feature worktree; `feature-dev-workflow:developing-a-feature` owns the dispatch. Gate: every command in plan Task 6 Step 1 passes, Copilot review loop clean, self-merge into `fix/suspend-only-for-shared-backends`, `gh issue close 369`.
-2. Dispatch #370 (plan Tasks 7 to 11) into its sub-worktree branched from the feature branch after step 1. Same gates, self-merge, `gh issue close 370`.
+1. Dispatch #369 (plan Tasks 1 to 6) and #370 (plan Tasks 7 to 11) in parallel into their sub-worktrees under the feature worktree; `feature-dev-workflow:fanning-out-with-worktrees` owns the dispatch. Gate per sub-PR: every command in plan Task 6 Step 1 passes, Copilot review loop clean, self-merge into `fix/suspend-only-for-shared-backends`, `gh issue close <n>`.
+2. The second sub-PR to ripen merges the feature branch forward, resolves the two shared test files, adds the contract-deleted Lease assertion, and re-runs the gates before its self-merge.
 3. `feature-dev-workflow:reviewing-feature-progress`, then the integration PR from `fix/suspend-only-for-shared-backends` to `main` with `Closes #368`. The user merges to main. Delete this file and the plan in the last commit before the merge; keep the spec.
 
 ## Resume checklist
