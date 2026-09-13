@@ -62,7 +62,16 @@ A workload of the operator stops on its own in exactly two states, both on the s
 `spec.suspend` is the user's own instruction and stands above this table: a cluster whose
 reference check fails while `spec.suspend` is set still scales every workload it controls
 to zero, directly, because a broken reference is exactly when a user reaches for suspend.
-`Ready` reports the failure and names the suspension in its message.
+`Ready` reports the failure and names the suspension in its message, and the per-process
+conditions of the scaled workloads report `Suspended`. A cluster that was at zero when its
+check failed stays at zero until the check passes, because only the render restores replicas.
+
+The same holds one level down. A `CamundaOptimize` whose own check fails still follows the
+suspension of its cluster: it scales its webapp and importer to zero when the cluster is
+suspended, because the logical restore of Elasticsearch relies on the importer stopping. It
+keeps its workloads only for a failure while its cluster runs. An Optimize whose cluster is
+deleted releases its workloads, as it does when another instance holds the cluster, so its
+pods never block the handover of the backend to the next cluster.
 
 Every other `Ready` reason leaves the workloads as the last successful reconcile rendered them.
 `InvalidReference`, `MissingSecret`, `VersionMismatch`, `StorageTypeMismatch`,
