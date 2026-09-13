@@ -116,9 +116,10 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 		return err
 	}
 
-	// The list is read once, before the render. A previous holder that is
-	// pointed back at the backend in that moment can start pods next to this
-	// cluster, and it stops again as soon as it meets the claim.
+	// The list is read once, before the render. It covers the pods that the
+	// previous holder started before it lost the claim. A holder that is
+	// pointed back at the backend meets the claim this cluster holds and
+	// parks, so it starts nothing beside it.
 	pods, err := res.otherPodsOnClaim(ctx, in.Storage.Claim)
 	if err != nil {
 		return err

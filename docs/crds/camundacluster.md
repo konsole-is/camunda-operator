@@ -173,7 +173,7 @@ Select every pod that writes one backend by the Lease name. The operator counts 
 kubectl get pods -A -l camunda.io/storage-claim=camunda-storage-8bd62d6c1f48cf988b142a51c9e7010d105e168c
 ```
 
-CAUTION: Do not point `storageRef` of a holder at another backend and back while a second cluster waits for the handover. A holder that returns at that moment can start pods next to the second cluster. The operator then suspends the cluster that lost the claim, but both write the backend until the pods of that cluster stop.
+A holder that you point at another backend and back finds the claim with the cluster that took it. The returning cluster is suspended with `StorageAlreadyAttached` until that cluster moves off the backend or is deleted. It starts no pod beside the new holder, and the new holder starts once the pods of the returning cluster are gone.
 
 The operator compares addresses, not servers. Two contracts that reach one Elasticsearch through two host names are not caught. Give one backend one address.
 
