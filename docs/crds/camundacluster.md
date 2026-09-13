@@ -127,7 +127,7 @@ The brokers keep their data on one PersistentVolumeClaim per pod. `spec.zeebe.st
 
 One `CamundaCluster` writes one backend. Camunda fixes the index names and the tables. Two clusters on one backend write each other's data, and a restore of one deletes the data of the other.
 
-The operator claims the backend, not the contract. The claim is a Lease named `camunda-storage-<hash>` in the namespace of the operator. The hash is of the address the contract resolves to. On the Elasticsearch path that address is the endpoint. On the RDBMS path it is the host, the port, and the database name of the PostgreSQL chain. Two contracts that name one address are one backend. The first cluster that takes the claim holds it for as long as it exists. A cluster whose contract is deleted keeps its backend and keeps running.
+The operator claims the backend, not the contract. The claim is a Lease named `camunda-storage-<hash>` in the namespace of the operator. The hash is of the address the contract resolves to. On the Elasticsearch path that address is the endpoint. On the RDBMS path it is the host, the port, and the database name of the PostgreSQL chain. Two contracts that name one address are one backend. The first cluster that takes the claim holds it until it moves to another backend, or until you delete it. A cluster whose contract is deleted keeps its backend and keeps running.
 
 The API server accepts a second cluster on a held backend. That cluster is suspended: every workload at zero and the volumes kept. Its `Ready` is `False` with reason `StorageAlreadyAttached`, and the message names the holder and the backend.
 
