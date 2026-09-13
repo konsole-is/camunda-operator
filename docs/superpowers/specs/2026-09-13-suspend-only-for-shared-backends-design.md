@@ -203,8 +203,10 @@ The pre-check failure branch of both controllers returns to the shape before #31
 parked cluster too: a failed reference on it reports the failure, its workloads stay at zero
 because nothing renders, and `Suspended()` reads false. Optimize does not depend on that
 reading for the parked case, because it gates its importer on the storage claim itself. A
-backup of such a cluster fails on connection, which reports a doubly broken cluster
-honestly.
+backup of such a cluster is admitted and waits at `Pending` for the management endpoint,
+which the parked render cleared, until the cluster recovers, and a schedule skips its later
+triggers while that backup is not terminal. That is a doubly broken cluster, reported by
+name on both objects, and the user fixes the reference.
 
 What goes:
 
