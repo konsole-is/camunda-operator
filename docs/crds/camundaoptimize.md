@@ -49,7 +49,7 @@ The operator creates two Deployments in the namespace of the resource, and one S
 
 A Service name stops at 63 characters, which is the tightest bound of the derived names. A `CamundaOptimize` name that is too long to carry the suffix is cut, and a hash of the full name is added. Two such resources stay apart. The operator applies the same bound to the Secrets that it mirrors into the namespace, and to the value of the `camunda.io/cluster` label.
 
-The pods also carry the label `camunda.io/storage-contract` with the secondary storage contract of the cluster. A cluster that takes that contract over waits for these pods as it waits for the pods of the previous holder, see [CamundaCluster](camundacluster.md#secondary-storage).
+The pods also carry the label `camunda.io/storage-claim` with the storage claim of the backend that the cluster writes. They carry `camunda.io/cluster-uid` with the UID of that cluster. A cluster that takes that backend over waits for these pods as it waits for the pods of the previous holder, see [CamundaCluster](camundacluster.md#secondary-storage).
 
 Read the names back with `kubectl get deploy,svc -l camunda.io/cluster=<cluster>`. The selector matches while the cluster name is 63 characters or less. For a longer name the label carries the cut form. `kubectl get deploy --show-labels` shows the value to select on.
 

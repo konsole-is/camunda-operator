@@ -38,7 +38,7 @@ spec:
 
 The [ObjectStorageConfig reference](../crds/objectstorageconfig.md) has examples for GCS, Azure Blob, and static credentials (MinIO, Ceph).
 
-`basePath` is a key prefix inside the bucket, without leading or trailing slashes. Every backup of a cluster lands under `<basePath>/<namespace>/<cluster>/`. Two clusters can share one bucket and never share one prefix. A cluster reads the contract in its own namespace, so a cluster in another namespace needs a contract of its own. Azure Blob is the exception: the Zeebe backup store writes into the whole container. On Azure, create one container and one `ObjectStorageConfig` per cluster. The secondary storage contract belongs to one cluster, see [one cluster per contract](./secondary-storage.md#one-cluster-per-contract).
+`basePath` is a key prefix inside the bucket, without leading or trailing slashes. Every backup of a cluster lands under `<basePath>/<namespace>/<cluster>/`. Two clusters can share one bucket and never share one prefix. A cluster reads the contract in its own namespace, so a cluster in another namespace needs a contract of its own. Azure Blob is the exception: the Zeebe backup store writes into the whole container. On Azure, create one container and one `ObjectStorageConfig` per cluster. A secondary storage backend belongs to one cluster, see [one cluster per backend](./secondary-storage.md#one-cluster-per-backend).
 
 ### Point the cluster at it
 

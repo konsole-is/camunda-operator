@@ -9,19 +9,15 @@ The contract lives in the namespace of the consuming cluster. A `CamundaCluster`
 | Role | Who |
 | --- | --- |
 | Producers | [ElasticsearchCluster](elasticsearchcluster.md) (always, named by its `secondaryStorageConfig` field), [Database](database.md) (when its `secondaryStorageConfig` field is set, as a `rdbms` contract), or you, by hand |
-| Consumers | [CamundaCluster](camundacluster.md) (through `storageRef`, one cluster per contract, see [Secondary storage](camundacluster.md#secondary-storage)), [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) (through the `storageRef` of the cluster they back up) |
+| Consumers | [CamundaCluster](camundacluster.md) (through `storageRef`, one cluster per backend, see [Secondary storage](camundacluster.md#secondary-storage)), [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) (through the `storageRef` of the cluster they back up) |
 
 This contract models the two backends the operator integrates with: `elasticsearch` and `rdbms`.
 
 ## The claim
 
-One `CamundaCluster` holds one contract. The claim goes to the first cluster that the operator reaches, which is not always the one you created first. When two clusters already name one contract, for example right after an upgrade, either one can win. The operator marks the claim with the annotations `camunda.io/claim-holder` and `camunda.io/claim-holder-uid`, and keeps them through an apply of the contract by its producer.
+One `CamundaCluster` writes one backend. The claim belongs to the backend that the contract resolves to, not to the contract. The operator holds it on a Lease in its own namespace. Two contracts that name one address are one claim, and a deleted contract does not free the backend for another cluster.
 
-To move the contract to another cluster, repoint or delete the holder. The cluster that waits for the contract takes the claim within 30 seconds. Do not remove the annotations by hand while two clusters name the contract. Both clusters then race for the free contract, and the holder can lose it and be suspended.
-
-A recreated contract is a new claim, and the holder can lose the race for it to another cluster.
-
-The contract is the unit of the claim, not the endpoint or the database it names. Give one contract to one backend, so two contracts never point the operator at data that one cluster already owns.
+[Secondary storage](camundacluster.md#secondary-storage) of the cluster reference has the rule in full. It names the reasons a cluster reports on `Ready`, and how a backend moves from one cluster to the next.
 
 The smallest contract for an Elasticsearch backend names the endpoint and the credentials:
 
