@@ -160,10 +160,12 @@ itself, so it computes the key and the Lease name from that chain, and `Input.St
 becomes the Lease name. Its importer writes the same backend, so it is gated the same way.
 
 Optimize also reads the claim itself: it renders its importer only while its cluster holds
-the storage claim of the backend it resolves (`Holds` on the Lease). The cluster's `Ready`
-lags a repoint by one reconcile, so `Suspended()` alone would let the importer start against
-a backend another cluster holds in that window. The claim is the gate; the status is the
-report.
+the storage claim of the backend it resolves (`Holds` on the Lease) and no pod of another
+cluster carries that claim, the same two checks the cluster makes before it renders. The
+cluster's `Ready` lags a repoint by one reconcile, so `Suspended()` alone would let the
+importer start against a backend another cluster holds, or still writes, in that window. The
+claim and the pods are the gate; the status is the report. One exported selector helper
+serves both gates so they cannot drift.
 
 ### What goes
 
