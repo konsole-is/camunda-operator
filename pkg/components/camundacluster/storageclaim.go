@@ -18,6 +18,7 @@ package camundacluster
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -132,8 +133,10 @@ func normalizeEndpoint(endpoint string) (string, error) {
 		}
 	}
 
-	return fmt.Sprintf(
-		"%s://%s:%d%s",
-		scheme, strings.ToLower(parsed.Hostname()), port, strings.TrimRight(parsed.Path, "/"),
-	), nil
+	// Hostname strips the brackets of an IPv6 literal, and JoinHostPort puts
+	// them back. Without them the address reads as another host and another
+	// port.
+	host := net.JoinHostPort(strings.ToLower(parsed.Hostname()), strconv.Itoa(port))
+
+	return scheme + "://" + host + strings.TrimRight(parsed.Path, "/"), nil
 }

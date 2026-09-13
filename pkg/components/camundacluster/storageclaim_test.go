@@ -72,6 +72,13 @@ func TestStorageClaimKey(t *testing.T) {
 			},
 			key: "elasticsearch|https://es.example.com:443",
 		},
+		"elasticsearch keeps the brackets of an IPv6 host": {
+			storage: Storage{
+				Type:          v1.SecondaryStorageTypeElasticsearch,
+				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://[::1]:9200"},
+			},
+			key: "elasticsearch|https://[::1]:9200",
+		},
 		"elasticsearch keeps a path prefix": {
 			storage: Storage{
 				Type:          v1.SecondaryStorageTypeElasticsearch,
