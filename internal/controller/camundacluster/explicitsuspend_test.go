@@ -18,6 +18,7 @@ package camundacluster
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,6 +30,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -160,6 +162,103 @@ func TestSuspendExplicitly(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSuspendExplicitlyJoinsPatchErrors covers the error path: one workload
+// that a conflict or an admission rule keeps up must not leave the rest of
+// them running.
+func TestSuspendExplicitlyJoinsPatchErrors(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	cluster := suspendCluster(true)
+	boom := errors.New("admission webhook denied the request")
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(
+			&appsv1.StatefulSet{
+				ObjectMeta: workloadMeta(cluster, "my-cluster-zeebe", "zeebe", true),
+				Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(1))},
+			},
+			&appsv1.Deployment{
+				ObjectMeta: workloadMeta(cluster, "my-cluster-operate", "operate", true),
+				Spec:       appsv1.DeploymentSpec{Replicas: new(int32(2))},
+			},
+		).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(
+				ctx context.Context,
+				cl client.WithWatch,
+				obj client.Object,
+				patch client.Patch,
+				opts ...client.PatchOption,
+			) error {
+				if obj.GetName() == "my-cluster-zeebe" {
+					return boom
+				}
+
+				return cl.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+	r := &CamundaClusterReconciler{
+		Client:        fakeClient,
+		APIReader:     fakeClient,
+		Scheme:        scheme,
+		EventRecorder: events.NewFakeRecorder(10),
+	}
+
+	err := r.suspendExplicitly(context.Background(), cluster)
+
+	require.ErrorIs(t, err, boom)
+	assert.Contains(t, err.Error(), "my-cluster-zeebe", "the error names the workload that stayed up")
+	assert.Equal(
+		t, int32(0), replicasOf(
+			t, fakeClient, client.ObjectKey{Namespace: cluster.Namespace, Name: "my-cluster-operate"},
+		), "the other workload is scaled anyway",
+	)
+}
+
+// TestSuspendExplicitlyReportsAFailedList covers a listing that fails: the
+// suspension scales nothing, and the error says which listing failed.
+func TestSuspendExplicitlyReportsAFailedList(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	cluster := suspendCluster(true)
+	boom := errors.New("connection refused")
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(&appsv1.StatefulSet{
+			ObjectMeta: workloadMeta(cluster, "my-cluster-zeebe", "zeebe", true),
+			Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(1))},
+		}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(
+				context.Context, client.WithWatch, client.ObjectList, ...client.ListOption,
+			) error {
+				return boom
+			},
+		}).
+		Build()
+	r := &CamundaClusterReconciler{
+		Client:        fakeClient,
+		APIReader:     fakeClient,
+		Scheme:        scheme,
+		EventRecorder: events.NewFakeRecorder(10),
+	}
+
+	err := r.suspendExplicitly(context.Background(), cluster)
+
+	require.ErrorIs(t, err, boom)
+	assert.Contains(t, err.Error(), "listing the StatefulSets of the cluster")
+	assert.Equal(
+		t, int32(1), replicasOf(
+			t, fakeClient, client.ObjectKey{Namespace: cluster.Namespace, Name: "my-cluster-zeebe"},
+		), "a listing that failed scales nothing",
+	)
 }
 
 // replicasOf returns spec.replicas of the StatefulSet or the Deployment at
