@@ -92,14 +92,35 @@ func TestSuspendExplicitly(t *testing.T) {
 	cases := map[string]struct {
 		suspend bool
 		found   bool
+		// observed is status.replicas of every workload that this cluster
+		// controls, the pods that are still up.
+		observed int32
 		// noOwned leaves out the workloads that this cluster controls, the
 		// state of a cluster that never rendered one.
 		noOwned bool
-		want    map[string]int32
+		// wantReason is the reason of the per-process condition of a scaled
+		// workload. Empty expects no condition at all.
+		wantReason string
+		want       map[string]int32
 	}{
-		"a suspended cluster scales the workloads it controls": {
-			suspend: true,
-			found:   true,
+		"a suspended cluster whose pods still run reports Suspending": {
+			suspend:    true,
+			found:      true,
+			observed:   2,
+			wantReason: string(component.Suspending),
+			want: map[string]int32{
+				"my-cluster-zeebe":    0,
+				"my-cluster-gateway":  0,
+				"my-cluster-operate":  0,
+				"other-cluster-zeebe": 1,
+				"adopted-zeebe":       1,
+			},
+		},
+		"a suspended cluster whose pods stopped reports Suspended": {
+			suspend:    true,
+			found:      true,
+			observed:   0,
+			wantReason: string(component.Suspended),
 			want: map[string]int32{
 				"my-cluster-zeebe":    0,
 				"my-cluster-gateway":  0,
@@ -142,15 +163,18 @@ func TestSuspendExplicitly(t *testing.T) {
 				&appsv1.StatefulSet{
 					ObjectMeta: workloadMeta(cluster, cluster, "my-cluster-zeebe", "zeebe", true),
 					Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(1))},
+					Status:     appsv1.StatefulSetStatus{Replicas: tc.observed},
 				},
 				// Already at zero: nothing to patch, and no event.
 				&appsv1.Deployment{
 					ObjectMeta: workloadMeta(cluster, cluster, "my-cluster-gateway", "gateway", true),
 					Spec:       appsv1.DeploymentSpec{Replicas: new(int32(0))},
+					Status:     appsv1.DeploymentStatus{Replicas: tc.observed},
 				},
 				&appsv1.Deployment{
 					ObjectMeta: workloadMeta(cluster, cluster, "my-cluster-operate", "operate", true),
 					Spec:       appsv1.DeploymentSpec{Replicas: new(int32(2))},
+					Status:     appsv1.DeploymentStatus{Replicas: tc.observed},
 				},
 			}
 			// Both carry the labels of this cluster, so the listing reaches
@@ -188,6 +212,15 @@ func TestSuspendExplicitly(t *testing.T) {
 				key := client.ObjectKey{Namespace: cluster.Namespace, Name: workload}
 				assert.Equal(t, want, replicasOf(t, fakeClient, key), workload)
 			}
+
+			zeebe := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionZeebeReady)
+			if tc.wantReason == "" {
+				assert.Nil(t, zeebe)
+
+				return
+			}
+			require.NotNil(t, zeebe)
+			assert.Equal(t, tc.wantReason, zeebe.Reason)
 		})
 	}
 }

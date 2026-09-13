@@ -51,7 +51,7 @@ const eventReasonWorkloadsSuspended = "WorkloadsSuspended"
 const suspendNote = ". The Optimize workloads are scaled to zero because CamundaCluster %q is suspended"
 
 // suspendedMessage is the message of the condition of a workload that the
-// suspension of the referenced cluster stopped.
+// suspension of the referenced cluster stopped and whose pods are gone.
 const suspendedMessage = "Scaled to zero while the referenced cluster is suspended"
 
 // workloadConditions maps an Optimize workload to the condition that it
@@ -123,27 +123,35 @@ func (r *Reconciler) followSuspension(
 		}
 		// Only a workload that reached zero reports the suspension: a rejected
 		// patch leaves its pods running.
-		stageSuspension(optimize, comp)
+		stageSuspension(optimize, comp, deployment.Status.Replicas)
 	}
 
 	return found, errors.Join(errs...)
 }
 
-// stageSuspension sets the condition of the given workload, in memory, to the
-// ocf Suspended status. An unknown workload changes nothing.
-func stageSuspension(optimize *v1.CamundaOptimize, comp string) {
+// stageSuspension sets the condition of the given workload, in memory, the way
+// ocf reports a suspension: Suspending while observed replicas are still up,
+// Suspended once they are gone. The watch on the Deployment brings the reconcile
+// back as they drop. An unknown workload changes nothing.
+func stageSuspension(optimize *v1.CamundaOptimize, comp string, observed int32) {
 	conditionType, ok := workloadConditions[comp]
 	if !ok {
 		return
 	}
 
-	meta.SetStatusCondition(optimize.GetStatusConditions(), metav1.Condition{
+	condition := metav1.Condition{
 		Type:               conditionType,
 		Status:             metav1.ConditionTrue,
 		Reason:             string(component.Suspended),
 		Message:            suspendedMessage,
 		ObservedGeneration: optimize.Generation,
-	})
+	}
+	if observed != 0 {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = string(component.Suspending)
+		condition.Message = fmt.Sprintf("Waiting for %d replicas to stop", observed)
+	}
+	meta.SetStatusCondition(optimize.GetStatusConditions(), condition)
 }
 
 // scaleToZero patches the replicas of a Deployment to zero and records the

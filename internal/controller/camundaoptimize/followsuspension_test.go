@@ -58,7 +58,7 @@ func TestFollowSuspensionJoinsPatchErrors(t *testing.T) {
 	importerName := components.WorkloadName(optimize, components.ComponentImporter)
 	boom := errors.New("admission webhook denied the request")
 
-	deployment := func(name string) *appsv1.Deployment {
+	deployment := func(name string, observed int32) *appsv1.Deployment {
 		return &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
@@ -71,13 +71,14 @@ func TestFollowSuspensionJoinsPatchErrors(t *testing.T) {
 					Controller: new(true),
 				}},
 			},
-			Spec: appsv1.DeploymentSpec{Replicas: new(int32(1))},
+			Spec:   appsv1.DeploymentSpec{Replicas: new(int32(1))},
+			Status: appsv1.DeploymentStatus{Replicas: observed},
 		}
 	}
 
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(deployment(webappName), deployment(importerName)).
+		WithObjects(deployment(webappName, 0), deployment(importerName, 0)).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Patch: func(
 				ctx context.Context,
@@ -167,4 +168,63 @@ func TestFollowSuspensionFindsNoWorkloadOfAnotherOwner(t *testing.T) {
 	var kept appsv1.Deployment
 	require.NoError(t, fakeClient.Get(context.Background(), client.ObjectKeyFromObject(foreign), &kept))
 	assert.Equal(t, int32(1), *kept.Spec.Replicas)
+}
+
+// TestFollowSuspensionReportsTheDrain covers the condition vocabulary: ocf
+// reports Suspending while the pods of a scaled workload are still up, and
+// Suspended once they are gone. The watch on the Deployment brings the reconcile
+// back as they drop.
+func TestFollowSuspensionReportsTheDrain(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	cases := map[string]struct {
+		observed int32
+		status   metav1.ConditionStatus
+		reason   string
+	}{
+		"pods still up": {observed: 2, status: metav1.ConditionFalse, reason: string(component.Suspending)},
+		"pods stopped":  {observed: 0, status: metav1.ConditionTrue, reason: string(component.Suspended)},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			optimize := &v1.CamundaOptimize{ObjectMeta: metav1.ObjectMeta{
+				Name: "co-a", Namespace: "team-a", UID: "uid-1",
+			}}
+			importer := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      components.WorkloadName(optimize, components.ComponentImporter),
+					Namespace: optimize.Namespace,
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: v1.GroupVersion.String(),
+						Kind:       "CamundaOptimize",
+						Name:       optimize.Name,
+						UID:        optimize.UID,
+						Controller: new(true),
+					}},
+				},
+				Spec:   appsv1.DeploymentSpec{Replicas: new(int32(1))},
+				Status: appsv1.DeploymentStatus{Replicas: tc.observed},
+			}
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(importer).Build()
+			r := &Reconciler{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				EventRecorder: events.NewFakeRecorder(10),
+			}
+
+			found, err := r.followSuspension(context.Background(), optimize)
+
+			require.NoError(t, err)
+			assert.True(t, found)
+			staged := meta.FindStatusCondition(optimize.Status.Conditions, v1.ConditionImporterReady)
+			require.NotNil(t, staged)
+			assert.Equal(t, tc.status, staged.Status)
+			assert.Equal(t, tc.reason, staged.Reason)
+		})
+	}
 }
