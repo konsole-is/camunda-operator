@@ -24,6 +24,7 @@ import (
 	gomegatypes "github.com/onsi/gomega/types"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -38,7 +39,6 @@ import (
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
-	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
 
 // userManager is the field manager of the entry that a user owns on
@@ -79,6 +79,19 @@ func createSecret(namespace, name string, data map[string]string) {
 	}
 	Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
+}
+
+// storageKeyOf returns the claim key of the backend that binding names. The
+// test bindings are Elasticsearch ones.
+func storageKeyOf(binding *v1.SecondaryStorageConfig) string {
+	GinkgoHelper()
+	key, err := clustercomponents.StorageClaimKey(clustercomponents.Storage{
+		Type:          binding.Spec.Type,
+		Elasticsearch: binding.Spec.Elasticsearch,
+	})
+	Expect(err).NotTo(HaveOccurred())
+
+	return key
 }
 
 // createBinding creates an Elasticsearch binding in namespace, with its
@@ -685,13 +698,17 @@ var _ = Describe("CamundaOptimize controller", func() {
 			auth := createAuth(ns, true)
 			holder := createCluster(ns, binding)
 
-			By("waiting until the holder holds the contract")
+			By("waiting until the holder holds the storage claim of the backend")
 			Eventually(func(g Gomega) {
-				var latest v1.SecondaryStorageConfig
-				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(binding), &latest)).To(Succeed())
-				claim, held := secondarystorageconfig.HolderOf(&latest)
-				g.Expect(held).To(BeTrue())
-				g.Expect(claim.Cluster).To(Equal(client.ObjectKeyFromObject(holder)))
+				var lease coordinationv1.Lease
+				name := client.ObjectKey{
+					Namespace: testClaimNamespace,
+					Name:      clustercomponents.StorageClaimSchema().LeaseName(storageKeyOf(binding)),
+				}
+				g.Expect(k8sClient.Get(ctx, name, &lease)).To(Succeed())
+				claim, ours := clustercomponents.StorageClaimSchema().HolderOf(&lease)
+				g.Expect(ours).To(BeTrue())
+				g.Expect(claim.NamespacedName).To(Equal(client.ObjectKeyFromObject(holder)))
 			}, timeout, interval).Should(Succeed())
 
 			By("parking the second cluster on the same contract")
@@ -736,22 +753,22 @@ var _ = Describe("CamundaOptimize controller", func() {
 			binding := createBinding(ns)
 			auth := createAuth(ns, true)
 
-			By("claiming the contract for a holder that is gone, with a pod it left behind")
-			Eventually(func(g Gomega) {
-				var latest v1.SecondaryStorageConfig
-				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(binding), &latest)).To(Succeed())
-				if latest.Annotations == nil {
-					latest.Annotations = map[string]string{}
-				}
-				latest.Annotations[secondarystorageconfig.ClaimHolderAnnotation] = ns + "/ghost"
-				latest.Annotations[secondarystorageconfig.ClaimHolderUIDAnnotation] = "ghost-uid"
-				g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
-			}, timeout, interval).Should(Succeed())
+			By("claiming the backend for a holder that is gone, with a pod it left behind")
+			key := storageKeyOf(binding)
+			ghost := &v1.CamundaCluster{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "ghost", UID: "ghost-uid"},
+			}
+			lease := clustercomponents.StorageClaimSchema().NewLease(testClaimNamespace, key, ghost)
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "ghost-zeebe-0",
 					Namespace: ns,
-					Labels:    clustercomponents.StoragePodLabels("ghost", binding.Name),
+					Labels: clustercomponents.StoragePodLabels(
+						ghost.Name,
+						ghost.UID,
+						clustercomponents.StorageClaimSchema().LeaseName(key),
+					),
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{{Name: "camunda", Image: "camunda/camunda:8.9.9"}},
