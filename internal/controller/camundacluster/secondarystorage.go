@@ -156,8 +156,10 @@ func (res *resolver) waitForHandover(ctx context.Context, claim, key string) err
 	)
 }
 
-// otherPodsOnClaim returns the sorted names of the pods of the namespace of
-// the cluster that carry the storage claim and another cluster UID.
+// otherPodsOnClaim returns the pods that carry the storage claim and another
+// cluster UID, as sorted "namespace/name" paths. The list covers every
+// namespace: two clusters of two namespaces meet on one Lease, so a previous
+// holder elsewhere leaves pods that write this backend.
 //
 // The pods of a CamundaOptimize attached to another cluster carry the same
 // labels, see pkg/components/camundaoptimize, and its importer writes the
@@ -167,7 +169,6 @@ func (res *resolver) otherPodsOnClaim(ctx context.Context, claim string) ([]stri
 	if err := res.reader.List(
 		ctx,
 		&pods,
-		client.InNamespace(res.cluster.Namespace),
 		client.MatchingLabels(map[string]string{labels.StorageClaimKey: labels.OwnerName(claim)}),
 	); err != nil {
 		return nil, fmt.Errorf("listing the pods on storage claim %q: %w", claim, err)
@@ -178,7 +179,7 @@ func (res *resolver) otherPodsOnClaim(ctx context.Context, claim string) ([]stri
 		if pods.Items[i].Labels[labels.ClusterUIDKey] == string(res.cluster.UID) {
 			continue
 		}
-		names = append(names, pods.Items[i].Name)
+		names = append(names, objectPath(client.ObjectKeyFromObject(&pods.Items[i])))
 	}
 	slices.Sort(names)
 

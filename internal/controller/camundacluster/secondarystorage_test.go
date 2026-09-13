@@ -44,9 +44,10 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
-// TestOtherPodsOnClaim covers otherPodsOnClaim against a fake client: only a
-// pod of the namespace that carries the storage claim and another cluster UID
-// counts, the importer of an Optimize attached to such a cluster among them.
+// TestOtherPodsOnClaim covers otherPodsOnClaim against a fake client: every
+// pod that carries the storage claim and another cluster UID counts, whatever
+// its namespace, the importer of an Optimize attached to such a cluster among
+// them.
 func TestOtherPodsOnClaim(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
@@ -75,7 +76,7 @@ func TestOtherPodsOnClaim(t *testing.T) {
 				pod("team-a", "old-zeebe-1", components.StoragePodLabels("old", "uid-old", claim)),
 				pod("team-a", "old-zeebe-0", components.StoragePodLabels("old", "uid-old", claim)),
 			},
-			pods: []string{"old-zeebe-0", "old-zeebe-1"},
+			pods: []string{"team-a/old-zeebe-0", "team-a/old-zeebe-1"},
 		},
 		"the Optimize importer pod of a previous holder": {
 			objects: []client.Object{
@@ -84,23 +85,26 @@ func TestOtherPodsOnClaim(t *testing.T) {
 					map[string]string{labels.ComponentKey: optimizecomponents.ComponentImporter},
 				)),
 			},
-			pods: []string{"old-optimize-importer-0"},
+			pods: []string{"team-a/old-optimize-importer-0"},
 		},
 		"pods of a same-named earlier cluster": {
 			objects: []client.Object{
 				pod("team-a", "holder-zeebe-0", components.StoragePodLabels("holder", "uid-0", claim)),
 			},
-			pods: []string{"holder-zeebe-0"},
+			pods: []string{"team-a/holder-zeebe-0"},
 		},
 		"pods on another claim": {
 			objects: []client.Object{
 				pod("team-a", "old-zeebe-0", components.StoragePodLabels("old", "uid-old", "camunda-storage-other")),
 			},
 		},
-		"pods in another namespace": {
+		// Two clusters of two namespaces meet on one Lease, so a holder
+		// elsewhere leaves pods that this cluster must wait for.
+		"pods of a previous holder in another namespace": {
 			objects: []client.Object{
 				pod("team-b", "old-zeebe-0", components.StoragePodLabels("old", "uid-old", claim)),
 			},
+			pods: []string{"team-b/old-zeebe-0"},
 		},
 	}
 

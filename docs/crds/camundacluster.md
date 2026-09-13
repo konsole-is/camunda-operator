@@ -146,7 +146,7 @@ status:
 
 The suspended cluster looks again every 30 seconds. When you delete the holder, the suspended cluster takes the claim and resumes on its own. When the holder moves to another backend, it releases this one as soon as the new address resolves. A paused holder keeps its claim until you unpause it.
 
-The cluster that takes the backend over stays at zero while pods of another cluster still write it. The pods of a deleted holder go after the cluster, and the pods of a holder that moved go when its rollout replaces them. Until then, its `Ready` is `False` with reason `WaitingForHandover`, and the message names the backend and those pods. The state clears on its own.
+The cluster that takes the backend over stays at zero while pods of another cluster still write it. Those pods count in every namespace, because two clusters of two namespaces can name one backend. The pods of a deleted holder go after the cluster, and the pods of a holder that moved go when its rollout replaces them. Until then, its `Ready` is `False` with reason `WaitingForHandover`, and the message names the backend and those pods. The state clears on its own.
 
 ```yaml
 status:
@@ -157,7 +157,8 @@ status:
       message: >-
         Pods of another CamundaCluster still write the backend
         "elasticsearch|https://es-http.my-cluster-ns.svc:9200":
-        my-other-cluster-zeebe-0. This cluster starts when they are gone
+        my-cluster-ns/my-other-cluster-zeebe-0. This cluster starts when they
+        are gone
 ```
 
 Every pod carries the label `camunda.io/storage-claim` with the name of the Lease, and `camunda.io/cluster-uid` with the UID of its cluster. The pods of an [Optimize instance](camundaoptimize.md) attached to the cluster carry both, because its importer writes that backend as well. Read the claim of every pod in a namespace:
