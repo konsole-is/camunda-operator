@@ -217,7 +217,7 @@ func storageHandover(
 	applyErr error,
 ) metav1.Condition {
 	message := fmt.Sprintf(
-		"Pods of another CamundaCluster still write the backend %q: %s. "+
+		"Pods of another cluster, or of its Optimize instance, still write the backend %q: %s. "+
 			"This cluster starts when they are gone",
 		handover.Backend, strings.Join(handover.Pods, ", "),
 	)

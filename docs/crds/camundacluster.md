@@ -155,8 +155,8 @@ status:
       status: "False"
       reason: WaitingForHandover
       message: >-
-        Pods of another CamundaCluster still write the backend
-        "elasticsearch|https://es-http.my-cluster-ns.svc:9200":
+        Pods of another cluster, or of its Optimize instance, still write the
+        backend "elasticsearch|https://es-http.my-cluster-ns.svc:9200":
         my-cluster-ns/my-other-cluster-zeebe-0. This cluster starts when they
         are gone
 ```
