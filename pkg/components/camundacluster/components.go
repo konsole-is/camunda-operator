@@ -313,7 +313,7 @@ func podTemplate(in Input, p Process) corev1.PodTemplateSpec {
 func StoragePodLabels(cluster, contract string) map[string]string {
 	return map[string]string{
 		labels.ClusterKey:         labels.OwnerName(cluster),
-		labels.StorageContractKey: labels.OwnerName(contract),
+		labels.StorageClaimKey: labels.OwnerName(contract),
 	}
 }
 

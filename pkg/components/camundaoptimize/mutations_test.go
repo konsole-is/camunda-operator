@@ -64,7 +64,7 @@ func TestMutationsAreGatedOffWithoutOverrides(t *testing.T) {
 		assert.Equal(
 			t,
 			fixtureContract,
-			template.Labels[labels.StorageContractKey],
+			template.Labels[labels.StorageClaimKey],
 			"the pods name the contract they run on, so a handover waits for them",
 		)
 		assert.Equal(

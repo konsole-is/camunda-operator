@@ -1,0 +1,16 @@
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  annotations:
+    camunda.io/storage-claim-holder-name: orders
+    camunda.io/storage-claim-holder-namespace: apps
+    camunda.io/storage-claim-holder-uid: uid-1
+    camunda.io/storage-claim-key: elasticsearch|https://es.data.svc:9200
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: orders
+    camunda.io/component: storage-claim
+  name: camunda-storage-4cccf41785289fed5fc192f2a7475c228d8b84fd
+  namespace: camunda-system
+spec:
+  holderIdentity: apps/orders
