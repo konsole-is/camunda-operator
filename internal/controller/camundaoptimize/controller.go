@@ -172,11 +172,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
 		conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
-		// A CamundaOptimize that lost the attachment must not keep the
-		// workloads it built while it held it, see releaseWorkloads. Every
-		// other failed check keeps the workloads on the configuration of
-		// the last pass and reports on Ready.
-		if failure.Reason == v1.ReasonClusterAlreadyAttached {
+		// A CamundaOptimize that lost the attachment, or whose cluster is
+		// gone, must not keep the workloads it built, see releaseWorkloads.
+		// Every other failed check keeps them on the configuration of the
+		// last pass and reports on Ready.
+		if failure.Reason == v1.ReasonClusterAlreadyAttached || errors.Is(err, errClusterGone) {
 			// The component conditions describe workloads that the next call
 			// deletes, and comps stays nil on this path, so the flush does not
 			// own those types and would write the stale values back. A parked

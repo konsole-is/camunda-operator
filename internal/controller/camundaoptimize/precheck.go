@@ -18,6 +18,7 @@ package camundaoptimize
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -35,6 +36,14 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
+
+// errClusterGone reports that the CamundaCluster of spec.clusterRef does not
+// exist. It is the one dangling reference that releases the workloads instead
+// of keeping them: their pods carry the storage claim of the backend the
+// cluster wrote, and the handover gate of the next cluster on that backend
+// counts them. Nothing owns them once the cluster is gone, and the render
+// builds them again if it comes back.
+var errClusterGone = errors.New("the referenced CamundaCluster does not exist")
 
 // mirroredSecrets are the copies of the referenced Secrets that live outside
 // the CamundaOptimize namespace: the copied keys and their data, by purpose.
@@ -142,6 +151,11 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 
 	var cluster v1.CamundaCluster
 	if err := res.exists(ctx, out.ClusterKey, &cluster); err != nil {
+		var failure *conditions.PreCheckFailure
+		if errors.As(err, &failure) {
+			return out, fmt.Errorf("%w: %w", errClusterGone, err)
+		}
+
 		return out, err
 	}
 	out.ClusterUID = cluster.UID
