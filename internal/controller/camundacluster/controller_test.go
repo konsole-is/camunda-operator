@@ -630,6 +630,23 @@ var _ = Describe("CamundaCluster controller", func() {
 			g.Expect(latest.Status.Management).To(BeNil(), "a suspended cluster publishes no endpoints")
 			g.Expect(latest.Status.Gateway).To(BeNil())
 		}, timeout, interval).Should(Succeed())
+		// The reason, the action, and the note are what a user reads in
+		// kubectl describe, so they are pinned as literals: an assertion
+		// against the constants would follow a rename of them.
+		Eventually(func(g Gomega) {
+			var events corev1.EventList
+			g.Expect(k8sClient.List(ctx, &events, client.InNamespace(ns))).To(Succeed())
+			g.Expect(events.Items).To(ContainElement(SatisfyAll(
+				HaveField("Reason", "WorkloadsSuspended"),
+				HaveField("InvolvedObject.Name", cluster.Name),
+				HaveField("Type", corev1.EventTypeNormal),
+				HaveField("Action", "Reconcile"),
+				HaveField("Message", SatisfyAll(
+					ContainSubstring(cluster.Name+"-zeebe"),
+					ContainSubstring("because spec.suspend is set"),
+				)),
+			)))
+		}, timeout, interval).Should(Succeed())
 
 		By("recreating the Secret")
 		createSecret(ns, name, map[string]string{"username": "camunda", "password": "es-password"})
