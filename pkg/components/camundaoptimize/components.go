@@ -176,15 +176,15 @@ func podTemplate(in Input, comp string) corev1.PodTemplateSpec {
 }
 
 // podLabels returns the labels of the pods of a component: the discovery
-// labels and the SecondaryStorageConfig they run on. The importer writes the
-// analytics indices of that contract, so a cluster that takes the contract
+// labels and the storage claim of the backend they write. The importer writes
+// the analytics indices of that backend, so a cluster that takes the backend
 // over finds these pods with the same selector as the pods of the previous
-// holder. The label is on the pods, never on the selector, so a repoint of
-// the cluster rolls them and the new ones carry the new value.
+// holder. The label is on the pods, never on the selector, so a change of
+// backend rolls them and the new ones carry the new value.
 func podLabels(in Input, comp string) map[string]string {
 	return labels.Merge(
 		discoveryLabels(in, comp),
-		clustercomponents.StoragePodLabels(in.ClusterName, in.StorageContract),
+		clustercomponents.StoragePodLabels(in.ClusterName, in.ClusterUID, in.StorageClaim),
 	)
 }
 

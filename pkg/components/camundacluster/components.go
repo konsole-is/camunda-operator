@@ -29,6 +29,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -292,7 +293,7 @@ func podTemplate(in Input, p Process) corev1.PodTemplateSpec {
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: labels.Merge(
 				DerivedPodLabels(in.Backup, in.Documents),
-				StoragePodLabels(in.Cluster.Name, in.Cluster.Spec.StorageRef),
+				StoragePodLabels(in.Cluster.Name, in.Cluster.UID, in.Storage.Claim),
 				discoveryLabels(in.Cluster, p.Component),
 			),
 			Annotations: map[string]string{ConfigHashAnnotation: configHash(in, p, r)},
@@ -305,15 +306,16 @@ func podTemplate(in Input, p Process) corev1.PodTemplateSpec {
 	}
 }
 
-// StoragePodLabels returns the labels that find every pod of the cluster
-// named cluster that runs on the SecondaryStorageConfig named contract. The
-// pods carry them next to the discovery labels, and a cluster that takes the
-// contract over lists the pods of the previous holder by them. Both values
-// are bounded the way a label value demands.
-func StoragePodLabels(cluster, contract string) map[string]string {
+// StoragePodLabels returns the labels that find every pod that writes the
+// backend of the storage claim named claim: the cluster name, the cluster
+// UID, and the claim. A cluster that takes the backend over lists the pods of
+// every other cluster by the claim, and tells its own pods apart by the UID.
+// The name and the claim are bounded the way a label value demands.
+func StoragePodLabels(cluster string, uid types.UID, claim string) map[string]string {
 	return map[string]string{
-		labels.ClusterKey:         labels.OwnerName(cluster),
-		labels.StorageClaimKey: labels.OwnerName(contract),
+		labels.ClusterKey:      labels.OwnerName(cluster),
+		labels.ClusterUIDKey:   string(uid),
+		labels.StorageClaimKey: labels.OwnerName(claim),
 	}
 }
 
