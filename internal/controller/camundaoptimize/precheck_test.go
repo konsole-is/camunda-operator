@@ -30,6 +30,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
@@ -66,7 +67,7 @@ func TestPreCheckSuspendsWhileTheClusterDoesNotHoldItsBackend(t *testing.T) {
 			require.NoError(t, err)
 			objects = append(objects, clustercomponents.StorageClaimSchema().NewLease(claimSpace, key, holder))
 
-			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+			c := storageClaimPodClient(t, scheme, objects...)
 			r := &Reconciler{
 				Client:         c,
 				APIReader:      c,
@@ -132,7 +133,7 @@ func TestPreCheckSuspendsWhileAnotherClusterWritesTheBackend(t *testing.T) {
 				}},
 			)
 
-			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+			c := storageClaimPodClient(t, scheme, objects...)
 			r := &Reconciler{Client: c, APIReader: c, Scheme: scheme, ClaimNamespace: claimSpace}
 
 			var optimize v1.CamundaOptimize
@@ -151,6 +152,45 @@ func TestPreCheckSuspendsWhileAnotherClusterWritesTheBackend(t *testing.T) {
 			)
 		})
 	}
+}
+
+// storageClaimPodClient builds a fake client for the handover gate. The fake
+// client refuses a "!=" field selector, which the API server serves, so the
+// interceptor asserts that the phase selector reached it and then drops it. An
+// envtest spec covers the filtering itself.
+func storageClaimPodClient(t *testing.T, scheme *runtime.Scheme, objects ...client.Object) client.Client {
+	t.Helper()
+
+	return fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objects...).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(
+				ctx context.Context,
+				c client.WithWatch,
+				list client.ObjectList,
+				opts ...client.ListOption,
+			) error {
+				if _, ours := list.(*metav1.PartialObjectMetadataList); !ours {
+					return c.List(ctx, list, opts...)
+				}
+
+				kept := make([]client.ListOption, 0, len(opts))
+				var phases string
+				for _, opt := range opts {
+					if selector, ok := opt.(client.MatchingFieldsSelector); ok {
+						phases = selector.String()
+
+						continue
+					}
+					kept = append(kept, opt)
+				}
+				assert.Equal(t, "status.phase!=Failed,status.phase!=Succeeded", phases)
+
+				return c.List(ctx, list, kept...)
+			},
+		}).
+		Build()
 }
 
 // storageClaimGateFixture returns the scheme, the cluster, and every object

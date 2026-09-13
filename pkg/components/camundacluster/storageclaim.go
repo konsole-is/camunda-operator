@@ -23,6 +23,11 @@ import (
 	"strconv"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/leaseclaim"
@@ -31,6 +36,10 @@ import (
 // StorageClaimComponent is the component label value of a storage claim
 // Lease.
 const StorageClaimComponent = "storage-claim"
+
+// podPhaseField is the field of a pod that the API server serves as a field
+// selector, so a list can leave the pods that ended to the API server.
+const podPhaseField = "status.phase"
 
 // storageClaimLeasePrefix starts the name of every storage claim Lease.
 const storageClaimLeasePrefix = "camunda-storage-"
@@ -77,6 +86,37 @@ func StorageClaimLeaseLabels(name string) map[string]string {
 // wait for a set of pods the other does not see.
 func StorageClaimPodSelector(claim string) map[string]string {
 	return map[string]string{labels.StorageClaimKey: labels.OwnerName(claim)}
+}
+
+// StorageClaimPodListOptions returns the list options that find every pod
+// which can still write the backend of the storage claim named claim, in every
+// namespace. A caller tells its own pods from the rest by the
+// camunda.io/cluster-uid label, see StoragePodLabels. Both gates of a handover
+// list with these, so neither can wait for a set of pods the other does not
+// see.
+//
+// A pod that reached Failed or Succeeded is left out. An evicted pod of a
+// previous holder keeps its object under a ReplicaSet that nobody deleted, and
+// it writes nothing. A pod with a deletion timestamp is listed: one on a lost
+// node still writes until the node comes back or the pod is forced away.
+func StorageClaimPodListOptions(claim string) []client.ListOption {
+	return []client.ListOption{
+		client.MatchingLabels(StorageClaimPodSelector(claim)),
+		client.MatchingFieldsSelector{Selector: fields.AndSelectors(
+			fields.OneTermNotEqualSelector(podPhaseField, string(corev1.PodFailed)),
+			fields.OneTermNotEqualSelector(podPhaseField, string(corev1.PodSucceeded)),
+		)},
+	}
+}
+
+// StorageClaimPodList returns the list that StorageClaimPodListOptions fills:
+// the metadata of the pods, because the name, the namespace and the labels are
+// all a handover gate reads.
+func StorageClaimPodList() *metav1.PartialObjectMetadataList {
+	list := &metav1.PartialObjectMetadataList{}
+	list.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("PodList"))
+
+	return list
 }
 
 // StorageClaimKey returns the backend that storage addresses, as the key of

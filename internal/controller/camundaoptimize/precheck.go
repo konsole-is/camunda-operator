@@ -23,7 +23,6 @@ import (
 	"strconv"
 	"strings"
 
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -269,19 +268,16 @@ func (res *resolver) resolveStorage(
 
 // otherPodOnClaim reports whether a pod of a cluster other than cluster
 // carries the storage claim named claim. Such a pod writes the backend, so the
-// importer must stay at zero beside it. The list covers every namespace,
-// because two clusters of two namespaces can resolve one backend.
+// importer must stay at zero beside it. The list covers every namespace and
+// leaves out the pods that ended, see
+// clustercomponents.StorageClaimPodListOptions.
 func (r *Reconciler) otherPodOnClaim(
 	ctx context.Context,
 	claim string,
 	cluster *v1.CamundaCluster,
 ) (bool, error) {
-	var pods corev1.PodList
-	err := r.APIReader.List(
-		ctx,
-		&pods,
-		client.MatchingLabels(clustercomponents.StorageClaimPodSelector(claim)),
-	)
+	pods := clustercomponents.StorageClaimPodList()
+	err := r.APIReader.List(ctx, pods, clustercomponents.StorageClaimPodListOptions(claim)...)
 	if err != nil {
 		return false, fmt.Errorf("listing the pods on storage claim %q: %w", claim, err)
 	}

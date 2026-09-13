@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	coordinationv1 "k8s.io/api/coordination/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -146,6 +147,35 @@ func TestStorageClaimLeaseLabelsSelectOneCluster(t *testing.T) {
 	assert.Equal(t, labels.OwnerName("orders"), set[labels.ClusterKey])
 	assert.Equal(t, StorageClaimComponent, set[labels.ComponentKey])
 	assert.Equal(t, labels.ManagedBy, set[labels.ManagedByKey])
+}
+
+// The handover gate lists the pods that can still write a backend. A pod that
+// ended writes nothing, and one that a previous holder left behind under a
+// ReplicaSet nobody deleted would hold the gate for good.
+func TestStorageClaimPodListOptionsLeaveOutThePodsThatEnded(t *testing.T) {
+	const claim = "camunda-storage-0123456789abcdef0123456789abcdef01234567"
+
+	opts := StorageClaimPodListOptions(claim)
+
+	var list client.ListOptions
+	for _, opt := range opts {
+		opt.ApplyToList(&list)
+	}
+	require.NotNil(t, list.LabelSelector)
+	assert.Equal(t, labels.StorageClaimKey+"="+claim, list.LabelSelector.String())
+	require.NotNil(t, list.FieldSelector)
+	assert.Equal(t, "status.phase!=Failed,status.phase!=Succeeded", list.FieldSelector.String())
+	assert.Empty(t, list.Namespace, "two clusters of two namespaces can resolve one backend")
+}
+
+// The gate reads the name, the namespace and the labels of a pod, so the list
+// stays metadata.
+func TestStorageClaimPodListAsksForMetadata(t *testing.T) {
+	assert.Equal(
+		t,
+		corev1.SchemeGroupVersion.WithKind("PodList"),
+		StorageClaimPodList().GroupVersionKind(),
+	)
 }
 
 // The name, the labels and the annotations of a storage claim Lease are the

@@ -36,6 +36,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
@@ -112,7 +113,7 @@ func TestOtherPodsOnClaim(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			res := &resolver{
-				reader:  fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.objects...).Build(),
+				reader:  storageClaimPodClient(t, scheme, tc.objects...),
 				cluster: self,
 			}
 			pods, err := res.otherPodsOnClaim(context.Background(), claim)
@@ -120,6 +121,45 @@ func TestOtherPodsOnClaim(t *testing.T) {
 			assert.Equal(t, tc.pods, pods)
 		})
 	}
+}
+
+// storageClaimPodClient builds a fake client for the handover gate. The fake
+// client refuses a "!=" field selector, which the API server serves, so the
+// interceptor asserts that the phase selector reached it and then drops it. An
+// envtest spec covers the filtering itself.
+func storageClaimPodClient(t *testing.T, scheme *runtime.Scheme, objects ...client.Object) client.Client {
+	t.Helper()
+
+	return fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objects...).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(
+				ctx context.Context,
+				c client.WithWatch,
+				list client.ObjectList,
+				opts ...client.ListOption,
+			) error {
+				if _, ours := list.(*metav1.PartialObjectMetadataList); !ours {
+					return c.List(ctx, list, opts...)
+				}
+
+				kept := make([]client.ListOption, 0, len(opts))
+				var phases string
+				for _, opt := range opts {
+					if selector, ok := opt.(client.MatchingFieldsSelector); ok {
+						phases = selector.String()
+
+						continue
+					}
+					kept = append(kept, opt)
+				}
+				assert.Equal(t, "status.phase!=Failed,status.phase!=Succeeded", phases)
+
+				return c.List(ctx, list, kept...)
+			},
+		}).
+		Build()
 }
 
 // A Lease that carries the name of a storage claim and no holder annotations
@@ -697,6 +737,29 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		expectClaimedBy(first, b)
 		expectHolds(a)
 		expectHolds(b)
+	})
+
+	// An evicted pod of a previous holder keeps its object under a ReplicaSet
+	// that nobody deleted. It writes nothing, so it must not hold the backend
+	// of the next cluster for good.
+	It("ignores a pod of a previous holder that ended", func() {
+		ns := newNamespace()
+		binding := createBinding(ns, true)
+		ghost := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "ghost", UID: "ghost-uid"},
+		}
+		createStorageLeaseFor(storageKeyOf(binding), ghost)
+		pod := createStoragePod(ghost, binding)
+
+		By("failing the pod the way an eviction does")
+		pod.Status.Phase = corev1.PodFailed
+		Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
+
+		cluster := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
+		createCluster(cluster)
+
+		expectHolds(cluster)
+		expectClaimedBy(binding, cluster)
 	})
 
 	// A claim whose holder never existed, or was deleted before the operator

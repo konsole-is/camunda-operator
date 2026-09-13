@@ -154,19 +154,15 @@ func (res *resolver) releaseOtherClaims(ctx context.Context, keep string) error 
 
 // otherPodsOnClaim returns the pods that carry the storage claim and another
 // cluster UID, as sorted "namespace/name" paths. The list covers every
-// namespace: two clusters of two namespaces meet on one Lease, so a previous
-// holder elsewhere leaves pods that write this backend.
+// namespace and leaves out the pods that ended, see
+// components.StorageClaimPodListOptions.
 //
 // The pods of a CamundaOptimize attached to another cluster carry the same
 // labels, see pkg/components/camundaoptimize, and its importer writes the
 // backend like a pod of that cluster.
 func (res *resolver) otherPodsOnClaim(ctx context.Context, claim string) ([]string, error) {
-	var pods corev1.PodList
-	if err := res.reader.List(
-		ctx,
-		&pods,
-		client.MatchingLabels(components.StorageClaimPodSelector(claim)),
-	); err != nil {
+	pods := components.StorageClaimPodList()
+	if err := res.reader.List(ctx, pods, components.StorageClaimPodListOptions(claim)...); err != nil {
 		return nil, fmt.Errorf("listing the pods on storage claim %q: %w", claim, err)
 	}
 
