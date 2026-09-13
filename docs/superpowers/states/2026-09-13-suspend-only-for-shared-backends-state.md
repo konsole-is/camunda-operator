@@ -6,8 +6,10 @@ tracking_issue: #368
 feature_branch: fix/suspend-only-for-shared-backends
 feature_worktree: .claude/worktrees/suspend-only-for-shared-backends
 sub_pr_approval: autonomous
+sub_pr_review_loop: on
+sub_pr_target: feature-branch
 integration_pr:
-status: planning
+status: foundational-wave
 ---
 
 # Suspend only for shared backends — orchestration state
