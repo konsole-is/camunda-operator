@@ -47,14 +47,21 @@ func suspendCluster(suspend bool) *v1.CamundaCluster {
 	}
 }
 
-// workloadMeta returns the metadata of a workload of cluster: the managed
-// labels of comp and, when controlled, the controlling owner reference.
-func workloadMeta(cluster *v1.CamundaCluster, name, comp string, controlled bool) metav1.ObjectMeta {
+// workloadMeta returns the metadata of a workload that labelOwner names and,
+// when controlled, that owner controls. The two are the same cluster for a
+// workload the operator rendered. They differ for the workload of a second
+// cluster that carries the labels of the first, which the listing reaches and
+// the owner reference rejects.
+func workloadMeta(
+	labelOwner, owner *v1.CamundaCluster,
+	name, comp string,
+	controlled bool,
+) metav1.ObjectMeta {
 	m := metav1.ObjectMeta{
 		Name:      name,
-		Namespace: cluster.Namespace,
+		Namespace: labelOwner.Namespace,
 		Labels: map[string]string{
-			labels.ClusterKey:   labels.OwnerName(cluster.Name),
+			labels.ClusterKey:   labels.OwnerName(labelOwner.Name),
 			labels.ComponentKey: comp,
 			labels.ManagedByKey: labels.ManagedBy,
 		},
@@ -63,8 +70,8 @@ func workloadMeta(cluster *v1.CamundaCluster, name, comp string, controlled bool
 		m.OwnerReferences = []metav1.OwnerReference{{
 			APIVersion: v1.GroupVersion.String(),
 			Kind:       "CamundaCluster",
-			Name:       cluster.Name,
-			UID:        cluster.UID,
+			Name:       owner.Name,
+			UID:        owner.UID,
 			Controller: new(true),
 		}}
 	}
@@ -83,8 +90,8 @@ func TestSuspendExplicitly(t *testing.T) {
 	cases := map[string]struct {
 		suspend bool
 		found   bool
-		// noOwned drops the workloads that this cluster controls, leaving only
-		// those of another owner.
+		// noOwned leaves out the workloads that this cluster controls, the
+		// state of a cluster that never rendered one.
 		noOwned bool
 		want    map[string]int32
 	}{
@@ -129,41 +136,38 @@ func TestSuspendExplicitly(t *testing.T) {
 				Name: "other-cluster", Namespace: cluster.Namespace, UID: "uid-2",
 			}}
 
-			objects := []client.Object{
+			owned := []client.Object{
 				&appsv1.StatefulSet{
-					ObjectMeta: workloadMeta(cluster, "my-cluster-zeebe", "zeebe", true),
+					ObjectMeta: workloadMeta(cluster, cluster, "my-cluster-zeebe", "zeebe", true),
 					Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(1))},
 				},
 				// Already at zero: nothing to patch, and no event.
 				&appsv1.Deployment{
-					ObjectMeta: workloadMeta(cluster, "my-cluster-gateway", "gateway", true),
+					ObjectMeta: workloadMeta(cluster, cluster, "my-cluster-gateway", "gateway", true),
 					Spec:       appsv1.DeploymentSpec{Replicas: new(int32(0))},
 				},
 				&appsv1.Deployment{
-					ObjectMeta: workloadMeta(cluster, "my-cluster-operate", "operate", true),
+					ObjectMeta: workloadMeta(cluster, cluster, "my-cluster-operate", "operate", true),
 					Spec:       appsv1.DeploymentSpec{Replicas: new(int32(2))},
 				},
-				// Same managed labels, another owner.
+			}
+			// Both carry the labels of this cluster, so the listing reaches
+			// them. The owner reference rejects the first, and the second has
+			// none: the operator never rendered it.
+			foreign := []client.Object{
 				&appsv1.StatefulSet{
-					ObjectMeta: workloadMeta(other, "other-cluster-zeebe", "zeebe", true),
+					ObjectMeta: workloadMeta(cluster, other, "other-cluster-zeebe", "zeebe", true),
 					Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(1))},
 				},
-				// The labels of this cluster and no controller: the operator
-				// never rendered it, so it is not ours to stop.
 				&appsv1.StatefulSet{
-					ObjectMeta: workloadMeta(cluster, "adopted-zeebe", "zeebe", false),
+					ObjectMeta: workloadMeta(cluster, cluster, "adopted-zeebe", "zeebe", false),
 					Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(1))},
 				},
 			}
-			// The labels of the other owner name its own cluster, so the list
-			// of this cluster must not reach it at all.
-			objects[3].SetLabels(map[string]string{
-				labels.ClusterKey:   labels.OwnerName(cluster.Name),
-				labels.ManagedByKey: labels.ManagedBy,
-			})
 
-			if tc.noOwned {
-				objects = objects[3:]
+			objects := foreign
+			if !tc.noOwned {
+				objects = append(owned, foreign...)
 			}
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
@@ -200,11 +204,11 @@ func TestSuspendExplicitlyJoinsPatchErrors(t *testing.T) {
 		WithScheme(scheme).
 		WithObjects(
 			&appsv1.StatefulSet{
-				ObjectMeta: workloadMeta(cluster, "my-cluster-zeebe", "zeebe", true),
+				ObjectMeta: workloadMeta(cluster, cluster, "my-cluster-zeebe", "zeebe", true),
 				Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(1))},
 			},
 			&appsv1.Deployment{
-				ObjectMeta: workloadMeta(cluster, "my-cluster-operate", "operate", true),
+				ObjectMeta: workloadMeta(cluster, cluster, "my-cluster-operate", "operate", true),
 				Spec:       appsv1.DeploymentSpec{Replicas: new(int32(2))},
 			},
 		).
@@ -255,7 +259,7 @@ func TestSuspendExplicitlyReportsAFailedList(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(&appsv1.StatefulSet{
-			ObjectMeta: workloadMeta(cluster, "my-cluster-zeebe", "zeebe", true),
+			ObjectMeta: workloadMeta(cluster, cluster, "my-cluster-zeebe", "zeebe", true),
 			Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(1))},
 		}).
 		WithInterceptorFuncs(interceptor.Funcs{
