@@ -196,15 +196,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// see followSuspension. Suspended is false unless the pre-check read
 		// the cluster, so a failure before that leaves the workloads alone.
 		var suspendErr error
+		var found bool
 		if res.Input.Suspended {
-			var found bool
 			found, suspendErr = r.followSuspension(ctx, &optimize)
 			if found && suspendErr == nil {
 				failure.Message += fmt.Sprintf(suspendNote, optimize.Spec.ClusterRef.Name)
 			}
 		}
 		conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
-		if suspendErr == nil {
+		// An instance that rendered no workload has no suspension to report,
+		// and recording one would repeat on every retry until its check
+		// passes. A suspension already on the conditions still needs its end
+		// recorded.
+		if suspendErr == nil && (found || suspendedBefore) {
 			r.recordSuspensionChange(&optimize, suspendedBefore, res.Input.Suspended)
 		}
 

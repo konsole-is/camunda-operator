@@ -692,6 +692,21 @@ var _ = Describe("CamundaOptimize controller", func() {
 			}, "3s", interval).Should(Succeed())
 		})
 
+		// An instance whose first check fails rendered nothing, so it has no
+		// suspension to report. Recording one on every retry would fill the
+		// event stream of a resource that changed no workload.
+		It("records no suspension event when it rendered no workload yet", func() {
+			ns := newNamespace()
+			cluster := createCluster(ns, createBinding(ns))
+			setClusterSuspend(cluster, true)
+			optimize := createOptimize(ns, cluster, createAuth(ns, false), "8.9.9")
+
+			expectNotReady(optimize, v1.ReasonMissingSecret)
+			Consistently(func(g Gomega) {
+				g.Expect(clusterSuspendedEvents(optimize)).To(BeEmpty())
+			}, "3s", interval).Should(Succeed())
+		})
+
 		It("follows the suspension of its cluster to zero replicas and back", func() {
 			s := newScenario("8.9.4")
 			webappKey := client.ObjectKey{
