@@ -170,7 +170,7 @@ kubectl get pods -n my-cluster-ns -L camunda.io/storage-claim
 Select the pods that write one backend by the Lease name:
 
 ```bash
-kubectl get pods -n my-cluster-ns -l camunda.io/storage-claim=camunda-storage-4cccf41785289fed5fc192f2a7475c228d8b84fd
+kubectl get pods -n my-cluster-ns -l camunda.io/storage-claim=camunda-storage-8bd62d6c1f48cf988b142a51c9e7010d105e168c
 ```
 
 CAUTION: Do not point `storageRef` of a holder at another backend and back while a second cluster waits for the handover. A holder that returns at that moment can start pods next to the second cluster. The operator then suspends the cluster that lost the claim, but both write the backend until the pods of that cluster stop.
