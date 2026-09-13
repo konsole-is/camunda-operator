@@ -267,6 +267,8 @@ The API server accepts a cluster that names something you did not create yet, so
 
 When one of these checks fails for a running cluster, the workloads stay up. They keep the configuration that the operator applied last, and they keep serving. `status.gateway` and `status.management` keep their endpoints, and the cluster keeps the storage claim of its backend. `Ready` carries the failure reason. The per-process conditions keep the values they last observed until the check passes. A workload that `spec.suspend` stopped is the exception: its condition reads `Suspended`. When the check passes again, the cluster takes the change.
 
+A cluster that `spec.suspend` stopped while the check failed stays at zero until the check passes. Clearing `spec.suspend` alone does not start it, because only a pass of the check restores the replicas. `status.gateway` and `status.management` stay empty until then.
+
 ```yaml
 status:
   conditions:
