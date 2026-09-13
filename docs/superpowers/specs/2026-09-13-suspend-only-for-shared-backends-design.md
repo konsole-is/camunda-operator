@@ -103,8 +103,9 @@ key. Three outcomes:
   controller renders the cluster suspended with `StorageAlreadyAttached`, as it does today.
   The message names the holder and the backend.
 - The blocker is foreign (a Lease with the name and no holder annotations): `Ready` reports
-  `StorageAlreadyAttached` with a message that names the Lease and says to delete it if
-  nothing uses it, as the Database claim does.
+  `InvalidReference` with a message that names the Lease and says to delete it if nothing
+  uses it, as the Database claim does. No cluster holds the backend, so it is not a
+  suspension.
 
 `HolderKeeps` is the default `OwnerExists`: a holder keeps the Lease while a `CamundaCluster`
 exists under the recorded UID. `Take` takes over the Lease of a holder that is gone in the
