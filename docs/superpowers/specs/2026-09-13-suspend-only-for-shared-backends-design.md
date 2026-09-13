@@ -139,7 +139,7 @@ the selector, so a change of backend rolls the pods and the new ones carry the n
 After `Take` succeeds, the cluster lists the pods of its namespace that carry the Lease name
 and do not belong to it. A pod belongs to it when its `camunda.io/cluster-uid` label names
 this cluster's UID. The pod templates of the cluster and of Optimize gain that label; today
-only the Services and claims of a cluster carry it. While any
+only the Web Modeler user Secrets of the management plane carry it. While any
 such pod exists, the step fails with the unwatched `WaitingForHandover` failure it fails with
 today, naming the pods, and the controller looks again on its retry interval. This covers a
 previous holder on the same contract, a previous holder on another contract to the same
