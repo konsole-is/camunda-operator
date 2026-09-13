@@ -619,15 +619,14 @@ func (in *CamundaCluster) SetObservedGeneration(generation int64) {
 
 // suspendedReadyReasons are the Ready reasons under which the operator holds
 // every workload of the cluster at zero: another cluster holds the storage
-// contract, the cluster waits for the pods of the previous holder of a
-// contract it takes over, or a pre-check failed on a dangling reference or a
-// missing Secret. VersionDowngradeRefused is not one of them: a refused
-// cluster keeps running on the version it has.
+// claim of its backend, or the cluster waits for the pods of another cluster
+// to leave that backend. A failed reference check is not one of them: the
+// cluster keeps running on its last configuration. Neither is
+// VersionDowngradeRefused: a refused cluster keeps running on the version
+// it has.
 var suspendedReadyReasons = []string{
 	ReasonStorageAlreadyAttached,
 	ReasonWaitingForHandover,
-	ReasonInvalidReference,
-	ReasonMissingSecret,
 }
 
 // Suspended reports whether the operator scales every workload of the cluster

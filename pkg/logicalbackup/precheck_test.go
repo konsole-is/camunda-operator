@@ -205,22 +205,6 @@ func TestPreCheckFailures(t *testing.T) {
 			message: "suspended",
 		},
 		{
-			name: "a pre-check failure holds the cluster at zero",
-			objects: func() []client.Object {
-				c := cluster()
-				c.Status.Conditions = []metav1.Condition{{
-					Type:               v1.ConditionReady,
-					Status:             metav1.ConditionFalse,
-					Reason:             v1.ReasonInvalidReference,
-					LastTransitionTime: metav1.Now(),
-				}}
-				return []client.Object{c, storage(v1.SecondaryStorageTypeElasticsearch), bucket()}
-			}(),
-			reason:  v1.ReasonClusterSuspended,
-			waiting: true,
-			message: "suspended",
-		},
-		{
 			name:    "the secondary storage does not exist",
 			objects: []client.Object{cluster(), bucket()},
 			reason:  v1.ReasonInvalidReference,
@@ -277,6 +261,26 @@ func TestPreCheckFailures(t *testing.T) {
 			assert.Equal(t, tt.waiting, logicalbackup.Waiting(err))
 		})
 	}
+}
+
+// A cluster whose reference check failed keeps its workloads, so its
+// management API answers and a backup of it runs.
+func TestPreCheckPassesForAClusterOnADanglingReference(t *testing.T) {
+	c := cluster()
+	c.Status.Conditions = []metav1.Condition{{
+		Type:               v1.ConditionReady,
+		Status:             metav1.ConditionFalse,
+		Reason:             v1.ReasonInvalidReference,
+		LastTransitionTime: metav1.Now(),
+	}}
+
+	result, err := logicalbackup.PreCheck(
+		context.Background(),
+		request(newReader(t, c, storage(v1.SecondaryStorageTypeElasticsearch), bucket())),
+	)
+
+	require.NoError(t, err)
+	assert.NotNil(t, result)
 }
 
 // A failure to read the API server is transient, not a state of the backup:
