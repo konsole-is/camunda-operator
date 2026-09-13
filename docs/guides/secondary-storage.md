@@ -22,7 +22,7 @@ If you have no strong reason to pick one, pick Elasticsearch. It is the backend 
 
 A backend belongs to one `CamundaCluster`. Camunda fixes the index names in Elasticsearch and the tables in a database, so two clusters on one backend write each other's data. Give every cluster its own `ElasticsearchCluster` or its own `Database`, each with its own contract. Two clusters can share one PostgreSQL server, each with its own database.
 
-The operator holds one claim per backend address. Two contracts that name one address are one backend. If a second cluster resolves a backend that another cluster holds, the operator suspends the second cluster. Its `Ready` condition reads `False` with reason `StorageAlreadyAttached` and names the holder and the backend. It resumes on its own when the holder releases the backend. The [CamundaCluster reference](../crds/camundacluster.md#secondary-storage) has the rule in full.
+The operator holds one claim per backend address. Two contracts that name one address are one backend. If a second cluster resolves a backend that another cluster holds, the operator suspends the second cluster. Its `Ready` condition reads `False` with reason `StorageAlreadyAttached` and names the holder and the backend. It resumes on its own once the holder releases the backend and the pods of that holder are gone. It reports `WaitingForHandover` while it waits for those pods. The [CamundaCluster reference](../crds/camundacluster.md#secondary-storage) has the rule in full.
 
 ## Elasticsearch
 
