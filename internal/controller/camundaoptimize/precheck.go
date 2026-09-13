@@ -54,6 +54,12 @@ type resolved struct {
 	// ClusterUID is the UID that the exporter patch carries as a
 	// precondition, so an apply cannot put a deleted cluster back.
 	ClusterUID types.UID
+	// AwaitsBackendPods reports that the pod gate of the storage claim parked
+	// the workloads: pods of another cluster still carry the claim of the
+	// backend this instance reads. Nothing tells this controller when those
+	// pods go, so the reconcile that sets this asks for another pass on its
+	// timer.
+	AwaitsBackendPods bool
 	// ExporterStorage is the storage contract with the credentials reference
 	// as the cluster resolves it. The exporter runs in the broker container,
 	// so it reads the copy that the cluster's own controller makes, not the
@@ -196,6 +202,7 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 		}
 		if writing {
 			out.Input.Suspended = true
+			out.AwaitsBackendPods = true
 		}
 	}
 

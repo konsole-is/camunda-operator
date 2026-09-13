@@ -105,6 +105,9 @@ var _ = BeforeSuite(func() {
 			APIReader:      mgr.GetAPIReader(),
 			Scheme:         mgr.GetScheme(),
 			ClaimNamespace: testClaimNamespace,
+			// The handover spec waits for this instance to look at the pods on
+			// the backend again, which happens on this timer.
+			RetryInterval: time.Second,
 		}).SetupWithManager(mgr)
 	})
 

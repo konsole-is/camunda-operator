@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -53,6 +54,10 @@ const controllerName = "camundaoptimize"
 // it a deleted CamundaOptimize would leave the cluster exporting records that
 // nothing reads.
 const Finalizer = "core.camunda.io/camundaoptimize-exporter"
+
+// defaultRetryInterval is how long the controller waits before it looks again
+// at something no watch reports.
+const defaultRetryInterval = 30 * time.Second
 
 // The event vocabulary of this controller.
 const (
@@ -86,6 +91,9 @@ type Reconciler struct {
 	// the backend its importer writes. SetupWithManager refuses an empty
 	// value.
 	ClaimNamespace string
+	// RetryInterval overrides how long the controller waits on something no
+	// watch reports. Zero means defaultRetryInterval; tests shorten it.
+	RetryInterval time.Duration
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used
@@ -228,7 +236,23 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	conditions.Stage(&optimize, conditions.Aggregate(&optimize, built.ready...))
 	r.recordSuspensionChange(&optimize, suspendedBefore, res.Input.Suspended)
 
+	// No watch reports the pods of another cluster on the backend, so the
+	// workloads they park start again on this timer.
+	if res.AwaitsBackendPods && reconcileErr == nil {
+		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+	}
+
 	return ctrl.Result{}, reconcileErr
+}
+
+// retryInterval returns the wait before an unwatched dependency is looked at
+// again.
+func (r *Reconciler) retryInterval() time.Duration {
+	if r.RetryInterval > 0 {
+		return r.RetryInterval
+	}
+
+	return defaultRetryInterval
 }
 
 // optimizeComponents are the components of one CamundaOptimize: all of them

@@ -145,6 +145,10 @@ func TestPreCheckSuspendsWhileAnotherClusterWritesTheBackend(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, claim, out.Input.StorageClaim, "the gate ran")
 			assert.Equal(t, tc.suspended, out.Input.Suspended)
+			assert.Equal(
+				t, tc.suspended, out.AwaitsBackendPods,
+				"nothing wakes this instance when those pods go, so the reconcile requeues on its timer",
+			)
 		})
 	}
 }
