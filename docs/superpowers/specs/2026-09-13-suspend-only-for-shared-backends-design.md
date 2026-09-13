@@ -59,6 +59,11 @@ A workload of the operator stops on its own in exactly two states, both on the s
 | `StorageAlreadyAttached` | Another live cluster holds the Lease of the backend this cluster resolves. This cluster renders every workload at zero. |
 | `WaitingForHandover` | This cluster holds the Lease, and pods of another cluster still carry its label. This cluster renders every workload at zero until they are gone. |
 
+`spec.suspend` is the user's own instruction and stands above this table: a cluster whose
+reference check fails while `spec.suspend` is set still scales every workload it controls
+to zero, directly, because a broken reference is exactly when a user reaches for suspend.
+`Ready` reports the failure and names the suspension in its message.
+
 Every other `Ready` reason leaves the workloads as the last successful reconcile rendered them.
 `InvalidReference`, `MissingSecret`, `VersionMismatch`, `StorageTypeMismatch`,
 `ExporterConflict`, and `VersionDowngradeRefused` are reports, not stops.
