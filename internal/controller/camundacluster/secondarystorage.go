@@ -24,6 +24,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -182,20 +183,58 @@ func (res *resolver) holderPods(ctx context.Context, holder secondarystorageconf
 	return names, nil
 }
 
+// parkFailureSeparator joins the parked reason of a cluster to the pre-check
+// failure that came after it. Cutting the standing message at it keeps the
+// append idempotent, so a failure that stands for many reconciles is carried
+// once and not once per pass.
+const parkFailureSeparator = ". A reference check of this cluster also fails: "
+
 // storageHeldAfterFailure builds the Ready condition of a parked cluster
-// whose pre-check then failed on another reference. The reason stays
-// StorageAlreadyAttached, so CamundaCluster.Suspended keeps reading true and
-// the extensions attached to this cluster stay at zero with it. The message
-// names the failure, because that is what the user has to correct.
+// whose pre-check then failed, and reports whether the cluster is parked at
+// all. The reason stays StorageAlreadyAttached, so CamundaCluster.Suspended
+// keeps reading true and the attachments of this cluster stay at zero with
+// its workloads. The message names the failure, because that is what the user
+// has to correct.
+//
+// A holder on the input is the plain case. Without one the claim either took
+// the backend for this cluster, which ends the park, or it never ran because
+// the chain failed before it. The standing Ready condition is the only memory
+// of the park in that second case, so its reason decides and its message is
+// kept. Such a park ends when the chain resolves again and the claim decides
+// anew.
 func storageHeldAfterFailure(
 	cluster *v1.CamundaCluster,
-	holder *components.StorageHolder,
+	storage components.Storage,
 	failure *conditions.PreCheckFailure,
-) metav1.Condition {
-	condition := storageHeld(cluster, holder, nil)
-	condition.Message += ". A reference check of this cluster also fails: " + failure.Message
+) (metav1.Condition, bool) {
+	if storage.Holder == nil {
+		standing := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
+		if storageResolved(storage) || standing == nil ||
+			standing.Reason != v1.ReasonStorageAlreadyAttached {
+			return metav1.Condition{}, false
+		}
 
-	return condition
+		base, _, _ := strings.Cut(standing.Message, parkFailureSeparator)
+
+		return conditions.Ready(
+			metav1.ConditionFalse,
+			v1.ReasonStorageAlreadyAttached,
+			base+parkFailureSeparator+failure.Message,
+			cluster.Generation,
+		), true
+	}
+
+	condition := storageHeld(cluster, storage.Holder, nil)
+	condition.Message += parkFailureSeparator + failure.Message
+
+	return condition, true
+}
+
+// storageResolved reports whether the chain resolved to a backend. Each
+// resolve function sets its block last, after every check it makes, so an
+// unset block means the pre-check failed before the claim ran.
+func storageResolved(storage components.Storage) bool {
+	return storage.Elasticsearch != nil || storage.RDBMS != nil
 }
 
 // storageHeld builds the Ready condition of a cluster whose storage contract
