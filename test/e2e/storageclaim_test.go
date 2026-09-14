@@ -29,6 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8slabels "k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
@@ -89,9 +90,12 @@ func itHandsTheStorageBackendOver() {
 		waiting.Name = scWaiting
 		brokerOfHolder := components.WorkloadName(holder, components.ComponentZeebe)
 		brokerOfWaiting := components.WorkloadName(waiting, components.ComponentZeebe)
+		gatewayOfWaiting := components.WorkloadName(waiting, components.ComponentGateway)
 
 		// The specs that follow suspend the Elasticsearch these clusters
-		// write, so neither of them may outlive this one.
+		// write, so neither of them may outlive this one. A cluster is gone
+		// before its pods are: the garbage collector removes the workloads
+		// after the finalizer cleared, so the cleanup waits for the pods too.
 		DeferCleanup(func() {
 			for _, name := range []string{scHolder, scWaiting} {
 				_, _ = utils.Kubectl(
@@ -101,6 +105,10 @@ func itHandsTheStorageBackendOver() {
 			Eventually(func(g Gomega) {
 				expectGone(g, ccResource, scHolder, esNamespace)
 				expectGone(g, ccResource, scWaiting, esNamespace)
+
+				var pods corev1.PodList
+				g.Expect(utils.List("pods", esNamespace, ownPodsSelector(scHolder, scWaiting), &pods)).To(Succeed())
+				g.Expect(pods.Items).To(BeEmpty(), "a pod of a deleted cluster still runs")
 			}, 5*time.Minute, 5*time.Second).Should(Succeed())
 		})
 
@@ -129,6 +137,7 @@ func itHandsTheStorageBackendOver() {
 		Consistently(func(g Gomega) {
 			expectReadyFailure(g, scWaiting, v1.ReasonStorageAlreadyAttached)
 			expectScaledToZero(g, "statefulset", brokerOfWaiting, esNamespace)
+			expectScaledToZero(g, "deployment", gatewayOfWaiting, esNamespace)
 			expectReady(g, ccResource, scHolder, esNamespace, v1.ReasonHealthy)
 		}, scHoldInterval, scHoldSample).Should(Succeed())
 
@@ -142,6 +151,7 @@ func itHandsTheStorageBackendOver() {
 				g, scWaiting, v1.ReasonWaitingForHandover, esNamespace+"/"+brokerOfHolder, backend,
 			)
 			expectScaledToZero(g, "statefulset", brokerOfWaiting, esNamespace)
+			expectScaledToZero(g, "deployment", gatewayOfWaiting, esNamespace)
 		}, scHandoverTimeout, time.Second).Should(Succeed())
 
 		By("starting the second cluster on the backend it took over")
@@ -209,16 +219,27 @@ func expectReadyFailure(g Gomega, name, reason string, parts ...string) {
 }
 
 // expectBrokerReplicas asserts that the broker StatefulSet name of the
-// ElasticsearchCluster flow asks for replicas and runs them. It is the read of
-// a cluster that keeps its workloads, as expectScaledToZero is the read of one
-// that stopped. It is written for Consistently.
+// ElasticsearchCluster flow asks for replicas and serves them. It reads the
+// ready count, because the pod count also counts a pod that is pending or
+// terminating. It is the read of a cluster that keeps its workloads, as
+// expectScaledToZero is the read of one that stopped. It is written for
+// Consistently.
 func expectBrokerReplicas(g Gomega, name string, replicas int32) {
 	var broker appsv1.StatefulSet
 	g.Expect(utils.Get("statefulset", name, esNamespace, &broker)).To(Succeed())
 	g.Expect(broker.Spec.Replicas).To(
 		HaveValue(Equal(replicas)), "statefulset %q does not ask for %d replicas", name, replicas,
 	)
-	g.Expect(broker.Status.Replicas).To(
-		Equal(replicas), "statefulset %q does not run %d pods", name, replicas,
+	g.Expect(broker.Status.ReadyReplicas).To(
+		Equal(replicas), "statefulset %q does not serve %d ready pods", name, replicas,
 	)
+}
+
+// ownPodsSelector selects the pods that the named CamundaClusters own, by the
+// cluster label every process pod carries.
+func ownPodsSelector(clusters ...string) string {
+	requirement, err := k8slabels.NewRequirement(labels.ClusterKey, selection.In, clusters)
+	Expect(err).NotTo(HaveOccurred())
+
+	return k8slabels.NewSelector().Add(*requirement).String()
 }
