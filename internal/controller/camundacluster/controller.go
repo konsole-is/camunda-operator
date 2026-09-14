@@ -163,9 +163,11 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	stop, err := r.settleClaimLifecycle(ctx, &cluster)
-	if stop || err != nil {
-		return ctrl.Result{}, err
+	// A deleted cluster gives its backends back, paused or not: its workloads
+	// go with the owner references, and a claim it kept would park every later
+	// cluster on that backend.
+	if !cluster.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, r.finalizeStorageClaims(ctx, &cluster)
 	}
 
 	if cluster.Spec.Pause {
@@ -178,6 +180,14 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			"Reconcile paused by spec.pause",
 		)
 		return ctrl.Result{}, nil
+	}
+
+	// The finalizer must exist before the first claim, which the pre-check
+	// takes below. A paused cluster is written by nothing, so it takes no
+	// claim either.
+	stop, err := r.addClaimFinalizer(ctx, &cluster)
+	if stop || err != nil {
+		return ctrl.Result{}, err
 	}
 
 	rec := component.ReconcileContext{

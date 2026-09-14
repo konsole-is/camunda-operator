@@ -179,23 +179,15 @@ func (res *resolver) refuseUnderOtherPods(ctx context.Context, claim, key string
 	return conditions.NewUnwatchedFailure(v1.ReasonWaitingForHandover, handoverMessage(key, pods))
 }
 
-// settleClaimLifecycle does the bookkeeping that the storage claim needs around
-// the lifecycle of the cluster, and reports whether the reconcile must stop. A
-// deleted cluster gives every backend back and loses the finalizer, and it
-// publishes no status: its workloads go with the owner references.
-//
-// A live cluster carries the finalizer before it takes its first claim. A
-// deletion between the claim and the next write would otherwise leave a backend
-// claimed by a cluster that is gone, and every later claimant of it waiting for
-// a holder that no longer exists.
-func (r *CamundaClusterReconciler) settleClaimLifecycle(
+// addClaimFinalizer writes the finalizer that keeps a deleted cluster alive
+// until it gives its backends back, and reports whether the reconcile must
+// stop. A deletion between the claim and the next write would otherwise leave a
+// backend claimed by a cluster that is gone, and every later claimant of it
+// waiting for a holder that no longer exists.
+func (r *CamundaClusterReconciler) addClaimFinalizer(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 ) (bool, error) {
-	if !cluster.DeletionTimestamp.IsZero() {
-		return true, r.finalizeStorageClaims(ctx, cluster)
-	}
-
 	if !controllerutil.AddFinalizer(cluster, StorageClaimFinalizer) {
 		return false, nil
 	}
