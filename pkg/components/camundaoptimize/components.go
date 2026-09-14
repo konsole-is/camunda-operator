@@ -61,6 +61,14 @@ var conditionTypes = map[string]string{
 	ComponentImporter: v1.ConditionImporterReady,
 }
 
+// ConditionTypeFor returns the condition that the given component reports on the
+// CamundaOptimize, and whether that component reports one at all.
+func ConditionTypeFor(comp string) (string, bool) {
+	conditionType, ok := conditionTypes[comp]
+
+	return conditionType, ok
+}
+
 // Build returns one component per Optimize workload, in reconcile order: the
 // webapp, then the importer. Each carries a Deployment, its Service, and,
 // where the Kubernetes cluster serves the kind and the spec asks for it, a

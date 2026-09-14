@@ -155,23 +155,33 @@ A callback URL that does not match is a failed sign-in. It does not change the s
 
 The major and the minor must match the effective version of the cluster. Camunda supports Optimize only on a matching minor. A difference reports `VersionMismatch`, and the message names both versions, so it tells you which minor to use.
 
-The effective version of the cluster is `spec.version` of the `CamundaCluster`, or the value its `presetRef` supplies when the cluster sets none. An upgrade of the cluster to a new minor therefore puts Optimize into `VersionMismatch` until you raise `spec.version` here as well. The operator scales both workloads to zero while the versions disagree, see [Suspension](#suspension). An importer of another minor must not write analytics from records that it does not support. Both start again when you set a version on the minor of the cluster.
+The effective version of the cluster is `spec.version` of the `CamundaCluster`, or the value its `presetRef` supplies when the cluster sets none. An upgrade of the cluster to a new minor therefore puts Optimize into `VersionMismatch` until you raise `spec.version` here as well. Both workloads keep running on the previous minor through that window. When you raise `spec.version` to the minor of the cluster, the operator rolls them to the new one.
 
 ## Suspension
 
-The importer reads Elasticsearch directly. It does not go through the orchestration cluster, so it keeps reading whether or not that cluster runs.
+The importer connects to Elasticsearch directly. It does not go through the orchestration cluster, so nothing stops it when that cluster stops. The operator stops it instead, with the cluster.
 
-`spec.suspend` on the referenced `CamundaCluster` therefore reaches the Optimize workloads too. The operator scales the webapp and the importer to zero with the workloads of the cluster, and starts them again when you clear the field. `suspend` means "stop everything attached to this cluster", not "stop the workloads of this cluster". The operator also suspends a cluster on its own, for example while another cluster holds its storage contract or while a reference of the cluster does not resolve, and the Optimize workloads follow every suspension the same way.
+`spec.suspend` on the referenced `CamundaCluster` therefore reaches the Optimize workloads too. The operator scales the webapp and the importer to zero with the workloads of the cluster, and starts them again when you clear the field and the checks of this instance pass. `suspend` means "stop everything attached to this cluster", not "stop the workloads of this cluster". The operator also suspends a cluster on its own, in two states. One is another cluster holding the storage claim of its backend. The other is a wait for the pods of another cluster to leave that backend. The Optimize workloads follow both.
 
 The workloads also stay at zero while the cluster does not hold the storage claim of its backend, see [CamundaCluster](camundacluster.md#secondary-storage). A cluster that is parked, or that waits for a handover, never has an importer running beside it. An instance that already runs records the event `StorageClaimAwaited` when this wait scales its workloads to zero. The cluster itself can still report `Ready` as `True` in that moment. An instance that starts parked has no workload to scale, so it reports the wait on `Ready` alone.
 
-`Ready` reads `True` with reason `Suspended` while the suspension holds. A cluster with `spec.suspend` reports the same. A cluster that another cluster parked reports `Ready` `False` with reason `StorageAlreadyAttached` instead, see [CamundaCluster](camundacluster.md#secondary-storage). Zero replicas is the state you asked for, so the Optimize condition is not an error. The condition does not name the cluster, but the events do: `kubectl describe camundaoptimize <name>` shows `ClusterSuspended` when the workloads go to zero and `ClusterResumed` when they start again.
+`Ready` reads `True` with reason `Suspended` while either wait holds. A cluster with `spec.suspend` reports the same. A cluster that another cluster parked reports `Ready` `False` with reason `StorageAlreadyAttached` instead, see [CamundaCluster](camundacluster.md#secondary-storage). Zero replicas is the state you asked for, so the Optimize condition is not an error.
+
+The condition does not name the cluster, but the events do: `kubectl describe camundaoptimize <name>` shows `ClusterSuspended` or `StorageClaimAwaited` when the workloads go to zero, and `ClusterResumed` when they start again. Each marks the decision. `WebappReady` and `ImporterReady` say whether the workloads have followed it yet.
 
 The operator keeps the exporter settings on the cluster while the suspension holds. A suspension is not a detachment, and the brokers are at zero, so nothing exports. Only deletion withdraws the settings.
 
-A failed check of a reference stops a running instance the same way. The operator scales the webapp and the importer to zero and keeps them. The importer reads Elasticsearch on its own, so a reference that no longer resolves must not leave it writing. `Ready` keeps the failure reason, and the message says that the workloads are at zero. `WebappReady` and `ImporterReady` report `Suspending` while the pods stop, then `Suspended`. The operator records the event `WorkloadsSuspended` for each Deployment it scales. When the check passes again, the workloads start on their own.
+A failed check of a reference does not stop a running instance. `Ready` carries the failure reason, and what happens to the workloads depends on the state of the cluster:
 
-An instance whose first check fails has no workloads to stop. It reports the failure on `Ready` alone, and it creates the workloads when the check passes.
+| State | Workloads |
+| --- | --- |
+| A running instance on a running cluster | They keep the configuration that the operator applied last. |
+| An instance whose first check fails | It has none yet. It creates them when the check passes. |
+| The cluster is suspended | Both go to zero, because the importer reads Elasticsearch on its own. The message of `Ready` names the suspension. |
+| The cluster resumed while the check still fails | The ones that stopped stay at zero and return to their configured replica counts when the check passes. Their conditions read `Suspended` with the message `Kept at zero until the reference check passes`. `Ready` carries the failure message, and adds `The Optimize workloads that stopped stay at zero until the reference check passes` when every stop succeeded. A workload whose stop the API server refuses keeps running. A condition of it that still claimed a suspension is removed, and the render stages it again. That leaves the note off `Ready` and records the Warning event `WorkloadStopRefused`, which carries the refusal. |
+| The cluster is gone, or another instance holds it | The operator removes them. Their pods hold the backend that cluster wrote, against the next cluster that takes it over. It builds them again when the cluster comes back, or when this instance regains the attachment. |
+
+The importer never starts while the cluster does not hold the storage claim of its backend. Another cluster writes that backend in this state, and two importers on one set of analytics indices overwrite each other.
 
 ```yaml
 status:
@@ -179,13 +189,10 @@ status:
     - type: Ready
       status: "False"
       reason: InvalidReference
-      message: >-
-        SecondaryStorageConfig "my-cluster-ns/my-storage-config" not found. The
-        Optimize workloads are scaled to zero until the pre-check passes
+      message: SecondaryStorageConfig "my-cluster-ns/my-storage-config" not found
     - type: ImporterReady
       status: "True"
-      reason: Suspended
-      message: Scaled to zero while the pre-check of the Optimize instance fails
+      reason: Healthy
 ```
 
 ## Stopping the import
@@ -235,15 +242,15 @@ A `CamundaOptimize` that never held the attachment removes nothing from the clus
 | `WebappReady` | `Healthy` | Every webapp replica is ready. | Nothing. |
 | `ImporterReady` | `Healthy` | The importer replica is ready, or `spec.importer.replicas` is `0`. | Nothing. |
 | `WebappReady` / `ImporterReady` | `Creating` / `Updating` / `Scaling` | The Deployment rolls out or scales. | Wait. |
-| `WebappReady` / `ImporterReady` | `Suspending` / `Suspended` | The referenced cluster is suspended, or a check of this resource failed, so the Deployment stops or is at zero. | Nothing. See [Suspension](#suspension). |
+| `WebappReady` / `ImporterReady` | `Suspending` / `Suspended` | The referenced cluster is suspended, so the Deployment stops or is at zero. | Nothing. See [Suspension](#suspension). |
 | `WebappReady` / `ImporterReady` | `Failing` | The Deployment has replicas that do not become ready. | Read the pods of the named Deployment. |
 | `WebappReady` / `ImporterReady` | `Degraded` / `Down` | Some or no replicas are ready after the grace period. | Read the pods and events of the named Deployment. |
 | `Ready` | `Healthy` | Every condition that takes part is healthy. | Nothing. |
 | `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Degraded` / `Down` | The reason of the governing condition. The message names it. | Read the row of that condition. |
-| `Ready` | `Suspended` | The referenced cluster is suspended and both workloads are at zero. `spec.suspend` of the cluster is `true`, or the operator suspended the cluster itself, for example while another cluster holds its storage contract. `Ready` is `True`. | Nothing. Optimize starts again when the cluster does. |
+| `Ready` | `Suspended` | Both workloads are at zero, because the referenced cluster is not writing its backend. `spec.suspend` of the cluster is `true`, the operator suspended the cluster itself, or the cluster does not hold the storage claim of its backend yet. `Ready` is `True`. | Nothing. Optimize starts again when the cluster does, once its own checks pass. |
 | `Ready` | `ClusterAlreadyAttached` | Another `CamundaOptimize` is already attached to the referenced cluster. | Delete one of the two. The message names the one that holds the cluster. |
 | `Ready` | `WaitingForHandover` | This resource now holds the cluster, and the importer Deployment of the previous one still exists. | Wait. The message names the Deployment. The state clears on its own. |
-| `Ready` | `InvalidReference` | The `clusterRef`, the `managementAuthRef`, or the `storageRef` chain of the cluster does not resolve. It also reports a referenced cluster whose effective spec is invalid, such as a version below `8.9.0`. | Read the message. Create the missing resource, or correct the field it names. |
+| `Ready` | `InvalidReference` | The `clusterRef`, the `managementAuthRef`, or the `storageRef` chain of the cluster does not resolve. It also reports a referenced cluster whose effective spec is invalid, such as a version below `8.9.0`. When the referenced `CamundaCluster` no longer exists, the operator removes the workloads of this `CamundaOptimize`, and builds them again when that cluster returns. | Read the message. Create the missing resource, or correct the field it names. |
 | `Ready` | `StorageTypeMismatch` | The `storageRef` of the cluster resolves to a `SecondaryStorageConfig` of type `rdbms`. Optimize reads Elasticsearch only. | Attach Optimize to a cluster on Elasticsearch secondary storage. |
 | `Ready` | `VersionMismatch` | The major and the minor of `spec.version` differ from those of the effective version of the cluster. | Set `spec.version` to a release on the minor of the cluster. |
 | `Ready` | `MissingSecret` | A referenced Secret does not exist or lacks a key. | Create the Secret with the named key. |
@@ -253,7 +260,7 @@ A `CamundaOptimize` that never held the attachment removes nothing from the clus
 
 `WebappReady` and `ImporterReady` always take part. `MirroredSecretsReady` takes part when a referenced Secret lives in another namespace, and reports `Disabled` when none does.
 
-Every reason above that reports a failed check scales both workloads to zero and keeps them, see [Suspension](#suspension). `ClusterAlreadyAttached` is the one exception. The workloads then belong to the resource that holds the cluster, so this one removes its own.
+What a failed check does to the workloads depends on the state of the cluster. [Suspension](#suspension) has the table.
 
 `status.observedGeneration` is the last generation the operator reconciled.
 

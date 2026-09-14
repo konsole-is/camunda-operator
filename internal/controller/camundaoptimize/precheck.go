@@ -18,6 +18,7 @@ package camundaoptimize
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -36,6 +37,14 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
+
+// errClusterGone reports that the CamundaCluster of spec.clusterRef does not
+// exist. It is the one dangling reference that releases the workloads instead
+// of keeping them: their pods carry the storage claim of the backend the
+// cluster wrote, and the handover gate of the next cluster on that backend
+// counts them. Nothing owns them once the cluster is gone, and the render
+// builds them again if it comes back.
+var errClusterGone = errors.New("the referenced CamundaCluster does not exist")
 
 // mirroredSecrets are the copies of the referenced Secrets that live outside
 // the CamundaOptimize namespace: the copied keys and their data, by purpose.
@@ -85,13 +94,13 @@ type resolver struct {
 }
 
 // preCheck resolves every reference of optimize, in the documented order: the
-// attachment to the cluster, the referenced cluster, its secondary storage,
-// the version gate, the Management Identity contract and its client Secret,
-// the platform config of the cluster, the Elasticsearch credentials, and the
-// exporter settings already on the cluster. A Secret outside the
-// CamundaOptimize namespace is copied into the returned mirrors, and the input
-// references the copy, so the renderer only ever names Secrets of that
-// namespace.
+// referenced cluster, the attachment to it, its secondary storage, the claim of
+// the backend, the version gate, the Management Identity contract and its
+// client Secret, the platform config of the cluster, the Elasticsearch
+// credentials, and the exporter settings already on the cluster. A Secret
+// outside the CamundaOptimize namespace is copied into the returned mirrors,
+// and the input references the copy, so the renderer only ever names Secrets of
+// that namespace.
 //
 // A failed check returns a *conditions.PreCheckFailure: ClusterAlreadyAttached
 // when another CamundaOptimize holds the cluster, InvalidReference for a
@@ -111,6 +120,27 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 		Input:      components.Input{Optimize: optimize, ClusterName: optimize.Spec.ClusterRef.Name},
 		ClusterKey: client.ObjectKey{Namespace: optimize.Namespace, Name: optimize.Spec.ClusterRef.Name},
 	}
+
+	// The cluster is read first, before the checks that can fail on the
+	// attachment. Neither of those needs it, and a failure at one of them still
+	// has to follow a suspended cluster: a logical restore of Elasticsearch
+	// suspends the cluster to stop every writer, and an importer left running
+	// through a handover writes analytics from half-restored indices.
+	var cluster v1.CamundaCluster
+	if err := res.exists(ctx, out.ClusterKey, &cluster); err != nil {
+		var failure *conditions.PreCheckFailure
+		if errors.As(err, &failure) {
+			return out, fmt.Errorf("%w: %w", errClusterGone, err)
+		}
+
+		return out, err
+	}
+	out.ClusterUID = cluster.UID
+	// The Optimize workloads follow the suspension of the cluster they attach
+	// to, by spec.suspend or by the storage claim. spec.suspend is the
+	// cluster's own field: MergeSpec carries it through unchanged, so no
+	// preset can set it.
+	out.Input.Suspended = cluster.Suspended()
 
 	holder, err := r.attachmentHolder(ctx, optimize)
 	if err != nil {
@@ -145,17 +175,6 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 			),
 		}
 	}
-
-	var cluster v1.CamundaCluster
-	if err := res.exists(ctx, out.ClusterKey, &cluster); err != nil {
-		return out, err
-	}
-	out.ClusterUID = cluster.UID
-	// The Optimize workloads follow the suspension of the cluster they attach
-	// to. spec.suspend is the cluster's own field: MergeSpec carries it
-	// through unchanged, so no preset can set it. The storage claim of the
-	// cluster is the second half of this decision, below.
-	out.Input.Suspended = cluster.Suspended()
 
 	binding, err := res.resolveStorage(ctx, &cluster)
 	if err != nil {

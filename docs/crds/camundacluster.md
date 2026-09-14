@@ -264,7 +264,29 @@ A change to the cluster, to a referenced resource, or to a referenced Secret rol
 
 The API server accepts a cluster that names something you did not create yet, so you can create the resources in any order. A missing `CamundaPlatformConfig`, `CamundaClusterPreset`, `CamundaRelease`, `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` sets `Ready` to `False` with reason `InvalidReference`. A missing Secret or key sets reason `MissingSecret`.
 
-When any of these checks fails for a running cluster, the cluster is suspended: every workload scales to zero and the volumes stay. Pods that keep running can write a backend that the cluster no longer resolves. `Ready` keeps the failure reason, and the message says what happened to the workloads. The per-process conditions report `Suspending` while the pods stop, then `Suspended`. The cluster records the event `WorkloadsSuspended` for each workload it scales, and `status.gateway` and `status.management` are cleared. When the check passes again, the cluster resumes on its own.
+When one of these checks fails for a running cluster, the workloads stay up. They keep the configuration that the operator applied last, and they keep serving. `status.gateway` and `status.management` keep their endpoints, and the cluster keeps the storage claim of its backend. `Ready` carries the failure reason. The per-process conditions keep the values they last observed until the check passes. A workload that a suspension stopped is the exception: its condition reports that suspension. When the check passes again, the cluster takes the change.
+
+A suspension that stopped the workloads while the check failed holds them at zero until the check passes. `spec.suspend` is one cause, and an operator suspension is the other. A cluster that reported `StorageAlreadyAttached` or `WaitingForHandover` holds those workloads at zero when that state ends while a check still fails. Clearing `spec.suspend` does not start them, and neither does the end of an operator suspension. When the check passes, the workloads return to the replica counts of the effective spec. A process you configured at zero stays at zero.
+
+The condition of each stopped workload reads `Suspending` while its pods drain, then `Suspended` with the message `Kept at zero until the reference check passes`. `Ready` carries the failure message, and adds `The workloads that stopped stay at zero until the reference check passes` when every stop succeeded. `status.gateway` and `status.management` stay empty while the workload that serves them is at zero. A workload whose stop the API server refuses keeps running, and the operator tries again on the next pass. A condition of it that still claimed a suspension is removed, and the render stages it again; every other condition of it stays. That leaves the note off `Ready` and records the Warning event `WorkloadStopRefused`, which names the workload and carries the refusal. The endpoints of a workload that keeps running stay published.
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: MissingSecret
+      message: Secret my-cluster-ns/my-storage-credentials not found
+    - type: ZeebeReady
+      status: "True"
+      reason: Healthy
+```
+
+## Suspend and pause
+
+`spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` is empty. When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
+
+`suspend` stops the workloads while a reference check fails as well. You do not have to correct the reference first. `Ready` then reports the failure, and the message says that the workloads are at zero because you set the field.
 
 ```yaml
 status:
@@ -274,20 +296,12 @@ status:
       reason: MissingSecret
       message: >-
         Secret my-cluster-ns/my-storage-credentials not found. The workloads
-        are scaled to zero, with the volumes kept, until the pre-check passes
-    - type: ZeebeReady
-      status: "True"
-      reason: Suspended
-      message: Scaled to zero while the pre-check of the cluster fails
+        are scaled to zero because spec.suspend is set
 ```
 
-## Suspend and pause
+The operator also suspends a cluster on its own, and only to keep two clusters off one backend. `spec.suspend` stays yours. A cluster whose backend another cluster holds reports `StorageAlreadyAttached`, and a cluster that waits for the pods of another cluster on its backend reports `WaitingForHandover` (see [Secondary storage](#secondary-storage)). These are the only two. Each of them ends on its own when its cause is gone. Every other failure leaves the workloads up.
 
-`spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` is empty. When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
-
-The operator also suspends a cluster on its own. `spec.suspend` stays yours. A cluster whose backend another cluster holds reports `StorageAlreadyAttached`, a cluster that waits for the pods of another cluster on its backend reports `WaitingForHandover` (see [Secondary storage](#secondary-storage)), and a cluster whose reference check fails reports `InvalidReference` or `MissingSecret` (see [Changes and referenced Secrets](#changes-and-referenced-secrets)). Each of these suspensions ends on its own when its cause is gone.
-
-`suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it, and starts them again when you clear the field. The Optimize importer reads Elasticsearch directly. Without this, it keeps importing while the cluster is down. Every suspension by the operator reaches them the same way: a `CamundaOptimize` attached to a suspended cluster scales to zero, and a backup of it waits with reason `ClusterSuspended`.
+`suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it, and starts them again when you clear the field and its own reference checks pass. The Optimize importer reads Elasticsearch directly. Without this, it keeps importing while the cluster is down. Every suspension by the operator reaches them the same way: a `CamundaOptimize` attached to a suspended cluster scales to zero, and a backup of it waits with reason `ClusterSuspended`.
 
 `spec.pause: true` freezes the cluster. The operator changes nothing that it manages for this cluster, and it writes no status. It records a `Paused` event each time it looks at the resource. Set `pause` back to `false`, and the operator continues.
 
@@ -318,9 +332,9 @@ Deleting the cluster removes every resource that the operator created for it, an
 | `Ready` | `Degraded` / `Down` | Some or no replicas of a component are ready after the grace period. | Read the pods and events of the named component. |
 | `Ready` | `Suspended` | `spec.suspend` is true and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to resume. |
 | `Ready` | `StorageAlreadyAttached` | Another `CamundaCluster` holds the storage claim of the backend that `storageRef` resolves to. This cluster is suspended. | Give this cluster a backend of its own, or delete the holder. The message names both, and the last apply error of the workloads when one occurred. |
-| `Ready` | `WaitingForHandover` | Pods of another cluster still write the backend that `storageRef` resolves to. This cluster holds the storage claim of it already, or waits to take it. Every workload of it is at zero, and the volumes are kept. | Wait. The message names the backend and those pods. The state clears on its own. If the pods never go, delete them. |
-| `Ready` | `InvalidReference` | A referenced resource does not exist, a ServiceAccount with `create: false` is absent, two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. A Lease of the operator namespace that this operator did not write reads the same way, and it blocks the storage claim of the backend. A running cluster is scaled to zero, with the volumes kept. | Read the message. Create the missing resource, correct the field it names, or delete the named Lease once nothing else uses it. The cluster resumes on its own. |
-| `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. A running cluster is scaled to zero, with the volumes kept. | Create the Secret with the named key. The cluster resumes on its own. |
+| `Ready` | `WaitingForHandover` | Pods of another cluster still write the backend that `storageRef` resolves to. This cluster holds the storage claim of it already, or waits to take it. The operator renders every workload of it at zero and keeps the volumes. | Wait. The message names the backend and those pods, and the last apply error of the workloads when one occurred. The state clears on its own. If the pods never go, delete them. |
+| `Ready` | `InvalidReference` | A referenced resource does not exist, a ServiceAccount with `create: false` is absent, two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. A Lease of the operator namespace that this operator did not write reads the same way, and it blocks the storage claim of the backend. A running cluster keeps its workloads. | Read the message. Create the missing resource, correct the field it names, or delete the named Lease once nothing else uses it. The cluster takes the change on its own. |
+| `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. A running cluster keeps its workloads. | Create the Secret with the named key. The cluster takes the change on its own. |
 | `Ready` | `VersionDowngradeRefused` | The effective version is below the version the brokers run, and no annotation sanctions the move. The operator applies nothing, and the brokers keep the version they have. | Read [Version](#version). Set the version forward again, or sanction the downgrade. |
 
 `status.management` publishes the address of the management API, so a backup kind calls it without knowing which process hosts it. It is empty while the cluster is suspended.

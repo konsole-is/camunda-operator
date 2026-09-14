@@ -429,3 +429,22 @@ func previewedDeployment(t *testing.T, comp *component.Component) *appsv1.Deploy
 
 	return nil
 }
+
+// TestConditionTypeFor pins the condition that each Optimize workload reports, so
+// a caller that acts on one outside the render reads it from the component label.
+func TestConditionTypeFor(t *testing.T) {
+	t.Parallel()
+
+	want := map[string]string{
+		ComponentWebapp:   v1.ConditionWebappReady,
+		ComponentImporter: v1.ConditionImporterReady,
+	}
+	for comp, conditionType := range want {
+		got, ok := ConditionTypeFor(comp)
+		assert.True(t, ok, comp)
+		assert.Equal(t, conditionType, got, comp)
+	}
+
+	_, ok := ConditionTypeFor("no-such-component")
+	assert.False(t, ok)
+}

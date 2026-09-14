@@ -18,6 +18,7 @@ package camundacluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -50,9 +51,10 @@ const StorageClaimFinalizer = "core.camunda.io/storage-claim"
 // first CamundaCluster that takes the claim holds it while it exists; a
 // holder that is gone is taken over. A live holder lands on
 // in.Storage.Holder and the controller renders this cluster suspended. A
-// cluster that holds the claim while pods of other clusters still carry it
-// lands on in.Storage.Handover, and the controller renders it suspended too:
-// those pods write the backend. It needs in.Storage from resolveStorage.
+// cluster whose backend pods of other clusters still carry lands on
+// in.Storage.Handover, and the controller renders it suspended too: those pods
+// write the backend. That holds whether this cluster took the claim or waits
+// under those pods to take it. It needs in.Storage from resolveStorage.
 //
 // It takes claims and never gives one back. A backend that this cluster left
 // goes back after the render that stops writing it was applied, see
@@ -77,15 +79,33 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 	// A suspended cluster is no claimant to order. It renders at zero and
 	// writes nothing beside those pods, so it takes the backend and holds it
 	// for when it resumes, and its Ready keeps the reason the user asked for.
+	var waitingFor []string
 	blocker, err := res.claims.TakeUnclaimed(ctx, res.cluster, key, func(ctx context.Context) error {
 		if in.Effective.Suspend {
 			return nil
 		}
 
-		return res.refuseUnderOtherPods(ctx, in.Storage.Claim, key)
+		waitingFor, err = res.podsUnderTheBackend(ctx, in.Storage.Claim)
+		if err != nil {
+			return err
+		}
+		if len(waitingFor) > 0 {
+			return errPodsOnBackend
+		}
+
+		return nil
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, errPodsOnBackend) {
 		return err
+	}
+	// The wait is the one a cluster that holds the claim reports, and it reads
+	// the same way: the cluster renders at zero and Ready says which pods it
+	// waits for. A cluster that kept running here would write the backend
+	// beside them, which is what the wait exists to prevent.
+	if len(waitingFor) > 0 {
+		in.Storage.Handover = &components.StorageHandover{Backend: key, Pods: waitingFor}
+
+		return nil
 	}
 	if blocker != nil {
 		if blocker.Foreign() {
@@ -171,23 +191,17 @@ func handoverPossible(suspended, heldAtStart, ownPodOnClaim bool) bool {
 	return !heldAtStart || !ownPodOnClaim
 }
 
-// refuseUnderOtherPods stops this cluster from taking a backend that pods of
-// another cluster still write. Its own pods are no reason to wait: a holder
-// whose Lease was deleted by hand meets them, writes the Lease again, and keeps
-// running.
-//
-// The failure is the one the handover gate reports, and it is unwatched for the
-// same reason: nothing tells this cluster when those pods go.
-func (res *resolver) refuseUnderOtherPods(ctx context.Context, claim, key string) error {
-	pods, err := components.OtherPodsOnClaim(ctx, res.reader, claim, res.cluster.UID)
-	if err != nil {
-		return err
-	}
-	if len(pods) == 0 {
-		return nil
-	}
+// errPodsOnBackend refuses the claim on a free backend from inside the rule of
+// TakeUnclaimed, which writes no Lease when the rule returns an error. It never
+// leaves claimStorage: the pods it stands for become the handover that the
+// caller reports.
+var errPodsOnBackend = errors.New("pods of another cluster write the backend")
 
-	return conditions.NewUnwatchedFailure(v1.ReasonWaitingForHandover, handoverMessage(key, pods))
+// podsUnderTheBackend returns the pods of other clusters that still write the
+// backend of claim. Its own pods are no reason to wait: a holder whose Lease was
+// deleted by hand meets them, writes the Lease again, and keeps running.
+func (res *resolver) podsUnderTheBackend(ctx context.Context, claim string) ([]string, error) {
+	return components.OtherPodsOnClaim(ctx, res.reader, claim, res.cluster.UID)
 }
 
 // addClaimFinalizer writes the finalizer that keeps a deleted cluster alive

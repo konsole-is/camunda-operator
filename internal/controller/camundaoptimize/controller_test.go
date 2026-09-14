@@ -29,6 +29,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -39,6 +40,7 @@ import (
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 )
 
 // userManager is the field manager of the entry that a user owns on
@@ -247,27 +249,26 @@ func createNamedOptimize(
 	return optimize
 }
 
-// createDanglingOptimize creates a CamundaOptimize whose clusterRef names no
-// cluster. The controller reports InvalidReference and builds nothing, so a
-// spec can stage workloads under it and they stay as staged.
+// unreconciledOptimize returns a CamundaOptimize that stands in as the owner of
+// a staged object. It is never created, so no reconcile of it runs and the
+// object stays as staged until the spec acts on it.
 //
-// Each one names a cluster of its own. Two that named the same cluster would
-// contend for it, and the controller would park the loser and release the
-// workloads that the spec staged under it.
-func createDanglingOptimize(name, namespace string) *v1.CamundaOptimize {
-	GinkgoHelper()
-	optimize := &v1.CamundaOptimize{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+// A created one does not serve: a CamundaOptimize whose cluster does not exist
+// releases the workloads it owns, so the controller would delete the objects
+// that the spec stages under it.
+func unreconciledOptimize(name, namespace string) *v1.CamundaOptimize {
+	return &v1.CamundaOptimize{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			UID:       types.UID("uid-" + name),
+		},
 		Spec: v1.CamundaOptimizeSpec{
 			Version:           "8.9.4",
 			ManagementAuthRef: "no-such-auth",
 			ClusterRef:        v1.ClusterRef{Name: "no-such-cluster-" + name},
 		},
 	}
-	Expect(k8sClient.Create(ctx, optimize)).To(Succeed())
-	DeferCleanup(func() { _ = deleteOptimize(optimize) })
-
-	return optimize
 }
 
 // stageWorkload creates the Deployment and the Service that the renderer gives
@@ -593,7 +594,7 @@ func suspensionEvents(optimize *v1.CamundaOptimize) []string {
 
 	var reasons []string
 	for _, event := range events.Items {
-		if event.InvolvedObject.Name != optimize.Name || event.Action != eventActionSuspend {
+		if event.InvolvedObject.Name != optimize.Name || event.Action != workloadsuspend.EventActionSuspend {
 			continue
 		}
 		for range max(int(event.Count), 1) {
@@ -659,6 +660,109 @@ var _ = Describe("CamundaOptimize controller", func() {
 				return k8sClient.Update(ctx, &latest)
 			})).To(Succeed())
 			expectStableRender(webappKey, importerKey)
+		})
+
+		// The importer reads Elasticsearch directly, and a logical restore of
+		// that Elasticsearch suspends the cluster to stop it. An instance on a
+		// failed check of its own must follow that suspension anyway, or the
+		// restore writes indices while the importer reads them.
+		It("follows the suspension of its cluster while a check of its own fails", func() {
+			s := newScenario("8.9.4")
+			webappKey := client.ObjectKey{
+				Namespace: s.namespace,
+				Name:      components.WorkloadName(s.optimize, components.ComponentWebapp),
+			}
+			importerKey := client.ObjectKey{
+				Namespace: s.namespace,
+				Name:      components.WorkloadName(s.optimize, components.ComponentImporter),
+			}
+			expectReplicas(1, webappKey, importerKey)
+
+			By("suspending the cluster and deleting the client Secret in one step")
+			Expect(k8sClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+				Name:      s.auth.Spec.ClientSecretRef.Name,
+				Namespace: s.auth.Spec.ClientSecretRef.Namespace,
+			}})).To(Succeed())
+			setClusterSuspend(s.cluster, true)
+
+			expectReplicas(0, webappKey, importerKey)
+			Eventually(func(g Gomega) {
+				var latest v1.CamundaOptimize
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(s.optimize), &latest)).To(Succeed())
+				ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
+				g.Expect(ready).NotTo(BeNil())
+				g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(ready.Reason).To(Equal(v1.ReasonMissingSecret))
+				g.Expect(ready.Message).To(ContainSubstring("scaled to zero"))
+			}, timeout, interval).Should(Succeed())
+			expectCondition(s.optimize, v1.ConditionImporterReady, Equal(string(component.Suspended)))
+
+			By("recording the transition once, however often the failure repeats")
+			Eventually(func(g Gomega) {
+				g.Expect(countSuspensionEvents(s.optimize, eventReasonClusterSuspended)).To(Equal(1))
+			}, timeout, interval).Should(Succeed())
+
+			By("dropping the suspension from the message, and recording no resume yet")
+			// An instance created beside its cluster can park on the storage
+			// claim of the backend before that cluster takes it, and the pass
+			// that starts the workloads records a resume of its own. The counts
+			// below read against that baseline.
+			resumesBefore := countSuspensionEvents(s.optimize, eventReasonClusterResumed)
+			setClusterSuspend(s.cluster, false)
+			Consistently(func(g Gomega) {
+				g.Expect(countSuspensionEvents(s.optimize, eventReasonClusterResumed)).To(
+					Equal(resumesBefore), "the workloads are still at zero",
+				)
+				g.Expect(countSuspensionEvents(s.optimize, eventReasonClusterSuspended)).To(
+					Equal(1), "and the suspension is recorded once, however often the failure repeats",
+				)
+			}, "3s", interval).Should(Succeed())
+			Eventually(func(g Gomega) {
+				var latest v1.CamundaOptimize
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(s.optimize), &latest)).To(Succeed())
+				importer := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionImporterReady)
+				g.Expect(importer).NotTo(BeNil())
+				g.Expect(importer.Reason).To(Equal(string(component.Suspended)))
+				g.Expect(importer.Message).To(
+					Equal("Kept at zero until the reference check passes"),
+					"the cluster resumed, so the message must not name its suspension",
+				)
+				ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
+				g.Expect(ready).NotTo(BeNil())
+				g.Expect(ready.Message).To(ContainSubstring(
+					"The Optimize workloads that stopped stay at zero until the reference check passes",
+				))
+			}, timeout, interval).Should(Succeed())
+			expectReplicas(0, webappKey, importerKey)
+
+			By("pairing the resume when the render starts the workloads again")
+			createSecret(
+				s.auth.Spec.ClientSecretRef.Namespace,
+				s.auth.Spec.ClientSecretRef.Name,
+				map[string]string{s.auth.Spec.ClientSecretRef.Key: "s3cret"},
+			)
+			expectReplicas(1, webappKey, importerKey)
+			Eventually(func(g Gomega) {
+				g.Expect(countSuspensionEvents(s.optimize, eventReasonClusterResumed)).To(Equal(resumesBefore + 1))
+			}, timeout, interval).Should(Succeed())
+			Consistently(func(g Gomega) {
+				g.Expect(countSuspensionEvents(s.optimize, eventReasonClusterResumed)).To(Equal(resumesBefore + 1))
+			}, "2s", interval).Should(Succeed())
+		})
+
+		// An instance whose first check fails rendered nothing, so it has no
+		// suspension to report. Recording one on every retry would fill the
+		// event stream of a resource that changed no workload.
+		It("records no suspension event when it rendered no workload yet", func() {
+			ns := newNamespace()
+			cluster := createCluster(ns, createBinding(ns))
+			setClusterSuspend(cluster, true)
+			optimize := createOptimize(ns, cluster, createAuth(ns, false), "8.9.9")
+
+			expectNotReady(optimize, v1.ReasonMissingSecret)
+			Consistently(func(g Gomega) {
+				g.Expect(countSuspensionEvents(optimize, eventReasonClusterSuspended)).To(BeZero())
+			}, "3s", interval).Should(Succeed())
 		})
 
 		It("follows the suspension of its cluster to zero replicas and back", func() {
@@ -818,11 +922,10 @@ var _ = Describe("CamundaOptimize controller", func() {
 			expectReplicas(1, webappKey, importerKey)
 		})
 
-		// The cluster stops on this reference too, and reports itself
-		// suspended. This controller cannot follow that suspension through
-		// the render input, because the reference it fails on is the same
-		// one, so the workloads stop on the failed pre-check instead.
-		It("scales to zero when the storage contract of its cluster is deleted", func() {
+		// The cluster keeps its own workloads on this reference too, so the
+		// importer keeps reading the Elasticsearch that both of them still
+		// write. Ready reports the dangling reference.
+		It("keeps its workloads when the storage contract of its cluster is deleted", func() {
 			s := newScenario("8.9.4")
 			webappKey := client.ObjectKey{
 				Namespace: s.namespace,
@@ -837,27 +940,32 @@ var _ = Describe("CamundaOptimize controller", func() {
 			By("deleting the contract that the cluster and this instance both resolve")
 			Expect(k8sClient.Delete(ctx, s.binding)).To(Succeed())
 
-			By("scaling both workloads to zero and naming that in the Ready message")
-			expectReplicas(0, webappKey, importerKey)
+			By("reporting the dangling reference and keeping both workloads")
 			Eventually(func(g Gomega) {
 				var latest v1.CamundaOptimize
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(s.optimize), &latest)).To(Succeed())
 				ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
 				g.Expect(ready).NotTo(BeNil())
 				g.Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
-				g.Expect(ready.Message).To(ContainSubstring("scaled to zero"))
+				g.Expect(ready.Message).To(ContainSubstring(s.binding.Name))
 			}, timeout, interval).Should(Succeed())
-			expectCondition(s.optimize, v1.ConditionImporterReady, Equal(string(component.Suspended)))
+			Consistently(func(g Gomega) {
+				for _, key := range []client.ObjectKey{webappKey, importerKey} {
+					var deployment appsv1.Deployment
+					g.Expect(k8sClient.Get(ctx, key, &deployment)).To(Succeed())
+					g.Expect(*deployment.Spec.Replicas).To(Equal(int32(1)), key.Name)
+				}
+			}, "3s", interval).Should(Succeed(), "both Deployments keep their replicas")
 
-			By("starting both workloads again when the contract comes back")
+			By("clearing the reason when the contract comes back")
 			restored := &v1.SecondaryStorageConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: s.binding.Name, Namespace: s.namespace},
 				Spec:       *s.binding.Spec.DeepCopy(),
 			}
 			Expect(k8sClient.Create(ctx, restored)).To(Succeed())
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, restored) })
-			expectReplicas(1, webappKey, importerKey)
 			expectCondition(s.optimize, v1.ConditionReady, Not(Equal(v1.ReasonInvalidReference)))
+			expectReplicas(1, webappKey, importerKey)
 		})
 
 		It("withdraws the exporter entries on deletion and keeps the entry of the user", func() {
@@ -868,6 +976,46 @@ var _ = Describe("CamundaOptimize controller", func() {
 
 			expectClusterEnv(s.cluster, ConsistOf(userEnv.Name))
 		})
+	})
+
+	// The pods of the webapp and the importer carry the storage claim of the
+	// backend their cluster writes, and the handover gate of a cluster counts
+	// them. Deployments left behind by a deleted cluster hold that backend
+	// against every cluster that takes it over.
+	It("releases its workloads when its cluster is deleted", func() {
+		s := newScenario("8.9.4")
+		webappKey := client.ObjectKey{
+			Namespace: s.namespace,
+			Name:      components.WorkloadName(s.optimize, components.ComponentWebapp),
+		}
+		importerKey := client.ObjectKey{
+			Namespace: s.namespace,
+			Name:      components.WorkloadName(s.optimize, components.ComponentImporter),
+		}
+		expectReplicas(1, webappKey, importerKey)
+
+		By("deleting the cluster it attaches to")
+		Expect(k8sClient.Delete(ctx, s.cluster)).To(Succeed())
+
+		expectNotReady(s.optimize, v1.ReasonInvalidReference)
+		Eventually(func(g Gomega) {
+			for _, key := range []client.ObjectKey{webappKey, importerKey} {
+				var deployment appsv1.Deployment
+				g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key, &deployment))).To(
+					BeTrue(), key.Name,
+				)
+			}
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaOptimize
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(s.optimize), &latest)).To(Succeed())
+			ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Message).To(ContainSubstring(s.cluster.Name))
+			g.Expect(meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionWebappReady)).To(
+				BeNil(), "a released instance reports nothing about what it used to render",
+			)
+		}, timeout, interval).Should(Succeed())
 	})
 
 	Context("with more than one CamundaOptimize on one cluster", func() {
@@ -905,8 +1053,8 @@ var _ = Describe("CamundaOptimize controller", func() {
 		// releaseWorkloads is called on them.
 		It("releases the workloads that a deposed holder still owns", func() {
 			ns := newNamespace()
-			deposed := createDanglingOptimize("co-deposed", ns)
-			other := createDanglingOptimize("co-other", ns)
+			deposed := unreconciledOptimize("co-deposed", ns)
+			other := unreconciledOptimize("co-other", ns)
 
 			webappKey := stageWorkload(deposed, deposed, components.ComponentWebapp)
 			importerKey := stageWorkload(deposed, deposed, components.ComponentImporter)
@@ -938,8 +1086,8 @@ var _ = Describe("CamundaOptimize controller", func() {
 		// identical, so only the owner reference tells their objects apart.
 		It("keeps an object at its own workload name that another owner controls", func() {
 			ns := newNamespace()
-			deposed := createDanglingOptimize("co-deposed", ns)
-			other := createDanglingOptimize("co-other", ns)
+			deposed := unreconciledOptimize("co-deposed", ns)
+			other := unreconciledOptimize("co-other", ns)
 
 			key := stageWorkload(deposed, other, components.ComponentWebapp)
 
@@ -958,7 +1106,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 			ns := newNamespace()
 			cluster := createCluster(ns, createBinding(ns))
 			auth := createAuth(ns, true)
-			previous := createDanglingOptimize("co-previous", ns)
+			previous := unreconciledOptimize("co-previous", ns)
 			foreign := stageForeignImporter(previous, cluster.Name)
 
 			optimize := createOptimize(ns, cluster, auth, "8.9.4")
@@ -1105,6 +1253,41 @@ var _ = Describe("CamundaOptimize controller", func() {
 			s := newScenario("8.8.1")
 
 			expectNotReady(s.optimize, v1.ReasonVersionMismatch)
+		})
+
+		// An upgrade of the cluster leaves the minors apart for as long as it
+		// takes the user to follow it with spec.version here. Optimize of the
+		// previous minor keeps serving through that window.
+		It("keeps its workloads running while the minors differ", func() {
+			s := newScenario("8.9.4")
+			webappKey := client.ObjectKey{
+				Namespace: s.namespace,
+				Name:      components.WorkloadName(s.optimize, components.ComponentWebapp),
+			}
+			importerKey := client.ObjectKey{
+				Namespace: s.namespace,
+				Name:      components.WorkloadName(s.optimize, components.ComponentImporter),
+			}
+			expectReplicas(1, webappKey, importerKey)
+
+			By("moving spec.version to another minor than the cluster")
+			Expect(retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				var latest v1.CamundaOptimize
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(s.optimize), &latest); err != nil {
+					return err
+				}
+				latest.Spec.Version = "8.8.1"
+				return k8sClient.Update(ctx, &latest)
+			})).To(Succeed())
+
+			expectNotReady(s.optimize, v1.ReasonVersionMismatch)
+			Consistently(func(g Gomega) {
+				for _, key := range []client.ObjectKey{webappKey, importerKey} {
+					var deployment appsv1.Deployment
+					g.Expect(k8sClient.Get(ctx, key, &deployment)).To(Succeed())
+					g.Expect(*deployment.Spec.Replicas).To(Equal(int32(1)), key.Name)
+				}
+			}, "3s", interval).Should(Succeed(), "both Deployments keep their replicas")
 		})
 
 		// The version floor is a rule that admission cannot enforce, because a

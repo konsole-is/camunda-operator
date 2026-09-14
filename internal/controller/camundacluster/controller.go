@@ -356,10 +356,10 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{RequeueAfter: wait}, nil
 }
 
-// reportFailedPreCheck stops the workloads of a cluster whose pre-check
-// failed, stages the failure on Ready, and gives back the backends that no pod
-// of this cluster writes any more. It returns how long to wait before the next
-// pass, which a claim held back earns.
+// reportFailedPreCheck stages the failure of a pre-check on Ready, holds at
+// zero the workloads that a suspension stopped, and gives back the backends
+// that no pod of this cluster writes any more. It returns how long to wait
+// before the next pass, which a claim held back earns.
 //
 // It releases nothing unless the claim step of the pre-check ran on this pass,
 // which in.Storage.Claim says: a step that fails before it fails on a reference
@@ -370,19 +370,33 @@ func (r *CamundaClusterReconciler) reportFailedPreCheck(
 	in components.Input,
 	failure *conditions.PreCheckFailure,
 ) (time.Duration, error) {
-	// A running cluster stops while its pre-check fails: its workloads scale
-	// to zero and its volumes stay, because they can keep writing a backend
-	// that the cluster no longer resolves. The failure stays the Ready reason,
-	// and the message says what happened to the workloads.
-	suspended, suspendErr := r.suspendWorkloads(ctx, cluster)
-	if suspended && suspendErr == nil {
-		failure.Message += ". The workloads are scaled to zero, with the volumes kept, until the pre-check passes"
+	// A running cluster keeps its workloads while its pre-check fails: they run
+	// on the configuration of the last pass, and the storage claim keeps its
+	// backend for it. Ready reports the failure.
+	//
+	// spec.suspend is the exception. It is the instruction of the user, and the
+	// suspended render is what a failed pre-check skips, so the workloads stop
+	// here instead, see suspendExplicitly.
+	stopped, suspendErr := r.suspendExplicitly(ctx, cluster)
+	if cluster.Spec.Suspend {
+		if stopped && suspendErr == nil {
+			failure.Message += suspendNote
+		}
+	} else {
+		// The suspension ended while the check still fails. Nothing renders
+		// here, so the workloads it stopped stay at zero.
+		kept, keptErr := r.keepAtZero(ctx, cluster)
+		suspendErr = errors.Join(suspendErr, keptErr)
+		if kept && keptErr == nil {
+			failure.Message += keptAtZeroNote
+		}
 	}
-	// The bindings are nil while the cluster is suspended, see binding.go. The
-	// endpoints of the scaled workloads answer nothing, so a consumer must see
-	// a cluster that is not ready, not a stale endpoint.
-	cluster.Status.Management = nil
-	cluster.Status.Gateway = nil
+	// Only the process that serves them going quiet clears them: a workload
+	// whose stop was refused still answers, see endpointsStopped.
+	if endpointsStopped(cluster) {
+		cluster.Status.Management = nil
+		cluster.Status.Gateway = nil
+	}
 	conditions.Stage(cluster, conditions.Failed(cluster, failure))
 	if suspendErr != nil {
 		return 0, suspendErr

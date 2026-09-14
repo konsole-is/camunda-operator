@@ -152,7 +152,10 @@ func TestHandoverPossible(t *testing.T) {
 // A free backend is not free while pods of another cluster write it. Without
 // this rule, a parked cluster that finds the Lease gone creates it, and the
 // running holder then meets a blocker and scales to zero.
-func TestClaimStorageRefusesAFreeBackendUnderOtherPods(t *testing.T) {
+//
+// The cluster that waits takes no Lease and renders at zero, which is what
+// keeps it off the backend those pods write.
+func TestClaimStorageWaitsUnderThePodsOnAFreeBackend(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
 	require.NoError(t, v1.AddToScheme(scheme))
@@ -178,9 +181,9 @@ func TestClaimStorageRefusesAFreeBackendUnderOtherPods(t *testing.T) {
 	cases := map[string]struct {
 		pods      []client.Object
 		suspended bool
-		refused   bool
+		waits     bool
 	}{
-		"pods of the running holder": {pods: foreign, refused: true},
+		"pods of the running holder": {pods: foreign, waits: true},
 		"its own pods": {
 			pods: []client.Object{pod("parked-zeebe-0", components.StoragePodLabels("parked", self.UID, claim))},
 		},
@@ -213,17 +216,20 @@ func TestClaimStorageRefusesAFreeBackendUnderOtherPods(t *testing.T) {
 				client.ObjectKey{Namespace: "camunda-system", Name: claim},
 				&lease,
 			)
-			if !tc.refused {
-				require.NoError(t, err)
+			require.NoError(t, err)
+			if !tc.waits {
+				assert.Nil(t, in.Storage.Handover)
 				assert.NoError(t, read, "the cluster took the free backend")
 
 				return
 			}
 
-			var unwatched *conditions.UnwatchedPreCheckFailure
-			require.ErrorAs(t, err, &unwatched)
-			assert.Equal(t, v1.ReasonWaitingForHandover, unwatched.Failure.Reason)
-			assert.Contains(t, unwatched.Failure.Message, "apps/holder-zeebe-0")
+			// The wait is no pre-check failure. It renders the cluster at zero,
+			// the way a handover on a claim it holds does, so its workloads
+			// stop writing the backend they are on.
+			require.NotNil(t, in.Storage.Handover)
+			assert.Equal(t, key, in.Storage.Handover.Backend)
+			assert.Contains(t, in.Storage.Handover.Pods, "apps/holder-zeebe-0")
 			assert.True(t, apierrors.IsNotFound(read), "no Lease is written under the pods of another cluster")
 		})
 	}
@@ -793,11 +799,10 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		expectClaimedBy(held, repointed)
 	})
 
-	// Two contracts can name one backend, and the operator compares
-	// contracts, not endpoints. When the holder of one contract loses it and
-	// keeps running, both clusters write the backend. A cluster whose
-	// pre-check fails therefore scales to zero, so the two never both run.
-	It("scales a running cluster to zero when its contract goes away, while the other keeps running", func() {
+	// A cluster whose contract is deleted keeps writing the backend it
+	// resolved on its last pass, so it keeps its workloads and its claim on
+	// that backend. Ready reports the dangling reference.
+	It("keeps a running cluster on its workloads when its contract goes away", func() {
 		ns := newNamespace()
 		first := newNamedCluster("cc-a-", ns, createPlatformConfig(), createBinding(ns, true))
 		createCluster(first)
@@ -813,23 +818,23 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 			second,
 			metav1.ConditionFalse,
 			Equal(v1.ReasonInvalidReference),
-			And(
-				ContainSubstring(binding.Name),
-				ContainSubstring("The workloads are scaled to zero, with the volumes kept"),
-			),
+			ContainSubstring(binding.Name),
 		)
 		zeebeKey := client.ObjectKey{Namespace: ns, Name: second.Name + "-zeebe"}
-		Eventually(func(g Gomega) {
-			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
-		}, timeout, interval).Should(Succeed(), "the broker StatefulSet is scaled, not deleted")
-		Eventually(func(g Gomega) {
-			var latest v1.CamundaCluster
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(second), &latest)).To(Succeed())
-			zeebe := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionZeebeReady)
-			g.Expect(zeebe).NotTo(BeNil())
-			g.Expect(zeebe.Reason).To(Equal("Suspended"))
-		}, timeout, interval).Should(Succeed(), "the broker condition reports the suspension")
+		Consistently(func(g Gomega) {
+			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(Equal(int32(1)))
+		}, "3s", interval).Should(Succeed(), "the broker StatefulSet keeps its replicas")
 		expectHolds(first)
+		// The claim outlives the contract that named the backend. The brokers
+		// of the second cluster still write it, so it stays theirs.
+		expectClaimedBy(binding, second)
+
+		By("parking a third cluster that names the same backend")
+		third := newNamedCluster(
+			"cc-c-", ns, createPlatformConfig(), createBindingAt(ns, binding.Spec.Elasticsearch.Endpoint),
+		)
+		createCluster(third)
+		expectParked(third, second)
 
 		By("recreating the contract")
 		recreated := &v1.SecondaryStorageConfig{
@@ -860,6 +865,38 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 
 		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.StorageRef = target.Name })
 		expectWaitingForHandover(cluster, target, pod)
+
+		Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
+		expectHolds(cluster)
+		expectClaimedBy(target, cluster)
+	})
+
+	// The same wait on a backend that no Lease holds. The cluster takes no
+	// claim under those pods, and it must stop all the same: its own workloads
+	// still write the backend it left.
+	It("scales a running cluster to zero under the pods on an unclaimed backend", func() {
+		ns := newNamespace()
+		own := createBinding(ns, true)
+		cluster := newNamedCluster("cc-a-", ns, createPlatformConfig(), own)
+		createCluster(cluster)
+		expectHolds(cluster)
+
+		target := createBinding(ns, true)
+		ghost := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "ghost", UID: "ghost-uid"},
+		}
+		pod := createStoragePod(ghost, target)
+
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.StorageRef = target.Name })
+		expectWaitingForHandover(cluster, target, pod)
+		var lease coordinationv1.Lease
+		name := client.ObjectKey{
+			Namespace: testClaimNamespace,
+			Name:      components.StorageClaimSchema().LeaseName(storageKeyOf(target)),
+		}
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, name, &lease))).To(
+			BeTrue(), "the backend stays unclaimed while those pods write it",
+		)
 
 		Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
 		expectHolds(cluster)
