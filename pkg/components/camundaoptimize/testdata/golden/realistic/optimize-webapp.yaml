@@ -24,6 +24,7 @@ spec:
         camunda.io/cluster: my-cluster
         camunda.io/cluster-uid: my-cluster-uid
         camunda.io/component: optimize-webapp
+        camunda.io/optimize-uid: ""
         camunda.io/storage-claim: camunda-storage-81339ac425c6eedb913ae5c8ea4153da5f552d4d
         team: platform
     spec:

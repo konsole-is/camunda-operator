@@ -252,7 +252,9 @@ carries the Lease name. Its importer writes the same backend, so it is gated the
 Optimize also reads the claim itself: it parks both workloads while its cluster does not
 hold the storage claim of the backend it resolves (`Holds` on the Lease), or while a pod of
 another cluster still carries that claim, the same two checks the cluster makes before it
-renders. Its own importer pod is no reason to wait. The cluster's `Ready` lags a repoint by
+renders. Its own importer pod is no reason to wait; the pods carry the instance UID
+(`camunda.io/optimize-uid`), so the importer of a deleted instance of the same cluster, which
+may still be stopping, is a pod to wait for and not its own. The cluster's `Ready` lags a repoint by
 one reconcile, so `Suspended()` alone would let the importer start against a backend another
 cluster holds, or still writes, in that window. The claim and the pods are the gate; the
 status is the report. That wait records its own event, `StorageClaimAwaited`, because the

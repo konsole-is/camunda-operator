@@ -181,7 +181,7 @@ A failed check of a reference does not stop a running instance. `Ready` carries 
 | The cluster resumed while the check still fails | The ones that stopped stay at zero and return to their configured replica counts when the check passes. Their conditions read `Suspended` with the message `Kept at zero until the reference check passes`. `Ready` carries the failure message, and adds `The Optimize workloads that stopped stay at zero until the reference check passes` when every stop succeeded. A workload whose stop the API server refuses keeps running. A condition of it that still claimed a suspension is removed, and the render stages it again. That leaves the note off `Ready` and records the Warning event `WorkloadStopRefused`, which carries the refusal. |
 | The cluster is gone, or another instance holds it | The operator removes them. Their pods hold the backend that cluster wrote, against the next cluster that takes it over. It builds them again when the cluster comes back, or when this instance regains the attachment. |
 
-The importer never starts while the cluster does not hold the storage claim of its backend. Another cluster writes that backend in this state, and two importers on one set of analytics indices overwrite each other.
+The importer never starts while the cluster does not hold the storage claim of its backend. Either the cluster has not claimed the backend yet, or another cluster holds it and writes it, and two importers on one set of analytics indices overwrite each other. `Ready` names the wait.
 
 ```yaml
 status:

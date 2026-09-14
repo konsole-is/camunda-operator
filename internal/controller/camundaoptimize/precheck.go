@@ -297,14 +297,20 @@ func (r *Reconciler) gateOnStorageClaim(
 	// An importer of this instance on that backend says the gate passed
 	// before, and only the render at zero holds the pods of another cluster
 	// away. A webapp pod says less, because it can be up while the importer is
-	// still pending. The list below covers every namespace, so the cheap
+	// still pending. The importer of a deleted instance of the same cluster
+	// says nothing either: it carries the cluster UID as well, and it may still
+	// be stopping, so the instance UID keeps it out of this read and the list
+	// below waits for it. That list covers every namespace, so the cheap
 	// namespaced read comes first.
 	own, err := clustercomponents.ClaimsOnOwnPods(
 		ctx,
 		r.APIReader,
 		out.Input.Optimize.Namespace,
 		cluster.UID,
-		map[string]string{labels.ComponentKey: components.ComponentImporter},
+		map[string]string{
+			labels.ComponentKey:   components.ComponentImporter,
+			labels.OptimizeUIDKey: string(out.Input.Optimize.UID),
+		},
 	)
 	if err != nil {
 		return err

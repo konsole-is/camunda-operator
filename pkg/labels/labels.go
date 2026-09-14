@@ -53,6 +53,11 @@ const (
 	// relates to. It tells a cluster apart from a later one of the same name
 	// and namespace.
 	ClusterUIDKey = "camunda.io/cluster-uid"
+	// OptimizeUIDKey names the UID of the CamundaOptimize that rendered a
+	// pod. Two instances of one cluster render pods with the same cluster
+	// labels, so this one tells the pods of a deleted instance apart from
+	// those of the instance that took its place.
+	OptimizeUIDKey = "camunda.io/optimize-uid"
 	// StorageClaimKey names the storage claim Lease of the backend that a pod
 	// of a CamundaCluster, or of the CamundaOptimize attached to it, writes.
 	// It is on the pod, never on the selector, so a change of backend rolls

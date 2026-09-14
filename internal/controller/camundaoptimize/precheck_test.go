@@ -122,13 +122,22 @@ func TestPreCheckSuspendsWhileAnotherClusterWritesTheBackend(t *testing.T) {
 
 	// The importer of this instance on that backend says the gate passed
 	// before, so the pods of every namespace stay unread. A webapp pod says
-	// less: it can be up while the importer is still pending.
+	// less: it can be up while the importer is still pending. The importer of
+	// a deleted instance of the same cluster carries the cluster UID too and
+	// may still be stopping, so the instance UID tells it apart and the gate
+	// waits for it.
 	fastPath := map[string]struct {
 		component string
+		instance  types.UID
 		suspended bool
 	}{
-		"an importer pod of this instance": {component: components.ComponentImporter},
-		"a webapp pod of this instance":    {component: components.ComponentWebapp, suspended: true},
+		"an importer pod of this instance": {component: components.ComponentImporter, instance: "optimize-uid"},
+		"a webapp pod of this instance": {
+			component: components.ComponentWebapp, instance: "optimize-uid", suspended: true,
+		},
+		"an importer pod of a deleted instance": {
+			component: components.ComponentImporter, instance: "gone-uid", suspended: true,
+		},
 	}
 
 	for name, tc := range fastPath {
@@ -148,7 +157,10 @@ func TestPreCheckSuspendsWhileAnotherClusterWritesTheBackend(t *testing.T) {
 					Name:      "own-" + tc.component,
 					Labels: labels.Merge(
 						clustercomponents.StoragePodLabels("holder", cluster.UID, claim),
-						map[string]string{labels.ComponentKey: tc.component},
+						map[string]string{
+							labels.ComponentKey:   tc.component,
+							labels.OptimizeUIDKey: string(tc.instance),
+						},
 					),
 				}},
 				&corev1.Pod{ObjectMeta: metav1.ObjectMeta{
@@ -317,7 +329,7 @@ func storageClaimGateFixture(t *testing.T) (*runtime.Scheme, *v1.CamundaCluster,
 	})
 
 	optimize := &v1.CamundaOptimize{
-		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "my-optimize"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "my-optimize", UID: "optimize-uid"},
 		Spec: v1.CamundaOptimizeSpec{
 			Version:           "8.9.4",
 			ManagementAuthRef: "my-auth",

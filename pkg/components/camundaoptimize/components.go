@@ -204,16 +204,20 @@ func podTemplate(in Input, comp string) corev1.PodTemplateSpec {
 }
 
 // podLabels returns the labels of the pods of a component: the discovery
-// labels and the storage claim of the backend they write. Both workloads carry
-// the claim. The importer writes the analytics indices of that backend, and the
-// webapp writes the reports and the dashboards of a user into it, so a cluster
-// that takes the backend over waits for either with the same selector as for
-// the pods of the previous holder. The label is on the pods, never on the selector, so a change of
-// backend rolls them and the new ones carry the new value.
+// labels, the storage claim of the backend they write, and the UID of this
+// instance. Both workloads carry the claim. The importer writes the analytics
+// indices of that backend, and the webapp writes the reports and the
+// dashboards of a user into it, so a cluster that takes the backend over
+// waits for either with the same selector as for the pods of the previous
+// holder. The instance UID tells the pods of this instance from those of a
+// deleted one on the same cluster, whose importer may still be stopping. The
+// labels are on the pods, never on the selector, so a change of backend rolls
+// them and the new ones carry the new value.
 func podLabels(in Input, comp string) map[string]string {
 	return labels.Merge(
 		discoveryLabels(in, comp),
 		clustercomponents.StoragePodLabels(in.ClusterName, in.ClusterUID, in.StorageClaim),
+		map[string]string{labels.OptimizeUIDKey: string(in.Optimize.UID)},
 	)
 }
 
