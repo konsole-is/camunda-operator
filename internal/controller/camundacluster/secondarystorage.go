@@ -19,7 +19,6 @@ package camundacluster
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -29,7 +28,6 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
-	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // eventReasonStorageClaimed is recorded when the cluster takes the storage
@@ -50,13 +48,7 @@ const eventReasonStorageClaimed = "StorageClaimed"
 func (res *resolver) claimStorage(ctx context.Context, in *components.Input) error {
 	key, err := components.StorageClaimKey(in.Storage)
 	if err != nil {
-		return &conditions.PreCheckFailure{
-			Reason: v1.ReasonInvalidReference,
-			Message: fmt.Sprintf(
-				"SecondaryStorageConfig %q: %s",
-				objectPath(client.ObjectKeyFromObject(res.storage)), err,
-			),
-		}
+		return components.StorageClaimKeyFailure(client.ObjectKeyFromObject(res.storage), err)
 	}
 	in.Storage.Claim = res.claims.LeaseName(key)
 
@@ -120,7 +112,7 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 	// previous holder started before it lost the claim. A holder that is
 	// pointed back at the backend meets the claim this cluster holds and
 	// parks, so it starts nothing beside it.
-	pods, err := res.otherPodsOnClaim(ctx, in.Storage.Claim)
+	pods, err := components.OtherPodsOnClaim(ctx, res.reader, in.Storage.Claim, res.cluster.UID)
 	if err != nil {
 		return err
 	}
@@ -152,32 +144,6 @@ func (res *resolver) releaseOtherClaims(ctx context.Context, keep string) error 
 	return nil
 }
 
-// otherPodsOnClaim returns the pods that carry the storage claim and another
-// cluster UID, as sorted "namespace/name" paths. The list covers every
-// namespace and leaves out the pods that ended, see
-// components.StorageClaimPodListOptions.
-//
-// The pods of a CamundaOptimize attached to another cluster carry the same
-// labels, see pkg/components/camundaoptimize, and its importer writes the
-// backend like a pod of that cluster.
-func (res *resolver) otherPodsOnClaim(ctx context.Context, claim string) ([]string, error) {
-	pods := components.StorageClaimPodList()
-	if err := res.reader.List(ctx, pods, components.StorageClaimPodListOptions(claim)...); err != nil {
-		return nil, fmt.Errorf("listing the pods on storage claim %q: %w", claim, err)
-	}
-
-	var names []string
-	for i := range pods.Items {
-		if pods.Items[i].Labels[labels.ClusterUIDKey] == string(res.cluster.UID) {
-			continue
-		}
-		names = append(names, objectPath(client.ObjectKeyFromObject(&pods.Items[i])))
-	}
-	slices.Sort(names)
-
-	return names, nil
-}
-
 // claimSuspends reports whether the storage claim keeps this cluster at zero:
 // another cluster holds the backend, or pods of another cluster still write
 // the one this cluster took over. Nothing watches either of them for this
@@ -195,11 +161,12 @@ func storageHeld(cluster *v1.CamundaCluster, holder *components.StorageHolder, a
 			"so this cluster stays suspended until that cluster moves to another backend or is deleted",
 		objectPath(holder.Cluster), holder.Backend,
 	)
-	if applyErr != nil {
-		message += fmt.Sprintf(". The last apply of the suspended workloads failed: %s", applyErr)
-	}
-
-	return conditions.Ready(metav1.ConditionFalse, v1.ReasonStorageAlreadyAttached, message, cluster.Generation)
+	return conditions.Ready(
+		metav1.ConditionFalse,
+		v1.ReasonStorageAlreadyAttached,
+		appendApplyFailure(message, applyErr),
+		cluster.Generation,
+	)
 }
 
 // storageHandover builds the Ready condition of a cluster that holds the
@@ -217,9 +184,21 @@ func storageHandover(
 			"This cluster starts when they are gone",
 		handover.Backend, strings.Join(handover.Pods, ", "),
 	)
-	if applyErr != nil {
-		message += fmt.Sprintf(". The last apply of the suspended workloads failed: %s", applyErr)
+	return conditions.Ready(
+		metav1.ConditionFalse,
+		v1.ReasonWaitingForHandover,
+		appendApplyFailure(message, applyErr),
+		cluster.Generation,
+	)
+}
+
+// appendApplyFailure adds the error of the last apply to a claim message. The
+// claim reason stays on Ready while an apply fails, so the message carries
+// what went wrong with it.
+func appendApplyFailure(message string, applyErr error) string {
+	if applyErr == nil {
+		return message
 	}
 
-	return conditions.Ready(metav1.ConditionFalse, v1.ReasonWaitingForHandover, message, cluster.Generation)
+	return message + fmt.Sprintf(". The last apply of the suspended workloads failed: %s", applyErr)
 }

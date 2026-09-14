@@ -17,18 +17,22 @@ limitations under the License.
 package camundacluster
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/leaseclaim"
 )
@@ -79,40 +83,58 @@ func StorageClaimLeaseLabels(name string) map[string]string {
 	return labels.Managed(labels.Cluster(name), StorageClaimComponent)
 }
 
-// StorageClaimPodSelector matches every pod that writes the backend of the
-// storage claim named claim, whatever cluster it belongs to. A caller tells
-// its own pods from the rest by the camunda.io/cluster-uid label, see
-// StoragePodLabels. Both gates of a handover select with this, so neither can
-// wait for a set of pods the other does not see.
-func StorageClaimPodSelector(claim string) map[string]string {
-	return map[string]string{labels.StorageClaimKey: labels.OwnerName(claim)}
-}
-
-// StorageClaimPodListOptions returns the list options that find every pod
-// which can still write the backend of the storage claim named claim, in every
-// namespace. A caller tells its own pods from the rest by the
-// camunda.io/cluster-uid label, see StoragePodLabels. Both gates of a handover
-// list with these, so neither can wait for a set of pods the other does not
-// see.
+// OtherPodsOnClaim returns the pods that carry the storage claim named claim
+// and a cluster UID other than self, as sorted "namespace/name" paths. A
+// handover waits for exactly these: every one of them writes the backend of
+// that claim. The reader must read the API server directly, because a decision
+// from a stale cache starts a second writer.
 //
-// A pod that reached Failed or Succeeded is left out. An evicted pod of a
-// previous holder keeps its object under a ReplicaSet that nobody deleted, and
-// it writes nothing. A pod with a deletion timestamp is listed: one on a lost
-// node still writes until the node comes back or the pod is forced away.
-func StorageClaimPodListOptions(claim string) []client.ListOption {
-	return []client.ListOption{
-		client.MatchingLabels(StorageClaimPodSelector(claim)),
+// The list covers every namespace, because two clusters of two namespaces can
+// resolve one backend. It leaves out the pods that reached Failed or
+// Succeeded: an evicted pod of a previous holder keeps its object under a
+// ReplicaSet that nobody deleted, and it writes nothing. It keeps a pod with a
+// deletion timestamp, because one on a lost node still writes until the node
+// comes back or the pod is forced away.
+//
+// The pods of a CamundaOptimize attached to another cluster carry the same
+// labels, see pkg/components/camundaoptimize, and its importer writes the
+// backend like a pod of that cluster.
+func OtherPodsOnClaim(
+	ctx context.Context,
+	reader client.Reader,
+	claim string,
+	self types.UID,
+) ([]string, error) {
+	pods := podMetadataList()
+	err := reader.List(
+		ctx,
+		pods,
+		client.MatchingLabels(map[string]string{labels.StorageClaimKey: labels.OwnerName(claim)}),
 		client.MatchingFieldsSelector{Selector: fields.AndSelectors(
 			fields.OneTermNotEqualSelector(podPhaseField, string(corev1.PodFailed)),
 			fields.OneTermNotEqualSelector(podPhaseField, string(corev1.PodSucceeded)),
 		)},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing the pods on storage claim %q: %w", claim, err)
 	}
+
+	var names []string
+	for i := range pods.Items {
+		if pods.Items[i].Labels[labels.ClusterUIDKey] == string(self) {
+			continue
+		}
+		names = append(names, pods.Items[i].Namespace+"/"+pods.Items[i].Name)
+	}
+	slices.Sort(names)
+
+	return names, nil
 }
 
-// StorageClaimPodList returns the list that StorageClaimPodListOptions fills:
-// the metadata of the pods, because the name, the namespace and the labels are
-// all a handover gate reads.
-func StorageClaimPodList() *metav1.PartialObjectMetadataList {
+// podMetadataList returns the list that a pod gate fills. The name, the
+// namespace and the labels are all it reads, so the API server sends metadata
+// and no pod spec.
+func podMetadataList() *metav1.PartialObjectMetadataList {
 	list := &metav1.PartialObjectMetadataList{}
 	list.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("PodList"))
 
@@ -157,6 +179,16 @@ func StorageClaimKey(storage Storage) (string, error) {
 		), nil
 	default:
 		return "", fmt.Errorf("unknown secondary storage type %q", storage.Type)
+	}
+}
+
+// StorageClaimKeyFailure is the Ready failure that a contract earns when
+// StorageClaimKey cannot name its backend. Both the cluster and its Optimize
+// report it, so a chain that resolves to no address reads the same on either.
+func StorageClaimKeyFailure(contract client.ObjectKey, err error) *conditions.PreCheckFailure {
+	return &conditions.PreCheckFailure{
+		Reason:  v1.ReasonInvalidReference,
+		Message: fmt.Sprintf("SecondaryStorageConfig %q: %s", contract.Namespace+"/"+contract.Name, err),
 	}
 }
 

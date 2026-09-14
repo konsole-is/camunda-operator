@@ -33,7 +33,6 @@ import (
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
-	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
@@ -168,13 +167,7 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 		Elasticsearch: binding.Spec.Elasticsearch,
 	})
 	if err != nil {
-		return out, &conditions.PreCheckFailure{
-			Reason: v1.ReasonInvalidReference,
-			Message: fmt.Sprintf(
-				"SecondaryStorageConfig %q: %s",
-				objectPath(client.ObjectKeyFromObject(binding)), err,
-			),
-		}
+		return out, clustercomponents.StorageClaimKeyFailure(client.ObjectKeyFromObject(binding), err)
 	}
 	out.Input.StorageClaim = clustercomponents.StorageClaimSchema().LeaseName(key)
 	out.Input.ClusterUID = cluster.UID
@@ -279,41 +272,16 @@ func (r *Reconciler) gateOnStorageClaim(
 		return nil
 	}
 
-	writing, err := r.otherPodOnClaim(ctx, out.Input.StorageClaim, cluster)
+	writing, err := clustercomponents.OtherPodsOnClaim(ctx, r.APIReader, out.Input.StorageClaim, cluster.UID)
 	if err != nil {
 		return err
 	}
-	if writing {
+	if len(writing) > 0 {
 		out.Input.Suspended = true
 		out.AwaitsBackendClaim = true
 	}
 
 	return nil
-}
-
-// otherPodOnClaim reports whether a pod of a cluster other than cluster
-// carries the storage claim named claim. Such a pod writes the backend, so the
-// importer must stay at zero beside it. The list covers every namespace and
-// leaves out the pods that ended, see
-// clustercomponents.StorageClaimPodListOptions.
-func (r *Reconciler) otherPodOnClaim(
-	ctx context.Context,
-	claim string,
-	cluster *v1.CamundaCluster,
-) (bool, error) {
-	pods := clustercomponents.StorageClaimPodList()
-	err := r.APIReader.List(ctx, pods, clustercomponents.StorageClaimPodListOptions(claim)...)
-	if err != nil {
-		return false, fmt.Errorf("listing the pods on storage claim %q: %w", claim, err)
-	}
-
-	for i := range pods.Items {
-		if pods.Items[i].Labels[labels.ClusterUIDKey] != string(cluster.UID) {
-			return true, nil
-		}
-	}
-
-	return false, nil
 }
 
 // resolveEffective merges the preset and the release of the cluster under

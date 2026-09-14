@@ -17,6 +17,7 @@ limitations under the License.
 package camundacluster
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -28,7 +29,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -167,33 +171,118 @@ func TestStorageClaimLeaseLabelsSelectOneCluster(t *testing.T) {
 	assert.Equal(t, labels.ManagedBy, set[labels.ManagedByKey])
 }
 
-// The handover gate lists the pods that can still write a backend. A pod that
-// ended writes nothing, and one that a previous holder left behind under a
-// ReplicaSet nobody deleted would hold the gate for good.
-func TestStorageClaimPodListOptionsLeaveOutThePodsThatEnded(t *testing.T) {
+// TestOtherPodsOnClaim covers OtherPodsOnClaim against a fake client: every
+// pod that carries the storage claim and another cluster UID counts, whatever
+// its namespace, the importer of an Optimize attached to such a cluster among
+// them.
+func TestOtherPodsOnClaim(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
 	const claim = "camunda-storage-0123456789abcdef0123456789abcdef01234567"
-
-	opts := StorageClaimPodListOptions(claim)
-
-	var list client.ListOptions
-	for _, opt := range opts {
-		opt.ApplyToList(&list)
+	self := &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "team-a", Name: "holder", UID: "uid-1"},
 	}
-	require.NotNil(t, list.LabelSelector)
-	assert.Equal(t, labels.StorageClaimKey+"="+claim, list.LabelSelector.String())
-	require.NotNil(t, list.FieldSelector)
-	assert.Equal(t, "status.phase!=Failed,status.phase!=Succeeded", list.FieldSelector.String())
-	assert.Empty(t, list.Namespace, "two clusters of two namespaces can resolve one backend")
+	pod := func(namespace, name string, podLabels map[string]string) *corev1.Pod {
+		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: podLabels}}
+	}
+
+	cases := map[string]struct {
+		objects []client.Object
+		pods    []string
+	}{
+		"no pods": {},
+		"pods of this cluster": {
+			objects: []client.Object{
+				pod("team-a", "holder-zeebe-0", StoragePodLabels("holder", "uid-1", claim)),
+			},
+		},
+		"pods of a previous holder on the claim, sorted": {
+			objects: []client.Object{
+				pod("team-a", "old-zeebe-1", StoragePodLabels("old", "uid-old", claim)),
+				pod("team-a", "old-zeebe-0", StoragePodLabels("old", "uid-old", claim)),
+			},
+			pods: []string{"team-a/old-zeebe-0", "team-a/old-zeebe-1"},
+		},
+		"the Optimize importer pod of a previous holder": {
+			objects: []client.Object{
+				pod("team-a", "old-optimize-importer-0", labels.Merge(
+					StoragePodLabels("old", "uid-old", claim),
+					map[string]string{labels.ComponentKey: "importer"},
+				)),
+			},
+			pods: []string{"team-a/old-optimize-importer-0"},
+		},
+		"pods of a same-named earlier cluster": {
+			objects: []client.Object{
+				pod("team-a", "holder-zeebe-0", StoragePodLabels("holder", "uid-0", claim)),
+			},
+			pods: []string{"team-a/holder-zeebe-0"},
+		},
+		"pods on another claim": {
+			objects: []client.Object{
+				pod("team-a", "old-zeebe-0", StoragePodLabels("old", "uid-old", "camunda-storage-other")),
+			},
+		},
+		// Two clusters of two namespaces meet on one Lease, so a holder
+		// elsewhere leaves pods that this cluster must wait for.
+		"pods of a previous holder in another namespace": {
+			objects: []client.Object{
+				pod("team-b", "old-zeebe-0", StoragePodLabels("old", "uid-old", claim)),
+			},
+			pods: []string{"team-b/old-zeebe-0"},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			reader := storageClaimPodClient(t, scheme, tc.objects...)
+
+			pods, err := OtherPodsOnClaim(context.Background(), reader, claim, self.UID)
+			require.NoError(t, err)
+			assert.Equal(t, tc.pods, pods)
+		})
+	}
 }
 
-// The gate reads the name, the namespace and the labels of a pod, so the list
-// stays metadata.
-func TestStorageClaimPodListAsksForMetadata(t *testing.T) {
-	assert.Equal(
-		t,
-		corev1.SchemeGroupVersion.WithKind("PodList"),
-		StorageClaimPodList().GroupVersionKind(),
-	)
+// storageClaimPodClient builds a fake client for the handover gate. The fake
+// client refuses a "!=" field selector, which the API server serves, so the
+// interceptor asserts that the phase selector reached it and then drops it. An
+// envtest spec covers the filtering itself.
+func storageClaimPodClient(t *testing.T, scheme *runtime.Scheme, objects ...client.Object) client.Client {
+	t.Helper()
+
+	return fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objects...).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(
+				ctx context.Context,
+				c client.WithWatch,
+				list client.ObjectList,
+				opts ...client.ListOption,
+			) error {
+				if _, ours := list.(*metav1.PartialObjectMetadataList); !ours {
+					return c.List(ctx, list, opts...)
+				}
+
+				kept := make([]client.ListOption, 0, len(opts))
+				var phases string
+				for _, opt := range opts {
+					if selector, ok := opt.(client.MatchingFieldsSelector); ok {
+						phases = selector.String()
+
+						continue
+					}
+					kept = append(kept, opt)
+				}
+				assert.Equal(t, "status.phase!=Failed,status.phase!=Succeeded", phases)
+
+				return c.List(ctx, list, kept...)
+			},
+		}).
+		Build()
 }
 
 // The name, the labels and the annotations of a storage claim Lease are the
