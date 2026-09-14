@@ -881,6 +881,35 @@ var _ = Describe("CamundaCluster controller", func() {
 		expectReady(cluster, metav1.ConditionTrue, Equal(v1.ReasonHealthy), Not(BeEmpty()))
 	})
 
+	It("stops the workloads of a suspended cluster whose downgrade is refused", func() {
+		cluster := createDefaultCluster()
+		zeebeKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-zeebe"}
+		gatewayKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-gateway"}
+
+		By("lowering spec.version and setting spec.suspend in one edit")
+		updateCluster(cluster, func(c *v1.CamundaCluster) {
+			c.Spec.Version = lowerVersion
+			c.Spec.Suspend = true
+		})
+		// The user asked for zero, and a refusal is no reason to keep the
+		// workloads up. The suspended render carries the running version, so
+		// the refusal applies no lower image.
+		Eventually(func(g Gomega) {
+			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
+			g.Expect(*fetchDeployment(gatewayKey).Spec.Replicas).To(BeZero())
+		}, timeout, interval).Should(Succeed())
+		expectReady(cluster, metav1.ConditionTrue, Equal(string(component.Suspended)), Not(BeEmpty()))
+		Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":8.9.9"), "the suspended render keeps the running image")
+
+		By("resuming the cluster, which meets the refusal")
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Suspend = false })
+		expectReady(
+			cluster, metav1.ConditionFalse,
+			Equal(v1.ReasonVersionDowngradeRefused),
+			ContainSubstring("8.9.8 is below the running version 8.9.9"),
+		)
+	})
+
 	It("refuses a removed spec.version when the release carries a lower one", func() {
 		ns := newNamespace()
 		release := minimalRelease(lowerVersion)

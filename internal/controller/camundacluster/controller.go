@@ -24,6 +24,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -257,25 +259,27 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// A refused downgrade re-enqueues through the watches on the cluster, the
 	// preset, and the owned StatefulSet, so no timer is needed.
 	if failure := refuseDowngrade(&cluster, in, storage); failure != nil {
-		if !claimSuspends(in.Storage) {
+		if !in.Effective.Suspend {
 			refused := conditions.Failed(&cluster, failure)
 			r.recordRefusedDowngrade(&cluster, refused)
 			conditions.Stage(&cluster, refused)
 
 			// A refused cluster keeps running on the version and the backend
-			// it has, and it applies nothing. A cluster that repointed before
-			// the refusal still holds the backend it left, so the pod gate
-			// gives that one back once its pods are gone.
-			wait, releaseErr := r.releaseWait(ctx, &cluster, in.Storage.Claim)
+			// it has, and it applies nothing. The backend its pods write is
+			// the one it keeps: a claim it took on this pass and renders on
+			// nothing goes back, so a cluster that repointed into the refusal
+			// blocks no one on a backend it never writes.
+			wait, releaseErr := r.releaseRefusedWait(ctx, &cluster, in.Storage.Claim)
 
 			return ctrl.Result{RequeueAfter: wait}, releaseErr
 		}
 
-		// A cluster the claim suspends must stop, refused or not: its brokers
-		// write the backend it left, which the next cluster can claim. The guard reads
-		// its baseline from the applied StatefulSet, so the parking renders
-		// the running version, with no pinned image over it, and the refusal
-		// stands when the holder releases.
+		// A suspended cluster must stop, refused or not, whether the claim or
+		// the user suspends it: its brokers write the backend it left, which
+		// the next cluster can claim, and a user who set spec.suspend asked
+		// for zero. The guard reads its baseline from the applied StatefulSet,
+		// so the suspended render carries the running version, with no pinned
+		// image over it, and the refusal stands when the cluster resumes.
 		in.Effective.Version = storage.runningVersion()
 		in.Images = nil
 	}
@@ -441,6 +445,31 @@ func (r *CamundaClusterReconciler) releaseWait(
 	}
 
 	return r.retryInterval(), nil
+}
+
+// releaseRefusedWait gives back the storage claims of a cluster whose
+// downgrade was refused, and returns the wait for the ones held back. Such a
+// cluster applies nothing, so the claim it took on this pass, taken, is not
+// the backend it writes. It keeps the claim its pods carry when they carry
+// one, and taken goes back with every other claim no pod of it writes, so a
+// cluster that repointed into the refusal blocks no one. A cluster with no pod
+// keeps taken, because a backend of a running cluster must not be freed over
+// a refusal.
+func (r *CamundaClusterReconciler) releaseRefusedWait(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+	taken string,
+) (time.Duration, error) {
+	own, err := components.ClaimsOnOwnPods(ctx, r.APIReader, cluster.Namespace, cluster.UID, nil)
+	if err != nil {
+		return 0, err
+	}
+	keep := taken
+	if len(own) > 0 && !own.Carries(taken) {
+		keep = slices.Sorted(maps.Keys(own))[0]
+	}
+
+	return r.releaseWait(ctx, cluster, keep)
 }
 
 // retryInterval returns the wait before an unwatched dependency is looked at

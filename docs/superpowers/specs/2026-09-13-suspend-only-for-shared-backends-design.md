@@ -164,7 +164,12 @@ Lease is noticed at once and not at the next unrelated event. Three outcomes:
   revision the pod had (`RolloutClaims`). While one is held back, the cluster looks again on
   its retry interval. The same pod-gated release runs on the
   foreign-Lease and bad-key exits, where the cluster keeps running on its previous backend
-  and gives it back once its pods are gone, and on the refused-downgrade path. A pre-check
+  and gives it back once its pods are gone, and on the refused-downgrade path. A refused
+  cluster applies nothing, so the claim it took on that pass is not the backend it writes: it
+  keeps the claim its pods carry and gives the fresh one back (`releaseRefusedWait`), so a
+  cluster that repointed into a refusal blocks no one on a backend it never writes. A refused
+  cluster that the user or the claim suspends renders suspended on its running version
+  instead, and meets the refusal again when it resumes. A pre-check
   failure that comes before the claim step releases nothing: the pass does not know which
   backend the cluster resolves, and a cluster at zero must not give its live backend away
   over a missing preset.

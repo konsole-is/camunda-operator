@@ -182,6 +182,83 @@ func TestReleaseLeftBackendsKeepsOneItsPodsStillWrite(t *testing.T) {
 	}
 }
 
+// A refused cluster applies nothing, so the claim it took on the pass is not
+// the backend it writes. It keeps the backend its pods write and gives the
+// fresh one back, so a cluster that repointed into a refusal blocks no one on
+// a backend it never writes. A cluster with no pod keeps what it took.
+func TestReleaseRefusedWaitKeepsTheBackendThePodsWrite(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	self := &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "team-a", Name: "orders", UID: "uid-1"},
+	}
+	const (
+		oldKey = "elasticsearch|https://old.es:9200"
+		newKey = "elasticsearch|https://new.es:9200"
+	)
+	oldClaim := components.StorageClaimSchema().LeaseName(oldKey)
+	newClaim := components.StorageClaimSchema().LeaseName(newKey)
+	pod := func(claim string) *corev1.Pod {
+		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Namespace: "team-a",
+			Name:      "orders-zeebe-0",
+			Labels:    components.StoragePodLabels("orders", self.UID, claim),
+		}}
+	}
+
+	cases := map[string]struct {
+		pods     []client.Object
+		released []string
+		kept     []string
+	}{
+		"the pods write the backend the cluster took": {
+			pods:     []client.Object{pod(newClaim)},
+			released: []string{oldClaim},
+			kept:     []string{newClaim},
+		},
+		"the pods write the backend the cluster left": {
+			pods:     []client.Object{pod(oldClaim)},
+			released: []string{newClaim},
+			kept:     []string{oldClaim},
+		},
+		"no pod": {
+			released: []string{oldClaim},
+			kept:     []string{newClaim},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			objects := append(
+				[]client.Object{
+					components.StorageClaimSchema().NewLease("camunda-system", oldKey, self),
+					components.StorageClaimSchema().NewLease("camunda-system", newKey, self),
+				},
+				tc.pods...,
+			)
+			c := storageClaimPodClient(t, scheme, objects...)
+			r := &CamundaClusterReconciler{Client: c, APIReader: c, ClaimNamespace: "camunda-system"}
+
+			wait, err := r.releaseRefusedWait(context.Background(), self, newClaim)
+
+			require.NoError(t, err)
+			assert.Zero(t, wait, "a refused cluster holds nothing back that a pod of its does not write")
+			for _, claim := range tc.released {
+				var lease coordinationv1.Lease
+				err := c.Get(context.Background(), client.ObjectKey{Namespace: "camunda-system", Name: claim}, &lease)
+				assert.True(t, apierrors.IsNotFound(err), "%s is released", claim)
+			}
+			for _, claim := range tc.kept {
+				var lease coordinationv1.Lease
+				err := c.Get(context.Background(), client.ObjectKey{Namespace: "camunda-system", Name: claim}, &lease)
+				assert.NoError(t, err, "%s is kept", claim)
+			}
+		})
+	}
+}
+
 // The gate exists for the takeover moment. A cluster whose own pods already
 // write the backend it holds is past that moment, so it does not pay for the
 // list. A status write that never landed must not end a wait, so the pods of
