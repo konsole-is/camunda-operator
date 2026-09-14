@@ -62,10 +62,10 @@ const MessageKeptAtZero = "Kept at zero until the reference check passes"
 // stopPatch is the body of the merge patch that stops a workload: the replicas
 // it asks for, which are always none, and the UID the caller read it with.
 //
-// The API server takes metadata.uid in a merge patch as a precondition. A
-// workload deleted and recreated under the same name between the read and the
-// patch carries another UID, so the patch is refused with a conflict rather than
-// stopping a workload that belongs to someone else now.
+// metadata.uid is immutable, so a patch that names one the object does not have
+// is rejected as invalid. A workload deleted and recreated under the same name
+// between the read and the patch carries another UID, and the patch fails rather
+// than stopping a workload that belongs to someone else now.
 type stopPatch struct {
 	Metadata struct {
 		UID types.UID `json:"uid"`

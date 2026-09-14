@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	apitypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -214,9 +215,9 @@ func TestStopAtZeroRefusesAWorkloadRecreatedUnderAnotherOwner(t *testing.T) {
 				patch client.Patch,
 				opts ...client.PatchOption,
 			) error {
-				// The API server refuses a merge patch whose metadata.uid does
-				// not match the object it lands on. The fake client applies it,
-				// so the refusal is spelled out here.
+				// metadata.uid is immutable, so the API server rejects a patch
+				// that names another one. The fake client applies it, so the
+				// rejection is spelled out here.
 				data, err := patch.Data(obj)
 				require.NoError(t, err)
 				sent = data
@@ -228,10 +229,14 @@ func TestStopAtZeroRefusesAWorkloadRecreatedUnderAnotherOwner(t *testing.T) {
 				}
 				require.NoError(t, json.Unmarshal(data, &body))
 				if body.Metadata.UID != recreated.UID {
-					return apierrors.NewConflict(
-						schema.GroupResource{Group: "apps", Resource: "deployments"},
+					return apierrors.NewInvalid(
+						schema.GroupKind{Group: "apps", Kind: "Deployment"},
 						obj.GetName(),
-						errors.New("the UID of the object does not match the precondition"),
+						field.ErrorList{field.Invalid(
+							field.NewPath("metadata", "uid"),
+							body.Metadata.UID,
+							"field is immutable",
+						)},
 					)
 				}
 
@@ -243,7 +248,7 @@ func TestStopAtZeroRefusesAWorkloadRecreatedUnderAnotherOwner(t *testing.T) {
 	outcome, err := workloadsuspend.StopAtZero(context.Background(), fakeClient, observed, suspended)
 
 	require.Error(t, err)
-	assert.True(t, apierrors.IsConflict(err), "the caller retries rather than stopping a stranger")
+	assert.True(t, apierrors.IsInvalid(err), "the patch fails rather than stopping a stranger")
 	assert.False(t, outcome.Patched, "nothing stopped, so nothing is reported stopped")
 	assert.Contains(t, string(sent), string(observed.UID), "the patch carries the UID that was read")
 
