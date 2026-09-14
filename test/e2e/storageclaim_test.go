@@ -93,7 +93,7 @@ func itHandsTheStorageBackendOver() {
 		brokerOfWaiting := components.WorkloadName(waiting, components.ComponentZeebe)
 		gatewayOfWaiting := components.WorkloadName(waiting, components.ComponentGateway)
 
-		// The specs that follow suspend the Elasticsearch these clusters
+		// The spec that follows deletes the Elasticsearch these clusters
 		// write, so neither of them may outlive this one. A cluster is gone
 		// before its pods are: the garbage collector removes the workloads
 		// after the finalizer cleared, so the cleanup waits for the pods too.
