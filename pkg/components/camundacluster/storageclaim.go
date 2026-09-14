@@ -125,11 +125,12 @@ func StorageClaimPodList() *metav1.PartialObjectMetadataList {
 //
 // An Elasticsearch key is the type, then the scheme and the host of the
 // endpoint, and its port as a number (80 for http, 443 for https when the URL
-// names none). The path of the endpoint is left out: the processes connect to
-// the host and the port, so two paths on one address are one Elasticsearch. An
-// rdbms key is the type, then the host, the port, and the database name. Every
-// host goes through normalizeHost. A chain that names no address, or an
-// endpoint that is no URL, is an error.
+// names none). The path of the endpoint is left out: Optimize connects to the
+// host and the port, so two endpoints that differ in the path reach one
+// Elasticsearch for at least one writer. An rdbms key is the type, then the
+// host, the port, and the database name. Every host goes through
+// normalizeHost. A chain that names no address, or an endpoint that is no URL,
+// is an error.
 func StorageClaimKey(storage Storage) (string, error) {
 	switch storage.Type {
 	case v1.SecondaryStorageTypeElasticsearch:
@@ -162,6 +163,9 @@ func StorageClaimKey(storage Storage) (string, error) {
 // normalizeEndpoint renders the address of an Elasticsearch endpoint the way
 // StorageClaimKey documents it: the scheme, the host, and the port, and
 // nothing of the path.
+//
+// Optimize connects to the host and the port of the endpoint, so two endpoints
+// that differ only in the path reach one Elasticsearch for its importer.
 func normalizeEndpoint(endpoint string) (string, error) {
 	parsed, err := url.Parse(endpoint)
 	if err != nil {
