@@ -61,11 +61,6 @@ type resolved struct {
 	// ClusterUID is the UID that the exporter patch carries as a
 	// precondition, so an apply cannot put a deleted cluster back.
 	ClusterUID types.UID
-	// SuspensionRead reports whether the pre-check reached the cluster and read
-	// Input.Suspended from it. A failure before that leaves the field false
-	// because nothing read it, not because the cluster runs, so a caller that
-	// acts on the suspension must check this first.
-	SuspensionRead bool
 	// ExporterStorage is the storage contract with the credentials reference
 	// as the cluster resolves it. The exporter runs in the broker container,
 	// so it reads the copy that the cluster's own controller makes, not the
@@ -140,7 +135,6 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	// cluster's own field: MergeSpec carries it through unchanged, so no
 	// preset can set it.
 	out.Input.Suspended = cluster.Suspended()
-	out.SuspensionRead = true
 
 	holder, err := r.attachmentHolder(ctx, optimize)
 	if err != nil {

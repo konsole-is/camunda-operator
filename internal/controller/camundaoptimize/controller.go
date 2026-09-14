@@ -198,18 +198,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// it to zero, and the render that does that never runs on this path,
 		// see followSuspension. Suspended is false unless the pre-check read
 		// the cluster, so a failure before that leaves the workloads alone.
+		// The pre-check reads the cluster first, so its suspension is known on
+		// every failure that reaches here. The one failure that comes before
+		// that read is the cluster being gone, which the branch above returns
+		// on.
 		var suspendErr error
 		var outcome suspensionOutcome
-		switch {
-		case !res.SuspensionRead:
-			// Nothing read the suspension, so the conditions of the workloads
-			// stay as the last pass left them.
-		case res.Input.Suspended:
+		if res.Input.Suspended {
 			outcome, suspendErr = r.followSuspension(ctx, &optimize)
 			if outcome.Found && suspendErr == nil {
 				failure.Message += fmt.Sprintf(suspendNote, optimize.Spec.ClusterRef.Name)
 			}
-		default:
+		} else {
 			// The cluster resumed while the check still fails. Nothing renders
 			// here, so the workloads it stopped stay at zero.
 			kept, keptErr := r.keepAtZero(ctx, &optimize)
