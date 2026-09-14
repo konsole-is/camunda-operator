@@ -288,15 +288,16 @@ func normalizeEndpoint(endpoint string) (string, error) {
 	return scheme + "://" + host, nil
 }
 
-// normalizeHost renders one host name for the spellings that reach one host:
-// lower case, without the trailing dot of the DNS root, an internationalized
-// name in the IDNA form its client resolves, and an IP address in the form
-// net.IP writes. Each spelling would otherwise take a claim of its own on one
-// backend, and an IPv6 address has the most of them.
+// normalizeHost renders one host name for the spellings that reach one host,
+// in this order: lower case, without the trailing dot of the DNS root, then the
+// IDNA form its client resolves, and last an IP literal in the form net.IP
+// writes. Each spelling would otherwise take a claim of its own on one backend,
+// and an IPv6 address has the most of them.
 //
-// A host that the IDNA profile refuses, an IP literal among them, keeps the
-// spelling it came with. pkg/components/camundamanagementcluster folds the host
-// of a realm the same way.
+// The IDNA profile refuses an IP literal, which keeps the spelling it came with
+// through that step and is canonical after the last one.
+// pkg/components/camundamanagementcluster folds the host of a realm the same
+// way.
 func normalizeHost(host string) string {
 	folded := strings.TrimSuffix(strings.ToLower(host), ".")
 	if ascii, err := idna.Lookup.ToASCII(folded); err == nil && ascii != "" {
