@@ -178,10 +178,13 @@ func stageKeptAtZero(cluster *v1.CamundaCluster) bool {
 		}
 		kept = true
 
+		// The suspension ended, not the drain. A workload whose pods are still
+		// stopping keeps the status and the reason that say so, and only its
+		// message stops naming spec.suspend.
 		meta.SetStatusCondition(cluster.GetStatusConditions(), metav1.Condition{
 			Type:               conditionType,
-			Status:             metav1.ConditionTrue,
-			Reason:             string(component.Suspended),
+			Status:             condition.Status,
+			Reason:             condition.Reason,
 			Message:            keptAtZeroMessage,
 			ObservedGeneration: cluster.Generation,
 		})

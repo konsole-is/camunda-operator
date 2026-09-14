@@ -351,3 +351,63 @@ func replicasOf(t *testing.T, reader client.Reader, key client.ObjectKey) int32 
 
 	return *deployment.Spec.Replicas
 }
+
+// TestStageKeptAtZero covers the conditions of a cluster whose suspension ended
+// while its pre-check still fails. The workloads stay where the suspension left
+// them, so only the message changes: a workload whose pods are still draining
+// keeps saying so, and one that reached zero keeps saying that.
+func TestStageKeptAtZero(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		status metav1.ConditionStatus
+		reason string
+		kept   bool
+	}{
+		"a workload whose pods stopped": {
+			status: metav1.ConditionTrue,
+			reason: string(component.Suspended),
+			kept:   true,
+		},
+		"a workload whose pods still drain": {
+			status: metav1.ConditionFalse,
+			reason: string(component.Suspending),
+			kept:   true,
+		},
+		"a workload on its way to a suspension": {
+			status: metav1.ConditionFalse,
+			reason: string(component.PendingSuspension),
+			kept:   true,
+		},
+		"a healthy workload": {
+			status: metav1.ConditionTrue,
+			reason: v1.ReasonHealthy,
+			kept:   false,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Generation: 3}}
+			meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+				Type:    v1.ConditionZeebeReady,
+				Status:  tc.status,
+				Reason:  tc.reason,
+				Message: "the message of the pass that staged it",
+			})
+
+			assert.Equal(t, tc.kept, stageKeptAtZero(cluster))
+
+			zeebe := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionZeebeReady)
+			require.NotNil(t, zeebe)
+			assert.Equal(t, tc.status, zeebe.Status, "the drain state is not the suspension")
+			assert.Equal(t, tc.reason, zeebe.Reason)
+			if !tc.kept {
+				assert.Equal(t, "the message of the pass that staged it", zeebe.Message)
+
+				return
+			}
+			assert.Equal(t, keptAtZeroMessage, zeebe.Message)
+		})
+	}
+}

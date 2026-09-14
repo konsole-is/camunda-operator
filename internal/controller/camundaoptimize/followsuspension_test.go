@@ -428,3 +428,58 @@ func countRecorded(recorder *events.FakeRecorder, reason string) int {
 		}
 	}
 }
+
+// TestStageKeptAtZero covers the conditions of a CamundaOptimize whose cluster
+// resumed while a check of this instance still fails. The workloads stay where
+// the suspension left them, so only the message changes: a workload whose pods
+// are still draining keeps saying so.
+func TestStageKeptAtZero(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		status metav1.ConditionStatus
+		reason string
+		kept   bool
+	}{
+		"a workload whose pods stopped": {
+			status: metav1.ConditionTrue,
+			reason: string(component.Suspended),
+			kept:   true,
+		},
+		"a workload whose pods still drain": {
+			status: metav1.ConditionFalse,
+			reason: string(component.Suspending),
+			kept:   true,
+		},
+		"a healthy workload": {
+			status: metav1.ConditionTrue,
+			reason: v1.ReasonHealthy,
+			kept:   false,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			optimize := &v1.CamundaOptimize{ObjectMeta: metav1.ObjectMeta{Generation: 3}}
+			meta.SetStatusCondition(&optimize.Status.Conditions, metav1.Condition{
+				Type:    v1.ConditionImporterReady,
+				Status:  tc.status,
+				Reason:  tc.reason,
+				Message: "the message of the pass that staged it",
+			})
+
+			assert.Equal(t, tc.kept, stageKeptAtZero(optimize))
+
+			importer := meta.FindStatusCondition(optimize.Status.Conditions, v1.ConditionImporterReady)
+			require.NotNil(t, importer)
+			assert.Equal(t, tc.status, importer.Status, "the drain state is not the suspension")
+			assert.Equal(t, tc.reason, importer.Reason)
+			if !tc.kept {
+				assert.Equal(t, "the message of the pass that staged it", importer.Message)
+
+				return
+			}
+			assert.Equal(t, keptAtZeroMessage, importer.Message)
+		})
+	}
+}

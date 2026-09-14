@@ -29,7 +29,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -207,10 +206,13 @@ func stageKeptAtZero(optimize *v1.CamundaOptimize) bool {
 		}
 		kept = true
 
+		// The suspension ended, not the drain. A workload whose pods are still
+		// stopping keeps the status and the reason that say so, and only its
+		// message stops naming the suspension of the cluster.
 		meta.SetStatusCondition(optimize.GetStatusConditions(), metav1.Condition{
 			Type:               conditionType,
-			Status:             metav1.ConditionTrue,
-			Reason:             string(component.Suspended),
+			Status:             condition.Status,
+			Reason:             condition.Reason,
 			Message:            keptAtZeroMessage,
 			ObservedGeneration: optimize.Generation,
 		})
