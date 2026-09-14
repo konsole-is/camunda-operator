@@ -59,6 +59,15 @@ const (
 	StorageClaimKeyAnnotation             = "camunda.io/storage-claim-key"
 )
 
+// PodClaims are the storage claims that the pods of one cluster carry.
+type PodClaims map[string]bool
+
+// Carries reports whether a pod of the cluster carries the storage claim named
+// name.
+func (p PodClaims) Carries(name string) bool {
+	return p[labels.OwnerName(name)]
+}
+
 // StorageClaimSchema is the shape of the storage claim Leases. One
 // CamundaCluster writes one backend, so the claim key is the backend and
 // every cluster that resolves it meets on one Lease, whatever contract it
@@ -127,15 +136,6 @@ func OtherPodsOnClaim(
 	slices.Sort(names)
 
 	return names, nil
-}
-
-// PodClaims are the storage claims that the pods of one cluster carry.
-type PodClaims map[string]bool
-
-// Carries reports whether a pod of the cluster carries the storage claim named
-// name.
-func (p PodClaims) Carries(name string) bool {
-	return p[labels.OwnerName(name)]
 }
 
 // ClaimsOnOwnPods returns the storage claims that the pods of the cluster in
