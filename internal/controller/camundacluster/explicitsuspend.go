@@ -98,11 +98,11 @@ func (r *CamundaClusterReconciler) suspendExplicitly(
 		}),
 	}
 
-	// The cache holds the workloads that this controller owns, and the merge
-	// patch tolerates a stale copy: it names one field and its value does not
-	// depend on what the copy says.
+	// The reads are live. The decision to stop a workload reads its replicas,
+	// and a render that raised them lands on the API server before an informer
+	// carries it, so a cached copy can report none for a workload that runs.
 	var sets appsv1.StatefulSetList
-	if err := r.List(ctx, &sets, selector...); err != nil {
+	if err := r.APIReader.List(ctx, &sets, selector...); err != nil {
 		errs = append(errs, fmt.Errorf("listing the StatefulSets of the cluster: %w", err))
 	}
 	for i := range sets.Items {
@@ -110,7 +110,7 @@ func (r *CamundaClusterReconciler) suspendExplicitly(
 	}
 
 	var deployments appsv1.DeploymentList
-	if err := r.List(ctx, &deployments, selector...); err != nil {
+	if err := r.APIReader.List(ctx, &deployments, selector...); err != nil {
 		errs = append(errs, fmt.Errorf("listing the Deployments of the cluster: %w", err))
 	}
 	for i := range deployments.Items {

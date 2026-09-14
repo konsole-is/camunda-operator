@@ -94,11 +94,12 @@ func (r *Reconciler) followSuspension(
 			Name:      components.WorkloadName(optimize, comp),
 		}
 
-		// The cache holds the Deployments that this controller owns, and the
-		// merge patch below tolerates a stale copy: it names one field and its
-		// value does not depend on what the copy says.
+		// The read is live. The decision to stop a workload reads its replicas,
+		// and a render that raised them lands on the API server before an
+		// informer carries it, so a cached copy can report none for a workload
+		// that runs.
 		var deployment appsv1.Deployment
-		if err := r.Get(ctx, key, &deployment); err != nil {
+		if err := r.APIReader.Get(ctx, key, &deployment); err != nil {
 			if !apierrors.IsNotFound(err) {
 				errs = append(errs, fmt.Errorf("reading Deployment %q: %w", key, err))
 			}
