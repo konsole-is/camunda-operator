@@ -161,8 +161,10 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	if err != nil {
 		return out, err
 	}
+	// The type comes from the contract, never from a literal here: the key of
+	// this instance must be the one the cluster computes from the same chain.
 	key, err := clustercomponents.StorageClaimKey(clustercomponents.Storage{
-		Type:          v1.SecondaryStorageTypeElasticsearch,
+		Type:          binding.Spec.Type,
 		Elasticsearch: binding.Spec.Elasticsearch,
 	})
 	if err != nil {
