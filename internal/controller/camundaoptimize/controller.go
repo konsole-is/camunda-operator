@@ -261,10 +261,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
 	conditions.Stage(&optimize, conditions.Aggregate(&optimize, built.ready...))
-	// An apply that failed leaves a workload where it was, so the transition it
-	// was meant to carry has not happened. The next pass reads the same prior
-	// state off the conditions and records it then.
-	if reconcileErr == nil {
+	// The start of a suspension is recorded whatever the apply did. One
+	// component that suspended is enough for the transition to have started, and
+	// the next pass reads it off that component's condition, so a record held
+	// back here is a record lost.
+	//
+	// The end waits for a clean apply: a workload the apply left at zero has not
+	// resumed, and the next pass reads the suspension off its condition and
+	// records the end then.
+	startsSuspension := res.Input.Suspended && !suspendedBefore
+	if startsSuspension || reconcileErr == nil {
 		r.recordSuspensionChange(&optimize, suspendedBefore, res.Input.Suspended)
 	}
 
