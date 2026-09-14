@@ -8,7 +8,7 @@ feature_worktree: .claude/worktrees/suspend-only-for-shared-backends
 sub_pr_approval: autonomous
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
-integration_pr:
+integration_pr: "#379"
 status: review
 ---
 
@@ -60,7 +60,7 @@ status: review
 ## Pending snapshot
 
 1. Done: #372, #371, and the convergence PR #378 self-merged; #369 and #370 closed; the epic, both sub-issue bodies, and the #372 body reconciled on 2026-09-14; spec refreshed (f8750ec). Pre-integration gates green on the feature branch at 17c37f6 on 2026-09-15: `make manifests generate` with a clean porcelain, `go test -p 2` over every root package (exit 0), `go -C api test ./...`, `GOTOOLCHAIN=go1.26.4 make lint` at 0 issues in both modules, `go vet -tags=e2e ./test/e2e/`, `mkdocs build --strict`. The state-file integrity walk matched reality.
-2. Now: the integration PR from `fix/suspend-only-for-shared-backends` to `main` with `Closes #368` (body draft in the session scratchpad, `pr-body-368-integration.md`). The Copilot auto-review fires on it; run `feature-dev-workflow:copilot-review-loop` to clean, no round cap. Watch the `elasticsearch` e2e job of run 34901403773 (the first run of the new flow) and the e2e jobs of the integration PR; a failure of the flow is fixed on the feature branch.
+2. Now: integration PR #379 (`fix/suspend-only-for-shared-backends` to `main`, `Closes #368`) opened 2026-09-15. The Copilot auto-review fires on every push to it, never re-request by hand; run `feature-dev-workflow:copilot-review-loop` to clean, no round cap. Watch the `elasticsearch` e2e job of run 34901403773 (the first run of the new flow) and the e2e jobs of the integration PR; a failure of the flow is fixed on the feature branch.
 3. Once the loop is clean and CI is green: delete this file and the plan in the last commit, keep the spec, push, and hand the merge to the user. After the user merges: verify #368 closed, remove the three sub-worktrees under `.claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/` and the feature worktree, delete the four remote branches (`fix/suspend-only-for-shared-backends--keep-workloads-on-precheck-failure`, `feat/suspend-only-for-shared-backends--storage-claim-on-a-lease`, `test/suspend-only-for-shared-backends--e2e-and-convergence`, `fix/suspend-only-for-shared-backends`).
 
 ## Resume checklist
