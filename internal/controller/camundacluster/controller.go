@@ -348,6 +348,10 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 // failed, stages the failure on Ready, and gives back the backends that no pod
 // of this cluster writes any more. It returns the claims it held back, which
 // the caller waits on.
+//
+// It releases nothing unless the claim step of the pre-check ran on this pass,
+// which in.Storage.Claim says: every earlier step fails on a reference that
+// tells nothing about the backend this cluster writes.
 func (r *CamundaClusterReconciler) reportFailedPreCheck(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -372,10 +376,18 @@ func (r *CamundaClusterReconciler) reportFailedPreCheck(
 		return nil, suspendErr
 	}
 
+	// The claim step is the last one, so a check that failed before it knows
+	// no backend of this cluster. Releasing with no claim to keep would give
+	// its live backend away, at once for a cluster whose pods are already
+	// gone, and a waiting cluster would take it.
+	if in.Storage.Claim == "" {
+		return nil, nil
+	}
+
 	// A cluster whose check fails keeps the backend it writes, because the
 	// workloads it had keep writing it. The pod gate holds that claim and
 	// gives back the ones no pod of this cluster carries any more, which is how
-	// a cluster that resolves no backend at all frees the one it left.
+	// a cluster that moved frees the backend it left.
 	return r.releaseLeftBackends(ctx, cluster, in.Storage.Claim)
 }
 

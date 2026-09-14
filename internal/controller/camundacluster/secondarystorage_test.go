@@ -215,6 +215,55 @@ func TestClaimStorageRefusesAFreeBackendUnderOtherPods(t *testing.T) {
 	}
 }
 
+// A pre-check that fails before the claim step knows no backend of this
+// cluster. Releasing then would hand a live backend to a waiting cluster, and
+// a cluster whose pods are already gone holds nothing back.
+func TestReportFailedPreCheckReleasesNothingBeforeTheClaimStep(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	const key = "elasticsearch|https://es.data.svc:9200"
+	self := &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "orders", UID: "uid-1"},
+	}
+	claim := components.StorageClaimSchema().LeaseName(key)
+
+	cases := map[string]struct {
+		claim    string
+		released bool
+	}{
+		"the pre-check failed before the claim step": {claim: ""},
+		"the claim step ran and named this backend":  {claim: claim},
+		"the claim step ran and named another":       {claim: "camunda-storage-other", released: true},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			c := storageClaimPodClient(
+				t, scheme, components.StorageClaimSchema().NewLease("camunda-system", key, self),
+			)
+			r := &CamundaClusterReconciler{Client: c, APIReader: c, ClaimNamespace: "camunda-system"}
+			in := components.Input{Cluster: self, Storage: components.Storage{Claim: tc.claim}}
+
+			_, err := r.reportFailedPreCheck(
+				context.Background(),
+				self.DeepCopy(),
+				in,
+				&conditions.PreCheckFailure{Reason: v1.ReasonInvalidReference, Message: "gone"},
+			)
+
+			require.NoError(t, err)
+			read := c.Get(
+				context.Background(),
+				client.ObjectKey{Namespace: "camunda-system", Name: claim},
+				&coordinationv1.Lease{},
+			)
+			assert.Equal(t, tc.released, apierrors.IsNotFound(read), "the backend this cluster writes")
+		})
+	}
+}
+
 // A Lease that carries the name of a storage claim and no holder annotations
 // is somebody else's. No cluster holds the backend, so the failure is a report
 // and not a suspension. Nothing watches that Lease for this cluster, so the
@@ -927,6 +976,37 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 
 		expectClaimedBy(binding, holder)
 		expectHolds(holder)
+		expectParked(parked, holder)
+	})
+
+	// A suspended cluster has no pod to hold its backend, so a release on any
+	// failed check would hand it to the cluster that waits for it. The check
+	// that failed says nothing about the backend, and the suspension is not
+	// forever.
+	It("keeps the backend of a suspended cluster whose platform config goes away", func() {
+		ns := newNamespace()
+		binding := createBinding(ns, true)
+		cfg := createPlatformConfig()
+		holder := newNamedCluster("cc-a-", ns, cfg, binding)
+		holder.Spec.Suspend = true
+		createCluster(holder)
+		expectClaimedBy(binding, holder)
+
+		parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
+		createCluster(parked)
+		expectParked(parked, holder)
+
+		By("deleting the platform config that the suspended cluster names")
+		Expect(k8sClient.Delete(ctx, cfg)).To(Succeed())
+		expectReady(holder, metav1.ConditionFalse, Equal(v1.ReasonInvalidReference), ContainSubstring(cfg.Name))
+
+		claim := client.ObjectKey{
+			Namespace: testClaimNamespace,
+			Name:      components.StorageClaimSchema().LeaseName(storageKeyOf(binding)),
+		}
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, claim, &coordinationv1.Lease{})).To(Succeed())
+		}, "3s", interval).Should(Succeed(), "the suspended cluster keeps the backend it resolved")
 		expectParked(parked, holder)
 	})
 
