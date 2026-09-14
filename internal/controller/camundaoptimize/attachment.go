@@ -150,6 +150,11 @@ func (r *Reconciler) releaseWorkloads(ctx context.Context, optimize *v1.CamundaO
 // missing object is already the wanted state. The ownership check matters
 // because the managed labels of two CamundaOptimizes on one cluster are
 // identical. Only the owner reference tells their objects apart.
+//
+// The delete carries the UID that the read returned. An object deleted and
+// built again under that name between the two belongs to whoever built it, and
+// the API server refuses the delete with a conflict rather than taking the
+// replacement. That refusal is the wanted state, so it is no error.
 func (r *Reconciler) deleteControlled(
 	ctx context.Context,
 	key client.ObjectKey,
@@ -167,7 +172,9 @@ func (r *Reconciler) deleteControlled(
 		return nil
 	}
 
-	if err := r.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
+	uid := obj.GetUID()
+	err := r.Delete(ctx, obj, &client.Preconditions{UID: &uid})
+	if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
 		return fmt.Errorf("deleting %T %q: %w", obj, key, err)
 	}
 
