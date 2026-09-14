@@ -77,6 +77,22 @@ func TestStorageClaimKey(t *testing.T) {
 			},
 			key: "elasticsearch|https://es.example.com:443",
 		},
+		// An HTTP client reaches one server through either spelling of an
+		// internationalized host, so both must give one key.
+		"elasticsearch folds an internationalized host": {
+			storage: Storage{
+				Type:          v1.SecondaryStorageTypeElasticsearch,
+				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://BÜCHER.example:9200"},
+			},
+			key: "elasticsearch|https://xn--bcher-kva.example:9200",
+		},
+		"elasticsearch keeps the punycode of that host": {
+			storage: Storage{
+				Type:          v1.SecondaryStorageTypeElasticsearch,
+				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://xn--bcher-kva.example:9200"},
+			},
+			key: "elasticsearch|https://xn--bcher-kva.example:9200",
+		},
 		// One IP address has many spellings, an IPv6 literal most of all. Each
 		// would otherwise take a claim of its own on one backend.
 		"elasticsearch folds a long IPv6 spelling": {

@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/net/idna"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -283,14 +284,23 @@ func normalizeEndpoint(endpoint string) (string, error) {
 	return scheme + "://" + host, nil
 }
 
-// normalizeHost renders one host name for the spellings that reach one host: a
-// name in lower case without the trailing dot of the DNS root, and an IP
-// address in the form net.IP writes. An IPv6 address has many spellings, and
-// "::1" and "0:0:0:0:0:0:0:1" would otherwise take a claim each on one backend.
+// normalizeHost renders one host name for the spellings that reach one host:
+// lower case, without the trailing dot of the DNS root, an internationalized
+// name in the IDNA form its client resolves, and an IP address in the form
+// net.IP writes. Each spelling would otherwise take a claim of its own on one
+// backend, and an IPv6 address has the most of them.
+//
+// A host that the IDNA profile refuses, an IP literal among them, keeps the
+// spelling it came with. pkg/components/camundamanagementcluster folds the host
+// of a realm the same way.
 func normalizeHost(host string) string {
-	if ip := net.ParseIP(host); ip != nil {
+	folded := strings.TrimSuffix(strings.ToLower(host), ".")
+	if ascii, err := idna.Lookup.ToASCII(folded); err == nil && ascii != "" {
+		folded = ascii
+	}
+	if ip := net.ParseIP(folded); ip != nil {
 		return ip.String()
 	}
 
-	return strings.TrimSuffix(strings.ToLower(host), ".")
+	return folded
 }
