@@ -53,9 +53,9 @@ const (
 	// They go under the default grace period of thirty seconds, and the
 	// waiting cluster reports the wait for as long as they are there.
 	scHandoverTimeout = 3 * time.Minute
-	// scHoldInterval is how long a hold of the operator is sampled, and how
-	// often. A hold that the operator must keep reads the same at every
-	// sample.
+	// scHoldInterval is how long a hold of the operator is sampled, and
+	// scHoldSample is how often. A hold that the operator must keep reads the
+	// same at every sample.
 	scHoldInterval = 30 * time.Second
 	scHoldSample   = 10 * time.Second
 )
@@ -88,7 +88,8 @@ func itHandsTheStorageBackendOver() {
 		holder.Name = scHolder
 		waiting := newCluster(esNamespace, scPlatform, scContract, "", false)
 		waiting.Name = scWaiting
-		brokerOfHolder := components.WorkloadName(holder, components.ComponentZeebe)
+		// The one broker pod of the holder is ordinal zero of its StatefulSet.
+		brokerPodOfHolder := components.WorkloadName(holder, components.ComponentZeebe) + "-0"
 		brokerOfWaiting := components.WorkloadName(waiting, components.ComponentZeebe)
 		gatewayOfWaiting := components.WorkloadName(waiting, components.ComponentGateway)
 
@@ -148,7 +149,7 @@ func itHandsTheStorageBackendOver() {
 		By("waiting for its pods to go, at zero and naming them")
 		Eventually(func(g Gomega) {
 			expectReadyFailure(
-				g, scWaiting, v1.ReasonWaitingForHandover, esNamespace+"/"+brokerOfHolder, backend,
+				g, scWaiting, v1.ReasonWaitingForHandover, esNamespace+"/"+brokerPodOfHolder, backend,
 			)
 			expectScaledToZero(g, "statefulset", brokerOfWaiting, esNamespace)
 			expectScaledToZero(g, "deployment", gatewayOfWaiting, esNamespace)
