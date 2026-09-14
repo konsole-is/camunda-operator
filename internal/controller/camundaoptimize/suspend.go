@@ -47,10 +47,16 @@ const (
 	// eventReasonWorkloadsSuspended is recorded when a failed pre-check scales
 	// an Optimize workload to zero.
 	eventReasonWorkloadsSuspended = "WorkloadsSuspended"
-	// noteSuspended and noteResumed carry the name of the cluster, which is
-	// what the Ready condition cannot say.
-	noteSuspended = "Scaling the Optimize workloads to zero: CamundaCluster %q is suspended"
-	noteResumed   = "Starting the Optimize workloads again: CamundaCluster %q is no longer suspended"
+	// eventReasonStorageClaimAwaited is recorded when the storage claim of the
+	// backend scales the Optimize workloads to zero while the cluster itself
+	// reports no suspension.
+	eventReasonStorageClaimAwaited = "StorageClaimAwaited"
+	// noteSuspended, noteResumed and noteClaimAwaited carry the name of the
+	// cluster, which is what the Ready condition cannot say.
+	noteSuspended    = "Scaling the Optimize workloads to zero: CamundaCluster %q is suspended"
+	noteResumed      = "Starting the Optimize workloads again: CamundaCluster %q is no longer suspended"
+	noteClaimAwaited = "Scaling the Optimize workloads to zero: CamundaCluster %q does not hold its " +
+		"backend, or pods of another cluster still write it"
 )
 
 // workloadConditions maps an Optimize workload to the condition that it
@@ -174,21 +180,28 @@ func stageSuspension(optimize *v1.CamundaOptimize, comp string, observed int32) 
 // component from its own suspension state, and the reason is Suspended, the
 // same reason that a suspended CamundaCluster reports.
 //
-// before is what wasSuspending read at the top of the reconcile, and suspended
-// is spec.suspend of the referenced cluster. The caller runs this after it
+// before is what wasSuspending read at the top of the reconcile, and res
+// carries why the workloads are at zero: the suspension of the cluster, or the
+// storage claim of the backend. The caller runs this after it
 // stages the new Ready, so a reconcile that returns early on an error records
 // nothing: it changed no workload, and the next reconcile still sees the same
 // transition to record.
 func (r *Reconciler) recordSuspensionChange(
 	optimize *v1.CamundaOptimize,
-	before, suspended bool,
+	before bool,
+	res resolved,
 ) {
-	if suspended == before {
+	if res.Input.Suspended == before {
 		return
 	}
 
 	reason, note := eventReasonClusterResumed, noteResumed
-	if suspended {
+	switch {
+	case res.AwaitsBackendClaim:
+		// The cluster can report itself healthy in this window, so
+		// ClusterSuspended would say something false about it.
+		reason, note = eventReasonStorageClaimAwaited, noteClaimAwaited
+	case res.Input.Suspended:
 		reason, note = eventReasonClusterSuspended, noteSuspended
 	}
 

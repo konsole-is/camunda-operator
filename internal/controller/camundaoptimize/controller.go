@@ -234,7 +234,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
 	conditions.Stage(&optimize, conditions.Aggregate(&optimize, built.ready...))
-	r.recordSuspensionChange(&optimize, suspendedBefore, res.Input.Suspended)
+	r.recordSuspensionChange(&optimize, suspendedBefore, res)
 
 	// No watch reports the storage claim of the backend, or the pods of
 	// another cluster on it, so the workloads they park start again on this

@@ -229,3 +229,49 @@ func withReadyReason(reason string) *v1.CamundaOptimize {
 
 	return optimize
 }
+
+// The cluster can report itself healthy while its storage claim parks these
+// workloads, so the event of that wait must not say the cluster is suspended.
+func TestRecordSuspensionChangeNamesTheClaimWait(t *testing.T) {
+	optimize := &v1.CamundaOptimize{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-optimize", Namespace: "apps"},
+		Spec:       v1.CamundaOptimizeSpec{ClusterRef: v1.ClusterRef{Name: "my-cluster"}},
+	}
+
+	cases := map[string]struct {
+		res    resolved
+		reason string
+		note   string
+	}{
+		"the claim of the backend parks the workloads": {
+			res:    resolved{Input: components.Input{Suspended: true}, AwaitsBackendClaim: true},
+			reason: eventReasonStorageClaimAwaited,
+			note:   "does not hold its backend",
+		},
+		"the cluster is suspended": {
+			res:    resolved{Input: components.Input{Suspended: true}},
+			reason: eventReasonClusterSuspended,
+			note:   "is suspended",
+		},
+		"the workloads start again": {
+			res:    resolved{},
+			reason: eventReasonClusterResumed,
+			note:   "no longer suspended",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			recorder := events.NewFakeRecorder(10)
+			r := &Reconciler{EventRecorder: recorder}
+
+			r.recordSuspensionChange(optimize, !tc.res.Input.Suspended, tc.res)
+
+			require.Len(t, recorder.Events, 1)
+			recorded := <-recorder.Events
+			assert.Contains(t, recorded, tc.reason)
+			assert.Contains(t, recorded, tc.note)
+			assert.Contains(t, recorded, "my-cluster")
+		})
+	}
+}
