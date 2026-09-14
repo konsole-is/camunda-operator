@@ -76,6 +76,17 @@ keeps its workloads only for a failure while its cluster runs. An Optimize whose
 deleted releases its workloads, as it does when another instance holds the cluster, so its
 pods never block the handover of the backend to the next cluster.
 
+The suspension events of Optimize mark decisions, not outcomes: `ClusterSuspended` is
+recorded on the pass that stopped a workload, and `ClusterResumed` on the pass that decided
+to start them, whatever the apply did. The workload conditions report whether the resume
+completed. Tying an event to a clean apply lost it for good when ocf rewrote the conditions
+on a failed apply.
+
+A cluster held at zero after its suspension ended keeps clearing `status.gateway` and
+`status.management` only while the process that serves them is at zero; a process that a
+rejected patch left running keeps its condition and its endpoints. On that path a condition
+captured mid-drain advances to `Suspended` once the workload observes zero, read live.
+
 Every other `Ready` reason leaves the workloads as the last successful reconcile rendered them.
 `InvalidReference`, `MissingSecret`, `VersionMismatch`, `StorageTypeMismatch`,
 `ExporterConflict`, and `VersionDowngradeRefused` are reports, not stops.
