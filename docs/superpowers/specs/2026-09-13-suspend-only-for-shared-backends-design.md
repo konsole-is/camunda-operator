@@ -113,7 +113,10 @@ key. Three outcomes:
 
 - `Take` returns no blocker: this cluster holds the Lease. It releases every other storage
   Lease it holds (`Held`, then `Release` for each Lease whose name differs), so a repoint
-  frees the old backend once the new one is taken. It then runs the handover gate.
+  frees the old backend once the new one is taken. A Lease is released only when no pod of
+  this cluster still carries its claim label, the same signal the handover gate reads, so a
+  backend is never free while a pod of its last holder can still write it; while one is held
+  back, the cluster looks again on its retry interval. It then runs the handover gate.
 - The blocker names a holder: `in.Storage.Holder` carries the holder and the key, and the
   controller renders the cluster suspended with `StorageAlreadyAttached`, as it does today.
   The message names the holder and the backend.

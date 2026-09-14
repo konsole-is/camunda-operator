@@ -22,8 +22,8 @@ status: foundational-wave
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #369 | feat/suspend-only-for-shared-backends--storage-claim-on-a-lease | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/storage-claim-on-a-lease | #372 → fix/suspend-only-for-shared-backends | ready at d12af5c, Copilot round 11 and final review pass pending |
-| #370 | fix/suspend-only-for-shared-backends--keep-workloads-on-precheck-failure | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/keep-workloads-on-precheck-failure | #371 → fix/suspend-only-for-shared-backends | ready at 07118a7, Copilot round 14 and final review pass pending |
+| #369 | feat/suspend-only-for-shared-backends--storage-claim-on-a-lease | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/storage-claim-on-a-lease | #372 → fix/suspend-only-for-shared-backends | at d12af5c, seven final-review items with the agent (release follows the pods, host root dot, shared pod-gate helper, gate event, list skip), Copilot round 12 after |
+| #370 | fix/suspend-only-for-shared-backends--keep-workloads-on-precheck-failure | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/keep-workloads-on-precheck-failure | #371 → fix/suspend-only-for-shared-backends | ready at 6ef0ca8, Copilot round 15 and final review pass pending |
 
 ## Contracts
 
@@ -33,6 +33,7 @@ status: foundational-wave
 
 ## Bubble-up log
 
+- 2026-09-14, Copilot round 11 on #372: the parked and repoint paths released the old backend's claim before the old pods were gone, so a claimant's one-time scan could miss a pod mid-recreation. Settled: a cluster releases a backend only when none of its pods still carries its claim, the same signal the handover gate uses, and requeues while it holds one back. Spec amended; #369 implements.
 - 2026-09-13, orchestrator review of #372: the repository docs skill lists a Lease as content that stays off a user page, so the three Copilot rounds I declined on that point were right; #369 rewrites the two pages. Follow-up candidate, not in scope: the pods of a LogicalRestoreRDBMS Job write the backend but carry no storage-claim label, so a cluster deleted mid-restore lets its successor start beside the restore; the old gate had the same gap. File it after the integration PR merges.
 - 2026-09-13, orchestrator review of #371: an Optimize whose own check fails kept importing while its cluster was suspended, which the Elasticsearch restore relies on not happening; and an Optimize whose cluster was deleted kept pods that block the backend's handover forever. Settled: Optimize follows the cluster's suspension on its own failed check, and releases its workloads when its cluster is gone. Explicit suspend on the cluster stages `Suspended` per process. Spec amended; #370 implements. Not propagated to #369.
 - 2026-09-13, Copilot round 4 on #371: `spec.suspend` set while a reference check fails left the workloads running. Settled: an explicit suspend scales the owned workloads to zero on the failure branch, with no condition faking. Spec amended; #370 implements it.
