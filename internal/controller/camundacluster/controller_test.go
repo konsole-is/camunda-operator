@@ -651,12 +651,32 @@ var _ = Describe("CamundaCluster controller", func() {
 			)),
 		)
 
+		By("clearing spec.suspend while the Secret is still missing")
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Suspend = false })
+		expectReady(
+			cluster,
+			metav1.ConditionFalse,
+			Equal(v1.ReasonMissingSecret),
+			And(
+				ContainSubstring(name),
+				ContainSubstring("The workloads stay at zero until the reference check passes"),
+			),
+		)
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			zeebe := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionZeebeReady)
+			g.Expect(zeebe).NotTo(BeNil())
+			g.Expect(zeebe.Reason).To(Equal(string(component.Suspended)))
+			g.Expect(zeebe.Message).To(
+				Equal("Kept at zero until the reference check passes"),
+				"the suspension ended, so its message must not name spec.suspend",
+			)
+		}, timeout, interval).Should(Succeed())
+		Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
+
 		By("recreating the Secret")
 		createSecret(ns, name, map[string]string{"username": "camunda", "password": "es-password"})
-		expectReady(cluster, metav1.ConditionTrue, Equal(string(component.Suspended)), Not(BeEmpty()))
-
-		By("clearing spec.suspend")
-		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Suspend = false })
 		Eventually(func(g Gomega) {
 			var latest v1.CamundaCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())

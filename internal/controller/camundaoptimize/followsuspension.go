@@ -54,6 +54,16 @@ const suspendNote = ". The Optimize workloads are scaled to zero because Camunda
 // suspension of the referenced cluster stopped and whose pods are gone.
 const suspendedMessage = "Scaled to zero while the referenced cluster is suspended"
 
+// keptAtZeroMessage is the message of that condition once the cluster resumed
+// while a check of this CamundaOptimize still fails. The workload stays where
+// the suspension left it, so the condition must not keep naming a suspension
+// that is over.
+const keptAtZeroMessage = "Kept at zero until the reference check passes"
+
+// keptAtZeroNote is appended to the failure message of a CamundaOptimize whose
+// workloads a suspension left at zero and whose cluster resumed.
+const keptAtZeroNote = ". The Optimize workloads stay at zero until the reference check passes"
+
 // suspensionOutcome reports what followSuspension did with the workloads.
 type suspensionOutcome struct {
 	// Found is true when a Deployment that this CamundaOptimize controls
@@ -199,4 +209,32 @@ func (r *Reconciler) scaleToZero(
 	)
 
 	return nil
+}
+
+// stageKeptAtZero restages the workload conditions of a CamundaOptimize whose
+// cluster resumed while a check of this instance still fails, and reports
+// whether it restaged any.
+//
+// Nothing renders on that path, so the workloads stay where the suspension left
+// them and only a pass of the check raises their replicas again. Their
+// conditions would keep naming a suspension of the cluster that is over.
+func stageKeptAtZero(optimize *v1.CamundaOptimize) bool {
+	var kept bool
+	for _, conditionType := range workloadConditions {
+		condition := meta.FindStatusCondition(optimize.Status.Conditions, conditionType)
+		if condition == nil || !suspensionReason(condition.Reason) {
+			continue
+		}
+		kept = true
+
+		meta.SetStatusCondition(optimize.GetStatusConditions(), metav1.Condition{
+			Type:               conditionType,
+			Status:             metav1.ConditionTrue,
+			Reason:             string(component.Suspended),
+			Message:            keptAtZeroMessage,
+			ObservedGeneration: optimize.Generation,
+		})
+	}
+
+	return kept
 }

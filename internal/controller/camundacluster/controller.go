@@ -204,6 +204,13 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if suspended && suspendErr == nil {
 				failure.Message += suspendNote
 			}
+		} else if stageKeptAtZero(&cluster) {
+			// The suspension ended while the check still fails. Nothing renders
+			// here, so the workloads stay at zero and their endpoints answer
+			// nothing, see stageKeptAtZero.
+			cluster.Status.Management = nil
+			cluster.Status.Gateway = nil
+			failure.Message += keptAtZeroNote
 		}
 		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
 		if suspendErr != nil {

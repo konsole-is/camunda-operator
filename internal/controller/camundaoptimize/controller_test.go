@@ -705,6 +705,25 @@ var _ = Describe("CamundaOptimize controller", func() {
 				g.Expect(suspensionEventsOf(s.optimize, eventReasonClusterResumed)).To(BeEmpty())
 			}, "3s", interval).Should(Succeed())
 
+			By("dropping the suspension from the message once it ended")
+			Eventually(func(g Gomega) {
+				var latest v1.CamundaOptimize
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(s.optimize), &latest)).To(Succeed())
+				importer := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionImporterReady)
+				g.Expect(importer).NotTo(BeNil())
+				g.Expect(importer.Reason).To(Equal(string(component.Suspended)))
+				g.Expect(importer.Message).To(
+					Equal("Kept at zero until the reference check passes"),
+					"the cluster resumed, so the message must not name its suspension",
+				)
+				ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
+				g.Expect(ready).NotTo(BeNil())
+				g.Expect(ready.Message).To(ContainSubstring(
+					"The Optimize workloads stay at zero until the reference check passes",
+				))
+			}, timeout, interval).Should(Succeed())
+			expectReplicas(0, webappKey, importerKey)
+
 			By("pairing the resume when the render starts the workloads again")
 			createSecret(
 				s.auth.Spec.ClientSecretRef.Namespace,

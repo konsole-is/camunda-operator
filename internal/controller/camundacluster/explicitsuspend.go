@@ -53,6 +53,15 @@ const suspendNote = ". The workloads are scaled to zero because spec.suspend is 
 // that an explicit suspend stopped and whose pods are gone.
 const suspendedMessage = "Scaled to zero because spec.suspend is set"
 
+// keptAtZeroMessage is the message of that condition once the suspension ended
+// while the pre-check still fails. The workload stays where the suspension left
+// it, so the condition must not keep naming a suspension that is over.
+const keptAtZeroMessage = "Kept at zero until the reference check passes"
+
+// keptAtZeroNote is appended to the failure message of a cluster whose
+// workloads a suspension left at zero and whose suspension ended.
+const keptAtZeroNote = ". The workloads stay at zero until the reference check passes"
+
 // processConditions maps the component label of a workload to the condition
 // that its process reports. It mirrors Process.ConditionType in
 // pkg/components/camundacluster: a failed pre-check has no effective spec to
@@ -197,4 +206,45 @@ func stageSuspension(cluster *v1.CamundaCluster, comp string, observed int32) {
 		condition.Message = fmt.Sprintf("Waiting for %d replicas to stop", observed)
 	}
 	meta.SetStatusCondition(cluster.GetStatusConditions(), condition)
+}
+
+// stageKeptAtZero restages the per-process conditions of a cluster whose
+// suspension ended while its pre-check still fails, and reports whether it
+// restaged any.
+//
+// Nothing renders on that path, so the workloads stay where the suspension left
+// them and only a pass of the pre-check raises their replicas again. Their
+// conditions would keep naming spec.suspend, which the user has already
+// cleared.
+func stageKeptAtZero(cluster *v1.CamundaCluster) bool {
+	var kept bool
+	for _, conditionType := range processConditions {
+		condition := meta.FindStatusCondition(cluster.Status.Conditions, conditionType)
+		if condition == nil || !suspensionReason(condition.Reason) {
+			continue
+		}
+		kept = true
+
+		meta.SetStatusCondition(cluster.GetStatusConditions(), metav1.Condition{
+			Type:               conditionType,
+			Status:             metav1.ConditionTrue,
+			Reason:             string(component.Suspended),
+			Message:            keptAtZeroMessage,
+			ObservedGeneration: cluster.Generation,
+		})
+	}
+
+	return kept
+}
+
+// suspensionReason reports whether an ocf status is on the way to suspended or
+// already there. Every one of them means that the workload is not running for
+// the user, so the condition that carries it is one this controller staged.
+func suspensionReason(reason string) bool {
+	switch reason {
+	case string(component.PendingSuspension), string(component.Suspending), string(component.Suspended):
+		return true
+	default:
+		return false
+	}
 }

@@ -205,6 +205,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			if outcome.Found && suspendErr == nil {
 				failure.Message += fmt.Sprintf(suspendNote, optimize.Spec.ClusterRef.Name)
 			}
+		} else if stageKeptAtZero(&optimize) {
+			// The cluster resumed while the check still fails. Nothing renders
+			// here, so the workloads stay at zero, see stageKeptAtZero.
+			failure.Message += keptAtZeroNote
 		}
 		conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
 		// This path records the start of a suspension and never its end. It
