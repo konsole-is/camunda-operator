@@ -62,9 +62,9 @@ var zeroReplicas = client.RawPatch(types.MergePatchType, []byte(`{"spec":{"repli
 
 // Outcome is what StopAtZero did with one workload, and what to report for it.
 type Outcome struct {
-	// Patched is true when this call lowered the replicas of the workload. A
-	// workload that already ran none is left alone, so a caller that records an
-	// event records it once.
+	// Patched is true when this call lowered the desired replicas of the
+	// workload. A workload that already asked for none is left alone, so a
+	// caller that records an event records it once.
 	Patched bool
 	// Status and Reason are the ocf suspension status read from the replicas the
 	// workload still observes: Suspending while pods run, Suspended once they
@@ -80,9 +80,10 @@ type Outcome struct {
 // returns what to report for it. suspended is the message to carry once its pods
 // are gone, which says why the caller holds this workload at zero.
 //
-// A workload that already runs none is not patched. A workload that is gone
-// needs nothing: the outcome reports it suspended and no error, because a
-// deleted workload runs no pods whatever it observed before.
+// A workload whose desired replicas are already zero is not patched, whatever it
+// still observes. A workload that is gone needs nothing: the outcome reports it
+// suspended and no error, because a deleted workload runs no pods whatever it
+// observed before.
 func StopAtZero(
 	ctx context.Context,
 	writer client.Writer,
