@@ -17,8 +17,10 @@ limitations under the License.
 package camundacluster
 
 import (
+	"maps"
 	"slices"
 	"strconv"
+	"sync"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
@@ -146,23 +148,38 @@ func Resolve(e Effective) []Process {
 	return append(append([]Process{zeebe, gateway}, apps...), connectors)
 }
 
+// conditionTypes is the condition that the process of each component reports,
+// built once. Resolve keeps the names and the condition of every process,
+// enabled or not, so the pairing holds for any effective spec and an empty one
+// serves to read it.
+var conditionTypes = sync.OnceValue(func() map[string]string {
+	processes := Resolve(Effective{})
+	types := make(map[string]string, len(processes))
+	for _, process := range processes {
+		types[process.Component] = process.ConditionType
+	}
+
+	return types
+})
+
 // ConditionTypeFor returns the condition that the process of the given component
 // reports on the cluster, and whether the component has a known condition type.
 // A component the topology disables still has one: a disabled process keeps its
 // condition so that it can report Disabled.
 //
-// Resolve keeps the names and the condition of every process, enabled or not, so
-// the pairing holds for any effective spec and an empty one serves to read it. A
-// caller that acts on a workload outside the render reads it from the component
-// label of that workload.
+// A caller that acts on a workload outside the render reads the component from
+// the label of that workload.
 func ConditionTypeFor(comp string) (string, bool) {
-	for _, process := range Resolve(Effective{}) {
-		if process.Component == comp {
-			return process.ConditionType, true
-		}
-	}
+	conditionType, ok := conditionTypes()[comp]
 
-	return "", false
+	return conditionType, ok
+}
+
+// ConditionTypes returns the condition that every process of a cluster reports,
+// sorted. A caller that walks the conditions outside the render reads them here
+// rather than resolving a topology it has no effective spec for.
+func ConditionTypes() []string {
+	return slices.Sorted(maps.Values(conditionTypes()))
 }
 
 // profiles returns the given profiles plus consolidated-auth, sorted.

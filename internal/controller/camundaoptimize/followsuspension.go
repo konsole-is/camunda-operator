@@ -27,7 +27,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -65,6 +64,11 @@ const keptAtZeroMessage = "Kept at zero until the reference check passes"
 // workloads a suspension left at zero and whose cluster resumed.
 const keptAtZeroNote = ". The Optimize workloads stay at zero until the reference check passes"
 
+// suspendOrder is the Optimize workloads, the importer first. It is the workload
+// that writes Elasticsearch, so a webapp that a conflict or an admission rule
+// keeps up must not keep the importer up with it.
+var suspendOrder = []string{components.ComponentImporter, components.ComponentWebapp}
+
 // suspensionOutcome reports what followSuspension did with the workloads.
 type suspensionOutcome struct {
 	// Found is true when a Deployment that this CamundaOptimize controls
@@ -88,7 +92,7 @@ type suspensionOutcome struct {
 // to suspended counts, so a reconcile that catches the drain reads it as
 // already suspended.
 func followsSuspendedCluster(optimize *v1.CamundaOptimize) bool {
-	for _, comp := range suspendOrder() {
+	for _, comp := range suspendOrder {
 		conditionType, ok := components.ConditionTypeFor(comp)
 		if !ok {
 			continue
@@ -117,7 +121,7 @@ func (r *Reconciler) followSuspension(
 ) (suspensionOutcome, error) {
 	var outcome suspensionOutcome
 	var errs []error
-	for _, comp := range suspendOrder() {
+	for _, comp := range suspendOrder {
 		key := client.ObjectKey{
 			Namespace: optimize.Namespace,
 			Name:      components.WorkloadName(optimize, comp),
@@ -194,7 +198,7 @@ func (r *Reconciler) recordSuspended(optimize *v1.CamundaOptimize, workload stri
 // conditions would keep naming a suspension of the cluster that is over.
 func stageKeptAtZero(optimize *v1.CamundaOptimize) bool {
 	var kept bool
-	for _, comp := range suspendOrder() {
+	for _, comp := range suspendOrder {
 		conditionType, ok := components.ConditionTypeFor(comp)
 		if !ok {
 			continue
@@ -219,14 +223,4 @@ func stageKeptAtZero(optimize *v1.CamundaOptimize) bool {
 	}
 
 	return kept
-}
-
-// suspendOrder returns the Optimize workloads with the importer first. It is the
-// workload that writes Elasticsearch, so a webapp that a conflict or an
-// admission rule keeps up must not keep the importer up with it.
-func suspendOrder() []string {
-	order := components.Workloads()
-	slices.Reverse(order)
-
-	return order
 }

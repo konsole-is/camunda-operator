@@ -259,3 +259,20 @@ func TestConditionTypeFor(t *testing.T) {
 	_, ok := ConditionTypeFor("no-such-component")
 	assert.False(t, ok)
 }
+
+// TestConditionTypes pins the list that a caller walks when it acts on the
+// conditions of a cluster outside the render, where no effective spec exists.
+func TestConditionTypes(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(
+		t, []string{
+			v1.ConditionAdminReady,
+			v1.ConditionConnectorsReady,
+			v1.ConditionGatewayReady,
+			v1.ConditionOperateReady,
+			v1.ConditionTasklistReady,
+			v1.ConditionZeebeReady,
+		}, ConditionTypes(), "sorted, so a caller reports them in a stable order",
+	)
+}

@@ -170,8 +170,7 @@ func stageSuspension(cluster *v1.CamundaCluster, comp string, outcome workloadsu
 // cleared.
 func stageKeptAtZero(cluster *v1.CamundaCluster) bool {
 	var kept bool
-	for _, process := range components.Resolve(components.Effective{}) {
-		conditionType := process.ConditionType
+	for _, conditionType := range components.ConditionTypes() {
 		condition := meta.FindStatusCondition(cluster.Status.Conditions, conditionType)
 		if condition == nil || !suspensionReason(condition.Reason) {
 			continue
