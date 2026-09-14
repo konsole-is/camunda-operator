@@ -199,10 +199,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// see followSuspension. Suspended is false unless the pre-check read
 		// the cluster, so a failure before that leaves the workloads alone.
 		var suspendErr error
-		var found bool
+		var outcome suspensionOutcome
 		if res.Input.Suspended {
-			found, suspendErr = r.followSuspension(ctx, &optimize)
-			if found && suspendErr == nil {
+			outcome, suspendErr = r.followSuspension(ctx, &optimize)
+			if outcome.Found && suspendErr == nil {
 				failure.Message += fmt.Sprintf(suspendNote, optimize.Spec.ClusterRef.Name)
 			}
 		}
@@ -213,11 +213,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// would repeat on every retry until the check passes. The render of the
 		// success path is what starts the workloads again, and it records that.
 		//
-		// An instance that rendered no workload has no suspension to report. A
-		// patch that failed does not stop the record: the transition started,
-		// and the next retry reads the suspension off the flushed condition, so
-		// the event would never be recorded at all.
-		if found && !suspendedBefore {
+		// The record follows a workload that stopped, not one that exists. A
+		// patch that failed does not stop the record when another workload
+		// stopped: the transition started, and the next retry reads it off that
+		// workload's condition. A pass that stopped none staged nothing, so
+		// recording it would repeat on every retry.
+		if outcome.Stopped && !suspendedBefore {
 			r.recordSuspensionChange(&optimize, suspendedBefore, res.Input.Suspended)
 		}
 

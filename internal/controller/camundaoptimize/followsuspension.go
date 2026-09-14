@@ -54,6 +54,19 @@ const suspendNote = ". The Optimize workloads are scaled to zero because Camunda
 // suspension of the referenced cluster stopped and whose pods are gone.
 const suspendedMessage = "Scaled to zero while the referenced cluster is suspended"
 
+// suspensionOutcome reports what followSuspension did with the workloads.
+type suspensionOutcome struct {
+	// Found is true when a Deployment that this CamundaOptimize controls
+	// exists, whatever happened to it. It gates the note on Ready, which says
+	// that the workloads stopped.
+	Found bool
+	// Stopped is true when at least one of those Deployments is at zero, by
+	// this pass or an earlier one. The transition event follows it: a pass that
+	// stopped none staged no condition either, so the next retry reads no
+	// suspension and would record the transition again.
+	Stopped bool
+}
+
 // workloadConditions maps an Optimize workload to the condition that it
 // reports.
 var workloadConditions = map[string]string{
@@ -83,9 +96,7 @@ func followsSuspendedCluster(optimize *v1.CamundaOptimize) bool {
 
 // followSuspension scales the webapp and the importer to zero and keeps
 // everything else: the Deployments, the Services, and the copies of the
-// referenced Secrets. It reports whether it found a Deployment that this
-// CamundaOptimize controls, so an instance that never rendered one does not
-// claim that any stopped. The condition of each workload it scales reports the
+// referenced Secrets. The condition of each workload it stops reports the
 // suspension, because the components do not run on this path.
 //
 // The importer goes first, and both are tried with their errors joined. It is
@@ -94,8 +105,8 @@ func followsSuspendedCluster(optimize *v1.CamundaOptimize) bool {
 func (r *Reconciler) followSuspension(
 	ctx context.Context,
 	optimize *v1.CamundaOptimize,
-) (bool, error) {
-	var found bool
+) (suspensionOutcome, error) {
+	var outcome suspensionOutcome
 	var errs []error
 	for _, comp := range []string{components.ComponentImporter, components.ComponentWebapp} {
 		key := client.ObjectKey{
@@ -114,7 +125,7 @@ func (r *Reconciler) followSuspension(
 		if !metav1.IsControlledBy(&deployment, optimize) {
 			continue
 		}
-		found = true
+		outcome.Found = true
 
 		if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != 0 {
 			if err := r.scaleToZero(ctx, optimize, &deployment); err != nil {
@@ -125,10 +136,11 @@ func (r *Reconciler) followSuspension(
 		}
 		// Only a workload that reached zero reports the suspension: a rejected
 		// patch leaves its pods running.
+		outcome.Stopped = true
 		stageSuspension(optimize, comp, deployment.Status.Replicas)
 	}
 
-	return found, errors.Join(errs...)
+	return outcome, errors.Join(errs...)
 }
 
 // stageSuspension sets the condition of the given workload, in memory, the way

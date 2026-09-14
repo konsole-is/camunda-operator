@@ -19,6 +19,7 @@ package camundaoptimize
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -104,10 +105,11 @@ func TestFollowSuspensionJoinsPatchErrors(t *testing.T) {
 		EventRecorder: events.NewFakeRecorder(10),
 	}
 
-	found, err := r.followSuspension(context.Background(), optimize)
+	outcome, err := r.followSuspension(context.Background(), optimize)
 
 	require.ErrorIs(t, err, boom)
-	assert.True(t, found)
+	assert.True(t, outcome.Found)
+	assert.True(t, outcome.Stopped, "the importer stopped, so the transition started")
 	assert.Contains(t, err.Error(), webappName, "the error names the workload that stayed up")
 
 	var importer appsv1.Deployment
@@ -162,10 +164,11 @@ func TestFollowSuspensionFindsNoWorkloadOfAnotherOwner(t *testing.T) {
 		EventRecorder: events.NewFakeRecorder(10),
 	}
 
-	found, err := r.followSuspension(context.Background(), optimize)
+	outcome, err := r.followSuspension(context.Background(), optimize)
 
 	require.NoError(t, err)
-	assert.False(t, found)
+	assert.False(t, outcome.Found)
+	assert.False(t, outcome.Stopped)
 
 	var kept appsv1.Deployment
 	require.NoError(t, fakeClient.Get(context.Background(), client.ObjectKeyFromObject(foreign), &kept))
@@ -219,10 +222,11 @@ func TestFollowSuspensionReportsTheDrain(t *testing.T) {
 				EventRecorder: events.NewFakeRecorder(10),
 			}
 
-			found, err := r.followSuspension(context.Background(), optimize)
+			outcome, err := r.followSuspension(context.Background(), optimize)
 
 			require.NoError(t, err)
-			assert.True(t, found)
+			assert.True(t, outcome.Found)
+			assert.True(t, outcome.Stopped)
 			staged := meta.FindStatusCondition(optimize.Status.Conditions, v1.ConditionImporterReady)
 			require.NotNil(t, staged)
 			assert.Equal(t, tc.status, staged.Status)
@@ -250,10 +254,11 @@ func TestFollowSuspensionFindsNothingWithoutWorkloads(t *testing.T) {
 		EventRecorder: events.NewFakeRecorder(10),
 	}
 
-	found, err := r.followSuspension(context.Background(), optimize)
+	outcome, err := r.followSuspension(context.Background(), optimize)
 
 	require.NoError(t, err)
-	assert.False(t, found)
+	assert.False(t, outcome.Found)
+	assert.False(t, outcome.Stopped)
 	assert.Empty(t, optimize.Status.Conditions)
 }
 
@@ -303,10 +308,11 @@ func TestFollowsSuspendedCluster(t *testing.T) {
 }
 
 // TestReconcileRecordsTheSuspensionWhenAPatchFails covers the event bookkeeping
-// of a partial failure: the transition into the suspension started, so it is
-// recorded even though one Deployment stayed up. Without this the next retry
-// reads the suspension off the flushed condition and the event is never
-// recorded at all.
+// of a failed patch. A pass that stopped one Deployment started the transition,
+// so it is recorded even though the other stayed up: the next retry reads the
+// suspension off the flushed condition of the one that stopped. A pass that
+// stopped none has no suspension to report, and recording one would repeat on
+// every retry.
 func TestReconcileRecordsTheSuspensionWhenAPatchFails(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
@@ -325,69 +331,86 @@ func TestReconcileRecordsTheSuspensionWhenAPatchFails(t *testing.T) {
 			ClusterRef:        v1.ClusterRef{Name: "my-cluster"},
 		},
 	}
-	// The cluster is suspended and its storageRef names nothing, so the
-	// pre-check fails after it read the suspension.
-	cluster := &v1.CamundaCluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: optimize.Namespace, UID: "uid-c"},
-		Spec: v1.CamundaClusterSpec{
-			Version:    "8.9.4",
-			Suspend:    true,
-			StorageRef: "no-such-contract",
-		},
-	}
 	webappName := components.WorkloadName(optimize, components.ComponentWebapp)
 	importerName := components.WorkloadName(optimize, components.ComponentImporter)
-	owned := func(name string) *appsv1.Deployment {
-		return &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: optimize.Namespace,
-				OwnerReferences: []metav1.OwnerReference{{
-					APIVersion: v1.GroupVersion.String(),
-					Kind:       "CamundaOptimize",
-					Name:       optimize.Name,
-					UID:        optimize.UID,
-					Controller: new(true),
-				}},
-			},
-			Spec: appsv1.DeploymentSpec{Replicas: new(int32(1))},
-		}
+
+	cases := map[string]struct {
+		rejected   []string
+		wantEvents int
+	}{
+		"one patch fails":   {rejected: []string{webappName}, wantEvents: 1},
+		"every patch fails": {rejected: []string{webappName, importerName}, wantEvents: 0},
 	}
 
-	fakeClient := fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithObjects(optimize, cluster, owned(webappName), owned(importerName)).
-		WithStatusSubresource(&v1.CamundaOptimize{}).
-		WithInterceptorFuncs(interceptor.Funcs{
-			Patch: func(
-				ctx context.Context,
-				cl client.WithWatch,
-				obj client.Object,
-				patch client.Patch,
-				opts ...client.PatchOption,
-			) error {
-				if obj.GetName() == webappName {
-					return errors.New("admission webhook denied the request")
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			// The cluster is suspended and its storageRef names nothing, so the
+			// pre-check fails after it read the suspension.
+			cluster := &v1.CamundaCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "my-cluster", Namespace: optimize.Namespace, UID: "uid-c",
+				},
+				Spec: v1.CamundaClusterSpec{
+					Version:    "8.9.4",
+					Suspend:    true,
+					StorageRef: "no-such-contract",
+				},
+			}
+			owned := func(name string) *appsv1.Deployment {
+				return &appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      name,
+						Namespace: optimize.Namespace,
+						OwnerReferences: []metav1.OwnerReference{{
+							APIVersion: v1.GroupVersion.String(),
+							Kind:       "CamundaOptimize",
+							Name:       optimize.Name,
+							UID:        optimize.UID,
+							Controller: new(true),
+						}},
+					},
+					Spec: appsv1.DeploymentSpec{Replicas: new(int32(1))},
 				}
+			}
 
-				return cl.Patch(ctx, obj, patch, opts...)
-			},
-		}).
-		Build()
-	recorder := events.NewFakeRecorder(16)
-	r := &Reconciler{
-		Client:          fakeClient,
-		APIReader:       fakeClient,
-		Scheme:          scheme,
-		EventRecorder:   recorder,
-		componentClient: fakeClient,
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(
+					optimize.DeepCopy(), cluster, owned(webappName), owned(importerName),
+				).
+				WithStatusSubresource(&v1.CamundaOptimize{}).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Patch: func(
+						ctx context.Context,
+						cl client.WithWatch,
+						obj client.Object,
+						patch client.Patch,
+						opts ...client.PatchOption,
+					) error {
+						if slices.Contains(tc.rejected, obj.GetName()) {
+							return errors.New("admission webhook denied the request")
+						}
+
+						return cl.Patch(ctx, obj, patch, opts...)
+					},
+				}).
+				Build()
+			recorder := events.NewFakeRecorder(16)
+			r := &Reconciler{
+				Client:          fakeClient,
+				APIReader:       fakeClient,
+				Scheme:          scheme,
+				EventRecorder:   recorder,
+				componentClient: fakeClient,
+			}
+
+			key := apitypes.NamespacedName{Namespace: optimize.Namespace, Name: optimize.Name}
+			_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: key})
+
+			require.Error(t, err, "the rejected patch is returned, so the reconcile retries")
+			assert.Equal(t, tc.wantEvents, countRecorded(recorder, eventReasonClusterSuspended))
+		})
 	}
-
-	key := apitypes.NamespacedName{Namespace: optimize.Namespace, Name: optimize.Name}
-	_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: key})
-
-	require.Error(t, err, "the rejected patch is returned, so the reconcile retries")
-	assert.Equal(t, 1, countRecorded(recorder, eventReasonClusterSuspended))
 }
 
 // countRecorded drains recorder and returns how many of its events carry the
