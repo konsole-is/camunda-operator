@@ -216,6 +216,8 @@ var _ = Describe("ElasticsearchCluster", Ordered, Label(utils.LabelElasticsearch
 		}, 3*time.Minute).Should(Succeed())
 	})
 
+	itHandsTheStorageBackendOver()
+
 	It("suspends by deleting the Elasticsearch resource and keeping the data volumes", func() {
 		By("recording the bound data volume")
 		var claims corev1.PersistentVolumeClaimList

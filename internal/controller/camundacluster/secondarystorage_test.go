@@ -822,8 +822,15 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		)
 		zeebeKey := client.ObjectKey{Namespace: ns, Name: second.Name + "-zeebe"}
 		Consistently(func(g Gomega) {
-			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(Equal(int32(1)))
-		}, "3s", interval).Should(Succeed(), "the broker StatefulSet keeps its replicas")
+			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(
+				Equal(int32(1)), "the broker StatefulSet keeps its replicas",
+			)
+
+			var latest v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(second), &latest)).To(Succeed())
+			g.Expect(latest.Status.Gateway).NotTo(BeNil(), "a running cluster keeps publishing its endpoints")
+			g.Expect(latest.Status.Management).NotTo(BeNil())
+		}, "3s", interval).Should(Succeed())
 		expectHolds(first)
 		// The claim outlives the contract that named the backend. The brokers
 		// of the second cluster still write it, so it stays theirs.

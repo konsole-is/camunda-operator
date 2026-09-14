@@ -816,7 +816,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 			Expect(countSuspensionEvents(s.optimize, eventReasonClusterResumed)).To(Equal(resumesBefore + 1))
 		})
 
-		It("scales to zero when another cluster holds the storage contract of its cluster", func() {
+		It("scales to zero when another cluster holds the backend of its cluster", func() {
 			ns := newNamespace()
 			binding := createBinding(ns)
 			auth := createAuth(ns, true)

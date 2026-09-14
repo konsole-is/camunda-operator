@@ -43,11 +43,6 @@ import (
 // workloads a suspension left at zero and whose cluster resumed.
 const keptAtZeroNote = ". The Optimize workloads that stopped stay at zero until the reference check passes"
 
-// suspendOrder is the Optimize workloads, the importer first. It is the workload
-// that writes Elasticsearch, so a webapp that a conflict or an admission rule
-// keeps up must not keep the importer up with it.
-var suspendOrder = []string{components.ComponentImporter, components.ComponentWebapp}
-
 // followSuspension scales the webapp and the importer to zero and keeps
 // everything else: the Deployments, the Services, and the copies of the
 // referenced Secrets. The condition of each workload it stops reports the wait
@@ -70,7 +65,7 @@ func (r *Reconciler) keepAtZero(
 	return workloadsuspend.KeepAtZero(
 		ctx,
 		optimize,
-		workloadConditions(),
+		components.ConditionTypes(),
 		func(ctx context.Context, held func(string) bool) ([]workloadsuspend.Workload, error) {
 			return r.optimizeWorkloads(ctx, optimize, held)
 		},
@@ -123,7 +118,7 @@ func (r *Reconciler) optimizeWorkloads(
 ) ([]workloadsuspend.Workload, error) {
 	var errs []error
 	var workloads []workloadsuspend.Workload
-	for _, comp := range suspendOrder {
+	for _, comp := range components.StopOrder() {
 		conditionType, ok := components.ConditionTypeFor(comp)
 		if !ok || !stop(conditionType) {
 			continue
@@ -188,7 +183,7 @@ func (r *Reconciler) recordStop(
 // followsSuspendedCluster reports whether the workload conditions already carry
 // a suspension of the referenced cluster.
 func followsSuspendedCluster(optimize *v1.CamundaOptimize) bool {
-	for _, conditionType := range workloadConditions() {
+	for _, conditionType := range components.ConditionTypes() {
 		condition := meta.FindStatusCondition(optimize.Status.Conditions, conditionType)
 		if condition != nil && workloadsuspend.IsSuspensionReason(condition.Reason) {
 			return true
@@ -196,16 +191,4 @@ func followsSuspendedCluster(optimize *v1.CamundaOptimize) bool {
 	}
 
 	return false
-}
-
-// workloadConditions returns the condition that each Optimize workload reports.
-func workloadConditions() []string {
-	types := make([]string, 0, len(suspendOrder))
-	for _, comp := range suspendOrder {
-		if conditionType, ok := components.ConditionTypeFor(comp); ok {
-			types = append(types, conditionType)
-		}
-	}
-
-	return types
 }
