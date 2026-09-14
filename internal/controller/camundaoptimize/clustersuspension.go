@@ -34,12 +34,14 @@ const (
 	// starts suspending and the Optimize workloads follow it to zero.
 	eventReasonClusterSuspended = "ClusterSuspended"
 	// eventReasonClusterResumed is recorded when the referenced cluster stops
-	// being suspended and the Optimize workloads start again.
+	// being suspended and the Optimize workloads follow their spec again.
 	eventReasonClusterResumed = "ClusterResumed"
 	// noteSuspended and noteResumed carry the name of the cluster, which is
-	// what the Ready condition cannot say.
-	noteSuspended = "Scaling the Optimize workloads to zero: CamundaCluster %q is suspended"
-	noteResumed   = "Starting the Optimize workloads again: CamundaCluster %q is no longer suspended"
+	// what the Ready condition cannot say. They report the state of the cluster
+	// and nothing about a replica count: an importer that spec.importer.replicas
+	// holds at zero is not starting again when the cluster resumes.
+	noteSuspended = "CamundaCluster %q is suspended, the Optimize workloads follow it to zero"
+	noteResumed   = "CamundaCluster %q is no longer suspended, the Optimize workloads follow their spec"
 )
 
 // wasSuspending reports whether the last reconcile left the CamundaOptimize
