@@ -24,8 +24,10 @@ import (
 
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
@@ -35,6 +37,12 @@ import (
 // eventReasonStorageClaimed is recorded when the cluster takes the storage
 // claim of its backend.
 const eventReasonStorageClaimed = "StorageClaimed"
+
+// StorageClaimFinalizer keeps a deleted CamundaCluster alive until it gives
+// back the backends it holds. Without it a deleted cluster leaves a claim that
+// only the next claimant of that backend clears, and a cluster that is created
+// and deleted on an endpoint of its own leaves one behind for good.
+const StorageClaimFinalizer = "core.camunda.io/storage-claim"
 
 // claimStorage takes the storage claim of the backend that resolveStorage
 // resolved, or records the cluster that holds it. The claim key is the
@@ -162,6 +170,70 @@ func (res *resolver) refuseUnderOtherPods(ctx context.Context, claim, key string
 	}
 
 	return conditions.NewUnwatchedFailure(v1.ReasonWaitingForHandover, handoverMessage(key, pods))
+}
+
+// settleClaimLifecycle does the bookkeeping that the storage claim needs around
+// the lifecycle of the cluster, and reports whether the reconcile must stop. A
+// deleted cluster gives every backend back and loses the finalizer, and it
+// publishes no status: its workloads go with the owner references.
+//
+// A live cluster carries the finalizer before it takes its first claim. A
+// deletion between the claim and the next write would otherwise leave a backend
+// claimed by a cluster that is gone, and every later claimant of it waiting for
+// a holder that no longer exists.
+func (r *CamundaClusterReconciler) settleClaimLifecycle(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+) (bool, error) {
+	if !cluster.DeletionTimestamp.IsZero() {
+		return true, r.finalizeStorageClaims(ctx, cluster)
+	}
+
+	if !controllerutil.AddFinalizer(cluster, StorageClaimFinalizer) {
+		return false, nil
+	}
+	if err := r.Update(ctx, cluster); err != nil {
+		// A deletion that races this write is fine. The deletion path owns the
+		// object from here.
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		}
+
+		return false, fmt.Errorf("adding the storage claim finalizer: %w", err)
+	}
+
+	return false, nil
+}
+
+// finalizeStorageClaims gives back every storage claim of a deleted cluster and
+// removes the finalizer. The pods of a deleting cluster hold no claim back: the
+// next claimant of that backend meets them through its own handover gate, and
+// waits for them there.
+func (r *CamundaClusterReconciler) finalizeStorageClaims(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+) error {
+	if !controllerutil.ContainsFinalizer(cluster, StorageClaimFinalizer) {
+		return nil
+	}
+
+	claims := components.StorageClaimSchema().NewClaim(r.Client, r.APIReader, r.ClaimNamespace)
+	leases, err := claims.Held(ctx, cluster)
+	if err != nil {
+		return err
+	}
+	for i := range leases {
+		if err := claims.Release(ctx, &leases[i]); err != nil {
+			return err
+		}
+	}
+
+	controllerutil.RemoveFinalizer(cluster, StorageClaimFinalizer)
+	if err := r.Update(ctx, cluster); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("removing the storage claim finalizer: %w", err)
+	}
+
+	return nil
 }
 
 // claimsOnOwnPods reads the storage claims that the pods of this cluster carry.

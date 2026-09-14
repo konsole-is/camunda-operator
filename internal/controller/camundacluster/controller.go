@@ -163,6 +163,11 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	stop, err := r.settleClaimLifecycle(ctx, &cluster)
+	if stop || err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if cluster.Spec.Pause {
 		r.EventRecorder.Eventf(
 			&cluster,

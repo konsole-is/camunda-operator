@@ -293,7 +293,7 @@ The operator also suspends a cluster on its own. `spec.suspend` stays yours. A c
 
 ## Deletion
 
-Deleting the cluster removes every resource that the operator created for it. The broker volumes follow `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` (see [Storage](#storage)). The `ElasticsearchCluster`, the `Database`, and the contracts are separate resources and stay.
+Deleting the cluster removes every resource that the operator created for it, and it releases the backend the cluster held. Another cluster on that backend starts once the pods of the deleted one are gone. The broker volumes follow `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` (see [Storage](#storage)). The `ElasticsearchCluster`, the `Database`, and the contracts are separate resources and stay.
 
 ## Status
 

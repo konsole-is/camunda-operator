@@ -609,9 +609,23 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		expectParked(parked, holder)
 
 		Expect(k8sClient.Delete(ctx, holder)).To(Succeed())
-		// The claim of a holder that is gone is taken over at once. The pods
-		// it left behind hold the render, not the claim.
-		expectClaimedBy(binding, parked)
+		// The deleted cluster gives the backend back before it goes, so no
+		// claim of it is left for the next claimant to clear.
+		claim := client.ObjectKey{
+			Namespace: testClaimNamespace,
+			Name:      components.StorageClaimSchema().LeaseName(storageKeyOf(binding)),
+		}
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, claim, &coordinationv1.Lease{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(holder), &v1.CamundaCluster{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		// The pods it left behind keep the parked cluster off the free
+		// backend, so the two never write it at once.
 		expectWaitingForHandover(parked, binding, pod)
 
 		Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
