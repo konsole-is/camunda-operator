@@ -254,18 +254,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
 	conditions.Stage(&optimize, conditions.Aggregate(&optimize, built.ready...))
-	// The start of a suspension is recorded whatever the apply did. One
-	// component that suspended is enough for the transition to have started, and
-	// the next pass reads it off that component's condition, so a record held
-	// back here is a record lost.
-	//
-	// The end waits for a clean apply: a workload the apply left at zero has not
-	// resumed, and the next pass reads the suspension off its condition and
-	// records the end then.
-	startsSuspension := res.Input.Suspended && !suspendedBefore
-	if startsSuspension || reconcileErr == nil {
-		r.recordSuspensionChange(&optimize, suspendedBefore, res.Input.Suspended)
-	}
+	// The event marks the decision, not its outcome: this pass decided that the
+	// suspension starts or ends, and the workload conditions report whether the
+	// apply carried it through. A record held back for a failed apply is a
+	// record lost, because ocf rewrites those conditions and the next pass reads
+	// no transition to record.
+	r.recordSuspensionChange(&optimize, suspendedBefore, res.Input.Suspended)
 
 	return ctrl.Result{}, reconcileErr
 }
