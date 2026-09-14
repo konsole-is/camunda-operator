@@ -39,54 +39,6 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 )
 
-// stopReason is what this controller says about the Optimize workloads it
-// holds at zero, in the three places that report it. Two waits lower them, and
-// a user acts on a different thing in each: one cluster was suspended, and the
-// other does not hold the backend that its Optimize reads.
-type stopReason struct {
-	// failureNote is appended to the failure message on Ready. It carries one
-	// verb for the name of the cluster.
-	failureNote string
-	// message is the condition of a workload whose pods are gone.
-	message string
-	// eventNote says, in the event of a scaled workload, why this controller
-	// lowered it.
-	eventNote string
-}
-
-var (
-	// clusterSuspended is the wait on a cluster that reports itself suspended,
-	// by spec.suspend or by a state the operator holds it in.
-	clusterSuspended = stopReason{
-		failureNote: ". The Optimize workloads are scaled to zero because CamundaCluster %q is suspended",
-		message:     "Scaled to zero while the referenced cluster is suspended",
-		eventNote:   "because the CamundaCluster it attaches to is suspended",
-	}
-	// backendClaimAwaited is the wait on the claim of the backend. The cluster
-	// can report itself healthy through it, so nothing here says it is
-	// suspended.
-	backendClaimAwaited = stopReason{
-		failureNote: ". The Optimize workloads are scaled to zero because CamundaCluster %q does not hold its backend",
-		message:     "Scaled to zero while the referenced cluster does not hold its backend",
-		eventNote:   "because the CamundaCluster it attaches to does not hold its backend",
-	}
-)
-
-// keptAtZeroReason says, in the event of a scaled workload, that a wait which
-// ended left it at zero.
-const keptAtZeroReason = "because the workloads that stopped stay at zero until the reference check passes"
-
-// stopReasonFor returns what to say about workloads that this pass holds at
-// zero. Only the storage claim reaches AwaitsBackendClaim, so every other
-// suspension is the cluster reporting one.
-func stopReasonFor(res resolved) stopReason {
-	if res.AwaitsBackendClaim {
-		return backendClaimAwaited
-	}
-
-	return clusterSuspended
-}
-
 // keptAtZeroNote is appended to the failure message of a CamundaOptimize whose
 // workloads a suspension left at zero and whose cluster resumed.
 const keptAtZeroNote = ". The Optimize workloads that stopped stay at zero until the reference check passes"
@@ -103,34 +55,28 @@ var suspendOrder = []string{components.ComponentImporter, components.ComponentWe
 func (r *Reconciler) followSuspension(
 	ctx context.Context,
 	optimize *v1.CamundaOptimize,
-	stop stopReason,
+	held wait,
 ) (workloadsuspend.Result, error) {
-	return r.stopWorkloads(ctx, optimize, stop.message, stop.eventNote, func(string) bool { return true })
+	return r.stopWorkloads(ctx, optimize, held.condition, held.workloadNote, func(string) bool { return true })
 }
 
 // keepAtZero holds the Optimize workloads that a suspension stopped while a
-// check of this instance still fails, and reports whether it held any.
-//
-// The conditions are read first, in memory: an instance that never followed a
-// suspension has nothing to hold, and reading its Deployments would answer a
-// question already answered. The candidates are then read live, so a drain that
-// finished since the cluster resumed is reported as finished rather than copied
-// from the condition that caught it mid-drain.
+// check of this instance still fails, and reports whether it held any. The
+// shared hold does the work, see workloadsuspend.KeepAtZero.
 func (r *Reconciler) keepAtZero(
 	ctx context.Context,
 	optimize *v1.CamundaOptimize,
-) (workloadsuspend.Result, error) {
-	if !followsSuspendedCluster(optimize) {
-		return workloadsuspend.Result{}, nil
-	}
-
-	return r.stopWorkloads(
+) (bool, error) {
+	return workloadsuspend.KeepAtZero(
 		ctx,
+		r.Client,
 		optimize,
-		workloadsuspend.MessageKeptAtZero,
-		keptAtZeroReason,
-		func(conditionType string) bool {
-			return workloadsuspend.IsAlreadySuspended(optimize, conditionType)
+		workloadConditions(),
+		func(ctx context.Context, held func(string) bool) ([]workloadsuspend.Workload, error) {
+			return r.optimizeWorkloads(ctx, optimize, held)
+		},
+		func(workload string) {
+			r.recordSuspended(optimize, workload, workloadsuspend.ReasonKeptAtZero)
 		},
 	)
 }

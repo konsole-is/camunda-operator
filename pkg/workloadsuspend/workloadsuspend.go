@@ -29,6 +29,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
@@ -59,6 +60,11 @@ const EventActionSuspend = "Suspend"
 // workload is read again on that pass, so a drain that finished in the meantime
 // is reported as finished.
 const MessageKeptAtZero = "Kept at zero until the reference check passes"
+
+// ReasonKeptAtZero says, in the event of a workload that KeepAtZero lowered,
+// why it did. The suspension that stopped the workload is over, and the render
+// that would start it again is what the failed check holds back.
+const ReasonKeptAtZero = "because the workloads that stopped stay at zero until the reference check passes"
 
 // stopPatch is the body of the merge patch that stops a workload: the replicas
 // it asks for, which are always none, and the UID the caller read it with.
@@ -161,6 +167,41 @@ func StopWorkloadsIf(
 	}
 
 	return result, errors.Join(errs...)
+}
+
+// KeepAtZero holds at zero the workloads of owner that a suspension stopped,
+// while the controller still has nothing to render from. It reports whether it
+// held any.
+//
+// conditionTypes are the conditions that owner can carry for a workload. They
+// are read first, in memory: an owner that never suspended has nothing to hold,
+// which is every failing pass of most of them, and reading its workloads would
+// answer a question already answered.
+//
+// read returns the workloads, live, for the conditions that the predicate
+// accepts. The reads are live because the decision reads replicas, and a render
+// that raised them lands on the API server before an informer carries it. A read
+// that failed halfway returns what it reached, and those workloads are held
+// anyway.
+func KeepAtZero(
+	ctx context.Context,
+	writer client.Writer,
+	owner component.OperatorCRD,
+	conditionTypes []string,
+	read func(ctx context.Context, held func(conditionType string) bool) ([]Workload, error),
+	record func(workload string),
+) (bool, error) {
+	held := func(conditionType string) bool {
+		return IsAlreadySuspended(owner, conditionType)
+	}
+	if !slices.ContainsFunc(conditionTypes, held) {
+		return false, nil
+	}
+
+	workloads, readErr := read(ctx, held)
+	result, stopErr := StopWorkloadsIf(ctx, writer, owner, workloads, MessageKeptAtZero, held, record)
+
+	return result.Found, errors.Join(readErr, stopErr)
 }
 
 // IsAlreadySuspended reports whether the condition of a workload on owner

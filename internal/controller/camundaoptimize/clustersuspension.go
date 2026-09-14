@@ -55,15 +55,58 @@ const (
 		"workloads follow their spec"
 )
 
-// suspensionEvent returns the event that reports the start of the wait holding
-// the workloads at zero. Only the storage claim reaches AwaitsBackendClaim, so
-// every other wait is the cluster reporting a suspension of its own.
-func suspensionEvent(res resolved) (reason, note string) {
+// wait is one reason the Optimize workloads are at zero, with everything this
+// controller says about it. Two waits lower them, and a user acts on a
+// different thing in each: one cluster was suspended, and the other does not
+// hold the backend that its Optimize reads.
+type wait struct {
+	// eventReason and eventNote report the start of this wait. The note carries
+	// one verb for the name of the cluster.
+	eventReason string
+	eventNote   string
+	// failureNote is appended to the failure message on Ready, and it carries
+	// the name of the cluster the same way.
+	failureNote string
+	// condition is the message of the condition of a workload of this wait
+	// whose pods are gone.
+	condition string
+	// workloadNote says, in the event of a workload this pass lowered, why it
+	// did.
+	workloadNote string
+}
+
+var (
+	// clusterSuspended is the wait on a cluster that reports itself suspended,
+	// by spec.suspend or by a state the operator holds it in.
+	clusterSuspended = wait{
+		eventReason:  eventReasonClusterSuspended,
+		eventNote:    noteSuspended,
+		failureNote:  ". The Optimize workloads are scaled to zero because CamundaCluster %q is suspended",
+		condition:    "Scaled to zero while the referenced cluster is suspended",
+		workloadNote: "because the CamundaCluster it attaches to is suspended",
+	}
+	// backendClaimAwaited is the wait on the claim of the backend. The cluster
+	// can report itself healthy through it, so nothing here says it is
+	// suspended.
+	backendClaimAwaited = wait{
+		eventReason: eventReasonStorageClaimAwaited,
+		eventNote:   noteClaimAwaited,
+		failureNote: ". The Optimize workloads are scaled to zero because CamundaCluster %q does not " +
+			"hold its backend",
+		condition:    "Scaled to zero while the referenced cluster does not hold its backend",
+		workloadNote: "because the CamundaCluster it attaches to does not hold its backend",
+	}
+)
+
+// waitFor returns the wait that holds the workloads at zero on this pass. Only
+// the storage claim reaches AwaitsBackendClaim, so every other wait is the
+// cluster reporting a suspension of its own.
+func waitFor(res resolved) wait {
 	if res.AwaitsBackendClaim {
-		return eventReasonStorageClaimAwaited, noteClaimAwaited
+		return backendClaimAwaited
 	}
 
-	return eventReasonClusterSuspended, noteSuspended
+	return clusterSuspended
 }
 
 // hasWorkloads reports whether this CamundaOptimize ever rendered a workload.
@@ -106,14 +149,14 @@ func wasSuspending(optimize *v1.CamundaOptimize) bool {
 // this transition and no other, so it names the event rather than deriving it
 // from a before and an after that are always false and true there.
 func (r *Reconciler) recordClusterSuspended(optimize *v1.CamundaOptimize, res resolved) {
-	reason, note := suspensionEvent(res)
+	held := waitFor(res)
 	r.EventRecorder.Eventf(
 		optimize,
 		nil,
 		corev1.EventTypeNormal,
-		reason,
+		held.eventReason,
 		workloadsuspend.EventActionSuspend,
-		note,
+		held.eventNote,
 		optimize.Spec.ClusterRef.Name,
 	)
 }
@@ -148,7 +191,8 @@ func (r *Reconciler) recordSuspensionChange(
 
 	reason, note := eventReasonClusterResumed, noteResumed
 	if res.Input.Suspended {
-		reason, note = suspensionEvent(res)
+		held := waitFor(res)
+		reason, note = held.eventReason, held.eventNote
 	}
 
 	r.EventRecorder.Eventf(

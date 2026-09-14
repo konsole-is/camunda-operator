@@ -341,10 +341,10 @@ func TestKeepAtZeroReadsNoWorkloadWithoutASuspension(t *testing.T) {
 		Build()
 	r := suspendReconciler(scheme, fakeClient, events.NewFakeRecorder(10))
 
-	outcome, err := r.keepAtZero(context.Background(), optimize)
+	kept, err := r.keepAtZero(context.Background(), optimize)
 
 	require.NoError(t, err)
-	assert.False(t, outcome.Found)
+	assert.False(t, kept)
 	assert.Zero(t, read, "the conditions answered it, so no Deployment was read")
 }
 

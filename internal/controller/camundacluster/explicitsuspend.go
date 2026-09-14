@@ -26,7 +26,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
@@ -49,12 +48,10 @@ const suspendNote = ". The workloads are scaled to zero because spec.suspend is 
 // that an explicit suspend stopped and whose pods are gone.
 const suspendedMessage = "Scaled to zero because spec.suspend is set"
 
-// suspendedNote and keptAtZeroReason say, in the event of a scaled workload, why
-// this controller lowered it.
-const (
-	suspendedNote    = "because spec.suspend is set"
-	keptAtZeroReason = "because the workloads that stopped stay at zero until the reference check passes"
-)
+// suspendedNote says, in the event of a scaled workload, why an explicit
+// suspend lowered it. The hold has a note of its own, see
+// workloadsuspend.ReasonKeptAtZero.
+const suspendedNote = "because spec.suspend is set"
 
 // keptAtZeroNote is appended to the failure message of a cluster whose
 // workloads a suspension left at zero and whose suspension ended.
@@ -91,37 +88,24 @@ func (r *CamundaClusterReconciler) suspendExplicitly(
 }
 
 // keepAtZero holds the workloads that a suspension stopped while the pre-check
-// still fails, and reports whether it held any.
-//
-// The conditions are read first, in memory: a cluster that never suspended has
-// nothing to hold, which is every failing pass of most clusters, and reading its
-// workloads would answer a question already answered. The candidates are then
-// read live, so a drain that finished since the suspension ended is reported as
-// finished rather than copied from the condition that caught it mid-drain.
+// still fails, and reports whether it held any. The shared hold does the work,
+// see workloadsuspend.KeepAtZero.
 func (r *CamundaClusterReconciler) keepAtZero(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 ) (bool, error) {
-	held := func(conditionType string) bool {
-		return workloadsuspend.IsAlreadySuspended(cluster, conditionType)
-	}
-	if !slices.ContainsFunc(components.ConditionTypes(), held) {
-		return false, nil
-	}
-
-	workloads, readErr := r.clusterWorkloads(ctx, cluster)
-
-	result, stopErr := workloadsuspend.StopWorkloadsIf(
+	return workloadsuspend.KeepAtZero(
 		ctx,
 		r.Client,
 		cluster,
-		workloads,
-		workloadsuspend.MessageKeptAtZero,
-		held,
-		func(workload string) { r.recordSuspended(cluster, workload, keptAtZeroReason) },
+		components.ConditionTypes(),
+		func(ctx context.Context, _ func(string) bool) ([]workloadsuspend.Workload, error) {
+			return r.clusterWorkloads(ctx, cluster)
+		},
+		func(workload string) {
+			r.recordSuspended(cluster, workload, workloadsuspend.ReasonKeptAtZero)
+		},
 	)
-
-	return result.Found, errors.Join(readErr, stopErr)
 }
 
 // clusterWorkloads returns the workloads of the cluster with the condition each

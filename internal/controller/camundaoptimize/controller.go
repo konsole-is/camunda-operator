@@ -213,7 +213,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// A cluster that holds these workloads at zero is the exception: they
 		// follow it, and the render that does that never runs on this path,
 		// see followSuspension. Either wait counts, the suspension of the
-		// cluster or the claim of its backend, and stopReasonFor says which one
+		// cluster or the claim of its backend, and waitFor says which one
 		// to report. Suspended is false unless the pre-check read the cluster,
 		// so a failure before that leaves the workloads alone. The pre-check
 		// reads the cluster first, so its suspension is known on every failure
@@ -222,17 +222,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		var suspendErr error
 		var outcome workloadsuspend.Result
 		if res.Input.Suspended {
-			stop := stopReasonFor(res)
-			outcome, suspendErr = r.followSuspension(ctx, &optimize, stop)
+			held := waitFor(res)
+			outcome, suspendErr = r.followSuspension(ctx, &optimize, held)
 			if outcome.Found && suspendErr == nil {
-				failure.Message += fmt.Sprintf(stop.failureNote, optimize.Spec.ClusterRef.Name)
+				failure.Message += fmt.Sprintf(held.failureNote, optimize.Spec.ClusterRef.Name)
 			}
 		} else {
 			// The cluster resumed while the check still fails. Nothing renders
 			// here, so the workloads it stopped stay at zero.
 			kept, keptErr := r.keepAtZero(ctx, &optimize)
 			suspendErr = keptErr
-			if kept.Found && keptErr == nil {
+			if kept && keptErr == nil {
 				failure.Message += keptAtZeroNote
 			}
 		}
