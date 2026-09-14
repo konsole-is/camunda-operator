@@ -23,7 +23,7 @@ status: foundational-wave
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #369 | feat/suspend-only-for-shared-backends--storage-claim-on-a-lease | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/storage-claim-on-a-lease | #372 → fix/suspend-only-for-shared-backends | self-merged as a622870 (squash of d98ffe1) on 2026-09-14 05:24 UTC; #369 closed. Copilot gave no review at the final head after two waits, so the loop ended on its last round and the two orchestrator review passes stand. |
-| #370 | fix/suspend-only-for-shared-backends--keep-workloads-on-precheck-failure | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/keep-workloads-on-precheck-failure | #371 → fix/suspend-only-for-shared-backends | at 16b3fad, final Copilot request pending; merge-forward of a622870 with the agent; merges second |
+| #370 | fix/suspend-only-for-shared-backends--keep-workloads-on-precheck-failure | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/keep-workloads-on-precheck-failure | #371 → fix/suspend-only-for-shared-backends | merged forward at d756a64 (a622870 in), gates green, mergeable; one Copilot request and one review pass at that head pending; then merge; merges second |
 
 ## Contracts
 
@@ -33,6 +33,7 @@ status: foundational-wave
 
 ## Bubble-up log
 
+- 2026-09-14, merge-forward of #371 onto a622870: seven files conflicted. Kept #372's `reportFailedPreCheck` structure with #370's behavior inside it; the old `suspendWorkloads` has no caller. On the merged branch a stop on the Optimize failure path can follow a claim wait as well as a suspension, so the note, the condition message, and the event name which (`stopReason`), the falsehood #372's `StorageClaimAwaited` exists to avoid. The contract-deleted spec now asserts the Lease survives the contract and a third cluster on the same address parks. The vocabulary sweep landed. The Optimize page and the two backup pages read one vocabulary.
 - 2026-09-14 04:10 UTC, #372: Copilot produced no round-15 review at 80012e3 after two ten-minute waits (request at 03:36, re-trigger at 03:52). Loop stopped at this head per the review-loop rule. One fresh request follows the agent's next push; if that also yields nothing after two waits, the Copilot loop on #372 ends on its last clean-with-reasons round and the two orchestrator review passes stand as the review.
 - 2026-09-14, final pass of #371 at eba7e57: the resume event tied to a clean apply was lost for good on a failed apply, so both suspension events now mark the decision; the kept-at-zero path re-reads a mid-drain workload; endpoints clear only for a process that is at zero. Spec amended; #370 implements. Not propagated to #369.
 - 2026-09-14, last pass of #372 at 80012e3: the release keeps its own post-apply pod list on purpose; a pre-check list would miss a pod created between the pre-check and the apply, which is the window the post-apply release closes. The GoDoc now says so. Twelve over-limit sentences on the two reference pages predate this feature; listed by the agent, left for the docs sweep of the merge-forward or a follow-up.
