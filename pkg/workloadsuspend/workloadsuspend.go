@@ -141,6 +141,12 @@ func StopAtZero(
 // zeroReplicas builds the patch that stops the workload that uid names. The ocf
 // apply takes the replicas back with force once the caller renders the workload
 // again.
+//
+// This is the one managed write of the operator that is not a server-side apply.
+// A partial apply under the field manager of the component would drop that
+// manager's ownership of every field it left out, and the next render would have
+// to take them all back. A merge patch touches the one field instead, under the
+// default manager, which is what the controller copies this replaced did.
 func zeroReplicas(uid types.UID) (client.Patch, error) {
 	var body stopPatch
 	body.Metadata.UID = uid
