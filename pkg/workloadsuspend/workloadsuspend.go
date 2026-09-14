@@ -60,7 +60,7 @@ type Outcome struct {
 //
 // A workload that already runs none is not patched. A workload that is gone
 // needs nothing: the outcome reports it suspended and no error, because a
-// deleted workload runs no pods.
+// deleted workload runs no pods whatever it observed before.
 func StopAtZero(
 	ctx context.Context,
 	writer client.Writer,
@@ -80,7 +80,13 @@ func StopAtZero(
 
 	if err := writer.Patch(ctx, obj, patch); err != nil {
 		if apierrors.IsNotFound(err) {
-			return outcome, nil
+			// A workload deleted between the read and the patch runs no pods,
+			// whatever the read observed.
+			return Outcome{
+				Status:  metav1.ConditionTrue,
+				Reason:  string(component.Suspended),
+				Message: suspended,
+			}, nil
 		}
 
 		return outcome, fmt.Errorf(

@@ -119,26 +119,35 @@ func TestStopAtZero(t *testing.T) {
 }
 
 // TestStopAtZeroToleratesAWorkloadThatIsGone pins the race with a delete: a
-// workload that vanished between the read and the patch runs no pods, so it
-// reports suspended and no error.
+// workload that vanished between the read and the patch runs no pods, whatever
+// it observed when it was read, so it reports suspended and no error.
 func TestStopAtZeroToleratesAWorkloadThatIsGone(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, clientgoscheme.AddToScheme(scheme))
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	observed := map[string]int32{"observed no pods": 0, "observed pods still running": 2}
 
-	outcome, err := workloadsuspend.StopAtZero(
-		context.Background(),
-		fakeClient,
-		&appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Name: "gone", Namespace: "ns"},
-			Spec:       appsv1.DeploymentSpec{Replicas: new(int32(1))},
-		},
-		suspended,
-	)
+	for name, replicas := range observed {
+		t.Run(name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			require.NoError(t, clientgoscheme.AddToScheme(scheme))
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-	require.NoError(t, err)
-	assert.False(t, outcome.Patched)
-	assert.Equal(t, string(component.Suspended), outcome.Reason)
+			outcome, err := workloadsuspend.StopAtZero(
+				context.Background(),
+				fakeClient,
+				&appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{Name: "gone", Namespace: "ns"},
+					Spec:       appsv1.DeploymentSpec{Replicas: new(int32(1))},
+					Status:     appsv1.DeploymentStatus{Replicas: replicas},
+				},
+				suspended,
+			)
+
+			require.NoError(t, err)
+			assert.False(t, outcome.Patched)
+			assert.Equal(t, metav1.ConditionTrue, outcome.Status)
+			assert.Equal(t, string(component.Suspended), outcome.Reason)
+			assert.Equal(t, suspended, outcome.Message)
+		})
+	}
 }
 
 // TestStopAtZeroWrapsAFailedPatch covers the caller contract on a rejected
