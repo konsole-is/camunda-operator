@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -158,6 +159,27 @@ func (r *CamundaClusterReconciler) stopWorkloads(
 	}
 
 	return found, errors.Join(errs...)
+}
+
+// endpointsStopped reports whether the process that serves the endpoints of the
+// cluster carries a suspension, so status.gateway and status.management would
+// answer nothing.
+//
+// The gateway serves them, or the brokers when it is embedded, which the gateway
+// condition reports as Disabled, see binding.go. A workload whose stop was
+// refused keeps serving, so its endpoints stay published.
+func endpointsStopped(cluster *v1.CamundaCluster) bool {
+	gateway := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionGatewayReady)
+	if gateway == nil {
+		return false
+	}
+
+	serving := gateway
+	if gateway.Reason == string(component.Disabled) {
+		serving = meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionZeebeReady)
+	}
+
+	return serving != nil && workloadsuspend.IsSuspensionReason(serving.Reason)
 }
 
 // recordSuspended records that an explicit suspend stopped the named workload.

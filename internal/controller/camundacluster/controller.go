@@ -198,9 +198,6 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// workloads stop here instead, see suspendExplicitly.
 		stopped, suspendErr := r.suspendExplicitly(ctx, &cluster)
 		if cluster.Spec.Suspend {
-			// A suspended cluster publishes no endpoints, see binding.go.
-			cluster.Status.Management = nil
-			cluster.Status.Gateway = nil
 			if stopped && suspendErr == nil {
 				failure.Message += suspendNote
 			}
@@ -210,10 +207,14 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			kept, keptErr := r.keepAtZero(ctx, &cluster)
 			suspendErr = errors.Join(suspendErr, keptErr)
 			if kept && keptErr == nil {
-				cluster.Status.Management = nil
-				cluster.Status.Gateway = nil
 				failure.Message += keptAtZeroNote
 			}
+		}
+		// Only the process that serves them going quiet clears them: a workload
+		// whose stop was refused still answers, see endpointsStopped.
+		if endpointsStopped(&cluster) {
+			cluster.Status.Management = nil
+			cluster.Status.Gateway = nil
 		}
 		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
 		if suspendErr != nil {

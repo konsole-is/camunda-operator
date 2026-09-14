@@ -436,3 +436,60 @@ func TestKeepAtZeroLeavesAWorkloadItNeverStopped(t *testing.T) {
 		), "a running workload stays running",
 	)
 }
+
+// TestEndpointsStopped covers which process decides that the endpoints answer
+// nothing: the gateway, or the brokers when the gateway is embedded. A workload
+// whose stop was refused keeps serving, so its endpoints stay published.
+func TestEndpointsStopped(t *testing.T) {
+	t.Parallel()
+
+	condition := func(conditionType, reason string) metav1.Condition {
+		return metav1.Condition{Type: conditionType, Status: metav1.ConditionTrue, Reason: reason}
+	}
+
+	cases := map[string]struct {
+		conditions []metav1.Condition
+		stopped    bool
+	}{
+		"the standalone gateway stopped": {
+			conditions: []metav1.Condition{
+				condition(v1.ConditionGatewayReady, string(component.Suspended)),
+				condition(v1.ConditionZeebeReady, string(component.Suspended)),
+			},
+			stopped: true,
+		},
+		"the standalone gateway kept running": {
+			conditions: []metav1.Condition{
+				condition(v1.ConditionGatewayReady, v1.ReasonHealthy),
+				condition(v1.ConditionZeebeReady, string(component.Suspended)),
+			},
+			stopped: false,
+		},
+		"an embedded gateway whose brokers stopped": {
+			conditions: []metav1.Condition{
+				condition(v1.ConditionGatewayReady, string(component.Disabled)),
+				condition(v1.ConditionZeebeReady, string(component.Suspended)),
+			},
+			stopped: true,
+		},
+		"an embedded gateway whose brokers kept running": {
+			conditions: []metav1.Condition{
+				condition(v1.ConditionGatewayReady, string(component.Disabled)),
+				condition(v1.ConditionZeebeReady, v1.ReasonHealthy),
+			},
+			stopped: false,
+		},
+		"a cluster that reports nothing yet": {stopped: false},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cluster := &v1.CamundaCluster{}
+			for _, c := range tc.conditions {
+				meta.SetStatusCondition(&cluster.Status.Conditions, c)
+			}
+
+			assert.Equal(t, tc.stopped, endpointsStopped(cluster))
+		})
+	}
+}
