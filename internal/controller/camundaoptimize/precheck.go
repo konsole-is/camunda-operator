@@ -184,6 +184,7 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	// this instance must be the one the cluster computes from the same chain.
 	key, err := clustercomponents.StorageClaimKey(clustercomponents.Storage{
 		Type:          binding.Spec.Type,
+		Namespace:     binding.Namespace,
 		Elasticsearch: binding.Spec.Elasticsearch,
 	})
 	if err != nil {

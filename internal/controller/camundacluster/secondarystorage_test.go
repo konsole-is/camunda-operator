@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -43,6 +44,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // A cluster gives a backend back only when none of its own pods writes it any
@@ -71,6 +73,32 @@ func TestReleaseLeftBackendsKeepsOneItsPodsStillWrite(t *testing.T) {
 		}}
 	}
 
+	replicaSet := func(name, claim string, uid types.UID, replicas int32) *appsv1.ReplicaSet {
+		return &appsv1.ReplicaSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "team-a",
+				Name:      name,
+				Labels:    components.StoragePodLabels("orders", uid, claim),
+			},
+			Spec: appsv1.ReplicaSetSpec{Replicas: &replicas},
+		}
+	}
+	statefulSet := func(observed int64, current, update string) *appsv1.StatefulSet {
+		return &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:  "team-a",
+				Name:       "orders-zeebe",
+				Labels:     labels.Managed(labels.Cluster("orders"), components.ComponentZeebe),
+				Generation: 2,
+			},
+			Status: appsv1.StatefulSetStatus{
+				ObservedGeneration: observed,
+				CurrentRevision:    current,
+				UpdateRevision:     update,
+			},
+		}
+	}
+
 	cases := map[string]struct {
 		pods     []client.Object
 		heldBack []string
@@ -79,6 +107,41 @@ func TestReleaseLeftBackendsKeepsOneItsPodsStillWrite(t *testing.T) {
 		"a pod of this cluster still carries the old claim": {
 			pods:     []client.Object{pod("orders-zeebe-0", oldClaim, self.UID)},
 			heldBack: []string{oldClaim},
+		},
+		// A ReplicaSet that asks for replicas recreates a pod that goes, with
+		// the claim its template carries, so the old claim stays held until
+		// the rollout scales it to zero.
+		"an old ReplicaSet of this cluster still asks for a pod": {
+			pods:     []client.Object{replicaSet("orders-gateway-old", oldClaim, self.UID, 1)},
+			heldBack: []string{oldClaim},
+		},
+		"an old ReplicaSet of this cluster is scaled to zero": {
+			pods:     []client.Object{replicaSet("orders-gateway-old", oldClaim, self.UID, 0)},
+			released: true,
+		},
+		"an old ReplicaSet of another cluster asks for a pod": {
+			pods:     []client.Object{replicaSet("other-gateway-old", oldClaim, "uid-other", 1)},
+			released: true,
+		},
+		// A StatefulSet mid-update recreates a pod with the revision it had,
+		// which the list cannot name, so every release waits for the update.
+		"a StatefulSet of this cluster is mid-update": {
+			pods:     []client.Object{statefulSet(2, "rev-1", "rev-2")},
+			heldBack: []string{oldClaim},
+		},
+		"the controller has not read the latest StatefulSet of this cluster": {
+			pods:     []client.Object{statefulSet(1, "rev-1", "rev-1")},
+			heldBack: []string{oldClaim},
+		},
+		"the StatefulSet of this cluster is up to date": {
+			pods:     []client.Object{statefulSet(2, "rev-2", "rev-2")},
+			released: true,
+		},
+		// No StatefulSet controller has read this one, so it has no earlier
+		// revision to recreate a pod from.
+		"the StatefulSet of this cluster was never observed": {
+			pods:     []client.Object{statefulSet(0, "", "")},
+			released: true,
 		},
 		"the pods of this cluster carry the new claim": {
 			pods:     []client.Object{pod("orders-zeebe-0", newClaim, self.UID)},

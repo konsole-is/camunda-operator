@@ -29,6 +29,11 @@ import (
 type Storage struct {
 	// Type selects which of the two blocks is set.
 	Type v1.SecondaryStorageType
+	// Namespace is the namespace of the contract the chain resolves from,
+	// which is the namespace of the cluster. A bare Service name in an
+	// endpoint resolves there, so the claim key qualifies it with this
+	// namespace, see StorageClaimKey.
+	Namespace string
 	// Elasticsearch is set when Type is elasticsearch.
 	Elasticsearch *v1.ElasticsearchStorage
 	// RDBMS is set when Type is rdbms.

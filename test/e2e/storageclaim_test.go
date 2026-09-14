@@ -72,6 +72,7 @@ func itHandsTheStorageBackendOver() {
 		Expect(utils.Get(sscResource, esStorageConfig, esNamespace, &published)).To(Succeed())
 		backend, err := components.StorageClaimKey(components.Storage{
 			Type:          published.Spec.Type,
+			Namespace:     published.Namespace,
 			Elasticsearch: published.Spec.Elasticsearch,
 		})
 		Expect(err).NotTo(HaveOccurred())

@@ -124,7 +124,11 @@ under `InvalidReference`, naming the contract.
   reach one Elasticsearch for at least one writer.
 - RDBMS: `rdbms|<host>:<port>/<database>`.
 
-Every host goes through `pkg/hostfold`, which the realm claim of the management cluster
+A bare Service name, a host with no dot that is no IP literal, is qualified with the
+namespace of the contract, `<host>.<namespace>.svc`, because the pods of the cluster resolve it
+there: `es` in two namespaces is two backends, and `es` beside `es.<namespace>.svc` is one.
+`Storage.Namespace` carries that namespace, and Optimize passes the same one, so both compute
+one key. Every host goes through `pkg/hostfold`, which the realm claim of the management cluster
 shares: lower case, the trailing dot of the DNS root dropped, the IDNA form the client
 resolves for an internationalized name, an IP literal as `net.IP` writes it, and brackets
 around an IPv6 literal from `net.JoinHostPort`. Two spellings of one host meet on one Lease.
@@ -153,8 +157,12 @@ Lease is noticed at once and not at the next unrelated event. Three outcomes:
   whose name differs) happens in the controller after the render was applied, not in the
   pre-check, so a pass that fails between the claim and the apply never frees a backend the
   old pod template still writes. A Lease is released only when no pod of this cluster still
-  carries its claim label, the same signal the handover gate reads; while one is held back,
-  the cluster looks again on its retry interval. The same pod-gated release runs on the
+  carries its claim label, the same signal the handover gate reads, and no workload of the
+  cluster can still start such a pod: a ReplicaSet of the cluster that asks for replicas keeps
+  the claim of its template held, and a StatefulSet of the cluster mid-update, or one the
+  controller has not read yet, holds every release, because a pod it recreates carries the
+  revision the pod had (`RolloutClaims`). While one is held back, the cluster looks again on
+  its retry interval. The same pod-gated release runs on the
   foreign-Lease and bad-key exits, where the cluster keeps running on its previous backend
   and gives it back once its pods are gone, and on the refused-downgrade path. A pre-check
   failure that comes before the claim step releases nothing: the pass does not know which

@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -200,6 +201,64 @@ func podMetadataList() *metav1.PartialObjectMetadataList {
 	return list
 }
 
+// RolloutClaims lists the storage claims that a workload of the cluster can
+// still start a pod with, beyond the pods that run: the claim of every
+// ReplicaSet of the cluster that asks for replicas, because it recreates a
+// pod that goes with the template it has. The second value reports a
+// StatefulSet of the cluster mid-update, or one whose latest generation the
+// controller has not read yet: a pod it recreates then carries the revision
+// the pod had, which the list cannot name, so a caller holds every release
+// while one updates. A StatefulSet the controller never observed has no
+// earlier revision to recreate a pod from, so it holds nothing.
+func RolloutClaims(
+	ctx context.Context,
+	reader client.Reader,
+	namespace, name string,
+	self types.UID,
+) (PodClaims, bool, error) {
+	var replicaSets appsv1.ReplicaSetList
+	err := reader.List(
+		ctx,
+		&replicaSets,
+		client.InNamespace(namespace),
+		client.MatchingLabels(map[string]string{labels.ClusterUIDKey: string(self)}),
+	)
+	if err != nil {
+		return nil, false, fmt.Errorf("listing the ReplicaSets of the cluster in namespace %q: %w", namespace, err)
+	}
+	carried := make(PodClaims, len(replicaSets.Items))
+	for i := range replicaSets.Items {
+		rs := &replicaSets.Items[i]
+		if rs.Spec.Replicas != nil && *rs.Spec.Replicas == 0 {
+			continue
+		}
+		if claim := rs.Labels[labels.StorageClaimKey]; claim != "" {
+			carried[claim] = true
+		}
+	}
+
+	var statefulSets appsv1.StatefulSetList
+	err = reader.List(
+		ctx,
+		&statefulSets,
+		client.InNamespace(namespace),
+		client.MatchingLabels(map[string]string{labels.ClusterKey: labels.OwnerName(name)}),
+	)
+	if err != nil {
+		return nil, false, fmt.Errorf("listing the StatefulSets of the cluster in namespace %q: %w", namespace, err)
+	}
+	updating := false
+	for i := range statefulSets.Items {
+		status := statefulSets.Items[i].Status
+		behind := status.ObservedGeneration > 0 && status.ObservedGeneration < statefulSets.Items[i].Generation
+		if behind || status.CurrentRevision != status.UpdateRevision {
+			updating = true
+		}
+	}
+
+	return carried, updating, nil
+}
+
 // StorageClaimKey returns the backend that storage addresses, as the key of
 // its storage claim. Two contracts that name one address give one key, and a
 // contract that is edited to another address gives another key.
@@ -210,15 +269,16 @@ func podMetadataList() *metav1.PartialObjectMetadataList {
 // host and the port, so two endpoints that differ in the path reach one
 // Elasticsearch for at least one writer. An rdbms key is the type, then the
 // host, the port, and the database name. Every host goes through
-// hostfold.FoldHost. A chain that names no address, or an endpoint that is no URL,
-// is an error.
+// hostfold.FoldHost, and a bare Service name takes the namespace of the
+// contract, see qualifyHost. A chain that names no address, or an endpoint
+// that is no URL, is an error.
 func StorageClaimKey(storage Storage) (string, error) {
 	switch storage.Type {
 	case v1.SecondaryStorageTypeElasticsearch:
 		if storage.Elasticsearch == nil {
 			return "", fmt.Errorf("storage of type %s has no elasticsearch block", storage.Type)
 		}
-		endpoint, err := normalizeEndpoint(storage.Elasticsearch.Endpoint)
+		endpoint, err := normalizeEndpoint(storage.Elasticsearch.Endpoint, storage.Namespace)
 		if err != nil {
 			return "", err
 		}
@@ -234,7 +294,8 @@ func StorageClaimKey(storage Storage) (string, error) {
 		// Both name one server, and JoinHostPort writes the one spelling that
 		// a reader of the key can take apart again.
 		host := strings.TrimSuffix(strings.TrimPrefix(storage.RDBMS.Host, "["), "]")
-		address := net.JoinHostPort(hostfold.FoldHost(host), strconv.Itoa(int(storage.RDBMS.Port)))
+		host = qualifyHost(hostfold.FoldHost(host), storage.Namespace)
+		address := net.JoinHostPort(host, strconv.Itoa(int(storage.RDBMS.Port)))
 
 		return fmt.Sprintf("%s|%s/%s", storage.Type, address, storage.RDBMS.Database), nil
 	default:
@@ -258,7 +319,7 @@ func StorageClaimKeyFailure(contract client.ObjectKey, err error) *conditions.Pr
 //
 // Optimize connects to the host and the port of the endpoint, so two endpoints
 // that differ only in the path reach one Elasticsearch for its importer.
-func normalizeEndpoint(endpoint string) (string, error) {
+func normalizeEndpoint(endpoint, namespace string) (string, error) {
 	parsed, err := url.Parse(endpoint)
 	if err != nil {
 		return "", fmt.Errorf("parsing the Elasticsearch endpoint %q: %w", endpoint, err)
@@ -284,7 +345,20 @@ func normalizeEndpoint(endpoint string) (string, error) {
 	// Hostname strips the brackets of an IPv6 literal, and JoinHostPort puts
 	// them back. Without them the address reads as another host and another
 	// port.
-	host := net.JoinHostPort(hostfold.FoldHost(parsed.Hostname()), strconv.Itoa(port))
+	host := qualifyHost(hostfold.FoldHost(parsed.Hostname()), namespace)
 
-	return scheme + "://" + host, nil
+	return scheme + "://" + net.JoinHostPort(host, strconv.Itoa(port)), nil
+}
+
+// qualifyHost returns a folded host with the Service namespace a bare name
+// resolves in. A name with no dot is a Service of the namespace the pods run
+// in, which is the namespace of the contract, so "es" in two namespaces is two
+// backends and "es" beside "es.<namespace>.svc" is one. A qualified name, an
+// IP literal, and a host with no namespace to take stay as they are.
+func qualifyHost(host, namespace string) string {
+	if namespace == "" || strings.Contains(host, ".") || net.ParseIP(strings.Trim(host, "[]")) != nil {
+		return host
+	}
+
+	return host + "." + namespace + ".svc"
 }

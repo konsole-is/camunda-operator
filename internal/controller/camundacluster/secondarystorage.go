@@ -279,10 +279,13 @@ func (res *resolver) claimsOnOwnPods(ctx context.Context) (components.PodClaims,
 // backend that another cluster may take.
 //
 // A cluster gives a backend back only when none of its own pods writes it any
-// more. The next claimant reads the pods of that backend once, before it
-// renders, so a release under running pods can let it start beside them.
-// Nothing reports the end of a pod drain, so the caller looks again on its
-// timer while a claim is held back.
+// more, and none of its workloads can still start one that does: a ReplicaSet
+// that asks for replicas recreates a pod with the claim its template carries,
+// and a StatefulSet mid-update recreates one with the revision the pod had.
+// The next claimant reads the pods of that backend once, before it renders,
+// so a release under running pods can let it start beside them. Nothing
+// reports the end of a pod drain or of a rollout, so the caller looks again
+// on its timer while a claim is held back.
 func (r *CamundaClusterReconciler) releaseLeftBackends(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -308,10 +311,16 @@ func (r *CamundaClusterReconciler) releaseLeftBackends(
 	if err != nil {
 		return nil, err
 	}
+	rollouts, updating, err := components.RolloutClaims(
+		ctx, r.APIReader, cluster.Namespace, cluster.Name, cluster.UID,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	var heldBack []string
 	for _, lease := range candidates {
-		if own.Carries(lease.Name) {
+		if own.Carries(lease.Name) || rollouts.Carries(lease.Name) || updating {
 			heldBack = append(heldBack, lease.Name)
 
 			continue

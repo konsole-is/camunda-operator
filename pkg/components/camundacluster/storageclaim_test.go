@@ -63,6 +63,38 @@ func TestStorageClaimKey(t *testing.T) {
 			},
 			key: "elasticsearch|https://es.example.com:443",
 		},
+		"a bare service name takes the namespace of the contract": {
+			storage: Storage{
+				Type:          v1.SecondaryStorageTypeElasticsearch,
+				Namespace:     "data",
+				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es:9200"},
+			},
+			key: "elasticsearch|https://es.data.svc:9200",
+		},
+		"a qualified name keeps its namespace": {
+			storage: Storage{
+				Type:          v1.SecondaryStorageTypeElasticsearch,
+				Namespace:     "apps",
+				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es.data.svc:9200"},
+			},
+			key: "elasticsearch|https://es.data.svc:9200",
+		},
+		"an IP literal takes no namespace": {
+			storage: Storage{
+				Type:          v1.SecondaryStorageTypeElasticsearch,
+				Namespace:     "data",
+				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://10.0.0.7:9200"},
+			},
+			key: "elasticsearch|https://10.0.0.7:9200",
+		},
+		"an rdbms bare host takes the namespace of the contract": {
+			storage: Storage{
+				Type:      v1.SecondaryStorageTypeRDBMS,
+				Namespace: "data",
+				RDBMS:     &RDBMSStorage{Host: "pg-rw", Port: 5432, Database: "camunda"},
+			},
+			key: "rdbms|pg-rw.data.svc:5432/camunda",
+		},
 		"elasticsearch renders the port as a number": {
 			storage: Storage{
 				Type:          v1.SecondaryStorageTypeElasticsearch,
