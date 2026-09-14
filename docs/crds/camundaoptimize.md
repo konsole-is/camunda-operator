@@ -167,7 +167,15 @@ The importer reads Elasticsearch directly. It does not go through the orchestrat
 
 The operator keeps the exporter settings on the cluster while the suspension holds. A suspension is not a detachment, and the brokers are at zero, so nothing exports. Only deletion withdraws the settings.
 
-A failed check of a reference does not stop a running instance. The webapp and the importer keep the configuration that the operator applied last, and `Ready` carries the failure reason. An instance whose first check fails has no workloads yet. It creates them when the check passes. A deleted cluster is the one failed reference that removes the workloads: their pods hold the backend that cluster wrote, against the next cluster that takes it over. The operator builds them again if the cluster comes back. A suspended cluster is the exception. Its Optimize workloads go to zero even while a check of this instance fails, because the importer reads Elasticsearch on its own. `Ready` keeps the failure reason, and the message names the suspension. Every other failure leaves the workloads as they are until the check passes. An instance whose check still fails when its cluster resumes keeps its workloads at zero, because only the render restores them. `WebappReady` and `ImporterReady` then read `Suspended` with the message `Kept at zero until the reference check passes`, and `Ready` says the same.
+A failed check of a reference does not stop a running instance. `Ready` carries the failure reason, and what happens to the workloads depends on the state of the cluster:
+
+| State | Workloads |
+| --- | --- |
+| A running instance on a running cluster | They keep the configuration that the operator applied last. |
+| An instance whose first check fails | It has none yet. It creates them when the check passes. |
+| The cluster is suspended | Both go to zero, because the importer reads Elasticsearch on its own. The message of `Ready` names the suspension. |
+| The cluster resumed while the check still fails | They stay at zero and start when the check passes. `WebappReady` and `ImporterReady` read `Suspended` with the message `Kept at zero until the reference check passes`, and `Ready` says the same. |
+| The cluster is gone, or another instance holds it | The operator removes them. Their pods hold the backend that cluster wrote, against the next cluster that takes it over, and it builds them again if the cluster comes back. |
 
 The importer never starts while the cluster does not hold the storage claim of its backend. Another cluster writes that backend in this state, and two importers on one set of analytics indices overwrite each other.
 
@@ -248,7 +256,7 @@ A `CamundaOptimize` that never held the attachment removes nothing from the clus
 
 `WebappReady` and `ImporterReady` always take part. `MirroredSecretsReady` takes part when a referenced Secret lives in another namespace, and reports `Disabled` when none does.
 
-Every reason above that reports a failed check leaves the workloads as they are, except in the states below, see [Suspension](#suspension). A running instance keeps running. An instance whose first check fails creates nothing until the check passes. A suspended cluster scales both workloads to zero. A cluster that another instance holds, or that does not exist any more, gets its workloads removed: they belong to the instance that holds the cluster now, or to no cluster at all.
+What a failed check does to the workloads depends on the state of the cluster. [Suspension](#suspension) has the table.
 
 `status.observedGeneration` is the last generation the operator reconciled.
 
