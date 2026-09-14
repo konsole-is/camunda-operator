@@ -42,9 +42,9 @@ import (
 // claim is what decides whether the importer may run.
 func TestPreCheckSuspendsWhileTheClusterDoesNotHoldItsBackend(t *testing.T) {
 	const (
-		namespace  = "apps"
+		namespace  = gateNamespace
 		claimSpace = "camunda-system"
-		endpoint   = "https://es-http.apps.svc:9200"
+		endpoint   = gateEndpoint
 	)
 
 	cases := map[string]struct {
@@ -57,7 +57,7 @@ func TestPreCheckSuspendsWhileTheClusterDoesNotHoldItsBackend(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			scheme, cluster, objects := storageClaimGateFixture(t, namespace, endpoint)
+			scheme, cluster, objects := storageClaimGateFixture(t)
 			holder := cluster.DeepCopy()
 			holder.UID = tc.holderUID
 			key, err := clustercomponents.StorageClaimKey(clustercomponents.Storage{
@@ -103,9 +103,9 @@ func TestPreCheckSuspendsWhileTheClusterDoesNotHoldItsBackend(t *testing.T) {
 // off the indices of that cluster.
 func TestPreCheckSuspendsWhileAnotherClusterWritesTheBackend(t *testing.T) {
 	const (
-		namespace  = "apps"
+		namespace  = gateNamespace
 		claimSpace = "camunda-system"
-		endpoint   = "https://es-http.apps.svc:9200"
+		endpoint   = gateEndpoint
 	)
 
 	cases := map[string]struct {
@@ -118,9 +118,45 @@ func TestPreCheckSuspendsWhileAnotherClusterWritesTheBackend(t *testing.T) {
 		"a pod of another cluster in another namespace": {podUID: "other-uid", podSpace: "team-b", suspended: true},
 	}
 
+	// A pod of the cluster on the backend says the takeover is over, so the
+	// list of every pod in the Kubernetes cluster is not worth its cost.
+	ownAndOther := map[string]types.UID{"zeebe-0": "cluster-uid", "other-zeebe-0": "other-uid"}
+
+	t.Run("the cluster already writes the backend", func(t *testing.T) {
+		scheme, cluster, objects := storageClaimGateFixture(t)
+		key, err := clustercomponents.StorageClaimKey(clustercomponents.Storage{
+			Type:          v1.SecondaryStorageTypeElasticsearch,
+			Elasticsearch: &v1.ElasticsearchStorage{Endpoint: endpoint},
+		})
+		require.NoError(t, err)
+		claim := clustercomponents.StorageClaimSchema().LeaseName(key)
+		objects = append(objects, clustercomponents.StorageClaimSchema().NewLease(claimSpace, key, cluster))
+		for podName, uid := range ownAndOther {
+			objects = append(objects, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace,
+				Name:      podName,
+				Labels:    clustercomponents.StoragePodLabels("holder", uid, claim),
+			}})
+		}
+
+		c := storageClaimPodClient(t, scheme, objects...)
+		r := &Reconciler{Client: c, APIReader: c, Scheme: scheme, ClaimNamespace: claimSpace}
+
+		var optimize v1.CamundaOptimize
+		require.NoError(t, c.Get(
+			context.Background(), client.ObjectKey{Namespace: namespace, Name: "my-optimize"}, &optimize,
+		))
+
+		out, err := r.preCheck(context.Background(), &optimize)
+
+		require.NoError(t, err)
+		assert.False(t, out.Input.Suspended)
+		assert.False(t, out.AwaitsBackendClaim)
+	})
+
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			scheme, cluster, objects := storageClaimGateFixture(t, namespace, endpoint)
+			scheme, cluster, objects := storageClaimGateFixture(t)
 			key, err := clustercomponents.StorageClaimKey(clustercomponents.Storage{
 				Type:          v1.SecondaryStorageTypeElasticsearch,
 				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: endpoint},
@@ -164,11 +200,11 @@ func TestPreCheckSuspendsWhileAnotherClusterWritesTheBackend(t *testing.T) {
 // pass on the timer that this instance does not need.
 func TestPreCheckLeavesTheClaimUnreadForASuspendedCluster(t *testing.T) {
 	const (
-		namespace = "apps"
-		endpoint  = "https://es-http.apps.svc:9200"
+		namespace = gateNamespace
+		endpoint  = gateEndpoint
 	)
 
-	scheme, cluster, objects := storageClaimGateFixture(t, namespace, endpoint)
+	scheme, cluster, objects := storageClaimGateFixture(t)
 	cluster.Spec.Suspend = true
 	c := storageClaimPodClient(t, scheme, objects...)
 	r := &Reconciler{Client: c, APIReader: c, Scheme: scheme, ClaimNamespace: "camunda-system"}
@@ -224,15 +260,23 @@ func storageClaimPodClient(t *testing.T, scheme *runtime.Scheme, objects ...clie
 		Build()
 }
 
+// The cluster of the gate fixtures, and the backend it resolves.
+const (
+	gateNamespace = "apps"
+	gateEndpoint  = "https://es-http.apps.svc:9200"
+)
+
 // storageClaimGateFixture returns the scheme, the cluster, and every object
 // that preCheck reads on the path to the storage claim gate: a healthy cluster
 // on an Elasticsearch contract, the Optimize of that cluster, and the auth
 // config and Secrets they name.
-func storageClaimGateFixture(
-	t *testing.T,
-	namespace, endpoint string,
-) (*runtime.Scheme, *v1.CamundaCluster, []client.Object) {
+func storageClaimGateFixture(t *testing.T) (*runtime.Scheme, *v1.CamundaCluster, []client.Object) {
 	t.Helper()
+
+	const (
+		namespace = gateNamespace
+		endpoint  = gateEndpoint
+	)
 
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))

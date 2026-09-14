@@ -246,7 +246,8 @@ func (res *resolver) resolveStorage(
 // the backend that key names: it must hold the storage claim, and no pod of
 // another cluster may still carry that claim. Either wait sets
 // AwaitsBackendClaim, because nothing reports the end of one to this
-// controller.
+// controller. A cluster whose own pods already write the backend is past the
+// takeover, and the pods of every namespace stay unread.
 //
 // The claim alone is not enough. The Ready of the cluster carries the state of
 // the pass that read the claim, so a storageRef edit reaches this controller
@@ -269,6 +270,20 @@ func (r *Reconciler) gateOnStorageClaim(
 		out.Input.Suspended = true
 		out.AwaitsBackendClaim = true
 
+		return nil
+	}
+
+	// A pod of the cluster on that backend says the takeover is over: only the
+	// render at zero holds the pods of another cluster away, and this cluster
+	// renders. The list below covers every namespace, so the cheap namespaced
+	// read comes first.
+	own, err := clustercomponents.ClaimsOnOwnPods(
+		ctx, r.APIReader, out.Input.Optimize.Namespace, cluster.UID,
+	)
+	if err != nil {
+		return err
+	}
+	if own.Carries(out.Input.StorageClaim) {
 		return nil
 	}
 
