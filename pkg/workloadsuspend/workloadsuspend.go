@@ -36,6 +36,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -52,6 +53,12 @@ const EventActionSuspend = "Suspend"
 // workload stays where the suspension left it, so the condition must not keep
 // naming a suspension that is over.
 const keptAtZeroMessage = "Kept at zero until the reference check passes"
+
+// zeroReplicas lowers the desired replicas of a workload. It names one field and
+// its value depends on nothing the workload says, so it applies to a copy of any
+// age. The ocf apply takes the field back with force once the caller renders the
+// workload again.
+var zeroReplicas = client.RawPatch(types.MergePatchType, []byte(`{"spec":{"replicas":0}}`))
 
 // Outcome is what StopAtZero did with one workload, and what to report for it.
 type Outcome struct {
@@ -90,10 +97,7 @@ func StopAtZero(
 		return outcome, nil
 	}
 
-	patch := client.MergeFrom(obj.DeepCopyObject().(client.Object))
-	setZero(obj)
-
-	if err := writer.Patch(ctx, obj, patch); err != nil {
+	if err := writer.Patch(ctx, obj, zeroReplicas); err != nil {
 		if apierrors.IsNotFound(err) {
 			// A workload deleted between the read and the patch runs no pods,
 			// whatever the read observed.
@@ -195,15 +199,4 @@ func KeepAtZero(owner component.OperatorCRD, conditionTypes []string) bool {
 	}
 
 	return kept
-}
-
-// setZero lowers the desired replicas of the workload to zero. The ocf apply
-// takes the field back with force once the caller renders the workload again.
-func setZero(obj client.Object) {
-	switch workload := obj.(type) {
-	case *appsv1.StatefulSet:
-		workload.Spec.Replicas = new(int32(0))
-	case *appsv1.Deployment:
-		workload.Spec.Replicas = new(int32(0))
-	}
 }

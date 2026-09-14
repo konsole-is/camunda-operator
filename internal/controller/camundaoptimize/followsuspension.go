@@ -90,8 +90,11 @@ func (r *Reconciler) followSuspension(
 			Name:      components.WorkloadName(optimize, comp),
 		}
 
+		// The cache holds the Deployments that this controller owns, and the
+		// merge patch below tolerates a stale copy: it names one field and its
+		// value does not depend on what the copy says.
 		var deployment appsv1.Deployment
-		if err := r.APIReader.Get(ctx, key, &deployment); err != nil {
+		if err := r.Get(ctx, key, &deployment); err != nil {
 			if !apierrors.IsNotFound(err) {
 				errs = append(errs, fmt.Errorf("reading Deployment %q: %w", key, err))
 			}
