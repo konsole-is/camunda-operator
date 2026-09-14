@@ -207,11 +207,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			}
 		}
 		conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
-		// An instance that rendered no workload has no suspension to report,
-		// and recording one would repeat on every retry until its check
-		// passes. A suspension already on the conditions still needs its end
-		// recorded.
-		if suspendErr == nil && (found || suspendedBefore) {
+		// This path records the start of a suspension and never its end. It
+		// renders nothing, so the workloads stay at zero and their conditions
+		// keep the suspension after the cluster resumed: a resume recorded here
+		// would repeat on every retry until the check passes. The render of the
+		// success path is what starts the workloads again, and it records that.
+		//
+		// An instance that rendered no workload has no suspension to report.
+		if suspendErr == nil && found && !suspendedBefore {
 			r.recordSuspensionChange(&optimize, suspendedBefore, res.Input.Suspended)
 		}
 

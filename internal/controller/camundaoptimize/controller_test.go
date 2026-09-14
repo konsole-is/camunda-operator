@@ -699,8 +699,13 @@ var _ = Describe("CamundaOptimize controller", func() {
 				g.Expect(clusterSuspendedEvents(s.optimize)).To(HaveLen(1))
 			}, "3s", interval).Should(Succeed())
 
-			By("pairing the resume across the window in which the check failed")
+			By("recording no resume while the workloads are still at zero")
 			setClusterSuspend(s.cluster, false)
+			Consistently(func(g Gomega) {
+				g.Expect(suspensionEventsOf(s.optimize, eventReasonClusterResumed)).To(BeEmpty())
+			}, "3s", interval).Should(Succeed())
+
+			By("pairing the resume when the render starts the workloads again")
 			createSecret(
 				s.auth.Spec.ClientSecretRef.Namespace,
 				s.auth.Spec.ClientSecretRef.Name,
@@ -710,6 +715,9 @@ var _ = Describe("CamundaOptimize controller", func() {
 			Eventually(func(g Gomega) {
 				g.Expect(suspensionEventsOf(s.optimize, eventReasonClusterResumed)).To(HaveLen(1))
 			}, timeout, interval).Should(Succeed())
+			Consistently(func(g Gomega) {
+				g.Expect(suspensionEventsOf(s.optimize, eventReasonClusterResumed)).To(HaveLen(1))
+			}, "2s", interval).Should(Succeed())
 		})
 
 		// An instance whose first check fails rendered nothing, so it has no
