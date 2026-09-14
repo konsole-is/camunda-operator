@@ -62,19 +62,6 @@ const keptAtZeroMessage = "Kept at zero until the reference check passes"
 // workloads a suspension left at zero and whose suspension ended.
 const keptAtZeroNote = ". The workloads stay at zero until the reference check passes"
 
-// processConditions maps the component label of a workload to the condition
-// that its process reports. It mirrors Process.ConditionType in
-// pkg/components/camundacluster: a failed pre-check has no effective spec to
-// build the topology from, so the pairs are read from the label instead.
-var processConditions = map[string]string{
-	components.ComponentZeebe:      v1.ConditionZeebeReady,
-	components.ComponentGateway:    v1.ConditionGatewayReady,
-	components.ComponentOperate:    v1.ConditionOperateReady,
-	components.ComponentTasklist:   v1.ConditionTasklistReady,
-	components.ComponentAdmin:      v1.ConditionAdminReady,
-	components.ComponentConnectors: v1.ConditionConnectorsReady,
-}
-
 // suspendExplicitly scales every workload that cluster controls to zero when
 // spec.suspend is set, and keeps everything else: the volumes, the Services,
 // and the Secrets. It does nothing for a cluster that does not set the field.
@@ -159,7 +146,7 @@ func (r *CamundaClusterReconciler) recordSuspended(cluster *v1.CamundaCluster, w
 // the workload brings the reconcile back as its replicas drop. A workload whose
 // component reports no condition changes nothing.
 func stageSuspension(cluster *v1.CamundaCluster, comp string, outcome workloadsuspend.Outcome) {
-	conditionType, ok := processConditions[comp]
+	conditionType, ok := components.ConditionTypeFor(comp)
 	if !ok {
 		return
 	}
@@ -183,7 +170,8 @@ func stageSuspension(cluster *v1.CamundaCluster, comp string, outcome workloadsu
 // cleared.
 func stageKeptAtZero(cluster *v1.CamundaCluster) bool {
 	var kept bool
-	for _, conditionType := range processConditions {
+	for _, process := range components.Resolve(components.Effective{}) {
+		conditionType := process.ConditionType
 		condition := meta.FindStatusCondition(cluster.Status.Conditions, conditionType)
 		if condition == nil || !suspensionReason(condition.Reason) {
 			continue

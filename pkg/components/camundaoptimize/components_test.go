@@ -429,3 +429,29 @@ func previewedDeployment(t *testing.T, comp *component.Component) *appsv1.Deploy
 
 	return nil
 }
+
+// TestWorkloadsAndConditionTypeFor pins what a caller reads when it acts on the
+// Optimize workloads outside the render: the list in reconcile order, and the
+// condition each one reports.
+func TestWorkloadsAndConditionTypeFor(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(
+		t,
+		[]string{ComponentWebapp, ComponentImporter},
+		Workloads(),
+	)
+
+	want := map[string]string{
+		ComponentWebapp:   v1.ConditionWebappReady,
+		ComponentImporter: v1.ConditionImporterReady,
+	}
+	for comp, conditionType := range want {
+		got, ok := ConditionTypeFor(comp)
+		assert.True(t, ok, comp)
+		assert.Equal(t, conditionType, got, comp)
+	}
+
+	_, ok := ConditionTypeFor("no-such-component")
+	assert.False(t, ok)
+}

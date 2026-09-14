@@ -18,6 +18,7 @@ package camundaoptimize
 
 import (
 	"fmt"
+	"slices"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -59,6 +60,21 @@ var components = []string{ComponentWebapp, ComponentImporter}
 var conditionTypes = map[string]string{
 	ComponentWebapp:   v1.ConditionWebappReady,
 	ComponentImporter: v1.ConditionImporterReady,
+}
+
+// Workloads returns the components of one CamundaOptimize, in reconcile order.
+// A caller that acts on the workloads outside the render walks this list, so it
+// never carries a copy of it.
+func Workloads() []string {
+	return slices.Clone(components)
+}
+
+// ConditionTypeFor returns the condition that the given component reports on the
+// CamundaOptimize, and whether that component reports one at all.
+func ConditionTypeFor(comp string) (string, bool) {
+	conditionType, ok := conditionTypes[comp]
+
+	return conditionType, ok
 }
 
 // Build returns one component per Optimize workload, in reconcile order: the

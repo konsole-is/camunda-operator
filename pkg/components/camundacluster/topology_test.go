@@ -235,3 +235,27 @@ func TestRESTEndpoint(t *testing.T) {
 		})),
 	)
 }
+
+// TestConditionTypeFor pins the pairing that a caller reads off a component
+// label, outside the render where no effective spec exists. Every process keeps
+// its condition whether or not the topology enables it.
+func TestConditionTypeFor(t *testing.T) {
+	t.Parallel()
+
+	want := map[string]string{
+		ComponentZeebe:      v1.ConditionZeebeReady,
+		ComponentGateway:    v1.ConditionGatewayReady,
+		ComponentOperate:    v1.ConditionOperateReady,
+		ComponentTasklist:   v1.ConditionTasklistReady,
+		ComponentAdmin:      v1.ConditionAdminReady,
+		ComponentConnectors: v1.ConditionConnectorsReady,
+	}
+	for comp, conditionType := range want {
+		got, ok := ConditionTypeFor(comp)
+		assert.True(t, ok, comp)
+		assert.Equal(t, conditionType, got, comp)
+	}
+
+	_, ok := ConditionTypeFor("no-such-component")
+	assert.False(t, ok)
+}

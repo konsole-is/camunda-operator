@@ -27,6 +27,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
@@ -78,13 +79,6 @@ type suspensionOutcome struct {
 	Stopped bool
 }
 
-// workloadConditions maps an Optimize workload to the condition that it
-// reports.
-var workloadConditions = map[string]string{
-	components.ComponentWebapp:   v1.ConditionWebappReady,
-	components.ComponentImporter: v1.ConditionImporterReady,
-}
-
 // followsSuspendedCluster reports whether the last pass already had the
 // Optimize workloads following a suspension of the referenced cluster.
 //
@@ -95,7 +89,12 @@ var workloadConditions = map[string]string{
 // to suspended counts, so a reconcile that catches the drain reads it as
 // already suspended.
 func followsSuspendedCluster(optimize *v1.CamundaOptimize) bool {
-	for _, conditionType := range []string{v1.ConditionImporterReady, v1.ConditionWebappReady} {
+	for _, comp := range suspendOrder() {
+		conditionType, ok := components.ConditionTypeFor(comp)
+		if !ok {
+			continue
+		}
+
 		condition := meta.FindStatusCondition(optimize.Status.Conditions, conditionType)
 		if condition != nil && suspensionReason(condition.Reason) {
 			return true
@@ -119,7 +118,7 @@ func (r *Reconciler) followSuspension(
 ) (suspensionOutcome, error) {
 	var outcome suspensionOutcome
 	var errs []error
-	for _, comp := range []string{components.ComponentImporter, components.ComponentWebapp} {
+	for _, comp := range suspendOrder() {
 		key := client.ObjectKey{
 			Namespace: optimize.Namespace,
 			Name:      components.WorkloadName(optimize, comp),
@@ -158,7 +157,7 @@ func (r *Reconciler) followSuspension(
 // the suspension did to it. The watch on the Deployment brings the reconcile back
 // as its replicas drop. An unknown workload changes nothing.
 func stageSuspension(optimize *v1.CamundaOptimize, comp string, outcome workloadsuspend.Outcome) {
-	conditionType, ok := workloadConditions[comp]
+	conditionType, ok := components.ConditionTypeFor(comp)
 	if !ok {
 		return
 	}
@@ -196,7 +195,12 @@ func (r *Reconciler) recordSuspended(optimize *v1.CamundaOptimize, workload stri
 // conditions would keep naming a suspension of the cluster that is over.
 func stageKeptAtZero(optimize *v1.CamundaOptimize) bool {
 	var kept bool
-	for _, conditionType := range workloadConditions {
+	for _, comp := range suspendOrder() {
+		conditionType, ok := components.ConditionTypeFor(comp)
+		if !ok {
+			continue
+		}
+
 		condition := meta.FindStatusCondition(optimize.Status.Conditions, conditionType)
 		if condition == nil || !suspensionReason(condition.Reason) {
 			continue
@@ -213,4 +217,14 @@ func stageKeptAtZero(optimize *v1.CamundaOptimize) bool {
 	}
 
 	return kept
+}
+
+// suspendOrder returns the Optimize workloads with the importer first. It is the
+// workload that writes Elasticsearch, so a webapp that a conflict or an
+// admission rule keeps up must not keep the importer up with it.
+func suspendOrder() []string {
+	order := components.Workloads()
+	slices.Reverse(order)
+
+	return order
 }

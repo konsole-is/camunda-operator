@@ -146,6 +146,23 @@ func Resolve(e Effective) []Process {
 	return append(append([]Process{zeebe, gateway}, apps...), connectors)
 }
 
+// ConditionTypeFor returns the condition that the process of the given component
+// reports on the cluster, and whether that component runs a process at all.
+//
+// Resolve keeps the names and the condition of every process, enabled or not, so
+// the pairing holds for any effective spec and an empty one serves to read it. A
+// caller that acts on a workload outside the render reads it from the component
+// label of that workload.
+func ConditionTypeFor(comp string) (string, bool) {
+	for _, process := range Resolve(Effective{}) {
+		if process.Component == comp {
+			return process.ConditionType, true
+		}
+	}
+
+	return "", false
+}
+
 // profiles returns the given profiles plus consolidated-auth, sorted.
 func profiles(names ...string) []string {
 	all := append(slices.Clone(names), camundaconfig.ProfileConsolidatedAuth)
