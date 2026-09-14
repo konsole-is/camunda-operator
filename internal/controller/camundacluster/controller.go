@@ -195,29 +195,16 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	in, mirrors, err := r.preCheck(ctx, &cluster)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
-		// A running cluster stops while its pre-check fails: its workloads
-		// scale to zero and its volumes stay, because they can keep writing
-		// a backend that the cluster no longer resolves. The failure stays
-		// the Ready reason, and the message says what happened to the
-		// workloads.
-		suspended, suspendErr := r.suspendWorkloads(ctx, &cluster)
-		if suspended && suspendErr == nil {
-			failure.Message += ". The workloads are scaled to zero, with the volumes kept, until the pre-check passes"
-		}
-		// The bindings are nil while the cluster is suspended, see binding.go.
-		// The endpoints of the scaled workloads answer nothing, so a consumer
-		// must see a cluster that is not ready, not a stale endpoint.
-		cluster.Status.Management = nil
-		cluster.Status.Gateway = nil
-		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
-		if suspendErr != nil {
-			return ctrl.Result{}, suspendErr
+		heldBack, failErr := r.reportFailedPreCheck(ctx, &cluster, in, failure)
+		if failErr != nil {
+			return ctrl.Result{}, failErr
 		}
 
 		// Only an unwatched failure needs a timer; everything else the
-		// pre-checks resolve re-enqueues through a watch.
+		// pre-checks resolve re-enqueues through a watch. A claim held back
+		// needs one either way: nothing reports the end of a pod drain.
 		var unwatched *conditions.UnwatchedPreCheckFailure
-		if errors.As(err, &unwatched) {
+		if errors.As(err, &unwatched) || len(heldBack) > 0 {
 			return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 		}
 		return ctrl.Result{}, nil
@@ -324,6 +311,17 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	cluster.Status.ServiceAccountName = components.PodServiceAccountName(in)
 	cred.recordRotation(&cluster)
 
+	// The backends this cluster left go back only now, after the apply that
+	// stopped writing them. A release before it would leave the old
+	// StatefulSet recreating pods into a backend another cluster may take.
+	if reconcileErr == nil {
+		heldBack, releaseErr := r.releaseLeftBackends(ctx, &cluster, in.Storage.Claim)
+		if releaseErr != nil {
+			return ctrl.Result{}, releaseErr
+		}
+		in.Storage.ReleaseHeldBack = heldBack
+	}
+
 	// A failed rotation retries on a timer: no watch fires when the user API
 	// recovers or accepts the credentials again.
 	if cred.failure != nil && reconcileErr == nil {
@@ -339,6 +337,41 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	return ctrl.Result{}, reconcileErr
+}
+
+// reportFailedPreCheck stops the workloads of a cluster whose pre-check
+// failed, stages the failure on Ready, and gives back the backends that no pod
+// of this cluster writes any more. It returns the claims it held back, which
+// the caller waits on.
+func (r *CamundaClusterReconciler) reportFailedPreCheck(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+	in components.Input,
+	failure *conditions.PreCheckFailure,
+) ([]string, error) {
+	// A running cluster stops while its pre-check fails: its workloads scale
+	// to zero and its volumes stay, because they can keep writing a backend
+	// that the cluster no longer resolves. The failure stays the Ready reason,
+	// and the message says what happened to the workloads.
+	suspended, suspendErr := r.suspendWorkloads(ctx, cluster)
+	if suspended && suspendErr == nil {
+		failure.Message += ". The workloads are scaled to zero, with the volumes kept, until the pre-check passes"
+	}
+	// The bindings are nil while the cluster is suspended, see binding.go. The
+	// endpoints of the scaled workloads answer nothing, so a consumer must see
+	// a cluster that is not ready, not a stale endpoint.
+	cluster.Status.Management = nil
+	cluster.Status.Gateway = nil
+	conditions.Stage(cluster, conditions.Failed(cluster, failure))
+	if suspendErr != nil {
+		return nil, suspendErr
+	}
+
+	// A cluster whose check fails keeps the backend it writes, because the
+	// workloads it had keep writing it. The pod gate holds that claim and
+	// gives back the ones no pod of this cluster carries any more, which is how
+	// a cluster that resolves no backend at all frees the one it left.
+	return r.releaseLeftBackends(ctx, cluster, in.Storage.Claim)
 }
 
 // retryInterval returns the wait before an unwatched dependency is looked at

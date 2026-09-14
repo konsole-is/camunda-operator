@@ -48,7 +48,7 @@ import (
 // A cluster gives a backend back only when none of its own pods writes it any
 // more. A release under running pods lets the next claimant start beside them,
 // and its own gate reads the pods once.
-func TestReleaseOtherClaimsKeepsABackendItsPodsStillWrite(t *testing.T) {
+func TestReleaseLeftBackendsKeepsOneItsPodsStillWrite(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
 	require.NoError(t, v1.AddToScheme(scheme))
@@ -63,41 +63,48 @@ func TestReleaseOtherClaimsKeepsABackendItsPodsStillWrite(t *testing.T) {
 	oldClaim := components.StorageClaimSchema().LeaseName(oldKey)
 	newClaim := components.StorageClaimSchema().LeaseName(newKey)
 
+	pod := func(name, claim string, uid types.UID) *corev1.Pod {
+		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Namespace: "team-a",
+			Name:      name,
+			Labels:    components.StoragePodLabels("orders", uid, claim),
+		}}
+	}
+
 	cases := map[string]struct {
-		own      components.PodClaims
+		pods     []client.Object
 		heldBack []string
 		released bool
 	}{
 		"a pod of this cluster still carries the old claim": {
-			own:      components.PodClaims{oldClaim: true},
+			pods:     []client.Object{pod("orders-zeebe-0", oldClaim, self.UID)},
 			heldBack: []string{oldClaim},
 		},
 		"the pods of this cluster carry the new claim": {
-			own:      components.PodClaims{newClaim: true},
+			pods:     []client.Object{pod("orders-zeebe-0", newClaim, self.UID)},
 			released: true,
 		},
-		"no pod of this cluster carries either": {
-			own:      components.PodClaims{},
+		"a pod of another cluster carries the old claim": {
+			pods:     []client.Object{pod("other-zeebe-0", oldClaim, "uid-other")},
 			released: true,
 		},
+		"no pods": {released: true},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			c := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(
+			objects := append(
+				[]client.Object{
 					components.StorageClaimSchema().NewLease("camunda-system", oldKey, self),
 					components.StorageClaimSchema().NewLease("camunda-system", newKey, self),
-				).
-				Build()
-			res := &resolver{
-				reader:  c,
-				claims:  components.StorageClaimSchema().NewClaim(c, c, "camunda-system"),
-				cluster: self,
-			}
+				},
+				tc.pods...,
+			)
+			c := storageClaimPodClient(t, scheme, objects...)
 
-			heldBack, err := res.releaseOtherClaims(context.Background(), newClaim, tc.own)
+			r := &CamundaClusterReconciler{Client: c, APIReader: c, ClaimNamespace: "camunda-system"}
+
+			heldBack, err := r.releaseLeftBackends(context.Background(), self, newClaim)
 
 			require.NoError(t, err)
 			assert.Equal(t, tc.heldBack, heldBack)
