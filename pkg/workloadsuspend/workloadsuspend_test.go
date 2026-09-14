@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -33,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 )
 
@@ -214,4 +216,103 @@ func replicas(t *testing.T, obj client.Object) int32 {
 	require.NotNil(t, asked)
 
 	return *asked
+}
+
+// TestIsSuspensionReason pins what counts as a workload a controller stopped.
+// Every ocf status on the way to suspended counts: a reconcile that catches the
+// drain must read it as suspended, not as running.
+func TestIsSuspensionReason(t *testing.T) {
+	t.Parallel()
+
+	for _, reason := range []string{
+		string(component.PendingSuspension),
+		string(component.Suspending),
+		string(component.Suspended),
+	} {
+		assert.True(t, workloadsuspend.IsSuspensionReason(reason), reason)
+	}
+
+	for _, reason := range []string{"Healthy", string(component.AliveUpdating), string(component.Down), ""} {
+		assert.False(t, workloadsuspend.IsSuspensionReason(reason), reason)
+	}
+}
+
+// TestKeepAtZero covers the conditions of an owner whose suspension ended while
+// it still has nothing to render from. The workloads stay where the suspension
+// left them, so only the message changes: a workload whose pods are still
+// draining keeps saying so, and one that reached zero keeps saying that.
+func TestKeepAtZero(t *testing.T) {
+	t.Parallel()
+
+	const conditionType = "ZeebeReady"
+
+	cases := map[string]struct {
+		status metav1.ConditionStatus
+		reason string
+		kept   bool
+	}{
+		"a workload whose pods stopped": {
+			status: metav1.ConditionTrue,
+			reason: string(component.Suspended),
+			kept:   true,
+		},
+		"a workload whose pods still drain": {
+			status: metav1.ConditionFalse,
+			reason: string(component.Suspending),
+			kept:   true,
+		},
+		"a workload on its way to a suspension": {
+			status: metav1.ConditionFalse,
+			reason: string(component.PendingSuspension),
+			kept:   true,
+		},
+		"a healthy workload": {
+			status: metav1.ConditionTrue,
+			reason: "Healthy",
+			kept:   false,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			owner := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Generation: 3}}
+			apimeta.SetStatusCondition(owner.GetStatusConditions(), metav1.Condition{
+				Type:    conditionType,
+				Status:  tc.status,
+				Reason:  tc.reason,
+				Message: "the message of the pass that staged it",
+			})
+
+			assert.Equal(t, tc.kept, workloadsuspend.KeepAtZero(owner, []string{conditionType}))
+
+			condition := apimeta.FindStatusCondition(*owner.GetStatusConditions(), conditionType)
+			require.NotNil(t, condition)
+			assert.Equal(t, tc.status, condition.Status, "the drain state is not the suspension")
+			assert.Equal(t, tc.reason, condition.Reason)
+			if !tc.kept {
+				assert.Equal(t, "the message of the pass that staged it", condition.Message)
+
+				return
+			}
+			assert.Equal(t, "Kept at zero until the reference check passes", condition.Message)
+		})
+	}
+}
+
+// TestStage sets the condition of a workload from what StopAtZero reported.
+func TestStage(t *testing.T) {
+	t.Parallel()
+
+	owner := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Generation: 7}}
+	workloadsuspend.Stage(owner, "ZeebeReady", workloadsuspend.Outcome{
+		Status:  metav1.ConditionFalse,
+		Reason:  string(component.Suspending),
+		Message: "Waiting for replicas to scale down, 2 replicas still running.",
+	})
+
+	condition := apimeta.FindStatusCondition(*owner.GetStatusConditions(), "ZeebeReady")
+	require.NotNil(t, condition)
+	assert.Equal(t, metav1.ConditionFalse, condition.Status)
+	assert.Equal(t, string(component.Suspending), condition.Reason)
+	assert.Equal(t, int64(7), condition.ObservedGeneration)
 }

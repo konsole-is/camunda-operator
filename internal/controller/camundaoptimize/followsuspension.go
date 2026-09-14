@@ -40,25 +40,13 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 )
 
-// eventReasonWorkloadsSuspended is recorded for each Optimize workload that
-// the suspension of the referenced cluster scales to zero while a check of
-// this CamundaOptimize fails.
-const eventReasonWorkloadsSuspended = "WorkloadsSuspended"
-
 // suspendNote is appended to the failure message of a CamundaOptimize whose
-// workloads the suspension of its cluster stopped, so Ready says both what
-// failed and what happened to the workloads.
+// workloads the suspension of its cluster stopped.
 const suspendNote = ". The Optimize workloads are scaled to zero because CamundaCluster %q is suspended"
 
 // suspendedMessage is the message of the condition of a workload that the
 // suspension of the referenced cluster stopped and whose pods are gone.
 const suspendedMessage = "Scaled to zero while the referenced cluster is suspended"
-
-// keptAtZeroMessage is the message of that condition once the cluster resumed
-// while a check of this CamundaOptimize still fails. The workload stays where
-// the suspension left it, so the condition must not keep naming a suspension
-// that is over.
-const keptAtZeroMessage = "Kept at zero until the reference check passes"
 
 // keptAtZeroNote is appended to the failure message of a CamundaOptimize whose
 // workloads a suspension left at zero and whose cluster resumed.
@@ -80,31 +68,6 @@ type suspensionOutcome struct {
 	// stopped none staged no condition either, so the next retry reads no
 	// suspension and would record the transition again.
 	Stopped bool
-}
-
-// followsSuspendedCluster reports whether the last pass already had the
-// Optimize workloads following a suspension of the referenced cluster.
-//
-// wasSuspending does not serve on the pre-check failure path: Ready carries the
-// failure there, never a suspension reason, so it reads false on every pass and
-// the transition event repeats. The condition of a workload carries the state
-// instead, because followSuspension is what writes it. Every status on the way
-// to suspended counts, so a reconcile that catches the drain reads it as
-// already suspended.
-func followsSuspendedCluster(optimize *v1.CamundaOptimize) bool {
-	for _, comp := range suspendOrder {
-		conditionType, ok := components.ConditionTypeFor(comp)
-		if !ok {
-			continue
-		}
-
-		condition := meta.FindStatusCondition(optimize.Status.Conditions, conditionType)
-		if condition != nil && suspensionReason(condition.Reason) {
-			return true
-		}
-	}
-
-	return false
 }
 
 // followSuspension scales the webapp and the importer to zero and keeps
@@ -156,22 +119,15 @@ func (r *Reconciler) followSuspension(
 	return outcome, errors.Join(errs...)
 }
 
-// stageSuspension sets the condition of the given workload, in memory, from what
-// the suspension did to it. The watch on the Deployment brings the reconcile back
-// as its replicas drop. An unknown workload changes nothing.
+// stageSuspension sets the condition of the given workload. An unknown workload
+// changes nothing.
 func stageSuspension(optimize *v1.CamundaOptimize, comp string, outcome workloadsuspend.Outcome) {
 	conditionType, ok := components.ConditionTypeFor(comp)
 	if !ok {
 		return
 	}
 
-	meta.SetStatusCondition(optimize.GetStatusConditions(), metav1.Condition{
-		Type:               conditionType,
-		Status:             outcome.Status,
-		Reason:             outcome.Reason,
-		Message:            outcome.Message,
-		ObservedGeneration: optimize.Generation,
-	})
+	workloadsuspend.Stage(optimize, conditionType, outcome)
 }
 
 // recordSuspended records that the suspension of the referenced cluster stopped
@@ -181,46 +137,37 @@ func (r *Reconciler) recordSuspended(optimize *v1.CamundaOptimize, workload stri
 		optimize,
 		nil,
 		corev1.EventTypeNormal,
-		eventReasonWorkloadsSuspended,
-		eventActionSuspend,
+		workloadsuspend.EventReasonWorkloadsSuspended,
+		workloadsuspend.EventActionSuspend,
 		"Scaled %q to zero because CamundaCluster %q is suspended",
 		workload,
 		optimize.Spec.ClusterRef.Name,
 	)
 }
 
-// stageKeptAtZero restages the workload conditions of a CamundaOptimize whose
-// cluster resumed while a check of this instance still fails, and reports
-// whether it restaged any.
-//
-// Nothing renders on that path, so the workloads stay where the suspension left
-// them and only a pass of the check raises their replicas again. Their
-// conditions would keep naming a suspension of the cluster that is over.
-func stageKeptAtZero(optimize *v1.CamundaOptimize) bool {
-	var kept bool
-	for _, comp := range suspendOrder {
-		conditionType, ok := components.ConditionTypeFor(comp)
-		if !ok {
-			continue
-		}
-
+// followsSuspendedCluster reports whether the last pass already had the Optimize
+// workloads following a suspension of the referenced cluster. The conditions of
+// the workloads carry that state, because followSuspension is what writes it and
+// Ready carries the failure on this path.
+func followsSuspendedCluster(optimize *v1.CamundaOptimize) bool {
+	for _, conditionType := range workloadConditions() {
 		condition := meta.FindStatusCondition(optimize.Status.Conditions, conditionType)
-		if condition == nil || !suspensionReason(condition.Reason) {
-			continue
+		if condition != nil && workloadsuspend.IsSuspensionReason(condition.Reason) {
+			return true
 		}
-		kept = true
-
-		// The suspension ended, not the drain. A workload whose pods are still
-		// stopping keeps the status and the reason that say so, and only its
-		// message stops naming the suspension of the cluster.
-		meta.SetStatusCondition(optimize.GetStatusConditions(), metav1.Condition{
-			Type:               conditionType,
-			Status:             condition.Status,
-			Reason:             condition.Reason,
-			Message:            keptAtZeroMessage,
-			ObservedGeneration: optimize.Generation,
-		})
 	}
 
-	return kept
+	return false
+}
+
+// workloadConditions returns the condition that each Optimize workload reports.
+func workloadConditions() []string {
+	types := make([]string, 0, len(suspendOrder))
+	for _, comp := range suspendOrder {
+		if conditionType, ok := components.ConditionTypeFor(comp); ok {
+			types = append(types, conditionType)
+		}
+	}
+
+	return types
 }

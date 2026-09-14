@@ -21,11 +21,11 @@ limitations under the License.
 package camundaoptimize
 
 import (
-	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 )
 
 // The event vocabulary of the suspension that a CamundaOptimize follows.
@@ -58,20 +58,7 @@ func wasSuspending(optimize *v1.CamundaOptimize) bool {
 		return false
 	}
 
-	return suspensionReason(ready.Reason)
-}
-
-// suspensionReason reports whether an ocf status is on the way to suspended or
-// already there. A suspension passes through three of them, and a reconcile
-// that catches one of the first two must not read it as "not suspended yet", or
-// it records the transition again on every look until the drain finishes.
-func suspensionReason(reason string) bool {
-	switch reason {
-	case string(component.PendingSuspension), string(component.Suspending), string(component.Suspended):
-		return true
-	default:
-		return false
-	}
+	return workloadsuspend.IsSuspensionReason(ready.Reason)
 }
 
 // recordSuspensionChange records an event when the suspension of the

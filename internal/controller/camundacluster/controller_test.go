@@ -644,7 +644,7 @@ var _ = Describe("CamundaCluster controller", func() {
 			cluster,
 			"WorkloadsSuspended",
 			corev1.EventTypeNormal,
-			HaveField("Action", "Reconcile"),
+			HaveField("Action", "Suspend"),
 			HaveField("Message", SatisfyAll(
 				ContainSubstring(cluster.Name+"-zeebe"),
 				ContainSubstring("because spec.suspend is set"),

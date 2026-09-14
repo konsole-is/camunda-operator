@@ -43,6 +43,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 )
 
 // controllerName is the name the controller registers with controller-runtime.
@@ -211,8 +212,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			}
 		default:
 			// The cluster resumed while the check still fails. Nothing renders
-			// here, so the workloads stay at zero, see stageKeptAtZero.
-			if stageKeptAtZero(&optimize) {
+			// here, so the workloads stay at zero.
+			if workloadsuspend.KeepAtZero(&optimize, workloadConditions()) {
 				failure.Message += keptAtZeroNote
 			}
 		}

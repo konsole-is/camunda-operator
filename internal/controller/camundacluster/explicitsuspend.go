@@ -27,10 +27,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -40,10 +38,6 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 )
 
-// eventReasonWorkloadsSuspended is recorded for each workload that an explicit
-// suspend scales to zero while the pre-check of the cluster fails.
-const eventReasonWorkloadsSuspended = "WorkloadsSuspended"
-
 // suspendNote is appended to the failure message of a cluster whose workloads
 // an explicit suspend stopped, so Ready says both what failed and what
 // happened to the workloads.
@@ -52,11 +46,6 @@ const suspendNote = ". The workloads are scaled to zero because spec.suspend is 
 // suspendedMessage is the message of the per-process condition of a workload
 // that an explicit suspend stopped and whose pods are gone.
 const suspendedMessage = "Scaled to zero because spec.suspend is set"
-
-// keptAtZeroMessage is the message of that condition once the suspension ended
-// while the pre-check still fails. The workload stays where the suspension left
-// it, so the condition must not keep naming a suspension that is over.
-const keptAtZeroMessage = "Kept at zero until the reference check passes"
 
 // keptAtZeroNote is appended to the failure message of a cluster whose
 // workloads a suspension left at zero and whose suspension ended.
@@ -134,72 +123,21 @@ func (r *CamundaClusterReconciler) recordSuspended(cluster *v1.CamundaCluster, w
 		cluster,
 		nil,
 		corev1.EventTypeNormal,
-		eventReasonWorkloadsSuspended,
-		eventActionReconcile,
+		workloadsuspend.EventReasonWorkloadsSuspended,
+		workloadsuspend.EventActionSuspend,
 		"Scaled %q to zero because spec.suspend is set",
 		workload,
 	)
 }
 
 // stageSuspension sets the per-process condition of the workload with the given
-// component label, in memory, from what the suspension did to it. The watch on
-// the workload brings the reconcile back as its replicas drop. A workload whose
-// component reports no condition changes nothing.
+// component label. A workload whose component reports no condition changes
+// nothing.
 func stageSuspension(cluster *v1.CamundaCluster, comp string, outcome workloadsuspend.Outcome) {
 	conditionType, ok := components.ConditionTypeFor(comp)
 	if !ok {
 		return
 	}
 
-	meta.SetStatusCondition(cluster.GetStatusConditions(), metav1.Condition{
-		Type:               conditionType,
-		Status:             outcome.Status,
-		Reason:             outcome.Reason,
-		Message:            outcome.Message,
-		ObservedGeneration: cluster.Generation,
-	})
-}
-
-// stageKeptAtZero restages the per-process conditions of a cluster whose
-// suspension ended while its pre-check still fails, and reports whether it
-// restaged any.
-//
-// Nothing renders on that path, so the workloads stay where the suspension left
-// them and only a pass of the pre-check raises their replicas again. Their
-// conditions would keep naming spec.suspend, which the user has already
-// cleared.
-func stageKeptAtZero(cluster *v1.CamundaCluster) bool {
-	var kept bool
-	for _, conditionType := range components.ConditionTypes() {
-		condition := meta.FindStatusCondition(cluster.Status.Conditions, conditionType)
-		if condition == nil || !suspensionReason(condition.Reason) {
-			continue
-		}
-		kept = true
-
-		// The suspension ended, not the drain. A workload whose pods are still
-		// stopping keeps the status and the reason that say so, and only its
-		// message stops naming spec.suspend.
-		meta.SetStatusCondition(cluster.GetStatusConditions(), metav1.Condition{
-			Type:               conditionType,
-			Status:             condition.Status,
-			Reason:             condition.Reason,
-			Message:            keptAtZeroMessage,
-			ObservedGeneration: cluster.Generation,
-		})
-	}
-
-	return kept
-}
-
-// suspensionReason reports whether an ocf status is on the way to suspended or
-// already there. Every one of them means that the workload is not running for
-// the user, so the condition that carries it is one this controller staged.
-func suspensionReason(reason string) bool {
-	switch reason {
-	case string(component.PendingSuspension), string(component.Suspending), string(component.Suspended):
-		return true
-	default:
-		return false
-	}
+	workloadsuspend.Stage(cluster, conditionType, outcome)
 }

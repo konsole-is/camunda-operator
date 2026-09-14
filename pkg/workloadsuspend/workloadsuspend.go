@@ -34,9 +34,24 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/statefulset"
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// EventReasonWorkloadsSuspended is the event reason of a workload that a
+// controller scaled to zero outside its render. The note says which suspension
+// it followed, which differs per controller.
+const EventReasonWorkloadsSuspended = "WorkloadsSuspended"
+
+// EventActionSuspend is the action verb of that event.
+const EventActionSuspend = "Suspend"
+
+// keptAtZeroMessage is the message of the condition of a workload whose
+// suspension ended while the controller still has nothing to render from. The
+// workload stays where the suspension left it, so the condition must not keep
+// naming a suspension that is over.
+const keptAtZeroMessage = "Kept at zero until the reference check passes"
 
 // Outcome is what StopAtZero did with one workload, and what to report for it.
 type Outcome struct {
@@ -132,6 +147,54 @@ func drain(obj client.Object, suspended string) (Outcome, *int32, error) {
 	}
 
 	return outcome, replicas, nil
+}
+
+// IsSuspensionReason reports whether a condition reason is one of the ocf
+// statuses on the way to suspended, or suspended itself. A workload that carries
+// one is not running for the user, so it is one a controller staged.
+func IsSuspensionReason(reason string) bool {
+	return concepts.SuspensionStatus(reason).Priority() > 0
+}
+
+// Stage sets the condition of a workload that a controller holds at zero, in
+// memory, from what StopAtZero did to it. The watch on the workload brings the
+// reconcile back as its replicas drop.
+func Stage(owner component.OperatorCRD, conditionType string, outcome Outcome) {
+	meta.SetStatusCondition(owner.GetStatusConditions(), metav1.Condition{
+		Type:               conditionType,
+		Status:             outcome.Status,
+		Reason:             outcome.Reason,
+		Message:            outcome.Message,
+		ObservedGeneration: owner.GetGeneration(),
+	})
+}
+
+// KeepAtZero rewrites the given conditions of an owner whose suspension ended
+// while it still has nothing to render from, and reports whether it rewrote any.
+//
+// The workloads stay where the suspension left them and only a render raises
+// their replicas again, so the conditions stay. The suspension ended, not the
+// drain: a workload whose pods are still stopping keeps the status and the
+// reason that say so, and only its message stops naming the suspension.
+func KeepAtZero(owner component.OperatorCRD, conditionTypes []string) bool {
+	var kept bool
+	for _, conditionType := range conditionTypes {
+		condition := meta.FindStatusCondition(*owner.GetStatusConditions(), conditionType)
+		if condition == nil || !IsSuspensionReason(condition.Reason) {
+			continue
+		}
+		kept = true
+
+		meta.SetStatusCondition(owner.GetStatusConditions(), metav1.Condition{
+			Type:               conditionType,
+			Status:             condition.Status,
+			Reason:             condition.Reason,
+			Message:            keptAtZeroMessage,
+			ObservedGeneration: owner.GetGeneration(),
+		})
+	}
+
+	return kept
 }
 
 // setZero lowers the desired replicas of the workload to zero. The ocf apply

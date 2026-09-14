@@ -40,6 +40,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 )
 
 // controllerName is the name the controller registers with controller-runtime.
@@ -204,10 +205,10 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if suspended && suspendErr == nil {
 				failure.Message += suspendNote
 			}
-		} else if stageKeptAtZero(&cluster) {
+		} else if workloadsuspend.KeepAtZero(&cluster, components.ConditionTypes()) {
 			// The suspension ended while the check still fails. Nothing renders
 			// here, so the workloads stay at zero and their endpoints answer
-			// nothing, see stageKeptAtZero.
+			// nothing.
 			cluster.Status.Management = nil
 			cluster.Status.Gateway = nil
 			failure.Message += keptAtZeroNote
