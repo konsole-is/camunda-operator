@@ -37,6 +37,7 @@ The two PRs run in parallel off the feature branch. They share no code contract:
 - Messages name the holder as `namespace/name` through `objectPath`, and the backend as the key string.
 - Tests that need a Lease golden copy `leaseGoldenScheme` and `leasePreview` into their own `_test.go` file (test helpers stay in `_test.go`, see memory).
 - Docs describe outcomes for the user, never reconcile steps. Show a status block where a reason changes.
+- Deliberate, recorded at the 2026-09-14 checkpoint: the cluster does not use the `held` predicate of `workloadsuspend.KeepAtZero` because it lists its workloads by label, while Optimize reads one Deployment per component; one predicate over two list shapes would hide the difference. Optimize keeps its suspension vocabulary (`clustersuspension.go`) apart from the act of following it (`followsuspension.go`) because it carries two waits and three events; the cluster has one of each and keeps both in `explicitsuspend.go`.
 
 ---
 
