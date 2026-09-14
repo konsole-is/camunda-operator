@@ -300,7 +300,7 @@ func TestClaimsOnOwnPods(t *testing.T) {
 		pod("team-b", "orders-zeebe-0", StoragePodLabels("orders", "uid-1", theirs)),
 	)
 
-	carried, err := ClaimsOnOwnPods(context.Background(), reader, "team-a", "uid-1")
+	carried, err := ClaimsOnOwnPods(context.Background(), reader, "team-a", "uid-1", nil)
 
 	require.NoError(t, err)
 	assert.True(t, carried.Carries(mine))

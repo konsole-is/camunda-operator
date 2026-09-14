@@ -34,6 +34,8 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // The importer writes the analytics indices of the backend of its cluster. A
@@ -118,41 +120,59 @@ func TestPreCheckSuspendsWhileAnotherClusterWritesTheBackend(t *testing.T) {
 		"a pod of another cluster in another namespace": {podUID: "other-uid", podSpace: "team-b", suspended: true},
 	}
 
-	// A pod of the cluster on the backend says the takeover is over, so the
-	// list of every pod in the Kubernetes cluster is not worth its cost.
-	ownAndOther := map[string]types.UID{"zeebe-0": "cluster-uid", "other-zeebe-0": "other-uid"}
+	// The importer of this instance on that backend says the gate passed
+	// before, so the pods of every namespace stay unread. A webapp pod says
+	// less: it can be up while the importer is still pending.
+	fastPath := map[string]struct {
+		component string
+		suspended bool
+	}{
+		"an importer pod of this instance": {component: components.ComponentImporter},
+		"a webapp pod of this instance":    {component: components.ComponentWebapp, suspended: true},
+	}
 
-	t.Run("the cluster already writes the backend", func(t *testing.T) {
-		scheme, cluster, objects := storageClaimGateFixture(t)
-		key, err := clustercomponents.StorageClaimKey(clustercomponents.Storage{
-			Type:          v1.SecondaryStorageTypeElasticsearch,
-			Elasticsearch: &v1.ElasticsearchStorage{Endpoint: endpoint},
+	for name, tc := range fastPath {
+		t.Run(name, func(t *testing.T) {
+			scheme, cluster, objects := storageClaimGateFixture(t)
+			key, err := clustercomponents.StorageClaimKey(clustercomponents.Storage{
+				Type:          v1.SecondaryStorageTypeElasticsearch,
+				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: endpoint},
+			})
+			require.NoError(t, err)
+			claim := clustercomponents.StorageClaimSchema().LeaseName(key)
+			objects = append(
+				objects,
+				clustercomponents.StorageClaimSchema().NewLease(claimSpace, key, cluster),
+				&corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      "own-" + tc.component,
+					Labels: labels.Merge(
+						clustercomponents.StoragePodLabels("holder", cluster.UID, claim),
+						map[string]string{labels.ComponentKey: tc.component},
+					),
+				}},
+				&corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      "other-zeebe-0",
+					Labels:    clustercomponents.StoragePodLabels("other", "other-uid", claim),
+				}},
+			)
+
+			c := storageClaimPodClient(t, scheme, objects...)
+			r := &Reconciler{Client: c, APIReader: c, Scheme: scheme, ClaimNamespace: claimSpace}
+
+			var optimize v1.CamundaOptimize
+			require.NoError(t, c.Get(
+				context.Background(), client.ObjectKey{Namespace: namespace, Name: "my-optimize"}, &optimize,
+			))
+
+			out, err := r.preCheck(context.Background(), &optimize)
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.suspended, out.Input.Suspended)
+			assert.Equal(t, tc.suspended, out.AwaitsBackendClaim)
 		})
-		require.NoError(t, err)
-		claim := clustercomponents.StorageClaimSchema().LeaseName(key)
-		objects = append(objects, clustercomponents.StorageClaimSchema().NewLease(claimSpace, key, cluster))
-		for podName, uid := range ownAndOther {
-			objects = append(objects, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
-				Namespace: namespace,
-				Name:      podName,
-				Labels:    clustercomponents.StoragePodLabels("holder", uid, claim),
-			}})
-		}
-
-		c := storageClaimPodClient(t, scheme, objects...)
-		r := &Reconciler{Client: c, APIReader: c, Scheme: scheme, ClaimNamespace: claimSpace}
-
-		var optimize v1.CamundaOptimize
-		require.NoError(t, c.Get(
-			context.Background(), client.ObjectKey{Namespace: namespace, Name: "my-optimize"}, &optimize,
-		))
-
-		out, err := r.preCheck(context.Background(), &optimize)
-
-		require.NoError(t, err)
-		assert.False(t, out.Input.Suspended)
-		assert.False(t, out.AwaitsBackendClaim)
-	})
+	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

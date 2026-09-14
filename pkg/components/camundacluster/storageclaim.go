@@ -144,6 +144,9 @@ func (p PodClaims) Carries(name string) bool {
 // writes that backend any more, and a takeover is over once its own pods write
 // the backend it took.
 //
+// match narrows the list to a part of the cluster, for example the importer of
+// a CamundaOptimize, and a nil match takes every pod of it.
+//
 // The pods of the cluster live in its namespace, so the list stays there. It
 // leaves out the pods that ended, like OtherPodsOnClaim.
 func ClaimsOnOwnPods(
@@ -151,13 +154,14 @@ func ClaimsOnOwnPods(
 	reader client.Reader,
 	namespace string,
 	self types.UID,
+	match map[string]string,
 ) (PodClaims, error) {
 	pods := podMetadataList()
 	err := reader.List(
 		ctx,
 		pods,
 		client.InNamespace(namespace),
-		client.MatchingLabels(map[string]string{labels.ClusterUIDKey: string(self)}),
+		client.MatchingLabels(labels.Merge(match, map[string]string{labels.ClusterUIDKey: string(self)})),
 		client.MatchingFieldsSelector{Selector: endedPodsExcluded()},
 	)
 	if err != nil {

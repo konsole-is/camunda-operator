@@ -239,7 +239,7 @@ func (r *CamundaClusterReconciler) finalizeStorageClaims(
 // One list serves the handover gate of the backend it holds and, after the
 // apply, the release of the backends it left.
 func (res *resolver) claimsOnOwnPods(ctx context.Context) (components.PodClaims, error) {
-	return components.ClaimsOnOwnPods(ctx, res.reader, res.cluster.Namespace, res.cluster.UID)
+	return components.ClaimsOnOwnPods(ctx, res.reader, res.cluster.Namespace, res.cluster.UID, nil)
 }
 
 // releaseLeftBackends gives back every storage claim of the cluster except
@@ -278,7 +278,7 @@ func (r *CamundaClusterReconciler) releaseLeftBackends(
 		return nil, nil
 	}
 
-	own, err := components.ClaimsOnOwnPods(ctx, r.APIReader, cluster.Namespace, cluster.UID)
+	own, err := components.ClaimsOnOwnPods(ctx, r.APIReader, cluster.Namespace, cluster.UID, nil)
 	if err != nil {
 		return nil, err
 	}

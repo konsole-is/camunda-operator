@@ -33,6 +33,7 @@ import (
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
@@ -273,12 +274,17 @@ func (r *Reconciler) gateOnStorageClaim(
 		return nil
 	}
 
-	// A pod of the cluster on that backend says the takeover is over: only the
-	// render at zero holds the pods of another cluster away, and this cluster
-	// renders. The list below covers every namespace, so the cheap namespaced
-	// read comes first.
+	// An importer of this instance on that backend says the gate passed
+	// before, and only the render at zero holds the pods of another cluster
+	// away. A webapp pod says less, because it can be up while the importer is
+	// still pending. The list below covers every namespace, so the cheap
+	// namespaced read comes first.
 	own, err := clustercomponents.ClaimsOnOwnPods(
-		ctx, r.APIReader, out.Input.Optimize.Namespace, cluster.UID,
+		ctx,
+		r.APIReader,
+		out.Input.Optimize.Namespace,
+		cluster.UID,
+		map[string]string{labels.ComponentKey: components.ComponentImporter},
 	)
 	if err != nil {
 		return err
