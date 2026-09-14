@@ -26,6 +26,7 @@ package workloadsuspend
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -54,11 +55,21 @@ const EventActionSuspend = "Suspend"
 // naming a suspension that is over.
 const keptAtZeroMessage = "Kept at zero until the reference check passes"
 
-// zeroReplicas lowers the desired replicas of a workload. It names one field and
-// its value depends on nothing the workload says, so it applies to a copy of any
-// age. The ocf apply takes the field back with force once the caller renders the
-// workload again.
-var zeroReplicas = client.RawPatch(types.MergePatchType, []byte(`{"spec":{"replicas":0}}`))
+// stopPatch is the body of the merge patch that stops a workload: the replicas
+// it asks for, which are always none, and the UID the caller read it with.
+//
+// The API server takes metadata.uid in a merge patch as a precondition. A
+// workload deleted and recreated under the same name between the read and the
+// patch carries another UID, so the patch is refused with a conflict rather than
+// stopping a workload that belongs to someone else now.
+type stopPatch struct {
+	Metadata struct {
+		UID types.UID `json:"uid"`
+	} `json:"metadata"`
+	Spec struct {
+		Replicas int32 `json:"replicas"`
+	} `json:"spec"`
+}
 
 // Outcome is what StopAtZero did with one workload, and what to report for it.
 type Outcome struct {
@@ -98,7 +109,12 @@ func StopAtZero(
 		return outcome, nil
 	}
 
-	if err := writer.Patch(ctx, obj, zeroReplicas); err != nil {
+	patch, err := zeroReplicas(obj.GetUID())
+	if err != nil {
+		return Outcome{}, err
+	}
+
+	if err := writer.Patch(ctx, obj, patch); err != nil {
 		if apierrors.IsNotFound(err) {
 			// A workload deleted between the read and the patch runs no pods,
 			// whatever the read observed.
@@ -116,6 +132,21 @@ func StopAtZero(
 	outcome.Patched = true
 
 	return outcome, nil
+}
+
+// zeroReplicas builds the patch that stops the workload that uid names. The ocf
+// apply takes the replicas back with force once the caller renders the workload
+// again.
+func zeroReplicas(uid types.UID) (client.Patch, error) {
+	var body stopPatch
+	body.Metadata.UID = uid
+
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("building the patch that stops the workload: %w", err)
+	}
+
+	return client.RawPatch(types.MergePatchType, raw), nil
 }
 
 // drain reads the ocf suspension status of the workload and its desired

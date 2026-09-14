@@ -18,6 +18,7 @@ package workloadsuspend_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -26,9 +27,12 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	apitypes "k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -180,6 +184,74 @@ func TestStopAtZeroWrapsAFailedPatch(t *testing.T) {
 	require.ErrorIs(t, err, boom)
 	assert.False(t, outcome.Patched)
 	assert.Contains(t, err.Error(), "ns/workload")
+}
+
+// TestStopAtZeroRefusesAWorkloadRecreatedUnderAnotherOwner pins the precondition
+// on the patch. A workload deleted and recreated under the same name between the
+// read and the patch belongs to someone else, and stopping it would take down a
+// workload this caller never owned.
+func TestStopAtZeroRefusesAWorkloadRecreatedUnderAnotherOwner(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+
+	// What the caller read, and what stands at that name by the time it patches.
+	observed := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "workload", Namespace: "ns", UID: "the-one-it-read"},
+		Spec:       appsv1.DeploymentSpec{Replicas: new(int32(1))},
+	}
+	recreated := observed.DeepCopy()
+	recreated.UID = "another-owner"
+
+	var sent []byte
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(recreated).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(
+				ctx context.Context,
+				cl client.WithWatch,
+				obj client.Object,
+				patch client.Patch,
+				opts ...client.PatchOption,
+			) error {
+				// The API server refuses a merge patch whose metadata.uid does
+				// not match the object it lands on. The fake client applies it,
+				// so the refusal is spelled out here.
+				data, err := patch.Data(obj)
+				require.NoError(t, err)
+				sent = data
+
+				var body struct {
+					Metadata struct {
+						UID apitypes.UID `json:"uid"`
+					} `json:"metadata"`
+				}
+				require.NoError(t, json.Unmarshal(data, &body))
+				if body.Metadata.UID != recreated.UID {
+					return apierrors.NewConflict(
+						schema.GroupResource{Group: "apps", Resource: "deployments"},
+						obj.GetName(),
+						errors.New("the UID of the object does not match the precondition"),
+					)
+				}
+
+				return cl.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+
+	outcome, err := workloadsuspend.StopAtZero(context.Background(), fakeClient, observed, suspended)
+
+	require.Error(t, err)
+	assert.True(t, apierrors.IsConflict(err), "the caller retries rather than stopping a stranger")
+	assert.False(t, outcome.Patched, "nothing stopped, so nothing is reported stopped")
+	assert.Contains(t, string(sent), string(observed.UID), "the patch carries the UID that was read")
+
+	var kept appsv1.Deployment
+	require.NoError(t, fakeClient.Get(
+		context.Background(), client.ObjectKey{Namespace: "ns", Name: "workload"}, &kept,
+	))
+	assert.Equal(t, int32(1), *kept.Spec.Replicas, "the workload of the other owner keeps its replicas")
 }
 
 // TestStopAtZeroRejectsAnotherKind pins that only the two workload kinds are
