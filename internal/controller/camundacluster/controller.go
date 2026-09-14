@@ -356,31 +356,14 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{RequeueAfter: wait}, nil
 }
 
-// releaseWait gives back the backends that this cluster no longer writes and
-// returns how long to wait before the next pass. Nothing reports the end of a
-// pod drain, so a claim held back asks for the retry interval, and everything
-// else asks for no timer of its own.
-func (r *CamundaClusterReconciler) releaseWait(
-	ctx context.Context,
-	cluster *v1.CamundaCluster,
-	keep string,
-) (time.Duration, error) {
-	heldBack, err := r.releaseLeftBackends(ctx, cluster, keep)
-	if err != nil || len(heldBack) == 0 {
-		return 0, err
-	}
-
-	return r.retryInterval(), nil
-}
-
 // reportFailedPreCheck stops the workloads of a cluster whose pre-check
 // failed, stages the failure on Ready, and gives back the backends that no pod
-// of this cluster writes any more. It returns the claims it held back, which
-// the caller waits on.
+// of this cluster writes any more. It returns how long to wait before the next
+// pass, which a claim held back earns.
 //
 // It releases nothing unless the claim step of the pre-check ran on this pass,
-// which in.Storage.Claim says: every earlier step fails on a reference that
-// tells nothing about the backend this cluster writes.
+// which in.Storage.Claim says: a step that fails before it fails on a reference
+// that tells nothing about the backend this cluster writes.
 func (r *CamundaClusterReconciler) reportFailedPreCheck(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -405,10 +388,10 @@ func (r *CamundaClusterReconciler) reportFailedPreCheck(
 		return 0, suspendErr
 	}
 
-	// The claim step is the last one, so a check that failed before it knows
-	// no backend of this cluster. Releasing with no claim to keep would give
-	// its live backend away, at once for a cluster whose pods are already
-	// gone, and a waiting cluster would take it.
+	// A check that failed before the claim step knows no backend of this
+	// cluster, which in.Storage.Claim says. Releasing with no claim to keep
+	// would give its live backend away, at once for a cluster whose pods are
+	// already gone, and a waiting cluster would take it.
 	if in.Storage.Claim == "" {
 		return 0, nil
 	}
@@ -418,6 +401,31 @@ func (r *CamundaClusterReconciler) reportFailedPreCheck(
 	// gives back the ones no pod of this cluster carries any more, which is how
 	// a cluster that moved frees the backend it left.
 	return r.releaseWait(ctx, cluster, in.Storage.Claim)
+}
+
+// releaseWait gives back the backends that this cluster no longer writes and
+// returns how long to wait before the next pass. Nothing reports the end of a
+// pod drain, so a claim held back asks for the retry interval, and everything
+// else asks for no timer of its own.
+//
+// keep is the claim of the backend the cluster writes now, and it is required:
+// a caller that has none knows of no backend to keep, and the deletion path
+// gives every claim back through finalizeStorageClaims.
+func (r *CamundaClusterReconciler) releaseWait(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+	keep string,
+) (time.Duration, error) {
+	if keep == "" {
+		return 0, errors.New("releasing the storage claims of a cluster needs the one it keeps")
+	}
+
+	heldBack, err := r.releaseLeftBackends(ctx, cluster, keep)
+	if err != nil || len(heldBack) == 0 {
+		return 0, err
+	}
+
+	return r.retryInterval(), nil
 }
 
 // retryInterval returns the wait before an unwatched dependency is looked at
