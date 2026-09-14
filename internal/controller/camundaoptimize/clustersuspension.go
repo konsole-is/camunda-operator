@@ -83,12 +83,15 @@ func suspensionReason(reason string) bool {
 // component from its own suspension state, and the reason is Suspended, the
 // same reason that a suspended CamundaCluster reports.
 //
-// before is what wasSuspending read at the top of the reconcile, and suspended
-// is CamundaCluster.Suspended of the referenced cluster, which covers
-// spec.suspend and the states in which the operator holds that cluster at
-// zero. The caller runs this after it stages the new Ready, so a reconcile
-// that returns early on an error records nothing: it changed no workload, and
-// the next reconcile still sees the same transition to record.
+// before is the prior suspension state that the caller read at the top of the
+// reconcile, from the Ready reason through wasSuspending or from the workload
+// conditions through followsSuspendedCluster. suspended is
+// CamundaCluster.Suspended of the referenced cluster, which covers spec.suspend
+// and the states in which the operator holds that cluster at zero.
+//
+// The caller runs this after it stages the new conditions. A reconcile that
+// returns early on an error records nothing, and the next one still sees the
+// same transition to record.
 func (r *Reconciler) recordSuspensionChange(
 	optimize *v1.CamundaOptimize,
 	before, suspended bool,
