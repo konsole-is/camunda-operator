@@ -330,10 +330,11 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 
-	// A cluster the claim suspends looks again on a timer: nothing watches the
-	// holder of its backend, or the pods of another cluster on it, and nothing
-	// should.
-	if claimSuspends(in.Storage) && reconcileErr == nil {
+	// A cluster the claim suspends looks again on a timer, and so does one that
+	// still holds a backend it left: nothing watches the holder of a backend,
+	// the pods of another cluster on it, or the drain of its own pods, and
+	// nothing should.
+	if (claimSuspends(in.Storage) || len(in.Storage.ReleaseHeldBack) > 0) && reconcileErr == nil {
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 

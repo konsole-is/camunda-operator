@@ -36,12 +36,94 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
+
+// A cluster gives a backend back only when none of its own pods writes it any
+// more. A release under running pods lets the next claimant start beside them,
+// and its own gate reads the pods once.
+func TestReleaseOtherClaimsKeepsABackendItsPodsStillWrite(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	self := &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "team-a", Name: "orders", UID: "uid-1"},
+	}
+	const (
+		oldKey = "elasticsearch|https://old.es:9200"
+		newKey = "elasticsearch|https://new.es:9200"
+	)
+	oldClaim := components.StorageClaimSchema().LeaseName(oldKey)
+	newClaim := components.StorageClaimSchema().LeaseName(newKey)
+
+	cases := map[string]struct {
+		pods     []client.Object
+		heldBack []string
+		released bool
+	}{
+		"a pod of this cluster still carries the old claim": {
+			pods: []client.Object{&corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+				Namespace: "team-a",
+				Name:      "orders-zeebe-0",
+				Labels:    components.StoragePodLabels("orders", self.UID, oldClaim),
+			}}},
+			heldBack: []string{oldClaim},
+		},
+		"the pods of this cluster carry the new claim": {
+			pods: []client.Object{&corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+				Namespace: "team-a",
+				Name:      "orders-zeebe-0",
+				Labels:    components.StoragePodLabels("orders", self.UID, newClaim),
+			}}},
+			released: true,
+		},
+		"a pod of another cluster carries the old claim": {
+			pods: []client.Object{&corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+				Namespace: "team-a",
+				Name:      "other-zeebe-0",
+				Labels:    components.StoragePodLabels("other", "uid-other", oldClaim),
+			}}},
+			released: true,
+		},
+		"no pods": {released: true},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			objects := append(
+				[]client.Object{
+					components.StorageClaimSchema().NewLease("camunda-system", oldKey, self),
+					components.StorageClaimSchema().NewLease("camunda-system", newKey, self),
+				},
+				tc.pods...,
+			)
+			c := storageClaimPodClient(t, scheme, objects...)
+			res := &resolver{
+				reader:  c,
+				claims:  components.StorageClaimSchema().NewClaim(c, c, "camunda-system"),
+				cluster: self,
+			}
+
+			heldBack, err := res.releaseOtherClaims(context.Background(), newClaim)
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.heldBack, heldBack)
+			var lease coordinationv1.Lease
+			err = c.Get(
+				context.Background(),
+				client.ObjectKey{Namespace: "camunda-system", Name: oldClaim},
+				&lease,
+			)
+			assert.Equal(t, tc.released, apierrors.IsNotFound(err), "the claim of the old backend")
+		})
+	}
+}
 
 // The gate exists for the takeover moment. A cluster that already held the
 // claim when the pass started, and was not waiting last time, cannot have a
@@ -195,6 +277,45 @@ func TestStorageHandover(t *testing.T) {
 			assert.True(t, gated.Suspended())
 		}
 	})
+}
+
+// storageClaimPodClient builds a fake client for the handover gate. The fake
+// client refuses a "!=" field selector, which the API server serves, so the
+// interceptor asserts that the phase selector reached it and then drops it. An
+// envtest spec covers the filtering itself.
+func storageClaimPodClient(t *testing.T, scheme *runtime.Scheme, objects ...client.Object) client.Client {
+	t.Helper()
+
+	return fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objects...).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(
+				ctx context.Context,
+				c client.WithWatch,
+				list client.ObjectList,
+				opts ...client.ListOption,
+			) error {
+				if _, ours := list.(*metav1.PartialObjectMetadataList); !ours {
+					return c.List(ctx, list, opts...)
+				}
+
+				kept := make([]client.ListOption, 0, len(opts))
+				var phases string
+				for _, opt := range opts {
+					if selector, ok := opt.(client.MatchingFieldsSelector); ok {
+						phases = selector.String()
+
+						continue
+					}
+					kept = append(kept, opt)
+				}
+				assert.Equal(t, "status.phase!=Failed,status.phase!=Succeeded", phases)
+
+				return c.List(ctx, list, kept...)
+			},
+		}).
+		Build()
 }
 
 // newNamedCluster is newCluster with a name prefix, so a spec that creates
@@ -445,8 +566,10 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 	})
 
 	// The pods of a repointed holder write the old backend until its rollout
-	// replaces them. The parked cluster waits for them.
-	It("waits for the pods of a repointed holder before it resumes", func() {
+	// replaces them, so the holder keeps that backend until they are gone. The
+	// parked cluster waits on the claim, not on the pods: the holder still
+	// holds the backend it left.
+	It("keeps the backend of a repointed holder while its pods still write it", func() {
 		ns := newNamespace()
 		binding := createBinding(ns, true)
 		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
@@ -460,9 +583,10 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 
 		other := createBinding(ns, true)
 		updateCluster(holder, func(c *v1.CamundaCluster) { c.Spec.StorageRef = other.Name })
-		expectWaitingForHandover(parked, binding, pod)
 		expectHolds(holder)
 		expectClaimedBy(other, holder)
+		expectParked(parked, holder)
+		expectClaimedBy(binding, holder)
 
 		Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
 		expectHolds(parked)
@@ -677,6 +801,35 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 
 		expectHolds(cluster)
 		expectClaimedBy(binding, cluster)
+	})
+
+	// The render at zero deletes the real pods, so a hand-made pod stands in
+	// for one that drains slowly.
+	It("keeps the claim of the old backend while its own pods still write it", func() {
+		ns := newNamespace()
+		old := createBinding(ns, true)
+		cluster := newNamedCluster("cc-a-", ns, createPlatformConfig(), old)
+		createCluster(cluster)
+		expectClaimedBy(old, cluster)
+		pod := createStoragePod(cluster, old)
+
+		other := createBinding(ns, true)
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.StorageRef = other.Name })
+		expectClaimedBy(other, cluster)
+
+		oldClaim := client.ObjectKey{
+			Namespace: testClaimNamespace,
+			Name:      components.StorageClaimSchema().LeaseName(storageKeyOf(old)),
+		}
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, oldClaim, &coordinationv1.Lease{})).To(Succeed())
+		}, "2s", interval).Should(Succeed(), "the pod of this cluster still writes the old backend")
+
+		Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, oldClaim, &coordinationv1.Lease{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed(), "the old backend is given back once the pod is gone")
 	})
 
 	// A claim whose holder never existed, or was deleted before the operator

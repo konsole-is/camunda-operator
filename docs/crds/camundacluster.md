@@ -144,7 +144,7 @@ status:
         until that cluster moves to another backend or is deleted
 ```
 
-The suspended cluster looks again every 30 seconds. When you delete the holder, the suspended cluster takes the claim and resumes on its own. When the holder moves to another backend, it releases this one as soon as the new address resolves. A suspended cluster releases the backend it wrote before, so two clusters that swap backends in one step both resume. A paused holder keeps its claim until you unpause it.
+The suspended cluster looks again every 30 seconds. When you delete the holder, the suspended cluster takes the claim and resumes on its own. When the holder moves to another backend, it gives this one back once the new address resolves and no pod of it writes the old backend any more. A suspended cluster releases the backend it wrote before, so two clusters that swap backends in one step both resume. A paused holder keeps its claim until you unpause it.
 
 The cluster that takes the backend over stays at zero while pods of another cluster still write it: every workload at zero and the volumes kept. A running cluster that you move to such a backend stops the same way, because its own pods still write the backend it left. Those pods count in every namespace, because two clusters of two namespaces can name one backend. The pods of a deleted holder go after the cluster, and the pods of a holder that moved go when its rollout replaces them. Until then, its `Ready` is `False` with reason `WaitingForHandover`, and the message names the backend and those pods. The state clears on its own.
 

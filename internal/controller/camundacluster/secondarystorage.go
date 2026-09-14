@@ -81,9 +81,11 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 		// while it holds a backend it no longer writes. Its pods still carry
 		// the previous claim, so the next cluster on that backend waits for
 		// them.
-		if err := res.releaseOtherClaims(ctx, in.Storage.Claim); err != nil {
+		heldBack, err := res.releaseOtherClaims(ctx, in.Storage.Claim)
+		if err != nil {
 			return err
 		}
+		in.Storage.ReleaseHeldBack = heldBack
 		in.Storage.Holder = &components.StorageHolder{
 			Cluster: blocker.Holder.NamespacedName,
 			Backend: key,
@@ -105,9 +107,11 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 		)
 	}
 
-	if err := res.releaseOtherClaims(ctx, in.Storage.Claim); err != nil {
+	heldBack, err := res.releaseOtherClaims(ctx, in.Storage.Claim)
+	if err != nil {
 		return err
 	}
+	in.Storage.ReleaseHeldBack = heldBack
 
 	if !handoverPossible(res.cluster, held) {
 		return nil
@@ -147,25 +151,54 @@ func handoverPossible(cluster *v1.CamundaCluster, heldAtStart bool) bool {
 	return ready != nil && ready.Reason == v1.ReasonWaitingForHandover
 }
 
-// releaseOtherClaims gives back every storage claim of the cluster except
-// keep. A cluster that moved to another backend holds two claims until here,
-// and the old one must go so the next cluster can take that backend.
-func (res *resolver) releaseOtherClaims(ctx context.Context, keep string) error {
+// releaseOtherClaims gives back every storage claim of the cluster except keep,
+// and returns the claims it held back. A cluster that moved to another backend
+// holds two claims until here, and the old one must go so the next cluster can
+// take that backend.
+//
+// A cluster gives a backend back only when none of its own pods writes it any
+// more. The next claimant reads the pods of that backend once, before it
+// renders, so a release under running pods can let it start beside them.
+// Nothing watches those pods for this cluster, so the caller looks again on its
+// timer while a claim is held back.
+func (res *resolver) releaseOtherClaims(ctx context.Context, keep string) ([]string, error) {
 	leases, err := res.claims.Held(ctx, res.cluster)
 	if err != nil {
-		return err
+		return nil, err
+	}
+
+	others := make([]string, 0, len(leases))
+	for i := range leases {
+		if leases[i].Name != keep {
+			others = append(others, leases[i].Name)
+		}
+	}
+	if len(others) == 0 {
+		return nil, nil
+	}
+
+	written, err := components.ClaimsWrittenByPods(
+		ctx, res.reader, res.cluster.Namespace, res.cluster.UID, others,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	heldBack := make(map[string]bool, len(written))
+	for _, name := range written {
+		heldBack[name] = true
 	}
 
 	for i := range leases {
-		if leases[i].Name == keep {
+		if leases[i].Name == keep || heldBack[leases[i].Name] {
 			continue
 		}
 		if err := res.claims.Release(ctx, &leases[i]); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	return written, nil
 }
 
 // claimSuspends reports whether the storage claim keeps this cluster at zero:

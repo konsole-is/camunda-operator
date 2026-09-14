@@ -110,10 +110,7 @@ func OtherPodsOnClaim(
 		ctx,
 		pods,
 		client.MatchingLabels(map[string]string{labels.StorageClaimKey: labels.OwnerName(claim)}),
-		client.MatchingFieldsSelector{Selector: fields.AndSelectors(
-			fields.OneTermNotEqualSelector(podPhaseField, string(corev1.PodFailed)),
-			fields.OneTermNotEqualSelector(podPhaseField, string(corev1.PodSucceeded)),
-		)},
+		client.MatchingFieldsSelector{Selector: endedPodsExcluded()},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("listing the pods on storage claim %q: %w", claim, err)
@@ -129,6 +126,64 @@ func OtherPodsOnClaim(
 	slices.Sort(names)
 
 	return names, nil
+}
+
+// ClaimsWrittenByPods returns the claims of names that a pod of the cluster
+// still carries, sorted. A cluster gives a backend back only when none of its
+// own pods writes it any more: a release under running pods lets the next
+// claimant start beside them, because that claimant reads the pods once.
+//
+// The pods of the cluster live in its namespace, so the list stays there. It
+// leaves out the pods that ended, like OtherPodsOnClaim.
+func ClaimsWrittenByPods(
+	ctx context.Context,
+	reader client.Reader,
+	namespace string,
+	self types.UID,
+	names []string,
+) ([]string, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+
+	pods := podMetadataList()
+	err := reader.List(
+		ctx,
+		pods,
+		client.InNamespace(namespace),
+		client.MatchingLabels(map[string]string{labels.ClusterUIDKey: string(self)}),
+		client.MatchingFieldsSelector{Selector: endedPodsExcluded()},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing the pods of the cluster in namespace %q: %w", namespace, err)
+	}
+
+	written := make(map[string]bool, len(pods.Items))
+	for i := range pods.Items {
+		written[pods.Items[i].Labels[labels.StorageClaimKey]] = true
+	}
+
+	var carried []string
+	for _, name := range names {
+		if written[labels.OwnerName(name)] {
+			carried = append(carried, name)
+		}
+	}
+	slices.Sort(carried)
+
+	return carried, nil
+}
+
+// endedPodsExcluded leaves the pods that reached Failed or Succeeded to the API
+// server. An evicted pod of a previous holder keeps its object under a
+// ReplicaSet that nobody deleted, and it writes nothing. A pod with a deletion
+// timestamp is not excluded: one on a lost node still writes until the node
+// comes back or the pod is forced away.
+func endedPodsExcluded() fields.Selector {
+	return fields.AndSelectors(
+		fields.OneTermNotEqualSelector(podPhaseField, string(corev1.PodFailed)),
+		fields.OneTermNotEqualSelector(podPhaseField, string(corev1.PodSucceeded)),
+	)
 }
 
 // podMetadataList returns the list that a pod gate fills. The name, the
