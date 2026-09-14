@@ -58,15 +58,19 @@ const keptAtZeroNote = ". The Optimize workloads stay at zero until the referenc
 var suspendOrder = []string{components.ComponentImporter, components.ComponentWebapp}
 
 // suspensionOutcome reports what followSuspension did with the workloads.
+//
+// The two fields differ only when a patch failed, which is the case the event
+// reads. The note on Ready is written only for a pass with no error, where a
+// found workload is always a stopped one.
 type suspensionOutcome struct {
 	// Found is true when a Deployment that this CamundaOptimize controls
 	// exists, whatever happened to it. It gates the note on Ready, which says
 	// that the workloads stopped.
 	Found bool
 	// Stopped is true when at least one of those Deployments is at zero, by
-	// this pass or an earlier one. The transition event follows it: a pass that
-	// stopped none staged no condition either, so the next retry reads no
-	// suspension and would record the transition again.
+	// this pass or an earlier one. The transition event follows it, whatever
+	// the errors: one workload that stopped starts the transition, and a pass
+	// that stopped none staged no condition for the next one to read.
 	Stopped bool
 }
 

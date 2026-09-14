@@ -221,7 +221,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// The start of a suspension only: this path renders nothing, so the end
 		// belongs to the success path that starts the workloads again.
 		if outcome.Stopped && !suspendedBefore {
-			r.recordSuspensionChange(&optimize, suspendedBefore, res.Input.Suspended)
+			r.recordClusterSuspended(&optimize)
 		}
 
 		return ctrl.Result{}, suspendErr

@@ -61,6 +61,22 @@ func wasSuspending(optimize *v1.CamundaOptimize) bool {
 	return workloadsuspend.IsSuspensionReason(ready.Reason)
 }
 
+// recordClusterSuspended records that the workloads of this CamundaOptimize
+// followed the referenced cluster to zero. The pre-check failure path records
+// this transition and no other, so it names the event rather than deriving it
+// from a before and an after that are always false and true there.
+func (r *Reconciler) recordClusterSuspended(optimize *v1.CamundaOptimize) {
+	r.EventRecorder.Eventf(
+		optimize,
+		nil,
+		corev1.EventTypeNormal,
+		eventReasonClusterSuspended,
+		eventActionSuspend,
+		noteSuspended,
+		optimize.Spec.ClusterRef.Name,
+	)
+}
+
 // recordSuspensionChange records an event when the suspension of the
 // referenced cluster changes, and nothing while it holds.
 //
