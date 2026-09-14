@@ -695,17 +695,17 @@ var _ = Describe("CamundaOptimize controller", func() {
 			Eventually(func(g Gomega) {
 				g.Expect(clusterSuspendedEvents(s.optimize)).To(HaveLen(1))
 			}, timeout, interval).Should(Succeed())
-			Consistently(func(g Gomega) {
-				g.Expect(clusterSuspendedEvents(s.optimize)).To(HaveLen(1))
-			}, "3s", interval).Should(Succeed())
 
-			By("recording no resume while the workloads are still at zero")
+			By("dropping the suspension from the message, and recording no resume yet")
 			setClusterSuspend(s.cluster, false)
 			Consistently(func(g Gomega) {
-				g.Expect(suspensionEventsOf(s.optimize, eventReasonClusterResumed)).To(BeEmpty())
+				g.Expect(suspensionEventsOf(s.optimize, eventReasonClusterResumed)).To(
+					BeEmpty(), "the workloads are still at zero",
+				)
+				g.Expect(clusterSuspendedEvents(s.optimize)).To(
+					HaveLen(1), "and the suspension is recorded once, however often the failure repeats",
+				)
 			}, "3s", interval).Should(Succeed())
-
-			By("dropping the suspension from the message once it ended")
 			Eventually(func(g Gomega) {
 				var latest v1.CamundaOptimize
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(s.optimize), &latest)).To(Succeed())

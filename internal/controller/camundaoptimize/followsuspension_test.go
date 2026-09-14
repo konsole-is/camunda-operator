@@ -43,14 +43,59 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
+// suspendScheme is the scheme that every fixture of this file builds its client
+// with.
+func suspendScheme(t *testing.T) *runtime.Scheme {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	return scheme
+}
+
+// ownedDeployment returns a Deployment of owner with the given name, asking for
+// one replica and observing observed of them.
+func ownedDeployment(owner *v1.CamundaOptimize, name string, observed int32) *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: owner.Namespace,
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: v1.GroupVersion.String(),
+				Kind:       "CamundaOptimize",
+				Name:       owner.Name,
+				UID:        owner.UID,
+				Controller: new(true),
+			}},
+		},
+		Spec:   appsv1.DeploymentSpec{Replicas: new(int32(1))},
+		Status: appsv1.DeploymentStatus{Replicas: observed},
+	}
+}
+
+// suspendReconciler returns a Reconciler that reads and writes through c and
+// records into recorder.
+func suspendReconciler(
+	scheme *runtime.Scheme,
+	c client.Client,
+	recorder *events.FakeRecorder,
+) *Reconciler {
+	return &Reconciler{
+		Client:          c,
+		APIReader:       c,
+		Scheme:          scheme,
+		EventRecorder:   recorder,
+		componentClient: c,
+	}
+}
+
 // TestFollowSuspensionJoinsPatchErrors covers the error path: the importer is
 // the workload that writes Elasticsearch, so a webapp that a conflict keeps up
 // must not keep the importer up with it. A workload whose patch was rejected
 // keeps its pods, so it reports no suspension.
 func TestFollowSuspensionJoinsPatchErrors(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, clientgoscheme.AddToScheme(scheme))
-	require.NoError(t, v1.AddToScheme(scheme))
+	scheme := suspendScheme(t)
 
 	optimize := &v1.CamundaOptimize{
 		ObjectMeta: metav1.ObjectMeta{
@@ -62,27 +107,12 @@ func TestFollowSuspensionJoinsPatchErrors(t *testing.T) {
 	importerName := components.WorkloadName(optimize, components.ComponentImporter)
 	boom := errors.New("admission webhook denied the request")
 
-	deployment := func(name string, observed int32) *appsv1.Deployment {
-		return &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: optimize.Namespace,
-				OwnerReferences: []metav1.OwnerReference{{
-					APIVersion: v1.GroupVersion.String(),
-					Kind:       "CamundaOptimize",
-					Name:       optimize.Name,
-					UID:        optimize.UID,
-					Controller: new(true),
-				}},
-			},
-			Spec:   appsv1.DeploymentSpec{Replicas: new(int32(1))},
-			Status: appsv1.DeploymentStatus{Replicas: observed},
-		}
-	}
-
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(deployment(webappName, 0), deployment(importerName, 0)).
+		WithObjects(
+			ownedDeployment(optimize, webappName, 0),
+			ownedDeployment(optimize, importerName, 0),
+		).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Patch: func(
 				ctx context.Context,
@@ -99,12 +129,7 @@ func TestFollowSuspensionJoinsPatchErrors(t *testing.T) {
 			},
 		}).
 		Build()
-	r := &Reconciler{
-		Client:        fakeClient,
-		APIReader:     fakeClient,
-		Scheme:        scheme,
-		EventRecorder: events.NewFakeRecorder(10),
-	}
+	r := suspendReconciler(scheme, fakeClient, events.NewFakeRecorder(10))
 
 	outcome, err := r.followSuspension(context.Background(), optimize)
 
@@ -135,9 +160,7 @@ func TestFollowSuspensionJoinsPatchErrors(t *testing.T) {
 // CamundaOptimizes of one cluster carry the same managed labels, so only the
 // owner reference tells their Deployments apart.
 func TestFollowSuspensionFindsNoWorkloadOfAnotherOwner(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, clientgoscheme.AddToScheme(scheme))
-	require.NoError(t, v1.AddToScheme(scheme))
+	scheme := suspendScheme(t)
 
 	optimize := &v1.CamundaOptimize{ObjectMeta: metav1.ObjectMeta{
 		Name: "co-a", Namespace: "team-a", UID: "uid-1",
@@ -158,12 +181,7 @@ func TestFollowSuspensionFindsNoWorkloadOfAnotherOwner(t *testing.T) {
 	}
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(foreign).Build()
-	r := &Reconciler{
-		Client:        fakeClient,
-		APIReader:     fakeClient,
-		Scheme:        scheme,
-		EventRecorder: events.NewFakeRecorder(10),
-	}
+	r := suspendReconciler(scheme, fakeClient, events.NewFakeRecorder(10))
 
 	outcome, err := r.followSuspension(context.Background(), optimize)
 
@@ -181,9 +199,7 @@ func TestFollowSuspensionFindsNoWorkloadOfAnotherOwner(t *testing.T) {
 // Suspended once they are gone. The watch on the Deployment brings the reconcile
 // back as they drop.
 func TestFollowSuspensionReportsTheDrain(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, clientgoscheme.AddToScheme(scheme))
-	require.NoError(t, v1.AddToScheme(scheme))
+	scheme := suspendScheme(t)
 
 	cases := map[string]struct {
 		observed int32
@@ -199,29 +215,12 @@ func TestFollowSuspensionReportsTheDrain(t *testing.T) {
 			optimize := &v1.CamundaOptimize{ObjectMeta: metav1.ObjectMeta{
 				Name: "co-a", Namespace: "team-a", UID: "uid-1",
 			}}
-			importer := &appsv1.Deployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      components.WorkloadName(optimize, components.ComponentImporter),
-					Namespace: optimize.Namespace,
-					OwnerReferences: []metav1.OwnerReference{{
-						APIVersion: v1.GroupVersion.String(),
-						Kind:       "CamundaOptimize",
-						Name:       optimize.Name,
-						UID:        optimize.UID,
-						Controller: new(true),
-					}},
-				},
-				Spec:   appsv1.DeploymentSpec{Replicas: new(int32(1))},
-				Status: appsv1.DeploymentStatus{Replicas: tc.observed},
-			}
+			importer := ownedDeployment(
+				optimize, components.WorkloadName(optimize, components.ComponentImporter), tc.observed,
+			)
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(importer).Build()
-			r := &Reconciler{
-				Client:        fakeClient,
-				APIReader:     fakeClient,
-				Scheme:        scheme,
-				EventRecorder: events.NewFakeRecorder(10),
-			}
+			r := suspendReconciler(scheme, fakeClient, events.NewFakeRecorder(10))
 
 			outcome, err := r.followSuspension(context.Background(), optimize)
 
@@ -240,20 +239,13 @@ func TestFollowSuspensionReportsTheDrain(t *testing.T) {
 // rendered no Deployment yet. found gates the note on Ready, so it must report
 // none and stage no condition.
 func TestFollowSuspensionFindsNothingWithoutWorkloads(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, clientgoscheme.AddToScheme(scheme))
-	require.NoError(t, v1.AddToScheme(scheme))
+	scheme := suspendScheme(t)
 
 	optimize := &v1.CamundaOptimize{ObjectMeta: metav1.ObjectMeta{
 		Name: "co-a", Namespace: "team-a", UID: "uid-1",
 	}}
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-	r := &Reconciler{
-		Client:        fakeClient,
-		APIReader:     fakeClient,
-		Scheme:        scheme,
-		EventRecorder: events.NewFakeRecorder(10),
-	}
+	r := suspendReconciler(scheme, fakeClient, events.NewFakeRecorder(10))
 
 	outcome, err := r.followSuspension(context.Background(), optimize)
 
@@ -315,9 +307,7 @@ func TestFollowsSuspendedCluster(t *testing.T) {
 // stopped none has no suspension to report, and recording one would repeat on
 // every retry.
 func TestReconcileRecordsTheSuspensionWhenAPatchFails(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, clientgoscheme.AddToScheme(scheme))
-	require.NoError(t, v1.AddToScheme(scheme))
+	scheme := suspendScheme(t)
 
 	optimize := &v1.CamundaOptimize{
 		ObjectMeta: metav1.ObjectMeta{
@@ -357,27 +347,11 @@ func TestReconcileRecordsTheSuspensionWhenAPatchFails(t *testing.T) {
 					StorageRef: "no-such-contract",
 				},
 			}
-			owned := func(name string) *appsv1.Deployment {
-				return &appsv1.Deployment{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      name,
-						Namespace: optimize.Namespace,
-						OwnerReferences: []metav1.OwnerReference{{
-							APIVersion: v1.GroupVersion.String(),
-							Kind:       "CamundaOptimize",
-							Name:       optimize.Name,
-							UID:        optimize.UID,
-							Controller: new(true),
-						}},
-					},
-					Spec: appsv1.DeploymentSpec{Replicas: new(int32(1))},
-				}
-			}
-
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithObjects(
-					optimize.DeepCopy(), cluster, owned(webappName), owned(importerName),
+					optimize.DeepCopy(),
+					cluster, ownedDeployment(optimize, webappName, 0), ownedDeployment(optimize, importerName, 0),
 				).
 				WithStatusSubresource(&v1.CamundaOptimize{}).
 				WithInterceptorFuncs(interceptor.Funcs{
@@ -397,13 +371,7 @@ func TestReconcileRecordsTheSuspensionWhenAPatchFails(t *testing.T) {
 				}).
 				Build()
 			recorder := events.NewFakeRecorder(16)
-			r := &Reconciler{
-				Client:          fakeClient,
-				APIReader:       fakeClient,
-				Scheme:          scheme,
-				EventRecorder:   recorder,
-				componentClient: fakeClient,
-			}
+			r := suspendReconciler(scheme, fakeClient, recorder)
 
 			key := apitypes.NamespacedName{Namespace: optimize.Namespace, Name: optimize.Name}
 			_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: key})
@@ -438,9 +406,7 @@ func countRecorded(recorder *events.FakeRecorder, reason string) int {
 // An importer left running through a handover would write analytics from
 // half-restored indices.
 func TestReconcileFollowsTheSuspensionWhenTheAttachmentCheckFails(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, clientgoscheme.AddToScheme(scheme))
-	require.NoError(t, v1.AddToScheme(scheme))
+	scheme := suspendScheme(t)
 
 	optimize := &v1.CamundaOptimize{
 		ObjectMeta: metav1.ObjectMeta{
@@ -459,22 +425,6 @@ func TestReconcileFollowsTheSuspensionWhenTheAttachmentCheckFails(t *testing.T) 
 		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: optimize.Namespace, UID: "uid-c"},
 		Spec:       v1.CamundaClusterSpec{Version: "8.9.4", Suspend: true, StorageRef: "contract"},
 	}
-	owned := func(name string) *appsv1.Deployment {
-		return &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: optimize.Namespace,
-				OwnerReferences: []metav1.OwnerReference{{
-					APIVersion: v1.GroupVersion.String(),
-					Kind:       "CamundaOptimize",
-					Name:       optimize.Name,
-					UID:        optimize.UID,
-					Controller: new(true),
-				}},
-			},
-			Spec: appsv1.DeploymentSpec{Replicas: new(int32(1))},
-		}
-	}
 	// The importer Deployment of a previous instance, which no owner reference
 	// of this one covers, so the pre-check fails with WaitingForHandover.
 	leftover := &appsv1.Deployment{
@@ -487,21 +437,19 @@ func TestReconcileFollowsTheSuspensionWhenTheAttachmentCheckFails(t *testing.T) 
 		},
 		Spec: appsv1.DeploymentSpec{Replicas: new(int32(1))},
 	}
-	importerName := components.WorkloadName(optimize, components.ComponentImporter)
 	webappName := components.WorkloadName(optimize, components.ComponentWebapp)
+	importerName := components.WorkloadName(optimize, components.ComponentImporter)
 
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(optimize, cluster, leftover, owned(webappName), owned(importerName)).
+		WithObjects(
+			optimize, cluster, leftover,
+			ownedDeployment(optimize, webappName, 0),
+			ownedDeployment(optimize, importerName, 0),
+		).
 		WithStatusSubresource(&v1.CamundaOptimize{}).
 		Build()
-	r := &Reconciler{
-		Client:          fakeClient,
-		APIReader:       fakeClient,
-		Scheme:          scheme,
-		EventRecorder:   events.NewFakeRecorder(16),
-		componentClient: fakeClient,
-	}
+	r := suspendReconciler(scheme, fakeClient, events.NewFakeRecorder(16))
 
 	key := apitypes.NamespacedName{Namespace: optimize.Namespace, Name: optimize.Name}
 	_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: key})

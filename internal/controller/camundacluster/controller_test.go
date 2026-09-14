@@ -583,14 +583,15 @@ var _ = Describe("CamundaCluster controller", func() {
 
 		expectReady(cluster, metav1.ConditionFalse, Equal(v1.ReasonMissingSecret), ContainSubstring(name))
 		Consistently(func(g Gomega) {
-			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(Equal(int32(1)))
-		}, "3s", interval).Should(Succeed(), "the broker StatefulSet keeps its replicas")
-		Eventually(func(g Gomega) {
+			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(
+				Equal(int32(1)), "the broker StatefulSet keeps its replicas",
+			)
+
 			var latest v1.CamundaCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
 			g.Expect(latest.Status.Gateway).NotTo(BeNil(), "a running cluster keeps publishing its endpoints")
 			g.Expect(latest.Status.Management).NotTo(BeNil())
-		}, timeout, interval).Should(Succeed())
+		}, "3s", interval).Should(Succeed())
 
 		By("recreating the Secret")
 		createSecret(ns, name, map[string]string{"username": "camunda", "password": "es-password"})
