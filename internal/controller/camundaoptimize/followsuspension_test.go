@@ -255,6 +255,47 @@ func TestFollowSuspensionFindsNothingWithoutWorkloads(t *testing.T) {
 	assert.Empty(t, optimize.Status.Conditions)
 }
 
+// TestKeepAtZeroReadsNoWorkloadWithoutASuspension covers the early return: an
+// instance that never followed a suspension has nothing to hold, so it must not
+// read its Deployments to find that out.
+func TestKeepAtZeroReadsNoWorkloadWithoutASuspension(t *testing.T) {
+	scheme := suspendScheme(t)
+
+	optimize := &v1.CamundaOptimize{ObjectMeta: metav1.ObjectMeta{
+		Name: "co-a", Namespace: "team-a", UID: "uid-1",
+	}}
+	meta.SetStatusCondition(&optimize.Status.Conditions, metav1.Condition{
+		Type:   v1.ConditionWebappReady,
+		Status: metav1.ConditionTrue,
+		Reason: v1.ReasonHealthy,
+	})
+
+	var read int
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(
+				ctx context.Context,
+				cl client.WithWatch,
+				key client.ObjectKey,
+				obj client.Object,
+				opts ...client.GetOption,
+			) error {
+				read++
+
+				return cl.Get(ctx, key, obj, opts...)
+			},
+		}).
+		Build()
+	r := suspendReconciler(scheme, fakeClient, events.NewFakeRecorder(10))
+
+	outcome, err := r.keepAtZero(context.Background(), optimize)
+
+	require.NoError(t, err)
+	assert.False(t, outcome.Found)
+	assert.Zero(t, read, "the conditions answered it, so no Deployment was read")
+}
+
 // TestFollowsSuspendedCluster pins what counts as a suspension that the
 // conditions already carry. Every ocf status on the way to suspended counts: a
 // reconcile that catches the drain must not record the transition a second

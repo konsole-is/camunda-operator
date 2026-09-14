@@ -86,6 +86,10 @@ func (r *Reconciler) keepAtZero(
 	ctx context.Context,
 	optimize *v1.CamundaOptimize,
 ) (workloadsuspend.Result, error) {
+	if !followsSuspendedCluster(optimize) {
+		return workloadsuspend.Result{}, nil
+	}
+
 	return r.stopWorkloads(
 		ctx,
 		optimize,
@@ -127,7 +131,8 @@ func (r *Reconciler) stopWorkloads(
 }
 
 // optimizeWorkloads reads the Deployments that stop accepts, with the condition
-// each one reports. A Deployment that is gone needs nothing.
+// each one reports. One that stop refuses is never read, and one that is gone
+// needs nothing.
 //
 // The reads are live. The decision to stop a workload reads its replicas, and a
 // render that raised them lands on the API server before an informer carries it,
@@ -141,7 +146,7 @@ func (r *Reconciler) optimizeWorkloads(
 	var workloads []workloadsuspend.Workload
 	for _, comp := range suspendOrder {
 		conditionType, ok := components.ConditionTypeFor(comp)
-		if !ok {
+		if !ok || !stop(conditionType) {
 			continue
 		}
 

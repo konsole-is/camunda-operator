@@ -441,6 +441,48 @@ func TestKeepAtZeroPutsBackARaisedWorkload(t *testing.T) {
 	assert.NotContains(t, recorded, "spec.suspend", "the user cleared the field, so the event must not name it")
 }
 
+// TestKeepAtZeroReadsNoWorkloadWithoutASuspension covers the early return: a
+// cluster that never suspended has nothing to hold, which is every failing pass
+// of most clusters, so it must not read its workloads to find that out.
+func TestKeepAtZeroReadsNoWorkloadWithoutASuspension(t *testing.T) {
+	scheme := suspendScheme(t)
+	cluster := suspendCluster(false)
+	meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+		Type:   v1.ConditionZeebeReady,
+		Status: metav1.ConditionTrue,
+		Reason: v1.ReasonHealthy,
+	})
+
+	var listed int
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(
+				ctx context.Context,
+				cl client.WithWatch,
+				list client.ObjectList,
+				opts ...client.ListOption,
+			) error {
+				listed++
+
+				return cl.List(ctx, list, opts...)
+			},
+		}).
+		Build()
+	r := &CamundaClusterReconciler{
+		Client:        fakeClient,
+		APIReader:     fakeClient,
+		Scheme:        scheme,
+		EventRecorder: events.NewFakeRecorder(10),
+	}
+
+	kept, err := r.keepAtZero(context.Background(), cluster)
+
+	require.NoError(t, err)
+	assert.False(t, kept)
+	assert.Zero(t, listed, "the conditions answered it, so no workload was read")
+}
+
 // TestKeepAtZeroLeavesAWorkloadItNeverStopped covers the guard: a workload whose
 // condition carries no suspension is running for the user, and a pass that held
 // it at zero would stop it for a reason the user never gave.

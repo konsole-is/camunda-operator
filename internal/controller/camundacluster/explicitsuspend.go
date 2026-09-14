@@ -26,6 +26,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
@@ -103,6 +104,10 @@ func (r *CamundaClusterReconciler) keepAtZero(
 	held := func(conditionType string) bool {
 		return workloadsuspend.IsAlreadySuspended(cluster, conditionType)
 	}
+	if !slices.ContainsFunc(components.ConditionTypes(), held) {
+		return false, nil
+	}
+
 	workloads, err := r.clusterWorkloads(ctx, cluster)
 	if err != nil {
 		return false, err
