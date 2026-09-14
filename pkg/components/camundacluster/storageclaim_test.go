@@ -129,6 +129,29 @@ func TestStorageClaimKey(t *testing.T) {
 			},
 			key: "elasticsearch|https://es.data.svc.cluster.local:9200",
 		},
+		// DatabaseServerConfig.Host takes an IPv6 literal with or without the
+		// brackets of a URL authority, and both reach one server.
+		"rdbms folds a bracketed IPv6 host": {
+			storage: Storage{
+				Type:  v1.SecondaryStorageTypeRDBMS,
+				RDBMS: &RDBMSStorage{Host: "[::1]", Port: 5432, Database: "camunda"},
+			},
+			key: "rdbms|[::1]:5432/camunda",
+		},
+		"rdbms folds a bare IPv6 host": {
+			storage: Storage{
+				Type:  v1.SecondaryStorageTypeRDBMS,
+				RDBMS: &RDBMSStorage{Host: "::1", Port: 5432, Database: "camunda"},
+			},
+			key: "rdbms|[::1]:5432/camunda",
+		},
+		"rdbms folds a long IPv6 spelling": {
+			storage: Storage{
+				Type:  v1.SecondaryStorageTypeRDBMS,
+				RDBMS: &RDBMSStorage{Host: "0:0:0:0:0:0:0:1", Port: 5432, Database: "camunda"},
+			},
+			key: "rdbms|[::1]:5432/camunda",
+		},
 		"rdbms drops the DNS root dot of the host": {
 			storage: Storage{
 				Type:  v1.SecondaryStorageTypeRDBMS,

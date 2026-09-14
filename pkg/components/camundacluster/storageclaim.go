@@ -229,13 +229,14 @@ func StorageClaimKey(storage Storage) (string, error) {
 			return "", fmt.Errorf("storage of type %s has no rdbms block", storage.Type)
 		}
 
-		return fmt.Sprintf(
-			"%s|%s:%d/%s",
-			storage.Type,
-			hostfold.FoldHost(storage.RDBMS.Host),
-			storage.RDBMS.Port,
-			storage.RDBMS.Database,
-		), nil
+		// The host of a DatabaseServerConfig is written by hand, so an IPv6
+		// literal arrives with or without the brackets of a URL authority.
+		// Both name one server, and JoinHostPort writes the one spelling that
+		// a reader of the key can take apart again.
+		host := strings.TrimSuffix(strings.TrimPrefix(storage.RDBMS.Host, "["), "]")
+		address := net.JoinHostPort(hostfold.FoldHost(host), strconv.Itoa(int(storage.RDBMS.Port)))
+
+		return fmt.Sprintf("%s|%s/%s", storage.Type, address, storage.RDBMS.Database), nil
 	default:
 		return "", fmt.Errorf("unknown secondary storage type %q", storage.Type)
 	}
