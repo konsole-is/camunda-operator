@@ -43,11 +43,6 @@ type Storage struct {
 	// backend, so the controller renders a cluster with a Holder suspended
 	// and reports the holder on Ready. Nil when this cluster holds the claim.
 	Holder *StorageHolder
-	// ReleaseHeldBack names the storage claims of backends that this cluster
-	// left and still holds, because its own pods still carry them. The
-	// controller looks again on its timer while one is held back: nothing
-	// reports the end of a pod drain to it.
-	ReleaseHeldBack []string
 	// Handover is set when this cluster holds the storage claim and pods of
 	// other clusters still carry it. Those pods write the backend, so the
 	// controller renders a cluster with a Handover suspended and reports the
