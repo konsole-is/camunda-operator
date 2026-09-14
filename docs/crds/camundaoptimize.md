@@ -174,8 +174,8 @@ A failed check of a reference does not stop a running instance. `Ready` carries 
 | A running instance on a running cluster | They keep the configuration that the operator applied last. |
 | An instance whose first check fails | It has none yet. It creates them when the check passes. |
 | The cluster is suspended | Both go to zero, because the importer reads Elasticsearch on its own. The message of `Ready` names the suspension. |
-| The cluster resumed while the check still fails | The ones that stopped stay at zero and start when the check passes. Their conditions read `Suspended` with the message `Kept at zero until the reference check passes`. `Ready` carries the failure message, followed by `The Optimize workloads that stopped stay at zero until the reference check passes`. A workload whose stop was refused keeps running and reports why. |
-| The cluster is gone, or another instance holds it | The operator removes them. Their pods hold the backend that cluster wrote, against the next cluster that takes it over, and it builds them again if the cluster comes back. |
+| The cluster resumed while the check still fails | The ones that stopped stay at zero and return to their configured replica counts when the check passes. Their conditions read `Suspended` with the message `Kept at zero until the reference check passes`. `Ready` carries the failure message, followed by `The Optimize workloads that stopped stay at zero until the reference check passes`. A workload whose stop was refused keeps running and reports why. |
+| The cluster is gone, or another instance holds it | The operator removes them. Their pods hold the backend that cluster wrote, against the next cluster that takes it over. It builds them again when the cluster comes back, or when this instance regains the attachment. |
 
 The importer never starts while the cluster does not hold the storage claim of its backend. Another cluster writes that backend in this state, and two importers on one set of analytics indices overwrite each other.
 
