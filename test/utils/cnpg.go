@@ -21,8 +21,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-
-	. "github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
 )
 
 const (
@@ -237,7 +235,7 @@ func waitForRollout(deployment, selector string) error {
 		"--timeout", "5m",
 	))
 	if err != nil {
-		dumpInstallDiagnostics(selector)
+		dumpInstallDiagnostics(cnpgNamespace, selector)
 	}
 
 	return err
@@ -254,28 +252,11 @@ func waitForCertificates(selector string, names ...string) error {
 	}
 
 	if _, err := Run(exec.Command("kubectl", args...)); err != nil {
-		dumpInstallDiagnostics(selector)
+		dumpInstallDiagnostics(cnpgNamespace, selector)
 		return err
 	}
 
 	return nil
-}
-
-// dumpInstallDiagnostics writes the pod descriptions of selector and the
-// events of cnpgNamespace to the Ginkgo writer, so a failed install explains
-// itself instead of leaving only the error message.
-func dumpInstallDiagnostics(selector string) {
-	pods, err := Run(exec.Command("kubectl", "describe", "pod", "-n", cnpgNamespace, "-l", selector))
-	if err != nil {
-		pods = err.Error()
-	}
-	_, _ = fmt.Fprintf(GinkgoWriter, "pods matching %q in %s:\n%s\n", selector, cnpgNamespace, pods)
-
-	events, err := Run(exec.Command("kubectl", "get", "events", "-n", cnpgNamespace, "--sort-by=.lastTimestamp"))
-	if err != nil {
-		events = err.Error()
-	}
-	_, _ = fmt.Fprintf(GinkgoWriter, "events in %s:\n%s\n", cnpgNamespace, events)
 }
 
 // deleteManifest removes what applyManifest applied and warns instead of
