@@ -93,10 +93,10 @@ type resolver struct {
 }
 
 // preCheck resolves every reference of optimize, in the documented order: the
-// attachment to the cluster, the referenced cluster, its secondary storage,
-// the version gate, the Management Identity contract and its client Secret,
-// the platform config of the cluster, the Elasticsearch credentials, and the
-// exporter settings already on the cluster. A Secret outside the
+// referenced cluster, the attachment to it, its secondary storage, the version
+// gate, the Management Identity contract and its client Secret, the platform
+// config of the cluster, the Elasticsearch credentials, and the exporter
+// settings already on the cluster. A Secret outside the
 // CamundaOptimize namespace is copied into the returned mirrors, and the input
 // references the copy, so the renderer only ever names Secrets of that
 // namespace.
