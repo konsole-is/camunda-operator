@@ -125,6 +125,7 @@ func TestReleaseLeftBackendsKeepsOneItsPodsStillWrite(t *testing.T) {
 // this cluster decide it and not the reason it last reported.
 func TestHandoverPossible(t *testing.T) {
 	cases := map[string]struct {
+		suspended     bool
 		heldAtStart   bool
 		ownPodOnClaim bool
 		possible      bool
@@ -133,11 +134,17 @@ func TestHandoverPossible(t *testing.T) {
 		"this pass took a claim its pods carry":     {heldAtStart: false, ownPodOnClaim: true, possible: true},
 		"no pod of this cluster writes the backend": {heldAtStart: true, possible: true},
 		"the pods of this cluster write it":         {heldAtStart: true, ownPodOnClaim: true, possible: false},
+		// A suspended cluster writes nothing, so it has no handover to wait
+		// for, and its Ready keeps the reason the user asked for.
+		"the user suspended the cluster":                    {suspended: true, heldAtStart: true},
+		"a suspended cluster that took the claim this pass": {suspended: true},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, tc.possible, handoverPossible(tc.heldAtStart, tc.ownPodOnClaim))
+			assert.Equal(
+				t, tc.possible, handoverPossible(tc.suspended, tc.heldAtStart, tc.ownPodOnClaim),
+			)
 		})
 	}
 }

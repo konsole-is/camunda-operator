@@ -117,7 +117,7 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 	if err != nil {
 		return err
 	}
-	if !handoverPossible(held, own.Carries(in.Storage.Claim)) {
+	if !handoverPossible(in.Effective.Suspend, held, own.Carries(in.Storage.Claim)) {
 		return nil
 	}
 
@@ -141,6 +141,9 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 // behind: no other cluster holds the backend while this one does, and a cluster
 // that holds no backend renders nothing.
 //
+// A cluster that spec.suspend holds at zero writes nothing, so it has no
+// handover to wait for, and its Ready keeps the reason the user asked for.
+//
 // heldAtStart says whether the cluster already held the claim when the pass
 // began, and ownPodOnClaim whether a pod of this cluster writes that backend.
 // Both are needed. A pass that took the claim can meet the pods of the cluster
@@ -149,7 +152,11 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 // the pods away, and a status write that never landed must not end the wait.
 // Every healthy pass of every cluster would list the pods of the whole
 // Kubernetes cluster without this.
-func handoverPossible(heldAtStart, ownPodOnClaim bool) bool {
+func handoverPossible(suspended, heldAtStart, ownPodOnClaim bool) bool {
+	if suspended {
+		return false
+	}
+
 	return !heldAtStart || !ownPodOnClaim
 }
 
