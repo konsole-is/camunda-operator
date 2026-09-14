@@ -109,8 +109,10 @@ type Result struct {
 	// Found is true when a workload that owner controls passed the predicate,
 	// whatever happened to it.
 	Found bool
-	// Stopped is true when at least one of those workloads is at zero, by this
-	// pass or an earlier one.
+	// Stopped is true when at least one of those workloads is stopped or
+	// draining, by this pass or an earlier one. A workload mid-drain counts:
+	// its replicas are already none, and the pods it still reports are on
+	// their way out.
 	Stopped bool
 }
 
