@@ -19,6 +19,7 @@ package camundaoptimize
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -31,6 +32,7 @@ import (
 	apitypes "k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -298,4 +300,108 @@ func TestFollowsSuspendedCluster(t *testing.T) {
 		followsSuspendedCluster(withCondition(v1.ConditionReady, string(component.Suspended))),
 		"Ready is the business of wasSuspending",
 	)
+}
+
+// TestReconcileRecordsTheSuspensionWhenAPatchFails covers the event bookkeeping
+// of a partial failure: the transition into the suspension started, so it is
+// recorded even though one Deployment stayed up. Without this the next retry
+// reads the suspension off the flushed condition and the event is never
+// recorded at all.
+func TestReconcileRecordsTheSuspensionWhenAPatchFails(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	optimize := &v1.CamundaOptimize{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "co-a",
+			Namespace:  "team-a",
+			UID:        "uid-1",
+			Finalizers: []string{Finalizer},
+		},
+		Spec: v1.CamundaOptimizeSpec{
+			Version:           "8.9.4",
+			ManagementAuthRef: "mac",
+			ClusterRef:        v1.ClusterRef{Name: "my-cluster"},
+		},
+	}
+	// The cluster is suspended and its storageRef names nothing, so the
+	// pre-check fails after it read the suspension.
+	cluster := &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: optimize.Namespace, UID: "uid-c"},
+		Spec: v1.CamundaClusterSpec{
+			Version:    "8.9.4",
+			Suspend:    true,
+			StorageRef: "no-such-contract",
+		},
+	}
+	webappName := components.WorkloadName(optimize, components.ComponentWebapp)
+	importerName := components.WorkloadName(optimize, components.ComponentImporter)
+	owned := func(name string) *appsv1.Deployment {
+		return &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: optimize.Namespace,
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: v1.GroupVersion.String(),
+					Kind:       "CamundaOptimize",
+					Name:       optimize.Name,
+					UID:        optimize.UID,
+					Controller: new(true),
+				}},
+			},
+			Spec: appsv1.DeploymentSpec{Replicas: new(int32(1))},
+		}
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(optimize, cluster, owned(webappName), owned(importerName)).
+		WithStatusSubresource(&v1.CamundaOptimize{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(
+				ctx context.Context,
+				cl client.WithWatch,
+				obj client.Object,
+				patch client.Patch,
+				opts ...client.PatchOption,
+			) error {
+				if obj.GetName() == webappName {
+					return errors.New("admission webhook denied the request")
+				}
+
+				return cl.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+	recorder := events.NewFakeRecorder(16)
+	r := &Reconciler{
+		Client:          fakeClient,
+		APIReader:       fakeClient,
+		Scheme:          scheme,
+		EventRecorder:   recorder,
+		componentClient: fakeClient,
+	}
+
+	key := apitypes.NamespacedName{Namespace: optimize.Namespace, Name: optimize.Name}
+	_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: key})
+
+	require.Error(t, err, "the rejected patch is returned, so the reconcile retries")
+	assert.Equal(t, 1, countRecorded(recorder, eventReasonClusterSuspended))
+}
+
+// countRecorded drains recorder and returns how many of its events carry the
+// given reason.
+func countRecorded(recorder *events.FakeRecorder, reason string) int {
+	var count int
+	for {
+		select {
+		case recorded := <-recorder.Events:
+			if strings.Contains(recorded, reason) {
+				count++
+			}
+		default:
+			return count
+		}
+	}
 }
