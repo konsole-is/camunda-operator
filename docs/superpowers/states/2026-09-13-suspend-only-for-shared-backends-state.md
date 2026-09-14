@@ -22,8 +22,8 @@ status: foundational-wave
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #369 | feat/suspend-only-for-shared-backends--storage-claim-on-a-lease | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/storage-claim-on-a-lease | #372 → fix/suspend-only-for-shared-backends | at e01da28 (final head, every review item landed), one Copilot request at this head pending, body reconcile with the agent; then merge; merges first |
-| #370 | fix/suspend-only-for-shared-backends--keep-workloads-on-precheck-failure | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/keep-workloads-on-precheck-failure | #371 → fix/suspend-only-for-shared-backends | at b2b717c (final head before the merge-forward), Copilot round 20 pending; merges second |
+| #369 | feat/suspend-only-for-shared-backends--storage-claim-on-a-lease | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/storage-claim-on-a-lease | #372 → fix/suspend-only-for-shared-backends | at d98ffe1 (final head), final Copilot request pending, every thread resolved, body reconciled; then merge; merges first |
+| #370 | fix/suspend-only-for-shared-backends--keep-workloads-on-precheck-failure | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/keep-workloads-on-precheck-failure | #371 → fix/suspend-only-for-shared-backends | at 7de7d65 (final head before the merge-forward), final Copilot request pending, every thread resolved; merges second |
 
 ## Contracts
 
