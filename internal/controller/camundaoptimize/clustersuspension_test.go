@@ -21,6 +21,7 @@ import (
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/stretchr/testify/assert"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
 
@@ -158,6 +159,30 @@ func recordedNotes(recorder *events.FakeRecorder) []string {
 			return notes
 		}
 	}
+}
+
+// TestHasWorkloadsReadsEveryWorkloadCondition covers the partial render: the
+// importer patch was rejected and the webapp stopped, so only the webapp
+// reports. The instance rendered a workload either way, and a resume of it is a
+// transition a user acts on.
+func TestHasWorkloadsReadsEveryWorkloadCondition(t *testing.T) {
+	t.Parallel()
+
+	for _, conditionType := range []string{v1.ConditionImporterReady, v1.ConditionWebappReady} {
+		optimize := &v1.CamundaOptimize{}
+		meta.SetStatusCondition(&optimize.Status.Conditions, metav1.Condition{
+			Type:   conditionType,
+			Status: metav1.ConditionTrue,
+			Reason: v1.ReasonHealthy,
+		})
+		assert.True(t, hasWorkloads(optimize), conditionType)
+	}
+
+	assert.False(
+		t,
+		hasWorkloads(withReadyReason(v1.ReasonHealthy)),
+		"Ready alone says nothing about a workload",
+	)
 }
 
 // withReadyReason returns a CamundaOptimize whose Ready condition carries the

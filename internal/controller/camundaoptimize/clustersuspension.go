@@ -71,8 +71,18 @@ func suspensionEvent(res resolved) (reason, note string) {
 // transition a user acts on: an instance created beside its cluster can meet
 // the storage claim before that cluster takes it, and an event of that window
 // would name a wait nobody asked for.
+//
+// Every workload counts, not the importer alone. A pass that stopped the webapp
+// and had the importer patch rejected leaves one condition of the two, and the
+// instance rendered a workload either way.
 func hasWorkloads(optimize *v1.CamundaOptimize) bool {
-	return meta.FindStatusCondition(optimize.Status.Conditions, v1.ConditionImporterReady) != nil
+	for _, conditionType := range workloadConditions() {
+		if meta.FindStatusCondition(optimize.Status.Conditions, conditionType) != nil {
+			return true
+		}
+	}
+
+	return false
 }
 
 // wasSuspending reports whether the last reconcile left the CamundaOptimize
