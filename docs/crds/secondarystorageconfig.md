@@ -15,9 +15,9 @@ This contract models the two backends the operator integrates with: `elasticsear
 
 ## The claim
 
-One `CamundaCluster` writes one backend. The claim belongs to the backend that the contract resolves to, not to the contract. The operator holds it on a Lease in its own namespace. Two contracts that name one address are one claim, and a deleted contract does not free the backend for another cluster.
+One `CamundaCluster` writes one backend. The claim belongs to the backend that the contract resolves to, not to the contract. Two contracts that name one address are one claim, whatever namespace each one lives in, and a deleted contract does not free the backend for another cluster.
 
-[Secondary storage](camundacluster.md#secondary-storage) of the cluster reference has the rule in full. It names the reasons a cluster reports on `Ready`, and how a backend moves from one cluster to the next.
+[Secondary storage](camundacluster.md#secondary-storage) of the cluster reference has the rule in full, and how a backend moves from one cluster to the next. The status table of that page names every reason a cluster reports on `Ready` for its backend.
 
 The smallest contract for an Elasticsearch backend names the endpoint and the credentials:
 

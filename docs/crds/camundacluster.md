@@ -127,7 +127,7 @@ The brokers keep their data on one PersistentVolumeClaim per pod. `spec.zeebe.st
 
 One `CamundaCluster` writes one backend. Camunda fixes the index names and the tables. Two clusters on one backend write each other's data, and a restore of one deletes the data of the other.
 
-The operator claims the backend, not the contract. The claim is a Lease named `camunda-storage-<hash>` in the namespace of the operator. The hash is of the address the contract resolves to. For Elasticsearch that address is the scheme, the host, and the port of the endpoint. A path prefix does not tell two backends apart, because the processes connect to the host and the port. For an RDBMS it is the host, the port, and the database name of the PostgreSQL chain. Two contracts that name one address are one backend. The first cluster that takes the claim holds it until it moves to another backend, or until you delete it. A cluster whose contract is deleted keeps its backend and keeps running. Do not delete the Lease by hand while a cluster runs on that backend. Every cluster that resolves the backend then races for the free claim, and the holder can lose it to a waiting cluster and be suspended.
+The operator claims the backend, not the contract. The backend is the address the contract resolves to. For Elasticsearch that address is the scheme, the host, and the port of the endpoint. A path prefix does not tell two backends apart, because the processes connect to the host and the port. For an RDBMS it is the host, the port, and the database name of the PostgreSQL chain. Two contracts that name one address are one backend, whatever namespace each one lives in. The first cluster that claims a backend holds it until it moves to another backend, or until you delete it. A cluster whose contract is deleted keeps its backend and keeps running. The operator keeps every storage claim in its own namespace. Do not remove the claim of a running cluster by hand. Every cluster that resolves the backend then races for it, and the holder can lose the backend to a waiting cluster and be suspended.
 
 The API server accepts a second cluster on a held backend. That cluster is suspended: every workload at zero and the volumes kept. Its `Ready` is `False` with reason `StorageAlreadyAttached`, and the message names the holder and the backend.
 
@@ -161,13 +161,13 @@ status:
         are gone
 ```
 
-Every pod carries the label `camunda.io/storage-claim` with the name of the Lease, and `camunda.io/cluster-uid` with the UID of its cluster. The pods of an [Optimize instance](camundaoptimize.md) attached to the cluster carry both, because its importer writes that backend as well. Read the claim of every pod in a namespace:
+Every pod carries the label `camunda.io/storage-claim` with the storage claim of the backend it writes, and `camunda.io/cluster-uid` with the UID of its cluster. The pods of an [Optimize instance](camundaoptimize.md) attached to the cluster carry both, because its importer writes that backend as well. Read the claim of every pod in a namespace:
 
 ```bash
 kubectl get pods -n my-cluster-ns -L camunda.io/storage-claim
 ```
 
-Select every pod that writes one backend by the Lease name. The operator counts these pods in every namespace, so read them the same way:
+The value is the same for every pod on one backend, whatever cluster or namespace it belongs to. Select them all with the value that the command above prints:
 
 ```bash
 kubectl get pods -A -l camunda.io/storage-claim=camunda-storage-8bd62d6c1f48cf988b142a51c9e7010d105e168c
@@ -319,7 +319,7 @@ Deleting the cluster removes every resource that the operator created for it. Th
 | `Ready` | `Suspended` | `spec.suspend` is true and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to resume. |
 | `Ready` | `StorageAlreadyAttached` | Another `CamundaCluster` holds the storage claim of the backend that `storageRef` resolves to. This cluster is suspended. | Give this cluster a backend of its own, or delete the holder. The message names both, and the last apply error of the workloads when one occurred. |
 | `Ready` | `WaitingForHandover` | This cluster holds the storage claim of the backend that `storageRef` resolves to, and pods of another cluster still write that backend. Every workload of this cluster is at zero, and the volumes are kept. | Wait. The message names the backend and those pods. The state clears on its own. If the pods never go, delete them. |
-| `Ready` | `InvalidReference` | A referenced resource does not exist, a ServiceAccount with `create: false` is absent, two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. A running cluster is scaled to zero, with the volumes kept. | Read the message. Create the missing resource or correct the field it names. The cluster resumes on its own. |
+| `Ready` | `InvalidReference` | A referenced resource does not exist, a ServiceAccount with `create: false` is absent, two buckets conflict, an Azure container is shared, a snapshot repository is missing, the merged spec is invalid, or a Lease in the namespace of the operator that this operator did not write blocks the storage claim of the backend. A running cluster is scaled to zero, with the volumes kept. | Read the message. Create the missing resource, correct the field it names, or delete the named Lease once nothing else uses it. The cluster resumes on its own. |
 | `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. A running cluster is scaled to zero, with the volumes kept. | Create the Secret with the named key. The cluster resumes on its own. |
 | `Ready` | `VersionDowngradeRefused` | The effective version is below the version the brokers run, and no annotation sanctions the move. The operator applies nothing, and the brokers keep the version they have. | Read [Version](#version). Set the version forward again, or sanction the downgrade. |
 
