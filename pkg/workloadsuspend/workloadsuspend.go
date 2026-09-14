@@ -156,6 +156,11 @@ func StopWorkloadsIf(
 		if err != nil {
 			errs = append(errs, err)
 			record(workload.Object.GetName(), err)
+			// The patch is tried only on a workload that still asks for
+			// replicas, so one that refused it is running. A condition that
+			// calls it suspended is stale, and a reader of that condition would
+			// take a serving process for a quiet one.
+			dropStaleSuspension(owner, workload.ConditionType)
 
 			continue
 		}
@@ -225,7 +230,7 @@ func KeepAtZero(
 			continue
 		}
 		if replicas == nil || *replicas > 0 {
-			meta.RemoveStatusCondition(owner.GetStatusConditions(), workload.ConditionType)
+			dropStaleSuspension(owner, workload.ConditionType)
 
 			continue
 		}
@@ -237,6 +242,26 @@ func KeepAtZero(
 	}
 
 	return kept, errors.Join(errs...)
+}
+
+// dropStaleSuspension removes the condition of a workload that is running while
+// the condition calls it suspended. The condition is the only record that a
+// controller stopped that workload, and it outlives the state it reported: a
+// render raises the replicas, and the flush that would have said so can be lost
+// to a conflict.
+//
+// Nothing then reads a suspension from it: the owner reports no endpoints of a
+// process that serves, and no transition of a workload that never stopped. The
+// next render stages what the workload reports.
+//
+// A condition that carries no suspension stays. It belongs to the render, and
+// this is the one case where a controller outside it writes these conditions.
+func dropStaleSuspension(owner component.OperatorCRD, conditionType string) {
+	if !IsAlreadySuspended(owner, conditionType) {
+		return
+	}
+
+	meta.RemoveStatusCondition(owner.GetStatusConditions(), conditionType)
 }
 
 // IsAlreadySuspended reports whether the condition of a workload on owner

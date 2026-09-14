@@ -372,6 +372,65 @@ func TestSuspendExplicitlyJoinsPatchErrors(t *testing.T) {
 	assert.Contains(t, refusals[0], boom.Error(), "the event carries the reason the API server gave")
 }
 
+// TestSuspendExplicitlyDropsAStaleSuspensionOnARefusal covers the pair that
+// clears the endpoints of a serving process: a render raised the gateway and
+// the flush that would have said so was lost, so its condition still reads
+// Suspended, and the stop that would make that true is refused.
+//
+// The condition must go. endpointsStopped reads it, and a cluster whose gateway
+// answers must keep publishing where to reach it.
+func TestSuspendExplicitlyDropsAStaleSuspensionOnARefusal(t *testing.T) {
+	scheme := suspendScheme(t)
+	cluster := suspendCluster(true)
+	boom := errors.New("admission webhook denied the request")
+	meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+		Type:   v1.ConditionGatewayReady,
+		Status: metav1.ConditionTrue,
+		Reason: string(component.Suspended),
+	})
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(&appsv1.Deployment{
+			ObjectMeta: workloadMeta(cluster, cluster, "my-cluster-gateway", "gateway", true),
+			Spec:       appsv1.DeploymentSpec{Replicas: new(int32(3))},
+			Status:     appsv1.DeploymentStatus{Replicas: 3},
+		}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(
+				ctx context.Context,
+				cl client.WithWatch,
+				obj client.Object,
+				patch client.Patch,
+				opts ...client.PatchOption,
+			) error {
+				return boom
+			},
+		}).
+		Build()
+	r := &CamundaClusterReconciler{
+		Client:        fakeClient,
+		APIReader:     fakeClient,
+		Scheme:        scheme,
+		EventRecorder: events.NewFakeRecorder(10),
+	}
+
+	_, err := r.suspendExplicitly(context.Background(), cluster)
+
+	require.ErrorIs(t, err, boom)
+	assert.Equal(
+		t, int32(3), replicasOf(
+			t, fakeClient, client.ObjectKey{Namespace: cluster.Namespace, Name: "my-cluster-gateway"},
+		), "the refused workload keeps its replicas",
+	)
+	assert.Nil(
+		t,
+		meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionGatewayReady),
+		"the stale suspension is gone",
+	)
+	assert.False(t, endpointsStopped(cluster), "the gateway serves, so its endpoints stay published")
+}
+
 // TestSuspendExplicitlyReportsAFailedList covers a listing that fails: the
 // suspension scales nothing, and the error says which listing failed.
 func TestSuspendExplicitlyReportsAFailedList(t *testing.T) {
