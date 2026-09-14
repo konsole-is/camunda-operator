@@ -569,6 +569,21 @@ func expectReplicas(want int32, keys ...client.ObjectKey) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// countSuspensionEvents counts the suspension events of one reason recorded on
+// optimize. A spec that asserts one transition counts its reason, because
+// another transition of its own can precede it.
+func countSuspensionEvents(optimize *v1.CamundaOptimize, reason string) int {
+	GinkgoHelper()
+	var count int
+	for _, recorded := range suspensionEvents(optimize) {
+		if recorded == reason {
+			count++
+		}
+	}
+
+	return count
+}
+
 // suspensionEvents returns the reasons of the suspension events recorded on
 // optimize, in the order the API server returns them.
 func suspensionEvents(optimize *v1.CamundaOptimize) []string {
@@ -677,19 +692,23 @@ var _ = Describe("CamundaOptimize controller", func() {
 			By("keeping the exporter patch, because the suspension is not a detachment")
 			expectClusterEnv(s.cluster, ContainElement("CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME"))
 
+			// An instance created beside its cluster can reach its first pass
+			// before the cluster holds the storage claim of the backend, and
+			// that pass records the wait of the claim and then the resume. The
+			// count of this reason is what says the suspension was named once.
 			By("naming the cluster in an event, once for the transition")
-			Expect(suspensionEvents(s.optimize)).To(Equal([]string{eventReasonClusterSuspended}))
+			Expect(countSuspensionEvents(s.optimize, eventReasonClusterSuspended)).To(Equal(1))
 			Consistently(func(g Gomega) {
-				g.Expect(suspensionEvents(s.optimize)).To(Equal([]string{eventReasonClusterSuspended}))
+				g.Expect(countSuspensionEvents(s.optimize, eventReasonClusterSuspended)).To(Equal(1))
 			}, 3*time.Second, interval).Should(Succeed())
+			resumesBefore := countSuspensionEvents(s.optimize, eventReasonClusterResumed)
 
 			By("starting both workloads again when the suspension is cleared")
 			setClusterSuspend(s.cluster, false)
 			expectReplicas(1, webappKey, importerKey)
 			expectReadyWhileStamping(s.optimize, webappKey, importerKey)
-			Expect(suspensionEvents(s.optimize)).To(Equal([]string{
-				eventReasonClusterSuspended, eventReasonClusterResumed,
-			}))
+			Expect(countSuspensionEvents(s.optimize, eventReasonClusterSuspended)).To(Equal(1))
+			Expect(countSuspensionEvents(s.optimize, eventReasonClusterResumed)).To(Equal(resumesBefore + 1))
 		})
 
 		It("scales to zero when another cluster holds the storage contract of its cluster", func() {

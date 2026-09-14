@@ -879,6 +879,36 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		}, timeout, interval).Should(Succeed(), "the old backend is given back once the pod is gone")
 	})
 
+	// A hand-deleted Lease must not depose the cluster that runs on the
+	// backend. The pods of the holder order the claimants of the free key, so
+	// the holder writes its claim again and the parked cluster keeps waiting.
+	It("gives a hand-deleted claim back to the cluster whose pods write the backend", func() {
+		ns := newNamespace()
+		binding := createBinding(ns, true)
+		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
+		createCluster(holder)
+		expectHolds(holder)
+		expectClaimedBy(binding, holder)
+		createStoragePod(holder, binding)
+
+		parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
+		createCluster(parked)
+		expectParked(parked, holder)
+
+		By("deleting the claim of the backend by hand")
+		claim := client.ObjectKey{
+			Namespace: testClaimNamespace,
+			Name:      components.StorageClaimSchema().LeaseName(storageKeyOf(binding)),
+		}
+		var lease coordinationv1.Lease
+		Expect(k8sClient.Get(ctx, claim, &lease)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &lease)).To(Succeed())
+
+		expectClaimedBy(binding, holder)
+		expectHolds(holder)
+		expectParked(parked, holder)
+	})
+
 	// A claim whose holder never existed, or was deleted before the operator
 	// ran, must not park every later cluster forever.
 	It("takes over a claim whose holder does not exist", func() {

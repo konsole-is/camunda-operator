@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -30,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -199,8 +201,42 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&v1.DatabaseConfig{}, r.enqueueInNamespace()).
 		Watches(&v1.DatabaseServerConfig{}, r.enqueueAll()).
 		Watches(&corev1.Secret{}, r.enqueueForSecret(), builder.OnlyMetadata).
+		Watches(
+			&coordinationv1.Lease{},
+			enqueueForStorageClaim(),
+			builder.WithPredicates(predicate.NewPredicateFuncs(isStorageClaim)),
+		).
 		Named(controllerName).
 		Complete(r)
+}
+
+// enqueueForStorageClaim maps a storage claim Lease to the cluster that holds
+// it. A deletion by hand, or a whole operator namespace recreated, otherwise
+// reaches a healthy holder at the next unrelated event: it reports no failure,
+// so it asks for no timer of its own.
+func enqueueForStorageClaim() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []reconcile.Request {
+		lease, ok := o.(*coordinationv1.Lease)
+		if !ok {
+			return nil
+		}
+		// The holder annotations survive a deletion event, so a Lease removed
+		// by hand still names the cluster to wake.
+		holder, ours := components.StorageClaimSchema().HolderOf(lease)
+		if !ours {
+			return nil
+		}
+
+		return []reconcile.Request{{NamespacedName: holder.NamespacedName}}
+	})
+}
+
+// isStorageClaim answers whether a Lease is one of the storage claims. The
+// leader election of this operator, and of everything else in the cluster,
+// writes Leases too.
+func isStorageClaim(o client.Object) bool {
+	return o.GetLabels()[labels.ComponentKey] == components.StorageClaimComponent &&
+		o.GetLabels()[labels.ManagedByKey] == labels.ManagedBy
 }
 
 // enqueueForBrokerClaim maps a PersistentVolumeClaim event to the cluster
