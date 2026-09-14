@@ -6,6 +6,9 @@
 #
 # The names here are mirrored by the constants of test/utils/minio.go. Keep
 # the two in step.
+#
+# Both images come from quay.io. Docker Hub stopped serving minio/minio and
+# minio/mc in September 2026, and quay.io carries the same tags.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -31,7 +34,7 @@ spec:
     spec:
       containers:
         - name: minio
-          image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+          image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
           args: ["server", "/data", "--address", ":9000"]
           ports:
             - containerPort: 9000
@@ -91,7 +94,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: mc
-          image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+          image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
           args: ["--config-dir", "/mc", "mb", "--ignore-existing", "local/camunda-backup"]
           env:
             - name: MINIO_ACCESS_KEY_ID
