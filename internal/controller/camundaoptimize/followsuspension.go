@@ -38,6 +38,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
+	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 )
 
 // eventReasonWorkloadsSuspended is recorded for each Optimize workload that
@@ -137,66 +138,43 @@ func (r *Reconciler) followSuspension(
 		}
 		outcome.Found = true
 
-		if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != 0 {
-			if err := r.scaleToZero(ctx, optimize, &deployment); err != nil {
-				errs = append(errs, err)
+		stopped, err := workloadsuspend.StopAtZero(ctx, r.Client, &deployment, suspendedMessage)
+		if err != nil {
+			errs = append(errs, err)
 
-				continue
-			}
+			continue
 		}
-		// Only a workload that reached zero reports the suspension: a rejected
-		// patch leaves its pods running.
+		if stopped.Patched {
+			r.recordSuspended(optimize, deployment.Name)
+		}
 		outcome.Stopped = true
-		stageSuspension(optimize, comp, deployment.Status.Replicas)
+		stageSuspension(optimize, comp, stopped)
 	}
 
 	return outcome, errors.Join(errs...)
 }
 
-// stageSuspension sets the condition of the given workload, in memory, the way
-// ocf reports a suspension: Suspending while observed replicas are still up,
-// Suspended once they are gone. The watch on the Deployment brings the reconcile
-// back as they drop. An unknown workload changes nothing.
-func stageSuspension(optimize *v1.CamundaOptimize, comp string, observed int32) {
+// stageSuspension sets the condition of the given workload, in memory, from what
+// the suspension did to it. The watch on the Deployment brings the reconcile back
+// as its replicas drop. An unknown workload changes nothing.
+func stageSuspension(optimize *v1.CamundaOptimize, comp string, outcome workloadsuspend.Outcome) {
 	conditionType, ok := workloadConditions[comp]
 	if !ok {
 		return
 	}
 
-	condition := metav1.Condition{
+	meta.SetStatusCondition(optimize.GetStatusConditions(), metav1.Condition{
 		Type:               conditionType,
-		Status:             metav1.ConditionTrue,
-		Reason:             string(component.Suspended),
-		Message:            suspendedMessage,
+		Status:             outcome.Status,
+		Reason:             outcome.Reason,
+		Message:            outcome.Message,
 		ObservedGeneration: optimize.Generation,
-	}
-	if observed != 0 {
-		condition.Status = metav1.ConditionFalse
-		condition.Reason = string(component.Suspending)
-		condition.Message = fmt.Sprintf("Waiting for %d replicas to stop", observed)
-	}
-	meta.SetStatusCondition(optimize.GetStatusConditions(), condition)
+	})
 }
 
-// scaleToZero patches the replicas of a Deployment to zero and records the
-// event on the CamundaOptimize. The ocf apply takes the field back with force
-// when the cluster resumes and the check passes.
-func (r *Reconciler) scaleToZero(
-	ctx context.Context,
-	optimize *v1.CamundaOptimize,
-	deployment *appsv1.Deployment,
-) error {
-	patch := client.MergeFrom(deployment.DeepCopy())
-	deployment.Spec.Replicas = new(int32(0))
-
-	if err := r.Patch(ctx, deployment, patch); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-
-		return fmt.Errorf("scaling Deployment %s to zero: %w", client.ObjectKeyFromObject(deployment), err)
-	}
-
+// recordSuspended records that the suspension of the referenced cluster stopped
+// the named workload.
+func (r *Reconciler) recordSuspended(optimize *v1.CamundaOptimize, workload string) {
 	r.EventRecorder.Eventf(
 		optimize,
 		nil,
@@ -204,11 +182,9 @@ func (r *Reconciler) scaleToZero(
 		eventReasonWorkloadsSuspended,
 		eventActionSuspend,
 		"Scaled %q to zero because CamundaCluster %q is suspended",
-		deployment.Name,
+		workload,
 		optimize.Spec.ClusterRef.Name,
 	)
-
-	return nil
 }
 
 // stageKeptAtZero restages the workload conditions of a CamundaOptimize whose

@@ -30,7 +30,6 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -38,6 +37,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 )
 
 // eventReasonWorkloadsSuspended is recorded for each workload that an explicit
@@ -94,24 +94,24 @@ func (r *CamundaClusterReconciler) suspendExplicitly(
 
 	var found bool
 	var errs []error
-	suspend := func(obj client.Object, replicas *int32, observed int32) {
+	suspend := func(obj client.Object) {
 		if !metav1.IsControlledBy(obj, cluster) {
 			return
 		}
 		found = true
 
-		if replicas == nil || *replicas != 0 {
-			if err := r.scaleToZero(ctx, cluster, obj); err != nil {
-				errs = append(errs, err)
+		outcome, err := workloadsuspend.StopAtZero(ctx, r.Client, obj, suspendedMessage)
+		if err != nil {
+			errs = append(errs, err)
 
-				return
-			}
+			return
 		}
-		// The components do not run on this path, so nothing else refreshes
-		// the per-process conditions and they would report health over zero
-		// pods. Only a workload that reached zero reports the suspension: a
-		// rejected patch leaves its pods running.
-		stageSuspension(cluster, obj.GetLabels()[labels.ComponentKey], observed)
+		if outcome.Patched {
+			r.recordSuspended(cluster, obj.GetName())
+		}
+		// The components do not run on this path, so nothing else refreshes the
+		// per-process conditions and they would report health over zero pods.
+		stageSuspension(cluster, obj.GetLabels()[labels.ComponentKey], outcome)
 	}
 
 	selector := []client.ListOption{
@@ -127,7 +127,7 @@ func (r *CamundaClusterReconciler) suspendExplicitly(
 		errs = append(errs, fmt.Errorf("listing the StatefulSets of the cluster: %w", err))
 	}
 	for i := range sets.Items {
-		suspend(&sets.Items[i], sets.Items[i].Spec.Replicas, sets.Items[i].Status.Replicas)
+		suspend(&sets.Items[i])
 	}
 
 	var deployments appsv1.DeploymentList
@@ -135,40 +135,14 @@ func (r *CamundaClusterReconciler) suspendExplicitly(
 		errs = append(errs, fmt.Errorf("listing the Deployments of the cluster: %w", err))
 	}
 	for i := range deployments.Items {
-		suspend(&deployments.Items[i], deployments.Items[i].Spec.Replicas, deployments.Items[i].Status.Replicas)
+		suspend(&deployments.Items[i])
 	}
 
 	return found, errors.Join(errs...)
 }
 
-// scaleToZero patches the replicas of a workload to zero and records the
-// event on the cluster. A workload that is already gone needs nothing. The
-// ocf apply takes the field back with force when the cluster resumes.
-func (r *CamundaClusterReconciler) scaleToZero(
-	ctx context.Context,
-	cluster *v1.CamundaCluster,
-	obj client.Object,
-) error {
-	patch := client.MergeFrom(obj.DeepCopyObject().(client.Object))
-	var kind string
-	switch workload := obj.(type) {
-	case *appsv1.StatefulSet:
-		kind = "StatefulSet"
-		workload.Spec.Replicas = new(int32(0))
-	case *appsv1.Deployment:
-		kind = "Deployment"
-		workload.Spec.Replicas = new(int32(0))
-	default:
-		return fmt.Errorf("cannot scale a %T to zero", obj)
-	}
-
-	if err := r.Patch(ctx, obj, patch); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("scaling %s %s to zero: %w", kind, client.ObjectKeyFromObject(obj), err)
-	}
-
+// recordSuspended records that an explicit suspend stopped the named workload.
+func (r *CamundaClusterReconciler) recordSuspended(cluster *v1.CamundaCluster, workload string) {
 	r.EventRecorder.Eventf(
 		cluster,
 		nil,
@@ -176,36 +150,27 @@ func (r *CamundaClusterReconciler) scaleToZero(
 		eventReasonWorkloadsSuspended,
 		eventActionReconcile,
 		"Scaled %q to zero because spec.suspend is set",
-		obj.GetName(),
+		workload,
 	)
-
-	return nil
 }
 
 // stageSuspension sets the per-process condition of the workload with the given
-// component label, in memory, the way ocf reports a suspension: Suspending
-// while observed replicas are still up, Suspended once they are gone. The watch
-// on the workload brings the reconcile back as they drop. A workload whose
+// component label, in memory, from what the suspension did to it. The watch on
+// the workload brings the reconcile back as its replicas drop. A workload whose
 // component reports no condition changes nothing.
-func stageSuspension(cluster *v1.CamundaCluster, comp string, observed int32) {
+func stageSuspension(cluster *v1.CamundaCluster, comp string, outcome workloadsuspend.Outcome) {
 	conditionType, ok := processConditions[comp]
 	if !ok {
 		return
 	}
 
-	condition := metav1.Condition{
+	meta.SetStatusCondition(cluster.GetStatusConditions(), metav1.Condition{
 		Type:               conditionType,
-		Status:             metav1.ConditionTrue,
-		Reason:             string(component.Suspended),
-		Message:            suspendedMessage,
+		Status:             outcome.Status,
+		Reason:             outcome.Reason,
+		Message:            outcome.Message,
 		ObservedGeneration: cluster.Generation,
-	}
-	if observed != 0 {
-		condition.Status = metav1.ConditionFalse
-		condition.Reason = string(component.Suspending)
-		condition.Message = fmt.Sprintf("Waiting for %d replicas to stop", observed)
-	}
-	meta.SetStatusCondition(cluster.GetStatusConditions(), condition)
+	})
 }
 
 // stageKeptAtZero restages the per-process conditions of a cluster whose
