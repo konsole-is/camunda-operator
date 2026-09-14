@@ -38,6 +38,17 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
+// suspendScheme is the scheme that every fixture of this file builds its client
+// with.
+func suspendScheme(t *testing.T) *runtime.Scheme {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	return scheme
+}
+
 // suspendCluster is the owner of the workloads that TestSuspendExplicitly
 // scales down. suspend says whether the user asked for the suspension.
 func suspendCluster(suspend bool) *v1.CamundaCluster {
@@ -350,4 +361,78 @@ func replicasOf(t *testing.T, reader client.Reader, key client.ObjectKey) int32 
 	require.NotNil(t, deployment.Spec.Replicas, key.Name)
 
 	return *deployment.Spec.Replicas
+}
+
+// TestKeepAtZeroFinishesTheDrain covers the workload that a suspension left
+// mid-drain. The condition caught it at Suspending, and its pods have stopped
+// since, so the pass that holds it at zero reads it again rather than copying a
+// state that has moved on.
+func TestKeepAtZeroFinishesTheDrain(t *testing.T) {
+	scheme := suspendScheme(t)
+	cluster := suspendCluster(false)
+	zeebe := &appsv1.StatefulSet{
+		ObjectMeta: workloadMeta(cluster, cluster, "my-cluster-zeebe", "zeebe", true),
+		// Already at zero, with no pods left: the drain the condition caught is
+		// over.
+		Spec: appsv1.StatefulSetSpec{Replicas: new(int32(0))},
+	}
+	meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+		Type:    v1.ConditionZeebeReady,
+		Status:  metav1.ConditionFalse,
+		Reason:  string(component.Suspending),
+		Message: "Waiting for replicas to scale down, 2 replicas still running.",
+	})
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(zeebe).Build()
+	r := &CamundaClusterReconciler{
+		Client:        fakeClient,
+		APIReader:     fakeClient,
+		Scheme:        scheme,
+		EventRecorder: events.NewFakeRecorder(10),
+	}
+
+	kept, err := r.keepAtZero(context.Background(), cluster)
+
+	require.NoError(t, err)
+	assert.True(t, kept)
+	condition := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionZeebeReady)
+	require.NotNil(t, condition)
+	assert.Equal(t, string(component.Suspended), condition.Reason, "the pods are gone")
+	assert.Equal(t, metav1.ConditionTrue, condition.Status)
+	assert.Equal(t, "Kept at zero until the reference check passes", condition.Message)
+}
+
+// TestKeepAtZeroLeavesAWorkloadItNeverStopped covers the guard: a workload whose
+// condition carries no suspension is running for the user, and a pass that held
+// it at zero would stop it for a reason the user never gave.
+func TestKeepAtZeroLeavesAWorkloadItNeverStopped(t *testing.T) {
+	scheme := suspendScheme(t)
+	cluster := suspendCluster(false)
+	zeebe := &appsv1.StatefulSet{
+		ObjectMeta: workloadMeta(cluster, cluster, "my-cluster-zeebe", "zeebe", true),
+		Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(1))},
+	}
+	meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+		Type:   v1.ConditionZeebeReady,
+		Status: metav1.ConditionTrue,
+		Reason: v1.ReasonHealthy,
+	})
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(zeebe).Build()
+	r := &CamundaClusterReconciler{
+		Client:        fakeClient,
+		APIReader:     fakeClient,
+		Scheme:        scheme,
+		EventRecorder: events.NewFakeRecorder(10),
+	}
+
+	kept, err := r.keepAtZero(context.Background(), cluster)
+
+	require.NoError(t, err)
+	assert.False(t, kept)
+	assert.Equal(
+		t, int32(1), replicasOf(
+			t, fakeClient, client.ObjectKey{Namespace: cluster.Namespace, Name: "my-cluster-zeebe"},
+		), "a running workload stays running",
+	)
 }

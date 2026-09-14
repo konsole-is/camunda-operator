@@ -86,6 +86,45 @@ func (r *Reconciler) followSuspension(
 	ctx context.Context,
 	optimize *v1.CamundaOptimize,
 ) (suspensionOutcome, error) {
+	return r.stopWorkloads(ctx, optimize, suspendedMessage, func(string) bool { return true })
+}
+
+// keepAtZero holds the Optimize workloads that a suspension stopped while a
+// check of this instance still fails, and reports whether it held any.
+//
+// Only a workload whose condition already carries a suspension is touched: one
+// this controller never stopped is still running for the user. The workload is
+// read again, so a drain that finished since the cluster resumed is reported as
+// finished rather than copied from the condition that caught it mid-drain.
+func (r *Reconciler) keepAtZero(
+	ctx context.Context,
+	optimize *v1.CamundaOptimize,
+) (suspensionOutcome, error) {
+	return r.stopWorkloads(
+		ctx,
+		optimize,
+		workloadsuspend.MessageKeptAtZero,
+		func(conditionType string) bool {
+			condition := meta.FindStatusCondition(optimize.Status.Conditions, conditionType)
+
+			return condition != nil && workloadsuspend.IsSuspensionReason(condition.Reason)
+		},
+	)
+}
+
+// stopWorkloads scales the Optimize workloads that stop accepts to zero and
+// stages the condition of each. message says why a workload is held there once
+// its pods are gone.
+//
+// The importer goes first, and both are tried with their errors joined. It is
+// the workload that writes Elasticsearch, so a webapp that a conflict or an
+// admission rule keeps up must not keep the importer up with it.
+func (r *Reconciler) stopWorkloads(
+	ctx context.Context,
+	optimize *v1.CamundaOptimize,
+	message string,
+	stop func(conditionType string) bool,
+) (suspensionOutcome, error) {
 	var outcome suspensionOutcome
 	var errs []error
 	for _, comp := range suspendOrder {
@@ -109,9 +148,14 @@ func (r *Reconciler) followSuspension(
 		if !metav1.IsControlledBy(&deployment, optimize) {
 			continue
 		}
+
+		conditionType, ok := components.ConditionTypeFor(comp)
+		if !ok || !stop(conditionType) {
+			continue
+		}
 		outcome.Found = true
 
-		stopped, err := workloadsuspend.StopAtZero(ctx, r.Client, &deployment, suspendedMessage)
+		stopped, err := workloadsuspend.StopAtZero(ctx, r.Client, &deployment, message)
 		if err != nil {
 			errs = append(errs, err)
 
@@ -121,21 +165,10 @@ func (r *Reconciler) followSuspension(
 			r.recordSuspended(optimize, deployment.Name)
 		}
 		outcome.Stopped = true
-		stageSuspension(optimize, comp, stopped)
+		workloadsuspend.Stage(optimize, conditionType, stopped)
 	}
 
 	return outcome, errors.Join(errs...)
-}
-
-// stageSuspension sets the condition of the given workload. An unknown workload
-// changes nothing.
-func stageSuspension(optimize *v1.CamundaOptimize, comp string, outcome workloadsuspend.Outcome) {
-	conditionType, ok := components.ConditionTypeFor(comp)
-	if !ok {
-		return
-	}
-
-	workloadsuspend.Stage(optimize, conditionType, outcome)
 }
 
 // recordSuspended records that the suspension of the referenced cluster stopped

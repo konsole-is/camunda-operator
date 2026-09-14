@@ -49,11 +49,15 @@ const EventReasonWorkloadsSuspended = "WorkloadsSuspended"
 // EventActionSuspend is the action verb of that event.
 const EventActionSuspend = "Suspend"
 
-// keptAtZeroMessage is the message of the condition of a workload whose
+// MessageKeptAtZero is the message of the condition of a workload whose
 // suspension ended while the controller still has nothing to render from. The
 // workload stays where the suspension left it, so the condition must not keep
 // naming a suspension that is over.
-const keptAtZeroMessage = "Kept at zero until the reference check passes"
+//
+// A caller passes it to StopAtZero in place of its own suspended message. The
+// workload is read again on that pass, so a drain that finished in the meantime
+// is reported as finished.
+const MessageKeptAtZero = "Kept at zero until the reference check passes"
 
 // stopPatch is the body of the merge patch that stops a workload: the replicas
 // it asks for, which are always none, and the UID the caller read it with.
@@ -203,32 +207,4 @@ func Stage(owner component.OperatorCRD, conditionType string, outcome Outcome) {
 		Message:            outcome.Message,
 		ObservedGeneration: owner.GetGeneration(),
 	})
-}
-
-// KeepAtZero rewrites the given conditions of an owner whose suspension ended
-// while it still has nothing to render from, and reports whether it rewrote any.
-//
-// The workloads stay where the suspension left them and only a render raises
-// their replicas again, so the conditions stay. The suspension ended, not the
-// drain: a workload whose pods are still stopping keeps the status and the
-// reason that say so, and only its message stops naming the suspension.
-func KeepAtZero(owner component.OperatorCRD, conditionTypes []string) bool {
-	var kept bool
-	for _, conditionType := range conditionTypes {
-		condition := meta.FindStatusCondition(*owner.GetStatusConditions(), conditionType)
-		if condition == nil || !IsSuspensionReason(condition.Reason) {
-			continue
-		}
-		kept = true
-
-		meta.SetStatusCondition(owner.GetStatusConditions(), metav1.Condition{
-			Type:               conditionType,
-			Status:             condition.Status,
-			Reason:             condition.Reason,
-			Message:            keptAtZeroMessage,
-			ObservedGeneration: owner.GetGeneration(),
-		})
-	}
-
-	return kept
 }

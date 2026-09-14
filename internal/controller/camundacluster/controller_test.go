@@ -668,7 +668,10 @@ var _ = Describe("CamundaCluster controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
 			zeebe := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionZeebeReady)
 			g.Expect(zeebe).NotTo(BeNil())
-			g.Expect(zeebe.Reason).To(Equal(string(component.Suspended)))
+			g.Expect(zeebe.Reason).To(
+				Equal(string(component.Suspended)),
+				"the pods are gone, so the drain is over even though it started mid-drain",
+			)
 			g.Expect(zeebe.Message).To(
 				Equal("Kept at zero until the reference check passes"),
 				"the suspension ended, so its message must not name spec.suspend",

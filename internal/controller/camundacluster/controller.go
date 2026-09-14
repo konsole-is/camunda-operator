@@ -40,7 +40,6 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
-	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 )
 
 // controllerName is the name the controller registers with controller-runtime.
@@ -197,21 +196,24 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// spec.suspend is the exception. It is the instruction of the user,
 		// and the suspended render is what a failed pre-check skips, so the
 		// workloads stop here instead, see suspendExplicitly.
-		suspended, suspendErr := r.suspendExplicitly(ctx, &cluster)
+		stopped, suspendErr := r.suspendExplicitly(ctx, &cluster)
 		if cluster.Spec.Suspend {
 			// A suspended cluster publishes no endpoints, see binding.go.
 			cluster.Status.Management = nil
 			cluster.Status.Gateway = nil
-			if suspended && suspendErr == nil {
+			if stopped && suspendErr == nil {
 				failure.Message += suspendNote
 			}
-		} else if workloadsuspend.KeepAtZero(&cluster, components.ConditionTypes()) {
+		} else {
 			// The suspension ended while the check still fails. Nothing renders
-			// here, so the workloads stay at zero and their endpoints answer
-			// nothing.
-			cluster.Status.Management = nil
-			cluster.Status.Gateway = nil
-			failure.Message += keptAtZeroNote
+			// here, so the workloads it stopped stay at zero.
+			kept, keptErr := r.keepAtZero(ctx, &cluster)
+			suspendErr = errors.Join(suspendErr, keptErr)
+			if kept && keptErr == nil {
+				cluster.Status.Management = nil
+				cluster.Status.Gateway = nil
+				failure.Message += keptAtZeroNote
+			}
 		}
 		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
 		if suspendErr != nil {
