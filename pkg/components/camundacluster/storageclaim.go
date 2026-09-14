@@ -283,8 +283,14 @@ func normalizeEndpoint(endpoint string) (string, error) {
 	return scheme + "://" + host, nil
 }
 
-// normalizeHost lowercases a host name and drops the trailing dot of the DNS
-// root. Both spellings resolve to the same host, so both must give one key.
+// normalizeHost renders one host name for the spellings that reach one host: a
+// name in lower case without the trailing dot of the DNS root, and an IP
+// address in the form net.IP writes. An IPv6 address has many spellings, and
+// "::1" and "0:0:0:0:0:0:0:1" would otherwise take a claim each on one backend.
 func normalizeHost(host string) string {
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.String()
+	}
+
 	return strings.TrimSuffix(strings.ToLower(host), ".")
 }

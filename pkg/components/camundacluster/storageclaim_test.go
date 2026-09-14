@@ -77,6 +77,22 @@ func TestStorageClaimKey(t *testing.T) {
 			},
 			key: "elasticsearch|https://es.example.com:443",
 		},
+		// One IP address has many spellings, an IPv6 literal most of all. Each
+		// would otherwise take a claim of its own on one backend.
+		"elasticsearch folds a long IPv6 spelling": {
+			storage: Storage{
+				Type:          v1.SecondaryStorageTypeElasticsearch,
+				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://[0:0:0:0:0:0:0:1]:9200"},
+			},
+			key: "elasticsearch|https://[::1]:9200",
+		},
+		"elasticsearch leaves an IPv4 literal alone": {
+			storage: Storage{
+				Type:          v1.SecondaryStorageTypeElasticsearch,
+				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://10.0.0.1:9200"},
+			},
+			key: "elasticsearch|https://10.0.0.1:9200",
+		},
 		"elasticsearch keeps the brackets of an IPv6 host": {
 			storage: Storage{
 				Type:          v1.SecondaryStorageTypeElasticsearch,
