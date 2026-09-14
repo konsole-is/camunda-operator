@@ -660,7 +660,7 @@ var _ = Describe("CamundaCluster controller", func() {
 			Equal(v1.ReasonMissingSecret),
 			And(
 				ContainSubstring(name),
-				ContainSubstring("The workloads stay at zero until the reference check passes"),
+				ContainSubstring("The workloads that stopped stay at zero until the reference check passes"),
 			),
 		)
 		Eventually(func(g Gomega) {

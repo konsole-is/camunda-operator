@@ -49,7 +49,7 @@ const suspendedMessage = "Scaled to zero because spec.suspend is set"
 
 // keptAtZeroNote is appended to the failure message of a cluster whose
 // workloads a suspension left at zero and whose suspension ended.
-const keptAtZeroNote = ". The workloads stay at zero until the reference check passes"
+const keptAtZeroNote = ". The workloads that stopped stay at zero until the reference check passes"
 
 // suspendExplicitly scales every workload that cluster controls to zero when
 // spec.suspend is set, and keeps everything else: the volumes, the Services,

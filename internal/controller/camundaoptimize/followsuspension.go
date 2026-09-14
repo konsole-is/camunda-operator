@@ -50,7 +50,7 @@ const suspendedMessage = "Scaled to zero while the referenced cluster is suspend
 
 // keptAtZeroNote is appended to the failure message of a CamundaOptimize whose
 // workloads a suspension left at zero and whose cluster resumed.
-const keptAtZeroNote = ". The Optimize workloads stay at zero until the reference check passes"
+const keptAtZeroNote = ". The Optimize workloads that stopped stay at zero until the reference check passes"
 
 // suspendOrder is the Optimize workloads, the importer first. It is the workload
 // that writes Elasticsearch, so a webapp that a conflict or an admission rule

@@ -719,7 +719,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 				ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
 				g.Expect(ready).NotTo(BeNil())
 				g.Expect(ready.Message).To(ContainSubstring(
-					"The Optimize workloads stay at zero until the reference check passes",
+					"The Optimize workloads that stopped stay at zero until the reference check passes",
 				))
 			}, timeout, interval).Should(Succeed())
 			expectReplicas(0, webappKey, importerKey)
