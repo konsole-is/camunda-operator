@@ -152,7 +152,10 @@ func TestHandoverPossible(t *testing.T) {
 // A free backend is not free while pods of another cluster write it. Without
 // this rule, a parked cluster that finds the Lease gone creates it, and the
 // running holder then meets a blocker and scales to zero.
-func TestClaimStorageRefusesAFreeBackendUnderOtherPods(t *testing.T) {
+//
+// The cluster that waits takes no Lease and renders at zero, which is what
+// keeps it off the backend those pods write.
+func TestClaimStorageWaitsUnderThePodsOnAFreeBackend(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
 	require.NoError(t, v1.AddToScheme(scheme))
@@ -178,9 +181,9 @@ func TestClaimStorageRefusesAFreeBackendUnderOtherPods(t *testing.T) {
 	cases := map[string]struct {
 		pods      []client.Object
 		suspended bool
-		refused   bool
+		waits     bool
 	}{
-		"pods of the running holder": {pods: foreign, refused: true},
+		"pods of the running holder": {pods: foreign, waits: true},
 		"its own pods": {
 			pods: []client.Object{pod("parked-zeebe-0", components.StoragePodLabels("parked", self.UID, claim))},
 		},
@@ -213,17 +216,20 @@ func TestClaimStorageRefusesAFreeBackendUnderOtherPods(t *testing.T) {
 				client.ObjectKey{Namespace: "camunda-system", Name: claim},
 				&lease,
 			)
-			if !tc.refused {
-				require.NoError(t, err)
+			require.NoError(t, err)
+			if !tc.waits {
+				assert.Nil(t, in.Storage.Handover)
 				assert.NoError(t, read, "the cluster took the free backend")
 
 				return
 			}
 
-			var unwatched *conditions.UnwatchedPreCheckFailure
-			require.ErrorAs(t, err, &unwatched)
-			assert.Equal(t, v1.ReasonWaitingForHandover, unwatched.Failure.Reason)
-			assert.Contains(t, unwatched.Failure.Message, "apps/holder-zeebe-0")
+			// The wait is no pre-check failure. It renders the cluster at zero,
+			// the way a handover on a claim it holds does, so its workloads
+			// stop writing the backend they are on.
+			require.NotNil(t, in.Storage.Handover)
+			assert.Equal(t, key, in.Storage.Handover.Backend)
+			assert.Contains(t, in.Storage.Handover.Pods, "apps/holder-zeebe-0")
 			assert.True(t, apierrors.IsNotFound(read), "no Lease is written under the pods of another cluster")
 		})
 	}
@@ -859,6 +865,38 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 
 		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.StorageRef = target.Name })
 		expectWaitingForHandover(cluster, target, pod)
+
+		Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
+		expectHolds(cluster)
+		expectClaimedBy(target, cluster)
+	})
+
+	// The same wait on a backend that no Lease holds. The cluster takes no
+	// claim under those pods, and it must stop all the same: its own workloads
+	// still write the backend it left.
+	It("scales a running cluster to zero under the pods on an unclaimed backend", func() {
+		ns := newNamespace()
+		own := createBinding(ns, true)
+		cluster := newNamedCluster("cc-a-", ns, createPlatformConfig(), own)
+		createCluster(cluster)
+		expectHolds(cluster)
+
+		target := createBinding(ns, true)
+		ghost := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "ghost", UID: "ghost-uid"},
+		}
+		pod := createStoragePod(ghost, target)
+
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.StorageRef = target.Name })
+		expectWaitingForHandover(cluster, target, pod)
+		var lease coordinationv1.Lease
+		name := client.ObjectKey{
+			Namespace: testClaimNamespace,
+			Name:      components.StorageClaimSchema().LeaseName(storageKeyOf(target)),
+		}
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, name, &lease))).To(
+			BeTrue(), "the backend stays unclaimed while those pods write it",
+		)
 
 		Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
 		expectHolds(cluster)

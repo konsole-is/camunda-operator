@@ -43,10 +43,11 @@ type Storage struct {
 	// backend, so the controller renders a cluster with a Holder suspended
 	// and reports the holder on Ready. Nil when this cluster holds the claim.
 	Holder *StorageHolder
-	// Handover is set when this cluster holds the storage claim and pods of
-	// other clusters still carry it. Those pods write the backend, so the
-	// controller renders a cluster with a Handover suspended and reports the
-	// pods on Ready. Nil when no such pod exists.
+	// Handover is set when pods of other clusters still carry the storage claim
+	// of the backend this cluster is on, whether it holds that claim already or
+	// waits to take it. Those pods write the backend, so the controller renders
+	// a cluster with a Handover suspended and reports the pods on Ready. Nil
+	// when no such pod exists.
 	Handover *StorageHandover
 }
 
@@ -60,7 +61,7 @@ type StorageHolder struct {
 }
 
 // StorageHandover is the wait for the pods of other clusters that still write
-// the backend this cluster took over.
+// the backend this cluster is on.
 type StorageHandover struct {
 	// Backend is the claim key of the backend, see StorageClaimKey.
 	Backend string
