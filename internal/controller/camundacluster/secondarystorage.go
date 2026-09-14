@@ -113,14 +113,28 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 		)
 	}
 
-	own, err := res.claimsOnOwnPods(ctx)
-	if err != nil {
-		return err
+	// The list costs a read of one namespace, so it is taken only where its
+	// answer decides the gate: a suspended cluster waits for nothing, and a
+	// cluster that took the claim on this pass meets the pods of whoever held
+	// it before, whatever its own pods carry.
+	var own components.PodClaims
+	if !in.Effective.Suspend && held {
+		if own, err = res.claimsOnOwnPods(ctx); err != nil {
+			return err
+		}
 	}
 	if !handoverPossible(in.Effective.Suspend, held, own.Carries(in.Storage.Claim)) {
 		return nil
 	}
 
+	// Only a takeover leaves a pod of another cluster on this backend: no other
+	// cluster holds it while this one does, and a cluster that holds no backend
+	// renders nothing. A cluster with no pod of its own on it can be waiting
+	// still, whatever it last reported, because the render at zero is what
+	// keeps those pods away and a status write that never landed must not end
+	// the wait. Every healthy pass would read the pods of the whole Kubernetes
+	// cluster without that.
+	//
 	// The list is read once, before the render. It covers the pods that the
 	// previous holder started before it lost the claim. A holder that is
 	// pointed back at the backend meets the claim this cluster holds and
@@ -137,21 +151,10 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 }
 
 // handoverPossible reports whether a pod of another cluster can carry the
-// storage claim that this cluster now holds. Only a takeover leaves such a pod
-// behind: no other cluster holds the backend while this one does, and a cluster
-// that holds no backend renders nothing.
-//
-// A cluster that spec.suspend holds at zero writes nothing, so it has no
-// handover to wait for, and its Ready keeps the reason the user asked for.
-//
-// heldAtStart says whether the cluster already held the claim when the pass
-// began, and ownPodOnClaim whether a pod of this cluster writes that backend.
-// Both are needed. A pass that took the claim can meet the pods of the cluster
-// it took it from. A cluster with no pod of its own on the backend can be
-// waiting still, whatever it last reported: the render at zero is what keeps
-// the pods away, and a status write that never landed must not end the wait.
-// Every healthy pass of every cluster would list the pods of the whole
-// Kubernetes cluster without this.
+// storage claim that this cluster now holds, which is what the wide list below
+// answers. suspended is spec.suspend of the cluster, heldAtStart says whether
+// it already held the claim when the pass began, and ownPodOnClaim whether a
+// pod of it writes that backend.
 func handoverPossible(suspended, heldAtStart, ownPodOnClaim bool) bool {
 	if suspended {
 		return false
@@ -236,8 +239,10 @@ func (r *CamundaClusterReconciler) finalizeStorageClaims(
 }
 
 // claimsOnOwnPods reads the storage claims that the pods of this cluster carry.
-// One list serves the handover gate of the backend it holds and, after the
-// apply, the release of the backends it left.
+// The handover gate reads it to learn whether a takeover of the backend it
+// holds is over. The release of the backends it left takes a list of its own,
+// after the apply, because a pod created in between carries the claim this one
+// would not show.
 func (res *resolver) claimsOnOwnPods(ctx context.Context) (components.PodClaims, error) {
 	return components.ClaimsOnOwnPods(ctx, res.reader, res.cluster.Namespace, res.cluster.UID, nil)
 }
@@ -245,8 +250,7 @@ func (res *resolver) claimsOnOwnPods(ctx context.Context) (components.PodClaims,
 // releaseLeftBackends gives back every storage claim of the cluster except
 // keep, and returns the claims it held back. A cluster that moved to another
 // backend holds two claims until here, and the old one must go so the next
-// cluster can take that backend. An empty keep releases every claim it holds,
-// which is what a cluster that resolves no backend at all asks for.
+// cluster can take that backend.
 //
 // It runs after the render was applied, never before: a pass that released and
 // then failed to apply would leave the old StatefulSet recreating pods into a
