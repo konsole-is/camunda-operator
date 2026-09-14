@@ -156,6 +156,58 @@ func TestFollowSuspensionJoinsPatchErrors(t *testing.T) {
 	assert.Equal(t, string(component.Suspended), staged.Reason)
 }
 
+// TestFollowSuspensionStopsWhatItRead covers a read that failed halfway: the
+// importer is read and the webapp read fails. The importer must stop anyway. It
+// is the workload that writes Elasticsearch, and a restore of that Elasticsearch
+// is why the cluster is suspended.
+func TestFollowSuspensionStopsWhatItRead(t *testing.T) {
+	scheme := suspendScheme(t)
+
+	optimize := &v1.CamundaOptimize{
+		ObjectMeta: metav1.ObjectMeta{Name: "co-a", Namespace: "team-a", UID: "uid-1"},
+		Spec:       v1.CamundaOptimizeSpec{ClusterRef: v1.ClusterRef{Name: "my-cluster"}},
+	}
+	webapp := components.WorkloadName(optimize, components.ComponentWebapp)
+	importer := components.WorkloadName(optimize, components.ComponentImporter)
+	boom := errors.New("etcd leader changed")
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(
+			ownedDeployment(optimize, importer, 1),
+			ownedDeployment(optimize, webapp, 1),
+		).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(
+				ctx context.Context,
+				cl client.WithWatch,
+				key client.ObjectKey,
+				obj client.Object,
+				opts ...client.GetOption,
+			) error {
+				if key.Name == webapp {
+					return boom
+				}
+
+				return cl.Get(ctx, key, obj, opts...)
+			},
+		}).
+		Build()
+	r := suspendReconciler(scheme, fakeClient, events.NewFakeRecorder(10))
+
+	outcome, err := r.followSuspension(context.Background(), optimize, clusterSuspended)
+
+	require.ErrorIs(t, err, boom)
+	assert.Contains(t, err.Error(), webapp, "the error names the read that failed")
+	assert.True(t, outcome.Found)
+	var stopped appsv1.Deployment
+	require.NoError(t, fakeClient.Get(
+		context.Background(),
+		client.ObjectKey{Namespace: optimize.Namespace, Name: importer},
+		&stopped,
+	))
+	assert.Equal(t, int32(0), *stopped.Spec.Replicas, "the workload that was read is stopped")
+}
+
 // TestFollowSuspensionFindsNoWorkloadOfAnotherOwner covers the owner guard: two
 // CamundaOptimizes of one cluster carry the same managed labels, so only the
 // owner reference tells their Deployments apart.

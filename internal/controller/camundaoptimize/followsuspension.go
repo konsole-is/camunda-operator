@@ -148,12 +148,13 @@ func (r *Reconciler) stopWorkloads(
 	message, reason string,
 	stop func(conditionType string) bool,
 ) (workloadsuspend.Result, error) {
-	workloads, err := r.optimizeWorkloads(ctx, optimize, stop)
-	if err != nil {
-		return workloadsuspend.Result{}, err
-	}
+	// A read that failed halfway still returns what it reached, and those
+	// workloads stop. The importer writes Elasticsearch, so leaving it up
+	// because the webapp could not be read is the state this path exists to
+	// prevent.
+	workloads, readErr := r.optimizeWorkloads(ctx, optimize, stop)
 
-	return workloadsuspend.StopWorkloadsIf(
+	result, stopErr := workloadsuspend.StopWorkloadsIf(
 		ctx,
 		r.Client,
 		optimize,
@@ -162,6 +163,8 @@ func (r *Reconciler) stopWorkloads(
 		stop,
 		func(workload string) { r.recordSuspended(optimize, workload, reason) },
 	)
+
+	return result, errors.Join(readErr, stopErr)
 }
 
 // optimizeWorkloads reads the Deployments that stop accepts, with the condition

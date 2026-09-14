@@ -236,6 +236,60 @@ func TestSuspendExplicitly(t *testing.T) {
 	}
 }
 
+// TestSuspendExplicitlyStopsWhatItRead covers a read that failed halfway: the
+// listing reaches the StatefulSets and fails on the Deployments. The brokers
+// must stop anyway. A restore of the backend suspends the cluster to stop every
+// writer, and a transient API failure must not leave one of them writing.
+func TestSuspendExplicitlyStopsWhatItRead(t *testing.T) {
+	scheme := suspendScheme(t)
+	cluster := suspendCluster(true)
+	boom := errors.New("etcd leader changed")
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(
+			&appsv1.StatefulSet{
+				ObjectMeta: workloadMeta(cluster, cluster, "my-cluster-zeebe", "zeebe", true),
+				Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(1))},
+			},
+			&appsv1.Deployment{
+				ObjectMeta: workloadMeta(cluster, cluster, "my-cluster-operate", "operate", true),
+				Spec:       appsv1.DeploymentSpec{Replicas: new(int32(2))},
+			},
+		).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(
+				ctx context.Context,
+				cl client.WithWatch,
+				list client.ObjectList,
+				opts ...client.ListOption,
+			) error {
+				if _, ok := list.(*appsv1.DeploymentList); ok {
+					return boom
+				}
+
+				return cl.List(ctx, list, opts...)
+			},
+		}).
+		Build()
+	r := &CamundaClusterReconciler{
+		Client:        fakeClient,
+		APIReader:     fakeClient,
+		Scheme:        scheme,
+		EventRecorder: events.NewFakeRecorder(10),
+	}
+
+	found, err := r.suspendExplicitly(context.Background(), cluster)
+
+	require.ErrorIs(t, err, boom)
+	assert.Contains(t, err.Error(), "listing the Deployments", "the error names the read that failed")
+	assert.True(t, found, "the StatefulSets were read, and one of them is ours")
+	assert.Equal(
+		t, int32(0), replicasOf(
+			t, fakeClient, client.ObjectKey{Namespace: cluster.Namespace, Name: "my-cluster-zeebe"},
+		), "the workload that was read is stopped",
+	)
+}
+
 // TestSuspendExplicitlyJoinsPatchErrors covers the error path: one workload
 // that a conflict or an admission rule keeps up must not leave the rest of
 // them running.

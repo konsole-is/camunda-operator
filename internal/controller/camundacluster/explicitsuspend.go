@@ -71,12 +71,13 @@ func (r *CamundaClusterReconciler) suspendExplicitly(
 		return false, nil
 	}
 
-	workloads, err := r.clusterWorkloads(ctx, cluster)
-	if err != nil {
-		return false, err
-	}
+	// A read that failed halfway still returns what it reached, and those
+	// workloads stop. The one it could not read keeps running either way, so
+	// leaving the rest up adds nothing but a writer on a backend that the user
+	// asked to go quiet.
+	workloads, readErr := r.clusterWorkloads(ctx, cluster)
 
-	result, err := workloadsuspend.StopWorkloadsIf(
+	result, stopErr := workloadsuspend.StopWorkloadsIf(
 		ctx,
 		r.Client,
 		cluster,
@@ -86,7 +87,7 @@ func (r *CamundaClusterReconciler) suspendExplicitly(
 		func(workload string) { r.recordSuspended(cluster, workload, suspendedNote) },
 	)
 
-	return result.Found, err
+	return result.Found, errors.Join(readErr, stopErr)
 }
 
 // keepAtZero holds the workloads that a suspension stopped while the pre-check
@@ -108,12 +109,9 @@ func (r *CamundaClusterReconciler) keepAtZero(
 		return false, nil
 	}
 
-	workloads, err := r.clusterWorkloads(ctx, cluster)
-	if err != nil {
-		return false, err
-	}
+	workloads, readErr := r.clusterWorkloads(ctx, cluster)
 
-	result, err := workloadsuspend.StopWorkloadsIf(
+	result, stopErr := workloadsuspend.StopWorkloadsIf(
 		ctx,
 		r.Client,
 		cluster,
@@ -123,7 +121,7 @@ func (r *CamundaClusterReconciler) keepAtZero(
 		func(workload string) { r.recordSuspended(cluster, workload, keptAtZeroReason) },
 	)
 
-	return result.Found, err
+	return result.Found, errors.Join(readErr, stopErr)
 }
 
 // clusterWorkloads returns the workloads of the cluster with the condition each
