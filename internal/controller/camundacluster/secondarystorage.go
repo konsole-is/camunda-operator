@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -108,6 +109,10 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 		return err
 	}
 
+	if !handoverPossible(res.cluster, held) {
+		return nil
+	}
+
 	// The list is read once, before the render. It covers the pods that the
 	// previous holder started before it lost the claim. A holder that is
 	// pointed back at the backend meets the claim this cluster holds and
@@ -121,6 +126,25 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 	}
 
 	return nil
+}
+
+// handoverPossible reports whether a pod of another cluster can carry the
+// storage claim that this cluster now holds. Only a takeover leaves such a pod
+// behind: no other cluster holds the backend while this one does, and a cluster
+// that holds no backend renders nothing. So the pods are worth a list when this
+// pass took the claim, and while the last pass was still waiting for them.
+//
+// heldAtStart says whether the cluster already held the claim when the pass
+// began. Every healthy pass of every cluster would list the pods of the whole
+// Kubernetes cluster without this.
+func handoverPossible(cluster *v1.CamundaCluster, heldAtStart bool) bool {
+	if !heldAtStart {
+		return true
+	}
+
+	ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
+
+	return ready != nil && ready.Reason == v1.ReasonWaitingForHandover
 }
 
 // releaseOtherClaims gives back every storage claim of the cluster except

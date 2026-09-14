@@ -43,6 +43,42 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
+// The gate exists for the takeover moment. A cluster that already held the
+// claim when the pass started, and was not waiting last time, cannot have a
+// pod of another cluster on its backend, so it does not pay for the list.
+func TestHandoverPossible(t *testing.T) {
+	cluster := func(reason string) *v1.CamundaCluster {
+		c := &v1.CamundaCluster{}
+		if reason != "" {
+			meta.SetStatusCondition(&c.Status.Conditions, metav1.Condition{
+				Type:   v1.ConditionReady,
+				Status: metav1.ConditionFalse,
+				Reason: reason,
+			})
+		}
+
+		return c
+	}
+
+	cases := map[string]struct {
+		heldAtStart bool
+		reason      string
+		possible    bool
+	}{
+		"this pass took the claim":      {heldAtStart: false, reason: v1.ReasonHealthy, possible: true},
+		"this pass created the Lease":   {heldAtStart: false, reason: "", possible: true},
+		"the last pass was waiting":     {heldAtStart: true, reason: v1.ReasonWaitingForHandover, possible: true},
+		"the cluster runs on its claim": {heldAtStart: true, reason: v1.ReasonHealthy, possible: false},
+		"the cluster reports nothing":   {heldAtStart: true, reason: "", possible: false},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.possible, handoverPossible(cluster(tc.reason), tc.heldAtStart))
+		})
+	}
+}
+
 // A Lease that carries the name of a storage claim and no holder annotations
 // is somebody else's. No cluster holds the backend, so the failure is a report
 // and not a suspension. Nothing watches that Lease for this cluster, so the
