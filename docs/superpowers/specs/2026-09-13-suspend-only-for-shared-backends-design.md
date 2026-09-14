@@ -135,11 +135,16 @@ cluster on it moves backends the way a repoint does.
 
 ### Take
 
-`claimStorage` runs after `resolveStorage`, where it runs today, and calls `TakeUnclaimed`
+`claimStorage` runs last in the pre-check, after every other input resolved, so a cluster
+takes a backend only on a pass that can render on it: a repoint whose bucket reference fails
+keeps the old backend and takes nothing. It calls `TakeUnclaimed`
 with the key and one rule that runs only while no Lease holds it: no pod of another cluster
 may still carry the claim. A free key with such pods is a handover in progress or a Lease
 that was deleted by hand, and the cluster whose pods write the backend recreates the Lease
-first, because its own pods are not "other". A parked cluster keeps waiting. The controller
+first, because its own pods are not "other". A parked cluster keeps waiting, and so does a
+cluster suspended by its spec, without a report: a Lease it created under those pods would
+park the running cluster they belong to, and a cluster at zero must not stop one that runs.
+It takes the backend on the pass that resumes it, or parks then. The controller
 also watches the claim Leases, enqueueing the holder the annotations name, so a deleted
 Lease is noticed at once and not at the next unrelated event. Three outcomes:
 

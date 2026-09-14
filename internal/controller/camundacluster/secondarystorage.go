@@ -74,17 +74,12 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 	// A free backend is not free while pods of another cluster write it. The
 	// rule runs only while no Lease holds the key, so it orders the claimants
 	// of a backend whose Lease is gone: the cluster whose own pods write it
-	// creates it again, and every other cluster waits.
-	//
-	// A suspended cluster is no claimant to order. It renders at zero and
-	// writes nothing beside those pods, so it takes the backend and holds it
-	// for when it resumes, and its Ready keeps the reason the user asked for.
+	// creates it again, and every other cluster waits. A suspended cluster
+	// waits too. It writes nothing beside those pods, but a Lease it created
+	// under them would park the cluster they belong to on its next pass, and
+	// a cluster at zero must not stop one that runs.
 	var waitingFor []string
 	blocker, err := res.claims.TakeUnclaimed(ctx, res.cluster, key, func(ctx context.Context) error {
-		if in.Effective.Suspend {
-			return nil
-		}
-
 		waitingFor, err = res.podsUnderTheBackend(ctx, in.Storage.Claim)
 		if err != nil {
 			return err
@@ -101,9 +96,14 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 	// The wait is the one a cluster that holds the claim reports, and it reads
 	// the same way: the cluster renders at zero and Ready says which pods it
 	// waits for. A cluster that kept running here would write the backend
-	// beside them, which is what the wait exists to prevent.
+	// beside them, which is what the wait exists to prevent. A suspended
+	// cluster is at zero already and Ready keeps the reason the user asked
+	// for; it takes the backend on the pass that resumes it, or parks then if
+	// another cluster took it first.
 	if len(waitingFor) > 0 {
-		in.Storage.Handover = &components.StorageHandover{Backend: key, Pods: waitingFor}
+		if !in.Effective.Suspend {
+			in.Storage.Handover = &components.StorageHandover{Backend: key, Pods: waitingFor}
+		}
 
 		return nil
 	}

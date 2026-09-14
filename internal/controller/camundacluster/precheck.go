@@ -104,9 +104,12 @@ func (r *CamundaClusterReconciler) preCheck(
 		res.resolvePlatform,
 		res.resolveAuth,
 		res.resolveStorage,
-		res.claimStorage,
 		res.warnReferencedJavaToolOptions,
 		res.resolveObjectStorage,
+		// The claim comes last: a cluster takes a backend only on a pass
+		// whose every other input resolved, so a repoint whose later check
+		// fails keeps the old backend and takes nothing it cannot render on.
+		res.claimStorage,
 	}
 	for _, step := range steps {
 		if err := step(ctx, &in); err != nil {

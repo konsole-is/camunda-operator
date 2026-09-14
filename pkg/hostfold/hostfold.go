@@ -14,9 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package hostfold renders one host name for the spellings that reach one
-// host. Every claim key that names an address folds its host here: two
-// spellings that a client resolves to one server must never take a claim each.
+// Package hostfold renders one host name for the spellings of that name.
+// Every claim key that names an address folds its host here: two spellings of
+// one name must never take a claim each. It folds the text only. A DNS alias
+// is another name for the same server, and two claims on two aliases stay two
+// claims.
 package hostfold
 
 import (

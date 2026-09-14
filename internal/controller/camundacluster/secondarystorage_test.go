@@ -182,15 +182,18 @@ func TestClaimStorageWaitsUnderThePodsOnAFreeBackend(t *testing.T) {
 		pods      []client.Object
 		suspended bool
 		waits     bool
+		reports   bool
 	}{
-		"pods of the running holder": {pods: foreign, waits: true},
+		"pods of the running holder": {pods: foreign, waits: true, reports: true},
 		"its own pods": {
 			pods: []client.Object{pod("parked-zeebe-0", components.StoragePodLabels("parked", self.UID, claim))},
 		},
 		"no pods": {},
-		// A suspended cluster renders at zero, so it writes nothing beside
-		// those pods. It takes the backend and holds it for when it resumes.
-		"a suspended cluster under the pods of another": {pods: foreign, suspended: true},
+		// A suspended cluster writes nothing beside those pods, but a Lease it
+		// created under them would park the running cluster they belong to.
+		// It waits without a report: it is at zero already, and Ready keeps
+		// the reason the user asked for.
+		"a suspended cluster under the pods of another": {pods: foreign, suspended: true, waits: true},
 	}
 
 	for name, tc := range cases {
@@ -224,13 +227,19 @@ func TestClaimStorageWaitsUnderThePodsOnAFreeBackend(t *testing.T) {
 				return
 			}
 
+			assert.True(t, apierrors.IsNotFound(read), "no Lease is written under the pods of another cluster")
+			if !tc.reports {
+				assert.Nil(t, in.Storage.Handover, "a suspended cluster keeps the Ready reason the user asked for")
+
+				return
+			}
+
 			// The wait is no pre-check failure. It renders the cluster at zero,
 			// the way a handover on a claim it holds does, so its workloads
 			// stop writing the backend they are on.
 			require.NotNil(t, in.Storage.Handover)
 			assert.Equal(t, key, in.Storage.Handover.Backend)
 			assert.Contains(t, in.Storage.Handover.Pods, "apps/holder-zeebe-0")
-			assert.True(t, apierrors.IsNotFound(read), "no Lease is written under the pods of another cluster")
 		})
 	}
 }
