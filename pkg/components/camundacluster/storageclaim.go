@@ -124,11 +124,11 @@ func StorageClaimPodList() *metav1.PartialObjectMetadataList {
 // contract that is edited to another address gives another key.
 //
 // An Elasticsearch key is the type, then the scheme and the host of the
-// endpoint in lower case, and its port as a number (80 for http, 443 for https
-// when the URL names none). The path of the endpoint is left out: the
-// processes connect to the host and the port, so two paths on one address are
-// one Elasticsearch. An rdbms key is the type, then the host in lower case,
-// the port, and the database name. A chain that names no address, or an
+// endpoint, and its port as a number (80 for http, 443 for https when the URL
+// names none). The path of the endpoint is left out: the processes connect to
+// the host and the port, so two paths on one address are one Elasticsearch. An
+// rdbms key is the type, then the host, the port, and the database name. Every
+// host goes through normalizeHost. A chain that names no address, or an
 // endpoint that is no URL, is an error.
 func StorageClaimKey(storage Storage) (string, error) {
 	switch storage.Type {
@@ -150,7 +150,7 @@ func StorageClaimKey(storage Storage) (string, error) {
 		return fmt.Sprintf(
 			"%s|%s:%d/%s",
 			storage.Type,
-			strings.ToLower(storage.RDBMS.Host),
+			normalizeHost(storage.RDBMS.Host),
 			storage.RDBMS.Port,
 			storage.RDBMS.Database,
 		), nil
@@ -188,7 +188,13 @@ func normalizeEndpoint(endpoint string) (string, error) {
 	// Hostname strips the brackets of an IPv6 literal, and JoinHostPort puts
 	// them back. Without them the address reads as another host and another
 	// port.
-	host := net.JoinHostPort(strings.ToLower(parsed.Hostname()), strconv.Itoa(port))
+	host := net.JoinHostPort(normalizeHost(parsed.Hostname()), strconv.Itoa(port))
 
 	return scheme + "://" + host, nil
+}
+
+// normalizeHost lowercases a host name and drops the trailing dot of the DNS
+// root. Both spellings resolve to the same host, so both must give one key.
+func normalizeHost(host string) string {
+	return strings.TrimSuffix(strings.ToLower(host), ".")
 }

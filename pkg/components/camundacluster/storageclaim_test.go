@@ -82,6 +82,24 @@ func TestStorageClaimKey(t *testing.T) {
 		},
 		// Optimize connects to the host and the port of the endpoint and drops
 		// the path, so two paths on one host and port are one Elasticsearch.
+		// A trailing dot is the DNS root. It names the same host, so it must not
+		// give a second key.
+		"elasticsearch drops the DNS root dot of the host": {
+			storage: Storage{
+				Type: v1.SecondaryStorageTypeElasticsearch,
+				Elasticsearch: &v1.ElasticsearchStorage{
+					Endpoint: "https://ES.data.svc.cluster.local.:9200",
+				},
+			},
+			key: "elasticsearch|https://es.data.svc.cluster.local:9200",
+		},
+		"rdbms drops the DNS root dot of the host": {
+			storage: Storage{
+				Type:  v1.SecondaryStorageTypeRDBMS,
+				RDBMS: &RDBMSStorage{Host: "PG.data.svc.", Port: 5432, Database: "camunda"},
+			},
+			key: "rdbms|pg.data.svc:5432/camunda",
+		},
 		"elasticsearch drops a path prefix": {
 			storage: Storage{
 				Type:          v1.SecondaryStorageTypeElasticsearch,
