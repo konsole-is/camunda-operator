@@ -163,7 +163,19 @@ exists, the claim step records them on the input and the controller renders the 
 suspended, every workload at zero and the volumes kept, with `Ready` False and reason
 `WaitingForHandover` naming the pods. It looks again on its retry interval, as a parked
 cluster does. This is a render, not a pre-check failure: a running cluster that repoints into
-a handover stops, so its old pods leave the previous backend and that handover completes too. This covers a
+a handover stops, so its old pods leave the previous backend and that handover completes too.
+
+The gate runs only at a takeover: when this cluster did not hold the claim at the start of
+the pass, and none of its own pods carries the claim yet. Once its own pods write the
+backend, no pod of another cluster can, because the render at zero was what held them back.
+That signal cannot be lost the way a status write can, so a healthy cluster never lists pods
+cluster-wide. One namespaced metadata list of the cluster's own pods serves this decision and
+the release below.
+
+A holder that moves to another backend keeps the old claim while any of its pods still
+carries it, so a cluster parked on that backend stays `StorageAlreadyAttached` until those
+pods are gone, and reaches `WaitingForHandover` only for a holder that is deleted. The claim,
+not the one-time scan, carries the guarantee in the repoint case. This covers a
 previous holder on the same contract, a previous holder on another contract to the same
 address, a deleted cluster whose pods the garbage collector has not reached, and a later
 cluster of the same name.
