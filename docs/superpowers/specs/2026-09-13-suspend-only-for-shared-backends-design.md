@@ -85,7 +85,12 @@ on a failed apply.
 A cluster held at zero after its suspension ended keeps clearing `status.gateway` and
 `status.management` only while the process that serves them is at zero; a process that a
 rejected patch left running keeps its condition and its endpoints. On that path a condition
-captured mid-drain advances to `Suspended` once the workload observes zero, read live.
+captured mid-drain advances to `Suspended` once the workload observes zero, read live. The
+hold never patches a workload: it reads and stages what is already at zero, and a condition
+that claims a suspension over a workload whose desired replicas are above zero is stale (a
+render raised it and its status write failed) and is removed, so the render restages it.
+A stop that read some workloads stops those even when another read failed, because the
+restore relies on the importer stopping; the read error is returned with the stop errors.
 
 Every other `Ready` reason leaves the workloads as the last successful reconcile rendered them.
 `InvalidReference`, `MissingSecret`, `VersionMismatch`, `StorageTypeMismatch`,
@@ -201,7 +206,12 @@ the release below.
 A holder that moves to another backend keeps the old claim while any of its pods still
 carries it, so a cluster parked on that backend stays `StorageAlreadyAttached` until those
 pods are gone, and reaches `WaitingForHandover` only for a holder that is deleted. The claim,
-not the one-time scan, carries the guarantee in the repoint case. This covers a
+not the one-time scan, carries the guarantee in the repoint case.
+
+The refusal to create a free Lease under pods of another cluster is a render at zero as
+well, not a pre-check failure: the claim step records the pods as a handover and the cluster
+renders suspended with `WaitingForHandover`, so a running cluster that repoints into such a
+backend stops rather than serving while `Suspended()` reads true. This covers a
 previous holder on the same contract, a previous holder on another contract to the same
 address, a deleted cluster whose pods the garbage collector has not reached, and a later
 cluster of the same name.
