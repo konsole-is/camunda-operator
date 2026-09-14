@@ -200,15 +200,21 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// the cluster, so a failure before that leaves the workloads alone.
 		var suspendErr error
 		var outcome suspensionOutcome
-		if res.Input.Suspended {
+		switch {
+		case !res.SuspensionRead:
+			// Nothing read the suspension, so the conditions of the workloads
+			// stay as the last pass left them.
+		case res.Input.Suspended:
 			outcome, suspendErr = r.followSuspension(ctx, &optimize)
 			if outcome.Found && suspendErr == nil {
 				failure.Message += fmt.Sprintf(suspendNote, optimize.Spec.ClusterRef.Name)
 			}
-		} else if stageKeptAtZero(&optimize) {
+		default:
 			// The cluster resumed while the check still fails. Nothing renders
 			// here, so the workloads stay at zero, see stageKeptAtZero.
-			failure.Message += keptAtZeroNote
+			if stageKeptAtZero(&optimize) {
+				failure.Message += keptAtZeroNote
+			}
 		}
 		conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
 		// This path records the start of a suspension and never its end. It

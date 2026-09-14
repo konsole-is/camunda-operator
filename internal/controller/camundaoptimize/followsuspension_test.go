@@ -40,6 +40,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // TestFollowSuspensionJoinsPatchErrors covers the error path: the importer is
@@ -482,4 +483,96 @@ func TestStageKeptAtZero(t *testing.T) {
 			assert.Equal(t, keptAtZeroMessage, importer.Message)
 		})
 	}
+}
+
+// TestReconcileFollowsTheSuspensionWhenTheAttachmentCheckFails covers the order
+// of the pre-check: the suspension of the cluster is read before the attachment
+// checks, so a failure there still stops the workloads.
+//
+// A logical restore of Elasticsearch suspends the cluster to stop every writer.
+// An importer left running through a handover would write analytics from
+// half-restored indices.
+func TestReconcileFollowsTheSuspensionWhenTheAttachmentCheckFails(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	optimize := &v1.CamundaOptimize{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "co-a",
+			Namespace:  "team-a",
+			UID:        "uid-1",
+			Finalizers: []string{Finalizer},
+		},
+		Spec: v1.CamundaOptimizeSpec{
+			Version:           "8.9.4",
+			ManagementAuthRef: "mac",
+			ClusterRef:        v1.ClusterRef{Name: "my-cluster"},
+		},
+	}
+	cluster := &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: optimize.Namespace, UID: "uid-c"},
+		Spec:       v1.CamundaClusterSpec{Version: "8.9.4", Suspend: true, StorageRef: "contract"},
+	}
+	owned := func(name string) *appsv1.Deployment {
+		return &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: optimize.Namespace,
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: v1.GroupVersion.String(),
+					Kind:       "CamundaOptimize",
+					Name:       optimize.Name,
+					UID:        optimize.UID,
+					Controller: new(true),
+				}},
+			},
+			Spec: appsv1.DeploymentSpec{Replicas: new(int32(1))},
+		}
+	}
+	// The importer Deployment of a previous instance, which no owner reference
+	// of this one covers, so the pre-check fails with WaitingForHandover.
+	leftover := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "co-previous-importer",
+			Namespace: optimize.Namespace,
+			Labels: labels.Managed(
+				labels.Cluster(optimize.Spec.ClusterRef.Name), components.ComponentImporter,
+			),
+		},
+		Spec: appsv1.DeploymentSpec{Replicas: new(int32(1))},
+	}
+	importerName := components.WorkloadName(optimize, components.ComponentImporter)
+	webappName := components.WorkloadName(optimize, components.ComponentWebapp)
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(optimize, cluster, leftover, owned(webappName), owned(importerName)).
+		WithStatusSubresource(&v1.CamundaOptimize{}).
+		Build()
+	r := &Reconciler{
+		Client:          fakeClient,
+		APIReader:       fakeClient,
+		Scheme:          scheme,
+		EventRecorder:   events.NewFakeRecorder(16),
+		componentClient: fakeClient,
+	}
+
+	key := apitypes.NamespacedName{Namespace: optimize.Namespace, Name: optimize.Name}
+	_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: key})
+	require.NoError(t, err)
+
+	for _, name := range []string{webappName, importerName} {
+		var deployment appsv1.Deployment
+		require.NoError(t, fakeClient.Get(
+			t.Context(), client.ObjectKey{Namespace: optimize.Namespace, Name: name}, &deployment,
+		))
+		assert.Equal(t, int32(0), *deployment.Spec.Replicas, name)
+	}
+
+	var latest v1.CamundaOptimize
+	require.NoError(t, fakeClient.Get(t.Context(), key, &latest))
+	ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
+	require.NotNil(t, ready)
+	assert.Equal(t, v1.ReasonWaitingForHandover, ready.Reason)
 }
