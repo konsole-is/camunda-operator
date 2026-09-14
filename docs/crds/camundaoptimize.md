@@ -159,7 +159,7 @@ The effective version of the cluster is `spec.version` of the `CamundaCluster`, 
 
 ## Suspension
 
-The importer reads Elasticsearch directly. It does not go through the orchestration cluster, so it keeps reading whether or not that cluster runs.
+The importer connects to Elasticsearch directly. It does not go through the orchestration cluster, so nothing stops it when that cluster stops. The operator stops it instead, with the cluster.
 
 `spec.suspend` on the referenced `CamundaCluster` therefore reaches the Optimize workloads too. The operator scales the webapp and the importer to zero with the workloads of the cluster, and starts them again when you clear the field. `suspend` means "stop everything attached to this cluster", not "stop the workloads of this cluster". The operator also suspends a cluster on its own, in two states. One is another cluster holding the storage claim of its backend. The other is a wait for the pods of another cluster to leave that backend. The Optimize workloads follow both.
 
