@@ -246,6 +246,35 @@ func TestOtherPodsOnClaim(t *testing.T) {
 	}
 }
 
+// Two decisions read the claims of the pods of one cluster: whether a backend
+// it left is free, and whether a takeover of the backend it holds is over.
+func TestClaimsOnOwnPods(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+
+	const (
+		mine   = "camunda-storage-1111111111111111111111111111111111111111"
+		theirs = "camunda-storage-2222222222222222222222222222222222222222"
+	)
+	pod := func(namespace, name string, podLabels map[string]string) *corev1.Pod {
+		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Name: name, Namespace: namespace, Labels: podLabels,
+		}}
+	}
+	reader := storageClaimPodClient(
+		t, scheme,
+		pod("team-a", "orders-zeebe-0", StoragePodLabels("orders", "uid-1", mine)),
+		pod("team-a", "other-zeebe-0", StoragePodLabels("other", "uid-other", theirs)),
+		pod("team-b", "orders-zeebe-0", StoragePodLabels("orders", "uid-1", theirs)),
+	)
+
+	carried, err := ClaimsOnOwnPods(context.Background(), reader, "team-a", "uid-1")
+
+	require.NoError(t, err)
+	assert.True(t, carried.Carries(mine))
+	assert.False(t, carried.Carries(theirs), "the claim of another cluster, and of another namespace")
+}
+
 // storageClaimPodClient builds a fake client for the handover gate. The fake
 // client refuses a "!=" field selector, which the API server serves, so the
 // interceptor asserts that the phase selector reached it and then drops it. An

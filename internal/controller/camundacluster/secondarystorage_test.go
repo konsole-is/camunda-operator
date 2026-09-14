@@ -36,7 +36,6 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
@@ -63,54 +62,40 @@ func TestReleaseOtherClaimsKeepsABackendItsPodsStillWrite(t *testing.T) {
 	newClaim := components.StorageClaimSchema().LeaseName(newKey)
 
 	cases := map[string]struct {
-		pods     []client.Object
+		own      components.PodClaims
 		heldBack []string
 		released bool
 	}{
 		"a pod of this cluster still carries the old claim": {
-			pods: []client.Object{&corev1.Pod{ObjectMeta: metav1.ObjectMeta{
-				Namespace: "team-a",
-				Name:      "orders-zeebe-0",
-				Labels:    components.StoragePodLabels("orders", self.UID, oldClaim),
-			}}},
+			own:      components.PodClaims{oldClaim: true},
 			heldBack: []string{oldClaim},
 		},
 		"the pods of this cluster carry the new claim": {
-			pods: []client.Object{&corev1.Pod{ObjectMeta: metav1.ObjectMeta{
-				Namespace: "team-a",
-				Name:      "orders-zeebe-0",
-				Labels:    components.StoragePodLabels("orders", self.UID, newClaim),
-			}}},
+			own:      components.PodClaims{newClaim: true},
 			released: true,
 		},
-		"a pod of another cluster carries the old claim": {
-			pods: []client.Object{&corev1.Pod{ObjectMeta: metav1.ObjectMeta{
-				Namespace: "team-a",
-				Name:      "other-zeebe-0",
-				Labels:    components.StoragePodLabels("other", "uid-other", oldClaim),
-			}}},
+		"no pod of this cluster carries either": {
+			own:      components.PodClaims{},
 			released: true,
 		},
-		"no pods": {released: true},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			objects := append(
-				[]client.Object{
+			c := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(
 					components.StorageClaimSchema().NewLease("camunda-system", oldKey, self),
 					components.StorageClaimSchema().NewLease("camunda-system", newKey, self),
-				},
-				tc.pods...,
-			)
-			c := storageClaimPodClient(t, scheme, objects...)
+				).
+				Build()
 			res := &resolver{
 				reader:  c,
 				claims:  components.StorageClaimSchema().NewClaim(c, c, "camunda-system"),
 				cluster: self,
 			}
 
-			heldBack, err := res.releaseOtherClaims(context.Background(), newClaim)
+			heldBack, err := res.releaseOtherClaims(context.Background(), newClaim, tc.own)
 
 			require.NoError(t, err)
 			assert.Equal(t, tc.heldBack, heldBack)
@@ -125,38 +110,25 @@ func TestReleaseOtherClaimsKeepsABackendItsPodsStillWrite(t *testing.T) {
 	}
 }
 
-// The gate exists for the takeover moment. A cluster that already held the
-// claim when the pass started, and was not waiting last time, cannot have a
-// pod of another cluster on its backend, so it does not pay for the list.
+// The gate exists for the takeover moment. A cluster whose own pods already
+// write the backend it holds is past that moment, so it does not pay for the
+// list. A status write that never landed must not end a wait, so the pods of
+// this cluster decide it and not the reason it last reported.
 func TestHandoverPossible(t *testing.T) {
-	cluster := func(reason string) *v1.CamundaCluster {
-		c := &v1.CamundaCluster{}
-		if reason != "" {
-			meta.SetStatusCondition(&c.Status.Conditions, metav1.Condition{
-				Type:   v1.ConditionReady,
-				Status: metav1.ConditionFalse,
-				Reason: reason,
-			})
-		}
-
-		return c
-	}
-
 	cases := map[string]struct {
-		heldAtStart bool
-		reason      string
-		possible    bool
+		heldAtStart   bool
+		ownPodOnClaim bool
+		possible      bool
 	}{
-		"this pass took the claim":      {heldAtStart: false, reason: v1.ReasonHealthy, possible: true},
-		"this pass created the Lease":   {heldAtStart: false, reason: "", possible: true},
-		"the last pass was waiting":     {heldAtStart: true, reason: v1.ReasonWaitingForHandover, possible: true},
-		"the cluster runs on its claim": {heldAtStart: true, reason: v1.ReasonHealthy, possible: false},
-		"the cluster reports nothing":   {heldAtStart: true, reason: "", possible: false},
+		"this pass took the claim":                  {heldAtStart: false, possible: true},
+		"this pass took a claim its pods carry":     {heldAtStart: false, ownPodOnClaim: true, possible: true},
+		"no pod of this cluster writes the backend": {heldAtStart: true, possible: true},
+		"the pods of this cluster write it":         {heldAtStart: true, ownPodOnClaim: true, possible: false},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, tc.possible, handoverPossible(cluster(tc.reason), tc.heldAtStart))
+			assert.Equal(t, tc.possible, handoverPossible(tc.heldAtStart, tc.ownPodOnClaim))
 		})
 	}
 }
@@ -277,45 +249,6 @@ func TestStorageHandover(t *testing.T) {
 			assert.True(t, gated.Suspended())
 		}
 	})
-}
-
-// storageClaimPodClient builds a fake client for the handover gate. The fake
-// client refuses a "!=" field selector, which the API server serves, so the
-// interceptor asserts that the phase selector reached it and then drops it. An
-// envtest spec covers the filtering itself.
-func storageClaimPodClient(t *testing.T, scheme *runtime.Scheme, objects ...client.Object) client.Client {
-	t.Helper()
-
-	return fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithObjects(objects...).
-		WithInterceptorFuncs(interceptor.Funcs{
-			List: func(
-				ctx context.Context,
-				c client.WithWatch,
-				list client.ObjectList,
-				opts ...client.ListOption,
-			) error {
-				if _, ours := list.(*metav1.PartialObjectMetadataList); !ours {
-					return c.List(ctx, list, opts...)
-				}
-
-				kept := make([]client.ListOption, 0, len(opts))
-				var phases string
-				for _, opt := range opts {
-					if selector, ok := opt.(client.MatchingFieldsSelector); ok {
-						phases = selector.String()
-
-						continue
-					}
-					kept = append(kept, opt)
-				}
-				assert.Equal(t, "status.phase!=Failed,status.phase!=Succeeded", phases)
-
-				return c.List(ctx, list, kept...)
-			},
-		}).
-		Build()
 }
 
 // newNamedCluster is newCluster with a name prefix, so a spec that creates

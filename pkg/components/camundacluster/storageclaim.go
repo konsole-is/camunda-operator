@@ -128,24 +128,29 @@ func OtherPodsOnClaim(
 	return names, nil
 }
 
-// ClaimsWrittenByPods returns the claims of names that a pod of the cluster
-// still carries, sorted. A cluster gives a backend back only when none of its
-// own pods writes it any more: a release under running pods lets the next
-// claimant start beside them, because that claimant reads the pods once.
+// PodClaims are the storage claims that the pods of one cluster carry.
+type PodClaims map[string]bool
+
+// Carries reports whether a pod of the cluster carries the storage claim named
+// name.
+func (p PodClaims) Carries(name string) bool {
+	return p[labels.OwnerName(name)]
+}
+
+// ClaimsOnOwnPods returns the storage claims that the pods of the cluster in
+// namespace carry. Two decisions read it, and both are about what this cluster
+// itself still writes: a backend it left goes back only when no pod of it
+// writes that backend any more, and a takeover is over once its own pods write
+// the backend it took.
 //
 // The pods of the cluster live in its namespace, so the list stays there. It
 // leaves out the pods that ended, like OtherPodsOnClaim.
-func ClaimsWrittenByPods(
+func ClaimsOnOwnPods(
 	ctx context.Context,
 	reader client.Reader,
 	namespace string,
 	self types.UID,
-	names []string,
-) ([]string, error) {
-	if len(names) == 0 {
-		return nil, nil
-	}
-
+) (PodClaims, error) {
 	pods := podMetadataList()
 	err := reader.List(
 		ctx,
@@ -158,18 +163,12 @@ func ClaimsWrittenByPods(
 		return nil, fmt.Errorf("listing the pods of the cluster in namespace %q: %w", namespace, err)
 	}
 
-	written := make(map[string]bool, len(pods.Items))
+	carried := make(PodClaims, len(pods.Items))
 	for i := range pods.Items {
-		written[pods.Items[i].Labels[labels.StorageClaimKey]] = true
-	}
-
-	var carried []string
-	for _, name := range names {
-		if written[labels.OwnerName(name)] {
-			carried = append(carried, name)
+		if claim := pods.Items[i].Labels[labels.StorageClaimKey]; claim != "" {
+			carried[claim] = true
 		}
 	}
-	slices.Sort(carried)
 
 	return carried, nil
 }

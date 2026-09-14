@@ -19,10 +19,10 @@ package camundacluster
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -81,7 +81,11 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 		// while it holds a backend it no longer writes. Its pods still carry
 		// the previous claim, so the next cluster on that backend waits for
 		// them.
-		heldBack, err := res.releaseOtherClaims(ctx, in.Storage.Claim)
+		own, err := res.claimsOnOwnPods(ctx)
+		if err != nil {
+			return err
+		}
+		heldBack, err := res.releaseOtherClaims(ctx, in.Storage.Claim, own)
 		if err != nil {
 			return err
 		}
@@ -107,13 +111,17 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 		)
 	}
 
-	heldBack, err := res.releaseOtherClaims(ctx, in.Storage.Claim)
+	own, err := res.claimsOnOwnPods(ctx)
+	if err != nil {
+		return err
+	}
+	heldBack, err := res.releaseOtherClaims(ctx, in.Storage.Claim, own)
 	if err != nil {
 		return err
 	}
 	in.Storage.ReleaseHeldBack = heldBack
 
-	if !handoverPossible(res.cluster, held) {
+	if !handoverPossible(held, own.Carries(in.Storage.Claim)) {
 		return nil
 	}
 
@@ -135,20 +143,18 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 // handoverPossible reports whether a pod of another cluster can carry the
 // storage claim that this cluster now holds. Only a takeover leaves such a pod
 // behind: no other cluster holds the backend while this one does, and a cluster
-// that holds no backend renders nothing. So the pods are worth a list when this
-// pass took the claim, and while the last pass was still waiting for them.
+// that holds no backend renders nothing.
 //
 // heldAtStart says whether the cluster already held the claim when the pass
-// began. Every healthy pass of every cluster would list the pods of the whole
+// began, and ownPodOnClaim whether a pod of this cluster writes that backend.
+// Both are needed. A pass that took the claim can meet the pods of the cluster
+// it took it from. A cluster with no pod of its own on the backend can be
+// waiting still, whatever it last reported: the render at zero is what keeps
+// the pods away, and a status write that never landed must not end the wait.
+// Every healthy pass of every cluster would list the pods of the whole
 // Kubernetes cluster without this.
-func handoverPossible(cluster *v1.CamundaCluster, heldAtStart bool) bool {
-	if !heldAtStart {
-		return true
-	}
-
-	ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
-
-	return ready != nil && ready.Reason == v1.ReasonWaitingForHandover
+func handoverPossible(heldAtStart, ownPodOnClaim bool) bool {
+	return !heldAtStart || !ownPodOnClaim
 }
 
 // releaseOtherClaims gives back every storage claim of the cluster except keep,
@@ -161,44 +167,40 @@ func handoverPossible(cluster *v1.CamundaCluster, heldAtStart bool) bool {
 // renders, so a release under running pods can let it start beside them.
 // Nothing watches those pods for this cluster, so the caller looks again on its
 // timer while a claim is held back.
-func (res *resolver) releaseOtherClaims(ctx context.Context, keep string) ([]string, error) {
+func (res *resolver) releaseOtherClaims(
+	ctx context.Context,
+	keep string,
+	own components.PodClaims,
+) ([]string, error) {
 	leases, err := res.claims.Held(ctx, res.cluster)
 	if err != nil {
 		return nil, err
 	}
 
-	others := make([]string, 0, len(leases))
+	var heldBack []string
 	for i := range leases {
-		if leases[i].Name != keep {
-			others = append(others, leases[i].Name)
+		if leases[i].Name == keep {
+			continue
 		}
-	}
-	if len(others) == 0 {
-		return nil, nil
-	}
+		if own.Carries(leases[i].Name) {
+			heldBack = append(heldBack, leases[i].Name)
 
-	written, err := components.ClaimsWrittenByPods(
-		ctx, res.reader, res.cluster.Namespace, res.cluster.UID, others,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	heldBack := make(map[string]bool, len(written))
-	for _, name := range written {
-		heldBack[name] = true
-	}
-
-	for i := range leases {
-		if leases[i].Name == keep || heldBack[leases[i].Name] {
 			continue
 		}
 		if err := res.claims.Release(ctx, &leases[i]); err != nil {
 			return nil, err
 		}
 	}
+	slices.Sort(heldBack)
 
-	return written, nil
+	return heldBack, nil
+}
+
+// claimsOnOwnPods reads the storage claims that the pods of this cluster carry.
+// One list serves the release of the backends it left and the handover gate of
+// the backend it holds.
+func (res *resolver) claimsOnOwnPods(ctx context.Context) (components.PodClaims, error) {
+	return components.ClaimsOnOwnPods(ctx, res.reader, res.cluster.Namespace, res.cluster.UID)
 }
 
 // claimSuspends reports whether the storage claim keeps this cluster at zero:
