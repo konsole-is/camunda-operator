@@ -69,6 +69,15 @@ func ConditionTypeFor(comp string) (string, bool) {
 	return conditionType, ok
 }
 
+// ConditionTypes returns the condition that each Optimize workload reports, the
+// importer first. A caller that stops the workloads one by one must reach the
+// importer before the webapp: the importer writes Elasticsearch, so a webapp
+// that a conflict or an admission rule keeps up must not keep the importer up
+// with it.
+func ConditionTypes() []string {
+	return []string{conditionTypes[ComponentImporter], conditionTypes[ComponentWebapp]}
+}
+
 // Build returns one component per Optimize workload, in reconcile order: the
 // webapp, then the importer. Each carries a Deployment, its Service, and,
 // where the Kubernetes cluster serves the kind and the spec asks for it, a

@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 )
 
@@ -123,7 +124,7 @@ func waitFor(res resolved) wait {
 // and had the importer patch rejected leaves one condition of the two, and the
 // instance rendered a workload either way.
 func hasWorkloads(optimize *v1.CamundaOptimize) bool {
-	for _, conditionType := range workloadConditions() {
+	for _, conditionType := range components.ConditionTypes() {
 		if meta.FindStatusCondition(optimize.Status.Conditions, conditionType) != nil {
 			return true
 		}

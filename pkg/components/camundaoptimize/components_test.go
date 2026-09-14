@@ -448,3 +448,16 @@ func TestConditionTypeFor(t *testing.T) {
 	_, ok := ConditionTypeFor("no-such-component")
 	assert.False(t, ok)
 }
+
+// TestConditionTypes pins the order a caller stops the workloads in. The
+// importer writes Elasticsearch, so it comes first.
+func TestConditionTypes(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(
+		t,
+		[]string{v1.ConditionImporterReady, v1.ConditionWebappReady},
+		ConditionTypes(),
+		"the importer is stopped before the webapp",
+	)
+}

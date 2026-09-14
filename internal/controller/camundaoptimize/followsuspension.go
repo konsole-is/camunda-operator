@@ -70,7 +70,7 @@ func (r *Reconciler) keepAtZero(
 	return workloadsuspend.KeepAtZero(
 		ctx,
 		optimize,
-		workloadConditions(),
+		components.ConditionTypes(),
 		func(ctx context.Context, held func(string) bool) ([]workloadsuspend.Workload, error) {
 			return r.optimizeWorkloads(ctx, optimize, held)
 		},
@@ -188,7 +188,7 @@ func (r *Reconciler) recordStop(
 // followsSuspendedCluster reports whether the workload conditions already carry
 // a suspension of the referenced cluster.
 func followsSuspendedCluster(optimize *v1.CamundaOptimize) bool {
-	for _, conditionType := range workloadConditions() {
+	for _, conditionType := range components.ConditionTypes() {
 		condition := meta.FindStatusCondition(optimize.Status.Conditions, conditionType)
 		if condition != nil && workloadsuspend.IsSuspensionReason(condition.Reason) {
 			return true
@@ -196,16 +196,4 @@ func followsSuspendedCluster(optimize *v1.CamundaOptimize) bool {
 	}
 
 	return false
-}
-
-// workloadConditions returns the condition that each Optimize workload reports.
-func workloadConditions() []string {
-	types := make([]string, 0, len(suspendOrder))
-	for _, comp := range suspendOrder {
-		if conditionType, ok := components.ConditionTypeFor(comp); ok {
-			types = append(types, conditionType)
-		}
-	}
-
-	return types
 }
