@@ -157,11 +157,11 @@ func TestClaimStorageRefusesAFreeBackendUnderOtherPods(t *testing.T) {
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
 	require.NoError(t, v1.AddToScheme(scheme))
 
-	in := &components.Input{Storage: components.Storage{
+	storage := components.Storage{
 		Type:          v1.SecondaryStorageTypeElasticsearch,
 		Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es.data.svc:9200"},
-	}}
-	key, err := components.StorageClaimKey(in.Storage)
+	}
+	key, err := components.StorageClaimKey(storage)
 	require.NoError(t, err)
 	claim := components.StorageClaimSchema().LeaseName(key)
 	self := &v1.CamundaCluster{
@@ -171,22 +171,29 @@ func TestClaimStorageRefusesAFreeBackendUnderOtherPods(t *testing.T) {
 		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "apps", Labels: podLabels}}
 	}
 
+	foreign := []client.Object{
+		pod("holder-zeebe-0", components.StoragePodLabels("holder", "uid-holder", claim)),
+	}
+
 	cases := map[string]struct {
-		pods    []client.Object
-		refused bool
+		pods      []client.Object
+		suspended bool
+		refused   bool
 	}{
-		"pods of the running holder": {
-			pods:    []client.Object{pod("holder-zeebe-0", components.StoragePodLabels("holder", "uid-holder", claim))},
-			refused: true,
-		},
+		"pods of the running holder": {pods: foreign, refused: true},
 		"its own pods": {
 			pods: []client.Object{pod("parked-zeebe-0", components.StoragePodLabels("parked", self.UID, claim))},
 		},
 		"no pods": {},
+		// A suspended cluster renders at zero, so it writes nothing beside
+		// those pods. It takes the backend and holds it for when it resumes.
+		"a suspended cluster under the pods of another": {pods: foreign, suspended: true},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
+			in := &components.Input{Storage: storage}
+			in.Effective = components.NewEffective(v1.CamundaClusterSpec{Suspend: tc.suspended})
 			c := storageClaimPodClient(t, scheme, tc.pods...)
 			res := &resolver{
 				reader:  c,

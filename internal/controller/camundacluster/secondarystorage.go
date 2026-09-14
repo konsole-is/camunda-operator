@@ -73,7 +73,15 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 	// rule runs only while no Lease holds the key, so it orders the claimants
 	// of a backend whose Lease is gone: the cluster whose own pods write it
 	// creates it again, and every other cluster waits.
+	//
+	// A suspended cluster is no claimant to order. It renders at zero and
+	// writes nothing beside those pods, so it takes the backend and holds it
+	// for when it resumes, and its Ready keeps the reason the user asked for.
 	blocker, err := res.claims.TakeUnclaimed(ctx, res.cluster, key, func(ctx context.Context) error {
+		if in.Effective.Suspend {
+			return nil
+		}
+
 		return res.refuseUnderOtherPods(ctx, in.Storage.Claim, key)
 	})
 	if err != nil {
