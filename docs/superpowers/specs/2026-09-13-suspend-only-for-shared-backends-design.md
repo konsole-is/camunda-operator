@@ -44,8 +44,11 @@ planned. Those kinds are the backend, not a writer to one.
 - No detection of two addresses that reach one server. The key compares what the contract
   says. A DNS alias for the same Elasticsearch is not caught, as the docs already state for
   two hand-written contracts.
-- No finalizer on the `CamundaCluster` for the Lease. A holder that is gone is taken over,
-  the way a stale annotation is today.
+- Reversed during review: the `CamundaCluster` carries a finalizer that releases its storage
+  Leases on deletion, as the Database controller does for its claims. Without it every
+  deleted cluster left one Lease behind for good, an unbounded leak in any CI that creates
+  and deletes clusters. A holder that is gone without the finalizer having run is still taken
+  over.
 - No framework primitive for a detached scale-to-zero (sourcehawk/operator-component-framework#207).
   Nothing in this operator needs one after this change.
 - No change to what `spec.suspend` does.
@@ -108,15 +111,23 @@ cluster on it moves backends the way a repoint does.
 
 ### Take
 
-`claimStorage` runs after `resolveStorage`, where it runs today, and calls `Take` with the
-key. Three outcomes:
+`claimStorage` runs after `resolveStorage`, where it runs today, and calls `TakeUnclaimed`
+with the key and one rule that runs only while no Lease holds it: no pod of another cluster
+may still carry the claim. A free key with such pods is a handover in progress or a Lease
+that was deleted by hand, and the cluster whose pods write the backend recreates the Lease
+first, because its own pods are not "other". A parked cluster keeps waiting. The controller
+also watches the claim Leases, enqueueing the holder the annotations name, so a deleted
+Lease is noticed at once and not at the next unrelated event. Three outcomes:
 
-- `Take` returns no blocker: this cluster holds the Lease. It releases every other storage
-  Lease it holds (`Held`, then `Release` for each Lease whose name differs), so a repoint
-  frees the old backend once the new one is taken. A Lease is released only when no pod of
-  this cluster still carries its claim label, the same signal the handover gate reads, so a
-  backend is never free while a pod of its last holder can still write it; while one is held
-  back, the cluster looks again on its retry interval. It then runs the handover gate.
+- `Take` returns no blocker: this cluster holds the Lease. It then runs the handover gate.
+  The release of every other storage Lease it holds (`Held`, then `Release` for each Lease
+  whose name differs) happens in the controller after the render was applied, not in the
+  pre-check, so a pass that fails between the claim and the apply never frees a backend the
+  old pod template still writes. A Lease is released only when no pod of this cluster still
+  carries its claim label, the same signal the handover gate reads; while one is held back,
+  the cluster looks again on its retry interval. The same pod-gated release runs on the
+  foreign-Lease and bad-key exits, where the cluster keeps running on its previous backend
+  and gives it back once its pods are gone.
 - The blocker names a holder: `in.Storage.Holder` carries the holder and the key, and the
   controller renders the cluster suspended with `StorageAlreadyAttached`, as it does today.
   The message names the holder and the backend.
@@ -275,11 +286,10 @@ three readers change behavior without a code change:
 
 ## Risks
 
-- **A Lease outlives a deleted cluster until a claimant takes it over.** A cluster with no
-  successor leaves one Lease in the operator namespace. It blocks nothing: `OwnerExists`
-  answers false for it, and the next claimant of that backend takes it. The Database claim
-  releases through a finalizer. This spec leaves the litter for the same reason it leaves
-  the annotation litter today, and a finalizer is a small follow-up if it bothers anyone.
+- **A Lease outlives a cluster deleted while the operator was down.** The finalizer releases
+  the Leases of a cluster on an ordinary deletion. A cluster removed while nothing ran the
+  finalizer leaves one Lease that blocks nothing: `OwnerExists` answers false for it, and the
+  next claimant of that backend takes it.
 - **Two clusters on one backend before this change both run.** After the upgrade, both
   reconcile, one takes the Lease, and the other parks. Which one is reconcile order. The
   pre-change annotation claim had the same property for one contract. This is a clean-slate
