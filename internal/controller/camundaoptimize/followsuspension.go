@@ -148,10 +148,8 @@ func (r *Reconciler) recordSuspended(optimize *v1.CamundaOptimize, workload stri
 	)
 }
 
-// followsSuspendedCluster reports whether the last pass already had the Optimize
-// workloads following a suspension of the referenced cluster. The conditions of
-// the workloads carry that state, because followSuspension is what writes it and
-// Ready carries the failure on this path.
+// followsSuspendedCluster reports whether the workload conditions already carry
+// a suspension of the referenced cluster.
 func followsSuspendedCluster(optimize *v1.CamundaOptimize) bool {
 	for _, conditionType := range workloadConditions() {
 		condition := meta.FindStatusCondition(optimize.Status.Conditions, conditionType)

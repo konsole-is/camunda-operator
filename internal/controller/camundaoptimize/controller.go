@@ -218,17 +218,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			}
 		}
 		conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
-		// This path records the start of a suspension and never its end. It
-		// renders nothing, so the workloads stay at zero and their conditions
-		// keep the suspension after the cluster resumed: a resume recorded here
-		// would repeat on every retry until the check passes. The render of the
-		// success path is what starts the workloads again, and it records that.
-		//
-		// The record follows a workload that stopped, not one that exists. A
-		// patch that failed does not stop the record when another workload
-		// stopped: the transition started, and the next retry reads it off that
-		// workload's condition. A pass that stopped none staged nothing, so
-		// recording it would repeat on every retry.
+		// The start of a suspension only: this path renders nothing, so the end
+		// belongs to the success path that starts the workloads again.
 		if outcome.Stopped && !suspendedBefore {
 			r.recordSuspensionChange(&optimize, suspendedBefore, res.Input.Suspended)
 		}
