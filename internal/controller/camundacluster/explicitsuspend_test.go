@@ -402,6 +402,45 @@ func TestKeepAtZeroFinishesTheDrain(t *testing.T) {
 	assert.Equal(t, "Kept at zero until the reference check passes", condition.Message)
 }
 
+// TestKeepAtZeroPutsBackARaisedWorkload covers the case that patches on the hold
+// path: something raised a workload this controller is holding at zero. The
+// event says why it went back rather than naming spec.suspend, which the user
+// has cleared.
+func TestKeepAtZeroPutsBackARaisedWorkload(t *testing.T) {
+	scheme := suspendScheme(t)
+	cluster := suspendCluster(false)
+	raised := &appsv1.StatefulSet{
+		ObjectMeta: workloadMeta(cluster, cluster, "my-cluster-zeebe", "zeebe", true),
+		Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(3))},
+	}
+	meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+		Type:   v1.ConditionZeebeReady,
+		Status: metav1.ConditionTrue,
+		Reason: string(component.Suspended),
+	})
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(raised).Build()
+	recorder := events.NewFakeRecorder(10)
+	r := &CamundaClusterReconciler{
+		Client:        fakeClient,
+		APIReader:     fakeClient,
+		Scheme:        scheme,
+		EventRecorder: recorder,
+	}
+
+	kept, err := r.keepAtZero(context.Background(), cluster)
+
+	require.NoError(t, err)
+	assert.True(t, kept)
+	assert.Equal(t, int32(0), replicasOf(
+		t, fakeClient, client.ObjectKey{Namespace: cluster.Namespace, Name: "my-cluster-zeebe"},
+	))
+
+	recorded := <-recorder.Events
+	assert.Contains(t, recorded, "stay at zero until the reference check passes")
+	assert.NotContains(t, recorded, "spec.suspend", "the user cleared the field, so the event must not name it")
+}
+
 // TestKeepAtZeroLeavesAWorkloadItNeverStopped covers the guard: a workload whose
 // condition carries no suspension is running for the user, and a pass that held
 // it at zero would stop it for a reason the user never gave.

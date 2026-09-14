@@ -47,6 +47,13 @@ const suspendNote = ". The Optimize workloads are scaled to zero because Camunda
 // suspension of the referenced cluster stopped and whose pods are gone.
 const suspendedMessage = "Scaled to zero while the referenced cluster is suspended"
 
+// suspendedNote and keptAtZeroReason say, in the event of a scaled workload, why
+// this controller lowered it.
+const (
+	suspendedNote    = "because the CamundaCluster it attaches to is suspended"
+	keptAtZeroReason = "because the workloads that stopped stay at zero until the reference check passes"
+)
+
 // keptAtZeroNote is appended to the failure message of a CamundaOptimize whose
 // workloads a suspension left at zero and whose cluster resumed.
 const keptAtZeroNote = ". The Optimize workloads that stopped stay at zero until the reference check passes"
@@ -64,7 +71,7 @@ func (r *Reconciler) followSuspension(
 	ctx context.Context,
 	optimize *v1.CamundaOptimize,
 ) (workloadsuspend.Result, error) {
-	return r.stopWorkloads(ctx, optimize, suspendedMessage, func(string) bool { return true })
+	return r.stopWorkloads(ctx, optimize, suspendedMessage, suspendedNote, func(string) bool { return true })
 }
 
 // keepAtZero holds the Optimize workloads that a suspension stopped while a
@@ -83,6 +90,7 @@ func (r *Reconciler) keepAtZero(
 		ctx,
 		optimize,
 		workloadsuspend.MessageKeptAtZero,
+		keptAtZeroReason,
 		func(conditionType string) bool {
 			return workloadsuspend.IsAlreadySuspended(optimize, conditionType)
 		},
@@ -90,7 +98,8 @@ func (r *Reconciler) keepAtZero(
 }
 
 // stopWorkloads scales the Optimize workloads that stop accepts to zero. message
-// says why a workload is held there once its pods are gone.
+// says why a workload is held there once its pods are gone, and reason says the
+// same in the event of each workload it lowered.
 //
 // The importer goes first. It is the workload that writes Elasticsearch, so a
 // webapp that a conflict or an admission rule keeps up must not keep the
@@ -98,7 +107,7 @@ func (r *Reconciler) keepAtZero(
 func (r *Reconciler) stopWorkloads(
 	ctx context.Context,
 	optimize *v1.CamundaOptimize,
-	message string,
+	message, reason string,
 	stop func(conditionType string) bool,
 ) (workloadsuspend.Result, error) {
 	workloads, err := r.optimizeWorkloads(ctx, optimize, stop)
@@ -113,7 +122,7 @@ func (r *Reconciler) stopWorkloads(
 		workloads,
 		message,
 		stop,
-		func(workload string) { r.recordSuspended(optimize, workload) },
+		func(workload string) { r.recordSuspended(optimize, workload, reason) },
 	)
 }
 
@@ -158,18 +167,20 @@ func (r *Reconciler) optimizeWorkloads(
 	return workloads, errors.Join(errs...)
 }
 
-// recordSuspended records that the suspension of the referenced cluster stopped
-// the named workload.
-func (r *Reconciler) recordSuspended(optimize *v1.CamundaOptimize, workload string) {
+// recordSuspended records that the named workload was scaled to zero, and why.
+// The reason differs per path: a cluster that is suspended, or this controller
+// putting back a workload that something raised while it has nothing to render
+// from.
+func (r *Reconciler) recordSuspended(optimize *v1.CamundaOptimize, workload, reason string) {
 	r.EventRecorder.Eventf(
 		optimize,
 		nil,
 		corev1.EventTypeNormal,
 		workloadsuspend.EventReasonWorkloadsSuspended,
 		workloadsuspend.EventActionSuspend,
-		"Scaled %q to zero because CamundaCluster %q is suspended",
+		"Scaled %q to zero %s",
 		workload,
-		optimize.Spec.ClusterRef.Name,
+		reason,
 	)
 }
 

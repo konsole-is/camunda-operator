@@ -48,6 +48,13 @@ const suspendNote = ". The workloads are scaled to zero because spec.suspend is 
 // that an explicit suspend stopped and whose pods are gone.
 const suspendedMessage = "Scaled to zero because spec.suspend is set"
 
+// suspendedNote and keptAtZeroReason say, in the event of a scaled workload, why
+// this controller lowered it.
+const (
+	suspendedNote    = "because spec.suspend is set"
+	keptAtZeroReason = "because the workloads that stopped stay at zero until the reference check passes"
+)
+
 // keptAtZeroNote is appended to the failure message of a cluster whose
 // workloads a suspension left at zero and whose suspension ended.
 const keptAtZeroNote = ". The workloads that stopped stay at zero until the reference check passes"
@@ -75,7 +82,7 @@ func (r *CamundaClusterReconciler) suspendExplicitly(
 		workloads,
 		suspendedMessage,
 		func(string) bool { return true },
-		func(workload string) { r.recordSuspended(cluster, workload) },
+		func(workload string) { r.recordSuspended(cluster, workload, suspendedNote) },
 	)
 
 	return result.Found, err
@@ -108,7 +115,7 @@ func (r *CamundaClusterReconciler) keepAtZero(
 		workloads,
 		workloadsuspend.MessageKeptAtZero,
 		held,
-		func(workload string) { r.recordSuspended(cluster, workload) },
+		func(workload string) { r.recordSuspended(cluster, workload, keptAtZeroReason) },
 	)
 
 	return result.Found, err
@@ -183,15 +190,22 @@ func endpointsStopped(cluster *v1.CamundaCluster) bool {
 	return serving != nil && workloadsuspend.IsSuspensionReason(serving.Reason)
 }
 
-// recordSuspended records that an explicit suspend stopped the named workload.
-func (r *CamundaClusterReconciler) recordSuspended(cluster *v1.CamundaCluster, workload string) {
+// recordSuspended records that the named workload was scaled to zero, and why.
+// The reason differs per path: an explicit suspend is the field of the user, and
+// a hold is this controller putting back a workload that something raised while
+// it has nothing to render from.
+func (r *CamundaClusterReconciler) recordSuspended(
+	cluster *v1.CamundaCluster,
+	workload, reason string,
+) {
 	r.EventRecorder.Eventf(
 		cluster,
 		nil,
 		corev1.EventTypeNormal,
 		workloadsuspend.EventReasonWorkloadsSuspended,
 		workloadsuspend.EventActionSuspend,
-		"Scaled %q to zero because spec.suspend is set",
+		"Scaled %q to zero %s",
 		workload,
+		reason,
 	)
 }
