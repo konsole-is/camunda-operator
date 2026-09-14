@@ -253,10 +253,12 @@ func TestRecordSuspensionChangeNamesTheClaimWait(t *testing.T) {
 			reason: eventReasonClusterSuspended,
 			note:   "is suspended",
 		},
+		// One note covers a resume from either wait, because the cluster was
+		// not suspended in one of them.
 		"the workloads start again": {
 			res:    resolved{},
 			reason: eventReasonClusterResumed,
-			note:   "no longer suspended",
+			note:   "holds its backend and is not suspended",
 		},
 	}
 

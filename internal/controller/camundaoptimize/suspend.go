@@ -52,9 +52,12 @@ const (
 	// reports no suspension.
 	eventReasonStorageClaimAwaited = "StorageClaimAwaited"
 	// noteSuspended, noteResumed and noteClaimAwaited carry the name of the
-	// cluster, which is what the Ready condition cannot say.
-	noteSuspended    = "Scaling the Optimize workloads to zero: CamundaCluster %q is suspended"
-	noteResumed      = "Starting the Optimize workloads again: CamundaCluster %q is no longer suspended"
+	// cluster, which is what the Ready condition cannot say. One resume note
+	// covers both waits: the workloads start when the cluster holds its backend
+	// and is not suspended, whichever of the two held them.
+	noteSuspended = "Scaling the Optimize workloads to zero: CamundaCluster %q is suspended"
+	noteResumed   = "Starting the Optimize workloads again: CamundaCluster %q holds its backend " +
+		"and is not suspended"
 	noteClaimAwaited = "Scaling the Optimize workloads to zero: CamundaCluster %q does not hold its " +
 		"backend, or pods of another cluster still write it"
 )
@@ -196,13 +199,13 @@ func (r *Reconciler) recordSuspensionChange(
 	}
 
 	reason, note := eventReasonClusterResumed, noteResumed
-	switch {
-	case res.AwaitsBackendClaim:
-		// The cluster can report itself healthy in this window, so
-		// ClusterSuspended would say something false about it.
-		reason, note = eventReasonStorageClaimAwaited, noteClaimAwaited
-	case res.Input.Suspended:
+	if res.Input.Suspended {
+		// The cluster can report itself healthy while its claim parks these
+		// workloads, so ClusterSuspended would say something false about it.
 		reason, note = eventReasonClusterSuspended, noteSuspended
+		if res.AwaitsBackendClaim {
+			reason, note = eventReasonStorageClaimAwaited, noteClaimAwaited
+		}
 	}
 
 	r.EventRecorder.Eventf(
