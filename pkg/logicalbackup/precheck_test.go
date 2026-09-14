@@ -173,7 +173,7 @@ func TestPreCheckFailures(t *testing.T) {
 			message: "suspended",
 		},
 		{
-			name: "another cluster holds the storage contract of the cluster",
+			name: "another cluster holds the backend of the cluster",
 			objects: func() []client.Object {
 				c := cluster()
 				c.Status.Conditions = []metav1.Condition{{
