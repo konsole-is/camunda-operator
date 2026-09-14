@@ -693,8 +693,9 @@ var _ = Describe("CamundaOptimize controller", func() {
 			expectClusterEnv(s.cluster, ContainElement("CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME"))
 
 			// An instance created beside its cluster can reach its first pass
-			// before the cluster holds the storage claim of the backend, and
-			// that pass records the wait of the claim and then the resume. The
+			// before the cluster holds the storage claim of the backend. That
+			// pass records nothing, because the instance has no workload yet,
+			// and the pass that starts them records a resume of its own. The
 			// count of this reason is what says the suspension was named once.
 			By("naming the cluster in an event, once for the transition")
 			Expect(countSuspensionEvents(s.optimize, eventReasonClusterSuspended)).To(Equal(1))

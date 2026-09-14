@@ -221,6 +221,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// anything stages a new one. The event is recorded at the end, once the
 	// reconcile has acted on the change.
 	suspendedBefore := wasSuspending(&optimize)
+	// The components stage their conditions below, so whether this instance
+	// ever rendered a workload is read before they do.
+	renderedBefore := hasWorkloads(&optimize)
 
 	if err := r.patchExporter(ctx, res); err != nil {
 		return ctrl.Result{}, err
@@ -234,7 +237,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
 	conditions.Stage(&optimize, conditions.Aggregate(&optimize, built.ready...))
-	r.recordSuspensionChange(&optimize, suspendedBefore, res)
+	if renderedBefore {
+		r.recordSuspensionChange(&optimize, suspendedBefore, res)
+	}
 
 	// No watch reports the storage claim of the backend, or the pods of
 	// another cluster on it, so the workloads they park start again on this

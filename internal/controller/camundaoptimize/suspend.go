@@ -216,6 +216,15 @@ func (r *Reconciler) recordSuspensionChange(
 	)
 }
 
+// hasWorkloads reports whether this CamundaOptimize ever rendered a workload.
+// An instance that never did has nothing to scale, so a suspension of it is no
+// transition a user acts on: an instance created beside its cluster can meet
+// the storage claim before that cluster takes it, and an event of that window
+// would name a suspension nobody asked for.
+func hasWorkloads(optimize *v1.CamundaOptimize) bool {
+	return meta.FindStatusCondition(optimize.Status.Conditions, v1.ConditionImporterReady) != nil
+}
+
 // wasSuspending reports whether the last reconcile left the CamundaOptimize
 // on its way to suspended or already there.
 //
