@@ -25,7 +25,6 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/net/idna"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -34,6 +33,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/hostfold"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/leaseclaim"
 )
@@ -210,7 +210,7 @@ func podMetadataList() *metav1.PartialObjectMetadataList {
 // host and the port, so two endpoints that differ in the path reach one
 // Elasticsearch for at least one writer. An rdbms key is the type, then the
 // host, the port, and the database name. Every host goes through
-// normalizeHost. A chain that names no address, or an endpoint that is no URL,
+// hostfold.FoldHost. A chain that names no address, or an endpoint that is no URL,
 // is an error.
 func StorageClaimKey(storage Storage) (string, error) {
 	switch storage.Type {
@@ -232,7 +232,7 @@ func StorageClaimKey(storage Storage) (string, error) {
 		return fmt.Sprintf(
 			"%s|%s:%d/%s",
 			storage.Type,
-			normalizeHost(storage.RDBMS.Host),
+			hostfold.FoldHost(storage.RDBMS.Host),
 			storage.RDBMS.Port,
 			storage.RDBMS.Database,
 		), nil
@@ -283,29 +283,7 @@ func normalizeEndpoint(endpoint string) (string, error) {
 	// Hostname strips the brackets of an IPv6 literal, and JoinHostPort puts
 	// them back. Without them the address reads as another host and another
 	// port.
-	host := net.JoinHostPort(normalizeHost(parsed.Hostname()), strconv.Itoa(port))
+	host := net.JoinHostPort(hostfold.FoldHost(parsed.Hostname()), strconv.Itoa(port))
 
 	return scheme + "://" + host, nil
-}
-
-// normalizeHost renders one host name for the spellings that reach one host,
-// in this order: lower case, without the trailing dot of the DNS root, then the
-// IDNA form its client resolves, and last an IP literal in the form net.IP
-// writes. Each spelling would otherwise take a claim of its own on one backend,
-// and an IPv6 address has the most of them.
-//
-// The IDNA profile refuses an IP literal, which keeps the spelling it came with
-// through that step and is canonical after the last one.
-// pkg/components/camundamanagementcluster folds the host of a realm the same
-// way.
-func normalizeHost(host string) string {
-	folded := strings.TrimSuffix(strings.ToLower(host), ".")
-	if ascii, err := idna.Lookup.ToASCII(folded); err == nil && ascii != "" {
-		folded = ascii
-	}
-	if ip := net.ParseIP(folded); ip != nil {
-		return ip.String()
-	}
-
-	return folded
 }
