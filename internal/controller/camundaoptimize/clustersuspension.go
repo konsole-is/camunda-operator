@@ -85,16 +85,20 @@ var (
 		condition:    "Scaled to zero while the referenced cluster is suspended",
 		workloadNote: "because the CamundaCluster it attaches to is suspended",
 	}
-	// backendClaimAwaited is the wait on the claim of the backend. The cluster
-	// can report itself healthy through it, so nothing here says it is
-	// suspended.
+	// backendClaimAwaited is the wait on the claim of the backend, which covers
+	// both halves of that gate: the cluster does not hold the claim, or it
+	// holds it while pods of another cluster still write the backend. The
+	// cluster can report itself healthy through either, so nothing here says it
+	// is suspended.
 	backendClaimAwaited = wait{
 		eventReason: eventReasonStorageClaimAwaited,
 		eventNote:   noteClaimAwaited,
 		failureNote: ". The Optimize workloads are scaled to zero because CamundaCluster %q does not " +
-			"hold its backend",
-		condition:    "Scaled to zero while the referenced cluster does not hold its backend",
-		workloadNote: "because the CamundaCluster it attaches to does not hold its backend",
+			"hold its backend, or pods of another cluster still write it",
+		condition: "Scaled to zero while the referenced cluster does not hold its backend, or pods of " +
+			"another cluster still write it",
+		workloadNote: "because the CamundaCluster it attaches to does not hold its backend, or pods of " +
+			"another cluster still write it",
 	}
 )
 

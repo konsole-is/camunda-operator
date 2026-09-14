@@ -111,6 +111,25 @@ func TestSuspensionNotesSpeakForTheClusterOnly(t *testing.T) {
 	}
 }
 
+// TestBackendClaimAwaitedSaysBothHalvesOfTheGate pins the claim wait. The gate
+// covers a cluster that does not hold the claim of its backend, and one that
+// holds it while pods of another cluster still write that backend. Everything
+// this wait says reaches a user, so none of it may name the first half alone.
+func TestBackendClaimAwaitedSaysBothHalvesOfTheGate(t *testing.T) {
+	t.Parallel()
+
+	const bothHalves = "does not hold its backend, or pods of another cluster still write it"
+	said := map[string]string{
+		"the event note":                      backendClaimAwaited.eventNote,
+		"the note on Ready":                   backendClaimAwaited.failureNote,
+		"the condition of a stopped workload": backendClaimAwaited.condition,
+		"the event of a workload it lowered":  backendClaimAwaited.workloadNote,
+	}
+	for name, says := range said {
+		assert.Contains(t, says, bothHalves, name)
+	}
+}
+
 // TestRecordClusterSuspendedNamesTheWait covers the pre-check failure path,
 // which records the start of a wait and no other transition. It names the same
 // two waits: a cluster that reports itself suspended, and the claim of the
