@@ -76,7 +76,7 @@ func (r *CamundaClusterReconciler) suspendExplicitly(
 		workloads,
 		suspendedMessage,
 		func(string) bool { return true },
-		func(workload string) { r.recordSuspended(cluster, workload) },
+		func(workload string, err error) { r.recordStop(cluster, workload, err) },
 	)
 
 	return result.Found, errors.Join(readErr, stopErr)
@@ -168,9 +168,29 @@ func endpointsStopped(cluster *v1.CamundaCluster) bool {
 	return serving != nil && workloadsuspend.IsSuspensionReason(serving.Reason)
 }
 
-// recordSuspended records that an explicit suspend scaled the named workload to
-// zero. The hold records nothing: it writes no workload.
-func (r *CamundaClusterReconciler) recordSuspended(cluster *v1.CamundaCluster, workload string) {
+// recordStop records what an explicit suspend did with the named workload: it
+// scaled it to zero, or the API server refused. The hold records nothing: it
+// writes no workload.
+func (r *CamundaClusterReconciler) recordStop(
+	cluster *v1.CamundaCluster,
+	workload string,
+	err error,
+) {
+	if err != nil {
+		r.EventRecorder.Eventf(
+			cluster,
+			nil,
+			corev1.EventTypeWarning,
+			workloadsuspend.EventReasonWorkloadStopRefused,
+			workloadsuspend.EventActionSuspend,
+			"Could not scale %q to zero, so it keeps running: %v",
+			workload,
+			err,
+		)
+
+		return
+	}
+
 	r.EventRecorder.Eventf(
 		cluster,
 		nil,

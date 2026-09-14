@@ -19,6 +19,7 @@ package camundacluster
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -328,11 +329,12 @@ func TestSuspendExplicitlyJoinsPatchErrors(t *testing.T) {
 			},
 		}).
 		Build()
+	recorder := events.NewFakeRecorder(10)
 	r := &CamundaClusterReconciler{
 		Client:        fakeClient,
 		APIReader:     fakeClient,
 		Scheme:        scheme,
-		EventRecorder: events.NewFakeRecorder(10),
+		EventRecorder: recorder,
 	}
 
 	found, err := r.suspendExplicitly(context.Background(), cluster)
@@ -354,6 +356,20 @@ func TestSuspendExplicitlyJoinsPatchErrors(t *testing.T) {
 	operate := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionOperateReady)
 	require.NotNil(t, operate)
 	assert.Equal(t, string(component.Suspended), operate.Reason)
+
+	// The condition of a refused workload says nothing about the refusal, so
+	// the event is where a user reads why it still runs.
+	var refusals []string
+	for range len(recorder.Events) {
+		recorded := <-recorder.Events
+		if strings.Contains(recorded, "WorkloadStopRefused") {
+			refusals = append(refusals, recorded)
+		}
+	}
+	require.Len(t, refusals, 1)
+	assert.Contains(t, refusals[0], "Warning")
+	assert.Contains(t, refusals[0], "my-cluster-zeebe")
+	assert.Contains(t, refusals[0], boom.Error(), "the event carries the reason the API server gave")
 }
 
 // TestSuspendExplicitlyReportsAFailedList covers a listing that fails: the

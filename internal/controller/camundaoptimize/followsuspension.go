@@ -103,7 +103,7 @@ func (r *Reconciler) stopWorkloads(
 		workloads,
 		message,
 		stop,
-		func(workload string) { r.recordSuspended(optimize, workload, reason) },
+		func(workload string, err error) { r.recordStop(optimize, workload, reason, err) },
 	)
 
 	return result, errors.Join(readErr, stopErr)
@@ -151,11 +151,28 @@ func (r *Reconciler) optimizeWorkloads(
 	return workloads, errors.Join(errs...)
 }
 
-// recordSuspended records that the named workload was scaled to zero, and why.
-// The reason differs per path: a cluster that is suspended, or this controller
-// putting back a workload that something raised while it has nothing to render
-// from.
-func (r *Reconciler) recordSuspended(optimize *v1.CamundaOptimize, workload, reason string) {
+// recordStop records what this pass did with the named workload: it scaled it
+// to zero for the reason of the wait that lowered it, or the API server refused.
+func (r *Reconciler) recordStop(
+	optimize *v1.CamundaOptimize,
+	workload, reason string,
+	err error,
+) {
+	if err != nil {
+		r.EventRecorder.Eventf(
+			optimize,
+			nil,
+			corev1.EventTypeWarning,
+			workloadsuspend.EventReasonWorkloadStopRefused,
+			workloadsuspend.EventActionSuspend,
+			"Could not scale %q to zero, so it keeps running: %v",
+			workload,
+			err,
+		)
+
+		return
+	}
+
 	r.EventRecorder.Eventf(
 		optimize,
 		nil,

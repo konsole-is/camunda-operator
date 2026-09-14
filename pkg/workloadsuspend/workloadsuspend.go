@@ -48,7 +48,13 @@ import (
 // it followed, which differs per controller.
 const EventReasonWorkloadsSuspended = "WorkloadsSuspended"
 
-// EventActionSuspend is the action verb of that event.
+// EventReasonWorkloadStopRefused is the event reason of a workload that the API
+// server refused to scale to zero. The workload keeps running and keeps the
+// condition it had, which says nothing about the refusal, so the event is where
+// a user reads why.
+const EventReasonWorkloadStopRefused = "WorkloadStopRefused"
+
+// EventActionSuspend is the action verb of both events.
 const EventActionSuspend = "Suspend"
 
 // MessageKeptAtZero is the message of the condition of a workload whose
@@ -122,8 +128,9 @@ type Result struct {
 // reports what it did with them.
 //
 // message says why a workload is held at zero once its pods are gone. record is
-// called with the name of every workload this pass actually lowered, so the
-// caller records an event in its own words, or records none.
+// called with the name of every workload this pass lowered, and with the name
+// and the error of every workload the API server refused, so the caller records
+// an event in its own words.
 //
 // Every workload is tried and the errors are joined. One workload that a
 // conflict or an admission rule keeps up must not leave the rest of them
@@ -135,7 +142,7 @@ func StopWorkloadsIf(
 	workloads []Workload,
 	message string,
 	stop func(conditionType string) bool,
-	record func(workload string),
+	record func(workload string, err error),
 ) (Result, error) {
 	var result Result
 	var errs []error
@@ -148,11 +155,12 @@ func StopWorkloadsIf(
 		outcome, err := StopAtZero(ctx, writer, workload.Object, message)
 		if err != nil {
 			errs = append(errs, err)
+			record(workload.Object.GetName(), err)
 
 			continue
 		}
 		if outcome.Patched {
-			record(workload.Object.GetName())
+			record(workload.Object.GetName(), nil)
 		}
 		result.Stopped = true
 		// The components do not run on the path that calls this, so nothing
