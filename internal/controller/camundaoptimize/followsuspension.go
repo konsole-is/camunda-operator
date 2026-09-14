@@ -67,11 +67,13 @@ var workloadConditions = map[string]string{
 // wasSuspending does not serve on the pre-check failure path: Ready carries the
 // failure there, never a suspension reason, so it reads false on every pass and
 // the transition event repeats. The condition of a workload carries the state
-// instead, because followSuspension is what writes it.
+// instead, because followSuspension is what writes it. Every status on the way
+// to suspended counts, so a reconcile that catches the drain reads it as
+// already suspended.
 func followsSuspendedCluster(optimize *v1.CamundaOptimize) bool {
 	for _, conditionType := range []string{v1.ConditionImporterReady, v1.ConditionWebappReady} {
 		condition := meta.FindStatusCondition(optimize.Status.Conditions, conditionType)
-		if condition != nil && condition.Reason == string(component.Suspended) {
+		if condition != nil && suspensionReason(condition.Reason) {
 			return true
 		}
 	}
