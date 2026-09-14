@@ -48,11 +48,6 @@ const suspendNote = ". The workloads are scaled to zero because spec.suspend is 
 // that an explicit suspend stopped and whose pods are gone.
 const suspendedMessage = "Scaled to zero because spec.suspend is set"
 
-// suspendedNote says, in the event of a scaled workload, why an explicit
-// suspend lowered it. The hold has a note of its own, see
-// workloadsuspend.ReasonKeptAtZero.
-const suspendedNote = "because spec.suspend is set"
-
 // keptAtZeroNote is appended to the failure message of a cluster whose
 // workloads a suspension left at zero and whose suspension ended.
 const keptAtZeroNote = ". The workloads that stopped stay at zero until the reference check passes"
@@ -81,29 +76,25 @@ func (r *CamundaClusterReconciler) suspendExplicitly(
 		workloads,
 		suspendedMessage,
 		func(string) bool { return true },
-		func(workload string) { r.recordSuspended(cluster, workload, suspendedNote) },
+		func(workload string) { r.recordSuspended(cluster, workload) },
 	)
 
 	return result.Found, errors.Join(readErr, stopErr)
 }
 
-// keepAtZero holds the workloads that a suspension stopped while the pre-check
-// still fails, and reports whether it held any. The shared hold does the work,
-// see workloadsuspend.KeepAtZero.
+// keepAtZero reports the workloads that a suspension left at zero while the
+// pre-check still fails, and whether it found any. It writes none of them, see
+// workloadsuspend.KeepAtZero.
 func (r *CamundaClusterReconciler) keepAtZero(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 ) (bool, error) {
 	return workloadsuspend.KeepAtZero(
 		ctx,
-		r.Client,
 		cluster,
 		components.ConditionTypes(),
 		func(ctx context.Context, _ func(string) bool) ([]workloadsuspend.Workload, error) {
 			return r.clusterWorkloads(ctx, cluster)
-		},
-		func(workload string) {
-			r.recordSuspended(cluster, workload, workloadsuspend.ReasonKeptAtZero)
 		},
 	)
 }
@@ -177,22 +168,16 @@ func endpointsStopped(cluster *v1.CamundaCluster) bool {
 	return serving != nil && workloadsuspend.IsSuspensionReason(serving.Reason)
 }
 
-// recordSuspended records that the named workload was scaled to zero, and why.
-// The reason differs per path: an explicit suspend is the field of the user, and
-// a hold is this controller putting back a workload that something raised while
-// it has nothing to render from.
-func (r *CamundaClusterReconciler) recordSuspended(
-	cluster *v1.CamundaCluster,
-	workload, reason string,
-) {
+// recordSuspended records that an explicit suspend scaled the named workload to
+// zero. The hold records nothing: it writes no workload.
+func (r *CamundaClusterReconciler) recordSuspended(cluster *v1.CamundaCluster, workload string) {
 	r.EventRecorder.Eventf(
 		cluster,
 		nil,
 		corev1.EventTypeNormal,
 		workloadsuspend.EventReasonWorkloadsSuspended,
 		workloadsuspend.EventActionSuspend,
-		"Scaled %q to zero %s",
+		"Scaled %q to zero because spec.suspend is set",
 		workload,
-		reason,
 	)
 }

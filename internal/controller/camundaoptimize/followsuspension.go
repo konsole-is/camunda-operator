@@ -60,23 +60,19 @@ func (r *Reconciler) followSuspension(
 	return r.stopWorkloads(ctx, optimize, held.condition, held.workloadNote, func(string) bool { return true })
 }
 
-// keepAtZero holds the Optimize workloads that a suspension stopped while a
-// check of this instance still fails, and reports whether it held any. The
-// shared hold does the work, see workloadsuspend.KeepAtZero.
+// keepAtZero reports the Optimize workloads that a suspension left at zero
+// while a check of this instance still fails, and whether it found any. It
+// writes none of them, see workloadsuspend.KeepAtZero.
 func (r *Reconciler) keepAtZero(
 	ctx context.Context,
 	optimize *v1.CamundaOptimize,
 ) (bool, error) {
 	return workloadsuspend.KeepAtZero(
 		ctx,
-		r.Client,
 		optimize,
 		workloadConditions(),
 		func(ctx context.Context, held func(string) bool) ([]workloadsuspend.Workload, error) {
 			return r.optimizeWorkloads(ctx, optimize, held)
-		},
-		func(workload string) {
-			r.recordSuspended(optimize, workload, workloadsuspend.ReasonKeptAtZero)
 		},
 	)
 }

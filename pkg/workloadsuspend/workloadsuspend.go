@@ -61,11 +61,6 @@ const EventActionSuspend = "Suspend"
 // is reported as finished.
 const MessageKeptAtZero = "Kept at zero until the reference check passes"
 
-// ReasonKeptAtZero says, in the event of a workload that KeepAtZero lowered,
-// why it did. The suspension that stopped the workload is over, and the render
-// that would start it again is what the failed check holds back.
-const ReasonKeptAtZero = "because the workloads that stopped stay at zero until the reference check passes"
-
 // stopPatch is the body of the merge patch that stops a workload: the replicas
 // it asks for, which are always none, and the UID the caller read it with.
 //
@@ -169,9 +164,14 @@ func StopWorkloadsIf(
 	return result, errors.Join(errs...)
 }
 
-// KeepAtZero holds at zero the workloads of owner that a suspension stopped,
-// while the controller still has nothing to render from. It reports whether it
-// held any.
+// KeepAtZero reports the workloads of owner that a suspension left at zero,
+// while the controller still has nothing to render from, and reports whether it
+// found any.
+//
+// It writes no workload. The render owns the replicas, and the only record that
+// this controller stopped a workload is the condition it staged, which a
+// conflict on the flush can drop and a later render can outrun. Patching from
+// that record would stop a workload that a render has already raised.
 //
 // conditionTypes are the conditions that owner can carry for a workload. They
 // are read first, in memory: an owner that never suspended has nothing to hold,
@@ -181,15 +181,18 @@ func StopWorkloadsIf(
 // read returns the workloads, live, for the conditions that the predicate
 // accepts. The reads are live because the decision reads replicas, and a render
 // that raised them lands on the API server before an informer carries it. A read
-// that failed halfway returns what it reached, and those workloads are held
+// that failed halfway returns what it reached, and those workloads are reported
 // anyway.
+//
+// A workload that asks for replicas of its own carries a condition that is
+// stale: a render raised it and the flush that would have said so was lost. The
+// condition goes, so nothing reads a suspension from it, and the next render
+// stages what the workload actually reports.
 func KeepAtZero(
 	ctx context.Context,
-	writer client.Writer,
 	owner component.OperatorCRD,
 	conditionTypes []string,
 	read func(ctx context.Context, held func(conditionType string) bool) ([]Workload, error),
-	record func(workload string),
 ) (bool, error) {
 	held := func(conditionType string) bool {
 		return IsAlreadySuspended(owner, conditionType)
@@ -199,9 +202,33 @@ func KeepAtZero(
 	}
 
 	workloads, readErr := read(ctx, held)
-	result, stopErr := StopWorkloadsIf(ctx, writer, owner, workloads, MessageKeptAtZero, held, record)
 
-	return result.Found, errors.Join(readErr, stopErr)
+	var kept bool
+	errs := []error{readErr}
+	for _, workload := range workloads {
+		if !metav1.IsControlledBy(workload.Object, owner) || !held(workload.ConditionType) {
+			continue
+		}
+
+		outcome, replicas, err := drain(workload.Object, MessageKeptAtZero)
+		if err != nil {
+			errs = append(errs, err)
+
+			continue
+		}
+		if replicas == nil || *replicas > 0 {
+			meta.RemoveStatusCondition(owner.GetStatusConditions(), workload.ConditionType)
+
+			continue
+		}
+		kept = true
+		// The components do not run on the path that calls this, so nothing
+		// else refreshes this condition and it would report a drain that
+		// finished as one still running.
+		Stage(owner, workload.ConditionType, outcome)
+	}
+
+	return kept, errors.Join(errs...)
 }
 
 // IsAlreadySuspended reports whether the condition of a workload on owner

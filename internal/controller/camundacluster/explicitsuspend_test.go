@@ -456,19 +456,24 @@ func TestKeepAtZeroFinishesTheDrain(t *testing.T) {
 	assert.Equal(t, "Kept at zero until the reference check passes", condition.Message)
 }
 
-// TestKeepAtZeroPutsBackARaisedWorkload covers the case that patches on the hold
-// path: something raised a workload this controller is holding at zero. The
-// event says why it went back rather than naming spec.suspend, which the user
-// has cleared.
-func TestKeepAtZeroPutsBackARaisedWorkload(t *testing.T) {
+// TestKeepAtZeroDropsAStaleSuspension covers a condition that outlived the
+// state it reported: a render raised the workload and the status flush that
+// would have said so was lost to a conflict, so the persisted condition still
+// reads Suspended over a running workload.
+//
+// The hold must not believe it and patch that workload back to zero. It drops
+// the condition instead, so nothing else reads a suspension from it, the
+// endpoints stay published, and the next render stages it again.
+func TestKeepAtZeroDropsAStaleSuspension(t *testing.T) {
 	scheme := suspendScheme(t)
 	cluster := suspendCluster(false)
-	raised := &appsv1.StatefulSet{
-		ObjectMeta: workloadMeta(cluster, cluster, "my-cluster-zeebe", "zeebe", true),
-		Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(3))},
+	raised := &appsv1.Deployment{
+		ObjectMeta: workloadMeta(cluster, cluster, "my-cluster-gateway", "gateway", true),
+		Spec:       appsv1.DeploymentSpec{Replicas: new(int32(3))},
+		Status:     appsv1.DeploymentStatus{Replicas: 3},
 	}
 	meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
-		Type:   v1.ConditionZeebeReady,
+		Type:   v1.ConditionGatewayReady,
 		Status: metav1.ConditionTrue,
 		Reason: string(component.Suspended),
 	})
@@ -485,14 +490,19 @@ func TestKeepAtZeroPutsBackARaisedWorkload(t *testing.T) {
 	kept, err := r.keepAtZero(context.Background(), cluster)
 
 	require.NoError(t, err)
-	assert.True(t, kept)
-	assert.Equal(t, int32(0), replicasOf(
-		t, fakeClient, client.ObjectKey{Namespace: cluster.Namespace, Name: "my-cluster-zeebe"},
-	))
-
-	recorded := <-recorder.Events
-	assert.Contains(t, recorded, "stay at zero until the reference check passes")
-	assert.NotContains(t, recorded, "spec.suspend", "the user cleared the field, so the event must not name it")
+	assert.False(t, kept)
+	assert.Equal(
+		t, int32(3), replicasOf(
+			t, fakeClient, client.ObjectKey{Namespace: cluster.Namespace, Name: "my-cluster-gateway"},
+		), "the render owns a workload it raised",
+	)
+	assert.Nil(
+		t,
+		meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionGatewayReady),
+		"the stale suspension is gone",
+	)
+	assert.False(t, endpointsStopped(cluster), "the gateway serves, so its endpoints stay published")
+	assert.Empty(t, recorder.Events, "nothing was scaled, so nothing is recorded")
 }
 
 // TestKeepAtZeroReadsNoWorkloadWithoutASuspension covers the early return: a
