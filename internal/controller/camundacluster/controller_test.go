@@ -799,6 +799,7 @@ var _ = Describe("CamundaCluster controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
 			g.Expect(latest.Status.Conditions).To(BeEmpty())
 			g.Expect(latest.Status.ObservedGeneration).To(BeZero())
+			g.Expect(latest.Finalizers).To(BeEmpty(), "a paused cluster is not written at all")
 			g.Expect(k8sClient.Get(ctx, zeebeKey, &appsv1.StatefulSet{})).NotTo(Succeed())
 		}, 2*time.Second, interval).Should(Succeed())
 

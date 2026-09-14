@@ -53,11 +53,11 @@ const (
 	// relates to. It tells a cluster apart from a later one of the same name
 	// and namespace.
 	ClusterUIDKey = "camunda.io/cluster-uid"
-	// StorageContractKey names the SecondaryStorageConfig that a pod of a
-	// CamundaCluster runs on. It is on the pod, never on the selector, so a
-	// repoint of the cluster rolls the pods and the new ones carry the new
-	// value.
-	StorageContractKey = "camunda.io/storage-contract"
+	// StorageClaimKey names the storage claim Lease of the backend that a pod
+	// of a CamundaCluster, or of the CamundaOptimize attached to it, writes.
+	// It is on the pod, never on the selector, so a change of backend rolls
+	// the pods and the new ones carry the new value.
+	StorageClaimKey = "camunda.io/storage-claim"
 	// ElasticsearchClusterKey names the owning ElasticsearchCluster.
 	ElasticsearchClusterKey = "camunda.io/elasticsearch-cluster"
 	// DatabaseServerKey names the owning DatabaseServer.

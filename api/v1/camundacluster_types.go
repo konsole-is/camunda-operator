@@ -80,12 +80,12 @@ const ReasonRejected = "Rejected"
 const ReasonVersionDowngradeRefused = "VersionDowngradeRefused"
 
 // ReasonStorageAlreadyAttached on Ready means that another CamundaCluster
-// holds the SecondaryStorageConfig that spec.storageRef names. One
-// CamundaCluster uses one contract. The index names and the tables are
-// fixed, so two clusters on one backend write each other's data. The
-// operator keeps this cluster suspended, with its volumes, until that
-// cluster releases the contract. Then it resumes this cluster on its own.
-// The message names the holder and the contract.
+// holds the backend that spec.storageRef resolves to. One CamundaCluster
+// holds one backend. The index names and the tables are fixed, so two
+// clusters on one backend write each other's data. The operator keeps this
+// cluster suspended, with its volumes, until that cluster moves to another
+// backend or is deleted. Then it resumes this cluster on its own. The message
+// names the holder and the backend.
 const ReasonStorageAlreadyAttached = "StorageAlreadyAttached"
 
 // ComponentMode says where a process of the unified binary runs.
@@ -472,10 +472,11 @@ type CamundaClusterSpec struct {
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
 	// StorageRef names the SecondaryStorageConfig, in the namespace of this
 	// cluster, that describes the secondary storage backend. Required on a
-	// CamundaCluster, forbidden in a preset. One CamundaCluster uses one
-	// contract. If another cluster already holds the contract, the operator
-	// suspends this cluster and reports Ready reason StorageAlreadyAttached
-	// until that cluster releases it.
+	// CamundaCluster, forbidden in a preset. One CamundaCluster holds one
+	// backend, and two contracts that name one address are one backend. If
+	// another cluster already holds the backend, the operator suspends this
+	// cluster and reports Ready reason StorageAlreadyAttached until that
+	// cluster moves to another backend or is deleted.
 	// +optional
 	StorageRef string `json:"storageRef,omitempty"`
 	// BackupStorageRef names an ObjectStorageConfig, in the namespace of

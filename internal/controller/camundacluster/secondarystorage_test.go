@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -33,191 +34,287 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
-	optimizecomponents "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
-	"github.com/konsole-is/camunda-operator/pkg/labels"
-	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// TestStaleHolder covers staleHolder against a fake client, table-driven over
-// why a holder is stale or live. A holder in another namespace whose
-// storageRef happens to equal the contract's name must not read as live: the
-// contract it names is a different object.
-func TestStaleHolder(t *testing.T) {
+// A cluster gives a backend back only when none of its own pods writes it any
+// more. A release under running pods lets the next claimant start beside them,
+// and its own gate reads the pods once.
+func TestReleaseLeftBackendsKeepsOneItsPodsStillWrite(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
 	require.NoError(t, v1.AddToScheme(scheme))
 
-	contract := &v1.SecondaryStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "storage-contract", Namespace: "team-a"},
+	self := &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "team-a", Name: "orders", UID: "uid-1"},
+	}
+	const (
+		oldKey = "elasticsearch|https://old.es:9200"
+		newKey = "elasticsearch|https://new.es:9200"
+	)
+	oldClaim := components.StorageClaimSchema().LeaseName(oldKey)
+	newClaim := components.StorageClaimSchema().LeaseName(newKey)
+
+	pod := func(name, claim string, uid types.UID) *corev1.Pod {
+		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Namespace: "team-a",
+			Name:      name,
+			Labels:    components.StoragePodLabels("orders", uid, claim),
+		}}
 	}
 
 	cases := map[string]struct {
-		objects []client.Object
-		holder  secondarystorageconfig.Holder
-		stale   bool
+		pods     []client.Object
+		heldBack []string
+		released bool
 	}{
-		"holder does not exist": {
-			holder: secondarystorageconfig.Holder{
-				Cluster: types.NamespacedName{Namespace: "team-a", Name: "ghost"},
-				UID:     "uid-1",
-			},
-			stale: true,
+		"a pod of this cluster still carries the old claim": {
+			pods:     []client.Object{pod("orders-zeebe-0", oldClaim, self.UID)},
+			heldBack: []string{oldClaim},
 		},
-		"holder exists with another UID": {
-			objects: []client.Object{&v1.CamundaCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: "team-a", UID: "uid-2"},
-				Spec:       v1.CamundaClusterSpec{StorageRef: "storage-contract"},
-			}},
-			holder: secondarystorageconfig.Holder{
-				Cluster: types.NamespacedName{Namespace: "team-a", Name: "holder"},
-				UID:     "uid-1",
-			},
-			stale: true,
+		"the pods of this cluster carry the new claim": {
+			pods:     []client.Object{pod("orders-zeebe-0", newClaim, self.UID)},
+			released: true,
 		},
-		"holder's storageRef names another contract": {
-			objects: []client.Object{&v1.CamundaCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: "team-a", UID: "uid-1"},
-				Spec:       v1.CamundaClusterSpec{StorageRef: "another-contract"},
-			}},
-			holder: secondarystorageconfig.Holder{
-				Cluster: types.NamespacedName{Namespace: "team-a", Name: "holder"},
-				UID:     "uid-1",
-			},
-			stale: true,
+		"a pod of another cluster carries the old claim": {
+			pods:     []client.Object{pod("other-zeebe-0", oldClaim, "uid-other")},
+			released: true,
 		},
-		"holder in another namespace whose storageRef equals the contract's name": {
-			objects: []client.Object{&v1.CamundaCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: "other-ns", UID: "uid-1"},
-				Spec:       v1.CamundaClusterSpec{StorageRef: "storage-contract"},
-			}},
-			holder: secondarystorageconfig.Holder{
-				Cluster: types.NamespacedName{Namespace: "other-ns", Name: "holder"},
-				UID:     "uid-1",
-			},
-			stale: true,
-		},
-		"holder with the same UID and storageRef": {
-			objects: []client.Object{&v1.CamundaCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: "team-a", UID: "uid-1"},
-				Spec:       v1.CamundaClusterSpec{StorageRef: "storage-contract"},
-			}},
-			holder: secondarystorageconfig.Holder{
-				Cluster: types.NamespacedName{Namespace: "team-a", Name: "holder"},
-				UID:     "uid-1",
-			},
-			stale: false,
-		},
-		"a paused holder that names another contract still holds": {
-			objects: []client.Object{&v1.CamundaCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: "team-a", UID: "uid-1"},
-				Spec:       v1.CamundaClusterSpec{Pause: true, StorageRef: "another-contract"},
-			}},
-			holder: secondarystorageconfig.Holder{
-				Cluster: types.NamespacedName{Namespace: "team-a", Name: "holder"},
-				UID:     "uid-1",
-			},
-			stale: false,
-		},
+		"no pods": {released: true},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			res := &resolver{
-				reader:  fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.objects...).Build(),
-				storage: contract,
-			}
-			stale, err := res.staleHolder(context.Background(), tc.holder)
+			objects := append(
+				[]client.Object{
+					components.StorageClaimSchema().NewLease("camunda-system", oldKey, self),
+					components.StorageClaimSchema().NewLease("camunda-system", newKey, self),
+				},
+				tc.pods...,
+			)
+			c := storageClaimPodClient(t, scheme, objects...)
+
+			r := &CamundaClusterReconciler{Client: c, APIReader: c, ClaimNamespace: "camunda-system"}
+
+			heldBack, err := r.releaseLeftBackends(context.Background(), self, newClaim)
+
 			require.NoError(t, err)
-			assert.Equal(t, tc.stale, stale)
+			assert.Equal(t, tc.heldBack, heldBack)
+			var lease coordinationv1.Lease
+			err = c.Get(
+				context.Background(),
+				client.ObjectKey{Namespace: "camunda-system", Name: oldClaim},
+				&lease,
+			)
+			assert.Equal(t, tc.released, apierrors.IsNotFound(err), "the claim of the old backend")
 		})
 	}
 }
 
-// TestHolderPods covers holderPods against a fake client: only a pod that
-// carries the storage labels of the holder and the contract counts, the
-// importer of an Optimize attached to the holder among them, and a holder in
-// another namespace has none, because a same-named contract there is another
-// object.
-func TestHolderPods(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, clientgoscheme.AddToScheme(scheme))
-	require.NoError(t, v1.AddToScheme(scheme))
-
-	contract := &v1.SecondaryStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "storage-contract", Namespace: "team-a"},
-	}
-	holder := secondarystorageconfig.Holder{
-		Cluster: types.NamespacedName{Namespace: "team-a", Name: "holder"},
-		UID:     "uid-1",
-	}
-	pod := func(namespace, name string, podLabels map[string]string) *corev1.Pod {
-		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: podLabels}}
-	}
-
+// The gate exists for the takeover moment. A cluster whose own pods already
+// write the backend it holds is past that moment, so it does not pay for the
+// list. A status write that never landed must not end a wait, so the pods of
+// this cluster decide it and not the reason it last reported.
+func TestHandoverPossible(t *testing.T) {
 	cases := map[string]struct {
-		objects []client.Object
-		holder  secondarystorageconfig.Holder
-		pods    []string
+		suspended     bool
+		heldAtStart   bool
+		ownPodOnClaim bool
+		possible      bool
 	}{
-		"no pods": {holder: holder},
-		"pods of the holder on the contract, sorted": {
-			objects: []client.Object{
-				pod("team-a", "holder-zeebe-1", components.StoragePodLabels("holder", "storage-contract")),
-				pod("team-a", "holder-zeebe-0", components.StoragePodLabels("holder", "storage-contract")),
-			},
-			holder: holder,
-			pods:   []string{"holder-zeebe-0", "holder-zeebe-1"},
-		},
-		"the Optimize importer pod of the holder on the contract": {
-			objects: []client.Object{
-				pod("team-a", "holder-optimize-importer-0", labels.Merge(
-					components.StoragePodLabels("holder", "storage-contract"),
-					map[string]string{labels.ComponentKey: optimizecomponents.ComponentImporter},
-				)),
-			},
-			holder: holder,
-			pods:   []string{"holder-optimize-importer-0"},
-		},
-		"pods of the holder on another contract": {
-			objects: []client.Object{
-				pod("team-a", "holder-zeebe-0", components.StoragePodLabels("holder", "another-contract")),
-			},
-			holder: holder,
-		},
-		"pods of another cluster on the contract": {
-			objects: []client.Object{
-				pod("team-a", "other-zeebe-0", components.StoragePodLabels("other", "storage-contract")),
-			},
-			holder: holder,
-		},
-		"pods of a same-named holder in another namespace": {
-			objects: []client.Object{
-				pod("other-ns", "holder-zeebe-0", components.StoragePodLabels("holder", "storage-contract")),
-			},
-			holder: secondarystorageconfig.Holder{
-				Cluster: types.NamespacedName{Namespace: "other-ns", Name: "holder"},
-				UID:     "uid-1",
-			},
-		},
+		"this pass took the claim":                  {heldAtStart: false, possible: true},
+		"this pass took a claim its pods carry":     {heldAtStart: false, ownPodOnClaim: true, possible: true},
+		"no pod of this cluster writes the backend": {heldAtStart: true, possible: true},
+		"the pods of this cluster write it":         {heldAtStart: true, ownPodOnClaim: true, possible: false},
+		// A suspended cluster writes nothing, so it has no handover to wait
+		// for, and its Ready keeps the reason the user asked for.
+		"the user suspended the cluster":                    {suspended: true, heldAtStart: true},
+		"a suspended cluster that took the claim this pass": {suspended: true},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			res := &resolver{
-				reader:  fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.objects...).Build(),
-				storage: contract,
-			}
-			pods, err := res.holderPods(context.Background(), tc.holder)
-			require.NoError(t, err)
-			assert.Equal(t, tc.pods, pods)
+			assert.Equal(
+				t, tc.possible, handoverPossible(tc.suspended, tc.heldAtStart, tc.ownPodOnClaim),
+			)
 		})
 	}
+}
+
+// A free backend is not free while pods of another cluster write it. Without
+// this rule, a parked cluster that finds the Lease gone creates it, and the
+// running holder then meets a blocker and scales to zero.
+func TestClaimStorageRefusesAFreeBackendUnderOtherPods(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	storage := components.Storage{
+		Type:          v1.SecondaryStorageTypeElasticsearch,
+		Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es.data.svc:9200"},
+	}
+	key, err := components.StorageClaimKey(storage)
+	require.NoError(t, err)
+	claim := components.StorageClaimSchema().LeaseName(key)
+	self := &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "parked", UID: "uid-parked"},
+	}
+	pod := func(name string, podLabels map[string]string) *corev1.Pod {
+		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "apps", Labels: podLabels}}
+	}
+
+	foreign := []client.Object{
+		pod("holder-zeebe-0", components.StoragePodLabels("holder", "uid-holder", claim)),
+	}
+
+	cases := map[string]struct {
+		pods      []client.Object
+		suspended bool
+		refused   bool
+	}{
+		"pods of the running holder": {pods: foreign, refused: true},
+		"its own pods": {
+			pods: []client.Object{pod("parked-zeebe-0", components.StoragePodLabels("parked", self.UID, claim))},
+		},
+		"no pods": {},
+		// A suspended cluster renders at zero, so it writes nothing beside
+		// those pods. It takes the backend and holds it for when it resumes.
+		"a suspended cluster under the pods of another": {pods: foreign, suspended: true},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			in := &components.Input{Storage: storage}
+			in.Effective = components.NewEffective(v1.CamundaClusterSpec{Suspend: tc.suspended})
+			c := storageClaimPodClient(t, scheme, tc.pods...)
+			res := &resolver{
+				reader:  c,
+				claims:  components.StorageClaimSchema().NewClaim(c, c, "camunda-system"),
+				cluster: self,
+				storage: &v1.SecondaryStorageConfig{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "storage"},
+				},
+				recorder: events.NewFakeRecorder(10),
+			}
+
+			err := res.claimStorage(context.Background(), in)
+
+			var lease coordinationv1.Lease
+			read := c.Get(
+				context.Background(),
+				client.ObjectKey{Namespace: "camunda-system", Name: claim},
+				&lease,
+			)
+			if !tc.refused {
+				require.NoError(t, err)
+				assert.NoError(t, read, "the cluster took the free backend")
+
+				return
+			}
+
+			var unwatched *conditions.UnwatchedPreCheckFailure
+			require.ErrorAs(t, err, &unwatched)
+			assert.Equal(t, v1.ReasonWaitingForHandover, unwatched.Failure.Reason)
+			assert.Contains(t, unwatched.Failure.Message, "apps/holder-zeebe-0")
+			assert.True(t, apierrors.IsNotFound(read), "no Lease is written under the pods of another cluster")
+		})
+	}
+}
+
+// A pre-check that fails before the claim step knows no backend of this
+// cluster. Releasing then would hand a live backend to a waiting cluster, and
+// a cluster whose pods are already gone holds nothing back.
+func TestReportFailedPreCheckReleasesNothingBeforeTheClaimStep(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	const key = "elasticsearch|https://es.data.svc:9200"
+	self := &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "orders", UID: "uid-1"},
+	}
+	claim := components.StorageClaimSchema().LeaseName(key)
+
+	cases := map[string]struct {
+		claim    string
+		released bool
+	}{
+		"the pre-check failed before the claim step": {claim: ""},
+		"the claim step ran and named this backend":  {claim: claim},
+		"the claim step ran and named another":       {claim: "camunda-storage-other", released: true},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			c := storageClaimPodClient(
+				t, scheme, components.StorageClaimSchema().NewLease("camunda-system", key, self),
+			)
+			r := &CamundaClusterReconciler{Client: c, APIReader: c, ClaimNamespace: "camunda-system"}
+			in := components.Input{Cluster: self, Storage: components.Storage{Claim: tc.claim}}
+
+			_, err := r.reportFailedPreCheck(
+				context.Background(),
+				self.DeepCopy(),
+				in,
+				&conditions.PreCheckFailure{Reason: v1.ReasonInvalidReference, Message: "gone"},
+			)
+
+			require.NoError(t, err)
+			read := c.Get(
+				context.Background(),
+				client.ObjectKey{Namespace: "camunda-system", Name: claim},
+				&coordinationv1.Lease{},
+			)
+			assert.Equal(t, tc.released, apierrors.IsNotFound(read), "the backend this cluster writes")
+		})
+	}
+}
+
+// A Lease that carries the name of a storage claim and no holder annotations
+// is somebody else's. No cluster holds the backend, so the failure is a report
+// and not a suspension. Nothing watches that Lease for this cluster, so the
+// failure must be unwatched: its deletion is picked up by the retry timer.
+func TestClaimStorageReportsAForeignLeaseAsUnwatched(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	in := &components.Input{Storage: components.Storage{
+		Type:          v1.SecondaryStorageTypeElasticsearch,
+		Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es.data.svc:9200"},
+	}}
+	key, err := components.StorageClaimKey(in.Storage)
+	require.NoError(t, err)
+	foreign := &coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{
+		Namespace: "camunda-system",
+		Name:      components.StorageClaimSchema().LeaseName(key),
+	}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(foreign).Build()
+
+	res := &resolver{
+		reader:  c,
+		claims:  components.StorageClaimSchema().NewClaim(c, c, "camunda-system"),
+		cluster: &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "orders", UID: "uid-1"}},
+		storage: &v1.SecondaryStorageConfig{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "storage"},
+		},
+	}
+
+	err = res.claimStorage(context.Background(), in)
+
+	var unwatched *conditions.UnwatchedPreCheckFailure
+	require.ErrorAs(t, err, &unwatched)
+	assert.Equal(t, v1.ReasonInvalidReference, unwatched.Failure.Reason)
+	assert.Contains(t, unwatched.Failure.Message, foreign.Name)
+	assert.Nil(t, in.Storage.Holder, "no cluster holds the backend, so the cluster is not suspended")
 }
 
 // TestStorageHeld covers the Ready condition storageHeld builds for a
@@ -225,8 +322,8 @@ func TestHolderPods(t *testing.T) {
 // keeps CamundaCluster.Suspended true either way.
 func TestStorageHeld(t *testing.T) {
 	holder := &components.StorageHolder{
-		Cluster:  types.NamespacedName{Namespace: "ns", Name: "holder"},
-		Contract: types.NamespacedName{Namespace: "ns", Name: "storage"},
+		Cluster: types.NamespacedName{Namespace: "ns", Name: "holder"},
+		Backend: "elasticsearch|https://es:9200",
 	}
 	cluster := &v1.CamundaCluster{
 		ObjectMeta: metav1.ObjectMeta{Generation: 3},
@@ -238,7 +335,7 @@ func TestStorageHeld(t *testing.T) {
 		assert.Equal(t, v1.ReasonStorageAlreadyAttached, cond.Reason)
 		assert.Equal(t, cluster.Generation, cond.ObservedGeneration)
 		assert.Contains(t, cond.Message, "ns/holder")
-		assert.Contains(t, cond.Message, "ns/storage")
+		assert.Contains(t, cond.Message, "elasticsearch|https://es:9200")
 		assert.NotContains(t, cond.Message, "failed")
 	})
 
@@ -262,6 +359,82 @@ func TestStorageHeld(t *testing.T) {
 	})
 }
 
+// TestStorageHandover covers the Ready condition storageHandover builds for a
+// cluster that holds the claim and waits for the pods of another cluster, with
+// and without an apply error, and that the result keeps
+// CamundaCluster.Suspended true either way.
+func TestStorageHandover(t *testing.T) {
+	handover := &components.StorageHandover{
+		Backend: "elasticsearch|https://es:9200",
+		Pods:    []string{"ns/old-zeebe-0", "ns/old-zeebe-1"},
+	}
+	cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Generation: 3}}
+
+	t.Run("without an apply error", func(t *testing.T) {
+		cond := storageHandover(cluster, handover, nil)
+		assert.Equal(t, metav1.ConditionFalse, cond.Status)
+		assert.Equal(t, v1.ReasonWaitingForHandover, cond.Reason)
+		assert.Equal(t, cluster.Generation, cond.ObservedGeneration)
+		assert.Contains(t, cond.Message, "elasticsearch|https://es:9200")
+		assert.Contains(t, cond.Message, "ns/old-zeebe-0, ns/old-zeebe-1")
+		assert.NotContains(t, cond.Message, "failed")
+	})
+
+	t.Run("with an apply error", func(t *testing.T) {
+		cond := storageHandover(cluster, handover, errors.New("apply exploded"))
+		assert.Equal(t, v1.ReasonWaitingForHandover, cond.Reason)
+		assert.Contains(t, cond.Message, "The last apply of the suspended workloads failed: apply exploded")
+	})
+
+	t.Run("the gate", func(t *testing.T) {
+		for _, applyErr := range []error{nil, errors.New("apply exploded")} {
+			gated := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Generation: 3}}
+			cond := storageHandover(gated, handover, applyErr)
+			meta.SetStatusCondition(&gated.Status.Conditions, cond)
+			assert.True(t, gated.Suspended())
+		}
+	})
+}
+
+// storageClaimPodClient builds a fake client for the handover gate. The fake
+// client refuses a "!=" field selector, which the API server serves, so the
+// interceptor asserts that the phase selector reached it and then drops it. An
+// envtest spec covers the filtering itself.
+func storageClaimPodClient(t *testing.T, scheme *runtime.Scheme, objects ...client.Object) client.Client {
+	t.Helper()
+
+	return fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objects...).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(
+				ctx context.Context,
+				c client.WithWatch,
+				list client.ObjectList,
+				opts ...client.ListOption,
+			) error {
+				if _, ours := list.(*metav1.PartialObjectMetadataList); !ours {
+					return c.List(ctx, list, opts...)
+				}
+
+				kept := make([]client.ListOption, 0, len(opts))
+				var phases string
+				for _, opt := range opts {
+					if selector, ok := opt.(client.MatchingFieldsSelector); ok {
+						phases = selector.String()
+
+						continue
+					}
+					kept = append(kept, opt)
+				}
+				assert.Equal(t, "status.phase!=Failed,status.phase!=Succeeded", phases)
+
+				return c.List(ctx, list, kept...)
+			},
+		}).
+		Build()
+}
+
 // newNamedCluster is newCluster with a name prefix, so a spec that creates
 // two clusters on one contract can tell them apart in the output.
 func newNamedCluster(
@@ -274,17 +447,36 @@ func newNamedCluster(
 	return cluster
 }
 
-// expectClaimedBy polls until the contract carries the claim of cluster.
+// expectClaimedBy polls until the storage claim of the backend that binding
+// names records cluster.
 func expectClaimedBy(binding *v1.SecondaryStorageConfig, cluster *v1.CamundaCluster) {
 	GinkgoHelper()
+	key := storageKeyOf(binding)
 	Eventually(func(g Gomega) {
-		var latest v1.SecondaryStorageConfig
-		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(binding), &latest)).To(Succeed())
-		holder, held := secondarystorageconfig.HolderOf(&latest)
-		g.Expect(held).To(BeTrue())
-		g.Expect(holder.Cluster).To(Equal(client.ObjectKeyFromObject(cluster)))
+		var lease coordinationv1.Lease
+		name := client.ObjectKey{
+			Namespace: testClaimNamespace,
+			Name:      components.StorageClaimSchema().LeaseName(key),
+		}
+		g.Expect(k8sClient.Get(ctx, name, &lease)).To(Succeed())
+		holder, ours := components.StorageClaimSchema().HolderOf(&lease)
+		g.Expect(ours).To(BeTrue())
+		g.Expect(holder.NamespacedName).To(Equal(client.ObjectKeyFromObject(cluster)))
 		g.Expect(holder.UID).To(Equal(cluster.UID))
 	}, timeout, interval).Should(Succeed())
+}
+
+// storageKeyOf returns the claim key of the backend that binding names. The
+// test bindings are Elasticsearch ones.
+func storageKeyOf(binding *v1.SecondaryStorageConfig) string {
+	GinkgoHelper()
+	key, err := components.StorageClaimKey(components.Storage{
+		Type:          binding.Spec.Type,
+		Elasticsearch: binding.Spec.Elasticsearch,
+	})
+	Expect(err).NotTo(HaveOccurred())
+
+	return key
 }
 
 // expectParked polls until cluster reports StorageAlreadyAttached naming
@@ -304,16 +496,20 @@ func expectParked(cluster, holder *v1.CamundaCluster) {
 }
 
 // createStoragePod creates a pod that carries the storage labels of cluster
-// on binding, the way a rendered pod of that cluster does. envtest runs no
-// kubelet, so a pod of the holder must be made by hand. It is deleted with
-// the namespace.
+// on the backend of binding, the way a rendered pod of that cluster does.
+// envtest runs no kubelet, so a pod of the holder must be made by hand. It is
+// deleted with the namespace.
 func createStoragePod(cluster *v1.CamundaCluster, binding *v1.SecondaryStorageConfig) *corev1.Pod {
 	GinkgoHelper()
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cluster.Name + "-zeebe-0",
 			Namespace: cluster.Namespace,
-			Labels:    components.StoragePodLabels(cluster.Name, binding.Name),
+			Labels: components.StoragePodLabels(
+				cluster.Name,
+				cluster.UID,
+				components.StorageClaimSchema().LeaseName(storageKeyOf(binding)),
+			),
 		},
 		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "camunda", Image: "camunda/camunda:8.9.0"}}},
 	}
@@ -322,20 +518,44 @@ func createStoragePod(cluster *v1.CamundaCluster, binding *v1.SecondaryStorageCo
 }
 
 // expectWaitingForHandover polls until cluster reports WaitingForHandover
-// naming previous and pod, and checks that its broker StatefulSet stays at
-// zero replicas meanwhile.
-func expectWaitingForHandover(cluster, previous *v1.CamundaCluster, pod *corev1.Pod) {
+// naming the backend of binding and pod, and checks that its broker
+// StatefulSet stays at zero replicas meanwhile.
+func expectWaitingForHandover(cluster *v1.CamundaCluster, binding *v1.SecondaryStorageConfig, pod *corev1.Pod) {
 	GinkgoHelper()
 	expectReady(
 		cluster,
 		metav1.ConditionFalse,
 		Equal(v1.ReasonWaitingForHandover),
-		And(ContainSubstring(previous.Namespace+"/"+previous.Name), ContainSubstring(pod.Name)),
+		And(ContainSubstring(storageKeyOf(binding)), ContainSubstring(pod.Name)),
 	)
 	zeebeKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-zeebe"}
 	Consistently(func(g Gomega) {
 		g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
 	}, "2s", interval).Should(Succeed(), "a cluster that waits for the handover renders nothing")
+}
+
+// createBindingAt creates an Elasticsearch contract in namespace that names
+// endpoint, so two contracts can name one backend. createBinding gives every
+// contract an endpoint of its own.
+func createBindingAt(namespace, endpoint string) *v1.SecondaryStorageConfig {
+	GinkgoHelper()
+	binding := fixtures.SecondaryStorageConfigElasticsearch(namespace)
+	binding.Spec.Elasticsearch.Endpoint = endpoint
+	Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+	createSecret(namespace, binding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{
+		"username": "camunda", "password": "es-password",
+	})
+
+	return binding
+}
+
+// createStorageLeaseFor writes a storage claim Lease that records holder, the
+// way a cluster that is gone leaves one behind.
+func createStorageLeaseFor(key string, holder *v1.CamundaCluster) {
+	GinkgoHelper()
+	Expect(k8sClient.Create(
+		ctx, components.StorageClaimSchema().NewLease(testClaimNamespace, key, holder),
+	)).To(Succeed())
 }
 
 // expectHolds polls until cluster reports a Ready reason other than
@@ -378,6 +598,28 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 			ContainSubstring(binding.Name),
 		)
 		expectHolds(first)
+	})
+
+	// Two contracts that name one address are one backend. The second cluster
+	// parks on the claim of the first.
+	It("parks the second cluster when two contracts name one address", func() {
+		ns := newNamespace()
+		first := newNamedCluster(
+			"cc-a-", ns, createPlatformConfig(), createBindingAt(ns, "https://shared.es:9200"),
+		)
+		createCluster(first)
+		expectHolds(first)
+
+		binding := createBindingAt(ns, "https://SHARED.es:9200/")
+		second := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
+		createCluster(second)
+		expectParked(second, first)
+		expectReady(
+			second,
+			metav1.ConditionFalse,
+			Equal(v1.ReasonStorageAlreadyAttached),
+			ContainSubstring("elasticsearch|https://shared.es:9200"),
+		)
 	})
 
 	It("lets two clusters on two contracts both run", func() {
@@ -430,8 +672,24 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		expectParked(parked, holder)
 
 		Expect(k8sClient.Delete(ctx, holder)).To(Succeed())
-		expectWaitingForHandover(parked, holder, pod)
-		expectClaimedBy(binding, holder)
+		// The deleted cluster gives the backend back before it goes, so no
+		// claim of it is left for the next claimant to clear.
+		claim := client.ObjectKey{
+			Namespace: testClaimNamespace,
+			Name:      components.StorageClaimSchema().LeaseName(storageKeyOf(binding)),
+		}
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, claim, &coordinationv1.Lease{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(holder), &v1.CamundaCluster{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		// The pods it left behind keep the parked cluster off the free
+		// backend, so the two never write it at once.
+		expectWaitingForHandover(parked, binding, pod)
 
 		Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
 		expectHolds(parked)
@@ -439,8 +697,10 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 	})
 
 	// The pods of a repointed holder write the old backend until its rollout
-	// replaces them. The parked cluster waits for them.
-	It("waits for the pods of a repointed holder before it resumes", func() {
+	// replaces them, so the holder keeps that backend until they are gone. The
+	// parked cluster waits on the claim, not on the pods: the holder still
+	// holds the backend it left.
+	It("keeps the backend of a repointed holder while its pods still write it", func() {
 		ns := newNamespace()
 		binding := createBinding(ns, true)
 		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
@@ -454,9 +714,10 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 
 		other := createBinding(ns, true)
 		updateCluster(holder, func(c *v1.CamundaCluster) { c.Spec.StorageRef = other.Name })
-		expectWaitingForHandover(parked, holder, pod)
 		expectHolds(holder)
 		expectClaimedBy(other, holder)
+		expectParked(parked, holder)
+		expectClaimedBy(binding, holder)
 
 		Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
 		expectHolds(parked)
@@ -558,6 +819,16 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(Equal(int32(1)))
 		}, "3s", interval).Should(Succeed(), "the broker StatefulSet keeps its replicas")
 		expectHolds(first)
+		// The claim outlives the contract that named the backend. The brokers
+		// of the second cluster still write it, so it stays theirs.
+		expectClaimedBy(binding, second)
+
+		By("parking a third cluster that names the same backend")
+		third := newNamedCluster(
+			"cc-c-", ns, createPlatformConfig(), createBindingAt(ns, binding.Spec.Elasticsearch.Endpoint),
+		)
+		createCluster(third)
+		expectParked(third, second)
 
 		By("recreating the contract")
 		recreated := &v1.SecondaryStorageConfig{
@@ -569,19 +840,91 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		expectClaimedBy(recreated, second)
 	})
 
-	// A claim whose holder never existed, or was deleted before the operator
-	// ran, must not park every later cluster forever.
-	It("takes over a claim whose holder does not exist", func() {
+	// A running cluster that repoints into a backend whose previous holder
+	// left pods behind must stop. It holds the claim of that backend, and its
+	// own workloads still write the backend it left.
+	It("scales a running cluster to zero while it waits for a handover", func() {
 		ns := newNamespace()
-		binding := fixtures.SecondaryStorageConfigElasticsearch(ns)
-		binding.Annotations = map[string]string{
-			secondarystorageconfig.ClaimHolderAnnotation:    ns + "/ghost",
-			secondarystorageconfig.ClaimHolderUIDAnnotation: "ghost-uid",
+		own := createBinding(ns, true)
+		cluster := newNamedCluster("cc-a-", ns, createPlatformConfig(), own)
+		createCluster(cluster)
+		expectHolds(cluster)
+
+		target := createBinding(ns, true)
+		ghost := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "ghost", UID: "ghost-uid"},
 		}
-		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
-		createSecret(ns, binding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{
-			"username": "camunda", "password": "es-password",
-		})
+		createStorageLeaseFor(storageKeyOf(target), ghost)
+		pod := createStoragePod(ghost, target)
+
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.StorageRef = target.Name })
+		expectWaitingForHandover(cluster, target, pod)
+
+		Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
+		expectHolds(cluster)
+		expectClaimedBy(target, cluster)
+	})
+
+	// A repoint holds two claims for one pass. The old one must go, or the
+	// next cluster on that backend parks on a claim nothing writes.
+	It("releases the old backend when the holder repoints and the new one resolves", func() {
+		ns := newNamespace()
+		old := createBinding(ns, true)
+		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), old)
+		createCluster(holder)
+		expectClaimedBy(old, holder)
+
+		other := createBinding(ns, true)
+		updateCluster(holder, func(c *v1.CamundaCluster) { c.Spec.StorageRef = other.Name })
+		expectClaimedBy(other, holder)
+		Eventually(func(g Gomega) {
+			var lease coordinationv1.Lease
+			name := client.ObjectKey{
+				Namespace: testClaimNamespace,
+				Name:      components.StorageClaimSchema().LeaseName(storageKeyOf(old)),
+			}
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, name, &lease))).To(BeTrue())
+		}, timeout, interval).Should(Succeed(), "the claim of the old backend is released")
+	})
+
+	// Two clusters that swap backends in one step meet each other's claim. A
+	// parked cluster writes nothing, so it gives its previous backend back,
+	// and the two never block each other for good.
+	It("lets two clusters swap their backends in one step", func() {
+		ns := newNamespace()
+		first := createBinding(ns, true)
+		second := createBinding(ns, true)
+		a := newNamedCluster("cc-a-", ns, createPlatformConfig(), first)
+		createCluster(a)
+		b := newNamedCluster("cc-b-", ns, createPlatformConfig(), second)
+		createCluster(b)
+		expectClaimedBy(first, a)
+		expectClaimedBy(second, b)
+
+		updateCluster(a, func(c *v1.CamundaCluster) { c.Spec.StorageRef = second.Name })
+		updateCluster(b, func(c *v1.CamundaCluster) { c.Spec.StorageRef = first.Name })
+
+		expectClaimedBy(second, a)
+		expectClaimedBy(first, b)
+		expectHolds(a)
+		expectHolds(b)
+	})
+
+	// An evicted pod of a previous holder keeps its object under a ReplicaSet
+	// that nobody deleted. It writes nothing, so it must not hold the backend
+	// of the next cluster for good.
+	It("ignores a pod of a previous holder that ended", func() {
+		ns := newNamespace()
+		binding := createBinding(ns, true)
+		ghost := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "ghost", UID: "ghost-uid"},
+		}
+		createStorageLeaseFor(storageKeyOf(binding), ghost)
+		pod := createStoragePod(ghost, binding)
+
+		By("failing the pod the way an eviction does")
+		pod.Status.Phase = corev1.PodFailed
+		Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
 
 		cluster := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
 		createCluster(cluster)
@@ -590,35 +933,111 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		expectClaimedBy(binding, cluster)
 	})
 
-	// The producer of a contract applies it with server-side apply and never
-	// names the claim annotations, so its field manager must not take them
-	// away.
-	It("keeps a claim through an apply of the contract by its producer", func() {
+	// The render at zero deletes the real pods, so a hand-made pod stands in
+	// for one that drains slowly.
+	It("keeps the claim of the old backend while its own pods still write it", func() {
+		ns := newNamespace()
+		old := createBinding(ns, true)
+		cluster := newNamedCluster("cc-a-", ns, createPlatformConfig(), old)
+		createCluster(cluster)
+		expectClaimedBy(old, cluster)
+		pod := createStoragePod(cluster, old)
+
+		other := createBinding(ns, true)
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.StorageRef = other.Name })
+		expectClaimedBy(other, cluster)
+
+		oldClaim := client.ObjectKey{
+			Namespace: testClaimNamespace,
+			Name:      components.StorageClaimSchema().LeaseName(storageKeyOf(old)),
+		}
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, oldClaim, &coordinationv1.Lease{})).To(Succeed())
+		}, "2s", interval).Should(Succeed(), "the pod of this cluster still writes the old backend")
+
+		Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, oldClaim, &coordinationv1.Lease{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed(), "the old backend is given back once the pod is gone")
+	})
+
+	// A hand-deleted Lease must not depose the cluster that runs on the
+	// backend. The pods of the holder order the claimants of the free key, so
+	// the holder writes its claim again and the parked cluster keeps waiting.
+	It("gives a hand-deleted claim back to the cluster whose pods write the backend", func() {
 		ns := newNamespace()
 		binding := createBinding(ns, true)
 		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
 		createCluster(holder)
+		expectHolds(holder)
+		expectClaimedBy(binding, holder)
+		createStoragePod(holder, binding)
+
+		parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
+		createCluster(parked)
+		expectParked(parked, holder)
+
+		By("deleting the claim of the backend by hand")
+		claim := client.ObjectKey{
+			Namespace: testClaimNamespace,
+			Name:      components.StorageClaimSchema().LeaseName(storageKeyOf(binding)),
+		}
+		var lease coordinationv1.Lease
+		Expect(k8sClient.Get(ctx, claim, &lease)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &lease)).To(Succeed())
+
+		expectClaimedBy(binding, holder)
+		expectHolds(holder)
+		expectParked(parked, holder)
+	})
+
+	// A suspended cluster has no pod to hold its backend, so a release on any
+	// failed check would hand it to the cluster that waits for it. The check
+	// that failed says nothing about the backend, and the suspension is not
+	// forever.
+	It("keeps the backend of a suspended cluster whose platform config goes away", func() {
+		ns := newNamespace()
+		binding := createBinding(ns, true)
+		cfg := createPlatformConfig()
+		holder := newNamedCluster("cc-a-", ns, cfg, binding)
+		holder.Spec.Suspend = true
+		createCluster(holder)
 		expectClaimedBy(binding, holder)
 
-		desired := &v1.SecondaryStorageConfig{
-			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "SecondaryStorageConfig"},
-			ObjectMeta: metav1.ObjectMeta{Name: binding.Name, Namespace: binding.Namespace},
-			Spec:       *binding.Spec.DeepCopy(),
-		}
-		Expect(k8sClient.Patch(
-			ctx,
-			desired,
-			//nolint:staticcheck // the producer applies the contract with the deprecated client.Apply patch, as ocf does
-			client.Apply,
-			client.FieldOwner("elasticsearchcluster"),
-			client.ForceOwnership,
-		)).To(Succeed())
+		parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
+		createCluster(parked)
+		expectParked(parked, holder)
 
-		var latest v1.SecondaryStorageConfig
-		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(binding), &latest)).To(Succeed())
-		Expect(latest.Annotations[secondarystorageconfig.ClaimHolderAnnotation]).
-			To(Equal(holder.Namespace + "/" + holder.Name))
-		Expect(latest.Annotations[secondarystorageconfig.ClaimHolderUIDAnnotation]).To(Equal(string(holder.UID)))
-		expectHolds(holder)
+		By("deleting the platform config that the suspended cluster names")
+		Expect(k8sClient.Delete(ctx, cfg)).To(Succeed())
+		expectReady(holder, metav1.ConditionFalse, Equal(v1.ReasonInvalidReference), ContainSubstring(cfg.Name))
+
+		claim := client.ObjectKey{
+			Namespace: testClaimNamespace,
+			Name:      components.StorageClaimSchema().LeaseName(storageKeyOf(binding)),
+		}
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, claim, &coordinationv1.Lease{})).To(Succeed())
+		}, "3s", interval).Should(Succeed(), "the suspended cluster keeps the backend it resolved")
+		expectParked(parked, holder)
 	})
+
+	// A claim whose holder never existed, or was deleted before the operator
+	// ran, must not park every later cluster forever.
+	It("takes over a claim whose holder does not exist", func() {
+		ns := newNamespace()
+		binding := createBinding(ns, true)
+		ghost := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "ghost", UID: "ghost-uid"},
+		}
+		createStorageLeaseFor(storageKeyOf(binding), ghost)
+
+		cluster := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
+		createCluster(cluster)
+
+		expectHolds(cluster)
+		expectClaimedBy(binding, cluster)
+	})
+
 })

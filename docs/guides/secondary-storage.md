@@ -18,11 +18,11 @@ This guide tells you which backend to pick, which resources to create for each b
 
 If you have no strong reason to pick one, pick Elasticsearch. It is the backend that Camunda benchmarks the most. If your organization already runs PostgreSQL at scale and you do not need Optimize, pick PostgreSQL.
 
-## One cluster per contract
+## One cluster per backend
 
-A contract belongs to one `CamundaCluster`. Camunda fixes the index names in Elasticsearch and the tables in a database, so two clusters on one backend write each other's data. Give every cluster its own `ElasticsearchCluster` or its own `Database`, each with its own contract. Two clusters can share one PostgreSQL server, each with its own database.
+A backend belongs to one `CamundaCluster`. Camunda fixes the index names in Elasticsearch and the tables in a database, so two clusters on one backend write each other's data. Give every cluster its own `ElasticsearchCluster` or its own `Database`, each with its own contract. Two clusters can share one PostgreSQL server, each with its own database.
 
-If a second cluster names a contract that another cluster holds, the operator suspends the second cluster. Its `Ready` condition reads `False` with reason `StorageAlreadyAttached` and names the holder. It resumes on its own when the holder releases the contract. The operator compares contracts, not endpoints: give one contract to one backend. The [CamundaCluster reference](../crds/camundacluster.md#secondary-storage) has the rule in full.
+The operator holds one claim per backend address. For Elasticsearch that address is the scheme, the host, and the port of the endpoint. For PostgreSQL it is the host, the port, and the database name, so two databases on one server are two backends. Two contracts that name one address are one backend. If a second cluster resolves a backend that another cluster holds, the operator suspends the second cluster. Its `Ready` condition reads `False` with reason `StorageAlreadyAttached` and names the holder and the backend. It resumes on its own once the holder releases the backend and the pods of that holder are gone. It reports `WaitingForHandover` while it waits for those pods. The [CamundaCluster reference](../crds/camundacluster.md#secondary-storage) has the rule in full.
 
 ## Elasticsearch
 
@@ -325,7 +325,7 @@ For all fields, see [DatabaseServerConfig](../crds/databaseserverconfig.md), [Da
 
 If you already run Elasticsearch or a PostgreSQL database that the operator does not manage, write the contracts by hand. The `CamundaCluster` does not know who created them.
 
-The rule of [one cluster per contract](#one-cluster-per-contract) holds for a hand-written contract. Write one contract per backend.
+The rule of [one cluster per backend](#one-cluster-per-backend) holds for a hand-written contract. Write one contract per backend.
 
 For Elasticsearch, write a `SecondaryStorageConfig` with `type: elasticsearch`. Create the Secret with the username and password first. If the endpoint serves a certificate that the orchestration cluster does not trust by default, name the CA Secret as well.
 

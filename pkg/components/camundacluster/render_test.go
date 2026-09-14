@@ -36,7 +36,11 @@ func newInput(t *testing.T, mutate func(*Input)) Input {
 	t.Helper()
 
 	cluster := &v1.CamundaCluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "my-cluster-ns"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-cluster",
+			Namespace: "my-cluster-ns",
+			UID:       "my-cluster-uid",
+		},
 		Spec: v1.CamundaClusterSpec{
 			PlatformConfigRef: "my-platform-config",
 			Version:           "8.9.9",
@@ -61,6 +65,14 @@ func newInput(t *testing.T, mutate func(*Input)) Input {
 	if mutate != nil {
 		mutate(&in)
 	}
+
+	// The controller sets the claim after it took it, so every rendered pod
+	// carries a real Lease name. A fixture that replaces Storage is covered
+	// because this runs after mutate.
+	key, err := StorageClaimKey(in.Storage)
+	require.NoError(t, err)
+	in.Storage.Claim = StorageClaimSchema().LeaseName(key)
+
 	return in
 }
 

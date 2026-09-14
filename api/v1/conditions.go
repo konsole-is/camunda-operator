@@ -51,10 +51,11 @@ const (
 	// ReasonStorageTypeMismatch means that the secondary storage type of the
 	// referenced cluster does not fit this resource.
 	ReasonStorageTypeMismatch = "StorageTypeMismatch"
-	// ReasonWaitingForHandover means that this resource takes over a claim
-	// from a previous holder whose workloads still exist. It keeps its own
-	// workloads down until they are gone. The message names what it waits
-	// for. The state clears on its own. The CRD doc of each resource that
-	// reports it names the workloads it waits for.
+	// ReasonWaitingForHandover means that workloads of another holder of the
+	// thing this resource claims still exist, whether this resource holds the
+	// claim already or waits to take it. It keeps its own workloads down until
+	// they are gone. The message names what it waits for. The state clears on
+	// its own. The CRD doc of each resource that reports it names the workloads
+	// it waits for.
 	ReasonWaitingForHandover = "WaitingForHandover"
 )

@@ -17,6 +17,8 @@ limitations under the License.
 package camundaoptimize
 
 import (
+	"k8s.io/apimachinery/pkg/types"
+
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/images"
 )
@@ -34,12 +36,17 @@ type Input struct {
 	// Partitions is the partition count of the referenced cluster. Optimize
 	// reads every partition of the exported records.
 	Partitions int32
-	// Suspended reports whether the referenced cluster is suspended, by
-	// spec.suspend or because another cluster holds its storage contract.
-	// Optimize follows it: a suspended cluster scales both Optimize workloads
-	// to zero, the way it scales its own. The importer reads Elasticsearch
-	// directly, so it otherwise keeps importing while the cluster is down, and
-	// a restore of that cluster writes analytics from half-restored indices.
+	// Suspended reports whether the Optimize workloads go to zero with the
+	// referenced cluster. Three states set it: spec.suspend of that cluster,
+	// another cluster holding the storage claim of its backend, and a wait for
+	// the pods of another cluster to leave that backend. The claim gate adds a
+	// fourth from this side, because the cluster can report itself healthy
+	// while it does not hold the claim yet.
+	//
+	// Optimize follows the cluster: it scales both workloads to zero, the way
+	// the cluster scales its own. The importer reads Elasticsearch directly, so
+	// it otherwise keeps importing while the cluster writes nothing, and a
+	// restore of that backend writes analytics from half-restored indices.
 	Suspended bool
 	// Platform is the spec of the CamundaPlatformConfig that the referenced
 	// cluster names. It gives the image repositories and the license. It is
@@ -49,11 +56,16 @@ type Input struct {
 	// the referenced cluster names, with every Secret reference already
 	// pointed at its copy in the CamundaOptimize namespace.
 	Storage v1.ElasticsearchStorage
-	// StorageContract is the name of that SecondaryStorageConfig. It is the
-	// camunda.io/storage-contract label value of the pods, so a cluster that
-	// takes the contract over waits for the importer of the previous holder
-	// as it waits for the pods of that cluster. It is always set.
-	StorageContract string
+	// StorageClaim is the name of the storage claim Lease of the backend that
+	// the referenced cluster writes. It is the camunda.io/storage-claim label
+	// value of the pods, so a cluster that takes the backend over waits for
+	// the importer of the previous holder as it waits for the pods of that
+	// cluster. It is always set.
+	StorageClaim string
+	// ClusterUID is the UID of the referenced cluster. The pods carry it
+	// beside the storage claim, so the cluster tells its own pods from those
+	// of another cluster on the same backend.
+	ClusterUID types.UID
 	// Auth is the ManagementAuthConfig that spec.managementAuthRef names, with
 	// its client secret reference already pointed at its copy in the
 	// CamundaOptimize namespace.

@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/tools/events"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 )
 
 // TestWasSuspendingCoversEveryStageOfASuspension pins what stops the
@@ -63,33 +64,87 @@ func TestWasSuspendingCoversEveryStageOfASuspension(t *testing.T) {
 	)
 }
 
-// TestSuspensionNotesSpeakForTheClusterOnly pins what the two events say. The
+// TestSuspensionNotesSpeakForTheClusterOnly pins what each event says. The
 // Ready condition cannot name the cluster, so the note must. Each note reports
 // the state of that cluster and nothing about a replica count: an importer that
 // spec.importer.replicas holds at zero does not start when the cluster resumes.
+//
+// The cluster can report itself healthy while the claim of its backend holds
+// these workloads at zero, so that wait gets an event that says so.
 func TestSuspensionNotesSpeakForTheClusterOnly(t *testing.T) {
 	t.Parallel()
 
-	optimize := &v1.CamundaOptimize{
-		ObjectMeta: metav1.ObjectMeta{Name: "co-a", Namespace: "team-a"},
-		Spec:       v1.CamundaOptimizeSpec{ClusterRef: v1.ClusterRef{Name: "my-cluster"}},
+	cases := map[string]struct {
+		res  resolved
+		want string
+	}{
+		"the cluster is suspended": {
+			res: resolved{Input: components.Input{Suspended: true}},
+			want: `Normal ClusterSuspended CamundaCluster "my-cluster" is suspended, ` +
+				"the Optimize workloads follow it to zero",
+		},
+		"the claim of the backend holds the workloads": {
+			res: resolved{Input: components.Input{Suspended: true}, AwaitsBackendClaim: true},
+			want: `Normal StorageClaimAwaited CamundaCluster "my-cluster" does not hold its backend, ` +
+				"or pods of another cluster still write it, the Optimize workloads follow it to zero",
+		},
+		// One note covers a resume from either wait, because the cluster was
+		// not suspended in one of them.
+		"the workloads follow their spec again": {
+			res: resolved{},
+			want: `Normal ClusterResumed CamundaCluster "my-cluster" holds its backend and is not suspended, ` +
+				"the Optimize workloads follow their spec",
+		},
 	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			recorder := events.NewFakeRecorder(10)
+			r := &Reconciler{EventRecorder: recorder}
+
+			r.recordSuspensionChange(suspendedOptimize(), !tc.res.Input.Suspended, tc.res)
+
+			assert.Equal(t, []string{tc.want}, recordedNotes(recorder))
+		})
+	}
+}
+
+// TestRecordClusterSuspendedNamesTheWait covers the pre-check failure path,
+// which records the start of a wait and no other transition. It names the same
+// two waits: a cluster that reports itself suspended, and the claim of the
+// backend that a healthy cluster does not hold.
+func TestRecordClusterSuspendedNamesTheWait(t *testing.T) {
+	t.Parallel()
+
 	recorder := events.NewFakeRecorder(10)
 	r := &Reconciler{EventRecorder: recorder}
 
-	r.recordClusterSuspended(optimize)
-	r.recordSuspensionChange(optimize, true, false)
+	r.recordClusterSuspended(suspendedOptimize(), resolved{Input: components.Input{Suspended: true}})
+	r.recordClusterSuspended(
+		suspendedOptimize(),
+		resolved{Input: components.Input{Suspended: true}, AwaitsBackendClaim: true},
+	)
 
 	assert.Equal(
 		t,
 		[]string{
 			`Normal ClusterSuspended CamundaCluster "my-cluster" is suspended, ` +
 				"the Optimize workloads follow it to zero",
-			`Normal ClusterResumed CamundaCluster "my-cluster" is no longer suspended, ` +
-				"the Optimize workloads follow their spec",
+			`Normal StorageClaimAwaited CamundaCluster "my-cluster" does not hold its backend, ` +
+				"or pods of another cluster still write it, the Optimize workloads follow it to zero",
 		},
 		recordedNotes(recorder),
 	)
+}
+
+// suspendedOptimize returns a CamundaOptimize attached to my-cluster, which is
+// the name that every note above carries.
+func suspendedOptimize() *v1.CamundaOptimize {
+	return &v1.CamundaOptimize{
+		ObjectMeta: metav1.ObjectMeta{Name: "co-a", Namespace: "team-a"},
+		Spec:       v1.CamundaOptimizeSpec{ClusterRef: v1.ClusterRef{Name: "my-cluster"}},
+	}
 }
 
 // recordedNotes drains recorder and returns what it holds.

@@ -1,0 +1,16 @@
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  annotations:
+    camunda.io/storage-claim-holder-name: nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn
+    camunda.io/storage-claim-holder-namespace: ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss
+    camunda.io/storage-claim-holder-uid: uid-2
+    camunda.io/storage-claim-key: rdbms|pg.data.svc:5432/camunda
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn-1be63cc0bd
+    camunda.io/component: storage-claim
+  name: camunda-storage-d48e96a0d8c190d85a28b5f3bec1fd4606ef16c8
+  namespace: camunda-system
+spec:
+  holderIdentity: ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn-134b74ed3b

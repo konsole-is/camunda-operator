@@ -44,8 +44,11 @@ planned. Those kinds are the backend, not a writer to one.
 - No detection of two addresses that reach one server. The key compares what the contract
   says. A DNS alias for the same Elasticsearch is not caught, as the docs already state for
   two hand-written contracts.
-- No finalizer on the `CamundaCluster` for the Lease. A holder that is gone is taken over,
-  the way a stale annotation is today.
+- Reversed during review: the `CamundaCluster` carries a finalizer that releases its storage
+  Leases on deletion, as the Database controller does for its claims. Without it every
+  deleted cluster left one Lease behind for good, an unbounded leak in any CI that creates
+  and deletes clusters. A holder that is gone without the finalizer having run is still taken
+  over.
 - No framework primitive for a detached scale-to-zero (sourcehawk/operator-component-framework#207).
   Nothing in this operator needs one after this change.
 - No change to what `spec.suspend` does.
@@ -57,7 +60,32 @@ A workload of the operator stops on its own in exactly two states, both on the s
 | `Ready` reason | State |
 | --- | --- |
 | `StorageAlreadyAttached` | Another live cluster holds the Lease of the backend this cluster resolves. This cluster renders every workload at zero. |
-| `WaitingForHandover` | This cluster holds the Lease, and pods of another cluster still carry its label. This cluster renders nothing until they are gone. |
+| `WaitingForHandover` | Pods of another cluster still write the backend this cluster resolves, whether this cluster holds the Lease or waits to create it. This cluster renders every workload at zero until they are gone. |
+
+`spec.suspend` is the user's own instruction and stands above this table: a cluster whose
+reference check fails while `spec.suspend` is set still scales every workload it controls
+to zero, directly, because a broken reference is exactly when a user reaches for suspend.
+`Ready` reports the failure and names the suspension in its message, and the per-process
+conditions of the scaled workloads report `Suspended`. A cluster that was at zero when its
+check failed stays at zero until the check passes, because only the render restores replicas.
+
+The same holds one level down. A `CamundaOptimize` whose own check fails still follows the
+suspension of its cluster: it scales its webapp and importer to zero when the cluster is
+suspended, because the logical restore of Elasticsearch relies on the importer stopping. It
+keeps its workloads only for a failure while its cluster runs. An Optimize whose cluster is
+deleted releases its workloads, as it does when another instance holds the cluster, so its
+pods never block the handover of the backend to the next cluster.
+
+The suspension events of Optimize mark decisions, not outcomes: `ClusterSuspended` is
+recorded on the pass that stopped a workload, and `ClusterResumed` on the pass that decided
+to start them, whatever the apply did. The workload conditions report whether the resume
+completed. Tying an event to a clean apply lost it for good when ocf rewrote the conditions
+on a failed apply.
+
+A cluster held at zero after its suspension ended keeps clearing `status.gateway` and
+`status.management` only while the process that serves them is at zero; a process that a
+rejected patch left running keeps its condition and its endpoints. On that path a condition
+captured mid-drain advances to `Suspended` once the workload observes zero, read live.
 
 Every other `Ready` reason leaves the workloads as the last successful reconcile rendered them.
 `InvalidReference`, `MissingSecret`, `VersionMismatch`, `StorageTypeMismatch`,
@@ -82,9 +110,10 @@ namespace, so two clusters in two namespaces that name one backend meet on one L
 `StorageClaimKey(storage components.Storage) string` returns the backend a resolved chain
 addresses:
 
-- Elasticsearch: `elasticsearch|<scheme>://<host>:<port><path>`, with the scheme and the host
-  lowercased, the port explicit (80 or 443 when the URL names none), and no trailing slash on
-  the path.
+- Elasticsearch: `elasticsearch|<scheme>://<host>:<port>`, with the scheme and the host
+  lowercased and the port explicit (80 or 443 when the URL names none). The path is not part
+  of the key: Optimize renders host and port only, so two endpoints that differ in a path
+  prefix reach one Elasticsearch for at least one writer.
 - RDBMS: `rdbms|<host>:<port>/<database>`, with the host lowercased.
 
 The key is what the contract resolves to, not the contract. Two contracts on one address
@@ -93,12 +122,26 @@ cluster on it moves backends the way a repoint does.
 
 ### Take
 
-`claimStorage` runs after `resolveStorage`, where it runs today, and calls `Take` with the
-key. Three outcomes:
+`claimStorage` runs after `resolveStorage`, where it runs today, and calls `TakeUnclaimed`
+with the key and one rule that runs only while no Lease holds it: no pod of another cluster
+may still carry the claim. A free key with such pods is a handover in progress or a Lease
+that was deleted by hand, and the cluster whose pods write the backend recreates the Lease
+first, because its own pods are not "other". A parked cluster keeps waiting. The controller
+also watches the claim Leases, enqueueing the holder the annotations name, so a deleted
+Lease is noticed at once and not at the next unrelated event. Three outcomes:
 
-- `Take` returns no blocker: this cluster holds the Lease. It releases every other storage
-  Lease it holds (`Held`, then `Release` for each Lease whose name differs), so a repoint
-  frees the old backend once the new one is taken. It then runs the handover gate.
+- `Take` returns no blocker: this cluster holds the Lease. It then runs the handover gate.
+  The release of every other storage Lease it holds (`Held`, then `Release` for each Lease
+  whose name differs) happens in the controller after the render was applied, not in the
+  pre-check, so a pass that fails between the claim and the apply never frees a backend the
+  old pod template still writes. A Lease is released only when no pod of this cluster still
+  carries its claim label, the same signal the handover gate reads; while one is held back,
+  the cluster looks again on its retry interval. The same pod-gated release runs on the
+  foreign-Lease and bad-key exits, where the cluster keeps running on its previous backend
+  and gives it back once its pods are gone, and on the refused-downgrade path. A pre-check
+  failure that comes before the claim step releases nothing: the pass does not know which
+  backend the cluster resolves, and a cluster at zero must not give its live backend away
+  over a missing preset.
 - The blocker names a holder: `in.Storage.Holder` carries the holder and the key, and the
   controller renders the cluster suspended with `StorageAlreadyAttached`, as it does today.
   The message names the holder and the backend.
@@ -137,12 +180,28 @@ the Lease name (`StorageClaimSchema().LeaseName(key)`, 56 characters, a valid la
 Lease name instead of the contract name. The label stays on the pod template only, never on
 the selector, so a change of backend rolls the pods and the new ones carry the new value.
 
-After `Take` succeeds, the cluster lists the pods of its namespace that carry the Lease name
-and do not belong to it. A pod belongs to it when its `camunda.io/cluster-uid` label names
+After `Take` succeeds, the cluster lists the pods in every namespace that carry the Lease name
+and do not belong to it. The Lease is shared across namespaces, so the pods must be too. A pod belongs to it when its `camunda.io/cluster-uid` label names
 this cluster's UID. The pod templates of the cluster and of Optimize gain that label; today
-only the Web Modeler user Secrets of the management plane carry it. While any
-such pod exists, the step fails with the unwatched `WaitingForHandover` failure it fails with
-today, naming the pods, and the controller looks again on its retry interval. This covers a
+only the Web Modeler user Secrets of the management plane carry it. While any such pod
+exists, the claim step records them on the input and the controller renders the cluster
+suspended, every workload at zero and the volumes kept, with `Ready` False and reason
+`WaitingForHandover` naming the pods. It looks again on its retry interval, as a parked
+cluster does. This is a render, not a pre-check failure: a running cluster that repoints into
+a handover stops, so its old pods leave the previous backend and that handover completes too.
+
+The gate runs only at a takeover: when this cluster did not hold the claim at the start of
+the pass, and none of its own pods carries the claim yet, and the cluster is not suspended
+by its spec, because a suspended cluster writes nothing and needs no handover. Once its own pods write the
+backend, no pod of another cluster can, because the render at zero was what held them back.
+That signal cannot be lost the way a status write can, so a healthy cluster never lists pods
+cluster-wide. One namespaced metadata list of the cluster's own pods serves this decision and
+the release below.
+
+A holder that moves to another backend keeps the old claim while any of its pods still
+carries it, so a cluster parked on that backend stays `StorageAlreadyAttached` until those
+pods are gone, and reaches `WaitingForHandover` only for a holder that is deleted. The claim,
+not the one-time scan, carries the guarantee in the repoint case. This covers a
 previous holder on the same contract, a previous holder on another contract to the same
 address, a deleted cluster whose pods the garbage collector has not reached, and a later
 cluster of the same name.
@@ -150,6 +209,14 @@ cluster of the same name.
 The Optimize pods carry the same label. `CamundaOptimize` resolves the cluster's chain
 itself, so it computes the key and the Lease name from that chain, and `Input.StorageContract`
 becomes the Lease name. Its importer writes the same backend, so it is gated the same way.
+
+Optimize also reads the claim itself: it renders its importer only while its cluster holds
+the storage claim of the backend it resolves (`Holds` on the Lease) and no pod of another
+cluster carries that claim, the same two checks the cluster makes before it renders. The
+cluster's `Ready` lags a repoint by one reconcile, so `Suspended()` alone would let the
+importer start against a backend another cluster holds, or still writes, in that window. The
+claim and the pods are the gate; the status is the report. One exported selector helper
+serves both gates so they cannot drift.
 
 ### What goes
 
@@ -173,7 +240,14 @@ role should not change. `make manifests` decides.
 ## No suspension on a failed pre-check
 
 The pre-check failure branch of both controllers returns to the shape before #319: stage
-`Failed` on `Ready`, requeue on a timer for an unwatched failure, return.
+`Failed` on `Ready`, requeue on a timer for an unwatched failure, return. That holds for a
+parked cluster too: a failed reference on it reports the failure, its workloads stay at zero
+because nothing renders, and `Suspended()` reads false. Optimize does not depend on that
+reading for the parked case, because it gates its importer on the storage claim itself. A
+backup of such a cluster is admitted and waits at `Pending` for the management endpoint,
+which the parked render cleared, until the cluster recovers, and a schedule skips its later
+triggers while that backup is not terminal. That is a doubly broken cluster, reported by
+name on both objects, and the user fixes the reference.
 
 What goes:
 
@@ -196,8 +270,8 @@ workloads that belong to the instance that holds the cluster.
 
 `suspendedReadyReasons` in `api/v1` narrows to `StorageAlreadyAttached` and
 `WaitingForHandover`. `Suspended()` then answers true for `spec.suspend` and for the two
-states in the table above, and nothing else. Its three readers change behavior without a
-code change:
+states in the table above, and nothing else. All three hold every workload at zero. Its
+three readers change behavior without a code change:
 
 - `CamundaOptimize` scales to zero with the cluster in those states only.
 - A logical backup waits with `ClusterSuspended` in those states only. A cluster on a
@@ -206,14 +280,18 @@ code change:
 
 ## Docs
 
-- `docs/crds/camundacluster.md`: the Secondary storage section describes the Lease, the key,
-  the label, the cross-contract case, and the handover. The claim annotations and the
+- `docs/crds/camundacluster.md`: the Secondary storage section describes the backend the
+  operator claims (the address the contract resolves to), the label, the cross-contract case,
+  and the handover. It does not name the Lease or its name pattern: the repository docs skill
+  keeps a Lease off a user page, and the Database page sets the precedent. Only the row for a
+  foreign claim names the Lease the message names, because the user deletes that object. The claim annotations and the
   "recreated contract is a new claim" warning go, because a recreated contract resolves to
   the same key and the holder keeps its Lease. The reference-check section and the
   `InvalidReference` and `MissingSecret` rows say the workloads keep running. The Suspend
   section lists the two operator-driven suspensions.
-- `docs/crds/secondarystorageconfig.md`: the claim paragraphs describe the Lease. "The
-  contract is the unit of the claim, not the endpoint" inverts: the backend is the unit.
+- `docs/crds/secondarystorageconfig.md`: the claim paragraphs describe the claim on the
+  backend, without the Lease. "The contract is the unit of the claim, not the endpoint"
+  inverts: the backend is the unit.
 - `docs/guides/secondary-storage.md`: "One cluster per contract" becomes one cluster per
   backend, and "The operator compares contracts, not endpoints" goes.
 - `docs/crds/camundaoptimize.md`: the label paragraph, the Suspension section, and the
@@ -223,11 +301,10 @@ code change:
 
 ## Risks
 
-- **A Lease outlives a deleted cluster until a claimant takes it over.** A cluster with no
-  successor leaves one Lease in the operator namespace. It blocks nothing: `OwnerExists`
-  answers false for it, and the next claimant of that backend takes it. The Database claim
-  releases through a finalizer. This spec leaves the litter for the same reason it leaves
-  the annotation litter today, and a finalizer is a small follow-up if it bothers anyone.
+- **A Lease outlives a cluster deleted while the operator was down.** The finalizer releases
+  the Leases of a cluster on an ordinary deletion. A cluster removed while nothing ran the
+  finalizer leaves one Lease that blocks nothing: `OwnerExists` answers false for it, and the
+  next claimant of that backend takes it.
 - **Two clusters on one backend before this change both run.** After the upgrade, both
   reconcile, one takes the Lease, and the other parks. Which one is reconcile order. The
   pre-change annotation claim had the same property for one contract. This is a clean-slate
@@ -235,9 +312,9 @@ code change:
 - **A key change of the Elasticsearch normalization changes every Lease name.** The
   normalization is pinned by a unit test with the documented cases, so a later edit is a
   visible decision.
-- **The handover gate reads pods once, before render.** The bound stated on
-  `waitForHandover` today, a holder pointed back at its backend between the list and the
-  render, is unchanged.
+- **The handover gate reads pods once, before render.** It protects against pods the
+  previous holder started before it lost the claim. A holder that points back at the backend
+  meets the claim the waiter holds and parks, so it starts nothing beside the waiter.
 
 ## Alternatives considered
 

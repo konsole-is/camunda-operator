@@ -39,20 +39,53 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 )
 
-// suspendNote is appended to the failure message of a CamundaOptimize whose
-// workloads the suspension of its cluster stopped.
-const suspendNote = ". The Optimize workloads are scaled to zero because CamundaCluster %q is suspended"
+// stopReason is what this controller says about the Optimize workloads it
+// holds at zero, in the three places that report it. Two waits lower them, and
+// a user acts on a different thing in each: one cluster was suspended, and the
+// other does not hold the backend that its Optimize reads.
+type stopReason struct {
+	// failureNote is appended to the failure message on Ready. It carries one
+	// verb for the name of the cluster.
+	failureNote string
+	// message is the condition of a workload whose pods are gone.
+	message string
+	// eventNote says, in the event of a scaled workload, why this controller
+	// lowered it.
+	eventNote string
+}
 
-// suspendedMessage is the message of the condition of a workload that the
-// suspension of the referenced cluster stopped and whose pods are gone.
-const suspendedMessage = "Scaled to zero while the referenced cluster is suspended"
-
-// suspendedNote and keptAtZeroReason say, in the event of a scaled workload, why
-// this controller lowered it.
-const (
-	suspendedNote    = "because the CamundaCluster it attaches to is suspended"
-	keptAtZeroReason = "because the workloads that stopped stay at zero until the reference check passes"
+var (
+	// clusterSuspended is the wait on a cluster that reports itself suspended,
+	// by spec.suspend or by a state the operator holds it in.
+	clusterSuspended = stopReason{
+		failureNote: ". The Optimize workloads are scaled to zero because CamundaCluster %q is suspended",
+		message:     "Scaled to zero while the referenced cluster is suspended",
+		eventNote:   "because the CamundaCluster it attaches to is suspended",
+	}
+	// backendClaimAwaited is the wait on the claim of the backend. The cluster
+	// can report itself healthy through it, so nothing here says it is
+	// suspended.
+	backendClaimAwaited = stopReason{
+		failureNote: ". The Optimize workloads are scaled to zero because CamundaCluster %q does not hold its backend",
+		message:     "Scaled to zero while the referenced cluster does not hold its backend",
+		eventNote:   "because the CamundaCluster it attaches to does not hold its backend",
+	}
 )
+
+// keptAtZeroReason says, in the event of a scaled workload, that a wait which
+// ended left it at zero.
+const keptAtZeroReason = "because the workloads that stopped stay at zero until the reference check passes"
+
+// stopReasonFor returns what to say about workloads that this pass holds at
+// zero. Only the storage claim reaches AwaitsBackendClaim, so every other
+// suspension is the cluster reporting one.
+func stopReasonFor(res resolved) stopReason {
+	if res.AwaitsBackendClaim {
+		return backendClaimAwaited
+	}
+
+	return clusterSuspended
+}
 
 // keptAtZeroNote is appended to the failure message of a CamundaOptimize whose
 // workloads a suspension left at zero and whose cluster resumed.
@@ -65,13 +98,14 @@ var suspendOrder = []string{components.ComponentImporter, components.ComponentWe
 
 // followSuspension scales the webapp and the importer to zero and keeps
 // everything else: the Deployments, the Services, and the copies of the
-// referenced Secrets. The condition of each workload it stops reports the
-// suspension, because the components do not run on this path.
+// referenced Secrets. The condition of each workload it stops reports the wait
+// that lowered it, because the components do not run on this path.
 func (r *Reconciler) followSuspension(
 	ctx context.Context,
 	optimize *v1.CamundaOptimize,
+	stop stopReason,
 ) (workloadsuspend.Result, error) {
-	return r.stopWorkloads(ctx, optimize, suspendedMessage, suspendedNote, func(string) bool { return true })
+	return r.stopWorkloads(ctx, optimize, stop.message, stop.eventNote, func(string) bool { return true })
 }
 
 // keepAtZero holds the Optimize workloads that a suspension stopped while a

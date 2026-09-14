@@ -131,7 +131,7 @@ func TestFollowSuspensionJoinsPatchErrors(t *testing.T) {
 		Build()
 	r := suspendReconciler(scheme, fakeClient, events.NewFakeRecorder(10))
 
-	outcome, err := r.followSuspension(context.Background(), optimize)
+	outcome, err := r.followSuspension(context.Background(), optimize, clusterSuspended)
 
 	require.ErrorIs(t, err, boom)
 	assert.True(t, outcome.Found)
@@ -183,7 +183,7 @@ func TestFollowSuspensionFindsNoWorkloadOfAnotherOwner(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(foreign).Build()
 	r := suspendReconciler(scheme, fakeClient, events.NewFakeRecorder(10))
 
-	outcome, err := r.followSuspension(context.Background(), optimize)
+	outcome, err := r.followSuspension(context.Background(), optimize, clusterSuspended)
 
 	require.NoError(t, err)
 	assert.False(t, outcome.Found)
@@ -222,7 +222,7 @@ func TestFollowSuspensionReportsTheDrain(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(importer).Build()
 			r := suspendReconciler(scheme, fakeClient, events.NewFakeRecorder(10))
 
-			outcome, err := r.followSuspension(context.Background(), optimize)
+			outcome, err := r.followSuspension(context.Background(), optimize, clusterSuspended)
 
 			require.NoError(t, err)
 			assert.True(t, outcome.Found)
@@ -247,7 +247,7 @@ func TestFollowSuspensionFindsNothingWithoutWorkloads(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 	r := suspendReconciler(scheme, fakeClient, events.NewFakeRecorder(10))
 
-	outcome, err := r.followSuspension(context.Background(), optimize)
+	outcome, err := r.followSuspension(context.Background(), optimize, clusterSuspended)
 
 	require.NoError(t, err)
 	assert.False(t, outcome.Found)

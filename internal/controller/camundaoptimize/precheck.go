@@ -34,6 +34,7 @@ import (
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
@@ -61,6 +62,11 @@ type resolved struct {
 	// ClusterUID is the UID that the exporter patch carries as a
 	// precondition, so an apply cannot put a deleted cluster back.
 	ClusterUID types.UID
+	// AwaitsBackendClaim reports that the storage claim of the backend parked
+	// the workloads: the cluster does not hold the claim, or pods of another
+	// cluster still carry it. Nothing tells this controller when either wait
+	// ends, so the reconcile that sets this asks for another pass on its timer.
+	AwaitsBackendClaim bool
 	// ExporterStorage is the storage contract with the credentials reference
 	// as the cluster resolves it. The exporter runs in the broker container,
 	// so it reads the copy that the cluster's own controller makes, not the
@@ -88,13 +94,13 @@ type resolver struct {
 }
 
 // preCheck resolves every reference of optimize, in the documented order: the
-// referenced cluster, the attachment to it, its secondary storage, the version
-// gate, the Management Identity contract and its client Secret, the platform
-// config of the cluster, the Elasticsearch credentials, and the exporter
-// settings already on the cluster. A Secret outside the
-// CamundaOptimize namespace is copied into the returned mirrors, and the input
-// references the copy, so the renderer only ever names Secrets of that
-// namespace.
+// referenced cluster, the attachment to it, its secondary storage, the claim of
+// the backend, the version gate, the Management Identity contract and its
+// client Secret, the platform config of the cluster, the Elasticsearch
+// credentials, and the exporter settings already on the cluster. A Secret
+// outside the CamundaOptimize namespace is copied into the returned mirrors,
+// and the input references the copy, so the renderer only ever names Secrets of
+// that namespace.
 //
 // A failed check returns a *conditions.PreCheckFailure: ClusterAlreadyAttached
 // when another CamundaOptimize holds the cluster, InvalidReference for a
@@ -174,7 +180,26 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	if err != nil {
 		return out, err
 	}
-	out.Input.StorageContract = binding.Name
+	// The type comes from the contract, never from a literal here: the key of
+	// this instance must be the one the cluster computes from the same chain.
+	key, err := clustercomponents.StorageClaimKey(clustercomponents.Storage{
+		Type:          binding.Spec.Type,
+		Elasticsearch: binding.Spec.Elasticsearch,
+	})
+	if err != nil {
+		return out, clustercomponents.StorageClaimKeyFailure(client.ObjectKeyFromObject(binding), err)
+	}
+	out.Input.StorageClaim = clustercomponents.StorageClaimSchema().LeaseName(key)
+	out.Input.ClusterUID = cluster.UID
+
+	// A cluster that already reports itself suspended keeps the workloads at
+	// zero whatever the claim says, so the reads below cannot change the
+	// answer.
+	if !out.Input.Suspended {
+		if err := r.gateOnStorageClaim(ctx, key, &cluster, &out); err != nil {
+			return out, err
+		}
+	}
 
 	effective, err := res.resolveEffective(ctx, &cluster)
 	if err != nil {
@@ -235,6 +260,68 @@ func (res *resolver) resolveStorage(
 	}
 
 	return &binding, nil
+}
+
+// gateOnStorageClaim parks the workloads of out unless cluster alone writes
+// the backend that key names: it must hold the storage claim, and no pod of
+// another cluster may still carry that claim. Either wait sets
+// AwaitsBackendClaim, because nothing reports the end of one to this
+// controller. A cluster whose own pods already write the backend is past the
+// takeover, and the pods of every namespace stay unread.
+//
+// The claim alone is not enough. The Ready of the cluster carries the state of
+// the pass that read the claim, so a storageRef edit reaches this controller
+// before the reason does, and the cluster takes the claim and records the pods
+// it waits for inside one pass. A read in between finds the claim held and the
+// previous reason.
+func (r *Reconciler) gateOnStorageClaim(
+	ctx context.Context,
+	key string,
+	cluster *v1.CamundaCluster,
+	out *resolved,
+) error {
+	held, err := clustercomponents.StorageClaimSchema().
+		NewClaim(r.Client, r.APIReader, r.ClaimNamespace).
+		Holds(ctx, key, cluster)
+	if err != nil {
+		return err
+	}
+	if !held {
+		out.Input.Suspended = true
+		out.AwaitsBackendClaim = true
+
+		return nil
+	}
+
+	// An importer of this instance on that backend says the gate passed
+	// before, and only the render at zero holds the pods of another cluster
+	// away. A webapp pod says less, because it can be up while the importer is
+	// still pending. The list below covers every namespace, so the cheap
+	// namespaced read comes first.
+	own, err := clustercomponents.ClaimsOnOwnPods(
+		ctx,
+		r.APIReader,
+		out.Input.Optimize.Namespace,
+		cluster.UID,
+		map[string]string{labels.ComponentKey: components.ComponentImporter},
+	)
+	if err != nil {
+		return err
+	}
+	if own.Carries(out.Input.StorageClaim) {
+		return nil
+	}
+
+	writing, err := clustercomponents.OtherPodsOnClaim(ctx, r.APIReader, out.Input.StorageClaim, cluster.UID)
+	if err != nil {
+		return err
+	}
+	if len(writing) > 0 {
+		out.Input.Suspended = true
+		out.AwaitsBackendClaim = true
+	}
+
+	return nil
 }
 
 // resolveEffective merges the preset and the release of the cluster under

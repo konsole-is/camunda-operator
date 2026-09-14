@@ -44,6 +44,11 @@ const (
 	interval = testenv.Interval
 )
 
+// testClaimNamespace holds the storage claim Leases of this suite. In a
+// cluster this is the namespace of the operator, which always exists, like
+// this one.
+const testClaimNamespace = "default"
+
 var (
 	env       *testenv.Env
 	ctx       context.Context
@@ -104,9 +109,10 @@ var _ = BeforeSuite(func() {
 		}
 
 		return (&CamundaClusterReconciler{
-			Client:    mgr.GetClient(),
-			APIReader: mgr.GetAPIReader(),
-			Scheme:    mgr.GetScheme(),
+			Client:         mgr.GetClient(),
+			APIReader:      mgr.GetAPIReader(),
+			Scheme:         mgr.GetScheme(),
+			ClaimNamespace: testClaimNamespace,
 			// The unwatched pre-check must come back within the Eventually
 			// window of the tests.
 			RetryInterval: time.Second,
