@@ -33,6 +33,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/leaseclaim"
 	"github.com/konsole-is/camunda-operator/pkg/mirror"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
@@ -57,9 +58,10 @@ type mirroredSecrets map[components.MirrorPurpose]map[string][]byte
 // method fills exactly one part of the render input.
 type resolver struct {
 	reader client.Reader
-	// writer writes the claim on the storage contract. Every read stays on
-	// reader.
-	writer   client.Writer
+	// claims runs the storage claim protocol over the Leases of the operator
+	// namespace. Its reads go through the uncached reader, as the protocol
+	// demands.
+	claims   *leaseclaim.Claim[*v1.CamundaCluster]
 	scheme   *runtime.Scheme
 	cluster  *v1.CamundaCluster
 	recorder events.EventRecorder
@@ -89,7 +91,7 @@ func (r *CamundaClusterReconciler) preCheck(
 ) (components.Input, mirroredSecrets, error) {
 	res := &resolver{
 		reader:   r.APIReader,
-		writer:   r.Client,
+		claims:   components.StorageClaimSchema().NewClaim(r.Client, r.APIReader, r.ClaimNamespace),
 		scheme:   r.Scheme,
 		cluster:  cluster,
 		recorder: r.EventRecorder,

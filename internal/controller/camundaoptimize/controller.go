@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -53,6 +54,10 @@ const controllerName = "camundaoptimize"
 // it a deleted CamundaOptimize would leave the cluster exporting records that
 // nothing reads.
 const Finalizer = "core.camunda.io/camundaoptimize-exporter"
+
+// defaultRetryInterval is how long the controller waits before it looks again
+// at something no watch reports.
+const defaultRetryInterval = 30 * time.Second
 
 // The event vocabulary of this controller.
 const (
@@ -81,6 +86,14 @@ type Reconciler struct {
 	// Metrics records the condition gauge and the apply counters of the
 	// framework. SetupWithManager sets it when it is nil.
 	Metrics component.MetricsRecorder
+	// ClaimNamespace holds the storage claim Leases of every cluster. This
+	// controller reads them to learn whether the cluster it attaches to holds
+	// the backend its importer writes. SetupWithManager refuses an empty
+	// value.
+	ClaimNamespace string
+	// RetryInterval overrides how long the controller waits on something no
+	// watch reports. Zero means defaultRetryInterval; tests shorten it.
+	RetryInterval time.Duration
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used
@@ -104,9 +117,11 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=pods,verbs=list
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch
 
 // Reconcile converges a CamundaOptimize. A CR under deletion withdraws the
 // exporter patch and releases the finalizer. Otherwise the finalizer is added
@@ -206,6 +221,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// anything stages a new one. The event is recorded at the end, once the
 	// reconcile has acted on the change.
 	suspendedBefore := wasSuspending(&optimize)
+	// The components stage their conditions below, so whether this instance
+	// ever rendered a workload is read before they do.
+	renderedBefore := hasWorkloads(&optimize)
 
 	if err := r.patchExporter(ctx, res); err != nil {
 		return ctrl.Result{}, err
@@ -219,9 +237,28 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
 	conditions.Stage(&optimize, conditions.Aggregate(&optimize, built.ready...))
-	r.recordSuspensionChange(&optimize, suspendedBefore, res.Input.Suspended)
+	if renderedBefore {
+		r.recordSuspensionChange(&optimize, suspendedBefore, res)
+	}
+
+	// No watch reports the storage claim of the backend, or the pods of
+	// another cluster on it, so the workloads they park start again on this
+	// timer.
+	if res.AwaitsBackendClaim && reconcileErr == nil {
+		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+	}
 
 	return ctrl.Result{}, reconcileErr
+}
+
+// retryInterval returns the wait before an unwatched dependency is looked at
+// again.
+func (r *Reconciler) retryInterval() time.Duration {
+	if r.RetryInterval > 0 {
+		return r.RetryInterval
+	}
+
+	return defaultRetryInterval
 }
 
 // optimizeComponents are the components of one CamundaOptimize: all of them

@@ -47,10 +47,19 @@ const (
 	// eventReasonWorkloadsSuspended is recorded when a failed pre-check scales
 	// an Optimize workload to zero.
 	eventReasonWorkloadsSuspended = "WorkloadsSuspended"
-	// noteSuspended and noteResumed carry the name of the cluster, which is
-	// what the Ready condition cannot say.
+	// eventReasonStorageClaimAwaited is recorded when the storage claim of the
+	// backend scales the Optimize workloads to zero while the cluster itself
+	// reports no suspension.
+	eventReasonStorageClaimAwaited = "StorageClaimAwaited"
+	// noteSuspended, noteResumed and noteClaimAwaited carry the name of the
+	// cluster, which is what the Ready condition cannot say. One resume note
+	// covers both waits: the workloads start when the cluster holds its backend
+	// and is not suspended, whichever of the two held them.
 	noteSuspended = "Scaling the Optimize workloads to zero: CamundaCluster %q is suspended"
-	noteResumed   = "Starting the Optimize workloads again: CamundaCluster %q is no longer suspended"
+	noteResumed   = "Starting the Optimize workloads again: CamundaCluster %q holds its backend " +
+		"and is not suspended"
+	noteClaimAwaited = "Scaling the Optimize workloads to zero: CamundaCluster %q does not hold its " +
+		"backend, or pods of another cluster still write it"
 )
 
 // workloadConditions maps an Optimize workload to the condition that it
@@ -174,22 +183,29 @@ func stageSuspension(optimize *v1.CamundaOptimize, comp string, observed int32) 
 // component from its own suspension state, and the reason is Suspended, the
 // same reason that a suspended CamundaCluster reports.
 //
-// before is what wasSuspending read at the top of the reconcile, and suspended
-// is spec.suspend of the referenced cluster. The caller runs this after it
+// before is what wasSuspending read at the top of the reconcile, and res
+// carries why the workloads are at zero: the suspension of the cluster, or the
+// storage claim of the backend. The caller runs this after it
 // stages the new Ready, so a reconcile that returns early on an error records
 // nothing: it changed no workload, and the next reconcile still sees the same
 // transition to record.
 func (r *Reconciler) recordSuspensionChange(
 	optimize *v1.CamundaOptimize,
-	before, suspended bool,
+	before bool,
+	res resolved,
 ) {
-	if suspended == before {
+	if res.Input.Suspended == before {
 		return
 	}
 
 	reason, note := eventReasonClusterResumed, noteResumed
-	if suspended {
+	if res.Input.Suspended {
+		// The cluster can report itself healthy while its claim parks these
+		// workloads, so ClusterSuspended would say something false about it.
 		reason, note = eventReasonClusterSuspended, noteSuspended
+		if res.AwaitsBackendClaim {
+			reason, note = eventReasonStorageClaimAwaited, noteClaimAwaited
+		}
 	}
 
 	r.EventRecorder.Eventf(
@@ -201,6 +217,15 @@ func (r *Reconciler) recordSuspensionChange(
 		note,
 		optimize.Spec.ClusterRef.Name,
 	)
+}
+
+// hasWorkloads reports whether this CamundaOptimize ever rendered a workload.
+// An instance that never did has nothing to scale, so a suspension of it is no
+// transition a user acts on: an instance created beside its cluster can meet
+// the storage claim before that cluster takes it, and an event of that window
+// would name a suspension nobody asked for.
+func hasWorkloads(optimize *v1.CamundaOptimize) bool {
+	return meta.FindStatusCondition(optimize.Status.Conditions, v1.ConditionImporterReady) != nil
 }
 
 // wasSuspending reports whether the last reconcile left the CamundaOptimize

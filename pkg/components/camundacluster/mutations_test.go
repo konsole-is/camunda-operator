@@ -62,7 +62,7 @@ func TestMutationsAreGatedOffWithoutOverrides(t *testing.T) {
 		assert.Equal(
 			t,
 			labels.Merge(
-				StoragePodLabels(in.Cluster.Name, in.Cluster.Spec.StorageRef),
+				StoragePodLabels(in.Cluster.Name, in.Cluster.UID, in.Storage.Claim),
 				discoveryLabels(in.Cluster, pc.Process.Component),
 			),
 			template.Labels,

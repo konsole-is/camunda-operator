@@ -24,16 +24,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 )
 
 // The fixture identities. Every value is fixed, so the golden manifests stay
 // deterministic.
 const (
-	fixtureName      = "my-optimize"
-	fixtureNamespace = "camunda"
-	fixtureCluster   = "my-cluster"
-	fixtureVersion   = "8.9.4"
-	fixtureContract  = "my-storage-config"
+	fixtureName       = "my-optimize"
+	fixtureNamespace  = "camunda"
+	fixtureCluster    = "my-cluster"
+	fixtureClusterUID = "my-cluster-uid"
+	fixtureVersion    = "8.9.4"
+	fixtureBackend    = "elasticsearch|http://elasticsearch.camunda.svc:9200"
 )
 
 // newInput returns the minimal render input, with mutate applied to it.
@@ -49,9 +51,10 @@ func newInput(t *testing.T, mutate func(in *Input)) Input {
 				ClusterRef:        v1.ClusterRef{Name: fixtureCluster},
 			},
 		},
-		ClusterName:     fixtureCluster,
-		StorageContract: fixtureContract,
-		Partitions:      1,
+		ClusterName:  fixtureCluster,
+		ClusterUID:   fixtureClusterUID,
+		StorageClaim: clustercomponents.StorageClaimSchema().LeaseName(fixtureBackend),
+		Partitions:   1,
 		Storage: v1.ElasticsearchStorage{
 			Endpoint: "http://elasticsearch.camunda.svc:9200",
 			CredentialsSecretRef: v1.LocalCredentialsSecretRef{

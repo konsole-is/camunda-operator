@@ -17,6 +17,8 @@ limitations under the License.
 package camundaoptimize
 
 import (
+	"k8s.io/apimachinery/pkg/types"
+
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/images"
 )
@@ -49,11 +51,16 @@ type Input struct {
 	// the referenced cluster names, with every Secret reference already
 	// pointed at its copy in the CamundaOptimize namespace.
 	Storage v1.ElasticsearchStorage
-	// StorageContract is the name of that SecondaryStorageConfig. It is the
-	// camunda.io/storage-contract label value of the pods, so a cluster that
-	// takes the contract over waits for the importer of the previous holder
-	// as it waits for the pods of that cluster. It is always set.
-	StorageContract string
+	// StorageClaim is the name of the storage claim Lease of the backend that
+	// the referenced cluster writes. It is the camunda.io/storage-claim label
+	// value of the pods, so a cluster that takes the backend over waits for
+	// the importer of the previous holder as it waits for the pods of that
+	// cluster. It is always set.
+	StorageClaim string
+	// ClusterUID is the UID of the referenced cluster. The pods carry it
+	// beside the storage claim, so the cluster tells its own pods from those
+	// of another cluster on the same backend.
+	ClusterUID types.UID
 	// Auth is the ManagementAuthConfig that spec.managementAuthRef names, with
 	// its client secret reference already pointed at its copy in the
 	// CamundaOptimize namespace.

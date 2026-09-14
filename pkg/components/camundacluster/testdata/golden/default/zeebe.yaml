@@ -41,8 +41,9 @@ spec:
         prometheus.io/scrape: "true"
       labels:
         camunda.io/cluster: my-cluster
+        camunda.io/cluster-uid: my-cluster-uid
         camunda.io/component: zeebe
-        camunda.io/storage-contract: my-storage-config
+        camunda.io/storage-claim: camunda-storage-8bd62d6c1f48cf988b142a51c9e7010d105e168c
         company.com/team: automation-ops
         team: platform
     spec:

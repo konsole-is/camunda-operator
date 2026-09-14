@@ -88,7 +88,7 @@ The rule reads the effective version. Three edits therefore meet it the same way
 
 The running version is the version that the operator stamped on the broker workload. After a version change it is the new version, even before the pods have rolled. The refusal message names it. The operator also stamps the highest version it asked each broker volume to run, as the annotation `camunda.io/broker-version`. A cluster recreated on retained volumes ([Storage](#storage)) reads its running version from that stamp, so the rule holds for it. A new cluster with new volumes has no running version, and the rule does not apply to it.
 
-A cluster whose storage contract another cluster holds is suspended before the rule applies, see [Secondary storage](#secondary-storage). One edit that repoints `spec.storageRef` to a held contract and lowers the version scales the workloads to zero on the running version. `Ready` reports `StorageAlreadyAttached`. When the holder releases the contract, the rule applies and the cluster reports `VersionDowngradeRefused`. It stays at zero until you set the version forward again or sanction the downgrade.
+A cluster whose backend another cluster holds is suspended before the rule applies, see [Secondary storage](#secondary-storage). One edit that repoints `spec.storageRef` to a held backend and lowers the version scales the workloads to zero on the running version. `Ready` reports `StorageAlreadyAttached`. When the holder releases the backend, the rule applies and the cluster reports `VersionDowngradeRefused`. It stays at zero until you set the version forward again or sanction the downgrade.
 
 A restore sanctions its own move to the version of its backup. The [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md#why-the-downgrade-is-safe-here) and [LogicalRestoreRDBMS](logicalrestorerdbms.md#why-the-downgrade-is-safe-here) pages explain why that move is safe.
 
@@ -125,41 +125,11 @@ The brokers keep their data on one PersistentVolumeClaim per pod. `spec.zeebe.st
 
 `spec.storageRef` names the `SecondaryStorageConfig` in the namespace of the cluster. The contract tells the cluster where its secondary storage is.
 
-One `CamundaCluster` uses one contract. Camunda fixes the index names and the tables. Two clusters on one backend write each other's data, and a restore of one deletes the data of the other.
+One `CamundaCluster` writes one backend. Camunda fixes the index names and the tables. Two clusters on one backend write each other's data, and a restore of one deletes the data of the other.
 
-The claim goes to the first cluster that the operator reaches, which is not always the one you created first. When two clusters already name one contract, for example right after an upgrade, either one can win. The operator writes `camunda.io/claim-holder` and `camunda.io/claim-holder-uid` on the contract to record the claim.
+The operator claims the backend, not the contract. The backend is the address the contract resolves to. For Elasticsearch that address is the scheme, the host, and the port of the endpoint. A path prefix does not tell two backends apart. Optimize connects to the host and the port, so the operator treats two such endpoints as one backend. For an RDBMS it is the host, the port, and the database name of the PostgreSQL chain. Two contracts that name one address are one backend, whatever namespace each one lives in. The first cluster that claims a backend holds it until it moves to another backend, or until you delete it. A cluster whose contract is deleted keeps its backend and keeps running. Do not remove the claim of a running cluster by hand. Every cluster that resolves the backend then races for it, and the holder can lose the backend to a waiting cluster and be suspended.
 
-The API server accepts a second cluster that names a held contract. That cluster is suspended: every workload at zero and the volumes kept. Its `Ready` is `False` with reason `StorageAlreadyAttached`, and the message names the holder and the contract.
-
-The suspended cluster looks again every 30 seconds. When the holder is deleted or names another contract, the suspended cluster takes the claim and resumes on its own. A paused holder keeps its claim until you unpause it. Do not remove the two claim annotations by hand while two clusters name the contract. Both clusters then race for the free contract, and the holder can lose it and be suspended.
-
-The cluster that takes the contract stays at zero while pods of the previous holder still run on it. The pods of a deleted holder go after the cluster, and the pods of a repointed holder go when its rollout replaces them. Until then, its `Ready` is `False` with reason `WaitingForHandover`, and the message names the previous holder and its pods. The state clears on its own.
-
-```yaml
-status:
-  conditions:
-    - type: Ready
-      status: "False"
-      reason: WaitingForHandover
-      message: >-
-        Pods of the previous holder CamundaCluster "my-cluster-ns/my-other-cluster"
-        still run on SecondaryStorageConfig "my-cluster-ns/my-storage-config":
-        my-other-cluster-zeebe-0. This cluster starts when they are gone
-```
-
-Every pod carries the label `camunda.io/storage-contract` with the contract it runs on. The pods of an [Optimize instance](camundaoptimize.md) attached to the cluster carry it too, because its importer writes that backend as well. A label value stops at 63 characters, so the operator shortens a longer contract name and adds a hash to it. Print the label as a column to read it for a name of any length:
-
-```bash
-kubectl get pods -n my-cluster-ns -L camunda.io/storage-contract
-```
-
-If the contract name is 63 characters or shorter, you can select on it:
-
-```bash
-kubectl get pods -n my-cluster-ns -l camunda.io/storage-contract=my-storage-config
-```
-
-A recreated contract is a new claim. If the producer deletes the contract and creates it again, the holder and a suspended cluster race for the new claim. The holder can lose that race. Do not recreate a contract while two clusters name it.
+The API server accepts a second cluster on a held backend. That cluster is suspended: every workload at zero and the volumes kept. Its `Ready` is `False` with reason `StorageAlreadyAttached`, and the message names the holder and the backend.
 
 ```yaml
 status:
@@ -168,15 +138,44 @@ status:
       status: "False"
       reason: StorageAlreadyAttached
       message: >-
-        CamundaCluster "my-cluster-ns/my-other-cluster" already holds
-        SecondaryStorageConfig "my-cluster-ns/my-storage-config". One
-        CamundaCluster uses one secondary storage contract, so this cluster
-        stays suspended until that one releases it
+        CamundaCluster "my-cluster-ns/my-other-cluster" already holds the
+        backend "elasticsearch|https://es-http.my-cluster-ns.svc:9200". One
+        CamundaCluster holds one backend, so this cluster stays suspended
+        until that cluster moves to another backend or is deleted
 ```
 
-Do not point `storageRef` of a holder at another contract and back while a second cluster waits for the handover. A holder that returns at that moment can start pods next to the second cluster. The operator then suspends the cluster that lost the claim, but both write the backend until the pods of that cluster stop.
+The suspended cluster looks again every 30 seconds. When you delete the holder, the suspended cluster takes the claim and resumes on its own. When the holder moves to another backend, it gives this one back. That happens once the new address resolves and no pod of the holder writes the old backend. A suspended cluster releases the backend it wrote before, so two clusters that swap backends in one step both resume. A paused holder keeps its claim until you unpause it.
 
-The operator compares contracts, not endpoints. Give one contract to one backend. Two hand-written contracts that name one Elasticsearch are not caught.
+A cluster stays at zero while pods of another cluster still write the backend it resolves. It waits that way whether it holds the claim of that backend already, or waits to take it. Every workload is at zero, and the volumes are kept. A running cluster that you move to such a backend stops the same way, because its own pods still write the backend it left. Those pods count in every namespace, because two clusters of two namespaces can name one backend. The pods of a deleted holder go after the cluster, and the pods of a holder that moved go when its rollout replaces them. Until then, its `Ready` is `False` with reason `WaitingForHandover`, and the message names the backend and those pods. The state clears on its own.
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: WaitingForHandover
+      message: >-
+        Pods of another cluster, or of its Optimize instance, still write the
+        backend "elasticsearch|https://es-http.my-cluster-ns.svc:9200":
+        my-cluster-ns/my-other-cluster-zeebe-0. This cluster starts when they
+        are gone
+```
+
+Every pod carries the label `camunda.io/storage-claim` with the storage claim of the backend it writes, and `camunda.io/cluster-uid` with the UID of its cluster. The pods of an [Optimize instance](camundaoptimize.md) attached to the cluster carry both, because its importer writes that backend as well. Read the claim of every pod in a namespace:
+
+```bash
+kubectl get pods -n my-cluster-ns -L camunda.io/storage-claim
+```
+
+The value is the same for every pod on one backend, whatever cluster or namespace it belongs to. Select them all with the value that the command above prints:
+
+```bash
+kubectl get pods -A -l camunda.io/storage-claim=camunda-storage-8bd62d6c1f48cf988b142a51c9e7010d105e168c
+```
+
+A holder that you point at another backend and back finds the claim with the cluster that took it. The returning cluster is suspended with `StorageAlreadyAttached` until that cluster moves off the backend or is deleted. It starts no pod beside the new holder, and the new holder starts once the pods of the returning cluster are gone.
+
+The operator compares addresses, not servers. Two contracts that reach one Elasticsearch through two host names are not caught. Give one backend one address.
 
 ## Secondary storage over TLS
 
@@ -286,7 +285,7 @@ status:
 
 `spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` is empty. When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
 
-The operator also suspends a cluster on its own. `spec.suspend` stays yours. A cluster whose storage contract another cluster holds reports `StorageAlreadyAttached`, a cluster that waits for the pods of a previous holder reports `WaitingForHandover` (see [Secondary storage](#secondary-storage)), and a cluster whose reference check fails reports `InvalidReference` or `MissingSecret` (see [Changes and referenced Secrets](#changes-and-referenced-secrets)). Each of these suspensions ends on its own when its cause is gone.
+The operator also suspends a cluster on its own. `spec.suspend` stays yours. A cluster whose backend another cluster holds reports `StorageAlreadyAttached`, a cluster that waits for the pods of another cluster on its backend reports `WaitingForHandover` (see [Secondary storage](#secondary-storage)), and a cluster whose reference check fails reports `InvalidReference` or `MissingSecret` (see [Changes and referenced Secrets](#changes-and-referenced-secrets)). Each of these suspensions ends on its own when its cause is gone.
 
 `suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it, and starts them again when you clear the field. The Optimize importer reads Elasticsearch directly. Without this, it keeps importing while the cluster is down. Every suspension by the operator reaches them the same way: a `CamundaOptimize` attached to a suspended cluster scales to zero, and a backup of it waits with reason `ClusterSuspended`.
 
@@ -294,7 +293,7 @@ The operator also suspends a cluster on its own. `spec.suspend` stays yours. A c
 
 ## Deletion
 
-Deleting the cluster removes every resource that the operator created for it. The broker volumes follow `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` (see [Storage](#storage)). The `ElasticsearchCluster`, the `Database`, and the contracts are separate resources and stay.
+Deleting the cluster removes every resource that the operator created for it, and it releases the backend the cluster held. Another cluster on that backend starts once the pods of the deleted one are gone. The broker volumes follow `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` (see [Storage](#storage)). The `ElasticsearchCluster`, the `Database`, and the contracts are separate resources and stay.
 
 ## Status
 
@@ -318,9 +317,9 @@ Deleting the cluster removes every resource that the operator created for it. Th
 | `Ready` | `Failing` | A component has replicas that do not become ready. | Read the pods of the named component. |
 | `Ready` | `Degraded` / `Down` | Some or no replicas of a component are ready after the grace period. | Read the pods and events of the named component. |
 | `Ready` | `Suspended` | `spec.suspend` is true and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to resume. |
-| `Ready` | `StorageAlreadyAttached` | Another `CamundaCluster` holds the `SecondaryStorageConfig` that `storageRef` names. This cluster is suspended. | Give this cluster a contract of its own, or delete the holder. The message names both, and the last apply error of the workloads when one occurred. |
-| `Ready` | `WaitingForHandover` | This cluster takes over the `SecondaryStorageConfig` that `storageRef` names, and pods of the previous holder still run on it. This cluster stays at zero. | Wait. The message names the previous holder and its pods. The state clears on its own. If the pods never go, delete them. |
-| `Ready` | `InvalidReference` | A referenced resource does not exist, a ServiceAccount with `create: false` is absent, two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. A running cluster is scaled to zero, with the volumes kept. | Read the message. Create the missing resource or correct the field it names. The cluster resumes on its own. |
+| `Ready` | `StorageAlreadyAttached` | Another `CamundaCluster` holds the storage claim of the backend that `storageRef` resolves to. This cluster is suspended. | Give this cluster a backend of its own, or delete the holder. The message names both, and the last apply error of the workloads when one occurred. |
+| `Ready` | `WaitingForHandover` | Pods of another cluster still write the backend that `storageRef` resolves to. This cluster holds the storage claim of it already, or waits to take it. Every workload of it is at zero, and the volumes are kept. | Wait. The message names the backend and those pods. The state clears on its own. If the pods never go, delete them. |
+| `Ready` | `InvalidReference` | A referenced resource does not exist, a ServiceAccount with `create: false` is absent, two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. A Lease of the operator namespace that this operator did not write reads the same way, and it blocks the storage claim of the backend. A running cluster is scaled to zero, with the volumes kept. | Read the message. Create the missing resource, correct the field it names, or delete the named Lease once nothing else uses it. The cluster resumes on its own. |
 | `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. A running cluster is scaled to zero, with the volumes kept. | Create the Secret with the named key. The cluster resumes on its own. |
 | `Ready` | `VersionDowngradeRefused` | The effective version is below the version the brokers run, and no annotation sanctions the move. The operator applies nothing, and the brokers keep the version they have. | Read [Version](#version). Set the version forward again, or sanction the downgrade. |
 

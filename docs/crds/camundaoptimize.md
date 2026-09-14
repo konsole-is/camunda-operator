@@ -49,7 +49,7 @@ The operator creates two Deployments in the namespace of the resource, and one S
 
 A Service name stops at 63 characters, which is the tightest bound of the derived names. A `CamundaOptimize` name that is too long to carry the suffix is cut, and a hash of the full name is added. Two such resources stay apart. The operator applies the same bound to the Secrets that it mirrors into the namespace, and to the value of the `camunda.io/cluster` label.
 
-The pods also carry the label `camunda.io/storage-contract` with the secondary storage contract of the cluster. A cluster that takes that contract over waits for these pods as it waits for the pods of the previous holder, see [CamundaCluster](camundacluster.md#secondary-storage).
+The pods also carry the label `camunda.io/storage-claim` with the storage claim of the backend that the cluster writes. They carry `camunda.io/cluster-uid` with the UID of that cluster. A cluster that takes that backend over waits for these pods as it waits for the pods of the previous holder, see [CamundaCluster](camundacluster.md#secondary-storage).
 
 Read the names back with `kubectl get deploy,svc -l camunda.io/cluster=<cluster>`. The selector matches while the cluster name is 63 characters or less. For a longer name the label carries the cut form. `kubectl get deploy --show-labels` shows the value to select on.
 
@@ -162,6 +162,8 @@ The effective version of the cluster is `spec.version` of the `CamundaCluster`, 
 The importer reads Elasticsearch directly. It does not go through the orchestration cluster, so it keeps reading whether or not that cluster runs.
 
 `spec.suspend` on the referenced `CamundaCluster` therefore reaches the Optimize workloads too. The operator scales the webapp and the importer to zero with the workloads of the cluster, and starts them again when you clear the field. `suspend` means "stop everything attached to this cluster", not "stop the workloads of this cluster". The operator also suspends a cluster on its own, for example while another cluster holds its storage contract or while a reference of the cluster does not resolve, and the Optimize workloads follow every suspension the same way.
+
+The workloads also stay at zero while the cluster does not hold the storage claim of its backend, see [CamundaCluster](camundacluster.md#secondary-storage). A cluster that is parked, or that waits for a handover, never has an importer running beside it. An instance that already runs records the event `StorageClaimAwaited` when this wait scales its workloads to zero. The cluster itself can still report `Ready` as `True` in that moment. An instance that starts parked has no workload to scale, so it reports the wait on `Ready` alone.
 
 `Ready` reads `True` with reason `Suspended` while the suspension holds. A cluster with `spec.suspend` reports the same. A cluster that another cluster parked reports `Ready` `False` with reason `StorageAlreadyAttached` instead, see [CamundaCluster](camundacluster.md#secondary-storage). Zero replicas is the state you asked for, so the Optimize condition is not an error. The condition does not name the cluster, but the events do: `kubectl describe camundaoptimize <name>` shows `ClusterSuspended` when the workloads go to zero and `ClusterResumed` when they start again.
 

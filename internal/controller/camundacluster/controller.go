@@ -77,6 +77,11 @@ type CamundaClusterReconciler struct {
 	// Metrics records the condition gauge and the apply counters of the
 	// framework. SetupWithManager sets it when it is nil.
 	Metrics component.MetricsRecorder
+	// ClaimNamespace holds the storage claim Leases of every cluster. One
+	// namespace for all of them, so two clusters in two namespaces that
+	// resolve one backend meet on one Lease. SetupWithManager refuses an
+	// empty value.
+	ClaimNamespace string
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used
@@ -117,7 +122,7 @@ const defaultRetryInterval = 30 * time.Second
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusterpresets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundareleases,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaplatformconfigs,verbs=get;list;watch
-// +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseserverconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs,verbs=get;list;watch
@@ -130,6 +135,7 @@ const defaultRetryInterval = 30 * time.Second
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile converges a CamundaCluster. A paused cluster records one Paused
 // event and returns before anything is read or written, status included.
@@ -137,10 +143,10 @@ const defaultRetryInterval = 30 * time.Second
 // Ready is True only when every component the cluster needs is True. Its
 // reason and message come from the governing component, which is the
 // highest-priority component that is not True, or the highest-priority of all
-// of them when they all are. A cluster whose storage contract another cluster
-// holds reports StorageAlreadyAttached instead of the aggregate. A cluster
-// that takes a contract over reports WaitingForHandover while a pod of the
-// previous holder still runs on it. Both look again on a timer.
+// of them when they all are. A cluster whose backend another cluster holds
+// reports StorageAlreadyAttached instead of the aggregate. A cluster that
+// holds the backend reports WaitingForHandover while a pod of another cluster
+// still writes it. Both look again on a timer.
 //
 // Status is written once per reconcile: the components and conditions.Stage
 // stage conditions on the in-memory cluster, and the deferred FlushStatus
@@ -157,6 +163,13 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	// A deleted cluster gives its backends back, paused or not: its workloads
+	// go with the owner references, and a claim it kept would park every later
+	// cluster on that backend.
+	if !cluster.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, r.finalizeStorageClaims(ctx, &cluster)
+	}
+
 	if cluster.Spec.Pause {
 		r.EventRecorder.Eventf(
 			&cluster,
@@ -167,6 +180,14 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			"Reconcile paused by spec.pause",
 		)
 		return ctrl.Result{}, nil
+	}
+
+	// The finalizer must exist before the first claim, which the pre-check
+	// takes below. A paused cluster is written by nothing, so it takes no
+	// claim either.
+	stop, err := r.addClaimFinalizer(ctx, &cluster)
+	if stop || err != nil {
+		return ctrl.Result{}, err
 	}
 
 	rec := component.ReconcileContext{
@@ -189,43 +210,31 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	in, mirrors, err := r.preCheck(ctx, &cluster)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
-		// A running cluster stops while its pre-check fails: its workloads
-		// scale to zero and its volumes stay, because they can keep writing
-		// a backend that the cluster no longer resolves. The failure stays
-		// the Ready reason, and the message says what happened to the
-		// workloads.
-		suspended, suspendErr := r.suspendWorkloads(ctx, &cluster)
-		if suspended && suspendErr == nil {
-			failure.Message += ". The workloads are scaled to zero, with the volumes kept, until the pre-check passes"
-		}
-		// The bindings are nil while the cluster is suspended, see binding.go.
-		// The endpoints of the scaled workloads answer nothing, so a consumer
-		// must see a cluster that is not ready, not a stale endpoint.
-		cluster.Status.Management = nil
-		cluster.Status.Gateway = nil
-		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
-		if suspendErr != nil {
-			return ctrl.Result{}, suspendErr
+		wait, failErr := r.reportFailedPreCheck(ctx, &cluster, in, failure)
+		if failErr != nil {
+			return ctrl.Result{}, failErr
 		}
 
 		// Only an unwatched failure needs a timer; everything else the
-		// pre-checks resolve re-enqueues through a watch.
+		// pre-checks resolve re-enqueues through a watch. A claim held back
+		// asks for one of its own, see releaseWait.
 		var unwatched *conditions.UnwatchedPreCheckFailure
 		if errors.As(err, &unwatched) {
-			return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+			wait = r.retryInterval()
 		}
-		return ctrl.Result{}, nil
+
+		return ctrl.Result{RequeueAfter: wait}, nil
 	}
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	// A cluster whose storage contract another cluster holds renders
-	// suspended: every workload at zero and the volumes kept, until the
-	// holder releases it.
+	// A cluster that does not write its backend alone renders suspended: every
+	// workload at zero and the volumes kept, until the other cluster releases
+	// the backend or its pods are gone.
 	// The suspension also idles the admin rotation and clears the management
 	// binding, as a user suspension does.
-	if in.Storage.Holder != nil {
+	if claimSuspends(in.Storage) {
 		in.Effective.Suspend = true
 	}
 
@@ -247,16 +256,22 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// A refused downgrade re-enqueues through the watches on the cluster, the
 	// preset, and the owned StatefulSet, so no timer is needed.
 	if failure := refuseDowngrade(&cluster, in, storage); failure != nil {
-		if in.Storage.Holder == nil {
+		if !claimSuspends(in.Storage) {
 			refused := conditions.Failed(&cluster, failure)
 			r.recordRefusedDowngrade(&cluster, refused)
 			conditions.Stage(&cluster, refused)
 
-			return ctrl.Result{}, nil
+			// A refused cluster keeps running on the version and the backend
+			// it has, and it applies nothing. A cluster that repointed before
+			// the refusal still holds the backend it left, so the pod gate
+			// gives that one back once its pods are gone.
+			wait, releaseErr := r.releaseWait(ctx, &cluster, in.Storage.Claim)
+
+			return ctrl.Result{RequeueAfter: wait}, releaseErr
 		}
 
-		// A parked cluster must stop, refused or not: its brokers write the
-		// contract it left, which the next cluster can claim. The guard reads
+		// A cluster the claim suspends must stop, refused or not: its brokers
+		// write the backend it left, which the next cluster can claim. The guard reads
 		// its baseline from the applied StatefulSet, so the parking renders
 		// the running version, with no pinned image over it, and the refusal
 		// stands when the holder releases.
@@ -299,12 +314,15 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
 
 	cred.stageFailure(&cluster, priorAdminSecret)
-	if in.Storage.Holder != nil {
-		// The parked reason is the gate that Suspended reports to extensions and
-		// backups, so it stays while the apply fails. The message carries the
-		// error, and the component conditions carry the state of each workload.
+	// The claim reason is the gate that Suspended reports to extensions and
+	// backups, so it stays while the apply fails. The message carries the
+	// error, and the component conditions carry the state of each workload.
+	switch {
+	case in.Storage.Holder != nil:
 		conditions.Stage(&cluster, storageHeld(&cluster, in.Storage.Holder, reconcileErr))
-	} else {
+	case in.Storage.Handover != nil:
+		conditions.Stage(&cluster, storageHandover(&cluster, in.Storage.Handover, reconcileErr))
+	default:
 		conditions.Stage(&cluster, conditions.Aggregate(&cluster, built.ready...))
 	}
 	cluster.Status.Volumes = storage.volumes()
@@ -315,19 +333,99 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	cluster.Status.ServiceAccountName = components.PodServiceAccountName(in)
 	cred.recordRotation(&cluster)
 
-	// A failed rotation retries on a timer: no watch fires when the user API
-	// recovers or accepts the credentials again.
-	if cred.failure != nil && reconcileErr == nil {
-		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+	if reconcileErr != nil {
+		return ctrl.Result{}, reconcileErr
 	}
 
-	// A parked cluster takes a stale claim on a timer: nothing watches its
-	// holder for it, and nothing should.
-	if in.Storage.Holder != nil && reconcileErr == nil {
-		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+	// The backends this cluster left go back only now, after the apply that
+	// stopped writing them. A release before it would leave the old
+	// StatefulSet recreating pods into a backend another cluster may take.
+	wait, releaseErr := r.releaseWait(ctx, &cluster, in.Storage.Claim)
+	if releaseErr != nil {
+		return ctrl.Result{}, releaseErr
 	}
 
-	return ctrl.Result{}, reconcileErr
+	// A failed rotation looks again on a timer, because no watch fires when the
+	// user API recovers or accepts the credentials again. A cluster the claim
+	// suspends looks again for the holder of its backend, or for the pods of
+	// another cluster on it, which nothing watches either.
+	if cred.failure != nil || claimSuspends(in.Storage) {
+		wait = r.retryInterval()
+	}
+
+	return ctrl.Result{RequeueAfter: wait}, nil
+}
+
+// reportFailedPreCheck stops the workloads of a cluster whose pre-check
+// failed, stages the failure on Ready, and gives back the backends that no pod
+// of this cluster writes any more. It returns how long to wait before the next
+// pass, which a claim held back earns.
+//
+// It releases nothing unless the claim step of the pre-check ran on this pass,
+// which in.Storage.Claim says: a step that fails before it fails on a reference
+// that tells nothing about the backend this cluster writes.
+func (r *CamundaClusterReconciler) reportFailedPreCheck(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+	in components.Input,
+	failure *conditions.PreCheckFailure,
+) (time.Duration, error) {
+	// A running cluster stops while its pre-check fails: its workloads scale
+	// to zero and its volumes stay, because they can keep writing a backend
+	// that the cluster no longer resolves. The failure stays the Ready reason,
+	// and the message says what happened to the workloads.
+	suspended, suspendErr := r.suspendWorkloads(ctx, cluster)
+	if suspended && suspendErr == nil {
+		failure.Message += ". The workloads are scaled to zero, with the volumes kept, until the pre-check passes"
+	}
+	// The bindings are nil while the cluster is suspended, see binding.go. The
+	// endpoints of the scaled workloads answer nothing, so a consumer must see
+	// a cluster that is not ready, not a stale endpoint.
+	cluster.Status.Management = nil
+	cluster.Status.Gateway = nil
+	conditions.Stage(cluster, conditions.Failed(cluster, failure))
+	if suspendErr != nil {
+		return 0, suspendErr
+	}
+
+	// A check that failed before the claim step knows no backend of this
+	// cluster, which in.Storage.Claim says. Releasing with no claim to keep
+	// would give its live backend away, at once for a cluster whose pods are
+	// already gone, and a waiting cluster would take it.
+	if in.Storage.Claim == "" {
+		return 0, nil
+	}
+
+	// A cluster whose check fails keeps the backend it writes, because the
+	// workloads it had keep writing it. The pod gate holds that claim and
+	// gives back the ones no pod of this cluster carries any more, which is how
+	// a cluster that moved frees the backend it left.
+	return r.releaseWait(ctx, cluster, in.Storage.Claim)
+}
+
+// releaseWait gives back the backends that this cluster no longer writes and
+// returns how long to wait before the next pass. Nothing reports the end of a
+// pod drain, so a claim held back asks for the retry interval, and everything
+// else asks for no timer of its own.
+//
+// keep is the claim of the backend the cluster writes now, and it is required:
+// a caller that has none knows of no backend to keep, and the deletion path
+// gives every claim back through finalizeStorageClaims.
+func (r *CamundaClusterReconciler) releaseWait(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+	keep string,
+) (time.Duration, error) {
+	if keep == "" {
+		return 0, errors.New("releasing the storage claims of a cluster needs the one it keeps")
+	}
+
+	heldBack, err := r.releaseLeftBackends(ctx, cluster, keep)
+	if err != nil || len(heldBack) == 0 {
+		return 0, err
+	}
+
+	return r.retryInterval(), nil
 }
 
 // retryInterval returns the wait before an unwatched dependency is looked at

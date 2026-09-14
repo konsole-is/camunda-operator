@@ -27,8 +27,9 @@ spec:
         camunda.io/config-hash: f8353a0bd43a26d9
       labels:
         camunda.io/cluster: my-cluster
+        camunda.io/cluster-uid: my-cluster-uid
         camunda.io/component: zeebe
-        camunda.io/storage-contract: my-storage-config
+        camunda.io/storage-claim: camunda-storage-ff7089537c23034dfdf34696a7291104a7a30dec
     spec:
       containers:
       - command:
