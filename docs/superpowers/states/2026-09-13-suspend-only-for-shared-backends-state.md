@@ -23,7 +23,7 @@ status: foundational-wave
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #369 | feat/suspend-only-for-shared-backends--storage-claim-on-a-lease | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/storage-claim-on-a-lease | #372 → fix/suspend-only-for-shared-backends | self-merged as a622870 (squash of d98ffe1) on 2026-09-14 05:24 UTC; #369 closed. Copilot gave no review at the final head after two waits, so the loop ended on its last round and the two orchestrator review passes stand. |
-| #370 | fix/suspend-only-for-shared-backends--keep-workloads-on-precheck-failure | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/keep-workloads-on-precheck-failure | #371 → fix/suspend-only-for-shared-backends | at a2e2248 (final head, every thread resolved, mergeable), one Copilot request pending; then merge; merges second |
+| #370 | fix/suspend-only-for-shared-backends--keep-workloads-on-precheck-failure | .claude/worktrees/suspend-only-for-shared-backends/.claude/worktrees/keep-workloads-on-precheck-failure | #371 → fix/suspend-only-for-shared-backends | at d6203b7 (every thread resolved, mergeable), one Copilot request pending; then merge; merges second |
 
 ## Contracts
 
