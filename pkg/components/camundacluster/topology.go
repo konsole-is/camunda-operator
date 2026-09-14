@@ -147,7 +147,9 @@ func Resolve(e Effective) []Process {
 }
 
 // ConditionTypeFor returns the condition that the process of the given component
-// reports on the cluster, and whether that component runs a process at all.
+// reports on the cluster, and whether the component has a known condition type.
+// A component the topology disables still has one: a disabled process keeps its
+// condition so that it can report Disabled.
 //
 // Resolve keeps the names and the condition of every process, enabled or not, so
 // the pairing holds for any effective spec and an empty one serves to read it. A
