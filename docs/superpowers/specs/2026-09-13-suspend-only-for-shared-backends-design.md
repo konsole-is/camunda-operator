@@ -60,7 +60,7 @@ A workload of the operator stops on its own in exactly two states, both on the s
 | `Ready` reason | State |
 | --- | --- |
 | `StorageAlreadyAttached` | Another live cluster holds the Lease of the backend this cluster resolves. This cluster renders every workload at zero. |
-| `WaitingForHandover` | This cluster holds the Lease, and pods of another cluster still carry its label. This cluster renders every workload at zero until they are gone. |
+| `WaitingForHandover` | Pods of another cluster still write the backend this cluster resolves, whether this cluster holds the Lease or waits to create it. This cluster renders every workload at zero until they are gone. |
 
 `spec.suspend` is the user's own instruction and stands above this table: a cluster whose
 reference check fails while `spec.suspend` is set still scales every workload it controls
@@ -127,7 +127,10 @@ Lease is noticed at once and not at the next unrelated event. Three outcomes:
   carries its claim label, the same signal the handover gate reads; while one is held back,
   the cluster looks again on its retry interval. The same pod-gated release runs on the
   foreign-Lease and bad-key exits, where the cluster keeps running on its previous backend
-  and gives it back once its pods are gone.
+  and gives it back once its pods are gone, and on the refused-downgrade path. A pre-check
+  failure that comes before the claim step releases nothing: the pass does not know which
+  backend the cluster resolves, and a cluster at zero must not give its live backend away
+  over a missing preset.
 - The blocker names a holder: `in.Storage.Holder` carries the holder and the key, and the
   controller renders the cluster suspended with `StorageAlreadyAttached`, as it does today.
   The message names the holder and the backend.
@@ -177,7 +180,8 @@ cluster does. This is a render, not a pre-check failure: a running cluster that 
 a handover stops, so its old pods leave the previous backend and that handover completes too.
 
 The gate runs only at a takeover: when this cluster did not hold the claim at the start of
-the pass, and none of its own pods carries the claim yet. Once its own pods write the
+the pass, and none of its own pods carries the claim yet, and the cluster is not suspended
+by its spec, because a suspended cluster writes nothing and needs no handover. Once its own pods write the
 backend, no pod of another cluster can, because the render at zero was what held them back.
 That signal cannot be lost the way a status write can, so a healthy cluster never lists pods
 cluster-wide. One namespaced metadata list of the cluster's own pods serves this decision and
