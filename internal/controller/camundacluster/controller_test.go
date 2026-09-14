@@ -885,6 +885,9 @@ var _ = Describe("CamundaCluster controller", func() {
 		cluster := createDefaultCluster()
 		zeebeKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-zeebe"}
 		gatewayKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-gateway"}
+		// The brokers run 8.9.9 before the edit; an edit that lands before
+		// the first render meets no running version to refuse.
+		Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":8.9.9"))
 
 		By("lowering spec.version and setting spec.suspend in one edit")
 		updateCluster(cluster, func(c *v1.CamundaCluster) {
