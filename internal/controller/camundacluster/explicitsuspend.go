@@ -31,7 +31,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -64,76 +63,68 @@ func (r *CamundaClusterReconciler) suspendExplicitly(
 		return false, nil
 	}
 
-	return r.stopWorkloads(ctx, cluster, suspendedMessage, func(string) bool { return true })
+	workloads, err := r.clusterWorkloads(ctx, cluster)
+	if err != nil {
+		return false, err
+	}
+
+	result, err := workloadsuspend.StopWorkloadsIf(
+		ctx,
+		r.Client,
+		cluster,
+		workloads,
+		suspendedMessage,
+		func(string) bool { return true },
+		func(workload string) { r.recordSuspended(cluster, workload) },
+	)
+
+	return result.Found, err
 }
 
 // keepAtZero holds the workloads that a suspension stopped while the pre-check
 // still fails, and reports whether it held any.
 //
-// Only a workload whose condition already carries a suspension is touched: one
-// this controller never stopped is still running for the user. The workload is
-// read again, so a drain that finished since the suspension ended is reported as
+// The conditions are read first, in memory: a cluster that never suspended has
+// nothing to hold, which is every failing pass of most clusters, and reading its
+// workloads would answer a question already answered. The candidates are then
+// read live, so a drain that finished since the suspension ended is reported as
 // finished rather than copied from the condition that caught it mid-drain.
 func (r *CamundaClusterReconciler) keepAtZero(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 ) (bool, error) {
-	return r.stopWorkloads(
-		ctx,
-		cluster,
-		workloadsuspend.MessageKeptAtZero,
-		func(conditionType string) bool {
-			condition := meta.FindStatusCondition(cluster.Status.Conditions, conditionType)
+	held := func(conditionType string) bool {
+		return workloadsuspend.IsAlreadySuspended(cluster, conditionType)
+	}
+	workloads, err := r.clusterWorkloads(ctx, cluster)
+	if err != nil {
+		return false, err
+	}
 
-			return condition != nil && workloadsuspend.IsSuspensionReason(condition.Reason)
-		},
+	result, err := workloadsuspend.StopWorkloadsIf(
+		ctx,
+		r.Client,
+		cluster,
+		workloads,
+		workloadsuspend.MessageKeptAtZero,
+		held,
+		func(workload string) { r.recordSuspended(cluster, workload) },
 	)
+
+	return result.Found, err
 }
 
-// stopWorkloads scales every workload that cluster controls and that stop
-// accepts to zero, stages the condition of each, and reports whether it found
-// one. message says why the workload is held there once its pods are gone.
+// clusterWorkloads returns the workloads of the cluster with the condition each
+// one reports. A workload whose component reports no condition is left out: the
+// suspension has nothing to say about it.
 //
 // The reads are live. The decision to stop a workload reads its replicas, and a
 // render that raised them lands on the API server before an informer carries it,
 // so a cached copy can report none for a workload that runs.
-//
-// Every workload is tried and the errors are joined. One workload that a
-// conflict or an admission rule keeps up must not leave the rest of them
-// running.
-func (r *CamundaClusterReconciler) stopWorkloads(
+func (r *CamundaClusterReconciler) clusterWorkloads(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
-	message string,
-	stop func(conditionType string) bool,
-) (bool, error) {
-	var found bool
-	var errs []error
-	suspend := func(obj client.Object) {
-		if !metav1.IsControlledBy(obj, cluster) {
-			return
-		}
-
-		conditionType, ok := components.ConditionTypeFor(obj.GetLabels()[labels.ComponentKey])
-		if !ok || !stop(conditionType) {
-			return
-		}
-		found = true
-
-		outcome, err := workloadsuspend.StopAtZero(ctx, r.Client, obj, message)
-		if err != nil {
-			errs = append(errs, err)
-
-			return
-		}
-		if outcome.Patched {
-			r.recordSuspended(cluster, obj.GetName())
-		}
-		// The components do not run on this path, so nothing else refreshes the
-		// per-process conditions and they would report health over zero pods.
-		workloadsuspend.Stage(cluster, conditionType, outcome)
-	}
-
+) ([]workloadsuspend.Workload, error) {
 	selector := []client.ListOption{
 		client.InNamespace(cluster.Namespace),
 		client.MatchingLabels(map[string]string{
@@ -142,12 +133,22 @@ func (r *CamundaClusterReconciler) stopWorkloads(
 		}),
 	}
 
+	var errs []error
+	var workloads []workloadsuspend.Workload
+	add := func(obj client.Object) {
+		conditionType, ok := components.ConditionTypeFor(obj.GetLabels()[labels.ComponentKey])
+		if !ok {
+			return
+		}
+		workloads = append(workloads, workloadsuspend.Workload{Object: obj, ConditionType: conditionType})
+	}
+
 	var sets appsv1.StatefulSetList
 	if err := r.APIReader.List(ctx, &sets, selector...); err != nil {
 		errs = append(errs, fmt.Errorf("listing the StatefulSets of the cluster: %w", err))
 	}
 	for i := range sets.Items {
-		suspend(&sets.Items[i])
+		add(&sets.Items[i])
 	}
 
 	var deployments appsv1.DeploymentList
@@ -155,10 +156,10 @@ func (r *CamundaClusterReconciler) stopWorkloads(
 		errs = append(errs, fmt.Errorf("listing the Deployments of the cluster: %w", err))
 	}
 	for i := range deployments.Items {
-		suspend(&deployments.Items[i])
+		add(&deployments.Items[i])
 	}
 
-	return found, errors.Join(errs...)
+	return workloads, errors.Join(errs...)
 }
 
 // endpointsStopped reports whether the process that serves the endpoints of the

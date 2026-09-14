@@ -43,6 +43,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 )
 
 // controllerName is the name the controller registers with controller-runtime.
@@ -203,7 +204,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// that read is the cluster being gone, which the branch above returns
 		// on.
 		var suspendErr error
-		var outcome suspensionOutcome
+		var outcome workloadsuspend.Result
 		if res.Input.Suspended {
 			outcome, suspendErr = r.followSuspension(ctx, &optimize)
 			if outcome.Found && suspendErr == nil {

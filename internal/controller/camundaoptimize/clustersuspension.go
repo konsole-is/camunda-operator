@@ -30,9 +30,6 @@ import (
 
 // The event vocabulary of the suspension that a CamundaOptimize follows.
 const (
-	// eventActionSuspend is the action of the events that the controller
-	// records when the suspension of the referenced cluster changes.
-	eventActionSuspend = "Suspend"
 	// eventReasonClusterSuspended is recorded when the referenced cluster
 	// starts suspending and the Optimize workloads follow it to zero.
 	eventReasonClusterSuspended = "ClusterSuspended"
@@ -71,7 +68,7 @@ func (r *Reconciler) recordClusterSuspended(optimize *v1.CamundaOptimize) {
 		nil,
 		corev1.EventTypeNormal,
 		eventReasonClusterSuspended,
-		eventActionSuspend,
+		workloadsuspend.EventActionSuspend,
 		noteSuspended,
 		optimize.Spec.ClusterRef.Name,
 	)
@@ -113,7 +110,7 @@ func (r *Reconciler) recordSuspensionChange(
 		nil,
 		corev1.EventTypeNormal,
 		reason,
-		eventActionSuspend,
+		workloadsuspend.EventActionSuspend,
 		note,
 		optimize.Spec.ClusterRef.Name,
 	)

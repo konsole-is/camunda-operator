@@ -39,6 +39,7 @@ import (
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
 
@@ -565,7 +566,7 @@ func suspensionEvents(optimize *v1.CamundaOptimize) []string {
 
 	var reasons []string
 	for _, event := range events.Items {
-		if event.InvolvedObject.Name != optimize.Name || event.Action != eventActionSuspend {
+		if event.InvolvedObject.Name != optimize.Name || event.Action != workloadsuspend.EventActionSuspend {
 			continue
 		}
 		for range max(int(event.Count), 1) {

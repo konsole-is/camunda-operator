@@ -27,6 +27,7 @@ package workloadsuspend
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -89,6 +90,85 @@ type Outcome struct {
 	// Message is the drain wording of ocf while pods run, and the message the
 	// caller passed once they are gone.
 	Message string
+}
+
+// Workload is one workload that a controller holds at zero, and the condition it
+// reports on the owner. Which workloads there are, and which condition each one
+// reports, is the business of the controller.
+type Workload struct {
+	Object        client.Object
+	ConditionType string
+}
+
+// Result is what StopWorkloadsIf did with the workloads it was given.
+//
+// The two differ only when a patch failed. A caller that speaks about the
+// workloads reads Found; one that follows a transition reads Stopped, because a
+// pass that stopped none staged no condition for the next one to read either.
+type Result struct {
+	// Found is true when a workload that owner controls passed the predicate,
+	// whatever happened to it.
+	Found bool
+	// Stopped is true when at least one of those workloads is at zero, by this
+	// pass or an earlier one.
+	Stopped bool
+}
+
+// StopWorkloadsIf scales every workload that owner controls and that stop
+// accepts to zero, stages the condition of each from what the stop did, and
+// reports what it did with them.
+//
+// message says why a workload is held at zero once its pods are gone. record is
+// called with the name of every workload this pass actually lowered, so the
+// caller records an event in its own words, or records none.
+//
+// Every workload is tried and the errors are joined. One workload that a
+// conflict or an admission rule keeps up must not leave the rest of them
+// running.
+func StopWorkloadsIf(
+	ctx context.Context,
+	writer client.Writer,
+	owner component.OperatorCRD,
+	workloads []Workload,
+	message string,
+	stop func(conditionType string) bool,
+	record func(workload string),
+) (Result, error) {
+	var result Result
+	var errs []error
+	for _, workload := range workloads {
+		if !metav1.IsControlledBy(workload.Object, owner) || !stop(workload.ConditionType) {
+			continue
+		}
+		result.Found = true
+
+		outcome, err := StopAtZero(ctx, writer, workload.Object, message)
+		if err != nil {
+			errs = append(errs, err)
+
+			continue
+		}
+		if outcome.Patched {
+			record(workload.Object.GetName())
+		}
+		result.Stopped = true
+		// The components do not run on the path that calls this, so nothing
+		// else refreshes these conditions and they would report health over
+		// zero pods.
+		Stage(owner, workload.ConditionType, outcome)
+	}
+
+	return result, errors.Join(errs...)
+}
+
+// IsAlreadySuspended reports whether the condition of a workload on owner
+// already carries a suspension, so a controller that holds its workloads at zero
+// touches only the ones it stopped. One it never stopped is still running for
+// the user.
+func IsAlreadySuspended(owner component.OperatorCRD, conditionType string) bool {
+	condition := meta.FindStatusCondition(*owner.GetStatusConditions(), conditionType)
+
+	return condition != nil && IsSuspensionReason(condition.Reason)
 }
 
 // StopAtZero patches the replicas of a StatefulSet or a Deployment to zero and
