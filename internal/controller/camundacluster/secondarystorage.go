@@ -58,7 +58,13 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 		return err
 	}
 
-	blocker, err := res.claims.Take(ctx, res.cluster, key)
+	// A free backend is not free while pods of another cluster write it. The
+	// rule runs only while no Lease holds the key, so it orders the claimants
+	// of a backend whose Lease is gone: the cluster whose own pods write it
+	// creates it again, and every other cluster waits.
+	blocker, err := res.claims.TakeUnclaimed(ctx, res.cluster, key, func(ctx context.Context) error {
+		return res.refuseUnderOtherPods(ctx, in.Storage.Claim, key)
+	})
 	if err != nil {
 		return err
 	}
@@ -157,6 +163,25 @@ func handoverPossible(heldAtStart, ownPodOnClaim bool) bool {
 	return !heldAtStart || !ownPodOnClaim
 }
 
+// refuseUnderOtherPods stops this cluster from taking a backend that pods of
+// another cluster still write. Its own pods are no reason to wait: a holder
+// whose Lease was deleted by hand meets them, writes the Lease again, and keeps
+// running.
+//
+// The failure is the one the handover gate reports, and it is unwatched for the
+// same reason: nothing tells this cluster when those pods go.
+func (res *resolver) refuseUnderOtherPods(ctx context.Context, claim, key string) error {
+	pods, err := components.OtherPodsOnClaim(ctx, res.reader, claim, res.cluster.UID)
+	if err != nil {
+		return err
+	}
+	if len(pods) == 0 {
+		return nil
+	}
+
+	return conditions.NewUnwatchedFailure(v1.ReasonWaitingForHandover, handoverMessage(key, pods))
+}
+
 // releaseOtherClaims gives back every storage claim of the cluster except keep,
 // and returns the claims it held back. A cluster that moved to another backend
 // holds two claims until here, and the old one must go so the next cluster can
@@ -238,16 +263,22 @@ func storageHandover(
 	handover *components.StorageHandover,
 	applyErr error,
 ) metav1.Condition {
-	message := fmt.Sprintf(
-		"Pods of another cluster, or of its Optimize instance, still write the backend %q: %s. "+
-			"This cluster starts when they are gone",
-		handover.Backend, strings.Join(handover.Pods, ", "),
-	)
 	return conditions.Ready(
 		metav1.ConditionFalse,
 		v1.ReasonWaitingForHandover,
-		appendApplyFailure(message, applyErr),
+		appendApplyFailure(handoverMessage(handover.Backend, handover.Pods), applyErr),
 		cluster.Generation,
+	)
+}
+
+// handoverMessage names the backend and the pods of other clusters that still
+// write it. The claim rule and the handover gate report the same wait, so they
+// read the same to a user.
+func handoverMessage(backend string, pods []string) string {
+	return fmt.Sprintf(
+		"Pods of another cluster, or of its Optimize instance, still write the backend %q: %s. "+
+			"This cluster starts when they are gone",
+		backend, strings.Join(pods, ", "),
 	)
 }
 

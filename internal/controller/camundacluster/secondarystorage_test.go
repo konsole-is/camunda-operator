@@ -34,8 +34,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
@@ -129,6 +131,79 @@ func TestHandoverPossible(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			assert.Equal(t, tc.possible, handoverPossible(tc.heldAtStart, tc.ownPodOnClaim))
+		})
+	}
+}
+
+// A free backend is not free while pods of another cluster write it. Without
+// this rule, a parked cluster that finds the Lease gone creates it, and the
+// running holder then meets a blocker and scales to zero.
+func TestClaimStorageRefusesAFreeBackendUnderOtherPods(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	in := &components.Input{Storage: components.Storage{
+		Type:          v1.SecondaryStorageTypeElasticsearch,
+		Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es.data.svc:9200"},
+	}}
+	key, err := components.StorageClaimKey(in.Storage)
+	require.NoError(t, err)
+	claim := components.StorageClaimSchema().LeaseName(key)
+	self := &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "parked", UID: "uid-parked"},
+	}
+	pod := func(name string, podLabels map[string]string) *corev1.Pod {
+		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "apps", Labels: podLabels}}
+	}
+
+	cases := map[string]struct {
+		pods    []client.Object
+		refused bool
+	}{
+		"pods of the running holder": {
+			pods:    []client.Object{pod("holder-zeebe-0", components.StoragePodLabels("holder", "uid-holder", claim))},
+			refused: true,
+		},
+		"its own pods": {
+			pods: []client.Object{pod("parked-zeebe-0", components.StoragePodLabels("parked", self.UID, claim))},
+		},
+		"no pods": {},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			c := storageClaimPodClient(t, scheme, tc.pods...)
+			res := &resolver{
+				reader:  c,
+				claims:  components.StorageClaimSchema().NewClaim(c, c, "camunda-system"),
+				cluster: self,
+				storage: &v1.SecondaryStorageConfig{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "storage"},
+				},
+				recorder: events.NewFakeRecorder(10),
+			}
+
+			err := res.claimStorage(context.Background(), in)
+
+			var lease coordinationv1.Lease
+			read := c.Get(
+				context.Background(),
+				client.ObjectKey{Namespace: "camunda-system", Name: claim},
+				&lease,
+			)
+			if !tc.refused {
+				require.NoError(t, err)
+				assert.NoError(t, read, "the cluster took the free backend")
+
+				return
+			}
+
+			var unwatched *conditions.UnwatchedPreCheckFailure
+			require.ErrorAs(t, err, &unwatched)
+			assert.Equal(t, v1.ReasonWaitingForHandover, unwatched.Failure.Reason)
+			assert.Contains(t, unwatched.Failure.Message, "apps/holder-zeebe-0")
+			assert.True(t, apierrors.IsNotFound(read), "no Lease is written under the pods of another cluster")
 		})
 	}
 }
@@ -249,6 +324,45 @@ func TestStorageHandover(t *testing.T) {
 			assert.True(t, gated.Suspended())
 		}
 	})
+}
+
+// storageClaimPodClient builds a fake client for the handover gate. The fake
+// client refuses a "!=" field selector, which the API server serves, so the
+// interceptor asserts that the phase selector reached it and then drops it. An
+// envtest spec covers the filtering itself.
+func storageClaimPodClient(t *testing.T, scheme *runtime.Scheme, objects ...client.Object) client.Client {
+	t.Helper()
+
+	return fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objects...).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(
+				ctx context.Context,
+				c client.WithWatch,
+				list client.ObjectList,
+				opts ...client.ListOption,
+			) error {
+				if _, ours := list.(*metav1.PartialObjectMetadataList); !ours {
+					return c.List(ctx, list, opts...)
+				}
+
+				kept := make([]client.ListOption, 0, len(opts))
+				var phases string
+				for _, opt := range opts {
+					if selector, ok := opt.(client.MatchingFieldsSelector); ok {
+						phases = selector.String()
+
+						continue
+					}
+					kept = append(kept, opt)
+				}
+				assert.Equal(t, "status.phase!=Failed,status.phase!=Succeeded", phases)
+
+				return c.List(ctx, list, kept...)
+			},
+		}).
+		Build()
 }
 
 // newNamedCluster is newCluster with a name prefix, so a spec that creates
