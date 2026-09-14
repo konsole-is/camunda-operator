@@ -43,11 +43,6 @@ import (
 // workloads a suspension left at zero and whose cluster resumed.
 const keptAtZeroNote = ". The Optimize workloads that stopped stay at zero until the reference check passes"
 
-// suspendOrder is the Optimize workloads, the importer first. It is the workload
-// that writes Elasticsearch, so a webapp that a conflict or an admission rule
-// keeps up must not keep the importer up with it.
-var suspendOrder = []string{components.ComponentImporter, components.ComponentWebapp}
-
 // followSuspension scales the webapp and the importer to zero and keeps
 // everything else: the Deployments, the Services, and the copies of the
 // referenced Secrets. The condition of each workload it stops reports the wait
@@ -123,7 +118,7 @@ func (r *Reconciler) optimizeWorkloads(
 ) ([]workloadsuspend.Workload, error) {
 	var errs []error
 	var workloads []workloadsuspend.Workload
-	for _, comp := range suspendOrder {
+	for _, comp := range components.StopOrder() {
 		conditionType, ok := components.ConditionTypeFor(comp)
 		if !ok || !stop(conditionType) {
 			continue

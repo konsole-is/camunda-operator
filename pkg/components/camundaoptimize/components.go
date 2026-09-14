@@ -69,13 +69,24 @@ func ConditionTypeFor(comp string) (string, bool) {
 	return conditionType, ok
 }
 
-// ConditionTypes returns the condition that each Optimize workload reports, the
-// importer first. A caller that stops the workloads one by one must reach the
-// importer before the webapp: the importer writes Elasticsearch, so a webapp
-// that a conflict or an admission rule keeps up must not keep the importer up
-// with it.
+// StopOrder returns the Optimize workloads in the order a caller stops them
+// outside the render: the importer first. The importer writes Elasticsearch,
+// so a webapp that a conflict or an admission rule keeps up must not keep the
+// importer up with it.
+func StopOrder() []string {
+	return []string{ComponentImporter, ComponentWebapp}
+}
+
+// ConditionTypes returns the condition that each Optimize workload reports, in
+// StopOrder. A caller that walks the conditions outside the render reads them
+// here, so the walk and the stop follow one order.
 func ConditionTypes() []string {
-	return []string{conditionTypes[ComponentImporter], conditionTypes[ComponentWebapp]}
+	types := make([]string, 0, len(conditionTypes))
+	for _, comp := range StopOrder() {
+		types = append(types, conditionTypes[comp])
+	}
+
+	return types
 }
 
 // Build returns one component per Optimize workload, in reconcile order: the
