@@ -61,6 +61,34 @@ var conditionTypes = map[string]string{
 	ComponentImporter: v1.ConditionImporterReady,
 }
 
+// ConditionTypeFor returns the condition that the given component reports on the
+// CamundaOptimize, and whether that component reports one at all.
+func ConditionTypeFor(comp string) (string, bool) {
+	conditionType, ok := conditionTypes[comp]
+
+	return conditionType, ok
+}
+
+// StopOrder returns the Optimize workloads in the order a caller stops them
+// outside the render: the importer first. The importer writes Elasticsearch,
+// so a webapp that a conflict or an admission rule keeps up must not keep the
+// importer up with it.
+func StopOrder() []string {
+	return []string{ComponentImporter, ComponentWebapp}
+}
+
+// ConditionTypes returns the condition that each Optimize workload reports, in
+// StopOrder. A caller that walks the conditions outside the render reads them
+// here, so the walk and the stop follow one order.
+func ConditionTypes() []string {
+	types := make([]string, 0, len(conditionTypes))
+	for _, comp := range StopOrder() {
+		types = append(types, conditionTypes[comp])
+	}
+
+	return types
+}
+
 // Build returns one component per Optimize workload, in reconcile order: the
 // webapp, then the importer. Each carries a Deployment, its Service, and,
 // where the Kubernetes cluster serves the kind and the spec asks for it, a
@@ -176,15 +204,20 @@ func podTemplate(in Input, comp string) corev1.PodTemplateSpec {
 }
 
 // podLabels returns the labels of the pods of a component: the discovery
-// labels and the SecondaryStorageConfig they run on. The importer writes the
-// analytics indices of that contract, so a cluster that takes the contract
-// over finds these pods with the same selector as the pods of the previous
-// holder. The label is on the pods, never on the selector, so a repoint of
-// the cluster rolls them and the new ones carry the new value.
+// labels, the storage claim of the backend they write, and the UID of this
+// instance. Both workloads carry the claim. The importer writes the analytics
+// indices of that backend, and the webapp writes the reports and the
+// dashboards of a user into it, so a cluster that takes the backend over
+// waits for either with the same selector as for the pods of the previous
+// holder. The instance UID tells the pods of this instance from those of a
+// deleted one on the same cluster, whose importer may still be stopping. The
+// labels are on the pods, never on the selector, so a change of backend rolls
+// them and the new ones carry the new value.
 func podLabels(in Input, comp string) map[string]string {
 	return labels.Merge(
 		discoveryLabels(in, comp),
-		clustercomponents.StoragePodLabels(in.ClusterName, in.StorageContract),
+		clustercomponents.StoragePodLabels(in.ClusterName, in.ClusterUID, in.StorageClaim),
+		map[string]string{labels.OptimizeUIDKey: string(in.Optimize.UID)},
 	)
 }
 

@@ -272,6 +272,13 @@ var _ = Describe("ElasticsearchCluster", Ordered, Label(utils.LabelElasticsearch
 		}, 3*time.Minute).Should(Succeed())
 	})
 
+	// The handover flow runs last among the specs that use the Elasticsearch.
+	// The Camunda indices its clusters create carry one replica each, which a
+	// one-node Elasticsearch never assigns, so the ElasticsearchCluster reports
+	// yellow health and not Ready from then on (#362). The deletion spec that
+	// follows never waits for Ready.
+	itHandsTheStorageBackendOver()
+
 	It("garbage-collects its bindings and, by default, the data volume on deletion", func() {
 		_, err := utils.Kubectl("delete", esResource, esName, "-n", esNamespace, "--wait=false")
 		Expect(err).NotTo(HaveOccurred())

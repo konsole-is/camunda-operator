@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/workloadmutations"
 )
@@ -63,9 +64,15 @@ func TestMutationsAreGatedOffWithoutOverrides(t *testing.T) {
 		assert.Equal(t, podLabels(in, comp.GetName()), template.Labels, comp.GetName())
 		assert.Equal(
 			t,
-			fixtureContract,
-			template.Labels[labels.StorageContractKey],
-			"the pods name the contract they run on, so a handover waits for them",
+			clustercomponents.StorageClaimSchema().LeaseName(fixtureBackend),
+			template.Labels[labels.StorageClaimKey],
+			"the pods name the storage claim of the backend they write, so a handover waits for them",
+		)
+		assert.Equal(
+			t,
+			fixtureClusterUID,
+			template.Labels[labels.ClusterUIDKey],
+			"the pods name the cluster, so it tells its own pods from those of the previous holder",
 		)
 		assert.Equal(
 			t,

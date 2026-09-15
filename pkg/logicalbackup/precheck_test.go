@@ -173,7 +173,7 @@ func TestPreCheckFailures(t *testing.T) {
 			message: "suspended",
 		},
 		{
-			name: "another cluster holds the storage contract of the cluster",
+			name: "another cluster holds the backend of the cluster",
 			objects: func() []client.Object {
 				c := cluster()
 				c.Status.Conditions = []metav1.Condition{{
@@ -196,22 +196,6 @@ func TestPreCheckFailures(t *testing.T) {
 					Type:               v1.ConditionReady,
 					Status:             metav1.ConditionFalse,
 					Reason:             v1.ReasonWaitingForHandover,
-					LastTransitionTime: metav1.Now(),
-				}}
-				return []client.Object{c, storage(v1.SecondaryStorageTypeElasticsearch), bucket()}
-			}(),
-			reason:  v1.ReasonClusterSuspended,
-			waiting: true,
-			message: "suspended",
-		},
-		{
-			name: "a pre-check failure holds the cluster at zero",
-			objects: func() []client.Object {
-				c := cluster()
-				c.Status.Conditions = []metav1.Condition{{
-					Type:               v1.ConditionReady,
-					Status:             metav1.ConditionFalse,
-					Reason:             v1.ReasonInvalidReference,
 					LastTransitionTime: metav1.Now(),
 				}}
 				return []client.Object{c, storage(v1.SecondaryStorageTypeElasticsearch), bucket()}
@@ -277,6 +261,31 @@ func TestPreCheckFailures(t *testing.T) {
 			assert.Equal(t, tt.waiting, logicalbackup.Waiting(err))
 		})
 	}
+}
+
+// The Ready condition of the cluster carries InvalidReference from a check of
+// its own that failed. Every resource this pre-check reads is present, so what
+// it proves is that it does not turn that reason into ClusterSuspended: a
+// cluster on a failed check keeps its workloads, so it is not suspended.
+//
+// Each backup kind gates on its own after this. LogicalBackupRDBMS also
+// requires the cluster to run the spec it declares.
+func TestPreCheckDoesNotReportClusterSuspendedForAFailedReferenceCheck(t *testing.T) {
+	c := cluster()
+	c.Status.Conditions = []metav1.Condition{{
+		Type:               v1.ConditionReady,
+		Status:             metav1.ConditionFalse,
+		Reason:             v1.ReasonInvalidReference,
+		LastTransitionTime: metav1.Now(),
+	}}
+
+	result, err := logicalbackup.PreCheck(
+		context.Background(),
+		request(newReader(t, c, storage(v1.SecondaryStorageTypeElasticsearch), bucket())),
+	)
+
+	require.NoError(t, err)
+	assert.NotNil(t, result)
 }
 
 // A failure to read the API server is transient, not a state of the backup:

@@ -138,8 +138,9 @@ func main() {
 	flag.StringVar(
 		&operatorNamespace, "namespace", os.Getenv(namespaceEnv),
 		"The namespace that the operator runs in. It holds the Leases that serialize the "+
-			"cross-namespace claims: of a logical database, and of a Keycloak realm. Defaults "+
-			"to the "+namespaceEnv+" environment variable, and then to the namespace of the Pod.",
+			"cross-namespace claims: of a logical database, of a Keycloak realm, and of the "+
+			"secondary storage backend of a cluster. Defaults to the "+namespaceEnv+
+			" environment variable, and then to the namespace of the Pod.",
 	)
 	opts := zap.Options{
 		Development: true,
@@ -284,9 +285,10 @@ func main() {
 	}
 
 	if err := (&camundacluster.CamundaClusterReconciler{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Scheme:    mgr.GetScheme(),
+		Client:         mgr.GetClient(),
+		APIReader:      mgr.GetAPIReader(),
+		Scheme:         mgr.GetScheme(),
+		ClaimNamespace: operatorNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaCluster")
 		os.Exit(1)
@@ -386,9 +388,10 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&camundaoptimize.Reconciler{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Scheme:    mgr.GetScheme(),
+		Client:         mgr.GetClient(),
+		APIReader:      mgr.GetAPIReader(),
+		Scheme:         mgr.GetScheme(),
+		ClaimNamespace: operatorNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaOptimize")
 		os.Exit(1)

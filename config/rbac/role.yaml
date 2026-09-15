@@ -68,7 +68,9 @@ rules:
   - replicasets
   verbs:
   - delete
+  - get
   - list
+  - watch
 - apiGroups:
   - barmancloud.cnpg.io
   resources:

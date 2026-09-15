@@ -18,6 +18,7 @@ package camundaoptimize
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -82,6 +83,10 @@ var indexers = map[string]client.IndexerFunc{
 // checks whether the Kubernetes cluster serves the kind. It also sets
 // EventRecorder, Metrics, and the uncached component client when they are nil.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.ClaimNamespace == "" {
+		return errors.New("the namespace of the storage claim Leases is required")
+	}
+
 	if r.EventRecorder == nil {
 		r.EventRecorder = mgr.GetEventRecorder(controllerName)
 	}

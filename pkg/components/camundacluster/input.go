@@ -29,25 +29,50 @@ import (
 type Storage struct {
 	// Type selects which of the two blocks is set.
 	Type v1.SecondaryStorageType
+	// Namespace is the namespace of the contract the chain resolves from,
+	// which is the namespace of the cluster. A bare Service name in an
+	// endpoint resolves there, so the claim key qualifies it with this
+	// namespace, see StorageClaimKey.
+	Namespace string
 	// Elasticsearch is set when Type is elasticsearch.
 	Elasticsearch *v1.ElasticsearchStorage
 	// RDBMS is set when Type is rdbms.
 	RDBMS *RDBMSStorage
-	// Holder is set when another CamundaCluster holds the
-	// SecondaryStorageConfig that spec.storageRef names. One CamundaCluster
-	// uses one contract, so the controller renders a cluster with a Holder
-	// suspended and reports the holder on Ready. Nil when this cluster holds
-	// its contract.
+	// Claim is the name of the storage claim Lease of the backend. Every pod
+	// carries it, so a cluster that takes the backend over finds the pods
+	// that still write it. It is set once the controller took the claim or
+	// was refused it.
+	Claim string
+	// Holder is set when another CamundaCluster holds the storage claim of
+	// the backend this cluster resolves. One CamundaCluster writes one
+	// backend, so the controller renders a cluster with a Holder suspended
+	// and reports the holder on Ready. Nil when this cluster holds the claim.
 	Holder *StorageHolder
+	// Handover is set when pods of other clusters still carry the storage claim
+	// of the backend this cluster is on, whether it holds that claim already or
+	// waits to take it. Those pods write the backend, so the controller renders
+	// a cluster with a Handover suspended and reports the pods on Ready. Nil
+	// when no such pod exists.
+	Handover *StorageHandover
 }
 
-// StorageHolder is the CamundaCluster that holds the storage contract this
-// cluster names.
+// StorageHolder is the CamundaCluster that holds the storage claim of the
+// backend this cluster resolves.
 type StorageHolder struct {
 	// Cluster is the namespace and name of the holder.
 	Cluster types.NamespacedName
-	// Contract is the namespace and name of the held SecondaryStorageConfig.
-	Contract types.NamespacedName
+	// Backend is the claim key of the backend, see StorageClaimKey.
+	Backend string
+}
+
+// StorageHandover is the wait for the pods of other clusters that still write
+// the backend this cluster is on.
+type StorageHandover struct {
+	// Backend is the claim key of the backend, see StorageClaimKey.
+	Backend string
+	// Pods are the pods of other clusters that carry the storage claim, as
+	// "namespace/name" paths.
+	Pods []string
 }
 
 // RDBMSStorage is the DatabaseConfig and DatabaseServerConfig chain of an

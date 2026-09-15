@@ -126,8 +126,8 @@ func createWorld(storageType v1.SecondaryStorageType, mutate ...func(*v1.Camunda
 	return &world{namespace: namespace, cluster: cluster}
 }
 
-// holdStorage puts the cluster of w in the suspension of a storage contract
-// that another cluster holds: Ready False with reason StorageAlreadyAttached.
+// holdStorage puts the cluster of w in the suspension of a backend that
+// another cluster holds: Ready False with reason StorageAlreadyAttached.
 // The CamundaCluster controller does not run in this suite, so the condition
 // stays where the spec puts it.
 func holdStorage(w *world) {
@@ -362,7 +362,7 @@ var _ = Describe("BackupSchedule controller", func() {
 		Expect(scheduledOf(schedule)).To(BeEmpty())
 	})
 
-	It("skips the trigger of a cluster whose storage contract another cluster holds", func() {
+	It("skips the trigger of a cluster whose backend another cluster holds", func() {
 		w := createWorld(v1.SecondaryStorageTypeRDBMS)
 		holdStorage(w)
 		schedule, trigger := createSchedule(w)

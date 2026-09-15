@@ -22,11 +22,11 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/net/idna"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/hostfold"
 )
 
 // realmState is what the environment of a Management Identity container says
@@ -107,23 +107,11 @@ func foldKeycloakURL(raw string) (string, bool) {
 	// the claim.
 	parsed.User = nil
 	parsed.Scheme = strings.ToLower(parsed.Scheme)
-	host := strings.ToLower(parsed.Hostname())
-	// A terminal dot spells the fully qualified form of the same name, and one
-	// IP address has many spellings, an IPv6 literal most of all. Each
-	// spelling would otherwise take a claim of its own on one realm.
-	if fqdn := strings.TrimSuffix(host, "."); fqdn != "" {
-		host = fqdn
-	}
-	// An HTTP client resolves an internationalized host through its IDNA form,
-	// so "bücher.example" and "xn--bcher-kva.example" reach one server and must
-	// fold to one realm. A host that the profile refuses, an IP literal among
-	// them, keeps the spelling it came with.
-	if ascii, err := idna.Lookup.ToASCII(host); err == nil && ascii != "" {
-		host = ascii
-	}
-	if ip := net.ParseIP(host); ip != nil {
-		host = ip.String()
-	}
+	// A terminal dot spells the fully qualified form of the same name, an
+	// internationalized name reaches one server through either spelling, and
+	// one IP address has many. Each would otherwise take a claim of its own on
+	// one realm, so the host folds the way every claim key folds one.
+	host := hostfold.FoldHost(parsed.Hostname())
 	// A port is a number, and url.Parse admits the leading zeroes that spell
 	// the same one. They go before the default port is read, so that 0443
 	// reaches https as its default too.

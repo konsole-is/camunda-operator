@@ -80,12 +80,12 @@ const ReasonRejected = "Rejected"
 const ReasonVersionDowngradeRefused = "VersionDowngradeRefused"
 
 // ReasonStorageAlreadyAttached on Ready means that another CamundaCluster
-// holds the SecondaryStorageConfig that spec.storageRef names. One
-// CamundaCluster uses one contract. The index names and the tables are
-// fixed, so two clusters on one backend write each other's data. The
-// operator keeps this cluster suspended, with its volumes, until that
-// cluster releases the contract. Then it resumes this cluster on its own.
-// The message names the holder and the contract.
+// holds the backend that spec.storageRef resolves to. One CamundaCluster
+// holds one backend. The index names and the tables are fixed, so two
+// clusters on one backend write each other's data. The operator keeps this
+// cluster suspended, with its volumes, until that cluster moves to another
+// backend or is deleted. Then it resumes this cluster on its own. The message
+// names the holder and the backend.
 const ReasonStorageAlreadyAttached = "StorageAlreadyAttached"
 
 // ComponentMode says where a process of the unified binary runs.
@@ -472,10 +472,11 @@ type CamundaClusterSpec struct {
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
 	// StorageRef names the SecondaryStorageConfig, in the namespace of this
 	// cluster, that describes the secondary storage backend. Required on a
-	// CamundaCluster, forbidden in a preset. One CamundaCluster uses one
-	// contract. If another cluster already holds the contract, the operator
-	// suspends this cluster and reports Ready reason StorageAlreadyAttached
-	// until that cluster releases it.
+	// CamundaCluster, forbidden in a preset. One CamundaCluster holds one
+	// backend, and two contracts that name one address are one backend. If
+	// another cluster already holds the backend, the operator suspends this
+	// cluster and reports Ready reason StorageAlreadyAttached until that
+	// cluster moves to another backend or is deleted.
 	// +optional
 	StorageRef string `json:"storageRef,omitempty"`
 	// BackupStorageRef names an ObjectStorageConfig, in the namespace of
@@ -619,15 +620,14 @@ func (in *CamundaCluster) SetObservedGeneration(generation int64) {
 
 // suspendedReadyReasons are the Ready reasons under which the operator holds
 // every workload of the cluster at zero: another cluster holds the storage
-// contract, the cluster waits for the pods of the previous holder of a
-// contract it takes over, or a pre-check failed on a dangling reference or a
-// missing Secret. VersionDowngradeRefused is not one of them: a refused
-// cluster keeps running on the version it has.
+// claim of its backend, or the cluster waits for the pods of another cluster
+// to leave that backend. A failed reference check is not one of them: the
+// cluster keeps running on its last configuration. Neither is
+// VersionDowngradeRefused: a refused cluster keeps running on the version
+// it has.
 var suspendedReadyReasons = []string{
 	ReasonStorageAlreadyAttached,
 	ReasonWaitingForHandover,
-	ReasonInvalidReference,
-	ReasonMissingSecret,
 }
 
 // Suspended reports whether the operator scales every workload of the cluster

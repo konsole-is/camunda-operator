@@ -25,6 +25,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -36,6 +38,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/testenv"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // timeout and interval bound the Eventually polling of every envtest assertion.
@@ -43,6 +46,11 @@ const (
 	timeout  = testenv.Timeout
 	interval = testenv.Interval
 )
+
+// testClaimNamespace holds the storage claim Leases of this suite. In a
+// cluster this is the namespace of the operator, which always exists, like
+// this one.
+const testClaimNamespace = "default"
 
 var (
 	env       *testenv.Env
@@ -104,9 +112,10 @@ var _ = BeforeSuite(func() {
 		}
 
 		return (&CamundaClusterReconciler{
-			Client:    mgr.GetClient(),
-			APIReader: mgr.GetAPIReader(),
-			Scheme:    mgr.GetScheme(),
+			Client:         mgr.GetClient(),
+			APIReader:      mgr.GetAPIReader(),
+			Scheme:         mgr.GetScheme(),
+			ClaimNamespace: testClaimNamespace,
 			// The unwatched pre-check must come back within the Eventually
 			// window of the tests.
 			RetryInterval: time.Second,
@@ -117,7 +126,63 @@ var _ = BeforeSuite(func() {
 	})
 
 	ctx, k8sClient = env.Ctx, env.Client
+	go collectOrphanedWorkloads(ctx, k8sClient)
 })
+
+// collectOrphanedWorkloads stands in for the garbage collector, which envtest
+// does not run: it deletes every StatefulSet and Deployment of the operator
+// whose owning CamundaCluster is gone, the way the collector does once the
+// finalizers of the cluster cleared. The storage claim reads such a
+// StatefulSet as a writer of the backend its template names until it is
+// gone, so a waiting cluster would never resume without this.
+func collectOrphanedWorkloads(ctx context.Context, c client.Client) {
+	defer GinkgoRecover()
+
+	// A workload is orphaned when it names a CamundaCluster owner and none of
+	// the named ones exists: a cluster recreated under the same name adds its
+	// own reference beside the stale one, and keeps the workload.
+	ownerGone := func(owners []metav1.OwnerReference, namespace string) bool {
+		named := false
+		for _, owner := range owners {
+			if owner.Kind != "CamundaCluster" {
+				continue
+			}
+			named = true
+			var cluster v1.CamundaCluster
+			err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: owner.Name}, &cluster)
+			if err == nil && cluster.UID == owner.UID {
+				return false
+			}
+		}
+
+		return named
+	}
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		var statefulSets appsv1.StatefulSetList
+		if err := c.List(ctx, &statefulSets, client.MatchingLabels{labels.ManagedByKey: labels.ManagedBy}); err == nil {
+			for i := range statefulSets.Items {
+				if ownerGone(statefulSets.Items[i].OwnerReferences, statefulSets.Items[i].Namespace) {
+					_ = c.Delete(ctx, &statefulSets.Items[i])
+				}
+			}
+		}
+		var deployments appsv1.DeploymentList
+		if err := c.List(ctx, &deployments, client.MatchingLabels{labels.ManagedByKey: labels.ManagedBy}); err == nil {
+			for i := range deployments.Items {
+				if ownerGone(deployments.Items[i].OwnerReferences, deployments.Items[i].Namespace) {
+					_ = c.Delete(ctx, &deployments.Items[i])
+				}
+			}
+		}
+	}
+}
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")

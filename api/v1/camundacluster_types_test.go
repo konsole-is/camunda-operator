@@ -34,7 +34,7 @@ func TestCamundaClusterSuspended(t *testing.T) {
 			cluster: v1.CamundaCluster{Spec: v1.CamundaClusterSpec{Suspend: true}},
 			want:    true,
 		},
-		"another cluster holds the storage contract": {
+		"another cluster holds the backend": {
 			cluster: v1.CamundaCluster{Status: v1.CamundaClusterStatus{Conditions: []metav1.Condition{{
 				Type:   v1.ConditionReady,
 				Status: metav1.ConditionFalse,
@@ -56,7 +56,7 @@ func TestCamundaClusterSuspended(t *testing.T) {
 				Status: metav1.ConditionFalse,
 				Reason: v1.ReasonInvalidReference,
 			}}}},
-			want: true,
+			want: false,
 		},
 		"a referenced Secret of the cluster is missing": {
 			cluster: v1.CamundaCluster{Status: v1.CamundaClusterStatus{Conditions: []metav1.Condition{{
@@ -64,7 +64,7 @@ func TestCamundaClusterSuspended(t *testing.T) {
 				Status: metav1.ConditionFalse,
 				Reason: v1.ReasonMissingSecret,
 			}}}},
-			want: true,
+			want: false,
 		},
 		"a refused downgrade keeps the cluster running": {
 			cluster: v1.CamundaCluster{Status: v1.CamundaClusterStatus{Conditions: []metav1.Condition{{

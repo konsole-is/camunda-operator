@@ -429,3 +429,41 @@ func previewedDeployment(t *testing.T, comp *component.Component) *appsv1.Deploy
 
 	return nil
 }
+
+// TestConditionTypeFor pins the condition that each Optimize workload reports, so
+// a caller that acts on one outside the render reads it from the component label.
+func TestConditionTypeFor(t *testing.T) {
+	t.Parallel()
+
+	want := map[string]string{
+		ComponentWebapp:   v1.ConditionWebappReady,
+		ComponentImporter: v1.ConditionImporterReady,
+	}
+	for comp, conditionType := range want {
+		got, ok := ConditionTypeFor(comp)
+		assert.True(t, ok, comp)
+		assert.Equal(t, conditionType, got, comp)
+	}
+
+	_, ok := ConditionTypeFor("no-such-component")
+	assert.False(t, ok)
+}
+
+// TestStopOrder pins the order a caller stops the workloads in, and that the
+// conditions follow it. The importer writes Elasticsearch, so it comes first.
+func TestStopOrder(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(
+		t,
+		[]string{ComponentImporter, ComponentWebapp},
+		StopOrder(),
+		"the importer is stopped before the webapp",
+	)
+	assert.Equal(
+		t,
+		[]string{v1.ConditionImporterReady, v1.ConditionWebappReady},
+		ConditionTypes(),
+		"the conditions follow the stop order",
+	)
+}

@@ -22,6 +22,7 @@ package cacheopts
 
 import (
 	batchv1 "k8s.io/api/batch/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,6 +49,10 @@ func Options() cache.Options {
 			// pods of these Jobs are what tells a controller that a container
 			// cannot start. See pkg/podstate.
 			&corev1.Pod{}: {Label: managed},
+			// The claim Leases of the operator carry the label. The leader
+			// election Leases of every operator in the cluster do not, and a
+			// cache of those is memory spent on nothing.
+			&coordinationv1.Lease{}: {Label: managed},
 		},
 	}
 }

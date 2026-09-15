@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -43,6 +44,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 )
 
 // controllerName is the name the controller registers with controller-runtime.
@@ -53,6 +55,10 @@ const controllerName = "camundaoptimize"
 // it a deleted CamundaOptimize would leave the cluster exporting records that
 // nothing reads.
 const Finalizer = "core.camunda.io/camundaoptimize-exporter"
+
+// defaultRetryInterval is how long the controller waits before it looks again
+// at something no watch reports.
+const defaultRetryInterval = 30 * time.Second
 
 // The event vocabulary of this controller.
 const (
@@ -81,6 +87,14 @@ type Reconciler struct {
 	// Metrics records the condition gauge and the apply counters of the
 	// framework. SetupWithManager sets it when it is nil.
 	Metrics component.MetricsRecorder
+	// ClaimNamespace holds the storage claim Leases of every cluster. This
+	// controller reads them to learn whether the cluster it attaches to holds
+	// the backend its importer writes. SetupWithManager refuses an empty
+	// value.
+	ClaimNamespace string
+	// RetryInterval overrides how long the controller waits on something no
+	// watch reports. Zero means defaultRetryInterval; tests shorten it.
+	RetryInterval time.Duration
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used
@@ -104,17 +118,23 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=pods,verbs=list
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=replicasets;statefulsets,verbs=list
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch
 
 // Reconcile converges a CamundaOptimize. A CR under deletion withdraws the
 // exporter patch and releases the finalizer. Otherwise the finalizer is added
 // before the first side effect, the pre-checks resolve every reference into
-// the render input, and a failed pre-check reports its Ready reason, scales
-// the webapp and the importer to zero, and stops. A CamundaOptimize that lost
-// the attachment deletes those workloads instead, because they belong to the
-// instance that holds it now.
+// the render input, and a failed pre-check reports its Ready reason and
+// returns. The webapp and the importer keep the configuration of the last pass,
+// with two exceptions. A suspended referenced cluster scales them to zero, so
+// the importer does not read Elasticsearch while that cluster is down. A
+// CamundaOptimize that lost the attachment, or whose cluster is gone, deletes
+// them: they belong to the instance that holds the cluster now, or to no
+// cluster at all.
 // Then the exporter patch turns the Elasticsearch exporter of the referenced
 // cluster on, and the components converge: the copies of referenced Secrets,
 // the webapp, the importer. Ready is True only when every component that takes
@@ -171,9 +191,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	res, err := r.preCheck(ctx, &optimize)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
-		// A CamundaOptimize that lost the attachment must not keep the
-		// workloads it built while it held it, see releaseWorkloads.
-		if failure.Reason == v1.ReasonClusterAlreadyAttached {
+		// Read before anything stages a new condition, as the success path
+		// does, and off the workload conditions rather than Ready, see
+		// followsSuspendedCluster.
+		suspendedBefore := followsSuspendedCluster(&optimize)
+		// A CamundaOptimize that lost the attachment, or whose cluster is
+		// gone, must not keep the workloads it built, see releaseWorkloads.
+		// Every other failed check keeps them on the configuration of the
+		// last pass and reports on Ready.
+		if failure.Reason == v1.ReasonClusterAlreadyAttached || errors.Is(err, errClusterGone) {
 			conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
 			// The component conditions describe workloads that the next call
 			// deletes, and comps stays nil on this path, so the flush does not
@@ -181,19 +207,42 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			// CamundaOptimize renders nothing, so it reports nothing about
 			// what it used to render.
 			removeComponentConditions(&optimize)
+
 			return ctrl.Result{}, r.releaseWorkloads(ctx, &optimize)
 		}
 
-		// Every other failed pre-check stops the workloads and keeps them.
-		// The reference that failed can be the one the cluster failed on too,
-		// and then the cluster reports itself suspended while this controller
-		// cannot resolve it either. The importer must not keep writing
-		// Elasticsearch through that, see suspendWorkloads.
-		suspended, suspendErr := r.suspendWorkloads(ctx, &optimize)
-		if suspended && suspendErr == nil {
-			failure.Message += ". The Optimize workloads are scaled to zero until the pre-check passes"
+		// A cluster that holds these workloads at zero is the exception: they
+		// follow it, and the render that does that never runs on this path,
+		// see followSuspension. Either wait counts, the suspension of the
+		// cluster or the claim of its backend, and waitFor says which one
+		// to report. Suspended is false unless the pre-check read the cluster,
+		// so a failure before that leaves the workloads alone. The pre-check
+		// reads the cluster first, so its suspension is known on every failure
+		// that reaches here. The one failure that comes before that read is the
+		// cluster being gone, which the branch above returns on.
+		var suspendErr error
+		var outcome workloadsuspend.Result
+		if res.Input.Suspended {
+			held := waitFor(res)
+			outcome, suspendErr = r.followSuspension(ctx, &optimize, held)
+			if outcome.Found && suspendErr == nil {
+				failure.Message += fmt.Sprintf(held.failureNote, optimize.Spec.ClusterRef.Name)
+			}
+		} else {
+			// The cluster resumed while the check still fails. Nothing renders
+			// here, so the workloads it stopped stay at zero.
+			kept, keptErr := r.keepAtZero(ctx, &optimize)
+			suspendErr = keptErr
+			if kept && keptErr == nil {
+				failure.Message += keptAtZeroNote
+			}
 		}
 		conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
+		// The start of a suspension only: this path renders nothing, so the end
+		// belongs to the success path that starts the workloads again.
+		if outcome.Stopped && !suspendedBefore {
+			r.recordClusterSuspended(&optimize, res)
+		}
 
 		return ctrl.Result{}, suspendErr
 	}
@@ -202,10 +251,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	res.Input.ServiceMonitorSupported = r.serviceMonitorSupported()
-	// The previous suspension state lives in Ready, so it is read before
-	// anything stages a new one. The event is recorded at the end, once the
-	// reconcile has acted on the change.
-	suspendedBefore := wasSuspending(&optimize)
+	// The previous suspension state is read before anything stages a new one.
+	// The event is recorded at the end, once the reconcile has acted on the
+	// change.
+	//
+	// Ready carries it for a suspension this path staged, and the workload
+	// conditions carry it for one the pre-check failure path staged. Both count,
+	// or a check that recovers after the cluster resumed pairs no event with the
+	// suspension that window recorded.
+	suspendedBefore := wasSuspending(&optimize) || followsSuspendedCluster(&optimize)
+	// The components stage their conditions below, so whether this instance
+	// ever rendered a workload is read before they do.
+	renderedBefore := hasWorkloads(&optimize)
 
 	if err := r.patchExporter(ctx, res); err != nil {
 		return ctrl.Result{}, err
@@ -219,9 +276,33 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
 	conditions.Stage(&optimize, conditions.Aggregate(&optimize, built.ready...))
-	r.recordSuspensionChange(&optimize, suspendedBefore, res.Input.Suspended)
+	// The event marks the decision, not its outcome: this pass decided that the
+	// suspension starts or ends, and the workload conditions report whether the
+	// apply carried it through. A record held back for a failed apply is a
+	// record lost, because ocf rewrites those conditions and the next pass reads
+	// no transition to record.
+	if renderedBefore {
+		r.recordSuspensionChange(&optimize, suspendedBefore, res)
+	}
+
+	// No watch reports the storage claim of the backend, or the pods of
+	// another cluster on it, so the workloads they park start again on this
+	// timer.
+	if res.AwaitsBackendClaim && reconcileErr == nil {
+		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+	}
 
 	return ctrl.Result{}, reconcileErr
+}
+
+// retryInterval returns the wait before an unwatched dependency is looked at
+// again.
+func (r *Reconciler) retryInterval() time.Duration {
+	if r.RetryInterval > 0 {
+		return r.RetryInterval
+	}
+
+	return defaultRetryInterval
 }
 
 // optimizeComponents are the components of one CamundaOptimize: all of them
