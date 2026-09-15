@@ -112,7 +112,7 @@ The second case is narrow. A creation timestamp records whole seconds, so two re
 
 On both paths the resource that had the attachment deletes its own workloads first. The new one reports `WaitingForHandover` and creates nothing until the importer Deployment of the previous one is gone.
 
-Pods that are already ordered to stop can run for their termination grace period after that Deployment goes. A short overlap of two importers is therefore still possible.
+Pods that are already ordered to stop can run for their termination grace period after that Deployment goes. The new resource waits for them too: its importer starts once the importer pod of the previous resource is gone, so two importers never write the indices at once.
 
 ## Authentication
 
