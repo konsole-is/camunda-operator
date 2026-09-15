@@ -1204,6 +1204,10 @@ var _ = Describe("CamundaOptimize controller", func() {
 				Namespace: s.namespace,
 				Name:      components.WorkloadName(s.optimize, components.ComponentWebapp),
 			}
+			// The first render can be the one at zero of an instance whose
+			// cluster has not claimed its backend yet; the render to compare
+			// against is the one that asks for the replicas.
+			expectReplicas(1, webappKey)
 			before := fetchDeployment(webappKey).Spec.Template.Annotations[components.ConfigHashAnnotation]
 			Expect(before).NotTo(BeEmpty())
 			expectStableRender(webappKey)
