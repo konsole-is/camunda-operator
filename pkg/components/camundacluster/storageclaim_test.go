@@ -25,6 +25,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/testing/golden"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -274,6 +275,25 @@ func TestOtherPodsOnClaim(t *testing.T) {
 	pod := func(namespace, name string, podLabels map[string]string) *corev1.Pod {
 		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: podLabels}}
 	}
+	replicaSet := func(namespace, name string, podLabels map[string]string, replicas int32) *appsv1.ReplicaSet {
+		return &appsv1.ReplicaSet{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: podLabels},
+			Spec:       appsv1.ReplicaSetSpec{Replicas: &replicas},
+		}
+	}
+	statefulSet := func(namespace, name string, podLabels map[string]string, replicas int32) *appsv1.StatefulSet {
+		return &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: namespace,
+				Labels:    labels.Managed(labels.Cluster(podLabels[labels.ClusterKey]), ComponentZeebe),
+			},
+			Spec: appsv1.StatefulSetSpec{
+				Replicas: &replicas,
+				Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: podLabels}},
+			},
+		}
+	}
 
 	cases := map[string]struct {
 		objects []client.Object
@@ -319,6 +339,40 @@ func TestOtherPodsOnClaim(t *testing.T) {
 				pod("team-b", "old-zeebe-0", StoragePodLabels("old", "uid-old", claim)),
 			},
 			pods: []string{"team-b/old-zeebe-0"},
+		},
+		// A workload whose pod is gone for a moment starts it again with the
+		// claim, so a scan that read the pods alone would pass too early.
+		"a ReplicaSet of a previous holder that asks for a pod": {
+			objects: []client.Object{
+				replicaSet("team-a", "old-gateway-abc", StoragePodLabels("old", "uid-old", claim), 1),
+			},
+			pods: []string{"team-a/old-gateway-abc"},
+		},
+		"a ReplicaSet of a previous holder at zero": {
+			objects: []client.Object{
+				replicaSet("team-a", "old-gateway-abc", StoragePodLabels("old", "uid-old", claim), 0),
+			},
+		},
+		"a ReplicaSet of this cluster that asks for a pod": {
+			objects: []client.Object{
+				replicaSet("team-a", "holder-gateway-abc", StoragePodLabels("holder", "uid-1", claim), 1),
+			},
+		},
+		"a StatefulSet of a previous holder whose template carries the claim": {
+			objects: []client.Object{
+				statefulSet("team-b", "old-zeebe", StoragePodLabels("old", "uid-old", claim), 1),
+			},
+			pods: []string{"team-b/old-zeebe"},
+		},
+		"a StatefulSet of a previous holder at zero": {
+			objects: []client.Object{
+				statefulSet("team-b", "old-zeebe", StoragePodLabels("old", "uid-old", claim), 0),
+			},
+		},
+		"a StatefulSet of this cluster": {
+			objects: []client.Object{
+				statefulSet("team-a", "holder-zeebe", StoragePodLabels("holder", "uid-1", claim), 1),
+			},
 		},
 	}
 

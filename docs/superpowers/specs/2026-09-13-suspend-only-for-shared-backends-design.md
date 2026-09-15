@@ -162,17 +162,24 @@ Lease is noticed at once and not at the next unrelated event. Three outcomes:
   the claim of its template held, and a StatefulSet of the cluster mid-update, or one the
   controller has not read yet, holds every release, because a pod it recreates carries the
   revision the pod had (`RolloutClaims`). While one is held back, the cluster looks again on
-  its retry interval. The same pod-gated release runs on the
+  its retry interval. A pre-check failure before the claim step releases what no pod and no
+  workload of the cluster carries and keeps the claim its pods carry, and releases nothing for
+  a cluster with no pod, because a reference that fails says nothing about the backend it
+  writes (`releaseStaleWait`). The same pod-gated release runs on the
   foreign-Lease and bad-key exits, where the cluster keeps running on its previous backend
-  and gives it back once its pods are gone, and on the refused-downgrade path. A refused
+  and gives it back once its pods are gone, and on the refused-downgrade path. The writers a
+  claimant waits for are the pods on the claim and the workloads that can still start one, a
+  ReplicaSet that asks for replicas with the claim on its labels and a StatefulSet that asks
+  for replicas with the claim on its template, because a pod evicted or not yet started
+  comes back with the claim. A refused
   cluster applies nothing, so the claim it took on that pass is not the backend it writes: it
   keeps the claim its pods carry and gives the fresh one back (`releaseRefusedWait`), so a
   cluster that repointed into a refusal blocks no one on a backend it never writes. A refused
   cluster that the user or the claim suspends renders suspended on its running version
   instead, and meets the refusal again when it resumes. A pre-check
-  failure that comes before the claim step releases nothing: the pass does not know which
-  backend the cluster resolves, and a cluster at zero must not give its live backend away
-  over a missing preset.
+  failure that comes before the claim step keeps the claim the pods of the cluster carry and
+  gives back what no pod and no workload of it carries; a cluster at zero releases nothing,
+  because a reference that fails says nothing about the backend it writes.
 - The blocker names a holder: `in.Storage.Holder` carries the holder and the key, and the
   controller renders the cluster suspended with `StorageAlreadyAttached`, as it does today.
   The message names the holder and the backend.

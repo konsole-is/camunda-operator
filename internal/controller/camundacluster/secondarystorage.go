@@ -197,7 +197,7 @@ func handoverPossible(suspended, heldAtStart, ownPodOnClaim bool) bool {
 // TakeUnclaimed, which writes no Lease when the rule returns an error. It never
 // leaves claimStorage: the pods it stands for become the handover that the
 // caller reports.
-var errPodsOnBackend = errors.New("pods of another cluster write the backend")
+var errPodsOnBackend = errors.New("pods or workloads of another cluster write the backend")
 
 // podsUnderTheBackend returns the pods of other clusters that still write the
 // backend of claim. Its own pods are no reason to wait: a holder whose Lease was
@@ -384,7 +384,8 @@ func storageHandover(
 // read the same to a user.
 func handoverMessage(backend string, pods []string) string {
 	return fmt.Sprintf(
-		"Pods of another cluster, or of its Optimize instance, still write the backend %q: %s. "+
+		"Pods of another cluster, or of its Optimize instance, or workloads that start one, "+
+			"still write the backend %q: %s. "+
 			"This cluster starts when they are gone",
 		backend, strings.Join(pods, ", "),
 	)

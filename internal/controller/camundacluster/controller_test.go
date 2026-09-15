@@ -955,10 +955,9 @@ var _ = Describe("CamundaCluster controller", func() {
 			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &v1.CamundaCluster{})
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 		}, timeout, interval).Should(Succeed())
-		// envtest garbage-collects nothing, so the StatefulSet that the
-		// delete would take goes by hand. The claims stay, as Retain keeps
-		// them.
-		Expect(k8sClient.Delete(ctx, fetchStatefulSet(zeebeKey))).To(Succeed())
+		// The collector of the suite removes the StatefulSet that the delete
+		// would take, as the garbage collector does. The claims stay, as
+		// Retain keeps them.
 		Eventually(func(g Gomega) {
 			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, zeebeKey, &appsv1.StatefulSet{}))).To(BeTrue())
 		}, timeout, interval).Should(Succeed())

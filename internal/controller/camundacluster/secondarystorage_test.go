@@ -402,9 +402,11 @@ func TestClaimStorageWaitsUnderThePodsOnAFreeBackend(t *testing.T) {
 }
 
 // A pre-check that fails before the claim step knows no backend of this
-// cluster. Releasing then would hand a live backend to a waiting cluster, and
-// a cluster whose pods are already gone holds nothing back.
-func TestReportFailedPreCheckReleasesNothingBeforeTheClaimStep(t *testing.T) {
+// cluster, so the pods name it: the claim they carry is kept, and a backend
+// the cluster left goes back. A cluster whose pods are gone releases nothing,
+// because a waiting cluster would take its live backend over a reference that
+// says nothing about it.
+func TestReportFailedPreCheckKeepsTheBackendThePodsWrite(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
 	require.NoError(t, v1.AddToScheme(scheme))
@@ -414,20 +416,37 @@ func TestReportFailedPreCheckReleasesNothingBeforeTheClaimStep(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "orders", UID: "uid-1"},
 	}
 	claim := components.StorageClaimSchema().LeaseName(key)
+	pod := func(claim string) *corev1.Pod {
+		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Namespace: "apps",
+			Name:      "orders-zeebe-0",
+			Labels:    components.StoragePodLabels("orders", self.UID, claim),
+		}}
+	}
 
 	cases := map[string]struct {
 		claim    string
+		pods     []client.Object
 		released bool
 	}{
-		"the pre-check failed before the claim step": {claim: ""},
-		"the claim step ran and named this backend":  {claim: claim},
-		"the claim step ran and named another":       {claim: "camunda-storage-other", released: true},
+		"the pre-check failed before the claim step, no pod": {claim: ""},
+		"the pre-check failed before the claim step, the pods write it": {
+			claim: "", pods: []client.Object{pod(claim)},
+		},
+		"the pre-check failed before the claim step, the pods left it": {
+			claim: "", pods: []client.Object{pod("camunda-storage-other")}, released: true,
+		},
+		"the claim step ran and named this backend": {claim: claim},
+		"the claim step ran and named another":      {claim: "camunda-storage-other", released: true},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			c := storageClaimPodClient(
-				t, scheme, components.StorageClaimSchema().NewLease("camunda-system", key, self),
+				t, scheme, append(
+					[]client.Object{components.StorageClaimSchema().NewLease("camunda-system", key, self)},
+					tc.pods...,
+				)...,
 			)
 			r := &CamundaClusterReconciler{Client: c, APIReader: c, ClaimNamespace: "camunda-system"}
 			in := components.Input{Cluster: self, Storage: components.Storage{Claim: tc.claim}}

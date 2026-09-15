@@ -95,12 +95,17 @@ func StorageClaimLeaseLabels(name string) map[string]string {
 }
 
 // OtherPodsOnClaim returns the pods that carry the storage claim named claim
-// and that own does not claim, as sorted "namespace/name" paths. A cluster
-// passes PodsOfCluster; an Optimize instance passes a predicate that also
-// leaves out the importer of a deleted instance of its cluster. A handover
-// waits for exactly these: every one of them writes the backend of that
-// claim. The reader must read the API server directly, because a decision
-// from a stale cache starts a second writer.
+// and that own does not claim, as sorted "namespace/name" paths, together
+// with the workloads that can still start such a pod: a ReplicaSet that asks
+// for replicas with the claim on its labels, and a StatefulSet that asks for
+// replicas with the claim on its template. A workload whose pod is gone for
+// a moment, evicted or not yet started, recreates it with the claim, so a
+// scan of the pods alone can pass while a writer is about to return. A
+// cluster passes PodsOfCluster; an Optimize instance passes a predicate that
+// also leaves out the importer of a deleted instance of its cluster. A
+// handover waits for exactly these: every one of them writes the backend of
+// that claim, or starts what does. The reader must read the API server
+// directly, because a decision from a stale cache starts a second writer.
 //
 // The list covers every namespace, because two clusters of two namespaces can
 // resolve one backend. It leaves out the pods that reached Failed or
@@ -135,6 +140,46 @@ func OtherPodsOnClaim(
 			continue
 		}
 		names = append(names, pods.Items[i].Namespace+"/"+pods.Items[i].Name)
+	}
+
+	var replicaSets appsv1.ReplicaSetList
+	err = reader.List(
+		ctx,
+		&replicaSets,
+		client.MatchingLabels(map[string]string{labels.StorageClaimKey: labels.OwnerName(claim)}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing the ReplicaSets on storage claim %q: %w", claim, err)
+	}
+	for i := range replicaSets.Items {
+		rs := &replicaSets.Items[i]
+		if own(rs.Labels) || (rs.Spec.Replicas != nil && *rs.Spec.Replicas == 0) {
+			continue
+		}
+		names = append(names, rs.Namespace+"/"+rs.Name)
+	}
+
+	// A StatefulSet carries the claim on its template only, so the list takes
+	// every StatefulSet of the operator and reads the template.
+	var statefulSets appsv1.StatefulSetList
+	err = reader.List(
+		ctx,
+		&statefulSets,
+		client.MatchingLabels(map[string]string{labels.ManagedByKey: labels.ManagedBy}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing the StatefulSets on storage claim %q: %w", claim, err)
+	}
+	for i := range statefulSets.Items {
+		sts := &statefulSets.Items[i]
+		template := sts.Spec.Template.Labels
+		if template[labels.StorageClaimKey] != labels.OwnerName(claim) || own(template) {
+			continue
+		}
+		if sts.Spec.Replicas != nil && *sts.Spec.Replicas == 0 {
+			continue
+		}
+		names = append(names, sts.Namespace+"/"+sts.Name)
 	}
 	slices.Sort(names)
 

@@ -366,9 +366,10 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 // that no pod of this cluster writes any more. It returns how long to wait
 // before the next pass, which a claim held back earns.
 //
-// It releases nothing unless the claim step of the pre-check ran on this pass,
-// which in.Storage.Claim says: a step that fails before it fails on a reference
-// that tells nothing about the backend this cluster writes.
+// A pass whose claim step did not run, which in.Storage.Claim says, keeps the
+// backend its pods write and gives back what no pod and no workload of the
+// cluster carries; a cluster with no pod keeps everything, because a failed
+// reference tells nothing about the backend it writes, see releaseStaleWait.
 func (r *CamundaClusterReconciler) reportFailedPreCheck(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -408,11 +409,12 @@ func (r *CamundaClusterReconciler) reportFailedPreCheck(
 	}
 
 	// A check that failed before the claim step knows no backend of this
-	// cluster, which in.Storage.Claim says. Releasing with no claim to keep
-	// would give its live backend away, at once for a cluster whose pods are
-	// already gone, and a waiting cluster would take it.
+	// cluster, which in.Storage.Claim says. The pods say it instead: the
+	// backend they write is kept, and a backend the cluster left goes back
+	// once nothing of it writes there, so a broken reference does not block
+	// that backend until it is fixed.
 	if in.Storage.Claim == "" {
-		return 0, nil
+		return r.releaseStaleWait(ctx, cluster)
 	}
 
 	// A cluster whose check fails keeps the backend it writes, because the
@@ -470,6 +472,24 @@ func (r *CamundaClusterReconciler) releaseRefusedWait(
 	}
 
 	return r.releaseWait(ctx, cluster, keep)
+}
+
+// releaseStaleWait gives back the storage claims of a cluster whose pass
+// named no backend, and returns the wait for the ones held back. The pods
+// name the backend instead: the cluster keeps the claim they carry and gives
+// back every other claim no pod and no workload of it carries. A cluster
+// with no pod releases nothing, because giving its backend away at once would
+// let a waiting cluster take it over a reference that says nothing about it.
+func (r *CamundaClusterReconciler) releaseStaleWait(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+) (time.Duration, error) {
+	own, err := components.ClaimsOnOwnPods(ctx, r.APIReader, cluster.Namespace, cluster.UID, nil)
+	if err != nil || len(own) == 0 {
+		return 0, err
+	}
+
+	return r.releaseWait(ctx, cluster, slices.Sorted(maps.Keys(own))[0])
 }
 
 // retryInterval returns the wait before an unwatched dependency is looked at
