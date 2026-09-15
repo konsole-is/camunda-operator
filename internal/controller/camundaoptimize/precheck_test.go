@@ -138,6 +138,9 @@ func TestPreCheckSuspendsWhileAnotherClusterWritesTheBackend(t *testing.T) {
 		"an importer pod of a deleted instance": {
 			component: components.ComponentImporter, instance: "gone-uid", suspended: true,
 		},
+		"a webapp pod of a deleted instance": {
+			component: components.ComponentWebapp, instance: "gone-uid", suspended: true,
+		},
 	}
 
 	for name, tc := range fastPath {

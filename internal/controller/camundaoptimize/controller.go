@@ -121,6 +121,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=pods,verbs=list
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=replicasets;statefulsets,verbs=list
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch
 
