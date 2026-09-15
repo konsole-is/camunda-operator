@@ -158,10 +158,10 @@ Lease is noticed at once and not at the next unrelated event. Three outcomes:
   pre-check, so a pass that fails between the claim and the apply never frees a backend the
   old pod template still writes. A Lease is released only when no pod of this cluster still
   carries its claim label, the same signal the handover gate reads, and no workload of the
-  cluster can still start such a pod: a ReplicaSet of the cluster that asks for replicas keeps
-  the claim of its template held, and a StatefulSet of the cluster mid-update, or one the
-  controller has not read yet, holds every release, because a pod it recreates carries the
-  revision the pod had (`RolloutClaims`). While one is held back, the cluster looks again on
+  cluster can still start such a pod: a ReplicaSet, a Deployment, or a StatefulSet of the
+  cluster that asks for replicas keeps the claim of its template held, and a StatefulSet of the
+  cluster mid-update, or one the controller has not read yet, holds every release, because a
+  pod it recreates carries the revision the pod had (`RolloutClaims`). While one is held back, the cluster looks again on
   its retry interval. A pre-check failure before the claim step releases what no pod and no
   workload of the cluster carries and keeps the claim its pods carry, and releases nothing for
   a cluster with no pod, because a reference that fails says nothing about the backend it
@@ -169,9 +169,9 @@ Lease is noticed at once and not at the next unrelated event. Three outcomes:
   foreign-Lease and bad-key exits, where the cluster keeps running on its previous backend
   and gives it back once its pods are gone, and on the refused-downgrade path. The writers a
   claimant waits for are the pods on the claim and the workloads that can still start one, a
-  ReplicaSet that asks for replicas with the claim on its labels and a StatefulSet that asks
-  for replicas with the claim on its template, because a pod evicted or not yet started
-  comes back with the claim. A refused
+  ReplicaSet that asks for replicas with the claim on its labels and a Deployment or a
+  StatefulSet that asks for replicas with the claim on its template, because a pod evicted or
+  not yet started comes back with the claim. A refused
   cluster applies nothing, so the claim it took on that pass is not the backend it writes: it
   keeps the claim its pods carry and gives the fresh one back (`releaseRefusedWait`), so a
   cluster that repointed into a refusal blocks no one on a backend it never writes. A refused

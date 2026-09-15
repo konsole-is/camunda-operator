@@ -97,10 +97,11 @@ func StorageClaimLeaseLabels(name string) map[string]string {
 // OtherPodsOnClaim returns the pods that carry the storage claim named claim
 // and that own does not claim, as sorted "namespace/name" paths, together
 // with the workloads that can still start such a pod: a ReplicaSet that asks
-// for replicas with the claim on its labels, and a StatefulSet that asks for
-// replicas with the claim on its template. A workload whose pod is gone for
-// a moment, evicted or not yet started, recreates it with the claim, so a
-// scan of the pods alone can pass while a writer is about to return. A
+// for replicas with the claim on its labels, and a Deployment or a
+// StatefulSet that asks for replicas with the claim on its template. A
+// workload whose pod is gone for a moment, evicted or not yet started,
+// recreates it with the claim, so a scan of the pods alone can pass while a
+// writer is about to return. A
 // cluster passes PodsOfCluster; an Optimize instance passes a predicate that
 // also leaves out the importer of a deleted instance of its cluster. A
 // handover waits for exactly these: every one of them writes the backend of
@@ -159,8 +160,23 @@ func OtherPodsOnClaim(
 		names = append(names, rs.Namespace+"/"+rs.Name)
 	}
 
-	// A StatefulSet carries the claim on its template only, so the list takes
-	// every StatefulSet of the operator and reads the template.
+	// A Deployment and a StatefulSet carry the claim on their template only,
+	// so the lists take every one of the operator and read the template.
+	var deployments appsv1.DeploymentList
+	err = reader.List(
+		ctx,
+		&deployments,
+		client.MatchingLabels(map[string]string{labels.ManagedByKey: labels.ManagedBy}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing the Deployments on storage claim %q: %w", claim, err)
+	}
+	for i := range deployments.Items {
+		d := &deployments.Items[i]
+		if templateStarts(claim, d.Spec.Template.Labels, d.Spec.Replicas, own) {
+			names = append(names, d.Namespace+"/"+d.Name)
+		}
+	}
 	var statefulSets appsv1.StatefulSetList
 	err = reader.List(
 		ctx,
@@ -172,18 +188,29 @@ func OtherPodsOnClaim(
 	}
 	for i := range statefulSets.Items {
 		sts := &statefulSets.Items[i]
-		template := sts.Spec.Template.Labels
-		if template[labels.StorageClaimKey] != labels.OwnerName(claim) || own(template) {
-			continue
+		if templateStarts(claim, sts.Spec.Template.Labels, sts.Spec.Replicas, own) {
+			names = append(names, sts.Namespace+"/"+sts.Name)
 		}
-		if sts.Spec.Replicas != nil && *sts.Spec.Replicas == 0 {
-			continue
-		}
-		names = append(names, sts.Namespace+"/"+sts.Name)
 	}
 	slices.Sort(names)
 
 	return names, nil
+}
+
+// templateStarts reports whether a workload with the given pod template and
+// desired replicas can start a pod that carries claim and that own does not
+// claim. A nil replica count asks for one.
+func templateStarts(
+	claim string,
+	template map[string]string,
+	replicas *int32,
+	own func(podLabels map[string]string) bool,
+) bool {
+	if template[labels.StorageClaimKey] != labels.OwnerName(claim) || own(template) {
+		return false
+	}
+
+	return replicas == nil || *replicas > 0
 }
 
 // PodsOfCluster returns the predicate of OtherPodsOnClaim that a cluster
@@ -260,8 +287,9 @@ func podMetadataList() *metav1.PartialObjectMetadataList {
 // RolloutClaims lists the storage claims that a workload of the cluster can
 // still start a pod with, beyond the pods that run: the claim of every
 // ReplicaSet of the cluster that asks for replicas, and the claim in the
-// template of every StatefulSet of the cluster that asks for replicas,
-// because each recreates a pod that goes with the template it has. The
+// template of every Deployment and StatefulSet of the cluster that asks for
+// replicas, because each recreates a pod that goes with the template it has,
+// and a Deployment does so through a ReplicaSet it creates again. The
 // second value reports a StatefulSet of the cluster mid-update, or one whose
 // latest generation the controller has not read yet: a pod it recreates then
 // carries the revision the pod had, which the list cannot name, so a caller
@@ -295,14 +323,22 @@ func RolloutClaims(
 		}
 	}
 
+	ownWorkloads := client.MatchingLabels(map[string]string{labels.ClusterKey: labels.OwnerName(name)})
+	var deployments appsv1.DeploymentList
+	if err := reader.List(ctx, &deployments, client.InNamespace(namespace), ownWorkloads); err != nil {
+		return nil, false, fmt.Errorf("listing the Deployments of the cluster in namespace %q: %w", namespace, err)
+	}
+	for i := range deployments.Items {
+		d := &deployments.Items[i]
+		if d.Spec.Replicas == nil || *d.Spec.Replicas > 0 {
+			if claim := d.Spec.Template.Labels[labels.StorageClaimKey]; claim != "" {
+				carried[claim] = true
+			}
+		}
+	}
+
 	var statefulSets appsv1.StatefulSetList
-	err = reader.List(
-		ctx,
-		&statefulSets,
-		client.InNamespace(namespace),
-		client.MatchingLabels(map[string]string{labels.ClusterKey: labels.OwnerName(name)}),
-	)
-	if err != nil {
+	if err := reader.List(ctx, &statefulSets, client.InNamespace(namespace), ownWorkloads); err != nil {
 		return nil, false, fmt.Errorf("listing the StatefulSets of the cluster in namespace %q: %w", namespace, err)
 	}
 	updating := false

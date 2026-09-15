@@ -281,6 +281,19 @@ func TestOtherPodsOnClaim(t *testing.T) {
 			Spec:       appsv1.ReplicaSetSpec{Replicas: &replicas},
 		}
 	}
+	deployment := func(namespace, name string, podLabels map[string]string, replicas int32) *appsv1.Deployment {
+		return &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: namespace,
+				Labels:    labels.Managed(labels.Cluster(podLabels[labels.ClusterKey]), ComponentGateway),
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: &replicas,
+				Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: podLabels}},
+			},
+		}
+	}
 	statefulSet := func(namespace, name string, podLabels map[string]string, replicas int32) *appsv1.StatefulSet {
 		return &appsv1.StatefulSet{
 			ObjectMeta: metav1.ObjectMeta{
@@ -356,6 +369,19 @@ func TestOtherPodsOnClaim(t *testing.T) {
 		"a ReplicaSet of this cluster that asks for a pod": {
 			objects: []client.Object{
 				replicaSet("team-a", "holder-gateway-abc", StoragePodLabels("holder", "uid-1", claim), 1),
+			},
+		},
+		// A Deployment between two ReplicaSets starts the next one from its
+		// template, so it counts like the ReplicaSet would.
+		"a Deployment of a previous holder whose template carries the claim": {
+			objects: []client.Object{
+				deployment("team-a", "old-gateway", StoragePodLabels("old", "uid-old", claim), 1),
+			},
+			pods: []string{"team-a/old-gateway"},
+		},
+		"a Deployment of a previous holder at zero": {
+			objects: []client.Object{
+				deployment("team-a", "old-gateway", StoragePodLabels("old", "uid-old", claim), 0),
 			},
 		},
 		"a StatefulSet of a previous holder whose template carries the claim": {

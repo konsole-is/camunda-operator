@@ -98,6 +98,21 @@ func TestReleaseLeftBackendsKeepsOneItsPodsStillWrite(t *testing.T) {
 			},
 		}
 	}
+	deploymentOn := func(claim string, replicas int32) *appsv1.Deployment {
+		return &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "team-a",
+				Name:      "orders-gateway",
+				Labels:    labels.Managed(labels.Cluster("orders"), components.ComponentGateway),
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: &replicas,
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: components.StoragePodLabels("orders", self.UID, claim)},
+				},
+			},
+		}
+	}
 	statefulSetOn := func(claim string, replicas int32) *appsv1.StatefulSet {
 		sts := statefulSet(2, "rev-2", "rev-2")
 		sts.Spec.Replicas = &replicas
@@ -158,6 +173,16 @@ func TestReleaseLeftBackendsKeepsOneItsPodsStillWrite(t *testing.T) {
 		},
 		"the StatefulSet of this cluster is at zero on the old claim": {
 			pods:     []client.Object{statefulSetOn(oldClaim, 0)},
+			released: true,
+		},
+		// A Deployment with no ReplicaSet for a moment creates the next one
+		// from its template.
+		"the Deployment template of this cluster still carries the old claim": {
+			pods:     []client.Object{deploymentOn(oldClaim, 1)},
+			heldBack: []string{oldClaim},
+		},
+		"the Deployment of this cluster is at zero on the old claim": {
+			pods:     []client.Object{deploymentOn(oldClaim, 0)},
 			released: true,
 		},
 		"the pods of this cluster carry the new claim": {
