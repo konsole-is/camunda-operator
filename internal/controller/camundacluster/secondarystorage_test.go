@@ -98,6 +98,13 @@ func TestReleaseLeftBackendsKeepsOneItsPodsStillWrite(t *testing.T) {
 			},
 		}
 	}
+	statefulSetOn := func(claim string, replicas int32) *appsv1.StatefulSet {
+		sts := statefulSet(2, "rev-2", "rev-2")
+		sts.Spec.Replicas = &replicas
+		sts.Spec.Template.Labels = components.StoragePodLabels("orders", self.UID, claim)
+
+		return sts
+	}
 
 	cases := map[string]struct {
 		pods     []client.Object
@@ -141,6 +148,16 @@ func TestReleaseLeftBackendsKeepsOneItsPodsStillWrite(t *testing.T) {
 		// revision to recreate a pod from.
 		"the StatefulSet of this cluster was never observed": {
 			pods:     []client.Object{statefulSet(0, "", "")},
+			released: true,
+		},
+		// A pass that applied no render leaves the template on the old claim,
+		// and a StatefulSet that asks for pods recreates one from it.
+		"the StatefulSet template of this cluster still carries the old claim": {
+			pods:     []client.Object{statefulSetOn(oldClaim, 1)},
+			heldBack: []string{oldClaim},
+		},
+		"the StatefulSet of this cluster is at zero on the old claim": {
+			pods:     []client.Object{statefulSetOn(oldClaim, 0)},
 			released: true,
 		},
 		"the pods of this cluster carry the new claim": {

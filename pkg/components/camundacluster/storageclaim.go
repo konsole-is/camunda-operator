@@ -95,9 +95,11 @@ func StorageClaimLeaseLabels(name string) map[string]string {
 }
 
 // OtherPodsOnClaim returns the pods that carry the storage claim named claim
-// and a cluster UID other than self, as sorted "namespace/name" paths. A
-// handover waits for exactly these: every one of them writes the backend of
-// that claim. The reader must read the API server directly, because a decision
+// and that own does not claim, as sorted "namespace/name" paths. A cluster
+// passes PodsOfCluster; an Optimize instance passes a predicate that also
+// leaves out the importer of a deleted instance of its cluster. A handover
+// waits for exactly these: every one of them writes the backend of that
+// claim. The reader must read the API server directly, because a decision
 // from a stale cache starts a second writer.
 //
 // The list covers every namespace, because two clusters of two namespaces can
@@ -114,7 +116,7 @@ func OtherPodsOnClaim(
 	ctx context.Context,
 	reader client.Reader,
 	claim string,
-	self types.UID,
+	own func(podLabels map[string]string) bool,
 ) ([]string, error) {
 	pods := podMetadataList()
 	err := reader.List(
@@ -129,7 +131,7 @@ func OtherPodsOnClaim(
 
 	var names []string
 	for i := range pods.Items {
-		if pods.Items[i].Labels[labels.ClusterUIDKey] == string(self) {
+		if own(pods.Items[i].Labels) {
 			continue
 		}
 		names = append(names, pods.Items[i].Namespace+"/"+pods.Items[i].Name)
@@ -137,6 +139,15 @@ func OtherPodsOnClaim(
 	slices.Sort(names)
 
 	return names, nil
+}
+
+// PodsOfCluster returns the predicate of OtherPodsOnClaim that a cluster
+// passes: every pod that carries its UID is its own, its processes and the
+// workloads of its Optimize instance alike.
+func PodsOfCluster(self types.UID) func(podLabels map[string]string) bool {
+	return func(podLabels map[string]string) bool {
+		return podLabels[labels.ClusterUIDKey] == string(self)
+	}
 }
 
 // ClaimsOnOwnPods returns the storage claims that the pods of the cluster in
@@ -203,13 +214,15 @@ func podMetadataList() *metav1.PartialObjectMetadataList {
 
 // RolloutClaims lists the storage claims that a workload of the cluster can
 // still start a pod with, beyond the pods that run: the claim of every
-// ReplicaSet of the cluster that asks for replicas, because it recreates a
-// pod that goes with the template it has. The second value reports a
-// StatefulSet of the cluster mid-update, or one whose latest generation the
-// controller has not read yet: a pod it recreates then carries the revision
-// the pod had, which the list cannot name, so a caller holds every release
-// while one updates. A StatefulSet the controller never observed has no
-// earlier revision to recreate a pod from, so it holds nothing.
+// ReplicaSet of the cluster that asks for replicas, and the claim in the
+// template of every StatefulSet of the cluster that asks for replicas,
+// because each recreates a pod that goes with the template it has. The
+// second value reports a StatefulSet of the cluster mid-update, or one whose
+// latest generation the controller has not read yet: a pod it recreates then
+// carries the revision the pod had, which the list cannot name, so a caller
+// holds every release while one updates. A StatefulSet the controller never
+// observed has no earlier revision to recreate a pod from, so it holds only
+// the claim of its template.
 func RolloutClaims(
 	ctx context.Context,
 	reader client.Reader,
@@ -249,9 +262,14 @@ func RolloutClaims(
 	}
 	updating := false
 	for i := range statefulSets.Items {
-		status := statefulSets.Items[i].Status
-		behind := status.ObservedGeneration > 0 && status.ObservedGeneration < statefulSets.Items[i].Generation
-		if behind || status.CurrentRevision != status.UpdateRevision {
+		sts := &statefulSets.Items[i]
+		if sts.Spec.Replicas == nil || *sts.Spec.Replicas > 0 {
+			if claim := sts.Spec.Template.Labels[labels.StorageClaimKey]; claim != "" {
+				carried[claim] = true
+			}
+		}
+		behind := sts.Status.ObservedGeneration > 0 && sts.Status.ObservedGeneration < sts.Generation
+		if behind || sts.Status.CurrentRevision != sts.Status.UpdateRevision {
 			updating = true
 		}
 	}

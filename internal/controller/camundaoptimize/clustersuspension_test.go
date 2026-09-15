@@ -87,7 +87,7 @@ func TestSuspensionNotesSpeakForTheClusterOnly(t *testing.T) {
 		"the claim of the backend holds the workloads": {
 			res: resolved{Input: components.Input{Suspended: true}, AwaitsBackendClaim: true},
 			want: `Normal StorageClaimAwaited CamundaCluster "my-cluster" does not hold its backend, ` +
-				"or pods of another cluster still write it, the Optimize workloads follow it to zero",
+				"or pods of another cluster or of a previous instance still write it, the Optimize workloads follow it to zero",
 		},
 		// One note covers a resume from either wait, because the cluster was
 		// not suspended in one of them.
@@ -113,12 +113,12 @@ func TestSuspensionNotesSpeakForTheClusterOnly(t *testing.T) {
 
 // TestBackendClaimAwaitedSaysBothHalvesOfTheGate pins the claim wait. The gate
 // covers a cluster that does not hold the claim of its backend, and one that
-// holds it while pods of another cluster still write that backend. Everything
+// holds it while pods of another cluster, or of a previous instance, still write that backend. Everything
 // this wait says reaches a user, so none of it may name the first half alone.
 func TestBackendClaimAwaitedSaysBothHalvesOfTheGate(t *testing.T) {
 	t.Parallel()
 
-	const bothHalves = "does not hold its backend, or pods of another cluster still write it"
+	const bothHalves = "does not hold its backend, or pods of another cluster or of a previous instance still write it"
 	said := map[string]string{
 		"the event note":                      backendClaimAwaited.eventNote,
 		"the note on Ready":                   backendClaimAwaited.failureNote,
@@ -152,7 +152,7 @@ func TestRecordClusterSuspendedNamesTheWait(t *testing.T) {
 			`Normal ClusterSuspended CamundaCluster "my-cluster" is suspended, ` +
 				"the Optimize workloads follow it to zero",
 			`Normal StorageClaimAwaited CamundaCluster "my-cluster" does not hold its backend, ` +
-				"or pods of another cluster still write it, the Optimize workloads follow it to zero",
+				"or pods of another cluster or of a previous instance still write it, the Optimize workloads follow it to zero",
 		},
 		recordedNotes(recorder),
 	)

@@ -319,7 +319,20 @@ func (r *Reconciler) gateOnStorageClaim(
 		return nil
 	}
 
-	writing, err := clustercomponents.OtherPodsOnClaim(ctx, r.APIReader, out.Input.StorageClaim, cluster.UID)
+	// The pods of the cluster are its own, and so are the pods of this
+	// instance. The importer of a deleted instance of the same cluster is
+	// neither: it carries the cluster UID, it may still be stopping, and two
+	// importers on one set of analytics indices overwrite each other.
+	writing, err := clustercomponents.OtherPodsOnClaim(
+		ctx, r.APIReader, out.Input.StorageClaim, func(podLabels map[string]string) bool {
+			if podLabels[labels.ClusterUIDKey] != string(cluster.UID) {
+				return false
+			}
+
+			return podLabels[labels.ComponentKey] != components.ComponentImporter ||
+				podLabels[labels.OptimizeUIDKey] == string(out.Input.Optimize.UID)
+		},
+	)
 	if err != nil {
 		return err
 	}

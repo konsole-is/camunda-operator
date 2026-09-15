@@ -50,8 +50,8 @@ const (
 	// when the cluster holds its backend and is not suspended, whichever of the
 	// two held them.
 	noteSuspended    = "CamundaCluster %q is suspended, the Optimize workloads follow it to zero"
-	noteClaimAwaited = "CamundaCluster %q does not hold its backend, or pods of another cluster " +
-		"still write it, the Optimize workloads follow it to zero"
+	noteClaimAwaited = "CamundaCluster %q does not hold its backend, or pods of another cluster or " +
+		"of a previous instance still write it, the Optimize workloads follow it to zero"
 	noteResumed = "CamundaCluster %q holds its backend and is not suspended, the Optimize " +
 		"workloads follow their spec"
 )
@@ -88,18 +88,18 @@ var (
 	}
 	// backendClaimAwaited is the wait on the claim of the backend, which covers
 	// both halves of that gate: the cluster does not hold the claim, or it
-	// holds it while pods of another cluster still write the backend. The
-	// cluster can report itself healthy through either, so nothing here says it
-	// is suspended.
+	// holds it while pods of another cluster, or the importer of a previous
+	// instance, still write the backend. The cluster can report itself healthy
+	// through either, so nothing here says it is suspended.
 	backendClaimAwaited = wait{
 		eventReason: eventReasonStorageClaimAwaited,
 		eventNote:   noteClaimAwaited,
 		failureNote: ". The Optimize workloads are scaled to zero because CamundaCluster %q does not " +
-			"hold its backend, or pods of another cluster still write it",
+			"hold its backend, or pods of another cluster or of a previous instance still write it",
 		condition: "Scaled to zero while the referenced cluster does not hold its backend, or pods of " +
-			"another cluster still write it",
+			"another cluster or of a previous instance still write it",
 		workloadNote: "because the CamundaCluster it attaches to does not hold its backend, or pods of " +
-			"another cluster still write it",
+			"another cluster or of a previous instance still write it",
 	}
 )
 

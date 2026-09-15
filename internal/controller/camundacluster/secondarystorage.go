@@ -167,7 +167,9 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 	// previous holder started before it lost the claim. A holder that is
 	// pointed back at the backend meets the claim this cluster holds and
 	// parks, so it starts nothing beside it.
-	pods, err := components.OtherPodsOnClaim(ctx, res.reader, in.Storage.Claim, res.cluster.UID)
+	pods, err := components.OtherPodsOnClaim(
+		ctx, res.reader, in.Storage.Claim, components.PodsOfCluster(res.cluster.UID),
+	)
 	if err != nil {
 		return err
 	}
@@ -201,7 +203,7 @@ var errPodsOnBackend = errors.New("pods of another cluster write the backend")
 // backend of claim. Its own pods are no reason to wait: a holder whose Lease was
 // deleted by hand meets them, writes the Lease again, and keeps running.
 func (res *resolver) podsUnderTheBackend(ctx context.Context, claim string) ([]string, error) {
-	return components.OtherPodsOnClaim(ctx, res.reader, claim, res.cluster.UID)
+	return components.OtherPodsOnClaim(ctx, res.reader, claim, components.PodsOfCluster(res.cluster.UID))
 }
 
 // addClaimFinalizer writes the finalizer that keeps a deleted cluster alive

@@ -326,7 +326,7 @@ func TestOtherPodsOnClaim(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			reader := storageClaimPodClient(t, scheme, tc.objects...)
 
-			pods, err := OtherPodsOnClaim(context.Background(), reader, claim, self.UID)
+			pods, err := OtherPodsOnClaim(context.Background(), reader, claim, PodsOfCluster(self.UID))
 			require.NoError(t, err)
 			assert.Equal(t, tc.pods, pods)
 		})
