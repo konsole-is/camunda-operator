@@ -29,7 +29,7 @@ import (
 
 const (
 	// renovate: datasource=github-releases depName=cert-manager/cert-manager
-	certmanagerVersion = "v1.20.3"
+	certmanagerVersion = "v1.20.4"
 	certmanagerURLTmpl = "https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml"
 
 	defaultKindBinary  = "kind"

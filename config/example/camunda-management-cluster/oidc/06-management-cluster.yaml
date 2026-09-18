@@ -34,11 +34,11 @@ spec:
       claimValue: "<the claim value of your first administrator>"
   console:
     # renovate: datasource=docker depName=camunda/console
-    version: "8.9.93"
+    version: "8.9.108"
     externalUrl: "https://console.camunda.example.com"
   webModeler:
     # renovate: datasource=docker depName=camunda/web-modeler-restapi
-    version: "8.9.8"
+    version: "8.9.9"
     externalUrl: "https://modeler.camunda.example.com"
     websocketsExternalUrl: "https://modeler.camunda.example.com/ws"
     databaseConfigRef: my-web-modeler-db
