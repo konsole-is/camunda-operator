@@ -39,7 +39,7 @@ Run it for each round, even when the previous round passed it.
     - **GREW**: a doc comment is longer than at the round base. A rename counts as the same declaration.
     - **LONGER than its body**: a doc of three or more lines over a shorter body.
 
-    A flag is not a verdict. It means the comment must be evaluated before you push.
+    A flag is not a verdict. It means the comment must be evaluated before you push. Docs under `api/` are CRD descriptions. The gate lists them without a flag, and `writing-operator-docs` judges them, not the evaluator.
 
 6. **Get every ✗ evaluated by a fresh agent, not by you.** You are the one under pressure from the finding, so your own judgment of the growth does not count. Dispatch one read-only agent for all the flags of the round, with the prompt in `evaluator-prompt.md` next to this file. Give it the rules, the flagged docs, and the declarations. Do not give it the finding or your reasons.
     - Apply its verdicts as it gives them: cut every CUT line, use its shortened doc where it wrote one, and put a fact it moved on the line it named. You do not overrule a CUT. If you think a CUT is wrong, the line stays cut and you raise it with the user in your report.

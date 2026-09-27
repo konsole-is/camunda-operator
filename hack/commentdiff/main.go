@@ -19,6 +19,8 @@ limitations under the License.
 // doc comment that got longer than it was at the base, and a doc comment of
 // three or more lines that is longer than the body it documents. A flag is
 // not a verdict. It exits 1 so that each flagged comment gets evaluated.
+// The docs under api/ become CRD descriptions that users read, so they are
+// listed but never flagged.
 //
 // Usage: go run ./hack/commentdiff [base]
 //
@@ -122,6 +124,7 @@ func diffFile(file string, oldSrc, newSrc []byte) []finding {
 	newDecls, newFree := scan(file, newSrc)
 	oldDecls, oldFree := scan(file, oldSrc)
 
+	userFacing := strings.HasPrefix(file, "api/")
 	var out []finding
 	renamed := pairRenames(oldDecls, newDecls)
 	for key, d := range newDecls {
@@ -151,6 +154,10 @@ func diffFile(file string, oldSrc, newSrc []byte) []finding {
 		if d.bodyLen > 0 && d.docLen >= minFlaggedDoc && d.docLen > d.bodyLen {
 			f.text += fmt.Sprintf(", LONGER than its %d-line body", d.bodyLen)
 			f.fatal = true
+		}
+		if userFacing && f.fatal {
+			f.fatal = false
+			f.text += " (user-facing: judge with writing-operator-docs)"
 		}
 		out = append(out, f)
 	}

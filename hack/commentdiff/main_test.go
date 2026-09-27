@@ -25,6 +25,17 @@ import (
 
 func src(body string) []byte { return []byte("package p\n\n" + body) }
 
+func TestDiffFileListsUserFacingGrowthWithoutFlag(t *testing.T) {
+	old := src("type Spec struct {\n\t// Replicas is the count.\n\tReplicas int\n}\n")
+	cur := src("type Spec struct {\n\t// Replicas is the count.\n\t// When unset, the default applies.\n\tReplicas int\n}\n")
+
+	got := diffFile("api/v1/spec_types.go", old, cur)
+
+	require.Len(t, got, 1)
+	assert.False(t, got[0].fatal)
+	assert.Contains(t, got[0].text, "GREW from 1 to 2 lines (user-facing")
+}
+
 func TestDiffFile(t *testing.T) {
 	tests := []struct {
 		name      string
