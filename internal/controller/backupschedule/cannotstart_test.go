@@ -27,7 +27,11 @@ import (
 )
 
 func TestCannotStart(t *testing.T) {
-	binding := &v1.ManagementBinding{Endpoint: "http://cc-zeebe.ns.svc:9600", Version: "8.9.9"}
+	binding := &v1.ManagementBinding{
+		Endpoint:         "http://cc-zeebe.ns.svc:9600",
+		Version:          "8.9.9",
+		BackupRepository: "camunda",
+	}
 	cluster := func(binding *v1.ManagementBinding, status metav1.ConditionStatus, reason string) *v1.CamundaCluster {
 		return &v1.CamundaCluster{Status: v1.CamundaClusterStatus{
 			Management: binding,
@@ -79,6 +83,16 @@ func TestCannotStart(t *testing.T) {
 			storageType: v1.SecondaryStorageTypeElasticsearch,
 			want: "it has not published its management binding, " +
 				"and Ready is False with reason InvalidReference",
+		},
+		{
+			name: "an Elasticsearch cluster without a backup repository names its Ready reason",
+			cluster: cluster(
+				&v1.ManagementBinding{Endpoint: binding.Endpoint},
+				metav1.ConditionFalse,
+				v1.ReasonInvalidReference,
+			),
+			storageType: v1.SecondaryStorageTypeElasticsearch,
+			want:        "it publishes no backup repository, and Ready is False with reason InvalidReference",
 		},
 		{
 			name:        "a binding without an endpoint counts as not published",

@@ -400,16 +400,25 @@ func (r *BackupScheduleReconciler) trigger(
 // cannotStart describes why a backup of the storage type cannot start on
 // the cluster, for the note of the skip event. It returns "" when the backup
 // can start. Both kinds need the management binding. An RDBMS backup also
-// needs Ready True. An Elasticsearch backup does not, so a degraded cluster
-// that still serves its management API is backed up.
+// needs Ready True. An Elasticsearch backup needs the backup repository of
+// the binding instead, so a degraded cluster that still serves its
+// management API is backed up.
 func cannotStart(cluster *v1.CamundaCluster, storageType v1.SecondaryStorageType) string {
-	if binding := cluster.Status.Management; binding == nil || binding.Endpoint == "" {
+	binding := cluster.Status.Management
+	if binding == nil || binding.Endpoint == "" {
 		return "it has not published its management binding, and " + readyState(cluster)
 	}
 
-	ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
-	if storageType == v1.SecondaryStorageTypeRDBMS && (ready == nil || ready.Status != metav1.ConditionTrue) {
-		return readyState(cluster)
+	switch storageType {
+	case v1.SecondaryStorageTypeElasticsearch:
+		if binding.BackupRepository == "" {
+			return "it publishes no backup repository, and " + readyState(cluster)
+		}
+	case v1.SecondaryStorageTypeRDBMS:
+		ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
+		if ready == nil || ready.Status != metav1.ConditionTrue {
+			return readyState(cluster)
+		}
 	}
 
 	return ""

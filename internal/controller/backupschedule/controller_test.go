@@ -157,12 +157,14 @@ func setReady(cluster *v1.CamundaCluster, status metav1.ConditionStatus, reason,
 }
 
 // publishBinding publishes the management binding that the CamundaCluster
-// controller publishes for a cluster that is not suspended.
+// controller publishes for a cluster that is not suspended. Only an
+// Elasticsearch backup reads its backup repository.
 func publishBinding(cluster *v1.CamundaCluster) {
 	cluster.Status.Management = &v1.ManagementBinding{
-		Endpoint: "http://" + cluster.Name + "-zeebe." + cluster.Namespace + ".svc:9600",
-		Auth:     v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
-		Version:  cluster.Spec.Version,
+		Endpoint:         "http://" + cluster.Name + "-zeebe." + cluster.Namespace + ".svc:9600",
+		Auth:             v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
+		Version:          cluster.Spec.Version,
+		BackupRepository: "camunda",
 	}
 }
 
