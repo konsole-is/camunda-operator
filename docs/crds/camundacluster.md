@@ -206,7 +206,7 @@ Elasticsearch never puts a replica on the node that holds its primary. An index 
 
 The cluster applies the count to its existing indices each time it starts. A change of `indexReplicas` restarts the cluster. A change of the storage contract, the node count included, also restarts it. A relational secondary storage ignores the field.
 
-Camunda also reads two older keys for the same count: `CAMUNDA_DATABASE_INDEX_NUMBEROFREPLICAS` and `ZEEBE_BROKER_EXPORTERS_CAMUNDAEXPORTER_ARGS_INDEX_NUMBEROFREPLICAS`. Camunda does not start when one of them and the count differ. If the `extraEnv` of a process sets one of them, the operator sets no default count on that process. That process then uses the value of the key. If you also set `indexReplicas`, give both the same value.
+Camunda also reads two older keys for the same count: `CAMUNDA_DATABASE_INDEX_NUMBEROFREPLICAS` and `ZEEBE_BROKER_EXPORTERS_CAMUNDAEXPORTER_ARGS_INDEX_NUMBEROFREPLICAS`. Camunda does not start when one of them and the count differ. If the `extraEnv` of a process sets one of them, the operator sets no default count on that process. That process then uses the value of the key. If you also set `indexReplicas`, give both the same value. The operator does not read the sources of `extraEnvFrom`. If such a source supplies an older key, set `indexReplicas` to the same value.
 
 ## Backups
 
