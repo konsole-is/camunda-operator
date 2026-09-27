@@ -483,7 +483,8 @@ type CamundaClusterSpec struct {
 	// creates in an Elasticsearch secondary storage. When it is not set, the
 	// nodeCount of the storage contract gives the count: 0 on one node, 1 on
 	// two or more nodes. Without a nodeCount, Camunda keeps its own default.
-	// A process whose extraEnv sets a legacy replica key keeps that value.
+	// When indexReplicas is not set, a process whose extraEnv sets a legacy
+	// replica key keeps that value.
 	// The cluster applies the count to its existing indices when it starts.
 	// A count that the nodes cannot place is kept, and the cluster records an
 	// IndexReplicasExceedNodes Warning event. A relational secondary storage
