@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package conformance
 
 import (
 	"os"
@@ -84,7 +84,7 @@ type jsonSchema struct {
 func TestEveryCRDPrintsTheStateItReports(t *testing.T) {
 	t.Parallel()
 
-	bases, err := filepath.Glob(filepath.Join("..", "..", "config", "crd", "bases", "*.yaml"))
+	bases, err := filepath.Glob(filepath.Join("..", "..", "..", "config", "crd", "bases", "*.yaml"))
 	require.NoError(t, err)
 	require.NotEmpty(t, bases)
 

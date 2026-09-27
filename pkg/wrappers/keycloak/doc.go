@@ -18,7 +18,7 @@ limitations under the License.
 // Keycloak Operator, k8s.keycloak.org/v2alpha1, and the ocf primitive that
 // reconciles it. The Keycloak project publishes no Go module for its CRDs, so
 // the types here carry the fields that the operator sets and reads. The schema
-// they follow is vendored in internal/testenv/crds/keycloak.
+// they follow is vendored in test/envtest/crds/keycloak.
 //
 // v2alpha1 is deprecated since Keycloak 26.7 in favor of v2beta1. It is the
 // only version that every supported 26.x Keycloak Operator serves.

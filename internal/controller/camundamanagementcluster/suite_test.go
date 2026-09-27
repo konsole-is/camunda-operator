@@ -35,7 +35,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
-	"github.com/konsole-is/camunda-operator/internal/testenv"
+	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
 // testClaimNamespace holds the realm claim Leases of this suite. In a cluster
@@ -44,12 +44,12 @@ const testClaimNamespace = "default"
 
 // timeout and interval bound the Eventually polling of every envtest assertion.
 const (
-	timeout  = testenv.Timeout
-	interval = testenv.Interval
+	timeout  = envtest.Timeout
+	interval = envtest.Interval
 )
 
 var (
-	env       *testenv.Env
+	env       *envtest.Env
 	ctx       context.Context
 	k8sClient client.Client
 	// clusterListFault sits in front of the APIReader of the reconciler that
@@ -105,7 +105,7 @@ var _ = BeforeSuite(func() {
 	// The two contract controllers are registered too: the Secret watch of
 	// this controller lists platform configs and DatabaseConfigs through the
 	// Secret indexes that those controllers own.
-	env = testenv.Start(func(mgr ctrl.Manager) error {
+	env = envtest.Start(func(mgr ctrl.Manager) error {
 		if err := (&camundaplatformconfig.CamundaPlatformConfigReconciler{
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),

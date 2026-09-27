@@ -177,7 +177,7 @@ func startControlPlane(t *testing.T) (client.Client, *runtime.Scheme) {
 		// boot at once on one machine. Two budgets of envtest are not enough
 		// under that load: twenty seconds for the control plane, and ten for
 		// the wait until the CRDs above answer as API resources.
-		// internal/testenv gives the suites it starts the same two.
+		// test/envtest gives the suites it starts the same two.
 		ControlPlaneStartTimeout: 2 * time.Minute,
 		CRDInstallOptions:        envtest.CRDInstallOptions{MaxTime: time.Minute},
 	}

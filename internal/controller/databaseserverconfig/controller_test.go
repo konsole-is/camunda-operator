@@ -28,7 +28,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
 var _ = Describe("DatabaseServerConfig controller", func() {
@@ -43,7 +42,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
 
-		serverConfig = fixtures.DatabaseServerConfig(namespace)
+		serverConfig = newDatabaseServerConfig(namespace)
 	})
 
 	// createServerConfig submits the fixture CR and registers its deletion.

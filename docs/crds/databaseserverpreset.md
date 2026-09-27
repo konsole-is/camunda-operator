@@ -27,7 +27,7 @@ graph LR
 
 ## Merge rules
 
-`spec.server` of the preset is the baseline. The [CamundaRelease](camundarelease.md) of `releaseRef` merges over it, and the server spec merges over both. A field set on the `DatabaseServer` replaces the value of the layer below for that field. A field left unset on the server comes from the layer below. An empty map (`podLabels`, `podAnnotations`) counts as unset. To remove a map that the preset provides, set the one you want on the server, or reference a preset without it.
+`spec.server` of the preset is the baseline. The [CamundaRelease](camundarelease.md) of `releaseRef` merges over it, and the server spec merges over both. A field set on the `DatabaseServer` replaces the value of the layer below for that field. A field left unset on the server comes from the layer below. An empty map (`podLabels`, `podAnnotations`) counts as unset. To remove a map that the preset provides, set the map you want on the server. Or reference a preset without that map.
 
 The blocks `scheduling`, `monitoring`, `serviceAccount`, `resources`, and `archive` are replaced as a whole, never merged field by field. A server that sets its own `archive` block drops the bucket and the retention of the preset with it.
 
@@ -121,7 +121,7 @@ spec:
 - The no-shrink rule of `DatabaseServer` for `storageSize` and `walStorageSize` does not bind a preset. You can lower the baseline at any time. You can also clear `walStorageSize`. Neither edit changes a server that already runs.
 - Whether the merged configuration is complete is checked on the `DatabaseServer`, not on the preset.
 - An edit of `spec.server.archive` is held while a server that reads this preset runs a rollback. That server reports `InvalidReference` and keeps the archive its rollback reads. The edit reaches it once the rollback is answered.
-- Every other rule of the `DatabaseServer` schema applies to `spec.server`: `instances` at least 1, `archive.retentionPeriodDays` at least 1, an `archive.baseBackupSchedule` that is a six-field cron or one of the `@yearly` to `@hourly` descriptors, and valid resource names.
+- Every other rule of the `DatabaseServer` schema applies to `spec.server`. `instances` must be at least 1, and `archive.retentionPeriodDays` must be at least 1. `archive.baseBackupSchedule` must be a six-field cron or one of the `@yearly` to `@hourly` descriptors. Resource names must be valid.
 
 ### A production-shaped example
 

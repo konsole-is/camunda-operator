@@ -12,7 +12,12 @@ Before you create a backup, make sure that:
 - The `ElasticsearchCluster` has `spec.snapshotStorageRef` on the same `ObjectStorageConfig`. Its `SecondaryStorageConfig` carries `snapshotRepository`.
 - The backup lives in the namespace of the cluster.
 
-A `LogicalBackupElasticsearch` writes one set of artifacts under one backup ID: the snapshots of the web-application indices and of the exported Zeebe record indices, in the snapshot repository of the cluster, and the Zeebe partition backup, in the bucket of the cluster's `backupStorageRef`. The status records the ID, the repository, and the snapshot names.
+A `LogicalBackupElasticsearch` writes one set of artifacts under one backup ID:
+
+- The snapshots of the web-application indices and of the exported Zeebe record indices, in the snapshot repository of the cluster.
+- The Zeebe partition backup, in the bucket of the cluster's `backupStorageRef`.
+
+The status records the ID, the repository, and the snapshot names.
 
 The operator creates no Kubernetes resources from this kind. It calls the management API of the cluster and the Elasticsearch API of the `SecondaryStorageConfig`.
 
@@ -54,7 +59,7 @@ If the management API or Elasticsearch is unreachable during a step, the backup 
 
 ## Changes
 
-Do not change the storage or the backup bucket of the cluster while a backup runs. The backup fails, and the message names the recorded and the current value. If you delete the cluster during the run, or delete and recreate it under the same name, the backup ends as `Failed` without a call to the new cluster.
+Do not change the storage or the backup bucket of the cluster while a backup runs. The backup fails, and the message names the recorded and the current value. If you delete the cluster during the run, the backup ends as `Failed`. If you delete and recreate it under the same name, the backup also ends as `Failed` without a call to the new cluster.
 
 ## Missing references
 
@@ -72,7 +77,7 @@ When you delete the backup, the operator deletes the snapshots and the partition
 | `Ready` | `Completed` | The backup finished. `Ready` is `True`. | Nothing. Record `status.backupId` for a restore. |
 | `Ready` | `Failed` | A step failed. Exporting runs again. | Read `status.failureMessage`. Correct the cause and create a new backup. |
 | `Ready` | `ResumeFailed` | A step failed or finished, and exporting did not resume within 30 minutes. Exporting stays paused. | Repair the management API, then delete this backup. The deletion resumes exporting. No other backup of the cluster starts before that. |
-| `Ready` | `ClusterSuspended` | The cluster is suspended, by `spec.suspend` or by the operator. The operator suspends it while another cluster holds the storage claim of its backend, or while it waits for the pods of another cluster to leave that backend. The backup waits. | Read the `Ready` condition of the cluster. Set `spec.suspend` to `false`, or remove what suspends it. |
+| `Ready` | `ClusterSuspended` | The cluster is suspended, by `spec.suspend` or by the operator. The operator suspends it while another cluster holds the storage claim of its backend. It also suspends the cluster while the cluster waits for the pods of another cluster to leave that backend. The backup waits. | Read the `Ready` condition of the cluster. Set `spec.suspend` to `false`, or remove what suspends it. |
 | `Ready` | `BackupInProgress` | Another backup of the cluster runs. This one waits. | Wait. If the message says that the cluster is paused, delete or repair the named backup. |
 | `Ready` | `StorageTypeMismatch` | The cluster does not store its data in Elasticsearch. | Use `LogicalBackupRDBMS` for a relational cluster. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, or the cluster publishes no snapshot repository. | Read the message. Create the resource, or set `snapshotStorageRef` on the `ElasticsearchCluster`. |

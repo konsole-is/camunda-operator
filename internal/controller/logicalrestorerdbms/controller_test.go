@@ -30,10 +30,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/testenv"
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalrestorerdbms"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	restorepkg "github.com/konsole-is/camunda-operator/pkg/restore"
+	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
 var _ = Describe("LogicalRestoreRDBMS admission", func() {
@@ -944,7 +944,7 @@ func stuckPod(w *world, jobName string) {
 		)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 
-	pod := testenv.PodOfJob(&job, jobName+"-stuck", corev1.Container{
+	pod := envtest.PodOfJob(&job, jobName+"-stuck", corev1.Container{
 		Name: "restore", Image: "postgres:17",
 	})
 	Expect(k8sClient.Create(ctx, pod)).To(Succeed())

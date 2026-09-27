@@ -36,11 +36,11 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/controller/elasticsearchcluster"
-	"github.com/konsole-is/camunda-operator/internal/testenv"
+	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
 var (
-	env       *testenv.Env
+	env       *envtest.Env
 	ctx       context.Context
 	k8sClient client.Client
 )
@@ -53,7 +53,7 @@ func TestControllers(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	env = testenv.StartWith(testenv.Options{WithoutECK: true}, func(mgr ctrl.Manager) error {
+	env = envtest.StartWith(envtest.Options{WithoutECK: true}, func(mgr ctrl.Manager) error {
 		return (&elasticsearchcluster.ElasticsearchClusterReconciler{
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),
@@ -90,7 +90,7 @@ var _ = Describe("ElasticsearchCluster without the ECK CRDs", func() {
 			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(ready.Reason).To(Equal(v1.ReasonECKNotInstalled))
 			g.Expect(latest.Status.ObservedGeneration).To(Equal(latest.Generation))
-		}, testenv.Timeout, testenv.Interval).Should(Succeed())
+		}, envtest.Timeout, envtest.Interval).Should(Succeed())
 
 		var storage v1.SecondaryStorageConfig
 		err := k8sClient.Get(ctx, client.ObjectKey{Namespace: "default", Name: "es-storage"}, &storage)

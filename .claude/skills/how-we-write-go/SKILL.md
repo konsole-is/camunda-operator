@@ -711,7 +711,7 @@ Name the file after the concern it holds, not after the type it operates on. `ba
 ```
 internal/controller/database/
   controller.go   ← Reconcile(), pre-checks and other I/O, watches, SetupWithManager
-  suite_test.go   ← the envtest suite of this package, through internal/testenv
+  suite_test.go   ← the envtest suite of this package, through test/envtest
 ```
 
 **Controller packages hold I/O and wiring. Everything that maps a spec to resources belongs in `pkg/`.** A controller package under `internal/controller/<crd>/` contains `Reconcile`, the pre-checks and other calls against the API server or external systems, the watches, the indexes, and `SetupWithManager`. It does not contain builders.

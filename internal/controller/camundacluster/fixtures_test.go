@@ -14,12 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package fixtures holds the sample CRs and schema probe values that more than
-// one controller suite needs. A fixture that one package uses stays in the
-// tests of that package. Only the fixtures that cross a package boundary live
-// here, for example a contract that another controller references. Each of
-// them then has exactly one definition.
-package fixtures
+package camundacluster
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,21 +24,19 @@ import (
 )
 
 const (
-	// SchemaTestNamespace hosts the throwaway objects that the admission specs
-	// create.
-	SchemaTestNamespace = "default"
-	// NotAResourceName is a value that the resource-name rules of the schemas
-	// must reject.
-	NotAResourceName = "Not_A_Name"
-	// NotAURL is a value that the URL rules of the schemas must reject.
-	NotAURL = "not a url"
+	// schemaTestNamespace hosts the throwaway objects that the admission
+	// specs create.
+	schemaTestNamespace = "default"
+	// notAResourceName is a value that the resource-name rules of the
+	// schemas must reject.
+	notAResourceName = "Not_A_Name"
 )
 
-// DatabaseServerConfig returns the minimal example of the CRD doc with a
+// newDatabaseServerConfig returns the minimal example of the CRD doc with a
 // unique name in namespace. Its admin credentials Secret is admin-creds of
 // the same namespace, with the keys username and password. The caller creates
 // that Secret.
-func DatabaseServerConfig(namespace string) *v1.DatabaseServerConfig {
+func newDatabaseServerConfig(namespace string) *v1.DatabaseServerConfig {
 	return &v1.DatabaseServerConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "dbsc-" + utilrand.String(8), Namespace: namespace},
 		Spec: v1.DatabaseServerConfigSpec{
@@ -57,9 +50,9 @@ func DatabaseServerConfig(namespace string) *v1.DatabaseServerConfig {
 	}
 }
 
-// DatabaseConfig returns the minimal example of the CRD doc with a unique
+// newDatabaseConfig returns the minimal example of the CRD doc with a unique
 // name. The caller chooses the namespace.
-func DatabaseConfig() *v1.DatabaseConfig {
+func newDatabaseConfig() *v1.DatabaseConfig {
 	return &v1.DatabaseConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "dbc-" + utilrand.String(8)},
 		Spec: v1.DatabaseConfigSpec{
@@ -72,11 +65,11 @@ func DatabaseConfig() *v1.DatabaseConfig {
 	}
 }
 
-// SecondaryStorageConfigElasticsearch returns an Elasticsearch binding with a
-// unique name in namespace. Its credentials Secret is <name>-credentials in
-// the same namespace, with the keys username and password. The caller creates
-// that Secret.
-func SecondaryStorageConfigElasticsearch(namespace string) *v1.SecondaryStorageConfig {
+// newSecondaryStorageConfigElasticsearch returns an Elasticsearch binding
+// with a unique name in namespace. Its credentials Secret is
+// <name>-credentials in the same namespace, with the keys username and
+// password. The caller creates that Secret.
+func newSecondaryStorageConfigElasticsearch(namespace string) *v1.SecondaryStorageConfig {
 	name := "ssc-" + utilrand.String(8)
 	return &v1.SecondaryStorageConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
@@ -92,9 +85,9 @@ func SecondaryStorageConfigElasticsearch(namespace string) *v1.SecondaryStorageC
 	}
 }
 
-// CamundaPlatformConfigBasic returns a platform config with basic
+// newCamundaPlatformConfigBasic returns a platform config with basic
 // authentication, no license, and no registry, with a unique name.
-func CamundaPlatformConfigBasic() *v1.CamundaPlatformConfig {
+func newCamundaPlatformConfigBasic() *v1.CamundaPlatformConfig {
 	return &v1.CamundaPlatformConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "cpc-" + utilrand.String(8)},
 		Spec: v1.CamundaPlatformConfigSpec{

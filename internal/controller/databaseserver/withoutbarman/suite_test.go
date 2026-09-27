@@ -37,11 +37,11 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseserver"
-	"github.com/konsole-is/camunda-operator/internal/testenv"
+	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
 var (
-	env       *testenv.Env
+	env       *envtest.Env
 	ctx       context.Context
 	k8sClient client.Client
 )
@@ -54,7 +54,7 @@ func TestControllers(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	env = testenv.StartWith(testenv.Options{WithoutBarmanPlugin: true}, func(mgr ctrl.Manager) error {
+	env = envtest.StartWith(envtest.Options{WithoutBarmanPlugin: true}, func(mgr ctrl.Manager) error {
 		return (&databaseserver.DatabaseServerReconciler{
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),
@@ -100,7 +100,7 @@ var _ = Describe("DatabaseServer without the Barman Cloud plugin", func() {
 			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(ready.Reason).To(Equal(v1.ReasonBarmanPluginNotInstalled))
 			g.Expect(ready.Message).To(ContainSubstring("restart the operator"))
-		}, testenv.Timeout, testenv.Interval).Should(Succeed())
+		}, envtest.Timeout, envtest.Interval).Should(Succeed())
 	})
 
 	It("runs a server that asks for no archive", func() {
@@ -113,6 +113,6 @@ var _ = Describe("DatabaseServer without the Barman Cloud plugin", func() {
 			ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
 			g.Expect(ready).NotTo(BeNil())
 			g.Expect(ready.Reason).NotTo(Equal(v1.ReasonBarmanPluginNotInstalled))
-		}, testenv.Timeout, testenv.Interval).Should(Succeed())
+		}, envtest.Timeout, envtest.Interval).Should(Succeed())
 	})
 })
