@@ -148,7 +148,7 @@ The restore itself waits in `Pending` while the target does not hold its backend
 
 After the restore left `Pending`, these two reasons hold it for 10 minutes, and then it fails. A target that now resolves to another backend than `status.backend` holds it with reason `InvalidReference` for the same time.
 
-A failed restore does not stop the recovery of the snapshots that Elasticsearch accepted. Before you start another cluster on this Elasticsearch, make sure that no index recovery is active.
+A failed or deleted restore does not stop the recovery of the snapshots that Elasticsearch accepted. A deleted restore no longer holds the backend. Before you start another cluster on this Elasticsearch, make sure that no index recovery is active.
 
 ## The snapshot repository
 

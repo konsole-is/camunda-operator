@@ -176,7 +176,7 @@ status:
         This cluster starts when they are gone
 ```
 
-Every pod carries the label `camunda.io/storage-claim` with the storage claim of the backend it writes, and `camunda.io/cluster-uid` with the UID of its cluster. The pods of an [Optimize instance](camundaoptimize.md) attached to the cluster carry both, because its importer writes that backend as well. Read the claim of every pod in a namespace:
+Every pod of the cluster carries two labels. `camunda.io/storage-claim` holds the storage claim of the backend it writes, and `camunda.io/cluster-uid` holds the UID of its cluster. The pods of an [Optimize instance](camundaoptimize.md) attached to the cluster carry both, because its importer writes that backend as well. The `pg_restore` pod of a [LogicalRestoreRDBMS](logicalrestorerdbms.md#the-backend) carries the storage claim and no cluster UID. Find it by the claim. Read the claim of every pod in a namespace:
 
 ```bash
 kubectl get pods -n my-cluster-ns -L camunda.io/storage-claim
