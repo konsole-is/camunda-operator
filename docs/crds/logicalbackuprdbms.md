@@ -53,11 +53,11 @@ The operator runs one backup of a cluster at a time, across both backup kinds. A
 
 ## Time limits
 
-The dump Job fails after `activeDeadlineSeconds`, 24 hours by default. A dependency can stop resolving during the run. Examples are a deleted Secret, an image that does not pull, or a management API that does not answer. The backup then waits 10 minutes for it to recover. After that, the backup fails.
+The dump Job fails after `activeDeadlineSeconds`, 24 hours by default. A dependency can stop resolving during the run. Examples are a deleted Secret, an image that does not pull, and a management API that does not answer. The backup then waits 10 minutes for it to recover. After that, the backup fails.
 
 ## Changes
 
-Do not change the backup storage of the cluster, or roll the cluster, while a backup runs. The backup waits 10 minutes with reason `InvalidReference` for the change to be reverted, then fails. The reason is that a dump and a Zeebe backup taken under different configurations do not form one restore point. A backup on a cluster that is still rolling out waits with reason `Progressing` before it starts. If you delete and recreate the cluster under the same name during the run, the backup fails at once.
+Do not change the backup storage of the cluster, or roll the cluster, while a backup runs. The backup waits 10 minutes with reason `InvalidReference` for the change to be reverted, then fails. A dump and a Zeebe backup taken under different configurations do not form one restore point. A backup on a cluster that is still rolling out waits with reason `Progressing` before it starts. If you delete and recreate the cluster under the same name during the run, the backup fails at once.
 
 ## Missing references
 

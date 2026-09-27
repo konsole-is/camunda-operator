@@ -2,7 +2,7 @@
 
 `BackupSchedule` takes logical backups of one `CamundaCluster` on a cron schedule. You create it, or another tool creates it for you.
 
-At each trigger the operator creates one backup of the kind that matches the secondary storage of the cluster. That is `LogicalBackupElasticsearch` for an Elasticsearch cluster and `LogicalBackupRDBMS` for a relational one. That backup then runs on its own. The schedule also owns retention: it deletes its own terminal backups beyond `spec.retained`, and the deletion removes the stored artifacts too.
+At each trigger the operator creates one backup of the kind that matches the secondary storage of the cluster. The kind is `LogicalBackupElasticsearch` for an Elasticsearch cluster and `LogicalBackupRDBMS` for a relational one. That backup then runs on its own. The schedule also owns retention: it deletes its own terminal backups beyond `spec.retained`, and the deletion removes the stored artifacts too.
 
 `kubectl get backupschedules` lists the schedules with `Ready`, its reason, the cron expression, and the age. `kubectl get backupschedules -o wide` adds the cluster, the last schedule, and the last backup.
 

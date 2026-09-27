@@ -110,7 +110,7 @@ A cluster that another backup or another restore holds keeps this restore in `Pe
 
 ## The storage chain
 
-The operator resolves the cluster's `storageRef` to a `SecondaryStorageConfig`, which must be `type: rdbms`. Then it resolves its `DatabaseConfig`, then its `serverRef` to a `DatabaseServerConfig` of the same namespace. A cluster on Elasticsearch is rejected with reason `InvalidReference`. Point-in-time restore does not exist for it.
+The operator resolves the cluster's `storageRef` to a `SecondaryStorageConfig`, which must be `type: rdbms`. Then it resolves the `DatabaseConfig` of that contract, and the `serverRef` of the `DatabaseConfig` to a `DatabaseServerConfig` of the same namespace. A cluster on Elasticsearch is rejected with reason `InvalidReference`. Point-in-time restore does not exist for it.
 
 The `DatabaseServerConfig` must also publish `status.systemIdentifier`. That value names the PostgreSQL instance behind its endpoint, and the rule below counts by it. A contract without it holds the restore with reason `InvalidReference`.
 
@@ -130,7 +130,7 @@ A `Database` that claims no logical database holds the restore too, with reason 
 
 A server that **no** `Database` uses holds the restore too, with reason `InvalidReference`. The `Database` resources are the only evidence the operator has about the databases of a server. Without one it cannot tell whether the server holds one database or ten. A restore erases the broker volumes, so the operator does not start one on that evidence. Declare the database of the cluster as a `Database` resource on a server of its own.
 
-The operator records the chain it validated in `status.storage`. The record holds the two contracts, the server, the logical database, the endpoint, and the system identifier behind that endpoint. It holds the restore to that record. A cluster that is repointed at another database after the check fails the restore. The reason is that the rules of the server and the state of the database were read against the first chain. Create a new restore for the database the cluster uses now.
+The operator records the chain it validated in `status.storage`. The record holds the two contracts, the server, the logical database, the endpoint, and the system identifier behind that endpoint. It holds the restore to that record. A cluster that is repointed at another database after the check fails the restore. The rules of the server and the state of the database were read against the first chain. Create a new restore for the database the cluster uses now.
 
 Every rule of this section holds the restore in `Pending`. Nothing is deleted while a rule does not hold, so you correct the cause and the same resource continues. You do not create a new one.
 
@@ -140,7 +140,7 @@ Before it touches a volume, the operator connects to the logical database with t
 
 The operator reads the table under the name that Camunda creates it with, and it reads no table prefix. A cluster that sets `camunda.data.secondary-storage.rdbms.prefix` is outside this check. A database that carries no such table holds the restore with reason `DatabaseNotRestored` too: an empty database is the state that this check exists for.
 
-The restore holds in `Pending` with reason `DatabaseNotRestored` when a partition row is missing. It also holds when any `LAST_UPDATED` is later than `spec.timestamp` plus one minute of slack. The slack exists because the clock of the database and the source of your timestamp are not the same clock.
+The restore holds in `Pending` with reason `DatabaseNotRestored` when a partition row is missing. It holds the same way when any `LAST_UPDATED` is later than `spec.timestamp` plus one minute of slack. The slack exists because the clock of the database and the source of your timestamp are not the same clock.
 
 A database that the operator cannot reach at all is a different hold. The restore stays in `ValidatingDatabaseState` with reason `ConnectionFailed` or `MissingSecret`, and it fails after ten minutes. It touches no volume there either.
 

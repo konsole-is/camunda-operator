@@ -41,7 +41,7 @@ The operator generates each password once and keeps it. To rotate one, delete it
 
 ## Missing references
 
-If `spec.serverRef` names no `DatabaseServerConfig` in this namespace, `Ready` is `False` with reason `InvalidReference`. If that contract has not published `status.systemIdentifier` yet, the reason is `ServerIdentityUnknown`, and the `Database` claims nothing and runs no SQL until it does. A contract whose `status.probedEndpoint` names an endpoint that its spec no longer names reads the same way. The reason is that this identity belongs to the server before the change. If the admin credentials Secret of the server is missing or lacks a key, the reason is `MissingSecret`. If the server does not answer or rejects the admin credentials, the reason is `ConnectionFailed` and the operator retries every 30 seconds.
+If `spec.serverRef` names no `DatabaseServerConfig` in this namespace, `Ready` is `False` with reason `InvalidReference`. If that contract has not published `status.systemIdentifier` yet, the reason is `ServerIdentityUnknown`, and the `Database` claims nothing and runs no SQL until it does. A contract whose `status.probedEndpoint` names an endpoint that its spec no longer names reads the same way. That identity belongs to the server before the change. If the admin credentials Secret of the server is missing or lacks a key, the reason is `MissingSecret`. If the server does not answer or rejects the admin credentials, the reason is `ConnectionFailed` and the operator retries every 30 seconds.
 
 ## Uniqueness
 

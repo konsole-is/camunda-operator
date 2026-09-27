@@ -1,6 +1,6 @@
 # Operations
 
-This guide covers the day-2 tasks of a running orchestration cluster. These are to read its status, change its shape, suspend it, grow its storage, rotate its passwords, and delete it. It applies to `CamundaCluster`, and where it says so, to `ElasticsearchCluster` and `Database`.
+This guide covers the day-2 tasks of a running orchestration cluster. It shows how to read its status, change its shape, suspend it, grow its storage, rotate its passwords, and delete it. It applies to `CamundaCluster`, and where it says so, to `ElasticsearchCluster` and `Database`.
 
 ## Read the status
 

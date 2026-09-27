@@ -3,7 +3,7 @@
 A Kubernetes operator that runs [Camunda 8.9+](https://docs.camunda.io/) orchestration clusters.
 You describe a cluster in one resource. The operator creates the workloads, wires the storage, and keeps the cluster healthy.
 
-The operator also manages what a cluster needs around it. That is an Elasticsearch cluster through ECK, a logical database on a PostgreSQL server you provide, and backups to a bucket.
+The operator also manages what a cluster needs around it. These are an Elasticsearch cluster through ECK, a logical database on a PostgreSQL server you provide, and backups to a bucket.
 It runs the management plane too: Management Identity, Console, and Web Modeler, over as many orchestration clusters as you give it.
 
 ## Start here

@@ -182,7 +182,7 @@ The rest reads the same as [Step 3a](#step-3a-the-operator-runs-keycloak): the f
 
 ### Step 3c: Your own OIDC provider
 
-Use this when you already run an identity provider. Examples are Microsoft Entra ID, Okta, or a central Keycloak that you administer yourself. Nothing is created for you.
+Use this when you already run an identity provider. Examples are Microsoft Entra ID, Okta, and a central Keycloak that you administer yourself. Nothing is created for you.
 
 The whole chain of this step is ready to apply in [`config/example/camunda-management-cluster/oidc`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-management-cluster/oidc).
 

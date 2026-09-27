@@ -125,7 +125,7 @@ The API server checks each field against the values CloudNativePG takes there:
 - 1-12 or `JAN`-`DEC` for the month.
 - 0-6 or `SUN`-`SAT` for the day of the week.
 
-It rejects the five-field cron of a Kubernetes CronJob, because CloudNativePG reads the first field as seconds. So `0 2 * * *` runs every hour at two minutes past, not daily at 02:00. A step takes at most three digits, and the number in `@every` takes at most six digits on each side of the point. A longer number is refused, because CloudNativePG cannot read it and the base backups stop. The API server cannot compare the two ends of a range. The operator refuses a range that reads downward, such as `FRI-MON`. `Ready` reports `InvalidReference` with the schedule in the message, and no base backup schedule reaches the cluster.
+The API server rejects the five-field cron of a Kubernetes CronJob, because CloudNativePG reads the first field as seconds. So `0 2 * * *` runs every hour at two minutes past, not daily at 02:00. A step takes at most three digits, and the number in `@every` takes at most six digits on each side of the point. A longer number is refused, because CloudNativePG cannot read it and the base backups stop. The API server cannot compare the two ends of a range. The operator refuses a range that reads downward, such as `FRI-MON`. `Ready` reports `InvalidReference` with the schedule in the message, and no base backup schedule reaches the cluster.
 
 The first base backup runs as soon as the server is up, whatever the schedule says. `ArchiveReady` is `False` until that first base backup completes: an archive that holds write-ahead log and no base backup cannot be recovered to any point.
 
