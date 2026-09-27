@@ -38,7 +38,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -87,7 +86,7 @@ func newReconcileHarness(t *testing.T) *reconcileHarness {
 	scheme := suspendScheme(t)
 	namespace := "team-a"
 
-	binding := fixtures.SecondaryStorageConfigElasticsearch(namespace)
+	binding := newSecondaryStorageConfigElasticsearch(namespace)
 	credentials := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      binding.Spec.Elasticsearch.CredentialsSecretRef.Name,
@@ -95,7 +94,7 @@ func newReconcileHarness(t *testing.T) *reconcileHarness {
 		},
 		Data: map[string][]byte{"username": []byte("camunda"), "password": []byte("es-password")},
 	}
-	platform := fixtures.CamundaPlatformConfigBasic()
+	platform := newCamundaPlatformConfigBasic()
 	auth := &v1.ManagementAuthConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "mac"},
 		Spec: v1.ManagementAuthConfigSpec{
