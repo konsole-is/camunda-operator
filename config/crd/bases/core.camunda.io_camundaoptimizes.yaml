@@ -2064,6 +2064,17 @@ spec:
                   by the operator.
                 format: int64
                 type: integer
+              suspendedBy:
+                description: |-
+                  SuspendedBy says why the Optimize workloads follow the referenced
+                  cluster to zero. It is empty while they follow their spec. The operator
+                  sets it on the pass that scales them to zero, and clears it on the pass
+                  that starts them again. It stays set while a failed check keeps them at
+                  zero after the cluster resumed.
+                enum:
+                - Cluster
+                - StorageClaim
+                type: string
             type: object
         required:
         - spec

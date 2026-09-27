@@ -122,8 +122,6 @@ func TestReconcileRecordsOneResumeWhenAnApplyFails(t *testing.T) {
 // conflict, the workload conditions that carry the suspension included. The
 // next pass must still know that the suspension was recorded.
 func TestReconcileRecordsOneSuspensionWhenTheFlushConflicts(t *testing.T) {
-	t.Skip("defect: the conflict drops the staged workload conditions, and the next pass records " +
-		"ClusterSuspended a second time; fixed by reading the prior state from the status (#373)")
 	h := newReconcileHarness(t)
 	h.start(t)
 

@@ -137,7 +137,30 @@ type CamundaOptimizeStatus struct {
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// SuspendedBy says why the Optimize workloads follow the referenced
+	// cluster to zero. It is empty while they follow their spec. The operator
+	// sets it on the pass that scales them to zero, and clears it on the pass
+	// that starts them again. It stays set while a failed check keeps them at
+	// zero after the cluster resumed.
+	// +optional
+	SuspendedBy OptimizeSuspension `json:"suspendedBy,omitempty"`
 }
+
+// OptimizeSuspension names why the Optimize workloads are at zero with the
+// cluster that they attach to.
+// +kubebuilder:validation:Enum=Cluster;StorageClaim
+type OptimizeSuspension string
+
+const (
+	// OptimizeSuspensionCluster means that the referenced cluster reports
+	// itself suspended, by spec.suspend or in a state in which the operator
+	// holds it at zero.
+	OptimizeSuspensionCluster OptimizeSuspension = "Cluster"
+	// OptimizeSuspensionStorageClaim means that the referenced cluster does not
+	// hold the storage claim of its backend, or that pods of another cluster or
+	// of a previous Optimize instance still write that backend.
+	OptimizeSuspensionStorageClaim OptimizeSuspension = "StorageClaim"
+)
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status

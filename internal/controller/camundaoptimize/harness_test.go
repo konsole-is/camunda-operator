@@ -24,9 +24,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8slabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
@@ -39,6 +41,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // harnessClaimNamespace holds the storage claim Lease of the harness cluster.
@@ -59,6 +62,10 @@ type reconcileHarness struct {
 	optimize   *v1.CamundaOptimize
 	cluster    *v1.CamundaCluster
 	key        types.NamespacedName
+	// lease is the storage claim that the cluster holds.
+	lease *coordinationv1.Lease
+	// pods are the pods that a pod list returns.
+	pods []metav1.PartialObjectMetadata
 
 	// failApply answers a server-side apply: a component apply or the exporter
 	// patch.
@@ -145,6 +152,7 @@ func newReconcileHarness(t *testing.T) *reconcileHarness {
 		optimize: optimize,
 		cluster:  cluster,
 		key:      client.ObjectKeyFromObject(optimize),
+		lease:    lease,
 	}
 	mapper := harnessRESTMapper(scheme)
 	h.client = fake.NewClientBuilder().
@@ -195,17 +203,29 @@ func harnessRESTMapper(scheme *runtime.Scheme) meta.RESTMapper {
 
 // interceptors route the writes of the fake client through the hooks of h.
 //
-// A pod list is answered empty. The claim gate lists pods with a field
-// selector on the phase, which the fake client cannot serve, and the harness
-// runs no pods.
+// A pod list is answered from h.pods by namespace and labels. The claim gate
+// lists pods with a field selector on the phase, which the fake client cannot
+// serve, and every pod of the harness runs.
 func (h *reconcileHarness) interceptors() interceptor.Funcs {
 	return interceptor.Funcs{
 		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
-			if pods, ok := list.(*metav1.PartialObjectMetadataList); ok && pods.GetObjectKind().GroupVersionKind().Kind == "PodList" {
-				return nil
+			pods, ok := list.(*metav1.PartialObjectMetadataList)
+			if !ok || pods.GetObjectKind().GroupVersionKind().Kind != "PodList" {
+				return c.List(ctx, list, opts...)
 			}
 
-			return c.List(ctx, list, opts...)
+			options := (&client.ListOptions{}).ApplyOptions(opts)
+			for _, pod := range h.pods {
+				if options.Namespace != "" && pod.Namespace != options.Namespace {
+					continue
+				}
+				if options.LabelSelector != nil && !options.LabelSelector.Matches(k8slabels.Set(pod.Labels)) {
+					continue
+				}
+				pods.Items = append(pods.Items, pod)
+			}
+
+			return nil
 		},
 		Patch: func(
 			ctx context.Context,
@@ -268,6 +288,28 @@ func (h *reconcileHarness) setClusterSuspend(t *testing.T, suspend bool) {
 	require.NoError(t, h.client.Get(t.Context(), client.ObjectKeyFromObject(h.cluster), &cluster))
 	cluster.Spec.Suspend = suspend
 	require.NoError(t, h.client.Update(t.Context(), &cluster))
+}
+
+// releaseClaim deletes the storage claim Lease, so the cluster no longer
+// holds its backend.
+func (h *reconcileHarness) releaseClaim(t *testing.T) {
+	t.Helper()
+	require.NoError(t, h.client.Delete(t.Context(), h.lease))
+}
+
+// runForeignWriter starts a pod of another cluster that carries the storage
+// claim of the backend of the harness cluster.
+func (h *reconcileHarness) runForeignWriter() {
+	h.pods = append(h.pods, metav1.PartialObjectMetadata{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "other-cluster-zeebe-0",
+			Namespace: "team-b",
+			Labels: map[string]string{
+				labels.StorageClaimKey: labels.OwnerName(h.lease.Name),
+				labels.ClusterUIDKey:   "uid-other",
+			},
+		},
+	})
 }
 
 // workloadKey returns the key of the Deployment of the given component.
