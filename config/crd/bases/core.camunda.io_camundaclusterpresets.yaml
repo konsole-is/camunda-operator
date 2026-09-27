@@ -4261,6 +4261,7 @@ spec:
                       creates in an Elasticsearch secondary storage. When it is not set, the
                       nodeCount of the storage contract gives the count: 0 on one node, 1 on
                       two or more nodes. Without a nodeCount, Camunda keeps its own default.
+                      A legacy replica key in extraEnv also keeps the Camunda default.
                       The cluster applies the count to its existing indices when it starts.
                       A count that the nodes cannot place is kept, and the cluster records an
                       IndexReplicasExceedNodes Warning event. A relational secondary storage

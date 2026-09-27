@@ -298,6 +298,58 @@ func TestRenderElasticsearchIndexReplicas(t *testing.T) {
 	}
 }
 
+// Camunda refuses to start when a legacy replica key and the unified key
+// differ. A legacy key in extraEnv therefore keeps the derived count out, and
+// an explicit count still renders.
+func TestRenderElasticsearchIndexReplicasBesideLegacyKey(t *testing.T) {
+	t.Parallel()
+
+	const key = "CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_NUMBEROFREPLICAS"
+	cases := map[string]struct {
+		mutate func(in *Input)
+		want   string
+	}{
+		"a legacy key in the global extraEnv keeps the default out": {
+			mutate: func(in *Input) {
+				in.Effective.ExtraEnv = []corev1.EnvVar{{Name: "CAMUNDA_DATABASE_INDEX_NUMBEROFREPLICAS", Value: "1"}}
+			},
+		},
+		"a legacy exporter key in the extraEnv of a web application keeps the default out": {
+			mutate: func(in *Input) {
+				in.Effective.Operate = &v1.WebAppSpec{}
+				in.Effective.Operate.ExtraEnv = []corev1.EnvVar{
+					{Name: "ZEEBE_BROKER_EXPORTERS_CAMUNDAEXPORTER_ARGS_INDEX_NUMBEROFREPLICAS", Value: "1"},
+				}
+			},
+		},
+		"an explicit count renders beside a legacy key": {
+			mutate: func(in *Input) {
+				in.Effective.IndexReplicas = new(int32(0))
+				in.Effective.ExtraEnv = []corev1.EnvVar{{Name: "CAMUNDA_DATABASE_INDEX_NUMBEROFREPLICAS", Value: "0"}}
+			},
+			want: "0",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			in := newInput(t, func(in *Input) {
+				in.Storage.Elasticsearch.NodeCount = new(int32(1))
+				tc.mutate(in)
+			})
+			r := render(in, process(t, in, ComponentZeebe))
+
+			if tc.want == "" {
+				assertNoEnv(t, r.env, key)
+				return
+			}
+			assertEnv(t, r.env, key, tc.want)
+		})
+	}
+}
+
 // A relational secondary storage has no indices, so the replica count of the
 // spec renders nothing there.
 func TestRenderRDBMSIgnoresIndexReplicas(t *testing.T) {

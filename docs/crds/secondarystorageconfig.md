@@ -58,7 +58,7 @@ spec:
     nodeCount: 1
 ```
 
-Without `nodeCount`, each consumer keeps the default of its Camunda application. The consumers are [CamundaCluster](camundacluster.md#index-replicas) and [CamundaOptimize](camundaoptimize.md#index-replicas), and each one can set its own count. A change of `nodeCount` changes the default count, and each consumer that uses the default restarts.
+Without `nodeCount`, each consumer keeps the default of its Camunda application. The consumers are [CamundaCluster](camundacluster.md#index-replicas) and [CamundaOptimize](camundaoptimize.md#index-replicas), and each one can set its own count. A change of `nodeCount` restarts a consumer only when its default count changes, for example from one node to two.
 
 ```mermaid
 graph LR

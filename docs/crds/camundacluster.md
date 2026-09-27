@@ -204,7 +204,9 @@ When you do not set it, the node count of the [SecondaryStorageConfig](secondary
 
 Elasticsearch never puts a replica on the node that holds its primary. An index with more replicas than the other nodes can hold stays at yellow health, and the `ElasticsearchCluster` then is not `Ready`. If you set a count that the node count cannot place, the cluster runs with it. It records the Warning event `IndexReplicasExceedNodes`, which names the count and the node count.
 
-The cluster applies the count to its existing indices each time it starts. A change of `indexReplicas`, or of the node count of the contract, restarts the cluster. A relational secondary storage ignores the field.
+The cluster applies the count to its existing indices each time it starts. When the count changes, the cluster restarts. A change of the node count restarts it only when the default count changes, for example from one node to two. A relational secondary storage ignores the field.
+
+Camunda also reads two older keys for the same count: `CAMUNDA_DATABASE_INDEX_NUMBEROFREPLICAS` and `ZEEBE_BROKER_EXPORTERS_CAMUNDAEXPORTER_ARGS_INDEX_NUMBEROFREPLICAS`. Camunda does not start when one of them and the count differ. If `extraEnv` sets one of them, the operator sets no default count. Then Camunda uses the value of that key. If you also set `indexReplicas`, give both the same value.
 
 ## Backups
 

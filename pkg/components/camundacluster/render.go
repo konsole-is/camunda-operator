@@ -59,6 +59,14 @@ const (
 	nodeIDCommand = "export %s=${HOSTNAME##*-}; exec " + CamundaEntrypoint
 )
 
+// legacyReplicasEnv are the environment variables of the legacy keys of
+// camunda.data.secondary-storage.elasticsearch.number-of-replicas
+// (DocumentBasedSecondaryStorageDatabase.legacyNumberOfReplicasProperties).
+var legacyReplicasEnv = []string{
+	camundaconfig.Key("camunda.database.index.numberOfReplicas").Env(),
+	camundaconfig.Key("zeebe.broker.exporters.camundaexporter.args.index.numberOfReplicas").Env(),
+}
+
 // rendered is the environment, volumes, and mounts of one process.
 type rendered struct {
 	env     []corev1.EnvVar
@@ -245,7 +253,7 @@ func storageEnv(in Input) rendered {
 				secretSource(es.CredentialsSecretRef.Name, es.CredentialsSecretRef.PasswordKey),
 			),
 		)
-		if replicas := es.IndexReplicas(in.Effective.IndexReplicas); replicas != nil {
+		if replicas := indexReplicas(in); replicas != nil {
 			r.env = append(
 				r.env,
 				camundaconfig.Var(camundaconfig.KeyElasticsearchIndexReplicas, strconv.Itoa(int(*replicas))),
@@ -289,6 +297,33 @@ func storageEnv(in Input) rendered {
 	}
 
 	return r
+}
+
+// indexReplicas returns the replica count to render, or nil to render none.
+// Camunda refuses to start when a legacy replica key and the unified key hold
+// different values. So the count that the node count derives gives way to a
+// legacy key that a user sets in extraEnv. An explicit indexReplicas does not.
+func indexReplicas(in Input) *int32 {
+	if in.Effective.IndexReplicas == nil && setsLegacyReplicas(in) {
+		return nil
+	}
+
+	return in.Storage.Elasticsearch.IndexReplicas(in.Effective.IndexReplicas)
+}
+
+// setsLegacyReplicas reports whether the global extraEnv, or the extraEnv of
+// a component whose process reads the secondary storage, names a legacy
+// replica key.
+func setsLegacyReplicas(in Input) bool {
+	env := slices.Clone(in.Effective.ExtraEnv)
+	storageReaders := []string{ComponentZeebe, ComponentGateway, ComponentOperate, ComponentTasklist, ComponentAdmin}
+	for _, component := range storageReaders {
+		env = append(env, in.Effective.Workload(component).ExtraEnv...)
+	}
+
+	return slices.ContainsFunc(env, func(e corev1.EnvVar) bool {
+		return slices.Contains(legacyReplicasEnv, e.Name)
+	})
 }
 
 // RDBMSURL returns the JDBC URL of the relational secondary storage that the
