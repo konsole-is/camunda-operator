@@ -104,7 +104,7 @@ A tool that also declares one of these fields fights the operator for it. Argo C
 - Put `spec.version` back after the restore, with the version that you want the cluster to run.
 - A tool that prunes annotations it does not declare removes the sanction, and the cluster then refuses the version write. Exclude `camunda.io/allow-version-downgrade` from pruning for the time of the restore.
 
-The target must stay suspended for the whole restore, not only at the start. A cluster that somebody unsuspends while the restore runs holds the restore in its current phase, and fails it after ten minutes with reason `ClusterNotSuspended`. Every phase after `Pending` erases something of the target.
+The target must stay suspended for the whole restore, not only at the start. A cluster that somebody unsuspends while the restore runs holds the restore in its current phase, and fails it after ten minutes with reason `ClusterNotSuspended`. Every phase after `Pending` erases something of the target. A `pg_restore` Job that already runs is not stopped, and the target can start beside it. If you unsuspended the target by mistake, suspend it again.
 
 ## One operation at a time
 
