@@ -26,12 +26,8 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
-	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
-	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -39,8 +35,6 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/cacheopts"
 	"github.com/konsole-is/camunda-operator/internal/controller/backupschedule"
 	"github.com/konsole-is/camunda-operator/internal/controller/camundacluster"
 	"github.com/konsole-is/camunda-operator/internal/controller/camundamanagementcluster"
@@ -59,8 +53,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/objectstorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/pointintimerestore"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
-	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
-	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
+	"github.com/konsole-is/camunda-operator/internal/manager"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -70,14 +63,7 @@ var (
 )
 
 func init() {
-	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-
-	utilruntime.Must(v1.AddToScheme(scheme))
-	utilruntime.Must(esv1.AddToScheme(scheme))
-	utilruntime.Must(monitoringv1.AddToScheme(scheme))
-	utilruntime.Must(keycloak.AddToScheme(scheme))
-	utilruntime.Must(cnpgv1.AddToScheme(scheme))
-	utilruntime.Must(barmanobjectstore.AddToScheme(scheme))
+	utilruntime.Must(manager.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -261,7 +247,7 @@ func main() {
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
-		Cache:                  cacheopts.Options(),
+		Cache:                  manager.CacheOptions(),
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,

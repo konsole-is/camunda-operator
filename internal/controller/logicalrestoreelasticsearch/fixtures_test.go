@@ -35,8 +35,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
-	"github.com/konsole-is/camunda-operator/internal/testenv"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
@@ -45,6 +43,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/esadmin/esadmintest"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	restorepkg "github.com/konsole-is/camunda-operator/pkg/restore"
+	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
 // The facts of every world. The version is the tag of the broker image and
@@ -189,7 +188,7 @@ func (w *world) finish(mutate ...func(*v1.CamundaCluster)) {
 	Expect(k8sClient.Create(ctx, w.bucket)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, w.bucket) })
 
-	platform := fixtures.CamundaPlatformConfigBasic()
+	platform := newCamundaPlatformConfigBasic()
 	Expect(k8sClient.Create(ctx, platform)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, platform) })
 
@@ -234,6 +233,17 @@ func (w *world) holdBackend(holder *v1.CamundaCluster) {
 		err = k8sClient.Update(ctx, &held)
 	}
 	Expect(err).NotTo(HaveOccurred())
+}
+
+// newCamundaPlatformConfigBasic returns a platform config with basic
+// authentication, no license, and no registry, with a unique name.
+func newCamundaPlatformConfigBasic() *v1.CamundaPlatformConfig {
+	return &v1.CamundaPlatformConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "cpc-" + utilrand.String(8)},
+		Spec: v1.CamundaPlatformConfigSpec{
+			Auth: &v1.PlatformAuthSpec{Method: v1.AuthenticationMethodBasic},
+		},
+	}
 }
 
 // renderBrokers stands in for the CamundaCluster controller. It creates the
@@ -677,7 +687,7 @@ func stuckPod(w *world, jobName string) {
 		)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 
-	pod := testenv.PodOfJob(&job, jobName+"-stuck", corev1.Container{
+	pod := envtest.PodOfJob(&job, jobName+"-stuck", corev1.Container{
 		Name: "restore", Image: "camunda/camunda:" + worldVersion,
 	})
 	Expect(k8sClient.Create(ctx, pod)).To(Succeed())

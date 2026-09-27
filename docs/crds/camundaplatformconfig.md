@@ -2,7 +2,7 @@
 
 `CamundaPlatformConfig` is a cluster-scoped resource that holds the settings every orchestration cluster of an environment shares. You create it, or another tool creates it for you.
 
-The settings that are the same for every orchestration cluster live here: how users and clients authenticate (basic or OIDC), the Camunda license, and the repositories that images are pulled from. You create one per environment. Each [CamundaCluster](camundacluster.md) references it by name through `platformConfigRef`, so you define the settings once. A [CamundaManagementCluster](camundamanagementcluster.md) references it the same way.
+The settings that are the same for every orchestration cluster live here. They are how users and clients authenticate (basic or OIDC), the Camunda license, and the repositories that images are pulled from. You create one per environment. Each [CamundaCluster](camundacluster.md) references it by name through `platformConfigRef`, so you define the settings once. A [CamundaManagementCluster](camundamanagementcluster.md) references it the same way.
 
 The OIDC fields follow the OIDC discovery vocabulary. They work with Keycloak, Auth0, Entra ID, Okta, or any other OIDC-compliant identity provider.
 
@@ -41,7 +41,7 @@ The OIDC client credentials here are the defaults of the environment. A [Camunda
 
 ## Split horizon
 
-When the identity provider is reachable at a different URL from inside the Kubernetes cluster, keep `issuerUrl` equal to the issuer claim of the tokens. Set `jwksUrl` and `tokenUrl` to the in-cluster endpoints.
+The identity provider can be reachable at a different URL from inside the Kubernetes cluster. In that case, keep `issuerUrl` equal to the issuer claim of the tokens. Set `jwksUrl` and `tokenUrl` to the in-cluster endpoints.
 
 The [authentication guide](../guides/authentication.md) explains the setup of both methods.
 

@@ -41,7 +41,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -872,7 +871,7 @@ func expectWaitingForHandover(cluster *v1.CamundaCluster, binding *v1.SecondaryS
 // contract an endpoint of its own.
 func createBindingAt(namespace, endpoint string) *v1.SecondaryStorageConfig {
 	GinkgoHelper()
-	binding := fixtures.SecondaryStorageConfigElasticsearch(namespace)
+	binding := newSecondaryStorageConfigElasticsearch(namespace)
 	binding.Spec.Elasticsearch.Endpoint = endpoint
 	Expect(k8sClient.Create(ctx, binding)).To(Succeed())
 	createSecret(namespace, binding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{

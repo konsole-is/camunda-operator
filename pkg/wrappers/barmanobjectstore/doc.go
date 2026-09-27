@@ -21,7 +21,7 @@ limitations under the License.
 // The plugin publishes a Go module, but importing it would add the whole
 // CloudNativePG operator, cert-manager, cnpg-i, and grpc to this operator's
 // dependencies, so the types here are copied from the CRD instead. The schema
-// they follow is vendored in internal/testenv/crds/barmancloud.
+// they follow is vendored in test/envtest/crds/barmancloud.
 //
 // Each type in types.go carries the object:generate marker of its own. The
 // marker of the whole package would also reach the wrapper, whose mutation

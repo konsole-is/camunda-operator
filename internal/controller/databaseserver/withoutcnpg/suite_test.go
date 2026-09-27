@@ -36,11 +36,11 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseserver"
-	"github.com/konsole-is/camunda-operator/internal/testenv"
+	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
 var (
-	env       *testenv.Env
+	env       *envtest.Env
 	ctx       context.Context
 	k8sClient client.Client
 )
@@ -53,7 +53,7 @@ func TestControllers(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	env = testenv.StartWith(testenv.Options{WithoutCNPG: true}, func(mgr ctrl.Manager) error {
+	env = envtest.StartWith(envtest.Options{WithoutCNPG: true}, func(mgr ctrl.Manager) error {
 		return (&databaseserver.DatabaseServerReconciler{
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),
@@ -91,7 +91,7 @@ var _ = Describe("DatabaseServer without the CloudNativePG CRDs", func() {
 			g.Expect(ready.Reason).To(Equal(v1.ReasonCNPGNotInstalled))
 			g.Expect(ready.Message).To(ContainSubstring("restart the operator"))
 			g.Expect(latest.Status.ObservedGeneration).To(Equal(latest.Generation))
-		}, testenv.Timeout, testenv.Interval).Should(Succeed())
+		}, envtest.Timeout, envtest.Interval).Should(Succeed())
 
 		var contract v1.DatabaseServerConfig
 		err := k8sClient.Get(ctx, client.ObjectKey{Namespace: "default", Name: "camunda"}, &contract)

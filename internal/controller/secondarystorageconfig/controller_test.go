@@ -28,7 +28,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
 // newSecondaryStorageNamespace creates a uniquely named Namespace for one spec
@@ -159,7 +158,7 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 
 		BeforeEach(func() {
 			namespace := newSecondaryStorageNamespace()
-			database = fixtures.DatabaseConfig()
+			database = newDatabaseConfig()
 			database.Namespace = namespace
 			secondaryStorage = validSecondaryStorageConfigRDBMS()
 			secondaryStorage.Namespace = namespace
@@ -207,7 +206,7 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 
 		It("is not satisfied by a same-named DatabaseConfig in another namespace", func() {
 			otherNamespace := newSecondaryStorageNamespace()
-			elsewhere := fixtures.DatabaseConfig()
+			elsewhere := newDatabaseConfig()
 			elsewhere.Name = database.Name
 			elsewhere.Namespace = otherNamespace
 			Expect(k8sClient.Create(ctx, elsewhere)).To(Succeed())
@@ -231,7 +230,7 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 
 	It("re-stamps observedGeneration after a spec update", func() {
 		namespace := newSecondaryStorageNamespace()
-		database := fixtures.DatabaseConfig()
+		database := newDatabaseConfig()
 		database.Namespace = namespace
 		Expect(k8sClient.Create(ctx, database)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, database) })
@@ -244,7 +243,7 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 			secondaryStorage, metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed",
 		)
 
-		other := fixtures.DatabaseConfig()
+		other := newDatabaseConfig()
 		other.Namespace = namespace
 		Expect(k8sClient.Create(ctx, other)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, other) })

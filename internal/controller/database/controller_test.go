@@ -35,7 +35,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	components "github.com/konsole-is/camunda-operator/pkg/components/database"
 )
 
@@ -154,7 +153,7 @@ func unprobedServer(namespace, secretName, host string) *v1.DatabaseServerConfig
 	pg, err := testPostgres()
 	Expect(err).NotTo(HaveOccurred())
 
-	server := fixtures.DatabaseServerConfig(namespace)
+	server := newDatabaseServerConfig(namespace)
 	server.Spec.Host = host
 	server.Spec.Port = pg.Port
 	server.Spec.AdminCredentialsSecretRef = v1.LocalCredentialsSecretRef{

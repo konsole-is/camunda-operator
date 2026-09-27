@@ -39,14 +39,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
-	"github.com/konsole-is/camunda-operator/internal/testenv"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	databasecomponents "github.com/konsole-is/camunda-operator/pkg/components/database"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
+	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
 // worldSystemIdentifier is the identity that the contract of a world reports.
@@ -118,7 +117,7 @@ func createWorldIn(namespace string, mutate ...func(*world)) *world {
 	GinkgoHelper()
 	suffix := strings.ToLower(utilrand.String(6))
 
-	platform := fixtures.CamundaPlatformConfigBasic()
+	platform := newCamundaPlatformConfigBasic()
 	Expect(k8sClient.Create(ctx, platform)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, platform) })
 
@@ -2011,7 +2010,7 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		// a Job creates, in the state that a missing Secret leaves it in. The
 		// pod carries the labels of the pod template of that Job, which is
 		// what the scoped pod cache of the manager selects on.
-		pod := testenv.PodOfJob(
+		pod := envtest.PodOfJob(
 			&jobs[0],
 			"restore-pod-"+strings.ToLower(utilrand.String(6)),
 			corev1.Container{Name: restore.ComponentRestore, Image: "camunda/camunda:8.9.9"},

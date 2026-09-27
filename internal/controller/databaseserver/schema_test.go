@@ -30,7 +30,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 )
 
@@ -105,7 +104,7 @@ func createdDatabaseServer() *v1.DatabaseServer {
 	GinkgoHelper()
 
 	obj := realisticDatabaseServer()
-	obj.Namespace = fixtures.SchemaTestNamespace
+	obj.Namespace = schemaTestNamespace
 
 	Expect(k8sClient.Create(ctx, obj)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
@@ -138,7 +137,7 @@ var _ = Describe("DatabaseServer schema", func() {
 		"admission",
 		func(build func() *v1.DatabaseServer, mutate func(*v1.DatabaseServer), wantErr string) {
 			obj := build()
-			obj.Namespace = fixtures.SchemaTestNamespace
+			obj.Namespace = schemaTestNamespace
 			mutate(obj)
 			err := k8sClient.Create(ctx, obj)
 			if wantErr == "" {
@@ -165,7 +164,7 @@ var _ = Describe("DatabaseServer schema", func() {
 		Entry(
 			"rejects a non-DNS-1123 databaseServerConfig",
 			validDatabaseServer, func(o *v1.DatabaseServer) {
-				o.Spec.DatabaseServerConfig = fixtures.NotAResourceName
+				o.Spec.DatabaseServerConfig = notAResourceName
 			}, "databaseServerConfig",
 		),
 		Entry(
@@ -366,7 +365,7 @@ var _ = Describe("DatabaseServer schema", func() {
 			"kind":       "DatabaseServer",
 			"metadata": map[string]any{
 				"name":      "dbs-" + utilrand.String(8),
-				"namespace": fixtures.SchemaTestNamespace,
+				"namespace": schemaTestNamespace,
 			},
 			"spec": map[string]any{
 				"version":              "17",
