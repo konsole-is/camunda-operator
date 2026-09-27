@@ -99,8 +99,8 @@ func StorageClaimLeaseLabels(name string) map[string]string {
 // and that own does not claim, as sorted "namespace/name" paths, together
 // with the workloads that can still start such a pod: a ReplicaSet that asks
 // for replicas with the claim on its labels, a Deployment or a StatefulSet
-// that asks for replicas with the claim on its template, and a Job that is not
-// suspended and has not finished with the claim on its template. A workload whose pod is gone
+// that asks for replicas with the claim on its template, and a Job that can
+// still start a pod with the claim on its template. A workload whose pod is gone
 // for a moment, evicted, failed, or not yet started, recreates it with the
 // claim, so a scan of the pods alone can pass while a writer is about to
 // return. A
@@ -217,10 +217,11 @@ func OtherPodsOnClaim(
 	return names, nil
 }
 
-// jobStarts reports whether a Job can start another pod: it is not suspended
-// and has not reached Complete or Failed.
+// jobStarts reports whether a Job can start another pod: it is not suspended,
+// its parallelism is not zero, and it has not reached Complete or Failed.
 func jobStarts(job *batchv1.Job) bool {
-	if job.Spec.Suspend != nil && *job.Spec.Suspend {
+	suspended := job.Spec.Suspend != nil && *job.Spec.Suspend
+	if suspended || (job.Spec.Parallelism != nil && *job.Spec.Parallelism == 0) {
 		return false
 	}
 	for _, condition := range job.Status.Conditions {

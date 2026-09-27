@@ -438,6 +438,13 @@ func TestOtherPodsOnClaim(t *testing.T) {
 		"a suspended Job": {
 			objects: []client.Object{job(restorePod, true)},
 		},
+		"a Job at zero parallelism": {
+			objects: []client.Object{func() client.Object {
+				j := job(restorePod, false)
+				j.Spec.Parallelism = new(int32(0))
+				return j
+			}()},
+		},
 		"a running Job on another claim": {
 			objects: []client.Object{job(
 				map[string]string{labels.StorageClaimKey: "camunda-storage-other"}, false,
