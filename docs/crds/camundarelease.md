@@ -1,6 +1,6 @@
 # CamundaRelease
 
-`CamundaRelease` is a cluster-scoped description of what a platform runs. It holds the Camunda version, the connectors version, the Elasticsearch version, the PostgreSQL version, an optional pinned image per Camunda process, and the environment that a version needs. You create it, or another tool creates it for you.
+`CamundaRelease` is a cluster-scoped description of what a platform runs. It holds the Camunda version, the connectors version, the Elasticsearch version, and the PostgreSQL version. It also holds an optional pinned image per Camunda process and the environment that a version needs. You create it, or another tool creates it for you.
 
 A release separates what runs from the shape of a resource. The shape lives in a preset: [CamundaClusterPreset](camundaclusterpreset.md), [ElasticsearchClusterPreset](elasticsearchclusterpreset.md), or [DatabaseServerPreset](databaseserverpreset.md). A platform team keeps a handful of presets, such as `small` and `medium`, and one release per rollout, such as `camunda-8-9-4`. To move a fleet to a new version set, the team edits one release. To move one resource, the owner changes one `releaseRef`.
 
@@ -87,11 +87,11 @@ spec:
 
 A pinned image changes only what is pulled. The version gates, the downgrade rule, and the computed environment still read `spec.version`, not the image. Pin an image of the same version that you name, for example a digest of it or a patched build of it.
 
-A pin belongs to the version of the release. A cluster that runs another version does not pull it: when `spec.version` on the cluster wins over the release, or a restore sets the version, the cluster pulls the normal repository at that version. The `connectors` pin follows `connectors.version` the same way.
+A pin belongs to the version of the release. A cluster that runs another version does not pull it. When `spec.version` on the cluster wins over the release, or a restore sets the version, the cluster pulls the normal repository at that version. The `connectors` pin follows `connectors.version` the same way.
 
-`spec.images` holds these two entries and no more. Elasticsearch takes its image from `elasticsearch.version` through the ECK operator, and PostgreSQL takes its repository from `images.postgres` on the [CamundaPlatformConfig](camundaplatformconfig.md#images), so neither has a pull reference for a release to replace.
+`spec.images` holds these two entries and no more. Elasticsearch takes its image from `elasticsearch.version` through the ECK operator. PostgreSQL takes its repository from `images.postgres` on the [CamundaPlatformConfig](camundaplatformconfig.md#images). So neither has a pull reference for a release to replace.
 
-To pin an image for a few clusters only, create a second release with the pin and point the `releaseRef` of those clusters at it.
+To pin an image for a few clusters only, create a second release with the pin. Then point the `releaseRef` of those clusters at it.
 
 To rename every image of an environment to a mirror, use `spec.images` on the [CamundaPlatformConfig](camundaplatformconfig.md#images) instead. A release pins one exact reference for the clusters that use this release. A platform config renames the repository for every cluster and lets the version supply the tag.
 

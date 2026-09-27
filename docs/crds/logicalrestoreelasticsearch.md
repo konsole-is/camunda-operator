@@ -2,7 +2,7 @@
 
 `LogicalRestoreElasticsearch` restores one completed [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) into one `CamundaCluster`. You create it, or an automated recovery flow creates it for you.
 
-The target is the cluster the backup was taken from. The operator rebuilds both halves of the cluster state: it puts the web-application indices and the Zeebe record indices back into the Elasticsearch of the target, and it gives the brokers new data volumes that the Camunda restore application fills from the partition backup.
+The target is the cluster the backup was taken from. The operator rebuilds both halves of the cluster state. It puts the web-application indices and the Zeebe record indices back into the Elasticsearch of the target. It also gives the brokers new data volumes that the Camunda restore application fills from the partition backup.
 
 One resource is one restore. The spec is immutable, and the restore runs once. To retry, create a new resource. `kubectl get lres` lists the restores with their phase, backup, and target.
 
@@ -60,7 +60,7 @@ Before the operator deletes anything, it compares the backup against the target.
 - The target is the cluster that the backup was taken from, which the backup names in `spec.clusterRef`. The restore application reads the partition backup under the prefix of the cluster it runs as. No other cluster reads that prefix.
 - The partition count of the target is the partition count that the backup recorded in `status.partitionsCount`.
 - The `spec.backupStorageRef` of the target names the same `ObjectStorageConfig` that the backup wrote to. The operator reads the artifacts through the bucket of the target, with the credentials that its contract names in the namespace of the target.
-- The target runs the exact Camunda version that the backup recorded in `status.version`. An Elasticsearch backup carries that version in the name of every snapshot, so a target one patch release newer cannot read it. The restore moves the target to that version before this rule runs, so a version that differs is a wait and not a failure. Only a backup that recorded no version, or that recorded a value which is not of the form `x.y.z`, fails this rule: the operator cannot write such a value.
+- The target runs the exact Camunda version that the backup recorded in `status.version`. An Elasticsearch backup carries that version in the name of every snapshot, so a target one patch release newer cannot read it. The restore moves the target to that version before this rule runs, so a version that differs is a wait and not a failure. Only a backup that recorded no version, or that recorded a value which is not of the form `x.y.z`, fails this rule. The operator cannot write such a value.
 
 ## The restore prepares the target
 
@@ -92,7 +92,7 @@ To move the cluster off that version, declare the version you want:
 - A client-side `kubectl apply` that sets `spec.version` takes the field back. It writes the field, and the API server gives ownership to the manager that wrote it.
 - A server-side apply, which is what Argo CD and Flux use, reports a conflict on the field. Force the conflict, and the tool owns `spec.version` again.
 
-CAUTION: A manifest that omits `spec.version` does not take the field back. Server-side apply removes a field only from the manager that declared it, and `camunda-operator/restore-version` still declares this one. Watch for this on a cluster that took its version from a release: an explicit `spec.version` always wins over the release, so the value the restore wrote governs the cluster until somebody removes the field. Remove it by hand to give the release control again.
+CAUTION: A manifest that omits `spec.version` does not take the field back. Server-side apply removes a field only from the manager that declared it, and `camunda-operator/restore-version` still declares this one. Watch for this on a cluster that took its version from a release. An explicit `spec.version` always wins over the release. So the value the restore wrote governs the cluster until somebody removes the field. Remove it by hand to give the release control again.
 
 If the version of the release is below the one the brokers run, the operator refuses that removal. Set the annotation `camunda.io/allow-version-downgrade` to the version of the release in the same edit that removes the field. Setting the annotation first does not work. The operator removes an annotation that does not name the version the cluster is asked to run. Remove the field first and set the annotation after the refusal, or do both in the one command shown.
 
@@ -125,7 +125,7 @@ The operator declares the two fields above under its own names, the same way [Ca
 
 A tool that also declares one of these fields fights the operator for it. Argo CD or Flux reverts the write of the restore, the restore writes it again, and the restore stalls in `Pending`. If you drive the `CamundaCluster` from Git:
 
-- Remove `spec.suspend` and `spec.version` from the manifest for the time of the restore, or mark both fields as an ignored difference.
+- Remove `spec.suspend` and `spec.version` from the manifest for the time of the restore. Or mark both fields as an ignored difference.
 - Put `spec.version` back after the restore, with the version that you want the cluster to run.
 - A tool that prunes annotations it does not declare removes the sanction, and the cluster then refuses the version write. Exclude `camunda.io/allow-version-downgrade` from pruning for the time of the restore.
 
@@ -159,9 +159,9 @@ CAUTION: A failure between the delete and the restore leaves the secondary stora
 
 ### An Optimize attached to the target
 
-A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names the target follows `spec.suspend` of that cluster, so its webapp and its importer are already at zero when this phase deletes the indices. You do not have to stop the import by hand.
+A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names the target follows `spec.suspend` of that cluster. So its webapp and its importer are already at zero when this phase deletes the indices. You do not have to stop the import by hand.
 
-This matters because the Optimize importer reads Elasticsearch directly, not through the orchestration cluster. An importer that kept running would read indices that are half restored, write analytics from them, and hold an import position that disagrees with the restored data. Both workloads start again when you unsuspend the cluster, and the importer reads the restored indices.
+This matters because the Optimize importer reads Elasticsearch directly, not through the orchestration cluster. An importer that kept running would read indices that are half restored and write analytics from them. It would also hold an import position that disagrees with the restored data. Both workloads start again when you unsuspend the cluster, and the importer reads the restored indices.
 
 ## Primary storage
 
@@ -175,13 +175,13 @@ Every Job carries the labels `camunda.io/component: restore`, `camunda.io/logica
 
 ## Time limits
 
-A restore that has started waits 10 minutes on a dependency that stops resolving, then it fails. The 10 minutes run from the first outage. Once an index or a volume is gone, a dependency that resolves again starts no second wait. The wait covers an Elasticsearch that does not answer, a reference that breaks, a pod that cannot start, and a target that somebody unsuspends mid-run. A restore that already deleted an index or a volume must reach a terminal phase, so that whoever owns the cluster learns that it has to act.
+A restore that has started waits 10 minutes on a dependency that stops resolving, then it fails. The 10 minutes run from the first outage. Once an index or a volume is gone, a dependency that resolves again starts no second wait. The wait covers an Elasticsearch that does not answer, a reference that breaks, a pod that cannot start, and a target that somebody unsuspends mid-run. A restore that already deleted an index or a volume must reach a terminal phase. Then whoever owns the cluster learns that it has to act.
 
 A restore in `Pending` waits without a bound, because it deleted nothing yet.
 
 ## Identity
 
-The restore pins the backup ID and the identity of the target when it starts. A backup that somebody deletes and creates again under the same name holds other artifacts, and a cluster that somebody deletes and creates again under the same name is another cluster. Both end the restore. Create a new restore for the resources as they are now.
+The restore pins the backup ID and the identity of the target when it starts. A backup that somebody deletes and creates again under the same name holds other artifacts. A cluster that somebody deletes and creates again under the same name is another cluster. Both end the restore. Create a new restore for the resources as they are now.
 
 ## The restore Jobs
 
@@ -220,7 +220,7 @@ A target that the restore suspended stays suspended. That is deliberate. Brokers
 | `Ready` | `ClusterNotSuspended` | The target started running again while the restore ran. | Suspend the cluster again. A restore that already erased something fails 10 minutes after the first outage. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster. | Wait. The restore starts when the holder reaches a terminal phase. |
 | `Ready` | `IncompatibleTarget` | The target cannot hold the backup. The message names both values. | Read "Compatibility" above. A backup restores into the cluster it was taken from alone. |
-| `Ready` | `InvalidReference` | A referenced resource does not exist, the backup is not completed, or the snapshot repository of the backup is absent from the target under a name the operator cannot place. | Read the message. Create the resource, wait for the backup, or register the repository on the target. |
+| `Ready` | `InvalidReference` | A referenced resource does not exist, or the backup is not completed. Or the snapshot repository of the backup is absent from the target under a name the operator cannot place. | Read the message. Create the resource, wait for the backup, or register the repository on the target. |
 | `Ready` | `ConnectionFailed` | The Elasticsearch of the target does not answer, or it refuses the credentials. | Make sure that the endpoint answers and that the credentials of the `SecondaryStorageConfig` are valid. |
 | `Ready` | `MissingSecret` | A pod of a restore Job cannot start, because a Secret it needs does not exist. | Create the Secret that the message names. |
 

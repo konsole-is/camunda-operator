@@ -6,7 +6,12 @@ An orchestration cluster needs secondary storage. `ElasticsearchCluster` gives y
 
 Use it when you want the operator to own the Elasticsearch cluster, its credentials, and its snapshot repository. If you want an RDBMS as secondary storage, use [Database](database.md) instead. An `ElasticsearchCluster` never references a `CamundaCluster`. The two meet only through the `SecondaryStorageConfig`.
 
-From an `ElasticsearchCluster` named `<name>`, the operator creates an ECK `Elasticsearch` resource named `<name>`, and ECK runs the nodes. The operator creates a user `camunda` for the orchestration cluster and publishes everything a consumer needs in the `SecondaryStorageConfig` named in `spec.secondaryStorageConfig`, in the same namespace: the HTTPS endpoint, a reference to the user Secret `<name>-es-user` (keys `username` and `password`), the CA of the self-signed certificate, and `snapshotRepository` once a repository is registered.
+From an `ElasticsearchCluster` named `<name>`, the operator creates an ECK `Elasticsearch` resource named `<name>`, and ECK runs the nodes. The operator creates a user `camunda` for the orchestration cluster. It publishes everything a consumer needs in the `SecondaryStorageConfig` named in `spec.secondaryStorageConfig`, in the same namespace:
+
+- The HTTPS endpoint.
+- A reference to the user Secret `<name>-es-user` (keys `username` and `password`).
+- The CA of the self-signed certificate.
+- `snapshotRepository`, once a repository is registered.
 
 The Elasticsearch pods and their data volumes carry the labels `camunda.io/elasticsearch-cluster: <name>` and `camunda.io/component: elasticsearch`.
 
@@ -80,7 +85,7 @@ The operator generates the password once and keeps it. To rotate it, delete the 
 
 ## Monitoring
 
-When `spec.monitoring.serviceMonitor.enabled` is `true`, the operator also runs the Prometheus `elasticsearch_exporter` next to the cluster, because Elasticsearch serves no Prometheus endpoint itself, and creates a ServiceMonitor for it when the Kubernetes cluster serves that kind.
+Elasticsearch serves no Prometheus endpoint itself. So when `spec.monitoring.serviceMonitor.enabled` is `true`, the operator also runs the Prometheus `elasticsearch_exporter` next to the cluster. It creates a ServiceMonitor for the exporter when the Kubernetes cluster serves that kind.
 
 ## Missing references
 
@@ -101,7 +106,7 @@ Deletion removes everything the operator created: the ECK resource, the Secrets,
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `ECKNotInstalled` | The ECK CRDs were not installed when the operator started. The operator does not create the ECK resource, the Secrets, or the `SecondaryStorageConfig`. | Install ECK, then restart the operator. |
-| `Ready` | `InvalidReference` | `spec.presetRef`, `spec.releaseRef`, or `spec.snapshotStorageRef` names a resource that does not exist, the merged spec lacks `version`, `replicas`, or `storageSize`, the version is below the floor, the bucket has settings that Elasticsearch cannot use, or a ServiceAccount with `create: false` does not exist. | Read the message. Create the missing resource, or fix the field it names. |
+| `Ready` | `InvalidReference` | `spec.presetRef`, `spec.releaseRef`, or `spec.snapshotStorageRef` names a resource that does not exist, or the merged spec lacks `version`, `replicas`, or `storageSize`. Or the version is below the floor, the bucket has settings that Elasticsearch cannot use, or a ServiceAccount with `create: false` does not exist. | Read the message. Create the missing resource, or fix the field it names. |
 | `Ready` | `MissingSecret` | The bucket of `spec.snapshotStorageRef` names a Secret or a key that does not exist. Or the components are healthy and the ECK Secrets that the repository registration needs do not exist yet. | Create the Secret with the keys that the `ObjectStorageConfig` names. If `SnapshotRepositoryReady` reports `MissingSecret`, wait for ECK. |
 | `Ready` | `Suspended` | `Ready` is `True`. The cluster is suspended by `spec.suspend: true`. The data volumes stay. | Nothing. To serve again, set `spec.suspend: false`. To wait for a serving cluster, require `Ready=True` and a reason other than `Suspended`. |
 | `Ready` | `ConnectionFailed` | The components are healthy, but the snapshot repository is not registered. See `SnapshotRepositoryReady`. | Read the message of `SnapshotRepositoryReady`. Make sure that the bucket and its credentials are correct. The operator retries on its own. |
@@ -112,7 +117,7 @@ Deletion removes everything the operator created: the ECK resource, the Secrets,
 | `SnapshotRepositoryReady` | `MissingSecret` | The `elastic` user Secret or the CA Secret of ECK does not exist yet. | Wait. ECK creates them with the cluster. |
 | `MetricsReady` | component status | The exporter. It is not part of `Ready`. It is `Disabled` while monitoring is off and `Suspended` while the cluster is suspended. | Read the exporter Deployment `<name>-es-exporter` when it is `Failing`. |
 
-`status.version` is the Elasticsearch version the cluster runs. It is the merged version, so it names what runs whether the release, the preset, or the cluster supplies it, and `kubectl get elasticsearchcluster` prints it in the `VERSION` column. It is empty until the first reconcile resolves the references of the cluster.
+`status.version` is the Elasticsearch version the cluster runs. It is the merged version, so it names what runs whether the release, the preset, or the cluster supplies it. `kubectl get elasticsearchcluster` prints it in the `VERSION` column. It is empty until the first reconcile resolves the references of the cluster.
 
 `status.observedGeneration` is the last generation that the operator reconciled.
 
