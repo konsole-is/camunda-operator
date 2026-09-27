@@ -92,6 +92,12 @@ const (
 	// camunda.data.exporters.elasticsearch.args.authentication.password
 	// (ElasticsearchExporterConfiguration.AuthenticationConfiguration).
 	KeyExporterElasticsearchPassword Key = "camunda.data.exporters.elasticsearch.args.authentication.password"
+	// KeyExporterElasticsearchIndexReplicas is
+	// camunda.data.exporters.elasticsearch.args.index.numberOfReplicas, the
+	// replica count in the index template of the exported indices
+	// (ElasticsearchExporterConfiguration.IndexConfiguration). The broker
+	// binds the args case-insensitively (ExporterConfiguration.java).
+	KeyExporterElasticsearchIndexReplicas Key = "camunda.data.exporters.elasticsearch.args.index.numberOfReplicas"
 
 	// KeyElasticsearchURL is camunda.data.secondary-storage.elasticsearch.url (Elasticsearch.java).
 	KeyElasticsearchURL Key = "camunda.data.secondary-storage.elasticsearch.url"
@@ -99,6 +105,10 @@ const (
 	KeyElasticsearchUsername Key = "camunda.data.secondary-storage.elasticsearch.username"
 	// KeyElasticsearchPassword is camunda.data.secondary-storage.elasticsearch.password (Elasticsearch.java).
 	KeyElasticsearchPassword Key = "camunda.data.secondary-storage.elasticsearch.password"
+	// KeyElasticsearchIndexReplicas is
+	// camunda.data.secondary-storage.elasticsearch.number-of-replicas
+	// (DocumentBasedSecondaryStorageDatabase.java).
+	KeyElasticsearchIndexReplicas Key = "camunda.data.secondary-storage.elasticsearch.number-of-replicas"
 	// KeyElasticsearchSecurityEnabled is camunda.data.secondary-storage.elasticsearch.security.enabled
 	// (SecondaryStorageSecurity.java).
 	KeyElasticsearchSecurityEnabled Key = "camunda.data.secondary-storage.elasticsearch.security.enabled"
@@ -396,9 +406,11 @@ var declared = []Key{
 	KeyExporterElasticsearchIndexPrefix,
 	KeyExporterElasticsearchUsername,
 	KeyExporterElasticsearchPassword,
+	KeyExporterElasticsearchIndexReplicas,
 	KeyElasticsearchURL,
 	KeyElasticsearchUsername,
 	KeyElasticsearchPassword,
+	KeyElasticsearchIndexReplicas,
 	KeyElasticsearchSecurityEnabled,
 	KeyElasticsearchSecurityCertificatePath,
 	KeyElasticsearchSecurityVerifyHostname,

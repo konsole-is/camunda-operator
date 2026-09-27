@@ -17,6 +17,8 @@ limitations under the License.
 package camundaoptimize
 
 import (
+	"strconv"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -52,16 +54,20 @@ const ExporterClassName = "io.camunda.zeebe.exporter.ElasticsearchExporter"
 // the contract names another namespace. Passing the copy that this controller
 // makes for the Optimize pods names a Secret the broker cannot read.
 //
+// replicas is the replica count of the zeebe-record index template, or nil to
+// leave the exporter default. The exporter writes these indices for Optimize
+// alone, so the count is the index replica count of the CamundaOptimize.
+//
 // The set carries no TLS setting, because the exporter has none. An
 // Elasticsearch with a private CA therefore needs that CA in the JVM trust
 // store of the broker before the exporter can reach it
 // (camunda/camunda#9839). pkg/components/camundacluster builds that trust
 // store for every binding that names a certificate authority. This exporter
 // then reaches such an endpoint without a setting of its own.
-func ExporterEnv(storage v1.ElasticsearchStorage) []corev1.EnvVar {
+func ExporterEnv(storage v1.ElasticsearchStorage, replicas *int32) []corev1.EnvVar {
 	creds := storage.CredentialsSecretRef
 
-	return []corev1.EnvVar{
+	env := []corev1.EnvVar{
 		camundaconfig.Var(camundaconfig.KeyExporterElasticsearchClassName, ExporterClassName),
 		camundaconfig.Var(camundaconfig.KeyExporterElasticsearchURL, storage.Endpoint),
 		camundaconfig.Var(camundaconfig.KeyExporterElasticsearchIndexPrefix, ZeebeRecordPrefix),
@@ -74,6 +80,15 @@ func ExporterEnv(storage v1.ElasticsearchStorage) []corev1.EnvVar {
 			secretSource(creds.Name, creds.PasswordKey),
 		),
 	}
+
+	if replicas != nil {
+		env = append(
+			env,
+			camundaconfig.Var(camundaconfig.KeyExporterElasticsearchIndexReplicas, strconv.Itoa(int(*replicas))),
+		)
+	}
+
+	return env
 }
 
 // ExporterConflicts returns the names that desired and existing both carry

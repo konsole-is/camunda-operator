@@ -113,6 +113,17 @@ spec:
                     - message: endpoint must be a valid http or https URL
                       rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
                         == 'https')
+                  nodeCount:
+                    description: |-
+                      NodeCount is the number of data nodes of the Elasticsearch cluster. An
+                      ElasticsearchCluster fills it in the contract it produces. Set it by
+                      hand for an Elasticsearch cluster that this operator does not manage.
+                      A consumer that sets no index replica count of its own gets 0 replicas
+                      on one node and 1 replica on two or more nodes. Without a node count,
+                      the consumer keeps the default of the Camunda application.
+                    format: int32
+                    minimum: 1
+                    type: integer
                   snapshotRepository:
                     description: |-
                       SnapshotRepository names the snapshot repository, registered in this

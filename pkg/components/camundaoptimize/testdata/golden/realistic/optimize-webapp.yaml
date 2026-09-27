@@ -18,7 +18,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 7643fbe9e6801f9a
+        camunda.io/config-hash: ae65f08d21e3f865
         prometheus.io/scrape: "true"
       labels:
         camunda.io/cluster: my-cluster
@@ -54,6 +54,8 @@ spec:
           value: /etc/camunda/es-ca/ca.crt
         - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_SSL_SELF_SIGNED
           value: "false"
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SETTINGS_INDEX_NUMBER_OF_REPLICAS
+          value: "1"
         - name: CAMUNDA_OPTIMIZE_ZEEBE_ENABLED
           value: "false"
         - name: CAMUNDA_OPTIMIZE_ZEEBE_NAME

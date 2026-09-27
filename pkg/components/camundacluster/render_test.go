@@ -261,6 +261,65 @@ func TestRenderElasticsearchWithCA(t *testing.T) {
 	assert.Equal(t, corev1.VolumeMount{Name: "es-ca", MountPath: "/etc/camunda/es-ca", ReadOnly: true}, r.mounts[0])
 }
 
+// The replica count of the indices follows the nodes of the contract unless
+// the cluster sets its own, and no count renders when neither is known.
+func TestRenderElasticsearchIndexReplicas(t *testing.T) {
+	t.Parallel()
+
+	const key = "CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_NUMBEROFREPLICAS"
+	cases := map[string]struct {
+		nodeCount *int32
+		requested *int32
+		want      string
+	}{
+		"one node gets no replica":             {nodeCount: new(int32(1)), want: "0"},
+		"three nodes get one replica":          {nodeCount: new(int32(3)), want: "1"},
+		"the cluster setting wins":             {nodeCount: new(int32(1)), requested: new(int32(2)), want: "2"},
+		"the cluster setting without nodes":    {requested: new(int32(0)), want: "0"},
+		"no node count and no setting renders": {},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			in := newInput(t, func(in *Input) {
+				in.Storage.Elasticsearch.NodeCount = tc.nodeCount
+				in.Effective.IndexReplicas = tc.requested
+			})
+			r := render(in, process(t, in, ComponentZeebe))
+
+			if tc.want == "" {
+				assertNoEnv(t, r.env, key)
+				return
+			}
+			assertEnv(t, r.env, key, tc.want)
+		})
+	}
+}
+
+// A relational secondary storage has no indices, so the replica count of the
+// spec renders nothing there.
+func TestRenderRDBMSIgnoresIndexReplicas(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Storage = Storage{
+			Type: v1.SecondaryStorageTypeRDBMS,
+			RDBMS: &RDBMSStorage{
+				Host:        "pg.ns.svc",
+				Port:        5432,
+				Database:    "camunda",
+				Credentials: v1.LocalCredentialsSecretRef{Name: "camunda-db", UsernameKey: "user", PasswordKey: "pass"},
+			},
+		}
+		in.Effective.IndexReplicas = new(int32(1))
+	})
+	r := render(in, process(t, in, ComponentZeebe))
+
+	assertNoEnv(t, r.env, "CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_NUMBEROFREPLICAS")
+}
+
 func TestRenderRDBMS(t *testing.T) {
 	t.Parallel()
 

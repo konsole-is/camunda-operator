@@ -245,6 +245,12 @@ func storageEnv(in Input) rendered {
 				secretSource(es.CredentialsSecretRef.Name, es.CredentialsSecretRef.PasswordKey),
 			),
 		)
+		if replicas := es.IndexReplicas(in.Effective.IndexReplicas); replicas != nil {
+			r.env = append(
+				r.env,
+				camundaconfig.Var(camundaconfig.KeyElasticsearchIndexReplicas, strconv.Itoa(int(*replicas))),
+			)
+		}
 		if es.CASecretRef != nil {
 			r.env = append(
 				r.env,

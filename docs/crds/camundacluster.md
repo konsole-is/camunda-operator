@@ -185,6 +185,27 @@ The Zeebe Elasticsearch exporter needs this trust. It has no TLS setting of its 
 
 The trust arrives through `JAVA_TOOL_OPTIONS`. If you set that variable yourself, read [Environment and JVM](#environment-and-jvm).
 
+## Index replicas
+
+`spec.indexReplicas` sets the number of replicas of each index that the cluster creates in an Elasticsearch secondary storage.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  indexReplicas: 1
+  # ... the rest of your cluster
+```
+
+When you do not set it, the node count of the [SecondaryStorageConfig](secondarystorageconfig.md#node-count) gives the count. One node gives 0 replicas. Two or more nodes give 1 replica. The contract of an [ElasticsearchCluster](elasticsearchcluster.md) always carries the node count. A contract without a node count leaves the count to Camunda.
+
+Elasticsearch never puts a replica on the node that holds its primary. An index with more replicas than the other nodes can hold stays at yellow health, and the `ElasticsearchCluster` then is not `Ready`. If you set a count that the node count cannot place, the cluster runs with it. It records the Warning event `IndexReplicasExceedNodes`, which names the count and the node count.
+
+The cluster applies the count to its existing indices each time it starts. A change of `indexReplicas`, or of the node count of the contract, restarts the cluster. A relational secondary storage ignores the field.
+
 ## Backups
 
 Without `spec.backupStorageRef` the cluster takes no backups. With it, the brokers write primary-storage backups to the referenced bucket, under the prefix `<basePath>/<namespace>/<name>` on S3 and GCS, so two clusters never share a prefix. Azure Blob has no prefix: every cluster needs an `ObjectStorageConfig` with its own container, and a second cluster on the same Azure contract reports `InvalidReference`.
@@ -549,6 +570,8 @@ spec:
   scheduling: {}
   # string. Required. Name of the SecondaryStorageConfig in the namespace of this cluster.
   storageRef: "my-storage-config"
+  # integer. Optional, minimum 0. Replicas of each index in an Elasticsearch secondary storage. Default: 0 when the contract names one node, 1 when it names more, the Camunda default when it names no node count. Allowed in a preset.
+  indexReplicas: 1
   # string. Optional. Name of an ObjectStorageConfig in this namespace, for backups.
   backupStorageRef: "my-backup-bucket"
   # string. Optional. Name of an ObjectStorageConfig in this namespace, for document storage. Only its workload identity is wired.

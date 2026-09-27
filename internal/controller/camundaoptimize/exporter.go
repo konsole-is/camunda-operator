@@ -36,9 +36,14 @@ import (
 // first: the value the operator computes wins, and only for the entries it
 // names.
 func (r *Reconciler) patchExporter(ctx context.Context, res resolved) error {
-	env := components.ExporterEnv(res.ExporterStorage)
+	return r.applyExporterPatch(ctx, res.ClusterKey, res.ClusterUID, res.exporterEnv())
+}
 
-	return r.applyExporterPatch(ctx, res.ClusterKey, res.ClusterUID, env)
+// exporterEnv returns the exporter entries of this instance: the storage of
+// the cluster and the index replica count of the CamundaOptimize.
+func (res resolved) exporterEnv() []corev1.EnvVar {
+	storage := res.ExporterStorage
+	return components.ExporterEnv(storage, storage.IndexReplicas(res.Input.Optimize.Spec.IndexReplicas))
 }
 
 // withdrawExporter removes the exporter entries of this controller from the

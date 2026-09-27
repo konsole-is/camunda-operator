@@ -95,8 +95,8 @@ func fixtureMinimal(t *testing.T) Input {
 	return newInput(t, nil)
 }
 
-// fixtureRealistic exercises every override surface: a TLS endpoint with a CA,
-// a platform registry and license, several partitions, per-workload resources,
+// fixtureRealistic exercises every override surface: a TLS endpoint with a CA
+// and a node count, a platform registry and license, several partitions, per-workload resources,
 // scheduling, pod metadata, extra environment, and a ServiceMonitor.
 func fixtureRealistic(t *testing.T) Input {
 	t.Helper()
@@ -113,6 +113,7 @@ func fixtureRealistic(t *testing.T) Input {
 			Name: "es-ca",
 			Key:  "ca.crt",
 		}
+		in.Storage.NodeCount = new(int32(3))
 		in.Auth.Spec.IssuerBackendURL = "http://identity.camunda.svc:8080/realms/camunda"
 		in.Optimize.Spec.Webapp = &v1.WorkloadSpec{
 			Replicas: new(int32(2)),

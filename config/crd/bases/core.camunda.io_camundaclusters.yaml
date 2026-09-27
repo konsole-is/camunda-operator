@@ -4224,6 +4224,19 @@ spec:
                         type: array
                     type: object
                 type: object
+              indexReplicas:
+                description: |-
+                  IndexReplicas is the replica count of each index that the cluster
+                  creates in an Elasticsearch secondary storage. When it is not set, the
+                  nodeCount of the storage contract gives the count: 0 on one node, 1 on
+                  two or more nodes. Without a nodeCount, Camunda keeps its own default.
+                  The cluster applies the count to its existing indices when it starts.
+                  A count that the nodes cannot place is kept, and the cluster records an
+                  IndexReplicasExceedNodes Warning event. A relational secondary storage
+                  ignores it.
+                format: int32
+                minimum: 0
+                type: integer
               monitoring:
                 description: Monitoring configures the monitoring integrations.
                 properties:

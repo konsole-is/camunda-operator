@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -220,7 +221,7 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 		return out, err
 	}
 
-	if err := checkExporterConflicts(&cluster, out.ExporterStorage); err != nil {
+	if err := checkExporterConflicts(&cluster, out.exporterEnv()); err != nil {
 		return out, err
 	}
 
@@ -502,12 +503,12 @@ func (res *resolver) checkLocalSecret(ctx context.Context, name string, keys ...
 // the other way. Server-side apply would merge the two into one entry with
 // both a value and a valueFrom, which a container rejects, so the rollout of
 // the cluster would stall while the CamundaCluster still looked healthy.
-func checkExporterConflicts(cluster *v1.CamundaCluster, storage v1.ElasticsearchStorage) error {
+func checkExporterConflicts(cluster *v1.CamundaCluster, desired []corev1.EnvVar) error {
 	if cluster.Spec.Zeebe == nil {
 		return nil
 	}
 
-	conflicts := components.ExporterConflicts(components.ExporterEnv(storage), cluster.Spec.Zeebe.ExtraEnv)
+	conflicts := components.ExporterConflicts(desired, cluster.Spec.Zeebe.ExtraEnv)
 	if len(conflicts) == 0 {
 		return nil
 	}

@@ -37,6 +37,29 @@ spec:
       passwordKey: password
 ```
 
+## Node count
+
+`elasticsearch.nodeCount` is the number of data nodes of the Elasticsearch cluster. A consumer that sets no index replica count of its own takes its count from it: 0 replicas on one node, 1 replica on two or more nodes. A one-node Elasticsearch then keeps green health while Camunda writes to it.
+
+An [ElasticsearchCluster](elasticsearchcluster.md) fills `nodeCount` from its `replicas`. For an Elasticsearch that you run yourself, set it by hand:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: SecondaryStorageConfig
+metadata:
+  name: my-storage-config
+  namespace: my-cluster-ns
+spec:
+  type: elasticsearch
+  elasticsearch:
+    endpoint: "https://my-cluster-es:9200"
+    credentialsSecretRef:
+      name: my-cluster-es-credentials
+    nodeCount: 1
+```
+
+Without `nodeCount`, each consumer keeps the default of its Camunda application. The consumers are [CamundaCluster](camundacluster.md#index-replicas) and [CamundaOptimize](camundaoptimize.md#index-replicas), and each one can set its own count. A change of `nodeCount` changes the default count, and each consumer that uses the default restarts.
+
 ```mermaid
 graph LR
     ESC[ElasticsearchCluster] --> SSC[SecondaryStorageConfig]
@@ -106,6 +129,8 @@ spec:
       key: ca.crt
     # string. Optional. Name of the snapshot repository, registered in this Elasticsearch cluster, that backups write to. An ElasticsearchCluster with a snapshotStorageRef fills it. Set it by hand for an Elasticsearch cluster the operator does not manage. A cluster that takes backups needs it.
     snapshotRepository: my-cluster-ns.my-cluster-es
+    # integer. Optional, minimum 1. Number of data nodes of the Elasticsearch cluster. An ElasticsearchCluster fills it. Consumers take their default index replica count from it: 0 on one node, 1 on more.
+    nodeCount: 3
   # object. Required when type is rdbms, forbidden otherwise. Relational database backend details.
   rdbms:
     # string. Required. Name of the DatabaseConfig, in the namespace of this contract, that describes the logical database.
@@ -118,6 +143,7 @@ spec:
 - Exactly the block that matches `spec.type` must be set. `elasticsearch` requires `spec.elasticsearch` and forbids `spec.rdbms`. `rdbms` requires `spec.rdbms` and forbids `spec.elasticsearch`.
 - `spec.elasticsearch.endpoint` must be a valid `http` or `https` URL.
 - `spec.elasticsearch.caSecretRef` is only valid when the endpoint is `https`.
+- `spec.elasticsearch.nodeCount` must be at least 1.
 - `spec.elasticsearch.snapshotRepository` must match `^[a-zA-Z0-9][a-zA-Z0-9._-]*$` and must be at most 253 characters.
 - `spec.rdbms.databaseConfigRef` must not be empty.
 - No field is immutable.

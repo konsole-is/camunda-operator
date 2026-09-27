@@ -122,6 +122,40 @@ func TestBaseEnvTrustsTheMountedCA(t *testing.T) {
 	assert.Empty(t, caMounts(minimal))
 }
 
+// The replica count of the Optimize indices follows the nodes of the contract
+// unless the instance sets its own, and no count renders when neither is
+// known.
+func TestBaseEnvIndexReplicas(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		nodeCount *int32
+		requested *int32
+		want      string
+	}{
+		"one node gets no replica":             {nodeCount: new(int32(1)), want: "0"},
+		"two nodes get one replica":            {nodeCount: new(int32(2)), want: "1"},
+		"the instance setting wins":            {nodeCount: new(int32(1)), requested: new(int32(1)), want: "1"},
+		"no node count and no setting renders": {},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			env := baseEnv(newInput(t, func(in *Input) {
+				in.Storage.NodeCount = tc.nodeCount
+				in.Optimize.Spec.IndexReplicas = tc.requested
+			}), false)
+
+			if tc.want == "" {
+				assert.NotContains(t, envNames(env), envElasticsearchReplicas)
+				return
+			}
+			assert.Equal(t, tc.want, envValueNamed(t, env, envElasticsearchReplicas))
+		})
+	}
+}
+
 // The backend issuer URL is what the container reaches from inside the
 // Kubernetes cluster; the contract lets it fall back to the browser issuer.
 func TestIssuerBackendURLDefaultsToIssuer(t *testing.T) {

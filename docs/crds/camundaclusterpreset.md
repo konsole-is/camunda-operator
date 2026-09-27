@@ -37,7 +37,7 @@ The cluster starts from `spec.cluster` of the preset. The [CamundaRelease](camun
 
 | Field | Merge behavior |
 | --- | --- |
-| `auth.clientId`, `auth.audience`, `auth.clientSecretRef`, per-component `mode`, `replicas`, `zeebe.partitions`, `zeebe.replicationFactor`, `zeebe.storageClassName`, `zeebe.storageSize`, `zeebe.persistentVolumeClaimRetentionPolicy`, `connectors.enabled` | The cluster value replaces the preset value. An unset cluster field inherits the preset value. |
+| `auth.clientId`, `auth.audience`, `auth.clientSecretRef`, per-component `mode`, `replicas`, `zeebe.partitions`, `zeebe.replicationFactor`, `zeebe.storageClassName`, `zeebe.storageSize`, `zeebe.persistentVolumeClaimRetentionPolicy`, `indexReplicas`, `connectors.enabled` | The cluster value replaces the preset value. An unset cluster field inherits the preset value. |
 | `resources` | Merged per request and limit entry. A cluster entry replaces the matching preset entry. Unset entries inherit. |
 | `extraEnv` | Merged by variable name. Preset entries come first, then release entries, then cluster entries. A later layer replaces an entry with the same name. The list carries the same server-side apply semantics as the cluster field, see [CamundaCluster](camundacluster.md#environment-and-jvm). |
 | `extraEnvFrom` | Concatenated: preset entries first, then release entries, then cluster entries. |

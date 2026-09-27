@@ -50,6 +50,7 @@ var serviceConfigEnv = []string{
 	envElasticsearchSSLEnabled,
 	envElasticsearchCAs,
 	envElasticsearchSelfSigned,
+	envElasticsearchReplicas,
 	envZeebeEnabled,
 	envZeebeName,
 	envZeebePartitionCount,

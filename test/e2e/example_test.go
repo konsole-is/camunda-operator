@@ -45,6 +45,7 @@ const (
 
 	// The resources of the inventories that this flow waits on.
 	exCluster        = "my-cluster"
+	exElasticsearch  = "my-cluster-es"
 	exDatabaseServer = "my-db"
 	exDatabase       = "my-camunda-db"
 
@@ -139,11 +140,6 @@ var _ = Describe("Example inventories", Ordered, Label(utils.LabelExample), func
 		}, exParkTimeout, 5*time.Second).Should(Succeed())
 	})
 
-	// The bar is the CamundaCluster alone. The ElasticsearchCluster of this
-	// inventory holds Ready=False for as long as the cluster exports to it,
-	// because Camunda creates every index with one replica and one
-	// Elasticsearch node cannot assign it. Issue #362 carries that. Wait for
-	// the ElasticsearchCluster again once it is answered.
 	It("stands the camunda-cluster/elasticsearch inventory up", func() {
 		applied = []string{exNamespace}
 
@@ -155,6 +151,14 @@ var _ = Describe("Example inventories", Ordered, Label(utils.LabelExample), func
 		Eventually(func(g Gomega) {
 			expectReady(g, ccResource, exCluster, exNamespace, v1.ReasonHealthy)
 		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
+
+		// The cluster created its indices by now. The ElasticsearchCluster
+		// has one node, so it stays Ready only when those indices carry no
+		// replica.
+		By("waiting for the ElasticsearchCluster after the cluster wrote to it")
+		Eventually(func(g Gomega) {
+			expectReady(g, esResource, exElasticsearch, exNamespace, v1.ReasonHealthy)
+		}, esReadyTimeout, 5*time.Second).Should(Succeed())
 	})
 
 	It("stands the camunda-cluster/rdbms inventory up", func() {

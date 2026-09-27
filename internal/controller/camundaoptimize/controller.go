@@ -267,6 +267,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	if err := r.patchExporter(ctx, res); err != nil {
 		return ctrl.Result{}, err
 	}
+	r.recordUnplaceableReplicas(&optimize, res)
 
 	built, err := r.buildComponents(res)
 	if err != nil {
