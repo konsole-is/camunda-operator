@@ -484,3 +484,34 @@ func TestBuildJobPodsMatchTheManagedSelector(t *testing.T) {
 
 	assert.True(t, labels.ManagedSelector().Matches(k8slabels.Set(job.Spec.Template.Labels)))
 }
+
+func TestPodOfRestore(t *testing.T) {
+	t.Parallel()
+
+	restore := &v1.LogicalRestoreRDBMS{ObjectMeta: metav1.ObjectMeta{UID: "uid-restore"}}
+	cases := map[string]struct {
+		podLabels map[string]string
+		own       bool
+	}{
+		"the pg_restore pod": {
+			podLabels: map[string]string{RestoreUIDLabel: "uid-restore"},
+			own:       true,
+		},
+		"a pod of another restore": {
+			podLabels: map[string]string{RestoreUIDLabel: "uid-other"},
+		},
+		// A user pod label can copy the restore UID onto a cluster pod. The
+		// cluster UID that the operator sets still marks it as a cluster pod.
+		"a cluster pod that carries the restore UID": {
+			podLabels: map[string]string{RestoreUIDLabel: "uid-restore", labels.ClusterUIDKey: "uid-other-cluster"},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.own, PodOfRestore(tc.podLabels, restore))
+		})
+	}
+}

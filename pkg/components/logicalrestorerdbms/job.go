@@ -451,3 +451,13 @@ func activeDeadline(pod *v1.DumpPodSpec) *int64 {
 func JobBelongsTo(job *batchv1.Job, restore *v1.LogicalRestoreRDBMS) bool {
 	return job.Labels[RestoreUIDLabel] == string(restore.UID)
 }
+
+// PodOfRestore reports whether a pod with podLabels is a pg_restore pod of
+// restore: it carries the UID label of restore and no cluster UID. A pod of a
+// cluster always carries the UID of its cluster, so a user label that copies
+// the restore UID onto it does not make it a pod of the restore.
+func PodOfRestore(podLabels map[string]string, restore *v1.LogicalRestoreRDBMS) bool {
+	_, ofCluster := podLabels[labels.ClusterUIDKey]
+
+	return !ofCluster && podLabels[RestoreUIDLabel] == string(restore.UID)
+}

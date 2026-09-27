@@ -307,8 +307,7 @@ func (r *Reconciler) checkBackend(
 		Storage:        storage,
 		Pinned:         pinned,
 		OwnPod: func(podLabels map[string]string) bool {
-			return podLabels[labels.ClusterUIDKey] == string(cluster.UID) ||
-				podLabels[components.RestoreUIDLabel] == string(lrr.UID)
+			return podLabels[labels.ClusterUIDKey] == string(cluster.UID) || components.PodOfRestore(podLabels, lrr)
 		},
 	})
 }
