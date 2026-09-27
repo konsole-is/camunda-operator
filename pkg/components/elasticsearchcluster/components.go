@@ -537,8 +537,8 @@ func usesServiceAccount(merged v1.ElasticsearchClusterSpec, storage *SnapshotSto
 // SecondaryStorageConfig that the spec names, published in the namespace of
 // the CR. It carries the in-cluster HTTPS endpoint, the reference to the user
 // Secret credentials, the reference to the ECK CA certificate, and the node
-// count of the merged spec. The node count stays the same while the cluster
-// is suspended, so the consumers keep the index replica count they had. A
+// count of the merged spec. Suspension does not change the node count, so the
+// consumers keep their index replica count while the cluster is suspended. A
 // read-only registration guards the contract on the credentials Secret, and
 // blocks while that Secret is absent.
 //

@@ -299,35 +299,45 @@ func TestRenderElasticsearchIndexReplicas(t *testing.T) {
 }
 
 // Camunda refuses to start when a legacy replica key and the unified key
-// differ. A legacy key in extraEnv therefore keeps the derived count out, and
-// an explicit count still renders.
+// differ. A legacy key in the extraEnv of a process therefore keeps the derived
+// count out of that process only, and an explicit count still renders.
 func TestRenderElasticsearchIndexReplicasBesideLegacyKey(t *testing.T) {
 	t.Parallel()
 
 	const key = "CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_NUMBEROFREPLICAS"
+	legacyOnOperate := func(in *Input) {
+		in.Effective.Operate = &v1.WebAppSpec{Mode: v1.ComponentModeStandalone}
+		in.Effective.Operate.ExtraEnv = []corev1.EnvVar{
+			{Name: "ZEEBE_BROKER_EXPORTERS_CAMUNDAEXPORTER_ARGS_INDEX_NUMBEROFREPLICAS", Value: "1"},
+		}
+	}
 	cases := map[string]struct {
-		mutate func(in *Input)
-		want   string
+		mutate    func(in *Input)
+		component string
+		want      string
 	}{
 		"a legacy key in the global extraEnv keeps the default out": {
 			mutate: func(in *Input) {
 				in.Effective.ExtraEnv = []corev1.EnvVar{{Name: "CAMUNDA_DATABASE_INDEX_NUMBEROFREPLICAS", Value: "1"}}
 			},
+			component: ComponentZeebe,
 		},
-		"a legacy exporter key in the extraEnv of a web application keeps the default out": {
-			mutate: func(in *Input) {
-				in.Effective.Operate = &v1.WebAppSpec{}
-				in.Effective.Operate.ExtraEnv = []corev1.EnvVar{
-					{Name: "ZEEBE_BROKER_EXPORTERS_CAMUNDAEXPORTER_ARGS_INDEX_NUMBEROFREPLICAS", Value: "1"},
-				}
-			},
+		"a legacy key on standalone Operate keeps the default out of Operate": {
+			mutate:    legacyOnOperate,
+			component: ComponentOperate,
+		},
+		"a legacy key on standalone Operate leaves the default on Zeebe": {
+			mutate:    legacyOnOperate,
+			component: ComponentZeebe,
+			want:      "0",
 		},
 		"an explicit count renders beside a legacy key": {
 			mutate: func(in *Input) {
 				in.Effective.IndexReplicas = new(int32(0))
 				in.Effective.ExtraEnv = []corev1.EnvVar{{Name: "CAMUNDA_DATABASE_INDEX_NUMBEROFREPLICAS", Value: "0"}}
 			},
-			want: "0",
+			component: ComponentZeebe,
+			want:      "0",
 		},
 	}
 
@@ -339,7 +349,7 @@ func TestRenderElasticsearchIndexReplicasBesideLegacyKey(t *testing.T) {
 				in.Storage.Elasticsearch.NodeCount = new(int32(1))
 				tc.mutate(in)
 			})
-			r := render(in, process(t, in, ComponentZeebe))
+			r := render(in, process(t, in, tc.component))
 
 			if tc.want == "" {
 				assertNoEnv(t, r.env, key)

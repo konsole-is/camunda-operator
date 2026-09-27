@@ -97,7 +97,7 @@ func render(in Input, p Process) rendered {
 		}
 	}
 
-	r := storageEnv(in)
+	r := storageEnv(in, p)
 	backup := backupEnv(in, p)
 	r.volumes = append(r.volumes, backup.volumes...)
 	r.mounts = append(r.mounts, backup.mounts...)
@@ -234,7 +234,7 @@ func userEnvFrom(in Input, p Process) []corev1.EnvFromSource {
 
 // storageEnv is the secondary storage layer. It returns the volume and mount
 // of the Elasticsearch CA when the binding names one.
-func storageEnv(in Input) rendered {
+func storageEnv(in Input, p Process) rendered {
 	var r rendered
 	r.env = append(r.env, camundaconfig.Var(camundaconfig.KeySecondaryStorageType, string(in.Storage.Type)))
 
@@ -253,7 +253,7 @@ func storageEnv(in Input) rendered {
 				secretSource(es.CredentialsSecretRef.Name, es.CredentialsSecretRef.PasswordKey),
 			),
 		)
-		if replicas := indexReplicas(in); replicas != nil {
+		if replicas := indexReplicas(in, p); replicas != nil {
 			r.env = append(
 				r.env,
 				camundaconfig.Var(camundaconfig.KeyElasticsearchIndexReplicas, strconv.Itoa(int(*replicas))),
@@ -299,31 +299,21 @@ func storageEnv(in Input) rendered {
 	return r
 }
 
-// indexReplicas returns the replica count to render, or nil to render none.
-// Camunda refuses to start when a legacy replica key and the unified key hold
-// different values. So the count that the node count derives gives way to a
-// legacy key that a user sets in extraEnv. An explicit indexReplicas does not.
-func indexReplicas(in Input) *int32 {
-	if in.Effective.IndexReplicas == nil && setsLegacyReplicas(in) {
+// indexReplicas returns the replica count to render for process p, or nil to
+// render none. Camunda refuses to start when a legacy replica key and the
+// unified key hold different values. So the count that the node count derives
+// gives way in a process whose extraEnv names a legacy key. An explicit
+// indexReplicas does not.
+func indexReplicas(in Input, p Process) *int32 {
+	if in.Effective.IndexReplicas == nil && slices.ContainsFunc(userEnv(in, p), isLegacyReplicas) {
 		return nil
 	}
 
 	return in.Storage.Elasticsearch.IndexReplicas(in.Effective.IndexReplicas)
 }
 
-// setsLegacyReplicas reports whether the global extraEnv, or the extraEnv of
-// a component whose process reads the secondary storage, names a legacy
-// replica key.
-func setsLegacyReplicas(in Input) bool {
-	env := slices.Clone(in.Effective.ExtraEnv)
-	storageReaders := []string{ComponentZeebe, ComponentGateway, ComponentOperate, ComponentTasklist, ComponentAdmin}
-	for _, component := range storageReaders {
-		env = append(env, in.Effective.Workload(component).ExtraEnv...)
-	}
-
-	return slices.ContainsFunc(env, func(e corev1.EnvVar) bool {
-		return slices.Contains(legacyReplicasEnv, e.Name)
-	})
+func isLegacyReplicas(e corev1.EnvVar) bool {
+	return slices.Contains(legacyReplicasEnv, e.Name)
 }
 
 // RDBMSURL returns the JDBC URL of the relational secondary storage that the
