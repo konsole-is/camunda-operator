@@ -80,7 +80,7 @@ The operator adds five entries to `spec.zeebe.extraEnv` of the referenced cluste
 | `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_USERNAME` | A `secretKeyRef` to the username key. |
 | `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD` | A `secretKeyRef` to the password key. |
 
-No credential is written to the `CamundaCluster`. The kubelet reads the Secret and gives the value to the broker container, so the password never appears in the spec of the cluster, and rotating the Secret does not change these entries.
+No credential is written to the `CamundaCluster`. The kubelet reads the Secret and gives the value to the broker container. So the password never appears in the spec of the cluster, and rotating the Secret does not change these entries.
 
 It owns those five entries, under its own field manager. Every other entry on the list stays as it is, whether you or a GitOps tool put it there. The operator changes nothing else on the cluster.
 
@@ -112,7 +112,7 @@ The second case is narrow. A creation timestamp records whole seconds, so two re
 
 On both paths the resource that had the attachment deletes its own workloads first. The new one reports `WaitingForHandover` and creates nothing until the importer Deployment of the previous one is gone.
 
-Pods that are already ordered to stop can run for their termination grace period after that Deployment goes. The new resource waits for them too: its importer starts once the importer pod of the previous resource is gone, so two importers never write the indices at once.
+Pods that are already ordered to stop can run for their termination grace period after that Deployment goes. The new resource waits for them too. Its importer starts once the importer pod of the previous resource is gone, so two importers never write the indices at once.
 
 ## Authentication
 
@@ -130,7 +130,7 @@ A person who opens the Optimize user interface is sent to the identity provider 
 
 Where you register it depends on who runs the identity provider:
 
-- A [CamundaManagementCluster](camundamanagementcluster.md) in one of the two Keycloak modes registers it for you. Set `spec.externalUrl` to the URL a browser reaches this Optimize at, and the management plane puts the callback on the `optimize` Keycloak client. One management plane serves as many Optimize instances as you run, each with its own URL.
+- A [CamundaManagementCluster](camundamanagementcluster.md) in one of the two Keycloak modes registers it for you. Set `spec.externalUrl` to the URL a browser reaches this Optimize at. The management plane then puts the callback on the `optimize` Keycloak client. One management plane serves as many Optimize instances as you run, each with its own URL.
 - A `CamundaManagementCluster` in the `oidc` mode registers nothing, and `spec.externalUrl` has no effect. You created the Optimize application at your provider yourself, so add the callback of every Optimize there. Camunda names the exact path in [component-specific configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/#component-specific-configuration).
 
 ```yaml
@@ -161,13 +161,13 @@ The effective version of the cluster is `spec.version` of the `CamundaCluster`, 
 
 The importer connects to Elasticsearch directly. It does not go through the orchestration cluster, so nothing stops it when that cluster stops. The operator stops it instead, with the cluster.
 
-`spec.suspend` on the referenced `CamundaCluster` therefore reaches the Optimize workloads too. The operator scales the webapp and the importer to zero with the workloads of the cluster, and starts them again when you clear the field and the checks of this instance pass. `suspend` means "stop everything attached to this cluster", not "stop the workloads of this cluster". The operator also suspends a cluster on its own, in two states. One is another cluster holding the storage claim of its backend. The other is a wait for the pods of another cluster to leave that backend. The Optimize workloads follow both.
+`spec.suspend` on the referenced `CamundaCluster` therefore reaches the Optimize workloads too. The operator scales the webapp and the importer to zero with the workloads of the cluster. It starts them again when you clear the field and the checks of this instance pass. `suspend` means "stop everything attached to this cluster", not "stop the workloads of this cluster". The operator also suspends a cluster on its own, in two states. One is another cluster holding the storage claim of its backend. The other is a wait for the pods of another cluster to leave that backend. The Optimize workloads follow both.
 
 The workloads also stay at zero while the cluster does not hold the storage claim of its backend, see [CamundaCluster](camundacluster.md#secondary-storage). A cluster that is parked, or that waits for a handover, never has an importer running beside it. An instance that already runs records the event `StorageClaimAwaited` when this wait scales its workloads to zero. The cluster itself can still report `Ready` as `True` in that moment. An instance that starts parked renders its workloads at zero from the start, so it records no event and reports the wait on `Ready` alone.
 
 `Ready` reads `True` with reason `Suspended` while either wait holds. A cluster with `spec.suspend` reports the same. A cluster that another cluster parked reports `Ready` `False` with reason `StorageAlreadyAttached` instead, see [CamundaCluster](camundacluster.md#secondary-storage). Zero replicas is the state you asked for, so the Optimize condition is not an error.
 
-The condition does not name the cluster, but the events do: `kubectl describe camundaoptimize <name>` shows `ClusterSuspended` or `StorageClaimAwaited` when the workloads go to zero, and `ClusterResumed` when they start again. Each marks the decision. `WebappReady` and `ImporterReady` say whether the workloads have followed it yet.
+The condition does not name the cluster, but the events do. `kubectl describe camundaoptimize <name>` shows `ClusterSuspended` or `StorageClaimAwaited` when the workloads go to zero. It shows `ClusterResumed` when they start again. Each marks the decision. `WebappReady` and `ImporterReady` say whether the workloads have followed it yet.
 
 `status.suspendedBy` says which wait holds the workloads at zero. It reads `Cluster` while the referenced cluster is suspended. It reads `StorageClaim` while the cluster does not hold the storage claim of its backend, or while pods of another cluster still write that backend. The field is empty while the workloads follow their spec. It keeps its value while a failed check holds the workloads at zero after the cluster resumed.
 
@@ -192,7 +192,13 @@ A failed check of a reference does not stop a running instance. `Ready` carries 
 | The cluster resumed while the check still fails | The ones that stopped stay at zero and return to their configured replica counts when the check passes. Their conditions read `Suspended` with the message `Kept at zero until the reference check passes`. `Ready` carries the failure message, and adds `The Optimize workloads that stopped stay at zero until the reference check passes` when every stop succeeded. A workload whose stop the API server refuses keeps running. A condition of it that still claimed a suspension is removed, and the render stages it again. That leaves the note off `Ready` and records the Warning event `WorkloadStopRefused`, which carries the refusal. |
 | The cluster is gone, or another instance holds it | The operator removes them. Their pods hold the backend that cluster wrote, against the next cluster that takes it over. It builds them again when the cluster comes back, or when this instance regains the attachment. |
 
-The importer never starts while the cluster does not hold the storage claim of its backend, while pods of another cluster still write that backend after the cluster took it over, or while the importer of a deleted instance of the cluster is still stopping. In the first state the cluster has not claimed the backend yet, or another cluster holds it and writes it. In every state two importers on one set of analytics indices would overwrite each other. `Ready` names the wait.
+The importer never starts while one of these states holds:
+
+- The cluster does not hold the storage claim of its backend.
+- Pods of another cluster still write that backend after the cluster took it over.
+- The importer of a deleted instance of the cluster is still stopping.
+
+In the first state the cluster has not claimed the backend yet, or another cluster holds it and writes it. In every state two importers on one set of analytics indices would overwrite each other. `Ready` names the wait.
 
 ```yaml
 status:
@@ -411,7 +417,7 @@ spec:
 
 ### The import during a restore
 
-A [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md) needs a suspended target cluster, and it replaces the Elasticsearch indices under it. An importer that keeps running through that restore reads indices that are half restored, writes analytics from them, and keeps an import position that disagrees with the restored data. The analytics are then wrong, and nothing reports it, because zero replicas was never asked for.
+A [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md) needs a suspended target cluster, and it replaces the Elasticsearch indices under it. An importer that keeps running through that restore reads indices that are half restored and writes analytics from them. It also keeps an import position that disagrees with the restored data. The analytics are then wrong, and nothing reports it, because zero replicas was never asked for.
 
 The operator closes that for you. A restore suspends the cluster, and the Optimize workloads follow it to zero, as [Suspension](#suspension) describes. You do not have to stop the import by hand.
 

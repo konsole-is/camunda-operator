@@ -32,7 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 )
 
@@ -528,7 +527,7 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 		It("warns on dangling dump credentials instead of parking the cluster", func() {
 			ns := newNamespace()
 
-			server := fixtures.DatabaseServerConfig(ns)
+			server := newDatabaseServerConfig(ns)
 			Expect(k8sClient.Create(ctx, server)).To(Succeed())
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
 
@@ -536,7 +535,7 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				"username": "camunda", "password": "app-secret",
 			})
 
-			dbConfig := fixtures.DatabaseConfig()
+			dbConfig := newDatabaseConfig()
 			dbConfig.Namespace = ns
 			dbConfig.Spec.ServerRef = server.Name
 			dbConfig.Spec.CredentialsSecretRef = v1.LocalCredentialsSecretRef{
@@ -587,7 +586,7 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 		It("resolves local dump credentials with no warning", func() {
 			ns := newNamespace()
 
-			server := fixtures.DatabaseServerConfig(ns)
+			server := newDatabaseServerConfig(ns)
 			Expect(k8sClient.Create(ctx, server)).To(Succeed())
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
 
@@ -598,7 +597,7 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				"username": "backup", "password": "dump-secret",
 			})
 
-			dbConfig := fixtures.DatabaseConfig()
+			dbConfig := newDatabaseConfig()
 			dbConfig.Namespace = ns
 			dbConfig.Spec.ServerRef = server.Name
 			dbConfig.Spec.CredentialsSecretRef = v1.LocalCredentialsSecretRef{

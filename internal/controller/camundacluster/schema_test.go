@@ -28,7 +28,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
 // updateSpec applies mutate to the latest revision of obj and returns the
@@ -73,7 +72,7 @@ func minimalCamundaCluster() *v1.CamundaCluster {
 	return &v1.CamundaCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "cc-" + utilrand.String(8),
-			Namespace: fixtures.SchemaTestNamespace,
+			Namespace: schemaTestNamespace,
 		},
 		Spec: v1.CamundaClusterSpec{
 			PlatformConfigRef: "my-platform-config",
@@ -226,7 +225,7 @@ var _ = Describe("CamundaCluster schema", func() {
 		),
 		Entry(
 			"rejects a non-DNS-1123 platformConfigRef",
-			minimalCamundaCluster, func(o *v1.CamundaCluster) { o.Spec.PlatformConfigRef = fixtures.NotAResourceName },
+			minimalCamundaCluster, func(o *v1.CamundaCluster) { o.Spec.PlatformConfigRef = notAResourceName },
 			"platformConfigRef",
 		),
 		Entry(

@@ -23,7 +23,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
 // requestUID is the identity of the request that the schema cases carry.
@@ -65,7 +64,7 @@ var _ = Describe("DatabaseServerConfig schema", func() {
 	DescribeTable(
 		"admission",
 		func(mutate func(*v1.DatabaseServerConfig), wantErr string) {
-			obj := fixtures.DatabaseServerConfig(fixtures.SchemaTestNamespace)
+			obj := newDatabaseServerConfig(schemaTestNamespace)
 			mutate(obj)
 			err := k8sClient.Create(ctx, obj)
 			if wantErr == "" {
@@ -185,7 +184,7 @@ var _ = Describe("DatabaseServerConfig schema", func() {
 	)
 
 	It("defaults the recovery mode to external", func() {
-		obj := fixtures.DatabaseServerConfig(fixtures.SchemaTestNamespace)
+		obj := newDatabaseServerConfig(schemaTestNamespace)
 		obj.Spec.PITR = &v1.PITRCapability{Enabled: true, RetentionPeriodDays: new(int32(7))}
 		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
@@ -196,7 +195,7 @@ var _ = Describe("DatabaseServerConfig schema", func() {
 	})
 
 	It("defaults the admin credential keys to username and password", func() {
-		obj := fixtures.DatabaseServerConfig(fixtures.SchemaTestNamespace)
+		obj := newDatabaseServerConfig(schemaTestNamespace)
 		obj.Spec.AdminCredentialsSecretRef.UsernameKey = ""
 		obj.Spec.AdminCredentialsSecretRef.PasswordKey = ""
 		Expect(k8sClient.Create(ctx, obj)).To(Succeed())

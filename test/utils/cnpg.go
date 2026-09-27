@@ -32,9 +32,9 @@ const (
 	// The published Go module github.com/cloudnative-pg/api carries the types
 	// alone, so the schemas are vendored instead of resolved from the module
 	// cache the way the ECK ones are.
-	cnpgCRDDir = "internal/testenv/crds/cnpg"
+	cnpgCRDDir = "test/envtest/crds/cnpg"
 	// barmanCRDDir holds the ObjectStore CRD of the Barman Cloud plugin.
-	barmanCRDDir = "internal/testenv/crds/barmancloud"
+	barmanCRDDir = "test/envtest/crds/barmancloud"
 )
 
 const (

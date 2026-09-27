@@ -217,7 +217,7 @@ Prerequisites: a PostgreSQL server that the operator can reach over the network,
         name: my-db-server-admin-credentials
     ```
 
-3. Wait until the `DatabaseServerConfig` is `Ready` with reason `Healthy`. The operator connects to the server with the admin credentials, and reports the major version and the identity of the instance:
+3. Wait until the `DatabaseServerConfig` is `Ready` with reason `Healthy`. The operator connects to the server with the admin credentials. It reports the major version and the identity of the instance:
 
     ```yaml
     status:
@@ -230,7 +230,7 @@ Prerequisites: a PostgreSQL server that the operator can reach over the network,
           message: Reached the server; it runs major version 17
     ```
 
-    If the operator cannot reach the server, or the server rejects the credentials, the reason is `ConnectionFailed` and the message names the endpoint and the error:
+    If the operator cannot reach the server, or the server rejects the credentials, the reason is `ConnectionFailed`. The message names the endpoint and the error:
 
     ```yaml
     status:
@@ -327,7 +327,7 @@ If you already run Elasticsearch or a PostgreSQL database that the operator does
 
 The rule of [one cluster per backend](#one-cluster-per-backend) holds for a hand-written contract. Write one contract per backend.
 
-For Elasticsearch, write a `SecondaryStorageConfig` with `type: elasticsearch`. Create the Secret with the username and password first. If the endpoint serves a certificate that the orchestration cluster does not trust by default, name the CA Secret as well.
+For Elasticsearch, write a `SecondaryStorageConfig` with `type: elasticsearch`. Create the Secret with the username and password first. The endpoint can serve a certificate that the orchestration cluster does not trust by default. In that case, name the CA Secret as well.
 
 ```yaml
 apiVersion: core.camunda.io/v1

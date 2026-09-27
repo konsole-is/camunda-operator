@@ -37,7 +37,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
@@ -62,7 +61,7 @@ func newNamespace() string {
 // registers its deletion.
 func createPlatformConfig() *v1.CamundaPlatformConfig {
 	GinkgoHelper()
-	cfg := fixtures.CamundaPlatformConfigBasic()
+	cfg := newCamundaPlatformConfigBasic()
 	Expect(k8sClient.Create(ctx, cfg)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, cfg) })
 	return cfg
@@ -85,7 +84,7 @@ func createSecret(namespace, name string, data map[string]string) *corev1.Secret
 // its credentials Secret when withCredentials is set.
 func createBinding(namespace string, withCredentials bool) *v1.SecondaryStorageConfig {
 	GinkgoHelper()
-	binding := fixtures.SecondaryStorageConfigElasticsearch(namespace)
+	binding := newSecondaryStorageConfigElasticsearch(namespace)
 	Expect(k8sClient.Create(ctx, binding)).To(Succeed())
 	if withCredentials {
 		createSecret(namespace, binding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{
@@ -488,7 +487,7 @@ var _ = Describe("CamundaCluster controller", func() {
 			}
 			Expect(k8sClient.Create(ctx, rdbmsBinding)).To(Succeed())
 
-			dbConfig := fixtures.DatabaseConfig()
+			dbConfig := newDatabaseConfig()
 			dbConfig.Namespace = ns
 			dbConfig.Spec.ServerRef = missing
 			Expect(k8sClient.Create(ctx, dbConfig)).To(Succeed())
@@ -1153,10 +1152,10 @@ var _ = Describe("CamundaCluster controller", func() {
 
 	It("rolls an RDBMS cluster when its DatabaseServerConfig or DatabaseConfig changes", func() {
 		ns := newNamespace()
-		server := fixtures.DatabaseServerConfig(ns)
+		server := newDatabaseServerConfig(ns)
 		Expect(k8sClient.Create(ctx, server)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
-		dbConfig := fixtures.DatabaseConfig()
+		dbConfig := newDatabaseConfig()
 		dbConfig.Namespace = ns
 		dbConfig.Spec.ServerRef = server.Name
 		Expect(k8sClient.Create(ctx, dbConfig)).To(Succeed())
@@ -1390,7 +1389,7 @@ var _ = Describe("CamundaCluster controller", func() {
 	// is the cluster namespace, so the pods reference the Secret directly.
 	It("resolves the credentials Secret of a binding in the cluster namespace and follows its changes", func() {
 		ns := newNamespace()
-		binding := fixtures.SecondaryStorageConfigElasticsearch(ns)
+		binding := newSecondaryStorageConfigElasticsearch(ns)
 		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
 		source := createSecret(ns, binding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{
 			"username": "camunda", "password": "v1",
@@ -1418,7 +1417,7 @@ var _ = Describe("CamundaCluster controller", func() {
 	// init container from the CA that the pod already mounts.
 	It("builds a JVM trust store when the binding names a certificate authority", func() {
 		ns := newNamespace()
-		binding := fixtures.SecondaryStorageConfigElasticsearch(ns)
+		binding := newSecondaryStorageConfigElasticsearch(ns)
 		binding.Spec.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
 			Name: "es-ca", Key: "ca.crt",
 		}
@@ -1462,7 +1461,7 @@ var _ = Describe("CamundaCluster controller", func() {
 	// value can already name a trust store of the user.
 	It("warns when a process reads JAVA_TOOL_OPTIONS from a reference", func() {
 		ns := newNamespace()
-		binding := fixtures.SecondaryStorageConfigElasticsearch(ns)
+		binding := newSecondaryStorageConfigElasticsearch(ns)
 		binding.Spec.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
 			Name: "es-ca", Key: "ca.crt",
 		}

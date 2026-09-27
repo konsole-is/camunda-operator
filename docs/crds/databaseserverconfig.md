@@ -115,7 +115,7 @@ spec:
   # ... the rest of your contract
 ```
 
-`targetTime` is RFC 3339 with a zone. A timestamp without a zone is rejected. `targetTime` must name a point in the past that is still inside the retention period of the archive. A retention period that was raised reaches the older points only as the archive writes past what the shorter one pruned. `requestedBy` names the resource that asks, as `<namespace>/<name>`. `requestID` is a UUID that belongs to this request alone: a `PointInTimeRestore` writes its own `metadata.uid`, and a request you write by hand carries any UUID, for example from `uuidgen`.
+`targetTime` is RFC 3339 with a zone. A timestamp without a zone is rejected. `targetTime` must name a point in the past that is still inside the retention period of the archive. A retention period that was raised reaches the older points only as the archive writes past what the shorter one pruned. `requestedBy` names the resource that asks, as `<namespace>/<name>`. `requestID` is a UUID that belongs to this request alone. A `PointInTimeRestore` writes its own `metadata.uid`. A request you write by hand carries any UUID, for example from `uuidgen`.
 
 The answer comes back in `pitr.lastRecovery`, and it repeats the request it answers:
 
@@ -143,9 +143,9 @@ spec:
 | `Unavailable` | The server holds no copy of `targetTime`. `message` says why. | Ask for a point that the archive still reaches. |
 | `Failed` | The rollback started and did not finish. `message` says what stopped it. | Correct the cause, then ask again. |
 
-Both fields stay on the contract after the answer, as the record of the last request. A request with a new `requestID` starts a new rollback, whatever it asks for. A `PointInTimeRestore` runs once, so you retry a rollback by creating a new restore resource: the new resource carries a new uid, and the server reads it as a new request even when the point is the same.
+Both fields stay on the contract after the answer, as the record of the last request. A request with a new `requestID` starts a new rollback, whatever it asks for. A `PointInTimeRestore` runs once, so you retry a rollback by creating a new restore resource. The new resource carries a new uid. The server reads it as a new request even when the point is the same.
 
-A rollback moves `spec.host` to another server, so the record of the last probe clears. See [Validation checks](#validation-checks). Wait for `Ready` before you read those fields again. `status.systemIdentifier` then reads the same value as before: a recovery restores the `pg_control` of the base backup it reads, so the recovered instance keeps the identity it recovered from.
+A rollback moves `spec.host` to another server, so the record of the last probe clears. See [Validation checks](#validation-checks). Wait for `Ready` before you read those fields again. `status.systemIdentifier` then reads the same value as before. A recovery restores the `pg_control` of the base backup it reads, so the recovered instance keeps the identity it recovered from.
 
 Writing the request itself clears nothing. A request and its answer leave `Ready` and the identity alone, so the databases on the server keep running while the rollback is asked for.
 
@@ -157,7 +157,7 @@ Writing the request itself clears nothing. A request and its answer leave `Ready
 | --- | --- | --- | --- |
 | `Ready` | `Healthy` | The server answered the admin credentials and reported its version. | Nothing. |
 | `Ready` | `MissingSecret` | The Secret named by `adminCredentialsSecretRef` is missing, or it lacks a configured key. | Create the Secret, or add the key. The message names the Secret and the key. |
-| `Ready` | `ConnectionFailed` | The server did not answer the admin credentials. The message names the host, the port, and the error. | Make sure that the host and port are correct, the server is up, the network allows the connection, and the credentials are valid. The operator tries again every 30 seconds. |
+| `Ready` | `ConnectionFailed` | The server did not answer the admin credentials. The message names the host, the port, and the error. | Make sure that the host and port are correct and that the server is up. Make sure that the network allows the connection and that the credentials are valid. The operator tries again every 30 seconds. |
 
 | Field | Meaning |
 | --- | --- |

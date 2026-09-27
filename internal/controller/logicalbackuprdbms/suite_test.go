@@ -31,19 +31,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/testenv"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin/camundaadmintest"
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
+	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
 // timeout and interval bound the Eventually polling of every envtest assertion.
 const (
-	timeout  = testenv.Timeout
-	interval = testenv.Interval
+	timeout  = envtest.Timeout
+	interval = envtest.Interval
 )
 
 var (
-	env           *testenv.Env
+	env           *envtest.Env
 	ctx           context.Context
 	k8sClient     client.Client
 	managementAPI *camundaadmintest.Server
@@ -90,7 +90,7 @@ var _ = BeforeSuite(func() {
 	managementAPI = camundaadmintest.New()
 	bucket = &fakeBucket{}
 
-	env = testenv.Start(func(mgr ctrl.Manager) error {
+	env = envtest.Start(func(mgr ctrl.Manager) error {
 		reconciler = &LogicalBackupRDBMSReconciler{
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),
