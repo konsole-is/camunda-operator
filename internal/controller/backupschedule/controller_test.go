@@ -123,27 +123,41 @@ func createWorld(storageType v1.SecondaryStorageType, mutate ...func(*v1.Camunda
 	}
 	Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
-	return &world{namespace: namespace, cluster: cluster}
+	w := &world{namespace: namespace, cluster: cluster}
+	setClusterReady(w, metav1.ConditionTrue, v1.ReasonHealthy, "the cluster is ready")
+
+	return w
 }
 
-// holdStorage puts the cluster of w in the suspension of a backend that
-// another cluster holds: Ready False with reason StorageAlreadyAttached.
-// The CamundaCluster controller does not run in this suite, so the condition
+// setClusterReady sets the Ready condition of the cluster of w. The
+// CamundaCluster controller does not run in this suite, so the condition
 // stays where the spec puts it.
-func holdStorage(w *world) {
+func setClusterReady(w *world, status metav1.ConditionStatus, reason, message string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		var current v1.CamundaCluster
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &current)).To(Succeed())
 		meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{
 			Type:               v1.ConditionReady,
-			Status:             metav1.ConditionFalse,
-			Reason:             v1.ReasonStorageAlreadyAttached,
-			Message:            "another CamundaCluster holds the SecondaryStorageConfig",
+			Status:             status,
+			Reason:             reason,
+			Message:            message,
 			ObservedGeneration: current.Generation,
 		})
 		g.Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
+}
+
+// holdStorage puts the cluster of w in the suspension of a backend that
+// another cluster holds: Ready False with reason StorageAlreadyAttached.
+func holdStorage(w *world) {
+	GinkgoHelper()
+	setClusterReady(
+		w,
+		metav1.ConditionFalse,
+		v1.ReasonStorageAlreadyAttached,
+		"another CamundaCluster holds the SecondaryStorageConfig",
+	)
 }
 
 // createSchedule creates a daily schedule for the cluster of w and returns it
@@ -386,6 +400,53 @@ var _ = Describe("BackupSchedule controller", func() {
 			g.Expect(current.Status.LastBackupName).To(BeEmpty())
 		}, timeout, interval).Should(Succeed())
 		Expect(scheduledOf(schedule)).To(BeEmpty())
+	})
+
+	It("skips the trigger of a cluster that is not ready and backs it up once it is", func() {
+		w := createWorld(v1.SecondaryStorageTypeRDBMS)
+		setClusterReady(w, metav1.ConditionFalse, v1.ReasonInvalidReference, "SecondaryStorageConfig is missing")
+		schedule, trigger := createSchedule(w)
+
+		By("skipping the trigger with an event that names the Ready reason")
+		clock.Set(trigger.Add(30 * time.Second))
+		touch(schedule)
+
+		want := fmt.Sprintf(
+			"TriggerSkipped: Skipped the trigger at %s: CamundaCluster %q is not ready: "+
+				"Ready is False with reason InvalidReference",
+			trigger.Format(time.RFC3339), w.cluster.Name,
+		)
+		Eventually(func(g Gomega) {
+			g.Expect(eventReasons(schedule)).To(ContainElement(want))
+
+			var current v1.BackupSchedule
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), &current)).To(Succeed())
+			g.Expect(current.Status.LastScheduleTime).NotTo(BeNil())
+			g.Expect(current.Status.LastScheduleTime.Time).To(BeTemporally("==", trigger))
+			g.Expect(current.Status.LastBackupName).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+		Expect(scheduledOf(schedule)).To(BeEmpty())
+
+		By("creating the backup at the next trigger after the cluster is ready")
+		setClusterReady(w, metav1.ConditionTrue, v1.ReasonHealthy, "the cluster is ready")
+		second := trigger.Add(24 * time.Hour)
+		clock.Set(second.Add(30 * time.Second))
+		touch(schedule)
+
+		name := schedule.Name + "-" + strconv.FormatInt(second.Unix(), 10)
+		Eventually(func(g Gomega) {
+			var backup v1.LogicalBackupRDBMS
+			g.Expect(k8sClient.Get(
+				ctx,
+				client.ObjectKey{Namespace: w.namespace, Name: name},
+				&backup,
+			)).To(Succeed())
+
+			var current v1.BackupSchedule
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), &current)).To(Succeed())
+			g.Expect(current.Status.LastBackupName).To(Equal(name))
+		}, timeout, interval).Should(Succeed())
+		Expect(scheduledOf(schedule)).To(HaveLen(1))
 	})
 
 	It("skips the trigger while a backup of the schedule is not terminal", func() {

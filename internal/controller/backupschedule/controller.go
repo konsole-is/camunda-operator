@@ -38,6 +38,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -261,11 +262,13 @@ func (r *BackupScheduleReconciler) resolve(
 }
 
 // trigger consumes the due trigger: it creates the backup, or it skips with
-// an event when the cluster is suspended or a backup of the schedule has not
-// finished. Every path below records the trigger as consumed, except a
-// transient error, which leaves it due so the retry takes it again. The
-// backup name repeats the trigger time, so a retry after a crash lands on
-// AlreadyExists instead of a second backup.
+// an event when the cluster is suspended, when its Ready condition is not
+// True, or when a backup of the schedule has not finished. A suspended
+// cluster skips as suspended, whatever its Ready condition says. Every path
+// below records the trigger as consumed, except a transient error, which
+// leaves it due so the retry takes it again. The backup name repeats the
+// trigger time, so a retry after a crash lands on AlreadyExists instead of a
+// second backup.
 func (r *BackupScheduleReconciler) trigger(
 	ctx context.Context,
 	schedule *v1.BackupSchedule,
@@ -295,6 +298,25 @@ func (r *BackupScheduleReconciler) trigger(
 			"Skipped the trigger at %s: CamundaCluster %q is suspended",
 			due.Format(time.RFC3339),
 			res.cluster.Name,
+		)
+
+		return nil
+	}
+
+	// A backup of a cluster that is not ready waits in Pending for as long as
+	// the cluster stays so, and while it waits it blocks every later trigger.
+	if state := notReady(res.cluster); state != "" {
+		schedule.Status.LastScheduleTime = &consumed
+		r.EventRecorder.Eventf(
+			schedule,
+			nil,
+			corev1.EventTypeNormal,
+			eventReasonTriggerSkipped,
+			eventActionSchedule,
+			"Skipped the trigger at %s: CamundaCluster %q is not ready: %s",
+			due.Format(time.RFC3339),
+			res.cluster.Name,
+			state,
 		)
 
 		return nil
@@ -373,6 +395,20 @@ func (r *BackupScheduleReconciler) trigger(
 	schedule.Status.LastBackupName = backup.GetName()
 
 	return nil
+}
+
+// notReady describes the Ready condition of a cluster that is not ready, for
+// the note of the skip event. It returns "" when Ready is True.
+func notReady(cluster *v1.CamundaCluster) string {
+	ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
+	if ready == nil {
+		return "it reports no Ready condition yet"
+	}
+	if ready.Status == metav1.ConditionTrue {
+		return ""
+	}
+
+	return fmt.Sprintf("Ready is %s with reason %s", ready.Status, ready.Reason)
 }
 
 // newBackup builds the backup of one trigger: the kind that matches the

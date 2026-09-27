@@ -92,13 +92,14 @@ Each creation records the Normal event `BackupCreated` on the schedule. The even
 The operator creates no backup when:
 
 - The cluster is suspended. A suspended cluster is not backed up: the schedule skips the trigger and records the Normal event `TriggerSkipped`, which names the cluster and the trigger time. A backup that already exists waits with reason `ClusterSuspended` instead. `spec.suspend` suspends the cluster, and so do these two `Ready` reasons of the `CamundaCluster`: `StorageAlreadyAttached` and `WaitingForHandover`. A workload of it that still runs is one the API server refused to stop, which its `WorkloadStopRefused` event says. Read `Ready` on the `CamundaCluster` and correct the cause there. Backups start again at the next trigger after the cluster resumes.
+- The `Ready` condition of the cluster is not `True`, and the cluster is not suspended. A backup of such a cluster waits in `Pending`, so the schedule skips the trigger. It records the Normal event `TriggerSkipped`, which names the cluster and its `Ready` reason, for example `InvalidReference`. A cluster that reports no `Ready` condition yet is skipped the same way. Read `Ready` on the `CamundaCluster` and correct the cause there. Backups start again at the next trigger after `Ready` is `True`.
 - A backup of this schedule has not reached a terminal phase. Two backups of one schedule never overlap, and a backup of either kind counts. If a backup regularly runs past the next trigger, give the schedule a longer gap.
 - An object already holds the name of the new backup and belongs to something else. The name carries the trigger time, so only that one trigger is skipped and the next one runs. Find out what created that object, and remove it if it does not belong there.
 - A reference does not resolve. The `CamundaCluster` is missing, or it has no `spec.storageRef` or `spec.backupStorageRef`, or the `SecondaryStorageConfig` it names is missing. The `Ready` condition of the schedule names the one that applies. Create the resource, or set the missing field.
 - `spec.schedule` is not a valid cron expression. No trigger fires at all, and `Ready` names `spec.schedule`. Correct the expression.
 - More than one trigger passed unconsumed, for example while the operator was not running. The schedule takes the latest of them and skips the earlier ones. See [The cron expression](#the-cron-expression).
 
-The first two cases record the Normal event `TriggerSkipped`. A name that belongs to something else records the Warning event `BackupNameTaken`. The other three record no event. The `Ready` condition of the schedule carries the unresolved reference and the invalid cron expression. Unconsumed triggers record nothing at all.
+The first three cases record the Normal event `TriggerSkipped`. A name that belongs to something else records the Warning event `BackupNameTaken`. The other three record no event. The `Ready` condition of the schedule carries the unresolved reference and the invalid cron expression. Unconsumed triggers record nothing at all.
 
 When the operator skips a trigger, it consumes that trigger and `status.lastScheduleTime` moves to it. The operator does not retry it and does not create the backup later. The next backup runs at the next trigger of the cron expression. When `status.lastScheduleTime` jumps over several triggers of the cron expression, the schedule took only the last of them.
 
@@ -110,6 +111,7 @@ Normal  BackupCreated   Created LogicalBackupRDBMS "my-cluster-schedule-17871048
 Normal  TriggerSkipped  Skipped the trigger at 2026-08-20T02:00:00Z: CamundaCluster "my-cluster" is suspended
 Normal  TriggerSkipped  Skipped the trigger at 2026-08-21T02:00:00Z: backup "my-cluster-schedule-1787104800" has not finished
 Warning BackupNameTaken Skipped the trigger at 2026-08-22T02:00:00Z: LogicalBackupRDBMS "my-cluster-schedule-1787364000" already exists and belongs to something else
+Normal  TriggerSkipped  Skipped the trigger at 2026-08-23T02:00:00Z: CamundaCluster "my-cluster" is not ready: Ready is False with reason InvalidReference
 ```
 
 ## Retention
@@ -161,7 +163,7 @@ The operator records no such warning when `spec.backup.primaryStorage.retention.
 
 When you delete a `BackupSchedule`, its backups stay. They carry no owner reference to the schedule, on purpose. No trigger fires again, and nothing prunes those backups again. Delete the backups you no longer want, or create a schedule of the same name again to take the pruning back.
 
-A schedule has no suspend field. To stop the backups for a time, delete the schedule. While the cluster itself is suspended, every trigger is skipped.
+A schedule has no suspend field. To stop the backups for a time, delete the schedule. While the cluster itself is suspended or not ready, every trigger is skipped.
 
 ## Status
 
@@ -170,7 +172,7 @@ A schedule has no suspend field. To stop the backups for a time, delete the sche
 | `Ready` | `Healthy` | The references resolve and the schedule can run its backups. | Nothing. |
 | `Ready` | `InvalidReference` | The `CamundaCluster` does not exist, it has no `spec.storageRef` or `spec.backupStorageRef`, its `SecondaryStorageConfig` does not exist, or `spec.schedule` is not a valid cron expression. The message names the cause. | Create the resource, set the missing field, or correct `spec.schedule`. |
 
-`Ready` reports the references only. A skipped trigger is an event, not a condition, because a suspended cluster and a running backup are expected states.
+`Ready` reports the references only. A skipped trigger is an event, not a condition, because a suspended cluster, a cluster that is not ready, and a running backup are expected states.
 
 A healthy schedule that took a backup reads:
 
