@@ -8,7 +8,7 @@ A `Database` is namespaced. It resolves `spec.serverRef` in its own namespace, a
 
 On the server, the operator creates the logical database `spec.databaseName` and two SQL roles with generated passwords. The application role, named like the database, owns it. The backup role, named `<databaseName>_backup`, can read every table, including tables created later, and has the rights that a restore needs. It is never the owner. Set `spec.backupCredentials.disabled: true` to skip the backup role. Only these roles can connect to the database.
 
-In Kubernetes, in the namespace of the `Database`, the operator writes one credential Secret per role (keys `username` and `password`) and a `DatabaseConfig` that names the server, the database, and both Secrets. When `spec.secondaryStorageConfig` is set, it also writes a `SecondaryStorageConfig` of `type: rdbms` that references the `DatabaseConfig`, so an orchestration cluster in that namespace can use the database as secondary storage. Create the `Database` in the namespace of the cluster that uses it. The Spec reference below gives the default names.
+In Kubernetes, in the namespace of the `Database`, the operator writes one credential Secret per role (keys `username` and `password`). It also writes a `DatabaseConfig` that names the server, the database, and both Secrets. When `spec.secondaryStorageConfig` is set, it also writes a `SecondaryStorageConfig` of `type: rdbms` that references the `DatabaseConfig`. An orchestration cluster in that namespace can then use the database as secondary storage. Create the `Database` in the namespace of the cluster that uses it. The Spec reference below gives the default names.
 
 Every resource carries the label `camunda.io/database: <name>`.
 
@@ -41,11 +41,11 @@ The operator generates each password once and keeps it. To rotate one, delete it
 
 ## Missing references
 
-If `spec.serverRef` names no `DatabaseServerConfig` in this namespace, `Ready` is `False` with reason `InvalidReference`. If that contract has not published `status.systemIdentifier` yet, the reason is `ServerIdentityUnknown`, and the `Database` claims nothing and runs no SQL until it does. A contract whose `status.probedEndpoint` names an endpoint that its spec no longer names reads the same way, because that identity belongs to the server before the change. If the admin credentials Secret of the server is missing or lacks a key, the reason is `MissingSecret`. If the server does not answer or rejects the admin credentials, the reason is `ConnectionFailed` and the operator retries every 30 seconds.
+If `spec.serverRef` names no `DatabaseServerConfig` in this namespace, `Ready` is `False` with reason `InvalidReference`. If that contract has not published `status.systemIdentifier` yet, the reason is `ServerIdentityUnknown`, and the `Database` claims nothing and runs no SQL until it does. A contract whose `status.probedEndpoint` names an endpoint that its spec no longer names reads the same way. The reason is that this identity belongs to the server before the change. If the admin credentials Secret of the server is missing or lacks a key, the reason is `MissingSecret`. If the server does not answer or rejects the admin credentials, the reason is `ConnectionFailed` and the operator retries every 30 seconds.
 
 ## Uniqueness
 
-One `Database` owns one logical database name on one PostgreSQL server. The server is the instance that the contract reaches, not the contract itself: two `DatabaseServerConfig` objects that describe one instance under different hosts are one server here. The operator reads the identity of the instance from `status.systemIdentifier` of the contract.
+One `Database` owns one logical database name on one PostgreSQL server. The server is the instance that the contract reaches, not the contract itself. Two `DatabaseServerConfig` objects that describe one instance under different hosts are one server here. The operator reads the identity of the instance from `status.systemIdentifier` of the contract.
 
 The claim therefore crosses namespaces. The first `Database` to claim a logical database name on an instance owns it. A `Database` of any namespace that claims the same name after that reports `InvalidReference`, names the holder, and runs no SQL.
 
@@ -68,7 +68,7 @@ status:
   collisionKey: 7412345678901234567/camunda
 ```
 
-Every claimant records this field, the one that loses included, so it shows the logical database a `Database` asked for and not one it owns. A `Database` that reports `InvalidReference` and names another `Database` does not own the name it shows. The operator resolves the key only after it reaches the server, so a `Database` that you point at a server which does not exist, or at one that the operator has not reached for the spec it has now, keeps the key from before until that server answers. The operator never clears the field. An owner whose server or contract is gone keeps the logical database. Delete that `Database` to release the name.
+Every claimant records this field, the one that loses included, so it shows the logical database a `Database` asked for and not one it owns. A `Database` that reports `InvalidReference` and names another `Database` does not own the name it shows. The operator resolves the key only after it reaches the server. You can point a `Database` at a server that does not exist. You can also point it at a server that the operator has not reached for the spec it has now. In both cases, that `Database` keeps the key from before until that server answers. The operator never clears the field. An owner whose server or contract is gone keeps the logical database. Delete that `Database` to release the name.
 
 ## Changes
 
@@ -84,7 +84,7 @@ Deletion removes the `DatabaseConfig`, the `SecondaryStorageConfig`, and the cre
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
-| `Ready` | `InvalidReference` | `spec.serverRef` names no `DatabaseServerConfig` in this namespace. Or another `Database`, named in the message as `<namespace>/<name>`, holds the same logical database name on the same server. Or nothing holds that name yet and another `Database` goes first for it, which the message says. | Create the `DatabaseServerConfig`, or change `databaseName`, or delete the `Database` that the message names. A message that another `Database` goes first says that nothing held the name when the operator looked. That `Database` can still take it, and it can take it before it becomes `Ready`. If it does not take it, read its `Ready` condition and clear what stops it, or change `databaseName` here, or delete it. |
+| `Ready` | `InvalidReference` | `spec.serverRef` names no `DatabaseServerConfig` in this namespace. Or another `Database`, named in the message as `<namespace>/<name>`, holds the same logical database name on the same server. Or nothing holds that name yet and another `Database` goes first for it, which the message says. | Create the `DatabaseServerConfig`, or change `databaseName`, or delete the `Database` that the message names. A message that another `Database` goes first says that nothing held the name when the operator looked. That `Database` can still take it, and it can take it before it becomes `Ready`. If it does not take it, read its `Ready` condition and clear what stops it. Or change `databaseName` here, or delete it. |
 | `Ready` | `ServerIdentityUnknown` | The `DatabaseServerConfig` has not published `status.systemIdentifier` yet, or it published one for an endpoint that its spec no longer names. The operator cannot tell which server the contract reaches, so it claims nothing and runs no SQL. | Wait until the `DatabaseServerConfig` is probed again for the endpoint and the credentials its spec names now. It publishes the identity as soon as it reaches the server. |
 | `Ready` | `MissingSecret` | The admin credentials Secret of the server is missing or lacks a key. | Create the Secret with the keys that the `DatabaseServerConfig` names. |
 | `Ready` | `ConnectionFailed` | The server does not answer, or it rejects the admin credentials. The operator retries every 30 seconds. | Make sure that the operator can reach the server and that the admin credentials are correct. |
@@ -93,7 +93,7 @@ Deletion removes the `DatabaseConfig`, the `SecondaryStorageConfig`, and the cre
 
 | Field | Meaning |
 | --- | --- |
-| `status.collisionKey` | The logical database that this `Database` last resolved: the system identifier of the server and the database name. Every claimant records it, so it is not a record of ownership, and it stays on the last one the operator resolved until a new server answers. The operator never clears it. |
+| `status.collisionKey` | The logical database that this `Database` last resolved: the system identifier of the server and the database name. Every claimant records it, so it is not a record of ownership. It stays on the last one the operator resolved until a new server answers. The operator never clears it. |
 | `status.observedGeneration` | The last generation that the operator reconciled. |
 
 ## Spec reference
