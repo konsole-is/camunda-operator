@@ -70,8 +70,8 @@ type StorageHolder struct {
 type StorageHandover struct {
 	// Backend is the claim key of the backend, see StorageClaimKey.
 	Backend string
-	// Pods are the pods of other clusters that carry the storage claim, as
-	// "namespace/name" paths.
+	// Pods are the pods and workloads of other clusters on the storage claim,
+	// see OtherPodsOnClaim.
 	Pods []string
 	// Restores are the running restores into other clusters on the backend,
 	// see RestoresOnBackend.
