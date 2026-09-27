@@ -23,15 +23,10 @@ import (
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 )
 
-// eventReasonIndexReplicasExceedNodes is the Warning event that the controller
-// records when the index replica count of the cluster needs more nodes than
-// the storage contract names. The cluster runs with the count, and the health
-// of its indices stays yellow.
+// eventReasonIndexReplicasExceedNodes is the Warning event for an index
+// replica count that the nodes of the storage contract cannot place.
 const eventReasonIndexReplicasExceedNodes = "IndexReplicasExceedNodes"
 
-// recordUnplaceableReplicas records IndexReplicasExceedNodes when the resolved
-// index replica count of an Elasticsearch secondary storage is more than its
-// nodes can place.
 func (r *CamundaClusterReconciler) recordUnplaceableReplicas(cluster *v1.CamundaCluster, in components.Input) {
 	es := in.Storage.Elasticsearch
 	if in.Storage.Type != v1.SecondaryStorageTypeElasticsearch || es == nil {

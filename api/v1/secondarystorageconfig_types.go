@@ -75,7 +75,7 @@ type ElasticsearchStorage struct {
 // IndexReplicas returns the replica count of each index that a consumer
 // creates on this backend. requested is the setting of the consumer, and it
 // wins when it is set. The result is nil when neither requested nor NodeCount
-// is set: the consumer then renders no replica setting.
+// is set.
 func (s *ElasticsearchStorage) IndexReplicas(requested *int32) *int32 {
 	if requested != nil {
 		return new(*requested)
@@ -87,10 +87,9 @@ func (s *ElasticsearchStorage) IndexReplicas(requested *int32) *int32 {
 }
 
 // ReplicasExceedNodes reports whether NodeCount is too small to place
-// replicas. Elasticsearch never puts a replica on the node of its primary, so
-// the health of an index with more replicas than NodeCount-1 stays yellow. It
-// is false when NodeCount is not set.
+// replicas. It is false when NodeCount is not set.
 func (s *ElasticsearchStorage) ReplicasExceedNodes(replicas int32) bool {
+	// Elasticsearch never puts a replica on the node of its primary.
 	return s.NodeCount != nil && replicas > *s.NodeCount-1
 }
 

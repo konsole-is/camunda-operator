@@ -86,8 +86,6 @@ func TestExporterEnvUsesTheUnifiedKeys(t *testing.T) {
 	}
 }
 
-// A replica count sets the template of the zeebe-record indices. Without one,
-// the exporter keeps its own default and the patch carries no entry for it.
 func TestExporterEnvIndexReplicas(t *testing.T) {
 	t.Parallel()
 

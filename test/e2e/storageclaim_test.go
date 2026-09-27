@@ -204,9 +204,7 @@ func itHandsTheStorageBackendOver() {
 			expectBrokerReplicas(g, brokerOfWaiting, 1)
 		}, scHoldInterval, scHoldSample).Should(Succeed())
 
-		// Both clusters created their indices on the one node. The contract
-		// names one node, so the indices carry no replica and the health of
-		// the ElasticsearchCluster stays green.
+		// One node stays Ready only when the indices of both clusters carry no replica.
 		By("keeping the ElasticsearchCluster Ready after both clusters wrote to it")
 		Eventually(func(g Gomega) {
 			expectReady(g, esResource, esName, esNamespace, v1.ReasonHealthy)

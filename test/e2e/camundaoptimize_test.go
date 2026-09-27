@@ -206,8 +206,7 @@ var _ = Describe("CamundaOptimize", Ordered, Label(utils.LabelCamundaOptimize), 
 		Expect(optimizeContract.Spec.Elasticsearch).NotTo(BeNil())
 		Expect(optimizeContract.Spec.Elasticsearch.Endpoint).To(HavePrefix("https://"))
 		Expect(optimizeContract.Spec.Elasticsearch.CASecretRef).NotTo(BeNil())
-		// The Optimize of this flow sets no index replica count, so the
-		// exporter takes the default of the contract.
+		// The Optimize of this flow sets no indexReplicas.
 		storage := *optimizeContract.Spec.Elasticsearch
 		exporterEnv = components.ExporterEnv(storage, storage.IndexReplicas(nil))
 

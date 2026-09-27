@@ -261,8 +261,6 @@ func TestRenderElasticsearchWithCA(t *testing.T) {
 	assert.Equal(t, corev1.VolumeMount{Name: "es-ca", MountPath: "/etc/camunda/es-ca", ReadOnly: true}, r.mounts[0])
 }
 
-// The replica count of the indices follows the nodes of the contract unless
-// the cluster sets its own, and no count renders when neither is known.
 func TestRenderElasticsearchIndexReplicas(t *testing.T) {
 	t.Parallel()
 
@@ -298,9 +296,6 @@ func TestRenderElasticsearchIndexReplicas(t *testing.T) {
 	}
 }
 
-// Camunda refuses to start when a legacy replica key and the unified key
-// differ. A legacy key in the extraEnv of a process therefore keeps the derived
-// count out of that process only, and an explicit count still renders.
 func TestRenderElasticsearchIndexReplicasBesideLegacyKey(t *testing.T) {
 	t.Parallel()
 
@@ -360,8 +355,6 @@ func TestRenderElasticsearchIndexReplicasBesideLegacyKey(t *testing.T) {
 	}
 }
 
-// A relational secondary storage has no indices, so the replica count of the
-// spec renders nothing there.
 func TestRenderRDBMSIgnoresIndexReplicas(t *testing.T) {
 	t.Parallel()
 

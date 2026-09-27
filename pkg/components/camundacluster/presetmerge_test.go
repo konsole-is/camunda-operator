@@ -326,8 +326,7 @@ func TestMergeSpec(t *testing.T) {
 	}
 }
 
-// indexReplicas is policy, so a preset can set it and the cluster overrides
-// it, 0 included.
+// The cluster overrides the indexReplicas of a preset, 0 included.
 func TestMergeSpecIndexReplicas(t *testing.T) {
 	t.Parallel()
 

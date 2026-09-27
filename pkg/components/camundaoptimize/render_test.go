@@ -122,9 +122,6 @@ func TestBaseEnvTrustsTheMountedCA(t *testing.T) {
 	assert.Empty(t, caMounts(minimal))
 }
 
-// The replica count of the Optimize indices follows the nodes of the contract
-// unless the instance sets its own, and no count renders when neither is
-// known.
 func TestBaseEnvIndexReplicas(t *testing.T) {
 	t.Parallel()
 

@@ -152,9 +152,7 @@ var _ = Describe("Example inventories", Ordered, Label(utils.LabelExample), func
 			expectReady(g, ccResource, exCluster, exNamespace, v1.ReasonHealthy)
 		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
 
-		// The cluster created its indices by now. The ElasticsearchCluster
-		// has one node, so it stays Ready only when those indices carry no
-		// replica.
+		// One node stays Ready only when the indices of the cluster carry no replica.
 		By("waiting for the ElasticsearchCluster after the cluster wrote to it")
 		Eventually(func(g Gomega) {
 			expectReady(g, esResource, exElasticsearch, exNamespace, v1.ReasonHealthy)

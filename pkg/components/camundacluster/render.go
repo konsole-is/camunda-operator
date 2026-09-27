@@ -300,11 +300,9 @@ func storageEnv(in Input, p Process) rendered {
 }
 
 // indexReplicas returns the replica count to render for process p, or nil to
-// render none. Camunda refuses to start when a legacy replica key and the
-// unified key hold different values. So the count that the node count derives
-// gives way in a process whose extraEnv names a legacy key. An explicit
-// indexReplicas does not.
+// render none.
 func indexReplicas(in Input, p Process) *int32 {
+	// Camunda refuses to start when a legacy replica key and the unified key differ.
 	if in.Effective.IndexReplicas == nil && slices.ContainsFunc(userEnv(in, p), isLegacyReplicas) {
 		return nil
 	}

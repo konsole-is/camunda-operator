@@ -55,8 +55,7 @@ const ExporterClassName = "io.camunda.zeebe.exporter.ElasticsearchExporter"
 // makes for the Optimize pods names a Secret the broker cannot read.
 //
 // replicas is the replica count of the zeebe-record index template, or nil to
-// leave the exporter default. The exporter writes these indices for Optimize
-// alone, so the count is the index replica count of the CamundaOptimize.
+// leave the exporter default.
 //
 // The set carries no TLS setting, because the exporter has none. An
 // Elasticsearch with a private CA therefore needs that CA in the JVM trust

@@ -95,8 +95,7 @@ const (
 	// KeyExporterElasticsearchIndexReplicas is
 	// camunda.data.exporters.elasticsearch.args.index.numberOfReplicas, the
 	// replica count in the index template of the exported indices
-	// (ElasticsearchExporterConfiguration.IndexConfiguration). The broker
-	// binds the args case-insensitively (ExporterConfiguration.java).
+	// (ElasticsearchExporterConfiguration.IndexConfiguration).
 	KeyExporterElasticsearchIndexReplicas Key = "camunda.data.exporters.elasticsearch.args.index.numberOfReplicas"
 
 	// KeyElasticsearchURL is camunda.data.secondary-storage.elasticsearch.url (Elasticsearch.java).

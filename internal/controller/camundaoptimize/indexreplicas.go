@@ -22,21 +22,13 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// The event vocabulary of the index replica check.
 const (
-	// eventReasonIndexReplicasExceedNodes is the Warning event that the
-	// controller records when the index replica count of the instance needs
-	// more nodes than the storage contract names. Optimize runs with the
-	// count, and the health of its indices stays yellow.
+	// eventReasonIndexReplicasExceedNodes is the Warning event for an index
+	// replica count that the nodes of the storage contract cannot place.
 	eventReasonIndexReplicasExceedNodes = "IndexReplicasExceedNodes"
-	// eventActionReconcile is the action of the events that the controller
-	// records while it reconciles a CamundaOptimize.
-	eventActionReconcile = "Reconcile"
+	eventActionReconcile                = "Reconcile"
 )
 
-// recordUnplaceableReplicas records IndexReplicasExceedNodes when the resolved
-// index replica count is more than the nodes of the storage contract can
-// place.
 func (r *Reconciler) recordUnplaceableReplicas(optimize *v1.CamundaOptimize, res resolved) {
 	storage := res.Input.Storage
 	replicas := storage.IndexReplicas(optimize.Spec.IndexReplicas)
