@@ -43,7 +43,7 @@ func formatResourceName(base, suffix string) string { ... }
 
 Rationale in a godoc costs more than the space it takes. It reads as contract, so the next reader treats it as a promise the code has to keep, and the next change argues with the paragraph instead of the code.
 
-**A review finding is not a reason to write a paragraph.** When a review turns up a case the code missed, the fix is the code. Write the comment only if the next reader would be caught by the same thing and could not deduce it from what is in front of them — not to show the case was considered, and not to record that the round happened.
+**A review finding is not a reason to write a paragraph.** When a review turns up a case the code missed, the fix is the code. Write the comment only if the next reader would be caught by the same thing and could not deduce it from what is in front of them — not to show the case was considered, and not to record that the round happened. When you act on review feedback, load `addressing-review-feedback`: it applies these rules at each round and gates the push.
 
 **The test for a bad comment:** could a code generator produce it by prepending a verb to the identifier name? If yes, it carries no information beyond the name itself — delete or rewrite it.
 

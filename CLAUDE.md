@@ -17,6 +17,7 @@ the detail. Do not work from memory when a skill covers the task.
 | Before you ... | Load this skill |
 | --- | --- |
 | Write, change, or review any Go code | `how-we-write-go` |
+| Act on review feedback: a PR review, a review thread or summary, a `/code-review` finding, a review-loop round | `addressing-review-feedback`, in every round, before the first edit and again before each push |
 | Write or edit the user docs: `docs/`, `README.md`, `dist/chart/README.md`, CRD field descriptions | `writing-operator-docs` |
 | Write or edit other prose: GoDoc, comments, error and condition messages | `simple-english:simple-english` |
 | Write or change Camunda application config (env vars, Spring properties) | `verifying-camunda-app-config` |
@@ -28,6 +29,11 @@ the detail. Do not work from memory when a skill covers the task.
 | Start a feature, plan it, or split it into PRs | `feature-dev-workflow:planning-a-feature`, then `feature-dev-workflow:developing-a-feature` |
 | Open or edit a pull request | `feature-dev-workflow:opening-a-pull-request` |
 | Say that work is complete | `superpowers:verification-before-completion` |
+
+`addressing-review-feedback` applies inside every other review workflow too:
+`feature-dev-workflow:copilot-review-loop`, `superpowers:receiving-code-review`, and any agent that you
+dispatch to fix review findings. Name the skill in the prompt of that agent. A review round that
+pushes without its `hack/commentdiff` gate at exit 0 is not done.
 
 The operator uses the operator component framework (ocf):
 https://github.com/sourcehawk/operator-component-framework. The `ocf:*` skills come from that
@@ -127,6 +133,9 @@ make manifests generate     # then `git status --porcelain config api` prints no
 go vet -tags=e2e ./test/e2e/  # go test ./... never compiles this package
 mkdocs build --strict       # catches a broken link or a missing nav entry
 ```
+
+A pull request that went through review also needs its `hack/commentdiff` gate at exit 0 for every
+round. The `addressing-review-feedback` skill says how to run it.
 
 Two traps that cost time before:
 
