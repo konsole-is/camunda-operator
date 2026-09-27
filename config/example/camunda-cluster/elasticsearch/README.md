@@ -55,6 +55,8 @@ To see each resource become ready, apply the files in their number order:
 
 - `my-cluster-es` publishes the `SecondaryStorageConfig` `my-storage-config`.
   The inventory holds no such file, because the operator writes it.
+- The contract names one node, so the cluster creates its indices with no
+  replica. `my-cluster-es` stays `Ready` while the cluster writes to it.
 - `my-cluster-gateway` is the Service of the cluster, on port 8080.
 - `my-cluster-camunda-admin` is the Secret with the first administrator. Read
   the keys `username` and `password` from it to log in.

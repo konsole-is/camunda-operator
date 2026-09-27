@@ -206,7 +206,9 @@ var _ = Describe("CamundaOptimize", Ordered, Label(utils.LabelCamundaOptimize), 
 		Expect(optimizeContract.Spec.Elasticsearch).NotTo(BeNil())
 		Expect(optimizeContract.Spec.Elasticsearch.Endpoint).To(HavePrefix("https://"))
 		Expect(optimizeContract.Spec.Elasticsearch.CASecretRef).NotTo(BeNil())
-		exporterEnv = components.ExporterEnv(*optimizeContract.Spec.Elasticsearch)
+		// The Optimize of this flow sets no indexReplicas.
+		storage := *optimizeContract.Spec.Elasticsearch
+		exporterEnv = components.ExporterEnv(storage, storage.IndexReplicas(nil))
 
 		By("waiting for Elasticsearch to answer with the credentials of the contract")
 		Eventually(func(g Gomega) {

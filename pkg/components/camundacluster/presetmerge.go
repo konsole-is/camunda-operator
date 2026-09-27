@@ -60,8 +60,8 @@ const versionFloor = "8.9.0"
 // the CamundaClusterPreset doc. Scalars and pointers override individually:
 // version, the auth fields, per-component mode, replicas, partitions,
 // replicationFactor, storageClassName, storageSize,
-// persistentVolumeClaimRetentionPolicy, connectors.enabled, and
-// connectors.version. Resources merge per request and limit entry. ExtraEnv
+// persistentVolumeClaimRetentionPolicy, indexReplicas, connectors.enabled,
+// and connectors.version. Resources merge per request and limit entry. ExtraEnv
 // merges by variable name, lower layer first, and an entry of a higher layer
 // with the same name replaces it. ExtraEnvFrom concatenates, lower layer
 // first. PodLabels and podAnnotations merge by key with the higher layer
@@ -179,6 +179,10 @@ func mergeLayer(base, over v1.CamundaClusterSpec) v1.CamundaClusterSpec {
 	merged.PodAnnotations = mergeMap(merged.PodAnnotations, over.PodAnnotations)
 	if over.Scheduling != nil {
 		merged.Scheduling = over.Scheduling
+	}
+
+	if over.IndexReplicas != nil {
+		merged.IndexReplicas = over.IndexReplicas
 	}
 
 	merged.Backup = mergeBackup(merged.Backup, over.Backup)

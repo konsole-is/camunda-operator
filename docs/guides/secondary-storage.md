@@ -30,7 +30,7 @@ Prerequisite: the ECK operator is installed in the Kubernetes cluster, and the c
 
 This chain is ready to apply in [`config/example/camunda-cluster/elasticsearch`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-cluster/elasticsearch).
 
-1. Create an `ElasticsearchCluster`. The sizes below are for trying out. For production, use more nodes and larger volumes.
+1. Create an `ElasticsearchCluster`. The sizes below are for trying out. For production, use more nodes and larger volumes. On one node, the Camunda indices get no replica, so the node keeps green health. [Node count](../crds/secondarystorageconfig.md#node-count) has the rule.
 
     ```yaml
     apiVersion: core.camunda.io/v1

@@ -326,6 +326,21 @@ func TestMergeSpec(t *testing.T) {
 	}
 }
 
+// The cluster overrides the indexReplicas of a preset, 0 included.
+func TestMergeSpecIndexReplicas(t *testing.T) {
+	t.Parallel()
+
+	preset := &v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{IndexReplicas: new(int32(2))}}
+
+	inherited := MergeSpec(v1.CamundaClusterSpec{}, preset, nil)
+	require.NotNil(t, inherited.IndexReplicas)
+	assert.Equal(t, int32(2), *inherited.IndexReplicas)
+
+	overridden := MergeSpec(v1.CamundaClusterSpec{IndexReplicas: new(int32(0))}, preset, nil)
+	require.NotNil(t, overridden.IndexReplicas)
+	assert.Equal(t, int32(0), *overridden.IndexReplicas)
+}
+
 func TestMergeSpecReleaseLayer(t *testing.T) {
 	t.Parallel()
 

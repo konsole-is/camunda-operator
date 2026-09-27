@@ -575,6 +575,11 @@ func (in *CamundaClusterSpec) DeepCopyInto(out *CamundaClusterSpec) {
 		*out = new(SchedulingSpec)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.IndexReplicas != nil {
+		in, out := &in.IndexReplicas, &out.IndexReplicas
+		*out = new(int32)
+		**out = **in
+	}
 	if in.Backup != nil {
 		in, out := &in.Backup, &out.Backup
 		*out = new(ClusterBackupSpec)
@@ -846,6 +851,11 @@ func (in *CamundaOptimizeSpec) DeepCopyInto(out *CamundaOptimizeSpec) {
 		in, out := &in.Importer, &out.Importer
 		*out = new(WorkloadSpec)
 		(*in).DeepCopyInto(*out)
+	}
+	if in.IndexReplicas != nil {
+		in, out := &in.IndexReplicas, &out.IndexReplicas
+		*out = new(int32)
+		**out = **in
 	}
 	if in.Monitoring != nil {
 		in, out := &in.Monitoring, &out.Monitoring
@@ -2316,6 +2326,11 @@ func (in *ElasticsearchStorage) DeepCopyInto(out *ElasticsearchStorage) {
 	if in.CASecretRef != nil {
 		in, out := &in.CASecretRef, &out.CASecretRef
 		*out = new(LocalSecretKeyRef)
+		**out = **in
+	}
+	if in.NodeCount != nil {
+		in, out := &in.NodeCount, &out.NodeCount
+		*out = new(int32)
 		**out = **in
 	}
 }

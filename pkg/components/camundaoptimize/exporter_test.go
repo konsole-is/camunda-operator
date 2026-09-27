@@ -47,7 +47,7 @@ func exporterStorage() v1.ElasticsearchStorage {
 func TestExporterEnvUsesTheUnifiedKeys(t *testing.T) {
 	t.Parallel()
 
-	env := ExporterEnv(exporterStorage())
+	env := ExporterEnv(exporterStorage(), nil)
 
 	assert.Equal(
 		t,
@@ -86,12 +86,25 @@ func TestExporterEnvUsesTheUnifiedKeys(t *testing.T) {
 	}
 }
 
+func TestExporterEnvIndexReplicas(t *testing.T) {
+	t.Parallel()
+
+	const key = "CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_NUMBEROFREPLICAS"
+
+	env := ExporterEnv(exporterStorage(), new(int32(0)))
+	assert.Contains(t, env, corev1.EnvVar{Name: key, Value: "0"})
+
+	for _, e := range ExporterEnv(exporterStorage(), nil) {
+		assert.NotEqual(t, key, e.Name)
+	}
+}
+
 // The index prefix of the exporter is the prefix that Optimize reads. The two
 // must agree, so both come from one constant.
 func TestExporterEnvPrefixMatchesTheOptimizeImportPrefix(t *testing.T) {
 	t.Parallel()
 
-	env := ExporterEnv(exporterStorage())
+	env := ExporterEnv(exporterStorage(), nil)
 	prefix := ""
 	for _, e := range env {
 		if e.Name == "CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PREFIX" {
@@ -115,7 +128,7 @@ func TestExporterPatchCarriesNothingElse(t *testing.T) {
 	patch := ExporterPatch(
 		types.NamespacedName{Namespace: "camunda", Name: "my-cluster"},
 		types.UID("9f1d6f4e-1c2b-4a7d-9d3e-0b5a6c7d8e9f"),
-		ExporterEnv(exporterStorage()),
+		ExporterEnv(exporterStorage(), nil),
 	)
 
 	raw, err := json.Marshal(patch)
@@ -150,7 +163,7 @@ func TestExporterPatchCarriesNothingElse(t *testing.T) {
 func TestExporterConflictsFindsTheMergeHazard(t *testing.T) {
 	t.Parallel()
 
-	desired := ExporterEnv(exporterStorage())
+	desired := ExporterEnv(exporterStorage(), nil)
 
 	assert.Empty(t, ExporterConflicts(desired, nil))
 	assert.Empty(t, ExporterConflicts(desired, []corev1.EnvVar{{Name: "USER_MARKER", Value: "keep-me"}}))

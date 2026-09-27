@@ -59,6 +59,14 @@ const (
 	nodeIDCommand = "export %s=${HOSTNAME##*-}; exec " + CamundaEntrypoint
 )
 
+// legacyReplicasEnv are the environment variables of the legacy keys of
+// camunda.data.secondary-storage.elasticsearch.number-of-replicas
+// (DocumentBasedSecondaryStorageDatabase.legacyNumberOfReplicasProperties).
+var legacyReplicasEnv = []string{
+	camundaconfig.Key("camunda.database.index.numberOfReplicas").Env(),
+	camundaconfig.Key("zeebe.broker.exporters.camundaexporter.args.index.numberOfReplicas").Env(),
+}
+
 // rendered is the environment, volumes, and mounts of one process.
 type rendered struct {
 	env     []corev1.EnvVar
@@ -89,7 +97,7 @@ func render(in Input, p Process) rendered {
 		}
 	}
 
-	r := storageEnv(in)
+	r := storageEnv(in, p)
 	backup := backupEnv(in, p)
 	r.volumes = append(r.volumes, backup.volumes...)
 	r.mounts = append(r.mounts, backup.mounts...)
@@ -226,7 +234,7 @@ func userEnvFrom(in Input, p Process) []corev1.EnvFromSource {
 
 // storageEnv is the secondary storage layer. It returns the volume and mount
 // of the Elasticsearch CA when the binding names one.
-func storageEnv(in Input) rendered {
+func storageEnv(in Input, p Process) rendered {
 	var r rendered
 	r.env = append(r.env, camundaconfig.Var(camundaconfig.KeySecondaryStorageType, string(in.Storage.Type)))
 
@@ -245,6 +253,12 @@ func storageEnv(in Input) rendered {
 				secretSource(es.CredentialsSecretRef.Name, es.CredentialsSecretRef.PasswordKey),
 			),
 		)
+		if replicas := indexReplicas(in, p); replicas != nil {
+			r.env = append(
+				r.env,
+				camundaconfig.Var(camundaconfig.KeyElasticsearchIndexReplicas, strconv.Itoa(int(*replicas))),
+			)
+		}
 		if es.CASecretRef != nil {
 			r.env = append(
 				r.env,
@@ -283,6 +297,21 @@ func storageEnv(in Input) rendered {
 	}
 
 	return r
+}
+
+// indexReplicas returns the replica count to render for process p, or nil to
+// render none.
+func indexReplicas(in Input, p Process) *int32 {
+	// Camunda refuses to start when a legacy replica key and the unified key differ.
+	if in.Effective.IndexReplicas == nil && slices.ContainsFunc(userEnv(in, p), isLegacyReplicas) {
+		return nil
+	}
+
+	return in.Storage.Elasticsearch.IndexReplicas(in.Effective.IndexReplicas)
+}
+
+func isLegacyReplicas(e corev1.EnvVar) bool {
+	return slices.Contains(legacyReplicasEnv, e.Name)
 }
 
 // RDBMSURL returns the JDBC URL of the relational secondary storage that the

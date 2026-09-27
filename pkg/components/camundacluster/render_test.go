@@ -261,6 +261,120 @@ func TestRenderElasticsearchWithCA(t *testing.T) {
 	assert.Equal(t, corev1.VolumeMount{Name: "es-ca", MountPath: "/etc/camunda/es-ca", ReadOnly: true}, r.mounts[0])
 }
 
+func TestRenderElasticsearchIndexReplicas(t *testing.T) {
+	t.Parallel()
+
+	const key = "CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_NUMBEROFREPLICAS"
+	cases := map[string]struct {
+		nodeCount *int32
+		requested *int32
+		want      string
+	}{
+		"one node gets no replica":             {nodeCount: new(int32(1)), want: "0"},
+		"three nodes get one replica":          {nodeCount: new(int32(3)), want: "1"},
+		"the cluster setting wins":             {nodeCount: new(int32(1)), requested: new(int32(2)), want: "2"},
+		"the cluster setting without nodes":    {requested: new(int32(0)), want: "0"},
+		"no node count and no setting renders": {},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			in := newInput(t, func(in *Input) {
+				in.Storage.Elasticsearch.NodeCount = tc.nodeCount
+				in.Effective.IndexReplicas = tc.requested
+			})
+			r := render(in, process(t, in, ComponentZeebe))
+
+			if tc.want == "" {
+				assertNoEnv(t, r.env, key)
+				return
+			}
+			assertEnv(t, r.env, key, tc.want)
+		})
+	}
+}
+
+func TestRenderElasticsearchIndexReplicasBesideLegacyKey(t *testing.T) {
+	t.Parallel()
+
+	const key = "CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_NUMBEROFREPLICAS"
+	legacyOnOperate := func(in *Input) {
+		in.Effective.Operate = &v1.WebAppSpec{Mode: v1.ComponentModeStandalone}
+		in.Effective.Operate.ExtraEnv = []corev1.EnvVar{
+			{Name: "ZEEBE_BROKER_EXPORTERS_CAMUNDAEXPORTER_ARGS_INDEX_NUMBEROFREPLICAS", Value: "1"},
+		}
+	}
+	cases := map[string]struct {
+		mutate    func(in *Input)
+		component string
+		want      string
+	}{
+		"a legacy key in the global extraEnv keeps the default out": {
+			mutate: func(in *Input) {
+				in.Effective.ExtraEnv = []corev1.EnvVar{{Name: "CAMUNDA_DATABASE_INDEX_NUMBEROFREPLICAS", Value: "1"}}
+			},
+			component: ComponentZeebe,
+		},
+		"a legacy key on standalone Operate keeps the default out of Operate": {
+			mutate:    legacyOnOperate,
+			component: ComponentOperate,
+		},
+		"a legacy key on standalone Operate leaves the default on Zeebe": {
+			mutate:    legacyOnOperate,
+			component: ComponentZeebe,
+			want:      "0",
+		},
+		"an explicit count renders beside a legacy key": {
+			mutate: func(in *Input) {
+				in.Effective.IndexReplicas = new(int32(0))
+				in.Effective.ExtraEnv = []corev1.EnvVar{{Name: "CAMUNDA_DATABASE_INDEX_NUMBEROFREPLICAS", Value: "0"}}
+			},
+			component: ComponentZeebe,
+			want:      "0",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			in := newInput(t, func(in *Input) {
+				in.Storage.Elasticsearch.NodeCount = new(int32(1))
+				tc.mutate(in)
+			})
+			r := render(in, process(t, in, tc.component))
+
+			if tc.want == "" {
+				assertNoEnv(t, r.env, key)
+				return
+			}
+			assertEnv(t, r.env, key, tc.want)
+		})
+	}
+}
+
+func TestRenderRDBMSIgnoresIndexReplicas(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Storage = Storage{
+			Type: v1.SecondaryStorageTypeRDBMS,
+			RDBMS: &RDBMSStorage{
+				Host:        "pg.ns.svc",
+				Port:        5432,
+				Database:    "camunda",
+				Credentials: v1.LocalCredentialsSecretRef{Name: "camunda-db", UsernameKey: "user", PasswordKey: "pass"},
+			},
+		}
+		in.Effective.IndexReplicas = new(int32(1))
+	})
+	r := render(in, process(t, in, ComponentZeebe))
+
+	assertNoEnv(t, r.env, "CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_NUMBEROFREPLICAS")
+}
+
 func TestRenderRDBMS(t *testing.T) {
 	t.Parallel()
 

@@ -109,6 +109,18 @@ type CamundaOptimizeSpec struct {
 	// +optional
 	// +kubebuilder:validation:XValidation:rule="!has(self.replicas) || self.replicas <= 1",message="importer.replicas must be 0 or 1: Optimize supports one active importer"
 	Importer *WorkloadSpec `json:"importer,omitempty"`
+	// IndexReplicas is the replica count of each Optimize index, and of each
+	// zeebe-record index that the exporter of the cluster writes for this
+	// Optimize. When it is not set, the nodeCount of the storage contract of
+	// the cluster gives the count: 0 on one node, 1 on two or more nodes.
+	// Without a nodeCount, Optimize and the exporter keep their own defaults.
+	// Optimize applies the count to its existing indices when it starts. The
+	// exporter applies it to the zeebe-record indices that it creates next. A
+	// count that the nodes cannot place is kept, and Optimize records an
+	// IndexReplicasExceedNodes Warning event.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	IndexReplicas *int32 `json:"indexReplicas,omitempty"`
 	// Monitoring configures the monitoring integrations.
 	// +optional
 	Monitoring *OptimizeMonitoringSpec `json:"monitoring,omitempty"`

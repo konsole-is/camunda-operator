@@ -43,11 +43,12 @@ var notInDefaultsYAML = map[Key]string{
 	KeyManagementServerPort: "Spring Boot property, set in dist application.properties",
 	KeyBrokerGatewayEnable:  "legacy broker property; defaults.yaml lists zeebe.broker.gateway as one block",
 
-	KeyExporterElasticsearchClassName:   "camunda.data.exporters is a map; defaults.yaml lists the map, not its entries",
-	KeyExporterElasticsearchURL:         "camunda.data.exporters is a map; defaults.yaml lists the map, not its entries",
-	KeyExporterElasticsearchIndexPrefix: "camunda.data.exporters is a map; defaults.yaml lists the map, not its entries",
-	KeyExporterElasticsearchUsername:    "camunda.data.exporters is a map; defaults.yaml lists the map, not its entries",
-	KeyExporterElasticsearchPassword:    "camunda.data.exporters is a map; defaults.yaml lists the map, not its entries",
+	KeyExporterElasticsearchClassName:     "camunda.data.exporters is a map; defaults.yaml lists the map, not its entries",
+	KeyExporterElasticsearchURL:           "camunda.data.exporters is a map; defaults.yaml lists the map, not its entries",
+	KeyExporterElasticsearchIndexPrefix:   "camunda.data.exporters is a map; defaults.yaml lists the map, not its entries",
+	KeyExporterElasticsearchUsername:      "camunda.data.exporters is a map; defaults.yaml lists the map, not its entries",
+	KeyExporterElasticsearchPassword:      "camunda.data.exporters is a map; defaults.yaml lists the map, not its entries",
+	KeyExporterElasticsearchIndexReplicas: "camunda.data.exporters is a map; defaults.yaml lists the map, not its entries",
 
 	KeyElasticsearchSecurityEnabled:         "SecondaryStorageSecurity fields are not generated into defaults.yaml",
 	KeyElasticsearchSecurityCertificatePath: "SecondaryStorageSecurity fields are not generated into defaults.yaml",
@@ -162,11 +163,12 @@ var sourceEvidence = map[Key]sourceRef{
 	// Exporter class that every map entry binds to, and the exporter's own
 	// configuration class for the args. The two args fields that are public
 	// take a literal pattern; fieldRef only matches a private declaration.
-	KeyExporterElasticsearchClassName:   fieldRef(exporterFile, "className"),
-	KeyExporterElasticsearchURL:         {esExporterConfigFile, `public String url`},
-	KeyExporterElasticsearchIndexPrefix: {esExporterConfigFile, `public String prefix`},
-	KeyExporterElasticsearchUsername:    fieldRef(esExporterConfigFile, "username"),
-	KeyExporterElasticsearchPassword:    fieldRef(esExporterConfigFile, "password"),
+	KeyExporterElasticsearchClassName:     fieldRef(exporterFile, "className"),
+	KeyExporterElasticsearchURL:           {esExporterConfigFile, `public String url`},
+	KeyExporterElasticsearchIndexPrefix:   {esExporterConfigFile, `public String prefix`},
+	KeyExporterElasticsearchUsername:      fieldRef(esExporterConfigFile, "username"),
+	KeyExporterElasticsearchPassword:      fieldRef(esExporterConfigFile, "password"),
+	KeyExporterElasticsearchIndexReplicas: fieldRef(esExporterConfigFile, "numberOfReplicas"),
 
 	KeyElasticsearchSecurityEnabled:         fieldRef(esSecurityFile, "enabled"),
 	KeyElasticsearchSecurityCertificatePath: fieldRef(esSecurityFile, "certificatePath"),

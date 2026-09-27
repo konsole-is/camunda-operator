@@ -64,6 +64,8 @@ const (
 	// envElasticsearchSelfSigned is es.security.ssl.selfSigned. The CA is
 	// supplied, so the certificate is verified against it like any other.
 	envElasticsearchSelfSigned = "CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_SSL_SELF_SIGNED"
+	// envElasticsearchReplicas is es.settings.index.number_of_replicas.
+	envElasticsearchReplicas = "CAMUNDA_OPTIMIZE_ELASTICSEARCH_SETTINGS_INDEX_NUMBER_OF_REPLICAS"
 	// envZeebeEnabled is zeebe.enabled: whether this instance imports the
 	// exported records of the cluster.
 	envZeebeEnabled = "CAMUNDA_OPTIMIZE_ZEEBE_ENABLED"
@@ -152,9 +154,9 @@ func baseEnv(in Input, importEnabled bool) []corev1.EnvVar {
 }
 
 // elasticsearchEnv renders the Elasticsearch connection: the host and the port
-// of the endpoint, the basic-auth credentials, and the TLS settings. Optimize
-// takes the host and the port apart, so the scheme of the endpoint becomes the
-// TLS switch.
+// of the endpoint, the basic-auth credentials, the TLS settings, and the index
+// replica count. Optimize takes the host and the port apart, so the scheme of
+// the endpoint becomes the TLS switch.
 func elasticsearchEnv(in Input) []corev1.EnvVar {
 	host, port, secure := endpointParts(in.Storage.Endpoint)
 	creds := in.Storage.CredentialsSecretRef
@@ -173,6 +175,10 @@ func elasticsearchEnv(in Input) []corev1.EnvVar {
 			corev1.EnvVar{Name: envElasticsearchCAs, Value: CAMountPath + "/" + ca.Key},
 			corev1.EnvVar{Name: envElasticsearchSelfSigned, Value: "false"},
 		)
+	}
+
+	if replicas := in.Storage.IndexReplicas(in.Optimize.Spec.IndexReplicas); replicas != nil {
+		env = append(env, corev1.EnvVar{Name: envElasticsearchReplicas, Value: strconv.Itoa(int(*replicas))})
 	}
 
 	return env
