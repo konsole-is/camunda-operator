@@ -2,7 +2,7 @@
 
 `BackupSchedule` takes logical backups of one `CamundaCluster` on a cron schedule. You create it, or another tool creates it for you.
 
-At each trigger the operator creates one backup of the kind that matches the secondary storage of the cluster: `LogicalBackupElasticsearch` for an Elasticsearch cluster, `LogicalBackupRDBMS` for a relational one. That backup then runs on its own. The schedule also owns retention: it deletes its own terminal backups beyond `spec.retained`, and the deletion removes the stored artifacts too.
+At each trigger the operator creates one backup of the kind that matches the secondary storage of the cluster. The kind is `LogicalBackupElasticsearch` for an Elasticsearch cluster and `LogicalBackupRDBMS` for a relational one. That backup then runs on its own. The schedule also owns retention: it deletes its own terminal backups beyond `spec.retained`, and the deletion removes the stored artifacts too.
 
 `kubectl get backupschedules` lists the schedules with `Ready`, its reason, the cron expression, and the age. `kubectl get backupschedules -o wide` adds the cluster, the last schedule, and the last backup.
 
@@ -91,7 +91,7 @@ Each creation records the Normal event `BackupCreated` on the schedule. The even
 
 The operator creates no backup when:
 
-- The cluster is suspended. A suspended cluster is not backed up: the schedule skips the trigger and records the Normal event `TriggerSkipped`, which names the cluster and the trigger time. A backup that already exists waits with reason `ClusterSuspended` instead. `spec.suspend` suspends the cluster, and so do these two `Ready` reasons of the `CamundaCluster`: `StorageAlreadyAttached` and `WaitingForHandover`. A workload of it that still runs is one the API server refused to stop, which its `WorkloadStopRefused` event says. Read `Ready` on the `CamundaCluster` and correct the cause there. Backups start again at the next trigger after the cluster resumes.
+- The cluster is suspended. A suspended cluster is not backed up. The schedule skips the trigger and records the Normal event `TriggerSkipped`, which names the cluster and the trigger time. A backup that already exists waits with reason `ClusterSuspended` instead. `spec.suspend` suspends the cluster, and so do these two `Ready` reasons of the `CamundaCluster`: `StorageAlreadyAttached` and `WaitingForHandover`. A workload of it that still runs is one the API server refused to stop, which its `WorkloadStopRefused` event says. Read `Ready` on the `CamundaCluster` and correct the cause there. Backups start again at the next trigger after the cluster resumes.
 - A backup of this schedule has not reached a terminal phase. Two backups of one schedule never overlap, and a backup of either kind counts. If a backup regularly runs past the next trigger, give the schedule a longer gap.
 - An object already holds the name of the new backup and belongs to something else. The name carries the trigger time, so only that one trigger is skipped and the next one runs. Find out what created that object, and remove it if it does not belong there.
 - A reference does not resolve. The `CamundaCluster` is missing, or it has no `spec.storageRef` or `spec.backupStorageRef`, or the `SecondaryStorageConfig` it names is missing. The `Ready` condition of the schedule names the one that applies. Create the resource, or set the missing field.
@@ -159,7 +159,7 @@ The operator records no such warning when `spec.backup.primaryStorage.retention.
 
 ## Deletion
 
-When you delete a `BackupSchedule`, its backups stay. They carry no owner reference to the schedule, on purpose. No trigger fires again, and nothing prunes those backups again. Delete the backups you no longer want, or create a schedule of the same name again to take the pruning back.
+When you delete a `BackupSchedule`, its backups stay. They carry no owner reference to the schedule, on purpose. No trigger fires again, and nothing prunes those backups again. Delete the backups you no longer want. Or create a schedule of the same name again to take the pruning back.
 
 A schedule has no suspend field. To stop the backups for a time, delete the schedule. While the cluster itself is suspended, every trigger is skipped.
 

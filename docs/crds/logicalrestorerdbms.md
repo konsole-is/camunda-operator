@@ -67,7 +67,7 @@ To move the cluster off that version, declare the version you want:
 - A client-side `kubectl apply` that sets `spec.version` takes the field back. It writes the field, and the API server gives ownership to the manager that wrote it.
 - A server-side apply, which is what Argo CD and Flux use, reports a conflict on the field. Force the conflict, and the tool owns `spec.version` again.
 
-CAUTION: A manifest that omits `spec.version` does not take the field back. Server-side apply removes a field only from the manager that declared it, and `camunda-operator/restore-version` still declares this one. Watch for this on a cluster that took its version from a release: an explicit `spec.version` always wins over the release, so the value the restore wrote governs the cluster until somebody removes the field. Remove it by hand to give the release control again.
+CAUTION: A manifest that omits `spec.version` does not take the field back. Server-side apply removes a field only from the manager that declared it, and `camunda-operator/restore-version` still declares this one. Watch for this on a cluster that took its version from a release. An explicit `spec.version` always wins over the release. So the value the restore wrote governs the cluster until somebody removes the field. Remove it by hand to give the release control again.
 
 If the version of the release is below the one the brokers run, the operator refuses that removal. Set the annotation `camunda.io/allow-version-downgrade` to the version of the release in the same edit that removes the field. Setting the annotation first does not work. The operator removes an annotation that does not name the version the cluster is asked to run. Remove the field first and set the annotation after the refusal, or do both in the one command shown.
 
@@ -100,7 +100,7 @@ The operator declares the two fields above under its own names, the same way [Ca
 
 A tool that also declares one of these fields fights the operator for it. Argo CD or Flux reverts the write of the restore, the restore writes it again, and the restore stalls in `Pending`. If you drive the `CamundaCluster` from Git:
 
-- Remove `spec.suspend` and `spec.version` from the manifest for the time of the restore, or mark both fields as an ignored difference.
+- Remove `spec.suspend` and `spec.version` from the manifest for the time of the restore. Or mark both fields as an ignored difference.
 - Put `spec.version` back after the restore, with the version that you want the cluster to run.
 - A tool that prunes annotations it does not declare removes the sanction, and the cluster then refuses the version write. Exclude `camunda.io/allow-version-downgrade` from pruning for the time of the restore.
 
@@ -118,7 +118,7 @@ A cluster that another backup or another restore holds keeps this restore in `Pe
 
 | Phase | What happens |
 | --- | --- |
-| `Pending` | The restore waits. The backup does not exist or is not completed, the target does not exist, another backup or restore holds the target, or the operator is still preparing the target. Nothing of the target is erased here. Preparation does write `spec.suspend` and `spec.version` on the target, which [The restore prepares the target](#the-restore-prepares-the-target) describes. |
+| `Pending` | The restore waits. The backup does not exist or is not completed, or the target does not exist. Or another backup or restore holds the target, or the operator is still preparing the target. Nothing of the target is erased here. Preparation does write `spec.suspend` and `spec.version` on the target, which [The restore prepares the target](#the-restore-prepares-the-target) describes. |
 | `ValidatingCompatibility` | The operator compares the backup against the target. |
 | `RestoringSecondaryStorage` | One Job downloads the dump from the backup bucket and runs `pg_restore` against the logical database of the target. |
 | `RestoringPrimaryStorage` | The operator recreates the broker data volumes and runs the Camunda restore application on them. |
@@ -167,13 +167,13 @@ The operator records the Job in `status.secondaryJobName` and follows it to its 
 
 ## Primary storage
 
-The Camunda restore application refuses a non-empty data directory, so the operator deletes the broker data volumes of the target and creates them again. The new volume takes the size that the backup recorded in `status.storageSizes.zeebe`, or the size of the claim template of the broker StatefulSet when the backup recorded none. The storage class, the access modes, and the labels always come from the claim template.
+The Camunda restore application refuses a non-empty data directory, so the operator deletes the broker data volumes of the target and creates them again. The new volume takes the size that the backup recorded in `status.storageSizes.zeebe`. When the backup recorded none, it takes the size of the claim template of the broker StatefulSet. The storage class, the access modes, and the labels always come from the claim template.
 
 **The volumes belong to the broker StatefulSet, not to the restore.** Deleting the restore never deletes a broker volume.
 
 A Job that already carries the name of one of these Jobs, from an earlier restore of the same name, fails this restore. Its result says nothing about this restore. The message names the Job.
 
-The operator then runs the Camunda restore application once per broker, as a Job with **no arguments**. The continuous primary-storage backup of Zeebe carries the checkpoint, and the restore application reads the exporter position from the restored database and picks the backups itself.
+The operator then runs the Camunda restore application once per broker, as a Job with **no arguments**. The continuous primary-storage backup of Zeebe carries the checkpoint. The restore application reads the exporter position from the restored database and picks the backups itself.
 
 The Jobs run with the configuration the brokers run with, so the two cannot drift. A cluster whose broker StatefulSet is gone cannot restore until the cluster brings it back.
 
@@ -213,7 +213,7 @@ A target that the restore suspended stays suspended. That is deliberate. Brokers
 | `Ready` | `ClusterNotSuspended` | The target started running again while the restore ran. | Suspend the target again. A restore that already erased something fails ten minutes after the first outage. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the target. The message names it. | Wait. The restore starts when that operation finishes. |
 | `Ready` | `IncompatibleTarget` | The target cannot hold the backup. See "Compatibility". | Create a new restore against a target that fits. |
-| `Ready` | `InvalidReference` | The backup or the target does not exist, the backup is not `Completed`, a link in the storage chain is gone, or the database server was not probed. | Correct the reference that the message names. |
+| `Ready` | `InvalidReference` | The backup or the target does not exist, or the backup is not `Completed`. Or a link in the storage chain is gone, or the database server was not probed. | Correct the reference that the message names. |
 | `Ready` | `MissingSecret` | The database credentials Secret is missing or lacks a key. | Create the Secret that the message names. |
 | `Ready` | `MissingCredentials` | The bucket credentials Secret is missing or lacks a key. | Create the Secret that the message names. |
 | `Ready` | `Failed` | A phase failed. | Read `status.failureMessage`. Correct the cause and create a new restore. |
