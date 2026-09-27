@@ -178,11 +178,13 @@ func hasWorkloads(optimize *v1.CamundaOptimize) bool {
 // through it. An instance that rendered no workload before records nothing
 // either.
 //
-// The condition carries the state and the event carries the transition, so a
-// user reading `kubectl describe` learns why the workloads went to zero. The
-// Ready condition cannot say it: ocf builds the message of a suspended
-// component from its own suspension state, and the reason is Suspended, the
-// same reason that a suspended CamundaCluster reports.
+// status.suspendedBy carries the state from one pass to the next. The
+// conditions do not, because a failed apply or a status conflict can rewrite
+// them. The event carries the transition, so a user reading `kubectl describe`
+// learns why the workloads went to zero. The Ready condition cannot say it:
+// ocf builds the message of a suspended component from its own suspension
+// state, and the reason is Suspended, the same reason that a suspended
+// CamundaCluster reports.
 //
 // The event marks the decision of this pass, not its outcome. A pass whose apply
 // fails still records it, and stages the field that tells the next pass so.
