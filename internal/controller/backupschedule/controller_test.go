@@ -24,6 +24,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 
 	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
@@ -124,28 +125,53 @@ func createWorld(storageType v1.SecondaryStorageType, mutate ...func(*v1.Camunda
 	Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
 	w := &world{namespace: namespace, cluster: cluster}
-	setClusterReady(w, metav1.ConditionTrue, v1.ReasonHealthy, "the cluster is ready")
+	updateClusterStatus(w, func(current *v1.CamundaCluster) {
+		setReady(current, metav1.ConditionTrue, v1.ReasonHealthy, "the cluster is ready")
+		publishBinding(current)
+	})
 
 	return w
 }
 
-// setClusterReady sets the Ready condition of the cluster of w. The
-// CamundaCluster controller does not run in this suite, so the condition
-// stays where the spec puts it.
-func setClusterReady(w *world, status metav1.ConditionStatus, reason, message string) {
+// updateClusterStatus applies mutate to the live cluster of w and writes its
+// status. The CamundaCluster controller does not run in this suite, so the
+// status stays where the spec puts it.
+func updateClusterStatus(w *world, mutate func(*v1.CamundaCluster)) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		var current v1.CamundaCluster
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &current)).To(Succeed())
-		meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{
-			Type:               v1.ConditionReady,
-			Status:             status,
-			Reason:             reason,
-			Message:            message,
-			ObservedGeneration: current.Generation,
-		})
+		mutate(&current)
 		g.Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
+}
+
+func setReady(cluster *v1.CamundaCluster, status metav1.ConditionStatus, reason, message string) {
+	meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+		Type:               v1.ConditionReady,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: cluster.Generation,
+	})
+}
+
+// publishBinding publishes the management binding that the CamundaCluster
+// controller publishes for a cluster that is not suspended.
+func publishBinding(cluster *v1.CamundaCluster) {
+	cluster.Status.Management = &v1.ManagementBinding{
+		Endpoint: "http://" + cluster.Name + "-zeebe." + cluster.Namespace + ".svc:9600",
+		Auth:     v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
+		Version:  cluster.Spec.Version,
+	}
+}
+
+// setClusterReady sets the Ready condition of the cluster of w.
+func setClusterReady(w *world, status metav1.ConditionStatus, reason, message string) {
+	GinkgoHelper()
+	updateClusterStatus(w, func(current *v1.CamundaCluster) {
+		setReady(current, status, reason, message)
+	})
 }
 
 // holdStorage puts the cluster of w in the suspension of a backend that
@@ -402,7 +428,7 @@ var _ = Describe("BackupSchedule controller", func() {
 		Expect(scheduledOf(schedule)).To(BeEmpty())
 	})
 
-	It("skips the trigger of a cluster that is not ready and backs it up once it is", func() {
+	It("skips the trigger of an RDBMS cluster that is not ready and backs it up once it is", func() {
 		w := createWorld(v1.SecondaryStorageTypeRDBMS)
 		setClusterReady(w, metav1.ConditionFalse, v1.ReasonInvalidReference, "SecondaryStorageConfig is missing")
 		schedule, trigger := createSchedule(w)
@@ -445,6 +471,54 @@ var _ = Describe("BackupSchedule controller", func() {
 			var current v1.BackupSchedule
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), &current)).To(Succeed())
 			g.Expect(current.Status.LastBackupName).To(Equal(name))
+		}, timeout, interval).Should(Succeed())
+		Expect(scheduledOf(schedule)).To(HaveLen(1))
+	})
+
+	It("skips the trigger of an Elasticsearch cluster without a binding and backs it up while it is degraded", func() {
+		w := createWorld(v1.SecondaryStorageTypeElasticsearch)
+		updateClusterStatus(w, func(current *v1.CamundaCluster) {
+			setReady(current, metav1.ConditionFalse, v1.ReasonInvalidReference, "SecondaryStorageConfig is missing")
+			current.Status.Management = nil
+		})
+		schedule, trigger := createSchedule(w)
+
+		By("skipping the trigger with an event that names the missing binding")
+		clock.Set(trigger.Add(30 * time.Second))
+		touch(schedule)
+
+		want := fmt.Sprintf(
+			"TriggerSkipped: Skipped the trigger at %s: CamundaCluster %q is not ready: "+
+				"it has not published its management binding, and Ready is False with reason InvalidReference",
+			trigger.Format(time.RFC3339), w.cluster.Name,
+		)
+		Eventually(func(g Gomega) {
+			g.Expect(eventReasons(schedule)).To(ContainElement(want))
+
+			var current v1.BackupSchedule
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), &current)).To(Succeed())
+			g.Expect(current.Status.LastScheduleTime).NotTo(BeNil())
+			g.Expect(current.Status.LastScheduleTime.Time).To(BeTemporally("==", trigger))
+		}, timeout, interval).Should(Succeed())
+		Expect(scheduledOf(schedule)).To(BeEmpty())
+
+		By("creating the backup at the next trigger while Ready is still False but the binding is back")
+		updateClusterStatus(w, func(current *v1.CamundaCluster) {
+			setReady(current, metav1.ConditionFalse, string(component.Degraded), "a connectors replica is not ready")
+			publishBinding(current)
+		})
+		second := trigger.Add(24 * time.Hour)
+		clock.Set(second.Add(30 * time.Second))
+		touch(schedule)
+
+		name := schedule.Name + "-" + strconv.FormatInt(second.Unix(), 10)
+		Eventually(func(g Gomega) {
+			var backup v1.LogicalBackupElasticsearch
+			g.Expect(k8sClient.Get(
+				ctx,
+				client.ObjectKey{Namespace: w.namespace, Name: name},
+				&backup,
+			)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 		Expect(scheduledOf(schedule)).To(HaveLen(1))
 	})

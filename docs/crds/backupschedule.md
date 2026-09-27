@@ -92,7 +92,7 @@ Each creation records the Normal event `BackupCreated` on the schedule. The even
 The operator creates no backup when:
 
 - The cluster is suspended. A suspended cluster is not backed up: the schedule skips the trigger and records the Normal event `TriggerSkipped`, which names the cluster and the trigger time. A backup that already exists waits with reason `ClusterSuspended` instead. `spec.suspend` suspends the cluster, and so do these two `Ready` reasons of the `CamundaCluster`: `StorageAlreadyAttached` and `WaitingForHandover`. A workload of it that still runs is one the API server refused to stop, which its `WorkloadStopRefused` event says. Read `Ready` on the `CamundaCluster` and correct the cause there. Backups start again at the next trigger after the cluster resumes.
-- The `Ready` condition of the cluster is not `True`, and the cluster is not suspended. A backup of such a cluster waits in `Pending`, so the schedule skips the trigger. It records the Normal event `TriggerSkipped`, which names the cluster and its `Ready` reason, for example `InvalidReference`. A cluster that reports no `Ready` condition yet is skipped the same way. Read `Ready` on the `CamundaCluster` and correct the cause there. Backups start again at the next trigger after `Ready` is `True`.
+- The backup cannot start, and the cluster is not suspended. A `LogicalBackupRDBMS` starts only while the `Ready` condition of the cluster is `True`. A `LogicalBackupElasticsearch` starts while the cluster publishes `status.management`, also when `Ready` is `False` with a reason such as `Degraded`. A backup that cannot start waits in `Pending`, so the schedule skips the trigger and records the Normal event `TriggerSkipped`. The event names the cluster and its `Ready` reason. Read `Ready` on the `CamundaCluster` and correct the cause there.
 - A backup of this schedule has not reached a terminal phase. Two backups of one schedule never overlap, and a backup of either kind counts. If a backup regularly runs past the next trigger, give the schedule a longer gap.
 - An object already holds the name of the new backup and belongs to something else. The name carries the trigger time, so only that one trigger is skipped and the next one runs. Find out what created that object, and remove it if it does not belong there.
 - A reference does not resolve. The `CamundaCluster` is missing, or it has no `spec.storageRef` or `spec.backupStorageRef`, or the `SecondaryStorageConfig` it names is missing. The `Ready` condition of the schedule names the one that applies. Create the resource, or set the missing field.
@@ -163,7 +163,7 @@ The operator records no such warning when `spec.backup.primaryStorage.retention.
 
 When you delete a `BackupSchedule`, its backups stay. They carry no owner reference to the schedule, on purpose. No trigger fires again, and nothing prunes those backups again. Delete the backups you no longer want, or create a schedule of the same name again to take the pruning back.
 
-A schedule has no suspend field. To stop the backups for a time, delete the schedule. While the cluster itself is suspended or not ready, every trigger is skipped.
+A schedule has no suspend field. To stop the backups for a time, delete the schedule. While the cluster itself is suspended, or while the backup cannot start on it, every trigger is skipped.
 
 ## Status
 

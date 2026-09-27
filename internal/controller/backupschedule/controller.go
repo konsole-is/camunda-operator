@@ -262,13 +262,13 @@ func (r *BackupScheduleReconciler) resolve(
 }
 
 // trigger consumes the due trigger: it creates the backup, or it skips with
-// an event when the cluster is suspended, when its Ready condition is not
-// True, or when a backup of the schedule has not finished. A suspended
-// cluster skips as suspended, whatever its Ready condition says. Every path
-// below records the trigger as consumed, except a transient error, which
-// leaves it due so the retry takes it again. The backup name repeats the
-// trigger time, so a retry after a crash lands on AlreadyExists instead of a
-// second backup.
+// an event when the cluster is suspended, when the backup cannot start on
+// the cluster, or when a backup of the schedule has not finished. A
+// suspended cluster skips as suspended, whatever its Ready condition says.
+// Every path below records the trigger as consumed, except a transient
+// error, which leaves it due so the retry takes it again. The backup name
+// repeats the trigger time, so a retry after a crash lands on AlreadyExists
+// instead of a second backup.
 func (r *BackupScheduleReconciler) trigger(
 	ctx context.Context,
 	schedule *v1.BackupSchedule,
@@ -303,9 +303,9 @@ func (r *BackupScheduleReconciler) trigger(
 		return nil
 	}
 
-	// A backup of a cluster that is not ready waits in Pending for as long as
-	// the cluster stays so, and while it waits it blocks every later trigger.
-	if state := notReady(res.cluster); state != "" {
+	// A backup that cannot start waits in Pending for as long as the cluster
+	// stays so, and while it waits it blocks every later trigger.
+	if state := cannotStart(res.cluster, res.storageType); state != "" {
 		schedule.Status.LastScheduleTime = &consumed
 		r.EventRecorder.Eventf(
 			schedule,
@@ -397,15 +397,28 @@ func (r *BackupScheduleReconciler) trigger(
 	return nil
 }
 
-// notReady describes the Ready condition of a cluster that is not ready, for
-// the note of the skip event. It returns "" when Ready is True.
-func notReady(cluster *v1.CamundaCluster) string {
+// cannotStart describes why a backup of the storage type cannot start on
+// the cluster, for the note of the skip event. It returns "" when the backup
+// can start. Both kinds need the management binding. An RDBMS backup also
+// needs Ready True. An Elasticsearch backup does not, so a degraded cluster
+// that still serves its management API is backed up.
+func cannotStart(cluster *v1.CamundaCluster, storageType v1.SecondaryStorageType) string {
+	if binding := cluster.Status.Management; binding == nil || binding.Endpoint == "" {
+		return "it has not published its management binding, and " + readyState(cluster)
+	}
+
+	ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
+	if storageType == v1.SecondaryStorageTypeRDBMS && (ready == nil || ready.Status != metav1.ConditionTrue) {
+		return readyState(cluster)
+	}
+
+	return ""
+}
+
+func readyState(cluster *v1.CamundaCluster) string {
 	ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
 	if ready == nil {
 		return "it reports no Ready condition yet"
-	}
-	if ready.Status == metav1.ConditionTrue {
-		return ""
 	}
 
 	return fmt.Sprintf("Ready is %s with reason %s", ready.Status, ready.Reason)
