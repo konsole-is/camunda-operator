@@ -99,8 +99,8 @@ func StorageClaimLeaseLabels(name string) map[string]string {
 // and that own does not claim, as sorted "namespace/name" paths, together
 // with the workloads that can still start such a pod: a ReplicaSet that asks
 // for replicas with the claim on its labels, a Deployment or a StatefulSet
-// that asks for replicas with the claim on its template, and a Job that has
-// not finished with the claim on its template. A workload whose pod is gone
+// that asks for replicas with the claim on its template, and a Job that is not
+// suspended and has not finished with the claim on its template. A workload whose pod is gone
 // for a moment, evicted, failed, or not yet started, recreates it with the
 // claim, so a scan of the pods alone can pass while a writer is about to
 // return. A
