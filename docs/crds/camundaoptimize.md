@@ -279,7 +279,7 @@ A `CamundaOptimize` that never held the attachment removes nothing from the clus
 
 What a failed check does to the workloads depends on the state of the cluster. [Suspension](#suspension) has the table.
 
-`status.suspendedBy` is `Cluster` or `StorageClaim` while the workloads follow the referenced cluster to zero, and empty otherwise. See [Suspension](#suspension).
+`status.suspendedBy` is `Cluster` or `StorageClaim` while the workloads follow the referenced cluster to zero. It keeps that value while a failed check holds them at zero after the cluster resumed. It is empty while the workloads follow their spec. See [Suspension](#suspension).
 
 `status.observedGeneration` is the last generation the operator reconciled.
 
