@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package manager
 
 import (
 	"testing"
@@ -23,7 +23,9 @@ import (
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -33,10 +35,14 @@ import (
 
 // The manager reads, watches, and applies every kind below through typed
 // objects. A kind the scheme does not recognize fails at runtime only, on a
-// Kubernetes cluster that serves it, and no envtest suite catches it: the
-// suites build a scheme of their own.
+// Kubernetes cluster that serves it. The envtest suites register into the
+// global client-go scheme, which knows the built-in kinds already, so a
+// missing built-in kind passes every suite.
 func TestSchemeRecognizesEveryKindTheManagerReconciles(t *testing.T) {
 	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, AddToScheme(scheme))
 
 	for _, gvk := range []schema.GroupVersionKind{
 		corev1.SchemeGroupVersion.WithKind("Secret"),

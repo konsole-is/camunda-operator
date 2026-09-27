@@ -94,7 +94,7 @@ var (
 	}
 )
 
-// The envtest guard in internal/controller/example_schema_test.go proves that
+// The envtest guard in internal/controller/conformance/example_schema_test.go proves that
 // every inventory is schema-valid against the real CRDs. It proves nothing
 // about convergence. A storageRef that names a contract nobody publishes, a
 // preset no node can schedule, and an image tag that does not pull all pass a

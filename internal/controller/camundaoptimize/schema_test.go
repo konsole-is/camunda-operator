@@ -25,7 +25,6 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
 // minimalCamundaOptimize returns the minimal example of the CRD doc with a
@@ -34,7 +33,7 @@ func minimalCamundaOptimize() *v1.CamundaOptimize {
 	return &v1.CamundaOptimize{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "co-" + utilrand.String(8),
-			Namespace: fixtures.SchemaTestNamespace,
+			Namespace: schemaTestNamespace,
 		},
 		Spec: v1.CamundaOptimizeSpec{
 			Version:           "8.9.4",

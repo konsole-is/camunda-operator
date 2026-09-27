@@ -56,7 +56,7 @@ spec:
 
 The broker count, the partitions, the volumes, the connectors, the backup policy, and the administrators all come from the preset `medium`. The versions come from the release `camunda-8-9-4`. The authentication method and the identity provider come from the platform config `production`.
 
-The fields that a cluster must set itself are the ones that belong to one cluster: `platformConfigRef`, `presetRef`, `releaseRef`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `externalUrl`, `serviceAccount`, `monitoring`, `suspend`, and `pause`. A preset that sets one of them is rejected, and so is a preset that sets `version` or `connectors.version`.
+The fields that a cluster must set itself are the ones that belong to one cluster. They are `platformConfigRef`, `presetRef`, `releaseRef`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `externalUrl`, `serviceAccount`, `monitoring`, `suspend`, and `pause`. A preset that sets one of them is rejected, and so is a preset that sets `version` or `connectors.version`.
 
 An `ElasticsearchCluster` works the same way. The instance-bound fields are `presetRef`, `releaseRef`, `secondaryStorageConfig`, and `suspend`:
 
@@ -159,7 +159,7 @@ The [CamundaClusterPreset](../crds/camundaclusterpreset.md), [ElasticsearchClust
 
 Three ready-to-apply presets are in [`config/example/presets`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/presets), and the release that the example clusters and their storage name is in [`config/example/releases`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/releases). The [example inventories](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example) next to them name both. A `CamundaCluster` there keeps its references and the fields that belong to that one cluster.
 
-That release carries the name of the minor line, `camunda-8-9`, because you edit that one release in place. When you want two releases side by side, name each one for the version it runs, such as `camunda-8-9-4` for Camunda 8.9.4.
+That release carries the name of the minor line, `camunda-8-9`, because you edit that one release in place. When you want two releases side by side, name each one for the version it runs. An example is `camunda-8-9-4` for Camunda 8.9.4.
 
 ## Override one field
 
@@ -187,7 +187,7 @@ Most fields merge like this, value by value. A few blocks replace as a whole, be
 
 When you edit a preset, every cluster that references it takes the new baseline. A larger `storageSize` grows the volumes of every cluster in place. A lower `storageSize` is ignored for a running cluster, which keeps its volumes and records the event `StorageShrinkIgnored`.
 
-To roll a fleet to a new version, edit the release. Every resource that references it rolls its pods, whatever preset sizes it. To roll in steps, create a second release, for example `camunda-8-9-5`, and move resources to it one at a time by changing `releaseRef`. When every resource is on the new release, delete the old one.
+To roll a fleet to a new version, edit the release. Every resource that references it rolls its pods, whatever preset sizes it. To roll in steps, create a second release, for example `camunda-8-9-5`. Then move resources to it one at a time by changing `releaseRef`. When every resource is on the new release, delete the old one.
 
 Every cluster whose brokers run a higher version refuses a lower one. Each one reports `Ready: False` with reason `VersionDowngradeRefused` and keeps the version its brokers run. To lower a fleet on purpose, lower the release first and let every cluster refuse. Then set the annotation `camunda.io/allow-version-downgrade` to the version of the release, on each cluster you want to move. The [CamundaCluster page](../crds/camundacluster.md#version) states the rule.
 

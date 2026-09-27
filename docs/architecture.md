@@ -31,7 +31,7 @@ The operator labels every resource that it creates:
 | `camunda.io/component` | the role of the resource, for example `zeebe`, `gateway`, `elasticsearch` |
 | `app.kubernetes.io/managed-by` | `camunda-operator` |
 
-One label key per owning kind keeps two owners of different kinds with the same name apart. Pods and volumes that another operator runs from a template of this operator, for example the Elasticsearch pods that ECK runs and the PostgreSQL pods that CloudNativePG runs, carry the owner and component labels but not the `managed-by` label.
+One label key per owning kind keeps two owners of different kinds with the same name apart. Another operator can run pods and volumes from a template of this operator. Examples are the Elasticsearch pods that ECK runs and the PostgreSQL pods that CloudNativePG runs. These pods and volumes carry the owner and component labels but not the `managed-by` label.
 A feature finds the workloads of a cluster through these labels, or reads the cluster directly through `clusterRef`.
 
 When a feature needs to call the cluster, it reads `status.management` of the `CamundaCluster`. That field publishes the address of the management API, so the feature does not rebuild Service names and ports.
@@ -121,7 +121,7 @@ A reference by name points into the namespace of the resource that holds it. A `
 
 The same rule holds for Secrets. A namespaced kind reads its Secrets from its own namespace only, so its `secretRef` blocks name a Secret and its keys, and never a namespace. A cluster-scoped kind names the namespace, because it has none of its own. Only `CamundaPlatformConfig` and `ManagementAuthConfig` do that, and the operator copies the Secrets they name into each namespace that reads them. A preset is cluster-scoped too, and it names no namespace. A `secretRef` on a preset resolves in the namespace of each cluster that inherits it.
 
-The management plane is the one place where a resource reaches across namespaces. A `CamundaManagementCluster` selects `CamundaClusters` across namespaces, bounded by its `namespaceSelector`, and annotates the ones it serves. The rule still holds in the direction that matters: a `CamundaCluster` never references a management plane, and it behaves the same whether one serves it or not.
+The management plane is the one place where a resource reaches across namespaces. A `CamundaManagementCluster` selects `CamundaClusters` across namespaces, bounded by its `namespaceSelector`, and annotates the ones it serves. The rule still holds in the direction that matters. A `CamundaCluster` never references a management plane, and it behaves the same whether one serves it or not.
 
 ## Status conventions
 

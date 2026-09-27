@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package camundamanagementcluster
 
 import (
 	"strings"
@@ -28,7 +28,6 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
 // validManagementCluster returns the minimal oidc-mode example of the CRD doc
@@ -130,7 +129,7 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			wantErr string,
 		) {
 			obj := build()
-			obj.Namespace = fixtures.SchemaTestNamespace
+			obj.Namespace = schemaTestNamespace
 			mutate(obj)
 			err := k8sClient.Create(ctx, obj)
 			if wantErr == "" {
@@ -453,7 +452,7 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 		"an explicitly empty admin field",
 		func(build func() *v1.CamundaManagementCluster, field string) {
 			obj := build()
-			obj.Namespace = fixtures.SchemaTestNamespace
+			obj.Namespace = schemaTestNamespace
 			raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -479,7 +478,7 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 	// carries the empty string to the API server.
 	It("accepts an explicitly empty realm", func() {
 		obj := externalKeycloakManagementCluster()
-		obj.Namespace = fixtures.SchemaTestNamespace
+		obj.Namespace = schemaTestNamespace
 		raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
 		Expect(err).NotTo(HaveOccurred())
 

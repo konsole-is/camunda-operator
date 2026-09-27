@@ -217,7 +217,7 @@ var _ = Describe("DatabaseServer", Ordered, Label(utils.LabelDatabaseServer), fu
 			dscomponents.ArchiveSegment(&current), dscomponents.ClusterName(&current), "base",
 		}, "/") + "/"
 
-		objects, err := utils.MinIOObjectsWithPrefix(minioNamespace, prefix, storeTimeout)
+		objects, err := utils.RustFSObjectsWithPrefix(rustfsNamespace, prefix, storeTimeout)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(objects).NotTo(BeEmpty(), "the archive holds no base backup under %q", prefix)
 	})

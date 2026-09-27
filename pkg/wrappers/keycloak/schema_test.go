@@ -14,33 +14,41 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package keycloak_test
 
 import (
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
+	"github.com/konsole-is/camunda-operator/test/utils"
 )
 
 // The Keycloak types are hand written against the CRD vendored in
-// internal/testenv/crds/keycloak, because the Keycloak project publishes no Go
+// test/envtest/crds/keycloak, because the Keycloak project publishes no Go
 // module for them. A field that the schema does not declare is pruned on
 // write, without an error, and the operator would then run a Keycloak that
-// silently ignores what the spec asked for. This spec writes every field the
-// operator sets and reads the object back.
-var _ = Describe("Keycloak types", func() {
-	It("round-trips every field the operator sets through the vendored schema", func() {
+// silently ignores what the spec asked for. The subtests write every field
+// the operator sets and read the object back.
+func TestKeycloakTypesRoundTripThroughTheVendoredSchema(t *testing.T) {
+	apiClient := startControlPlane(t)
+
+	t.Run("round-trips every field the operator sets", func(t *testing.T) {
+		ctx := t.Context()
 		kc := &keycloak.Keycloak{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "kc-" + utilrand.String(8),
-				Namespace: fixtures.SchemaTestNamespace,
+				Namespace: "default",
 			},
 			Spec: keycloak.KeycloakSpec{
 				Instances: new(int32(2)),
@@ -114,24 +122,23 @@ var _ = Describe("Keycloak types", func() {
 		}
 		want := kc.Spec.DeepCopy()
 
-		Expect(k8sClient.Create(ctx, kc)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, kc) })
+		require.NoError(t, apiClient.Create(ctx, kc))
 
 		var stored keycloak.Keycloak
-		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(kc), &stored)).To(Succeed())
-		Expect(&stored.Spec).To(Equal(want))
+		require.NoError(t, apiClient.Get(ctx, client.ObjectKeyFromObject(kc), &stored))
+		assert.Equal(t, want, &stored.Spec)
 	})
 
-	It("reads the conditions of the status subresource", func() {
+	t.Run("reads the conditions of the status subresource", func(t *testing.T) {
+		ctx := t.Context()
 		kc := &keycloak.Keycloak{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "kc-" + utilrand.String(8),
-				Namespace: fixtures.SchemaTestNamespace,
+				Namespace: "default",
 			},
 			Spec: keycloak.KeycloakSpec{Instances: new(int32(1))},
 		}
-		Expect(k8sClient.Create(ctx, kc)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, kc) })
+		require.NoError(t, apiClient.Create(ctx, kc))
 
 		kc.Status = keycloak.KeycloakStatus{
 			Instances: 1,
@@ -141,13 +148,48 @@ var _ = Describe("Keycloak types", func() {
 				Message: "Keycloak is ready",
 			}},
 		}
-		Expect(k8sClient.Status().Update(ctx, kc)).To(Succeed())
+		require.NoError(t, apiClient.Status().Update(ctx, kc))
 
 		var stored keycloak.Keycloak
-		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(kc), &stored)).To(Succeed())
-		Expect(stored.Status.Instances).To(Equal(int32(1)))
-		Expect(stored.Status.Conditions).To(HaveLen(1))
-		Expect(stored.Status.Conditions[0].Type).To(Equal(keycloak.ConditionReady))
-		Expect(stored.Status.Conditions[0].Status).To(Equal("True"))
+		require.NoError(t, apiClient.Get(ctx, client.ObjectKeyFromObject(kc), &stored))
+		assert.Equal(t, int32(1), stored.Status.Instances)
+		require.Len(t, stored.Status.Conditions, 1)
+		assert.Equal(t, keycloak.ConditionReady, stored.Status.Conditions[0].Type)
+		assert.Equal(t, "True", stored.Status.Conditions[0].Status)
 	})
-})
+}
+
+// startControlPlane boots an envtest control plane that serves the vendored
+// Keycloak CRD, and returns a client against it.
+func startControlPlane(t *testing.T) client.Client {
+	t.Helper()
+
+	crdPath, err := utils.KeycloakCRDPath()
+	require.NoError(t, err)
+
+	control := &envtest.Environment{
+		CRDDirectoryPaths:     []string{crdPath},
+		ErrorIfCRDPathMissing: true,
+		BinaryAssetsDirectory: utils.EnvtestBinaryDir(),
+		// A full run boots several control planes at once on one machine.
+		// test/envtest gives the suites it starts the same two budgets.
+		ControlPlaneStartTimeout: 2 * time.Minute,
+		CRDInstallOptions:        envtest.CRDInstallOptions{MaxTime: time.Minute},
+	}
+
+	cfg, err := control.Start()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, control.Stop())
+	})
+
+	// The scheme is private to this test. Registering into the global
+	// scheme.Scheme would leak the kind into every other test that shares it.
+	testScheme := runtime.NewScheme()
+	require.NoError(t, keycloak.AddToScheme(testScheme))
+
+	apiClient, err := client.New(cfg, client.Options{Scheme: testScheme})
+	require.NoError(t, err)
+
+	return apiClient
+}

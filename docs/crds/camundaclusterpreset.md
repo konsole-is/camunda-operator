@@ -58,7 +58,7 @@ A preset can lower `zeebe.storageSize` freely. A cluster that already applied a 
 
 ## Status
 
-A preset reports no status. Reference errors appear on the referencing `CamundaCluster`: a missing preset gives `Ready: False` with reason `InvalidReference`, and an invalid merged spec gives `InvalidReference` with a message that starts with `invalid effective spec:`.
+A preset reports no status. Reference errors appear on the referencing `CamundaCluster`. A missing preset gives `Ready: False` with reason `InvalidReference`. An invalid merged spec gives `InvalidReference` with a message that starts with `invalid effective spec:`.
 
 ## Spec reference
 
@@ -170,7 +170,7 @@ spec:
 - `spec.cluster` is required.
 - The instance-bound fields are rejected in `spec.cluster`: `platformConfigRef`, `presetRef`, `releaseRef`, `externalUrl`, `serviceAccount`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, and `pause`. An explicit zero value, for example `suspend: false` or an empty `presetRef`, counts as unset.
 - `version` and `connectors.version` are rejected in `spec.cluster`. They belong to a [CamundaRelease](camundarelease.md) or to the cluster.
-- The fields of `spec.cluster` obey the same schema rules as on a `CamundaCluster`: `whenDeleted` is `Delete` or `Retain`, and the backup durations are ISO 8601 days and time.
+- The fields of `spec.cluster` obey the same schema rules as on a `CamundaCluster`. `whenDeleted` is `Delete` or `Retain`, and the backup durations are ISO 8601 days and time.
 - The transition rules of a `CamundaCluster` do not bind a preset: a preset can lower `zeebe.storageSize`. A referencing cluster keeps its applied volumes.
 - There is no cross-resource validation. The referencing cluster reports a problem with the merged spec.
 

@@ -1,7 +1,7 @@
 # CRD reference
 
 The operator defines the custom resources below in the API group `core.camunda.io/v1`.
-Each page opens with what the kind is and a minimal manifest, then covers one topic per section, and ends with the status conditions and the full spec reference.
+Each page opens with what the kind is and a minimal manifest. Then it covers one topic per section, and it ends with the status conditions and the full spec reference.
 
 ## Cluster
 
