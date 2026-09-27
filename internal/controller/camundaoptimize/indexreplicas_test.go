@@ -17,6 +17,7 @@ limitations under the License.
 package camundaoptimize
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -42,6 +43,15 @@ func TestRecordUnplaceableReplicas(t *testing.T) {
 			want: []string{
 				"Warning IndexReplicasExceedNodes indexReplicas 2 needs 3 Elasticsearch nodes, " +
 					"but the storage contract names 2. The indices stay yellow",
+			},
+		},
+		{
+			name:      "the largest count names its node count without overflow",
+			nodeCount: new(int32(1)),
+			requested: new(int32(math.MaxInt32)),
+			want: []string{
+				"Warning IndexReplicasExceedNodes indexReplicas 2147483647 needs 2147483648 Elasticsearch nodes, " +
+					"but the storage contract names 1. The indices stay yellow",
 			},
 		},
 		{

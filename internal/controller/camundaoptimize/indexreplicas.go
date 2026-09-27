@@ -44,7 +44,7 @@ func (r *Reconciler) recordUnplaceableReplicas(optimize *v1.CamundaOptimize, res
 		eventActionReconcile,
 		"indexReplicas %d needs %d Elasticsearch nodes, but the storage contract names %d. The indices stay yellow",
 		*replicas,
-		*replicas+1,
+		int64(*replicas)+1,
 		*storage.NodeCount,
 	)
 }

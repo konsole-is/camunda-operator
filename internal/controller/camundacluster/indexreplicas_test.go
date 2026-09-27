@@ -17,6 +17,7 @@ limitations under the License.
 package camundacluster
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -44,6 +45,18 @@ func TestRecordUnplaceableReplicas(t *testing.T) {
 			requested: new(int32(1)),
 			want: []string{
 				"Warning IndexReplicasExceedNodes indexReplicas 1 needs 2 Elasticsearch nodes, " +
+					"but the storage contract names 1. The indices stay yellow",
+			},
+		},
+		{
+			name: "the largest count names its node count without overflow",
+			storage: components.Storage{
+				Type:          v1.SecondaryStorageTypeElasticsearch,
+				Elasticsearch: &v1.ElasticsearchStorage{NodeCount: new(int32(1))},
+			},
+			requested: new(int32(math.MaxInt32)),
+			want: []string{
+				"Warning IndexReplicasExceedNodes indexReplicas 2147483647 needs 2147483648 Elasticsearch nodes, " +
 					"but the storage contract names 1. The indices stay yellow",
 			},
 		},

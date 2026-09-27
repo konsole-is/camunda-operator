@@ -167,6 +167,8 @@ func usesTrustStore(in Input, p Process) bool {
 		return false
 	}
 
+	// The legacy Elasticsearch exporter has no TLS setting, so this trust store
+	// is how it reaches a private CA (camunda/camunda#9839).
 	es := in.Storage.Elasticsearch
 	return in.Storage.Type == v1.SecondaryStorageTypeElasticsearch && es != nil && es.CASecretRef != nil
 }

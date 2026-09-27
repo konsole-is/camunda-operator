@@ -43,24 +43,18 @@ const ExporterFieldManager = "camunda-operator/camundaoptimize"
 const ExporterClassName = "io.camunda.zeebe.exporter.ElasticsearchExporter"
 
 // ExporterEnv returns the environment entries that turn the legacy Zeebe
-// Elasticsearch exporter on for the given secondary storage. The keys are the
-// unified configuration of Camunda 8.9. The legacy zeebe.broker.exporters.*
-// properties describe the same exporter, and the binary refuses to start when
-// both are set, so the operator never writes them. A nil replicas keeps the
-// replica default of the exporter.
+// Elasticsearch exporter on for the given secondary storage, in the unified
+// configuration keys of Camunda 8.9. The broker refuses to start when
+// zeebe.broker.exporters.* properties for the same exporter are also set.
+// A nil replicas keeps the replica default of the exporter.
 //
-// The entries run in the broker container, so storage must carry the
-// credentials reference as the cluster resolves it: the Secret of the cluster
-// namespace, which is the copy that the cluster's own controller makes when
-// the contract names another namespace. Passing the copy that this controller
-// makes for the Optimize pods names a Secret the broker cannot read.
+// The entries run in the broker container, so storage must name the
+// credentials Secret of the cluster namespace, not the copy made for the
+// Optimize pods, which the broker cannot read.
 //
-// The set carries no TLS setting, because the exporter has none. An
-// Elasticsearch with a private CA therefore needs that CA in the JVM trust
-// store of the broker before the exporter can reach it
-// (camunda/camunda#9839). pkg/components/camundacluster builds that trust
-// store for every binding that names a certificate authority. This exporter
-// then reaches such an endpoint without a setting of its own.
+// The entries carry no TLS setting: a certificate authority of storage
+// reaches the exporter only through the JVM trust store of the broker
+// (camunda/camunda#9839).
 func ExporterEnv(storage v1.ElasticsearchStorage, replicas *int32) []corev1.EnvVar {
 	creds := storage.CredentialsSecretRef
 
