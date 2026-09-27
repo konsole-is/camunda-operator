@@ -36,7 +36,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -100,7 +99,7 @@ func storageKeyOf(binding *v1.SecondaryStorageConfig) string {
 // credentials Secret. The binding resolves the Secret in its own namespace.
 func createBinding(namespace string) *v1.SecondaryStorageConfig {
 	GinkgoHelper()
-	binding := fixtures.SecondaryStorageConfigElasticsearch(namespace)
+	binding := newSecondaryStorageConfigElasticsearch(namespace)
 	Expect(k8sClient.Create(ctx, binding)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, binding) })
 	createSecret(namespace, binding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{
@@ -160,7 +159,7 @@ func createAuth(namespace string, withSecret bool) *v1.ManagementAuthConfig {
 // registers its deletion.
 func createPlatformConfig() *v1.CamundaPlatformConfig {
 	GinkgoHelper()
-	cfg := fixtures.CamundaPlatformConfigBasic()
+	cfg := newCamundaPlatformConfigBasic()
 	Expect(k8sClient.Create(ctx, cfg)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, cfg) })
 

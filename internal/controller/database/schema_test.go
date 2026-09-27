@@ -25,7 +25,6 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
 // validDatabase returns the minimal example of the CRD doc with a unique name.
@@ -33,7 +32,7 @@ func validDatabase() *v1.Database {
 	return &v1.Database{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "db-" + utilrand.String(8),
-			Namespace: fixtures.SchemaTestNamespace,
+			Namespace: schemaTestNamespace,
 		},
 		Spec: v1.DatabaseSpec{
 			ServerRef:    "my-db-server",
@@ -112,13 +111,13 @@ var _ = Describe("Database schema", func() {
 		Entry(
 			"rejects a non-DNS-1123 databaseConfig name",
 			validDatabase, func(o *v1.Database) {
-				o.Spec.DatabaseConfig = fixtures.NotAResourceName
+				o.Spec.DatabaseConfig = notAResourceName
 			}, "databaseConfig",
 		),
 		Entry(
 			"rejects a non-DNS-1123 secondaryStorageConfig name",
 			validDatabase, func(o *v1.Database) {
-				o.Spec.SecondaryStorageConfig = fixtures.NotAResourceName
+				o.Spec.SecondaryStorageConfig = notAResourceName
 			}, "secondaryStorageConfig",
 		),
 	)

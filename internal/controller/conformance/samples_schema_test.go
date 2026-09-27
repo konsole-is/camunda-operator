@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package conformance
 
 import (
 	"os"
@@ -25,8 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/yaml"
-
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
 // implementedKindSamples lists the sample manifests of the kinds whose API
@@ -56,7 +54,7 @@ var implementedKindSamples = []string{
 var _ = Describe("config/samples", func() {
 	It("applies every implemented kind's sample against the schema", func() {
 		for _, file := range implementedKindSamples {
-			data, err := os.ReadFile(filepath.Join("..", "..", "config", "samples", file))
+			data, err := os.ReadFile(filepath.Join("..", "..", "..", "config", "samples", file))
 			Expect(err).NotTo(HaveOccurred(), file)
 
 			var obj unstructured.Unstructured
@@ -66,7 +64,7 @@ var _ = Describe("config/samples", func() {
 			mapping, err := k8sClient.RESTMapper().RESTMapping(gvk.GroupKind(), gvk.Version)
 			Expect(err).NotTo(HaveOccurred(), file)
 			if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
-				obj.SetNamespace(fixtures.SchemaTestNamespace)
+				obj.SetNamespace(schemaTestNamespace)
 			}
 
 			Expect(k8sClient.Create(ctx, &obj)).To(Succeed(), file)

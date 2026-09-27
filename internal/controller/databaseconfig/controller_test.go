@@ -28,7 +28,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
 // databaseConfigSecret builds a Secret at ref, in namespace, that holds a
@@ -77,8 +76,8 @@ var _ = Describe("DatabaseConfig controller", func() {
 		ns = "dbc-" + utilrand.String(8)
 		create(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}})
 
-		server = fixtures.DatabaseServerConfig(ns)
-		dbConfig = fixtures.DatabaseConfig()
+		server = newDatabaseServerConfig(ns)
+		dbConfig = newDatabaseConfig()
 		dbConfig.Namespace = ns
 		dbConfig.Spec.ServerRef = server.Name
 		dbConfig.Spec.CredentialsSecretRef = v1.LocalCredentialsSecretRef{

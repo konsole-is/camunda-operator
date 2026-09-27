@@ -14,12 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package testenv boots the envtest control plane that the controller suites
+// Package envtest boots the envtest control plane that the controller suites
 // share. Each controller package owns its own Ginkgo suite. This package owns
 // the bootstrap that is common to all suites: CRD loading, scheme
 // registration, and a running manager. A suite then only declares which
 // reconcilers it exercises.
-package testenv
+package envtest
 
 import (
 	"context"
@@ -27,11 +27,8 @@ import (
 	"path/filepath"
 	"time"
 
-	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
-	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,13 +36,10 @@ import (
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	crenvtest "sigs.k8s.io/controller-runtime/pkg/envtest"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/cacheopts"
-	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
-	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
+	"github.com/konsole-is/camunda-operator/internal/manager"
 	"github.com/konsole-is/camunda-operator/test/utils"
 )
 
@@ -68,7 +62,7 @@ type Env struct {
 	Client client.Client
 
 	cancel  context.CancelFunc
-	control *envtest.Environment
+	control *crenvtest.Environment
 }
 
 // Options tunes the control plane that StartWith boots.
@@ -109,12 +103,7 @@ func Start(register func(mgr ctrl.Manager) error) *Env {
 func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 	ginkgo.GinkgoHelper()
 
-	gomega.Expect(v1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
-	gomega.Expect(esv1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
-	gomega.Expect(monitoringv1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
-	gomega.Expect(keycloak.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
-	gomega.Expect(cnpgv1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
-	gomega.Expect(barmanobjectstore.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
+	gomega.Expect(manager.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
 
 	root, err := utils.ModuleRoot()
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
@@ -144,7 +133,7 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 	}
 
 	ginkgo.By("bootstrapping test environment")
-	control := &envtest.Environment{
+	control := &crenvtest.Environment{
 		CRDDirectoryPaths:     crdPaths,
 		ErrorIfCRDPathMissing: true,
 		BinaryAssetsDirectory: utils.EnvtestBinaryDir(),
@@ -159,7 +148,7 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 		// ErrorIfCRDPathMissing into CRDInstallOptions, so naming the struct
 		// here keeps both.
 		ControlPlaneStartTimeout: 2 * time.Minute,
-		CRDInstallOptions:        envtest.CRDInstallOptions{MaxTime: time.Minute},
+		CRDInstallOptions:        crenvtest.CRDInstallOptions{MaxTime: time.Minute},
 	}
 
 	cfg, err := control.Start()
@@ -176,7 +165,7 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 		// The suites read through the scoped informers of the operator. An
 		// informer that hides a fixture of a suite hides the same object in
 		// production.
-		Cache:   cacheopts.Options(),
+		Cache:   manager.CacheOptions(),
 		Metrics: metricsserver.Options{BindAddress: "0"},
 	})
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())

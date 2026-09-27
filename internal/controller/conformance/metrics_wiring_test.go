@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package conformance
 
 import (
 	"go/ast"
@@ -39,18 +39,24 @@ import (
 func TestEveryControllerRecordsMetricsUnderItsControllerName(t *testing.T) {
 	t.Parallel()
 
-	entries, err := os.ReadDir(".")
+	controllerDir := ".."
+	entries, err := os.ReadDir(controllerDir)
 	require.NoError(t, err)
 
+	var packages []string
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+		// This package holds tests only and runs no controller.
+		if entry.IsDir() && entry.Name() != "conformance" {
+			packages = append(packages, entry.Name())
 		}
+	}
+	require.NotEmpty(t, packages, "no controller package found under %s", controllerDir)
 
-		t.Run(entry.Name(), func(t *testing.T) {
+	for _, pkg := range packages {
+		t.Run(pkg, func(t *testing.T) {
 			t.Parallel()
 
-			w := parseControllerPackage(t, entry.Name())
+			w := parseControllerPackage(t, filepath.Join(controllerDir, pkg))
 			assert.NotEmpty(t, w.contexts, "no ReconcileContext literal found")
 			for _, pos := range w.contextsWithoutMetrics {
 				assert.Fail(t, "ReconcileContext literal does not set Metrics", pos)

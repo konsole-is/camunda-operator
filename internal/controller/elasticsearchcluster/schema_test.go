@@ -26,7 +26,6 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
 // validElasticsearchCluster returns a minimal, admissible ElasticsearchCluster
@@ -95,7 +94,7 @@ var _ = Describe("ElasticsearchCluster schema", func() {
 		"admission",
 		func(build func() *v1.ElasticsearchCluster, mutate func(*v1.ElasticsearchCluster), wantErr string) {
 			obj := build()
-			obj.Namespace = fixtures.SchemaTestNamespace
+			obj.Namespace = schemaTestNamespace
 			mutate(obj)
 			err := k8sClient.Create(ctx, obj)
 			if wantErr == "" {
@@ -163,7 +162,7 @@ var _ = Describe("ElasticsearchCluster schema", func() {
 		Entry(
 			"rejects a non-DNS-1123 secondaryStorageConfig",
 			validElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
-				o.Spec.SecondaryStorageConfig = fixtures.NotAResourceName
+				o.Spec.SecondaryStorageConfig = notAResourceName
 			}, "secondaryStorageConfig",
 		),
 		Entry(
@@ -201,7 +200,7 @@ var _ = Describe("ElasticsearchCluster schema", func() {
 			"kind":       "ElasticsearchCluster",
 			"metadata": map[string]any{
 				"name":      "esc-" + utilrand.String(8),
-				"namespace": fixtures.SchemaTestNamespace,
+				"namespace": schemaTestNamespace,
 			},
 			"spec": map[string]any{
 				"version":                "9.2.4",
@@ -226,7 +225,7 @@ var _ = Describe("ElasticsearchCluster schema", func() {
 
 	It("rejects shrinking storageSize on update and accepts growth", func() {
 		obj := realisticElasticsearchCluster()
-		obj.Namespace = fixtures.SchemaTestNamespace
+		obj.Namespace = schemaTestNamespace
 
 		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
