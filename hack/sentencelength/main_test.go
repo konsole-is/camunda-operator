@@ -82,6 +82,28 @@ func TestCheckPage(t *testing.T) {
 				"\n```\n<!--\n" + words(30) + "\n-->\n",
 		},
 		{
+			name: "a comment inside a line is skipped",
+			page: "The " + strings.Repeat("word ", 20) + "<!-- " + words(10) + " --> end.",
+		},
+		{
+			name: "a comment that opens inside a line is skipped to its end",
+			page: "The " + strings.Repeat("word ", 20) + "<!-- " + words(10) + "\n" + words(10) + " -->",
+		},
+		{
+			name: "a blockquote is read without its markers",
+			page: "> " + words(26),
+			want: []finding{{line: 1, words: 26, limit: 25}},
+		},
+		{
+			name: "an empty quote line ends a text",
+			page: "> The " + strings.Repeat("word ", 15) + "\n>\n> " + strings.Repeat("word ", 15) + "end.",
+		},
+		{
+			name: "a line longer than a scanner buffer is read",
+			page: strings.Repeat("Short one. ", 200000) + words(26),
+			want: []finding{{line: 1, words: 26, limit: 25}},
+		},
+		{
 			name: "each table cell is its own text",
 			page: "| a | b |\n| --- | --- |\n| " + words(20) + " | " + words(26) + " |",
 			want: []finding{{line: 3, words: 26, limit: 25}},

@@ -29,9 +29,11 @@ limitations under the License.
 // What it reads:
 //   - Paragraphs, list items, admonition bodies, and each table cell as a
 //     separate text. A blank line, a list marker, or a table row ends a text.
-//   - It skips front matter, fenced code blocks, HTML comments, headings,
-//     table separator rows, HTML lines, admonition title lines, and link
-//     reference definitions.
+//   - It reads a blockquote like the text around it, without the ">" markers.
+//     A quote line with no text ends a text.
+//   - It skips front matter, fenced code blocks, HTML comments, also inside a
+//     line, headings, table separator rows, HTML lines, admonition title
+//     lines, and link reference definitions.
 //
 // How it counts (ASD-STE100 rules 8.4 to 8.7):
 //   - A sentence ends at ".", "!" or "?" before a space or the end of the
@@ -51,10 +53,10 @@ limitations under the License.
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -90,6 +92,8 @@ type text struct {
 }
 
 var (
+	comment       = regexp.MustCompile(`(?s)<!--.*?(?:-->|\z)`)
+	quoteMarkers  = regexp.MustCompile(`^\s*(?:>\s?)+`)
 	orderedItem   = regexp.MustCompile(`^\s*\d+[.)]\s+`)
 	unorderedItem = regexp.MustCompile(`^\s*[-*+]\s+`)
 	tableSep      = regexp.MustCompile(`^\s*\|?[\s:|-]+\|?\s*$`)
@@ -143,13 +147,7 @@ func main() {
 		perFile[f.file]++
 	}
 
-	files := slices.Sorted(func(yield func(string) bool) {
-		for f := range perFile {
-			if !yield(f) {
-				return
-			}
-		}
-	})
+	files := slices.Sorted(maps.Keys(perFile))
 	if len(files) > 0 {
 		fmt.Println()
 	}
@@ -214,12 +212,10 @@ func checkPage(content string) []finding {
 
 func texts(content string) []text {
 	var (
-		out       []text
-		cur       *text
-		fence     string
-		inComment bool
-		inFront   bool
-		lineNo    int
+		out     []text
+		cur     *text
+		fence   string
+		inFront bool
 	)
 	flush := func() {
 		if cur != nil && len(cur.lines) > 0 {
@@ -235,12 +231,15 @@ func texts(content string) []text {
 		cur.lineNos = append(cur.lineNos, n)
 	}
 
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	// A comment becomes the line breaks it held, so the line numbers stay
+	// valid and a comment on its own lines still ends a text.
+	content = comment.ReplaceAllStringFunc(content, func(c string) string {
+		return strings.Repeat("\n", strings.Count(c, "\n"))
+	})
 
-	for scanner.Scan() {
-		lineNo++
-		line := scanner.Text()
+	for i, line := range strings.Split(content, "\n") {
+		lineNo := i + 1
+		line = quoteMarkers.ReplaceAllString(line, "")
 		trimmed := strings.TrimSpace(line)
 
 		switch {
@@ -257,20 +256,12 @@ func texts(content string) []text {
 				fence = ""
 			}
 			continue
-		case inComment:
-			if strings.Contains(trimmed, "-->") {
-				inComment = false
-			}
-			continue
 		}
 
 		switch {
 		case strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~"):
 			flush()
 			fence = trimmed[:3]
-		case strings.HasPrefix(trimmed, "<!--"):
-			flush()
-			inComment = !strings.Contains(trimmed, "-->")
 		case trimmed == "":
 			flush()
 		case strings.HasPrefix(trimmed, "#"),
