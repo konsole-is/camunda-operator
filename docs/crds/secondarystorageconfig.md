@@ -39,7 +39,7 @@ spec:
 
 ## Node count
 
-`elasticsearch.nodeCount` is the number of data nodes of the Elasticsearch cluster. A consumer that sets no index replica count of its own takes its count from it: 0 replicas on one node, 1 replica on two or more nodes. A one-node Elasticsearch then keeps green health while Camunda writes to it.
+`elasticsearch.nodeCount` is the number of data nodes of the Elasticsearch cluster. A consumer that sets no index replica count of its own takes its count from it. One node gives 0 replicas. Two or more nodes give 1 replica. A one-node Elasticsearch then keeps green health while Camunda writes to it.
 
 An [ElasticsearchCluster](elasticsearchcluster.md) fills `nodeCount` from its `replicas`. For an Elasticsearch that you run yourself, set it by hand:
 
