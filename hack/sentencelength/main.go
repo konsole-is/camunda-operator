@@ -203,8 +203,9 @@ func checkDir(root string) ([]finding, error) {
 
 // checkPage returns the long sentences of one Markdown page, without a file name.
 func checkPage(content string) []finding {
-	var findings []finding
-	for _, t := range texts(content) {
+	ts := texts(content)
+	findings := make([]finding, 0, len(ts))
+	for _, t := range ts {
 		findings = append(findings, checkText(t)...)
 	}
 
@@ -213,27 +214,28 @@ func checkPage(content string) []finding {
 
 func texts(content string) []text {
 	var (
-		out        []text
-		cur        *text
-		fence      string
-		inComment  bool
-		inFront    bool
-		lineNo     int
-		scanner    = bufio.NewScanner(strings.NewReader(content))
-		flush      = func() {
-			if cur != nil && len(cur.lines) > 0 {
-				out = append(out, *cur)
-			}
-			cur = nil
-		}
-		appendLine = func(line string, n int) {
-			if cur == nil {
-				cur = &text{}
-			}
-			cur.lines = append(cur.lines, line)
-			cur.lineNos = append(cur.lineNos, n)
-		}
+		out       []text
+		cur       *text
+		fence     string
+		inComment bool
+		inFront   bool
+		lineNo    int
 	)
+	flush := func() {
+		if cur != nil && len(cur.lines) > 0 {
+			out = append(out, *cur)
+		}
+		cur = nil
+	}
+	appendLine := func(line string, n int) {
+		if cur == nil {
+			cur = &text{}
+		}
+		cur.lines = append(cur.lines, line)
+		cur.lineNos = append(cur.lineNos, n)
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(content))
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 
 	for scanner.Scan() {

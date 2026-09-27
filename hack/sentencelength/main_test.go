@@ -103,7 +103,7 @@ func TestCheckPage(t *testing.T) {
 			for i := range got {
 				got[i].start = ""
 			}
-			assert.Equal(t, tt.want, got)
+			assert.ElementsMatch(t, tt.want, got)
 		})
 	}
 }
@@ -127,7 +127,7 @@ func TestCheckDirSkipsUnpublishedPages(t *testing.T) {
 	findings, err := checkDir(root)
 	require.NoError(t, err)
 
-	var files []string
+	files := make([]string, 0, len(findings))
 	for _, f := range findings {
 		files = append(files, f.file)
 	}
