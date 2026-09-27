@@ -6,9 +6,9 @@
 // go through the standard managers.
 //
 // The image pins of the e2e suite are the env files under test/e2e/matrix/
-// (one per supported Camunda minor), three Go constants, a YAML image field,
-// and two Makefile variables, which no standard manager reads, so a marker
-// comment above each one names what to track:
+// (one per supported Camunda minor), Go constants, YAML image fields of the
+// test fixtures, and two Makefile variables. No standard manager reads them,
+// so a marker comment above each one names what to track:
 //
 //   # renovate: datasource=docker depName=camunda/camunda
 //   CAMUNDA_VERSION=8.9.17
@@ -27,6 +27,9 @@
   ignorePaths: [],
   // An alpha or snapshot tag of the next Camunda minor never lands.
   ignoreUnstable: true,
+  // Without a tidy, a Go update leaves the replaced versions in go.sum, and
+  // the tidy check of the Tests workflow fails.
+  postUpdateOptions: ["gomodTidy"],
   customManagers: [
     {
       // A variable of an env file or of the Makefile: the marker, then
@@ -121,10 +124,17 @@
       groupName: "e2e-image-pins",
     },
     {
-      // curl and Keycloak are test fixtures with no minor to hold. Camunda 8.9
-      // supports every Keycloak 26.x, and the major stays off above. The
-      // Keycloak of the management plane flow has a bound of its own below.
-      matchDepNames: ["curlimages/curl", "quay.io/keycloak/keycloak", "camunda/keycloak"],
+      // curl, aws-cli, RustFS, and Keycloak are test fixtures with no minor to
+      // hold. Camunda 8.9 supports every Keycloak 26.x, and the major stays
+      // off above. The Keycloak of the management plane flow has a bound of
+      // its own below.
+      matchDepNames: [
+        "curlimages/curl",
+        "amazon/aws-cli",
+        "rustfs/rustfs",
+        "quay.io/keycloak/keycloak",
+        "camunda/keycloak",
+      ],
       matchUpdateTypes: ["minor"],
       enabled: true,
     },

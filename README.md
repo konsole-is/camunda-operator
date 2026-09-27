@@ -78,7 +78,7 @@ root module.
 make test           # unit and envtest suites (needs Docker for the PostgreSQL testcontainer)
 make lint           # golangci-lint, callsplit, and the version pins of config/example
 make all            # generate manifests and deepcopy, fmt, vet, build
-make test-e2e       # kind cluster with ECK, CloudNativePG, PostgreSQL, and MinIO (needs Docker and kind)
+make test-e2e       # kind cluster with ECK, CloudNativePG, PostgreSQL, and RustFS (needs Docker and kind)
 make helm-generate  # regenerate dist/chart/ from config/
 make docs-serve     # preview the documentation site
 ```
