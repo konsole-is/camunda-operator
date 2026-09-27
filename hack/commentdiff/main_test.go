@@ -27,7 +27,12 @@ func src(body string) []byte { return []byte("package p\n\n" + body) }
 
 func TestDiffFileListsUserFacingGrowthWithoutFlag(t *testing.T) {
 	old := src("type Spec struct {\n\t// Replicas is the count.\n\tReplicas int\n}\n")
-	cur := src("type Spec struct {\n\t// Replicas is the count.\n\t// When unset, the default applies.\n\tReplicas int\n}\n")
+	cur := src(`type Spec struct {
+	// Replicas is the count.
+	// When unset, the default applies.
+	Replicas int
+}
+`)
 
 	got := diffFile("api/v1/spec_types.go", old, cur)
 
