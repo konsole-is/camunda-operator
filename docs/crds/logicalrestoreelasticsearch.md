@@ -145,6 +145,7 @@ The restore itself waits in `Pending` while the target does not hold its backend
 
 - `StorageAlreadyAttached` means that another cluster holds the backend. The message names that cluster. The restore writes nothing into a backend that another cluster holds.
 - `WaitingForHandover` means that the target does not hold the backend yet, or that pods of another cluster still write it. The message names them.
+- `InvalidReference` can name a Lease that claims the backend and names no `CamundaCluster`. The target cannot take the backend while it exists. Delete the Lease if nothing uses it.
 
 After the restore left `Pending`, these two reasons hold it for 10 minutes, and then it fails. A target that now resolves to another backend than `status.backend` holds it with reason `InvalidReference` for the same time.
 

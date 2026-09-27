@@ -194,6 +194,14 @@ func CheckBackend(
 	if found {
 		holder, ours = schema.HolderOf(lease)
 	}
+	// The target meets the same Lease and reports it the same way. It cannot
+	// take the backend while that Lease exists, so waiting for it never ends.
+	if found && !ours {
+		return logicalbackup.InvalidReference(
+			"Lease %s/%s claims the backend %q and names no CamundaCluster. Delete it if nothing uses it",
+			lease.Namespace, lease.Name, key,
+		), nil
+	}
 	if !ours || holder.UID != check.Cluster.UID {
 		return notHeld(check.Cluster, key, holder.NamespacedName, ours), nil
 	}

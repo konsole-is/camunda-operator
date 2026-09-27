@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -186,6 +187,17 @@ func TestCheckBackend(t *testing.T) {
 			pinned:  key,
 			reason:  v1.ReasonWaitingForHandover,
 			message: "does not hold the backend",
+		},
+		// The target reports this Lease as InvalidReference and never takes
+		// the backend, so the restore does not wait for it.
+		"a Lease that names no cluster claims the backend": {
+			pinned: key,
+			objects: []client.Object{&coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{
+				Name:      claim,
+				Namespace: backendClaimNamespace,
+			}}},
+			reason:  v1.ReasonInvalidReference,
+			message: "names no CamundaCluster",
 		},
 		"another cluster holds the backend": {
 			pinned:  key,
