@@ -90,8 +90,9 @@ var (
 	// backendClaimAwaited is the wait on the claim of the backend, which covers
 	// both halves of that gate: the cluster does not hold the claim, or it
 	// holds it while pods of another cluster, the importer of a previous
-	// instance, or a restore into another cluster still write the backend. The cluster can report itself healthy
-	// through either, so nothing here says it is suspended.
+	// instance, or a restore into another cluster still write the backend.
+	// The cluster can report itself healthy through either, so nothing here
+	// says it is suspended.
 	backendClaimAwaited = wait{
 		eventReason: eventReasonStorageClaimAwaited,
 		eventNote:   noteClaimAwaited,

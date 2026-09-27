@@ -98,10 +98,9 @@ func TestPreCheckSuspendsWhileTheClusterDoesNotHoldItsBackend(t *testing.T) {
 	}
 }
 
-// A restore into another cluster writes the backend with no pod of that
-// cluster, so the importer waits for it by its pinned backend. The restore of
-// this cluster is its own work, and a restore that has not started or has
-// ended writes nothing.
+// The importer waits for a restore into another cluster by its pinned
+// backend. The restore of this cluster is its own work, and a restore that has
+// not started or has ended writes nothing.
 func TestPreCheckSuspendsWhileARestoreIntoAnotherClusterWritesTheBackend(t *testing.T) {
 	const (
 		namespace  = gateNamespace

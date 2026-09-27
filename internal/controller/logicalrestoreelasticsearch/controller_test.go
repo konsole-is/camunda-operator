@@ -722,9 +722,8 @@ var _ = Describe("LogicalRestoreElasticsearch cluster claim", func() {
 
 	// Nothing bounds the hold, and no spec change ends it. The restore takes
 	// the claim over as soon as the holder reaches a terminal phase.
-	// A restore writes only a backend that its target holds. Another cluster
-	// on that backend would run beside the restore, so the restore waits, and
-	// it starts on its own once the target holds the backend again.
+	// A restore writes only a backend that its target holds. It waits, and it
+	// starts on its own once the target holds the backend again.
 	It("holds a restore whose backend another cluster holds, and starts once the target holds it", func() {
 		w := newWorld()
 		other := &v1.CamundaCluster{

@@ -114,9 +114,8 @@ func TestSuspensionNotesSpeakForTheClusterOnly(t *testing.T) {
 
 // TestBackendClaimAwaitedSaysBothHalvesOfTheGate pins the claim wait. The gate
 // covers a cluster that does not hold the claim of its backend, and one that
-// holds it while pods of another cluster or of a previous instance, or a restore into another cluster,
-// still write that backend. Everything this wait says reaches a user, so none of it may name the first
-// half alone.
+// holds it while other writers still write that backend. Everything this wait
+// says reaches a user, so none of it may name the first half alone.
 func TestBackendClaimAwaitedSaysBothHalvesOfTheGate(t *testing.T) {
 	t.Parallel()
 

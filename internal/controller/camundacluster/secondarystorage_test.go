@@ -425,11 +425,8 @@ func TestClaimStorageWaitsUnderThePodsOnAFreeBackend(t *testing.T) {
 	}
 }
 
-// A running restore writes the backend with no pod of a cluster: the
-// Elasticsearch restore runs inside the operator, and the pg_restore Job
-// carries no cluster UID. So the claim step waits for the restore itself, from
-// the end of its admission to its terminal phase, on a free backend and on one
-// this cluster holds alike.
+// The claim step waits for a running restore into another cluster, on a free
+// backend and on one this cluster holds alike.
 func TestClaimStorageWaitsForARunningRestoreIntoAnotherCluster(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
@@ -1411,12 +1408,9 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		expectClaimedBy(binding, cluster)
 	})
 
-	// A restore writes the backend with no pod that the gate sees: the
-	// Elasticsearch restore runs inside the operator, and the pg_restore Job
-	// carries no cluster UID. A holder deleted mid-restore gives the backend
-	// back, and the next cluster must still wait for the restore to end. No
-	// restore controller runs in this suite, so the spec writes the status a
-	// running restore has.
+	// A holder deleted mid-restore gives the backend back, and the next cluster
+	// must still wait for the restore to end. No restore controller runs in
+	// this suite, so the spec writes the status a running restore has.
 	for _, kind := range []string{"LogicalRestoreElasticsearch", "LogicalRestoreRDBMS"} {
 		It("waits for a running "+kind+" into a deleted holder before it resumes", func() {
 			ns := newNamespace()

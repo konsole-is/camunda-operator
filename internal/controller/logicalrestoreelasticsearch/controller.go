@@ -100,8 +100,7 @@ const (
 // field has a production default, and tests shrink the intervals.
 type Options struct {
 	// ClaimNamespace holds the storage claim Leases of every CamundaCluster.
-	// The restore writes the Elasticsearch of its target only while the target
-	// holds the storage claim of it. SetupWithManager refuses an empty value.
+	// SetupWithManager refuses an empty value.
 	ClaimNamespace string
 	// PollInterval paces a running phase. Zero means five seconds.
 	PollInterval time.Duration

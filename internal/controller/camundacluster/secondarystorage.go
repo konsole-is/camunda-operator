@@ -73,13 +73,13 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 	}
 
 	// A free backend is not free while pods of another cluster, or a restore
-	// into another cluster, write it. The
-	// rule runs only while no Lease holds the key, so it orders the claimants
-	// of a backend whose Lease is gone: the cluster whose own pods write it
-	// creates it again, and every other cluster waits. A suspended cluster
-	// waits too. It writes nothing beside those pods, but a Lease it created
-	// under them would park the cluster they belong to on its next pass, and
-	// a cluster at zero must not stop one that runs.
+	// into another cluster, write it. The rule runs only while no Lease holds
+	// the key, so it orders the claimants of a backend whose Lease is gone:
+	// the cluster whose own pods write it creates it again, and every other
+	// cluster waits. A suspended cluster waits too. It writes nothing beside
+	// those pods, but a Lease it created under them would park the cluster
+	// they belong to on its next pass, and a cluster at zero must not stop one
+	// that runs.
 	var waitingFor *components.StorageHandover
 	blocker, err := res.claims.TakeUnclaimed(ctx, res.cluster, key, func(ctx context.Context) error {
 		waitingFor, err = res.writersOnTheBackend(ctx, key, in.Storage.Claim)
@@ -170,9 +170,8 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 	// pointed back at the backend meets the claim this cluster holds and
 	// parks, so it starts nothing beside it.
 	//
-	// The restores are read after the Lease was written. A restore checks
-	// that its target holds the backend after it pinned it, so a restore that
-	// this read misses meets the Lease of this cluster and writes nothing.
+	// The restores are read after the Lease was written, so a restore that
+	// this read misses meets the Lease.
 	in.Storage.Handover, err = res.writersOnTheBackend(ctx, key, in.Storage.Claim)
 
 	return err
@@ -198,9 +197,7 @@ func handoverPossible(suspended, heldAtStart, ownPodOnClaim bool) bool {
 var errWritersOnBackend = errors.New("another cluster, or a restore into one, writes the backend")
 
 // writersOnTheBackend returns the handover that this cluster waits for on the
-// backend of key, whose storage claim Lease is claim: the pods of other
-// clusters that still write it, and the running restores into other clusters.
-// It returns nil when nothing else writes the backend. Its own pods and its own
+// backend of key, or nil when nothing else writes it. Its own pods and its own
 // restore are no reason to wait: a holder whose Lease was deleted by hand meets
 // them, writes the Lease again, and keeps running.
 func (res *resolver) writersOnTheBackend(
@@ -381,10 +378,9 @@ func storageHeld(cluster *v1.CamundaCluster, holder *components.StorageHolder, a
 
 // storageHandover builds the Ready condition of a cluster that waits for the
 // pods of other clusters, or the restores into other clusters, on its backend.
-// A deleted holder leaves its pods to the garbage collector, a holder that
-// moved replaces them through a rollout, and a restore ends in a terminal
-// phase. When applyErr is set, the message carries it as the error of the
-// last apply.
+// A deleted holder leaves its pods to the garbage collector, and a holder that
+// moved replaces them through a rollout. When applyErr is set, the message
+// carries it as the error of the last apply.
 func storageHandover(
 	cluster *v1.CamundaCluster,
 	handover *components.StorageHandover,

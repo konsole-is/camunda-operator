@@ -217,8 +217,6 @@ func OtherPodsOnClaim(
 	return names, nil
 }
 
-// jobStarts reports whether a Job can start another pod: it is not suspended,
-// its parallelism is not zero, and it has not reached Complete or Failed.
 func jobStarts(job *batchv1.Job) bool {
 	suspended := job.Spec.Suspend != nil && *job.Spec.Suspend
 	if suspended || (job.Spec.Parallelism != nil && *job.Spec.Parallelism == 0) {
@@ -252,17 +250,9 @@ func templateStarts(
 
 // RestoresOnBackend returns the logical restores that write the backend that
 // key names and that do not restore the cluster with UID self, as sorted
-// "Kind namespace/name" entries. A handover waits for them beside the pods of
-// OtherPodsOnClaim: the Elasticsearch restore has no pod at all, and the
-// pg_restore Job carries no cluster UID.
-//
-// A restore counts from the end of its admission to its terminal phase. It
-// pins status.backend before it leaves Pending, and it writes nothing before
-// that. A restore in Pending does not count: it waits on its own pre-checks
-// without a bound, and a wait on it would never end.
-//
-// The reader must read the API server directly, and the lists cover every
-// namespace, as in OtherPodsOnClaim.
+// "Kind namespace/name" entries. A restore counts from the end of its
+// admission to its terminal phase. The reader must read the API server
+// directly, and the lists cover every namespace, as in OtherPodsOnClaim.
 func RestoresOnBackend(
 	ctx context.Context,
 	reader client.Reader,
@@ -298,9 +288,8 @@ func RestoresOnBackend(
 	return names, nil
 }
 
-// restoreWrites reports whether a restore in phase can write its backend
-// beside the cluster with UID self. The restore of self is the cluster's own
-// work.
+// A restore in Pending waits on its own pre-checks without a bound, so a wait
+// on it never ends.
 func restoreWrites(phase v1.LogicalRestorePhase, terminal bool, target, self types.UID) bool {
 	started := phase != "" && phase != v1.LogicalRestorePending
 

@@ -175,10 +175,6 @@ func (r *Reconciler) admit(
 		return prepared, nil
 	}
 
-	// The backend is pinned on the look that leaves Pending. From then on
-	// the handover gate of every other cluster waits for this restore, and
-	// every later look checks the backend again before it writes, see
-	// restore.CheckBackend.
 	storage, failure, err := restore.ResolveStorage(ctx, r.APIReader, cluster)
 	if err != nil {
 		return restore.Outcome{}, err
@@ -200,6 +196,9 @@ func (r *Reconciler) admit(
 	if failure != nil {
 		return r.waiting(lrr, failure), nil
 	}
+	// This look writes nothing. The write waits for a later look, whose check
+	// reads the claim after this pin is stored, so a cluster that takes the
+	// claim before that check finds this restore.
 	lrr.Status.Backend = backend
 
 	r.start(lrr, cluster, source)
@@ -278,9 +277,7 @@ func (r *Reconciler) resolve(
 	if err != nil || failure != nil {
 		return nil, failure, err
 	}
-	// The backend is a standing condition too. A target that was pointed at
-	// another backend, or that lost the storage claim of this one, no longer
-	// keeps other clusters away from it.
+	// The backend is a standing condition too.
 	failure, err = r.checkBackend(ctx, lrr, cluster, storage, lrr.Status.Backend)
 	if err != nil || failure != nil {
 		return nil, failure, err
@@ -289,9 +286,6 @@ func (r *Reconciler) resolve(
 	return &resolution{cluster: cluster, backup: source, target: target, storage: storage}, nil, nil
 }
 
-// checkBackend reports why the restore must not write the backend pinned
-// into the database of cluster, or nil when it may. The pg_restore pod of
-// this restore is the only pod on the claim that it does not wait for.
 func (r *Reconciler) checkBackend(
 	ctx context.Context,
 	lrr *v1.LogicalRestoreRDBMS,

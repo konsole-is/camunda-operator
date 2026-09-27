@@ -132,9 +132,8 @@ var indexers = map[string]client.IndexerFunc{
 // platform configs, the bindings, and the DatabaseConfigs. The pre-checks put the
 // resource versions of the Secrets and the generations of the CRs they read
 // into the config hash, so any of these events rolls the pods whose rendered
-// configuration changed. The end of a logical restore wakes the clusters that
-// wait for it through enqueueWaitingForHandover. It also sets EventRecorder,
-// Metrics, and the uncached component client when they are nil.
+// configuration changed. It also sets EventRecorder, Metrics, and the uncached
+// component client when they are nil.
 func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.ClaimNamespace == "" {
 		return errors.New("the namespace of the storage claim Leases is required")
@@ -256,9 +255,8 @@ func enqueueForStorageClaim() handler.EventHandler {
 }
 
 // enqueueWaitingForHandover maps the end of a restore to every cluster that
-// reports WaitingForHandover. A restore names its target and not the cluster
-// that waits beside it, and the waiting clusters are few, so the map takes
-// them all and each one reads its own backend again.
+// reports WaitingForHandover. A restore does not name the clusters that wait
+// for it, so the map takes them all.
 func (r *CamundaClusterReconciler) enqueueWaitingForHandover() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, _ client.Object) []reconcile.Request {
 		set := requestSet{}

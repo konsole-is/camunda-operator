@@ -103,8 +103,6 @@ type Options struct {
 	// the backup. The manager passes --camunda-operator-cli-image.
 	CLIImage string
 	// ClaimNamespace holds the storage claim Leases of every CamundaCluster.
-	// The restore writes the database of its target only while the target
-	// holds the storage claim of it.
 	ClaimNamespace string
 	// PollInterval paces a running phase. Zero means five seconds.
 	PollInterval time.Duration

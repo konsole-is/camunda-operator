@@ -142,9 +142,7 @@ type JobInput struct {
 	// manager, and the manager receives it as --camunda-operator-cli-image.
 	CLIImage string
 	// StorageClaim is the name of the storage claim Lease of the database,
-	// see camundacluster.StorageClaimSchema. The pod carries it, so a cluster
-	// that takes the database over waits for a pod that still writes it,
-	// also after the restore ended.
+	// see camundacluster.StorageClaimSchema. The pod carries it.
 	StorageClaim string
 }
 
@@ -453,9 +451,7 @@ func JobBelongsTo(job *batchv1.Job, restore *v1.LogicalRestoreRDBMS) bool {
 }
 
 // PodOfRestore reports whether a pod with podLabels is a pg_restore pod of
-// restore: it carries the UID label of restore and no cluster UID. A pod of a
-// cluster always carries the UID of its cluster, so a user label that copies
-// the restore UID onto it does not make it a pod of the restore.
+// restore: it carries the UID label of restore and no cluster UID.
 func PodOfRestore(podLabels map[string]string, restore *v1.LogicalRestoreRDBMS) bool {
 	_, ofCluster := podLabels[labels.ClusterUIDKey]
 

@@ -352,9 +352,8 @@ var _ = Describe("LogicalRestoreRDBMS cluster claim", func() {
 	// Nothing bounds the hold, and no spec change ends it. No watch of this
 	// controller covers a holder that the restore does not reference, so the
 	// retry timer is what takes the claim over once the holder is terminal.
-	// A restore writes only a backend that its target holds. Another cluster
-	// on that backend would run beside the restore, so the restore waits, and
-	// it starts on its own once the target holds the backend again.
+	// A restore writes only a backend that its target holds. It waits, and it
+	// starts on its own once the target holds the backend again.
 	It("holds a restore whose backend another cluster holds, and starts once the target holds it", func() {
 		w := newWorld()
 		other := &v1.CamundaCluster{
