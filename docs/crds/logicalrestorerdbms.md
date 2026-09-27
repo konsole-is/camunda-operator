@@ -230,7 +230,7 @@ A target that the restore suspended stays suspended. That is deliberate. Brokers
 | `Ready` | `ClusterNotSuspended` | The target started running again while the restore ran. | Suspend the target again. A restore that already erased something fails ten minutes after the first outage. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the target. The message names it. | Wait. The restore starts when that operation finishes. |
 | `Ready` | `StorageAlreadyAttached` | Another cluster holds the logical database of the target. The message names it. | Read "The backend". The restore starts when the target holds the database. |
-| `Ready` | `WaitingForHandover` | The target does not hold its logical database yet, or pods of another cluster still write it. | Wait. The message names the pods. The restore starts when they are gone. |
+| `Ready` | `WaitingForHandover` | The target does not hold its logical database yet, or pods of another cluster still write it. | Wait. If the target does not hold the backend yet, the message names the target and the backend. The restore starts once the target takes it. If pods still write the backend, the message names them. The restore starts when they are gone. |
 | `Ready` | `IncompatibleTarget` | The target cannot hold the backup. See "Compatibility". | Create a new restore against a target that fits. |
 | `Ready` | `InvalidReference` | The backup or the target does not exist, or the backup is not `Completed`. Or a link in the storage chain is gone, or the database server was not probed. | Correct the reference that the message names. |
 | `Ready` | `MissingSecret` | The database credentials Secret is missing or lacks a key. | Create the Secret that the message names. |

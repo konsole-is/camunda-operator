@@ -75,6 +75,16 @@ func (r *Reconciler) restoreDatabase(
 	if failure != nil {
 		return r.holdStarted(lrr, failure), nil
 	}
+	// resolveDatabase read the database chain again after resolve checked the
+	// backend. The Job writes the database of these objects, so they must name
+	// the backend that the check covered.
+	backend, failure := restore.DatabaseBackend(resolved.storage, database.config, database.server)
+	if failure == nil {
+		failure = restore.MovedBackend(resolved.cluster, backend, lrr.Status.Backend)
+	}
+	if failure != nil {
+		return r.holdStarted(lrr, failure), nil
+	}
 
 	job, err := components.BuildJob(components.JobInput{
 		Restore:            lrr,

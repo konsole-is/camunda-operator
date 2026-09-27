@@ -40,6 +40,11 @@ type BackendCheck struct {
 	ClaimNamespace string
 	// Cluster is the target cluster, as the restore resolved it.
 	Cluster *v1.CamundaCluster
+	// Storage is the SecondaryStorageConfig that the restore writes through,
+	// as the restore resolved it. The check reads the backend of this object
+	// and does not read the storageRef of the cluster again, so a contract
+	// that changes between the check and the write cannot pass the check.
+	Storage *v1.SecondaryStorageConfig
 	// Pinned is the backend that the restore pinned in status.backend.
 	Pinned string
 	// OwnPod reports whether a pod that carries the storage claim belongs to
@@ -63,34 +68,24 @@ func ResolveBackend(
 		return "", failure, err
 	}
 
-	chain := clustercomponents.Storage{Type: storage.Spec.Type, Namespace: storage.Namespace}
-	switch storage.Spec.Type {
-	case v1.SecondaryStorageTypeElasticsearch:
-		chain.Elasticsearch = storage.Spec.Elasticsearch
-	case v1.SecondaryStorageTypeRDBMS:
-		chain.RDBMS, failure, err = resolveDatabaseAddress(ctx, reader, storage)
-		if err != nil || failure != nil {
-			return "", failure, err
-		}
-	}
-
-	key, err := clustercomponents.StorageClaimKey(chain)
-	if err != nil {
-		return "", clustercomponents.StorageClaimKeyFailure(client.ObjectKeyFromObject(storage), err), nil
-	}
-
-	return key, nil, nil
+	return BackendOf(ctx, reader, storage)
 }
 
-// resolveDatabaseAddress follows the rdbms block of storage to the host, the
-// port, and the database name, which is all the claim key reads.
-func resolveDatabaseAddress(
+// BackendOf returns the claim key of the backend that storage describes. An
+// rdbms contract is followed to its DatabaseConfig and DatabaseServerConfig.
+// A chain that does not resolve is a failure the user corrects.
+func BackendOf(
 	ctx context.Context,
 	reader client.Reader,
 	storage *v1.SecondaryStorageConfig,
-) (*clustercomponents.RDBMSStorage, *conditions.PreCheckFailure, error) {
+) (string, *conditions.PreCheckFailure, error) {
+	if storage.Spec.Type != v1.SecondaryStorageTypeRDBMS {
+		key, failure := claimKey(storage, nil)
+
+		return key, failure, nil
+	}
 	if storage.Spec.RDBMS == nil {
-		return nil, logicalbackup.InvalidReference(
+		return "", logicalbackup.InvalidReference(
 			"SecondaryStorageConfig %s/%s has type rdbms and no rdbms block", storage.Namespace, storage.Name,
 		), nil
 	}
@@ -98,20 +93,51 @@ func resolveDatabaseAddress(
 	var config v1.DatabaseConfig
 	configKey := types.NamespacedName{Namespace: storage.Namespace, Name: storage.Spec.RDBMS.DatabaseConfigRef}
 	if failure, err := get(ctx, reader, configKey, &config, "DatabaseConfig"); err != nil || failure != nil {
-		return nil, failure, err
+		return "", failure, err
 	}
 
 	var server v1.DatabaseServerConfig
 	serverKey := types.NamespacedName{Namespace: config.Namespace, Name: config.Spec.ServerRef}
 	if failure, err := get(ctx, reader, serverKey, &server, "DatabaseServerConfig"); err != nil || failure != nil {
-		return nil, failure, err
+		return "", failure, err
 	}
 
-	return &clustercomponents.RDBMSStorage{
+	key, failure := DatabaseBackend(storage, &config, &server)
+
+	return key, failure, nil
+}
+
+// DatabaseBackend returns the claim key of the logical database that config
+// and server describe, reached through storage. A writer that read these
+// objects itself compares this key with the pinned backend, so it writes the
+// database that the check covered.
+func DatabaseBackend(
+	storage *v1.SecondaryStorageConfig,
+	config *v1.DatabaseConfig,
+	server *v1.DatabaseServerConfig,
+) (string, *conditions.PreCheckFailure) {
+	return claimKey(storage, &clustercomponents.RDBMSStorage{
 		Host:     server.Spec.Host,
 		Port:     server.Spec.Port,
 		Database: config.Spec.DatabaseName,
-	}, nil, nil
+	})
+}
+
+func claimKey(
+	storage *v1.SecondaryStorageConfig,
+	database *clustercomponents.RDBMSStorage,
+) (string, *conditions.PreCheckFailure) {
+	key, err := clustercomponents.StorageClaimKey(clustercomponents.Storage{
+		Type:          storage.Spec.Type,
+		Namespace:     storage.Namespace,
+		Elasticsearch: storage.Spec.Elasticsearch,
+		RDBMS:         database,
+	})
+	if err != nil {
+		return "", clustercomponents.StorageClaimKeyFailure(client.ObjectKeyFromObject(storage), err)
+	}
+
+	return key, nil
 }
 
 // get reads one referenced object of the storage chain. A missing object is a
@@ -135,10 +161,10 @@ func get(
 }
 
 // CheckBackend reports why a restore must not write the backend it pinned,
-// or nil when it may. It may when three things hold: the storage chain of the
-// target still resolves to that backend, the target holds the storage claim
-// of it, and no pod of another cluster carries that claim. Each read goes to
-// the API server.
+// or nil when it may. It may when three things hold: check.Storage still
+// resolves to that backend, the target holds the storage claim of it, and no
+// pod of another cluster carries that claim. The reads of the claim and the
+// pods go to the API server.
 //
 // The restore pins the backend and leaves Pending before its first check, and
 // the handover gate of a cluster that takes the claim reads the running
@@ -150,15 +176,12 @@ func CheckBackend(
 	reader client.Reader,
 	check BackendCheck,
 ) (*conditions.PreCheckFailure, error) {
-	key, failure, err := ResolveBackend(ctx, reader, check.Cluster)
+	key, failure, err := BackendOf(ctx, reader, check.Storage)
 	if err != nil || failure != nil {
 		return failure, err
 	}
-	if key != check.Pinned {
-		return logicalbackup.InvalidReference(
-			"CamundaCluster %s/%s now resolves to the backend %q, and the restore started against %q",
-			check.Cluster.Namespace, check.Cluster.Name, key, check.Pinned,
-		), nil
+	if failure := MovedBackend(check.Cluster, key, check.Pinned); failure != nil {
+		return failure, nil
 	}
 
 	schema := clustercomponents.StorageClaimSchema()
@@ -195,6 +218,20 @@ func CheckBackend(
 	}
 
 	return nil, nil
+}
+
+// MovedBackend reports the backend key of cluster that is not the pinned
+// one as a failure, or nil when they match. A restore writes only the backend
+// it pinned.
+func MovedBackend(cluster *v1.CamundaCluster, key, pinned string) *conditions.PreCheckFailure {
+	if key == pinned {
+		return nil
+	}
+
+	return logicalbackup.InvalidReference(
+		"CamundaCluster %s/%s now resolves to the backend %q, and the restore started against %q",
+		cluster.Namespace, cluster.Name, key, pinned,
+	)
 }
 
 // notHeld is the failure of a target that does not hold its backend. A

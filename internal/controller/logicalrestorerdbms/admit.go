@@ -180,14 +180,21 @@ func (r *Reconciler) admit(
 	// the handover gate of every other cluster waits for this restore, and
 	// every later look checks the backend again before it writes, see
 	// restore.CheckBackend.
-	backend, failure, err := restore.ResolveBackend(ctx, r.APIReader, cluster)
+	storage, failure, err := restore.ResolveStorage(ctx, r.APIReader, cluster)
 	if err != nil {
 		return restore.Outcome{}, err
 	}
 	if failure != nil {
 		return r.waiting(lrr, failure), nil
 	}
-	failure, err = r.checkBackend(ctx, lrr, cluster, backend)
+	backend, failure, err := restore.BackendOf(ctx, r.APIReader, storage)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	if failure != nil {
+		return r.waiting(lrr, failure), nil
+	}
+	failure, err = r.checkBackend(ctx, lrr, cluster, storage, backend)
 	if err != nil {
 		return restore.Outcome{}, err
 	}
@@ -275,7 +282,7 @@ func (r *Reconciler) resolve(
 	// The backend is a standing condition too. A target that was pointed at
 	// another backend, or that lost the storage claim of this one, no longer
 	// keeps other clusters away from it.
-	failure, err = r.checkBackend(ctx, lrr, cluster, lrr.Status.Backend)
+	failure, err = r.checkBackend(ctx, lrr, cluster, storage, lrr.Status.Backend)
 	if err != nil || failure != nil {
 		return nil, failure, err
 	}
@@ -291,11 +298,13 @@ func (r *Reconciler) checkBackend(
 	ctx context.Context,
 	lrr *v1.LogicalRestoreRDBMS,
 	cluster *v1.CamundaCluster,
+	storage *v1.SecondaryStorageConfig,
 	pinned string,
 ) (*conditions.PreCheckFailure, error) {
 	return restore.CheckBackend(ctx, r.Client, r.APIReader, restore.BackendCheck{
 		ClaimNamespace: r.opts.ClaimNamespace,
 		Cluster:        cluster,
+		Storage:        storage,
 		Pinned:         pinned,
 		OwnPod: func(podLabels map[string]string) bool {
 			return podLabels[labels.ClusterUIDKey] == string(cluster.UID) ||

@@ -153,14 +153,28 @@ func TestCheckBackend(t *testing.T) {
 	}
 	ownJob := map[string]string{labels.StorageClaimKey: labels.OwnerName(claim), "restore-uid": "uid-restore"}
 
+	storage := backendObjects()[0].(*v1.SecondaryStorageConfig)
+	moved := storage.DeepCopy()
+	moved.Spec.Elasticsearch = &v1.ElasticsearchStorage{Endpoint: "https://old:9200"}
+
 	cases := map[string]struct {
 		pinned  string
+		storage *v1.SecondaryStorageConfig
 		objects []client.Object
 		ownPod  func(map[string]string) bool
 		reason  string
 		message string
 	}{
 		"the target holds the backend alone": {pinned: key, objects: []client.Object{lease(target)}},
+		// The restore writes through the contract it resolved. A live contract
+		// that names the pinned backend again does not make that copy safe.
+		"the contract the restore writes through names another backend": {
+			pinned:  key,
+			storage: moved,
+			objects: []client.Object{lease(target)},
+			reason:  v1.ReasonInvalidReference,
+			message: `now resolves to the backend "elasticsearch|https://old.ns.svc:9200"`,
+		},
 		"the target was pointed at another backend": {
 			pinned:  "elasticsearch|https://old:9200",
 			objects: []client.Object{lease(target)},
@@ -207,10 +221,15 @@ func TestCheckBackend(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			c := backendClient(t, append(backendObjects(), tc.objects...)...)
+			through := storage
+			if tc.storage != nil {
+				through = tc.storage
+			}
 
 			failure, err := CheckBackend(context.Background(), c, c, BackendCheck{
 				ClaimNamespace: backendClaimNamespace,
 				Cluster:        target,
+				Storage:        through,
 				Pinned:         tc.pinned,
 				OwnPod:         tc.ownPod,
 			})
@@ -226,4 +245,31 @@ func TestCheckBackend(t *testing.T) {
 			assert.Contains(t, failure.Message, tc.message)
 		})
 	}
+}
+
+// A pg_restore Job writes the database of the objects it was built from, so
+// their key must be the one the check covered.
+func TestDatabaseBackendIsTheKeyThatResolveBackendPins(t *testing.T) {
+	objects := backendObjects()
+	c := backendClient(t, objects...)
+	storage := objects[1].(*v1.SecondaryStorageConfig)
+	config := objects[2].(*v1.DatabaseConfig)
+	server := objects[3].(*v1.DatabaseServerConfig)
+
+	pinned, failure, err := ResolveBackend(context.Background(), c, backendTarget("rdbms-storage"))
+	require.NoError(t, err)
+	require.Nil(t, failure)
+
+	key, failure := DatabaseBackend(storage, config, server)
+	require.Nil(t, failure)
+	assert.Equal(t, pinned, key)
+	assert.Nil(t, MovedBackend(backendTarget("rdbms-storage"), key, pinned))
+
+	moved := server.DeepCopy()
+	moved.Spec.Host = "other-postgres"
+	key, failure = DatabaseBackend(storage, config, moved)
+	require.Nil(t, failure)
+	failure = MovedBackend(backendTarget("rdbms-storage"), key, pinned)
+	require.NotNil(t, failure)
+	assert.Equal(t, v1.ReasonInvalidReference, failure.Reason)
 }
