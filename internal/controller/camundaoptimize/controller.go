@@ -188,7 +188,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		}
 	}()
 
-	// Read before anything below stages a condition of this pass.
 	prior := readSuspension(&optimize)
 
 	res, err := r.preCheck(ctx, &optimize)
@@ -204,7 +203,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			// deletes, and comps stays nil on this path, so the flush does not
 			// own those types and would write the stale values back. A parked
 			// CamundaOptimize renders nothing, so it reports nothing about
-			// what it used to render, and it follows no suspension.
+			// what it used to render.
 			removeComponentConditions(&optimize)
 			optimize.Status.SuspendedBy = ""
 
@@ -228,11 +227,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			if outcome.Found && suspendErr == nil {
 				failure.Message += fmt.Sprintf(held.failureNote, optimize.Spec.ClusterRef.Name)
 			}
-			// A workload stopped by this pass or an earlier one proves that the
-			// instance rendered one, whatever the conditions carried in. A pass
-			// that stopped none leaves nothing at zero, so it records nothing.
-			// This path renders nothing, so the end of the suspension belongs to
-			// the success path that starts the workloads again.
+			// A stopped workload proves that the instance rendered one, whatever
+			// the conditions carried in.
 			if outcome.Stopped {
 				prior.rendered = true
 				r.recordSuspensionChange(&optimize, prior, now)

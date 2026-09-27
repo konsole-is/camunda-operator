@@ -34,8 +34,7 @@ import (
 )
 
 // TestReconcileHarnessRenders covers the harness itself: a Reconcile passes the
-// whole pre-check and renders both workloads. Every other test of this file
-// starts from there.
+// whole pre-check and renders both workloads.
 func TestReconcileHarnessRenders(t *testing.T) {
 	h := newReconcileHarness(t)
 
@@ -49,10 +48,10 @@ func TestReconcileHarnessRenders(t *testing.T) {
 	assert.Equal(t, metav1.ConditionFalse, ready.Status, "no workload reports a ready pod yet")
 }
 
-// TestReconcileReportsTheDrainOfASuspension covers what envtest cannot show,
-// because it has no kubelet: a suspension reports Suspending while the pods of
-// the workloads are still up, and Suspended once they are gone. The event
-// marks the transition once, however many passes the drain takes.
+// TestReconcileReportsTheDrainOfASuspension covers a suspension that reports
+// Suspending while the pods of the workloads are still up, and Suspended once
+// they are gone. The event marks the transition once, however many passes the
+// drain takes.
 func TestReconcileReportsTheDrainOfASuspension(t *testing.T) {
 	h := newReconcileHarness(t)
 	h.start(t)
@@ -82,9 +81,8 @@ func TestReconcileReportsTheDrainOfASuspension(t *testing.T) {
 }
 
 // TestReconcileRecordsOneResumeWhenAnApplyFails covers a resume pass on which
-// one component apply fails. The pass decided that the suspension ends, so it
-// records the resume, and the pass that retries the apply must not record it
-// again.
+// one component apply fails. That pass records the resume, and the pass that
+// retries the apply does not record it again.
 func TestReconcileRecordsOneResumeWhenAnApplyFails(t *testing.T) {
 	h := newReconcileHarness(t)
 	h.start(t)
@@ -117,10 +115,8 @@ func TestReconcileRecordsOneResumeWhenAnApplyFails(t *testing.T) {
 }
 
 // TestReconcileRecordsOneSuspensionWhenTheFlushConflicts covers a status
-// conflict on the failure path. A failed check builds no component, so the
-// flush owns no condition type and takes every condition from the server on a
-// conflict, the workload conditions that carry the suspension included. The
-// next pass must still know that the suspension was recorded.
+// conflict on the failure path, where the flush takes every condition from the
+// server. The next pass does not record the suspension again.
 func TestReconcileRecordsOneSuspensionWhenTheFlushConflicts(t *testing.T) {
 	h := newReconcileHarness(t)
 	h.start(t)

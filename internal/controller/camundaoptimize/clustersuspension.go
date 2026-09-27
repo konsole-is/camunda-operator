@@ -104,18 +104,9 @@ var (
 )
 
 // suspension is the suspension of the referenced cluster that a
-// CamundaOptimize followed when the last pass ended. Reconcile reads it once,
-// before any path stages a condition, and every path records its events
-// against it.
-//
-// The prior state is a field of the status that only this controller writes,
-// not a reading of the conditions. A failed apply rewrites the workload
-// conditions, and a flush that conflicts takes every condition that it does not
-// own from the server, which is all of them on a failed check. It keeps the
-// fields of the status that it staged.
+// CamundaOptimize followed when the last pass ended.
 type suspension struct {
-	// by is status.suspendedBy: why the workloads were at zero, or empty when
-	// they followed their spec.
+	// by is status.suspendedBy.
 	by v1.OptimizeSuspension
 	// rendered reports whether the instance rendered a workload before this
 	// pass.
@@ -125,13 +116,12 @@ type suspension struct {
 // readSuspension returns the suspension that optimize carries into this pass.
 // Call it before anything stages a condition of this pass.
 func readSuspension(optimize *v1.CamundaOptimize) suspension {
+	// Not the conditions: a failed apply or a conflicting flush rewrites them.
 	return suspension{by: optimize.Status.SuspendedBy, rendered: hasWorkloads(optimize)}
 }
 
 // suspendedBy returns why res holds the workloads at zero on this pass, or
-// empty when they follow their spec. Only the storage claim reaches
-// AwaitsBackendClaim, so every other suspension is one that the cluster
-// reports itself.
+// empty when they follow their spec.
 func suspendedBy(res resolved) v1.OptimizeSuspension {
 	switch {
 	case !res.Input.Suspended:
@@ -173,21 +163,9 @@ func hasWorkloads(optimize *v1.CamundaOptimize) bool {
 }
 
 // recordSuspensionChange stages now as status.suspendedBy, and records an event
-// when the workloads start to follow a suspension or stop following one. A
-// change from one wait to the other records nothing: the workloads stay at zero
-// through it. An instance that rendered no workload before records nothing
-// either.
-//
-// status.suspendedBy carries the state from one pass to the next. The
-// conditions do not, because a failed apply or a status conflict can rewrite
-// them. The event carries the transition, so a user reading `kubectl describe`
-// learns why the workloads went to zero. The Ready condition cannot say it:
-// ocf builds the message of a suspended component from its own suspension
-// state, and the reason is Suspended, the same reason that a suspended
-// CamundaCluster reports.
-//
-// The event marks the decision of this pass, not its outcome. A pass whose apply
-// fails still records it, and stages the field that tells the next pass so.
+// when the workloads start to follow a suspension or stop following one. It
+// records nothing when prior rendered no workload. The event marks the decision
+// of this pass, not its outcome.
 func (r *Reconciler) recordSuspensionChange(
 	optimize *v1.CamundaOptimize,
 	prior suspension,
@@ -204,6 +182,8 @@ func (r *Reconciler) recordSuspensionChange(
 		reason, note = held.eventReason, held.eventNote
 	}
 
+	// Ready cannot name the wait: its reason is Suspended, as for a suspended
+	// CamundaCluster.
 	r.EventRecorder.Eventf(
 		optimize,
 		nil,

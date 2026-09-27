@@ -138,10 +138,8 @@ type CamundaOptimizeStatus struct {
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// SuspendedBy says why the Optimize workloads follow the referenced
-	// cluster to zero. It is empty while they follow their spec. The operator
-	// sets it on the pass that scales them to zero, and clears it on the pass
-	// that starts them again. It stays set while a failed check keeps them at
-	// zero after the cluster resumed.
+	// cluster to zero. It is empty while they follow their spec. It stays set
+	// while a failed check keeps them at zero after the cluster resumed.
 	// +optional
 	SuspendedBy OptimizeSuspension `json:"suspendedBy,omitempty"`
 }

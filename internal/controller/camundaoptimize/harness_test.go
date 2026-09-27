@@ -43,13 +43,11 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
-// harnessClaimNamespace holds the storage claim Lease of the harness cluster.
 const harnessClaimNamespace = "camunda-operator-system"
 
 // reconcileHarness is a CamundaOptimize whose every reference resolves over a
-// fake client, so a Reconcile passes the pre-check and renders. envtest reaches
-// the same paths, but it cannot fail one write, has no kubelet to report a
-// draining workload, and cannot inject a status conflict. The harness can.
+// fake client, so a Reconcile passes the pre-check and renders. Unlike envtest,
+// it can fail one write and set the status of a workload.
 //
 // The hooks answer the matching call in place of the fake client when they
 // return an error, and pass it on when they return nil. A test sets them
@@ -78,9 +76,7 @@ type reconcileHarness struct {
 }
 
 // newReconcileHarness returns a harness whose CamundaOptimize passes every
-// check. The cluster holds the storage claim of its backend, and no pod carries
-// that claim, so the claim gate passes too. The CamundaOptimize carries the
-// finalizer, so the first Reconcile goes straight to the pre-check.
+// check, the storage claim gate included, and whose first Reconcile renders.
 func newReconcileHarness(t *testing.T) *reconcileHarness {
 	t.Helper()
 	scheme := suspendScheme(t)
@@ -137,7 +133,6 @@ func newReconcileHarness(t *testing.T) *reconcileHarness {
 		},
 	}
 
-	// The claim key is the one the pre-check computes from the same chain.
 	key, err := clustercomponents.StorageClaimKey(clustercomponents.Storage{
 		Type:          binding.Spec.Type,
 		Namespace:     binding.Namespace,
@@ -263,7 +258,6 @@ func (h *reconcileHarness) interceptors() interceptor.Funcs {
 	}
 }
 
-// reconcile runs one Reconcile of the harness CamundaOptimize.
 func (h *reconcileHarness) reconcile(t *testing.T) error {
 	t.Helper()
 	_, err := h.reconciler.Reconcile(t.Context(), ctrl.Request{NamespacedName: h.key})
@@ -280,7 +274,6 @@ func (h *reconcileHarness) latest(t *testing.T) *v1.CamundaOptimize {
 	return &optimize
 }
 
-// setClusterSuspend sets spec.suspend of the harness cluster.
 func (h *reconcileHarness) setClusterSuspend(t *testing.T, suspend bool) {
 	t.Helper()
 	var cluster v1.CamundaCluster
@@ -311,12 +304,10 @@ func (h *reconcileHarness) runForeignWriter() {
 	})
 }
 
-// workloadKey returns the key of the Deployment of the given component.
 func (h *reconcileHarness) workloadKey(comp string) client.ObjectKey {
 	return client.ObjectKey{Namespace: h.optimize.Namespace, Name: components.WorkloadName(h.optimize, comp)}
 }
 
-// workloadKeys returns the keys of both Optimize workloads.
 func (h *reconcileHarness) workloadKeys() []client.ObjectKey {
 	return []client.ObjectKey{
 		h.workloadKey(components.ComponentWebapp),
@@ -353,12 +344,12 @@ func (h *reconcileHarness) observe(t *testing.T, observed int32) {
 }
 
 // events drains the recorder and returns how many events carry each reason.
-// The fake recorder writes an event as its type, its reason and its note.
 func (h *reconcileHarness) events() map[string]int {
 	counts := map[string]int{}
 	for {
 		select {
 		case recorded := <-h.recorder.Events:
+			// The fake recorder writes an event as its type, its reason and its note.
 			if fields := strings.Fields(recorded); len(fields) > 1 {
 				counts[fields[1]]++
 			}

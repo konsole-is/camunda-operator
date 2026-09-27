@@ -30,11 +30,8 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// TestSuspendedByNamesEachSourceOfASuspension covers the three sources of a
-// suspension, as the pre-check reads them: the cluster reports itself
-// suspended, the cluster does not hold the storage claim of its backend, and
-// a pod of another cluster still writes that backend. The last two are one wait
-// for a user, so they share one value.
+// TestSuspendedByNamesEachSourceOfASuspension covers each source of a
+// suspension that the pre-check reads.
 func TestSuspendedByNamesEachSourceOfASuspension(t *testing.T) {
 	cases := map[string]struct {
 		arrange func(t *testing.T, h *reconcileHarness)
@@ -72,8 +69,7 @@ func TestSuspendedByNamesEachSourceOfASuspension(t *testing.T) {
 }
 
 // TestReadSuspensionReadsTheStatus covers the prior state that a pass carries
-// in: the suspension comes from status.suspendedBy and nothing else, and an
-// instance that never rendered a workload says so.
+// in: the suspension comes from status.suspendedBy and nothing else.
 func TestReadSuspensionReadsTheStatus(t *testing.T) {
 	t.Parallel()
 
@@ -86,9 +82,6 @@ func TestReadSuspensionReadsTheStatus(t *testing.T) {
 		"an instance created beside a parked cluster follows the wait with no workload",
 	)
 
-	// A workload condition that reads Suspended is not a suspension that this
-	// controller recorded: a failed apply or a conflict on the flush can leave
-	// one behind.
 	rendered := &v1.CamundaOptimize{}
 	meta.SetStatusCondition(&rendered.Status.Conditions, metav1.Condition{
 		Type:   v1.ConditionImporterReady,
@@ -99,10 +92,8 @@ func TestReadSuspensionReadsTheStatus(t *testing.T) {
 }
 
 // TestRecordSuspensionChangeRecordsTheStartAndTheEndOnly pins which changes
-// reach the event stream. The start and the end of a suspension do. A change
-// from one wait to the other does not, because the workloads stay at zero
-// through it, and an instance with no workload has no transition to report.
-// Every pass stages the state it decided on, so the next pass reads it.
+// reach the event stream: the start and the end of a suspension, and no other.
+// Every pass stages the state it decided on.
 func TestRecordSuspensionChangeRecordsTheStartAndTheEndOnly(t *testing.T) {
 	t.Parallel()
 
