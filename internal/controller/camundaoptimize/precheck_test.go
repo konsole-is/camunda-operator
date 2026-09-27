@@ -98,6 +98,69 @@ func TestPreCheckSuspendsWhileTheClusterDoesNotHoldItsBackend(t *testing.T) {
 	}
 }
 
+// A restore into another cluster writes the backend with no pod of that
+// cluster, so the importer waits for it by its pinned backend. The restore of
+// this cluster is its own work, and a restore that has not started or has
+// ended writes nothing.
+func TestPreCheckSuspendsWhileARestoreIntoAnotherClusterWritesTheBackend(t *testing.T) {
+	const (
+		namespace  = gateNamespace
+		claimSpace = "camunda-system"
+		endpoint   = gateEndpoint
+	)
+
+	cases := map[string]struct {
+		target    types.UID
+		phase     v1.LogicalRestorePhase
+		suspended bool
+	}{
+		"a running restore into another cluster": {
+			target: "other-uid", phase: v1.LogicalRestoreRestoringSecondaryStorage, suspended: true,
+		},
+		"a running restore into this cluster": {
+			target: "cluster-uid", phase: v1.LogicalRestoreRestoringSecondaryStorage,
+		},
+		"a pending restore into another cluster": {target: "other-uid", phase: v1.LogicalRestorePending},
+		"a failed restore into another cluster":  {target: "other-uid", phase: v1.LogicalRestoreFailed},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			scheme, cluster, objects := storageClaimGateFixture(t)
+			key, err := clustercomponents.StorageClaimKey(clustercomponents.Storage{
+				Type:          v1.SecondaryStorageTypeElasticsearch,
+				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: endpoint},
+			})
+			require.NoError(t, err)
+			restore := &v1.LogicalRestoreElasticsearch{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "team-b", Name: "restore"},
+			}
+			restore.Status.Phase = tc.phase
+			restore.Status.Backend = key
+			restore.Status.TargetClusterUID = tc.target
+			objects = append(
+				objects,
+				clustercomponents.StorageClaimSchema().NewLease(claimSpace, key, cluster),
+				restore,
+			)
+
+			c := storageClaimPodClient(t, scheme, objects...)
+			r := &Reconciler{Client: c, APIReader: c, Scheme: scheme, ClaimNamespace: claimSpace}
+
+			var optimize v1.CamundaOptimize
+			require.NoError(t, c.Get(
+				context.Background(), client.ObjectKey{Namespace: namespace, Name: "my-optimize"}, &optimize,
+			))
+
+			out, err := r.preCheck(context.Background(), &optimize)
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.suspended, out.Input.Suspended)
+			assert.Equal(t, tc.suspended, out.AwaitsBackendClaim)
+		})
+	}
+}
+
 // The cluster takes the claim of a new backend and records the handover it
 // must wait for in one pass, and its Ready reaches the API server at the end
 // of that pass. This controller can read the claim in between, so the pods on
