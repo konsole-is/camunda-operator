@@ -127,11 +127,11 @@ var _ = BeforeSuite(func() {
 	setupECK()
 	setupKeycloakCRDs()
 	deployManager()
-	setupMinIO()
+	setupRustFS()
 })
 
 var _ = AfterSuite(func() {
-	teardownMinIO()
+	teardownRustFS()
 	undeployManager()
 	teardownKeycloakCRDs()
 	teardownECK()
@@ -198,21 +198,21 @@ func undeployManager() {
 	_, _ = utils.Run(cmd)
 }
 
-// setupMinIO deploys the object store of the backup flows. Each flow creates
+// setupRustFS deploys the object store of the backup flows. Each flow creates
 // the bucket contract in its own namespace with createBackupStorage.
-func setupMinIO() {
-	By("creating the MinIO namespace")
-	_, err := utils.Kubectl("create", "ns", minioNamespace)
-	Expect(err).NotTo(HaveOccurred(), "Failed to create the MinIO namespace")
+func setupRustFS() {
+	By("creating the RustFS namespace")
+	_, err := utils.Kubectl("create", "ns", rustfsNamespace)
+	Expect(err).NotTo(HaveOccurred(), "Failed to create the RustFS namespace")
 
-	By("deploying MinIO and creating the bucket")
-	Expect(utils.InstallMinIO(minioNamespace)).To(Succeed(), "Failed to install MinIO")
+	By("deploying RustFS and creating the bucket")
+	Expect(utils.InstallRustFS(rustfsNamespace)).To(Succeed(), "Failed to install RustFS")
 }
 
-// teardownMinIO removes the MinIO namespace.
-func teardownMinIO() {
-	By("removing the MinIO namespace")
-	_, _ = utils.Kubectl("delete", "ns", minioNamespace, "--wait=false")
+// teardownRustFS removes the RustFS namespace.
+func teardownRustFS() {
+	By("removing the RustFS namespace")
+	_, _ = utils.Kubectl("delete", "ns", rustfsNamespace, "--wait=false")
 }
 
 // setupCertManager installs CertManager if needed for webhook tests.
