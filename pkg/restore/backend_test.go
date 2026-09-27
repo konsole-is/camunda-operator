@@ -214,12 +214,16 @@ func TestCheckBackend(t *testing.T) {
 			reason:  v1.ReasonWaitingForHandover,
 			message: "apps/other-zeebe-0",
 		},
-		"the pods of the target": {
+		// The target is suspended for the whole restore, so a pod of it that
+		// still runs, such as its Optimize importer, writes beside the restore.
+		"a pod of the target that still runs": {
 			pinned: key,
 			objects: []client.Object{
 				lease(target),
-				pod("target-zeebe-0", clustercomponents.StoragePodLabels("target", target.UID, claim)),
+				pod("target-optimize-importer-0", clustercomponents.StoragePodLabels("target", target.UID, claim)),
 			},
+			reason:  v1.ReasonWaitingForHandover,
+			message: "apps/target-optimize-importer-0",
 		},
 		"the pod of the restore itself": {
 			pinned:  key,

@@ -144,7 +144,7 @@ From then until the restore reaches `Completed` or `Failed`, no other `CamundaCl
 The restore itself waits in `Pending` while the target does not hold its backend:
 
 - `StorageAlreadyAttached` means that another cluster holds the backend. The message names that cluster. The restore writes nothing into a backend that another cluster holds.
-- `WaitingForHandover` means that the target does not hold the backend yet, or that pods of another cluster still write it. In the first case the message names the target and the backend. In the second case it names those pods.
+- `WaitingForHandover` means that the target does not hold the backend yet, or that pods still write it. In the first case the message names the target and the backend. In the second case it names those pods. They can be pods of another cluster, or pods of the target that have not stopped yet, such as its Optimize importer.
 - `InvalidReference` can name a Lease that claims the backend and names no `CamundaCluster`. The target cannot take the backend while it exists. Delete the Lease if nothing uses it.
 
 After the restore left `Pending`, these two reasons hold it for 10 minutes, and then it fails. A target that now resolves to another backend than `status.backend` holds it with reason `InvalidReference` for the same time.
@@ -175,7 +175,7 @@ CAUTION: A failure between the delete and the restore leaves the secondary stora
 
 ### An Optimize attached to the target
 
-A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names the target follows `spec.suspend` of that cluster. So its webapp and its importer are already at zero when this phase deletes the indices. You do not have to stop the import by hand.
+A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names the target follows `spec.suspend` of that cluster. So its webapp and its importer go to zero with the cluster. The restore waits in `Pending` until the importer pod is gone, so no import runs when this phase deletes the indices. You do not have to stop the import by hand.
 
 This matters because the Optimize importer reads Elasticsearch directly, not through the orchestration cluster. An importer that keeps running reads indices that are half restored and writes analytics from them. It also holds an import position that disagrees with the restored data. Both workloads start again when you unsuspend the cluster, and the importer reads the restored indices.
 
@@ -236,7 +236,7 @@ A target that the restore suspended stays suspended. That is deliberate. Brokers
 | `Ready` | `ClusterNotSuspended` | The target started running again while the restore ran. | Suspend the cluster again. A restore that already erased something fails 10 minutes after the first outage. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster. | Wait. The restore starts when the holder reaches a terminal phase. |
 | `Ready` | `StorageAlreadyAttached` | Another cluster holds the Elasticsearch of the target. The message names it. | Read "The backend" above. The restore starts when the target holds the Elasticsearch. |
-| `Ready` | `WaitingForHandover` | The target does not hold its Elasticsearch yet, or pods of another cluster still write it. | Wait. If the target does not hold the backend yet, the message names the target and the backend. The restore starts once the target takes it. If pods still write the backend, the message names them. The restore starts when they are gone. |
+| `Ready` | `WaitingForHandover` | The target does not hold its Elasticsearch yet, or pods still write it. | Wait. If the target does not hold the backend yet, the message names the target and the backend. The restore starts once the target takes it. If pods still write the backend, the message names them. The restore starts when they are gone. |
 | `Ready` | `IncompatibleTarget` | The target cannot hold the backup. The message names both values. | Read "Compatibility" above. A backup restores into the cluster it was taken from alone. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, or the backup is not completed. Or the snapshot repository of the backup is absent from the target under a name the operator cannot place. | Read the message. Create the resource, wait for the backup, or register the repository on the target. |
 | `Ready` | `ConnectionFailed` | The Elasticsearch of the target does not answer, or it refuses the credentials. | Make sure that the endpoint answers and that the credentials of the `SecondaryStorageConfig` are valid. |

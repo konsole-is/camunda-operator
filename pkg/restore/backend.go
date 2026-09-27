@@ -48,8 +48,9 @@ type BackendCheck struct {
 	// Pinned is the backend that the restore pinned in status.backend.
 	Pinned string
 	// OwnPod reports whether a pod that carries the storage claim belongs to
-	// the restore or to its target. A nil OwnPod takes the pods of the target
-	// only.
+	// the restore itself. A nil OwnPod takes no pod as its own. The target is
+	// suspended for the whole restore, so a pod of the target on the claim,
+	// its Optimize importer included, still writes the backend.
 	OwnPod func(podLabels map[string]string) bool
 }
 
@@ -162,9 +163,11 @@ func get(
 
 // CheckBackend reports why a restore must not write the backend it pinned,
 // or nil when it may. It may when three things hold: check.Storage still
-// resolves to that backend, the target holds the storage claim of it, and no
-// pod of another cluster carries that claim. The reads of the claim and the
-// pods go to the API server.
+// resolves to that backend, the target holds the storage claim of it, and
+// nothing but the restore itself writes it. That last check waits for every
+// pod on the claim and for every workload of the operator that can start one,
+// see OtherPodsOnClaim. The reads of the claim and the writers go to the API
+// server.
 //
 // The restore pins the backend and leaves Pending before its first check, and
 // the handover gate of a cluster that takes the claim reads the running
@@ -206,7 +209,7 @@ func CheckBackend(
 		return notHeld(check.Cluster, key, holder.NamespacedName, ours), nil
 	}
 
-	own := clustercomponents.PodsOfCluster(check.Cluster.UID)
+	own := func(map[string]string) bool { return false }
 	if check.OwnPod != nil {
 		own = check.OwnPod
 	}
@@ -218,7 +221,7 @@ func CheckBackend(
 		return &conditions.PreCheckFailure{
 			Reason: v1.ReasonWaitingForHandover,
 			Message: fmt.Sprintf(
-				"Pods of another cluster, or workloads that start one, still write the backend %q: %s. "+
+				"Pods, or workloads that start one, still write the backend %q: %s. "+
 					"The restore writes it when they are gone",
 				key, strings.Join(pods, ", "),
 			),

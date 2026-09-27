@@ -28,7 +28,6 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalrestorerdbms"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
-	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
 )
@@ -291,9 +290,8 @@ func (r *Reconciler) resolve(
 }
 
 // checkBackend reports why the restore must not write the backend pinned
-// into the database of cluster, or nil when it may. The pg_restore Job pod of
-// this restore carries the storage claim and no cluster UID, so it is this
-// restore's own and not a pod to wait for.
+// into the database of cluster, or nil when it may. The pg_restore pod of
+// this restore is the only pod on the claim that it does not wait for.
 func (r *Reconciler) checkBackend(
 	ctx context.Context,
 	lrr *v1.LogicalRestoreRDBMS,
@@ -306,9 +304,7 @@ func (r *Reconciler) checkBackend(
 		Cluster:        cluster,
 		Storage:        storage,
 		Pinned:         pinned,
-		OwnPod: func(podLabels map[string]string) bool {
-			return podLabels[labels.ClusterUIDKey] == string(cluster.UID) || components.PodOfRestore(podLabels, lrr)
-		},
+		OwnPod:         func(podLabels map[string]string) bool { return components.PodOfRestore(podLabels, lrr) },
 	})
 }
 
