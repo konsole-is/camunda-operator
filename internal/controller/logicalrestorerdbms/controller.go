@@ -95,9 +95,7 @@ const (
 	defaultMidRunGrace = 10 * time.Minute
 )
 
-// Options tunes a Reconciler. CLIImage and ClaimNamespace are required. Every
-// other field has a production default, and a test sets what it needs to
-// observe.
+// Options tunes a Reconciler. CLIImage and ClaimNamespace are required.
 type Options struct {
 	// CLIImage is the camunda-operator-cli image that downloads the dump of
 	// the backup. The manager passes --camunda-operator-cli-image.
@@ -115,9 +113,7 @@ type Options struct {
 }
 
 // withDefaults fills the zero fields of o with the production configuration.
-// It rejects an empty CLIImage, because the restore cannot guess an image and
-// would fail only once it reached the secondary-storage phase. It rejects an
-// empty ClaimNamespace for the same reason.
+// It errors when CLIImage or ClaimNamespace is empty.
 func (o Options) withDefaults() (Options, error) {
 	if o.CLIImage == "" {
 		return o, errors.New("the camunda-operator-cli image is required")

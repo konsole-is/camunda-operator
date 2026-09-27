@@ -95,31 +95,15 @@ func StorageClaimLeaseLabels(name string) map[string]string {
 	return labels.Managed(labels.Cluster(name), StorageClaimComponent)
 }
 
-// OtherPodsOnClaim returns the pods that carry the storage claim named claim
-// and that own does not claim, as sorted "namespace/name" paths, together
-// with the workloads that can still start such a pod: a ReplicaSet that asks
-// for replicas with the claim on its labels, a Deployment or a StatefulSet
-// that asks for replicas with the claim on its template, and a Job that can
-// still start a pod with the claim on its template. A workload whose pod is gone
-// for a moment, evicted, failed, or not yet started, recreates it with the
-// claim, so a scan of the pods alone can pass while a writer is about to
-// return. A
-// cluster passes PodsOfCluster; an Optimize instance passes a predicate that
-// also leaves out the importer of a deleted instance of its cluster. A
-// handover waits for exactly these: every one of them writes the backend of
-// that claim, or starts what does. The reader must read the API server
-// directly, because a decision from a stale cache starts a second writer.
+// OtherPodsOnClaim returns, as sorted "namespace/name" paths, the pods that
+// carry the storage claim named claim and that own does not claim, and the
+// ReplicaSets, Deployments, StatefulSets and Jobs that can still start such a
+// pod. Every entry writes the backend of that claim or starts what does. A
+// terminating pod counts until it is gone, which on a lost node means until it
+// is forced away.
 //
-// The list covers every namespace, because two clusters of two namespaces can
-// resolve one backend. It leaves out the pods that reached Failed or
-// Succeeded: an evicted pod of a previous holder keeps its object under a
-// ReplicaSet that nobody deleted, and it writes nothing. It keeps a pod with a
-// deletion timestamp, because one on a lost node still writes until the node
-// comes back or the pod is forced away.
-//
-// The pods of a CamundaOptimize attached to another cluster carry the same
-// labels, see pkg/components/camundaoptimize, and its importer writes the
-// backend like a pod of that cluster.
+// The lists cover every namespace. The reader must read the API server
+// directly: a decision from a stale cache starts a second writer.
 func OtherPodsOnClaim(
 	ctx context.Context,
 	reader client.Reader,
@@ -145,6 +129,8 @@ func OtherPodsOnClaim(
 		names = append(names, pods.Items[i].Namespace+"/"+pods.Items[i].Name)
 	}
 
+	// A workload whose pod is gone for a moment recreates it with the claim,
+	// so the pods alone can pass while a writer is about to return.
 	var replicaSets appsv1.ReplicaSetList
 	err = reader.List(
 		ctx,

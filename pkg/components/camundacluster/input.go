@@ -66,8 +66,7 @@ type StorageHolder struct {
 }
 
 // StorageHandover is the wait for what else still writes the backend this
-// cluster is on: the pods of other clusters, and the restores into other
-// clusters.
+// cluster is on.
 type StorageHandover struct {
 	// Backend is the claim key of the backend, see StorageClaimKey.
 	Backend string

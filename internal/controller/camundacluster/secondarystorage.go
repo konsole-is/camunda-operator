@@ -46,20 +46,13 @@ const eventReasonStorageClaimed = "StorageClaimed"
 const StorageClaimFinalizer = "core.camunda.io/storage-claim"
 
 // claimStorage takes the storage claim of the backend that resolveStorage
-// resolved, or records the cluster that holds it. The claim key is the
-// backend, so two contracts that name one address meet on one Lease. The
-// first CamundaCluster that takes the claim holds it while it exists; a
-// holder that is gone is taken over. A live holder lands on
-// in.Storage.Holder and the controller renders this cluster suspended. A
-// cluster whose backend pods of other clusters still carry, or a restore into
-// another cluster still writes, lands on in.Storage.Handover, and the
-// controller renders it suspended too. That holds whether this cluster took
-// the claim or waits under those writers to take it. It needs in.Storage from
-// resolveStorage.
+// resolved and sets in.Storage.Claim. It needs in.Storage from resolveStorage.
+// A live holder lands on in.Storage.Holder. Pods or a restore of another
+// cluster that still write the backend land on in.Storage.Handover, whether or
+// not this cluster took the claim, except on a cluster the user suspended. A
+// Lease that names no CamundaCluster is an unwatched pre-check failure.
 //
-// It takes claims and never gives one back. A backend that this cluster left
-// goes back after the render that stops writing it was applied, see
-// releaseLeftBackends.
+// It never gives a claim back, see releaseLeftBackends.
 func (res *resolver) claimStorage(ctx context.Context, in *components.Input) error {
 	key, err := components.StorageClaimKey(in.Storage)
 	if err != nil {
@@ -196,10 +189,9 @@ func handoverPossible(suspended, heldAtStart, ownPodOnClaim bool) bool {
 // that the caller reports.
 var errWritersOnBackend = errors.New("another cluster, or a restore into one, writes the backend")
 
-// writersOnTheBackend returns the handover that this cluster waits for on the
-// backend of key, or nil when nothing else writes it. Its own pods and its own
-// restore are no reason to wait: a holder whose Lease was deleted by hand meets
-// them, writes the Lease again, and keeps running.
+// writersOnTheBackend returns the pods of other clusters on claim and the
+// restores into other clusters on key as the handover this cluster waits for,
+// or nil when there are none. claim is the Lease name of key.
 func (res *resolver) writersOnTheBackend(
 	ctx context.Context,
 	key, claim string,
@@ -349,12 +341,7 @@ func (r *CamundaClusterReconciler) releaseLeftBackends(
 	return heldBack, nil
 }
 
-// claimSuspends reports whether the storage claim keeps this cluster at zero:
-// another cluster holds the backend, or pods of another cluster or a restore
-// into one still write the one this cluster took over. Nothing watches the
-// holder or the pods for this cluster, so the controller looks again on its
-// timer while it holds. The end of a restore also wakes it, see
-// enqueueWaitingForHandover.
+// claimSuspends reports whether the storage claim keeps this cluster at zero.
 func claimSuspends(storage components.Storage) bool {
 	return storage.Holder != nil || storage.Handover != nil
 }

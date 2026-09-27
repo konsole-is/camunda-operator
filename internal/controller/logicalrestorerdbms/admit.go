@@ -206,9 +206,8 @@ func (r *Reconciler) admit(
 	return restore.Outcome{Wait: restore.Shortly}, nil
 }
 
-// start moves the restore into the validation phase. It pins nothing:
-// admission pinned the backup id and the identity of the target earlier, on
-// the look before it first wrote to the cluster, and the backend on this look.
+// start moves the restore into the validation phase. The caller pins what it
+// reads first.
 func (r *Reconciler) start(
 	lrr *v1.LogicalRestoreRDBMS,
 	cluster *v1.CamundaCluster,
