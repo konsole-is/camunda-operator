@@ -46,16 +46,14 @@ const ExporterClassName = "io.camunda.zeebe.exporter.ElasticsearchExporter"
 // Elasticsearch exporter on for the given secondary storage. The keys are the
 // unified configuration of Camunda 8.9. The legacy zeebe.broker.exporters.*
 // properties describe the same exporter, and the binary refuses to start when
-// both are set, so the operator never writes them.
+// both are set, so the operator never writes them. A nil replicas keeps the
+// replica default of the exporter.
 //
 // The entries run in the broker container, so storage must carry the
 // credentials reference as the cluster resolves it: the Secret of the cluster
 // namespace, which is the copy that the cluster's own controller makes when
 // the contract names another namespace. Passing the copy that this controller
 // makes for the Optimize pods names a Secret the broker cannot read.
-//
-// replicas is the replica count of the zeebe-record index template, or nil to
-// leave the exporter default.
 //
 // The set carries no TLS setting, because the exporter has none. An
 // Elasticsearch with a private CA therefore needs that CA in the JVM trust

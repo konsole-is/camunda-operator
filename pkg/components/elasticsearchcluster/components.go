@@ -537,8 +537,8 @@ func usesServiceAccount(merged v1.ElasticsearchClusterSpec, storage *SnapshotSto
 // SecondaryStorageConfig that the spec names, published in the namespace of
 // the CR. It carries the in-cluster HTTPS endpoint, the reference to the user
 // Secret credentials, the reference to the ECK CA certificate, and the node
-// count of the merged spec. A read-only registration guards the contract on the credentials Secret, and
-// blocks while that Secret is absent.
+// count of the merged spec. A read-only registration guards the contract on
+// the credentials Secret, and blocks while that Secret is absent.
 //
 // registeredName is the snapshot repository that Elasticsearch last
 // confirmed, which the caller reads from status.snapshotRepository. The
@@ -581,7 +581,7 @@ func StorageContractComponent(
 					Key:  CACertKey,
 				},
 				SnapshotRepository: publishedRepositoryName(cluster, storage, registeredName, suspended),
-				// Suspension keeps the node count, so consumers keep their replica count.
+				// Suspension does not change the node count.
 				NodeCount: new(*merged.Replicas),
 			},
 		},

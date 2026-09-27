@@ -56,8 +56,6 @@ func TestElasticsearchStorageIndexReplicas(t *testing.T) {
 	}
 }
 
-// The result is a copy: a caller that changes it leaves the setting of the
-// consumer as it was.
 func TestElasticsearchStorageIndexReplicasSharesNoMemory(t *testing.T) {
 	requested := new(int32(2))
 	storage := v1.ElasticsearchStorage{}

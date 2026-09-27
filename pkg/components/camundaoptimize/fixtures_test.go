@@ -95,10 +95,7 @@ func fixtureMinimal(t *testing.T) Input {
 	return newInput(t, nil)
 }
 
-// fixtureRealistic exercises every override surface: a TLS endpoint with a CA
-// and a node count, a platform registry and license, several partitions,
-// per-workload resources, scheduling, pod metadata, extra environment, and a
-// ServiceMonitor.
+// fixtureRealistic exercises every override surface.
 func fixtureRealistic(t *testing.T) Input {
 	t.Helper()
 
