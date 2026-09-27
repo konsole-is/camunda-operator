@@ -156,9 +156,8 @@ func setReady(cluster *v1.CamundaCluster, status metav1.ConditionStatus, reason,
 	})
 }
 
-// publishBinding publishes the management binding that the CamundaCluster
-// controller publishes for a cluster that is not suspended. Only an
-// Elasticsearch backup reads its backup repository.
+// publishBinding sets the management binding that the CamundaCluster
+// controller publishes.
 func publishBinding(cluster *v1.CamundaCluster) {
 	cluster.Status.Management = &v1.ManagementBinding{
 		Endpoint:         "http://" + cluster.Name + "-zeebe." + cluster.Namespace + ".svc:9600",
@@ -168,7 +167,6 @@ func publishBinding(cluster *v1.CamundaCluster) {
 	}
 }
 
-// setClusterReady sets the Ready condition of the cluster of w.
 func setClusterReady(w *world, status metav1.ConditionStatus, reason, message string) {
 	GinkgoHelper()
 	updateClusterStatus(w, func(current *v1.CamundaCluster) {

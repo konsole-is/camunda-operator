@@ -263,14 +263,9 @@ func (r *BackupScheduleReconciler) resolve(
 	return &resolved{cluster: &cluster, storageType: storage.Spec.Type}, nil, nil
 }
 
-// trigger consumes the due trigger: it creates the backup, or it skips with
-// an event when the cluster is suspended, when the backup cannot start on
-// the cluster, or when a backup of the schedule has not finished. A
-// suspended cluster skips as suspended, whatever its Ready condition says.
-// Every path below records the trigger as consumed, except a transient
-// error, which leaves it due so the retry takes it again. The backup name
-// repeats the trigger time, so a retry after a crash lands on AlreadyExists
-// instead of a second backup.
+// trigger consumes the due trigger: it creates the backup, or it skips the
+// trigger with an event. An error leaves the trigger due, so the retry takes
+// it again.
 func (r *BackupScheduleReconciler) trigger(
 	ctx context.Context,
 	schedule *v1.BackupSchedule,
@@ -305,8 +300,7 @@ func (r *BackupScheduleReconciler) trigger(
 		return nil
 	}
 
-	// A backup that cannot start waits in Pending for as long as the cluster
-	// stays so, and while it waits it blocks every later trigger.
+	// A backup that cannot start waits in Pending and blocks every later trigger.
 	state, err := r.cannotStart(ctx, res.cluster, res.storageType)
 	if err != nil {
 		return err
@@ -402,13 +396,8 @@ func (r *BackupScheduleReconciler) trigger(
 	return nil
 }
 
-// cannotStart describes why a backup of the storage type cannot start on
-// the cluster, as the note of the skip event after the trigger time. It
-// returns "" when the backup can start. Both kinds need a management binding
-// that the backup controllers accept. An RDBMS backup also needs Ready True.
-// An Elasticsearch backup needs the backup repository of the binding
-// instead, so a degraded cluster that still serves its management API is
-// backed up.
+// cannotStart returns why a backup of the storage type cannot start on the
+// cluster, or "" when it can.
 func (r *BackupScheduleReconciler) cannotStart(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -422,6 +411,7 @@ func (r *BackupScheduleReconciler) cannotStart(
 		return failure.Message + ", and " + readyState(cluster), nil
 	}
 
+	// Each kind checks what its backup controller waits on before it starts.
 	switch storageType {
 	case v1.SecondaryStorageTypeElasticsearch:
 		if cluster.Status.Management.BackupRepository == "" {
