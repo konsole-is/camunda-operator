@@ -169,7 +169,7 @@ The workloads also stay at zero while the cluster does not hold the storage clai
 
 The condition does not name the cluster, but the events do. `kubectl describe camundaoptimize <name>` shows `ClusterSuspended` or `StorageClaimAwaited` when the workloads go to zero. It shows `ClusterResumed` when they start again. Each marks the decision. `WebappReady` and `ImporterReady` say whether the workloads have followed it yet.
 
-`status.suspendedBy` says which wait holds the workloads at zero. It reads `Cluster` while the referenced cluster is suspended. It reads `StorageClaim` while the cluster does not hold the storage claim of its backend, or while pods of another cluster still write that backend. The field is empty while the workloads follow their spec. It keeps its value while a failed check holds the workloads at zero after the cluster resumed.
+`status.suspendedBy` says which wait holds the workloads at zero. It reads `Cluster` while the referenced cluster is suspended. It reads `StorageClaim` while the storage claim of the backend holds them. The field is empty while the workloads follow their spec. It keeps its value while a failed check holds the workloads at zero after the cluster resumed.
 
 ```yaml
 status:
