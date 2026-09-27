@@ -26,7 +26,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/logicalrestorerdbms"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
 )
@@ -174,6 +176,26 @@ func (r *Reconciler) admit(
 		return prepared, nil
 	}
 
+	// The backend is pinned on the look that leaves Pending. From then on
+	// the handover gate of every other cluster waits for this restore, and
+	// every later look checks the backend again before it writes, see
+	// restore.CheckBackend.
+	backend, failure, err := restore.ResolveBackend(ctx, r.APIReader, cluster)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	if failure != nil {
+		return r.waiting(lrr, failure), nil
+	}
+	failure, err = r.checkBackend(ctx, lrr, cluster, backend)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	if failure != nil {
+		return r.waiting(lrr, failure), nil
+	}
+	lrr.Status.Backend = backend
+
 	r.start(lrr, cluster, source)
 
 	return restore.Outcome{Wait: restore.Shortly}, nil
@@ -181,7 +203,7 @@ func (r *Reconciler) admit(
 
 // start moves the restore into the validation phase. It pins nothing:
 // admission pinned the backup id and the identity of the target earlier, on
-// the look before it first wrote to the cluster.
+// the look before it first wrote to the cluster, and the backend on this look.
 func (r *Reconciler) start(
 	lrr *v1.LogicalRestoreRDBMS,
 	cluster *v1.CamundaCluster,
@@ -250,8 +272,36 @@ func (r *Reconciler) resolve(
 	if err != nil || failure != nil {
 		return nil, failure, err
 	}
+	// The backend is a standing condition too. A target that was pointed at
+	// another backend, or that lost the storage claim of this one, no longer
+	// keeps other clusters away from it.
+	failure, err = r.checkBackend(ctx, lrr, cluster, lrr.Status.Backend)
+	if err != nil || failure != nil {
+		return nil, failure, err
+	}
 
 	return &resolution{cluster: cluster, backup: source, target: target, storage: storage}, nil, nil
+}
+
+// checkBackend reports why the restore must not write the backend pinned
+// into the database of cluster, or nil when it may. The pg_restore Job pod of
+// this restore carries the storage claim and no cluster UID, so it is this
+// restore's own and not a pod to wait for.
+func (r *Reconciler) checkBackend(
+	ctx context.Context,
+	lrr *v1.LogicalRestoreRDBMS,
+	cluster *v1.CamundaCluster,
+	pinned string,
+) (*conditions.PreCheckFailure, error) {
+	return restore.CheckBackend(ctx, r.Client, r.APIReader, restore.BackendCheck{
+		ClaimNamespace: r.opts.ClaimNamespace,
+		Cluster:        cluster,
+		Pinned:         pinned,
+		OwnPod: func(podLabels map[string]string) bool {
+			return podLabels[labels.ClusterUIDKey] == string(cluster.UID) ||
+				podLabels[components.RestoreUIDLabel] == string(lrr.UID)
+		},
+	})
 }
 
 // readBackup reads the LogicalBackupRDBMS that the restore names, and reports

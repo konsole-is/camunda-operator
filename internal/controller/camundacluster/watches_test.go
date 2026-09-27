@@ -121,3 +121,52 @@ func TestEnqueueForBrokerClaim(t *testing.T) {
 		assert.Empty(t, enqueue(claim))
 	})
 }
+
+// A cluster that waits for a restore on its backend starts once the restore
+// stops writing. Only that end wakes the waiting clusters: a restore that
+// starts or moves between running phases changes nothing for them.
+func TestRestoreEnds(t *testing.T) {
+	restore := func(phase v1.LogicalRestorePhase) *v1.LogicalRestoreRDBMS {
+		lrr := &v1.LogicalRestoreRDBMS{}
+		lrr.Status.Phase = phase
+		return lrr
+	}
+	ends := restoreEnds()
+
+	reached := event.UpdateEvent{
+		ObjectOld: restore(v1.LogicalRestoreRestoringSecondaryStorage),
+		ObjectNew: restore(v1.LogicalRestoreFailed),
+	}
+	assert.True(t, ends.Update(reached), "a restore that reached a terminal phase")
+	completed := &v1.LogicalRestoreElasticsearch{}
+	completed.Status.Phase = v1.LogicalRestoreCompleted
+	elasticsearch := event.UpdateEvent{ObjectOld: &v1.LogicalRestoreElasticsearch{}, ObjectNew: completed}
+	assert.True(t, ends.Update(elasticsearch), "the Elasticsearch kind too")
+	running := event.UpdateEvent{
+		ObjectOld: restore(v1.LogicalRestoreRestoringSecondaryStorage),
+		ObjectNew: restore(v1.LogicalRestoreRestoringPrimaryStorage),
+	}
+	assert.False(t, ends.Update(running), "a restore that still runs")
+	ended := event.UpdateEvent{ObjectOld: restore(v1.LogicalRestoreFailed), ObjectNew: restore(v1.LogicalRestoreFailed)}
+	assert.False(t, ends.Update(ended), "a restore that ended before")
+	assert.True(t, ends.Delete(event.DeleteEvent{Object: restore(v1.LogicalRestoreRestoringSecondaryStorage)}))
+	assert.False(t, ends.Delete(event.DeleteEvent{Object: restore(v1.LogicalRestoreCompleted)}))
+	assert.False(t, ends.Create(event.CreateEvent{Object: restore(v1.LogicalRestorePending)}))
+}
+
+// The index keeps the waiting clusters apart from every other, so the end of
+// a restore wakes only them.
+func TestWaitingForHandoverIndex(t *testing.T) {
+	index := indexers[waitingForHandoverField]
+	cluster := func(reason string) *v1.CamundaCluster {
+		c := &v1.CamundaCluster{}
+		c.Status.Conditions = []metav1.Condition{
+			{Type: v1.ConditionReady, Status: metav1.ConditionFalse, Reason: reason},
+		}
+		return c
+	}
+
+	assert.Equal(t, []string{"true"}, index(cluster(v1.ReasonWaitingForHandover)))
+	assert.Empty(t, index(cluster(v1.ReasonStorageAlreadyAttached)))
+	assert.Empty(t, index(&v1.CamundaCluster{}))
+}

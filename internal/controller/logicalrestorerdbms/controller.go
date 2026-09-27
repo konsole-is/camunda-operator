@@ -95,12 +95,17 @@ const (
 	defaultMidRunGrace = 10 * time.Minute
 )
 
-// Options tunes a Reconciler. Only CLIImage is required. Every other field
-// has a production default, and a test sets what it needs to observe.
+// Options tunes a Reconciler. CLIImage and ClaimNamespace are required. Every
+// other field has a production default, and a test sets what it needs to
+// observe.
 type Options struct {
 	// CLIImage is the camunda-operator-cli image that downloads the dump of
 	// the backup. The manager passes --camunda-operator-cli-image.
 	CLIImage string
+	// ClaimNamespace holds the storage claim Leases of every CamundaCluster.
+	// The restore writes the database of its target only while the target
+	// holds the storage claim of it.
+	ClaimNamespace string
 	// PollInterval paces a running phase. Zero means five seconds.
 	PollInterval time.Duration
 	// RetryInterval paces a hold that no watch resolves. Zero means thirty
@@ -113,10 +118,14 @@ type Options struct {
 
 // withDefaults fills the zero fields of o with the production configuration.
 // It rejects an empty CLIImage, because the restore cannot guess an image and
-// would fail only once it reached the secondary-storage phase.
+// would fail only once it reached the secondary-storage phase. It rejects an
+// empty ClaimNamespace for the same reason.
 func (o Options) withDefaults() (Options, error) {
 	if o.CLIImage == "" {
 		return o, errors.New("the camunda-operator-cli image is required")
+	}
+	if o.ClaimNamespace == "" {
+		return o, errors.New("the namespace of the storage claim Leases is required")
 	}
 	if o.PollInterval <= 0 {
 		o.PollInterval = defaultPollInterval

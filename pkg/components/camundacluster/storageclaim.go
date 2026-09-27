@@ -213,6 +213,63 @@ func templateStarts(
 	return replicas == nil || *replicas > 0
 }
 
+// RestoresOnBackend returns the logical restores that write the backend that
+// key names and that do not restore the cluster with UID self, as sorted
+// "Kind namespace/name" entries. A handover waits for them beside the pods of
+// OtherPodsOnClaim: the Elasticsearch restore has no pod at all, and the
+// pg_restore Job carries no cluster UID.
+//
+// A restore counts from the end of its admission to its terminal phase. It
+// pins status.backend before it leaves Pending, and it writes nothing before
+// that. A restore in Pending does not count: it waits on its own pre-checks
+// without a bound, and a wait on it would never end.
+//
+// The reader must read the API server directly, and the lists cover every
+// namespace, as in OtherPodsOnClaim.
+func RestoresOnBackend(
+	ctx context.Context,
+	reader client.Reader,
+	key string,
+	self types.UID,
+) ([]string, error) {
+	var elasticsearch v1.LogicalRestoreElasticsearchList
+	if err := reader.List(ctx, &elasticsearch); err != nil {
+		return nil, fmt.Errorf("listing the LogicalRestoreElasticsearches: %w", err)
+	}
+	var rdbms v1.LogicalRestoreRDBMSList
+	if err := reader.List(ctx, &rdbms); err != nil {
+		return nil, fmt.Errorf("listing the LogicalRestoreRDBMSes: %w", err)
+	}
+
+	var names []string
+	for i := range elasticsearch.Items {
+		lres := &elasticsearch.Items[i]
+		if restoreWrites(lres.Status.Phase, lres.Terminal(), lres.Status.TargetClusterUID, self) &&
+			lres.Status.Backend == key {
+			names = append(names, "LogicalRestoreElasticsearch "+lres.Namespace+"/"+lres.Name)
+		}
+	}
+	for i := range rdbms.Items {
+		lrr := &rdbms.Items[i]
+		if restoreWrites(lrr.Status.Phase, lrr.Terminal(), lrr.Status.TargetClusterUID, self) &&
+			lrr.Status.Backend == key {
+			names = append(names, "LogicalRestoreRDBMS "+lrr.Namespace+"/"+lrr.Name)
+		}
+	}
+	slices.Sort(names)
+
+	return names, nil
+}
+
+// restoreWrites reports whether a restore in phase can write its backend
+// beside the cluster with UID self. The restore of self is the cluster's own
+// work.
+func restoreWrites(phase v1.LogicalRestorePhase, terminal bool, target, self types.UID) bool {
+	started := phase != "" && phase != v1.LogicalRestorePending
+
+	return started && !terminal && target != self
+}
+
 // PodsOfCluster returns the predicate of OtherPodsOnClaim that a cluster
 // passes: every pod that carries its UID is its own, its processes and the
 // workloads of its Optimize instance alike.

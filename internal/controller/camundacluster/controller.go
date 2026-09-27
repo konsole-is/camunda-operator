@@ -128,6 +128,7 @@ const defaultRetryInterval = 30 * time.Second
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseserverconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=logicalrestoreelasticsearches;logicalrestorerdbmses,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
@@ -148,8 +149,9 @@ const defaultRetryInterval = 30 * time.Second
 // highest-priority component that is not True, or the highest-priority of all
 // of them when they all are. A cluster whose backend another cluster holds
 // reports StorageAlreadyAttached instead of the aggregate. A cluster that
-// holds the backend reports WaitingForHandover while a pod of another cluster
-// still writes it. Both look again on a timer.
+// holds the backend reports WaitingForHandover while a pod of another cluster,
+// or a restore into another cluster, still writes it. Both look again on a
+// timer.
 //
 // Status is written once per reconcile: the components and conditions.Stage
 // stage conditions on the in-memory cluster, and the deferred FlushStatus

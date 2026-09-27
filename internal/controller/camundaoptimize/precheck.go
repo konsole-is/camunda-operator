@@ -264,8 +264,9 @@ func (res *resolver) resolveStorage(
 }
 
 // gateOnStorageClaim parks the workloads of out unless cluster alone writes
-// the backend that key names: it must hold the storage claim, and no pod of
-// another cluster may still carry that claim. Either wait sets
+// the backend that key names: it must hold the storage claim, no pod of
+// another cluster may still carry that claim, and no restore into another
+// cluster may still write it. Either wait sets
 // AwaitsBackendClaim, because nothing reports the end of one to this
 // controller. A cluster whose own pods already write the backend is past the
 // takeover, and the pods of every namespace stay unread.
@@ -337,7 +338,13 @@ func (r *Reconciler) gateOnStorageClaim(
 	if err != nil {
 		return err
 	}
-	if len(writing) > 0 {
+	// A restore into another cluster writes the backend with no pod of that
+	// cluster, so the pods alone do not show it.
+	restores, err := clustercomponents.RestoresOnBackend(ctx, r.APIReader, key, cluster.UID)
+	if err != nil {
+		return err
+	}
+	if len(writing) > 0 || len(restores) > 0 {
 		out.Input.Suspended = true
 		out.AwaitsBackendClaim = true
 	}

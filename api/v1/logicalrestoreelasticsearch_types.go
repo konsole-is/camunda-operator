@@ -47,6 +47,13 @@ type LogicalRestoreElasticsearchStatus struct {
 	// the restore to another set of artifacts.
 	// +optional
 	BackupID int64 `json:"backupId,omitempty"`
+	// backend is the Elasticsearch that the restore writes, pinned when the
+	// restore starts, in the form of the storage claim key of the target
+	// (the scheme, the host, and the port). From the end of admission to the
+	// terminal phase, no other CamundaCluster starts on this backend. The
+	// restore holds while its target does not hold the backend.
+	// +optional
+	Backend string `json:"backend,omitempty"`
 	// repository is the Elasticsearch snapshot repository that the restore
 	// reads from, on the Elasticsearch of the target.
 	// +optional

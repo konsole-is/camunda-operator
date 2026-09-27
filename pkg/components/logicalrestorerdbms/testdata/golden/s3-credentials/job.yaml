@@ -22,6 +22,7 @@ spec:
         camunda.io/component: pg-restore
         camunda.io/logical-restore-rdbms: my-cluster-restore
         camunda.io/logical-restore-rdbms-uid: 9d4c1f77-2b3e-4a58-8c0d-7e5f6a1b2c34
+        camunda.io/storage-claim: camunda-storage-0123456789abcdef0123456789abcdef01234567
         team: data
     spec:
       containers:

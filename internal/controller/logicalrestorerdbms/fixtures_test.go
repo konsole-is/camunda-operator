@@ -40,6 +40,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+	restorepkg "github.com/konsole-is/camunda-operator/pkg/restore"
 )
 
 // The facts of every world. The version is the tag of the broker image and
@@ -96,8 +97,10 @@ func newWorld(mutate ...func(*v1.CamundaCluster)) *world {
 		ObjectMeta: metav1.ObjectMeta{Name: "dbsc-" + suffix, Namespace: w.namespace},
 		Spec: v1.DatabaseServerConfigSpec{
 			Engine: v1.DatabaseEnginePostgres,
-			Host:   "postgres.databases.svc",
-			Port:   5432,
+			// Each world is a backend of its own, so the storage claim of one
+			// world never parks the restore of another.
+			Host: "postgres-" + suffix + ".databases.svc",
+			Port: 5432,
 			AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
 				Name: "admin", UsernameKey: "username", PasswordKey: "password",
 			},
@@ -192,10 +195,33 @@ func (w *world) finish(mutate ...func(*v1.CamundaCluster)) {
 		m(w.cluster)
 	}
 	Expect(k8sClient.Create(ctx, w.cluster)).To(Succeed())
+	w.holdBackend(w.cluster)
 
 	w.renderBrokers()
 	w.createBrokerVolumes()
 	releaseTerminatingClaims(w)
+}
+
+// holdBackend stands in for the storage claim that the CamundaCluster
+// controller takes: the Lease of the backend of the world names holder, which
+// is the cluster of the world unless a spec parks it. Worlds can share one
+// backend, so a Lease of an earlier world is taken over.
+func (w *world) holdBackend(holder *v1.CamundaCluster) {
+	GinkgoHelper()
+
+	key, failure, err := restorepkg.ResolveBackend(ctx, k8sClient, w.cluster)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(failure).NotTo(HaveOccurred())
+
+	lease := camundacluster.StorageClaimSchema().NewLease(claimNamespace, key, holder)
+	err = k8sClient.Create(ctx, lease)
+	if apierrors.IsAlreadyExists(err) {
+		var held coordinationv1.Lease
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(lease), &held)).To(Succeed())
+		held.Labels, held.Annotations, held.Spec = lease.Labels, lease.Annotations, lease.Spec
+		err = k8sClient.Update(ctx, &held)
+	}
+	Expect(err).NotTo(HaveOccurred())
 }
 
 // renderBrokers stands in for the CamundaCluster controller. It creates the

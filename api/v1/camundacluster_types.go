@@ -79,15 +79,6 @@ const ReasonRejected = "Rejected"
 // sanctions one such move.
 const ReasonVersionDowngradeRefused = "VersionDowngradeRefused"
 
-// ReasonStorageAlreadyAttached on Ready means that another CamundaCluster
-// holds the backend that spec.storageRef resolves to. One CamundaCluster
-// holds one backend. The index names and the tables are fixed, so two
-// clusters on one backend write each other's data. The operator keeps this
-// cluster suspended, with its volumes, until that cluster moves to another
-// backend or is deleted. Then it resumes this cluster on its own. The message
-// names the holder and the backend.
-const ReasonStorageAlreadyAttached = "StorageAlreadyAttached"
-
 // ComponentMode says where a process of the unified binary runs.
 // +kubebuilder:validation:Enum=Standalone;Embedded
 type ComponentMode string

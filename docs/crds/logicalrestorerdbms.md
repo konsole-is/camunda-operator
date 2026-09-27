@@ -112,6 +112,21 @@ A cluster holds one backup or one restore at a time. This restore holds the targ
 
 A cluster that another backup or another restore holds keeps this restore in `Pending` with reason `ClusterClaimed`. The message names the holder. Nothing bounds this wait, and you change nothing. The restore starts on its own a short time after the holder reaches a terminal phase.
 
+## The backend
+
+A restore writes into the backend of its target. That is the logical database that the `SecondaryStorageConfig` of the target resolves to. The restore writes it only while the target holds that backend. When the restore leaves `Pending`, it records the backend in `status.backend`.
+
+From then until the restore reaches `Completed` or `Failed`, no other `CamundaCluster` starts on that backend. This also holds when you delete the target during the restore, or point it at another backend. The next cluster on the backend reports `WaitingForHandover`, and the message names this restore. [CamundaCluster: Secondary storage](camundacluster.md#secondary-storage) has the rule for the cluster.
+
+The restore itself waits in `Pending` while the target does not hold its backend:
+
+- `StorageAlreadyAttached` means that another cluster holds the backend. The message names that cluster. The restore writes nothing into a backend that another cluster holds.
+- `WaitingForHandover` means that the target does not hold the backend yet, or that pods of another cluster still write it. The message names them.
+
+After the restore left `Pending`, these two reasons hold it for ten minutes, and then it fails. A target that now resolves to another backend than `status.backend` holds it with reason `InvalidReference` for the same time.
+
+The pod of the `pg_restore` Job carries the label `camunda.io/storage-claim` of the database. If the restore fails while that pod still runs, the next cluster on the database also waits for the pod.
+
 ## Phases
 
 `status.phase` records how far the restore got. A restore continues at that phase after the operator restarts.
@@ -212,6 +227,8 @@ A target that the restore suspended stays suspended. That is deliberate. Brokers
 | `Ready` | `Completed` | The restore finished, and it gives back the suspension it applied, so the target starts again a moment later. `Ready` is `True`. | Nothing. Unsuspend the target yourself only when you suspended it yourself. |
 | `Ready` | `ClusterNotSuspended` | The target started running again while the restore ran. | Suspend the target again. A restore that already erased something fails ten minutes after the first outage. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the target. The message names it. | Wait. The restore starts when that operation finishes. |
+| `Ready` | `StorageAlreadyAttached` | Another cluster holds the logical database of the target. The message names it. | Read "The backend". The restore starts when the target holds the database. |
+| `Ready` | `WaitingForHandover` | The target does not hold its logical database yet, or pods of another cluster still write it. | Wait. The message names the pods. The restore starts when they are gone. |
 | `Ready` | `IncompatibleTarget` | The target cannot hold the backup. See "Compatibility". | Create a new restore against a target that fits. |
 | `Ready` | `InvalidReference` | The backup or the target does not exist, the backup is not `Completed`, a link in the storage chain is gone, or the database server was not probed. | Correct the reference that the message names. |
 | `Ready` | `MissingSecret` | The database credentials Secret is missing or lacks a key. | Create the Secret that the message names. |
@@ -224,6 +241,7 @@ The status also records what the restore pinned and what it did:
 
 - `status.backupId` pins the backup id. A backup that is deleted and created again under one name carries another id, and the restore fails.
 - `status.targetClusterUID` pins the identity of the target. A cluster that is deleted and created again under one name fails the restore.
+- `status.backend` is the logical database that the restore writes, as the host, the port, and the database name.
 - `status.secondaryJobName` is the `pg_restore` Job, while it exists.
 - `status.clusterSuspended` records that this restore suspended the target. The restore withdraws that suspension when it completes.
 - `status.brokers` is the broker count that the operator read off the broker StatefulSet.

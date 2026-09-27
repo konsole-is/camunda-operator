@@ -53,9 +53,18 @@ const (
 	ReasonStorageTypeMismatch = "StorageTypeMismatch"
 	// ReasonWaitingForHandover means that workloads of another holder of the
 	// thing this resource claims still exist, whether this resource holds the
-	// claim already or waits to take it. It keeps its own workloads down until
-	// they are gone. The message names what it waits for. The state clears on
-	// its own. The CRD doc of each resource that reports it names the workloads
-	// it waits for.
+	// claim already or waits to take it. It keeps its own workloads down, or
+	// its own work on hold, until they are gone. The message names what it
+	// waits for. The CRD doc of each resource that reports it names the
+	// workloads it waits for.
 	ReasonWaitingForHandover = "WaitingForHandover"
+	// ReasonStorageAlreadyAttached means that a CamundaCluster other than the
+	// one this resource names holds the storage claim of the backend. One
+	// CamundaCluster holds one backend. The index names and the tables are
+	// fixed, so two clusters on one backend write each other's data. A
+	// CamundaCluster stays suspended, with its volumes, until the holder moves
+	// to another backend or is deleted, and then it resumes on its own. A
+	// restore holds, and writes nothing into the backend. The message names
+	// the holder and the backend.
+	ReasonStorageAlreadyAttached = "StorageAlreadyAttached"
 )

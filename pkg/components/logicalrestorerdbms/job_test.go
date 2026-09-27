@@ -122,6 +122,7 @@ func input() JobInput {
 		Database:           "camunda",
 		ObjectKey:          testObjectKey,
 		CLIImage:           "ghcr.io/konsole-is/camunda-operator-cli:0.1.0",
+		StorageClaim:       "camunda-storage-0123456789abcdef0123456789abcdef01234567",
 	}
 }
 
@@ -251,6 +252,22 @@ func TestBuildJobCarriesTheOwnerLabelsAndTheUID(t *testing.T) {
 	assert.Equal(t, "my-cluster-ns", job.Namespace)
 	assert.Equal(t, "my-cluster-restore-pg-restore", job.Name)
 	assert.Empty(t, job.OwnerReferences, "the caller sets the controller reference")
+}
+
+func TestBuildJobPodCarriesTheStorageClaimAndNoClusterUID(t *testing.T) {
+	t.Parallel()
+
+	in := input()
+	in.Pod = &v1.DumpPodSpec{PodLabels: map[string]string{labels.StorageClaimKey: "user-value"}}
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+
+	// The handover gate of a cluster lists the pods on a claim, so the pod
+	// carries it and a user label cannot hide it. A cluster UID would make the
+	// target count the pod as its own and start beside it.
+	assert.Equal(t, labels.OwnerName(in.StorageClaim), job.Spec.Template.Labels[labels.StorageClaimKey])
+	assert.NotContains(t, job.Spec.Template.Labels, labels.ClusterUIDKey)
+	assert.NotContains(t, job.Labels, labels.StorageClaimKey, "the gate lists pods, not Jobs")
 }
 
 func TestBuildJobRunsUnderTheClusterServiceAccount(t *testing.T) {

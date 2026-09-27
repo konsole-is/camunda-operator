@@ -58,6 +58,10 @@ const retryInterval = 5 * time.Second
 // window stays under retryInterval, so only a watch ends a hold inside it.
 const watchWindow = 2 * time.Second
 
+// claimNamespace holds the storage claim Leases of the suite. It exists in
+// every envtest API server.
+const claimNamespace = "default"
+
 var (
 	env       *testenv.Env
 	ctx       context.Context
@@ -75,10 +79,11 @@ var _ = BeforeSuite(func() {
 
 	env = testenv.Start(func(mgr ctrl.Manager) error {
 		return New(mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), Options{
-			CLIImage:      cliImage,
-			PollInterval:  100 * time.Millisecond,
-			RetryInterval: retryInterval,
-			MidRunGrace:   midRunGrace,
+			CLIImage:       cliImage,
+			ClaimNamespace: claimNamespace,
+			PollInterval:   100 * time.Millisecond,
+			RetryInterval:  retryInterval,
+			MidRunGrace:    midRunGrace,
 		}).SetupWithManager(mgr)
 	})
 

@@ -141,6 +141,11 @@ type JobInput struct {
 	// streams the archive from the bucket. The image ships separately from the
 	// manager, and the manager receives it as --camunda-operator-cli-image.
 	CLIImage string
+	// StorageClaim is the name of the storage claim Lease of the database,
+	// see camundacluster.StorageClaimSchema. The pod carries it, so a cluster
+	// that takes the database over waits for a pod that still writes it,
+	// also after the restore ended.
+	StorageClaim string
 }
 
 // BuildJob renders the Job that downloads the dump and restores it into the
@@ -191,6 +196,7 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 	// The workload-identity pod label is operator-required. Without it, the
 	// Azure webhook injects no token, whatever the ServiceAccount carries.
 	podManaged := labels.Merge(in.Bucket.WorkloadIdentityPodLabels(), managed)
+	podManaged[labels.StorageClaimKey] = labels.OwnerName(in.StorageClaim)
 	podLabels := labels.Merge(pod.PodLabels, podManaged)
 
 	template := corev1.PodTemplateSpec{

@@ -135,6 +135,21 @@ A cluster holds one backup or one restore at a time. This restore holds the targ
 
 A restore whose target another operation holds waits in `Pending` with the reason `ClusterClaimed`, and the message names the holder. Nothing bounds this wait, and you change nothing. The restore starts on its own a short time after the holder reaches a terminal phase.
 
+## The backend
+
+A restore writes into the backend of its target. That is the Elasticsearch that the `SecondaryStorageConfig` of the target resolves to. The restore writes it only while the target holds that backend. When the restore leaves `Pending`, it records the backend in `status.backend`.
+
+From then until the restore reaches `Completed` or `Failed`, no other `CamundaCluster` starts on that backend. This also holds when you delete the target during the restore, or point it at another backend. The next cluster on the backend reports `WaitingForHandover`, and the message names this restore. [CamundaCluster: Secondary storage](camundacluster.md#secondary-storage) has the rule for the cluster.
+
+The restore itself waits in `Pending` while the target does not hold its backend:
+
+- `StorageAlreadyAttached` means that another cluster holds the backend. The message names that cluster. The restore writes nothing into a backend that another cluster holds.
+- `WaitingForHandover` means that the target does not hold the backend yet, or that pods of another cluster still write it. The message names them.
+
+After the restore left `Pending`, these two reasons hold it for 10 minutes, and then it fails. A target that now resolves to another backend than `status.backend` holds it with reason `InvalidReference` for the same time.
+
+A failed restore does not stop the recovery of the snapshots that Elasticsearch accepted. Before you start another cluster on this Elasticsearch, make sure that no index recovery is active.
+
 ## The snapshot repository
 
 The restore reads the snapshots from the repository that the backup recorded in `status.repository`, on the Elasticsearch of the target. If that repository is absent, the operator registers it over the bucket that the backup pinned and the prefix that the source cluster wrote under. The snapshots lie under that prefix, whichever Elasticsearch server the target reads through.
@@ -219,6 +234,8 @@ A target that the restore suspended stays suspended. That is deliberate. Brokers
 | `Ready` | `Failed` | The restore ended. | Read `status.failureMessage`. Correct the cause and create a new restore. |
 | `Ready` | `ClusterNotSuspended` | The target started running again while the restore ran. | Suspend the cluster again. A restore that already erased something fails 10 minutes after the first outage. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster. | Wait. The restore starts when the holder reaches a terminal phase. |
+| `Ready` | `StorageAlreadyAttached` | Another cluster holds the Elasticsearch of the target. The message names it. | Read "The backend" above. The restore starts when the target holds the Elasticsearch. |
+| `Ready` | `WaitingForHandover` | The target does not hold its Elasticsearch yet, or pods of another cluster still write it. | Wait. The message names the pods. The restore starts when they are gone. |
 | `Ready` | `IncompatibleTarget` | The target cannot hold the backup. The message names both values. | Read "Compatibility" above. A backup restores into the cluster it was taken from alone. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, the backup is not completed, or the snapshot repository of the backup is absent from the target under a name the operator cannot place. | Read the message. Create the resource, wait for the backup, or register the repository on the target. |
 | `Ready` | `ConnectionFailed` | The Elasticsearch of the target does not answer, or it refuses the credentials. | Make sure that the endpoint answers and that the credentials of the `SecondaryStorageConfig` are valid. |
@@ -227,6 +244,7 @@ A target that the restore suspended stays suspended. That is deliberate. Brokers
 These status fields report what the restore did:
 
 - `status.backupId` is the backup that the restore reads.
+- `status.backend` is the Elasticsearch that the restore writes, as the scheme, the host, and the port.
 - `status.repository` is the snapshot repository on the Elasticsearch of the target.
 - `status.restoredSnapshots` names every snapshot that the operator asked Elasticsearch to restore.
 - `status.clusterSuspended` records that this restore suspended the target. The restore withdraws that suspension when it completes.

@@ -93,6 +93,7 @@ func (r *Reconciler) restoreDatabase(
 		Database:           database.config.Spec.DatabaseName,
 		ObjectKey:          resolved.backup.ObjectKey,
 		CLIImage:           r.opts.CLIImage,
+		StorageClaim:       camundacluster.StorageClaimSchema().LeaseName(lrr.Status.Backend),
 	})
 	if err != nil {
 		// The builder answers a pod block that it cannot render. No retry

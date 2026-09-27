@@ -426,6 +426,107 @@ func TestClaimStorageWaitsUnderThePodsOnAFreeBackend(t *testing.T) {
 	}
 }
 
+// A running restore writes the backend with no pod of a cluster: the
+// Elasticsearch restore runs inside the operator, and the pg_restore Job
+// carries no cluster UID. So the claim step waits for the restore itself, from
+// the end of its admission to its terminal phase, on a free backend and on one
+// this cluster holds alike.
+func TestClaimStorageWaitsForARunningRestoreIntoAnotherCluster(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	storage := components.Storage{
+		Type:          v1.SecondaryStorageTypeElasticsearch,
+		Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es.data.svc:9200"},
+	}
+	key, err := components.StorageClaimKey(storage)
+	require.NoError(t, err)
+	self := &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "next", UID: "uid-next"},
+	}
+	elasticsearch := func(phase v1.LogicalRestorePhase, backend string, target types.UID) client.Object {
+		lres := &v1.LogicalRestoreElasticsearch{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "restore"}}
+		lres.Status.Phase, lres.Status.Backend, lres.Status.TargetClusterUID = phase, backend, target
+		return lres
+	}
+	rdbms := func(phase v1.LogicalRestorePhase, backend string, target types.UID) client.Object {
+		lrr := &v1.LogicalRestoreRDBMS{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "restore"}}
+		lrr.Status.Phase, lrr.Status.Backend, lrr.Status.TargetClusterUID = phase, backend, target
+		return lrr
+	}
+
+	cases := map[string]struct {
+		restore client.Object
+		held    bool
+		waitsOn string
+	}{
+		"an Elasticsearch restore that writes the secondary storage": {
+			restore: elasticsearch(v1.LogicalRestoreRestoringSecondaryStorage, key, "uid-old"),
+			waitsOn: "LogicalRestoreElasticsearch apps/restore",
+		},
+		"an RDBMS restore that writes the secondary storage": {
+			restore: rdbms(v1.LogicalRestoreRestoringSecondaryStorage, key, "uid-old"),
+			waitsOn: "LogicalRestoreRDBMS apps/restore",
+		},
+		"a restore that passed admission and writes nothing yet": {
+			restore: elasticsearch(v1.LogicalRestoreValidatingCompatibility, key, "uid-old"),
+			waitsOn: "LogicalRestoreElasticsearch apps/restore",
+		},
+		"a running restore on a backend this cluster already took": {
+			restore: rdbms(v1.LogicalRestoreRestoringPrimaryStorage, key, "uid-old"),
+			held:    true,
+			waitsOn: "LogicalRestoreRDBMS apps/restore",
+		},
+		// A restore in Pending writes nothing, and it waits on its own
+		// pre-checks without a bound.
+		"a restore in Pending":  {restore: elasticsearch(v1.LogicalRestorePending, key, "uid-old")},
+		"a restore that failed": {restore: rdbms(v1.LogicalRestoreFailed, key, "uid-old")},
+		"a restore on another backend": {
+			restore: elasticsearch(
+				v1.LogicalRestoreRestoringSecondaryStorage,
+				"elasticsearch|https://other:9200",
+				"uid-old",
+			),
+		},
+		"the restore of this cluster": {
+			restore: elasticsearch(v1.LogicalRestoreRestoringSecondaryStorage, key, self.UID),
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			in := &components.Input{Storage: storage}
+			in.Effective = components.NewEffective(v1.CamundaClusterSpec{})
+			objects := []client.Object{tc.restore}
+			if tc.held {
+				objects = append(objects, components.StorageClaimSchema().NewLease("camunda-system", key, self))
+			}
+			c := storageClaimPodClient(t, scheme, objects...)
+			res := &resolver{
+				reader:  c,
+				claims:  components.StorageClaimSchema().NewClaim(c, c, "camunda-system"),
+				cluster: self,
+				storage: &v1.SecondaryStorageConfig{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "storage"},
+				},
+				recorder: events.NewFakeRecorder(10),
+			}
+
+			require.NoError(t, res.claimStorage(context.Background(), in))
+
+			if tc.waitsOn == "" {
+				assert.Nil(t, in.Storage.Handover)
+
+				return
+			}
+			require.NotNil(t, in.Storage.Handover)
+			assert.Equal(t, []string{tc.waitsOn}, in.Storage.Handover.Restores)
+			assert.Empty(t, in.Storage.Handover.Pods)
+		})
+	}
+}
+
 // A pre-check that fails before the claim step knows no backend of this
 // cluster, so the pods name it: the claim they carry is kept, and a backend
 // the cluster left goes back. A cluster whose pods are gone releases nothing,
@@ -594,6 +695,22 @@ func TestStorageHandover(t *testing.T) {
 		assert.Contains(t, cond.Message, "elasticsearch|https://es:9200")
 		assert.Contains(t, cond.Message, "ns/old-zeebe-0, ns/old-zeebe-1")
 		assert.NotContains(t, cond.Message, "failed")
+	})
+
+	t.Run("with a restore beside the pods", func(t *testing.T) {
+		withRestore := *handover
+		withRestore.Restores = []string{"LogicalRestoreRDBMS ns/restore"}
+		cond := storageHandover(cluster, &withRestore, nil)
+		assert.Contains(t, cond.Message, "ns/old-zeebe-0, ns/old-zeebe-1")
+		assert.Contains(t, cond.Message, "Restores into another cluster still write the backend")
+		assert.Contains(t, cond.Message, "LogicalRestoreRDBMS ns/restore")
+	})
+
+	t.Run("with a restore alone", func(t *testing.T) {
+		alone := &components.StorageHandover{Backend: handover.Backend, Restores: []string{"LogicalRestoreRDBMS ns/r"}}
+		cond := storageHandover(cluster, alone, nil)
+		assert.NotContains(t, cond.Message, "Pods of another cluster")
+		assert.Contains(t, cond.Message, "LogicalRestoreRDBMS ns/r. This cluster starts when they are gone")
 	})
 
 	t.Run("with an apply error", func(t *testing.T) {
@@ -1295,4 +1412,90 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		expectClaimedBy(binding, cluster)
 	})
 
+	// A restore writes the backend with no pod that the gate sees: the
+	// Elasticsearch restore runs inside the operator, and the pg_restore Job
+	// carries no cluster UID. A holder deleted mid-restore gives the backend
+	// back, and the next cluster must still wait for the restore to end. No
+	// restore controller runs in this suite, so the spec writes the status a
+	// running restore has.
+	for _, kind := range []string{"LogicalRestoreElasticsearch", "LogicalRestoreRDBMS"} {
+		It("waits for a running "+kind+" into a deleted holder before it resumes", func() {
+			ns := newNamespace()
+			binding := createBinding(ns, true)
+			holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
+			createCluster(holder)
+			expectClaimedBy(binding, holder)
+			restore := createRunningRestore(kind, holder, storageKeyOf(binding))
+
+			parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
+			createCluster(parked)
+			expectParked(parked, holder)
+
+			Expect(k8sClient.Delete(ctx, holder)).To(Succeed())
+			Eventually(func(g Gomega) {
+				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(holder), &v1.CamundaCluster{})
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}, timeout, interval).Should(Succeed())
+
+			expectReady(
+				parked,
+				metav1.ConditionFalse,
+				Equal(v1.ReasonWaitingForHandover),
+				And(ContainSubstring(storageKeyOf(binding)), ContainSubstring(kind+" "+ns+"/"+restore.GetName())),
+			)
+			zeebeKey := client.ObjectKey{Namespace: parked.Namespace, Name: parked.Name + "-zeebe"}
+			Consistently(func(g Gomega) {
+				g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
+			}, "2s", interval).Should(Succeed(), "a cluster that waits for a restore renders nothing")
+
+			finishRestore(restore)
+			expectHolds(parked)
+			expectClaimedBy(binding, parked)
+		})
+	}
+
 })
+
+// createRunningRestore creates a logical restore of kind into target and
+// writes the status of one that passed admission on backend: the phase that
+// writes the secondary storage, the pinned target, and the pinned backend.
+func createRunningRestore(kind string, target *v1.CamundaCluster, backend string) client.Object {
+	GinkgoHelper()
+	objectMeta := metav1.ObjectMeta{Namespace: target.Namespace, Name: "restore-" + utilrand.String(6)}
+	ref := v1.ClusterRef{Name: target.Name}
+
+	var restore client.Object
+	switch kind {
+	case "LogicalRestoreElasticsearch":
+		lres := &v1.LogicalRestoreElasticsearch{ObjectMeta: objectMeta}
+		lres.Spec.BackupRef.Name, lres.Spec.TargetClusterRef = "backup", ref
+		Expect(k8sClient.Create(ctx, lres)).To(Succeed())
+		lres.Status.Phase = v1.LogicalRestoreRestoringSecondaryStorage
+		lres.Status.TargetClusterUID, lres.Status.Backend = target.UID, backend
+		restore = lres
+	default:
+		lrr := &v1.LogicalRestoreRDBMS{ObjectMeta: objectMeta}
+		lrr.Spec.BackupRef.Name, lrr.Spec.TargetClusterRef = "backup", ref
+		Expect(k8sClient.Create(ctx, lrr)).To(Succeed())
+		lrr.Status.Phase = v1.LogicalRestoreRestoringSecondaryStorage
+		lrr.Status.TargetClusterUID, lrr.Status.Backend = target.UID, backend
+		restore = lrr
+	}
+	Expect(k8sClient.Status().Update(ctx, restore)).To(Succeed())
+
+	return restore
+}
+
+// finishRestore moves a restore that createRunningRestore made to Failed, a
+// terminal phase.
+func finishRestore(restore client.Object) {
+	GinkgoHelper()
+	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(restore), restore)).To(Succeed())
+	switch r := restore.(type) {
+	case *v1.LogicalRestoreElasticsearch:
+		r.Status.Phase = v1.LogicalRestoreFailed
+	case *v1.LogicalRestoreRDBMS:
+		r.Status.Phase = v1.LogicalRestoreFailed
+	}
+	Expect(k8sClient.Status().Update(ctx, restore)).To(Succeed())
+}

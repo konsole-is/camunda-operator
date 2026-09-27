@@ -161,6 +161,21 @@ status:
         are gone
 ```
 
+A running restore into another cluster holds the backend the same way. A [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md#the-backend) or a [LogicalRestoreRDBMS](logicalrestorerdbms.md#the-backend) writes the backend from the moment it leaves `Pending` until it reaches `Completed` or `Failed`. You can delete its target during that time, or point the target at another backend. The next cluster on the backend still waits, with reason `WaitingForHandover`, and the message names the restore. A restore into this cluster itself is no reason to wait.
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: WaitingForHandover
+      message: >-
+        Restores into another cluster still write the backend
+        "elasticsearch|https://es-http.my-cluster-ns.svc:9200":
+        LogicalRestoreElasticsearch my-cluster-ns/my-other-cluster-restore.
+        This cluster starts when they are gone
+```
+
 Every pod carries the label `camunda.io/storage-claim` with the storage claim of the backend it writes, and `camunda.io/cluster-uid` with the UID of its cluster. The pods of an [Optimize instance](camundaoptimize.md) attached to the cluster carry both, because its importer writes that backend as well. Read the claim of every pod in a namespace:
 
 ```bash
@@ -299,7 +314,7 @@ status:
         are scaled to zero because spec.suspend is set
 ```
 
-The operator also suspends a cluster on its own, and only to keep two clusters off one backend. `spec.suspend` stays yours. A cluster whose backend another cluster holds reports `StorageAlreadyAttached`, and a cluster that waits for the pods of another cluster on its backend reports `WaitingForHandover` (see [Secondary storage](#secondary-storage)). These are the only two. Each of them ends on its own when its cause is gone. Every other failure leaves the workloads up.
+The operator also suspends a cluster on its own, and only to keep two clusters off one backend. `spec.suspend` stays yours. A cluster whose backend another cluster holds reports `StorageAlreadyAttached`, and a cluster that waits for the pods of another cluster, or for a restore into another cluster, on its backend reports `WaitingForHandover` (see [Secondary storage](#secondary-storage)). These are the only two. Each of them ends on its own when its cause is gone. Every other failure leaves the workloads up.
 
 `suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it, and starts them again when you clear the field and its own reference checks pass. The Optimize importer reads Elasticsearch directly. Without this, it keeps importing while the cluster is down. Every suspension by the operator reaches them the same way: a `CamundaOptimize` attached to a suspended cluster scales to zero, and a backup of it waits with reason `ClusterSuspended`.
 
@@ -332,7 +347,7 @@ Deleting the cluster removes every resource that the operator created for it, an
 | `Ready` | `Degraded` / `Down` | Some or no replicas of a component are ready after the grace period. | Read the pods and events of the named component. |
 | `Ready` | `Suspended` | `spec.suspend` is true and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to resume. |
 | `Ready` | `StorageAlreadyAttached` | Another `CamundaCluster` holds the storage claim of the backend that `storageRef` resolves to. This cluster is suspended. | Give this cluster a backend of its own, or delete the holder. The message names both, and the last apply error of the workloads when one occurred. |
-| `Ready` | `WaitingForHandover` | Pods of another cluster still write the backend that `storageRef` resolves to. This cluster holds the storage claim of it already, or waits to take it. The operator renders every workload of it at zero and keeps the volumes. | Wait. The message names the backend, those pods, the workloads that can start one, and the last apply error of the workloads when one occurred. The state clears on its own. If the pods never go, delete them; if a named workload keeps them coming back, scale it to zero or delete it. |
+| `Ready` | `WaitingForHandover` | Pods of another cluster, or a restore into another cluster, still write the backend that `storageRef` resolves to. This cluster holds the storage claim of it already, or waits to take it. The operator renders every workload of it at zero and keeps the volumes. | Wait. The message names the backend, those pods, the workloads that can start one, the restores, and the last apply error of the workloads when one occurred. The state clears on its own. If the pods never go, delete them; if a named workload keeps them coming back, scale it to zero or delete it. A restore ends in `Completed` or `Failed`. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, a ServiceAccount with `create: false` is absent, two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. A Lease of the operator namespace that this operator did not write reads the same way, and it blocks the storage claim of the backend. A running cluster keeps its workloads. | Read the message. Create the missing resource, correct the field it names, or delete the named Lease once nothing else uses it. The cluster takes the change on its own. |
 | `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. A running cluster keeps its workloads. | Create the Secret with the named key. The cluster takes the change on its own. |
 | `Ready` | `VersionDowngradeRefused` | The effective version is below the version the brokers run, and no annotation sanctions the move. The operator applies nothing, and the brokers keep the version they have. | Read [Version](#version). Set the version forward again, or sanction the downgrade. |
