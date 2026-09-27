@@ -27,6 +27,9 @@
   ignorePaths: [],
   // An alpha or snapshot tag of the next Camunda minor never lands.
   ignoreUnstable: true,
+  // Without a tidy, a Go update leaves the replaced versions in go.sum, and
+  // the tidy check of the Tests workflow fails.
+  postUpdateOptions: ["gomodTidy"],
   customManagers: [
     {
       // A variable of an env file or of the Makefile: the marker, then
