@@ -490,9 +490,9 @@ var _ = Describe("BackupSchedule controller", func() {
 		touch(schedule)
 
 		want := fmt.Sprintf(
-			"TriggerSkipped: Skipped the trigger at %s: CamundaCluster %q is not ready: "+
-				"it has not published its management binding, and Ready is False with reason InvalidReference",
-			trigger.Format(time.RFC3339), w.cluster.Name,
+			"TriggerSkipped: Skipped the trigger at %s: CamundaCluster %s/%s has not published its "+
+				"management binding yet, and Ready is False with reason InvalidReference",
+			trigger.Format(time.RFC3339), w.namespace, w.cluster.Name,
 		)
 		Eventually(func(g Gomega) {
 			g.Expect(eventReasons(schedule)).To(ContainElement(want))

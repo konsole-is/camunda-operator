@@ -58,6 +58,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+	"github.com/konsole-is/camunda-operator/pkg/management"
 )
 
 // controllerName is the name the controller registers with controller-runtime.
@@ -114,6 +115,7 @@ type BackupScheduleReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=backupschedules/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=logicalbackupelasticsearches;logicalbackuprdbmses,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters;secondarystorageconfigs;camundaclusterpresets,verbs=get
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile consumes the due trigger of the schedule, if one is due, and
@@ -305,7 +307,11 @@ func (r *BackupScheduleReconciler) trigger(
 
 	// A backup that cannot start waits in Pending for as long as the cluster
 	// stays so, and while it waits it blocks every later trigger.
-	if state := cannotStart(res.cluster, res.storageType); state != "" {
+	state, err := r.cannotStart(ctx, res.cluster, res.storageType)
+	if err != nil {
+		return err
+	}
+	if state != "" {
 		schedule.Status.LastScheduleTime = &consumed
 		r.EventRecorder.Eventf(
 			schedule,
@@ -313,9 +319,8 @@ func (r *BackupScheduleReconciler) trigger(
 			corev1.EventTypeNormal,
 			eventReasonTriggerSkipped,
 			eventActionSchedule,
-			"Skipped the trigger at %s: CamundaCluster %q is not ready: %s",
+			"Skipped the trigger at %s: %s",
 			due.Format(time.RFC3339),
-			res.cluster.Name,
 			state,
 		)
 
@@ -398,30 +403,40 @@ func (r *BackupScheduleReconciler) trigger(
 }
 
 // cannotStart describes why a backup of the storage type cannot start on
-// the cluster, for the note of the skip event. It returns "" when the backup
-// can start. Both kinds need the management binding. An RDBMS backup also
-// needs Ready True. An Elasticsearch backup needs the backup repository of
-// the binding instead, so a degraded cluster that still serves its
-// management API is backed up.
-func cannotStart(cluster *v1.CamundaCluster, storageType v1.SecondaryStorageType) string {
-	binding := cluster.Status.Management
-	if binding == nil || binding.Endpoint == "" {
-		return "it has not published its management binding, and " + readyState(cluster)
+// the cluster, as the note of the skip event after the trigger time. It
+// returns "" when the backup can start. Both kinds need a management binding
+// that the backup controllers accept. An RDBMS backup also needs Ready True.
+// An Elasticsearch backup needs the backup repository of the binding
+// instead, so a degraded cluster that still serves its management API is
+// backed up.
+func (r *BackupScheduleReconciler) cannotStart(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+	storageType v1.SecondaryStorageType,
+) (string, error) {
+	_, failure, err := management.NewClient(ctx, r.APIReader, cluster)
+	if err != nil {
+		return "", fmt.Errorf("checking the management binding of CamundaCluster %s: %w", cluster.Name, err)
+	}
+	if failure != nil {
+		return failure.Message + ", and " + readyState(cluster), nil
 	}
 
 	switch storageType {
 	case v1.SecondaryStorageTypeElasticsearch:
-		if binding.BackupRepository == "" {
-			return "it publishes no backup repository, and " + readyState(cluster)
+		if cluster.Status.Management.BackupRepository == "" {
+			return fmt.Sprintf(
+				"CamundaCluster %q publishes no backup repository, and %s", cluster.Name, readyState(cluster),
+			), nil
 		}
 	case v1.SecondaryStorageTypeRDBMS:
 		ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
 		if ready == nil || ready.Status != metav1.ConditionTrue {
-			return readyState(cluster)
+			return fmt.Sprintf("CamundaCluster %q is not ready: %s", cluster.Name, readyState(cluster)), nil
 		}
 	}
 
-	return ""
+	return "", nil
 }
 
 func readyState(cluster *v1.CamundaCluster) string {
