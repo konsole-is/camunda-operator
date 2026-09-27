@@ -161,7 +161,7 @@ CAUTION: A failure between the delete and the restore leaves the secondary stora
 
 A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names the target follows `spec.suspend` of that cluster. So its webapp and its importer are already at zero when this phase deletes the indices. You do not have to stop the import by hand.
 
-This matters because the Optimize importer reads Elasticsearch directly, not through the orchestration cluster. An importer that kept running would read indices that are half restored and write analytics from them. It would also hold an import position that disagrees with the restored data. Both workloads start again when you unsuspend the cluster, and the importer reads the restored indices.
+This matters because the Optimize importer reads Elasticsearch directly, not through the orchestration cluster. An importer that keeps running reads indices that are half restored and writes analytics from them. It also holds an import position that disagrees with the restored data. Both workloads start again when you unsuspend the cluster, and the importer reads the restored indices.
 
 ## Primary storage
 

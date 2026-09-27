@@ -213,7 +213,7 @@ The server keeps its whole archive while a rollback runs, because the rollback r
 - A removal of `spec.archive`.
 - A change of one of those fields in the preset the server reads.
 
-The message names what to put back. The archive keeps every setting it had when the rollback started, and the edit applies once the answer is out. A shorter `retentionPeriodDays` is the one that matters most. It becomes the retention policy of the bucket, and it would prune the base backup the rollback starts from.
+The message names what to put back. The archive keeps every setting it had when the rollback started, and the edit applies once the answer is out. A shorter `retentionPeriodDays` is the one that matters most. It becomes the retention policy of the bucket, and it can prune the base backup the rollback starts from.
 
 Everything outside `spec.archive` still applies while a rollback runs. Only the contract name and the archive are held.
 

@@ -128,7 +128,7 @@ spec:
 
 #### One realm answers to one management plane
 
-The first `CamundaManagementCluster` that reaches the realm holds it. Management Identity administers the clients of that realm, and the plane owns the login callbacks of its `optimize` client. So a second plane on the same realm would undo both.
+The first `CamundaManagementCluster` that reaches the realm holds it. Management Identity administers the clients of that realm, and the plane owns the login callbacks of its `optimize` client. So a second plane on the same realm can undo both.
 
 The holder is not always the plane you created first. A suspended plane takes no realm until it resumes, and it keeps every realm it already holds.
 
@@ -431,7 +431,7 @@ One cluster is read at most once every 10 minutes, so a repair takes up to that 
 
 A cluster that leaves the management plane loses the user, and the Secret that published its password goes with it. The cluster leaves when it leaves `spec.clusterSelector` or the namespace bound, when you remove `spec.webModeler`, or when you delete the cluster.
 
-A cluster that stopped accepting basic credentials keeps the user. Nothing signs in with it there, and the cluster no longer publishes the administrator credential that a removal needs. A cluster whose `spec.platformConfigRef` names no `CamundaPlatformConfig` counts the same. The operator cannot read how it authenticates, and a removal that fails there would hold the cluster forever. In both cases the operator deletes the Secret, records the event `WebModelerUserLeftBehind` on the `CamundaManagementCluster` with the reason, and lets the cluster go. Remove that user yourself if you do not want it there.
+A cluster that stopped accepting basic credentials keeps the user. Nothing signs in with it there, and the cluster no longer publishes the administrator credential that a removal needs. A cluster whose `spec.platformConfigRef` names no `CamundaPlatformConfig` counts the same. The operator cannot read how it authenticates, and a removal that fails there holds the cluster forever. In both cases the operator deletes the Secret, records the event `WebModelerUserLeftBehind` on the `CamundaManagementCluster` with the reason, and lets the cluster go. Remove that user yourself if you do not want it there.
 
 ## Clusters
 
@@ -571,7 +571,7 @@ The `oidc` mode registers nothing. Your provider holds the callback URLs, so `sp
 
 ### Moving the callbacks to another realm
 
-When `spec.identityProvider` starts naming another Keycloak, another `realm`, or the `oidc` mode, the login callbacks leave the realm they were in. On a move from one Keycloak to another, a plane that serves an Optimize empties the old realm first. Then it registers the callbacks in the new one. A move to the `oidc` mode and a plane that serves no Optimize register nothing in a realm, so neither waits. `status.callbackRealm` names the realm the plane last pointed Management Identity at. Identity registers the callbacks there while it starts, so the field appears with the realm and not with the first registration. During a move, it keeps naming the old realm until the callbacks have left it. After that, it keeps naming it until nothing is left that could write them back:
+When `spec.identityProvider` starts naming another Keycloak, another `realm`, or the `oidc` mode, the login callbacks leave the realm they were in. On a move from one Keycloak to another, a plane that serves an Optimize empties the old realm first. Then it registers the callbacks in the new one. A move to the `oidc` mode and a plane that serves no Optimize register nothing in a realm, so neither waits. `status.callbackRealm` names the realm the plane last pointed Management Identity at. Identity registers the callbacks there while it starts, so the field appears with the realm and not with the first registration. During a move, it keeps naming the old realm until the callbacks have left it. After that, it keeps naming it until nothing is left that can write them back:
 
 ```yaml
 status:
