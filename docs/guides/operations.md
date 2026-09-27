@@ -1,6 +1,6 @@
 # Operations
 
-This guide covers the day-2 tasks of a running orchestration cluster: read its status, change its shape, suspend it, grow its storage, rotate its passwords, and delete it. It applies to `CamundaCluster`, and where it says so, to `ElasticsearchCluster` and `Database`.
+This guide covers the day-2 tasks of a running orchestration cluster. These are to read its status, change its shape, suspend it, grow its storage, rotate its passwords, and delete it. It applies to `CamundaCluster`, and where it says so, to `ElasticsearchCluster` and `Database`.
 
 ## Read the status
 
@@ -118,7 +118,15 @@ Every condition carries one of these reasons:
 | `InvalidReference` | A referenced resource does not exist, or the merged spec is not valid. The message names it. | Create the resource, or fix the field that the message names. |
 | `MissingSecret` | A referenced Secret or one of its keys does not exist. The message names it. | Create the Secret with the keys that the reference names. |
 
-`Disabled` shows on `GatewayReady` when the gateway is `Embedded`, on `OperateReady`, `TasklistReady`, and `AdminReady` when the web application is `Embedded`, on `ConnectorsReady` when connectors are off, on `AdminSecretReady` under OIDC, and on `MirroredSecretsReady` when every referenced Secret lives in the namespace of the cluster. `InvalidReference` and `MissingSecret` show on `Ready` only.
+`Disabled` shows on these conditions:
+
+- `GatewayReady`, when the gateway is `Embedded`.
+- `OperateReady`, `TasklistReady`, and `AdminReady`, when the web application is `Embedded`.
+- `ConnectorsReady`, when connectors are off.
+- `AdminSecretReady`, under OIDC.
+- `MirroredSecretsReady`, when every referenced Secret lives in the namespace of the cluster.
+
+`InvalidReference` and `MissingSecret` show on `Ready` only.
 
 The other status fields in the example above:
 
@@ -263,7 +271,7 @@ spec:
   pause: true
 ```
 
-The operator changes nothing for this resource. It writes no status, and it records a `Paused` event each time it looks at the resource. The workloads keep running as they are. Use `suspend` to save compute and keep the data. Use `pause` when you must stop the operator from touching the resource, for example while you inspect or repair a workload by hand.
+The operator changes nothing for this resource. It writes no status, and it records a `Paused` event each time it looks at the resource. The workloads keep running as they are. Use `suspend` to save compute and keep the data. Use `pause` when you must stop the operator from touching the resource. For example, pause it while you inspect or repair a workload by hand.
 
 ## Grow storage
 
@@ -294,9 +302,9 @@ status:
       capacity: 32Gi   # not expanded yet
 ```
 
-The API server rejects a smaller value. If a preset lowers the size under a running cluster, the operator ignores it, keeps the current size, and records the Warning event `StorageShrinkIgnored` once per requested size. To get a smaller volume, delete and recreate the cluster.
+The API server rejects a smaller value. If a preset lowers the size under a running cluster, the operator ignores it and keeps the current size. It records the Warning event `StorageShrinkIgnored` once per requested size. To get a smaller volume, delete and recreate the cluster.
 
-`storageSize` of an `ElasticsearchCluster`, and `storageSize` and `walStorageSize` of a `DatabaseServer`, obey the same rules: they grow in place, a smaller inline value is rejected, and a smaller preset value is ignored with `StorageShrinkIgnored`.
+`storageSize` of an `ElasticsearchCluster`, and `storageSize` and `walStorageSize` of a `DatabaseServer`, obey the same rules. They grow in place, a smaller inline value is rejected, and a smaller preset value is ignored with `StorageShrinkIgnored`.
 
 ## Rotate passwords
 
@@ -329,15 +337,22 @@ spec:
       passwordRotation: "2026-08"
 ```
 
-A changed value rotates once. The operator generates a new password, sets it on the `admin` user through the user API of the running cluster, publishes it in `<name>-camunda-admin`, and rolls the connectors Deployment. `status.adminPassword.rotation` shows the value when the rotation is complete. A failed rotation shows on the condition `AdminSecretReady`, and the operator tries again. The [authentication guide](authentication.md#rotate-the-password) has the failure modes.
+A changed value rotates once. The operator generates a new password and sets it on the `admin` user through the user API of the running cluster. Then it publishes the password in `<name>-camunda-admin` and rolls the connectors Deployment. `status.adminPassword.rotation` shows the value when the rotation is complete. A failed rotation shows on the condition `AdminSecretReady`, and the operator tries again. The [authentication guide](authentication.md#rotate-the-password) has the failure modes.
 
 ## Change configuration and referenced Secrets
 
-You do not edit the cluster to roll a configuration change. A change to the `CamundaPlatformConfig`, the `CamundaClusterPreset`, the `CamundaRelease`, the `SecondaryStorageConfig` and its `DatabaseConfig` or `DatabaseServerConfig`, an `ObjectStorageConfig`, or any referenced Secret reaches the pods on its own. The pod templates carry the annotation `camunda.io/config-hash`, and a new hash rolls the pods.
+You do not edit the cluster to roll a configuration change. A change to one of these resources reaches the pods on its own:
+
+- The `CamundaPlatformConfig`, the `CamundaClusterPreset`, or the `CamundaRelease`.
+- The `SecondaryStorageConfig` and its `DatabaseConfig` or `DatabaseServerConfig`.
+- An `ObjectStorageConfig`.
+- Any referenced Secret.
+
+The pod templates carry the annotation `camunda.io/config-hash`, and a new hash rolls the pods.
 
 The [CamundaPlatformConfig](../crds/camundaplatformconfig.md) is cluster-scoped, so the Secrets it names are copied into the namespace of the cluster as `<name>-camunda-<purpose>`, for example `my-cluster-camunda-license` or `my-cluster-camunda-oidc-client`. The pods read the copy. When the source Secret changes, the copy follows, and the pods roll. `MirroredSecretsReady` reports the copies. Every other Secret a cluster reads already lives in its namespace.
 
-To add your own environment variables, use `extraEnv` and `extraEnvFrom`. The operator writes its own configuration first, then the top-level `extraEnv`, then the `extraEnv` of the embedded parts that the process hosts, then the `extraEnv` of the process itself. A later entry with the same name wins, and an entry replaces an operator entry with the same name. For example, to set the heap of the brokers:
+To add your own environment variables, use `extraEnv` and `extraEnvFrom`. The operator writes its own configuration first, then the top-level `extraEnv`. Then it writes the `extraEnv` of the embedded parts that the process hosts, then the `extraEnv` of the process itself. A later entry with the same name wins, and an entry replaces an operator entry with the same name. For example, to set the heap of the brokers:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -435,7 +450,7 @@ spec:
       whenDeleted: Retain
 ```
 
-A restore of the cluster that reached `Failed` **after it started the restore application** keeps its per-broker Jobs, and the pods of those Jobs hold the broker volumes. The delete of the cluster then waits on a volume that never terminates. Delete that restore first. `status.primaryJobNames` on the restore tells you which case you are in: a restore that failed in an earlier phase names no Job there and holds nothing, and a restore that reached `Completed` already removed the Jobs it names, together with their pods.
+A restore of the cluster that reached `Failed` **after it started the restore application** keeps its per-broker Jobs. The pods of those Jobs hold the broker volumes. The delete of the cluster then waits on a volume that never terminates. Delete that restore first. `status.primaryJobNames` on the restore tells you which case you are in. A restore that failed in an earlier phase names no Job there and holds nothing. A restore that reached `Completed` already removed the Jobs it names, together with their pods.
 
 The `ElasticsearchCluster`, the `DatabaseServer`, and the `Database` are separate resources with their own lifecycle. Deleting the `CamundaCluster` leaves them in place. Deleting an `ElasticsearchCluster` removes the ECK resource, its Secrets, and its `SecondaryStorageConfig`, and its data volumes follow its own `persistentVolumeClaimRetentionPolicy`. Deleting a `Database` removes its `DatabaseConfig`, its `SecondaryStorageConfig`, and its credential Secrets, but it never drops the logical database or the SQL roles. Data removal on the server is a manual act.
 
