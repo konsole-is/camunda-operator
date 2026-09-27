@@ -505,3 +505,7 @@ docs-serve: ## Serve the documentation site locally with live reload.
 .PHONY: docs-build
 docs-build: ## Build the documentation site in strict mode.
 	mkdocs build --strict
+
+.PHONY: docs-sentences
+docs-sentences: ## Report the sentences under docs/ that are longer than the simple-english limits.
+	go run ./hack/sentencelength docs
