@@ -586,7 +586,7 @@ status:
 
 `status.callbackRealm` also keeps naming the old realm until no Management Identity of the old configuration can put the callbacks back into it. A move restarts Management Identity, and nobody signs in while it restarts. A move that the old realm holds back keeps Management Identity on the old realm until that realm is empty. Everybody keeps signing in there meanwhile. A move to the `oidc` mode, and a plane that serves no Optimize, are never held. Their Management Identity moves while the old realm is still being emptied.
 
-Keep the Secret that `adminCredentialsSecretRef` names there until `status.callbackRealm` stops naming the old realm. If the old Keycloak needed a `caBundleSecretRef` Secret, keep that Secret too. The operator signs in to the old Keycloak with them one last time. The record is the completion signal of a move, because the condition ends at `Healthy`, `Disabled`, or `NoCallbacks`, whichever the new mode reaches.
+Keep the Secret that `adminCredentialsSecretRef` names there. If the old Keycloak needed a `caBundleSecretRef` Secret, keep that one too. Keep both until `status.callbackRealm` stops naming the old realm. The operator signs in to the old Keycloak with them one last time. The record is the completion signal of a move, because the condition ends at `Healthy`, `Disabled`, or `NoCallbacks`, whichever the new mode reaches.
 
 A move to the `oidc` mode empties the old realm the same way. `status.callbackRealm` then goes, and `OptimizeCallbacksReady` reads `Disabled`.
 
