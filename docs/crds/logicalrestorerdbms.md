@@ -123,7 +123,7 @@ When the restore fails while its `pg_restore` Job still runs, the next cluster a
 The restore itself waits in `Pending` while the target does not hold its backend:
 
 - `StorageAlreadyAttached` means that another cluster holds the backend. The message names that cluster. The restore writes nothing into a backend that another cluster holds.
-- `WaitingForHandover` means that the target does not hold the backend yet, or that pods of another cluster still write it. The message names them.
+- `WaitingForHandover` means that the target does not hold the backend yet, or that pods of another cluster still write it. In the first case the message names the target and the backend. In the second case it names those pods.
 - `InvalidReference` can name a Lease that claims the backend and names no `CamundaCluster`. The target cannot take the backend while it exists. Delete the Lease if nothing uses it.
 
 After the restore left `Pending`, these two reasons hold it for ten minutes, and then it fails. A target that now resolves to another backend than `status.backend` holds it with reason `InvalidReference` for the same time.
