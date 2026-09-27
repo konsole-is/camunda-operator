@@ -32,8 +32,8 @@ the detail. Do not work from memory when a skill covers the task.
 
 `addressing-review-feedback` applies inside every other review workflow too:
 `feature-dev-workflow:copilot-review-loop`, `superpowers:receiving-code-review`, and any agent that you
-dispatch to fix review findings. Name the skill in the prompt of that agent. A review round that
-pushes without its `hack/commentdiff` gate at exit 0 is not done.
+dispatch to fix review findings. Name the skill in the prompt of that agent. A review round is not
+done while a comment that `hack/commentdiff` flags has no verdict from a fresh evaluator.
 
 The operator uses the operator component framework (ocf):
 https://github.com/sourcehawk/operator-component-framework. The `ocf:*` skills come from that
@@ -134,8 +134,8 @@ go vet -tags=e2e ./test/e2e/  # go test ./... never compiles this package
 mkdocs build --strict       # catches a broken link or a missing nav entry
 ```
 
-A pull request that went through review also needs its `hack/commentdiff` gate at exit 0 for every
-round. The `addressing-review-feedback` skill says how to run it.
+A pull request that went through review also needs a verdict for every comment that
+`hack/commentdiff` flags. The `addressing-review-feedback` skill says how to run it and who judges.
 
 Two traps that cost time before:
 

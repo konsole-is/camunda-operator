@@ -15,9 +15,10 @@ limitations under the License.
 */
 
 // Command commentdiff lists the Go comments that changed between a base ref
-// and the working tree, and fails on the two shapes that review rounds grow:
-// a doc comment that got longer than it was at the base, and a doc comment of
-// three or more lines that is longer than the body it documents.
+// and the working tree, and flags the two shapes that review rounds grow: a
+// doc comment that got longer than it was at the base, and a doc comment of
+// three or more lines that is longer than the body it documents. A flag is
+// not a verdict. It exits 1 so that each flagged comment gets evaluated.
 //
 // Usage: go run ./hack/commentdiff [base]
 //
@@ -49,7 +50,6 @@ type decl struct {
 	docLen  int
 	docText string
 	bodyLen int
-	fields  int // parameters and results, except a context.Context
 }
 
 type finding struct {
@@ -99,7 +99,7 @@ func main() {
 		}
 		fmt.Printf("%s%s:%d: %s\n", marker, f.file, f.line, f.text)
 	}
-	fmt.Printf("\n%d changed comments, %d flagged (✗)\n", len(findings), fatal)
+	fmt.Printf("\n%d changed comments, %d flagged (✗) for evaluation\n", len(findings), fatal)
 	if fatal > 0 {
 		os.Exit(1)
 	}
@@ -136,15 +136,11 @@ func diffFile(file string, oldSrc, newSrc []byte) []finding {
 			continue
 		}
 		f := finding{file: file, line: d.line}
-		allowed := old.docLen + max(0, d.fields-old.fields)
 		switch {
-		case existed && d.docLen > allowed:
+		case existed && d.docLen > old.docLen:
 			f.text = fmt.Sprintf("doc of %s GREW from %d to %d lines", d.name, old.docLen, d.docLen)
 			if old.name != d.name {
 				f.text += " (was " + old.name + ")"
-			}
-			if allowed > old.docLen {
-				f.text += fmt.Sprintf(", allowed %d for its new parameters or results", allowed)
 			}
 			f.fatal = true
 		case existed:
@@ -232,7 +228,7 @@ func scan(file string, src []byte) (map[string]decl, map[string]int) {
 	}
 
 	docs := map[*ast.CommentGroup]bool{}
-	add := func(key, short string, doc *ast.CommentGroup, bodyLen, fields int) {
+	add := func(key, short string, doc *ast.CommentGroup, bodyLen int) {
 		if doc == nil {
 			return
 		}
@@ -244,7 +240,6 @@ func scan(file string, src []byte) (map[string]decl, map[string]int) {
 			docLen:  lines(fset, doc),
 			docText: doc.Text(),
 			bodyLen: bodyLen,
-			fields:  fields,
 		}
 	}
 
@@ -255,23 +250,23 @@ func scan(file string, src []byte) (map[string]decl, map[string]int) {
 			if d.Body != nil {
 				body = fset.Position(d.Body.Rbrace).Line - fset.Position(d.Body.Lbrace).Line - 1
 			}
-			add(funcKey(d), d.Name.Name, d.Doc, body, countFields(d.Type))
+			add(funcKey(d), d.Name.Name, d.Doc, body)
 		case *ast.GenDecl:
-			add(genKey(d), "", d.Doc, 0, 0)
+			add(genKey(d), "", d.Doc, 0)
 			for _, s := range d.Specs {
 				switch s := s.(type) {
 				case *ast.TypeSpec:
-					add("type "+s.Name.Name, s.Name.Name, s.Doc, 0, 0)
+					add("type "+s.Name.Name, s.Name.Name, s.Doc, 0)
 					if st, ok := s.Type.(*ast.StructType); ok {
 						for _, fld := range st.Fields.List {
 							for _, n := range fld.Names {
-								add("field "+s.Name.Name+"."+n.Name, n.Name, fld.Doc, 0, 0)
+								add("field "+s.Name.Name+"."+n.Name, n.Name, fld.Doc, 0)
 							}
 						}
 					}
 				case *ast.ValueSpec:
 					for _, n := range s.Names {
-						add("value "+n.Name, n.Name, s.Doc, 0, 0)
+						add("value "+n.Name, n.Name, s.Doc, 0)
 					}
 				}
 			}
@@ -288,24 +283,6 @@ func scan(file string, src []byte) (map[string]decl, map[string]int) {
 		free[text] = fset.Position(cg.Pos()).Line
 	}
 	return decls, free
-}
-
-// countFields counts the parameters and results of a function, leaving out a
-// context.Context, which never needs a line of doc.
-func countFields(t *ast.FuncType) int {
-	n := 0
-	for _, list := range []*ast.FieldList{t.Params, t.Results} {
-		if list == nil {
-			continue
-		}
-		for _, f := range list.List {
-			if sel, ok := f.Type.(*ast.SelectorExpr); ok && sel.Sel.Name == "Context" {
-				continue
-			}
-			n += max(1, len(f.Names))
-		}
-	}
-	return n
 }
 
 func funcKey(d *ast.FuncDecl) string {

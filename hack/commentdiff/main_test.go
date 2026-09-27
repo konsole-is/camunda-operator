@@ -17,7 +17,6 @@ limitations under the License.
 package main
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -77,10 +76,10 @@ func cannotStart(c int, kind string) string {
 }
 `,
 			wantFatal: true,
-			wantText:  "(was func notReady), allowed 3",
+			wantText:  "GREW from 2 to 5 lines (was func notReady)",
 		},
 		{
-			name: "one line allowed for a new result",
+			name: "a new result does not excuse a longer doc",
 			old: `// f returns the note.
 func f(c int) string {
 	return ""
@@ -92,10 +91,11 @@ func f(c int) (string, error) {
 	return "", nil
 }
 `,
-			wantText: "changed (2 lines, was 1)",
+			wantFatal: true,
+			wantText:  "GREW from 1 to 2",
 		},
 		{
-			name: "a new context parameter allows nothing",
+			name: "a new parameter does not excuse a longer doc",
 			old: `// f returns the note.
 func f(c int) string {
 	return ""
@@ -174,14 +174,4 @@ type T struct{}
 			assert.Equal(t, tt.wantFatal, got[0].fatal)
 		})
 	}
-}
-
-func TestCountFieldsSkipsContext(t *testing.T) {
-	decls, _ := scan("p.go", src(`// f runs.
-func f(ctx context.Context, a, b int) (string, error) { return "", nil }
-`))
-	d, ok := decls["func f"]
-	require.True(t, ok)
-	assert.Equal(t, 4, d.fields)
-	assert.False(t, strings.Contains(d.name, "ctx"))
 }

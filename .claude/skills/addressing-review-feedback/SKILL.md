@@ -35,16 +35,21 @@ Run it for each round, even when the previous round passed it.
     go run ./hack/commentdiff "$BASE"
     ```
 
-    It lists every comment the round added or changed, and it exits 1 on a flagged (✗) one:
-    - **GREW**: a doc comment is longer than at the round base. A rename counts as the same declaration. It is allowed one extra line for each parameter or result the signature gained, except a `context.Context`.
+    It lists every comment the round added or changed. It flags (✗) two shapes, and exits 1 when it flags one:
+    - **GREW**: a doc comment is longer than at the round base. A rename counts as the same declaration.
     - **LONGER than its body**: a doc of three or more lines over a shorter body.
 
-6. **Resolve every ✗ by cutting.** Shorten the doc to the contract (what it returns, its preconditions, the trap a caller hits), then run the gate again. Repeat until it exits 0. There is no other way to clear a ✗: no exemption, no note in the PR, no "this one is justified".
-7. **Give every listed comment a verdict,** including the ones without ✗. For each, write one line in your notes: KEEP with the `how-we-write-go` rule it satisfies, or CUT. A comment you cannot name a rule for is cut.
-8. **Reply to the threads.** For a finding about prose, say what you cut ("cut the doc to the contract; the conditions are in the body"). Do not say "clarified" or "expanded".
-9. **Push.**
+    A flag is not a verdict. It means the comment must be evaluated before you push.
 
-After the last round, before you report the PR as clean, run the tool once more against the PR base (`go run ./hack/commentdiff origin/main`) and give a step 7 verdict to every comment the whole PR adds. Against the PR base, a ✗ can be a contract the PR changed on purpose, so here each ✗ gets a verdict: KEEP names the new contract fact each added line states, and every other line is cut. The hard rule of step 6 applies to review rounds, where the contract is already set.
+6. **Get every ✗ evaluated by a fresh agent, not by you.** You are the one under pressure from the finding, so your own judgment of the growth does not count. Dispatch one read-only agent for all the flags of the round, with the prompt in `evaluator-prompt.md` next to this file. Give it the rules, the flagged docs, and the declarations. Do not give it the finding or your reasons.
+    - Apply its verdicts as it gives them: cut every CUT line, use its shortened doc where it wrote one, and put a fact it moved on the line it named. You do not overrule a CUT. If you think a CUT is wrong, the line stays cut and you raise it with the user in your report.
+    - **If your harness gives you no way to dispatch an agent** (a fork, for example), re-read the four `how-we-write-go` sections named above first, then evaluate with the same prompt yourself. Mark every verdict "self-evaluated", so the user can see that it was not independent.
+7. **Give every other listed comment a verdict yourself,** the ones without ✗. For each, write one line in your notes: KEEP with the `how-we-write-go` rule it satisfies, or CUT. A comment you cannot name a rule for is cut.
+8. **Post the verdicts.** In the round's PR comment, add a table of every ✗: the declaration, the lines kept with the caller decision each serves, the lines cut, and who evaluated it (fresh agent or self-evaluated).
+9. **Reply to the threads.** For a finding about prose, say what you cut ("cut the doc to the contract; the conditions are in the body"). Do not say "clarified" or "expanded".
+10. **Push.**
+
+After the last round, before you report the PR as clean, run the gate once more against the PR base (`go run ./hack/commentdiff origin/main`). Evaluate its flags the same way (step 6), and give a step 7 verdict to every other comment the whole PR adds. Against the PR base, a flag is often a contract that the PR changed on purpose. The evaluator keeps each line that states a new caller fact.
 
 ## Example
 
@@ -77,8 +82,9 @@ What the procedure produces. The thread reply rejects the finding, because the s
 | "The reviewer says the comment is inaccurate, so I make it accurate." | An accurate, longer comment is the drift. Make it shorter, until what is left is true. |
 | "The reviewer asked for the doc to state the conditions." | The conditions are in the code. A second account is the thing `how-we-write-go` forbids. Reject in the thread. |
 | "Documenting the decision stops reviewers raising it again." | The PR body holds decisions. The code comment is read long after the review is over. |
-| "The signature changed, so the doc is new." | The gate pairs renames and allows one line per new parameter or result. The rest is growth. |
-| "This growth is justified." | A ✗ is cleared by cutting. There is no other path. |
+| "The signature changed, so the doc is new." | The gate pairs renames. The evaluator keeps each line that states a new caller fact, and cuts the rest. |
+| "This growth is justified, I can see it is." | Then the evaluator keeps it. You do not decide on your own growth. |
+| "Dispatching an evaluator for one line is overkill." | One flag is one short call. The grown comment on #391 grew one line at a time. |
 | "I read how-we-write-go at the start." | Hours and rounds ago. Step 2 exists because of that. |
 | "It is a test helper, the rules are looser." | Test comments follow the same rules. |
 
@@ -89,5 +95,6 @@ What the procedure produces. The thread reply rejects the finding, because the s
 - A godoc now names the branches of its body: "both kinds…", "X also needs…", "instead…".
 - A comment carries "so that…" rationale for a decision the PR body already records.
 - You are about to push without running the gate in this round.
+- You are about to push a ✗ that no evaluator has judged, or to keep a line it cut.
 
 Each one means: stop, go back to step 3.
