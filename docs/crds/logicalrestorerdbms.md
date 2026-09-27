@@ -118,6 +118,8 @@ A restore writes into the backend of its target. That is the logical database th
 
 From then until the restore reaches `Completed` or `Failed`, no other `CamundaCluster` starts on that backend. This also holds when you delete the target during the restore, or point it at another backend. The next cluster on the backend reports `WaitingForHandover`, and the message names this restore. [CamundaCluster: Secondary storage](camundacluster.md#secondary-storage) has the rule for the cluster.
 
+When the restore fails while its `pg_restore` Job still runs, the next cluster also waits for that Job to finish.
+
 The restore itself waits in `Pending` while the target does not hold its backend:
 
 - `StorageAlreadyAttached` means that another cluster holds the backend. The message names that cluster. The restore writes nothing into a backend that another cluster holds.

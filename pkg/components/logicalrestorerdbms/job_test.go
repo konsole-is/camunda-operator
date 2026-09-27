@@ -258,16 +258,20 @@ func TestBuildJobPodCarriesTheStorageClaimAndNoClusterUID(t *testing.T) {
 	t.Parallel()
 
 	in := input()
-	in.Pod = &v1.DumpPodSpec{PodLabels: map[string]string{labels.StorageClaimKey: "user-value"}}
+	in.Pod = &v1.DumpPodSpec{PodLabels: map[string]string{
+		labels.StorageClaimKey: "user-value",
+		labels.ClusterUIDKey:   "uid-of-the-target",
+	}}
 	job, err := BuildJob(in)
 	require.NoError(t, err)
 
 	// The handover gate of a cluster lists the pods on a claim, so the pod
-	// carries it and a user label cannot hide it. A cluster UID would make the
-	// target count the pod as its own and start beside it.
+	// carries it and a user label cannot hide it. A cluster UID, from a user
+	// label too, would make the target count the pod as its own and start
+	// beside it.
 	assert.Equal(t, labels.OwnerName(in.StorageClaim), job.Spec.Template.Labels[labels.StorageClaimKey])
 	assert.NotContains(t, job.Spec.Template.Labels, labels.ClusterUIDKey)
-	assert.NotContains(t, job.Labels, labels.StorageClaimKey, "the gate lists pods, not Jobs")
+	assert.NotContains(t, job.Labels, labels.StorageClaimKey, "the gate reads the template of a Job")
 }
 
 func TestBuildJobRunsUnderTheClusterServiceAccount(t *testing.T) {

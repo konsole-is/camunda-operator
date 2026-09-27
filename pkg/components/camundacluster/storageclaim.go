@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -97,11 +98,12 @@ func StorageClaimLeaseLabels(name string) map[string]string {
 // OtherPodsOnClaim returns the pods that carry the storage claim named claim
 // and that own does not claim, as sorted "namespace/name" paths, together
 // with the workloads that can still start such a pod: a ReplicaSet that asks
-// for replicas with the claim on its labels, and a Deployment or a
-// StatefulSet that asks for replicas with the claim on its template. A
-// workload whose pod is gone for a moment, evicted or not yet started,
-// recreates it with the claim, so a scan of the pods alone can pass while a
-// writer is about to return. A
+// for replicas with the claim on its labels, a Deployment or a StatefulSet
+// that asks for replicas with the claim on its template, and a Job that has
+// not finished with the claim on its template. A workload whose pod is gone
+// for a moment, evicted, failed, or not yet started, recreates it with the
+// claim, so a scan of the pods alone can pass while a writer is about to
+// return. A
 // cluster passes PodsOfCluster; an Optimize instance passes a predicate that
 // also leaves out the importer of a deleted instance of its cluster. A
 // handover waits for exactly these: every one of them writes the backend of
@@ -192,9 +194,43 @@ func OtherPodsOnClaim(
 			names = append(names, sts.Namespace+"/"+sts.Name)
 		}
 	}
+	// A Job starts its next pod after a pod failed, until it reaches its
+	// backoff limit. The pg_restore Job of a restore that failed can do that
+	// after the restore itself stopped counting.
+	var jobs batchv1.JobList
+	err = reader.List(
+		ctx,
+		&jobs,
+		client.MatchingLabels(map[string]string{labels.ManagedByKey: labels.ManagedBy}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing the Jobs on storage claim %q: %w", claim, err)
+	}
+	for i := range jobs.Items {
+		job := &jobs.Items[i]
+		if jobStarts(job) && templateStarts(claim, job.Spec.Template.Labels, nil, own) {
+			names = append(names, job.Namespace+"/"+job.Name)
+		}
+	}
 	slices.Sort(names)
 
 	return names, nil
+}
+
+// jobStarts reports whether a Job can start another pod: it is not suspended
+// and has not reached Complete or Failed.
+func jobStarts(job *batchv1.Job) bool {
+	if job.Spec.Suspend != nil && *job.Spec.Suspend {
+		return false
+	}
+	for _, condition := range job.Status.Conditions {
+		finished := condition.Type == batchv1.JobComplete || condition.Type == batchv1.JobFailed
+		if finished && condition.Status == corev1.ConditionTrue {
+			return false
+		}
+	}
+
+	return true
 }
 
 // templateStarts reports whether a workload with the given pod template and

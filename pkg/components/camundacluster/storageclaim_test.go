@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -308,6 +309,28 @@ func TestOtherPodsOnClaim(t *testing.T) {
 		}
 	}
 
+	// A pg_restore Job carries the claim on its template and no cluster UID.
+	restorePod := map[string]string{labels.StorageClaimKey: labels.OwnerName(claim)}
+	job := func(podLabels map[string]string, suspend bool, finished ...batchv1.JobConditionType) *batchv1.Job {
+		j := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "restore-pg-restore",
+				Namespace: "team-a",
+				Labels:    labels.Managed(labels.LogicalRestoreRDBMS("restore"), "pg-restore"),
+			},
+			Spec: batchv1.JobSpec{
+				Suspend:  &suspend,
+				Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: podLabels}},
+			},
+		}
+		for _, condition := range finished {
+			j.Status.Conditions = append(j.Status.Conditions, batchv1.JobCondition{
+				Type: condition, Status: corev1.ConditionTrue,
+			})
+		}
+		return j
+	}
+
 	cases := map[string]struct {
 		objects []client.Object
 		pods    []string
@@ -399,6 +422,26 @@ func TestOtherPodsOnClaim(t *testing.T) {
 			objects: []client.Object{
 				statefulSet("team-a", "holder-zeebe", StoragePodLabels("holder", "uid-1", claim), 1),
 			},
+		},
+		// A Job between two pod retries has no pod, and it starts the next
+		// one with the claim.
+		"a running Job whose template carries the claim": {
+			objects: []client.Object{job(restorePod, false)},
+			pods:    []string{"team-a/restore-pg-restore"},
+		},
+		"a Job that completed": {
+			objects: []client.Object{job(restorePod, false, batchv1.JobComplete)},
+		},
+		"a Job that failed": {
+			objects: []client.Object{job(restorePod, false, batchv1.JobFailed)},
+		},
+		"a suspended Job": {
+			objects: []client.Object{job(restorePod, true)},
+		},
+		"a running Job on another claim": {
+			objects: []client.Object{job(
+				map[string]string{labels.StorageClaimKey: "camunda-storage-other"}, false,
+			)},
 		},
 	}
 

@@ -198,6 +198,10 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 	podManaged := labels.Merge(in.Bucket.WorkloadIdentityPodLabels(), managed)
 	podManaged[labels.StorageClaimKey] = labels.OwnerName(in.StorageClaim)
 	podLabels := labels.Merge(pod.PodLabels, podManaged)
+	// The pod carries no cluster UID. With the UID of the target, the handover
+	// gate of the target counts the pod as its own and starts beside it, so a
+	// user label cannot set one.
+	delete(podLabels, labels.ClusterUIDKey)
 
 	template := corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
