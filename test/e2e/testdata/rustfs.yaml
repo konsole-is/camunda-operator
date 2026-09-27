@@ -1,0 +1,112 @@
+# A single RustFS server for the backup flows. It is the S3-compatible object
+# store that the ObjectStorageConfig of the suite points at. The credentials
+# Secret is both the root account of the server and the access-key pair that
+# the contract references. The data lives in an emptyDir: the server exists
+# for one suite run.
+#
+# The names here are mirrored by the constants of test/utils/rustfs.go. Keep
+# the two in step.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rustfs-credentials
+type: Opaque
+stringData:
+  accessKeyId: camundabackup
+  secretAccessKey: camunda-backup-secret
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rustfs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rustfs
+  template:
+    metadata:
+      labels:
+        app: rustfs
+    spec:
+      containers:
+        - name: rustfs
+          # renovate: datasource=docker depName=rustfs/rustfs
+          image: rustfs/rustfs:1.0.0
+          ports:
+            - containerPort: 9000
+              name: api
+          env:
+            - name: RUSTFS_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rustfs-credentials
+                  key: accessKeyId
+            - name: RUSTFS_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rustfs-credentials
+                  key: secretAccessKey
+            - name: RUSTFS_CONSOLE_ENABLE
+              value: "false"
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: api
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rustfs
+spec:
+  selector:
+    app: rustfs
+  ports:
+    - port: 9000
+      targetPort: api
+---
+# The bucket that every backup of the suite writes to. create-bucket succeeds
+# on a bucket that already exists, so the Job can run against a server that
+# kept its data.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rustfs-bucket
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: aws
+          # renovate: datasource=docker depName=amazon/aws-cli
+          image: amazon/aws-cli:2.37.4
+          args: ["s3api", "create-bucket", "--bucket", "camunda-backup"]
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: rustfs-credentials
+                  key: accessKeyId
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rustfs-credentials
+                  key: secretAccessKey
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_ENDPOINT_URL
+              value: http://rustfs:9000

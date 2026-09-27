@@ -40,13 +40,13 @@ import (
 )
 
 const (
-	// minioNamespace holds the object store of the backup flows. It is a
+	// rustfsNamespace holds the object store of the backup flows. It is a
 	// namespace of its own, so every flow reaches one store from a namespace
 	// of its own, which is how an installation places a store next to several
 	// clusters.
-	minioNamespace = "minio-e2e"
+	rustfsNamespace = "rustfs-e2e"
 	// backupStorage is the ObjectStorageConfig that every flow writes
-	// through: a MinIO bucket addressed with an endpoint, path-style
+	// through: a RustFS bucket addressed with an endpoint, path-style
 	// addressing, and static credentials. The kind is namespaced, so each
 	// flow gets a contract of this name in its own namespace.
 	backupStorage = "camunda-backup-e2e"
@@ -82,23 +82,23 @@ const exporterPhaseRunning = "EXPORTING"
 // names its Secret in its own namespace.
 func createBackupStorage(namespace string) {
 	By("creating the bucket credentials and the ObjectStorageConfig of " + namespace)
-	Expect(apply(minioCredentials(namespace))).To(Succeed(), "Failed to create the bucket credentials")
+	Expect(apply(rustfsCredentials(namespace))).To(Succeed(), "Failed to create the bucket credentials")
 	Expect(apply(backupObjectStorage(namespace))).To(Succeed(), "Failed to create the ObjectStorageConfig")
 	Eventually(func(g Gomega) {
 		expectReady(g, oscResource, backupStorage, namespace, v1.ReasonHealthy)
 	}, 2*time.Minute).Should(Succeed())
 }
 
-// minioCredentials returns the access-key pair of the store, in namespace. It
-// holds the same values as the pair that testdata/minio.yaml creates for the
+// rustfsCredentials returns the access-key pair of the store, in namespace. It
+// holds the same values as the pair that testdata/rustfs.yaml creates for the
 // server itself.
-func minioCredentials(namespace string) *corev1.Secret {
+func rustfsCredentials(namespace string) *corev1.Secret {
 	return &corev1.Secret{
 		TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
-		ObjectMeta: metav1.ObjectMeta{Name: utils.MinIOCredentialsSecret, Namespace: namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: utils.RustFSCredentialsSecret, Namespace: namespace},
 		StringData: map[string]string{
-			utils.MinIOAccessKeyIDKey:     utils.MinIOAccessKeyID,
-			utils.MinIOSecretAccessKeyKey: utils.MinIOSecretAccessKey,
+			utils.RustFSAccessKeyIDKey:     utils.RustFSAccessKeyID,
+			utils.RustFSSecretAccessKeyKey: utils.RustFSSecretAccessKey,
 		},
 	}
 }
@@ -113,17 +113,17 @@ func backupObjectStorage(namespace string) *v1.ObjectStorageConfig {
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{
-				BucketName:     utils.MinIOBucket,
+				BucketName:     utils.RustFSBucket,
 				BasePath:       backupBasePath,
-				Endpoint:       utils.MinIOEndpoint(minioNamespace),
+				Endpoint:       utils.RustFSEndpoint(rustfsNamespace),
 				ForcePathStyle: true,
 				Auth: v1.S3StorageAuth{
 					Type: v1.ObjectStorageAuthTypeCredentials,
 					Credentials: &v1.S3Credentials{
 						SecretRef: v1.S3CredentialsSecretRef{
-							Name:               utils.MinIOCredentialsSecret,
-							AccessKeyIDKey:     utils.MinIOAccessKeyIDKey,
-							SecretAccessKeyKey: utils.MinIOSecretAccessKeyKey,
+							Name:               utils.RustFSCredentialsSecret,
+							AccessKeyIDKey:     utils.RustFSAccessKeyIDKey,
+							SecretAccessKeyKey: utils.RustFSSecretAccessKeyKey,
 						},
 					},
 				},
@@ -203,7 +203,7 @@ func itBacksUpTheElasticsearchCluster(cluster *v1.CamundaCluster, elasticsearch,
 			g.Expect(names).To(ContainElement(logicalbackup.RecordsSnapshotName(backup.Status.BackupID)))
 		}, 3*time.Minute, 5*time.Second).Should(Succeed())
 
-		By("finding the partition backup objects in MinIO")
+		By("finding the partition backup objects in RustFS")
 		objects, err := runtimeBackupObjects(cluster, backup.Status.BackupID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(objects).NotTo(BeEmpty(), "the Zeebe backup wrote no object under the prefix of the cluster")
@@ -238,7 +238,7 @@ func itBacksUpTheElasticsearchCluster(cluster *v1.CamundaCluster, elasticsearch,
 		}
 		Expect(names).NotTo(ContainElement(logicalbackup.RecordsSnapshotName(backup.Status.BackupID)))
 
-		By("checking that the partition backup objects are gone from MinIO")
+		By("checking that the partition backup objects are gone from RustFS")
 		objects, err := runtimeBackupObjects(cluster, backup.Status.BackupID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(objects).To(BeEmpty())
@@ -297,8 +297,8 @@ func itBacksUpTheRelationalCluster(cluster *v1.CamundaCluster) {
 		Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
 		Expect(*backup.Status.ZeebeBackupID).NotTo(BeZero())
 
-		By("finding a non-empty dump in MinIO")
-		objects, err := utils.MinIOObjectsWithPrefix(minioNamespace, backup.Status.ObjectKey, storeTimeout)
+		By("finding a non-empty dump in RustFS")
+		objects, err := utils.RustFSObjectsWithPrefix(rustfsNamespace, backup.Status.ObjectKey, storeTimeout)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(objects).To(HaveLen(1), "expected exactly the dump at %q", backup.Status.ObjectKey)
 		Expect(objects[0].Key).To(Equal(backup.Status.ObjectKey))
@@ -317,8 +317,8 @@ func itBacksUpTheRelationalCluster(cluster *v1.CamundaCluster) {
 			expectGone(g, lbrdbmsResource, rdbmsBackupName, cluster.Namespace)
 		}, 5*time.Minute, 5*time.Second).Should(Succeed())
 
-		By("checking that the dump is gone from MinIO")
-		objects, err := utils.MinIOObjectsWithPrefix(minioNamespace, backup.Status.ObjectKey, storeTimeout)
+		By("checking that the dump is gone from RustFS")
+		objects, err := utils.RustFSObjectsWithPrefix(rustfsNamespace, backup.Status.ObjectKey, storeTimeout)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(objects).To(BeEmpty())
 	})
@@ -328,15 +328,15 @@ func itBacksUpTheRelationalCluster(cluster *v1.CamundaCluster) {
 // into the bucket. The backup store of Zeebe owns the layout under the prefix
 // of the cluster and carries the backup id as one path segment of every key,
 // so the id selects the set without this suite restating that layout.
-func runtimeBackupObjects(cluster *v1.CamundaCluster, id int64) ([]utils.MinIOObject, error) {
+func runtimeBackupObjects(cluster *v1.CamundaCluster, id int64) ([]utils.RustFSObject, error) {
 	prefix := logicalbackup.ClusterPrefix(backupBasePath, cluster.Namespace, cluster.Name)
-	objects, err := utils.MinIOObjectsWithPrefix(minioNamespace, prefix+"/", storeTimeout)
+	objects, err := utils.RustFSObjectsWithPrefix(rustfsNamespace, prefix+"/", storeTimeout)
 	if err != nil {
 		return nil, err
 	}
 
 	segment := "/" + strconv.FormatInt(id, 10) + "/"
-	var matched []utils.MinIOObject
+	var matched []utils.RustFSObject
 	for _, object := range objects {
 		if strings.Contains(object.Key, segment) {
 			matched = append(matched, object)
