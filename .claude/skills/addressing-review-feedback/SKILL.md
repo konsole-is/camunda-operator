@@ -19,7 +19,7 @@ Run it for each round, even when the previous round passed it.
 
 1. **Record the round base.** Before you edit, write down the current head: `BASE=$(git rev-parse HEAD)`.
 2. **Re-read the comment rules.** Open `.claude/skills/how-we-write-go/SKILL.md` and read the four sections named above again. What you read at the start of the session has faded by now. That is how the rules get lost.
-3. **Classify each finding** by what it says is wrong:
+3. **Classify each finding** by what it says is wrong. The table is for Go code comments: godocs, inline comments, and test comments. A user-facing text is different: an `api/v1` field or type description (it becomes the CRD description), a page under `docs/`, or an error or condition message. For those, accuracy comes first. When a finding shows that one of them is wrong, correct it under `writing-operator-docs`, even when the correct version is longer.
 
     | The finding says | The fix | What happens to the comments |
     | --- | --- | --- |
@@ -87,6 +87,7 @@ What the procedure produces. The thread reply rejects the finding, because the s
 | "Dispatching an evaluator for one line is overkill." | One flag is one short call. The grown comment on #391 grew one line at a time. |
 | "I read how-we-write-go at the start." | Hours and rounds ago. Step 2 exists because of that. |
 | "It is a test helper, the rules are looser." | Test comments follow the same rules. |
+| "The CRD description is wrong, but the fix would make it longer." | A user-facing text that is false gets corrected. The cut rule is for code comments that restate code. |
 
 ## Red flags
 
