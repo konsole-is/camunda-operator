@@ -38,8 +38,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
-	"github.com/konsole-is/camunda-operator/internal/testenv"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
@@ -47,6 +45,7 @@ import (
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalbackuprdbms"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
 // world is the resolved fixture set of one spec. It holds a relational cluster
@@ -152,7 +151,7 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	Expect(k8sClient.Create(ctx, bucket)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, bucket) })
 
-	platform := fixtures.CamundaPlatformConfigBasic()
+	platform := newCamundaPlatformConfigBasic()
 	Expect(k8sClient.Create(ctx, platform)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, platform) })
 
@@ -518,7 +517,7 @@ func gateState(w *world, sibling, waiting *v1.LogicalBackupRDBMS) string {
 // template of the dump Job: the labels of that template, the job-name label,
 // and a controller reference to the Job.
 func podOfBackup(job *batchv1.Job, suffix string) *corev1.Pod {
-	return testenv.PodOfJob(
+	return envtest.PodOfJob(
 		job, job.Name+"-"+suffix, corev1.Container{Name: "upload", Image: "cli"},
 	)
 }

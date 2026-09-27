@@ -28,14 +28,14 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/konsole-is/camunda-operator/internal/testenv"
+	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
 // timeout and interval bound the Eventually polling of every envtest
 // assertion.
 const (
-	timeout  = testenv.Timeout
-	interval = testenv.Interval
+	timeout  = envtest.Timeout
+	interval = envtest.Interval
 )
 
 // cliImage is the camunda-operator-cli image that the suite hands the
@@ -59,7 +59,7 @@ const retryInterval = 5 * time.Second
 const watchWindow = 2 * time.Second
 
 var (
-	env       *testenv.Env
+	env       *envtest.Env
 	ctx       context.Context
 	k8sClient client.Client
 )
@@ -73,7 +73,7 @@ func TestLogicalRestoreRDBMSController(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	env = testenv.Start(func(mgr ctrl.Manager) error {
+	env = envtest.Start(func(mgr ctrl.Manager) error {
 		return New(mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), Options{
 			CLIImage:      cliImage,
 			PollInterval:  100 * time.Millisecond,

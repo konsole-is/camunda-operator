@@ -44,7 +44,7 @@ func startAPIServer(t *testing.T) client.Client {
 		BinaryAssetsDirectory: utils.EnvtestBinaryDir(),
 		// A full run starts one control plane per suite, and several of them
 		// boot at once on one machine. Twenty seconds, the envtest default, is
-		// not enough under that load. internal/testenv gives the suites it
+		// not enough under that load. test/envtest gives the suites it
 		// starts the same budget.
 		ControlPlaneStartTimeout: 2 * time.Minute,
 	}

@@ -179,7 +179,7 @@
       enabled: true,
     },
     {
-      // CloudNativePG stays on the minor that internal/testenv/crds/cnpg
+      // CloudNativePG stays on the minor that test/envtest/crds/cnpg
       // vendors the CRDs from: a new minor changes the schema the envtest
       // suites check against, and 1.31 removes the in-tree Barman Cloud
       // support that the plugin replaces. Adopting one re-vendors the CRDs.
@@ -190,7 +190,7 @@
     },
     {
       // The Barman Cloud plugin stays on the minor that
-      // internal/testenv/crds/barmancloud vendors the ObjectStore CRD from,
+      // test/envtest/crds/barmancloud vendors the ObjectStore CRD from,
       // for the same reason. It is below 1.0, so a minor of it can change
       // the schema.
       matchFileNames: ["test/e2e/matrix/8.9.env"],

@@ -23,7 +23,6 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
 // validManagementAuthConfig returns the minimal example of the CRD doc with a
@@ -68,17 +67,17 @@ var _ = Describe("ManagementAuthConfig schema", func() {
 		),
 		Entry(
 			"rejects non-URL baseUrl", func(o *v1.ManagementAuthConfig) {
-				o.Spec.BaseURL = fixtures.NotAURL
+				o.Spec.BaseURL = notAURL
 			}, "baseUrl",
 		),
 		Entry(
 			"rejects non-URL issuerUrl", func(o *v1.ManagementAuthConfig) {
-				o.Spec.IssuerURL = fixtures.NotAURL
+				o.Spec.IssuerURL = notAURL
 			}, "issuerUrl",
 		),
 		Entry(
 			"rejects non-URL issuerBackendUrl", func(o *v1.ManagementAuthConfig) {
-				o.Spec.IssuerBackendURL = fixtures.NotAURL
+				o.Spec.IssuerBackendURL = notAURL
 			}, "issuerBackendUrl",
 		),
 		Entry(
@@ -93,7 +92,7 @@ var _ = Describe("ManagementAuthConfig schema", func() {
 		),
 		Entry(
 			"rejects non-URL jwksUrl", func(o *v1.ManagementAuthConfig) {
-				o.Spec.JwksURL = fixtures.NotAURL
+				o.Spec.JwksURL = notAURL
 			}, "jwksUrl",
 		),
 		Entry(

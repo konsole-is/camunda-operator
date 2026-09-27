@@ -24,7 +24,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
 // validSecondaryStorageConfigES returns the minimal Elasticsearch example of
@@ -62,7 +61,7 @@ var _ = Describe("SecondaryStorageConfig schema", func() {
 		"admission",
 		func(build func() *v1.SecondaryStorageConfig, mutate func(*v1.SecondaryStorageConfig), wantErr string) {
 			obj := build()
-			obj.Namespace = fixtures.SchemaTestNamespace
+			obj.Namespace = schemaTestNamespace
 			mutate(obj)
 			err := k8sClient.Create(ctx, obj)
 			if wantErr == "" {
@@ -121,7 +120,7 @@ var _ = Describe("SecondaryStorageConfig schema", func() {
 		Entry(
 			"rejects non-URL endpoint",
 			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
-				o.Spec.Elasticsearch.Endpoint = fixtures.NotAURL
+				o.Spec.Elasticsearch.Endpoint = notAURL
 			}, "endpoint",
 		),
 		Entry(
@@ -157,7 +156,7 @@ var _ = Describe("SecondaryStorageConfig schema", func() {
 
 	It("round-trips caSecretRef", func() {
 		obj := validSecondaryStorageConfigES()
-		obj.Namespace = fixtures.SchemaTestNamespace
+		obj.Namespace = schemaTestNamespace
 		obj.Spec.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{
 			Name: "my-cluster-es-http-certs-public", Key: "ca.crt",
 		}

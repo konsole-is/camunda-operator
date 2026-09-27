@@ -28,7 +28,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
 // createPlatformConfig creates cfg and registers its deletion.
@@ -43,7 +42,7 @@ func createPlatformConfig(cfg *v1.CamundaPlatformConfig) {
 func createSecret(name string, data map[string]string) *corev1.Secret {
 	GinkgoHelper()
 	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: fixtures.SchemaTestNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: schemaTestNamespace},
 		StringData: data,
 	}
 	Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -55,7 +54,7 @@ func createSecret(name string, data map[string]string) *corev1.Secret {
 // test namespace.
 func secretRef(prefix, key string) v1.SecretKeyRef {
 	return v1.SecretKeyRef{
-		Name: prefix + "-" + utilrand.String(8), Namespace: fixtures.SchemaTestNamespace, Key: key,
+		Name: prefix + "-" + utilrand.String(8), Namespace: schemaTestNamespace, Key: key,
 	}
 }
 

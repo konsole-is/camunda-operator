@@ -36,15 +36,15 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
-	"github.com/konsole-is/camunda-operator/internal/testenv"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
 // timeout and interval bound the Eventually polling of every envtest assertion.
 const (
-	timeout  = testenv.Timeout
-	interval = testenv.Interval
+	timeout  = envtest.Timeout
+	interval = envtest.Interval
 )
 
 // testClaimNamespace holds the storage claim Leases of this suite. In a
@@ -53,7 +53,7 @@ const (
 const testClaimNamespace = "default"
 
 var (
-	env       *testenv.Env
+	env       *envtest.Env
 	ctx       context.Context
 	k8sClient client.Client
 )
@@ -88,7 +88,7 @@ var _ = BeforeSuite(func() {
 	// The contract controllers are registered too: the Secret watch of the
 	// cluster controller lists platform configs, bindings, and DatabaseConfigs
 	// through their indexes.
-	env = testenv.Start(func(mgr ctrl.Manager) error {
+	env = envtest.Start(func(mgr ctrl.Manager) error {
 		if err := (&camundaplatformconfig.CamundaPlatformConfigReconciler{
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),

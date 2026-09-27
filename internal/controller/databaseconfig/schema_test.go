@@ -23,15 +23,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
 var _ = Describe("DatabaseConfig schema", func() {
 	DescribeTable(
 		"admission",
 		func(mutate func(*v1.DatabaseConfig), wantErr string) {
-			obj := fixtures.DatabaseConfig()
-			obj.Namespace = fixtures.SchemaTestNamespace
+			obj := newDatabaseConfig()
+			obj.Namespace = schemaTestNamespace
 			mutate(obj)
 			err := k8sClient.Create(ctx, obj)
 			if wantErr == "" {
@@ -76,8 +75,8 @@ var _ = Describe("DatabaseConfig schema", func() {
 	// applies the usernameKey default only when the field is absent, so an
 	// explicit empty string still breaks the minimum-length rule.
 	It("rejects a backup ref with an explicitly empty usernameKey", func() {
-		obj := fixtures.DatabaseConfig()
-		obj.Namespace = fixtures.SchemaTestNamespace
+		obj := newDatabaseConfig()
+		obj.Namespace = schemaTestNamespace
 		obj.Spec.BackupCredentialsSecretRef = &v1.LocalCredentialsSecretRef{
 			Name: "my-camunda-db-backup-credentials", PasswordKey: "password",
 		}

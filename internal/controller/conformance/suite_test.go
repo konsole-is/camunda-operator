@@ -14,7 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+// Package conformance holds the checks that span every kind: the schema of
+// each sample and example manifest, the print columns of each CRD, and the
+// metrics wiring of each controller package. Each controller package tests
+// its own kind. This package has only tests.
+package conformance
 
 import (
 	"context"
@@ -29,7 +33,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/konsole-is/camunda-operator/internal/testenv"
+	"github.com/konsole-is/camunda-operator/test/envtest"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -37,15 +41,15 @@ import (
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 var (
-	env       *testenv.Env
+	env       *envtest.Env
 	ctx       context.Context
 	k8sClient client.Client
 )
 
-func TestControllers(t *testing.T) {
+func TestConformance(t *testing.T) {
 	RegisterFailHandler(Fail)
 
-	RunSpecs(t, "Controller Suite")
+	RunSpecs(t, "Conformance Suite")
 }
 
 var _ = BeforeSuite(func() {
@@ -54,7 +58,7 @@ var _ = BeforeSuite(func() {
 	// Every implemented controller has its own package and suite. This suite
 	// only serves the schema specs that span kinds, so it registers no
 	// reconciler.
-	env = testenv.Start(func(ctrl.Manager) error { return nil })
+	env = envtest.Start(func(ctrl.Manager) error { return nil })
 
 	ctx, k8sClient = env.Ctx, env.Client
 })
