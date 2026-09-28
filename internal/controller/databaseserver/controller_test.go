@@ -1229,13 +1229,26 @@ var _ = Describe("DatabaseServer controller", func() {
 		expectCondition(second, v1.ConditionContractReady, metav1.ConditionFalse)
 
 		By("deleting the server that holds the contract")
-		published := publishedContract(owner)
+		ownerRef := metav1.GetControllerOf(publishedContract(owner))
+		Expect(ownerRef).NotTo(BeNil())
 		Expect(k8sClient.Delete(ctx, owner)).To(Succeed())
-		// envtest runs no garbage collector, so the contract the owner
-		// reference points at goes here instead.
-		Expect(k8sClient.Delete(ctx, published)).To(Succeed())
+		// envtest runs no garbage collector, so the spec deletes the contract
+		// that the owner reference points at. A reconcile of the owner that
+		// was in flight can write it once more, and the collector deletes
+		// that one too.
+		Eventually(func(g Gomega) {
+			var stale v1.DatabaseServerConfig
+			err := k8sClient.Get(ctx, contractKey(owner), &stale)
+			if err == nil && metav1.IsControlledBy(&stale, &v1.DatabaseServer{
+				ObjectMeta: metav1.ObjectMeta{UID: ownerRef.UID},
+			}) {
+				g.Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &stale))).To(Succeed())
+			}
 
-		expectCondition(second, v1.ConditionContractReady, metav1.ConditionTrue)
+			condition := conditionOf(second, v1.ConditionContractReady)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue), condition.Message)
+		}, timeout, interval).Should(Succeed())
 		contract := publishedContract(second)
 		Expect(metav1.IsControlledBy(contract, reconciledServer(second))).To(BeTrue())
 		Expect(contract.Spec.Host).To(Equal("second-rw." + second.Namespace + ".svc"))
