@@ -371,6 +371,9 @@ func Resume(
 
 		return fmt.Errorf("reading CamundaCluster %s: %w", cluster, err)
 	}
+	if existing.UID != p.TargetClusterUID {
+		return nil
+	}
 	// A cluster that already runs has nothing to withdraw. The terminal branch
 	// of a controller looks on every event of the restore and of its cluster,
 	// and a cluster that starts again produces many of those, so an apply that
