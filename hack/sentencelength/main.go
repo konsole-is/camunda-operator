@@ -109,7 +109,7 @@ var (
 	bareURL       = regexp.MustCompile(`https?://[^\s<>]*[^\s<>.,:;!?)]`)
 	quoted        = regexp.MustCompile(`"[^"]*"|“[^”]*”`)
 	parens        = regexp.MustCompile(`\([^()]*\)`)
-	banned        = regexp.MustCompile(`;|(?i:\b(?:would|could|may)\b)`)
+	banned        = regexp.MustCompile(`;|(?i:\b(?:would|could|may)(?:n['’]t)?\b)`)
 )
 
 var imperatives = map[string]bool{

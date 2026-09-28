@@ -123,6 +123,11 @@ func TestCheckPage(t *testing.T) {
 			want: []finding{{line: 1, banned: "would"}, {line: 2, banned: "could"}, {line: 2, banned: "may"}},
 		},
 		{
+			name: "a contracted modal is reported",
+			page: "The pod couldn't start. The job wouldn’t end.",
+			want: []finding{{line: 1, banned: "couldn't"}, {line: 1, banned: "wouldn’t"}},
+		},
+		{
 			name: "a modal inside a longer word is not reported",
 			page: "The pod shoulder mayhem couldron ends.",
 		},

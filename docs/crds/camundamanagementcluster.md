@@ -508,8 +508,8 @@ status:
 | `NotReady` | The cluster publishes no `status.gateway` yet, or it changed while the operator claimed it. | Wait. The row clears when the cluster settles. |
 | `ClaimedElsewhere` | Another management plane already serves this cluster. The message names it. | One cluster answers to one management plane. Remove the cluster from one of the two selectors. |
 | `InvalidReference` | The `platformConfigRef` of the cluster does not resolve, or the cluster authenticates with `oidc` on another issuer than the management plane. The message says which. | Create the named `CamundaPlatformConfig`, or correct the reference on the cluster. Or point the cluster at the issuer of the management plane. |
-| `WriteFailed` | The operator did not write the Console settings on the cluster. | Read the message. The operator tries again. |
-| `BasicAuthUserFailed` | The operator did not create the Web Modeler user on this basic-auth cluster. `attached` stays true. | Read the message. It usually names a missing administrator Secret or a cluster that does not answer. |
+| `WriteFailed` | The operator failed to write the Console settings on the cluster. | Read the message. The operator tries again. |
+| `BasicAuthUserFailed` | The operator failed to create the Web Modeler user on this basic-auth cluster. `attached` stays true. | Read the message. It usually names a missing administrator Secret or a cluster that does not answer. |
 
 An attached cluster carries the annotation `camunda.io/management-cluster`, whose value is `my-management-ns/my-management`. It is how one management plane tells its clusters from the clusters of another. The operator removes the annotation when the cluster leaves the selector, and when you delete this resource.
 
@@ -747,7 +747,7 @@ The `ManagementAuthConfig` is the one step that reads `WriteFailed` on `Ready` i
 | `KeycloakReady`, `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Suspending` | `spec.suspend` is `true` and the workload still runs pods. | Wait. |
 | `KeycloakReady` | `PendingSuspension` | `spec.suspend` is `true` and the `Keycloak` resource does not ask for zero instances yet. | Wait. |
 | `ManagementAuthReady` | `Healthy` | The `ManagementAuthConfig` is up to date. | Nothing. |
-| `ManagementAuthReady` | `WriteFailed` | The operator did not write the `ManagementAuthConfig`. The message carries the answer of the API server. | Read the message. The operator tries again. |
+| `ManagementAuthReady` | `WriteFailed` | The operator failed to write the `ManagementAuthConfig`. The message carries the answer of the API server. | Read the message. The operator tries again. |
 | `OptimizeCallbacksReady` | `Healthy` | The `optimize` client of the realm carries the login callback of every row of `status.optimize`, and the first administrator holds the `Optimize` role. | Nothing. |
 | `OptimizeCallbacksReady` | `NoCallbacks` | No Optimize behind this management plane names an address, so there is no login callback to register. The management plane stops reading the realm while this holds. | Nothing, until you run an Optimize. Then set `spec.externalUrl` on it. See [Optimize](#optimize). |
 | `OptimizeCallbacksReady` | `OptimizeClientMissing` | The realm holds no `optimize` client and Management Identity has finished starting. Management Identity creates that client while it starts and never after. While it is still starting, this condition reads `PrerequisiteNotMet` instead. | Restart Management Identity. A client that was removed from the realm comes back on the next start. |
@@ -771,7 +771,7 @@ The `ManagementAuthConfig` is the one step that reads `WriteFailed` on `Ready` i
 | `Ready` | `MissingSecret` | A referenced Secret does not exist or lacks a key. The message names both. | Create the Secret with the named key. |
 | `Ready` | `Conflict` | A `ManagementAuthConfig` of that name exists and belongs to another owner. The message names the holder. | Set `spec.managementAuthConfigName` to a free name, or remove the object. |
 | `Ready` | `RealmClaimedElsewhere` | Another management plane holds the Keycloak realm of this plane, or a Lease that this operator did not write blocks it. The operator starts nothing new for this plane and writes nothing in that realm. Workloads it already ran keep running, except that a plane retargeted into the wait leaves its old realm and loses the Management Identity of it. The message names the holder, or the Lease to remove. | Give this plane a realm of its own, or delete the holder or the named Lease. See [One realm answers to one management plane](#one-realm-answers-to-one-management-plane). |
-| `Ready` | `WriteFailed` | The operator did not write the `ManagementAuthConfig`, or Keycloak refused the change to the `optimize` client. | Read the `ManagementAuthReady` and `OptimizeCallbacksReady` rows. |
+| `Ready` | `WriteFailed` | The operator failed to write the `ManagementAuthConfig`, or Keycloak refused the change to the `optimize` client. | Read the `ManagementAuthReady` and `OptimizeCallbacksReady` rows. |
 | `Ready` | `StepFailed` | A step did not finish, usually because the Kubernetes API refused a call. The message names the action that failed. | Read the message. The operator tries again. If the reason stays, correct what the message names. |
 | `Ready` | `OptimizeClientMissing` / `ConnectionFailed` / `AdminRoleGrantFailed` | The realm is not in the state the management plane wants: the login callbacks are missing, or the first administrator holds no `Optimize` role. | Read the `OptimizeCallbacksReady` row. |
 
