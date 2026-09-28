@@ -54,6 +54,17 @@ type LogicalRestoreElasticsearchStatus struct {
 	// restore holds while its target does not hold the backend.
 	// +optional
 	Backend string `json:"backend,omitempty"`
+	// recoveryHeld is true while a restore that failed, or that is being
+	// deleted, keeps the backend because Elasticsearch can still recover
+	// snapshots that the restore asked for. No other CamundaCluster starts on
+	// the backend until the recovery ends. A deleted restore stays until then.
+	// +optional
+	RecoveryHeld bool `json:"recoveryHeld,omitempty"`
+	// recoveryUnknownSince is when a held restore first could not read the
+	// recovery from Elasticsearch. When the recovery stays unknown for ten
+	// minutes, the restore gives the backend back.
+	// +optional
+	RecoveryUnknownSince *metav1.Time `json:"recoveryUnknownSince,omitempty"`
 	// repository is the Elasticsearch snapshot repository that the restore
 	// reads from, on the Elasticsearch of the target.
 	// +optional

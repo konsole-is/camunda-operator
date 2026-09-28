@@ -191,16 +191,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	// The Jobs of a restore carry a controller reference to it, so the garbage
-	// collector removes them with the restore. The finalizer is for the
-	// suspension hold on the cluster.
-	if !lres.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, restore.FinalizeHold(ctx, r.Client, r.APIReader, &lres, lres.Spec.TargetClusterRef.Name)
-	}
-	if err := restore.AddHoldFinalizer(ctx, r.Client, &lres); err != nil {
-		return ctrl.Result{}, err
-	}
-
 	rec := component.ReconcileContext{
 		Client:        r.Client,
 		Scheme:        r.Scheme,
@@ -209,11 +199,28 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		APIReader:     r.APIReader,
 		Owner:         &lres,
 	}
+	// A restore whose finalizer this look removed is gone, and so is its status.
+	finalized := false
 	defer func() {
+		if finalized {
+			return
+		}
 		if flushErr := component.FlushStatus(ctx, rec, nil); flushErr != nil {
 			err = errors.Join(err, flushErr)
 		}
 	}()
+
+	// The Jobs of a restore carry a controller reference to it, so the garbage
+	// collector removes them with the restore.
+	if !lres.DeletionTimestamp.IsZero() {
+		wait, err := r.finalize(ctx, &lres)
+		finalized = err == nil && wait == 0
+
+		return ctrl.Result{RequeueAfter: wait}, err
+	}
+	if err := restore.AddHoldFinalizer(ctx, r.Client, &lres); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	if lres.Terminal() {
 		// The terminal branch that every restore kind shares. It stages the
@@ -221,7 +228,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// the claim back in the one order that frees the broker volumes. The
 		// Jobs of a completed restore take more than one look to go, so an
 		// answer that is not Done holds the two steps behind them.
-		if lres.Status.Backend != "" {
+		held, err := r.holdRecovery(ctx, &lres)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if held == 0 && lres.Status.Backend != "" {
 			err := restore.ReleaseWriter(
 				ctx, r.Client, r.opts.ClaimNamespace, lres.Status.Backend, &lres, lres.Status.TargetClusterUID,
 			)
@@ -232,6 +243,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		finished, err := restore.Finish(
 			ctx, r.Client, r.APIReader, &lres, &lres.Status.RestoreProgress, lres.Spec.TargetClusterRef.Name,
 		)
+		if held > 0 && (finished.Wait == 0 || held < finished.Wait) {
+			finished.Wait = held
+		}
 
 		return ctrl.Result{RequeueAfter: finished.Wait}, err
 	}
@@ -352,6 +366,7 @@ func (r *Reconciler) fail(lres *v1.LogicalRestoreElasticsearch, reason, message 
 		"The restore failed: %s",
 		lres.Status.FailureMessage,
 	)
+	r.holdForRecovery(lres)
 }
 
 // SetupWithManager registers the controller, the two field indexes, and the
@@ -407,7 +422,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 			var registrations []restore.Registration
 			for i := range list.Items {
 				item := &list.Items[i]
-				if restore.Renewable(item.Status.Backend, item.Terminal(), item.DeletionTimestamp) {
+				held := item.Status.RecoveryHeld && item.Status.Backend != ""
+				if held || restore.Renewable(item.Status.Backend, item.Terminal(), item.DeletionTimestamp) {
 					registrations = append(registrations, restore.Registration{
 						Owner: item, Backend: item.Status.Backend, Target: item.Status.TargetClusterUID,
 					})

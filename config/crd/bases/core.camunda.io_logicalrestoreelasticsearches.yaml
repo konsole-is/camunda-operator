@@ -249,6 +249,20 @@ spec:
                 items:
                   type: string
                 type: array
+              recoveryHeld:
+                description: |-
+                  recoveryHeld is true while a restore that failed, or that is being
+                  deleted, keeps the backend because Elasticsearch can still recover
+                  snapshots that the restore asked for. No other CamundaCluster starts on
+                  the backend until the recovery ends. A deleted restore stays until then.
+                type: boolean
+              recoveryUnknownSince:
+                description: |-
+                  recoveryUnknownSince is when a held restore first could not read the
+                  recovery from Elasticsearch. When the recovery stays unknown for ten
+                  minutes, the restore gives the backend back.
+                format: date-time
+                type: string
               recreatedClaims:
                 description: |-
                   RecreatedClaims names the broker data claims that the restore deleted
