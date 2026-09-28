@@ -348,51 +348,6 @@ func TestKeepAtZeroReadsNoWorkloadWithoutASuspension(t *testing.T) {
 	assert.Zero(t, read, "the conditions answered it, so no Deployment was read")
 }
 
-// TestFollowsSuspendedCluster pins what counts as a suspension that the
-// conditions already carry. Every ocf status on the way to suspended counts: a
-// reconcile that catches the drain must not record the transition a second
-// time.
-func TestFollowsSuspendedCluster(t *testing.T) {
-	t.Parallel()
-
-	withCondition := func(conditionType, reason string) *v1.CamundaOptimize {
-		optimize := &v1.CamundaOptimize{}
-		meta.SetStatusCondition(&optimize.Status.Conditions, metav1.Condition{
-			Type:   conditionType,
-			Status: metav1.ConditionTrue,
-			Reason: reason,
-		})
-
-		return optimize
-	}
-
-	following := []string{
-		string(component.PendingSuspension),
-		string(component.Suspending),
-		string(component.Suspended),
-	}
-	for _, reason := range following {
-		assert.True(t, followsSuspendedCluster(withCondition(v1.ConditionImporterReady, reason)), reason)
-		assert.True(t, followsSuspendedCluster(withCondition(v1.ConditionWebappReady, reason)), reason)
-	}
-
-	running := []string{v1.ReasonHealthy, string(component.AliveUpdating), string(component.Down)}
-	for _, reason := range running {
-		assert.False(t, followsSuspendedCluster(withCondition(v1.ConditionImporterReady, reason)), reason)
-	}
-
-	assert.False(
-		t,
-		followsSuspendedCluster(&v1.CamundaOptimize{}),
-		"a resource with no workload condition follows no suspension",
-	)
-	assert.False(
-		t,
-		followsSuspendedCluster(withCondition(v1.ConditionReady, string(component.Suspended))),
-		"Ready is the business of wasSuspending",
-	)
-}
-
 // TestReconcileRecordsTheSuspensionWhenAPatchFails covers the event bookkeeping
 // of a failed patch. A pass that stopped one Deployment started the transition,
 // so it is recorded even though the other stayed up: the next retry reads the

@@ -104,11 +104,40 @@ var (
 	}
 )
 
-// waitFor returns the wait that holds the workloads at zero on this pass. Only
-// the storage claim reaches AwaitsBackendClaim, so every other wait is the
-// cluster reporting a suspension of its own.
-func waitFor(res resolved) wait {
-	if res.AwaitsBackendClaim {
+// suspension is the suspension of the referenced cluster that a
+// CamundaOptimize followed when the last pass ended.
+type suspension struct {
+	// by is status.suspendedBy.
+	by v1.OptimizeSuspension
+	// rendered reports whether the instance rendered a workload before this
+	// pass.
+	rendered bool
+}
+
+// readSuspension returns the suspension that optimize carries into this pass.
+// Call it before anything stages a condition of this pass.
+func readSuspension(optimize *v1.CamundaOptimize) suspension {
+	// Not the conditions: a failed apply or a conflicting flush rewrites them.
+	return suspension{by: optimize.Status.SuspendedBy, rendered: hasWorkloads(optimize)}
+}
+
+// suspendedBy returns why res holds the workloads at zero on this pass, or
+// empty when they follow their spec.
+func suspendedBy(res resolved) v1.OptimizeSuspension {
+	switch {
+	case !res.Input.Suspended:
+		return ""
+	case res.AwaitsBackendClaim:
+		return v1.OptimizeSuspensionStorageClaim
+	default:
+		return v1.OptimizeSuspensionCluster
+	}
+}
+
+// waitFor returns everything this controller says about the wait by. by is not
+// empty.
+func waitFor(by v1.OptimizeSuspension) wait {
+	if by == v1.OptimizeSuspensionStorageClaim {
 		return backendClaimAwaited
 	}
 
@@ -134,73 +163,28 @@ func hasWorkloads(optimize *v1.CamundaOptimize) bool {
 	return false
 }
 
-// wasSuspending reports whether the last reconcile left the CamundaOptimize
-// on its way to suspended or already there.
-//
-// It reads Ready rather than a stored copy of the cluster field, because the
-// controller persists no view of the cluster. Suspending counts: a reconcile
-// that catches the workloads mid-drain must not record the transition a
-// second time.
-func wasSuspending(optimize *v1.CamundaOptimize) bool {
-	ready := meta.FindStatusCondition(optimize.Status.Conditions, v1.ConditionReady)
-	if ready == nil {
-		return false
-	}
-
-	return workloadsuspend.IsSuspensionReason(ready.Reason)
-}
-
-// recordClusterSuspended records that the workloads of this CamundaOptimize
-// followed the referenced cluster to zero. The pre-check failure path records
-// this transition and no other, so it names the event rather than deriving it
-// from a before and an after that are always false and true there.
-func (r *Reconciler) recordClusterSuspended(optimize *v1.CamundaOptimize, res resolved) {
-	held := waitFor(res)
-	r.EventRecorder.Eventf(
-		optimize,
-		nil,
-		corev1.EventTypeNormal,
-		held.eventReason,
-		workloadsuspend.EventActionSuspend,
-		held.eventNote,
-		optimize.Spec.ClusterRef.Name,
-	)
-}
-
-// recordSuspensionChange records an event when the suspension of the
-// referenced cluster changes, and nothing while it holds.
-//
-// The condition carries the state and the event carries the transition, so a
-// user reading `kubectl describe` learns why the workloads went to zero. The
-// Ready condition cannot say it: ocf builds the message of a suspended
-// component from its own suspension state, and the reason is Suspended, the
-// same reason that a suspended CamundaCluster reports.
-//
-// before is the prior suspension state that the caller read at the top of the
-// reconcile, from the Ready reason through wasSuspending or from the workload
-// conditions through followsSuspendedCluster. res carries why the workloads are
-// at zero now: Suspended covers spec.suspend and the states in which the
-// operator holds the cluster at zero, and AwaitsBackendClaim the claim of the
-// backend, which lowers them while the cluster reports itself healthy.
-//
-// The caller runs this after it stages the new conditions. A reconcile that
-// returns early on an error records nothing, and the next one still sees the
-// same transition to record.
+// recordSuspensionChange stages now as status.suspendedBy, and records an event
+// when the workloads start to follow a suspension or stop following one. It
+// records nothing when prior rendered no workload. The event marks the decision
+// of this pass, not its outcome.
 func (r *Reconciler) recordSuspensionChange(
 	optimize *v1.CamundaOptimize,
-	before bool,
-	res resolved,
+	prior suspension,
+	now v1.OptimizeSuspension,
 ) {
-	if res.Input.Suspended == before {
+	optimize.Status.SuspendedBy = now
+	if !prior.rendered || (prior.by != "") == (now != "") {
 		return
 	}
 
 	reason, note := eventReasonClusterResumed, noteResumed
-	if res.Input.Suspended {
-		held := waitFor(res)
+	if now != "" {
+		held := waitFor(now)
 		reason, note = held.eventReason, held.eventNote
 	}
 
+	// Ready cannot name the wait: its reason is Suspended, as for a suspended
+	// CamundaCluster.
 	r.EventRecorder.Eventf(
 		optimize,
 		nil,

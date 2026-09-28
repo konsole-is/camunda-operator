@@ -190,13 +190,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		}
 	}()
 
+	prior := readSuspension(&optimize)
+
 	res, err := r.preCheck(ctx, &optimize)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
-		// Read before anything stages a new condition, as the success path
-		// does, and off the workload conditions rather than Ready, see
-		// followsSuspendedCluster.
-		suspendedBefore := followsSuspendedCluster(&optimize)
 		// A CamundaOptimize that lost the attachment, or whose cluster is
 		// gone, must not keep the workloads it built, see releaseWorkloads.
 		// Every other failed check keeps them on the configuration of the
@@ -209,6 +207,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			// CamundaOptimize renders nothing, so it reports nothing about
 			// what it used to render.
 			removeComponentConditions(&optimize)
+			optimize.Status.SuspendedBy = ""
 
 			return ctrl.Result{}, r.releaseWorkloads(ctx, &optimize)
 		}
@@ -223,16 +222,23 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// that reaches here. The one failure that comes before that read is the
 		// cluster being gone, which the branch above returns on.
 		var suspendErr error
-		var outcome workloadsuspend.Result
-		if res.Input.Suspended {
-			held := waitFor(res)
+		if now := suspendedBy(res); now != "" {
+			held := waitFor(now)
+			var outcome workloadsuspend.Result
 			outcome, suspendErr = r.followSuspension(ctx, &optimize, held)
 			if outcome.Found && suspendErr == nil {
 				failure.Message += fmt.Sprintf(held.failureNote, optimize.Spec.ClusterRef.Name)
 			}
+			// A stopped workload proves that the instance rendered one, whatever
+			// the conditions carried in.
+			if outcome.Stopped {
+				prior.rendered = true
+				r.recordSuspensionChange(&optimize, prior, now)
+			}
 		} else {
 			// The cluster resumed while the check still fails. Nothing renders
-			// here, so the workloads it stopped stay at zero.
+			// here, so the workloads it stopped stay at zero, and
+			// status.suspendedBy keeps the suspension that stopped them.
 			kept, keptErr := r.keepAtZero(ctx, &optimize)
 			suspendErr = keptErr
 			if kept && keptErr == nil {
@@ -240,11 +246,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			}
 		}
 		conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
-		// The start of a suspension only: this path renders nothing, so the end
-		// belongs to the success path that starts the workloads again.
-		if outcome.Stopped && !suspendedBefore {
-			r.recordClusterSuspended(&optimize, res)
-		}
 
 		return ctrl.Result{}, suspendErr
 	}
@@ -253,18 +254,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	res.Input.ServiceMonitorSupported = r.serviceMonitorSupported()
-	// The previous suspension state is read before anything stages a new one.
-	// The event is recorded at the end, once the reconcile has acted on the
-	// change.
-	//
-	// Ready carries it for a suspension this path staged, and the workload
-	// conditions carry it for one the pre-check failure path staged. Both count,
-	// or a check that recovers after the cluster resumed pairs no event with the
-	// suspension that window recorded.
-	suspendedBefore := wasSuspending(&optimize) || followsSuspendedCluster(&optimize)
-	// The components stage their conditions below, so whether this instance
-	// ever rendered a workload is read before they do.
-	renderedBefore := hasWorkloads(&optimize)
 
 	if err := r.patchExporter(ctx, res); err != nil {
 		return ctrl.Result{}, err
@@ -279,14 +268,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
 	conditions.Stage(&optimize, conditions.Aggregate(&optimize, built.ready...))
-	// The event marks the decision, not its outcome: this pass decided that the
-	// suspension starts or ends, and the workload conditions report whether the
-	// apply carried it through. A record held back for a failed apply is a
-	// record lost, because ocf rewrites those conditions and the next pass reads
-	// no transition to record.
-	if renderedBefore {
-		r.recordSuspensionChange(&optimize, suspendedBefore, res)
-	}
+	r.recordSuspensionChange(&optimize, prior, suspendedBy(res))
 
 	// No watch reports the storage claim of the backend, or the pods of
 	// another cluster on it, so the workloads they park start again on this

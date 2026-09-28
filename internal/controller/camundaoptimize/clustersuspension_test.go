@@ -17,52 +17,146 @@ limitations under the License.
 package camundaoptimize
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 )
 
-// TestWasSuspendingCoversEveryStageOfASuspension pins what stops the
-// suspension event from being recorded twice.
-//
-// A suspension passes through three ocf statuses before it settles. A
-// reconcile that catches the workloads mid-drain reads one of the first two,
-// and it must not read them as "not suspended yet", or it records the
-// transition again on every look until the drain finishes.
-func TestWasSuspendingCoversEveryStageOfASuspension(t *testing.T) {
+// TestSuspendedByNamesEachSourceOfASuspension covers each source of a
+// suspension that the pre-check reads.
+func TestSuspendedByNamesEachSourceOfASuspension(t *testing.T) {
+	cases := map[string]struct {
+		arrange func(t *testing.T, h *reconcileHarness)
+		want    v1.OptimizeSuspension
+	}{
+		"nothing holds the workloads": {
+			arrange: func(*testing.T, *reconcileHarness) {},
+			want:    "",
+		},
+		"the cluster is suspended": {
+			arrange: func(t *testing.T, h *reconcileHarness) { h.setClusterSuspend(t, true) },
+			want:    v1.OptimizeSuspensionCluster,
+		},
+		"the cluster does not hold the storage claim": {
+			arrange: func(t *testing.T, h *reconcileHarness) { h.releaseClaim(t) },
+			want:    v1.OptimizeSuspensionStorageClaim,
+		},
+		"a pod of another cluster still writes the backend": {
+			arrange: func(t *testing.T, h *reconcileHarness) { h.runForeignWriter() },
+			want:    v1.OptimizeSuspensionStorageClaim,
+		},
+		"a restore into another cluster writes the backend": {
+			arrange: func(t *testing.T, h *reconcileHarness) { h.runForeignRestore(t) },
+			want:    v1.OptimizeSuspensionStorageClaim,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			h := newReconcileHarness(t)
+			tc.arrange(t, h)
+
+			res, err := h.reconciler.preCheck(t.Context(), h.latest(t))
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, suspendedBy(res))
+		})
+	}
+}
+
+// TestReadSuspensionReadsTheStatus covers the prior state that a pass carries
+// in: the suspension comes from status.suspendedBy and nothing else.
+func TestReadSuspensionReadsTheStatus(t *testing.T) {
 	t.Parallel()
 
-	suspending := []string{
-		string(component.PendingSuspension),
-		string(component.Suspending),
-		string(component.Suspended),
-	}
-	for _, reason := range suspending {
-		assert.True(t, wasSuspending(withReadyReason(reason)), reason)
-	}
-
-	running := []string{
-		v1.ReasonHealthy,
-		string(component.AliveUpdating),
-		string(component.Down),
-		v1.ReasonClusterAlreadyAttached,
-	}
-	for _, reason := range running {
-		assert.False(t, wasSuspending(withReadyReason(reason)), reason)
-	}
-
-	assert.False(
+	notRendered := &v1.CamundaOptimize{}
+	notRendered.Status.SuspendedBy = v1.OptimizeSuspensionStorageClaim
+	assert.Equal(
 		t,
-		wasSuspending(&v1.CamundaOptimize{}),
-		"a resource with no Ready yet has not been suspended",
+		suspension{by: v1.OptimizeSuspensionStorageClaim},
+		readSuspension(notRendered),
+		"an instance created beside a parked cluster follows the wait with no workload",
 	)
+
+	rendered := &v1.CamundaOptimize{}
+	meta.SetStatusCondition(&rendered.Status.Conditions, metav1.Condition{
+		Type:   v1.ConditionImporterReady,
+		Status: metav1.ConditionTrue,
+		Reason: string(component.Suspended),
+	})
+	assert.Equal(t, suspension{rendered: true}, readSuspension(rendered))
+}
+
+// TestRecordSuspensionChangeRecordsTheStartAndTheEndOnly pins which changes
+// reach the event stream: the start and the end of a suspension, and no other.
+// Every pass stages the state it decided on.
+func TestRecordSuspensionChangeRecordsTheStartAndTheEndOnly(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		prior suspension
+		now   v1.OptimizeSuspension
+		want  []string
+	}{
+		"a suspension starts": {
+			prior: suspension{rendered: true},
+			now:   v1.OptimizeSuspensionCluster,
+			want:  []string{eventReasonClusterSuspended},
+		},
+		"a suspension ends": {
+			prior: suspension{by: v1.OptimizeSuspensionStorageClaim, rendered: true},
+			now:   "",
+			want:  []string{eventReasonClusterResumed},
+		},
+		"a suspension holds": {
+			prior: suspension{by: v1.OptimizeSuspensionCluster, rendered: true},
+			now:   v1.OptimizeSuspensionCluster,
+			want:  []string{},
+		},
+		"the wait changes": {
+			prior: suspension{by: v1.OptimizeSuspensionCluster, rendered: true},
+			now:   v1.OptimizeSuspensionStorageClaim,
+			want:  []string{},
+		},
+		"no suspension holds": {
+			prior: suspension{rendered: true},
+			now:   "",
+			want:  []string{},
+		},
+		"the instance rendered no workload yet": {
+			prior: suspension{},
+			now:   v1.OptimizeSuspensionStorageClaim,
+			want:  []string{},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			recorder := events.NewFakeRecorder(10)
+			r := &Reconciler{EventRecorder: recorder}
+			optimize := suspendedOptimize()
+
+			r.recordSuspensionChange(optimize, tc.prior, tc.now)
+
+			notes := recordedNotes(recorder)
+			reasons := make([]string, 0, len(notes))
+			for _, note := range notes {
+				reasons = append(reasons, strings.Fields(note)[1])
+			}
+			assert.Equal(t, tc.want, reasons)
+			assert.Equal(t, tc.now, optimize.Status.SuspendedBy, "the pass stages what it decided on")
+		})
+	}
 }
 
 // TestSuspensionNotesSpeakForTheClusterOnly pins what each event says. The
@@ -76,16 +170,19 @@ func TestSuspensionNotesSpeakForTheClusterOnly(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
-		res  resolved
-		want string
+		prior suspension
+		now   v1.OptimizeSuspension
+		want  string
 	}{
 		"the cluster is suspended": {
-			res: resolved{Input: components.Input{Suspended: true}},
+			prior: suspension{rendered: true},
+			now:   v1.OptimizeSuspensionCluster,
 			want: `Normal ClusterSuspended CamundaCluster "my-cluster" is suspended, ` +
 				"the Optimize workloads follow it to zero",
 		},
 		"the claim of the backend holds the workloads": {
-			res: resolved{Input: components.Input{Suspended: true}, AwaitsBackendClaim: true},
+			prior: suspension{rendered: true},
+			now:   v1.OptimizeSuspensionStorageClaim,
 			want: `Normal StorageClaimAwaited CamundaCluster "my-cluster" does not hold its backend, ` +
 				"or pods of another cluster or of a previous instance, or a restore into another cluster, still write it, " +
 				"the Optimize workloads follow it to zero",
@@ -93,7 +190,7 @@ func TestSuspensionNotesSpeakForTheClusterOnly(t *testing.T) {
 		// One note covers a resume from either wait, because the cluster was
 		// not suspended in one of them.
 		"the workloads follow their spec again": {
-			res: resolved{},
+			prior: suspension{by: v1.OptimizeSuspensionCluster, rendered: true},
 			want: `Normal ClusterResumed CamundaCluster "my-cluster" holds its backend and is not suspended, ` +
 				"the Optimize workloads follow their spec",
 		},
@@ -105,7 +202,7 @@ func TestSuspensionNotesSpeakForTheClusterOnly(t *testing.T) {
 			recorder := events.NewFakeRecorder(10)
 			r := &Reconciler{EventRecorder: recorder}
 
-			r.recordSuspensionChange(suspendedOptimize(), !tc.res.Input.Suspended, tc.res)
+			r.recordSuspensionChange(suspendedOptimize(), tc.prior, tc.now)
 
 			assert.Equal(t, []string{tc.want}, recordedNotes(recorder))
 		})
@@ -132,33 +229,52 @@ func TestBackendClaimAwaitedSaysBothHalvesOfTheGate(t *testing.T) {
 	}
 }
 
-// TestRecordClusterSuspendedNamesTheWait covers the pre-check failure path,
+// TestReconcileNamesTheWaitWhenACheckFails covers the pre-check failure path,
 // which records the start of a wait and no other transition. It names the same
 // two waits: a cluster that reports itself suspended, and the claim of the
 // backend that a healthy cluster does not hold.
-func TestRecordClusterSuspendedNamesTheWait(t *testing.T) {
-	t.Parallel()
-
-	recorder := events.NewFakeRecorder(10)
-	r := &Reconciler{EventRecorder: recorder}
-
-	r.recordClusterSuspended(suspendedOptimize(), resolved{Input: components.Input{Suspended: true}})
-	r.recordClusterSuspended(
-		suspendedOptimize(),
-		resolved{Input: components.Input{Suspended: true}, AwaitsBackendClaim: true},
-	)
-
-	assert.Equal(
-		t,
-		[]string{
-			`Normal ClusterSuspended CamundaCluster "my-cluster" is suspended, ` +
+func TestReconcileNamesTheWaitWhenACheckFails(t *testing.T) {
+	cases := map[string]struct {
+		arrange func(t *testing.T, h *reconcileHarness)
+		want    string
+	}{
+		"the cluster is suspended": {
+			arrange: func(t *testing.T, h *reconcileHarness) { h.setClusterSuspend(t, true) },
+			want: `Normal ClusterSuspended CamundaCluster "my-cluster" is suspended, ` +
 				"the Optimize workloads follow it to zero",
-			`Normal StorageClaimAwaited CamundaCluster "my-cluster" does not hold its backend, ` +
+		},
+		"the cluster does not hold the storage claim": {
+			arrange: func(t *testing.T, h *reconcileHarness) { h.releaseClaim(t) },
+			want: `Normal StorageClaimAwaited CamundaCluster "my-cluster" does not hold its backend, ` +
 				"or pods of another cluster or of a previous instance, or a restore into another cluster, still write it, " +
 				"the Optimize workloads follow it to zero",
 		},
-		recordedNotes(recorder),
-	)
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			h := newReconcileHarness(t)
+			h.start(t)
+			require.NoError(t, h.client.Delete(t.Context(), &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+				Name: "mac-client", Namespace: h.optimize.Namespace,
+			}}))
+			tc.arrange(t, h)
+
+			require.NoError(t, h.reconcile(t))
+
+			ready := meta.FindStatusCondition(h.latest(t).Status.Conditions, v1.ConditionReady)
+			require.NotNil(t, ready)
+			require.Equal(t, v1.ReasonMissingSecret, ready.Reason, "the pass took the failure path")
+			var suspensionNotes []string
+			for _, note := range recordedNotes(h.recorder) {
+				switch strings.Fields(note)[1] {
+				case eventReasonClusterSuspended, eventReasonClusterResumed, eventReasonStorageClaimAwaited:
+					suspensionNotes = append(suspensionNotes, note)
+				}
+			}
+			assert.Equal(t, []string{tc.want}, suspensionNotes)
+		})
+	}
 }
 
 // suspendedOptimize returns a CamundaOptimize attached to my-cluster, which is

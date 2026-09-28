@@ -191,6 +191,17 @@ The workloads also stay at zero while the cluster does not hold the storage clai
 
 The condition does not name the cluster, but the events do. `kubectl describe camundaoptimize <name>` shows `ClusterSuspended` or `StorageClaimAwaited` when the workloads go to zero. It shows `ClusterResumed` when they start again. Each marks the decision. `WebappReady` and `ImporterReady` say whether the workloads have followed it yet.
 
+`status.suspendedBy` says which wait holds the workloads at zero. It reads `Cluster` while the referenced cluster is suspended. It reads `StorageClaim` while the storage claim of the backend holds them. The field is empty while the workloads follow their spec. It keeps its value while a failed check holds the workloads at zero after the cluster resumed.
+
+```yaml
+status:
+  suspendedBy: Cluster
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Suspended
+```
+
 The operator keeps the exporter settings on the cluster while the suspension holds. A suspension is not a detachment, and the brokers are at zero, so nothing exports. Only deletion withdraws the settings.
 
 A failed check of a reference does not stop a running instance. `Ready` carries the failure reason, and what happens to the workloads depends on the state of the cluster:
@@ -289,6 +300,8 @@ A `CamundaOptimize` that never held the attachment removes nothing from the clus
 `WebappReady` and `ImporterReady` always take part. `MirroredSecretsReady` takes part when a referenced Secret lives in another namespace, and reports `Disabled` when none does.
 
 What a failed check does to the workloads depends on the state of the cluster. [Suspension](#suspension) has the table.
+
+`status.suspendedBy` is `Cluster` or `StorageClaim` while the workloads follow the referenced cluster to zero. It keeps that value while a failed check holds them at zero after the cluster resumed. It is empty while the workloads follow their spec. See [Suspension](#suspension).
 
 `status.observedGeneration` is the last generation the operator reconciled.
 
