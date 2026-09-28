@@ -460,6 +460,12 @@ func createRestore(w *world, mutate ...func(*v1.PointInTimeRestore)) *v1.PointIn
 		m(pitr)
 	}
 	Expect(k8sClient.Create(ctx, pitr)).To(Succeed())
+	// A restore that outlives its spec keeps polling on its timers. The
+	// controller runs one reconcile at a time, so every later spec waits
+	// behind those polls.
+	DeferCleanup(func() {
+		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, pitr))).To(Succeed())
+	})
 
 	return pitr
 }
