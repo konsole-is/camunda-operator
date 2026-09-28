@@ -168,8 +168,7 @@ func InstallKeycloakCRDs() error {
 		// Server-side apply: the CRD manifests exceed the annotation size
 		// that client-side apply records, and apply also completes a partial
 		// install where create would stop with AlreadyExists.
-		cmd := exec.Command("kubectl", "apply", "--server-side", "-f", url)
-		if _, err := Run(cmd); err != nil {
+		if err := applyRemoteManifest(url, "--server-side"); err != nil {
 			return err
 		}
 	}
@@ -218,15 +217,12 @@ func InstallKeycloakOperator(namespace string) error {
 		return err
 	}
 
-	cmd := exec.Command(
-		"kubectl", "apply", "--server-side", "-n", namespace,
-		"-f", fmt.Sprintf(keycloakResourceURLTmpl, version, keycloakOperatorManifest),
-	)
-	if _, err := Run(cmd); err != nil {
+	url := fmt.Sprintf(keycloakResourceURLTmpl, version, keycloakOperatorManifest)
+	if err := applyRemoteManifest(url, "--server-side", "-n", namespace); err != nil {
 		return err
 	}
 
-	cmd = exec.Command(
+	cmd := exec.Command(
 		"kubectl", "rollout", "status", "deployment/"+keycloakOperatorDeployment,
 		"--namespace", namespace, "--timeout", "5m",
 	)

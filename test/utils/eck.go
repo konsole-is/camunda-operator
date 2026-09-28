@@ -98,8 +98,7 @@ func InstallECK() error {
 		// Server-side apply: the CRD manifest exceeds the annotation size
 		// that client-side apply records, and apply also completes a partial
 		// install where create would stop with AlreadyExists.
-		cmd := exec.Command("kubectl", "apply", "--server-side", "-f", url)
-		if _, err := Run(cmd); err != nil {
+		if err := applyRemoteManifest(url, "--server-side"); err != nil {
 			return err
 		}
 	}
