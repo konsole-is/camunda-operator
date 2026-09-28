@@ -332,6 +332,60 @@ func TestHandoverPossible(t *testing.T) {
 	}
 }
 
+// A holder whose own pods write its backend never reads the handover, so it
+// prunes the expired writer Leases of that backend on its own pass.
+func TestClaimStoragePrunesExpiredWritersOnAHealthyBackend(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	storage := components.Storage{
+		Type:          v1.SecondaryStorageTypeElasticsearch,
+		Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es.data.svc:9200"},
+	}
+	key, err := components.StorageClaimKey(storage)
+	require.NoError(t, err)
+	claim := components.StorageClaimSchema().LeaseName(key)
+	self := &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "holder", UID: "uid-holder"},
+	}
+	own := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Name:      "holder-zeebe-0",
+		Namespace: "apps",
+		Labels:    components.StoragePodLabels("holder", self.UID, claim),
+	}}
+	held := components.StorageClaimSchema().NewLease("camunda-system", key, self)
+	c := storageClaimPodClient(t, scheme, own, held)
+
+	deleted := storagewriter.Writer{
+		Kind: "LogicalRestoreElasticsearch", Namespace: "apps", Name: "gone", UID: "uid-gone", ClusterUID: "uid-old",
+	}
+	registered := time.Now().Add(-storagewriter.Duration)
+	require.NoError(
+		t,
+		storagewriter.Register(context.Background(), c, c, "camunda-system", key, claim, deleted, registered),
+	)
+
+	in := &components.Input{Storage: storage}
+	in.Effective = components.NewEffective(v1.CamundaClusterSpec{})
+	res := &resolver{
+		reader:         c,
+		client:         c,
+		claims:         components.StorageClaimSchema().NewClaim(c, c, "camunda-system"),
+		claimNamespace: "camunda-system",
+		cluster:        self,
+		storage:        &v1.SecondaryStorageConfig{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "storage"}},
+		recorder:       events.NewFakeRecorder(10),
+	}
+
+	require.NoError(t, res.claimStorage(context.Background(), in))
+
+	assert.Nil(t, in.Storage.Handover)
+	lease := types.NamespacedName{Namespace: "camunda-system", Name: storagewriter.LeaseName(key, deleted.UID)}
+	err = c.Get(context.Background(), lease, &coordinationv1.Lease{})
+	assert.True(t, apierrors.IsNotFound(err), "the expired writer Lease is pruned")
+}
+
 // A free backend is not free while pods of another cluster write it. Without
 // this rule, a parked cluster that finds the Lease gone creates it, and the
 // running holder then meets a blocker and scales to zero.

@@ -138,6 +138,21 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 		)
 	}
 
+	// Only a waiting cluster prunes on the handover read, and a holder whose
+	// own pods write the backend never makes that read. The cache is enough
+	// here, because a stale read deletes nothing that was renewed.
+	if err := storagewriter.PruneExpired(
+		ctx,
+		res.client,
+		res.client,
+		res.claimNamespace,
+		key,
+		in.Storage.Claim,
+		time.Now(),
+	); err != nil {
+		return err
+	}
+
 	// The list costs a read of one namespace, so it is taken only where its
 	// answer decides the gate: a suspended cluster waits for nothing, and a
 	// cluster that took the claim on this pass meets the pods of whoever held
