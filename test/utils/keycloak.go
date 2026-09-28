@@ -262,7 +262,6 @@ func urlExists(url string, attempts int, backoff time.Duration) (bool, error) {
 	return retry(attempts, backoff, func() (bool, bool, error) { return probeOnce(client, url) })
 }
 
-// probeOnce reports as transient an error that a later try can clear.
 func probeOnce(client *http.Client, url string) (exists, transient bool, err error) {
 	resp, err := client.Head(url) // nolint:gosec // a URL of keycloak-k8s-resources at a release tag
 	if err != nil {

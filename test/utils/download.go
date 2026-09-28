@@ -22,7 +22,7 @@ import (
 	"net/http"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
+	. "github.com/onsi/ginkgo/v2" // nolint:staticcheck
 )
 
 const (
@@ -31,9 +31,8 @@ const (
 	downloadTimeout  = 2 * time.Minute
 )
 
-// applyRemoteManifest downloads the manifest at url and runs kubectl apply
-// on it with applyArgs. A server error or a connection error is tried again a
-// few times before it fails the apply.
+// applyRemoteManifest runs kubectl apply with applyArgs on the manifest at
+// url. A 5xx or a connection error gets a few more tries.
 func applyRemoteManifest(url string, applyArgs ...string) error {
 	manifest, err := download(url, downloadAttempts, downloadBackoff)
 	if err != nil {
@@ -47,17 +46,17 @@ func applyRemoteManifest(url string, applyArgs ...string) error {
 	return err
 }
 
-// download returns the body of url. A connection error or a 5xx gets
-// another try, up to attempts tries in all. Any other status fails at once.
+// download retries a connection error or a 5xx, up to attempts tries in
+// all. Any other status fails at once.
 func download(url string, attempts int, backoff time.Duration) ([]byte, error) {
 	client := &http.Client{Timeout: downloadTimeout}
 
 	return retry(attempts, backoff, func() ([]byte, bool, error) { return downloadOnce(client, url) })
 }
 
-// retry calls try until it succeeds, returns an error that is not transient,
-// or has run attempts times. It waits backoff before the second call and
-// twice as long before each next one.
+// retry calls try at least once and at most attempts times. It stops at a
+// success or at an error that try reports as not transient. It waits backoff
+// before the second call and twice as long before each next one.
 func retry[T any](attempts int, backoff time.Duration, try func() (T, bool, error)) (T, error) {
 	for attempt := 1; ; attempt++ {
 		result, transient, err := try()
@@ -71,9 +70,8 @@ func retry[T any](attempts int, backoff time.Duration, try func() (T, bool, erro
 	}
 }
 
-// downloadOnce reports as transient an error that a later try can clear.
 func downloadOnce(client *http.Client, url string) (body []byte, transient bool, err error) {
-	resp, err := client.Get(url) // nolint:gosec // a release URL that this package builds
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, true, fmt.Errorf("downloading %q: %w", url, err)
 	}
