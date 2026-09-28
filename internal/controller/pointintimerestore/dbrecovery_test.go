@@ -593,7 +593,6 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		before := expectBackendHeld(pitr)
 
 		repointContract(w)
-		answerRecovery(w, v1.RecoveryResultCompleted, "")
 
 		var named string
 		Eventually(func(g Gomega) {
@@ -611,6 +610,11 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 			Equal([]string{"PointInTimeRestore " + w.namespace + "/" + pitr.Name}),
 		)
 		Expect(readRestore(Default, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
+
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+		Consistently(func() []string {
+			return backendsHeldBy(pitr)
+		}, time.Second, interval).Should(HaveLen(2))
 
 		publishContractReady(w, recoveredIdentifier)
 		Eventually(func() []string {

@@ -110,6 +110,17 @@ func (r *Reconciler) enterDatabaseRecovery(
 		}), nil
 	}
 
+	// A cluster claims the endpoint that the contract names, Ready or not.
+	named, failure := restore.DatabaseBackend(resolved.storage, resolved.dbConfig, contract)
+	if failure == nil && named != pitr.Status.Backend {
+		err := restore.RegisterWriter(
+			ctx, r.Client, r.APIReader, r.ClaimNamespace, named, pitr, pitr.Status.TargetClusterUID,
+		)
+		if err != nil {
+			return restore.Outcome{}, err
+		}
+	}
+
 	request := recoveryRequest(pitr)
 	if outcome := contract.Spec.PITR.LastRecovery; request.AnsweredBy(outcome) {
 		return r.recoveryAnswered(ctx, pitr, resolved, outcome)
@@ -269,17 +280,6 @@ func (r *Reconciler) recoveryAnswered(
 		r.fail(pitr, v1.ReasonFailed, outcome.Message)
 
 		return restore.Outcome{}, nil
-	}
-
-	// A cluster claims the endpoint that the contract names, Ready or not.
-	named, failure := restore.DatabaseBackend(resolved.storage, resolved.dbConfig, contract)
-	if failure == nil && named != pitr.Status.Backend {
-		err := restore.RegisterWriter(
-			ctx, r.Client, r.APIReader, r.ClaimNamespace, named, pitr, pitr.Status.TargetClusterUID,
-		)
-		if err != nil {
-			return restore.Outcome{}, err
-		}
 	}
 
 	// Ready alone is the answer to the spec that was probed, which can still be
