@@ -153,6 +153,11 @@ func TestCheckPage(t *testing.T) {
 			want: []finding{{line: 1, banned: ";"}},
 		},
 		{
+			name: "a line that starts with an autolink is read",
+			page: "<https://example.com> would fail.",
+			want: []finding{{line: 1, banned: "would"}},
+		},
+		{
 			name: "a modal in an email autolink is not reported",
 			page: "Write to <may@example.com> now.",
 		},

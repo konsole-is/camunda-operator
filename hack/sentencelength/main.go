@@ -273,7 +273,7 @@ func texts(content string) []text {
 		case trimmed == "":
 			flush()
 		case strings.HasPrefix(trimmed, "#"),
-			strings.HasPrefix(trimmed, "<"),
+			strings.HasPrefix(trimmed, "<") && !startsWithAutolink(trimmed),
 			strings.HasPrefix(trimmed, "!!!"),
 			strings.HasPrefix(trimmed, "???"),
 			linkRefDef.MatchString(line):
@@ -300,6 +300,11 @@ func texts(content string) []text {
 	flush()
 
 	return out
+}
+
+func startsWithAutolink(s string) bool {
+	loc := autolink.FindStringIndex(s)
+	return loc != nil && loc[0] == 0
 }
 
 // tableCells splits a table row on the pipes outside inline code.
