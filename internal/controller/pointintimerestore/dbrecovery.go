@@ -83,6 +83,14 @@ func (r *Reconciler) enterDatabaseRecovery(
 		return r.resolveFailed(pitr, err)
 	}
 	if failure != nil {
+		answered, err := r.rollbackAnswered(ctx, pitr)
+		if err != nil {
+			return restore.Outcome{}, err
+		}
+		if answered {
+			return r.holdStarted(pitr, failure), nil
+		}
+
 		return r.holdRecovering(pitr, failure), nil
 	}
 	// The brokers must stay down for the whole rollback.
@@ -212,6 +220,37 @@ func (r *Reconciler) runningRollback(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
 ) (*v1.DatabaseServerConfig, error) {
+	contract, err := r.pinnedContract(ctx, pitr)
+	if err != nil || contract == nil {
+		return nil, err
+	}
+
+	request := recoveryRequest(pitr)
+	asked := contract.Spec.Recovery != nil && *contract.Spec.Recovery == request
+	if !contract.OperatorRecovers() || !asked || request.AnsweredBy(contract.Spec.PITR.LastRecovery) {
+		return nil, nil
+	}
+
+	return contract, nil
+}
+
+// rollbackAnswered reports whether the pinned contract answered the request of
+// this restore.
+func (r *Reconciler) rollbackAnswered(ctx context.Context, pitr *v1.PointInTimeRestore) (bool, error) {
+	contract, err := r.pinnedContract(ctx, pitr)
+	if err != nil || contract == nil || contract.Spec.PITR == nil {
+		return false, err
+	}
+
+	return recoveryRequest(pitr).AnsweredBy(contract.Spec.PITR.LastRecovery), nil
+}
+
+// pinnedContract returns the contract that the restore pinned, or nil when it
+// pinned none or the contract is gone or replaced.
+func (r *Reconciler) pinnedContract(
+	ctx context.Context,
+	pitr *v1.PointInTimeRestore,
+) (*v1.DatabaseServerConfig, error) {
 	pinned := pitr.Status.Storage
 	if pinned == nil {
 		return nil, nil
@@ -226,11 +265,7 @@ func (r *Reconciler) runningRollback(
 
 		return nil, fmt.Errorf("reading DatabaseServerConfig %s: %w", key, err)
 	}
-
-	request := recoveryRequest(pitr)
-	asked := contract.Spec.Recovery != nil && *contract.Spec.Recovery == request
-	if contract.UID != pinned.DatabaseServerConfigUID || !contract.OperatorRecovers() || !asked ||
-		request.AnsweredBy(contract.Spec.PITR.LastRecovery) {
+	if contract.UID != pinned.DatabaseServerConfigUID {
 		return nil, nil
 	}
 

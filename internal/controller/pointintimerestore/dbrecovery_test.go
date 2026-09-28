@@ -586,6 +586,27 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		}, timeout, interval).Should(BeEmpty())
 	})
 
+	It("gives its database back when the chain stops resolving after the server answered", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		backend := expectBackendHeld(pitr)
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+			cluster.Spec.StorageRef = "no-such-storage"
+			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring("no-such-storage"))
+		Eventually(func() []string {
+			return writersSeenByAnotherCluster(backend)
+		}, timeout, interval).Should(BeEmpty())
+	})
+
 	It("holds the endpoint that the contract names before the contract reaches it", func() {
 		w := operatorRecoveryWorld()
 		pitr := createRestore(w)
