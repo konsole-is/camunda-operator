@@ -15,24 +15,20 @@ limitations under the License.
 */
 
 // Command sentencelength reports the sentences of the user docs that break
-// the simple-english rules: a sentence longer than 20 words for a procedural
-// sentence or 25 words for a descriptive one, a semicolon, and the modals
-// "would", "could" and "may".
+// the simple-english rules: a procedural sentence over 20 words, a
+// descriptive sentence over 25 words, a semicolon, and the modals "would",
+// "could" and "may".
 //
 // Usage: sentencelength [dir]
 //
 // The directory defaults to docs. The command reads every .md file below it,
-// except the files that mkdocs does not publish: docs/superpowers/ and
-// docs/crds/TEMPLATE.md. It prints one line per finding, then the count for
-// each page and the total. A long sentence prints as
-// file:line: words/limit words: first words, and a semicolon or a modal as
-// file:line: "word": first words. It exits with status 1 when it finds one.
+// except docs/superpowers/ and docs/crds/TEMPLATE.md. It prints one line per
+// finding, then the count for each page and the total. It exits with status 1
+// when it reports a finding.
 //
 // What it reads:
-//   - Paragraphs, list items, admonition bodies, and each table cell as a
-//     separate text. A blank line, a list marker, or a table row ends a text.
-//   - It reads a blockquote like the text around it, without the ">" markers.
-//     A quote line with no text ends a text.
+//   - Paragraphs, list items, admonition bodies, blockquotes, and each table
+//     cell as a separate text.
 //   - It skips front matter, fenced code blocks, HTML comments, also inside a
 //     line, headings, table separator rows, HTML lines, admonition title
 //     lines, and link reference definitions.
@@ -41,9 +37,10 @@ limitations under the License.
 //   - A sentence ends at ".", "!" or "?" before a space or the end of the
 //     text, and at the end of the text. A colon that ends a text is the end
 //     of a sentence too, so a list lead-in is counted alone.
-//   - Inline code, text in parentheses, and text in double quotes count as
-//     one word. A link counts as the words of its text. A hyphenated word
-//     counts as one word. A token without a letter or a digit is no word.
+//   - Inline code, URLs, text in parentheses, and text in double quotes count
+//     as one word and are not checked for semicolons or modals. A link counts
+//     as the words of its text. A hyphenated word counts as one word. A token
+//     without a letter or a digit is no word.
 //
 // How it classifies a sentence:
 //   - A sentence in an ordered list item is procedural.
@@ -79,7 +76,7 @@ type finding struct {
 	line  int
 	words int
 	limit int
-	// banned holds the semicolon or the modal. It is empty for a long sentence.
+	// banned holds the semicolon or modal, and is empty for a long sentence.
 	banned string
 	// start holds the first words of the sentence, so a reader finds it on a
 	// line that holds more than one sentence.
