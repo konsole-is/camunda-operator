@@ -18,12 +18,12 @@ package restore
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
@@ -54,24 +54,59 @@ func RegisterWriter(
 	)
 }
 
-// WriterWait bounds wait, the time until the next look of a restore that is
-// registered as a writer, so that the look renews the registration before it
-// expires. A zero wait asks for no look and is bounded too.
-func WriterWait(wait time.Duration) time.Duration {
-	if wait == 0 || wait > storagewriter.RenewInterval {
-		return storagewriter.RenewInterval
-	}
-
-	return wait
+// Registration is a restore that holds a writer registration on Backend, for
+// the cluster with UID Target.
+type Registration struct {
+	Owner   conditions.Owner
+	Backend string
+	Target  types.UID
 }
 
-// WriterRateLimiter is the rate limiter of a restore controller. It retries a
-// failed look within storagewriter.RenewInterval.
-func WriterRateLimiter() workqueue.TypedRateLimiter[reconcile.Request] {
-	return workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](
-		5*time.Millisecond,
-		storagewriter.RenewInterval,
-	)
+// Renewer renews the registrations that List returns, every
+// storagewriter.RenewInterval, while this operator leads.
+type Renewer struct {
+	Client         client.Client
+	Reader         client.Reader
+	ClaimNamespace string
+	// List returns the restores that are not terminal and that registered a
+	// backend.
+	List func(ctx context.Context) ([]Registration, error)
+}
+
+// Start renews until ctx ends. The manager runs it once this operator leads.
+func (r *Renewer) Start(ctx context.Context) error {
+	ticker := time.NewTicker(storagewriter.RenewInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			if err := r.renew(ctx, time.Now()); err != nil {
+				log.FromContext(ctx).Error(err, "Could not renew the writer registrations of the restores")
+			}
+		}
+	}
+}
+
+// renew renews every registration that List returns once, and keeps going
+// past a registration that fails.
+func (r *Renewer) renew(ctx context.Context, now time.Time) error {
+	registrations, err := r.List(ctx)
+	if err != nil {
+		return err
+	}
+
+	var errs []error
+	for _, reg := range registrations {
+		w := writerOf(reg.Owner, reg.Target)
+		if err := storagewriter.Renew(ctx, r.Client, r.Reader, r.ClaimNamespace, reg.Backend, w, now); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 func writerOf(owner conditions.Owner, target types.UID) storagewriter.Writer {

@@ -62,7 +62,6 @@ import (
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
@@ -267,12 +266,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// a terminal holder inactive. A release before that point lets a second
 	// operation start against a cluster whose restore the API still reports
 	// as running.
-	wait := outcome.Wait
-	if lres.Status.Backend != "" && !lres.Terminal() {
-		wait = restore.WriterWait(wait)
-	}
-
-	return ctrl.Result{RequeueAfter: wait}, nil
+	return ctrl.Result{RequeueAfter: outcome.Wait}, nil
 }
 
 // complete ends the restore. The secondary storage of the target holds the
@@ -398,6 +392,32 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return fmt.Errorf("indexing LogicalRestoreElasticsearch by backupRef: %w", err)
 	}
 
+	renewer := &restore.Renewer{
+		Client:         mgr.GetClient(),
+		Reader:         mgr.GetAPIReader(),
+		ClaimNamespace: r.opts.ClaimNamespace,
+		List: func(ctx context.Context) ([]restore.Registration, error) {
+			var list v1.LogicalRestoreElasticsearchList
+			if err := mgr.GetClient().List(ctx, &list); err != nil {
+				return nil, fmt.Errorf("listing the LogicalRestoreElasticsearchs: %w", err)
+			}
+			var registrations []restore.Registration
+			for i := range list.Items {
+				item := &list.Items[i]
+				if item.Status.Backend != "" && !item.Terminal() {
+					registrations = append(registrations, restore.Registration{
+						Owner: item, Backend: item.Status.Backend, Target: item.Status.TargetClusterUID,
+					})
+				}
+			}
+
+			return registrations, nil
+		},
+	}
+	if err := mgr.Add(renewer); err != nil {
+		return fmt.Errorf("adding the writer renewer: %w", err)
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.LogicalRestoreElasticsearch{}).
 		Owns(&batchv1.Job{}).
@@ -428,6 +448,5 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 			),
 		).
 		Named(controllerName).
-		WithOptions(controller.Options{RateLimiter: restore.WriterRateLimiter()}).
 		Complete(r)
 }

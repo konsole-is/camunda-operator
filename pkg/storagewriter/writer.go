@@ -20,7 +20,8 @@ limitations under the License.
 // no knowledge of their kinds.
 //
 // A registration is a Lease in the storage claim namespace. It is live until
-// its renewTime is Duration old. A writer renews it at least every
+// Duration after its last renewal, or after this operator started to lead
+// when that is later (see Clock). A writer renews it at least every
 // RenewInterval while it writes, and releases it when it stops.
 package storagewriter
 
@@ -132,6 +133,38 @@ func Register(
 
 	lease.Spec.RenewTime = &metav1.MicroTime{Time: now}
 	if err := c.Update(ctx, &lease); err != nil {
+		return fmt.Errorf("renewing the writer Lease of %s: %w", w, err)
+	}
+
+	return nil
+}
+
+// Renew renews the registration of w on the backend key when it exists. It
+// never creates one, so a writer that a stale list shows as live cannot bring
+// back a registration it released.
+func Renew(
+	ctx context.Context,
+	c client.Client,
+	reader client.Reader,
+	namespace, key string,
+	w Writer,
+	now time.Time,
+) error {
+	var lease coordinationv1.Lease
+	err := reader.Get(ctx, types.NamespacedName{Namespace: namespace, Name: LeaseName(key, w.UID)}, &lease)
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reading the writer Lease of %s: %w", w, err)
+	}
+
+	lease.Spec.RenewTime = &metav1.MicroTime{Time: now}
+	err = c.Update(ctx, &lease)
+	if apierrors.IsNotFound(err) || apierrors.IsConflict(err) {
+		return nil
+	}
+	if err != nil {
 		return fmt.Errorf("renewing the writer Lease of %s: %w", w, err)
 	}
 
