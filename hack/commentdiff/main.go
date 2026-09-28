@@ -340,10 +340,12 @@ func crdDescription(decls map[string]decl, key string) bool {
 	if kind != "type" && kind != "field" {
 		return false
 	}
-	owner, _, _ := strings.Cut(name, ".")
-	if !ast.IsExported(owner) {
-		return false
+	for part := range strings.SplitSeq(name, ".") {
+		if !ast.IsExported(part) {
+			return false
+		}
 	}
+	owner, _, _ := strings.Cut(name, ".")
 	ownerDoc := decls["type "+owner].docText + decls["group type "+owner].docText
 	return !strings.Contains(ownerDoc, "+kubebuilder:object:generate=false")
 }
@@ -362,7 +364,14 @@ func hasKey(m map[string]decl, key string) bool {
 	return ok
 }
 
-func kind(key string) string { return strings.SplitN(key, " ", 2)[0] }
+func kind(key string) string {
+	k, rest, _ := strings.Cut(key, " ")
+	if k == "group" {
+		tok, _, _ := strings.Cut(rest, " ")
+		return k + " " + tok
+	}
+	return k
+}
 
 func abs(n int) int {
 	if n < 0 {
@@ -482,6 +491,8 @@ func members(t ast.Expr) []*ast.Field {
 		return members(t.X)
 	case *ast.ArrayType:
 		return members(t.Elt)
+	case *ast.MapType:
+		return members(t.Value)
 	}
 	return nil
 }

@@ -373,6 +373,13 @@ func TestDiffFileFlagsGrownMemberDocs(t *testing.T) {
 			wantText: "doc of field T.Inner.X GREW from 1 to 2",
 		},
 		{
+			name: "field of a struct in a map value",
+			old:  "type T struct {\n\tByName map[string]struct {\n\t\t// X is the count.\n\t\tX int\n\t}\n}\n",
+			cur: "type T struct {\n\tByName map[string]struct {\n\t\t// X is the count.\n" +
+				"\t\t// It is never negative.\n\t\tX int\n\t}\n}\n",
+			wantText: "doc of field T.ByName.X GREW from 1 to 2",
+		},
+		{
 			name: "method of one of two generic types",
 			old: "// M runs.\nfunc (b *B[T]) M() {\n\tg()\n}\n\n" +
 				"// M runs.\nfunc (a A[K, V]) M() {\n\tg()\n}\n",
@@ -415,6 +422,12 @@ func TestDiffFileFlagsGoDocsUnderAPI(t *testing.T) {
 			file: "api/v1/spec_types.go",
 			old:  "type Getter interface {\n\t// Get returns the spec.\n\tGet() int\n}\n",
 			cur:  "type Getter interface {\n\t// Get returns the spec.\n\t// It is never nil.\n\tGet() int\n}\n",
+		},
+		{
+			name: "unexported field of an exported type",
+			file: "api/v1/spec_types.go",
+			old:  "type Spec struct {\n\t// cache is internal.\n\tcache int\n}\n",
+			cur:  "type Spec struct {\n\t// cache is internal.\n\t// It is never shared.\n\tcache int\n}\n",
 		},
 		{
 			name: "type in a test file",
@@ -473,4 +486,15 @@ func TestRunPairsARenameBelowTheGitSimilarityThreshold(t *testing.T) {
 	require.Len(t, got, 1)
 	assert.Equal(t, "b.go", got[0].file)
 	assert.Contains(t, got[0].text, "GREW from 1 to 2 lines (was func notReady)")
+}
+
+func TestDiffFileDoesNotPairAGroupTypeWithAGroupConst(t *testing.T) {
+	old := src("// X is one.\ntype A int\n")
+	cur := src("// X is one.\nconst B = 1\n")
+
+	got, err := diffFile("p.go", old, cur)
+
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Contains(t, got[0].text, "doc of group const B added")
 }
