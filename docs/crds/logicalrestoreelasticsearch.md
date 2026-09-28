@@ -133,7 +133,7 @@ A tool that also declares one of these fields fights the operator for it. Argo C
 
 ## One operation at a time
 
-A cluster holds one backup or one restore at a time. This restore holds the target from the moment it starts to prepare it, which it reports as `Pending`. It gives the hold back when it reaches a terminal phase.
+A cluster holds one backup or one restore at a time. This restore holds the target from the moment it starts to prepare it, which it reports as `Pending`. It gives the hold back when it reaches a terminal phase. A failed restore that keeps the backend for a recovery also keeps the target until that recovery ends.
 
 A restore whose target another operation holds waits in `Pending` with the reason `ClusterClaimed`, and the message names the holder. Nothing bounds this wait, and you change nothing. The restore starts on its own a short time after the holder reaches a terminal phase.
 
@@ -153,7 +153,7 @@ After the restore left `Pending`, these two reasons hold it for 10 minutes, and 
 
 ### After a failure or a delete
 
-Elasticsearch recovers the snapshots that it accepted, even when the restore fails or you delete it. The restore keeps the backend until no index that it replaces recovers any more. Until then, `status.recoveryHeld` is `true`. A deleted restore stays until then too, and so does its suspension hold on the target.
+Elasticsearch recovers the snapshots that it accepted, even when the restore fails or you delete it. The restore keeps the backend until no index that it replaces recovers any more. Until then, `status.recoveryHeld` is `true`. A deleted restore stays until then too, and so does its suspension hold on the target. Another backup or restore of the target waits in `Pending` with the reason `ClusterClaimed`.
 
 ```yaml
 status:
@@ -163,7 +163,7 @@ status:
 
 The event `RecoveryHeld` marks the start of this hold, and the event `RecoveryEnded` marks its end.
 
-If the restore cannot read the recovery for 10 minutes, it gives the backend back and records the Warning event `RecoveryUnknown`. That happens when the Elasticsearch does not answer, or when the target is gone. `status.recoveryUnknownSince` shows when the restore first could not read the recovery. After a `RecoveryUnknown` event, make sure that no index recovery is active before you start another cluster on this Elasticsearch.
+If the restore cannot read the recovery for 10 minutes, it gives the backend back and records the Warning event `RecoveryUnknown`. That happens when the Elasticsearch does not answer, when the target is gone, or when the target now points at another Elasticsearch. `status.recoveryUnknownSince` shows when the restore first could not read the recovery. After a `RecoveryUnknown` event, make sure that no index recovery is active before you start another cluster on this Elasticsearch.
 
 ## The snapshot repository
 
@@ -248,7 +248,7 @@ The delete removes the suspension hold of the restore from the target. A target 
 | `Ready` | `Completed` | The restore finished, and it gives back the suspension it applied, so the target starts again a moment later. `Ready` is `True`. | Nothing. Unsuspend the target yourself only when you suspended it yourself. |
 | `Ready` | `Failed` | The restore ended. | Read `status.failureMessage`. Correct the cause and create a new restore. |
 | `Ready` | `ClusterNotSuspended` | Somebody removed the suspension hold of the restore from the target and cleared `spec.suspend`. | Suspend the cluster again. A restore that already erased something fails 10 minutes after the first outage. |
-| `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster. | Wait. The restore starts when the holder reaches a terminal phase. |
+| `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster. | Wait. The restore starts when the holder reaches a terminal phase. A failed restore that keeps the backend for a recovery holds the cluster until the recovery ends. |
 | `Ready` | `StorageAlreadyAttached` | Another cluster holds the Elasticsearch of the target. The message names it. | Read "The backend" above. The restore starts when the target holds the Elasticsearch. |
 | `Ready` | `WaitingForHandover` | The target does not hold its Elasticsearch yet, or pods still write it. | Wait. If the target does not hold the backend yet, the message names the target and the backend. The restore starts once the target takes it. If pods still write the backend, the message names them. The restore starts when they are gone. |
 | `Ready` | `IncompatibleTarget` | The target cannot hold the backup. The message names both values. | Read "Compatibility" above. A backup restores into the cluster it was taken from alone. |

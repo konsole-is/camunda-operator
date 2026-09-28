@@ -649,6 +649,26 @@ func TestAForeignLeaseSpellingOurIdentityIsNotSelf(t *testing.T) {
 	assert.Empty(t, after.GetAnnotations(), "the foreign Lease was not taken over or rewritten")
 }
 
+// A failed Elasticsearch restore whose snapshots Elasticsearch still
+// recovers writes the cluster's secondary storage, so no other operation may
+// take the cluster from it.
+func TestAFailedRestoreHoldingARecoveryStaysActive(t *testing.T) {
+	holder := clusterclaim.Claimant{Kind: "LogicalRestoreElasticsearch", Name: "restore", UID: types.UID("uid-restore")}
+	for _, held := range []bool{true, false} {
+		restore := &v1.LogicalRestoreElasticsearch{
+			ObjectMeta: objectMeta(holder),
+			Status: v1.LogicalRestoreElasticsearchStatus{
+				Phase:        v1.LogicalRestoreFailed,
+				RecoveryHeld: held,
+			},
+		}
+
+		active, err := clusterclaim.HolderActive(t.Context(), claimClient(t, restore), claimNamespace, holder)
+		require.NoError(t, err)
+		assert.Equal(t, held, active, "recoveryHeld=%t", held)
+	}
+}
+
 func TestHolderActive(t *testing.T) {
 	tests := []struct {
 		name   string

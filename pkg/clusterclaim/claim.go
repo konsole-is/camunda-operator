@@ -350,11 +350,9 @@ var holderKinds = map[string]func() claimHolder{
 // such a holder, so it must not take the cluster from it. An uninterpretable
 // holder blocks until a human removes its Lease.
 //
-// One terminal holder stays active: an Elasticsearch backup that left the
-// cluster's exporting paused. Its claim is what keeps a sibling from backing
-// up a paused cluster. The claim follows the pause, not the phase. It goes
-// back when the holder's deletion resumes exporting, or when the holder is
-// gone. See keepsClusterPaused.
+// Two terminal holders stay active: an Elasticsearch backup that left the
+// cluster's exporting paused (see keepsClusterPaused), and an Elasticsearch
+// restore while its status.recoveryHeld is true.
 //
 // reader must read the API server directly: a cached read of the holder can
 // be behind, and a stale "gone" or a stale phase would take a live claim
@@ -374,7 +372,7 @@ func HolderActive(ctx context.Context, reader client.Reader, namespace string, h
 		return true, nil
 	}
 
-	return keepsClusterPaused(resource), nil
+	return keepsClusterPaused(resource) || recoveryHeld(resource), nil
 }
 
 // holderResource reads the resource of the holder. known is false for a kind
@@ -429,6 +427,12 @@ func keepsClusterPaused(resource claimHolder) bool {
 
 	ready := meta.FindStatusCondition(backup.Status.Conditions, v1.ConditionReady)
 	return ready != nil && ready.Reason == v1.ReasonResumeFailed
+}
+
+func recoveryHeld(resource claimHolder) bool {
+	restore, ok := resource.(*v1.LogicalRestoreElasticsearch)
+
+	return ok && restore.Status.RecoveryHeld
 }
 
 // takeOver deletes the Lease while it still records holder. A Lease that

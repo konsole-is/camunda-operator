@@ -232,7 +232,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		if held == 0 && lres.Status.Backend != "" {
+		// The claim on the target stays with a held recovery, so no other
+		// backup or restore of the target starts beside it.
+		if held > 0 {
+			restore.StageTerminal(&lres, &lres.Status.RestoreProgress)
+
+			return ctrl.Result{RequeueAfter: held}, nil
+		}
+		if lres.Status.Backend != "" {
 			err := restore.ReleaseWriter(
 				ctx, r.Client, r.opts.ClaimNamespace, lres.Status.Backend, &lres, lres.Status.TargetClusterUID,
 			)
@@ -243,9 +250,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		finished, err := restore.Finish(
 			ctx, r.Client, r.APIReader, &lres, &lres.Status.RestoreProgress, lres.Spec.TargetClusterRef.Name,
 		)
-		if held > 0 && (finished.Wait == 0 || held < finished.Wait) {
-			finished.Wait = held
-		}
 
 		return ctrl.Result{RequeueAfter: finished.Wait}, err
 	}

@@ -108,7 +108,7 @@ func (r *Reconciler) holdRecovery(ctx context.Context, lres *v1.LogicalRestoreEl
 			lres.Status.RecoveryUnknownSince = &now
 		}
 		if now.Sub(lres.Status.RecoveryUnknownSince.Time) < r.opts.MidRunGrace {
-			return r.opts.PollInterval, nil
+			return r.keepWriter(ctx, lres)
 		}
 		r.EventRecorder.Eventf(
 			lres,
@@ -124,7 +124,7 @@ func (r *Reconciler) holdRecovery(ctx context.Context, lres *v1.LogicalRestoreEl
 	case recovering:
 		lres.Status.RecoveryUnknownSince = nil
 
-		return r.opts.PollInterval, nil
+		return r.keepWriter(ctx, lres)
 	default:
 		r.EventRecorder.Eventf(
 			lres,
@@ -140,6 +140,19 @@ func (r *Reconciler) holdRecovery(ctx context.Context, lres *v1.LogicalRestoreEl
 	lres.Status.RecoveryUnknownSince = nil
 
 	return 0, nil
+}
+
+// A look that released the registration can crash before the cleared hold is
+// in status, so the next look registers it again rather than only renewing it.
+func (r *Reconciler) keepWriter(ctx context.Context, lres *v1.LogicalRestoreElasticsearch) (time.Duration, error) {
+	if lres.Status.Backend == "" {
+		return r.opts.PollInterval, nil
+	}
+	err := restore.RegisterWriter(
+		ctx, r.Client, r.APIReader, r.opts.ClaimNamespace, lres.Status.Backend, lres, lres.Status.TargetClusterUID,
+	)
+
+	return r.opts.PollInterval, err
 }
 
 // readRecovery reports whether Elasticsearch still recovers an index that the

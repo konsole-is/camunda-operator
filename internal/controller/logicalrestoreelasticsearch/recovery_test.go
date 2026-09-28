@@ -55,6 +55,25 @@ var _ = Describe("LogicalRestoreElasticsearch after Elasticsearch accepted its s
 		}, timeout, interval).Should(Succeed())
 	})
 
+	It("keeps its claim on the target after it fails until the recovery ends", func() {
+		w := newWorld()
+		backup := createBackup(w)
+		restore := startedRestore(w, backup)
+		w.search.SetRecoveryActive(true)
+		failRestore(restore)
+
+		retry := createRestore(w, backup.Name)
+
+		reached := expectReason(retry, v1.LogicalRestorePending, v1.ReasonClusterClaimed)
+		Expect(readyCondition(reached).Message).To(ContainSubstring(restore.Name))
+
+		By("starting the retry once the recovery ends")
+		w.search.SetRecoveryActive(false)
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, retry).Status.Phase).NotTo(Equal(v1.LogicalRestorePending))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("stays with its backend and its hold after it is deleted until the recovery ends", func() {
 		w := newWorld()
 		backup := createBackup(w)
