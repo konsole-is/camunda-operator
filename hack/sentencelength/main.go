@@ -103,7 +103,7 @@ var (
 	tableSep      = regexp.MustCompile(`^\s*\|?[\s:|-]+\|?\s*$`)
 	linkRefDef    = regexp.MustCompile(`^\s*\[[^\]]+\]:\s`)
 	inlineCode    = regexp.MustCompile("`[^`]*`")
-	link          = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
+	link          = regexp.MustCompile(`!?\[([^\]]*)\]\((?:[^()]|\([^()]*\))*\)`)
 	refLink       = regexp.MustCompile(`\[([^\]]*)\]\[[^\]]*\]`)
 	autolink      = regexp.MustCompile(`<[A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*>|<[^\s<>@]+@[^\s<>]+>`)
 	bareURL       = regexp.MustCompile(`https?://[^\s<>]*[^\s<>.,:;!?)]`)

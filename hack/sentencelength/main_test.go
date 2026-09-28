@@ -140,6 +140,10 @@ func TestCheckPage(t *testing.T) {
 			page: "See [the page](https://example.com/a;b) now.",
 		},
 		{
+			name: "a modal in a link target with parentheses is not reported",
+			page: "See [the page](https://example.com/(a)/may) now.",
+		},
+		{
 			name: "a semicolon or a modal in an autolink or a bare URL is not reported",
 			page: "See <https://example.com/a;b> and https://example.com/may-release/x;y now.",
 		},
