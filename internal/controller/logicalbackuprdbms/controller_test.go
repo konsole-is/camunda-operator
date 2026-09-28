@@ -304,9 +304,21 @@ func createBackup(w *world, mutate ...func(*v1.LogicalBackupRDBMS)) *v1.LogicalB
 	for _, m := range mutate {
 		m(backup)
 	}
-	Expect(k8sClient.Create(ctx, backup)).To(Succeed())
+	createAndDelete(backup)
 
 	return backup
+}
+
+// createAndDelete creates backup and deletes it when the spec ends. A backup
+// that outlives its spec keeps looking again every second. The controller
+// runs one reconcile at a time, so every later spec waits behind those looks.
+func createAndDelete(backup *v1.LogicalBackupRDBMS) {
+	GinkgoHelper()
+
+	Expect(k8sClient.Create(ctx, backup)).To(Succeed())
+	DeferCleanup(func() {
+		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, backup))).To(Succeed())
+	})
 }
 
 // jobOf waits for the dump Job of backup in the cluster namespace and returns
@@ -684,7 +696,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			ObjectMeta: metav1.ObjectMeta{Name: "backup-" + utilrand.String(6), Namespace: namespace},
 			Spec:       v1.LogicalBackupRDBMSSpec{ClusterRef: v1.ClusterRef{Name: "nowhere"}},
 		}
-		Expect(k8sClient.Create(ctx, backup)).To(Succeed())
+		createAndDelete(backup)
 
 		expectPending(backup, v1.ReasonInvalidReference)
 	})
