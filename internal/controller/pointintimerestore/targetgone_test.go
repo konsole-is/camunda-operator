@@ -51,8 +51,6 @@ func TestReplacementBetweenTwoReadsKeepsTheRollbackHeld(t *testing.T) {
 	assert.Contains(t, ready.Message, "was replaced while its database server rolls back")
 }
 
-// A deletion between the two reads must still move the hold to the endpoint
-// that the contract names.
 func TestDeletionBetweenTwoReadsFollowsTheNamedEndpoint(t *testing.T) {
 	pitr, r := rollbackWithSecondClusterRead(t, func(read *v1.CamundaCluster) error {
 		return apierrors.NewNotFound(v1.GroupVersion.WithResource("camundaclusters").GroupResource(), read.Name)
