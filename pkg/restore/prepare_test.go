@@ -60,20 +60,28 @@ type prepareWorld struct {
 	applies *[]applied
 }
 
-// newPrepareWorld builds a suspended cluster whose brokers already stopped
-// and that runs the version of its backup. Every case moves one fact of it.
+// newPrepareWorld builds a suspended cluster that carries the hold of the
+// restore, whose brokers already stopped, and that runs the version of its
+// backup. Every case moves one fact of it.
 func newPrepareWorld(t *testing.T) *prepareWorld {
 	t.Helper()
 
+	owner := restoreOwner(1)
+	owner.UID = "restore-uid"
 	cluster := &v1.CamundaCluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "ns", UID: clusterUID},
-		Spec:       v1.CamundaClusterSpec{Version: "8.9.9", Suspend: true},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "my-cluster",
+			Namespace:   "ns",
+			UID:         clusterUID,
+			Annotations: map[string]string{holdKey(owner): "held"},
+		},
+		Spec: v1.CamundaClusterSpec{Version: "8.9.9", Suspend: true},
 	}
 
 	applies := &[]applied{}
 	c := fake.NewClientBuilder().
 		WithScheme(testScheme(t)).
-		WithObjects(cluster).
+		WithObjects(cluster, owner).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Patch: func(
 				ctx context.Context,
@@ -97,7 +105,6 @@ func newPrepareWorld(t *testing.T) *prepareWorld {
 
 	target := targetFixture()
 	target.StatefulSet.Status.Replicas = 0
-	owner := restoreOwner(1)
 
 	return &prepareWorld{
 		restore: owner,
@@ -122,6 +129,18 @@ func (w *prepareWorld) look(t *testing.T) Outcome {
 	require.NoError(t, err)
 
 	return outcome
+}
+
+// appliesBy returns the applies that the step made under manager.
+func (w *prepareWorld) appliesBy(manager client.FieldOwner) []applied {
+	var out []applied
+	for _, a := range *w.applies {
+		if a.manager == string(manager) {
+			out = append(out, a)
+		}
+	}
+
+	return out
 }
 
 // progress returns the record that the step reads and writes.
@@ -290,7 +309,7 @@ func TestPrepareWaitsForTheImageWithoutWritingAgain(t *testing.T) {
 	// The state after the write: the cluster declares the version and
 	// carries the sanction, which the cluster controller keeps until the
 	// brokers converge.
-	w.cluster.Annotations = map[string]string{components.AllowVersionDowngradeAnnotation: "8.9.9"}
+	w.cluster.Annotations[components.AllowVersionDowngradeAnnotation] = w.input.Version
 
 	outcome := w.look(t)
 
@@ -397,10 +416,10 @@ func TestResumeWritesNothingWithoutTheRecord(t *testing.T) {
 	w := newPrepareWorld(t)
 
 	require.NoError(t, Resume(
-		t.Context(), w.client, w.client, w.completed(), client.ObjectKeyFromObject(w.cluster),
+		t.Context(), w.client, w.client, w.restore, w.completed(), client.ObjectKeyFromObject(w.cluster),
 	))
 
-	assert.Empty(t, *w.applies)
+	assert.Empty(t, w.appliesBy(FieldManagerTargetSuspend))
 	assert.True(t, w.live(t).Spec.Suspend)
 }
 
@@ -413,13 +432,13 @@ func TestResumeWithdrawsTheSuspensionItApplied(t *testing.T) {
 	w.progress().ClusterSuspended = true
 
 	require.NoError(t, Resume(
-		t.Context(), w.client, w.client, w.completed(), client.ObjectKeyFromObject(w.cluster),
+		t.Context(), w.client, w.client, w.restore, w.completed(), client.ObjectKeyFromObject(w.cluster),
 	))
 
-	require.Len(t, *w.applies, 1)
-	assert.Equal(t, string(FieldManagerTargetSuspend), (*w.applies)[0].manager)
-	assert.False(t, (*w.applies)[0].cluster.Spec.Suspend)
-	assert.Equal(t, clusterUID, (*w.applies)[0].cluster.UID)
+	suspends := w.appliesBy(FieldManagerTargetSuspend)
+	require.Len(t, suspends, 1)
+	assert.False(t, suspends[0].cluster.Spec.Suspend)
+	assert.Equal(t, clusterUID, suspends[0].cluster.UID)
 }
 
 // The terminal branch of a controller looks on every event of the restore and
@@ -432,13 +451,16 @@ func TestResumeWritesNothingOnceTheClusterRunsAgain(t *testing.T) {
 	w.progress().ClusterSuspended = true
 	key := client.ObjectKeyFromObject(w.cluster)
 
-	require.NoError(t, Resume(t.Context(), w.client, w.client, w.completed(), key))
-	require.Len(t, *w.applies, 1)
+	require.NoError(t, Resume(t.Context(), w.client, w.client, w.restore, w.completed(), key))
+	require.Len(t, w.appliesBy(FieldManagerTargetSuspend), 1)
 
 	w.unsuspended(t)
-	require.NoError(t, Resume(t.Context(), w.client, w.client, w.progress(), key))
+	require.NoError(t, Resume(t.Context(), w.client, w.client, w.restore, w.progress(), key))
 
-	assert.Len(t, *w.applies, 1, "the restore withdrew a suspension that was already gone")
+	assert.Len(
+		t, w.appliesBy(FieldManagerTargetSuspend), 1,
+		"the restore withdrew a suspension that was already gone",
+	)
 }
 
 // An apply against a cluster that is gone would put an empty CamundaCluster
@@ -451,11 +473,11 @@ func TestResumeWritesNothingForAClusterThatIsGone(t *testing.T) {
 	require.NoError(t, w.client.Delete(t.Context(), w.cluster))
 
 	require.NoError(t, Resume(
-		t.Context(), w.client, w.client, w.completed(),
+		t.Context(), w.client, w.client, w.restore, w.completed(),
 		types.NamespacedName{Namespace: "ns", Name: "my-cluster"},
 	))
 
-	assert.Empty(t, *w.applies)
+	assert.Empty(t, w.appliesBy(FieldManagerTargetSuspend))
 }
 
 // The broker volumes of a failed restore can be empty or half written, and
@@ -469,10 +491,10 @@ func TestResumeLeavesTheClusterOfAFailedRestoreSuspended(t *testing.T) {
 	Fail(w.progress(), v1.ReasonFailed, "a broker could not restore", metav1.Now())
 
 	require.NoError(t, Resume(
-		t.Context(), w.client, w.client, w.progress(), client.ObjectKeyFromObject(w.cluster),
+		t.Context(), w.client, w.client, w.restore, w.progress(), client.ObjectKeyFromObject(w.cluster),
 	))
 
-	assert.Empty(t, *w.applies)
+	assert.Empty(t, w.appliesBy(FieldManagerTargetSuspend))
 	assert.True(t, w.live(t).Spec.Suspend)
 }
 

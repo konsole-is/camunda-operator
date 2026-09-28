@@ -643,7 +643,7 @@ var _ = Describe("CamundaCluster controller", func() {
 			Equal(v1.ReasonMissingSecret),
 			And(
 				ContainSubstring(name),
-				ContainSubstring("The workloads are scaled to zero because spec.suspend is set"),
+				ContainSubstring("The workloads are scaled to zero because the cluster is suspended"),
 			),
 		)
 		Eventually(func(g Gomega) {
@@ -666,7 +666,7 @@ var _ = Describe("CamundaCluster controller", func() {
 			HaveField("Action", "Suspend"),
 			HaveField("Message", SatisfyAll(
 				ContainSubstring(cluster.Name+"-zeebe"),
-				ContainSubstring("because spec.suspend is set"),
+				ContainSubstring("because the cluster is suspended"),
 			)),
 		)
 
@@ -850,6 +850,50 @@ var _ = Describe("CamundaCluster controller", func() {
 		stampStatefulSetReady(zeebeKey)
 		stampDeploymentReady(gatewayKey)
 		expectReady(cluster, metav1.ConditionTrue, Equal(v1.ReasonHealthy), Not(BeEmpty()))
+	})
+
+	// A hold written by hand proves that the cluster needs to know no holder
+	// kind: any annotation under the prefix suspends it.
+	It("stays suspended while it carries a suspension hold, whatever spec.suspend says", func() {
+		cluster := createDefaultCluster()
+		zeebeKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-zeebe"}
+		gatewayKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-gateway"}
+		fetchStatefulSet(zeebeKey)
+		fetchDeployment(gatewayKey)
+		hold := v1.SuspensionHoldPrefix + "by-hand"
+
+		By("putting a hold on a cluster that does not set spec.suspend")
+		updateCluster(cluster, func(c *v1.CamundaCluster) {
+			if c.Annotations == nil {
+				c.Annotations = map[string]string{}
+			}
+			c.Annotations[hold] = "a test holds this cluster"
+		})
+		Eventually(func(g Gomega) {
+			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
+			g.Expect(*fetchDeployment(gatewayKey).Spec.Replicas).To(BeZero())
+		}, timeout, interval).Should(Succeed())
+		expectReady(
+			cluster,
+			metav1.ConditionFalse,
+			Equal(v1.ReasonSuspensionHeld),
+			And(ContainSubstring(hold), ContainSubstring("a test holds this cluster")),
+		)
+
+		By("setting and clearing spec.suspend under the hold")
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Suspend = true })
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Suspend = false })
+		Consistently(func(g Gomega) {
+			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
+		}, "2s", interval).Should(Succeed(), "clearing spec.suspend does not remove a hold")
+		expectReady(cluster, metav1.ConditionFalse, Equal(v1.ReasonSuspensionHeld), ContainSubstring(hold))
+
+		By("removing the hold")
+		updateCluster(cluster, func(c *v1.CamundaCluster) { delete(c.Annotations, hold) })
+		Eventually(func(g Gomega) {
+			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(Equal(int32(1)))
+			g.Expect(*fetchDeployment(gatewayKey).Spec.Replicas).To(Equal(int32(1)))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("refuses a version below the one the brokers run, and applies a sanctioned one", func() {

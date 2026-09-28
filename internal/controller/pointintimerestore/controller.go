@@ -236,10 +236,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	// The Jobs of a restore carry a controller reference to it, so the garbage
-	// collector removes them with the restore. It writes nothing outside the
-	// cluster, so it needs no finalizer.
+	// collector removes them with the restore. The finalizer is for the
+	// suspension hold on the cluster.
 	if !pitr.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, restore.FinalizeHold(ctx, r.Client, r.APIReader, &pitr, pitr.Spec.ClusterRef.Name)
+	}
+	if err := restore.AddHoldFinalizer(ctx, r.Client, &pitr); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	rec := component.ReconcileContext{

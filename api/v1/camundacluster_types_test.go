@@ -86,6 +86,12 @@ func TestCamundaClusterSuspended(t *testing.T) {
 			cluster: v1.CamundaCluster{},
 			want:    false,
 		},
+		"a suspension hold suspends a cluster that does not set spec.suspend": {
+			cluster: v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+				v1.SuspensionHoldPrefix + "holder": "restores into this cluster",
+			}}},
+			want: true,
+		},
 	}
 
 	for name, tc := range cases {
@@ -93,4 +99,23 @@ func TestCamundaClusterSuspended(t *testing.T) {
 			assert.Equal(t, tc.want, tc.cluster.Suspended())
 		})
 	}
+}
+
+// Only annotations under the prefix are holds, and they come back sorted by
+// key so that a message that names them is stable.
+func TestSuspensionHoldsReadsThePrefixOnly(t *testing.T) {
+	cluster := v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+		v1.SuspensionHoldPrefix + "b": "second",
+		"camunda.io/config-hash":      "not a hold",
+		v1.SuspensionHoldPrefix + "a": "first",
+	}}}
+
+	assert.Equal(
+		t, []v1.SuspensionHold{
+			{Key: v1.SuspensionHoldPrefix + "a", Reason: "first"},
+			{Key: v1.SuspensionHoldPrefix + "b", Reason: "second"},
+		}, cluster.SuspensionHolds(),
+	)
+	assert.True(t, cluster.SuspendRequested())
+	assert.False(t, (&v1.CamundaCluster{}).SuspendRequested())
 }

@@ -84,11 +84,12 @@ type PrepareInput struct {
 	Poll time.Duration
 }
 
-// Prepare carries the cluster of a restore to the state that the restore
-// needs, and reports Done once the cluster is there. It suspends the cluster,
-// waits until the brokers are gone, and sets the Camunda version of the
-// backup. The caller runs it during admission, before it leaves the phase in
-// which the restore has destroyed nothing.
+// Prepare carries the cluster of a restore to the state that the restore needs,
+// and reports Done once the cluster is there. It puts the suspension hold of
+// the restore on the cluster, suspends the cluster, waits until the brokers are
+// gone, and sets the Camunda version of the backup. The caller adds
+// HoldFinalizer to the restore first. The caller runs it during admission,
+// before it leaves the phase in which the restore has destroyed nothing.
 //
 // The order is the safety property, and it is what makes a downgrade safe.
 // Camunda does not support a running cluster that moves backwards: a broker
@@ -120,6 +121,10 @@ func Prepare(
 	}
 
 	key := client.ObjectKeyFromObject(in.Cluster)
+
+	if err := holdTarget(ctx, c, in.Owner, in.Cluster); err != nil {
+		return Outcome{}, err
+	}
 
 	if !in.Cluster.Spec.Suspend {
 		return suspendTarget(ctx, c, p, in, key)
@@ -343,10 +348,10 @@ func WritesVersion(version string) bool {
 	return versionPattern.MatchString(version)
 }
 
-// Resume withdraws the suspension that this restore applied to its cluster.
-// It writes nothing unless the restore recorded that it suspended the
-// cluster, so a cluster that its owner suspended for reasons of their own
-// stays suspended.
+// Resume removes the suspension hold of the restore from its cluster, and
+// withdraws the suspension that this restore applied. It withdraws spec.suspend
+// only when the restore recorded that it suspended the cluster, so a cluster
+// that its owner suspended for reasons of their own stays suspended.
 //
 // The recorded terminal reason decides, the same way it decides for
 // CollectJobs. A completed restore gives the suspension back. A failed
@@ -367,10 +372,17 @@ func Resume(
 	ctx context.Context,
 	c client.Client,
 	reader client.Reader,
+	owner client.Object,
 	p *v1.RestoreProgress,
 	cluster types.NamespacedName,
 ) error {
-	if p.TerminalReason != v1.ReasonCompleted || !p.ClusterSuspended {
+	if p.TerminalReason != v1.ReasonCompleted {
+		return nil
+	}
+	if err := releaseHold(ctx, c, reader, owner, cluster); err != nil {
+		return err
+	}
+	if !p.ClusterSuspended {
 		return nil
 	}
 

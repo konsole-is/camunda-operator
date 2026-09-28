@@ -49,11 +49,12 @@ The operator writes nothing else on the target. It writes no credential, and no 
 
 ### What the operator writes, and what it keeps
 
-Each write is a server-side apply of one field, under a field manager of its own:
+Each write is a server-side apply of one field or annotation, under a field manager of its own:
 
 | Field | Field manager | What happens at the end |
 | --- | --- | --- |
 | `spec.suspend` | `camunda-operator/restore-suspend` | The restore withdraws it when it reaches `Completed`. |
+| The annotation `suspension-hold.camunda.io/<restore UID>` | `camunda-operator/suspension-hold-<restore UID>` | The restore removes it when it reaches `Completed`, and when you delete the restore. A failed restore keeps it. |
 | `spec.version` and the annotation `camunda.io/allow-version-downgrade` | `camunda-operator/restore-version` | The restore keeps `spec.version`. The operator removes the annotation once the brokers carry the version, and as soon as it names another version. |
 
 These names are published. A GitOps tool reads them in a conflict message, and they tell a write of a restore from a write of a user.
@@ -91,8 +92,8 @@ The operator refuses a downgrade that you do by hand on a running cluster, outsi
 The restore withdraws its suspension when it reaches `Completed`, and only when `status.clusterSuspended` is `true`.
 
 - **A target that you suspended yourself stays suspended.** The restore recorded no suspension of its own, so it withdraws none.
-- **A failed restore leaves the target suspended.** Its broker volumes can be empty or half written. Brokers that start over such volumes are worse than a cluster that is down. Read `status.failureMessage`, correct the cause, and create a new restore.
-- **A restore that you delete while it runs leaves the target suspended.** A delete never unsuspends the target. Brokers that start over volumes the restore already erased are worse than a cluster that is down. Unsuspend the cluster yourself once you know what its volumes hold.
+- **A failed restore leaves the target suspended.** Its broker volumes can be empty or half written. Brokers that start over such volumes are worse than a cluster that is down. Read `status.failureMessage`, correct the cause, and create a new restore. The failed restore also keeps its suspension hold, so clearing `spec.suspend` does not start the target. Delete the restore to remove the hold.
+- **A restore that you delete while it runs leaves the target suspended.** A delete never unsuspends the target. It removes the suspension hold of the restore, and `spec.suspend` decides from then on. Brokers that start over volumes the restore already erased are worse than a cluster that is down. Unsuspend the cluster yourself once you know what its volumes hold.
 
 ### A GitOps tool that owns the CamundaCluster
 
@@ -103,8 +104,9 @@ A tool that also declares one of these fields fights the operator for it. Argo C
 - Remove `spec.suspend` and `spec.version` from the manifest for the time of the restore. Or mark both fields as an ignored difference.
 - Put `spec.version` back after the restore, with the version that you want the cluster to run.
 - A tool that prunes annotations it does not declare removes the sanction, and the cluster then refuses the version write. Exclude `camunda.io/allow-version-downgrade` from pruning for the time of the restore.
+- Such a tool also removes the suspension hold of the restore. Exclude the annotations that start with `suspension-hold.camunda.io/` from pruning.
 
-The target must stay suspended for the whole restore, not only at the start. A cluster that somebody unsuspends while the restore runs holds the restore in its current phase, and fails it after ten minutes with reason `ClusterNotSuspended`. Every phase after `Pending` erases something of the target. A `pg_restore` Job that already runs is not stopped, and the target can start beside it. If you unsuspended the target by mistake, suspend it again.
+The target stays suspended for the whole restore. The restore puts a suspension hold on it, and a cluster with a hold stays suspended whatever `spec.suspend` says (see [Suspension holds](camundacluster.md#suspension-holds)). If somebody removes the hold by hand and clears `spec.suspend`, the restore holds in its current phase. It fails ten minutes later with reason `ClusterNotSuspended`. Every phase after `Pending` erases something of the target. If you removed the hold by mistake, suspend the target again.
 
 ## One operation at a time
 
@@ -220,7 +222,7 @@ kubectl logs -n my-cluster-ns job/my-cluster-restore-lrrdbms-0
 
 When you delete the restore, the operator deletes the Jobs it created. A restore that completed already removed its per-broker Jobs. A restore that failed still has them, and this is how you remove them. The restore wrote nothing to the backup bucket, so the delete leaves no artifact there. The recreated broker volumes stay.
 
-A target that the restore suspended stays suspended. That is deliberate. Brokers that start over volumes the restore already erased are worse than a cluster that is down. Unsuspend the cluster yourself once you know what its volumes hold.
+The delete removes the suspension hold of the restore from the target. A target that the restore suspended through `spec.suspend` stays suspended. That is deliberate. Brokers that start over volumes the restore already erased are worse than a cluster that is down. Unsuspend the cluster yourself once you know what its volumes hold.
 
 ## Status
 
@@ -228,7 +230,7 @@ A target that the restore suspended stays suspended. That is deliberate. Brokers
 | --- | --- | --- | --- |
 | `Ready` | `Progressing` | A restore phase runs. | Wait. The message names the phase. |
 | `Ready` | `Completed` | The restore finished, and it gives back the suspension it applied, so the target starts again a moment later. `Ready` is `True`. | Nothing. Unsuspend the target yourself only when you suspended it yourself. |
-| `Ready` | `ClusterNotSuspended` | The target started running again while the restore ran. | Suspend the target again. A restore that already erased something fails ten minutes after the first outage. |
+| `Ready` | `ClusterNotSuspended` | Somebody removed the suspension hold of the restore from the target and cleared `spec.suspend`. | Suspend the target again. A restore that already erased something fails ten minutes after the first outage. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the target. The message names it. | Wait. The restore starts when that operation finishes. |
 | `Ready` | `StorageAlreadyAttached` | Another cluster holds the logical database of the target. The message names it. | Read "The backend". The restore starts when the target holds the database. |
 | `Ready` | `WaitingForHandover` | The target does not hold its logical database yet, or pods still write it. | Wait. If the target does not hold the backend yet, the message names the target and the backend. The restore starts once the target takes it. If pods still write the backend, the message names them. The restore starts when they are gone. |

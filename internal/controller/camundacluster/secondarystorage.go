@@ -385,6 +385,29 @@ func claimSuspends(storage components.Storage) bool {
 	return storage.Holder != nil || storage.Handover != nil
 }
 
+// suspensionHeld builds the Ready condition of a cluster that carries
+// suspension holds. When applyErr is set, the message carries it as the error
+// of the last apply.
+func suspensionHeld(cluster *v1.CamundaCluster, applyErr error) metav1.Condition {
+	holds := cluster.SuspensionHolds()
+	named := make([]string, 0, len(holds))
+	for _, hold := range holds {
+		named = append(named, fmt.Sprintf("%s (%s)", hold.Key, hold.Reason))
+	}
+	message := fmt.Sprintf(
+		"The cluster stays suspended while it carries a suspension hold, whatever spec.suspend "+
+			"says. Holds: %s",
+		strings.Join(named, ", "),
+	)
+
+	return conditions.Ready(
+		metav1.ConditionFalse,
+		v1.ReasonSuspensionHeld,
+		appendApplyFailure(message, applyErr),
+		cluster.Generation,
+	)
+}
+
 // storageHeld builds the Ready condition of a cluster whose backend another
 // cluster holds. When applyErr is set, the message carries it as the error of
 // the last apply.

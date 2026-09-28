@@ -18,6 +18,7 @@ package logicalrestorerdbms
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -369,6 +370,23 @@ func (w *world) suspend(suspended bool) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// overrideHolds clears spec.suspend of the target and removes every
+// suspension hold from it, which is what a user does to start a held target
+// on purpose.
+func (w *world) overrideHolds() {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), w.cluster)).To(Succeed())
+		w.cluster.Spec.Suspend = false
+		for key := range w.cluster.Annotations {
+			if strings.HasPrefix(key, v1.SuspensionHoldPrefix) {
+				delete(w.cluster.Annotations, key)
+			}
+		}
+		g.Expect(k8sClient.Update(ctx, w.cluster)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
 // probeServer stands in for the DatabaseServerConfig controller, which
 // publishes the probed major version and a current Ready.
 func probeServer(server *v1.DatabaseServerConfig, version string) {
@@ -466,6 +484,16 @@ func clusterSuspended(g Gomega, w *world) bool {
 	g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
 
 	return cluster.Spec.Suspend
+}
+
+// holdOf returns the suspension hold of the restore on the target, and
+// whether the target carries it.
+func holdOf(g Gomega, w *world, lrr *v1.LogicalRestoreRDBMS) (string, bool) {
+	var cluster v1.CamundaCluster
+	g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+	reason, ok := cluster.Annotations[v1.SuspensionHoldPrefix+string(latest(g, lrr).UID)]
+
+	return reason, ok
 }
 
 func readyCondition(lrr *v1.LogicalRestoreRDBMS) *metav1.Condition {

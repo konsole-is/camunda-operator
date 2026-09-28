@@ -1,0 +1,163 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package restore
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
+)
+
+// unheld removes the hold of the restore from the cluster of the world, in
+// the store and in the copy that the step reads.
+func (w *prepareWorld) unheld(t *testing.T) {
+	t.Helper()
+
+	current := w.live(t)
+	delete(current.Annotations, holdKey(w.restore))
+	require.NoError(t, w.client.Update(t.Context(), current))
+	delete(w.cluster.Annotations, holdKey(w.restore))
+}
+
+// liveRestore returns the restore of the world as the store holds it.
+func (w *prepareWorld) liveRestore(t *testing.T) *v1.PointInTimeRestore {
+	t.Helper()
+
+	var current v1.PointInTimeRestore
+	require.NoError(t, w.client.Get(t.Context(), client.ObjectKeyFromObject(w.restore), &current))
+
+	return &current
+}
+
+// The hold comes before every other write, so a cluster that somebody
+// unsuspends at any later point stays down.
+func TestPrepareHoldsTheClusterBeforeAnythingElse(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	w.unheld(t)
+	w.unsuspended(t)
+
+	w.look(t)
+
+	require.Len(t, *w.applies, 1, "the suspension is recorded before it is written")
+	hold := (*w.applies)[0]
+	assert.Equal(t, string(holdManager(w.restore)), hold.manager)
+	assert.Equal(t, clusterUID, hold.cluster.UID, "the apply carries no precondition")
+	assert.Equal(
+		t,
+		map[string]string{holdKey(w.restore): "PointInTimeRestore ns/my-cluster-pitr restores into this cluster"},
+		hold.cluster.Annotations,
+	)
+}
+
+// Each restore applies its hold under a field manager of its own, so the
+// apply of one restore never removes the hold of another.
+func TestHoldManagerIsPerRestore(t *testing.T) {
+	t.Parallel()
+
+	first, second := restoreOwner(1), restoreOwner(1)
+	first.UID, second.UID = "first", "second"
+
+	assert.NotEqual(t, holdManager(first), holdManager(second))
+	assert.NotEqual(t, holdKey(first), holdKey(second))
+	assert.Equal(t, v1.SuspensionHoldPrefix+"first", holdKey(first))
+}
+
+// A completed restore removes its hold. The removal applies an object without
+// the annotation under the manager of the hold.
+func TestResumeRemovesTheHoldOfACompletedRestore(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+
+	require.NoError(t, Resume(
+		t.Context(), w.client, w.client, w.restore, w.completed(), client.ObjectKeyFromObject(w.cluster),
+	))
+
+	holds := w.appliesBy(holdManager(w.restore))
+	require.Len(t, holds, 1)
+	assert.Empty(t, holds[0].cluster.Annotations)
+	assert.Equal(t, clusterUID, holds[0].cluster.UID)
+}
+
+// A failed restore keeps its hold, as it keeps the suspension, so a user who
+// clears spec.suspend does not start brokers over half-written volumes.
+func TestResumeKeepsTheHoldOfAFailedRestore(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	Fail(w.progress(), v1.ReasonFailed, "a broker could not restore", metav1.Now())
+
+	require.NoError(t, Resume(
+		t.Context(), w.client, w.client, w.restore, w.progress(), client.ObjectKeyFromObject(w.cluster),
+	))
+
+	assert.Empty(t, *w.applies)
+}
+
+// The finalizer goes on once, before the restore can write a hold.
+func TestAddHoldFinalizerAddsItOnce(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	owner := w.liveRestore(t)
+
+	require.NoError(t, AddHoldFinalizer(t.Context(), w.client, owner))
+	require.NoError(t, AddHoldFinalizer(t.Context(), w.client, owner))
+
+	assert.Equal(t, []string{HoldFinalizer}, w.liveRestore(t).Finalizers)
+}
+
+// A deleted restore removes its hold and then its finalizer. The suspension
+// that it applied through spec.suspend stays.
+func TestFinalizeHoldRemovesTheHoldAndThenTheFinalizer(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	owner := w.liveRestore(t)
+	require.NoError(t, AddHoldFinalizer(t.Context(), w.client, owner))
+
+	require.NoError(t, FinalizeHold(t.Context(), w.client, w.client, owner, w.cluster.Name))
+
+	holds := w.appliesBy(holdManager(owner))
+	require.Len(t, holds, 1)
+	assert.Empty(t, holds[0].cluster.Annotations)
+	assert.Empty(t, w.appliesBy(FieldManagerTargetSuspend))
+	assert.False(t, controllerutil.ContainsFinalizer(w.liveRestore(t), HoldFinalizer))
+}
+
+// A restore whose cluster is gone has no hold to remove, and it still lets go.
+func TestFinalizeHoldLetsGoWhenTheClusterIsGone(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	owner := w.liveRestore(t)
+	require.NoError(t, AddHoldFinalizer(t.Context(), w.client, owner))
+	require.NoError(t, w.client.Delete(t.Context(), w.cluster))
+
+	require.NoError(t, FinalizeHold(t.Context(), w.client, w.client, owner, w.cluster.Name))
+
+	assert.Empty(t, *w.applies)
+	assert.False(t, controllerutil.ContainsFinalizer(w.liveRestore(t), HoldFinalizer))
+}

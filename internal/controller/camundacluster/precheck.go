@@ -177,6 +177,9 @@ func (res *resolver) resolveEffective(ctx context.Context, in *components.Input)
 		}
 	}
 	in.Effective = components.NewEffective(merged)
+	if res.cluster.SuspendRequested() {
+		in.Effective.Suspend = true
+	}
 	in.Images = components.ReleaseImages(merged, release)
 
 	return nil

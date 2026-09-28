@@ -234,7 +234,7 @@ kubectl get camundacluster my-cluster -n my-cluster-ns \
   -o jsonpath='{.metadata.managedFields[*].manager}'
 ```
 
-`camunda-operator/restore-suspend` among those managers means that a restore applied the suspension. A restore that reaches `Completed` gives it back on its own, so wait for that. A restore that failed keeps it, and the cluster is yours to start again once you know what its volumes hold.
+`camunda-operator/restore-suspend` among those managers means that a restore applied the suspension. A restore that reaches `Completed` gives it back on its own, so wait for that. A restore that failed keeps it, and it keeps its [suspension hold](../crds/camundacluster.md#suspension-holds) too. Once you know what the volumes hold, delete the failed restore. Then the cluster is yours to start again.
 
 CAUTION: A merge patch of `spec.suspend` takes the field from the restore that owns it. A restore that is still running suspends the cluster again at once, and the patch achieves nothing. A restore that already failed leaves the cluster to you, and the volumes hold what the restore wrote before it stopped.
 

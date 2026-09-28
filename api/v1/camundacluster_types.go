@@ -18,6 +18,7 @@ package v1
 
 import (
 	"slices"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -503,7 +504,8 @@ type CamundaClusterSpec struct {
 	// +optional
 	Monitoring *ClusterMonitoringSpec `json:"monitoring,omitempty"`
 	// Suspend scales every workload to zero and keeps the data. Defaults to
-	// false.
+	// false. A suspension hold annotation on the cluster also suspends it,
+	// whatever this field says. See SuspensionHoldPrefix.
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
 	// Pause halts the reconciliation of this cluster entirely and leaves the
@@ -634,12 +636,45 @@ var suspendedReadyReasons = []string{
 	ReasonWaitingForHandover,
 }
 
+// SuspensionHoldPrefix is the prefix of a suspension hold annotation. A
+// cluster that carries at least one such annotation stays suspended, whatever
+// spec.suspend says. The part after the prefix names the holder, and the
+// value says why it holds the cluster.
+const SuspensionHoldPrefix = "suspension-hold.camunda.io/"
+
+// SuspensionHold is one suspension hold annotation of a cluster.
+type SuspensionHold struct {
+	// Key is the annotation key.
+	Key string
+	// Reason is the annotation value.
+	Reason string
+}
+
+// SuspensionHolds returns the suspension holds of the cluster, sorted by key.
+func (in *CamundaCluster) SuspensionHolds() []SuspensionHold {
+	var holds []SuspensionHold
+	for key, reason := range in.Annotations {
+		if strings.HasPrefix(key, SuspensionHoldPrefix) {
+			holds = append(holds, SuspensionHold{Key: key, Reason: reason})
+		}
+	}
+	slices.SortFunc(holds, func(a, b SuspensionHold) int { return strings.Compare(a.Key, b.Key) })
+
+	return holds
+}
+
+// SuspendRequested reports whether spec.suspend or a suspension hold suspends
+// the cluster.
+func (in *CamundaCluster) SuspendRequested() bool {
+	return in.Spec.Suspend || len(in.SuspensionHolds()) > 0
+}
+
 // Suspended reports whether the operator scales every workload of the cluster
-// to zero: spec.suspend is set, or Ready carries one of the
-// suspendedReadyReasons. An extension attached to the cluster follows this,
-// not spec.suspend alone.
+// to zero: spec.suspend or a suspension hold is set, or Ready carries one of
+// the suspendedReadyReasons. An extension attached to the cluster follows
+// this, not spec.suspend alone.
 func (in *CamundaCluster) Suspended() bool {
-	if in.Spec.Suspend {
+	if in.SuspendRequested() {
 		return true
 	}
 

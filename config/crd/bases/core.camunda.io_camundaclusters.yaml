@@ -5873,7 +5873,8 @@ spec:
               suspend:
                 description: |-
                   Suspend scales every workload to zero and keeps the data. Defaults to
-                  false.
+                  false. A suspension hold annotation on the cluster also suspends it,
+                  whatever this field says. See SuspensionHoldPrefix.
                 type: boolean
               tasklist:
                 description: Tasklist configures the Tasklist web application.

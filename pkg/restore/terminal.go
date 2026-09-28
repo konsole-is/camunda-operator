@@ -65,7 +65,7 @@ func Finish(
 	// another node cannot attach a ReadWriteOnce volume that a completed pod
 	// still holds, so the cluster would stall on the very volumes this branch
 	// is freeing.
-	if err := Resume(ctx, c, reader, p, types.NamespacedName{
+	if err := Resume(ctx, c, reader, owner, p, types.NamespacedName{
 		Namespace: owner.GetNamespace(), Name: cluster,
 	}); err != nil {
 		return Outcome{}, err

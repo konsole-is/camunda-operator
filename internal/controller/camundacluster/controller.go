@@ -150,7 +150,8 @@ const defaultRetryInterval = 30 * time.Second
 // deleted records one Paused event and writes nothing else, status included.
 //
 // Ready is True only when every component the cluster needs is True, and its
-// reason otherwise comes from conditions.Aggregate. A cluster whose backend
+// reason otherwise comes from conditions.Aggregate. A cluster with a suspension
+// hold reports SuspensionHeld. A cluster whose backend
 // another cluster holds reports StorageAlreadyAttached instead. A cluster that
 // holds the backend reports WaitingForHandover while pods of another cluster,
 // or a writer for another cluster, still write it.
@@ -323,6 +324,8 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// backups, so it stays while the apply fails. The message carries the
 	// error, and the component conditions carry the state of each workload.
 	switch {
+	case len(cluster.SuspensionHolds()) > 0:
+		conditions.Stage(&cluster, suspensionHeld(&cluster, reconcileErr))
 	case in.Storage.Holder != nil:
 		conditions.Stage(&cluster, storageHeld(&cluster, in.Storage.Holder, reconcileErr))
 	case in.Storage.Handover != nil:
@@ -386,7 +389,7 @@ func (r *CamundaClusterReconciler) reportFailedPreCheck(
 	// suspended render is what a failed pre-check skips, so the workloads stop
 	// here instead, see suspendExplicitly.
 	stopped, suspendErr := r.suspendExplicitly(ctx, cluster)
-	if cluster.Spec.Suspend {
+	if cluster.SuspendRequested() {
 		if stopped && suspendErr == nil {
 			failure.Message += suspendNote
 		}
