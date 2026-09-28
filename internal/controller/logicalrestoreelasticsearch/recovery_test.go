@@ -30,9 +30,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/esadmin/esadmintest"
 )
 
-// Elasticsearch recovers the snapshots it accepted whatever happens to the
-// restore that asked for them. Another cluster that starts on the backend
-// meanwhile writes beside that recovery.
+// A restore keeps its backend while Elasticsearch still recovers snapshots that it asked for.
 var _ = Describe("LogicalRestoreElasticsearch after Elasticsearch accepted its snapshots", func() {
 	It("keeps its backend after it fails until Elasticsearch finishes the recovery", func() {
 		w := newWorld()

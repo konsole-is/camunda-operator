@@ -223,22 +223,21 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	if lres.Terminal() {
-		// The terminal branch that every restore kind shares. It stages the
-		// recorded outcome again, and it gives the Jobs, the suspension, and
-		// the claim back in the one order that frees the broker volumes. The
-		// Jobs of a completed restore take more than one look to go, so an
-		// answer that is not Done holds the two steps behind them.
 		held, err := r.holdRecovery(ctx, &lres)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		// The claim on the target stays with a held recovery, so no other
-		// backup or restore of the target starts beside it.
+		// Elasticsearch still writes the target, so the writer, the suspension and the claim all stay.
 		if held > 0 {
 			restore.StageTerminal(&lres, &lres.Status.RestoreProgress)
 
 			return ctrl.Result{RequeueAfter: held}, nil
 		}
+		// The terminal branch that every restore kind shares. It stages the
+		// recorded outcome again, and it gives the Jobs, the suspension, and
+		// the claim back in the one order that frees the broker volumes. The
+		// Jobs of a completed restore take more than one look to go, so an
+		// answer that is not Done holds the two steps behind them.
 		if lres.Status.Backend != "" {
 			err := restore.ReleaseWriter(
 				ctx, r.Client, r.opts.ClaimNamespace, lres.Status.Backend, &lres, lres.Status.TargetClusterUID,

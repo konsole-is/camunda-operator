@@ -340,23 +340,17 @@ var holderKinds = map[string]func() claimHolder{
 	"PointInTimeRestore":          func() claimHolder { return &v1.PointInTimeRestore{} },
 }
 
-// HolderActive reports whether the resource that holder names still needs the
-// claim. It reads the resource of holder.Kind in the namespace. Absent, a
-// UID other than holder.UID (a later resource with the same name), or a
-// terminal phase means inactive. A kind that the API server does not serve
-// means inactive too: no resource of that kind can exist.
-//
-// A kind that holderKinds does not list means active. The claim cannot read
-// such a holder, so it must not take the cluster from it. An uninterpretable
-// holder blocks until a human removes its Lease.
+// HolderActive reports whether the resource that holder names in namespace
+// still needs the claim. Absent, a UID other than holder.UID (a later
+// resource with the same name), a kind the API server does not serve, or a
+// terminal phase means inactive. A kind that holderKinds does not list means
+// active, and blocks until a human removes its Lease.
 //
 // Two terminal holders stay active: an Elasticsearch backup that left the
 // cluster's exporting paused (see keepsClusterPaused), and an Elasticsearch
 // restore while its status.recoveryHeld is true.
 //
-// reader must read the API server directly: a cached read of the holder can
-// be behind, and a stale "gone" or a stale phase would take a live claim
-// over.
+// reader must read the API server directly, not a cache.
 func HolderActive(ctx context.Context, reader client.Reader, namespace string, holder Claimant) (bool, error) {
 	resource, known, err := holderResource(ctx, reader, namespace, holder)
 	if err != nil {

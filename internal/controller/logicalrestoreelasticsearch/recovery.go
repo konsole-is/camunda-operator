@@ -68,8 +68,7 @@ func (r *Reconciler) finalize(ctx context.Context, lres *v1.LogicalRestoreElasti
 }
 
 // holdForRecovery marks a restore that ends while Elasticsearch can still
-// recover its snapshots as held. The look that deletes the target indices
-// records the repository, so a restore without one asked for nothing.
+// recover its snapshots as held.
 func (r *Reconciler) holdForRecovery(lres *v1.LogicalRestoreElasticsearch) {
 	if lres.Status.Repository == "" || lres.Status.RecoveryHeld {
 		return
@@ -88,7 +87,7 @@ func (r *Reconciler) holdForRecovery(lres *v1.LogicalRestoreElasticsearch) {
 
 // holdRecovery keeps a held restore on its backend while Elasticsearch
 // recovers the restored indices. It returns how long to wait before the next
-// look, or zero once the restore holds nothing.
+// look, or zero once the hold is over and the caller can release the backend.
 func (r *Reconciler) holdRecovery(ctx context.Context, lres *v1.LogicalRestoreElasticsearch) (time.Duration, error) {
 	if !lres.Status.RecoveryHeld {
 		return 0, nil
@@ -102,8 +101,6 @@ func (r *Reconciler) holdRecovery(ctx context.Context, lres *v1.LogicalRestoreEl
 	now := metav1.Now()
 	switch {
 	case failure != nil:
-		// The clock is in status, so a restart of the operator neither resets
-		// nor skips it.
 		if lres.Status.RecoveryUnknownSince == nil {
 			lres.Status.RecoveryUnknownSince = &now
 		}
@@ -142,12 +139,12 @@ func (r *Reconciler) holdRecovery(ctx context.Context, lres *v1.LogicalRestoreEl
 	return 0, nil
 }
 
-// A look that released the registration can crash before the cleared hold is
-// in status, so the next look registers it again rather than only renewing it.
 func (r *Reconciler) keepWriter(ctx context.Context, lres *v1.LogicalRestoreElasticsearch) (time.Duration, error) {
 	if lres.Status.Backend == "" {
 		return r.opts.PollInterval, nil
 	}
+	// A look that released the registration can crash before the cleared hold is
+	// in status, so the next look registers it again rather than only renewing it.
 	err := restore.RegisterWriter(
 		ctx, r.Client, r.APIReader, r.opts.ClaimNamespace, lres.Status.Backend, lres, lres.Status.TargetClusterUID,
 	)
