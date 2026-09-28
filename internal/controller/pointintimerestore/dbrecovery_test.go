@@ -472,6 +472,14 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 
 		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
 		expectRecovering(pitr, "was deleted", w.server.Name)
+
+		repointContract(w)
+		Eventually(func(g Gomega) {
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Backend).To(ContainSubstring(recoveredHost))
+			g.Expect(backendsHeldBy(pitr)).To(Equal([]string{current.Status.Backend}))
+			backend = current.Status.Backend
+		}, timeout, interval).Should(Succeed())
 		Consistently(func() []string {
 			return writersSeenByAnotherCluster(backend)
 		}, "2s", interval).Should(HaveLen(1))
@@ -569,6 +577,15 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 		expectRecovering(pitr, "started running again", w.server.Name)
+
+		By("following the endpoint that the contract names while it holds")
+		repointContract(w)
+		Eventually(func(g Gomega) {
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Backend).To(ContainSubstring(recoveredHost))
+			g.Expect(backendsHeldBy(pitr)).To(Equal([]string{current.Status.Backend}))
+			backend = current.Status.Backend
+		}, timeout, interval).Should(Succeed())
 
 		By("holding past the mid-run grace while the request is unanswered")
 		Consistently(func(g Gomega) {

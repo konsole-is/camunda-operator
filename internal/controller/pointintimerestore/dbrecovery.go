@@ -24,6 +24,7 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -93,6 +94,10 @@ func (r *Reconciler) enterDatabaseRecovery(
 
 		return r.holdRecovering(pitr, failure), nil
 	}
+	// A cluster claims the endpoint that the contract names, Ready or not.
+	if _, err := r.followBackend(ctx, pitr, resolved.server); err != nil {
+		return restore.Outcome{}, err
+	}
 	// The brokers must stay down for the whole rollback.
 	if failure := notSuspended(resolved.cluster); failure != nil {
 		outcome, held, err := r.holdForRollback(ctx, pitr, failure.Reason, fmt.Sprintf(
@@ -116,11 +121,6 @@ func (r *Reconciler) enterDatabaseRecovery(
 				client.ObjectKeyFromObject(contract),
 			),
 		}), nil
-	}
-
-	// A cluster claims the endpoint that the contract names, Ready or not.
-	if _, err := r.followBackend(ctx, pitr, resolved); err != nil {
-		return restore.Outcome{}, err
 	}
 
 	request := recoveryRequest(pitr)
@@ -194,6 +194,9 @@ func (r *Reconciler) holdForRollback(
 ) (outcome restore.Outcome, held bool, err error) {
 	contract, err := r.runningRollback(ctx, pitr)
 	if err != nil || contract == nil {
+		return restore.Outcome{}, false, err
+	}
+	if _, err := r.followBackend(ctx, pitr, contract); err != nil {
 		return restore.Outcome{}, false, err
 	}
 
@@ -326,7 +329,7 @@ func (r *Reconciler) recoveryAnswered(
 		return restore.Outcome{Wait: r.opts.PollInterval}, nil
 	}
 
-	failure, err := r.followBackend(ctx, pitr, resolved)
+	failure, err := r.followBackend(ctx, pitr, contract)
 	if err != nil {
 		return restore.Outcome{}, err
 	}
@@ -350,13 +353,22 @@ func (r *Reconciler) recoveryAnswered(
 }
 
 // followBackend moves the writer registration of the restore to the backend
-// that the contract names.
+// of the pinned database at the endpoint that contract names.
 func (r *Reconciler) followBackend(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
-	resolved *chain,
+	contract *v1.DatabaseServerConfig,
 ) (*conditions.PreCheckFailure, error) {
-	backend, failure := restore.DatabaseBackend(resolved.storage, resolved.dbConfig, resolved.server)
+	pinned := pitr.Status.Storage
+	if pinned == nil {
+		return nil, nil
+	}
+	storage := &v1.SecondaryStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Namespace: pitr.Namespace, Name: pinned.SecondaryStorageConfig},
+		Spec:       v1.SecondaryStorageConfigSpec{Type: v1.SecondaryStorageTypeRDBMS},
+	}
+	dbConfig := &v1.DatabaseConfig{Spec: v1.DatabaseConfigSpec{DatabaseName: pinned.DatabaseName}}
+	backend, failure := restore.DatabaseBackend(storage, dbConfig, contract)
 	if failure != nil || backend == pitr.Status.Backend {
 		return failure, nil
 	}

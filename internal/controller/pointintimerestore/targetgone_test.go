@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -36,6 +37,7 @@ import (
 func TestReplacementBetweenTwoReadsKeepsTheRollbackHeld(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, v1.AddToScheme(scheme))
+	require.NoError(t, coordinationv1.AddToScheme(scheme))
 
 	pitr := &v1.PointInTimeRestore{
 		ObjectMeta: metav1.ObjectMeta{Name: "pitr", Namespace: "ns", UID: "pitr-uid"},
@@ -89,6 +91,7 @@ func TestReplacementBetweenTwoReadsKeepsTheRollbackHeld(t *testing.T) {
 		}).
 		Build()
 	r := &Reconciler{
+		Client:        reader,
 		APIReader:     reader,
 		EventRecorder: events.NewFakeRecorder(10),
 		opts:          Options{}.withDefaults(),
