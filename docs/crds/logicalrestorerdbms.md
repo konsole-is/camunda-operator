@@ -160,7 +160,7 @@ The brokers write the backup prefix of their own cluster into their configuratio
 
 The backup must record the Camunda version it was taken with, in `status.version`. A backup that recorded none fails the restore: nothing then proves that the target can read it. A backup whose recorded version is not of the form `x.y.z` fails it too, because the operator cannot write such a value on the target.
 
-CAUTION: The restore sets `spec.version` to the version of the backup every time, and this rule accepts a target one minor newer. A target that this rule would already accept is therefore moved back one minor. The cluster comes back at the version of the backup, and you upgrade it forward again after the restore.
+CAUTION: The restore sets `spec.version` to the version of the backup every time, and this rule accepts a target one minor newer. A target that this rule already accepts is therefore moved back one minor. The cluster comes back at the version of the backup, and you upgrade it forward again after the restore.
 
 The rules compare no partition count. A relational backup records none, and it needs none. The restore application reads the exporter position from the restored database and aligns the partitions itself.
 
@@ -170,7 +170,7 @@ These rules read the running shape of the target, not `status.management` of the
 
 The operator runs one Job that rebuilds the logical database of the target. The Job downloads the dump from the backup bucket, then runs `pg_restore --clean --if-exists --no-owner` on it.
 
-**The Job connects as the application role of the target**, the role that `DatabaseConfig.spec.credentialsSecretRef` names. `pg_restore --clean` drops each object before it recreates it, and PostgreSQL lets only the owner of an object drop it. The application role owns the database and every object in it. The backup role that wrote the dump owns nothing: it holds USAGE and CREATE on the schema and DML on the tables. A restore that connected as the backup role would fail every DROP with "must be owner of table" and would restore no data.
+**The Job connects as the application role of the target**, the role that `DatabaseConfig.spec.credentialsSecretRef` names. `pg_restore --clean` drops each object before it recreates it, and PostgreSQL lets only the owner of an object drop it. The application role owns the database and every object in it. The backup role that wrote the dump owns nothing: it holds USAGE and CREATE on the schema and DML on the tables. If a restore connects as the backup role, every DROP fails with "must be owner of table", and the restore writes no data.
 
 Every credentials Secret lives in the namespace of the target. A Secret that is missing or lacks a key holds the restore with reason `MissingSecret` for the database credentials, or `MissingCredentials` for the bucket credentials.
 
@@ -183,7 +183,7 @@ The operator records the Job in `status.secondaryJobName` and follows it to its 
 - A completed Job moves the restore to `RestoringPrimaryStorage`.
 - A failed Job fails the restore, and the message names the Job. The logical database then holds a partial restore that only a new attempt repairs.
 - A Job that disappears before it completes fails the restore, for the same reason.
-- A Job under that name that carries the UID of another restore fails the restore. Its completion would let this restore continue without a restore of its own database.
+- A Job under that name that carries the UID of another restore fails the restore. Without this rule, the completion of that Job lets this restore continue without a restore of its own database.
 
 ## Primary storage
 

@@ -113,6 +113,59 @@ func TestCheckPage(t *testing.T) {
 			page: "The " + strings.Repeat("word ", 15) + "\n\n" + strings.Repeat("word ", 15) + "end.",
 		},
 		{
+			name: "a semicolon is reported",
+			page: "The pod starts; the job ends.",
+			want: []finding{{line: 1, banned: ";"}},
+		},
+		{
+			name: "each modal is reported at its line",
+			page: "The pod would start.\nThe job could end. It May fail.",
+			want: []finding{{line: 1, banned: "would"}, {line: 2, banned: "could"}, {line: 2, banned: "may"}},
+		},
+		{
+			name: "a contracted modal is reported",
+			page: "The pod couldn't start. The job wouldn’t end.",
+			want: []finding{{line: 1, banned: "couldn't"}, {line: 1, banned: "wouldn’t"}},
+		},
+		{
+			name: "a modal inside a longer word is not reported",
+			page: "The pod shoulder mayhem couldron ends.",
+		},
+		{
+			name: "a semicolon or a modal in code is not reported",
+			page: "The `a; b` value and `may` flag end.\n\n```\nx; it would, could, or may fail\n```\n",
+		},
+		{
+			name: "a semicolon in a link target is not reported",
+			page: "See [the page](https://example.com/a;b) now.",
+		},
+		{
+			name: "a modal in a link target with parentheses is not reported",
+			page: "See [the page](https://example.com/(a)/may) now.",
+		},
+		{
+			name: "a semicolon or a modal in an autolink or a bare URL is not reported",
+			page: "See <https://example.com/a;b> and https://example.com/may-release/x;y now.",
+		},
+		{
+			name: "a semicolon right after a bare URL is reported",
+			page: "See https://example.com/a; the pod starts.",
+			want: []finding{{line: 1, banned: ";"}},
+		},
+		{
+			name: "a line that starts with an autolink is read",
+			page: "<https://example.com> would fail.",
+			want: []finding{{line: 1, banned: "would"}},
+		},
+		{
+			name: "a modal in an email autolink is not reported",
+			page: "Write to <may@example.com> now.",
+		},
+		{
+			name: "a period after a bare URL ends the sentence",
+			page: "The " + strings.Repeat("word ", 22) + "https://example.com/a. The pod starts now.",
+		},
+		{
 			name: "abbreviation does not end a sentence",
 			page: "The " + strings.Repeat("word ", 12) + "e.g. " + strings.Repeat("word ", 11) + "end.",
 			want: []finding{{line: 1, words: 26, limit: 25}},

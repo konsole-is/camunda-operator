@@ -56,11 +56,11 @@ func AddHoldFinalizer(ctx context.Context, c client.Client, owner client.Object)
 	return nil
 }
 
-// FinalizeHold removes the Jobs of a deleted restore, then its suspension
-// hold, and then HoldFinalizer. Outcome.Done reports that the finalizer is
-// gone. cluster is the name of the target, which lives in the namespace of the
-// restore. The suspension that the restore applied through spec.suspend stays.
-// The reader must be uncached.
+// FinalizeHold removes the Jobs, the suspension hold and HoldFinalizer of a
+// deleted restore. Outcome.Done reports that the finalizer is gone. cluster is
+// the name of the target, which lives in the namespace of the restore. The
+// suspension that the restore applied through spec.suspend stays. The reader
+// must be uncached.
 func FinalizeHold(
 	ctx context.Context,
 	c client.Client,
@@ -97,8 +97,7 @@ func FinalizeHold(
 	return Outcome{Done: true}, nil
 }
 
-// removeOwnedJobs deletes the Jobs that the restore controls, and reports
-// whether none is left.
+// removeOwnedJobs reports whether no Job of the restore is left.
 func removeOwnedJobs(ctx context.Context, c client.Client, reader client.Reader, owner client.Object) (bool, error) {
 	var jobs batchv1.JobList
 	if err := reader.List(ctx, &jobs, client.InNamespace(owner.GetNamespace())); err != nil {

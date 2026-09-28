@@ -68,6 +68,7 @@ func newPrepareWorld(t *testing.T) *prepareWorld {
 
 	owner := restoreOwner(1)
 	owner.UID = "restore-uid"
+	owner.Status.TargetClusterUID = clusterUID
 	cluster := &v1.CamundaCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "my-cluster",
@@ -478,6 +479,27 @@ func TestResumeWritesNothingForAClusterThatIsGone(t *testing.T) {
 	))
 
 	assert.Empty(t, w.appliesBy(FieldManagerTargetSuspend))
+}
+
+// A cluster created again under the same name is not the cluster this restore
+// suspended.
+func TestResumeWritesNothingForAClusterCreatedAgain(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	w.progress().ClusterSuspended = true
+	require.NoError(t, w.client.Delete(t.Context(), w.cluster))
+	require.NoError(t, w.client.Create(t.Context(), &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "ns", UID: "another-cluster"},
+		Spec:       v1.CamundaClusterSpec{Suspend: true},
+	}))
+
+	require.NoError(t, Resume(
+		t.Context(), w.client, w.client, w.restore, w.completed(), client.ObjectKeyFromObject(w.cluster),
+	))
+
+	assert.Empty(t, w.appliesBy(FieldManagerTargetSuspend))
+	assert.True(t, w.live(t).Spec.Suspend)
 }
 
 // The broker volumes of a failed restore can be empty or half written, and
