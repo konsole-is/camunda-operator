@@ -100,7 +100,7 @@ func archivingServerIn(namespace, name, contract string, from metav1.Time) *v1.D
 			},
 		},
 	}
-	Expect(k8sClient.Create(ctx, server)).To(Succeed())
+	createServer(server)
 
 	makeClusterHealthy(server, "7000000000000000001")
 	completeBaseBackup(server, "base-1", from)

@@ -78,9 +78,22 @@ func serverNamed(
 			Archive:              archive,
 		},
 	}
-	Expect(k8sClient.Create(ctx, server)).To(Succeed())
+	createServer(server)
 
 	return server
+}
+
+// createServer creates server and deletes it when the spec ends. A server
+// that outlives its spec keeps looking again on its retry timer. The
+// controller runs one reconcile at a time, so every later spec waits behind
+// those looks.
+func createServer(server *v1.DatabaseServer) {
+	GinkgoHelper()
+
+	Expect(k8sClient.Create(ctx, server)).To(Succeed())
+	DeferCleanup(func() {
+		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, server))).To(Succeed())
+	})
 }
 
 // serverInBucketNamespace creates the minimal DatabaseServer that archives to
@@ -187,7 +200,7 @@ func serverOnPreset(walStorageSize string) (
 			DatabaseServerConfig: "camunda",
 		},
 	}
-	Expect(k8sClient.Create(ctx, server)).To(Succeed())
+	createServer(server)
 
 	return server, preset, release
 }
@@ -1417,7 +1430,7 @@ var _ = Describe("DatabaseServer controller", func() {
 				Suspend:              true,
 			},
 		}
-		Expect(k8sClient.Create(ctx, server)).To(Succeed())
+		createServer(server)
 
 		taken := expectConditionReason(server, v1.ConditionClusterReady, metav1.ConditionFalse, v1.ReasonClusterTaken)
 		Expect(taken.Message).To(ContainSubstring("no owner controls it"))
