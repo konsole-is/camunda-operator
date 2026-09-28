@@ -65,7 +65,7 @@ Each write is a server-side apply of one field or annotation, under a field mana
 | Field | Field manager | What happens at the end |
 | --- | --- | --- |
 | `spec.suspend` | `camunda-operator/restore-suspend` | The restore withdraws it when it reaches `Completed`. |
-| The annotation `suspension-hold.camunda.io/<restore UID>` | `camunda-operator/suspension-hold-<restore UID>` | The restore removes it when it reaches `Completed`, and when you delete the restore. A failed restore keeps it. |
+| The annotation `suspension-hold.camunda.io/<restore UID>` | `camunda-operator/suspension-hold-<restore UID>` | The restore removes it when it reaches `Completed`. When you delete the restore, it removes the hold once its Jobs are gone. A failed restore keeps it. |
 
 These names are published. A GitOps tool reads them in a conflict message, and they tell a write of a restore from a write of a user.
 

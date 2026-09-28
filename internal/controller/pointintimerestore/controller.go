@@ -238,7 +238,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// The Jobs of a restore carry a controller reference to it, so the garbage
 	// collector removes them with the restore.
 	if !pitr.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, restore.FinalizeHold(ctx, r.Client, r.APIReader, &pitr, pitr.Spec.ClusterRef.Name)
+		finalized, err := restore.FinalizeHold(ctx, r.Client, r.APIReader, &pitr, pitr.Spec.ClusterRef.Name)
+
+		return ctrl.Result{RequeueAfter: finalized.Wait}, err
 	}
 	if err := restore.AddHoldFinalizer(ctx, r.Client, &pitr); err != nil {
 		return ctrl.Result{}, err
