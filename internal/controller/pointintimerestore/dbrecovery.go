@@ -18,6 +18,7 @@ package pointintimerestore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -64,6 +65,12 @@ func (r *Reconciler) enterDatabaseRecovery(
 	}
 
 	resolved, failure, err := r.resolve(ctx, pitr, pinAcrossRecovery)
+	if errors.Is(err, errClusterReplaced) {
+		// The cluster was replaced after targetGone read it.
+		return r.goneDuringRollback(ctx, pitr, fmt.Sprintf(
+			"CamundaCluster %s/%s was replaced", pitr.Namespace, pitr.Spec.ClusterRef.Name,
+		))
+	}
 	if err != nil {
 		return r.resolveFailed(pitr, err)
 	}
@@ -106,10 +113,8 @@ func (r *Reconciler) enterDatabaseRecovery(
 	return restore.Outcome{Wait: r.opts.PollInterval}, nil
 }
 
-// targetGone holds a restore whose cluster was deleted or replaced while the
-// server still runs the rollback that the restore asked for, and ends it once
-// the rollback no longer runs. done is false while the cluster is the one
-// that the restore pinned.
+// targetGone hands the look to goneDuringRollback when the cluster is not the
+// one that the restore pinned. done is false while it is.
 func (r *Reconciler) targetGone(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
@@ -127,10 +132,22 @@ func (r *Reconciler) targetGone(
 	if err == nil {
 		gone = fmt.Sprintf("CamundaCluster %s was replaced", key)
 	}
+	outcome, err = r.goneDuringRollback(ctx, pitr, gone)
 
+	return outcome, true, err
+}
+
+// goneDuringRollback holds the restore while the rollback that it asked for
+// still runs, and fails it once the rollback no longer runs. gone says what
+// happened to the cluster.
+func (r *Reconciler) goneDuringRollback(
+	ctx context.Context,
+	pitr *v1.PointInTimeRestore,
+	gone string,
+) (restore.Outcome, error) {
 	contract, err := r.runningRollback(ctx, pitr)
 	if err != nil {
-		return restore.Outcome{}, false, err
+		return restore.Outcome{}, err
 	}
 	if contract != nil {
 		return r.holdRecovering(pitr, &conditions.PreCheckFailure{
@@ -140,7 +157,7 @@ func (r *Reconciler) targetGone(
 					"%s answers the recovery request. Until then, no other cluster starts on the database",
 				gone, client.ObjectKeyFromObject(contract),
 			),
-		}), true, nil
+		}), nil
 	}
 
 	r.fail(pitr, v1.ReasonFailed, fmt.Sprintf(
@@ -149,7 +166,7 @@ func (r *Reconciler) targetGone(
 		gone,
 	))
 
-	return restore.Outcome{}, true, nil
+	return restore.Outcome{}, nil
 }
 
 // runningRollback returns the pinned contract while it carries the request of
@@ -227,6 +244,17 @@ func (r *Reconciler) recoveryAnswered(
 		r.fail(pitr, v1.ReasonFailed, outcome.Message)
 
 		return restore.Outcome{}, nil
+	}
+
+	// A cluster claims the endpoint that the contract names, Ready or not.
+	named, failure := restore.DatabaseBackend(resolved.storage, resolved.dbConfig, contract)
+	if failure == nil && named != pitr.Status.Backend {
+		err := restore.RegisterWriter(
+			ctx, r.Client, r.APIReader, r.ClaimNamespace, named, pitr, pitr.Status.TargetClusterUID,
+		)
+		if err != nil {
+			return restore.Outcome{}, err
+		}
 	}
 
 	// Ready alone is the answer to the spec that was probed, which can still be

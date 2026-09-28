@@ -485,6 +485,38 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		}, timeout, interval).Should(BeEmpty(), "the restore gives the database back once the rollback ended")
 	})
 
+	It("holds the endpoint that the contract names before the contract reaches it", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		before := expectBackendHeld(pitr)
+
+		repointContract(w)
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+
+		var named string
+		Eventually(func(g Gomega) {
+			held := backendsHeldBy(pitr)
+			g.Expect(held).To(HaveLen(2))
+			g.Expect(held).To(ContainElement(before))
+			for _, backend := range held {
+				if backend != before {
+					named = backend
+				}
+			}
+		}, timeout, interval).Should(Succeed())
+		Expect(named).To(ContainSubstring(recoveredHost))
+		Expect(writersSeenByAnotherCluster(named)).To(
+			Equal([]string{"PointInTimeRestore " + w.namespace + "/" + pitr.Name}),
+		)
+		Expect(readRestore(Default, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
+
+		publishContractReady(w, recoveredIdentifier)
+		Eventually(func() []string {
+			return backendsHeldBy(pitr)
+		}, timeout, interval).Should(Equal([]string{named}))
+	})
+
 	It("moves its hold to the endpoint of the recovered server", func() {
 		w := operatorRecoveryWorld()
 		pitr := createRestore(w)
