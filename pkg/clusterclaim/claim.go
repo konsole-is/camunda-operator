@@ -46,6 +46,8 @@ import (
 	"hash/fnv"
 	"strings"
 
+	"k8s.io/utils/ptr"
+
 	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -426,7 +428,7 @@ func keepsClusterPaused(resource claimHolder) bool {
 func recoveryHeld(resource claimHolder) bool {
 	restore, ok := resource.(*v1.LogicalRestoreElasticsearch)
 
-	return ok && restore.Status.RecoveryHeld
+	return ok && ptr.Deref(restore.Status.RecoveryHeld, false)
 }
 
 // takeOver deletes the Lease while it still records holder. A Lease that

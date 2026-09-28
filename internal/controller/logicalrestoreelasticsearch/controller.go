@@ -53,6 +53,8 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/utils/ptr"
+
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -425,7 +427,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 			var registrations []restore.Registration
 			for i := range list.Items {
 				item := &list.Items[i]
-				held := item.Status.RecoveryHeld && item.Status.Backend != ""
+				held := ptr.Deref(item.Status.RecoveryHeld, false) && item.Status.Backend != ""
 				if held || restore.Renewable(item.Status.Backend, item.Terminal(), item.DeletionTimestamp) {
 					registrations = append(registrations, restore.Registration{
 						Owner: item, Backend: item.Status.Backend, Target: item.Status.TargetClusterUID,

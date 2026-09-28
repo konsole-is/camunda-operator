@@ -657,7 +657,7 @@ func TestAFailedRestoreHoldingARecoveryStaysActive(t *testing.T) {
 			ObjectMeta: objectMeta(holder),
 			Status: v1.LogicalRestoreElasticsearchStatus{
 				Phase:        v1.LogicalRestoreFailed,
-				RecoveryHeld: held,
+				RecoveryHeld: &held,
 			},
 		}
 

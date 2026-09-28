@@ -20,6 +20,8 @@ import (
 	"context"
 	"time"
 
+	"k8s.io/utils/ptr"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -80,11 +82,11 @@ func (r *Reconciler) finalize(ctx context.Context, lres *v1.LogicalRestoreElasti
 // holdForRecovery marks a restore that ends while Elasticsearch can still
 // recover its snapshots as held.
 func (r *Reconciler) holdForRecovery(lres *v1.LogicalRestoreElasticsearch) {
-	if lres.Status.Repository == "" || lres.Status.RecoveryHeld {
+	if lres.Status.Repository == "" || lres.Status.RecoveryHeld != nil {
 		return
 	}
 
-	lres.Status.RecoveryHeld = true
+	lres.Status.RecoveryHeld = new(true)
 	r.EventRecorder.Eventf(
 		lres,
 		nil,
@@ -99,7 +101,7 @@ func (r *Reconciler) holdForRecovery(lres *v1.LogicalRestoreElasticsearch) {
 // recovers the restored indices. It returns how long to wait before the next
 // look, or zero once the hold is over and the caller can release the backend.
 func (r *Reconciler) holdRecovery(ctx context.Context, lres *v1.LogicalRestoreElasticsearch) (time.Duration, error) {
-	if !lres.Status.RecoveryHeld {
+	if !ptr.Deref(lres.Status.RecoveryHeld, false) {
 		return 0, nil
 	}
 
@@ -143,7 +145,7 @@ func (r *Reconciler) holdRecovery(ctx context.Context, lres *v1.LogicalRestoreEl
 		)
 	}
 
-	lres.Status.RecoveryHeld = false
+	lres.Status.RecoveryHeld = new(false)
 	lres.Status.RecoveryUnknownSince = nil
 
 	return 0, nil

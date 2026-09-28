@@ -28,6 +28,8 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin/esadmintest"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
+	restorepkg "github.com/konsole-is/camunda-operator/pkg/restore"
 )
 
 // A restore keeps its backend while Elasticsearch still recovers snapshots that it asked for.
@@ -40,7 +42,7 @@ var _ = Describe("LogicalRestoreElasticsearch after Elasticsearch accepted its s
 
 		failRestore(restore)
 
-		Expect(latestOf(restore).Status.RecoveryHeld).To(BeTrue())
+		Expect(latestOf(restore).Status.RecoveryHeld).To(HaveValue(BeTrue()))
 		Consistently(func() []string {
 			return writersNaming(restore)
 		}, "2s", interval).Should(HaveLen(1))
@@ -49,7 +51,7 @@ var _ = Describe("LogicalRestoreElasticsearch after Elasticsearch accepted its s
 		w.search.SetRecoveryActive(false)
 		Eventually(func(g Gomega) {
 			g.Expect(writersNaming(restore)).To(BeEmpty())
-			g.Expect(latest(g, restore).Status.RecoveryHeld).To(BeFalse())
+			g.Expect(latest(g, restore).Status.RecoveryHeld).To(HaveValue(BeFalse()))
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -81,7 +83,7 @@ var _ = Describe("LogicalRestoreElasticsearch after Elasticsearch accepted its s
 		Expect(k8sClient.Delete(ctx, restore)).To(Succeed())
 
 		Eventually(func(g Gomega) {
-			g.Expect(latest(g, restore).Status.RecoveryHeld).To(BeTrue())
+			g.Expect(latest(g, restore).Status.RecoveryHeld).To(HaveValue(BeTrue()))
 		}, timeout, interval).Should(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(restore), restore)).To(Succeed())
@@ -108,11 +110,43 @@ var _ = Describe("LogicalRestoreElasticsearch after Elasticsearch accepted its s
 
 		Eventually(func(g Gomega) {
 			held := latest(g, restore)
-			g.Expect(held.Status.RecoveryHeld).To(BeTrue())
+			g.Expect(held.Status.RecoveryHeld).To(HaveValue(BeTrue()))
 			g.Expect(held.Status.RecoveryUnknownSince).NotTo(BeNil())
 			g.Expect(writersNaming(restore)).To(HaveLen(1))
 		}, timeout, interval).Should(Succeed())
 
+		expectGone(w, restore)
+	})
+
+	It("does not hold again after the grace while its Job pods keep it from going", func() {
+		// outage is a failure count that outlasts the spec.
+		const outage = 1000
+
+		w := newWorld()
+		collectDeletedJobs(w.namespace)
+		backup := createBackup(w)
+		restore := startedRestore(w, backup)
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.PrimaryJobNames).NotTo(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+		jobName := restorepkg.JobName(labels.LogicalRestoreElasticsearch(restore.Name), 0)
+		stuckPod(w, jobName)
+		w.search.SetRecoveryActive(true)
+		w.search.FailNext("recovery", outage)
+
+		Expect(k8sClient.Delete(ctx, restore)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.RecoveryHeld).To(HaveValue(BeFalse()))
+		}, midRunGrace+timeout, interval).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.RecoveryHeld).To(HaveValue(BeFalse()))
+			g.Expect(writersNaming(restore)).To(BeEmpty())
+		}, "2s", interval).Should(Succeed())
+
+		By("going once the Job pod is gone")
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: w.namespace, Name: jobName + "-stuck"}}
+		Expect(k8sClient.Delete(ctx, pod, client.GracePeriodSeconds(0))).To(Succeed())
 		expectGone(w, restore)
 	})
 
@@ -127,7 +161,7 @@ var _ = Describe("LogicalRestoreElasticsearch after Elasticsearch accepted its s
 
 		Eventually(func(g Gomega) {
 			held := latest(g, restore)
-			g.Expect(held.Status.RecoveryHeld).To(BeTrue())
+			g.Expect(held.Status.RecoveryHeld).To(HaveValue(BeTrue()))
 			g.Expect(held.Status.RecoveryUnknownSince).NotTo(BeNil())
 			g.Expect(writersNaming(restore)).To(HaveLen(1))
 		}, timeout, interval).Should(Succeed())
