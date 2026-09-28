@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	coordinationv1 "k8s.io/api/coordination/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -275,4 +276,24 @@ func TestTheRunnablesRunOnlyOnTheLeader(t *testing.T) {
 
 	assert.True(t, clock.NeedLeaderElection())
 	assert.True(t, janitor.NeedLeaderElection())
+}
+
+func TestRegisterRestoresTheIdentityOfATamperedLease(t *testing.T) {
+	ctx := context.Background()
+	c := newClient(t)
+	w := restore("restore", "target")
+	tampered := &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{Namespace: claimNamespace, Name: LeaseName(backend, w.UID)},
+		Spec: coordinationv1.LeaseSpec{
+			RenewTime:            &metav1.MicroTime{Time: start},
+			LeaseDurationSeconds: new(int32(1)),
+		},
+	}
+	require.NoError(t, c.Create(ctx, tampered))
+
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, w, start.Add(time.Second)))
+
+	live, err := Live(ctx, c, claimNamespace, backend, claim, "other-cluster", start.Add(Duration/2), time.Time{})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/restore"}, live)
 }

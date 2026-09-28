@@ -30,6 +30,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"slices"
 	"sync/atomic"
 	"time"
@@ -38,6 +39,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -110,7 +112,8 @@ func (w Writer) String() string {
 }
 
 // Register creates the registration of w on the backend key, or renews it when
-// its last renewal is RenewInterval old or older. claim is the name of the
+// its last renewal is RenewInterval old or older. It also restores the labels,
+// annotations and duration of an existing one. claim is the name of the
 // storage claim Lease of key. namespace is the storage claim namespace.
 func Register(
 	ctx context.Context,
@@ -120,29 +123,47 @@ func Register(
 	w Writer,
 	now time.Time,
 ) error {
+	want := newLease(namespace, key, claim, w, now)
 	var lease coordinationv1.Lease
-	err := reader.Get(ctx, types.NamespacedName{Namespace: namespace, Name: LeaseName(key, w.UID)}, &lease)
+	err := reader.Get(ctx, client.ObjectKeyFromObject(want), &lease)
 	if apierrors.IsNotFound(err) {
-		err = c.Create(ctx, newLease(namespace, key, claim, w, now))
-		if err != nil && !apierrors.IsAlreadyExists(err) {
+		err = c.Create(ctx, want)
+		if err == nil {
+			return nil
+		}
+		if !apierrors.IsAlreadyExists(err) {
 			return fmt.Errorf("registering %s as a writer of %q: %w", w, key, err)
 		}
-
-		return nil
+		err = reader.Get(ctx, client.ObjectKeyFromObject(want), &lease)
 	}
 	if err != nil {
 		return fmt.Errorf("reading the writer Lease of %s: %w", w, err)
 	}
-	if lease.Spec.RenewTime != nil && now.Sub(lease.Spec.RenewTime.Time) < RenewInterval {
+
+	renew := lease.Spec.RenewTime == nil || now.Sub(lease.Spec.RenewTime.Time) >= RenewInterval
+	if !renew && matches(&lease, want) {
 		return nil
 	}
 
-	lease.Spec.RenewTime = &metav1.MicroTime{Time: now}
+	lease.Labels = want.Labels
+	lease.Annotations = want.Annotations
+	lease.Spec.HolderIdentity = want.Spec.HolderIdentity
+	lease.Spec.LeaseDurationSeconds = want.Spec.LeaseDurationSeconds
+	if renew {
+		lease.Spec.RenewTime = want.Spec.RenewTime
+	}
 	if err := c.Update(ctx, &lease); err != nil {
 		return fmt.Errorf("renewing the writer Lease of %s: %w", w, err)
 	}
 
 	return nil
+}
+
+func matches(lease, want *coordinationv1.Lease) bool {
+	return maps.Equal(lease.Labels, want.Labels) &&
+		maps.Equal(lease.Annotations, want.Annotations) &&
+		ptr.Equal(lease.Spec.HolderIdentity, want.Spec.HolderIdentity) &&
+		ptr.Equal(lease.Spec.LeaseDurationSeconds, want.Spec.LeaseDurationSeconds)
 }
 
 // Renew renews the registration of w on the backend key when it exists. It
