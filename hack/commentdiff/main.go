@@ -35,6 +35,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"math"
 	"os"
 	"os/exec"
@@ -58,7 +59,7 @@ type decl struct {
 }
 
 type change struct {
-	path     string
+	path     string // empty when the working tree does not have the file
 	basePath string // empty when base does not have the file
 }
 
@@ -111,12 +112,30 @@ func run(base string) ([]finding, error) {
 		return nil, err
 	}
 
-	var findings []finding
+	// A file that git sees as deleted can be the base of an added file that
+	// changed too much for its rename detection.
+	var deletedSrcs [][]byte
 	for _, c := range changes {
-		if strings.Contains(c.path, "zz_generated") {
+		if c.path != "" || strings.Contains(c.basePath, "zz_generated") {
 			continue
 		}
-		found, err := compare(mergeBase, c)
+		src, err := git("show", mergeBase+":"+c.basePath)
+		if err != nil {
+			return nil, fmt.Errorf("read %s at %s: %w", c.basePath, mergeBase, err)
+		}
+		deletedSrcs = append(deletedSrcs, []byte(src))
+	}
+
+	var findings []finding
+	for _, c := range changes {
+		if c.path == "" || strings.Contains(c.path, "zz_generated") {
+			continue
+		}
+		var candidates [][]byte
+		if c.basePath == "" {
+			candidates = deletedSrcs
+		}
+		found, err := compare(mergeBase, c, candidates)
 		if err != nil {
 			return nil, err
 		}
@@ -134,7 +153,7 @@ func run(base string) ([]finding, error) {
 
 // changedFiles lists the Go files that differ from base in the working tree, untracked files included.
 func changedFiles(base string) ([]change, error) {
-	diff, err := git("diff", "-z", "--name-status", "-M", "--diff-filter=AMR", base, "--", "*.go")
+	diff, err := git("diff", "-z", "--name-status", "-M", "--diff-filter=AMRD", base, "--", "*.go")
 	if err != nil {
 		return nil, fmt.Errorf("list changed Go files: %w", err)
 	}
@@ -148,6 +167,8 @@ func changedFiles(base string) ([]change, error) {
 			i++
 		case strings.HasPrefix(status, "A"):
 			changes = append(changes, change{path: fields[i+1]})
+		case strings.HasPrefix(status, "D"):
+			changes = append(changes, change{basePath: fields[i+1]})
 		default:
 			changes = append(changes, change{path: fields[i+1], basePath: fields[i+1]})
 		}
@@ -165,7 +186,7 @@ func changedFiles(base string) ([]change, error) {
 	return changes, nil
 }
 
-func compare(base string, c change) ([]finding, error) {
+func compare(base string, c change, deletedSrcs [][]byte) ([]finding, error) {
 	newSrc, err := os.ReadFile(c.path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", c.path, err)
@@ -177,12 +198,12 @@ func compare(base string, c change) ([]finding, error) {
 			return nil, fmt.Errorf("read %s at %s: %w", c.basePath, base, err)
 		}
 	}
-	return diffFile(c.path, []byte(oldSrc), newSrc)
+	return diffFile(c.path, []byte(oldSrc), newSrc, deletedSrcs...)
 }
 
 // diffFile reports every doc comment and every free-standing comment in
 // newSrc that is not in oldSrc. An empty oldSrc is a file added since base.
-func diffFile(file string, oldSrc, newSrc []byte) ([]finding, error) {
+func diffFile(file string, oldSrc, newSrc []byte, deletedSrcs ...[]byte) ([]finding, error) {
 	newDecls, newFree, err := scan(file, newSrc)
 	if err != nil {
 		return nil, err
@@ -190,6 +211,14 @@ func diffFile(file string, oldSrc, newSrc []byte) ([]finding, error) {
 	oldDecls, oldFree, err := scan(file, oldSrc)
 	if err != nil {
 		return nil, fmt.Errorf("at the base: %w", err)
+	}
+	for _, src := range deletedSrcs {
+		decls, free, err := scan(file, src)
+		if err != nil {
+			return nil, fmt.Errorf("in a deleted file: %w", err)
+		}
+		maps.Copy(oldDecls, decls)
+		oldFree = append(oldFree, free...)
 	}
 
 	schemaFile := strings.HasPrefix(file, "api/") && !strings.HasSuffix(file, "_test.go")

@@ -450,3 +450,21 @@ func TestDiffFileReportsASharedDocOnce(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, got, 1)
 }
+
+func TestRunPairsARenameBelowTheGitSimilarityThreshold(t *testing.T) {
+	newRepo(t)
+	writeFile(t, "a.go", "package p\n\n// notReady describes Ready.\nfunc notReady() string {\n\treturn \"ready\"\n}\n")
+	gitRun(t, "add", "a.go")
+	gitRun(t, "commit", "-q", "-m", "base")
+	require.NoError(t, os.Remove("a.go"))
+	writeFile(t, "b.go", "package p\n\nimport \"fmt\"\n\n"+
+		"// cannotStart describes why.\n// Both kinds need a binding.\nfunc cannotStart(kind string) string {\n"+
+		"\tif kind == \"\" {\n\t\treturn fmt.Sprint(\"no kind\")\n\t}\n\treturn fmt.Sprint(kind, \" cannot start\")\n}\n")
+
+	got, err := run("HEAD")
+
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "b.go", got[0].file)
+	assert.Contains(t, got[0].text, "GREW from 1 to 2 lines (was func notReady)")
+}
