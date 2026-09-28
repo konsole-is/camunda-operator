@@ -139,6 +139,10 @@ func TestCheckPage(t *testing.T) {
 			page: "See <https://example.com/a;b> and https://example.com/may-release/x;y now.",
 		},
 		{
+			name: "a modal in an email autolink is not reported",
+			page: "Write to <may@example.com> now.",
+		},
+		{
 			name: "a period after a bare URL ends the sentence",
 			page: "The " + strings.Repeat("word ", 22) + "https://example.com/a. The pod starts now.",
 		},
