@@ -175,6 +175,57 @@ func Live(
 	self types.UID,
 	now time.Time,
 ) ([]string, error) {
+	leases, err := registrations(ctx, reader, namespace, key, claim)
+	if err != nil {
+		return nil, err
+	}
+
+	var writers []string
+	for _, lease := range leases {
+		if lease.Labels[labels.ClusterUIDKey] == string(self) || expired(lease, now) {
+			continue
+		}
+		writers = append(writers, lease.Annotations[WriterAnnotation])
+	}
+	slices.Sort(writers)
+
+	return writers, nil
+}
+
+// PruneExpired deletes the expired registrations on the backend key. The
+// delete carries the resource version that was read, so a registration that
+// its writer renewed in between stays.
+func PruneExpired(
+	ctx context.Context,
+	c client.Client,
+	reader client.Reader,
+	namespace, key, claim string,
+	now time.Time,
+) error {
+	leases, err := registrations(ctx, reader, namespace, key, claim)
+	if err != nil {
+		return err
+	}
+
+	for _, lease := range leases {
+		if !expired(lease, now) {
+			continue
+		}
+		err := c.Delete(ctx, lease, client.Preconditions{ResourceVersion: &lease.ResourceVersion})
+		if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+			return fmt.Errorf("pruning the expired writer Lease %s: %w", lease.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// registrations returns the writer Leases of the backend key.
+func registrations(
+	ctx context.Context,
+	reader client.Reader,
+	namespace, key, claim string,
+) ([]*coordinationv1.Lease, error) {
 	var leases coordinationv1.LeaseList
 	err := reader.List(
 		ctx,
@@ -190,21 +241,15 @@ func Live(
 		return nil, fmt.Errorf("listing the writers of the backend %q: %w", key, err)
 	}
 
-	var writers []string
+	var out []*coordinationv1.Lease
 	for i := range leases.Items {
-		lease := &leases.Items[i]
 		// Two claim names can share a bounded label value, so the key decides.
-		if lease.Annotations[KeyAnnotation] != key || lease.Labels[labels.ClusterUIDKey] == string(self) {
-			continue
+		if leases.Items[i].Annotations[KeyAnnotation] == key {
+			out = append(out, &leases.Items[i])
 		}
-		if expired(lease, now) {
-			continue
-		}
-		writers = append(writers, lease.Annotations[WriterAnnotation])
 	}
-	slices.Sort(writers)
 
-	return writers, nil
+	return out, nil
 }
 
 func expired(lease *coordinationv1.Lease, now time.Time) bool {

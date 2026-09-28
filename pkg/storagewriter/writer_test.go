@@ -146,3 +146,50 @@ func renewTime(t *testing.T, c client.Client, w Writer) time.Time {
 
 	return lease.Spec.RenewTime.UTC()
 }
+
+func TestPruneExpiredDeletesOnlyExpiredRegistrationsOfTheBackend(t *testing.T) {
+	ctx := context.Background()
+	c := newClient(t)
+	stale := restore("stale", "target")
+	fresh := restore("fresh", "target")
+	elsewhere := restore("elsewhere", "target")
+
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, stale, start))
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, fresh, start.Add(Duration)))
+	require.NoError(t, Register(ctx, c, c, claimNamespace, "rdbms|other:5432/db", claim, elsewhere, start))
+
+	require.NoError(t, PruneExpired(ctx, c, c, claimNamespace, backend, claim, start.Add(Duration)))
+
+	var leases coordinationv1.LeaseList
+	require.NoError(t, c.List(ctx, &leases, client.InNamespace(claimNamespace)))
+	names := make([]string, 0, len(leases.Items))
+	for _, lease := range leases.Items {
+		names = append(names, lease.Name)
+	}
+	want := []string{LeaseName(backend, fresh.UID), LeaseName("rdbms|other:5432/db", elsewhere.UID)}
+	assert.ElementsMatch(t, want, names)
+}
+
+func TestPruneExpiredKeepsARegistrationRenewedAfterTheRead(t *testing.T) {
+	ctx := context.Background()
+	c := newClient(t)
+	w := restore("restore", "target")
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, w, start))
+
+	// The reader serves the Lease as it was before the writer renewed it.
+	stale := newClient(t)
+	var read coordinationv1.Lease
+	require.NoError(
+		t,
+		c.Get(ctx, types.NamespacedName{Namespace: claimNamespace, Name: LeaseName(backend, w.UID)}, &read),
+	)
+	read.ResourceVersion = ""
+	require.NoError(t, stale.Create(ctx, &read))
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, w, start.Add(Duration)))
+
+	require.NoError(t, PruneExpired(ctx, c, stale, claimNamespace, backend, claim, start.Add(Duration)))
+
+	live, err := Live(ctx, c, claimNamespace, backend, claim, "other-cluster", start.Add(Duration))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/restore"}, live)
+}

@@ -61,6 +61,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
@@ -440,5 +441,6 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 			),
 		).
 		Named(controllerName).
+		WithOptions(controller.Options{RateLimiter: restore.WriterRateLimiter()}).
 		Complete(r)
 }

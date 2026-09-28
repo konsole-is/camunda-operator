@@ -58,6 +58,8 @@ type mirroredSecrets map[components.MirrorPurpose]map[string][]byte
 // method fills exactly one part of the render input.
 type resolver struct {
 	reader client.Reader
+	// client deletes the writer Leases that expired.
+	client client.Client
 	// claims runs the storage claim protocol over the Leases of the operator
 	// namespace. Its reads go through the uncached reader, as the protocol
 	// demands.
@@ -93,6 +95,7 @@ func (r *CamundaClusterReconciler) preCheck(
 ) (components.Input, mirroredSecrets, error) {
 	res := &resolver{
 		reader:         r.APIReader,
+		client:         r.Client,
 		claims:         components.StorageClaimSchema().NewClaim(r.Client, r.APIReader, r.ClaimNamespace),
 		claimNamespace: r.ClaimNamespace,
 		scheme:         r.Scheme,

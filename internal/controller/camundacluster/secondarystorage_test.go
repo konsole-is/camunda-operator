@@ -386,6 +386,7 @@ func TestClaimStorageWaitsUnderThePodsOnAFreeBackend(t *testing.T) {
 			c := storageClaimPodClient(t, scheme, tc.pods...)
 			res := &resolver{
 				reader:  c,
+				client:  c,
 				claims:  components.StorageClaimSchema().NewClaim(c, c, "camunda-system"),
 				cluster: self,
 				storage: &v1.SecondaryStorageConfig{
@@ -518,6 +519,7 @@ func TestClaimStorageWaitsForALiveWriterForAnotherCluster(t *testing.T) {
 			)
 			res := &resolver{
 				reader:         c,
+				client:         c,
 				claims:         components.StorageClaimSchema().NewClaim(c, c, "camunda-system"),
 				claimNamespace: "camunda-system",
 				cluster:        self,
@@ -528,6 +530,22 @@ func TestClaimStorageWaitsForALiveWriterForAnotherCluster(t *testing.T) {
 			}
 
 			require.NoError(t, res.claimStorage(context.Background(), in))
+
+			lease := &coordinationv1.Lease{}
+			err := c.Get(
+				context.Background(),
+				types.NamespacedName{
+					Namespace: "camunda-system",
+					Name:      storagewriter.LeaseName(backend, tc.writer.UID),
+				},
+				lease,
+			)
+			assert.Equal(
+				t,
+				!tc.registered.IsZero(),
+				apierrors.IsNotFound(err),
+				"only an expired writer Lease is pruned",
+			)
 
 			if tc.waitsOn == "" {
 				assert.Nil(t, in.Storage.Handover)
@@ -632,6 +650,7 @@ func TestClaimStorageReportsAForeignLeaseAsUnwatched(t *testing.T) {
 
 	res := &resolver{
 		reader:  c,
+		client:  c,
 		claims:  components.StorageClaimSchema().NewClaim(c, c, "camunda-system"),
 		cluster: &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "orders", UID: "uid-1"}},
 		storage: &v1.SecondaryStorageConfig{
@@ -1486,6 +1505,14 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		)
 		expectHolds(parked)
 		expectClaimedBy(binding, parked)
+		Eventually(func(g Gomega) {
+			key := types.NamespacedName{
+				Namespace: testClaimNamespace,
+				Name:      storagewriter.LeaseName(storageKeyOf(binding), writer.UID),
+			}
+			err := k8sClient.Get(ctx, key, &coordinationv1.Lease{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
 	})
 
 })

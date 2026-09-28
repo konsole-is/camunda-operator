@@ -21,7 +21,9 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
@@ -61,6 +63,15 @@ func WriterWait(wait time.Duration) time.Duration {
 	}
 
 	return wait
+}
+
+// WriterRateLimiter is the rate limiter of a restore controller. It retries a
+// failed look within storagewriter.RenewInterval.
+func WriterRateLimiter() workqueue.TypedRateLimiter[reconcile.Request] {
+	return workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](
+		5*time.Millisecond,
+		storagewriter.RenewInterval,
+	)
 }
 
 func writerOf(owner conditions.Owner, target types.UID) storagewriter.Writer {

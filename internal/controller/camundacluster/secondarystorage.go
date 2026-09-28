@@ -202,7 +202,11 @@ func (res *resolver) writersOnTheBackend(
 	if err != nil {
 		return nil, err
 	}
-	writers, err := storagewriter.Live(ctx, res.reader, res.claimNamespace, key, claim, res.cluster.UID, time.Now())
+	now := time.Now()
+	if err := storagewriter.PruneExpired(ctx, res.client, res.reader, res.claimNamespace, key, claim, now); err != nil {
+		return nil, err
+	}
+	writers, err := storagewriter.Live(ctx, res.reader, res.claimNamespace, key, claim, res.cluster.UID, now)
 	if err != nil {
 		return nil, err
 	}
