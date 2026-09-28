@@ -138,9 +138,8 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 		)
 	}
 
-	// Only a waiting cluster prunes on the handover read, and a holder whose
-	// own pods write the backend never makes that read. The cache is enough
-	// here, because a stale read deletes nothing that was renewed.
+	// Every pass prunes: a holder with its own pods skips the handover read.
+	// A stale cached read deletes nothing that was renewed.
 	if err := storagewriter.PruneExpired(
 		ctx,
 		res.client,
