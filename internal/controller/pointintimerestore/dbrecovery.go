@@ -145,8 +145,8 @@ func (r *Reconciler) enterDatabaseRecovery(
 	return restore.Outcome{Wait: r.opts.PollInterval}, nil
 }
 
-// targetGone hands the look to goneDuringRollback when the cluster is not the
-// one that the restore pinned. done is false while it is.
+// targetGone reports done, with the outcome of the look, when the pinned
+// cluster is deleted, being deleted, or replaced.
 func (r *Reconciler) targetGone(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,

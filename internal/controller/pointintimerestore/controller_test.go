@@ -298,10 +298,8 @@ func createServerFor(namespace, host, identifier string) *v1.DatabaseServerConfi
 	return server
 }
 
-// holdBackend stands in for the storage claim that the CamundaCluster
-// controller takes: the Lease of the backend of holder names holder, and takes
-// over a Lease that names another cluster. A chain that does not resolve
-// claims nothing.
+// holdBackend takes the storage claim of holder's backend, as the
+// CamundaCluster controller does.
 func holdBackend(holder *v1.CamundaCluster) {
 	GinkgoHelper()
 	storage, failure, err := restore.ResolveStorage(ctx, k8sClient, holder)
@@ -327,8 +325,7 @@ func holdBackend(holder *v1.CamundaCluster) {
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, lease) })
 }
 
-// wake changes an annotation of cluster, so the cluster watch enqueues the
-// restores that name it.
+// wake makes the cluster watch enqueue the restores that name cluster.
 func wake(cluster *v1.CamundaCluster) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {

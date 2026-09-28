@@ -84,12 +84,11 @@ var errChainChanged = errors.New("the storage chain of the cluster changed")
 
 // admit runs every rule that must hold before the operator reads the
 // database, in the documented order. A rule that does not hold keeps the
-// restore in Pending, where it touches nothing and recovers on its own once
-// the cause is gone.
+// restore in Pending, and it recovers on its own once the cause is gone.
 //
-// It ends by claiming the cluster and suspending it. The claim comes first,
-// because it is what serialises the operations on a cluster, and admission is
-// about to write to that cluster's spec.
+// It claims the cluster before it suspends it, because the claim serialises
+// the operations on a cluster, and admission is about to write to that
+// cluster's spec.
 //
 // Admission ends by reading the database in the same reconcile. The read is
 // the first call that leaves the cluster, but it changes nothing, and a
@@ -202,8 +201,8 @@ func (r *Reconciler) admit(
 	// contract that declares external is rolled back before the restore was
 	// created, and the database is read as it stands.
 	if resolved.server.OperatorRecovers() {
-		// The registration comes before the pin, so a failed registration
-		// leaves no backend for the renewer to keep alive.
+		// Status.Backend is set only after the registration succeeds, so the renewer
+		// never keeps a backend alive that the restore did not register.
 		err := restore.RegisterWriter(
 			ctx, r.Client, r.APIReader, r.ClaimNamespace, backend, pitr, pitr.Status.TargetClusterUID,
 		)

@@ -33,8 +33,6 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// A cluster replaced between the two reads of one look must not end the
-// restore while the server still rolls the database back.
 func TestReplacementBetweenTwoReadsKeepsTheRollbackHeld(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, v1.AddToScheme(scheme))

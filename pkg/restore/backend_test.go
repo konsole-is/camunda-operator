@@ -104,7 +104,7 @@ func backendClient(t *testing.T, objects ...client.Object) client.Client {
 }
 
 // resolveBackend resolves the backend of cluster the way the restore
-// controllers do: the storage contract first, then its backend.
+// controllers do.
 func resolveBackend(t *testing.T, c client.Client, cluster *v1.CamundaCluster) (string, *conditions.PreCheckFailure) {
 	t.Helper()
 

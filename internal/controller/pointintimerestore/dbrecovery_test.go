@@ -470,7 +470,6 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		expectRecoveryRequest(w)
 		backend := expectBackendHeld(pitr)
 
-		// The rollback runs in the server and goes on without the cluster.
 		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
 		expectRecovering(pitr, "was deleted", w.server.Name)
 		Consistently(func() []string {
