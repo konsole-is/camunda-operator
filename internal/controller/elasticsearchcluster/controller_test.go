@@ -1560,8 +1560,12 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		))
 		Expect(container.Env).To(ContainElement(HaveField("Name", "ES_PASSWORD")))
 
+		// One reconcile applies the Deployment and then the Service, so the
+		// Service can still be missing when the Deployment shows up.
 		var metrics corev1.Service
-		Expect(k8sClient.Get(ctx, metricsKey, &metrics)).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, metricsKey, &metrics)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
 		expectControlledBy(&metrics, cluster)
 		Expect(metrics.Spec.Ports).To(ConsistOf(HaveField("Port", int32(9114))))
 
