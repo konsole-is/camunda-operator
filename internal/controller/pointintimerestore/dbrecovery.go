@@ -84,20 +84,17 @@ func (r *Reconciler) enterDatabaseRecovery(
 		return r.resolveFailed(pitr, err)
 	}
 	if failure != nil {
-		contract, err := r.runningRollback(ctx, pitr)
+		contract, err := r.pinnedContract(ctx, pitr)
 		if err != nil {
 			return restore.Outcome{}, err
 		}
-		if contract != nil {
-			if _, err := r.followBackend(ctx, pitr, contract); err != nil {
-				return restore.Outcome{}, err
-			}
+		if contract == nil {
+			return r.holdRecovering(pitr, failure), nil
 		}
-		answered, err := r.rollbackAnswered(ctx, pitr)
-		if err != nil {
+		if _, err := r.followBackend(ctx, pitr, contract); err != nil {
 			return restore.Outcome{}, err
 		}
-		if answered {
+		if contract.Spec.PITR != nil && recoveryRequest(pitr).AnsweredBy(contract.Spec.PITR.LastRecovery) {
 			return r.holdStarted(pitr, failure), nil
 		}
 
@@ -240,17 +237,6 @@ func (r *Reconciler) runningRollback(
 	return contract, nil
 }
 
-// rollbackAnswered reports whether the pinned contract answered the request of
-// this restore.
-func (r *Reconciler) rollbackAnswered(ctx context.Context, pitr *v1.PointInTimeRestore) (bool, error) {
-	contract, err := r.pinnedContract(ctx, pitr)
-	if err != nil || contract == nil || contract.Spec.PITR == nil {
-		return false, err
-	}
-
-	return recoveryRequest(pitr).AnsweredBy(contract.Spec.PITR.LastRecovery), nil
-}
-
 // pinnedContract returns the contract that the restore pinned, or nil when it
 // pinned none or the contract is gone or replaced.
 func (r *Reconciler) pinnedContract(
@@ -388,17 +374,15 @@ func (r *Reconciler) followBackend(
 	if err != nil {
 		return nil, err
 	}
-	if pitr.Status.Backend != "" {
-		err := restore.ReleaseWriter(
-			ctx, r.Client, r.ClaimNamespace, pitr.Status.Backend, pitr, pitr.Status.TargetClusterUID,
-		)
-		if err != nil {
-			return nil, err
-		}
-	}
+	// The renewer renews status.backend only, so the new key goes there
+	// before the old one is released.
+	old := pitr.Status.Backend
 	pitr.Status.Backend = backend
+	if old == "" {
+		return nil, nil
+	}
 
-	return nil, nil
+	return nil, restore.ReleaseWriter(ctx, r.Client, r.ClaimNamespace, old, pitr, pitr.Status.TargetClusterUID)
 }
 
 // askForRecovery writes the request on the contract, unless the contract

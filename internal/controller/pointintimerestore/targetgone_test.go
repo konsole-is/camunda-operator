@@ -18,6 +18,7 @@ package pointintimerestore
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -60,6 +61,46 @@ func TestDeletionBetweenTwoReadsFollowsTheNamedEndpoint(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, v1.PointInTimeRestoreRestoringDatabase, pitr.Status.Phase)
+	assert.Contains(t, pitr.Status.Backend, "recovered.databases.svc")
+}
+
+func TestDeletionAfterTheAnswerFollowsTheNamedEndpoint(t *testing.T) {
+	pitr, r := rollbackWithSecondClusterRead(t, func(read *v1.CamundaCluster) error {
+		return apierrors.NewNotFound(v1.GroupVersion.WithResource("camundaclusters").GroupResource(), read.Name)
+	})
+	ctx := context.Background()
+	var contract v1.DatabaseServerConfig
+	require.NoError(t, r.Get(ctx, client.ObjectKey{Namespace: "ns", Name: "dbsc"}, &contract))
+	request := recoveryRequest(pitr)
+	contract.Spec.PITR.LastRecovery = &v1.RecoveryOutcome{
+		RequestID:   request.RequestID,
+		RequestedBy: request.RequestedBy,
+		TargetTime:  request.TargetTime,
+		Result:      v1.RecoveryResultCompleted,
+	}
+	require.NoError(t, r.Update(ctx, &contract))
+
+	_, err := r.enterDatabaseRecovery(ctx, pitr)
+	require.NoError(t, err)
+
+	assert.Contains(t, pitr.Status.Backend, "recovered.databases.svc")
+}
+
+func TestFollowBackendRecordsTheNewBackendWhenTheOldReleaseFails(t *testing.T) {
+	pitr, r := rollbackWithSecondClusterRead(t, func(*v1.CamundaCluster) error { return nil })
+	failing := interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+		Delete: func(context.Context, client.WithWatch, client.Object, ...client.DeleteOption) error {
+			return errors.New("the API server is gone")
+		},
+	})
+	r.Client = failing
+	ctx := context.Background()
+	var contract v1.DatabaseServerConfig
+	require.NoError(t, r.APIReader.Get(ctx, client.ObjectKey{Namespace: "ns", Name: "dbsc"}, &contract))
+
+	_, err := r.followBackend(ctx, pitr, &contract)
+
+	require.Error(t, err)
 	assert.Contains(t, pitr.Status.Backend, "recovered.databases.svc")
 }
 

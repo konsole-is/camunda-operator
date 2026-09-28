@@ -21,7 +21,7 @@ With `external` the database must already hold the state of the requested timest
 
 With `operator` the restore writes `spec.recovery` on the contract and waits in `RestoringDatabase` until `spec.pitr.lastRecovery` answers it. The request carries the uid of the restore. So the answer to an earlier restore of the same name and the same point is never read as the answer to this one.
 
-The endpoint on the contract can change while it waits, because a rollback usually replaces the server. The restore follows the contract to the new endpoint once the contract reports `Ready` for it, and goes on. Everything else about the chain still binds. A contract that is deleted and created again under its name fails the restore, mid-rollback as much as before it.
+The endpoint on the contract can change while it waits, because a rollback usually replaces the server. The restore goes on once the contract reports `Ready` for the new endpoint. Everything else about the chain still binds. A contract that is deleted and created again under its name fails the restore, mid-rollback as much as before it.
 
 From the request until the restore reaches `Completed` or `Failed`, no other `CamundaCluster` starts on the database of the cluster. `status.backend` names that database. The hold and `status.backend` move to the new endpoint as soon as the contract names it. The next cluster on the database reports `WaitingForHandover`, and the message names this restore. [CamundaCluster: Secondary storage](camundacluster.md#secondary-storage) has the rule for the cluster. The hold lasts while the contract does not answer. To free the database from a restore that does not move, delete the restore.
 
