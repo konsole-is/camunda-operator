@@ -72,7 +72,7 @@ func (r *Reconciler) enterDatabaseRecovery(
 			"CamundaCluster %s/%s was replaced", pitr.Namespace, pitr.Spec.ClusterRef.Name,
 		))
 	case errors.Is(err, errChainChanged):
-		outcome, held, holdErr := r.holdForRollback(ctx, pitr, fmt.Sprintf(
+		outcome, held, holdErr := r.holdForRollback(ctx, pitr, v1.ReasonInvalidReference, fmt.Sprintf(
 			"The storage chain of CamundaCluster %s/%s changed", pitr.Namespace, pitr.Spec.ClusterRef.Name,
 		))
 		if holdErr != nil || held {
@@ -85,10 +85,15 @@ func (r *Reconciler) enterDatabaseRecovery(
 	if failure != nil {
 		return r.holdRecovering(pitr, failure), nil
 	}
-	// The brokers must stay down for the whole rollback. This one is bounded:
-	// a cluster that runs again writes into the database the restore is
-	// rolling back, and nobody but its owner can stop that.
+	// The brokers must stay down for the whole rollback.
 	if failure := notSuspended(resolved.cluster); failure != nil {
+		outcome, held, err := r.holdForRollback(ctx, pitr, failure.Reason, fmt.Sprintf(
+			"CamundaCluster %s/%s started running again", pitr.Namespace, pitr.Spec.ClusterRef.Name,
+		))
+		if err != nil || held {
+			return outcome, err
+		}
+
 		return r.holdStarted(pitr, failure), nil
 	}
 
@@ -153,7 +158,7 @@ func (r *Reconciler) goneDuringRollback(
 	pitr *v1.PointInTimeRestore,
 	gone string,
 ) (restore.Outcome, error) {
-	outcome, held, err := r.holdForRollback(ctx, pitr, gone)
+	outcome, held, err := r.holdForRollback(ctx, pitr, v1.ReasonInvalidReference, gone)
 	if err != nil || held {
 		return outcome, err
 	}
@@ -172,7 +177,7 @@ func (r *Reconciler) goneDuringRollback(
 func (r *Reconciler) holdForRollback(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
-	what string,
+	reason, what string,
 ) (outcome restore.Outcome, held bool, err error) {
 	contract, err := r.runningRollback(ctx, pitr)
 	if err != nil || contract == nil {
@@ -180,7 +185,7 @@ func (r *Reconciler) holdForRollback(
 	}
 
 	return r.holdRecovering(pitr, &conditions.PreCheckFailure{
-		Reason: v1.ReasonInvalidReference,
+		Reason: reason,
 		Message: fmt.Sprintf(
 			"%s while its database server rolls back. The restore ends when DatabaseServerConfig "+
 				"%s answers the recovery request. Until then, no other cluster starts on the database",

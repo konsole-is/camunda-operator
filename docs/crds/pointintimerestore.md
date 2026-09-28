@@ -91,7 +91,7 @@ A tool that also declares one of these fields fights the operator for it. Argo C
 - Remove `spec.suspend` from the manifest for the time of the restore, or mark the field as an ignored difference.
 - Let the tool declare `spec.suspend: false` again after the restore, if it declared the field before.
 
-The cluster must stay suspended for the whole restore, not only at the start. A cluster that somebody unsuspends while the restore runs holds the restore in its current phase, and fails it after ten minutes with reason `ClusterNotSuspended`.
+The cluster must stay suspended for the whole restore, not only at the start. A cluster that somebody unsuspends while the restore runs holds the restore in its current phase, and fails it after ten minutes with reason `ClusterNotSuspended`. While the server rolls the database back, the ten minutes start when the contract answers.
 
 ## One operation at a time
 

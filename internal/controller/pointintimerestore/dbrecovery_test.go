@@ -556,6 +556,36 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		}, timeout, interval).Should(BeEmpty())
 	})
 
+	It("keeps its database held when its cluster runs again, until the server answers", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		backend := expectBackendHeld(pitr)
+
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+			cluster.Spec.Suspend = false
+			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		expectRecovering(pitr, "started running again", w.server.Name)
+
+		By("holding past the mid-run grace while the request is unanswered")
+		Consistently(func(g Gomega) {
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
+			g.Expect(ready(current).Reason).To(Equal(v1.ReasonClusterNotSuspended))
+			g.Expect(writersSeenByAnotherCluster(backend)).To(HaveLen(1))
+		}, 5*time.Second, interval).Should(Succeed())
+
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring("started running again"))
+		Eventually(func() []string {
+			return writersSeenByAnotherCluster(backend)
+		}, timeout, interval).Should(BeEmpty())
+	})
+
 	It("holds the endpoint that the contract names before the contract reaches it", func() {
 		w := operatorRecoveryWorld()
 		pitr := createRestore(w)
