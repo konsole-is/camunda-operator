@@ -14,23 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Command sentencelength reports the sentences of the user docs that are
-// longer than the simple-english limits: 20 words for a procedural sentence
-// and 25 words for a descriptive one.
+// Command sentencelength reports the sentences of the user docs that break
+// the simple-english rules: a procedural sentence over 20 words, a
+// descriptive sentence over 25 words, a semicolon, and the modals "would",
+// "could" and "may".
 //
 // Usage: sentencelength [dir]
 //
 // The directory defaults to docs. The command reads every .md file below it,
-// except the files that mkdocs does not publish: docs/superpowers/ and
-// docs/crds/TEMPLATE.md. It prints one line per long sentence as
-// file:line: words/limit: first words, then the count for each page and the total. It
-// exits with status 1 when it finds a long sentence.
+// except docs/superpowers/ and docs/crds/TEMPLATE.md. It prints one line per
+// finding, then the count for each page and the total. It exits with status 1
+// when it reports a finding.
 //
 // What it reads:
-//   - Paragraphs, list items, admonition bodies, and each table cell as a
-//     separate text. A blank line, a list marker, or a table row ends a text.
-//   - It reads a blockquote like the text around it, without the ">" markers.
-//     A quote line with no text ends a text.
+//   - Paragraphs, list items, admonition bodies, blockquotes, and each table
+//     cell as a separate text.
 //   - It skips front matter, fenced code blocks, HTML comments, also inside a
 //     line, headings, table separator rows, HTML lines, admonition title
 //     lines, and link reference definitions.
@@ -39,9 +37,10 @@ limitations under the License.
 //   - A sentence ends at ".", "!" or "?" before a space or the end of the
 //     text, and at the end of the text. A colon that ends a text is the end
 //     of a sentence too, so a list lead-in is counted alone.
-//   - Inline code, text in parentheses, and text in double quotes count as
-//     one word. A link counts as the words of its text. A hyphenated word
-//     counts as one word. A token without a letter or a digit is no word.
+//   - Inline code, URLs, text in parentheses, and text in double quotes count
+//     as one word and are not checked for semicolons or modals. A link counts
+//     as the words of its text. A hyphenated word counts as one word. A token
+//     without a letter or a digit is no word.
 //
 // How it classifies a sentence:
 //   - A sentence in an ordered list item is procedural.
@@ -71,12 +70,14 @@ const (
 	descriptive = 25
 )
 
-// finding is one sentence over its limit.
+// finding is one sentence over its limit, or one semicolon or modal.
 type finding struct {
 	file  string
 	line  int
 	words int
 	limit int
+	// banned holds the semicolon or modal, and is empty for a long sentence.
+	banned string
 	// start holds the first words of the sentence, so a reader finds it on a
 	// line that holds more than one sentence.
 	start string
@@ -99,10 +100,13 @@ var (
 	tableSep      = regexp.MustCompile(`^\s*\|?[\s:|-]+\|?\s*$`)
 	linkRefDef    = regexp.MustCompile(`^\s*\[[^\]]+\]:\s`)
 	inlineCode    = regexp.MustCompile("`[^`]*`")
-	link          = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
+	link          = regexp.MustCompile(`!?\[([^\]]*)\]\((?:[^()]|\([^()]*\))*\)`)
 	refLink       = regexp.MustCompile(`\[([^\]]*)\]\[[^\]]*\]`)
+	autolink      = regexp.MustCompile(`<[A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*>|<[^\s<>@]+@[^\s<>]+>`)
+	bareURL       = regexp.MustCompile(`https?://[^\s<>]*[^\s<>.,:;!?)]`)
 	quoted        = regexp.MustCompile(`"[^"]*"|“[^”]*”`)
 	parens        = regexp.MustCompile(`\([^()]*\)`)
+	banned        = regexp.MustCompile(`;|(?i:\b(?:would|could|may)(?:n['’]t)?\b)`)
 )
 
 var imperatives = map[string]bool{
@@ -143,7 +147,11 @@ func main() {
 
 	perFile := map[string]int{}
 	for _, f := range findings {
-		fmt.Printf("%s:%d: %d/%d words: %s ...\n", f.file, f.line, f.words, f.limit, f.start)
+		if f.banned != "" {
+			fmt.Printf("%s:%d: %q: %s ...\n", f.file, f.line, f.banned, f.start)
+		} else {
+			fmt.Printf("%s:%d: %d/%d words: %s ...\n", f.file, f.line, f.words, f.limit, f.start)
+		}
 		perFile[f.file]++
 	}
 
@@ -199,7 +207,7 @@ func checkDir(root string) ([]finding, error) {
 	return findings, nil
 }
 
-// checkPage returns the long sentences of one Markdown page, without a file name.
+// checkPage returns the findings of one Markdown page, without a file name.
 func checkPage(content string) []finding {
 	ts := texts(content)
 	findings := make([]finding, 0, len(ts))
@@ -265,7 +273,7 @@ func texts(content string) []text {
 		case trimmed == "":
 			flush()
 		case strings.HasPrefix(trimmed, "#"),
-			strings.HasPrefix(trimmed, "<"),
+			strings.HasPrefix(trimmed, "<") && !startsWithAutolink(trimmed),
 			strings.HasPrefix(trimmed, "!!!"),
 			strings.HasPrefix(trimmed, "???"),
 			linkRefDef.MatchString(line):
@@ -292,6 +300,11 @@ func texts(content string) []text {
 	flush()
 
 	return out
+}
+
+func startsWithAutolink(s string) bool {
+	loc := autolink.FindStringIndex(s)
+	return loc != nil && loc[0] == 0
 }
 
 // tableCells splits a table row on the pipes outside inline code.
@@ -327,11 +340,18 @@ func checkText(t text) []finding {
 		offset += len(l) + 1
 	}
 
+	lineAt := func(offset int) int {
+		return t.lineNos[sort.SearchInts(starts, offset+1)-1]
+	}
+
 	masked := mask(joined)
 
 	var findings []finding
 	for _, s := range sentences(masked) {
-		words := strings.FieldsFunc(masked[s[0]:s[1]], unicode.IsSpace)
+		sentence := masked[s[0]:s[1]]
+		start := firstWords(joined[s[0]:s[1]], 6)
+
+		words := strings.FieldsFunc(sentence, unicode.IsSpace)
 		words = slices.DeleteFunc(words, func(w string) bool { return !strings.ContainsFunc(w, isWordRune) })
 
 		limit := descriptive
@@ -340,12 +360,14 @@ func checkText(t text) []finding {
 		}
 
 		if len(words) > limit {
-			idx := sort.SearchInts(starts, s[0]+1) - 1
+			findings = append(findings, finding{line: lineAt(s[0]), words: len(words), limit: limit, start: start})
+		}
+
+		for _, m := range banned.FindAllStringIndex(sentence, -1) {
 			findings = append(findings, finding{
-				line:  t.lineNos[idx],
-				words: len(words),
-				limit: limit,
-				start: firstWords(joined[s[0]:s[1]], 6),
+				line:   lineAt(s[0] + m[0]),
+				banned: strings.ToLower(sentence[m[0]:m[1]]),
+				start:  start,
 			})
 		}
 	}
@@ -379,6 +401,8 @@ func mask(s string) string {
 	fill(inlineCode, false)
 	fill(link, true)
 	fill(refLink, true)
+	fill(autolink, false)
+	fill(bareURL, false)
 	fill(quoted, false)
 	for parens.Match(b) {
 		fill(parens, false)
