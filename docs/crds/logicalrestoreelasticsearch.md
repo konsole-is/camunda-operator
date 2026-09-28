@@ -163,7 +163,7 @@ status:
 
 The event `RecoveryHeld` marks the start of this hold, and the event `RecoveryEnded` marks its end.
 
-If the restore cannot read the recovery for 10 minutes, it gives the backend back and records the Warning event `RecoveryUnknown`. That happens when the Elasticsearch does not answer, when the target is gone, or when the target now points at another Elasticsearch. `status.recoveryUnknownSince` shows when the restore first could not read the recovery. After a `RecoveryUnknown` event, make sure that no index recovery is active before you start another cluster on this Elasticsearch.
+If the restore cannot read the recovery for 10 minutes, it gives the backend back and records the Warning event `RecoveryUnknown`. That happens when the Elasticsearch does not answer, when the target is gone, or when the target now points at another Elasticsearch. `status.recoveryUnknownSince` shows when the restore first failed to read the recovery. After a `RecoveryUnknown` event, make sure that no index recovery is active before you start another cluster on this Elasticsearch.
 
 ## The snapshot repository
 
@@ -263,7 +263,7 @@ These status fields report what the restore did:
 - `status.repository` is the snapshot repository on the Elasticsearch of the target.
 - `status.restoredSnapshots` names every snapshot that the operator asked Elasticsearch to restore.
 - `status.recoveryHeld` is `true` while a restore that failed, or that you deleted, keeps the backend for the recovery of its snapshots.
-- `status.recoveryUnknownSince` is when a held restore first could not read that recovery.
+- `status.recoveryUnknownSince` is when a held restore first failed to read that recovery.
 - `status.clusterSuspended` records that this restore suspended the target. The restore withdraws that suspension when it completes.
 - `status.brokers` is the broker count that the restore recorded before it deleted a volume.
 - `status.recreatedClaims` names the broker data volumes that the restore deleted and created again.

@@ -63,7 +63,7 @@ type LogicalRestoreElasticsearchStatus struct {
 	// until it is false.
 	// +optional
 	RecoveryHeld bool `json:"recoveryHeld,omitempty"`
-	// recoveryUnknownSince is when a held restore first could not read the
+	// recoveryUnknownSince is when a held restore first failed to read the
 	// recovery from Elasticsearch. When the recovery stays unknown for ten
 	// minutes, the restore gives the backend back.
 	// +optional

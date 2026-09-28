@@ -261,7 +261,7 @@ spec:
                 type: boolean
               recoveryUnknownSince:
                 description: |-
-                  recoveryUnknownSince is when a held restore first could not read the
+                  recoveryUnknownSince is when a held restore first failed to read the
                   recovery from Elasticsearch. When the recovery stays unknown for ten
                   minutes, the restore gives the backend back.
                 format: date-time
