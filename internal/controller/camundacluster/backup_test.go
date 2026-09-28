@@ -516,9 +516,7 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			cluster.Spec.BackupStorageRef = createStaticBucket(ns, "minio-keys").Name
 			createCluster(cluster)
 
-			stampStatefulSetReady(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"})
-			stampDeploymentReady(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-gateway"})
-			expectReady(cluster, metav1.ConditionTrue, Equal(v1.ReasonHealthy), Not(BeEmpty()))
+			expectHealthyOnceWorkloadsAreReady(cluster)
 		})
 
 		// Only dump Jobs consume the backup user of the database, so a
@@ -622,9 +620,7 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			cluster := newCluster(ns, createPlatformConfig(), storage)
 			createCluster(cluster)
 
-			stampStatefulSetReady(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"})
-			stampDeploymentReady(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-gateway"})
-			expectReady(cluster, metav1.ConditionTrue, Equal(v1.ReasonHealthy), Not(BeEmpty()))
+			expectHealthyOnceWorkloadsAreReady(cluster)
 
 			Consistently(func(g Gomega) {
 				var events eventsv1.EventList

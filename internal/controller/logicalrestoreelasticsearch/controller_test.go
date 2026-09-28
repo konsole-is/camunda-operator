@@ -732,6 +732,7 @@ var _ = Describe("LogicalRestoreElasticsearch cluster claim", func() {
 		reached := expectReason(restore, v1.LogicalRestorePending, v1.ReasonStorageAlreadyAttached)
 		Expect(readyCondition(reached).Message).To(ContainSubstring(w.namespace + "/other"))
 		Expect(reached.Status.Backend).To(BeEmpty(), "the backend is pinned when the restore leaves Pending")
+		Expect(writersNaming(restore)).To(BeEmpty(), "a restore in Pending writes nothing, so it holds no backend")
 		Expect(w.search.IndexDeleteCalls()).To(BeZero())
 		w.holdBackend(w.cluster)
 		Eventually(func(g Gomega) {
@@ -739,6 +740,20 @@ var _ = Describe("LogicalRestoreElasticsearch cluster claim", func() {
 			g.Expect(current.Status.Phase).NotTo(Equal(v1.LogicalRestorePending))
 			g.Expect(current.Status.Backend).NotTo(BeEmpty())
 		}, timeout, interval).Should(Succeed())
+		Expect(writersNaming(restore)).To(HaveLen(1), "the restore holds its backend from the pin on")
+	})
+
+	It("gives its backend back when it fails", func() {
+		w := newWorld()
+		backup := createBackup(w)
+		restore := startedRestore(w, backup)
+		Expect(writersNaming(restore)).To(HaveLen(1))
+
+		failRestore(restore)
+
+		Eventually(func() []string {
+			return writersNaming(restore)
+		}, timeout, interval).Should(BeEmpty())
 	})
 
 	// Nothing bounds the hold, and no spec change ends it. The restore takes

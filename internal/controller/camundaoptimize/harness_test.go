@@ -20,6 +20,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,6 +42,7 @@ import (
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 )
 
 const harnessClaimNamespace = "camunda-operator-system"
@@ -307,17 +309,20 @@ func (h *reconcileHarness) runForeignWriter() {
 	})
 }
 
-// runForeignRestore starts a restore into another cluster that writes the
-// backend of the harness cluster.
+// runForeignRestore registers a restore into another cluster as a writer of
+// the backend of the harness cluster.
 func (h *reconcileHarness) runForeignRestore(t *testing.T) {
 	t.Helper()
-	restore := &v1.LogicalRestoreElasticsearch{
-		ObjectMeta: metav1.ObjectMeta{Name: "restore", Namespace: "team-b"},
+	writer := storagewriter.Writer{
+		Kind:       "LogicalRestoreElasticsearch",
+		Namespace:  "team-b",
+		Name:       "restore",
+		UID:        "uid-restore",
+		ClusterUID: "uid-other",
 	}
-	restore.Status.Phase = v1.LogicalRestoreRestoringSecondaryStorage
-	restore.Status.Backend = h.backend
-	restore.Status.TargetClusterUID = "uid-other"
-	require.NoError(t, h.client.Create(t.Context(), restore))
+	require.NoError(t, storagewriter.Register(
+		t.Context(), h.client, h.client, harnessClaimNamespace, h.backend, h.lease.Name, writer, time.Now(),
+	))
 }
 
 func (h *reconcileHarness) workloadKey(comp string) client.ObjectKey {

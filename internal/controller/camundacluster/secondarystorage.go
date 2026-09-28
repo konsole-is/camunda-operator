@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -33,6 +34,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 )
 
 // eventReasonStorageClaimed is recorded when the cluster takes the storage
@@ -136,6 +138,21 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 		)
 	}
 
+	// Every pass prunes: a holder with its own pods skips the handover read.
+	// A stale cached read deletes nothing that was renewed.
+	if err := storagewriter.PruneExpired(
+		ctx,
+		res.client,
+		res.client,
+		res.claimNamespace,
+		key,
+		in.Storage.Claim,
+		time.Now(),
+		res.writersSince,
+	); err != nil {
+		return err
+	}
+
 	// The list costs a read of one namespace, so it is taken only where its
 	// answer decides the gate: a suspended cluster waits for nothing, and a
 	// cluster that took the claim on this pass meets the pods of whoever held
@@ -163,8 +180,8 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 	// pointed back at the backend meets the claim this cluster holds and
 	// parks, so it starts nothing beside it.
 	//
-	// The restores are read after the Lease was written, so a restore that
-	// this read misses meets the Lease.
+	// The writers are read after the Lease was written, so a writer that this
+	// read misses meets the Lease.
 	in.Storage.Handover, err = res.writersOnTheBackend(ctx, key, in.Storage.Claim)
 
 	return err
@@ -187,10 +204,10 @@ func handoverPossible(suspended, heldAtStart, ownPodOnClaim bool) bool {
 // of TakeUnclaimed, which writes no Lease when the rule returns an error. It
 // never leaves claimStorage: the writers it stands for become the handover
 // that the caller reports.
-var errWritersOnBackend = errors.New("another cluster, or a restore into one, writes the backend")
+var errWritersOnBackend = errors.New("another cluster, or a writer for one, writes the backend")
 
-// writersOnTheBackend returns the pods of other clusters on claim and the
-// restores into other clusters on key as the handover this cluster waits for,
+// writersOnTheBackend returns the pods of other clusters on claim and the live
+// writers for other clusters on key as the handover this cluster waits for,
 // or nil when there are none. claim is the Lease name of key.
 func (res *resolver) writersOnTheBackend(
 	ctx context.Context,
@@ -200,15 +217,37 @@ func (res *resolver) writersOnTheBackend(
 	if err != nil {
 		return nil, err
 	}
-	restores, err := components.RestoresOnBackend(ctx, res.reader, key, res.cluster.UID)
+	now := time.Now()
+	if err := storagewriter.PruneExpired(
+		ctx,
+		res.client,
+		res.reader,
+		res.claimNamespace,
+		key,
+		claim,
+		now,
+		res.writersSince,
+	); err != nil {
+		return nil, err
+	}
+	writers, err := storagewriter.Live(
+		ctx,
+		res.reader,
+		res.claimNamespace,
+		key,
+		claim,
+		res.cluster.UID,
+		now,
+		res.writersSince,
+	)
 	if err != nil {
 		return nil, err
 	}
-	if len(pods) == 0 && len(restores) == 0 {
+	if len(pods) == 0 && len(writers) == 0 {
 		return nil, nil
 	}
 
-	return &components.StorageHandover{Backend: key, Pods: pods, Restores: restores}, nil
+	return &components.StorageHandover{Backend: key, Pods: pods, Writers: writers}, nil
 }
 
 // addClaimFinalizer writes the finalizer that keeps a deleted cluster alive
@@ -364,7 +403,7 @@ func storageHeld(cluster *v1.CamundaCluster, holder *components.StorageHolder, a
 }
 
 // storageHandover builds the Ready condition of a cluster that waits for the
-// pods of other clusters, or the restores into other clusters, on its backend.
+// pods of other clusters, or the writers for other clusters, on its backend.
 // A deleted holder leaves its pods to the garbage collector, and a holder that
 // moved replaces them through a rollout. When applyErr is set, the message
 // carries it as the error of the last apply.
@@ -393,10 +432,10 @@ func handoverMessage(handover *components.StorageHandover) string {
 			handover.Backend, strings.Join(handover.Pods, ", "),
 		))
 	}
-	if len(handover.Restores) > 0 {
+	if len(handover.Writers) > 0 {
 		writers = append(writers, fmt.Sprintf(
-			"Restores into another cluster still write the backend %q: %s",
-			handover.Backend, strings.Join(handover.Restores, ", "),
+			"Writers for another cluster still write the backend %q: %s",
+			handover.Backend, strings.Join(handover.Writers, ", "),
 		))
 	}
 

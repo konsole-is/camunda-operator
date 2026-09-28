@@ -23,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -33,6 +34,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 )
 
 // longClusterName is longer than a label value admits, so the owner label of
@@ -122,40 +124,26 @@ func TestEnqueueForBrokerClaim(t *testing.T) {
 	})
 }
 
-// A cluster that waits for a restore on its backend starts once the restore
-// stops writing. Only that end wakes the waiting clusters: a restore that
-// starts or moves between running phases changes nothing for them.
-func TestRestoreEnds(t *testing.T) {
-	restore := func(phase v1.LogicalRestorePhase) *v1.LogicalRestoreRDBMS {
-		lrr := &v1.LogicalRestoreRDBMS{}
-		lrr.Status.Phase = phase
-		return lrr
-	}
-	ends := restoreEnds()
+// A cluster that waits for a writer on its backend starts once the writer
+// releases its registration. A renewal frees nothing, so only the release
+// wakes the waiting clusters, and only for a writer Lease.
+func TestWriterReleased(t *testing.T) {
+	writer := &coordinationv1.Lease{}
+	writer.SetLabels(map[string]string{
+		labels.ComponentKey: storagewriter.Component,
+		labels.ManagedByKey: labels.ManagedBy,
+	})
+	other := &coordinationv1.Lease{}
+	released := writerReleased()
 
-	reached := event.UpdateEvent{
-		ObjectOld: restore(v1.LogicalRestoreRestoringSecondaryStorage),
-		ObjectNew: restore(v1.LogicalRestoreFailed),
-	}
-	assert.True(t, ends.Update(reached), "a restore that reached a terminal phase")
-	completed := &v1.LogicalRestoreElasticsearch{}
-	completed.Status.Phase = v1.LogicalRestoreCompleted
-	elasticsearch := event.UpdateEvent{ObjectOld: &v1.LogicalRestoreElasticsearch{}, ObjectNew: completed}
-	assert.True(t, ends.Update(elasticsearch), "the Elasticsearch kind too")
-	running := event.UpdateEvent{
-		ObjectOld: restore(v1.LogicalRestoreRestoringSecondaryStorage),
-		ObjectNew: restore(v1.LogicalRestoreRestoringPrimaryStorage),
-	}
-	assert.False(t, ends.Update(running), "a restore that still runs")
-	ended := event.UpdateEvent{ObjectOld: restore(v1.LogicalRestoreFailed), ObjectNew: restore(v1.LogicalRestoreFailed)}
-	assert.False(t, ends.Update(ended), "a restore that ended before")
-	assert.True(t, ends.Delete(event.DeleteEvent{Object: restore(v1.LogicalRestoreRestoringSecondaryStorage)}))
-	assert.False(t, ends.Delete(event.DeleteEvent{Object: restore(v1.LogicalRestoreCompleted)}))
-	assert.False(t, ends.Create(event.CreateEvent{Object: restore(v1.LogicalRestorePending)}))
+	assert.True(t, released.Delete(event.DeleteEvent{Object: writer}))
+	assert.False(t, released.Delete(event.DeleteEvent{Object: other}), "a Lease that is no writer")
+	assert.False(t, released.Update(event.UpdateEvent{ObjectOld: writer, ObjectNew: writer}), "a renewal")
+	assert.False(t, released.Create(event.CreateEvent{Object: writer}))
 }
 
-// The index keeps the waiting clusters apart from every other, so the end of
-// a restore wakes only them.
+// The index keeps the waiting clusters apart from every other, so a released
+// writer wakes only them.
 func TestWaitingForHandoverIndex(t *testing.T) {
 	index := indexers[waitingForHandoverField]
 	cluster := func(reason string) *v1.CamundaCluster {

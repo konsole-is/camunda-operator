@@ -197,8 +197,15 @@ func (r *Reconciler) admit(
 		return r.waiting(lrr, failure), nil
 	}
 	// This look writes nothing. The write waits for a later look, whose check
-	// reads the claim after this pin is stored, so a cluster that takes the
-	// claim before that check finds this restore.
+	// reads the claim after this registration exists, so a cluster that takes
+	// the claim before that check is what the check finds, and one that takes
+	// it after lists this restore as a writer.
+	err = restore.RegisterWriter(
+		ctx, r.Client, r.APIReader, r.opts.ClaimNamespace, backend, lrr, lrr.Status.TargetClusterUID,
+	)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
 	lrr.Status.Backend = backend
 
 	r.start(lrr, cluster, source)

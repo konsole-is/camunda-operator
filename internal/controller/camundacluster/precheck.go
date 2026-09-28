@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -58,15 +59,21 @@ type mirroredSecrets map[components.MirrorPurpose]map[string][]byte
 // method fills exactly one part of the render input.
 type resolver struct {
 	reader client.Reader
+	// client deletes the writer Leases that expired. Its reads use the cache.
+	client client.Client
+	// writersSince is storagewriter.Clock.Since.
+	writersSince time.Time
 	// claims runs the storage claim protocol over the Leases of the operator
 	// namespace. Its reads go through the uncached reader, as the protocol
 	// demands.
-	claims   *leaseclaim.Claim[*v1.CamundaCluster]
-	scheme   *runtime.Scheme
-	cluster  *v1.CamundaCluster
-	recorder events.EventRecorder
-	inputs   []string
-	mirrors  mirroredSecrets
+	claims *leaseclaim.Claim[*v1.CamundaCluster]
+	// claimNamespace holds the storage claim Leases and the writer Leases.
+	claimNamespace string
+	scheme         *runtime.Scheme
+	cluster        *v1.CamundaCluster
+	recorder       events.EventRecorder
+	inputs         []string
+	mirrors        mirroredSecrets
 	// storage is the SecondaryStorageConfig that spec.storageRef names, set
 	// by resolveStorage for the steps after it.
 	storage *v1.SecondaryStorageConfig
@@ -90,12 +97,15 @@ func (r *CamundaClusterReconciler) preCheck(
 	cluster *v1.CamundaCluster,
 ) (components.Input, mirroredSecrets, error) {
 	res := &resolver{
-		reader:   r.APIReader,
-		claims:   components.StorageClaimSchema().NewClaim(r.Client, r.APIReader, r.ClaimNamespace),
-		scheme:   r.Scheme,
-		cluster:  cluster,
-		recorder: r.EventRecorder,
-		mirrors:  mirroredSecrets{},
+		reader:         r.APIReader,
+		client:         r.Client,
+		writersSince:   r.WriterClock.Since(),
+		claims:         components.StorageClaimSchema().NewClaim(r.Client, r.APIReader, r.ClaimNamespace),
+		claimNamespace: r.ClaimNamespace,
+		scheme:         r.Scheme,
+		cluster:        cluster,
+		recorder:       r.EventRecorder,
+		mirrors:        mirroredSecrets{},
 	}
 	in := components.Input{Cluster: cluster}
 

@@ -19,6 +19,7 @@ package camundaoptimize
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,6 +37,7 @@ import (
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 )
 
 // The importer writes the analytics indices of the backend of its cluster. A
@@ -98,10 +100,10 @@ func TestPreCheckSuspendsWhileTheClusterDoesNotHoldItsBackend(t *testing.T) {
 	}
 }
 
-// The importer waits for a restore into another cluster by its pinned
-// backend. The restore of this cluster is its own work, and a restore that has
-// not started or has ended writes nothing.
-func TestPreCheckSuspendsWhileARestoreIntoAnotherClusterWritesTheBackend(t *testing.T) {
+// The importer waits for a live writer for another cluster, such as a restore.
+// A writer for this cluster is its own work, and a registration that expired
+// writes nothing.
+func TestPreCheckSuspendsWhileAWriterForAnotherClusterWritesTheBackend(t *testing.T) {
 	const (
 		namespace  = gateNamespace
 		claimSpace = "camunda-system"
@@ -109,18 +111,15 @@ func TestPreCheckSuspendsWhileARestoreIntoAnotherClusterWritesTheBackend(t *test
 	)
 
 	cases := map[string]struct {
-		target    types.UID
-		phase     v1.LogicalRestorePhase
-		suspended bool
+		target     types.UID
+		registered time.Time
+		suspended  bool
 	}{
-		"a running restore into another cluster": {
-			target: "other-uid", phase: v1.LogicalRestoreRestoringSecondaryStorage, suspended: true,
+		"a live writer for another cluster": {target: "other-uid", registered: time.Now(), suspended: true},
+		"a live writer for this cluster":    {target: "cluster-uid", registered: time.Now()},
+		"an expired writer for another cluster": {
+			target: "other-uid", registered: time.Now().Add(-storagewriter.Duration),
 		},
-		"a running restore into this cluster": {
-			target: "cluster-uid", phase: v1.LogicalRestoreRestoringSecondaryStorage,
-		},
-		"a pending restore into another cluster": {target: "other-uid", phase: v1.LogicalRestorePending},
-		"a failed restore into another cluster":  {target: "other-uid", phase: v1.LogicalRestoreFailed},
 	}
 
 	for name, tc := range cases {
@@ -131,19 +130,17 @@ func TestPreCheckSuspendsWhileARestoreIntoAnotherClusterWritesTheBackend(t *test
 				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: endpoint},
 			})
 			require.NoError(t, err)
-			restore := &v1.LogicalRestoreElasticsearch{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "team-b", Name: "restore"},
-			}
-			restore.Status.Phase = tc.phase
-			restore.Status.Backend = key
-			restore.Status.TargetClusterUID = tc.target
-			objects = append(
-				objects,
-				clustercomponents.StorageClaimSchema().NewLease(claimSpace, key, cluster),
-				restore,
-			)
+			objects = append(objects, clustercomponents.StorageClaimSchema().NewLease(claimSpace, key, cluster))
 
 			c := storageClaimPodClient(t, scheme, objects...)
+			writer := storagewriter.Writer{
+				Kind: "LogicalRestoreElasticsearch", Namespace: "team-b", Name: "restore", UID: "restore-uid",
+				ClusterUID: tc.target,
+			}
+			claim := clustercomponents.StorageClaimSchema().LeaseName(key)
+			require.NoError(t, storagewriter.Register(
+				context.Background(), c, c, claimSpace, key, claim, writer, tc.registered,
+			))
 			r := &Reconciler{Client: c, APIReader: c, Scheme: scheme, ClaimNamespace: claimSpace}
 
 			var optimize v1.CamundaOptimize

@@ -217,6 +217,25 @@ func stampStatefulSetReady(key client.ObjectKey) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// expectHealthyOnceWorkloadsAreReady stamps the workloads of cluster ready
+// until the cluster reports Ready Healthy. A cluster can apply its workloads
+// again after a stamp, and nothing in envtest observes that apply.
+func expectHealthyOnceWorkloadsAreReady(cluster *v1.CamundaCluster) {
+	GinkgoHelper()
+	zeebeKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-zeebe"}
+	gatewayKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-gateway"}
+	Eventually(func(g Gomega) {
+		stampStatefulSetReady(zeebeKey)
+		stampDeploymentReady(gatewayKey)
+		var latest v1.CamundaCluster
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+		ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
+		g.Expect(ready).NotTo(BeNil())
+		g.Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+		g.Expect(ready.Reason).To(Equal(v1.ReasonHealthy))
+	}, timeout, interval).Should(Succeed())
+}
+
 // stampDeploymentReady writes the status a Deployment controller would write
 // when every replica is ready.
 func stampDeploymentReady(key client.ObjectKey) {

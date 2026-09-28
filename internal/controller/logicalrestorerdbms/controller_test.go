@@ -361,6 +361,7 @@ var _ = Describe("LogicalRestoreRDBMS cluster claim", func() {
 		reached := expectReason(lrr, v1.LogicalRestorePending, v1.ReasonStorageAlreadyAttached)
 		Expect(readyCondition(reached).Message).To(ContainSubstring(w.namespace + "/other"))
 		Expect(reached.Status.Backend).To(BeEmpty(), "the backend is pinned when the restore leaves Pending")
+		Expect(writersNaming(lrr)).To(BeEmpty(), "a restore in Pending writes nothing, so it holds no backend")
 
 		w.holdBackend(w.cluster)
 		Eventually(func(g Gomega) {
@@ -368,6 +369,37 @@ var _ = Describe("LogicalRestoreRDBMS cluster claim", func() {
 			g.Expect(current.Status.Phase).NotTo(Equal(v1.LogicalRestorePending))
 			g.Expect(current.Status.Backend).NotTo(BeEmpty())
 		}, timeout, interval).Should(Succeed())
+		Expect(writersNaming(lrr)).To(HaveLen(1), "the restore holds its backend from the pin on")
+
+		failRestore(w, lrr)
+		Eventually(func() []string {
+			return writersNaming(lrr)
+		}, timeout, interval).Should(BeEmpty(), "a terminal restore gives its backend back")
+	})
+
+	// A restore whose registration fails stays in Pending with no backend, so
+	// the renewer and the next look do not keep a writer Lease for it.
+	It("pins no backend while its writer registration fails", func() {
+		w := newWorld()
+		w.holdBackend(w.cluster)
+		backup := createBackup(w)
+		denyWriterLeases()
+
+		lrr := createRestore(w, backup.Name)
+		Consistently(func(g Gomega) {
+			current := latest(g, lrr)
+			g.Expect(current.Status.Phase).To(Or(BeEmpty(), Equal(v1.LogicalRestorePending)))
+			g.Expect(current.Status.Backend).To(BeEmpty())
+		}, "5s", interval).Should(Succeed())
+		Expect(writersNaming(lrr)).To(BeEmpty())
+
+		allowWriterLeases()
+		Eventually(func(g Gomega) {
+			current := latest(g, lrr)
+			g.Expect(current.Status.Phase).NotTo(Equal(v1.LogicalRestorePending))
+			g.Expect(current.Status.Backend).NotTo(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+		Expect(writersNaming(lrr)).To(HaveLen(1))
 	})
 
 	// Nothing bounds the hold, and no spec change ends it. No watch of this

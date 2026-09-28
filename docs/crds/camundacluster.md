@@ -161,7 +161,7 @@ status:
         are gone
 ```
 
-A running restore into another cluster holds the backend the same way. A [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md#the-backend) or a [LogicalRestoreRDBMS](logicalrestorerdbms.md#the-backend) writes the backend from the moment it leaves `Pending` until it reaches `Completed` or `Failed`. You can delete its target during that time, or point the target at another backend. The next cluster on the backend still waits, with reason `WaitingForHandover`, and the message names the restore. A restore into this cluster itself is no reason to wait.
+A running restore into another cluster holds the backend the same way. A [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md#the-backend) or a [LogicalRestoreRDBMS](logicalrestorerdbms.md#the-backend) writes the backend from the moment it leaves `Pending` until it reaches `Completed` or `Failed`. You can delete its target during that time, or point the target at another backend. The next cluster on the backend still waits, with reason `WaitingForHandover`, and the message names the restore. A restore into this cluster itself is no reason to wait. The wait lasts as long as the restore is not finished, even when it stops making progress. To free the backend from a restore that does not move, delete the restore. A restore that you delete while it runs holds the backend for about two more minutes. When the operator restarts in that time, the two minutes count from its start.
 
 ```yaml
 status:
@@ -170,7 +170,7 @@ status:
       status: "False"
       reason: WaitingForHandover
       message: >-
-        Restores into another cluster still write the backend
+        Writers for another cluster still write the backend
         "elasticsearch|https://es-http.my-cluster-ns.svc:9200":
         LogicalRestoreElasticsearch my-cluster-ns/my-other-cluster-restore.
         This cluster starts when they are gone
@@ -377,7 +377,7 @@ Deleting the cluster removes every resource that the operator created for it, an
 | `Ready` | `Degraded` / `Down` | Some or no replicas of a component are ready after the grace period. | Read the pods and events of the named component. |
 | `Ready` | `Suspended` | `spec.suspend` is true and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to resume. |
 | `Ready` | `StorageAlreadyAttached` | Another `CamundaCluster` holds the storage claim of the backend that `storageRef` resolves to. This cluster is suspended. | Give this cluster a backend of its own, or delete the holder. The message names both, and the last apply error of the workloads when one occurred. |
-| `Ready` | `WaitingForHandover` | Pods of another cluster, or a restore into another cluster, still write the backend that `storageRef` resolves to. This cluster holds the storage claim of it already, or waits to take it. The operator renders every workload of it at zero and keeps the volumes. | Wait. The message names the backend, those pods, the workloads that can start one, and the restores. It also names the last apply error of the workloads when one occurred. The state clears on its own. If the pods never go, delete them. If a named workload keeps them coming back, scale it to zero or delete it. A restore ends in `Completed` or `Failed`. |
+| `Ready` | `WaitingForHandover` | Pods of another cluster, or a writer for another cluster such as a restore, still write the backend that `storageRef` resolves to. This cluster holds the storage claim of it already, or waits to take it. The operator renders every workload of it at zero and keeps the volumes. | Wait. The message names the backend, those pods, the workloads that can start one, and the writers, such as a restore. It also names the last apply error of the workloads when one occurred. The state clears on its own. If the pods never go, delete them. If a named workload keeps them coming back, scale it to zero or delete it. A restore ends in `Completed` or `Failed`. A writer that stops without an end, such as a deleted restore, holds the backend for about two minutes. After an operator restart, the two minutes count from its start. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, or a ServiceAccount with `create: false` is absent. Or two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. A Lease of the operator namespace that this operator did not write reads the same way, and it blocks the storage claim of the backend. A running cluster keeps its workloads. | Read the message. Create the missing resource, correct the field it names, or delete the named Lease once nothing else uses it. The cluster takes the change on its own. |
 | `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. A running cluster keeps its workloads. | Create the Secret with the named key. The cluster takes the change on its own. |
 | `Ready` | `VersionDowngradeRefused` | The effective version is below the version the brokers run, and no annotation sanctions the move. The operator applies nothing, and the brokers keep the version they have. | Read [Version](#version). Set the version forward again, or sanction the downgrade. |
