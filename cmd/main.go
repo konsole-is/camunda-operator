@@ -54,6 +54,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/pointintimerestore"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/manager"
+	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -270,11 +271,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	writerClock := &storagewriter.Clock{}
+	if err := mgr.Add(writerClock); err != nil {
+		setupLog.Error(err, "Failed to add the writer clock")
+		os.Exit(1)
+	}
+
 	if err := (&camundacluster.CamundaClusterReconciler{
 		Client:         mgr.GetClient(),
 		APIReader:      mgr.GetAPIReader(),
 		Scheme:         mgr.GetScheme(),
 		ClaimNamespace: operatorNamespace,
+		WriterClock:    writerClock,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaCluster")
 		os.Exit(1)
@@ -378,6 +386,7 @@ func main() {
 		APIReader:      mgr.GetAPIReader(),
 		Scheme:         mgr.GetScheme(),
 		ClaimNamespace: operatorNamespace,
+		WriterClock:    writerClock,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaOptimize")
 		os.Exit(1)

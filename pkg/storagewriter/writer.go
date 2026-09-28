@@ -30,6 +30,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
@@ -59,6 +60,30 @@ const (
 )
 
 const leasePrefix = "camunda-writer-"
+
+// Clock records when this operator started to lead. A registration counts as
+// renewed at that time at the latest. The zero Clock, and a nil one, never
+// started.
+type Clock struct {
+	started atomic.Int64
+}
+
+// Start records the time. The manager runs it once this operator leads.
+func (c *Clock) Start(ctx context.Context) error {
+	c.started.Store(time.Now().UnixNano())
+	<-ctx.Done()
+
+	return nil
+}
+
+// Since returns the time Start ran, or the zero time.
+func (c *Clock) Since() time.Time {
+	if c == nil || c.started.Load() == 0 {
+		return time.Time{}
+	}
+
+	return time.Unix(0, c.started.Load())
+}
 
 // Writer is a resource that writes a backend for the CamundaCluster with UID
 // ClusterUID.
@@ -167,13 +192,13 @@ func Release(ctx context.Context, c client.Client, namespace, key string, w Writ
 // namespace/name" entries, leaving out the writers for the cluster with UID
 // self. claim is the name of the storage claim Lease of key. The reader must
 // read the API server directly: a stale list lets a cluster start beside a
-// writer.
+// writer. since is Clock.Since.
 func Live(
 	ctx context.Context,
 	reader client.Reader,
 	namespace, key, claim string,
 	self types.UID,
-	now time.Time,
+	now, since time.Time,
 ) ([]string, error) {
 	leases, err := registrations(ctx, reader, namespace, key, claim)
 	if err != nil {
@@ -182,7 +207,7 @@ func Live(
 
 	var writers []string
 	for _, lease := range leases {
-		if lease.Labels[labels.ClusterUIDKey] == string(self) || expired(lease, now) {
+		if lease.Labels[labels.ClusterUIDKey] == string(self) || expired(lease, now, since) {
 			continue
 		}
 		writers = append(writers, lease.Annotations[WriterAnnotation])
@@ -194,13 +219,13 @@ func Live(
 
 // PruneExpired deletes the expired registrations on the backend key. The
 // delete carries the resource version that was read, so a registration that
-// its writer renewed in between stays.
+// its writer renewed in between stays. since is Clock.Since.
 func PruneExpired(
 	ctx context.Context,
 	c client.Client,
 	reader client.Reader,
 	namespace, key, claim string,
-	now time.Time,
+	now, since time.Time,
 ) error {
 	leases, err := registrations(ctx, reader, namespace, key, claim)
 	if err != nil {
@@ -208,7 +233,7 @@ func PruneExpired(
 	}
 
 	for _, lease := range leases {
-		if !expired(lease, now) {
+		if !expired(lease, now, since) {
 			continue
 		}
 		err := c.Delete(ctx, lease, client.Preconditions{ResourceVersion: &lease.ResourceVersion})
@@ -252,13 +277,17 @@ func registrations(
 	return out, nil
 }
 
-func expired(lease *coordinationv1.Lease, now time.Time) bool {
+func expired(lease *coordinationv1.Lease, now, since time.Time) bool {
 	if lease.Spec.RenewTime == nil || lease.Spec.LeaseDurationSeconds == nil {
 		return true
 	}
 	duration := time.Duration(*lease.Spec.LeaseDurationSeconds) * time.Second
+	renewed := lease.Spec.RenewTime.Time
+	if since.After(renewed) {
+		renewed = since
+	}
 
-	return !now.Before(lease.Spec.RenewTime.Add(duration))
+	return !now.Before(renewed.Add(duration))
 }
 
 // IsWriterLease reports whether obj is a writer Lease.

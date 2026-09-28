@@ -42,6 +42,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 )
 
 // controllerName is the name the controller registers with controller-runtime.
@@ -84,6 +85,10 @@ type CamundaClusterReconciler struct {
 	// resolve one backend meet on one Lease. SetupWithManager refuses an
 	// empty value.
 	ClaimNamespace string
+	// WriterClock tells when this operator started to lead, see
+	// storagewriter.Clock. Nil counts a writer registration from its last
+	// renewal only.
+	WriterClock *storagewriter.Clock
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used

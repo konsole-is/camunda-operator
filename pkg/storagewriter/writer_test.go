@@ -63,11 +63,11 @@ func TestRegisterMakesTheWriterLiveForOtherClusters(t *testing.T) {
 
 	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, w, start))
 
-	live, err := Live(ctx, c, claimNamespace, backend, claim, "other-cluster", start)
+	live, err := Live(ctx, c, claimNamespace, backend, claim, "other-cluster", start, time.Time{})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/restore"}, live)
 
-	own, err := Live(ctx, c, claimNamespace, backend, claim, "target", start)
+	own, err := Live(ctx, c, claimNamespace, backend, claim, "target", start, time.Time{})
 	require.NoError(t, err)
 	assert.Empty(t, own, "a writer for the cluster itself does not hold that cluster")
 }
@@ -77,7 +77,7 @@ func TestAWriterOfAnotherBackendIsNotLive(t *testing.T) {
 	c := newClient(t)
 	require.NoError(t, Register(ctx, c, c, claimNamespace, "rdbms|other:5432/camunda", claim, restore("r", "t"), start))
 
-	live, err := Live(ctx, c, claimNamespace, backend, claim, "other-cluster", start)
+	live, err := Live(ctx, c, claimNamespace, backend, claim, "other-cluster", start, time.Time{})
 
 	require.NoError(t, err)
 	assert.Empty(t, live)
@@ -88,11 +88,11 @@ func TestARegistrationExpiresWithoutARenewal(t *testing.T) {
 	c := newClient(t)
 	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, restore("r", "t"), start))
 
-	before, err := Live(ctx, c, claimNamespace, backend, claim, "other", start.Add(Duration-time.Second))
+	before, err := Live(ctx, c, claimNamespace, backend, claim, "other", start.Add(Duration-time.Second), time.Time{})
 	require.NoError(t, err)
 	assert.Len(t, before, 1)
 
-	after, err := Live(ctx, c, claimNamespace, backend, claim, "other", start.Add(Duration))
+	after, err := Live(ctx, c, claimNamespace, backend, claim, "other", start.Add(Duration), time.Time{})
 	require.NoError(t, err)
 	assert.Empty(t, after)
 }
@@ -110,7 +110,7 @@ func TestRegisterRenewsOnlyAfterTheRenewInterval(t *testing.T) {
 	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, w, later))
 	assert.Equal(t, later, renewTime(t, c, w))
 
-	live, err := Live(ctx, c, claimNamespace, backend, claim, "other", start.Add(Duration))
+	live, err := Live(ctx, c, claimNamespace, backend, claim, "other", start.Add(Duration), time.Time{})
 	require.NoError(t, err)
 	assert.Len(t, live, 1, "the renewal moves the expiry")
 }
@@ -124,7 +124,7 @@ func TestReleaseEndsTheRegistrationAndToleratesAMissingLease(t *testing.T) {
 	require.NoError(t, Release(ctx, c, claimNamespace, backend, w))
 	require.NoError(t, Release(ctx, c, claimNamespace, backend, w))
 
-	live, err := Live(ctx, c, claimNamespace, backend, claim, "other", start)
+	live, err := Live(ctx, c, claimNamespace, backend, claim, "other", start, time.Time{})
 	require.NoError(t, err)
 	assert.Empty(t, live)
 }
@@ -158,7 +158,7 @@ func TestPruneExpiredDeletesOnlyExpiredRegistrationsOfTheBackend(t *testing.T) {
 	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, fresh, start.Add(Duration)))
 	require.NoError(t, Register(ctx, c, c, claimNamespace, "rdbms|other:5432/db", claim, elsewhere, start))
 
-	require.NoError(t, PruneExpired(ctx, c, c, claimNamespace, backend, claim, start.Add(Duration)))
+	require.NoError(t, PruneExpired(ctx, c, c, claimNamespace, backend, claim, start.Add(Duration), time.Time{}))
 
 	var leases coordinationv1.LeaseList
 	require.NoError(t, c.List(ctx, &leases, client.InNamespace(claimNamespace)))
@@ -187,9 +187,39 @@ func TestPruneExpiredKeepsARegistrationRenewedAfterTheRead(t *testing.T) {
 	require.NoError(t, stale.Create(ctx, &read))
 	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, w, start.Add(Duration)))
 
-	require.NoError(t, PruneExpired(ctx, c, stale, claimNamespace, backend, claim, start.Add(Duration)))
+	require.NoError(t, PruneExpired(ctx, c, stale, claimNamespace, backend, claim, start.Add(Duration), time.Time{}))
 
-	live, err := Live(ctx, c, claimNamespace, backend, claim, "other-cluster", start.Add(Duration))
+	live, err := Live(ctx, c, claimNamespace, backend, claim, "other-cluster", start.Add(Duration), time.Time{})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/restore"}, live)
+}
+
+func TestAClockThatStartedLaterKeepsAnOldRegistrationLive(t *testing.T) {
+	ctx := context.Background()
+	c := newClient(t)
+	w := restore("restore", "target")
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, w, start))
+
+	// The operator was down past the duration and leads again since led.
+	led := start.Add(Duration + time.Minute)
+	now := led.Add(Duration - time.Second)
+
+	live, err := Live(ctx, c, claimNamespace, backend, claim, "other-cluster", now, led)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/restore"}, live)
+
+	require.NoError(t, PruneExpired(ctx, c, c, claimNamespace, backend, claim, now, led))
+	live, err = Live(ctx, c, claimNamespace, backend, claim, "other-cluster", now, led)
+	require.NoError(t, err)
+	assert.Len(t, live, 1, "a registration is not pruned inside the duration after the clock started")
+
+	live, err = Live(ctx, c, claimNamespace, backend, claim, "other-cluster", led.Add(Duration), led)
+	require.NoError(t, err)
+	assert.Empty(t, live, "a writer that never renews expires one duration after the clock started")
+}
+
+func TestAClockThatNeverStartedIsTheZeroTime(t *testing.T) {
+	var nilClock *Clock
+	assert.True(t, nilClock.Since().IsZero())
+	assert.True(t, (&Clock{}).Since().IsZero())
 }

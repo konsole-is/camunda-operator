@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -60,6 +61,8 @@ type resolver struct {
 	reader client.Reader
 	// client deletes the writer Leases that expired. Its reads use the cache.
 	client client.Client
+	// writersSince is storagewriter.Clock.Since.
+	writersSince time.Time
 	// claims runs the storage claim protocol over the Leases of the operator
 	// namespace. Its reads go through the uncached reader, as the protocol
 	// demands.
@@ -96,6 +99,7 @@ func (r *CamundaClusterReconciler) preCheck(
 	res := &resolver{
 		reader:         r.APIReader,
 		client:         r.Client,
+		writersSince:   r.WriterClock.Since(),
 		claims:         components.StorageClaimSchema().NewClaim(r.Client, r.APIReader, r.ClaimNamespace),
 		claimNamespace: r.ClaimNamespace,
 		scheme:         r.Scheme,

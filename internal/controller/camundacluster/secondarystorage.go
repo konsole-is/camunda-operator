@@ -148,6 +148,7 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 		key,
 		in.Storage.Claim,
 		time.Now(),
+		res.writersSince,
 	); err != nil {
 		return err
 	}
@@ -217,10 +218,28 @@ func (res *resolver) writersOnTheBackend(
 		return nil, err
 	}
 	now := time.Now()
-	if err := storagewriter.PruneExpired(ctx, res.client, res.reader, res.claimNamespace, key, claim, now); err != nil {
+	if err := storagewriter.PruneExpired(
+		ctx,
+		res.client,
+		res.reader,
+		res.claimNamespace,
+		key,
+		claim,
+		now,
+		res.writersSince,
+	); err != nil {
 		return nil, err
 	}
-	writers, err := storagewriter.Live(ctx, res.reader, res.claimNamespace, key, claim, res.cluster.UID, now)
+	writers, err := storagewriter.Live(
+		ctx,
+		res.reader,
+		res.claimNamespace,
+		key,
+		claim,
+		res.cluster.UID,
+		now,
+		res.writersSince,
+	)
 	if err != nil {
 		return nil, err
 	}
