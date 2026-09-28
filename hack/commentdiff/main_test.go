@@ -213,6 +213,19 @@ func f() {
 			wantText: "comment: g must run first.",
 		},
 		{
+			name: "comment that starts with a number after a plus",
+			old: `func f() {
+	g()
+}
+`,
+			cur: `func f() {
+	// +1 is the minimum.
+	g()
+}
+`,
+			wantText: "comment: +1 is the minimum.",
+		},
+		{
 			name: "kubebuilder marker is not a comment",
 			old: `type T struct{}
 `,
@@ -390,6 +403,12 @@ func TestDiffFileFlagsGoDocsUnderAPI(t *testing.T) {
 			file: "api/v1/spec_types.go",
 			old:  "// M runs.\nfunc (s *Spec) M() {\n\tg()\n}\n",
 			cur:  "// M runs.\n// It runs twice.\nfunc (s *Spec) M() {\n\tg()\n}\n",
+		},
+		{
+			name: "type that controller-gen does not generate",
+			file: "api/v1/groupversion_info.go",
+			old:  "// Builder builds.\n// +kubebuilder:object:generate=false\ntype Builder struct{}\n",
+			cur:  "// Builder builds.\n// It never fails.\n// +kubebuilder:object:generate=false\ntype Builder struct{}\n",
 		},
 		{
 			name: "type in a test file",

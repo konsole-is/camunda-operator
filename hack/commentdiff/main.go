@@ -19,8 +19,8 @@ limitations under the License.
 // doc comment that got longer than it was at the base, and a doc comment of
 // three or more lines that is longer than the body it documents. A flag is
 // not a verdict. It exits 1 so that each flagged comment gets evaluated.
-// The type and field docs under api/ become CRD descriptions that users
-// read, so they are listed but never flagged.
+// The docs of schema types and fields under api/ become CRD descriptions
+// that users read, so they are listed but never flagged.
 //
 // Usage: go run ./hack/commentdiff [base]
 //
@@ -40,6 +40,8 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // minFlaggedDoc is the doc length from which a doc longer than its body is
@@ -221,7 +223,7 @@ func diffFile(file string, oldSrc, newSrc []byte) ([]finding, error) {
 			f.text += fmt.Sprintf(", LONGER than its %d-line body", d.bodyLen)
 			f.fatal = true
 		}
-		if schemaFile && f.fatal && crdDescription(d.name) {
+		if schemaFile && f.fatal && crdDescription(newDecls, d.name) {
 			f.fatal = false
 			f.text += " (user-facing: judge with writing-operator-docs)"
 		}
@@ -304,8 +306,17 @@ func pairRenames(old, cur map[string]decl) map[string]decl {
 	return paired
 }
 
-func crdDescription(key string) bool {
-	return strings.HasPrefix(key, "type ") || strings.HasPrefix(key, "group type ") || strings.HasPrefix(key, "field ")
+func crdDescription(decls map[string]decl, key string) bool {
+	kind, name, _ := strings.Cut(strings.TrimPrefix(key, "group "), " ")
+	if kind != "type" && kind != "field" {
+		return false
+	}
+	owner, _, _ := strings.Cut(name, ".")
+	if !ast.IsExported(owner) {
+		return false
+	}
+	ownerDoc := decls["type "+owner].docText + decls["group type "+owner].docText
+	return !strings.Contains(ownerDoc, "+kubebuilder:object:generate=false")
 }
 
 func sortedKeys(m map[string]decl) []string {
@@ -409,12 +420,23 @@ func scan(file string, src []byte) (map[string]decl, []comment, error) {
 			continue
 		}
 		text := strings.TrimSpace(cg.Text())
-		if text == "" || strings.HasPrefix(text, "+") {
-			continue // kubebuilder markers and build tags
+		if text == "" || isMarker(text) {
+			continue
 		}
 		free = append(free, comment{text: text, line: fset.Position(cg.Pos()).Line})
 	}
 	return decls, free, nil
+}
+
+// isMarker reports whether every line of text is a marker such as +optional or +kubebuilder:validation:Required.
+func isMarker(text string) bool {
+	for line := range strings.Lines(text) {
+		r, _ := utf8.DecodeRuneInString(strings.TrimPrefix(line, "+"))
+		if !strings.HasPrefix(line, "+") || !unicode.IsLetter(r) {
+			return false
+		}
+	}
+	return true
 }
 
 func members(t ast.Expr) []*ast.Field {
