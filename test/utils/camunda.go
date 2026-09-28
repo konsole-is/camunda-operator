@@ -32,7 +32,7 @@ import (
 
 // CurlImage is the pinned curl image of the in-cluster helper pods.
 // renovate: datasource=docker depName=curlimages/curl
-const CurlImage = "curlimages/curl:8.21.0"
+const CurlImage = "curlimages/curl:8.22.0"
 
 // fileNamePattern is what a file of CamundaRequest.Files can be called: a
 // plain file name that is safe inside the shell script of the helper pod.
