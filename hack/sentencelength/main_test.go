@@ -148,6 +148,11 @@ func TestCheckPage(t *testing.T) {
 			page: "See <https://example.com/a;b> and https://example.com/may-release/x;y now.",
 		},
 		{
+			name: "a semicolon right after a bare URL is reported",
+			page: "See https://example.com/a; the pod starts.",
+			want: []finding{{line: 1, banned: ";"}},
+		},
+		{
 			name: "a modal in an email autolink is not reported",
 			page: "Write to <may@example.com> now.",
 		},
