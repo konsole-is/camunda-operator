@@ -103,6 +103,8 @@ type Writer struct {
 	ClusterUID types.UID
 }
 
+// String returns the writer as "Kind namespace/name", the form that the writer
+// annotation holds and that Live returns.
 func (w Writer) String() string {
 	return w.Kind + " " + w.Namespace + "/" + w.Name
 }

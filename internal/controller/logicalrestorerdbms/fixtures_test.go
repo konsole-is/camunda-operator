@@ -22,6 +22,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
@@ -716,6 +717,83 @@ func collectDeletedJobs(namespace string) {
 			}
 		}
 	}()
+}
+
+const denyWritersPolicy = "deny-writer-leases"
+
+// denyWriterLeases makes the API server refuse every new writer Lease, and
+// waits until it does.
+func denyWriterLeases() {
+	GinkgoHelper()
+	policy := &admissionregistrationv1.ValidatingAdmissionPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: denyWritersPolicy},
+		Spec: admissionregistrationv1.ValidatingAdmissionPolicySpec{
+			MatchConstraints: &admissionregistrationv1.MatchResources{
+				ResourceRules: []admissionregistrationv1.NamedRuleWithOperations{{
+					RuleWithOperations: admissionregistrationv1.RuleWithOperations{
+						Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create},
+						Rule: admissionregistrationv1.Rule{
+							APIGroups:   []string{"coordination.k8s.io"},
+							APIVersions: []string{"v1"},
+							Resources:   []string{"leases"},
+						},
+					},
+				}},
+			},
+			Validations: []admissionregistrationv1.Validation{{
+				Expression: "!has(object.metadata.labels) || !('" + labels.ComponentKey + "' in object.metadata.labels) || " +
+					"object.metadata.labels['" + labels.ComponentKey + "'] != '" + storagewriter.Component + "'",
+			}},
+		},
+	}
+	binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: denyWritersPolicy},
+		Spec: admissionregistrationv1.ValidatingAdmissionPolicyBindingSpec{
+			PolicyName:        denyWritersPolicy,
+			ValidationActions: []admissionregistrationv1.ValidationAction{admissionregistrationv1.Deny},
+		},
+	}
+	Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+	Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+	DeferCleanup(allowWriterLeases)
+
+	Eventually(func() bool {
+		probe := probeWriterLease()
+		err := k8sClient.Create(ctx, probe)
+		if err == nil {
+			_ = k8sClient.Delete(ctx, probe)
+		}
+
+		return apierrors.IsInvalid(err) || apierrors.IsForbidden(err)
+	}, timeout, interval).Should(BeTrue(), "the policy refuses writer Leases")
+}
+
+// allowWriterLeases removes the policy of denyWriterLeases, and waits until the
+// API server accepts writer Leases again.
+func allowWriterLeases() {
+	GinkgoHelper()
+	for _, obj := range []client.Object{
+		&admissionregistrationv1.ValidatingAdmissionPolicyBinding{ObjectMeta: metav1.ObjectMeta{Name: denyWritersPolicy}},
+		&admissionregistrationv1.ValidatingAdmissionPolicy{ObjectMeta: metav1.ObjectMeta{Name: denyWritersPolicy}},
+	} {
+		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, obj))).To(Succeed())
+	}
+	Eventually(func() error {
+		probe := probeWriterLease()
+		if err := k8sClient.Create(ctx, probe); err != nil {
+			return err
+		}
+
+		return k8sClient.Delete(ctx, probe)
+	}, timeout, interval).Should(Succeed())
+}
+
+func probeWriterLease() *coordinationv1.Lease {
+	return &coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{
+		Namespace: claimNamespace,
+		Name:      "probe-" + utilrand.String(8),
+		Labels:    map[string]string{labels.ComponentKey: storagewriter.Component},
+	}}
 }
 
 // writersNaming returns the writer Leases in the claim namespace that name the

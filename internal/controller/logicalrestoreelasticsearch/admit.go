@@ -201,13 +201,13 @@ func (r *Reconciler) admit(
 	// reads the claim after this registration exists, so a cluster that takes
 	// the claim before that check is what the check finds, and one that takes
 	// it after lists this restore as a writer.
-	lres.Status.Backend = backend
 	err = restore.RegisterWriter(
 		ctx, r.Client, r.APIReader, r.opts.ClaimNamespace, backend, lres, lres.Status.TargetClusterUID,
 	)
 	if err != nil {
 		return restore.Outcome{}, err
 	}
+	lres.Status.Backend = backend
 
 	r.start(lres)
 

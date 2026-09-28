@@ -377,6 +377,31 @@ var _ = Describe("LogicalRestoreRDBMS cluster claim", func() {
 		}, timeout, interval).Should(BeEmpty(), "a terminal restore gives its backend back")
 	})
 
+	// A restore whose registration fails stays in Pending with no backend, so
+	// the renewer and the next look do not keep a writer Lease for it.
+	It("pins no backend while its writer registration fails", func() {
+		w := newWorld()
+		w.holdBackend(w.cluster)
+		backup := createBackup(w)
+		denyWriterLeases()
+
+		lrr := createRestore(w, backup.Name)
+		Consistently(func(g Gomega) {
+			current := latest(g, lrr)
+			g.Expect(current.Status.Phase).To(Or(BeEmpty(), Equal(v1.LogicalRestorePending)))
+			g.Expect(current.Status.Backend).To(BeEmpty())
+		}, "5s", interval).Should(Succeed())
+		Expect(writersNaming(lrr)).To(BeEmpty())
+
+		allowWriterLeases()
+		Eventually(func(g Gomega) {
+			current := latest(g, lrr)
+			g.Expect(current.Status.Phase).NotTo(Equal(v1.LogicalRestorePending))
+			g.Expect(current.Status.Backend).NotTo(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+		Expect(writersNaming(lrr)).To(HaveLen(1))
+	})
+
 	// Nothing bounds the hold, and no spec change ends it. No watch of this
 	// controller covers a holder that the restore does not reference, so the
 	// retry timer is what takes the claim over once the holder is terminal.
