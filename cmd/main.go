@@ -276,6 +276,14 @@ func main() {
 		setupLog.Error(err, "Failed to add the writer clock")
 		os.Exit(1)
 	}
+	if err := mgr.Add(&storagewriter.Janitor{
+		Client:    mgr.GetClient(),
+		Namespace: operatorNamespace,
+		Clock:     writerClock,
+	}); err != nil {
+		setupLog.Error(err, "Failed to add the writer Lease janitor")
+		os.Exit(1)
+	}
 
 	if err := (&camundacluster.CamundaClusterReconciler{
 		Client:         mgr.GetClient(),

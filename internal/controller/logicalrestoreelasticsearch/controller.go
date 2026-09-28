@@ -399,12 +399,12 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		List: func(ctx context.Context) ([]restore.Registration, error) {
 			var list v1.LogicalRestoreElasticsearchList
 			if err := mgr.GetClient().List(ctx, &list); err != nil {
-				return nil, fmt.Errorf("listing the LogicalRestoreElasticsearchs: %w", err)
+				return nil, fmt.Errorf("listing the LogicalRestoreElasticsearch resources: %w", err)
 			}
 			var registrations []restore.Registration
 			for i := range list.Items {
 				item := &list.Items[i]
-				if item.Status.Backend != "" && !item.Terminal() {
+				if restore.Renewable(item.Status.Backend, item.Terminal(), item.DeletionTimestamp) {
 					registrations = append(registrations, restore.Registration{
 						Owner: item, Backend: item.Status.Backend, Target: item.Status.TargetClusterUID,
 					})

@@ -109,3 +109,12 @@ func TestRenewerReportsAFailedList(t *testing.T) {
 
 	assert.ErrorContains(t, renewer.renew(context.Background(), time.Now()), "list failed")
 }
+
+func TestRenewableSkipsFinishedAndDeletedRestores(t *testing.T) {
+	deleted := metav1.Now()
+
+	assert.True(t, Renewable("rdbms|db:5432/camunda", false, nil), "a running restore with a backend")
+	assert.False(t, Renewable("", false, nil), "no backend registered yet")
+	assert.False(t, Renewable("rdbms|db:5432/camunda", true, nil), "a terminal restore released its registration")
+	assert.False(t, Renewable("rdbms|db:5432/camunda", false, &deleted), "a deleted restore no longer runs")
+}

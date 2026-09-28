@@ -39,6 +39,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
@@ -268,6 +269,38 @@ func PruneExpired(
 		return err
 	}
 
+	return prune(ctx, c, leases, now, since)
+}
+
+// PruneAllExpired deletes the expired registrations of every backend in
+// namespace, the same way PruneExpired does for one.
+func PruneAllExpired(
+	ctx context.Context,
+	c client.Client,
+	reader client.Reader,
+	namespace string,
+	now, since time.Time,
+) error {
+	var leases coordinationv1.LeaseList
+	err := reader.List(
+		ctx,
+		&leases,
+		client.InNamespace(namespace),
+		client.MatchingLabels{labels.ManagedByKey: labels.ManagedBy, labels.ComponentKey: Component},
+	)
+	if err != nil {
+		return fmt.Errorf("listing the writer Leases: %w", err)
+	}
+
+	all := make([]*coordinationv1.Lease, 0, len(leases.Items))
+	for i := range leases.Items {
+		all = append(all, &leases.Items[i])
+	}
+
+	return prune(ctx, c, all, now, since)
+}
+
+func prune(ctx context.Context, c client.Client, leases []*coordinationv1.Lease, now, since time.Time) error {
 	for _, lease := range leases {
 		if !expired(lease, now, since) {
 			continue
@@ -279,6 +312,31 @@ func PruneExpired(
 	}
 
 	return nil
+}
+
+// Janitor prunes the expired registrations in Namespace every Duration while
+// this operator leads.
+type Janitor struct {
+	Client    client.Client
+	Namespace string
+	Clock     *Clock
+}
+
+// Start prunes until ctx ends. The manager runs it once this operator leads.
+func (j *Janitor) Start(ctx context.Context) error {
+	ticker := time.NewTicker(Duration)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			if err := PruneAllExpired(ctx, j.Client, j.Client, j.Namespace, time.Now(), j.Clock.Since()); err != nil {
+				log.FromContext(ctx).Error(err, "Could not prune the expired writer Leases")
+			}
+		}
+	}
 }
 
 // registrations returns the writer Leases of the backend key.

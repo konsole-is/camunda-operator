@@ -235,3 +235,35 @@ func TestTheFirstCallOfAClockRecordsTheTime(t *testing.T) {
 	require.NoError(t, clock.Start(ctx))
 	assert.Equal(t, since, clock.Since(), "Start keeps the time that Since recorded first")
 }
+
+func TestPruneAllExpiredPrunesEveryBackendAndKeepsTheLive(t *testing.T) {
+	ctx := context.Background()
+	c := newClient(t)
+	stale := restore("stale", "target")
+	elsewhere := restore("elsewhere", "target")
+	fresh := restore("fresh", "target")
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, stale, start))
+	require.NoError(t, Register(ctx, c, c, claimNamespace, "rdbms|other:5432/db", "other-claim", elsewhere, start))
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, fresh, start.Add(Duration)))
+
+	require.NoError(t, PruneAllExpired(ctx, c, c, claimNamespace, start.Add(Duration), time.Time{}))
+
+	var leases coordinationv1.LeaseList
+	require.NoError(t, c.List(ctx, &leases, client.InNamespace(claimNamespace)))
+	require.Len(t, leases.Items, 1)
+	assert.Equal(t, LeaseName(backend, fresh.UID), leases.Items[0].Name)
+}
+
+func TestPruneAllExpiredKeepsARegistrationInsideTheLeadGrace(t *testing.T) {
+	ctx := context.Background()
+	c := newClient(t)
+	w := restore("restore", "target")
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, w, start))
+	led := start.Add(Duration + time.Minute)
+
+	require.NoError(t, PruneAllExpired(ctx, c, c, claimNamespace, led.Add(time.Second), led))
+
+	var leases coordinationv1.LeaseList
+	require.NoError(t, c.List(ctx, &leases, client.InNamespace(claimNamespace)))
+	assert.Len(t, leases.Items, 1)
+}

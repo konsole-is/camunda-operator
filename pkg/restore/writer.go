@@ -21,6 +21,7 @@ import (
 	"errors"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -60,6 +61,12 @@ type Registration struct {
 	Owner   conditions.Owner
 	Backend string
 	Target  types.UID
+}
+
+// Renewable reports whether the Renewer renews the registration of a restore
+// with the given backend.
+func Renewable(backend string, terminal bool, deleted *metav1.Time) bool {
+	return backend != "" && !terminal && deleted.IsZero()
 }
 
 // Renewer renews the registrations that List returns, every
