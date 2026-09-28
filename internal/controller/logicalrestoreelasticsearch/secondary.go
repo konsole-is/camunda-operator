@@ -41,7 +41,7 @@ var allIndicesOfSnapshot = []string{"*"}
 // operator talks to Elasticsearch itself, with the credentials of the storage
 // contract of the target.
 //
-// The work runs in two looks. The first registers the snapshot repository,
+// The first look registers the snapshot repository and records it. The next
 // deletes the Camunda indices of the target, asks Elasticsearch to restore
 // every snapshot, and records their names. Every later look polls the
 // recovery. The recorded names are the resume marker: a look that finds them
@@ -90,14 +90,21 @@ func (r *Reconciler) startRestore(
 	resolved *resolution,
 	admin *esadmin.Client,
 ) (restore.Outcome, error) {
-	repository, failure, err := r.ensureRepository(ctx, resolved, admin)
-	if err != nil {
-		return restore.Outcome{}, err
+	// A failed or deleted restore holds its backend only once the repository
+	// is in status, so it is recorded before the first index is deleted.
+	if lres.Status.Repository == "" {
+		repository, failure, err := r.ensureRepository(ctx, resolved, admin)
+		if err != nil {
+			return restore.Outcome{}, err
+		}
+		if failure != nil {
+			return r.holdStarted(lres, failure), nil
+		}
+		lres.Status.Repository = repository
+
+		return restore.Outcome{Wait: restore.Shortly}, nil
 	}
-	if failure != nil {
-		return r.holdStarted(lres, failure), nil
-	}
-	lres.Status.Repository = repository
+	repository := lres.Status.Repository
 
 	// The Optimize indices go only when the backup holds Optimize snapshots. A
 	// backup without them cannot put them back, and deleting them would erase

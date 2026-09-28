@@ -163,6 +163,15 @@ func (r *Reconciler) readRecovery(
 		return false, failure, err
 	}
 
+	// A target that moved to another Elasticsearch cannot answer for the recovery on the pinned one.
+	backend, failure, err := restore.BackendOf(ctx, r.APIReader, storage)
+	if err != nil || failure != nil {
+		return false, failure, err
+	}
+	if failure := restore.MovedBackend(cluster, backend, lres.Status.Backend); failure != nil {
+		return false, failure, nil
+	}
+
 	admin, failure, err := secondarystorageconfig.ElasticsearchAdmin(ctx, r.APIReader, storage)
 	if err != nil || failure != nil {
 		return false, failure, err

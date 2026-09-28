@@ -236,7 +236,7 @@ kubectl logs -n my-cluster-ns job/my-cluster-restore-lres-0
 
 ## Deletion
 
-Deleting the restore removes its Jobs. A restore that completed already removed them. A restore whose snapshots Elasticsearch still recovers stays until the recovery ends, as [After a failure or a delete](#after-a-failure-or-a-delete) describes. A restore that failed still has them, and this is how you remove them. The recreated broker volumes stay, and so does everything the restore wrote into Elasticsearch.
+Deleting the restore removes its Jobs. A restore that completed already removed them. A restore that failed still has them, and this is how you remove them. A restore whose snapshots Elasticsearch still recovers stays until the recovery ends, as [After a failure or a delete](#after-a-failure-or-a-delete) describes. The recreated broker volumes stay, and so does everything the restore wrote into Elasticsearch.
 
 The delete removes the suspension hold of the restore from the target. A target that the restore suspended through `spec.suspend` stays suspended. That is deliberate. Brokers that start over volumes the restore already erased are worse than a cluster that is down. Unsuspend the cluster yourself once you know what its volumes hold.
 

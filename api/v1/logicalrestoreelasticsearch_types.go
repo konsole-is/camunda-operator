@@ -57,7 +57,7 @@ type LogicalRestoreElasticsearchStatus struct {
 	// recoveryHeld is true while a restore that failed, or that is being
 	// deleted, keeps the backend because Elasticsearch can still recover
 	// snapshots that the restore asked for. No other CamundaCluster starts on
-	// the backend until the recovery ends. A deleted restore stays until then.
+	// the backend while it is true. A deleted restore stays until it is false.
 	// +optional
 	RecoveryHeld bool `json:"recoveryHeld,omitempty"`
 	// recoveryUnknownSince is when a held restore first could not read the

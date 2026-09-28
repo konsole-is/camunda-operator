@@ -21,10 +21,13 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/esadmin/esadmintest"
 )
 
 // Elasticsearch recovers the snapshots it accepted whatever happens to the
@@ -95,7 +98,48 @@ var _ = Describe("LogicalRestoreElasticsearch after Elasticsearch accepted its s
 
 		expectGone(w, restore)
 	})
+
+	It("does not read the recovery from another Elasticsearch that its target moved to", func() {
+		w := newWorld()
+		backup := createBackup(w)
+		restore := startedRestore(w, backup)
+		w.search.SetRecoveryActive(true)
+		repointStorage(w)
+
+		Expect(k8sClient.Delete(ctx, restore)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			held := latest(g, restore)
+			g.Expect(held.Status.RecoveryHeld).To(BeTrue())
+			g.Expect(held.Status.RecoveryUnknownSince).NotTo(BeNil())
+			g.Expect(writersNaming(restore)).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+
+		expectGone(w, restore)
+	})
 })
+
+// repointStorage moves the storage contract of the target to a second fake
+// Elasticsearch, which recovers nothing.
+func repointStorage(w *world) {
+	GinkgoHelper()
+	other := esadmintest.NewTLS()
+	DeferCleanup(other.Close)
+
+	ca := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "es-ca-other", Namespace: w.namespace},
+		Data:       map[string][]byte{"ca.crt": other.CertificatePEM()},
+	}
+	Expect(k8sClient.Create(ctx, ca)).To(Succeed())
+
+	Eventually(func(g Gomega) {
+		var storage v1.SecondaryStorageConfig
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.storage), &storage)).To(Succeed())
+		storage.Spec.Elasticsearch.Endpoint = other.URL()
+		storage.Spec.Elasticsearch.CASecretRef = &v1.LocalSecretKeyRef{Name: ca.Name, Key: "ca.crt"}
+		g.Expect(k8sClient.Update(ctx, &storage)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
 
 // holdsOf returns the suspension holds that the target carries.
 func holdsOf(g Gomega, w *world) []string {
