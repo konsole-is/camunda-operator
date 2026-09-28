@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -131,7 +132,9 @@ func TestFinalizeHoldRemovesTheHoldAndThenTheFinalizer(t *testing.T) {
 	owner := w.liveRestore(t)
 	require.NoError(t, AddHoldFinalizer(t.Context(), w.client, owner))
 
-	require.NoError(t, FinalizeHold(t.Context(), w.client, w.client, owner, w.cluster.Name))
+	finalized, err := FinalizeHold(t.Context(), w.client, w.client, owner, w.cluster.Name)
+	require.NoError(t, err)
+	assert.True(t, finalized.Done)
 
 	holds := w.appliesBy(holdManager(owner))
 	require.Len(t, holds, 1)
@@ -148,8 +151,47 @@ func TestFinalizeHoldLetsGoWhenTheClusterIsGone(t *testing.T) {
 	require.NoError(t, AddHoldFinalizer(t.Context(), w.client, owner))
 	require.NoError(t, w.client.Delete(t.Context(), w.cluster))
 
-	require.NoError(t, FinalizeHold(t.Context(), w.client, w.client, owner, w.cluster.Name))
+	finalized, err := FinalizeHold(t.Context(), w.client, w.client, owner, w.cluster.Name)
+	require.NoError(t, err)
+	assert.True(t, finalized.Done)
 
 	assert.Empty(t, *w.applies)
+	assert.False(t, controllerutil.ContainsFinalizer(w.liveRestore(t), HoldFinalizer))
+}
+
+// A Job pod of the restore still writes the storage of the target until the
+// Job is gone.
+func TestFinalizeHoldKeepsTheHoldUntilTheJobsOfTheRestoreAreGone(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	owner := w.liveRestore(t)
+	require.NoError(t, AddHoldFinalizer(t.Context(), w.client, owner))
+	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
+		Name:       "r-pg-restore",
+		Namespace:  owner.Namespace,
+		Finalizers: []string{"test/pods-remain"},
+	}}
+	require.NoError(t, controllerutil.SetControllerReference(owner, job, w.client.Scheme()))
+	require.NoError(t, w.client.Create(t.Context(), job))
+
+	finalized, err := FinalizeHold(t.Context(), w.client, w.client, owner, w.cluster.Name)
+	require.NoError(t, err)
+	assert.False(t, finalized.Done)
+	assert.Positive(t, finalized.Wait)
+	assert.Empty(t, w.appliesBy(holdManager(owner)))
+	assert.True(t, controllerutil.ContainsFinalizer(w.liveRestore(t), HoldFinalizer))
+
+	var deleting batchv1.Job
+	require.NoError(t, w.client.Get(t.Context(), client.ObjectKeyFromObject(job), &deleting))
+	assert.NotNil(t, deleting.DeletionTimestamp)
+
+	deleting.Finalizers = nil
+	require.NoError(t, w.client.Update(t.Context(), &deleting))
+
+	finalized, err = FinalizeHold(t.Context(), w.client, w.client, w.liveRestore(t), w.cluster.Name)
+	require.NoError(t, err)
+	assert.True(t, finalized.Done)
+	assert.Len(t, w.appliesBy(holdManager(owner)), 1)
 	assert.False(t, controllerutil.ContainsFinalizer(w.liveRestore(t), HoldFinalizer))
 }

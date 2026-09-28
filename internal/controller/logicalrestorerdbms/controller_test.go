@@ -346,6 +346,7 @@ var _ = Describe("LogicalRestoreRDBMS suspension of its target", func() {
 			g.Expect(clusterSuspended(g, w)).To(BeTrue())
 		}, timeout, interval).Should(Succeed())
 		uid := latestOf(lrr).UID
+		collectDeletedJobs(w.namespace)
 
 		Expect(k8sClient.Delete(ctx, lrr)).To(Succeed())
 

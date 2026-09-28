@@ -350,7 +350,7 @@ The operator also suspends a cluster on its own, and only to keep two clusters o
 
 ### Suspension holds
 
-A suspension hold is an annotation whose key starts with `suspension-hold.camunda.io/`. A cluster that carries at least one hold stays suspended, whatever `spec.suspend` says. The value of the annotation says who holds the cluster, and why. A restore puts a hold on its target, so that the target cannot start while the restore rewrites its storage. The restore removes the hold when it completes, and when you delete it. A failed restore keeps its hold.
+A suspension hold is an annotation whose key starts with `suspension-hold.camunda.io/`. A cluster that carries at least one hold stays suspended, whatever `spec.suspend` says. The value of the annotation says who holds the cluster, and why. A restore puts a hold on its target, so that the target cannot start while the restore rewrites its storage. The restore removes the hold when it completes. When you delete the restore, it removes the hold once its Jobs are gone. A failed restore keeps its hold.
 
 ```yaml
 apiVersion: core.camunda.io/v1

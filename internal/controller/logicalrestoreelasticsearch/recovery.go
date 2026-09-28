@@ -64,7 +64,9 @@ func (r *Reconciler) finalize(ctx context.Context, lres *v1.LogicalRestoreElasti
 		}
 	}
 
-	return 0, restore.FinalizeHold(ctx, r.Client, r.APIReader, lres, lres.Spec.TargetClusterRef.Name)
+	finalized, err := restore.FinalizeHold(ctx, r.Client, r.APIReader, lres, lres.Spec.TargetClusterRef.Name)
+
+	return finalized.Wait, err
 }
 
 // holdForRecovery marks a restore that ends while Elasticsearch can still

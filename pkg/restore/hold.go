@@ -20,7 +20,9 @@ import (
 	"context"
 	"fmt"
 
+	batchv1 "k8s.io/api/batch/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -54,37 +56,80 @@ func AddHoldFinalizer(ctx context.Context, c client.Client, owner client.Object)
 	return nil
 }
 
-// FinalizeHold removes the suspension hold of a deleted restore from its
-// cluster, and then HoldFinalizer. cluster is the name of the target, which
-// lives in the namespace of the restore. The suspension that the restore
-// applied through spec.suspend stays.
+// FinalizeHold removes the Jobs of a deleted restore, then its suspension
+// hold, and then HoldFinalizer. Outcome.Done reports that the finalizer is
+// gone. cluster is the name of the target, which lives in the namespace of the
+// restore. The suspension that the restore applied through spec.suspend stays.
+// The reader must be uncached.
 func FinalizeHold(
 	ctx context.Context,
 	c client.Client,
 	reader client.Reader,
 	owner client.Object,
 	cluster string,
-) error {
+) (Outcome, error) {
 	if !controllerutil.ContainsFinalizer(owner, HoldFinalizer) {
-		return nil
+		return Outcome{Done: true}, nil
+	}
+
+	// The garbage collector removes the Jobs only after the restore is gone,
+	// and a Job pod still writes the storage of the target until then.
+	removed, err := removeOwnedJobs(ctx, c, reader, owner)
+	if err != nil || !removed {
+		return Outcome{Wait: Shortly}, err
 	}
 
 	key := types.NamespacedName{Namespace: owner.GetNamespace(), Name: cluster}
 	if err := releaseHold(ctx, c, reader, owner, key); err != nil {
-		return err
+		return Outcome{}, err
 	}
 
 	base, ok := owner.DeepCopyObject().(client.Object)
 	if !ok {
-		return fmt.Errorf("copying %s: not a client.Object", client.ObjectKeyFromObject(owner))
+		return Outcome{}, fmt.Errorf("copying %s: not a client.Object", client.ObjectKeyFromObject(owner))
 	}
 	controllerutil.RemoveFinalizer(owner, HoldFinalizer)
 	patch := client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})
 	if err := c.Patch(ctx, owner, patch); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("removing the finalizer from %s: %w", client.ObjectKeyFromObject(owner), err)
+		return Outcome{}, fmt.Errorf("removing the finalizer from %s: %w", client.ObjectKeyFromObject(owner), err)
 	}
 
-	return nil
+	return Outcome{Done: true}, nil
+}
+
+// removeOwnedJobs deletes the Jobs that the restore controls, and reports
+// whether none is left.
+func removeOwnedJobs(ctx context.Context, c client.Client, reader client.Reader, owner client.Object) (bool, error) {
+	var jobs batchv1.JobList
+	if err := reader.List(ctx, &jobs, client.InNamespace(owner.GetNamespace())); err != nil {
+		return false, fmt.Errorf("listing the Jobs of %s: %w", client.ObjectKeyFromObject(owner), err)
+	}
+
+	removed := true
+	for i := range jobs.Items {
+		job := &jobs.Items[i]
+		if !ownedBy(job, owner) {
+			continue
+		}
+
+		// Under foreground propagation the Job outlives its pods.
+		removed = false
+		if job.DeletionTimestamp != nil {
+			continue
+		}
+
+		err := c.Delete(
+			ctx,
+			job,
+			client.PropagationPolicy(metav1.DeletePropagationForeground),
+			client.Preconditions{UID: &job.UID},
+		)
+		if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+			return false, fmt.Errorf("removing the Job %s: %w", client.ObjectKeyFromObject(job), err)
+		}
+	}
+
+	return removed, nil
 }
 
 // releaseHold removes the suspension hold of the restore from its cluster. A
