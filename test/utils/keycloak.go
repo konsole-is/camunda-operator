@@ -151,7 +151,7 @@ func InstallKeycloakCRDs() error {
 
 	for _, crd := range keycloakOperatorCRDs {
 		url := fmt.Sprintf(keycloakResourceURLTmpl, version, crd.file)
-		published, err := urlExists(url)
+		published, err := urlExists(url, downloadAttempts, downloadBackoff)
 		if err != nil {
 			return err
 		}
@@ -187,7 +187,7 @@ func UninstallKeycloakCRDs() {
 
 	for _, crd := range keycloakOperatorCRDs {
 		url := fmt.Sprintf(keycloakResourceURLTmpl, version, crd.file)
-		published, err := urlExists(url)
+		published, err := urlExists(url, downloadAttempts, downloadBackoff)
 		if err != nil {
 			warnError(err)
 			continue
@@ -253,23 +253,30 @@ func UninstallKeycloakOperator(namespace string) {
 // fails the install instead of holding the suite.
 const urlProbeTimeout = 30 * time.Second
 
-// urlExists reports whether a HEAD of url answers 200. A 404 is false; any
-// other answer or a transport error is an error, so a flaky network never
-// reads as a release that publishes no such file.
-func urlExists(url string) (bool, error) {
+// urlExists reports whether a HEAD of url answers 200. A 404 is false. A
+// connection error or a 5xx gets another try, up to attempts tries in all.
+// Any other answer is an error.
+func urlExists(url string, attempts int, backoff time.Duration) (bool, error) {
 	client := &http.Client{Timeout: urlProbeTimeout}
+
+	return retry(attempts, backoff, func() (bool, bool, error) { return probeOnce(client, url) })
+}
+
+// probeOnce reports as transient an error that a later try can clear.
+func probeOnce(client *http.Client, url string) (exists, transient bool, err error) {
 	resp, err := client.Head(url) // nolint:gosec // a URL of keycloak-k8s-resources at a release tag
 	if err != nil {
-		return false, fmt.Errorf("probing %q: %w", url, err)
+		return false, true, fmt.Errorf("probing %q: %w", url, err)
 	}
 	_ = resp.Body.Close()
 
 	switch resp.StatusCode {
 	case http.StatusOK:
-		return true, nil
+		return true, false, nil
 	case http.StatusNotFound:
-		return false, nil
+		return false, false, nil
 	default:
-		return false, fmt.Errorf("probing %q: HTTP %d", url, resp.StatusCode)
+		return false, resp.StatusCode >= http.StatusInternalServerError,
+			fmt.Errorf("probing %q: HTTP %d", url, resp.StatusCode)
 	}
 }

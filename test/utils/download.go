@@ -47,19 +47,25 @@ func applyRemoteManifest(url string, applyArgs ...string) error {
 	return err
 }
 
-// download returns the body of url. It makes at most attempts tries and
-// waits backoff before the second, twice as long before each next one. Only
-// a connection error or a 5xx gets another try. Any other status fails at
-// once.
+// download returns the body of url. A connection error or a 5xx gets
+// another try, up to attempts tries in all. Any other status fails at once.
 func download(url string, attempts int, backoff time.Duration) ([]byte, error) {
 	client := &http.Client{Timeout: downloadTimeout}
+
+	return retry(attempts, backoff, func() ([]byte, bool, error) { return downloadOnce(client, url) })
+}
+
+// retry calls try until it succeeds, returns an error that is not transient,
+// or has run attempts times. It waits backoff before the second call and
+// twice as long before each next one.
+func retry[T any](attempts int, backoff time.Duration, try func() (T, bool, error)) (T, error) {
 	for attempt := 1; ; attempt++ {
-		body, transient, err := downloadOnce(client, url)
+		result, transient, err := try()
 		if err == nil || !transient || attempt == attempts {
-			return body, err
+			return result, err
 		}
 
-		_, _ = fmt.Fprintf(GinkgoWriter, "Download failed, trying again in %s: %v\n", backoff, err)
+		_, _ = fmt.Fprintf(GinkgoWriter, "Request failed, trying again in %s: %v\n", backoff, err)
 		time.Sleep(backoff)
 		backoff *= 2
 	}
