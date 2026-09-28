@@ -134,6 +134,8 @@ A `Database` that claims no logical database holds the restore too, with reason 
 
 A server that **no** `Database` uses holds the restore too, with reason `InvalidReference`. The `Database` resources are the only evidence the operator has about the databases of a server. Without one it cannot tell whether the server holds one database or ten. A restore erases the broker volumes, so the operator does not start one on that evidence. Declare the database of the cluster as a `Database` resource on a server of its own.
 
+The cluster must hold the database it restores. Two clusters can name one `DatabaseConfig`, and a rollback also rolls back the data of the other cluster. A database that another `CamundaCluster` holds keeps the restore in `Pending` with reason `StorageAlreadyAttached`, and the message names that cluster. The restore also waits with reason `WaitingForHandover` in two cases. The cluster does not hold the database yet, or pods still write it.
+
 The operator records the chain it validated in `status.storage`. The record holds the two contracts, the server, the logical database, the endpoint, and the system identifier behind that endpoint. It holds the restore to that record. A cluster that is repointed at another database after the check fails the restore. The rules of the server and the state of the database were read against the first chain. Create a new restore for the database the cluster uses now.
 
 Every rule of this section holds the restore in `Pending`. Nothing is deleted while a rule does not hold, so you correct the cause and the same resource continues. You do not create a new one.
@@ -240,6 +242,8 @@ A cluster that the restore suspended stays suspended. That is deliberate. Broker
 | `Ready` | `InvalidReference` | The cluster or a link in its storage chain does not exist, or the storage is not relational. Or the cluster names no backup storage, or the `DatabaseServerConfig` publishes no system identifier. Or a `Database` claims no logical database, no `Database` uses the server, or the broker StatefulSet is gone. | Correct the reference that the message names. |
 | `Ready` | `PitrUnavailable` | The server does not declare point-in-time recovery, or `spec.timestamp` lies outside its retention period or in the future. Or the server answered a rollback request with `Unavailable`, or the brokers of the cluster do not run in UTC. | Enable `pitr` on the server, choose a point the server holds, or run the brokers in UTC. |
 | `Ready` | `SharedServer` | More than one `Database` uses the server, counted across all namespaces. The message names each one. | Move the cluster to a dedicated server. |
+| `Ready` | `StorageAlreadyAttached` | Another `CamundaCluster` holds the database of the cluster. The message names it. | Move one of the two clusters to a database of its own, or delete the other cluster. |
+| `Ready` | `WaitingForHandover` | The cluster does not hold its database yet, or pods still write it. The message names them. | Wait. The restore continues when the cluster holds the database and nothing writes it. |
 | `Ready` | `DatabaseNotRestored` | The database is ahead of `spec.timestamp`, or it reports no position for a partition. The operator touched no volume. | Restore the database to the requested point, then wait. |
 | `Ready` | `ExporterPositionNotCovered` | The point you chose lies outside the window that the primary-storage backups cover. The broker volumes are already erased. | Choose an earlier point, restore the database to it, and create a new restore. See "Choosing the point to restore to". |
 | `Ready` | `MissingSecret` | A credentials Secret of the cluster is missing or lacks a key. | Create the Secret that the message names. |
@@ -288,7 +292,7 @@ spec:
 - `spec` is immutable. A restore runs once, and you retry it with a new resource.
 - `spec.timestamp` is an RFC 3339 timestamp. The API server accepts one in the future, because the schema has no clock. The restore reports `PitrUnavailable` for it instead.
 - `clusterRef` names a cluster in the namespace of the restore. It never crosses a namespace. The operator reads the Secrets of the cluster and runs Jobs in that namespace, so the reference stays inside the RBAC boundary of the restore.
-- The API server accepts a restore that breaks the rules below, because they depend on live cluster state. The restore reports the breach on `Ready` instead: the storage chain, the dedicated-server rule, and the state of the database.
+- The API server accepts a restore that breaks the rules below, because they depend on live cluster state. The restore reports the breach on `Ready` instead: the storage chain, the dedicated-server rule, the hold on the database, and the state of the database.
 - Whether the database really holds `spec.timestamp` is not provable by the operator. See "Limits of this check" above.
 - Whether the primary-storage backups cover the point is not provable by the operator either. See [Choosing the point to restore to](#choosing-the-point-to-restore-to).
 

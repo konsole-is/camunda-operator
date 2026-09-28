@@ -196,6 +196,7 @@ func createWorldIn(namespace string, mutate ...func(*world)) *world {
 	Expect(k8sClient.Create(ctx, w.dbConfig)).To(Succeed())
 	Expect(k8sClient.Create(ctx, w.storage)).To(Succeed())
 	Expect(k8sClient.Create(ctx, w.cluster)).To(Succeed())
+	holdBackend(w.cluster)
 
 	createBrokers(w)
 	releaseTerminatingClaims(namespace)
@@ -295,6 +296,50 @@ func createServerFor(namespace, host, identifier string) *v1.DatabaseServerConfi
 	}
 
 	return server
+}
+
+// holdBackend stands in for the storage claim that the CamundaCluster
+// controller takes: the Lease of the backend of holder names holder, and takes
+// over a Lease that names another cluster. A chain that does not resolve
+// claims nothing.
+func holdBackend(holder *v1.CamundaCluster) {
+	GinkgoHelper()
+	storage, failure, err := restore.ResolveStorage(ctx, k8sClient, holder)
+	Expect(err).NotTo(HaveOccurred())
+	if failure != nil {
+		return
+	}
+	key, failure, err := restore.BackendOf(ctx, k8sClient, storage)
+	Expect(err).NotTo(HaveOccurred())
+	if failure != nil {
+		return
+	}
+
+	lease := components.StorageClaimSchema().NewLease(testClaimNamespace, key, holder)
+	err = k8sClient.Create(ctx, lease)
+	if apierrors.IsAlreadyExists(err) {
+		var held coordinationv1.Lease
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(lease), &held)).To(Succeed())
+		held.Labels, held.Annotations, held.Spec = lease.Labels, lease.Annotations, lease.Spec
+		err = k8sClient.Update(ctx, &held)
+	}
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, lease) })
+}
+
+// wake changes an annotation of cluster, so the cluster watch enqueues the
+// restores that name it.
+func wake(cluster *v1.CamundaCluster) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var current v1.CamundaCluster
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &current)).To(Succeed())
+		if current.Annotations == nil {
+			current.Annotations = map[string]string{}
+		}
+		current.Annotations["test.camunda.io/wake"] = utilrand.String(8)
+		g.Expect(k8sClient.Update(ctx, &current)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 }
 
 // moveHost points the spec of server at another host and leaves the record of
@@ -671,12 +716,44 @@ var _ = Describe("PointInTimeRestore admission", func() {
 			Spec:       *w.cluster.Spec.DeepCopy(),
 		}
 		Expect(k8sClient.Create(ctx, replacement)).To(Succeed())
+		holdBackend(replacement)
+		wake(replacement)
 
 		Eventually(func(g Gomega) {
 			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestorePending))
 			g.Expect(current.Status.TargetClusterUID).To(Equal(replacement.UID))
 		}, watchWindow, interval).Should(Succeed())
+	})
+
+	// Two clusters on one DatabaseConfig pass the dedicated-server rule.
+	It("holds a restore whose database another cluster holds, and pins nothing", func() {
+		w := operatorRecoveryWorld()
+		other := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "other-" + w.cluster.Name, Namespace: w.namespace},
+			Spec:       *w.cluster.Spec.DeepCopy(),
+		}
+		Expect(k8sClient.Create(ctx, other)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, other) })
+		holdBackend(other)
+		pitr := createRestore(w)
+
+		Expect(expectHeld(pitr, v1.ReasonStorageAlreadyAttached)).To(ContainSubstring(other.Name))
+		Consistently(func(g Gomega) {
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestorePending))
+			g.Expect(current.Status.Storage).To(BeNil())
+			g.Expect(current.Status.Backend).To(BeEmpty())
+			var contract v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), &contract)).To(Succeed())
+			g.Expect(contract.Spec.Recovery).To(BeNil())
+		}, time.Second, interval).Should(Succeed())
+		expectClaimsUntouched(w)
+
+		By("starting once its own cluster holds the database")
+		holdBackend(w.cluster)
+		wake(w.cluster)
+		expectRecovering(pitr)
 	})
 
 	It("holds a restore whose clusterRef names no cluster", func() {
@@ -1136,6 +1213,7 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		expectClaimsUntouched(w)
 
 		publishProbe(w.server, worldSystemIdentifier)
+		holdBackend(w.cluster)
 		expectAdmitted(pitr, w)
 	})
 

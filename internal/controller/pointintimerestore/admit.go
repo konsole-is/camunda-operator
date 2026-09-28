@@ -175,6 +175,23 @@ func (r *Reconciler) admit(
 		return prepared, nil
 	}
 
+	backend, failure := restore.DatabaseBackend(resolved.storage, resolved.dbConfig, resolved.server)
+	if failure != nil {
+		return r.waiting(pitr, failure), nil
+	}
+	failure, err = restore.CheckBackend(ctx, r.Client, r.APIReader, restore.BackendCheck{
+		ClaimNamespace: r.ClaimNamespace,
+		Cluster:        resolved.cluster,
+		Storage:        resolved.storage,
+		Pinned:         backend,
+	})
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	if failure != nil {
+		return r.waiting(pitr, failure), nil
+	}
+
 	// Everything that this restore is allowed to act on is now known: the
 	// chain, the rules of the server, and the clock of the brokers. The record
 	// goes in before the database is read, so every later look is measured
@@ -185,10 +202,6 @@ func (r *Reconciler) admit(
 	// contract that declares external is rolled back before the restore was
 	// created, and the database is read as it stands.
 	if resolved.server.OperatorRecovers() {
-		backend, failure := restore.DatabaseBackend(resolved.storage, resolved.dbConfig, resolved.server)
-		if failure != nil {
-			return r.waiting(pitr, failure), nil
-		}
 		// The registration comes before the pin, so a failed registration
 		// leaves no backend for the renewer to keep alive.
 		err := restore.RegisterWriter(
