@@ -168,6 +168,15 @@ type PointInTimeRestoreStatus struct {
 	// when a later look disagrees.
 	// +optional
 	Storage *PointInTimeRestoreStorage `json:"storage,omitempty"`
+	// Backend is the logical database that the restore asks its server to roll
+	// back, in the form of the storage claim key of the cluster (the host, the
+	// port, and the database name). The operator records it when it asks for
+	// the rollback, and it moves to the endpoint of the recovered server. From
+	// then to the terminal phase, no other CamundaCluster starts on this
+	// backend. A restore whose server is rolled back outside the operator
+	// records none.
+	// +optional
+	Backend string `json:"backend,omitempty"`
 	// ObservedPositions are the exporter positions the pre-check read, in
 	// partition order. They record what the operator saw when it let the
 	// restore past the database-state check, or what held it.

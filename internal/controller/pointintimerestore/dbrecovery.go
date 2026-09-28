@@ -21,9 +21,11 @@ import (
 	"fmt"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -57,6 +59,10 @@ func (r *Reconciler) enterDatabaseRecovery(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
 ) (restore.Outcome, error) {
+	if outcome, done, err := r.targetGone(ctx, pitr); done || err != nil {
+		return outcome, err
+	}
+
 	resolved, failure, err := r.resolve(ctx, pitr, pinAcrossRecovery)
 	if err != nil {
 		return r.resolveFailed(pitr, err)
@@ -86,7 +92,7 @@ func (r *Reconciler) enterDatabaseRecovery(
 
 	request := recoveryRequest(pitr)
 	if outcome := contract.Spec.PITR.LastRecovery; request.AnsweredBy(outcome) {
-		return r.recoveryAnswered(pitr, resolved, outcome)
+		return r.recoveryAnswered(ctx, pitr, resolved, outcome)
 	}
 
 	if err := r.askForRecovery(ctx, contract, request); err != nil {
@@ -98,6 +104,84 @@ func (r *Reconciler) enterDatabaseRecovery(
 	))
 
 	return restore.Outcome{Wait: r.opts.PollInterval}, nil
+}
+
+// targetGone holds a restore whose cluster was deleted or replaced while the
+// server still runs the rollback that the restore asked for, and ends it once
+// the rollback no longer runs. done is false while the cluster is the one
+// that the restore pinned.
+func (r *Reconciler) targetGone(
+	ctx context.Context,
+	pitr *v1.PointInTimeRestore,
+) (outcome restore.Outcome, done bool, err error) {
+	key := types.NamespacedName{Namespace: pitr.Namespace, Name: pitr.Spec.ClusterRef.Name}
+	var cluster v1.CamundaCluster
+	err = r.APIReader.Get(ctx, key, &cluster)
+	switch {
+	case err == nil && cluster.UID == pitr.Status.TargetClusterUID:
+		return restore.Outcome{}, false, nil
+	case err != nil && !apierrors.IsNotFound(err):
+		return restore.Outcome{}, false, fmt.Errorf("reading CamundaCluster %s: %w", key, err)
+	}
+	gone := fmt.Sprintf("CamundaCluster %s was deleted", key)
+	if err == nil {
+		gone = fmt.Sprintf("CamundaCluster %s was replaced", key)
+	}
+
+	contract, err := r.runningRollback(ctx, pitr)
+	if err != nil {
+		return restore.Outcome{}, false, err
+	}
+	if contract != nil {
+		return r.holdRecovering(pitr, &conditions.PreCheckFailure{
+			Reason: v1.ReasonInvalidReference,
+			Message: fmt.Sprintf(
+				"%s while its database server rolls back. The restore ends when DatabaseServerConfig "+
+					"%s answers the recovery request. Until then, no other cluster starts on the database",
+				gone, client.ObjectKeyFromObject(contract),
+			),
+		}), true, nil
+	}
+
+	r.fail(pitr, v1.ReasonFailed, fmt.Sprintf(
+		"%s during the rollback of its database, so no cluster takes the restored state. Create a "+
+			"new restore for the cluster that uses the database now",
+		gone,
+	))
+
+	return restore.Outcome{}, true, nil
+}
+
+// runningRollback returns the pinned contract while it carries the request of
+// this restore and has not answered it, or nil when no rollback of this
+// restore runs.
+func (r *Reconciler) runningRollback(
+	ctx context.Context,
+	pitr *v1.PointInTimeRestore,
+) (*v1.DatabaseServerConfig, error) {
+	pinned := pitr.Status.Storage
+	if pinned == nil {
+		return nil, nil
+	}
+
+	var contract v1.DatabaseServerConfig
+	key := types.NamespacedName{Namespace: pitr.Namespace, Name: pinned.DatabaseServerConfig}
+	if err := r.APIReader.Get(ctx, key, &contract); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+
+		return nil, fmt.Errorf("reading DatabaseServerConfig %s: %w", key, err)
+	}
+
+	request := recoveryRequest(pitr)
+	asked := contract.Spec.Recovery != nil && *contract.Spec.Recovery == request
+	if contract.UID != pinned.DatabaseServerConfigUID || !contract.OperatorRecovers() || !asked ||
+		request.AnsweredBy(contract.Spec.PITR.LastRecovery) {
+		return nil, nil
+	}
+
+	return &contract, nil
 }
 
 // recoveryRequest renders the request that this restore makes: the identity of
@@ -126,6 +210,7 @@ func recoveryRequest(pitr *v1.PointInTimeRestore) v1.RecoveryRequest {
 // with PitrUnavailable. Failed means the rollback started and did not finish.
 // Completed continues, once the contract reaches the server it now names.
 func (r *Reconciler) recoveryAnswered(
+	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
 	resolved *chain,
 	outcome *v1.RecoveryOutcome,
@@ -159,6 +244,14 @@ func (r *Reconciler) recoveryAnswered(
 		return restore.Outcome{Wait: r.opts.PollInterval}, nil
 	}
 
+	failure, err := r.followBackend(ctx, pitr, resolved)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	if failure != nil {
+		return r.holdRecovering(pitr, failure), nil
+	}
+
 	// The pin is replaced, not compared. The rollback was asked for by this
 	// restore, so the server behind the contract is meant to be another one,
 	// and every later look is measured against this record instead.
@@ -172,6 +265,37 @@ func (r *Reconciler) recoveryAnswered(
 	))
 
 	return restore.Outcome{Wait: restore.Shortly}, nil
+}
+
+// followBackend moves the writer registration of the restore to the backend
+// that the recovered server serves.
+func (r *Reconciler) followBackend(
+	ctx context.Context,
+	pitr *v1.PointInTimeRestore,
+	resolved *chain,
+) (*conditions.PreCheckFailure, error) {
+	backend, failure := restore.DatabaseBackend(resolved.storage, resolved.dbConfig, resolved.server)
+	if failure != nil || backend == pitr.Status.Backend {
+		return failure, nil
+	}
+
+	err := restore.RegisterWriter(
+		ctx, r.Client, r.APIReader, r.ClaimNamespace, backend, pitr, pitr.Status.TargetClusterUID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if pitr.Status.Backend != "" {
+		err := restore.ReleaseWriter(
+			ctx, r.Client, r.ClaimNamespace, pitr.Status.Backend, pitr, pitr.Status.TargetClusterUID,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+	pitr.Status.Backend = backend
+
+	return nil, nil
 }
 
 // askForRecovery writes the request on the contract, unless the contract

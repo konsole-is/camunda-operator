@@ -185,6 +185,20 @@ func (r *Reconciler) admit(
 	// contract that declares external is rolled back before the restore was
 	// created, and the database is read as it stands.
 	if resolved.server.OperatorRecovers() {
+		backend, failure := restore.DatabaseBackend(resolved.storage, resolved.dbConfig, resolved.server)
+		if failure != nil {
+			return r.waiting(pitr, failure), nil
+		}
+		// The registration comes before the pin, so a failed registration
+		// leaves no backend for the renewer to keep alive.
+		err := restore.RegisterWriter(
+			ctx, r.Client, r.APIReader, r.ClaimNamespace, backend, pitr, pitr.Status.TargetClusterUID,
+		)
+		if err != nil {
+			return restore.Outcome{}, err
+		}
+		pitr.Status.Backend = backend
+
 		pitr.Status.Phase = v1.PointInTimeRestoreRestoringDatabase
 		r.progressing(pitr, fmt.Sprintf(
 			"DatabaseServerConfig %s rolls its own server back. The restore asks it for %s",

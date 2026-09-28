@@ -23,6 +23,10 @@ With `operator` the restore writes `spec.recovery` on the contract and waits in 
 
 The endpoint on the contract can change while it waits, because a rollback usually replaces the server. The restore follows the contract to the new endpoint once the contract reports `Ready` for it, and goes on. Everything else about the chain still binds. A contract that is deleted and created again under its name fails the restore, mid-rollback as much as before it.
 
+From the request until the restore reaches `Completed` or `Failed`, no other `CamundaCluster` starts on the database of the cluster. `status.backend` names that database, and it follows the contract to the new endpoint. The next cluster on the database reports `WaitingForHandover`, and the message names this restore. [CamundaCluster: Secondary storage](camundacluster.md#secondary-storage) has the rule for the cluster. The hold lasts while the contract does not answer. To free the database from a restore that does not move, delete the restore.
+
+You can delete the cluster during the rollback, or delete it and create it again under its name. The restore then waits for the answer of the contract, because the server still rolls back. After the answer, the restore ends in `Failed`, and the database is free. If you delete the restore itself while it runs, the database stays held for about two more minutes. When the operator restarts in that time, the two minutes count from its start. With `external`, the restore holds nothing, because the operator writes nothing into the database.
+
 A restore that asks for a point the server never held ends in `Failed` with reason `PitrUnavailable`. A rollback that started and did not finish ends in `Failed` with reason `Failed`. `status.failureMessage` carries the message that the server reported.
 
 The smallest restore names the cluster and the point:
@@ -246,7 +250,8 @@ A restore that already started keeps a broken dependency for ten minutes. After 
 
 The status also records what the restore pinned and what it did:
 
-- `status.targetClusterUID` pins the identity of the cluster from the start. A cluster that is deleted and created again under one name fails the restore.
+- `status.targetClusterUID` pins the identity of the cluster from the start. A cluster that is deleted and created again under one name fails the restore. During a rollback, the restore fails when the contract answers.
+- `status.backend` names the database that the restore keeps other clusters off, when the contract declares `pitr.recovery: operator`.
 - `status.storage` pins the storage chain that the restore validated, down to the system identifier of the server.
 - `status.clusterSuspended` records that this restore suspended the cluster. The restore withdraws that suspension when it completes.
 - `status.brokers` is the broker count that the operator read off the broker StatefulSet.

@@ -17,15 +17,20 @@ limitations under the License.
 package pointintimerestore
 
 import (
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 )
 
 // recoveredIdentifier is the identity that the contract publishes after its
@@ -188,6 +193,67 @@ func expectFailed(pitr *v1.PointInTimeRestore, reason string) string {
 	}, timeout, interval).Should(Succeed())
 
 	return message
+}
+
+// backendsHeldBy returns the backends of the writer Leases that name the
+// restore.
+func backendsHeldBy(pitr *v1.PointInTimeRestore) []string {
+	GinkgoHelper()
+
+	var leases coordinationv1.LeaseList
+	Expect(k8sClient.List(
+		ctx,
+		&leases,
+		client.InNamespace(testClaimNamespace),
+		client.MatchingLabels{labels.ComponentKey: storagewriter.Component},
+	)).To(Succeed())
+
+	var backends []string
+	for i := range leases.Items {
+		annotations := leases.Items[i].Annotations
+		if annotations[storagewriter.WriterAnnotation] == "PointInTimeRestore "+pitr.Namespace+"/"+pitr.Name {
+			backends = append(backends, annotations[storagewriter.KeyAnnotation])
+		}
+	}
+
+	return backends
+}
+
+// writersSeenByAnotherCluster returns the writers that a cluster other than
+// the target of the restore waits for on backend.
+func writersSeenByAnotherCluster(backend string) []string {
+	GinkgoHelper()
+
+	now := time.Now()
+	writers, err := storagewriter.Live(
+		ctx,
+		k8sClient,
+		testClaimNamespace,
+		backend,
+		clustercomponents.StorageClaimSchema().LeaseName(backend),
+		"uid-of-another-cluster",
+		now,
+		now,
+	)
+	Expect(err).NotTo(HaveOccurred())
+
+	return writers
+}
+
+// expectBackendHeld waits until the restore holds exactly one backend, and
+// returns it.
+func expectBackendHeld(pitr *v1.PointInTimeRestore) string {
+	GinkgoHelper()
+
+	var backend string
+	Eventually(func(g Gomega) {
+		current := readRestore(g, pitr)
+		g.Expect(current.Status.Backend).NotTo(BeEmpty())
+		g.Expect(backendsHeldBy(pitr)).To(Equal([]string{current.Status.Backend}))
+		backend = current.Status.Backend
+	}, timeout, interval).Should(Succeed())
+
+	return backend
 }
 
 var _ = Describe("PointInTimeRestore database recovery", func() {
@@ -379,6 +445,66 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		Expect(message).To(ContainSubstring("the server is suspended"))
 	})
 
+	It("holds its database against other clusters while the server rolls back", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+
+		backend := expectBackendHeld(pitr)
+		Expect(writersSeenByAnotherCluster(backend)).To(
+			Equal([]string{"PointInTimeRestore " + w.namespace + "/" + pitr.Name}),
+		)
+
+		answerRecovery(w, v1.RecoveryResultFailed, "the server is suspended")
+		expectFailed(pitr, v1.ReasonFailed)
+		Eventually(func() []string {
+			return backendsHeldBy(pitr)
+		}, timeout, interval).Should(BeEmpty(), "a terminal restore gives its database back")
+		Expect(writersSeenByAnotherCluster(backend)).To(BeEmpty())
+	})
+
+	It("keeps its database held when its cluster is deleted, until the server answers", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		backend := expectBackendHeld(pitr)
+
+		// The rollback runs in the server and goes on without the cluster.
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		expectRecovering(pitr, "was deleted", w.server.Name)
+		Consistently(func() []string {
+			return writersSeenByAnotherCluster(backend)
+		}, "2s", interval).Should(HaveLen(1))
+
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+		message := expectFailed(pitr, v1.ReasonFailed)
+		Expect(message).To(ContainSubstring("was deleted"))
+		Eventually(func() []string {
+			return writersSeenByAnotherCluster(backend)
+		}, timeout, interval).Should(BeEmpty(), "the restore gives the database back once the rollback ended")
+	})
+
+	It("moves its hold to the endpoint of the recovered server", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		before := expectBackendHeld(pitr)
+
+		repointContract(w)
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+		publishContractReady(w, recoveredIdentifier)
+
+		Eventually(func(g Gomega) {
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestoreRestoringDatabase))
+			g.Expect(current.Status.Backend).NotTo(Equal(before))
+		}, timeout, interval).Should(Succeed())
+		after := expectBackendHeld(pitr)
+		Expect(strings.Contains(after, recoveredHost)).To(BeTrue(), after)
+		Expect(writersSeenByAnotherCluster(before)).To(BeEmpty())
+	})
+
 	It("asks nothing of a contract that nobody rolls back", func() {
 		w := createWorld()
 		pitr := createRestore(w)
@@ -389,5 +515,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		var contract v1.DatabaseServerConfig
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), &contract)).To(Succeed())
 		Expect(contract.Spec.Recovery).To(BeNil())
+		Expect(readRestore(Default, pitr).Status.Backend).To(BeEmpty())
+		Expect(backendsHeldBy(pitr)).To(BeEmpty(), "a restore that writes no database holds none")
 	})
 })
