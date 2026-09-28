@@ -56,6 +56,9 @@ var notInDefaultsYAML = map[Key]string{
 	KeyElasticsearchSecuritySelfSigned:      "SecondaryStorageSecurity fields are not generated into defaults.yaml",
 	KeyRDBMSDatabaseVendorID:                "read by MyBatisConfiguration, not a configuration class field",
 
+	KeyBackupRepositoryName:                  "defaults.yaml leaves out this field of DocumentBasedSecondaryStorageBackup",
+	KeyPrimaryBackupRetentionCleanupSchedule: "defaults.yaml leaves out this field of BackupSchedulerRetentionCfg",
+
 	KeyAuthenticationMethod:       "security classes are not generated into defaults.yaml",
 	KeyOIDCIssuerURI:              "security classes are not generated into defaults.yaml",
 	KeyOIDCClientID:               "security classes are not generated into defaults.yaml",
@@ -122,6 +125,10 @@ const (
 	myBatisConfigFile    = "dist/src/main/java/io/camunda/application/commons/rdbms/MyBatisConfiguration.java"
 	esSecurityFile       = "configuration/src/main/java/io/camunda/configuration/SecondaryStorageSecurity.java"
 	exporterFile         = "configuration/src/main/java/io/camunda/configuration/Exporter.java"
+	secondaryBackupFile  = "configuration/src/main/java/io/camunda/configuration/" +
+		"DocumentBasedSecondaryStorageBackup.java"
+	retentionConfigFile = "zeebe/broker/src/main/java/io/camunda/zeebe/broker/system/configuration/" +
+		"backup/BackupSchedulerRetentionCfg.java"
 	esExporterConfigFile = "zeebe/exporters/elasticsearch-exporter/src/main/java/io/camunda/zeebe/exporter/" +
 		"ElasticsearchExporterConfiguration.java"
 	clientPropsFile = "clients/camunda-spring-boot-starter/src/main/java/io/camunda/" +
@@ -176,6 +183,9 @@ var sourceEvidence = map[Key]sourceRef{
 	KeyElasticsearchSecuritySelfSigned:      fieldRef(esSecurityFile, "selfSigned"),
 
 	KeyRDBMSDatabaseVendorID: {myBatisConfigFile, `database-vendor-id`},
+
+	KeyBackupRepositoryName:                  fieldRef(secondaryBackupFile, "repositoryName"),
+	KeyPrimaryBackupRetentionCleanupSchedule: fieldRef(retentionConfigFile, "cleanupSchedule"),
 
 	KeyAuthenticationMethod: fieldRef(authConfigFile, "method"),
 
