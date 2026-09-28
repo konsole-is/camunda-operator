@@ -62,25 +62,28 @@ const (
 const leasePrefix = "camunda-writer-"
 
 // Clock records when this operator started to lead. A registration counts as
-// renewed at that time at the latest. The zero Clock, and a nil one, never
-// started.
+// renewed at that time at the latest. A nil Clock never started.
 type Clock struct {
 	started atomic.Int64
 }
 
-// Start records the time. The manager runs it once this operator leads.
+// Start records the time, unless a Since call recorded it first. The manager
+// runs it once this operator leads.
 func (c *Clock) Start(ctx context.Context) error {
-	c.started.Store(time.Now().UnixNano())
+	c.started.CompareAndSwap(0, time.Now().UnixNano())
 	<-ctx.Done()
 
 	return nil
 }
 
-// Since returns the time Start ran, or the zero time.
+// Since returns the time this operator started to lead, and records the
+// current time when Start has not run yet. Call it only while this operator
+// leads. A nil Clock returns the zero time.
 func (c *Clock) Since() time.Time {
-	if c == nil || c.started.Load() == 0 {
+	if c == nil {
 		return time.Time{}
 	}
+	c.started.CompareAndSwap(0, time.Now().UnixNano())
 
 	return time.Unix(0, c.started.Load())
 }

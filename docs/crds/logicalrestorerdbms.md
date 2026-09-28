@@ -116,7 +116,7 @@ A cluster that another backup or another restore holds keeps this restore in `Pe
 
 A restore writes into the backend of its target. That is the logical database that the `SecondaryStorageConfig` of the target resolves to. The restore writes it only while the target holds that backend. When the restore leaves `Pending`, it records the backend in `status.backend`.
 
-From then until the restore reaches `Completed` or `Failed`, no other `CamundaCluster` starts on that backend. This also holds when you delete the target during the restore, or point it at another backend. The next cluster on the backend reports `WaitingForHandover`, and the message names this restore. If you delete the restore itself while it runs, the backend stays held for at most two more minutes. [CamundaCluster: Secondary storage](camundacluster.md#secondary-storage) has the rule for the cluster.
+From then until the restore reaches `Completed` or `Failed`, no other `CamundaCluster` starts on that backend. This also holds when you delete the target during the restore, or point it at another backend. The next cluster on the backend reports `WaitingForHandover`, and the message names this restore. If you delete the restore itself while it runs, the backend stays held for at most two more minutes. When the operator restarts in that time, the two minutes count from its start. [CamundaCluster: Secondary storage](camundacluster.md#secondary-storage) has the rule for the cluster.
 
 When the restore fails while its `pg_restore` Job still runs, the next cluster also waits for that Job to finish.
 

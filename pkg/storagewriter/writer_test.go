@@ -218,8 +218,20 @@ func TestAClockThatStartedLaterKeepsAnOldRegistrationLive(t *testing.T) {
 	assert.Empty(t, live, "a writer that never renews expires one duration after the clock started")
 }
 
-func TestAClockThatNeverStartedIsTheZeroTime(t *testing.T) {
-	var nilClock *Clock
-	assert.True(t, nilClock.Since().IsZero())
-	assert.True(t, (&Clock{}).Since().IsZero())
+func TestANilClockIsTheZeroTime(t *testing.T) {
+	var clock *Clock
+	assert.True(t, clock.Since().IsZero())
+}
+
+func TestTheFirstCallOfAClockRecordsTheTime(t *testing.T) {
+	clock := &Clock{}
+	before := time.Now()
+
+	since := clock.Since()
+
+	assert.False(t, since.Before(before), "a Since call before Start records the current time")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	require.NoError(t, clock.Start(ctx))
+	assert.Equal(t, since, clock.Since(), "Start keeps the time that Since recorded first")
 }
