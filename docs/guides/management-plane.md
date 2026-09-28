@@ -328,7 +328,7 @@ In the `oidc` mode, Web Modeler needs two clients on the platform config: `webMo
 
 `spec.clusterSelector` decides which clusters Console lists and Web Modeler deploys to. It reaches every namespace of the Kubernetes cluster, which is why creating a `CamundaManagementCluster` is a platform-administrator action.
 
-The selector follows the Kubernetes convention: unset selects no cluster, `{}` selects every cluster, and terms select the clusters whose labels match. `spec.namespaceSelector` narrows the search to the namespaces whose labels match; unset or `{}` puts no bound on the namespace. See [Clusters](../crds/camundamanagementcluster.md#clusters).
+The selector follows the Kubernetes convention: unset selects no cluster, `{}` selects every cluster, and terms select the clusters whose labels match. `spec.namespaceSelector` narrows the search to the namespaces whose labels match. Unset or `{}` puts no bound on the namespace. See [Clusters](../crds/camundamanagementcluster.md#clusters).
 
 ```yaml
 apiVersion: core.camunda.io/v1

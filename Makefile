@@ -507,5 +507,5 @@ docs-build: ## Build the documentation site in strict mode.
 	mkdocs build --strict
 
 .PHONY: docs-sentences
-docs-sentences: ## Report the sentences under docs/ that are longer than the simple-english limits.
+docs-sentences: ## Report the sentences under docs/ that break the simple-english rules: length, semicolons, and the modals would, could, and may.
 	go run ./hack/sentencelength docs
