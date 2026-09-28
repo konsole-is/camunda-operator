@@ -59,6 +59,11 @@ type change struct {
 	basePath string // empty when base does not have the file
 }
 
+type comment struct {
+	text string
+	line int
+}
+
 type finding struct {
 	file  string
 	line  int
@@ -222,12 +227,43 @@ func diffFile(file string, oldSrc, newSrc []byte) ([]finding, error) {
 		}
 		out = append(out, f)
 	}
-	for text, lines := range newFree {
-		for _, line := range lines[min(len(oldFree[text]), len(lines)):] {
-			out = append(out, finding{file: file, line: line, text: "comment: " + firstLine(text)})
-		}
+	for _, c := range unmatched(oldFree, newFree) {
+		out = append(out, finding{file: file, line: c.line, text: "comment: " + firstLine(c.text)})
 	}
 	return out, nil
+}
+
+// unmatched returns the comments of cur that a longest common subsequence of texts with old leaves out.
+func unmatched(old, cur []comment) []comment {
+	lcs := make([][]int, len(old)+1)
+	for i := range lcs {
+		lcs[i] = make([]int, len(cur)+1)
+	}
+	for i := len(old) - 1; i >= 0; i-- {
+		for j := len(cur) - 1; j >= 0; j-- {
+			if old[i].text == cur[j].text {
+				lcs[i][j] = lcs[i+1][j+1] + 1
+			} else {
+				lcs[i][j] = max(lcs[i+1][j], lcs[i][j+1])
+			}
+		}
+	}
+
+	var out []comment
+	i, j := 0, 0
+	for j < len(cur) {
+		switch {
+		case i < len(old) && old[i].text == cur[j].text:
+			i++
+			j++
+		case i < len(old) && lcs[i+1][j] > lcs[i][j+1]:
+			i++
+		default:
+			out = append(out, cur[j])
+			j++
+		}
+	}
+	return out
 }
 
 // pairRenames maps each new declaration that has no match at base to the
@@ -295,11 +331,11 @@ func abs(n int) int {
 	return n
 }
 
-// scan returns the doc comments keyed by declaration, and the text of every
-// comment group that is not a doc comment, mapped to its lines.
-func scan(file string, src []byte) (map[string]decl, map[string][]int, error) {
+// scan returns the doc comments keyed by declaration, and every comment group
+// that is not a doc comment, in source order.
+func scan(file string, src []byte) (map[string]decl, []comment, error) {
 	decls := map[string]decl{}
-	free := map[string][]int{}
+	var free []comment
 	if len(bytes.TrimSpace(src)) == 0 {
 		return decls, free, nil
 	}
@@ -361,7 +397,7 @@ func scan(file string, src []byte) (map[string]decl, map[string][]int, error) {
 		if text == "" || strings.HasPrefix(text, "+") {
 			continue // kubebuilder markers and build tags
 		}
-		free[text] = append(free[text], fset.Position(cg.Pos()).Line)
+		free = append(free, comment{text: text, line: fset.Position(cg.Pos()).Line})
 	}
 	return decls, free, nil
 }

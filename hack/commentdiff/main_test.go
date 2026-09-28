@@ -317,3 +317,24 @@ func gitRun(t *testing.T, args ...string) {
 	out, err := exec.Command("git", append(cfg, args...)...).CombinedOutput()
 	require.NoError(t, err, string(out))
 }
+
+func TestDiffFileReportsTheLineOfAChangedDuplicateComment(t *testing.T) {
+	tests := []struct {
+		name     string
+		old      string
+		wantLine int
+	}{
+		{name: "first of two changed", old: "func f() {\n\t// a\n\tg()\n\t// b\n\tg()\n}\n", wantLine: 4},
+		{name: "second of two changed", old: "func f() {\n\t// b\n\tg()\n\t// a\n\tg()\n}\n", wantLine: 6},
+	}
+	cur := src("func f() {\n\t// b\n\tg()\n\t// b\n\tg()\n}\n")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := diffFile("p.go", src(tt.old), cur)
+
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			assert.Equal(t, tt.wantLine, got[0].line)
+		})
+	}
+}
