@@ -35,6 +35,9 @@ jobs:
           git add --intent-to-add config/prometheus/observability
           git diff --exit-code -- config/prometheus/observability
 
+      - name: Check the docs against the simple-english rules
+        run: make docs-sentences
+
       # Renovate's validator is an npm package. The runner's default Node is
       # older than the one Renovate supports, which is a warning today and a
       # refusal later.
