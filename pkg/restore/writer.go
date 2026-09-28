@@ -80,6 +80,9 @@ type Renewer struct {
 	List func(ctx context.Context) ([]Registration, error)
 }
 
+// NeedLeaderElection makes the manager run Start only on the leader.
+func (r *Renewer) NeedLeaderElection() bool { return true }
+
 // Start renews until ctx ends. The manager runs it once this operator leads.
 func (r *Renewer) Start(ctx context.Context) error {
 	ticker := time.NewTicker(storagewriter.RenewInterval)

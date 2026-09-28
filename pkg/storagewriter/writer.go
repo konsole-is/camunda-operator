@@ -78,6 +78,9 @@ func (c *Clock) Start(ctx context.Context) error {
 	return nil
 }
 
+// NeedLeaderElection makes the manager run Start only on the leader.
+func (c *Clock) NeedLeaderElection() bool { return true }
+
 // Since returns the time this operator started to lead, and records the
 // current time when Start has not run yet. Call it only while this operator
 // leads. A nil Clock returns the zero time.
@@ -321,6 +324,9 @@ type Janitor struct {
 	Namespace string
 	Clock     *Clock
 }
+
+// NeedLeaderElection makes the manager run Start only on the leader.
+func (j *Janitor) NeedLeaderElection() bool { return true }
 
 // Start prunes until ctx ends. The manager runs it once this operator leads.
 func (j *Janitor) Start(ctx context.Context) error {

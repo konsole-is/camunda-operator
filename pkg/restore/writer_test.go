@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
@@ -117,4 +118,10 @@ func TestRenewableSkipsFinishedAndDeletedRestores(t *testing.T) {
 	assert.False(t, Renewable("", false, nil), "no backend registered yet")
 	assert.False(t, Renewable("rdbms|db:5432/camunda", true, nil), "a terminal restore released its registration")
 	assert.False(t, Renewable("rdbms|db:5432/camunda", false, &deleted), "a deleted restore no longer runs")
+}
+
+func TestTheRenewerRunsOnlyOnTheLeader(t *testing.T) {
+	var renewer manager.LeaderElectionRunnable = &Renewer{}
+
+	assert.True(t, renewer.NeedLeaderElection())
 }

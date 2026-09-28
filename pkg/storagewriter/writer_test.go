@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 const (
@@ -266,4 +267,12 @@ func TestPruneAllExpiredKeepsARegistrationInsideTheLeadGrace(t *testing.T) {
 	var leases coordinationv1.LeaseList
 	require.NoError(t, c.List(ctx, &leases, client.InNamespace(claimNamespace)))
 	assert.Len(t, leases.Items, 1)
+}
+
+func TestTheRunnablesRunOnlyOnTheLeader(t *testing.T) {
+	var clock manager.LeaderElectionRunnable = &Clock{}
+	var janitor manager.LeaderElectionRunnable = &Janitor{}
+
+	assert.True(t, clock.NeedLeaderElection())
+	assert.True(t, janitor.NeedLeaderElection())
 }
