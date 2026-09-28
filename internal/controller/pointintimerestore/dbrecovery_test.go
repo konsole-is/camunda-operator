@@ -614,16 +614,13 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 
 		repointContract(w)
 
+		// status.backend is what the renewer renews.
 		var named string
 		Eventually(func(g Gomega) {
-			held := backendsHeldBy(pitr)
-			g.Expect(held).To(HaveLen(2))
-			g.Expect(held).To(ContainElement(before))
-			for _, backend := range held {
-				if backend != before {
-					named = backend
-				}
-			}
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Backend).NotTo(Equal(before))
+			g.Expect(backendsHeldBy(pitr)).To(Equal([]string{current.Status.Backend}))
+			named = current.Status.Backend
 		}, timeout, interval).Should(Succeed())
 		Expect(named).To(ContainSubstring(recoveredHost))
 		Expect(writersSeenByAnotherCluster(named)).To(
@@ -634,12 +631,14 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		answerRecovery(w, v1.RecoveryResultCompleted, "")
 		Consistently(func() []string {
 			return backendsHeldBy(pitr)
-		}, time.Second, interval).Should(HaveLen(2))
+		}, time.Second, interval).Should(Equal([]string{named}))
 
 		publishContractReady(w, recoveredIdentifier)
-		Eventually(func() []string {
-			return backendsHeldBy(pitr)
-		}, timeout, interval).Should(Equal([]string{named}))
+		Eventually(func(g Gomega) {
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestoreRestoringDatabase))
+			g.Expect(backendsHeldBy(pitr)).To(Equal([]string{named}))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("moves its hold to the endpoint of the recovered server", func() {

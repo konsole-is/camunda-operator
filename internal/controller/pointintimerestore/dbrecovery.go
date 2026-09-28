@@ -119,14 +119,8 @@ func (r *Reconciler) enterDatabaseRecovery(
 	}
 
 	// A cluster claims the endpoint that the contract names, Ready or not.
-	named, failure := restore.DatabaseBackend(resolved.storage, resolved.dbConfig, contract)
-	if failure == nil && named != pitr.Status.Backend {
-		err := restore.RegisterWriter(
-			ctx, r.Client, r.APIReader, r.ClaimNamespace, named, pitr, pitr.Status.TargetClusterUID,
-		)
-		if err != nil {
-			return restore.Outcome{}, err
-		}
+	if _, err := r.followBackend(ctx, pitr, resolved); err != nil {
+		return restore.Outcome{}, err
 	}
 
 	request := recoveryRequest(pitr)
@@ -356,7 +350,7 @@ func (r *Reconciler) recoveryAnswered(
 }
 
 // followBackend moves the writer registration of the restore to the backend
-// that the recovered server serves.
+// that the contract names.
 func (r *Reconciler) followBackend(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
