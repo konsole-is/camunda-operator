@@ -314,7 +314,7 @@ The operator generates each password once and keeps it stable. To rotate one, de
 | --- | --- | --- |
 | The Elasticsearch user of an `ElasticsearchCluster` | `<name>-es-user` | ECK updates the user. Every `CamundaCluster` that references the `SecondaryStorageConfig` of this Elasticsearch rolls its pods. |
 | A role of a `Database` | The application or backup credential Secret that the `Database` created | The operator sets the new password on the server before it publishes the Secret. Every `CamundaCluster` that references the `DatabaseConfig` rolls its pods. |
-| The admin user of a basic-authentication cluster | None. Set `spec.auth.basic.passwordRotation` instead; see below. | The operator sets the new password on the `admin` user and rolls the connectors Deployment. |
+| The admin user of a basic-authentication cluster | None. Set `spec.auth.basic.passwordRotation` instead. See below. | The operator sets the new password on the `admin` user and rolls the connectors Deployment. |
 
 ```bash
 kubectl delete secret my-cluster-es-es-user -n my-cluster-ns

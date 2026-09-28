@@ -220,7 +220,7 @@ The importer never starts while one of these states holds:
 - Pods of another cluster still write that backend after the cluster took it over.
 - The importer of a deleted instance of the cluster is still stopping.
 
-In the first state the cluster has not claimed the backend yet, or another cluster holds it and writes it. In every state two importers on one set of analytics indices would overwrite each other. `Ready` names the wait.
+In the first state the cluster has not claimed the backend yet, or another cluster holds it and writes it. In every state, if two importers run on one set of analytics indices, they overwrite each other. `Ready` names the wait.
 
 ```yaml
 status:
