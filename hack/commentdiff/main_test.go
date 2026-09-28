@@ -19,6 +19,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -377,4 +378,56 @@ func TestDiffFileFlagsGrownMemberDocs(t *testing.T) {
 			assert.Contains(t, got[0].text, tt.wantText)
 		})
 	}
+}
+
+func TestDiffFileFlagsGoDocsUnderAPI(t *testing.T) {
+	tests := []struct {
+		name, file string
+		old, cur   string
+	}{
+		{
+			name: "method in a types file",
+			file: "api/v1/spec_types.go",
+			old:  "// M runs.\nfunc (s *Spec) M() {\n\tg()\n}\n",
+			cur:  "// M runs.\n// It runs twice.\nfunc (s *Spec) M() {\n\tg()\n}\n",
+		},
+		{
+			name: "type in a test file",
+			file: "api/v1/spec_types_test.go",
+			old:  "// fixture is a spec.\ntype fixture struct{}\n",
+			cur:  "// fixture is a spec.\n// It is valid.\ntype fixture struct{}\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := diffFile(tt.file, src(tt.old), src(tt.cur))
+
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			assert.True(t, got[0].fatal)
+		})
+	}
+}
+
+func TestDiffFilePairsARenameThatMovedFar(t *testing.T) {
+	old := src("// notReady describes Ready.\nfunc notReady() {\n\tg()\n}\n")
+	cur := src(strings.Repeat("var _ = 0\n", 100) +
+		"// cannotStart describes why.\n// Both kinds need a binding.\nfunc cannotStart() {\n\tg()\n}\n")
+
+	got, err := diffFile("p.go", old, cur)
+
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.True(t, got[0].fatal)
+	assert.Contains(t, got[0].text, "GREW from 1 to 2 lines (was func notReady)")
+}
+
+func TestDiffFileReportsASharedDocOnce(t *testing.T) {
+	old := src("type T struct {\n\t// A and B are counts.\n\tA, B int\n}\n")
+	cur := src("type T struct {\n\t// A and B are counts.\n\t// They are never negative.\n\tA, B int\n}\n")
+
+	got, err := diffFile("p.go", old, cur)
+
+	require.NoError(t, err)
+	assert.Len(t, got, 1)
 }

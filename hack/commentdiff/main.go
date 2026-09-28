@@ -19,8 +19,8 @@ limitations under the License.
 // doc comment that got longer than it was at the base, and a doc comment of
 // three or more lines that is longer than the body it documents. A flag is
 // not a verdict. It exits 1 so that each flagged comment gets evaluated.
-// The docs under api/ become CRD descriptions that users read, so they are
-// listed but never flagged.
+// The type and field docs under api/ become CRD descriptions that users
+// read, so they are listed but never flagged.
 //
 // Usage: go run ./hack/commentdiff [base]
 //
@@ -35,6 +35,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"math"
 	"os"
 	"os/exec"
 	"sort"
@@ -189,8 +190,9 @@ func diffFile(file string, oldSrc, newSrc []byte) ([]finding, error) {
 		return nil, fmt.Errorf("at the base: %w", err)
 	}
 
-	userFacing := strings.HasPrefix(file, "api/")
+	schemaFile := strings.HasPrefix(file, "api/") && !strings.HasSuffix(file, "_test.go")
 	var out []finding
+	reported := map[int]bool{} // one doc can cover several names
 	renamed := pairRenames(oldDecls, newDecls)
 	for _, key := range sortedKeys(newDecls) {
 		d := newDecls[key]
@@ -198,12 +200,10 @@ func diffFile(file string, oldSrc, newSrc []byte) ([]finding, error) {
 		if !existed {
 			old, existed = renamed[key]
 		}
-		if existed && old.docText == d.docText {
+		if existed && old.docText == d.docText || d.docLen == 0 || reported[d.line] {
 			continue
 		}
-		if d.docLen == 0 {
-			continue
-		}
+		reported[d.line] = true
 		f := finding{file: file, line: d.line}
 		switch {
 		case existed && d.docLen > old.docLen:
@@ -221,7 +221,7 @@ func diffFile(file string, oldSrc, newSrc []byte) ([]finding, error) {
 			f.text += fmt.Sprintf(", LONGER than its %d-line body", d.bodyLen)
 			f.fatal = true
 		}
-		if userFacing && f.fatal {
+		if schemaFile && f.fatal && crdDescription(d.name) {
 			f.fatal = false
 			f.text += " (user-facing: judge with writing-operator-docs)"
 		}
@@ -283,7 +283,7 @@ func pairRenames(old, cur map[string]decl) map[string]decl {
 			continue
 		}
 		d := cur[key]
-		best, dist := decl{}, maxRenameGap+1
+		best, dist := decl{}, math.MaxInt
 		for _, r := range removed {
 			if used[r.name] || kind(r.name) != kind(d.name) {
 				continue
@@ -304,9 +304,9 @@ func pairRenames(old, cur map[string]decl) map[string]decl {
 	return paired
 }
 
-// maxRenameGap is how far, in lines, a removed doc may sit from an added one
-// and still count as the same declaration under a new name.
-const maxRenameGap = 60
+func crdDescription(key string) bool {
+	return strings.HasPrefix(key, "type ") || strings.HasPrefix(key, "group type ") || strings.HasPrefix(key, "field ")
+}
 
 func sortedKeys(m map[string]decl) []string {
 	keys := make([]string, 0, len(m))
