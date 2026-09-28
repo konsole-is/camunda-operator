@@ -84,6 +84,15 @@ func (r *Reconciler) enterDatabaseRecovery(
 		return r.resolveFailed(pitr, err)
 	}
 	if failure != nil {
+		contract, err := r.runningRollback(ctx, pitr)
+		if err != nil {
+			return restore.Outcome{}, err
+		}
+		if contract != nil {
+			if _, err := r.followBackend(ctx, pitr, contract); err != nil {
+				return restore.Outcome{}, err
+			}
+		}
 		answered, err := r.rollbackAnswered(ctx, pitr)
 		if err != nil {
 			return restore.Outcome{}, err

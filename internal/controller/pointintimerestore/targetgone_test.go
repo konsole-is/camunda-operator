@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	coordinationv1 "k8s.io/api/coordination/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,6 +36,43 @@ import (
 )
 
 func TestReplacementBetweenTwoReadsKeepsTheRollbackHeld(t *testing.T) {
+	pitr, r := rollbackWithSecondClusterRead(t, func(read *v1.CamundaCluster) error {
+		read.UID = "replacement"
+
+		return nil
+	})
+
+	_, err := r.enterDatabaseRecovery(context.Background(), pitr)
+	require.NoError(t, err)
+
+	assert.Equal(t, v1.PointInTimeRestoreRestoringDatabase, pitr.Status.Phase)
+	ready := meta.FindStatusCondition(pitr.Status.Conditions, v1.ConditionReady)
+	require.NotNil(t, ready)
+	assert.Contains(t, ready.Message, "was replaced while its database server rolls back")
+}
+
+// A deletion between the two reads must still move the hold to the endpoint
+// that the contract names.
+func TestDeletionBetweenTwoReadsFollowsTheNamedEndpoint(t *testing.T) {
+	pitr, r := rollbackWithSecondClusterRead(t, func(read *v1.CamundaCluster) error {
+		return apierrors.NewNotFound(v1.GroupVersion.WithResource("camundaclusters").GroupResource(), read.Name)
+	})
+
+	_, err := r.enterDatabaseRecovery(context.Background(), pitr)
+	require.NoError(t, err)
+
+	assert.Equal(t, v1.PointInTimeRestoreRestoringDatabase, pitr.Status.Phase)
+	assert.Contains(t, pitr.Status.Backend, "recovered.databases.svc")
+}
+
+// rollbackWithSecondClusterRead returns a restore that waits for the answer
+// of a contract that already names a new endpoint, and a reconciler whose
+// second read of the cluster goes through second.
+func rollbackWithSecondClusterRead(
+	t *testing.T,
+	second func(read *v1.CamundaCluster) error,
+) (*v1.PointInTimeRestore, *Reconciler) {
+	t.Helper()
 	scheme := runtime.NewScheme()
 	require.NoError(t, v1.AddToScheme(scheme))
 	require.NoError(t, coordinationv1.AddToScheme(scheme))
@@ -49,15 +87,20 @@ func TestReplacementBetweenTwoReadsKeepsTheRollbackHeld(t *testing.T) {
 			Phase:           v1.PointInTimeRestoreRestoringDatabase,
 			RestoreProgress: v1.RestoreProgress{TargetClusterUID: "pinned"},
 			Storage: &v1.PointInTimeRestoreStorage{
+				SecondaryStorageConfig:  "ssc",
 				DatabaseServerConfig:    "dbsc",
 				DatabaseServerConfigUID: "dbsc-uid",
+				DatabaseName:            "camunda",
 			},
+			Backend: "old",
 		},
 	}
 	request := recoveryRequest(pitr)
 	contract := &v1.DatabaseServerConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "dbsc", Namespace: "ns", UID: "dbsc-uid"},
 		Spec: v1.DatabaseServerConfigSpec{
+			Host:     "recovered.databases.svc",
+			Port:     5432,
 			PITR:     &v1.PITRCapability{Enabled: true, Recovery: v1.RecoveryModeOperator},
 			Recovery: &request,
 		},
@@ -82,7 +125,7 @@ func TestReplacementBetweenTwoReadsKeepsTheRollbackHeld(t *testing.T) {
 				if read, ok := obj.(*v1.CamundaCluster); ok {
 					reads++
 					if reads > 1 {
-						read.UID = "replacement"
+						return second(read)
 					}
 				}
 
@@ -90,18 +133,11 @@ func TestReplacementBetweenTwoReadsKeepsTheRollbackHeld(t *testing.T) {
 			},
 		}).
 		Build()
-	r := &Reconciler{
+
+	return pitr, &Reconciler{
 		Client:        reader,
 		APIReader:     reader,
 		EventRecorder: events.NewFakeRecorder(10),
 		opts:          Options{}.withDefaults(),
 	}
-
-	_, err := r.enterDatabaseRecovery(context.Background(), pitr)
-	require.NoError(t, err)
-
-	assert.Equal(t, v1.PointInTimeRestoreRestoringDatabase, pitr.Status.Phase)
-	ready := meta.FindStatusCondition(pitr.Status.Conditions, v1.ConditionReady)
-	require.NotNil(t, ready)
-	assert.Contains(t, ready.Message, "was replaced while its database server rolls back")
 }
