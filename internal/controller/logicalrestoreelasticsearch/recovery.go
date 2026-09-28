@@ -27,6 +27,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
@@ -64,7 +65,14 @@ func (r *Reconciler) finalize(ctx context.Context, lres *v1.LogicalRestoreElasti
 		}
 	}
 
-	finalized, err := restore.FinalizeHold(ctx, r.Client, r.APIReader, lres, lres.Spec.TargetClusterRef.Name)
+	finalized, err := restore.FinalizeHold(
+		ctx,
+		r.Client,
+		r.APIReader,
+		lres,
+		labels.LogicalRestoreElasticsearch(lres.Name),
+		lres.Spec.TargetClusterRef.Name,
+	)
 
 	return finalized.Wait, err
 }
