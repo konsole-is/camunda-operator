@@ -73,7 +73,12 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize role of t
 
 		keycloak.revokeAdminRealmRoles()
 
+		// The grant waits until the Identity Deployment has rolled out, and a
+		// later render can move it to a new generation, so the spec keeps
+		// marking it ready.
 		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
 			g.Expect(keycloak.adminRealmRoles()).To(ContainElement(optimizeRealmRole))
 		}, timeout, interval).Should(Succeed())
 	})
