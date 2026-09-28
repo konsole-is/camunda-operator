@@ -210,7 +210,7 @@ func archiveOnCluster(g Gomega, server *v1.DatabaseServer) renderedArchive {
 	var baseBackup cnpgv1.ScheduledBackup
 	g.Expect(k8sClient.Get(ctx, key, &baseBackup)).To(Succeed())
 
-	pitr := publishedContract(server).Spec.PITR
+	pitr := publishedContract(g, server).Spec.PITR
 	g.Expect(pitr).NotTo(BeNil())
 	g.Expect(pitr.Enabled).To(BeTrue(), "the contract keeps advertising the archive the rollback reads")
 	g.Expect(pitr.RetentionPeriodDays).NotTo(BeNil())
@@ -294,12 +294,15 @@ func contractKey(server *v1.DatabaseServer) client.ObjectKey {
 	return client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
 }
 
-// publishedContract reads the contract of the server.
-func publishedContract(server *v1.DatabaseServer) *v1.DatabaseServerConfig {
+// publishedContract reads the contract of the server. A caller inside an
+// Eventually or a Consistently passes the Gomega of that poll, so a contract
+// that the server withdraws for a moment is read again instead of ending the
+// spec. A caller at spec level passes Default.
+func publishedContract(g Gomega, server *v1.DatabaseServer) *v1.DatabaseServerConfig {
 	GinkgoHelper()
 
 	var contract v1.DatabaseServerConfig
-	Expect(k8sClient.Get(ctx, contractKey(server), &contract)).To(Succeed())
+	g.Expect(k8sClient.Get(ctx, contractKey(server), &contract)).To(Succeed())
 
 	return &contract
 }
@@ -320,7 +323,7 @@ func expectLastRecovery(server *v1.DatabaseServer, result v1.RecoveryResult) *v1
 	GinkgoHelper()
 
 	Eventually(func(g Gomega) {
-		contract := publishedContract(server)
+		contract := publishedContract(g, server)
 		g.Expect(contract.Spec.PITR).NotTo(BeNil())
 		g.Expect(contract.Spec.PITR.LastRecovery).NotTo(BeNil())
 		g.Expect(contract.Spec.PITR.LastRecovery.Result).To(Equal(result))
@@ -334,7 +337,7 @@ func expectLastRecovery(server *v1.DatabaseServer, result v1.RecoveryResult) *v1
 		g.Expect(recorded.RequestID).To(Equal(contract.Spec.PITR.LastRecovery.RequestID))
 	}, timeout, interval).Should(Succeed())
 
-	return publishedContract(server).Spec.PITR.LastRecovery
+	return publishedContract(Default, server).Spec.PITR.LastRecovery
 }
 
 // expectAnsweredRecovery waits until the status of the server records the
@@ -543,21 +546,21 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		By("waiting for CloudNativePG before it touches the contract")
 		Consistently(func() string {
-			return publishedContract(server).Spec.Host
+			return publishedContract(Default, server).Spec.Host
 		}, "1s", interval).Should(Equal("camunda-rw." + server.Namespace + ".svc"))
 
 		bringRecoveryClusterUp(server, "camunda-r1")
 
 		By("pointing the contract at the recovered server")
 		Eventually(func(g Gomega) {
-			contract := publishedContract(server)
+			contract := publishedContract(g, server)
 			g.Expect(contract.Spec.Host).To(Equal("camunda-r1-rw." + server.Namespace + ".svc"))
 			g.Expect(contract.Spec.AdminCredentialsSecretRef.Name).To(Equal("camunda-r1-superuser"))
 		}, timeout, interval).Should(Succeed())
 
 		By("waiting for the contract to reach the server it names now")
 		Consistently(func() *v1.RecoveryOutcome {
-			contract := publishedContract(server)
+			contract := publishedContract(Default, server)
 			if contract.Spec.PITR == nil {
 				return nil
 			}
@@ -621,7 +624,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		By("keeping the outcome and the request on the contract it republishes")
 		Consistently(func(g Gomega) {
-			contract := publishedContract(server)
+			contract := publishedContract(g, server)
 			g.Expect(contract.Spec.PITR.LastRecovery).NotTo(BeNil())
 			g.Expect(contract.Spec.PITR.LastRecovery.Result).To(Equal(v1.RecoveryResultCompleted))
 			g.Expect(contract.Spec.Recovery).NotTo(BeNil())
@@ -635,7 +638,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		// which keeps this spec on the gap rule and off the future rule.
 		gap := askForRecovery(server, closedAt.Time)
 		Eventually(func(g Gomega) {
-			outcome := publishedContract(server).Spec.PITR.LastRecovery
+			outcome := publishedContract(g, server).Spec.PITR.LastRecovery
 			g.Expect(outcome).NotTo(BeNil())
 			g.Expect(outcome.RequestID).To(Equal(gap.RequestID))
 			g.Expect(outcome.Result).To(Equal(v1.RecoveryResultUnavailable))
@@ -740,7 +743,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 		Eventually(func(g Gomega) {
-			pitr := publishedContract(server).Spec.PITR
+			pitr := publishedContract(g, server).Spec.PITR
 			g.Expect(pitr).NotTo(BeNil())
 			g.Expect(pitr.RetentionPeriodDays).To(HaveValue(BeEquivalentTo(30)))
 		}, timeout, interval).Should(Succeed())
@@ -787,7 +790,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		By("answering nothing and keeping the cluster")
 		Consistently(func(g Gomega) {
-			contract := publishedContract(server)
+			contract := publishedContract(g, server)
 			if contract.Spec.PITR != nil {
 				g.Expect(contract.Spec.PITR.LastRecovery).To(BeNil())
 			}
@@ -799,7 +802,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		outcome := expectLastRecovery(server, v1.RecoveryResultCompleted)
 		Expect(outcome.Result).To(Equal(v1.RecoveryResultCompleted))
-		Expect(publishedContract(server).Spec.Host).
+		Expect(publishedContract(Default, server).Spec.Host).
 			To(Equal("camunda-r1-rw." + server.Namespace + ".svc"))
 	})
 
@@ -821,7 +824,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(k8sClient.Get(
 			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &running,
 		)).To(Succeed())
-		Expect(publishedContract(server).Spec.Host).To(Equal("camunda-rw." + server.Namespace + ".svc"))
+		Expect(publishedContract(Default, server).Spec.Host).To(Equal("camunda-rw." + server.Namespace + ".svc"))
 	})
 
 	It("takes no request from a contract that says nobody rolls the server back", func() {
@@ -833,11 +836,11 @@ var _ = Describe("DatabaseServer recovery", func() {
 		// A server without an archive publishes pitr.recovery: external. A
 		// request on that contract was written against a server that never
 		// offered to roll itself back, so the server does not take it.
-		Expect(publishedContract(server).Spec.PITR.Recovery).To(Equal(v1.RecoveryModeExternal))
+		Expect(publishedContract(Default, server).Spec.PITR.Recovery).To(Equal(v1.RecoveryModeExternal))
 		askForRecovery(server, time.Now().Add(-time.Hour))
 
 		Consistently(func(g Gomega) {
-			contract := publishedContract(server)
+			contract := publishedContract(g, server)
 			g.Expect(contract.Spec.PITR.LastRecovery).To(BeNil())
 			g.Expect(reconciledServer(server).Status.Recovery).To(BeNil())
 		}, "2s", interval).Should(Succeed())
@@ -927,7 +930,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 			g.Expect(archive.History).To(HaveLen(1))
 			g.Expect(archive.History[0].To).To(BeNil())
 
-			g.Expect(publishedContract(server).Spec.PITR.LastRecovery).To(BeNil())
+			g.Expect(publishedContract(g, server).Spec.PITR.LastRecovery).To(BeNil())
 		}, "2s", interval).Should(Succeed())
 
 		By("finishing the rollback the removal was held for")
@@ -939,7 +942,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		By("applying the removal once the rollback is answered")
 		expectGone(storeKey, &barmanobjectstore.ObjectStore{})
 		Eventually(func(g Gomega) {
-			contract := publishedContract(server)
+			contract := publishedContract(g, server)
 			g.Expect(contract.Spec.PITR).NotTo(BeNil())
 			g.Expect(contract.Spec.PITR.Enabled).To(BeFalse())
 		}, timeout, interval).Should(Succeed())
@@ -1046,7 +1049,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		By("answering the first, then starting the second under a name of its own")
 		Eventually(func(g Gomega) {
-			outcome := publishedContract(server).Spec.PITR.LastRecovery
+			outcome := publishedContract(g, server).Spec.PITR.LastRecovery
 			g.Expect(outcome).NotTo(BeNil())
 			g.Expect(outcome.RequestID).To(Equal(first.RequestID))
 			g.Expect(outcome.Result).To(Equal(v1.RecoveryResultCompleted))
@@ -1098,7 +1101,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		host := "camunda-r1-rw." + server.Namespace + ".svc"
 		Eventually(func(g Gomega) {
 			g.Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda-r1"))
-			g.Expect(publishedContract(server).Spec.Host).To(Equal(host))
+			g.Expect(publishedContract(g, server).Spec.Host).To(Equal(host))
 		}, timeout, interval).Should(Succeed())
 
 		// What a delete and a create under the derived name leaves behind: a
@@ -1132,7 +1135,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		By("running from the cluster it came from again")
 		Eventually(func(g Gomega) {
 			g.Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda"))
-			g.Expect(publishedContract(server).Spec.Host).
+			g.Expect(publishedContract(g, server).Spec.Host).
 				To(Equal("camunda-rw." + server.Namespace + ".svc"))
 		}, timeout, interval).Should(Succeed())
 
@@ -1158,7 +1161,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		host := "camunda-r1-rw." + server.Namespace + ".svc"
 		Eventually(func(g Gomega) {
 			g.Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda-r1"))
-			g.Expect(publishedContract(server).Spec.Host).To(Equal(host))
+			g.Expect(publishedContract(g, server).Spec.Host).To(Equal(host))
 		}, timeout, interval).Should(Succeed())
 
 		// A cluster that is going keeps the phase it last reached, and that
@@ -1182,7 +1185,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		By("running from the cluster it came from again")
 		Eventually(func(g Gomega) {
 			g.Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda"))
-			g.Expect(publishedContract(server).Spec.Host).
+			g.Expect(publishedContract(g, server).Spec.Host).
 				To(Equal("camunda-rw." + server.Namespace + ".svc"))
 		}, timeout, interval).Should(Succeed())
 
@@ -1290,7 +1293,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		// so the rename leaves it where it is. Whoever asked reads the result
 		// there, however long they take to look.
 		Consistently(func(g Gomega) {
-			contract := publishedContract(server)
+			contract := publishedContract(g, server)
 			g.Expect(contract.Spec.PITR.LastRecovery).NotTo(BeNil())
 			g.Expect(contract.Spec.PITR.LastRecovery.Result).To(Equal(v1.RecoveryResultCompleted))
 		}, "2s", interval).Should(Succeed())
@@ -1344,7 +1347,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		// Grading the cluster that is going answers the new request from the
 		// state of the dead one, and it answers it at once.
 		Consistently(func() string {
-			return publishedContract(server).Spec.PITR.LastRecovery.RequestID
+			return publishedContract(Default, server).Spec.PITR.LastRecovery.RequestID
 		}, "2s", interval).Should(Equal(first.RequestID))
 
 		By("letting it go")
@@ -1403,7 +1406,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		}, timeout, interval).Should(Succeed())
 
 		Eventually(func() string {
-			return publishedContract(server).Spec.Host
+			return publishedContract(Default, server).Spec.Host
 		}, timeout, interval).Should(Equal("camunda-rw." + server.Namespace + ".svc"))
 
 		// The archive of the cluster the server runs from stays open: the
@@ -1944,11 +1947,11 @@ var _ = Describe("DatabaseServer recovery", func() {
 			g.Expect(ready).NotTo(BeNil())
 			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse), ready.Message)
 			g.Expect(ready.Reason).To(Equal(string(component.GuardBlocked)), ready.Message)
-			g.Expect(publishedContract(server).Spec.Host).To(Equal(strangerHost))
+			g.Expect(publishedContract(g, server).Spec.Host).To(Equal(strangerHost))
 		}, timeout, interval).Should(Succeed())
 
 		Consistently(func() string {
-			return publishedContract(server).Spec.Host
+			return publishedContract(Default, server).Spec.Host
 		}, "1s", interval).Should(Equal(strangerHost))
 
 		// The endpoint is read back only on a look that finds the record

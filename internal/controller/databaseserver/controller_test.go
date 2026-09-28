@@ -1198,7 +1198,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		owner := serverInNamespace(nil)
 		writeSuperuserSecret(owner)
 		expectCondition(owner, v1.ConditionContractReady, metav1.ConditionTrue)
-		host := publishedContract(owner).Spec.Host
+		host := publishedContract(Default, owner).Spec.Host
 
 		// The second server names the contract of the first, and its own
 		// superuser Secret is there. Nothing but the guard keeps it off.
@@ -1212,7 +1212,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		// The apply moves the owner reference, the label, and the endpoint
 		// together, so a contract the second server wrote shows in all three.
 		Consistently(func(g Gomega) {
-			contract := publishedContract(owner)
+			contract := publishedContract(g, owner)
 			g.Expect(contract.Spec.Host).To(Equal(host))
 			g.Expect(contract.Labels).To(HaveKeyWithValue(labels.DatabaseServerKey, "camunda"))
 			g.Expect(metav1.IsControlledBy(contract, reconciledServer(owner))).To(BeTrue())
@@ -1229,7 +1229,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		expectCondition(second, v1.ConditionContractReady, metav1.ConditionFalse)
 
 		By("deleting the server that holds the contract")
-		ownerRef := metav1.GetControllerOf(publishedContract(owner))
+		ownerRef := metav1.GetControllerOf(publishedContract(Default, owner))
 		Expect(ownerRef).NotTo(BeNil())
 		Expect(k8sClient.Delete(ctx, owner)).To(Succeed())
 		// envtest runs no garbage collector, so the spec deletes the contract
@@ -1249,7 +1249,7 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(condition).NotTo(BeNil())
 			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue), condition.Message)
 		}, timeout, interval).Should(Succeed())
-		contract := publishedContract(second)
+		contract := publishedContract(Default, second)
 		Expect(metav1.IsControlledBy(contract, reconciledServer(second))).To(BeTrue())
 		Expect(contract.Spec.Host).To(Equal("second-rw." + second.Namespace + ".svc"))
 	})
@@ -1466,7 +1466,7 @@ var _ = Describe("DatabaseServer controller", func() {
 
 		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
 		Expect(k8sClient.Get(ctx, key, &cnpgv1.ScheduledBackup{})).To(Succeed())
-		Expect(publishedContract(server).Spec.Host).To(Equal("camunda-rw." + server.Namespace + ".svc"))
+		Expect(publishedContract(Default, server).Spec.Host).To(Equal("camunda-rw." + server.Namespace + ".svc"))
 		history := archiveHistory(server)
 		Expect(history).To(HaveLen(1))
 
@@ -1517,7 +1517,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		makeClusterHealthy(server, "7000000000000000001")
 		expectCondition(server, v1.ConditionClusterReady, metav1.ConditionTrue)
 		expectCondition(server, v1.ConditionContractReady, metav1.ConditionTrue)
-		Expect(publishedContract(server).Spec.Host).To(Equal("camunda-rw." + server.Namespace + ".svc"))
+		Expect(publishedContract(Default, server).Spec.Host).To(Equal("camunda-rw." + server.Namespace + ".svc"))
 		Eventually(func() error {
 			return k8sClient.Get(ctx, key, &cnpgv1.ScheduledBackup{})
 		}, timeout, interval).Should(Succeed())
@@ -1655,7 +1655,7 @@ var _ = Describe("DatabaseServer controller", func() {
 
 			// The contract stands. The endpoint and the credentials are this
 			// server's own, and the server declares no point to roll back to.
-			pitr := publishedContract(server).Spec.PITR
+			pitr := publishedContract(g, server).Spec.PITR
 			g.Expect(pitr).NotTo(BeNil())
 			g.Expect(pitr.Enabled).To(BeFalse())
 			g.Expect(pitr.Recovery).To(Equal(v1.RecoveryModeExternal))
@@ -1696,7 +1696,7 @@ var _ = Describe("DatabaseServer controller", func() {
 
 		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
 		Eventually(func(g Gomega) {
-			g.Expect(publishedContract(server).Spec.PITR.Enabled).To(BeTrue())
+			g.Expect(publishedContract(g, server).Spec.PITR.Enabled).To(BeTrue())
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -2570,7 +2570,7 @@ var _ = Describe("DatabaseServer controller", func() {
 
 		// The contract moved to the recovered server, and the refusal still
 		// stands over it.
-		Expect(publishedContract(server).Spec.Host).
+		Expect(publishedContract(Default, server).Spec.Host).
 			To(Equal(recovered + "-rw." + server.Namespace + ".svc"))
 		Eventually(func(g Gomega) {
 			ready := conditionOf(server, v1.ConditionReady)
