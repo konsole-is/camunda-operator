@@ -88,26 +88,12 @@ type PrepareInput struct {
 // and reports Done once the cluster is there. It puts the suspension hold of
 // the restore on the cluster, suspends the cluster, waits until the brokers are
 // gone, and sets the Camunda version of the backup. The caller adds
-// HoldFinalizer to the restore first. The caller runs it during admission,
-// before it leaves the phase in which the restore has destroyed nothing.
+// HoldFinalizer to the restore first, and runs Prepare during admission, before
+// it leaves the phase in which the restore has destroyed nothing.
 //
-// The order is the safety property, and it is what makes a downgrade safe.
-// Camunda does not support a running cluster that moves backwards: a broker
-// compares the version in its data directory against its own binary at
-// startup, reports a downgrade, and applies no migration. No broker performs
-// that comparison here. The cluster controller refuses a downgrade on its
-// own, and the version apply carries the annotation that sanctions this one.
-// The cluster is suspended before the version changes, so nothing runs while
-// it changes, and the volumes are erased before a broker of the older
-// version starts. The first broker that starts again finds the state of the
-// backup at the version of the backup.
-//
-// The suspension is withdrawn by Resume, and only when this restore is what
+// Resume removes the hold, and withdraws the suspension only when this restore
 // applied it. The version is not withdrawn: the cluster keeps running the
-// version of the backup, which is the point of writing it. The cluster runs
-// that version until another manager takes spec.version over or removes it. A
-// manifest that leaves the field out takes nothing back, because server-side
-// apply removes a field only from the manager that declared it.
+// version of the backup.
 //
 // The step is idempotent, so a caller that re-enters it repeats no write.
 func Prepare(
@@ -290,6 +276,9 @@ func versionTarget(
 	sanctioned := in.Cluster.Annotations[components.AllowVersionDowngradeAnnotation]
 	if in.Cluster.Spec.Version != in.Version ||
 		(in.Target.Version != in.Version && sanctioned != in.Version) {
+		// The version outlives the restore. A manifest that leaves spec.version out
+		// takes nothing back: server-side apply removes a field only from the
+		// manager that declared it.
 		if err := applyVersion(ctx, c, key, in.Cluster.UID, in.Version); err != nil {
 			return Outcome{}, err
 		}
@@ -348,26 +337,12 @@ func WritesVersion(version string) bool {
 	return versionPattern.MatchString(version)
 }
 
-// Resume removes the suspension hold of the restore from its cluster, and
-// withdraws the suspension that this restore applied. It withdraws spec.suspend
-// only when the restore recorded that it suspended the cluster, so a cluster
-// that its owner suspended for reasons of their own stays suspended.
-//
-// The recorded terminal reason decides, the same way it decides for
-// CollectJobs. A completed restore gives the suspension back. A failed
-// restore keeps it: its broker volumes can be empty or half written, and
-// brokers that start over them are worse than a cluster that is down.
-//
-// Finish runs this after it collected the Jobs and before it gives the
-// cluster claim back, and it carries the reason for that order. The pods of
-// those Jobs hold the broker volumes, and this call is what lets a broker ask
-// for one.
-//
-// The withdrawal applies an object without spec.suspend, so server-side apply
-// removes the field that this manager owns and leaves the value of any other
-// manager in place. The cluster is read first, and the apply carries its UID:
-// without it, an apply against a cluster that is already gone would put an
-// empty CamundaCluster in its place.
+// Resume gives the cluster back once the restore completed: it removes the
+// suspension hold of the restore, and withdraws spec.suspend when the restore
+// recorded that it suspended the cluster. A cluster that its owner suspended
+// stays suspended, and a failed restore keeps both its hold and the
+// suspension. Call it only after CollectJobs reports Done, because the pods of
+// the Jobs hold the broker volumes.
 func Resume(
 	ctx context.Context,
 	c client.Client,
@@ -376,6 +351,8 @@ func Resume(
 	p *v1.RestoreProgress,
 	cluster types.NamespacedName,
 ) error {
+	// The broker volumes of a failed restore can be half written, and brokers
+	// that start over them are worse than a cluster that is down.
 	if p.TerminalReason != v1.ReasonCompleted {
 		return nil
 	}

@@ -14,11 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// This file stops the workloads of a suspended cluster while
-// its pre-check fails. A failed pre-check leaves nothing to render from, so the
-// suspended render never runs. Without this, the instruction of the user waits
-// for a reference that it does not depend on. A broken Secret is exactly when a
-// user reaches for suspend.
+// This file stops the workloads of a cluster that spec.suspend or a
+// suspension hold suspends while its pre-check fails. A failed pre-check
+// leaves nothing to render from, so the suspended render never runs. Without
+// this, the suspension waits for a reference that it does not depend on. A
+// broken Secret is exactly when a user reaches for suspend.
 
 package camundacluster
 

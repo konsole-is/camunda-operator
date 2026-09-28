@@ -144,7 +144,7 @@ func holdTarget(
 	return nil
 }
 
-// holdKey is the suspension hold annotation of one restore.
+// holdKey is the suspension hold annotation key of one restore.
 func holdKey(owner client.Object) string {
 	return v1.SuspensionHoldPrefix + string(owner.GetUID())
 }

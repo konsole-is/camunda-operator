@@ -370,9 +370,7 @@ func (w *world) suspend(suspended bool) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// overrideHolds clears spec.suspend of the target and removes every
-// suspension hold from it, which is what a user does to start a held target
-// on purpose.
+// overrideHolds clears spec.suspend and every suspension hold of the target.
 func (w *world) overrideHolds() {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
@@ -486,8 +484,8 @@ func clusterSuspended(g Gomega, w *world) bool {
 	return cluster.Spec.Suspend
 }
 
-// holdOf returns the suspension hold of the restore on the target, and
-// whether the target carries it.
+// holdOf returns the reason of the restore's hold on the target, and whether
+// the target carries it.
 func holdOf(g Gomega, w *world, lrr *v1.LogicalRestoreRDBMS) (string, bool) {
 	var cluster v1.CamundaCluster
 	g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())

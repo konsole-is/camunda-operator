@@ -504,8 +504,8 @@ type CamundaClusterSpec struct {
 	// +optional
 	Monitoring *ClusterMonitoringSpec `json:"monitoring,omitempty"`
 	// Suspend scales every workload to zero and keeps the data. Defaults to
-	// false. A suspension hold annotation on the cluster also suspends it,
-	// whatever this field says. See SuspensionHoldPrefix.
+	// false. An annotation with the prefix suspension-hold.camunda.io/ also
+	// suspends the cluster, whatever this field says.
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
 	// Pause halts the reconciliation of this cluster entirely and leaves the
@@ -644,7 +644,7 @@ const SuspensionHoldPrefix = "suspension-hold.camunda.io/"
 
 // SuspensionHold is one suspension hold annotation of a cluster.
 type SuspensionHold struct {
-	// Key is the annotation key.
+	// Key is the whole annotation key, prefix included.
 	Key string
 	// Reason is the annotation value.
 	Reason string
@@ -670,9 +670,9 @@ func (in *CamundaCluster) SuspendRequested() bool {
 }
 
 // Suspended reports whether the operator scales every workload of the cluster
-// to zero: spec.suspend or a suspension hold is set, or Ready carries one of
-// the suspendedReadyReasons. An extension attached to the cluster follows
-// this, not spec.suspend alone.
+// to zero: spec.suspend or a suspension hold is set, or Ready reports
+// StorageAlreadyAttached or WaitingForHandover. An extension attached to the
+// cluster follows this, not spec.suspend alone.
 func (in *CamundaCluster) Suspended() bool {
 	if in.SuspendRequested() {
 		return true

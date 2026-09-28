@@ -49,8 +49,7 @@ func (w *prepareWorld) liveRestore(t *testing.T) *v1.PointInTimeRestore {
 	return &current
 }
 
-// The hold comes before every other write, so a cluster that somebody
-// unsuspends at any later point stays down.
+// The hold comes first, so a cluster that somebody unsuspends later stays down.
 func TestPrepareHoldsTheClusterBeforeAnythingElse(t *testing.T) {
 	t.Parallel()
 
@@ -71,8 +70,7 @@ func TestPrepareHoldsTheClusterBeforeAnythingElse(t *testing.T) {
 	)
 }
 
-// Each restore applies its hold under a field manager of its own, so the
-// apply of one restore never removes the hold of another.
+// The apply of one restore never removes the hold of another.
 func TestHoldManagerIsPerRestore(t *testing.T) {
 	t.Parallel()
 
@@ -84,8 +82,6 @@ func TestHoldManagerIsPerRestore(t *testing.T) {
 	assert.Equal(t, v1.SuspensionHoldPrefix+"first", holdKey(first))
 }
 
-// A completed restore removes its hold. The removal applies an object without
-// the annotation under the manager of the hold.
 func TestResumeRemovesTheHoldOfACompletedRestore(t *testing.T) {
 	t.Parallel()
 
@@ -101,8 +97,7 @@ func TestResumeRemovesTheHoldOfACompletedRestore(t *testing.T) {
 	assert.Equal(t, clusterUID, holds[0].cluster.UID)
 }
 
-// A failed restore keeps its hold, as it keeps the suspension, so a user who
-// clears spec.suspend does not start brokers over half-written volumes.
+// Brokers must not start over the half-written volumes of a failed restore.
 func TestResumeKeepsTheHoldOfAFailedRestore(t *testing.T) {
 	t.Parallel()
 
@@ -116,7 +111,6 @@ func TestResumeKeepsTheHoldOfAFailedRestore(t *testing.T) {
 	assert.Empty(t, *w.applies)
 }
 
-// The finalizer goes on once, before the restore can write a hold.
 func TestAddHoldFinalizerAddsItOnce(t *testing.T) {
 	t.Parallel()
 
@@ -129,8 +123,7 @@ func TestAddHoldFinalizerAddsItOnce(t *testing.T) {
 	assert.Equal(t, []string{HoldFinalizer}, w.liveRestore(t).Finalizers)
 }
 
-// A deleted restore removes its hold and then its finalizer. The suspension
-// that it applied through spec.suspend stays.
+// The suspension that the restore applied through spec.suspend stays.
 func TestFinalizeHoldRemovesTheHoldAndThenTheFinalizer(t *testing.T) {
 	t.Parallel()
 
@@ -147,7 +140,6 @@ func TestFinalizeHoldRemovesTheHoldAndThenTheFinalizer(t *testing.T) {
 	assert.False(t, controllerutil.ContainsFinalizer(w.liveRestore(t), HoldFinalizer))
 }
 
-// A restore whose cluster is gone has no hold to remove, and it still lets go.
 func TestFinalizeHoldLetsGoWhenTheClusterIsGone(t *testing.T) {
 	t.Parallel()
 
