@@ -360,6 +360,25 @@ func scan(file string, src []byte) (map[string]decl, []comment, error) {
 			bodyLen: bodyLen,
 		}
 	}
+	var addMembers func(owner string, t ast.Expr)
+	addMembers = func(owner string, t ast.Expr) {
+		for _, fld := range members(t) {
+			names := make([]string, 0, max(1, len(fld.Names)))
+			for _, n := range fld.Names {
+				names = append(names, n.Name)
+			}
+			if len(names) == 0 {
+				names = []string{typeName(fld.Type)}
+			}
+			for _, n := range names {
+				if n == "" {
+					continue
+				}
+				add("field "+owner+"."+n, n, fld.Doc, 0)
+				addMembers(owner+"."+n, fld.Type)
+			}
+		}
+	}
 
 	add("package "+f.Name.Name, "", f.Doc, 0)
 	for _, d := range f.Decls {
@@ -376,11 +395,7 @@ func scan(file string, src []byte) (map[string]decl, []comment, error) {
 				switch s := s.(type) {
 				case *ast.TypeSpec:
 					add("type "+s.Name.Name, s.Name.Name, s.Doc, 0)
-					for _, fld := range members(s.Type) {
-						for _, n := range fld.Names {
-							add("field "+s.Name.Name+"."+n.Name, n.Name, fld.Doc, 0)
-						}
-					}
+					addMembers(s.Name.Name, s.Type)
 				case *ast.ValueSpec:
 					for _, n := range s.Names {
 						add("value "+n.Name, n.Name, s.Doc, 0)
@@ -408,24 +423,36 @@ func members(t ast.Expr) []*ast.Field {
 		return t.Fields.List
 	case *ast.InterfaceType:
 		return t.Methods.List
+	case *ast.StarExpr:
+		return members(t.X)
+	case *ast.ArrayType:
+		return members(t.Elt)
 	}
 	return nil
+}
+
+// typeName returns the bare name of a named type, or "" for a type that has no name.
+func typeName(t ast.Expr) string {
+	switch t := t.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.SelectorExpr:
+		return t.Sel.Name
+	case *ast.StarExpr:
+		return typeName(t.X)
+	case *ast.IndexExpr:
+		return typeName(t.X)
+	case *ast.IndexListExpr:
+		return typeName(t.X)
+	}
+	return ""
 }
 
 func funcKey(d *ast.FuncDecl) string {
 	if d.Recv == nil || len(d.Recv.List) == 0 {
 		return "func " + d.Name.Name
 	}
-	var recv bytes.Buffer
-	switch t := d.Recv.List[0].Type.(type) {
-	case *ast.StarExpr:
-		if id, ok := t.X.(*ast.Ident); ok {
-			recv.WriteString(id.Name)
-		}
-	case *ast.Ident:
-		recv.WriteString(t.Name)
-	}
-	return "func (" + recv.String() + ") " + d.Name.Name
+	return "func (" + typeName(d.Recv.List[0].Type) + ") " + d.Name.Name
 }
 
 func genKey(d *ast.GenDecl) string {

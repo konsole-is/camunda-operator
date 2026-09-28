@@ -338,3 +338,43 @@ func TestDiffFileReportsTheLineOfAChangedDuplicateComment(t *testing.T) {
 		})
 	}
 }
+
+func TestDiffFileFlagsGrownMemberDocs(t *testing.T) {
+	tests := []struct {
+		name     string
+		old, cur string
+		wantText string
+	}{
+		{
+			name:     "embedded field",
+			old:      "type T struct {\n\t// Base is shared.\n\t*Base\n}\n",
+			cur:      "type T struct {\n\t// Base is shared.\n\t// It is never nil.\n\t*Base\n}\n",
+			wantText: "doc of field T.Base GREW from 1 to 2",
+		},
+		{
+			name: "field of a nested struct",
+			old:  "type T struct {\n\tInner struct {\n\t\t// X is the count.\n\t\tX int\n\t}\n}\n",
+			cur: "type T struct {\n\tInner struct {\n\t\t// X is the count.\n" +
+				"\t\t// It is never negative.\n\t\tX int\n\t}\n}\n",
+			wantText: "doc of field T.Inner.X GREW from 1 to 2",
+		},
+		{
+			name: "method of one of two generic types",
+			old: "// M runs.\nfunc (b *B[T]) M() {\n\tg()\n}\n\n" +
+				"// M runs.\nfunc (a A[K, V]) M() {\n\tg()\n}\n",
+			cur: "// M runs.\n// It runs twice.\nfunc (b *B[T]) M() {\n\tg()\n}\n\n" +
+				"// M runs.\nfunc (a A[K, V]) M() {\n\tg()\n}\n",
+			wantText: "doc of func (B) M GREW from 1 to 2",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := diffFile("p.go", src(tt.old), src(tt.cur))
+
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			assert.True(t, got[0].fatal)
+			assert.Contains(t, got[0].text, tt.wantText)
+		})
+	}
+}
