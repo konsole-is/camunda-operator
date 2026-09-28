@@ -158,11 +158,11 @@ const (
 	KeyPrimaryBackupCheckpointInterval Key = "camunda.data.primary-storage.backup.checkpoint-interval"
 	// KeyPrimaryBackupRetentionWindow is
 	// camunda.data.primary-storage.backup.retention.window, an ISO 8601
-	// duration (BackupRetentionCfg.java).
+	// duration (BackupSchedulerRetentionCfg.java).
 	KeyPrimaryBackupRetentionWindow Key = "camunda.data.primary-storage.backup.retention.window"
 	// KeyPrimaryBackupRetentionCleanupSchedule is
 	// camunda.data.primary-storage.backup.retention.cleanup-schedule: an ISO
-	// 8601 duration, a CRON expression, or none (BackupRetentionCfg.java).
+	// 8601 duration, a CRON expression, or none (BackupSchedulerRetentionCfg.java).
 	KeyPrimaryBackupRetentionCleanupSchedule Key = "camunda.data.primary-storage.backup.retention.cleanup-schedule"
 
 	// KeyPrimaryBackupS3BucketName is camunda.data.primary-storage.backup.s3.bucket-name

@@ -371,9 +371,7 @@ func (w *world) rollBrokerImage(version string) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// overrideHolds clears spec.suspend of the target and removes every
-// suspension hold from it, which is what a user does to start a held target
-// on purpose.
+// overrideHolds clears spec.suspend and every suspension hold of the target.
 func (w *world) overrideHolds() {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {

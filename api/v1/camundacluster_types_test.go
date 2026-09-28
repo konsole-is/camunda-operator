@@ -101,8 +101,7 @@ func TestCamundaClusterSuspended(t *testing.T) {
 	}
 }
 
-// Only annotations under the prefix are holds, and they come back sorted by
-// key so that a message that names them is stable.
+// Only annotations under the prefix are holds, and they come back sorted by key.
 func TestSuspensionHoldsReadsThePrefixOnly(t *testing.T) {
 	cluster := v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
 		v1.SuspensionHoldPrefix + "b": "second",

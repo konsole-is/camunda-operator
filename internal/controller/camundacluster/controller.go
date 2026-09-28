@@ -150,11 +150,11 @@ const defaultRetryInterval = 30 * time.Second
 // deleted records one Paused event and writes nothing else, status included.
 //
 // Ready is True only when every component the cluster needs is True, and its
-// reason otherwise comes from conditions.Aggregate. A cluster with a suspension
-// hold reports SuspensionHeld. A cluster whose backend
-// another cluster holds reports StorageAlreadyAttached instead. A cluster that
-// holds the backend reports WaitingForHandover while pods of another cluster,
-// or a writer for another cluster, still write it.
+// reason otherwise comes from conditions.Aggregate. A cluster with a
+// suspension hold reports SuspensionHeld instead. Otherwise, a cluster whose
+// backend another cluster holds reports StorageAlreadyAttached, and a cluster
+// that holds the backend reports WaitingForHandover while pods of another
+// cluster, or a writer for another cluster, still write it.
 func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
 	var cluster v1.CamundaCluster
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &cluster); err != nil {

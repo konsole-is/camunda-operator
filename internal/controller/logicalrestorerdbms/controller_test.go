@@ -305,8 +305,6 @@ var _ = Describe("LogicalRestoreRDBMS suspension of its target", func() {
 		}, "1s", interval).Should(Succeed())
 	})
 
-	// A cleared spec.suspend does not start the target while the restore
-	// runs: the hold stays, before the pg_restore Job exists and after.
 	It("keeps its hold when somebody clears spec.suspend of the target", func() {
 		w := newWorld()
 		backup := createBackup(w)
@@ -336,8 +334,7 @@ var _ = Describe("LogicalRestoreRDBMS suspension of its target", func() {
 		expectPhase(lrr, v1.LogicalRestoreRestoringSecondaryStorage)
 	})
 
-	// Deleting a restore is how a user lets go of the target. The restore
-	// removes its hold. The suspension it applied through spec.suspend stays.
+	// Deleting a restore is how a user lets go of the target.
 	It("removes its hold when it is deleted, and keeps the target suspended", func() {
 		w := newWorld(func(cluster *v1.CamundaCluster) { cluster.Spec.Suspend = false })
 		backup := createBackup(w)

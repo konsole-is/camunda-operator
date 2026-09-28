@@ -200,8 +200,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	// The Jobs of a restore carry a controller reference to it, so the garbage
-	// collector removes them with the restore. The finalizer is for the
-	// suspension hold on the cluster.
+	// collector removes them with the restore.
 	if !lrr.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, restore.FinalizeHold(ctx, r.Client, r.APIReader, &lrr, lrr.Spec.TargetClusterRef.Name)
 	}
