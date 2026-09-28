@@ -264,18 +264,9 @@ func (res *resolver) resolveStorage(
 	return &binding, nil
 }
 
-// gateOnStorageClaim parks the workloads of out unless cluster alone writes
-// the backend that key names: it must hold the storage claim, and no pod of
-// another cluster may still carry that claim. Either wait sets
-// AwaitsBackendClaim, because nothing reports the end of one to this
-// controller. A cluster whose own pods already write the backend is past the
-// takeover, and the pods of every namespace stay unread.
-//
-// The claim alone is not enough. The Ready of the cluster carries the state of
-// the pass that read the claim, so a storageRef edit reaches this controller
-// before the reason does, and the cluster takes the claim and records the pods
-// it waits for inside one pass. A read in between finds the claim held and the
-// previous reason.
+// gateOnStorageClaim parks the workloads of out and sets out.AwaitsBackendClaim,
+// which no watch clears, unless cluster holds the storage claim of the backend
+// that key names and nothing but cluster and this instance still writes it.
 func (r *Reconciler) gateOnStorageClaim(
 	ctx context.Context,
 	key string,
@@ -320,6 +311,9 @@ func (r *Reconciler) gateOnStorageClaim(
 		return nil
 	}
 
+	// The cluster's Ready lags its claim by a pass, so a held claim does not
+	// mean the handover is over.
+	//
 	// The pods of the cluster are its own, and so are the pods of this
 	// instance. A pod of a deleted instance of the same cluster is neither:
 	// it carries the cluster UID and an instance UID of its own, it may
@@ -338,7 +332,13 @@ func (r *Reconciler) gateOnStorageClaim(
 	if err != nil {
 		return err
 	}
-	if len(writing) > 0 {
+	// A restore into another cluster writes the backend with no pod of that
+	// cluster, so the pods alone do not show it.
+	restores, err := clustercomponents.RestoresOnBackend(ctx, r.APIReader, key, cluster.UID)
+	if err != nil {
+		return err
+	}
+	if len(writing) > 0 || len(restores) > 0 {
 		out.Input.Suspended = true
 		out.AwaitsBackendClaim = true
 	}

@@ -349,6 +349,27 @@ var _ = Describe("LogicalRestoreRDBMS cluster claim", func() {
 		Expect(jobs.Items).To(BeEmpty())
 	})
 
+	It("holds a restore whose backend another cluster holds, and starts once the target holds it", func() {
+		w := newWorld()
+		other := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: w.namespace, Name: "other", UID: "uid-other"},
+		}
+		w.holdBackend(other)
+		backup := createBackup(w)
+
+		lrr := createRestore(w, backup.Name)
+		reached := expectReason(lrr, v1.LogicalRestorePending, v1.ReasonStorageAlreadyAttached)
+		Expect(readyCondition(reached).Message).To(ContainSubstring(w.namespace + "/other"))
+		Expect(reached.Status.Backend).To(BeEmpty(), "the backend is pinned when the restore leaves Pending")
+
+		w.holdBackend(w.cluster)
+		Eventually(func(g Gomega) {
+			current := latest(g, lrr)
+			g.Expect(current.Status.Phase).NotTo(Equal(v1.LogicalRestorePending))
+			g.Expect(current.Status.Backend).NotTo(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// Nothing bounds the hold, and no spec change ends it. No watch of this
 	// controller covers a holder that the restore does not reference, so the
 	// retry timer is what takes the claim over once the holder is terminal.
@@ -552,7 +573,7 @@ var _ = Describe("LogicalRestoreRDBMS of the logical database", func() {
 		Expect(job.Spec.Template.Spec.Containers).To(HaveLen(1))
 		container := job.Spec.Template.Spec.Containers[0]
 		Expect(envValue(container, "PGDATABASE")).To(Equal("camunda"))
-		Expect(envValue(container, "PGHOST")).To(Equal("postgres.databases.svc"))
+		Expect(envValue(container, "PGHOST")).To(Equal(w.server.Spec.Host))
 		// The backup role that wrote the archive owns none of the objects it
 		// dumped, and pg_restore --clean drops every one of them, so a restore
 		// that connected as the backup role would fail on every DROP.

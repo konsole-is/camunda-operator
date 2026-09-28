@@ -122,6 +122,7 @@ func input() JobInput {
 		Database:           "camunda",
 		ObjectKey:          testObjectKey,
 		CLIImage:           "ghcr.io/konsole-is/camunda-operator-cli:0.1.0",
+		StorageClaim:       "camunda-storage-0123456789abcdef0123456789abcdef01234567",
 	}
 }
 
@@ -251,6 +252,25 @@ func TestBuildJobCarriesTheOwnerLabelsAndTheUID(t *testing.T) {
 	assert.Equal(t, "my-cluster-ns", job.Namespace)
 	assert.Equal(t, "my-cluster-restore-pg-restore", job.Name)
 	assert.Empty(t, job.OwnerReferences, "the caller sets the controller reference")
+}
+
+func TestBuildJobPodCarriesTheStorageClaimAndNoClusterUID(t *testing.T) {
+	t.Parallel()
+
+	in := input()
+	in.Pod = &v1.DumpPodSpec{PodLabels: map[string]string{
+		labels.StorageClaimKey: "user-value",
+		labels.ClusterUIDKey:   "uid-of-the-target",
+	}}
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+
+	// The pod carries the claim, and a user label cannot hide it. It carries
+	// no cluster UID, not even from a user label, or the target counts it as
+	// its own.
+	assert.Equal(t, labels.OwnerName(in.StorageClaim), job.Spec.Template.Labels[labels.StorageClaimKey])
+	assert.NotContains(t, job.Spec.Template.Labels, labels.ClusterUIDKey)
+	assert.NotContains(t, job.Labels, labels.StorageClaimKey, "the gate reads the template of a Job")
 }
 
 func TestBuildJobRunsUnderTheClusterServiceAccount(t *testing.T) {
@@ -462,4 +482,35 @@ func TestBuildJobPodsMatchTheManagedSelector(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, labels.ManagedSelector().Matches(k8slabels.Set(job.Spec.Template.Labels)))
+}
+
+func TestPodOfRestore(t *testing.T) {
+	t.Parallel()
+
+	restore := &v1.LogicalRestoreRDBMS{ObjectMeta: metav1.ObjectMeta{UID: "uid-restore"}}
+	cases := map[string]struct {
+		podLabels map[string]string
+		own       bool
+	}{
+		"the pg_restore pod": {
+			podLabels: map[string]string{RestoreUIDLabel: "uid-restore"},
+			own:       true,
+		},
+		"a pod of another restore": {
+			podLabels: map[string]string{RestoreUIDLabel: "uid-other"},
+		},
+		// A user pod label can copy the restore UID onto a cluster pod. The
+		// cluster UID that the operator sets still marks it as a cluster pod.
+		"a cluster pod that carries the restore UID": {
+			podLabels: map[string]string{RestoreUIDLabel: "uid-restore", labels.ClusterUIDKey: "uid-other-cluster"},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.own, PodOfRestore(tc.podLabels, restore))
+		})
+	}
 }

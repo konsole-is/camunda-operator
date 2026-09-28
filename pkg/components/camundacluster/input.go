@@ -65,14 +65,17 @@ type StorageHolder struct {
 	Backend string
 }
 
-// StorageHandover is the wait for the pods of other clusters that still write
-// the backend this cluster is on.
+// StorageHandover is the wait for what else still writes the backend this
+// cluster is on.
 type StorageHandover struct {
 	// Backend is the claim key of the backend, see StorageClaimKey.
 	Backend string
-	// Pods are the pods of other clusters that carry the storage claim, as
-	// "namespace/name" paths.
+	// Pods are the pods and workloads of other clusters on the storage claim,
+	// see OtherPodsOnClaim.
 	Pods []string
+	// Restores are the running restores into other clusters on the backend,
+	// see RestoresOnBackend.
+	Restores []string
 }
 
 // RDBMSStorage is the DatabaseConfig and DatabaseServerConfig chain of an

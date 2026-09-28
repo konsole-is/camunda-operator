@@ -24,11 +24,13 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -71,6 +73,10 @@ const (
 	// so the key is the name alone. No other controller reads presets, so
 	// this controller owns the index.
 	presetSecretRefsField = "camundaclusterpreset.spec.secretRefs"
+	// waitingForHandoverField holds "true" for a cluster whose Ready reports
+	// WaitingForHandover, so the end of a restore wakes the clusters that wait
+	// and no other.
+	waitingForHandoverField = "camundacluster.status.waitingForHandover"
 )
 
 // indexers are the index functions of the fields above.
@@ -105,6 +111,13 @@ var indexers = map[string]client.IndexerFunc{
 			return nil
 		}
 		return []string{refindex.NamespacedKey(cluster.Namespace, cluster.Spec.Auth.ClientSecretRef.Name)}
+	},
+	waitingForHandoverField: func(o client.Object) []string {
+		ready := meta.FindStatusCondition(o.(*v1.CamundaCluster).Status.Conditions, v1.ConditionReady)
+		if ready == nil || ready.Reason != v1.ReasonWaitingForHandover {
+			return nil
+		}
+		return []string{"true"}
 	},
 }
 
@@ -206,6 +219,16 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			enqueueForStorageClaim(),
 			builder.WithPredicates(predicate.NewPredicateFuncs(isStorageClaim)),
 		).
+		Watches(
+			&v1.LogicalRestoreElasticsearch{},
+			r.enqueueWaitingForHandover(),
+			builder.WithPredicates(restoreEnds()),
+		).
+		Watches(
+			&v1.LogicalRestoreRDBMS{},
+			r.enqueueWaitingForHandover(),
+			builder.WithPredicates(restoreEnds()),
+		).
 		Named(controllerName).
 		Complete(r)
 }
@@ -229,6 +252,43 @@ func enqueueForStorageClaim() handler.EventHandler {
 
 		return []reconcile.Request{{NamespacedName: holder.NamespacedName}}
 	})
+}
+
+// enqueueWaitingForHandover maps the end of a restore to every cluster that
+// reports WaitingForHandover. A restore does not name the clusters that wait
+// for it, so the map takes them all.
+func (r *CamundaClusterReconciler) enqueueWaitingForHandover() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, _ client.Object) []reconcile.Request {
+		set := requestSet{}
+		set.addList(ctx, r.Client, client.MatchingFields{waitingForHandoverField: "true"})
+		return set.requests()
+	})
+}
+
+// terminal is what the two logical restore kinds share for restoreEnds.
+type terminal interface {
+	Terminal() bool
+}
+
+// restoreEnds passes the events after which a restore writes no backend any
+// more: it reached a terminal phase, or it was deleted before it did.
+func restoreEnds() predicate.Funcs {
+	return predicate.Funcs{
+		CreateFunc: func(event.CreateEvent) bool { return false },
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			before, ok := e.ObjectOld.(terminal)
+			if !ok {
+				return false
+			}
+			after, ok := e.ObjectNew.(terminal)
+			return ok && !before.Terminal() && after.Terminal()
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			restore, ok := e.Object.(terminal)
+			return ok && !restore.Terminal()
+		},
+		GenericFunc: func(event.GenericEvent) bool { return false },
+	}
 }
 
 // isStorageClaim answers whether a Lease is one of the storage claims. The
