@@ -75,6 +75,15 @@ func (r *Reconciler) restoreDatabase(
 	if failure != nil {
 		return r.holdStarted(lrr, failure), nil
 	}
+	// resolveDatabase read the chain again after resolve checked the backend,
+	// and the Job writes the database of this second read.
+	backend, failure := restore.DatabaseBackend(resolved.storage, database.config, database.server)
+	if failure == nil {
+		failure = restore.MovedBackend(resolved.cluster, backend, lrr.Status.Backend)
+	}
+	if failure != nil {
+		return r.holdStarted(lrr, failure), nil
+	}
 
 	job, err := components.BuildJob(components.JobInput{
 		Restore:            lrr,
@@ -93,6 +102,7 @@ func (r *Reconciler) restoreDatabase(
 		Database:           database.config.Spec.DatabaseName,
 		ObjectKey:          resolved.backup.ObjectKey,
 		CLIImage:           r.opts.CLIImage,
+		StorageClaim:       camundacluster.StorageClaimSchema().LeaseName(lrr.Status.Backend),
 	})
 	if err != nil {
 		// The builder answers a pod block that it cannot render. No retry

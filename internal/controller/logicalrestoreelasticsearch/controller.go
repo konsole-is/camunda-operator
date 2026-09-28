@@ -96,9 +96,12 @@ const (
 	defaultMidRunGrace = 10 * time.Minute
 )
 
-// Options tunes a Reconciler. The zero value is the production configuration.
-// Tests shrink the intervals.
+// Options tunes a Reconciler. Only ClaimNamespace is required. Every other
+// field has a production default, and tests shrink the intervals.
 type Options struct {
+	// ClaimNamespace holds the storage claim Leases of every CamundaCluster.
+	// SetupWithManager refuses an empty value.
+	ClaimNamespace string
 	// PollInterval paces a running phase. Zero means five seconds.
 	PollInterval time.Duration
 	// RetryInterval paces a hold that no watch resolves. Zero means thirty
@@ -158,6 +161,7 @@ func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs;objectstorageconfigs;logicalbackupelasticsearches,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apps,resources=replicasets;deployments,verbs=list
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps;secrets,verbs=get;list;watch
@@ -335,6 +339,9 @@ func (r *Reconciler) fail(lres *v1.LogicalRestoreElasticsearch, reason, message 
 // clusters they name, and the backups they read. A suspend flip and a backup
 // that reaches Completed both wake a waiting restore without a timer.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.opts.ClaimNamespace == "" {
+		return errors.New("the namespace of the storage claim Leases is required")
+	}
 	if r.EventRecorder == nil {
 		r.EventRecorder = mgr.GetEventRecorder(controllerName)
 	}

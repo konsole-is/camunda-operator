@@ -61,6 +61,36 @@ type ElasticsearchStorage struct {
 	// +kubebuilder:validation:MaxLength=253
 	// +optional
 	SnapshotRepository string `json:"snapshotRepository,omitempty"`
+	// NodeCount is the number of data nodes of the Elasticsearch cluster. An
+	// ElasticsearchCluster fills it in the contract it produces. Set it by
+	// hand for an Elasticsearch cluster that this operator does not manage.
+	// A consumer that sets no index replica count of its own gets 0 replicas
+	// on one node and 1 replica on two or more nodes. Without a node count,
+	// the consumer keeps the default of the Camunda application.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	NodeCount *int32 `json:"nodeCount,omitempty"`
+}
+
+// IndexReplicas returns the replica count of each index that a consumer
+// creates on this backend. requested is the setting of the consumer, and it
+// wins when it is set. The result is nil when neither requested nor NodeCount
+// is set.
+func (s *ElasticsearchStorage) IndexReplicas(requested *int32) *int32 {
+	if requested != nil {
+		return new(*requested)
+	}
+	if s.NodeCount == nil {
+		return nil
+	}
+	return new(min(1, *s.NodeCount-1))
+}
+
+// ReplicasExceedNodes reports whether NodeCount is too small to place
+// replicas. It is false when NodeCount is not set.
+func (s *ElasticsearchStorage) ReplicasExceedNodes(replicas int32) bool {
+	// Elasticsearch never puts a replica on the node of its primary.
+	return s.NodeCount != nil && replicas > *s.NodeCount-1
 }
 
 // RDBMSStorage holds relational database backend details.

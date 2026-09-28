@@ -203,6 +203,12 @@ func itHandsTheStorageBackendOver() {
 			expectReadyFailure(g, scWaiting, v1.ReasonInvalidReference, esNamespace+"/"+scContract)
 			expectBrokerReplicas(g, brokerOfWaiting, 1)
 		}, scHoldInterval, scHoldSample).Should(Succeed())
+
+		// One node stays Ready only when the indices of both clusters carry no replica.
+		By("keeping the ElasticsearchCluster Ready after both clusters wrote to it")
+		Eventually(func(g Gomega) {
+			expectReady(g, esResource, esName, esNamespace, v1.ReasonHealthy)
+		}, esReadyTimeout, 5*time.Second).Should(Succeed())
 	})
 }
 

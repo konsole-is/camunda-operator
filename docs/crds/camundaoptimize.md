@@ -70,7 +70,7 @@ The operator creates no Ingress and no route from outside the Kubernetes cluster
 
 ## The exporter settings on the cluster
 
-The operator adds five entries to `spec.zeebe.extraEnv` of the referenced cluster. Three carry a value. The two credentials carry a reference to the Secret that `credentialsSecretRef` of the storage contract names:
+The operator adds five or six entries to `spec.zeebe.extraEnv` of the referenced cluster. All carry a value, except the two credentials. These carry a reference to the Secret that `credentialsSecretRef` of the storage contract names:
 
 | Entry | What it carries |
 | --- | --- |
@@ -79,22 +79,44 @@ The operator adds five entries to `spec.zeebe.extraEnv` of the referenced cluste
 | `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PREFIX` | `zeebe-record`, as a value. |
 | `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_USERNAME` | A `secretKeyRef` to the username key. |
 | `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD` | A `secretKeyRef` to the password key. |
+| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_NUMBEROFREPLICAS` | The [index replica count](#index-replicas), as a value. Only when a count applies. |
 
 No credential is written to the `CamundaCluster`. The kubelet reads the Secret and gives the value to the broker container. So the password never appears in the spec of the cluster, and rotating the Secret does not change these entries.
 
-It owns those five entries, under its own field manager. Every other entry on the list stays as it is, whether you or a GitOps tool put it there. The operator changes nothing else on the cluster.
+It owns those entries, under its own field manager. Every other entry on the list stays as it is, whether you or a GitOps tool put it there. The operator changes nothing else on the cluster.
 
 These entries are part of the Zeebe pod template. Attaching Optimize therefore rolls the Zeebe pods of the cluster, and so does deleting it. Plan the first attach like any other cluster change.
 
 The index prefix is `zeebe-record` and there is no field for it. The operator sets both sides, the exporter on the cluster and the importer of Optimize, so the two always agree.
 
-One case needs your attention. The cluster can already carry an entry under one of the five names above. Two outcomes are possible.
+One case needs your attention. The cluster can already carry an entry under one of the names above. Two outcomes are possible.
 
 Your entry can supply a literal value where the operator supplies a Secret reference, or the reverse. `Ready` then reports `ExporterConflict`, and the message names the entry. The operator reads the Elasticsearch password from a Secret, so a literal password under that name collides with it. Delete your entry from the cluster. The operator then applies its own.
 
-If your entry supplies its value the same way as the operator, it is not a conflict. The operator takes the entry over and its value wins. A GitOps tool that also manages that entry fights the operator for it, so remove those five names from what your tool manages.
+If your entry supplies its value the same way as the operator, it is not a conflict. The operator takes the entry over and its value wins. A GitOps tool that also manages that entry fights the operator for it, so remove those names from what your tool manages.
 
-The entries change only when the storage contract of the cluster changes, such as a new Elasticsearch endpoint. Rotating the password behind the Secret does not change them, so it does not roll the Zeebe pods.
+The entries change only when the storage contract of the cluster changes, such as a new Elasticsearch endpoint, or when the index replica count changes. Rotating the password behind the Secret does not change them, so it does not roll the Zeebe pods.
+
+## Index replicas
+
+`spec.indexReplicas` sets the number of replicas of each Optimize index. It also sets the replicas of the `zeebe-record` indices that the exporter of the cluster writes for Optimize.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaOptimize
+metadata:
+  name: my-cluster-optimize
+  namespace: my-cluster-ns
+spec:
+  indexReplicas: 0
+  # ... the rest of your Optimize
+```
+
+When you do not set it, the node count of the [SecondaryStorageConfig](secondarystorageconfig.md#node-count) of the cluster gives the count. One node gives 0 replicas. Two or more nodes give 1 replica. Without a node count, Optimize and the exporter keep their own defaults. The count of Optimize does not follow [`indexReplicas`](camundacluster.md#index-replicas) of the cluster. Each one sets its own count.
+
+If you set a count that the node count cannot place, Optimize runs with it. The indices then stay at yellow health, and Optimize records the Warning event `IndexReplicasExceedNodes`.
+
+Optimize applies the count to its existing indices each time it starts. The exporter applies it to the `zeebe-record` indices that it creates after the change. A `zeebe-record` index that exists already keeps its count. A change of the count restarts the Optimize pods and the Zeebe pods of the cluster.
 
 ## One Optimize for one cluster
 
@@ -161,7 +183,7 @@ The effective version of the cluster is `spec.version` of the `CamundaCluster`, 
 
 The importer connects to Elasticsearch directly. It does not go through the orchestration cluster, so nothing stops it when that cluster stops. The operator stops it instead, with the cluster.
 
-`spec.suspend` on the referenced `CamundaCluster` therefore reaches the Optimize workloads too. The operator scales the webapp and the importer to zero with the workloads of the cluster. It starts them again when you clear the field and the checks of this instance pass. `suspend` means "stop everything attached to this cluster", not "stop the workloads of this cluster". The operator also suspends a cluster on its own, in two states. One is another cluster holding the storage claim of its backend. The other is a wait for the pods of another cluster to leave that backend. The Optimize workloads follow both.
+`spec.suspend` on the referenced `CamundaCluster` therefore reaches the Optimize workloads too. The operator scales the webapp and the importer to zero with the workloads of the cluster. It starts them again when you clear the field and the checks of this instance pass. `suspend` means "stop everything attached to this cluster", not "stop the workloads of this cluster". The operator also suspends a cluster on its own, in two states. One is another cluster holding the storage claim of its backend. The other is a wait for the pods of another cluster, or a restore into another cluster, to stop writing that backend. The Optimize workloads follow both.
 
 The workloads also stay at zero while the cluster does not hold the storage claim of its backend, see [CamundaCluster](camundacluster.md#secondary-storage). A cluster that is parked, or that waits for a handover, never has an importer running beside it. An instance that already runs records the event `StorageClaimAwaited` when this wait scales its workloads to zero. The cluster itself can still report `Ready` as `True` in that moment. An instance that starts parked renders its workloads at zero from the start, so it records no event and reports the wait on `Ready` alone.
 
@@ -348,6 +370,8 @@ spec:
     podAnnotations: {}
     # object. Optional. Scheduling constraints (nodeAffinity, tolerations, podAffinity) for the importer pod.
     scheduling: {}
+  # integer. Optional, minimum 0. Replicas of each Optimize index and of each zeebe-record index. Default: 0 when the storage contract of the cluster names one node, 1 when it names more, the Optimize default when it names no node count.
+  indexReplicas: 0
   # object. Optional. Prometheus integration.
   monitoring:
     # object. Optional. ServiceMonitor creation for both Deployments.

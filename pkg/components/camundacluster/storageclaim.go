@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -94,30 +95,15 @@ func StorageClaimLeaseLabels(name string) map[string]string {
 	return labels.Managed(labels.Cluster(name), StorageClaimComponent)
 }
 
-// OtherPodsOnClaim returns the pods that carry the storage claim named claim
-// and that own does not claim, as sorted "namespace/name" paths, together
-// with the workloads that can still start such a pod: a ReplicaSet that asks
-// for replicas with the claim on its labels, and a Deployment or a
-// StatefulSet that asks for replicas with the claim on its template. A
-// workload whose pod is gone for a moment, evicted or not yet started,
-// recreates it with the claim, so a scan of the pods alone can pass while a
-// writer is about to return. A
-// cluster passes PodsOfCluster; an Optimize instance passes a predicate that
-// also leaves out the importer of a deleted instance of its cluster. A
-// handover waits for exactly these: every one of them writes the backend of
-// that claim, or starts what does. The reader must read the API server
-// directly, because a decision from a stale cache starts a second writer.
+// OtherPodsOnClaim returns, as sorted "namespace/name" paths, the pods that
+// carry the storage claim named claim and that own does not claim, and the
+// ReplicaSets, Deployments, StatefulSets and Jobs that can still start such a
+// pod. Every entry writes the backend of that claim or starts what does. A
+// terminating pod counts until it is gone, which on a lost node means until it
+// is forced away.
 //
-// The list covers every namespace, because two clusters of two namespaces can
-// resolve one backend. It leaves out the pods that reached Failed or
-// Succeeded: an evicted pod of a previous holder keeps its object under a
-// ReplicaSet that nobody deleted, and it writes nothing. It keeps a pod with a
-// deletion timestamp, because one on a lost node still writes until the node
-// comes back or the pod is forced away.
-//
-// The pods of a CamundaOptimize attached to another cluster carry the same
-// labels, see pkg/components/camundaoptimize, and its importer writes the
-// backend like a pod of that cluster.
+// The lists cover every namespace. The reader must read the API server
+// directly: a decision from a stale cache starts a second writer.
 func OtherPodsOnClaim(
 	ctx context.Context,
 	reader client.Reader,
@@ -143,6 +129,8 @@ func OtherPodsOnClaim(
 		names = append(names, pods.Items[i].Namespace+"/"+pods.Items[i].Name)
 	}
 
+	// A workload whose pod is gone for a moment recreates it with the claim,
+	// so the pods alone can pass while a writer is about to return.
 	var replicaSets appsv1.ReplicaSetList
 	err = reader.List(
 		ctx,
@@ -192,9 +180,42 @@ func OtherPodsOnClaim(
 			names = append(names, sts.Namespace+"/"+sts.Name)
 		}
 	}
+	// A Job starts its next pod after a pod failed, until it reaches its
+	// backoff limit. The pg_restore Job of a restore that failed can do that
+	// after the restore itself stopped counting.
+	var jobs batchv1.JobList
+	err = reader.List(
+		ctx,
+		&jobs,
+		client.MatchingLabels(map[string]string{labels.ManagedByKey: labels.ManagedBy}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing the Jobs on storage claim %q: %w", claim, err)
+	}
+	for i := range jobs.Items {
+		job := &jobs.Items[i]
+		if jobStarts(job) && templateStarts(claim, job.Spec.Template.Labels, nil, own) {
+			names = append(names, job.Namespace+"/"+job.Name)
+		}
+	}
 	slices.Sort(names)
 
 	return names, nil
+}
+
+func jobStarts(job *batchv1.Job) bool {
+	suspended := job.Spec.Suspend != nil && *job.Spec.Suspend
+	if suspended || (job.Spec.Parallelism != nil && *job.Spec.Parallelism == 0) {
+		return false
+	}
+	for _, condition := range job.Status.Conditions {
+		finished := condition.Type == batchv1.JobComplete || condition.Type == batchv1.JobFailed
+		if finished && condition.Status == corev1.ConditionTrue {
+			return false
+		}
+	}
+
+	return true
 }
 
 // templateStarts reports whether a workload with the given pod template and
@@ -211,6 +232,54 @@ func templateStarts(
 	}
 
 	return replicas == nil || *replicas > 0
+}
+
+// RestoresOnBackend returns the logical restores that write the backend that
+// key names and that do not restore the cluster with UID self, as sorted
+// "Kind namespace/name" entries. A restore counts from the end of its
+// admission to its terminal phase. The reader must read the API server
+// directly, and the lists cover every namespace, as in OtherPodsOnClaim.
+func RestoresOnBackend(
+	ctx context.Context,
+	reader client.Reader,
+	key string,
+	self types.UID,
+) ([]string, error) {
+	var elasticsearch v1.LogicalRestoreElasticsearchList
+	if err := reader.List(ctx, &elasticsearch); err != nil {
+		return nil, fmt.Errorf("listing the LogicalRestoreElasticsearches: %w", err)
+	}
+	var rdbms v1.LogicalRestoreRDBMSList
+	if err := reader.List(ctx, &rdbms); err != nil {
+		return nil, fmt.Errorf("listing the LogicalRestoreRDBMSes: %w", err)
+	}
+
+	var names []string
+	for i := range elasticsearch.Items {
+		lres := &elasticsearch.Items[i]
+		if restoreWrites(lres.Status.Phase, lres.Terminal(), lres.Status.TargetClusterUID, self) &&
+			lres.Status.Backend == key {
+			names = append(names, "LogicalRestoreElasticsearch "+lres.Namespace+"/"+lres.Name)
+		}
+	}
+	for i := range rdbms.Items {
+		lrr := &rdbms.Items[i]
+		if restoreWrites(lrr.Status.Phase, lrr.Terminal(), lrr.Status.TargetClusterUID, self) &&
+			lrr.Status.Backend == key {
+			names = append(names, "LogicalRestoreRDBMS "+lrr.Namespace+"/"+lrr.Name)
+		}
+	}
+	slices.Sort(names)
+
+	return names, nil
+}
+
+// A restore in Pending waits on its own pre-checks without a bound, so a wait
+// on it never ends.
+func restoreWrites(phase v1.LogicalRestorePhase, terminal bool, target, self types.UID) bool {
+	started := phase != "" && phase != v1.LogicalRestorePending
+
+	return started && !terminal && target != self
 }
 
 // PodsOfCluster returns the predicate of OtherPodsOnClaim that a cluster

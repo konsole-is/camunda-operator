@@ -402,7 +402,7 @@ func main() {
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
 		mgr.GetScheme(),
-		logicalrestoreelasticsearch.Options{},
+		logicalrestoreelasticsearch.Options{ClaimNamespace: operatorNamespace},
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "LogicalRestoreElasticsearch")
 		os.Exit(1)
@@ -411,7 +411,7 @@ func main() {
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
 		mgr.GetScheme(),
-		logicalrestorerdbms.Options{CLIImage: cliImage},
+		logicalrestorerdbms.Options{CLIImage: cliImage, ClaimNamespace: operatorNamespace},
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "LogicalRestoreRDBMS")
 		os.Exit(1)

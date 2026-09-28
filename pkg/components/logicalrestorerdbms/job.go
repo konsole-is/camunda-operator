@@ -141,6 +141,9 @@ type JobInput struct {
 	// streams the archive from the bucket. The image ships separately from the
 	// manager, and the manager receives it as --camunda-operator-cli-image.
 	CLIImage string
+	// StorageClaim is the name of the storage claim Lease of the database,
+	// see camundacluster.StorageClaimSchema. The pod carries it.
+	StorageClaim string
 }
 
 // BuildJob renders the Job that downloads the dump and restores it into the
@@ -191,7 +194,12 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 	// The workload-identity pod label is operator-required. Without it, the
 	// Azure webhook injects no token, whatever the ServiceAccount carries.
 	podManaged := labels.Merge(in.Bucket.WorkloadIdentityPodLabels(), managed)
+	podManaged[labels.StorageClaimKey] = labels.OwnerName(in.StorageClaim)
 	podLabels := labels.Merge(pod.PodLabels, podManaged)
+	// The pod carries no cluster UID. With the UID of the target, the handover
+	// gate of the target counts the pod as its own and starts beside it, so a
+	// user label cannot set one.
+	delete(podLabels, labels.ClusterUIDKey)
 
 	template := corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
@@ -440,4 +448,12 @@ func activeDeadline(pod *v1.DumpPodSpec) *int64 {
 // Job. The reconcile must not adopt or delete it for this restore.
 func JobBelongsTo(job *batchv1.Job, restore *v1.LogicalRestoreRDBMS) bool {
 	return job.Labels[RestoreUIDLabel] == string(restore.UID)
+}
+
+// PodOfRestore reports whether a pod with podLabels is a pg_restore pod of
+// restore: it carries the UID label of restore and no cluster UID.
+func PodOfRestore(podLabels map[string]string, restore *v1.LogicalRestoreRDBMS) bool {
+	_, ofCluster := podLabels[labels.ClusterUIDKey]
+
+	return !ofCluster && podLabels[RestoreUIDLabel] == string(restore.UID)
 }

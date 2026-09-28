@@ -47,13 +47,21 @@ type LogicalRestoreRDBMSStatus struct {
 	// name carries another id, and this restore is not its restore.
 	// +optional
 	BackupID int64 `json:"backupId,omitempty"`
+	// Backend is the logical database that the restore writes, pinned when
+	// the restore starts, in the form of the storage claim key of the target
+	// (the host, the port, and the database name). From the end of admission
+	// to the terminal phase, no other CamundaCluster starts on this backend.
+	// The restore holds while its target does not hold the backend.
+	// +optional
+	Backend string `json:"backend,omitempty"`
 	// SecondaryJobName is the Job that runs pg_restore, while it exists.
 	// +optional
 	SecondaryJobName string `json:"secondaryJobName,omitempty"`
 	// RestoreProgress is the part of the status that every restore kind has.
 	// Its Ready condition carries the reasons Progressing, Completed, Failed,
 	// ClusterNotSuspended, ClusterClaimed, IncompatibleTarget,
-	// InvalidReference, MissingSecret, and MissingCredentials.
+	// StorageAlreadyAttached, WaitingForHandover, InvalidReference,
+	// MissingSecret, and MissingCredentials.
 	RestoreProgress `json:",inline"`
 }
 

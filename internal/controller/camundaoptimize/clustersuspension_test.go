@@ -23,6 +23,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
@@ -51,6 +52,10 @@ func TestSuspendedByNamesEachSourceOfASuspension(t *testing.T) {
 		},
 		"a pod of another cluster still writes the backend": {
 			arrange: func(t *testing.T, h *reconcileHarness) { h.runForeignWriter() },
+			want:    v1.OptimizeSuspensionStorageClaim,
+		},
+		"a restore into another cluster writes the backend": {
+			arrange: func(t *testing.T, h *reconcileHarness) { h.runForeignRestore(t) },
 			want:    v1.OptimizeSuspensionStorageClaim,
 		},
 	}
@@ -179,7 +184,8 @@ func TestSuspensionNotesSpeakForTheClusterOnly(t *testing.T) {
 			prior: suspension{rendered: true},
 			now:   v1.OptimizeSuspensionStorageClaim,
 			want: `Normal StorageClaimAwaited CamundaCluster "my-cluster" does not hold its backend, ` +
-				"or pods of another cluster or of a previous instance still write it, the Optimize workloads follow it to zero",
+				"or pods of another cluster or of a previous instance, or a restore into another cluster, still write it, " +
+				"the Optimize workloads follow it to zero",
 		},
 		// One note covers a resume from either wait, because the cluster was
 		// not suspended in one of them.
@@ -205,12 +211,13 @@ func TestSuspensionNotesSpeakForTheClusterOnly(t *testing.T) {
 
 // TestBackendClaimAwaitedSaysBothHalvesOfTheGate pins the claim wait. The gate
 // covers a cluster that does not hold the claim of its backend, and one that
-// holds it while pods of another cluster, or of a previous instance, still write that backend. Everything
-// this wait says reaches a user, so none of it may name the first half alone.
+// holds it while other writers still write that backend. Everything this wait
+// says reaches a user, so none of it may name the first half alone.
 func TestBackendClaimAwaitedSaysBothHalvesOfTheGate(t *testing.T) {
 	t.Parallel()
 
-	const bothHalves = "does not hold its backend, or pods of another cluster or of a previous instance still write it"
+	const bothHalves = "does not hold its backend, or pods of another cluster or of a previous instance, " +
+		"or a restore into another cluster, still write it"
 	said := map[string]string{
 		"the event note":                      backendClaimAwaited.eventNote,
 		"the note on Ready":                   backendClaimAwaited.failureNote,
@@ -219,6 +226,54 @@ func TestBackendClaimAwaitedSaysBothHalvesOfTheGate(t *testing.T) {
 	}
 	for name, says := range said {
 		assert.Contains(t, says, bothHalves, name)
+	}
+}
+
+// TestReconcileNamesTheWaitWhenACheckFails covers the pre-check failure path,
+// which records the start of a wait and no other transition. It names the same
+// two waits: a cluster that reports itself suspended, and the claim of the
+// backend that a healthy cluster does not hold.
+func TestReconcileNamesTheWaitWhenACheckFails(t *testing.T) {
+	cases := map[string]struct {
+		arrange func(t *testing.T, h *reconcileHarness)
+		want    string
+	}{
+		"the cluster is suspended": {
+			arrange: func(t *testing.T, h *reconcileHarness) { h.setClusterSuspend(t, true) },
+			want: `Normal ClusterSuspended CamundaCluster "my-cluster" is suspended, ` +
+				"the Optimize workloads follow it to zero",
+		},
+		"the cluster does not hold the storage claim": {
+			arrange: func(t *testing.T, h *reconcileHarness) { h.releaseClaim(t) },
+			want: `Normal StorageClaimAwaited CamundaCluster "my-cluster" does not hold its backend, ` +
+				"or pods of another cluster or of a previous instance, or a restore into another cluster, still write it, " +
+				"the Optimize workloads follow it to zero",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			h := newReconcileHarness(t)
+			h.start(t)
+			require.NoError(t, h.client.Delete(t.Context(), &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+				Name: "mac-client", Namespace: h.optimize.Namespace,
+			}}))
+			tc.arrange(t, h)
+
+			require.NoError(t, h.reconcile(t))
+
+			ready := meta.FindStatusCondition(h.latest(t).Status.Conditions, v1.ConditionReady)
+			require.NotNil(t, ready)
+			require.Equal(t, v1.ReasonMissingSecret, ready.Reason, "the pass took the failure path")
+			var suspensionNotes []string
+			for _, note := range recordedNotes(h.recorder) {
+				switch strings.Fields(note)[1] {
+				case eventReasonClusterSuspended, eventReasonClusterResumed, eventReasonStorageClaimAwaited:
+					suspensionNotes = append(suspensionNotes, note)
+				}
+			}
+			assert.Equal(t, []string{tc.want}, suspensionNotes)
+		})
 	}
 }
 

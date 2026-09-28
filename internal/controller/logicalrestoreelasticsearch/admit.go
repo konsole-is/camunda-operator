@@ -176,14 +176,39 @@ func (r *Reconciler) admit(
 		return prepared, nil
 	}
 
+	storage, failure, err := restore.ResolveStorage(ctx, r.APIReader, cluster)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	if failure != nil {
+		return r.waiting(lres, failure), nil
+	}
+	backend, failure, err := restore.BackendOf(ctx, r.APIReader, storage)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	if failure != nil {
+		return r.waiting(lres, failure), nil
+	}
+	failure, err = r.checkBackend(ctx, cluster, storage, backend)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	if failure != nil {
+		return r.waiting(lres, failure), nil
+	}
+	// This look writes nothing. The write waits for a later look, whose check
+	// reads the claim after this pin is stored, so a cluster that takes the
+	// claim before that check finds this restore.
+	lres.Status.Backend = backend
+
 	r.start(lres)
 
 	return restore.Outcome{Wait: restore.Shortly}, nil
 }
 
-// start moves the restore into the validation phase. It pins nothing:
-// admission pinned the backup id and the identity of the target earlier, on
-// the look before it first wrote to the cluster.
+// start moves the restore into the validation phase. The caller pins what it
+// reads first.
 func (r *Reconciler) start(lres *v1.LogicalRestoreElasticsearch) {
 	lres.Status.Phase = v1.LogicalRestoreValidatingCompatibility
 	r.progressing(lres, "the restore compares the backup against the target")
@@ -239,8 +264,27 @@ func (r *Reconciler) resolve(
 	if err != nil || failure != nil {
 		return nil, failure, err
 	}
+	// The backend is a standing condition too.
+	failure, err = r.checkBackend(ctx, cluster, storage, lres.Status.Backend)
+	if err != nil || failure != nil {
+		return nil, failure, err
+	}
 
 	return &resolution{cluster: cluster, backup: source, target: target, storage: storage}, nil, nil
+}
+
+func (r *Reconciler) checkBackend(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+	storage *v1.SecondaryStorageConfig,
+	pinned string,
+) (*conditions.PreCheckFailure, error) {
+	return restore.CheckBackend(ctx, r.Client, r.APIReader, restore.BackendCheck{
+		ClaimNamespace: r.opts.ClaimNamespace,
+		Cluster:        cluster,
+		Storage:        storage,
+		Pinned:         pinned,
+	})
 }
 
 // readBackup reads the LogicalBackupElasticsearch that the restore names. The

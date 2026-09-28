@@ -128,11 +128,13 @@ const defaultRetryInterval = 30 * time.Second
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseserverconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=logicalrestoreelasticsearches;logicalrestorerdbmses,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=list
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=list
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
@@ -140,20 +142,14 @@ const defaultRetryInterval = 30 * time.Second
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 
-// Reconcile converges a CamundaCluster. A paused cluster records one Paused
-// event and returns before anything is read or written, status included.
+// Reconcile converges a CamundaCluster. A paused cluster that is not being
+// deleted records one Paused event and writes nothing else, status included.
 //
-// Ready is True only when every component the cluster needs is True. Its
-// reason and message come from the governing component, which is the
-// highest-priority component that is not True, or the highest-priority of all
-// of them when they all are. A cluster whose backend another cluster holds
-// reports StorageAlreadyAttached instead of the aggregate. A cluster that
-// holds the backend reports WaitingForHandover while a pod of another cluster
-// still writes it. Both look again on a timer.
-//
-// Status is written once per reconcile: the components and conditions.Stage
-// stage conditions on the in-memory cluster, and the deferred FlushStatus
-// persists them together.
+// Ready is True only when every component the cluster needs is True, and its
+// reason otherwise comes from conditions.Aggregate. A cluster whose backend
+// another cluster holds reports StorageAlreadyAttached instead. A cluster that
+// holds the backend reports WaitingForHandover while pods of another cluster,
+// or a restore into another cluster, still write it.
 func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
 	var cluster v1.CamundaCluster
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &cluster); err != nil {
@@ -233,8 +229,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// A cluster that does not write its backend alone renders suspended: every
-	// workload at zero and the volumes kept, until the other cluster releases
-	// the backend or its pods are gone.
+	// workload at zero and the volumes kept.
 	// The suspension also idles the admin rotation and clears the management
 	// binding, as a user suspension does.
 	if claimSuspends(in.Storage) {
@@ -297,6 +292,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 	r.recordIgnoredShrink(&cluster, storage, in.Effective.StorageSize())
+	r.recordUnplaceableReplicas(&cluster, in)
 
 	cred, err := r.resolveAdminCredential(ctx, &cluster, in, storage)
 	if err != nil {
@@ -353,7 +349,8 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// A failed rotation looks again on a timer, because no watch fires when the
 	// user API recovers or accepts the credentials again. A cluster the claim
 	// suspends looks again for the holder of its backend, or for the pods of
-	// another cluster on it, which nothing watches either.
+	// another cluster on it, which nothing watches either. The end of a
+	// restore wakes it through enqueueWaitingForHandover.
 	if cred.failure != nil || claimSuspends(in.Storage) {
 		wait = r.retryInterval()
 	}

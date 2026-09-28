@@ -115,6 +115,14 @@ spec:
           status:
             description: status defines the observed state of the restore
             properties:
+              backend:
+                description: |-
+                  Backend is the Elasticsearch that the restore writes, pinned when the
+                  restore starts, in the form of the storage claim key of the target
+                  (the scheme, the host, and the port). From the end of admission to the
+                  terminal phase, no other CamundaCluster starts on this backend. The
+                  restore holds while its target does not hold the backend.
+                type: string
               backupId:
                 description: |-
                   backupId is the backup that the restore reads, pinned when the restore

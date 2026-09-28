@@ -116,9 +116,11 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaplatformconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=managementauthconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=logicalrestoreelasticsearches;logicalrestorerdbmses,verbs=list
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=list
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=list
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=replicasets;statefulsets,verbs=list
@@ -256,6 +258,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	if err := r.patchExporter(ctx, res); err != nil {
 		return ctrl.Result{}, err
 	}
+	r.recordUnplaceableReplicas(&optimize, res)
 
 	built, err := r.buildComponents(res)
 	if err != nil {

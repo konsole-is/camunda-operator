@@ -61,6 +61,8 @@ type reconcileHarness struct {
 	key        types.NamespacedName
 	// lease is the storage claim that the cluster holds.
 	lease *coordinationv1.Lease
+	// backend is the storage claim key of the backend of the cluster.
+	backend string
 	// pods are the pods that a pod list returns.
 	pods []metav1.PartialObjectMetadata
 
@@ -147,6 +149,7 @@ func newReconcileHarness(t *testing.T) *reconcileHarness {
 		cluster:  cluster,
 		key:      client.ObjectKeyFromObject(optimize),
 		lease:    lease,
+		backend:  key,
 	}
 	mapper := harnessRESTMapper(scheme)
 	h.client = fake.NewClientBuilder().
@@ -302,6 +305,19 @@ func (h *reconcileHarness) runForeignWriter() {
 			},
 		},
 	})
+}
+
+// runForeignRestore starts a restore into another cluster that writes the
+// backend of the harness cluster.
+func (h *reconcileHarness) runForeignRestore(t *testing.T) {
+	t.Helper()
+	restore := &v1.LogicalRestoreElasticsearch{
+		ObjectMeta: metav1.ObjectMeta{Name: "restore", Namespace: "team-b"},
+	}
+	restore.Status.Phase = v1.LogicalRestoreRestoringSecondaryStorage
+	restore.Status.Backend = h.backend
+	restore.Status.TargetClusterUID = "uid-other"
+	require.NoError(t, h.client.Create(t.Context(), restore))
 }
 
 func (h *reconcileHarness) workloadKey(comp string) client.ObjectKey {

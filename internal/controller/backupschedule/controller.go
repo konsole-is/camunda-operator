@@ -38,6 +38,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -57,6 +58,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+	"github.com/konsole-is/camunda-operator/pkg/management"
 )
 
 // controllerName is the name the controller registers with controller-runtime.
@@ -113,6 +115,7 @@ type BackupScheduleReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=backupschedules/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=logicalbackupelasticsearches;logicalbackuprdbmses,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters;secondarystorageconfigs;camundaclusterpresets,verbs=get
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile consumes the due trigger of the schedule, if one is due, and
@@ -260,12 +263,9 @@ func (r *BackupScheduleReconciler) resolve(
 	return &resolved{cluster: &cluster, storageType: storage.Spec.Type}, nil, nil
 }
 
-// trigger consumes the due trigger: it creates the backup, or it skips with
-// an event when the cluster is suspended or a backup of the schedule has not
-// finished. Every path below records the trigger as consumed, except a
-// transient error, which leaves it due so the retry takes it again. The
-// backup name repeats the trigger time, so a retry after a crash lands on
-// AlreadyExists instead of a second backup.
+// trigger consumes the due trigger: it creates the backup, or it skips the
+// trigger with an event. An error leaves the trigger due, so the retry takes
+// it again.
 func (r *BackupScheduleReconciler) trigger(
 	ctx context.Context,
 	schedule *v1.BackupSchedule,
@@ -295,6 +295,27 @@ func (r *BackupScheduleReconciler) trigger(
 			"Skipped the trigger at %s: CamundaCluster %q is suspended",
 			due.Format(time.RFC3339),
 			res.cluster.Name,
+		)
+
+		return nil
+	}
+
+	// A backup that cannot start waits in Pending and blocks every later trigger.
+	state, err := r.cannotStart(ctx, res.cluster, res.storageType)
+	if err != nil {
+		return err
+	}
+	if state != "" {
+		schedule.Status.LastScheduleTime = &consumed
+		r.EventRecorder.Eventf(
+			schedule,
+			nil,
+			corev1.EventTypeNormal,
+			eventReasonTriggerSkipped,
+			eventActionSchedule,
+			"Skipped the trigger at %s: %s",
+			due.Format(time.RFC3339),
+			state,
 		)
 
 		return nil
@@ -373,6 +394,48 @@ func (r *BackupScheduleReconciler) trigger(
 	schedule.Status.LastBackupName = backup.GetName()
 
 	return nil
+}
+
+// cannotStart returns why a backup of the storage type cannot start on the
+// cluster, or "" when it can.
+func (r *BackupScheduleReconciler) cannotStart(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+	storageType v1.SecondaryStorageType,
+) (string, error) {
+	_, failure, err := management.NewClient(ctx, r.APIReader, cluster)
+	if err != nil {
+		return "", fmt.Errorf("checking the management binding of CamundaCluster %s: %w", cluster.Name, err)
+	}
+	if failure != nil {
+		return failure.Message + ", and " + readyState(cluster), nil
+	}
+
+	// Each kind checks what its backup controller waits on before it starts.
+	switch storageType {
+	case v1.SecondaryStorageTypeElasticsearch:
+		if cluster.Status.Management.BackupRepository == "" {
+			return fmt.Sprintf(
+				"CamundaCluster %q publishes no backup repository, and %s", cluster.Name, readyState(cluster),
+			), nil
+		}
+	case v1.SecondaryStorageTypeRDBMS:
+		ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
+		if ready == nil || ready.Status != metav1.ConditionTrue {
+			return fmt.Sprintf("CamundaCluster %q is not ready: %s", cluster.Name, readyState(cluster)), nil
+		}
+	}
+
+	return "", nil
+}
+
+func readyState(cluster *v1.CamundaCluster) string {
+	ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
+	if ready == nil {
+		return "it reports no Ready condition yet"
+	}
+
+	return fmt.Sprintf("Ready is %s with reason %s", ready.Status, ready.Reason)
 }
 
 // newBackup builds the backup of one trigger: the kind that matches the

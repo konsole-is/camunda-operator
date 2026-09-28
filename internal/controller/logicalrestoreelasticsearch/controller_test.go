@@ -720,6 +720,27 @@ var _ = Describe("LogicalRestoreElasticsearch cluster claim", func() {
 		Expect(w.search.IndexDeleteCalls()).To(BeZero())
 	})
 
+	It("holds a restore whose backend another cluster holds, and starts once the target holds it", func() {
+		w := newWorld()
+		other := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: w.namespace, Name: "other", UID: "uid-other"},
+		}
+		w.holdBackend(other)
+		backup := createBackup(w)
+
+		restore := createRestore(w, backup.Name)
+		reached := expectReason(restore, v1.LogicalRestorePending, v1.ReasonStorageAlreadyAttached)
+		Expect(readyCondition(reached).Message).To(ContainSubstring(w.namespace + "/other"))
+		Expect(reached.Status.Backend).To(BeEmpty(), "the backend is pinned when the restore leaves Pending")
+		Expect(w.search.IndexDeleteCalls()).To(BeZero())
+		w.holdBackend(w.cluster)
+		Eventually(func(g Gomega) {
+			current := latest(g, restore)
+			g.Expect(current.Status.Phase).NotTo(Equal(v1.LogicalRestorePending))
+			g.Expect(current.Status.Backend).NotTo(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// Nothing bounds the hold, and no spec change ends it. The restore takes
 	// the claim over as soon as the holder reaches a terminal phase.
 	It("starts on its own once the holder finishes", func() {

@@ -22,7 +22,7 @@ If you have no strong reason to pick one, pick Elasticsearch. It is the backend 
 
 A backend belongs to one `CamundaCluster`. Camunda fixes the index names in Elasticsearch and the tables in a database, so two clusters on one backend write each other's data. Give every cluster its own `ElasticsearchCluster` or its own `Database`, each with its own contract. Two clusters can share one PostgreSQL server, each with its own database.
 
-The operator holds one claim per backend address. For Elasticsearch that address is the scheme, the host, and the port of the endpoint. For PostgreSQL it is the host, the port, and the database name, so two databases on one server are two backends. Two contracts that name one address are one backend. If a second cluster resolves a backend that another cluster holds, the operator suspends the second cluster. Its `Ready` condition reads `False` with reason `StorageAlreadyAttached` and names the holder and the backend. It resumes on its own once the holder releases the backend and the pods of that holder are gone. It reports `WaitingForHandover` while it waits for those pods. The [CamundaCluster reference](../crds/camundacluster.md#secondary-storage) has the rule in full.
+The operator holds one claim per backend address. For Elasticsearch that address is the scheme, the host, and the port of the endpoint. For PostgreSQL it is the host, the port, and the database name, so two databases on one server are two backends. Two contracts that name one address are one backend. If a second cluster resolves a backend that another cluster holds, the operator suspends the second cluster. Its `Ready` condition reads `False` with reason `StorageAlreadyAttached` and names the holder and the backend. It resumes on its own once the holder releases the backend and the pods of that holder are gone. It reports `WaitingForHandover` while it waits for those pods. A running restore into another cluster keeps it waiting the same way. The [CamundaCluster reference](../crds/camundacluster.md#secondary-storage) has the rule in full.
 
 ## Elasticsearch
 
@@ -30,7 +30,7 @@ Prerequisite: the ECK operator is installed in the Kubernetes cluster, and the c
 
 This chain is ready to apply in [`config/example/camunda-cluster/elasticsearch`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-cluster/elasticsearch).
 
-1. Create an `ElasticsearchCluster`. The sizes below are for trying out. For production, use more nodes and larger volumes.
+1. Create an `ElasticsearchCluster`. The sizes below are for trying out. For production, use more nodes and larger volumes. On one node, the Camunda indices get no replica, so the node keeps green health. [Node count](../crds/secondarystorageconfig.md#node-count) has the rule.
 
     ```yaml
     apiVersion: core.camunda.io/v1
