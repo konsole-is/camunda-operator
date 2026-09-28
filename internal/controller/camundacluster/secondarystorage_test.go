@@ -1557,9 +1557,8 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 			ContainSubstring(writer.String()),
 		)
 
-		// The registration ages out only after the wait is seen. A spec that
-		// started the clock at the registration lost the wait whenever the
-		// steps before it took longer than the time left.
+		// The registration ages out only after the wait is seen, so the time
+		// that the steps above take cannot end the wait before it is read.
 		By("letting the registration expire without a release")
 		expireWriter(storageKeyOf(binding), writer)
 		expectHolds(parked)
