@@ -135,6 +135,14 @@ func TestCheckPage(t *testing.T) {
 			page: "See [the page](https://example.com/a;b) now.",
 		},
 		{
+			name: "a semicolon or a modal in an autolink or a bare URL is not reported",
+			page: "See <https://example.com/a;b> and https://example.com/may-release/x;y now.",
+		},
+		{
+			name: "a period after a bare URL ends the sentence",
+			page: "The " + strings.Repeat("word ", 22) + "https://example.com/a. The pod starts now.",
+		},
+		{
 			name: "abbreviation does not end a sentence",
 			page: "The " + strings.Repeat("word ", 12) + "e.g. " + strings.Repeat("word ", 11) + "end.",
 			want: []finding{{line: 1, words: 26, limit: 25}},

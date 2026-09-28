@@ -134,7 +134,7 @@ The holder is not always the plane you created first. A suspended plane takes no
 
 The realm of a Keycloak that the operator runs is held the same way. Its address is reachable inside the Kubernetes cluster, so a plane that names it under `identityProvider.externalKeycloak` waits for that realm.
 
-The realm that Management Identity administers is the realm this plane claims, so `spec.identity.extraEnv` refuses an entry named `KEYCLOAK_URL` or `KEYCLOAK_REALM`. Such an override puts Management Identity in a realm that another plane holds.
+The realm that Management Identity administers is the realm this plane claims, so `spec.identity.extraEnv` refuses an entry named `KEYCLOAK_URL` or `KEYCLOAK_REALM`. Such an override can put Management Identity in a realm that another plane holds.
 
 A second plane that names the same `url` and `realm` waits, from any namespace. The operator starts nothing new for it and writes nothing in that realm, and `Ready` names the holder:
 

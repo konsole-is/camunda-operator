@@ -105,6 +105,7 @@ var (
 	inlineCode    = regexp.MustCompile("`[^`]*`")
 	link          = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
 	refLink       = regexp.MustCompile(`\[([^\]]*)\]\[[^\]]*\]`)
+	autolink      = regexp.MustCompile(`<[A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*>|https?://[^\s<>]*[^\s<>.,:;!?)]`)
 	quoted        = regexp.MustCompile(`"[^"]*"|“[^”]*”`)
 	parens        = regexp.MustCompile(`\([^()]*\)`)
 	banned        = regexp.MustCompile(`;|(?i:\b(?:would|could|may)\b)`)
@@ -397,6 +398,7 @@ func mask(s string) string {
 	fill(inlineCode, false)
 	fill(link, true)
 	fill(refLink, true)
+	fill(autolink, false)
 	fill(quoted, false)
 	for parens.Match(b) {
 		fill(parens, false)
