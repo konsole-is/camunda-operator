@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -29,6 +30,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // HoldFinalizer keeps a deleted restore until it has removed its suspension
@@ -57,15 +59,17 @@ func AddHoldFinalizer(ctx context.Context, c client.Client, owner client.Object)
 }
 
 // FinalizeHold removes the Jobs, the suspension hold and HoldFinalizer of a
-// deleted restore. Outcome.Done reports that the finalizer is gone. cluster is
-// the name of the target, which lives in the namespace of the restore. The
-// suspension that the restore applied through spec.suspend stays. The reader
-// must be uncached.
+// deleted restore. Outcome.Done reports that the finalizer is gone. label is
+// the owner label that the Job pods of the restore carry. cluster is the name
+// of the target, which lives in the namespace of the restore. The suspension
+// that the restore applied through spec.suspend stays. The reader must be
+// uncached.
 func FinalizeHold(
 	ctx context.Context,
 	c client.Client,
 	reader client.Reader,
 	owner client.Object,
+	label labels.Owner,
 	cluster string,
 ) (Outcome, error) {
 	if !controllerutil.ContainsFinalizer(owner, HoldFinalizer) {
@@ -74,7 +78,7 @@ func FinalizeHold(
 
 	// The garbage collector removes the Jobs only after the restore is gone,
 	// and a Job pod still writes the storage of the target until then.
-	removed, err := removeOwnedJobs(ctx, c, reader, owner)
+	removed, err := removeJobs(ctx, c, reader, owner, label)
 	if err != nil || !removed {
 		return Outcome{Wait: Shortly}, err
 	}
@@ -97,8 +101,14 @@ func FinalizeHold(
 	return Outcome{Done: true}, nil
 }
 
-// removeOwnedJobs reports whether no Job of the restore is left.
-func removeOwnedJobs(ctx context.Context, c client.Client, reader client.Reader, owner client.Object) (bool, error) {
+// removeJobs reports whether no Job and no Job pod of the restore is left.
+func removeJobs(
+	ctx context.Context,
+	c client.Client,
+	reader client.Reader,
+	owner client.Object,
+	label labels.Owner,
+) (bool, error) {
 	var jobs batchv1.JobList
 	if err := reader.List(ctx, &jobs, client.InNamespace(owner.GetNamespace())); err != nil {
 		return false, fmt.Errorf("listing the Jobs of %s: %w", client.ObjectKeyFromObject(owner), err)
@@ -128,7 +138,24 @@ func removeOwnedJobs(ctx context.Context, c client.Client, reader client.Reader,
 		}
 	}
 
-	return removed, nil
+	if !removed {
+		return false, nil
+	}
+
+	// A Job that somebody deleted with background propagation is gone before
+	// its pods are.
+	var pods corev1.PodList
+	err := reader.List(
+		ctx,
+		&pods,
+		client.InNamespace(owner.GetNamespace()),
+		client.MatchingLabels{label.Key: label.Name},
+	)
+	if err != nil {
+		return false, fmt.Errorf("listing the Job pods of %s: %w", client.ObjectKeyFromObject(owner), err)
+	}
+
+	return len(pods.Items) == 0, nil
 }
 
 // releaseHold removes the suspension hold of the restore from its cluster. A

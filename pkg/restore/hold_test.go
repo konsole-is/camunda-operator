@@ -22,11 +22,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // unheld removes the hold of the restore from the cluster of the world, in
@@ -132,7 +134,7 @@ func TestFinalizeHoldRemovesTheHoldAndThenTheFinalizer(t *testing.T) {
 	owner := w.liveRestore(t)
 	require.NoError(t, AddHoldFinalizer(t.Context(), w.client, owner))
 
-	finalized, err := FinalizeHold(t.Context(), w.client, w.client, owner, w.cluster.Name)
+	finalized, err := FinalizeHold(t.Context(), w.client, w.client, owner, podLabel(owner), w.cluster.Name)
 	require.NoError(t, err)
 	assert.True(t, finalized.Done)
 
@@ -151,7 +153,7 @@ func TestFinalizeHoldLetsGoWhenTheClusterIsGone(t *testing.T) {
 	require.NoError(t, AddHoldFinalizer(t.Context(), w.client, owner))
 	require.NoError(t, w.client.Delete(t.Context(), w.cluster))
 
-	finalized, err := FinalizeHold(t.Context(), w.client, w.client, owner, w.cluster.Name)
+	finalized, err := FinalizeHold(t.Context(), w.client, w.client, owner, podLabel(owner), w.cluster.Name)
 	require.NoError(t, err)
 	assert.True(t, finalized.Done)
 
@@ -175,7 +177,7 @@ func TestFinalizeHoldKeepsTheHoldUntilTheJobsOfTheRestoreAreGone(t *testing.T) {
 	require.NoError(t, controllerutil.SetControllerReference(owner, job, w.client.Scheme()))
 	require.NoError(t, w.client.Create(t.Context(), job))
 
-	finalized, err := FinalizeHold(t.Context(), w.client, w.client, owner, w.cluster.Name)
+	finalized, err := FinalizeHold(t.Context(), w.client, w.client, owner, podLabel(owner), w.cluster.Name)
 	require.NoError(t, err)
 	assert.False(t, finalized.Done)
 	assert.Positive(t, finalized.Wait)
@@ -189,9 +191,41 @@ func TestFinalizeHoldKeepsTheHoldUntilTheJobsOfTheRestoreAreGone(t *testing.T) {
 	deleting.Finalizers = nil
 	require.NoError(t, w.client.Update(t.Context(), &deleting))
 
-	finalized, err = FinalizeHold(t.Context(), w.client, w.client, w.liveRestore(t), w.cluster.Name)
+	finalized, err = FinalizeHold(t.Context(), w.client, w.client, w.liveRestore(t), podLabel(owner), w.cluster.Name)
 	require.NoError(t, err)
 	assert.True(t, finalized.Done)
 	assert.Len(t, w.appliesBy(holdManager(owner)), 1)
 	assert.False(t, controllerutil.ContainsFinalizer(w.liveRestore(t), HoldFinalizer))
+}
+
+// A Job deleted with background propagation is gone before its pods are.
+func TestFinalizeHoldKeepsTheHoldUntilTheJobPodsOfTheRestoreAreGone(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	owner := w.liveRestore(t)
+	require.NoError(t, AddHoldFinalizer(t.Context(), w.client, owner))
+	label := podLabel(owner)
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Name:      "r-pitr-0-abcde",
+		Namespace: owner.Namespace,
+		Labels:    map[string]string{label.Key: label.Name},
+	}}
+	require.NoError(t, w.client.Create(t.Context(), pod))
+
+	finalized, err := FinalizeHold(t.Context(), w.client, w.client, owner, label, w.cluster.Name)
+	require.NoError(t, err)
+	assert.False(t, finalized.Done)
+	assert.Empty(t, w.appliesBy(holdManager(owner)))
+
+	require.NoError(t, w.client.Delete(t.Context(), pod))
+
+	finalized, err = FinalizeHold(t.Context(), w.client, w.client, w.liveRestore(t), label, w.cluster.Name)
+	require.NoError(t, err)
+	assert.True(t, finalized.Done)
+	assert.Len(t, w.appliesBy(holdManager(owner)), 1)
+}
+
+func podLabel(owner *v1.PointInTimeRestore) labels.Owner {
+	return labels.PointInTimeRestore(owner.Name)
 }

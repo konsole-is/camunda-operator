@@ -66,6 +66,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/podstate"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
@@ -194,7 +195,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// The Jobs of a restore carry a controller reference to it, so the garbage
 	// collector removes them with the restore.
 	if !lres.DeletionTimestamp.IsZero() {
-		finalized, err := restore.FinalizeHold(ctx, r.Client, r.APIReader, &lres, lres.Spec.TargetClusterRef.Name)
+		finalized, err := restore.FinalizeHold(
+			ctx,
+			r.Client,
+			r.APIReader,
+			&lres,
+			labels.LogicalRestoreElasticsearch(lres.Name),
+			lres.Spec.TargetClusterRef.Name,
+		)
 
 		return ctrl.Result{RequeueAfter: finalized.Wait}, err
 	}
