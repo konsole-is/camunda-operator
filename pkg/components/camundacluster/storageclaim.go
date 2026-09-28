@@ -234,54 +234,6 @@ func templateStarts(
 	return replicas == nil || *replicas > 0
 }
 
-// RestoresOnBackend returns the logical restores that write the backend that
-// key names and that do not restore the cluster with UID self, as sorted
-// "Kind namespace/name" entries. A restore counts from the end of its
-// admission to its terminal phase. The reader must read the API server
-// directly, and the lists cover every namespace, as in OtherPodsOnClaim.
-func RestoresOnBackend(
-	ctx context.Context,
-	reader client.Reader,
-	key string,
-	self types.UID,
-) ([]string, error) {
-	var elasticsearch v1.LogicalRestoreElasticsearchList
-	if err := reader.List(ctx, &elasticsearch); err != nil {
-		return nil, fmt.Errorf("listing the LogicalRestoreElasticsearches: %w", err)
-	}
-	var rdbms v1.LogicalRestoreRDBMSList
-	if err := reader.List(ctx, &rdbms); err != nil {
-		return nil, fmt.Errorf("listing the LogicalRestoreRDBMSes: %w", err)
-	}
-
-	var names []string
-	for i := range elasticsearch.Items {
-		lres := &elasticsearch.Items[i]
-		if restoreWrites(lres.Status.Phase, lres.Terminal(), lres.Status.TargetClusterUID, self) &&
-			lres.Status.Backend == key {
-			names = append(names, "LogicalRestoreElasticsearch "+lres.Namespace+"/"+lres.Name)
-		}
-	}
-	for i := range rdbms.Items {
-		lrr := &rdbms.Items[i]
-		if restoreWrites(lrr.Status.Phase, lrr.Terminal(), lrr.Status.TargetClusterUID, self) &&
-			lrr.Status.Backend == key {
-			names = append(names, "LogicalRestoreRDBMS "+lrr.Namespace+"/"+lrr.Name)
-		}
-	}
-	slices.Sort(names)
-
-	return names, nil
-}
-
-// A restore in Pending waits on its own pre-checks without a bound, so a wait
-// on it never ends.
-func restoreWrites(phase v1.LogicalRestorePhase, terminal bool, target, self types.UID) bool {
-	started := phase != "" && phase != v1.LogicalRestorePending
-
-	return started && !terminal && target != self
-}
-
 // PodsOfCluster returns the predicate of OtherPodsOnClaim that a cluster
 // passes: every pod that carries its UID is its own, its processes and the
 // workloads of its Optimize instance alike.

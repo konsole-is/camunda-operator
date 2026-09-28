@@ -139,7 +139,7 @@ A restore whose target another operation holds waits in `Pending` with the reaso
 
 A restore writes into the backend of its target. That is the Elasticsearch that the `SecondaryStorageConfig` of the target resolves to. The restore writes it only while the target holds that backend. When the restore leaves `Pending`, it records the backend in `status.backend`.
 
-From then until the restore reaches `Completed` or `Failed`, no other `CamundaCluster` starts on that backend. This also holds when you delete the target during the restore, or point it at another backend. The next cluster on the backend reports `WaitingForHandover`, and the message names this restore. [CamundaCluster: Secondary storage](camundacluster.md#secondary-storage) has the rule for the cluster.
+From then until the restore reaches `Completed` or `Failed`, no other `CamundaCluster` starts on that backend. This also holds when you delete the target during the restore, or point it at another backend. The next cluster on the backend reports `WaitingForHandover`, and the message names this restore. If you delete the restore itself while it runs, the backend stays held for at most two more minutes. [CamundaCluster: Secondary storage](camundacluster.md#secondary-storage) has the rule for the cluster.
 
 The restore itself waits in `Pending` while the target does not hold its backend:
 
@@ -149,7 +149,7 @@ The restore itself waits in `Pending` while the target does not hold its backend
 
 After the restore left `Pending`, these two reasons hold it for 10 minutes, and then it fails. A target that now resolves to another backend than `status.backend` holds it with reason `InvalidReference` for the same time.
 
-A failed or deleted restore does not stop the recovery of the snapshots that Elasticsearch accepted. A deleted restore no longer holds the backend. Before you start another cluster on this Elasticsearch, make sure that no index recovery is active.
+A failed or deleted restore does not stop the recovery of the snapshots that Elasticsearch accepted. A failed restore gives the backend back at once, and a deleted restore within two minutes. Before you start another cluster on this Elasticsearch, make sure that no index recovery is active.
 
 ## The snapshot repository
 

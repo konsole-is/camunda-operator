@@ -1,0 +1,223 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// Package storagewriter registers a resource that writes a storage backend
+// without a pod of a CamundaCluster, such as a restore. A CamundaCluster that
+// waits for the writers of its backend counts the live registrations and needs
+// no knowledge of their kinds.
+//
+// A registration is a Lease in the storage claim namespace. It is live until
+// its renewTime is Duration old. A writer renews it at least every
+// RenewInterval while it writes, and releases it when it stops.
+package storagewriter
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"slices"
+	"time"
+
+	coordinationv1 "k8s.io/api/coordination/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/konsole-is/camunda-operator/pkg/labels"
+)
+
+const (
+	// Component is the component label value of a writer Lease.
+	Component = "storage-writer"
+	// KeyAnnotation holds the claim key of the backend that the writer writes.
+	KeyAnnotation = "camunda.io/storage-writer-key"
+	// WriterAnnotation holds the writer as "Kind namespace/name".
+	WriterAnnotation = "camunda.io/storage-writer"
+)
+
+const (
+	// Duration is how long a registration stays live after its last renewal.
+	// A writer that stops without a release holds the backend this long.
+	Duration = 2 * time.Minute
+	// RenewInterval is the longest time between two renewals of a writer.
+	RenewInterval = 30 * time.Second
+)
+
+const leasePrefix = "camunda-writer-"
+
+// Writer is a resource that writes a backend for the CamundaCluster with UID
+// ClusterUID.
+type Writer struct {
+	Kind       string
+	Namespace  string
+	Name       string
+	UID        types.UID
+	ClusterUID types.UID
+}
+
+func (w Writer) String() string {
+	return w.Kind + " " + w.Namespace + "/" + w.Name
+}
+
+// Register creates the registration of w on the backend key, or renews it when
+// its last renewal is RenewInterval old or older. claim is the name of the
+// storage claim Lease of key. namespace is the storage claim namespace.
+func Register(
+	ctx context.Context,
+	c client.Client,
+	reader client.Reader,
+	namespace, key, claim string,
+	w Writer,
+	now time.Time,
+) error {
+	var lease coordinationv1.Lease
+	err := reader.Get(ctx, types.NamespacedName{Namespace: namespace, Name: LeaseName(key, w.UID)}, &lease)
+	if apierrors.IsNotFound(err) {
+		err = c.Create(ctx, newLease(namespace, key, claim, w, now))
+		if err != nil && !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("registering %s as a writer of %q: %w", w, key, err)
+		}
+
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reading the writer Lease of %s: %w", w, err)
+	}
+	if lease.Spec.RenewTime != nil && now.Sub(lease.Spec.RenewTime.Time) < RenewInterval {
+		return nil
+	}
+
+	lease.Spec.RenewTime = &metav1.MicroTime{Time: now}
+	if err := c.Update(ctx, &lease); err != nil {
+		return fmt.Errorf("renewing the writer Lease of %s: %w", w, err)
+	}
+
+	return nil
+}
+
+// LeaseName returns the name of the registration of the writer with UID uid on
+// the backend key.
+func LeaseName(key string, uid types.UID) string {
+	sum := sha256.Sum256([]byte(key + "|" + string(uid)))
+
+	return leasePrefix + hex.EncodeToString(sum[:])[:40]
+}
+
+func newLease(namespace, key, claim string, w Writer, now time.Time) *coordinationv1.Lease {
+	identity := labels.BoundedName(w.String(), 128)
+	renewed := metav1.MicroTime{Time: now}
+
+	return &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      LeaseName(key, w.UID),
+			Labels:    leaseLabels(claim, w.ClusterUID),
+			Annotations: map[string]string{
+				KeyAnnotation:    key,
+				WriterAnnotation: w.String(),
+			},
+		},
+		Spec: coordinationv1.LeaseSpec{
+			HolderIdentity:       &identity,
+			AcquireTime:          &renewed,
+			RenewTime:            &renewed,
+			LeaseDurationSeconds: new(int32(Duration / time.Second)),
+		},
+	}
+}
+
+func leaseLabels(claim string, clusterUID types.UID) map[string]string {
+	return map[string]string{
+		labels.ManagedByKey:    labels.ManagedBy,
+		labels.ComponentKey:    Component,
+		labels.StorageClaimKey: labels.OwnerName(claim),
+		labels.ClusterUIDKey:   string(clusterUID),
+	}
+}
+
+// Release removes the registration of w on the backend key. A registration that
+// is gone already is fine.
+func Release(ctx context.Context, c client.Client, namespace, key string, w Writer) error {
+	lease := &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: LeaseName(key, w.UID)},
+	}
+	if err := c.Delete(ctx, lease); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("releasing the writer Lease of %s: %w", w, err)
+	}
+
+	return nil
+}
+
+// Live returns the live writers of the backend key, as sorted "Kind
+// namespace/name" entries, leaving out the writers for the cluster with UID
+// self. claim is the name of the storage claim Lease of key. The reader must
+// read the API server directly: a stale list lets a cluster start beside a
+// writer.
+func Live(
+	ctx context.Context,
+	reader client.Reader,
+	namespace, key, claim string,
+	self types.UID,
+	now time.Time,
+) ([]string, error) {
+	var leases coordinationv1.LeaseList
+	err := reader.List(
+		ctx,
+		&leases,
+		client.InNamespace(namespace),
+		client.MatchingLabels{
+			labels.ManagedByKey:    labels.ManagedBy,
+			labels.ComponentKey:    Component,
+			labels.StorageClaimKey: labels.OwnerName(claim),
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing the writers of the backend %q: %w", key, err)
+	}
+
+	var writers []string
+	for i := range leases.Items {
+		lease := &leases.Items[i]
+		// Two claim names can share a bounded label value, so the key decides.
+		if lease.Annotations[KeyAnnotation] != key || lease.Labels[labels.ClusterUIDKey] == string(self) {
+			continue
+		}
+		if expired(lease, now) {
+			continue
+		}
+		writers = append(writers, lease.Annotations[WriterAnnotation])
+	}
+	slices.Sort(writers)
+
+	return writers, nil
+}
+
+func expired(lease *coordinationv1.Lease, now time.Time) bool {
+	if lease.Spec.RenewTime == nil || lease.Spec.LeaseDurationSeconds == nil {
+		return true
+	}
+	duration := time.Duration(*lease.Spec.LeaseDurationSeconds) * time.Second
+
+	return !now.Before(lease.Spec.RenewTime.Add(duration))
+}
+
+// IsWriterLease reports whether obj is a writer Lease.
+func IsWriterLease(obj client.Object) bool {
+	return obj.GetLabels()[labels.ComponentKey] == Component &&
+		obj.GetLabels()[labels.ManagedByKey] == labels.ManagedBy
+}

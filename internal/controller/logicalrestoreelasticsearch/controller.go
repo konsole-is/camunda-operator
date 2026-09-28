@@ -218,11 +218,28 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// the claim back in the one order that frees the broker volumes. The
 		// Jobs of a completed restore take more than one look to go, so an
 		// answer that is not Done holds the two steps behind them.
+		if lres.Status.Backend != "" {
+			err := restore.ReleaseWriter(
+				ctx, r.Client, r.opts.ClaimNamespace, lres.Status.Backend, &lres, lres.Status.TargetClusterUID,
+			)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
 		finished, err := restore.Finish(
 			ctx, r.Client, r.APIReader, &lres, &lres.Status.RestoreProgress, lres.Spec.TargetClusterRef.Name,
 		)
 
 		return ctrl.Result{RequeueAfter: finished.Wait}, err
+	}
+
+	if lres.Status.Backend != "" {
+		err := restore.RegisterWriter(
+			ctx, r.Client, r.APIReader, r.opts.ClaimNamespace, lres.Status.Backend, &lres, lres.Status.TargetClusterUID,
+		)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	var outcome restore.Outcome
@@ -249,7 +266,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// a terminal holder inactive. A release before that point lets a second
 	// operation start against a cluster whose restore the API still reports
 	// as running.
-	return ctrl.Result{RequeueAfter: outcome.Wait}, nil
+	wait := outcome.Wait
+	if lres.Status.Backend != "" && !lres.Terminal() {
+		wait = restore.WriterWait(wait)
+	}
+
+	return ctrl.Result{RequeueAfter: wait}, nil
 }
 
 // complete ends the restore. The secondary storage of the target holds the

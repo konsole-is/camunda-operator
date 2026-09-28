@@ -45,6 +45,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
+	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 )
 
 // The index fields of CamundaClusters, one per reference kind. Cluster-scoped
@@ -74,8 +75,8 @@ const (
 	// this controller owns the index.
 	presetSecretRefsField = "camundaclusterpreset.spec.secretRefs"
 	// waitingForHandoverField holds "true" for a cluster whose Ready reports
-	// WaitingForHandover, so the end of a restore wakes the clusters that wait
-	// and no other.
+	// WaitingForHandover, so a released writer Lease wakes the clusters that
+	// wait and no other.
 	waitingForHandoverField = "camundacluster.status.waitingForHandover"
 )
 
@@ -220,14 +221,9 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			builder.WithPredicates(predicate.NewPredicateFuncs(isStorageClaim)),
 		).
 		Watches(
-			&v1.LogicalRestoreElasticsearch{},
+			&coordinationv1.Lease{},
 			r.enqueueWaitingForHandover(),
-			builder.WithPredicates(restoreEnds()),
-		).
-		Watches(
-			&v1.LogicalRestoreRDBMS{},
-			r.enqueueWaitingForHandover(),
-			builder.WithPredicates(restoreEnds()),
+			builder.WithPredicates(writerReleased()),
 		).
 		Named(controllerName).
 		Complete(r)
@@ -254,9 +250,9 @@ func enqueueForStorageClaim() handler.EventHandler {
 	})
 }
 
-// enqueueWaitingForHandover maps the end of a restore to every cluster that
-// reports WaitingForHandover. A restore does not name the clusters that wait
-// for it, so the map takes them all.
+// enqueueWaitingForHandover maps a released writer Lease to every cluster
+// that reports WaitingForHandover. A writer Lease does not name the clusters
+// that wait for it, so the map takes them all.
 func (r *CamundaClusterReconciler) enqueueWaitingForHandover() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, _ client.Object) []reconcile.Request {
 		set := requestSet{}
@@ -265,28 +261,13 @@ func (r *CamundaClusterReconciler) enqueueWaitingForHandover() handler.EventHand
 	})
 }
 
-// terminal is what the two logical restore kinds share for restoreEnds.
-type terminal interface {
-	Terminal() bool
-}
-
-// restoreEnds passes the events after which a restore writes no backend any
-// more: it reached a terminal phase, or it was deleted before it did.
-func restoreEnds() predicate.Funcs {
+// writerReleased passes the deletion of a writer Lease. A renewal writes the
+// Lease far more often and frees nothing.
+func writerReleased() predicate.Funcs {
 	return predicate.Funcs{
-		CreateFunc: func(event.CreateEvent) bool { return false },
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			before, ok := e.ObjectOld.(terminal)
-			if !ok {
-				return false
-			}
-			after, ok := e.ObjectNew.(terminal)
-			return ok && !before.Terminal() && after.Terminal()
-		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
-			restore, ok := e.Object.(terminal)
-			return ok && !restore.Terminal()
-		},
+		CreateFunc:  func(event.CreateEvent) bool { return false },
+		UpdateFunc:  func(event.UpdateEvent) bool { return false },
+		DeleteFunc:  func(e event.DeleteEvent) bool { return storagewriter.IsWriterLease(e.Object) },
 		GenericFunc: func(event.GenericEvent) bool { return false },
 	}
 }

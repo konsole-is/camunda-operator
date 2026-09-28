@@ -128,7 +128,6 @@ const defaultRetryInterval = 30 * time.Second
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseserverconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs,verbs=get;list;watch
-// +kubebuilder:rbac:groups=core.camunda.io,resources=logicalrestoreelasticsearches;logicalrestorerdbmses,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
@@ -149,7 +148,7 @@ const defaultRetryInterval = 30 * time.Second
 // reason otherwise comes from conditions.Aggregate. A cluster whose backend
 // another cluster holds reports StorageAlreadyAttached instead. A cluster that
 // holds the backend reports WaitingForHandover while pods of another cluster,
-// or a restore into another cluster, still write it.
+// or a writer for another cluster, still write it.
 func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
 	var cluster v1.CamundaCluster
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &cluster); err != nil {
@@ -349,8 +348,9 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// A failed rotation looks again on a timer, because no watch fires when the
 	// user API recovers or accepts the credentials again. A cluster the claim
 	// suspends looks again for the holder of its backend, or for the pods of
-	// another cluster on it, which nothing watches either. The end of a
-	// restore wakes it through enqueueWaitingForHandover.
+	// another cluster on it, which nothing watches either, and for a writer
+	// Lease that expires. A released writer Lease wakes it through
+	// enqueueWaitingForHandover.
 	if cred.failure != nil || claimSuspends(in.Storage) {
 		wait = r.retryInterval()
 	}

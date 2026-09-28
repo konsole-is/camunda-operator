@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -37,6 +38,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
+	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 )
 
 // errClusterGone reports that the CamundaCluster of spec.clusterRef does not
@@ -332,13 +334,15 @@ func (r *Reconciler) gateOnStorageClaim(
 	if err != nil {
 		return err
 	}
-	// A restore into another cluster writes the backend with no pod of that
-	// cluster, so the pods alone do not show it.
-	restores, err := clustercomponents.RestoresOnBackend(ctx, r.APIReader, key, cluster.UID)
+	// A writer for another cluster, such as a restore, writes the backend with
+	// no pod of that cluster, so the pods alone do not show it.
+	writers, err := storagewriter.Live(
+		ctx, r.APIReader, r.ClaimNamespace, key, out.Input.StorageClaim, cluster.UID, time.Now(),
+	)
 	if err != nil {
 		return err
 	}
-	if len(writing) > 0 || len(restores) > 0 {
+	if len(writing) > 0 || len(writers) > 0 {
 		out.Input.Suspended = true
 		out.AwaitsBackendClaim = true
 	}

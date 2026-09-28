@@ -38,8 +38,10 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	restorepkg "github.com/konsole-is/camunda-operator/pkg/restore"
+	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 )
 
 // The facts of every world. The version is the tag of the broker image and
@@ -714,4 +716,41 @@ func collectDeletedJobs(namespace string) {
 			}
 		}
 	}()
+}
+
+// writersNaming returns the writer Leases in the claim namespace that name the
+// restore, as their writer annotation.
+func writersNaming(restore *v1.LogicalRestoreRDBMS) []string {
+	GinkgoHelper()
+	var leases coordinationv1.LeaseList
+	Expect(k8sClient.List(
+		ctx,
+		&leases,
+		client.InNamespace(claimNamespace),
+		client.MatchingLabels{labels.ComponentKey: storagewriter.Component},
+	)).To(Succeed())
+
+	var writers []string
+	for i := range leases.Items {
+		writer := leases.Items[i].Annotations[storagewriter.WriterAnnotation]
+		if writer == "LogicalRestoreRDBMS "+restore.Namespace+"/"+restore.Name {
+			writers = append(writers, writer)
+		}
+	}
+
+	return writers
+}
+
+// failRestore fails the pg_restore Job of the restore and waits until the
+// restore reports Failed.
+func failRestore(w *world, lrr *v1.LogicalRestoreRDBMS) {
+	GinkgoHelper()
+	var jobName string
+	Eventually(func(g Gomega) {
+		jobName = latest(g, lrr).Status.SecondaryJobName
+		g.Expect(jobName).NotTo(BeEmpty())
+	}, timeout, interval).Should(Succeed())
+
+	markJob(w.namespace, jobName, batchv1.JobFailed)
+	expectReason(lrr, v1.LogicalRestoreFailed, v1.ReasonFailed)
 }

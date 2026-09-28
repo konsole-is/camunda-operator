@@ -73,9 +73,9 @@ type StorageHandover struct {
 	// Pods are the pods and workloads of other clusters on the storage claim,
 	// see OtherPodsOnClaim.
 	Pods []string
-	// Restores are the running restores into other clusters on the backend,
-	// see RestoresOnBackend.
-	Restores []string
+	// Writers are the live writers for other clusters on the backend, see
+	// storagewriter.Live.
+	Writers []string
 }
 
 // RDBMSStorage is the DatabaseConfig and DatabaseServerConfig chain of an

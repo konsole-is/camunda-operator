@@ -184,8 +184,8 @@ func TestSuspensionNotesSpeakForTheClusterOnly(t *testing.T) {
 			prior: suspension{rendered: true},
 			now:   v1.OptimizeSuspensionStorageClaim,
 			want: `Normal StorageClaimAwaited CamundaCluster "my-cluster" does not hold its backend, ` +
-				"or pods of another cluster or of a previous instance, or a restore into another cluster, still write it, " +
-				"the Optimize workloads follow it to zero",
+				"or pods of another cluster or of a previous instance, or a writer for another cluster, " +
+				"such as a restore, still write it, the Optimize workloads follow it to zero",
 		},
 		// One note covers a resume from either wait, because the cluster was
 		// not suspended in one of them.
@@ -217,7 +217,7 @@ func TestBackendClaimAwaitedSaysBothHalvesOfTheGate(t *testing.T) {
 	t.Parallel()
 
 	const bothHalves = "does not hold its backend, or pods of another cluster or of a previous instance, " +
-		"or a restore into another cluster, still write it"
+		"or a writer for another cluster, such as a restore, still write it"
 	said := map[string]string{
 		"the event note":                      backendClaimAwaited.eventNote,
 		"the note on Ready":                   backendClaimAwaited.failureNote,
@@ -246,8 +246,8 @@ func TestReconcileNamesTheWaitWhenACheckFails(t *testing.T) {
 		"the cluster does not hold the storage claim": {
 			arrange: func(t *testing.T, h *reconcileHarness) { h.releaseClaim(t) },
 			want: `Normal StorageClaimAwaited CamundaCluster "my-cluster" does not hold its backend, ` +
-				"or pods of another cluster or of a previous instance, or a restore into another cluster, still write it, " +
-				"the Optimize workloads follow it to zero",
+				"or pods of another cluster or of a previous instance, or a writer for another cluster, " +
+				"such as a restore, still write it, the Optimize workloads follow it to zero",
 		},
 	}
 
