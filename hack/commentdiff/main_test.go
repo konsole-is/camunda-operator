@@ -168,7 +168,7 @@ func f() { g() }
 }
 `,
 			wantFatal: true,
-			wantText:  "doc of field I.M GREW from 1 to 2",
+			wantText:  "doc of method I.M GREW from 1 to 2",
 		},
 		{
 			name: "changed comment that duplicates another is listed",
@@ -409,6 +409,12 @@ func TestDiffFileFlagsGoDocsUnderAPI(t *testing.T) {
 			file: "api/v1/groupversion_info.go",
 			old:  "// Builder builds.\n// +kubebuilder:object:generate=false\ntype Builder struct{}\n",
 			cur:  "// Builder builds.\n// It never fails.\n// +kubebuilder:object:generate=false\ntype Builder struct{}\n",
+		},
+		{
+			name: "method of an interface",
+			file: "api/v1/spec_types.go",
+			old:  "type Getter interface {\n\t// Get returns the spec.\n\tGet() int\n}\n",
+			cur:  "type Getter interface {\n\t// Get returns the spec.\n\t// It is never nil.\n\tGet() int\n}\n",
 		},
 		{
 			name: "type in a test file",

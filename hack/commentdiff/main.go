@@ -402,6 +402,10 @@ func scan(file string, src []byte) (map[string]decl, []comment, error) {
 	}
 	var addMembers func(owner string, t ast.Expr)
 	addMembers = func(owner string, t ast.Expr) {
+		kind := "field "
+		if _, ok := t.(*ast.InterfaceType); ok {
+			kind = "method "
+		}
 		for _, fld := range members(t) {
 			names := make([]string, 0, max(1, len(fld.Names)))
 			for _, n := range fld.Names {
@@ -414,7 +418,7 @@ func scan(file string, src []byte) (map[string]decl, []comment, error) {
 				if n == "" {
 					continue
 				}
-				add("field "+owner+"."+n, n, fld.Doc, 0)
+				add(kind+owner+"."+n, n, fld.Doc, 0)
 				addMembers(owner+"."+n, fld.Type)
 			}
 		}
