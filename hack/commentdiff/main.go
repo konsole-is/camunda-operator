@@ -54,6 +54,11 @@ type decl struct {
 	bodyLen int
 }
 
+type change struct {
+	path     string
+	basePath string // empty when base does not have the file
+}
+
 type finding struct {
 	file  string
 	line  int
@@ -66,31 +71,10 @@ func main() {
 	if len(os.Args) > 1 {
 		base = os.Args[1]
 	}
-	mergeBase, err := git("merge-base", base, "HEAD")
+	findings, err := run(base)
 	if err != nil {
-		fail("find the merge base of %s and HEAD: %v", base, err)
+		fail("%v", err)
 	}
-	mergeBase = strings.TrimSpace(mergeBase)
-
-	names, err := git("diff", "--name-only", "--diff-filter=AMR", mergeBase, "--", "*.go")
-	if err != nil {
-		fail("list changed Go files: %v", err)
-	}
-
-	var findings []finding
-	for file := range strings.FieldsSeq(names) {
-		if strings.Contains(file, "zz_generated") {
-			continue
-		}
-		findings = append(findings, compare(mergeBase, file)...)
-	}
-
-	sort.Slice(findings, func(i, j int) bool {
-		if findings[i].file != findings[j].file {
-			return findings[i].file < findings[j].file
-		}
-		return findings[i].line < findings[j].line
-	})
 
 	fatal := 0
 	for _, f := range findings {
@@ -107,27 +91,104 @@ func main() {
 	}
 }
 
-// compare reports the comments of file that are new or changed since base.
-func compare(base, file string) []finding {
-	newSrc, err := os.ReadFile(file)
+func run(base string) ([]finding, error) {
+	mergeBase, err := git("merge-base", base, "HEAD")
 	if err != nil {
-		return nil // deleted in the working tree
+		return nil, fmt.Errorf("find the merge base of %s and HEAD: %w", base, err)
 	}
-	oldSrc, _ := git("show", base+":"+file) // empty for an added file
+	mergeBase = strings.TrimSpace(mergeBase)
 
-	return diffFile(file, []byte(oldSrc), newSrc)
+	changes, err := changedFiles(mergeBase)
+	if err != nil {
+		return nil, err
+	}
+
+	var findings []finding
+	for _, c := range changes {
+		if strings.Contains(c.path, "zz_generated") {
+			continue
+		}
+		found, err := compare(mergeBase, c)
+		if err != nil {
+			return nil, err
+		}
+		findings = append(findings, found...)
+	}
+
+	sort.Slice(findings, func(i, j int) bool {
+		if findings[i].file != findings[j].file {
+			return findings[i].file < findings[j].file
+		}
+		return findings[i].line < findings[j].line
+	})
+	return findings, nil
+}
+
+// changedFiles lists the Go files that differ from base in the working tree, untracked files included.
+func changedFiles(base string) ([]change, error) {
+	diff, err := git("diff", "-z", "--name-status", "-M", "--diff-filter=AMR", base, "--", "*.go")
+	if err != nil {
+		return nil, fmt.Errorf("list changed Go files: %w", err)
+	}
+
+	var changes []change
+	fields := strings.Split(strings.TrimSuffix(diff, "\x00"), "\x00")
+	for i := 0; i+1 < len(fields); i += 2 {
+		switch status := fields[i]; {
+		case strings.HasPrefix(status, "R") && i+2 < len(fields):
+			changes = append(changes, change{path: fields[i+2], basePath: fields[i+1]})
+			i++
+		case strings.HasPrefix(status, "A"):
+			changes = append(changes, change{path: fields[i+1]})
+		default:
+			changes = append(changes, change{path: fields[i+1], basePath: fields[i+1]})
+		}
+	}
+
+	untracked, err := git("ls-files", "-z", "--others", "--exclude-standard", "--", "*.go")
+	if err != nil {
+		return nil, fmt.Errorf("list untracked Go files: %w", err)
+	}
+	for path := range strings.SplitSeq(untracked, "\x00") {
+		if path != "" {
+			changes = append(changes, change{path: path})
+		}
+	}
+	return changes, nil
+}
+
+func compare(base string, c change) ([]finding, error) {
+	newSrc, err := os.ReadFile(c.path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", c.path, err)
+	}
+
+	var oldSrc string
+	if c.basePath != "" {
+		if oldSrc, err = git("show", base+":"+c.basePath); err != nil {
+			return nil, fmt.Errorf("read %s at %s: %w", c.basePath, base, err)
+		}
+	}
+	return diffFile(c.path, []byte(oldSrc), newSrc)
 }
 
 // diffFile reports every doc comment and every free-standing comment in
 // newSrc that is not in oldSrc. An empty oldSrc is a file added since base.
-func diffFile(file string, oldSrc, newSrc []byte) []finding {
-	newDecls, newFree := scan(file, newSrc)
-	oldDecls, oldFree := scan(file, oldSrc)
+func diffFile(file string, oldSrc, newSrc []byte) ([]finding, error) {
+	newDecls, newFree, err := scan(file, newSrc)
+	if err != nil {
+		return nil, err
+	}
+	oldDecls, oldFree, err := scan(file, oldSrc)
+	if err != nil {
+		return nil, fmt.Errorf("at the base: %w", err)
+	}
 
 	userFacing := strings.HasPrefix(file, "api/")
 	var out []finding
 	renamed := pairRenames(oldDecls, newDecls)
-	for key, d := range newDecls {
+	for _, key := range sortedKeys(newDecls) {
+		d := newDecls[key]
 		old, existed := oldDecls[key]
 		if !existed {
 			old, existed = renamed[key]
@@ -161,13 +222,12 @@ func diffFile(file string, oldSrc, newSrc []byte) []finding {
 		}
 		out = append(out, f)
 	}
-	for text, line := range newFree {
-		if _, ok := oldFree[text]; ok {
-			continue
+	for text, lines := range newFree {
+		for _, line := range lines[min(len(oldFree[text]), len(lines)):] {
+			out = append(out, finding{file: file, line: line, text: "comment: " + firstLine(text)})
 		}
-		out = append(out, finding{file: file, line: line, text: "comment: " + firstLine(text)})
 	}
-	return out
+	return out, nil
 }
 
 // pairRenames maps each new declaration that has no match at base to the
@@ -175,18 +235,19 @@ func diffFile(file string, oldSrc, newSrc []byte) []finding {
 // or else the removed one of the same kind whose doc sat closest to it.
 func pairRenames(old, cur map[string]decl) map[string]decl {
 	var removed []decl
-	for key, d := range old {
-		if _, ok := cur[key]; !ok && d.docLen > 0 {
+	for _, key := range sortedKeys(old) {
+		if d := old[key]; d.docLen > 0 && !hasKey(cur, key) {
 			removed = append(removed, d)
 		}
 	}
 	paired := map[string]decl{}
 	used := map[string]bool{}
-	for key, d := range cur {
-		if _, ok := old[key]; ok {
+	for _, key := range sortedKeys(cur) {
+		if hasKey(old, key) {
 			continue
 		}
-		best, dist := decl{}, -1
+		d := cur[key]
+		best, dist := decl{}, maxRenameGap+1
 		for _, r := range removed {
 			if used[r.name] || kind(r.name) != kind(d.name) {
 				continue
@@ -195,11 +256,11 @@ func pairRenames(old, cur map[string]decl) map[string]decl {
 			if r.short == d.short {
 				gap = -1
 			}
-			if dist == -1 || gap < dist {
+			if gap < dist {
 				best, dist = r, gap
 			}
 		}
-		if best.name != "" && dist <= maxRenameGap {
+		if best.name != "" {
 			used[best.name] = true
 			paired[key] = best
 		}
@@ -211,6 +272,20 @@ func pairRenames(old, cur map[string]decl) map[string]decl {
 // and still count as the same declaration under a new name.
 const maxRenameGap = 60
 
+func sortedKeys(m map[string]decl) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func hasKey(m map[string]decl, key string) bool {
+	_, ok := m[key]
+	return ok
+}
+
 func kind(key string) string { return strings.SplitN(key, " ", 2)[0] }
 
 func abs(n int) int {
@@ -221,17 +296,17 @@ func abs(n int) int {
 }
 
 // scan returns the doc comments keyed by declaration, and the text of every
-// comment group that is not a doc comment, mapped to its line.
-func scan(file string, src []byte) (map[string]decl, map[string]int) {
+// comment group that is not a doc comment, mapped to its lines.
+func scan(file string, src []byte) (map[string]decl, map[string][]int, error) {
 	decls := map[string]decl{}
-	free := map[string]int{}
+	free := map[string][]int{}
 	if len(bytes.TrimSpace(src)) == 0 {
-		return decls, free
+		return decls, free, nil
 	}
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, file, src, parser.ParseComments)
 	if err != nil {
-		return decls, free
+		return nil, nil, err
 	}
 
 	docs := map[*ast.CommentGroup]bool{}
@@ -250,12 +325,13 @@ func scan(file string, src []byte) (map[string]decl, map[string]int) {
 		}
 	}
 
+	add("package "+f.Name.Name, "", f.Doc, 0)
 	for _, d := range f.Decls {
 		switch d := d.(type) {
 		case *ast.FuncDecl:
 			body := 0
 			if d.Body != nil {
-				body = fset.Position(d.Body.Rbrace).Line - fset.Position(d.Body.Lbrace).Line - 1
+				body = max(1, fset.Position(d.Body.Rbrace).Line-fset.Position(d.Body.Lbrace).Line-1)
 			}
 			add(funcKey(d), d.Name.Name, d.Doc, body)
 		case *ast.GenDecl:
@@ -264,11 +340,9 @@ func scan(file string, src []byte) (map[string]decl, map[string]int) {
 				switch s := s.(type) {
 				case *ast.TypeSpec:
 					add("type "+s.Name.Name, s.Name.Name, s.Doc, 0)
-					if st, ok := s.Type.(*ast.StructType); ok {
-						for _, fld := range st.Fields.List {
-							for _, n := range fld.Names {
-								add("field "+s.Name.Name+"."+n.Name, n.Name, fld.Doc, 0)
-							}
+					for _, fld := range members(s.Type) {
+						for _, n := range fld.Names {
+							add("field "+s.Name.Name+"."+n.Name, n.Name, fld.Doc, 0)
 						}
 					}
 				case *ast.ValueSpec:
@@ -287,9 +361,19 @@ func scan(file string, src []byte) (map[string]decl, map[string]int) {
 		if text == "" || strings.HasPrefix(text, "+") {
 			continue // kubebuilder markers and build tags
 		}
-		free[text] = fset.Position(cg.Pos()).Line
+		free[text] = append(free[text], fset.Position(cg.Pos()).Line)
 	}
-	return decls, free
+	return decls, free, nil
+}
+
+func members(t ast.Expr) []*ast.Field {
+	switch t := t.(type) {
+	case *ast.StructType:
+		return t.Fields.List
+	case *ast.InterfaceType:
+		return t.Methods.List
+	}
+	return nil
 }
 
 func funcKey(d *ast.FuncDecl) string {

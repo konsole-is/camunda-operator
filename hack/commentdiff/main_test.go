@@ -17,6 +17,8 @@ limitations under the License.
 package main
 
 import (
+	"os"
+	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -34,8 +36,9 @@ func TestDiffFileListsUserFacingGrowthWithoutFlag(t *testing.T) {
 }
 `)
 
-	got := diffFile("api/v1/spec_types.go", old, cur)
+	got, err := diffFile("api/v1/spec_types.go", old, cur)
 
+	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.False(t, got[0].fatal)
 	assert.Contains(t, got[0].text, "GREW from 1 to 2 lines (user-facing")
@@ -140,6 +143,51 @@ func f() {
 			wantText:  "LONGER than its 1-line body",
 		},
 		{
+			name: "one-line body still counts as a body",
+			old:  "",
+			cur: `// f does a thing.
+// It does it twice.
+// Then once more.
+func f() { g() }
+`,
+			wantFatal: true,
+			wantText:  "LONGER than its 1-line body",
+		},
+		{
+			name: "interface method doc grew",
+			old: `type I interface {
+	// M runs.
+	M()
+}
+`,
+			cur: `type I interface {
+	// M runs.
+	// It runs twice.
+	M()
+}
+`,
+			wantFatal: true,
+			wantText:  "doc of field I.M GREW from 1 to 2",
+		},
+		{
+			name: "changed comment that duplicates another is listed",
+			old: `func f() {
+	// a
+	g()
+	// b
+	g()
+}
+`,
+			cur: `func f() {
+	// b
+	g()
+	// b
+	g()
+}
+`,
+			wantText: "comment: b",
+		},
+		{
 			name: "two-line doc over a one-line body is the normal shape",
 			old:  "",
 			cur: `// f calls g.
@@ -180,7 +228,8 @@ type T struct{}
 			if tt.old != "" {
 				old = src(tt.old)
 			}
-			got := diffFile("p.go", old, src(tt.cur))
+			got, err := diffFile("p.go", old, src(tt.cur))
+			require.NoError(t, err)
 			if tt.wantText == "" {
 				assert.Empty(t, got)
 				return
@@ -190,4 +239,81 @@ type T struct{}
 			assert.Equal(t, tt.wantFatal, got[0].fatal)
 		})
 	}
+}
+
+func TestDiffFileFlagsGrownPackageDoc(t *testing.T) {
+	old := []byte("// Package p does a thing.\npackage p\n")
+	cur := []byte("// Package p does a thing.\n// It does it twice.\npackage p\n")
+
+	got, err := diffFile("p.go", old, cur)
+
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.True(t, got[0].fatal)
+	assert.Contains(t, got[0].text, "doc of package p GREW from 1 to 2")
+}
+
+func TestDiffFileFailsWhenTheSourceDoesNotParse(t *testing.T) {
+	_, err := diffFile("p.go", nil, src("func f( {\n"))
+
+	assert.Error(t, err)
+}
+
+func TestPairRenamesBreaksTiesTheSameWayEachTime(t *testing.T) {
+	old := map[string]decl{
+		"func a": {name: "func a", short: "a", line: 10, docLen: 1},
+		"func b": {name: "func b", short: "b", line: 30, docLen: 1},
+	}
+	cur := map[string]decl{"func c": {name: "func c", short: "c", line: 20, docLen: 1}}
+
+	for range 50 {
+		assert.Equal(t, "func a", pairRenames(old, cur)["func c"].name)
+	}
+}
+
+func TestRunComparesARenamedFileWithItsBasePath(t *testing.T) {
+	newRepo(t)
+	writeFile(t, "a.go", "package p\n\n// f returns one.\n// It never fails.\nfunc f() int { return 1 }\n")
+	gitRun(t, "add", "a.go")
+	gitRun(t, "commit", "-q", "-m", "base")
+	gitRun(t, "mv", "a.go", "b.go")
+
+	got, err := run("HEAD")
+
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
+func TestRunScansUntrackedFiles(t *testing.T) {
+	newRepo(t)
+	gitRun(t, "commit", "-q", "--allow-empty", "-m", "base")
+	writeFile(t, "c.go", "package p\n\n// f returns one.\nfunc f() int { return 1 }\n")
+
+	got, err := run("HEAD")
+
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "c.go", got[0].file)
+	assert.Contains(t, got[0].text, "doc of func f added")
+}
+
+func newRepo(t *testing.T) {
+	t.Chdir(t.TempDir())
+	gitRun(t, "init", "-q")
+}
+
+func writeFile(t *testing.T, name, content string) {
+	require.NoError(t, os.WriteFile(name, []byte(content), 0o600))
+}
+
+func gitRun(t *testing.T, args ...string) {
+	t.Helper()
+	cfg := []string{
+		"-c", "user.name=test",
+		"-c", "user.email=test@example.com",
+		"-c", "commit.gpgsign=false",
+		"-c", "core.hooksPath=/dev/null",
+	}
+	out, err := exec.Command("git", append(cfg, args...)...).CombinedOutput()
+	require.NoError(t, err, string(out))
 }

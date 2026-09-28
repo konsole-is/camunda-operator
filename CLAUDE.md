@@ -33,7 +33,8 @@ the detail. Do not work from memory when a skill covers the task.
 `addressing-review-feedback` applies inside every other review workflow too:
 `feature-dev-workflow:copilot-review-loop`, `superpowers:receiving-code-review`, and any agent that you
 dispatch to fix review findings. Name the skill in the prompt of that agent. A review round is not
-done while a comment that `hack/commentdiff` flags has no verdict from a fresh evaluator.
+done while a comment that `hack/commentdiff` flags has no verdict from a fresh evaluator. Only a
+harness that cannot dispatch an agent can use a verdict marked "self-evaluated".
 
 The operator uses the operator component framework (ocf):
 https://github.com/sourcehawk/operator-component-framework. The `ocf:*` skills come from that
