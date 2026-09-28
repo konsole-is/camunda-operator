@@ -61,7 +61,7 @@ func download(url string, attempts int, backoff time.Duration) ([]byte, error) {
 func retry[T any](attempts int, backoff time.Duration, try func() (T, bool, error)) (T, error) {
 	for attempt := 1; ; attempt++ {
 		result, transient, err := try()
-		if err == nil || !transient || attempt == attempts {
+		if err == nil || !transient || attempt >= attempts {
 			return result, err
 		}
 

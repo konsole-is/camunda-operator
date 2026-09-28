@@ -102,3 +102,12 @@ func TestDownloadRetriesAConnectionError(t *testing.T) {
 	require.ErrorContains(t, err, "downloading")
 	assert.GreaterOrEqual(t, time.Since(start), 30*time.Millisecond, "two backoffs of 10ms and 20ms")
 }
+
+func TestRetryMakesOneTryWhenAttemptsIsNotPositive(t *testing.T) {
+	server, hits := serveStatuses(t, "", http.StatusInternalServerError)
+
+	_, err := download(server.URL, 0, time.Millisecond)
+
+	require.ErrorContains(t, err, "HTTP 500")
+	assert.Equal(t, int32(1), hits.Load())
+}
