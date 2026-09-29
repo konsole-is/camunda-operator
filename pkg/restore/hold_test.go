@@ -17,6 +17,8 @@ limitations under the License.
 package restore
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -224,6 +226,33 @@ func TestFinalizeHoldKeepsTheHoldUntilTheJobPodsOfTheRestoreAreGone(t *testing.T
 	require.NoError(t, err)
 	assert.True(t, finalized.Done)
 	assert.Len(t, w.appliesBy(holdManager(owner)), 1)
+}
+
+// A failed read is an error, not a wait.
+func TestFinalizeHoldReturnsAFailedReadWithoutAWait(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	owner := w.liveRestore(t)
+	require.NoError(t, AddHoldFinalizer(t.Context(), w.client, owner))
+
+	finalized, err := FinalizeHold(
+		t.Context(),
+		w.client,
+		failingLister{w.client},
+		owner,
+		podLabel(owner),
+		w.cluster.Name,
+	)
+	require.Error(t, err)
+	assert.Zero(t, finalized)
+	assert.True(t, controllerutil.ContainsFinalizer(w.liveRestore(t), HoldFinalizer))
+}
+
+type failingLister struct{ client.Reader }
+
+func (failingLister) List(context.Context, client.ObjectList, ...client.ListOption) error {
+	return errors.New("list refused")
 }
 
 func podLabel(owner *v1.PointInTimeRestore) labels.Owner {

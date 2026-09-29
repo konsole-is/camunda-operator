@@ -28,12 +28,11 @@ import (
 
 // Finish is the terminal branch of every restore kind. The controller runs it
 // on every look of a restore that reached a terminal phase, in place of the
-// phase it would otherwise advance. It gives back what the restore held: the
-// Jobs of a completed restore, the suspension that the restore applied, and
-// the claim on the cluster. cluster is the name of the target, which lives in
-// the namespace of the restore.
+// phase it would otherwise advance. It gives back the Jobs of a completed
+// restore, what Resume gives back, and the claim on the cluster. cluster is
+// the name of the target, which lives in the namespace of the restore.
 //
-// It reports Done only when all three are given back. Until then it reports
+// It reports Done only when all of them are given back. Until then it reports
 // Outcome.Wait, which is a wait and not a failure, and the controller looks
 // again after it.
 //
