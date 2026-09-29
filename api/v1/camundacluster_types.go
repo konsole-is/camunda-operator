@@ -504,8 +504,8 @@ type CamundaClusterSpec struct {
 	// +optional
 	Monitoring *ClusterMonitoringSpec `json:"monitoring,omitempty"`
 	// Suspend scales every workload to zero and keeps the data. Defaults to
-	// false. An annotation with the prefix suspension-hold.camunda.io/ also
-	// suspends the cluster, whatever this field says.
+	// false. An annotation with the prefix suspension-hold.camunda.io/ on the
+	// CamundaCluster also suspends it, whatever this field says.
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
 	// Pause halts the reconciliation of this cluster entirely and leaves the

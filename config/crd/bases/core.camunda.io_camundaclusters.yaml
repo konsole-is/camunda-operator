@@ -5873,8 +5873,8 @@ spec:
               suspend:
                 description: |-
                   Suspend scales every workload to zero and keeps the data. Defaults to
-                  false. An annotation with the prefix suspension-hold.camunda.io/ also
-                  suspends the cluster, whatever this field says.
+                  false. An annotation with the prefix suspension-hold.camunda.io/ on the
+                  CamundaCluster also suspends it, whatever this field says.
                 type: boolean
               tasklist:
                 description: Tasklist configures the Tasklist web application.

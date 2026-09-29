@@ -374,7 +374,7 @@ The `Ready` condition of the backup carries the reason. Before the backup starts
 | `MissingCredentials` (PostgreSQL) | The static credentials Secret of the bucket does not resolve. | Make sure that the Secret that the `ObjectStorageConfig` names exists and holds the configured keys. |
 | `ConnectionFailed` | The management API of the cluster, or Elasticsearch, is not reachable or rejected the call. | Make sure that the cluster is healthy and that a network policy does not block the operator. The backup retries for a bounded time, then fails. |
 | `StorageTypeMismatch` | The cluster stores its data in the other backend. | Use the other backup kind. |
-| `ClusterSuspended` | The cluster is suspended. The backup waits. | Set `spec.suspend: false` on the cluster, or wait. |
+| `ClusterSuspended` | The cluster is suspended. The backup waits. | Set `spec.suspend: false` on the cluster, or wait. A cluster that reports `SuspensionHeld` stays suspended until its holds are gone. |
 | `BackupInProgress` | Another backup of the cluster runs. The message names it. The backup waits. | Wait, or delete the other backup. |
 
 A `Failed` backup holds no artifacts that a restore can use. Delete it to remove what it wrote.
