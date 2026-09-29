@@ -189,11 +189,19 @@ func TestCheckPageNamesTheSentence(t *testing.T) {
 	assert.Equal(t, "The word word word word word", got[0].start)
 }
 
-func TestCheckDirSkipsUnpublishedPages(t *testing.T) {
+func TestCheckDirSkipsUnpublishedAndGeneratedPages(t *testing.T) {
 	root := t.TempDir()
 	long := words(30)
 
-	for _, rel := range []string{"index.md", "superpowers/plan.md", "crds/TEMPLATE.md", "crds/kind.md", "notes.txt"} {
+	pages := []string{
+		"index.md",
+		"superpowers/plan.md",
+		"crds/TEMPLATE.md",
+		"crds/api-reference.md",
+		"crds/kind.md",
+		"notes.txt",
+	}
+	for _, rel := range pages {
 		path := filepath.Join(root, rel)
 		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
 		require.NoError(t, os.WriteFile(path, []byte(long), 0o600))
