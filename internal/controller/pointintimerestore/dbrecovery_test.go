@@ -534,6 +534,29 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		}, timeout, interval).Should(BeEmpty(), "the restore gives the database back once the rollback ended")
 	})
 
+	It("follows a contract that moves and stops recovering while its cluster is gone", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		expectBackendHeld(pitr)
+
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		expectRecovering(pitr, "was deleted", w.server.Name)
+
+		Eventually(func(g Gomega) {
+			var contract v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), &contract)).To(Succeed())
+			contract.Spec.Host = recoveredHost
+			contract.Spec.PITR.Recovery = v1.RecoveryModeExternal
+			g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(readRestore(g, pitr).Status.Backend).To(ContainSubstring(recoveredHost))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("follows a moved contract without waiting for its retry timer while its cluster is gone", func() {
 		w := operatorRecoveryWorld()
 		pitr := createRestore(w)

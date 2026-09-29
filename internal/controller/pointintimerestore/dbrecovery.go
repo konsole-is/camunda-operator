@@ -189,6 +189,11 @@ func (r *Reconciler) holdForRollback(
 	if err != nil {
 		return restore.Outcome{}, false, err
 	}
+	if contract != nil {
+		if _, err := r.followBackend(ctx, pitr, contract); err != nil {
+			return restore.Outcome{}, false, err
+		}
+	}
 	if unanswerable {
 		return r.holdStarted(pitr, &conditions.PreCheckFailure{
 			Reason: reason,
@@ -201,9 +206,6 @@ func (r *Reconciler) holdForRollback(
 	}
 	if contract == nil {
 		return restore.Outcome{}, false, nil
-	}
-	if _, err := r.followBackend(ctx, pitr, contract); err != nil {
-		return restore.Outcome{}, false, err
 	}
 
 	return r.holdRecovering(pitr, &conditions.PreCheckFailure{
@@ -238,7 +240,7 @@ func (r *Reconciler) runningRollback(
 	case !asked || answered:
 		return nil, false, nil
 	case !contract.OperatorRecovers():
-		return nil, true, nil
+		return contract, true, nil
 	}
 
 	return contract, false, nil
