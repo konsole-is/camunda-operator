@@ -212,7 +212,7 @@ func (r *Reconciler) holdForRollback(
 		Reason: reason,
 		Message: fmt.Sprintf(
 			"%s while its database server rolls back. The restore ends when DatabaseServerConfig "+
-				"%s answers the recovery request. Until then, no other cluster starts on the database",
+				"%s answers the recovery request. Until then, the restore holds the database",
 			what, client.ObjectKeyFromObject(contract),
 		),
 	}), true, nil
