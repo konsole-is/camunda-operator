@@ -90,8 +90,7 @@ var certManagerDeployments = []string{"cert-manager", "cert-manager-cainjector",
 
 // InstallCertManager installs the cert manager bundle and waits until every
 // one of its Deployments is Available, which can take time if cert-manager
-// was re-installed after uninstalling on a cluster. cert-manager retries a
-// failed issuance first after 5 seconds, not after the default of one hour.
+// was re-installed after uninstalling on a cluster.
 func InstallCertManager() error {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
 	if _, err := Run(exec.Command("kubectl", "apply", "-f", url)); err != nil {
