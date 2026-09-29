@@ -300,7 +300,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		}, timeout, interval).Should(Succeed())
 
 		message := expectFailed(pitr, v1.ReasonFailed)
-		Expect(message).To(ContainSubstring("storage chain of the cluster changed"))
+		Expect(message).To(ContainSubstring("no DatabaseServerConfig can answer"))
 	})
 
 	It("fails and gives its database back when its contract is deleted while it waits", func() {
@@ -313,6 +313,27 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		Expect(k8sClient.Delete(ctx, w.server)).To(Succeed())
 
 		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring(w.server.Name))
+		Eventually(func() []string {
+			return writersSeenByAnotherCluster(backend)
+		}, timeout, interval).Should(BeEmpty())
+	})
+
+	It("keeps its database held for the grace when its cluster and its contract are both deleted", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		backend := expectBackendHeld(pitr)
+
+		Expect(k8sClient.Delete(ctx, w.server)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+
+		Consistently(func(g Gomega) {
+			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
+			g.Expect(writersSeenByAnotherCluster(backend)).NotTo(BeEmpty())
+		}, time.Second, interval).Should(Succeed())
+
+		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring("no DatabaseServerConfig can answer"))
 		Eventually(func() []string {
 			return writersSeenByAnotherCluster(backend)
 		}, timeout, interval).Should(BeEmpty())

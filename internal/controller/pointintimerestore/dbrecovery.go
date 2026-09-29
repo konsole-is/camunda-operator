@@ -190,16 +190,29 @@ func (r *Reconciler) goneDuringRollback(
 	return restore.Outcome{}, nil
 }
 
-// holdForRollback holds the restore while the rollback that it asked for still
-// runs. held is false when no rollback of this restore runs.
+// holdForRollback holds the restore while the rollback that it asked for runs or
+// can still run. held is false when no rollback of this restore runs.
 func (r *Reconciler) holdForRollback(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
 	reason, what string,
 ) (outcome restore.Outcome, held bool, err error) {
-	contract, err := r.runningRollback(ctx, pitr)
-	if err != nil || contract == nil {
+	contract, unanswerable, err := r.runningRollback(ctx, pitr)
+	if err != nil {
 		return restore.Outcome{}, false, err
+	}
+	if unanswerable {
+		return r.holdStarted(pitr, &conditions.PreCheckFailure{
+			Reason: reason,
+			Message: fmt.Sprintf(
+				"%s, and no DatabaseServerConfig can answer the recovery request. The database stays "+
+					"held for a while, because its server can still roll back",
+				what,
+			),
+		}), true, nil
+	}
+	if contract == nil {
+		return restore.Outcome{}, false, nil
 	}
 	if _, err := r.followBackend(ctx, pitr, contract); err != nil {
 		return restore.Outcome{}, false, err
@@ -216,24 +229,31 @@ func (r *Reconciler) holdForRollback(
 }
 
 // runningRollback returns the pinned contract while it carries the request of
-// this restore and has not answered it, or nil when no rollback of this
-// restore runs.
+// this restore and has not answered it. unanswerable is true when the rollback
+// can still run but no pinned contract that recovers can answer it.
 func (r *Reconciler) runningRollback(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
-) (*v1.DatabaseServerConfig, error) {
-	contract, err := r.pinnedContract(ctx, pitr)
-	if err != nil || contract == nil {
-		return nil, err
+) (contract *v1.DatabaseServerConfig, unanswerable bool, err error) {
+	contract, err = r.pinnedContract(ctx, pitr)
+	if err != nil {
+		return nil, false, err
+	}
+	if contract == nil {
+		return nil, pitr.Status.Storage != nil, nil
 	}
 
 	request := recoveryRequest(pitr)
 	asked := contract.Spec.Recovery != nil && *contract.Spec.Recovery == request
-	if !contract.OperatorRecovers() || !asked || request.AnsweredBy(contract.Spec.PITR.LastRecovery) {
-		return nil, nil
+	answered := contract.Spec.PITR != nil && request.AnsweredBy(contract.Spec.PITR.LastRecovery)
+	switch {
+	case !asked || answered:
+		return nil, false, nil
+	case !contract.OperatorRecovers():
+		return nil, true, nil
 	}
 
-	return contract, nil
+	return contract, false, nil
 }
 
 // pinnedContract returns the contract that the restore pinned, or nil when it
