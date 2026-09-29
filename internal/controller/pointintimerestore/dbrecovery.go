@@ -47,9 +47,7 @@ const recoveryFieldManager client.FieldOwner = "camunda-operator/pointintimerest
 // The restore reaches this phase only when the contract declares
 // pitr.recovery: operator. It writes spec.recovery on the contract, holds
 // until pitr.lastRecovery answers that request, and reads the result. Nothing
-// bounds the hold: the restore has erased nothing, the recovery of a large
-// database takes as long as it takes, and a producer that never answers is
-// something the owner of the server fixes.
+// bounds the hold while the pinned contract exists.
 //
 // A Completed answer is not the end of the wait. Pointing the contract at the
 // recovered server is a change of its spec, which clears the identity it
@@ -88,8 +86,9 @@ func (r *Reconciler) enterDatabaseRecovery(
 		if err != nil {
 			return restore.Outcome{}, err
 		}
+		// A contract that is gone can never answer the request.
 		if contract == nil {
-			return r.holdRecovering(pitr, failure), nil
+			return r.holdStarted(pitr, failure), nil
 		}
 		if _, err := r.followBackend(ctx, pitr, contract); err != nil {
 			return restore.Outcome{}, err

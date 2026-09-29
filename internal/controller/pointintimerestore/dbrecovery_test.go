@@ -303,6 +303,21 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		Expect(message).To(ContainSubstring("storage chain of the cluster changed"))
 	})
 
+	It("fails and gives its database back when its contract is deleted while it waits", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		backend := expectBackendHeld(pitr)
+
+		Expect(k8sClient.Delete(ctx, w.server)).To(Succeed())
+
+		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring(w.server.Name))
+		Eventually(func() []string {
+			return writersSeenByAnotherCluster(backend)
+		}, timeout, interval).Should(BeEmpty())
+	})
+
 	It("asks again when a restore of its name and its point was answered before it", func() {
 		w := operatorRecoveryWorld()
 		first := createRestore(w)
