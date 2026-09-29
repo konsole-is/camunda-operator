@@ -105,6 +105,21 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		keycloak := startFakeKeycloak(withOptimizeClient())
 		s := newScenario(withFakeKeycloak(keycloak))
 
+		// The pass that generates these Secrets renders Identity with no trace
+		// of them in its config hash, so the pass after it rolls the pods once
+		// more. The first Optimize comes after the Secrets exist, so every
+		// template that carries it is the one that stays.
+		generated := []client.ObjectKey{
+			{Namespace: s.namespace, Name: components.OptimizeClientSecretName(s.mc)},
+			{Namespace: s.namespace, Name: components.IdentityAdminSecretName(s.mc)},
+		}
+		Eventually(func(g Gomega) {
+			for _, key := range generated {
+				var published corev1.Secret
+				g.Expect(k8sClient.Get(ctx, key, &published)).To(Succeed())
+			}
+		}, timeout, interval).Should(Succeed())
+
 		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
 
 		identity := client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
