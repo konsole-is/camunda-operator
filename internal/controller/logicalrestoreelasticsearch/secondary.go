@@ -37,24 +37,8 @@ import (
 var allIndicesOfSnapshot = []string{"*"}
 
 // restoreSecondaryStorage writes the snapshots of the backup back into the
-// Elasticsearch of the target. Camunda exposes no restore endpoint, so the
-// operator talks to Elasticsearch itself, with the credentials of the storage
-// contract of the target.
-//
-// The work runs in two looks. The first registers the snapshot repository,
-// deletes the Camunda indices of the target, asks Elasticsearch to restore
-// every snapshot, and records their names. Every later look polls the
-// recovery. The recorded names are the resume marker: a look that finds them
-// never deletes an index again.
-//
-// A failure between the delete and the restore leaves the secondary storage
-// of the target empty. The backup itself stays whole, and the next look
-// deletes what is there and asks for the restore again, so the retry
-// converges.
-//
-// The phase never clears the mid-run grace. The first look deletes the
-// indices of the target. A clock that restarts after that delete gives every
-// later failure a full grace over data that is already gone.
+// Elasticsearch of the target. It takes several looks: call it again after
+// Outcome.Wait until the phase moves on.
 func (r *Reconciler) restoreSecondaryStorage(
 	ctx context.Context,
 	lres *v1.LogicalRestoreElasticsearch,
@@ -75,10 +59,12 @@ func (r *Reconciler) restoreSecondaryStorage(
 		return r.holdStarted(lres, failure), nil
 	}
 
+	// The recorded names are the resume marker: a look that finds them never deletes an index again.
 	if len(lres.Status.RestoredSnapshots) == 0 {
 		return r.startRestore(ctx, lres, resolved, admin)
 	}
 
+	// Nothing in this phase clears the mid-run grace, because the target indices are already deleted.
 	return r.trackRestore(ctx, lres, resolved, admin)
 }
 
@@ -90,14 +76,21 @@ func (r *Reconciler) startRestore(
 	resolved *resolution,
 	admin *esadmin.Client,
 ) (restore.Outcome, error) {
-	repository, failure, err := r.ensureRepository(ctx, resolved, admin)
-	if err != nil {
-		return restore.Outcome{}, err
+	// A failed or deleted restore holds its backend only once the repository
+	// is in status, so it is recorded before the first index is deleted.
+	if lres.Status.Repository == "" {
+		repository, failure, err := r.ensureRepository(ctx, resolved, admin)
+		if err != nil {
+			return restore.Outcome{}, err
+		}
+		if failure != nil {
+			return r.holdStarted(lres, failure), nil
+		}
+		lres.Status.Repository = repository
+
+		return restore.Outcome{Wait: restore.Shortly}, nil
 	}
-	if failure != nil {
-		return r.holdStarted(lres, failure), nil
-	}
-	lres.Status.Repository = repository
+	repository := lres.Status.Repository
 
 	// The Optimize indices go only when the backup holds Optimize snapshots. A
 	// backup without them cannot put them back, and deleting them would erase
@@ -110,6 +103,7 @@ func (r *Reconciler) startRestore(
 	}
 
 	snapshots := restoredSnapshots(resolved.backup, lres.Status.BackupID)
+	// A failure here leaves RestoredSnapshots unset, so the next look deletes and restores again.
 	for _, snapshot := range snapshots {
 		if err := admin.RestoreSnapshot(ctx, repository, snapshot, allIndicesOfSnapshot); err != nil {
 			return r.holdStarted(lres, elasticsearchFailure(
