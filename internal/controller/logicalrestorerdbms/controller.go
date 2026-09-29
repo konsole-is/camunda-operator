@@ -250,8 +250,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	if lrr.Status.Backend != "" {
-		err := restore.RegisterWriter(
-			ctx, r.Client, r.APIReader, r.opts.ClaimNamespace, lrr.Status.Backend, &lrr, lrr.Status.TargetClusterUID,
+		err := restore.RegisterDatabaseWriter(
+			ctx,
+			r.Client,
+			r.APIReader,
+			r.opts.ClaimNamespace,
+			lrr.Status.Backend,
+			lrr.Status.Contract,
+			&lrr,
+			lrr.Status.TargetClusterUID,
 		)
 		if err != nil {
 			return ctrl.Result{}, err

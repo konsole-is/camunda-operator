@@ -381,6 +381,8 @@ The operator reads every cluster again at most every 10 minutes. It creates the 
 
 A cluster that leaves the management plane loses the user, and the Secret goes too. The cluster leaves when it leaves the selectors, when you remove `spec.webModeler`, or when you delete the cluster. Some clusters keep the user: a cluster that stopped using basic authentication, and a cluster whose `spec.platformConfigRef` names no `CamundaPlatformConfig`. The operator then deletes the Secret and records the event `WebModelerUserLeftBehind` on this resource. Remove that user yourself if you do not want it.
 
+A cluster that refuses the removal keeps the user, and the Secret keeps its password. This management plane keeps its claim on that cluster until the removal succeeds, and tries again. The operator records the Warning event `WebModelerUserRemovalFailed` on this resource, with the answer of the cluster. Correct what the event names, for example a missing administrator Secret or a cluster that does not answer.
+
 ## Clusters
 
 `spec.clusterSelector` selects the orchestration clusters that Console lists and Web Modeler deploys to. It follows the Kubernetes label selector convention:

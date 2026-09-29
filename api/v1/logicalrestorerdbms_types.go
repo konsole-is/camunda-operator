@@ -54,6 +54,11 @@ type LogicalRestoreRDBMSStatus struct {
 	// The restore holds while its target does not hold the backend.
 	// +optional
 	Backend string `json:"backend,omitempty"`
+	// Contract is the DatabaseServerConfig and the database name that held the
+	// address of Backend when the restore started. The hold stays on this
+	// contract when the DatabaseServerConfig moves to another address.
+	// +optional
+	Contract string `json:"contract,omitempty"`
 	// SecondaryJobName is the Job that runs pg_restore, while it exists.
 	// +optional
 	SecondaryJobName string `json:"secondaryJobName,omitempty"`

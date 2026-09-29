@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -33,6 +34,7 @@ import (
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalrestorerdbms"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	restorepkg "github.com/konsole-is/camunda-operator/pkg/restore"
+	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
@@ -489,7 +491,7 @@ var _ = Describe("LogicalRestoreRDBMS cluster claim", func() {
 		)).To(Succeed())
 
 		Eventually(func(g Gomega) {
-			g.Expect(writersSeenByAnotherCluster(g, crashed)).To(BeEmpty())
+			g.Expect(writersSeenByAnotherCluster(g, crashed, "")).To(BeEmpty())
 			g.Expect(writersNaming(lrr)).To(BeEmpty())
 		}, timeout, interval).Should(Succeed())
 		current := latestOf(lrr)
@@ -522,8 +524,40 @@ var _ = Describe("LogicalRestoreRDBMS cluster claim", func() {
 			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(lrr), &v1.LogicalRestoreRDBMS{})
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			g.Expect(writersNaming(lrr)).To(BeEmpty())
-			g.Expect(writersSeenByAnotherCluster(g, crashed)).To(BeEmpty())
+			g.Expect(writersSeenByAnotherCluster(g, crashed, "")).To(BeEmpty())
 		}, timeout, interval).Should(Succeed())
+	})
+
+	// The hold stays on the contract of the database, so a cluster on it waits
+	// at every address that the DatabaseServerConfig moves to.
+	It("pins the contract of its database and holds it at every address", func() {
+		w := newWorld()
+		backup := createBackup(w)
+		lrr := createRestore(w, backup.Name)
+		contract := restorepkg.DatabaseContract(client.ObjectKeyFromObject(w.server), w.dbConfig.Spec.DatabaseName)
+		var backend string
+		Eventually(func(g Gomega) {
+			current := latest(g, lrr)
+			g.Expect(current.Status.Backend).NotTo(BeEmpty())
+			g.Expect(current.Status.Contract).To(Equal(contract))
+			backend = current.Status.Backend
+		}, timeout, interval).Should(Succeed())
+		elsewhere := "rdbms|elsewhere.example.svc:5432/camunda"
+		Eventually(func(g Gomega) {
+			g.Expect(writersSeenByAnotherCluster(g, elsewhere, contract)).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+
+		By("stripping the contract from its Lease")
+		key := client.ObjectKey{Namespace: claimNamespace, Name: storagewriter.LeaseName(backend, latestOf(lrr).UID)}
+		Eventually(func(g Gomega) {
+			var lease coordinationv1.Lease
+			g.Expect(k8sClient.Get(ctx, key, &lease)).To(Succeed())
+			delete(lease.Annotations, storagewriter.ContractAnnotation)
+			g.Expect(k8sClient.Update(ctx, &lease)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(writersSeenByAnotherCluster(g, elsewhere, contract)).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed(), "a later pass restores the pinned contract")
 	})
 
 	// A restore whose registration fails stays in Pending with no backend, so
@@ -674,10 +708,13 @@ var _ = Describe("LogicalRestoreRDBMS compatibility", func() {
 		lrr := createRestore(w, backup.Name)
 
 		By("writing the version of the backup on the target")
+		// The restore writes the version before the status write that first sets
+		// its phase, so a version on the target does not yet mean a phase.
 		Eventually(func(g Gomega) {
 			var cluster v1.CamundaCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
 			g.Expect(cluster.Spec.Version).To(Equal("8.10.0"))
+			g.Expect(latest(g, lrr).Status.Phase).To(Equal(v1.LogicalRestorePending))
 		}, timeout, interval).Should(Succeed())
 
 		By("holding until the brokers carry that version")

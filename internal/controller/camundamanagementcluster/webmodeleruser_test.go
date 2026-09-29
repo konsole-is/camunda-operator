@@ -337,6 +337,82 @@ var _ = Describe("Web Modeler", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	It("calls a cluster that refused the removal again on the retry interval", func() {
+		// The only cluster leaves the plane, so no user converges and nothing
+		// else requeues the plane. The retries come from RetryInterval alone.
+		api := newClusterUserAPI()
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		cluster := createBasicCluster(s, api.URL())
+
+		expectAttached(s.mc, cluster)
+		Eventually(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		api.FailNext("deleteUser", 1000)
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.ClusterSelector = nil
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		// The back-off of controller-runtime doubles from 5 ms. After ten
+		// refusals it waits about 5 s, then 10 s, 20 s, and 40 s, so it cannot
+		// make five more calls in 15 s. One call a second makes about 15.
+		Eventually(api.DeleteCalls, time.Minute, interval).Should(BeNumerically(">=", 10))
+		refused := api.DeleteCalls()
+		Eventually(api.DeleteCalls, 15*time.Second, interval).Should(BeNumerically(">=", refused+5))
+		Eventually(func(g Gomega) {
+			g.Expect(eventReasons(g, s.mc)).To(ContainElement(eventReasonUserRemovalFailed))
+		}, timeout, interval).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(conditionOf(g, s.mc, v1.ConditionReady).Reason).NotTo(Equal(v1.ReasonStepFailed))
+		}, 2*time.Second, interval).Should(Succeed())
+
+		api.FailNext("deleteUser", 0)
+		Eventually(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeFalse())
+			g.Expect(readOrchestrationCluster(g, cluster).Annotations).NotTo(HaveKey(components.ClaimAnnotation))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("releases a deselected cluster while another one refuses the removal", func() {
+		refusing, removing := newClusterUserAPI(), newClusterUserAPI()
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		held := createBasicCluster(s, refusing.URL())
+		released := createBasicCluster(s, removing.URL())
+
+		expectAttached(s.mc, held)
+		expectAttached(s.mc, released)
+		Eventually(func(g Gomega) {
+			g.Expect(refusing.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+			g.Expect(removing.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		refusing.FailNext("deleteUser", 1000)
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.ClusterSelector = nil
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(removing.Exists(components.WebModelerClusterUsername)).To(BeFalse())
+			g.Expect(readOrchestrationCluster(g, released).Annotations).NotTo(HaveKey(components.ClaimAnnotation))
+		}, timeout, interval).Should(Succeed())
+		g := Default
+		g.Expect(refusing.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+		g.Expect(readOrchestrationCluster(g, held).Annotations).To(
+			HaveKeyWithValue(components.ClaimAnnotation, ClaimValue(s.mc)),
+		)
+
+		refusing.FailNext("deleteUser", 0)
+		Eventually(func(g Gomega) {
+			g.Expect(refusing.Exists(components.WebModelerClusterUsername)).To(BeFalse())
+			g.Expect(readOrchestrationCluster(g, held).Annotations).NotTo(HaveKey(components.ClaimAnnotation))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("removes the user when the spec stops asking for Web Modeler", func() {
 		api := newClusterUserAPI()
 		s := newScenario(withWebModeler, withSelector(map[string]string{}))

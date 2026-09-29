@@ -1439,7 +1439,7 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 			holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
 			createCluster(holder)
 			expectClaimedBy(binding, holder)
-			writer := registerWriter(kind, holder, storageKeyOf(binding))
+			writer := registerWriter(kind, holder, storageKeyOf(binding), "")
 
 			parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
 			createCluster(parked)
@@ -1463,6 +1463,85 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		})
 	}
 
+	// A restore that rolls the database server back holds the database through
+	// a writer that names the contract. When the contract moves to another
+	// address, the writer and the next cluster react to one change, so the
+	// next cluster must wait whether or not the writer followed the move yet.
+	It("waits for a writer of the contract after the database of a deleted holder moves", func() {
+		ns := newNamespace()
+		binding, server := createDatabaseBinding(ns)
+		old := databaseKeyOf(server)
+		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
+		createCluster(holder)
+		expectDatabaseClaimedBy(old, holder)
+		writer := registerWriter("PointInTimeRestore", holder, old, databaseContractOf(server))
+
+		parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
+		createCluster(parked)
+		expectParked(parked, holder)
+
+		deleteHolder(holder)
+		expectWaitingForWriter(parked, old, writer)
+
+		By("moving the contract before the writer follows it")
+		moved := moveDatabaseServer(server, "moved-postgres."+ns+".svc")
+		expectWaitingForWriter(parked, moved, writer)
+
+		By("moving the writer to the new address")
+		Expect(storagewriter.Register(
+			ctx,
+			k8sClient,
+			k8sClient,
+			testClaimNamespace,
+			moved,
+			components.StorageClaimSchema().LeaseName(moved),
+			writer,
+		)).To(Succeed())
+		Expect(storagewriter.Release(ctx, k8sClient, testClaimNamespace, old, writer)).To(Succeed())
+		claim := client.ObjectKey{Namespace: testClaimNamespace, Name: components.StorageClaimSchema().LeaseName(moved)}
+		Consistently(func(g Gomega) {
+			err := k8sClient.Get(ctx, claim, &coordinationv1.Lease{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, "2s", interval).Should(Succeed(), "the release of the old key wakes the cluster, and it still waits")
+
+		Expect(storagewriter.Release(ctx, k8sClient, testClaimNamespace, moved, writer)).To(Succeed())
+		expectHolds(parked)
+		expectDatabaseClaimedBy(moved, parked)
+	})
+
+	// The holder cannot take the new address while its platform config is
+	// gone, so the other cluster reaches the free claim first. That is the
+	// order in which a key match alone lets it start beside the writer.
+	It("waits for a writer of the contract when the next cluster reaches the moved database first", func() {
+		ns := newNamespace()
+		binding, server := createDatabaseBinding(ns)
+		old := databaseKeyOf(server)
+		cfg := createPlatformConfig()
+		holder := newNamedCluster("cc-a-", ns, cfg, binding)
+		createCluster(holder)
+		expectDatabaseClaimedBy(old, holder)
+		writer := registerWriter("PointInTimeRestore", holder, old, databaseContractOf(server))
+
+		parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
+		createCluster(parked)
+		expectParked(parked, holder)
+
+		Expect(k8sClient.Delete(ctx, cfg)).To(Succeed())
+		expectReady(holder, metav1.ConditionFalse, Equal(v1.ReasonInvalidReference), ContainSubstring(cfg.Name))
+
+		moved := moveDatabaseServer(server, "moved-postgres."+ns+".svc")
+		expectWaitingForWriter(parked, moved, writer)
+		claim := client.ObjectKey{Namespace: testClaimNamespace, Name: components.StorageClaimSchema().LeaseName(moved)}
+		Consistently(func(g Gomega) {
+			err := k8sClient.Get(ctx, claim, &coordinationv1.Lease{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, "2s", interval).Should(Succeed(), "a cluster that waits for a writer takes no claim")
+
+		Expect(storagewriter.Release(ctx, k8sClient, testClaimNamespace, old, writer)).To(Succeed())
+		expectHolds(parked)
+		expectDatabaseClaimedBy(moved, parked)
+	})
+
 	// A writer Lease that outlives its restore, because somebody removed the
 	// finalizer of the restore by hand, holds the backend until somebody
 	// deletes it. Its timestamps say it was renewed a year ago with a
@@ -1473,7 +1552,7 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
 		createCluster(holder)
 		expectClaimedBy(binding, holder)
-		writer := registerWriter("LogicalRestoreRDBMS", holder, storageKeyOf(binding))
+		writer := registerWriter("LogicalRestoreRDBMS", holder, storageKeyOf(binding), "")
 		ageWriter(storageKeyOf(binding), writer)
 
 		parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
@@ -1514,8 +1593,9 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 })
 
 // registerWriter registers a writer of kind for target on backend, as a
-// running restore into target does.
-func registerWriter(kind string, target *v1.CamundaCluster, backend string) storagewriter.Writer {
+// running restore into target does. A non-empty contract is the contract that
+// the writer names.
+func registerWriter(kind string, target *v1.CamundaCluster, backend, contract string) storagewriter.Writer {
 	GinkgoHelper()
 	writer := storagewriter.Writer{
 		Kind:       kind,
@@ -1523,6 +1603,7 @@ func registerWriter(kind string, target *v1.CamundaCluster, backend string) stor
 		Name:       "restore-" + utilrand.String(6),
 		UID:        types.UID(utilrand.String(12)),
 		ClusterUID: target.UID,
+		Contract:   contract,
 	}
 	claim := components.StorageClaimSchema().LeaseName(backend)
 	Expect(storagewriter.Register(ctx, k8sClient, k8sClient, testClaimNamespace, backend, claim, writer)).
@@ -1565,4 +1646,101 @@ func expectRendersNothing(cluster *v1.CamundaCluster) {
 	Consistently(func(g Gomega) {
 		g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
 	}, "2s", interval).Should(Succeed())
+}
+
+// createDatabaseBinding creates an rdbms contract in namespace: a
+// DatabaseServerConfig, a DatabaseConfig for the database camunda with its
+// credentials Secret, and the SecondaryStorageConfig that names them.
+func createDatabaseBinding(namespace string) (*v1.SecondaryStorageConfig, *v1.DatabaseServerConfig) {
+	GinkgoHelper()
+	server := newDatabaseServerConfig(namespace)
+	Expect(k8sClient.Create(ctx, server)).To(Succeed())
+	dbConfig := newDatabaseConfig()
+	dbConfig.Namespace = namespace
+	dbConfig.Spec.ServerRef = server.Name
+	Expect(k8sClient.Create(ctx, dbConfig)).To(Succeed())
+	createSecret(namespace, dbConfig.Spec.CredentialsSecretRef.Name, map[string]string{
+		"username": "camunda", "password": "db-password",
+	})
+	binding := &v1.SecondaryStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "rdbms-" + utilrand.String(8), Namespace: namespace},
+		Spec: v1.SecondaryStorageConfigSpec{
+			Type:  v1.SecondaryStorageTypeRDBMS,
+			RDBMS: &v1.RDBMSStorage{DatabaseConfigRef: dbConfig.Name},
+		},
+	}
+	Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+
+	return binding, server
+}
+
+// databaseKeyOf returns the claim key of the database camunda at the address
+// that server names.
+func databaseKeyOf(server *v1.DatabaseServerConfig) string {
+	GinkgoHelper()
+	key, err := components.StorageClaimKey(databaseOf(server))
+	Expect(err).NotTo(HaveOccurred())
+
+	return key
+}
+
+// databaseContractOf returns the contract of the database camunda behind
+// server.
+func databaseContractOf(server *v1.DatabaseServerConfig) string {
+	return components.StorageContract(databaseOf(server))
+}
+
+func databaseOf(server *v1.DatabaseServerConfig) components.Storage {
+	return components.Storage{
+		Type:      v1.SecondaryStorageTypeRDBMS,
+		Namespace: server.Namespace,
+		RDBMS: &components.RDBMSStorage{
+			Server:   client.ObjectKeyFromObject(server),
+			Host:     server.Spec.Host,
+			Port:     server.Spec.Port,
+			Database: "camunda",
+		},
+	}
+}
+
+// moveDatabaseServer points server at host and returns the claim key of the
+// database there.
+func moveDatabaseServer(server *v1.DatabaseServerConfig, host string) string {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var latest v1.DatabaseServerConfig
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+		latest.Spec.Host = host
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+	server.Spec.Host = host
+
+	return databaseKeyOf(server)
+}
+
+// expectDatabaseClaimedBy polls until the storage claim of backend records
+// cluster.
+func expectDatabaseClaimedBy(backend string, cluster *v1.CamundaCluster) {
+	GinkgoHelper()
+	name := client.ObjectKey{Namespace: testClaimNamespace, Name: components.StorageClaimSchema().LeaseName(backend)}
+	Eventually(func(g Gomega) {
+		var lease coordinationv1.Lease
+		g.Expect(k8sClient.Get(ctx, name, &lease)).To(Succeed())
+		holder, ours := components.StorageClaimSchema().HolderOf(&lease)
+		g.Expect(ours).To(BeTrue())
+		g.Expect(holder.UID).To(Equal(cluster.UID))
+	}, timeout, interval).Should(Succeed())
+}
+
+// expectWaitingForWriter polls until cluster reports WaitingForHandover for
+// writer on backend, and checks that it renders nothing meanwhile.
+func expectWaitingForWriter(cluster *v1.CamundaCluster, backend string, writer storagewriter.Writer) {
+	GinkgoHelper()
+	expectReady(
+		cluster,
+		metav1.ConditionFalse,
+		Equal(v1.ReasonWaitingForHandover),
+		And(ContainSubstring(backend), ContainSubstring(writer.String())),
+	)
+	expectRendersNothing(cluster)
 }

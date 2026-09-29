@@ -51,6 +51,15 @@ type BackendCheck struct {
 	OwnPod func(podLabels map[string]string) bool
 }
 
+// Backend is the backend that a restore writes.
+type Backend struct {
+	// Key is the claim key of the backend.
+	Key string
+	// Contract is the DatabaseContract of a logical database, or empty for
+	// Elasticsearch.
+	Contract string
+}
+
 // BackendOf returns the claim key of the backend that storage describes. A
 // chain that does not resolve is a failure the user corrects.
 func BackendOf(
@@ -58,13 +67,25 @@ func BackendOf(
 	reader client.Reader,
 	storage *v1.SecondaryStorageConfig,
 ) (string, *conditions.PreCheckFailure, error) {
+	backend, failure, err := ResolveBackend(ctx, reader, storage)
+
+	return backend.Key, failure, err
+}
+
+// ResolveBackend is BackendOf with the contract of the backend. Both come
+// from one read of the chain, so they name one server.
+func ResolveBackend(
+	ctx context.Context,
+	reader client.Reader,
+	storage *v1.SecondaryStorageConfig,
+) (Backend, *conditions.PreCheckFailure, error) {
 	if storage.Spec.Type != v1.SecondaryStorageTypeRDBMS {
 		key, failure := claimKey(storage, nil)
 
-		return key, failure, nil
+		return Backend{Key: key}, failure, nil
 	}
 	if storage.Spec.RDBMS == nil {
-		return "", logicalbackup.InvalidReference(
+		return Backend{}, logicalbackup.InvalidReference(
 			"SecondaryStorageConfig %s/%s has type rdbms and no rdbms block", storage.Namespace, storage.Name,
 		), nil
 	}
@@ -72,18 +93,21 @@ func BackendOf(
 	var config v1.DatabaseConfig
 	configKey := types.NamespacedName{Namespace: storage.Namespace, Name: storage.Spec.RDBMS.DatabaseConfigRef}
 	if failure, err := get(ctx, reader, configKey, &config, "DatabaseConfig"); err != nil || failure != nil {
-		return "", failure, err
+		return Backend{}, failure, err
 	}
 
 	var server v1.DatabaseServerConfig
 	serverKey := types.NamespacedName{Namespace: config.Namespace, Name: config.Spec.ServerRef}
 	if failure, err := get(ctx, reader, serverKey, &server, "DatabaseServerConfig"); err != nil || failure != nil {
-		return "", failure, err
+		return Backend{}, failure, err
 	}
 
 	key, failure := DatabaseBackend(storage, &config, &server)
+	if failure != nil {
+		return Backend{}, failure, nil
+	}
 
-	return key, failure, nil
+	return Backend{Key: key, Contract: DatabaseContract(serverKey, config.Spec.DatabaseName)}, nil, nil
 }
 
 // DatabaseBackend returns the claim key of the logical database that config
@@ -97,6 +121,17 @@ func DatabaseBackend(
 		Host:     server.Spec.Host,
 		Port:     server.Spec.Port,
 		Database: config.Spec.DatabaseName,
+	})
+}
+
+// DatabaseContract returns the contract of the logical database named
+// database behind the DatabaseServerConfig server. A writer registration that
+// names it holds the database at every address the contract moves to, see
+// RegisterDatabaseWriter.
+func DatabaseContract(server types.NamespacedName, database string) string {
+	return clustercomponents.StorageContract(clustercomponents.Storage{
+		Type:  v1.SecondaryStorageTypeRDBMS,
+		RDBMS: &clustercomponents.RDBMSStorage{Server: server, Database: database},
 	})
 }
 

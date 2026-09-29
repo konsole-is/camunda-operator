@@ -39,6 +39,20 @@ func RegisterWriter(
 	owner conditions.Owner,
 	target types.UID,
 ) error {
+	return RegisterDatabaseWriter(ctx, c, reader, claimNamespace, backend, "", owner, target)
+}
+
+// RegisterDatabaseWriter is RegisterWriter for a logical database. The
+// registration also names contract, see DatabaseContract, so a cluster on
+// that database waits for it after the contract moves to another address.
+func RegisterDatabaseWriter(
+	ctx context.Context,
+	c client.Client,
+	reader client.Reader,
+	claimNamespace, backend, contract string,
+	owner conditions.Owner,
+	target types.UID,
+) error {
 	return storagewriter.Register(
 		ctx,
 		c,
@@ -46,17 +60,18 @@ func RegisterWriter(
 		claimNamespace,
 		backend,
 		clustercomponents.StorageClaimSchema().LeaseName(backend),
-		writerOf(owner, target),
+		writerOf(owner, target, contract),
 	)
 }
 
-func writerOf(owner conditions.Owner, target types.UID) storagewriter.Writer {
+func writerOf(owner conditions.Owner, target types.UID, contract string) storagewriter.Writer {
 	return storagewriter.Writer{
 		Kind:       owner.GetKind(),
 		Namespace:  owner.GetNamespace(),
 		Name:       owner.GetName(),
 		UID:        owner.GetUID(),
 		ClusterUID: target,
+		Contract:   contract,
 	}
 }
 
@@ -68,7 +83,7 @@ func ReleaseWriter(
 	owner conditions.Owner,
 	target types.UID,
 ) error {
-	return storagewriter.Release(ctx, c, claimNamespace, backend, writerOf(owner, target))
+	return storagewriter.Release(ctx, c, claimNamespace, backend, writerOf(owner, target, ""))
 }
 
 // ReleaseWriters ends every registration of owner on every backend, also one
@@ -83,12 +98,14 @@ func ReleaseWriters(
 	return storagewriter.ReleaseAll(ctx, c, reader, claimNamespace, owner.GetUID())
 }
 
-// OtherWriters returns the writers of backend other than owner, the writers
-// for its own target included. reader must read the API server directly.
+// OtherWriters returns the writers of backend, and the writers that name
+// contract on any backend, other than owner. The writers for its own target
+// count. An empty contract matches on backend alone. reader must read the API
+// server directly.
 func OtherWriters(
 	ctx context.Context,
 	reader client.Reader,
-	claimNamespace, backend string,
+	claimNamespace, backend, contract string,
 	owner conditions.Owner,
 ) ([]string, error) {
 	return storagewriter.LiveExcept(
@@ -97,6 +114,6 @@ func OtherWriters(
 		claimNamespace,
 		backend,
 		clustercomponents.StorageClaimSchema().LeaseName(backend),
-		writerOf(owner, ""),
+		writerOf(owner, "", contract),
 	)
 }

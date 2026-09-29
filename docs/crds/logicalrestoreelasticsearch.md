@@ -78,7 +78,7 @@ In `Pending` this wait has no limit. After `Pending`, these reasons hold the res
 
 ### After a failure or a delete
 
-Elasticsearch recovers the snapshots that it accepted, even when the restore fails or you delete it. The restore keeps the backend until no index that it replaces recovers. Until then, `status.recoveryHeld` is `true`:
+Elasticsearch recovers the snapshots that it accepted, even when the restore fails or you delete it. The restore keeps the backend until each shard of the indices that it replaces is on a node and recovered. An unassigned replica does not count, and neither does a primary shard that Elasticsearch cannot place on any node. Until then, `status.recoveryHeld` is `true`:
 
 ```yaml
 status:
@@ -108,7 +108,9 @@ The operator reads that prefix under the `basePath` that the `ObjectStorageConfi
 
 The operator deletes the Camunda indices on the Elasticsearch of the target, then restores every snapshot of the backup. It deletes the Optimize indices only when the backup holds an Optimize snapshot. Give one Elasticsearch to one cluster: a second cluster on the same Elasticsearch loses its Camunda indices too.
 
-`status.restoredSnapshots` names every snapshot that the restore asked for. The phase ends when the restored indices exist and no shard recovers.
+`status.restoredSnapshots` names every snapshot that the restore asked for. The phase ends when the restored indices exist and each of their shards is on a node and recovered. An unassigned replica does not count.
+
+If Elasticsearch cannot place a primary shard of a restored index on any node, the restore does not wait for it. The restore still reaches `Completed`, and that index stays red. After the restore, make sure that no restored index is red with `GET _cluster/health?level=indices`. For a red index, `GET _cluster/allocation/explain` tells you why its shard has no node. Correct the cause that it names.
 
 CAUTION: Do not delete the backup while the restore runs. A failure after the delete of the indices leaves the secondary storage of the target empty until the restore finishes or you restore again.
 

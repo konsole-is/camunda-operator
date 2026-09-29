@@ -43,7 +43,11 @@ var (
 	testPostgresErr    error
 )
 
-// testPostgres starts the shared postgres:17 container on first use and
+// A Docker Hub pull first gets a token from auth.docker.io, and a reset of
+// that request fails every spec. Google's mirror of Docker Hub needs no token.
+const postgresImage = "mirror.gcr.io/library/postgres:17"
+
+// testPostgres starts the shared PostgreSQL container on first use and
 // returns its coordinates. The testcontainers reaper removes the container
 // when the test binary exits.
 func testPostgres() (testPostgresInfo, error) {
@@ -52,7 +56,7 @@ func testPostgres() (testPostgresInfo, error) {
 		defer cancel()
 
 		container, err := postgres.Run(
-			ctx, "postgres:17",
+			ctx, postgresImage,
 			postgres.WithDatabase("postgres"),
 			postgres.WithUsername("postgres"),
 			postgres.WithPassword("admin-secret"),

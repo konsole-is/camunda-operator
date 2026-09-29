@@ -55,6 +55,27 @@ var _ = Describe("LogicalRestoreElasticsearch after Elasticsearch accepted its s
 		}, timeout, interval).Should(Succeed())
 	})
 
+	It("keeps its backend after it fails while a restored shard initializes with no recovery yet", func() {
+		w := newWorld()
+		backup := createBackup(w)
+		restore := startedRestore(w, backup)
+		w.search.SetShards(targetIndices[0], esadmintest.Shard{Primary: true, State: "INITIALIZING"})
+
+		failRestore(restore)
+
+		Expect(latestOf(restore).Status.RecoveryHeld).To(HaveValue(BeTrue()))
+		Consistently(func() []string {
+			return writersNaming(restore)
+		}, "2s", interval).Should(HaveLen(1))
+
+		By("giving the backend back once the shard started")
+		w.search.SetShards(targetIndices[0], esadmintest.Shard{Primary: true, State: "STARTED"})
+		Eventually(func(g Gomega) {
+			g.Expect(writersNaming(restore)).To(BeEmpty())
+			g.Expect(latest(g, restore).Status.RecoveryHeld).To(HaveValue(BeFalse()))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("keeps its claim on the target after it fails until the recovery ends", func() {
 		w := newWorld()
 		backup := createBackup(w)

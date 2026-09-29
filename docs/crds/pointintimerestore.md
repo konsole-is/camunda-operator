@@ -55,7 +55,7 @@ With `operator`, the restore writes the request in `spec.recovery` of the contra
 
 ### The database during a rollback
 
-With `operator`, the restore holds the database from just before its request until `Completed` or `Failed`. `status.backend` names the database and follows the endpoint of the contract. No other `CamundaCluster` starts on that database, and the next one reports `WaitingForHandover`. [CamundaCluster: Secondary storage](camundacluster.md#secondary-storage) describes that wait. One case is not covered: another running cluster on the same database can start on the new endpoint just after the contract moves. Do not run another cluster on this database during the restore. With `external`, the restore holds nothing, because the operator writes nothing into the database.
+With `operator`, the restore holds the database from just before its request until `Completed` or `Failed`. `status.backend` names the database and follows the endpoint of the contract. No other `CamundaCluster` starts on that database, and the next one reports `WaitingForHandover`. [CamundaCluster: Secondary storage](camundacluster.md#secondary-storage) describes that wait. The hold is on the `DatabaseServerConfig` and the database name, so it covers the old endpoint and the new one. With `external`, the restore holds nothing, because the operator writes nothing into the database.
 
 The server finishes a rollback that it started. So these changes during the rollback take effect only when the contract answers:
 

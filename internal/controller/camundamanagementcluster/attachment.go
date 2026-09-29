@@ -293,15 +293,16 @@ func basicUserSecret(
 }
 
 // releaseClaims withdraws the claim of mc from every cluster that the selector
-// no longer matches. It runs after the Web Modeler user and the Console ping
-// of those clusters are withdrawn, and only when both succeeded, so that no
-// other management plane takes a cluster whose user this one still has to
-// remove.
+// no longer matches, except the clusters in held. Call it only once the Web
+// Modeler user and the Console ping of those clusters are withdrawn, and put in
+// held each cluster that refused the removal of the user, so that no other
+// management plane takes a cluster whose user this one still has to remove.
 func (r *Reconciler) releaseClaims(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	clusters []v1.CamundaCluster,
 	namespaces map[string]bool,
+	held map[types.UID]bool,
 ) error {
 	selector, err := metav1.LabelSelectorAsSelector(mc.Spec.ClusterSelector)
 	if err != nil {
@@ -311,7 +312,7 @@ func (r *Reconciler) releaseClaims(
 	var errs []error
 	for i := range clusters {
 		cluster := &clusters[i]
-		if inNamespaces(cluster, namespaces) && selector.Matches(k8slabels.Set(cluster.Labels)) {
+		if held[cluster.UID] || (inNamespaces(cluster, namespaces) && selector.Matches(k8slabels.Set(cluster.Labels))) {
 			continue
 		}
 		errs = append(errs, r.withdrawClaim(ctx, mc, cluster))

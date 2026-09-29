@@ -66,7 +66,7 @@ The restore can set a version below the one the brokers run. Camunda does not su
 
 The backend is the logical database that the `SecondaryStorageConfig` of the target resolves to. When the restore leaves `Pending`, it records the backend in `status.backend`, in the form `rdbms|<host>:<port>/<database>`.
 
-From then until `Completed` or `Failed`, no other `CamundaCluster` starts on that backend. The next cluster reports `WaitingForHandover`, and the message names this restore. [CamundaCluster: Secondary storage](camundacluster.md#secondary-storage) describes that wait. A restore that you delete keeps the backend until its Jobs and their pods are gone. The pod of the `pg_restore` Job carries the label `camunda.io/storage-claim` of the database. So when the restore fails while that pod runs, the next cluster also waits for the pod.
+From then until `Completed` or `Failed`, no other `CamundaCluster` starts on that backend. The next cluster reports `WaitingForHandover`, and the message names this restore. [CamundaCluster: Secondary storage](camundacluster.md#secondary-storage) describes that wait. The hold is on the `DatabaseServerConfig` and the database name, so it stays when that `DatabaseServerConfig` moves to another host or port. A restore that you delete keeps the backend until its Jobs and their pods are gone. The pod of the `pg_restore` Job carries the label `camunda.io/storage-claim` of the database. So when the restore fails while that pod runs, the next cluster also waits for the pod.
 
 The restore writes the backend only while the target holds it. Until then it waits:
 
@@ -129,6 +129,7 @@ Other status fields:
 - `status.backupId` is the backup that the restore reads. The restore pins it when it starts. A backup that somebody deletes and creates again under the same name ends the restore.
 - `status.targetClusterUID` pins the target. A cluster that somebody deletes and creates again under the same name ends the restore.
 - `status.backend` is the logical database that the restore writes.
+- `status.contract` is the `DatabaseServerConfig` and the database name that the hold stays on when the address moves.
 - `status.secondaryJobName` is the `pg_restore` Job, while it exists.
 - `status.clusterSuspended` is `true` when this restore suspended the target.
 - `status.brokers` is the broker count that the restore recorded before it deleted a volume.

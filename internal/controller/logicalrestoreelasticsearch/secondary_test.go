@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/esadmin/esadmintest"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 )
 
@@ -169,6 +170,27 @@ var _ = Describe("LogicalRestoreElasticsearch of secondary storage", func() {
 
 		By("moving on once the restored indices are there")
 		w.search.SetIndices(targetIndices...)
+		expectPhase(restore, v1.LogicalRestoreRestoringPrimaryStorage)
+	})
+
+	It("waits for a restored shard that initializes before its recovery is registered", func() {
+		w := newWorld()
+		backup := createBackup(w)
+		w.seedSnapshots(elasticsearchSnapshots...)
+		w.search.SetRecoveryActive(false)
+		w.search.SetShards(targetIndices[0], esadmintest.Shard{Primary: true, State: "INITIALIZING"})
+
+		restore := createRestore(w, backup.Name)
+		serveRestoredIndices(w, restore)
+
+		Consistently(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.Phase).To(
+				Equal(v1.LogicalRestoreRestoringSecondaryStorage),
+			)
+		}, "2s", interval).Should(Succeed())
+
+		By("moving on once the shard started")
+		w.search.SetShards(targetIndices[0], esadmintest.Shard{Primary: true, State: "STARTED"})
 		expectPhase(restore, v1.LogicalRestoreRestoringPrimaryStorage)
 	})
 
