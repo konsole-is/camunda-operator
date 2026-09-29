@@ -37,8 +37,8 @@ const configHashLength = 16
 //
 // The environment alone is not enough. Every credential arrives through a
 // Secret reference, and the reference does not change when the data behind it
-// does. HashInputs carries the resource version of every Secret the
-// controller read, and componentInputs carries what one component alone
+// does. HashInputs carries a digest of the keys the controller read from each
+// Secret, and componentInputs carries what one component alone
 // reads, the credentials that the operator generates itself included.
 //
 // The ConfigMap of the Optimize root URLs is the one referenced object that is

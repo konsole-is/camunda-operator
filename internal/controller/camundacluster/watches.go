@@ -130,9 +130,9 @@ var indexers = map[string]client.IndexerFunc{
 // and object storage configs through the indexes, DatabaseConfigs by namespace,
 // DatabaseServerConfigs for every cluster, and Secrets (metadata only)
 // through enqueueForSecret, which also follows the Secret indexes of the
-// platform configs, the bindings, and the DatabaseConfigs. The pre-checks put the
-// resource versions of the Secrets and the generations of the CRs they read
-// into the config hash, so any of these events rolls the pods whose rendered
+// platform configs, the bindings, and the DatabaseConfigs. The pre-checks put a
+// digest of the Secret keys and the generations of the CRs they read into the
+// config hash, so any of these events rolls the pods whose rendered
 // configuration changed. It also sets EventRecorder, Metrics, and the uncached
 // component client when they are nil.
 func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {

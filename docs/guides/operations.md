@@ -346,11 +346,11 @@ You do not edit the cluster to roll a configuration change. A change to one of t
 - The `CamundaPlatformConfig`, the `CamundaClusterPreset`, or the `CamundaRelease`.
 - The `SecondaryStorageConfig` and its `DatabaseConfig` or `DatabaseServerConfig`.
 - An `ObjectStorageConfig`.
-- Any referenced Secret.
+- A key that the cluster reads from a referenced Secret.
 
-The pod templates carry the annotation `camunda.io/config-hash`, and a new hash rolls the pods.
+The pod templates carry the annotation `camunda.io/config-hash`, and a new hash rolls the pods. A change to the labels or annotations of a Secret, or to a key that the cluster does not read, rolls nothing.
 
-The [CamundaPlatformConfig](../crds/camundaplatformconfig.md) is cluster-scoped, so the Secrets it names are copied into the namespace of the cluster as `<name>-camunda-<purpose>`, for example `my-cluster-camunda-license` or `my-cluster-camunda-oidc-client`. The pods read the copy. When the source Secret changes, the copy follows, and the pods roll. `MirroredSecretsReady` reports the copies. Every other Secret a cluster reads already lives in its namespace.
+The [CamundaPlatformConfig](../crds/camundaplatformconfig.md) is cluster-scoped, so the Secrets it names are copied into the namespace of the cluster as `<name>-camunda-<purpose>`, for example `my-cluster-camunda-license` or `my-cluster-camunda-oidc-client`. The pods read the copy. When the source Secret changes, the copy follows. When a key that the pods read changes, the pods roll. `MirroredSecretsReady` reports the copies. Every other Secret a cluster reads already lives in its namespace.
 
 To add your own environment variables, use `extraEnv` and `extraEnvFrom`. The operator writes its own configuration first, then the top-level `extraEnv`. Then it writes the `extraEnv` of the embedded parts that the process hosts, then the `extraEnv` of the process itself. A later entry with the same name wins, and an entry replaces an operator entry with the same name. For example, to set the heap of the brokers:
 
