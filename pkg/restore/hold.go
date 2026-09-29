@@ -79,8 +79,11 @@ func FinalizeHold(
 	// The garbage collector removes the Jobs only after the restore is gone,
 	// and a Job pod still writes the storage of the target until then.
 	removed, err := removeJobs(ctx, c, reader, owner, label)
-	if err != nil || !removed {
-		return Outcome{Wait: Shortly}, err
+	if err != nil {
+		return Outcome{}, err
+	}
+	if !removed {
+		return Outcome{Wait: Shortly}, nil
 	}
 
 	key := types.NamespacedName{Namespace: owner.GetNamespace(), Name: cluster}
