@@ -102,8 +102,7 @@ func TestCheckKeys(t *testing.T) {
 }
 
 // Get returns the Secret when every key is present, and the CheckKeys message
-// otherwise, so a caller that needs the data or the resource version reads
-// the Secret once.
+// otherwise, so a caller that needs the data reads the Secret once.
 func TestGet(t *testing.T) {
 	ref := types.NamespacedName{Namespace: "ns", Name: "name"}
 
@@ -130,5 +129,61 @@ func TestGet(t *testing.T) {
 		require.NotNil(t, got)
 		assert.Equal(t, []byte("value"), got.Data["password"])
 		assert.NotEmpty(t, got.ResourceVersion)
+	})
+}
+
+func TestDataDigest(t *testing.T) {
+	base := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "name", Namespace: "ns"},
+		Data: map[string][]byte{
+			"username": []byte("admin"),
+			"password": []byte("secret"),
+			"other":    []byte("unread"),
+		},
+	}
+	digest := DataDigest(base, "username", "password")
+
+	t.Run("key order does not matter", func(t *testing.T) {
+		assert.Equal(t, digest, DataDigest(base, "password", "username"))
+	})
+
+	t.Run("metadata change keeps the digest", func(t *testing.T) {
+		changed := base.DeepCopy()
+		changed.Labels = map[string]string{"team": "a"}
+		changed.Annotations = map[string]string{"reconciled-at": "now"}
+		changed.ResourceVersion = "42"
+		assert.Equal(t, digest, DataDigest(changed, "username", "password"))
+	})
+
+	t.Run("referenced value change moves the digest", func(t *testing.T) {
+		changed := base.DeepCopy()
+		changed.Data["password"] = []byte("rotated")
+		assert.NotEqual(t, digest, DataDigest(changed, "username", "password"))
+	})
+
+	t.Run("unreferenced key change keeps the digest", func(t *testing.T) {
+		changed := base.DeepCopy()
+		changed.Data["other"] = []byte("changed")
+		changed.Data["added"] = []byte("new")
+		assert.Equal(t, digest, DataDigest(changed, "username", "password"))
+	})
+
+	t.Run("value moved to another key moves the digest", func(t *testing.T) {
+		swapped := base.DeepCopy()
+		swapped.Data["username"], swapped.Data["password"] = base.Data["password"], base.Data["username"]
+		assert.NotEqual(t, digest, DataDigest(swapped, "username", "password"))
+	})
+
+	t.Run("no keys covers the whole data", func(t *testing.T) {
+		whole := DataDigest(base)
+		changed := base.DeepCopy()
+		changed.Data["other"] = []byte("changed")
+		assert.NotEqual(t, whole, DataDigest(changed))
+	})
+
+	t.Run("digest does not carry the value", func(t *testing.T) {
+		assert.Len(t, digest, 16)
+		assert.NotContains(t, digest, "secret")
+		assert.NotContains(t, digest, "admin")
 	})
 }

@@ -14,12 +14,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package secretref checks the Secret references named by contract CRDs.
+// Package secretref checks the Secret references named by contract CRDs and
+// digests the data they point to.
 package secretref
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -61,4 +67,28 @@ func Get(
 	}
 
 	return &secret, "", nil
+}
+
+// DataDigest returns a hash input for the values of keys in secret: 16 hex
+// characters that move when the value of a named key changes, and stay when
+// only the metadata or an unnamed key changes. No keys means every key of the
+// Secret. The digest never carries a value in clear.
+func DataDigest(secret *corev1.Secret, keys ...string) string {
+	if len(keys) == 0 {
+		keys = slices.Collect(maps.Keys(secret.Data))
+	}
+	keys = slices.Clone(keys)
+	slices.Sort(keys)
+	keys = slices.Compact(keys)
+
+	// A Secret key cannot hold "=" or a newline, so each line maps to one
+	// key and the digest of its value.
+	var b strings.Builder
+	for _, key := range keys {
+		value := sha256.Sum256(secret.Data[key])
+		b.WriteString(key + "=" + hex.EncodeToString(value[:]) + "\n")
+	}
+
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])[:16]
 }

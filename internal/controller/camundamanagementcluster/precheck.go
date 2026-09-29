@@ -189,7 +189,9 @@ func (res *resolver) resolveKeycloakAdmin(ctx context.Context) error {
 		}
 		res.componentInputs[components.ComponentIdentity] = append(
 			res.componentInputs[components.ComponentIdentity],
-			"Secret/"+objectPath(key)+"="+secret.ResourceVersion,
+			"Secret/"+objectPath(key)+"="+secretref.DataDigest(
+				&secret, components.KeycloakAdminUsernameKey, components.KeycloakAdminPasswordKey,
+			),
 		)
 
 		return nil
@@ -496,7 +498,7 @@ func (res *resolver) secretFor(
 }
 
 // checkLocalSecret checks that the Secret named name in the management
-// namespace carries keys, and records its resource version as a hash input.
+// namespace carries keys, and records a digest of their values as a hash input.
 // Every reference of a namespaced kind resolves here, so no copy is involved.
 func (res *resolver) checkLocalSecret(ctx context.Context, name string, keys ...string) error {
 	_, err := res.secret(ctx, client.ObjectKey{Namespace: res.mc.Namespace, Name: name}, keys...)
@@ -505,9 +507,9 @@ func (res *resolver) checkLocalSecret(ctx context.Context, name string, keys ...
 }
 
 // secret checks that the Secret at key carries every one of keys and returns
-// its data. A missing Secret or key maps to MissingSecret. The resource
-// version of the Secret goes into the hash inputs, so a rotated credential
-// rolls the pods that read it.
+// its data. A missing Secret or key maps to MissingSecret. A digest of the
+// values of keys goes into the hash inputs, so a rotated credential rolls the
+// pods that read it.
 func (res *resolver) secret(
 	ctx context.Context,
 	key client.ObjectKey,
@@ -520,7 +522,7 @@ func (res *resolver) secret(
 	if msg != "" {
 		return nil, &conditions.PreCheckFailure{Reason: v1.ReasonMissingSecret, Message: msg}
 	}
-	res.inputs = append(res.inputs, "Secret/"+objectPath(key)+"="+found.ResourceVersion)
+	res.inputs = append(res.inputs, "Secret/"+objectPath(key)+"="+secretref.DataDigest(found, keys...))
 
 	return found.Data, nil
 }

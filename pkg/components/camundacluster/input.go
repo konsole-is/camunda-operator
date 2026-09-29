@@ -128,9 +128,10 @@ type Input struct {
 	// controller sets it to the size of the applied template. When nil, the
 	// template requests the effective storage size.
 	VolumeClaimSize *resource.Quantity
-	// HashInputs are the resource versions and generations of the referenced
-	// Secrets and custom resources, as "kind/namespace/name=version" strings.
-	// ConfigHash sorts them, so the order does not matter.
+	// HashInputs are the data digests of the referenced Secrets and the
+	// generations of the referenced custom resources, as
+	// "kind/namespace/name=value" strings. ConfigHash sorts them, so the order
+	// does not matter.
 	HashInputs []string
 	// AdminPasswordHash is PasswordHash of the admin password that the admin
 	// Secret of a basic-auth cluster publishes, or "" under OIDC. It is the

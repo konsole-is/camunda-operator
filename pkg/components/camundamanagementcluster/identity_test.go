@@ -301,7 +301,7 @@ func TestIdentityDeploymentCarriesTheOverridesAndTheConfigHash(t *testing.T) {
 }
 
 // A rotated Secret behind an unchanged reference rolls the pods, because the
-// hash covers the resource versions the controller read.
+// hash covers the Secret digests the controller read.
 func TestConfigHashFollowsTheHashInputs(t *testing.T) {
 	t.Parallel()
 

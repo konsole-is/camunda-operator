@@ -36,8 +36,8 @@ const configHashLength = 16
 //
 // The environment alone is not enough. Every credential arrives through a
 // Secret reference, and the reference does not change when the data behind it
-// does. HashInputs carries the resource version of every Secret the controller
-// read, so a rotated password rolls the pods.
+// does. HashInputs carries a digest of the keys the controller read from each
+// Secret, so a rotated password rolls the pods.
 func ConfigHash(in Input, comp string) string {
 	var b strings.Builder
 	b.WriteString("component=" + comp + "\n")

@@ -492,8 +492,8 @@ func (res *resolver) resolveElasticsearch(
 }
 
 // checkLocalSecret checks that the Secret named name in the namespace of the
-// Optimize instance carries keys, and records its resource version as a render
-// input. Every reference of a namespaced kind resolves here, so no copy is
+// Optimize instance carries keys, and records a digest of their values as a
+// render input. Every reference of a namespaced kind resolves here, so no copy is
 // involved.
 func (res *resolver) checkLocalSecret(ctx context.Context, name string, keys ...string) error {
 	_, err := res.secret(ctx, client.ObjectKey{Namespace: res.optimize.Namespace, Name: name}, "", keys...)
@@ -584,11 +584,12 @@ func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose
 	return nil
 }
 
-// secret checks that the Secret at key carries every one of keys. When the
-// Secret lives outside the CamundaOptimize namespace, it copies the keys into
-// the mirror of that purpose and returns the key of the copy in the
-// CamundaOptimize namespace; otherwise it returns key unchanged. A missing
-// Secret or key maps to MissingSecret.
+// secret checks that the Secret at key carries every one of keys and records
+// a digest of their values as a hash input. When the Secret lives outside the
+// CamundaOptimize namespace, it copies the keys into the mirror of that
+// purpose and returns the key of the copy in the CamundaOptimize namespace;
+// otherwise it returns key unchanged. A missing Secret or key maps to
+// MissingSecret.
 func (res *resolver) secret(
 	ctx context.Context,
 	key client.ObjectKey,
@@ -605,7 +606,7 @@ func (res *resolver) secret(
 	// The hash input is the Secret that was read, never the copy that this
 	// controller applies. Hashing the copy would feed the controller's own
 	// write back into the hash.
-	res.inputs = append(res.inputs, "Secret/"+objectPath(key)+"="+found.ResourceVersion)
+	res.inputs = append(res.inputs, "Secret/"+objectPath(key)+"="+secretref.DataDigest(found, keys...))
 
 	if key.Namespace == res.optimize.Namespace {
 		return key, nil
