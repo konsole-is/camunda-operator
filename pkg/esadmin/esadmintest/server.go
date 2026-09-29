@@ -38,6 +38,14 @@ import (
 // leaves every closed index behind for the restore to collide with.
 const resolveWildcards = "open,closed"
 
+// routingFilter is the filter_path that a routing table read must carry.
+var routingFilter = []string{
+	"routing_table.indices.*.shards.*.state",
+	"routing_table.indices.*.shards.*.primary",
+	"routing_table.indices.*.shards.*.unassigned_info.reason",
+	"routing_table.indices.*.shards.*.unassigned_info.allocation_status",
+}
+
 // The path segments that name an API of the fake.
 const (
 	snapshotPath = "_snapshot"
@@ -122,7 +130,9 @@ type RestoreRequest struct {
 //
 // The fake pins the shape of both index requests: it accepts one only when it
 // tolerates a target that matches nothing, and it accepts a resolution only
-// when the request expands its wildcards to open and closed indices.
+// when the request expands its wildcards to open and closed indices. It
+// accepts a routing table read only when its filter_path names the fields in
+// routingFilter.
 type Server struct {
 	adminhttptest.Fake
 
@@ -685,12 +695,23 @@ func (s *Server) handleRoutingTable(w http.ResponseWriter, r *http.Request, targ
 		errorBody(w, http.StatusInternalServerError, "injected shards failure")
 		return
 	}
-	if !tolerates(r.URL.Query()) {
+	query := r.URL.Query()
+	if !tolerates(query) {
 		errorBodyTyped(
 			w, http.StatusNotFound,
 			"index_not_found_exception", "no such index ["+target+"]",
 		)
 		return
+	}
+	filters := strings.Split(query.Get("filter_path"), ",")
+	for _, field := range routingFilter {
+		if !slices.Contains(filters, field) {
+			errorBodyTyped(
+				w, http.StatusBadRequest, "illegal_argument_exception",
+				"filter_path must name "+field+", or the routing table can pass the size limit of the client",
+			)
+			return
+		}
 	}
 
 	indices := map[string]any{}

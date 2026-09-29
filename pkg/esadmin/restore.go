@@ -45,6 +45,13 @@ var restoredReasons = map[string]bool{
 	"EXISTING_INDEX_RESTORED": true,
 }
 
+// routingFilter keeps the fields that shardPending reads. The unfiltered
+// routing table of a large cluster passes the 1 MiB that the client reads.
+const routingFilter = "routing_table.indices.*.shards.*.state," +
+	"routing_table.indices.*.shards.*.primary," +
+	"routing_table.indices.*.shards.*.unassigned_info.reason," +
+	"routing_table.indices.*.shards.*.unassigned_info.allocation_status"
+
 // waitingAllocations are the allocation statuses of an unassigned shard that a
 // node can still take.
 var waitingAllocations = map[string]bool{
@@ -307,7 +314,7 @@ func (c *Client) shardPending(ctx context.Context, patterns []string) (bool, err
 	payload, _, err := c.api.Do(ctx, adminhttp.Request{
 		Method: http.MethodGet,
 		Path: "/_cluster/state/routing_table/" + indexTarget(patterns) +
-			"?ignore_unavailable=true&allow_no_indices=true",
+			"?ignore_unavailable=true&allow_no_indices=true&filter_path=" + routingFilter,
 	})
 	if err != nil {
 		return false, err
