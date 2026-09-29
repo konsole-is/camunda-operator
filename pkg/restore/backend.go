@@ -100,6 +100,35 @@ func DatabaseBackend(
 	})
 }
 
+// DatabaseContract returns the contract of the logical database named
+// database behind the DatabaseServerConfig server. A writer registration that
+// names it holds the database at every address the contract moves to, see
+// RegisterDatabaseWriter.
+func DatabaseContract(server types.NamespacedName, database string) string {
+	return clustercomponents.StorageContract(clustercomponents.Storage{
+		Type:  v1.SecondaryStorageTypeRDBMS,
+		RDBMS: &clustercomponents.RDBMSStorage{Server: server, Database: database},
+	})
+}
+
+// ContractOf returns the DatabaseContract that storage resolves to, or the
+// empty string for a storage that is not rdbms. A DatabaseConfig that does
+// not exist is an error: BackendOf reports it as a failure first.
+func ContractOf(ctx context.Context, reader client.Reader, storage *v1.SecondaryStorageConfig) (string, error) {
+	if storage.Spec.Type != v1.SecondaryStorageTypeRDBMS || storage.Spec.RDBMS == nil {
+		return "", nil
+	}
+
+	var config v1.DatabaseConfig
+	key := types.NamespacedName{Namespace: storage.Namespace, Name: storage.Spec.RDBMS.DatabaseConfigRef}
+	if err := reader.Get(ctx, key, &config); err != nil {
+		return "", fmt.Errorf("reading DatabaseConfig %s: %w", key, err)
+	}
+	server := types.NamespacedName{Namespace: config.Namespace, Name: config.Spec.ServerRef}
+
+	return DatabaseContract(server, config.Spec.DatabaseName), nil
+}
+
 func claimKey(
 	storage *v1.SecondaryStorageConfig,
 	database *clustercomponents.RDBMSStorage,

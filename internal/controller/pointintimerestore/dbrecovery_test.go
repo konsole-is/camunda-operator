@@ -233,6 +233,7 @@ func writersSeenByAnotherCluster(backend string) []string {
 		testClaimNamespace,
 		backend,
 		clustercomponents.StorageClaimSchema().LeaseName(backend),
+		"",
 		"uid-of-another-cluster",
 	)
 	Expect(err).NotTo(HaveOccurred())

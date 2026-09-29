@@ -386,8 +386,15 @@ func (r *Reconciler) followBackend(
 		return failure, nil
 	}
 
-	err := restore.RegisterWriter(
-		ctx, r.Client, r.APIReader, r.ClaimNamespace, backend, pitr, pitr.Status.TargetClusterUID,
+	err := restore.RegisterDatabaseWriter(
+		ctx,
+		r.Client,
+		r.APIReader,
+		r.ClaimNamespace,
+		backend,
+		pinnedContract(pitr),
+		pitr,
+		pitr.Status.TargetClusterUID,
 	)
 	if err != nil {
 		return nil, err

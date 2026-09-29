@@ -302,6 +302,7 @@ func (res *resolver) resolveRDBMSStorage(
 		return err
 	}
 	in.Storage.RDBMS = &components.RDBMSStorage{
+		Server:      serverKey,
 		Host:        server.Spec.Host,
 		Port:        server.Spec.Port,
 		Database:    dbConfig.Spec.DatabaseName,

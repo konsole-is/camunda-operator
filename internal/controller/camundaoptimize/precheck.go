@@ -335,8 +335,9 @@ func (r *Reconciler) gateOnStorageClaim(
 	}
 	// A writer for another cluster, such as a restore, writes the backend with
 	// no pod of that cluster, so the pods alone do not show it.
+	// Optimize runs on Elasticsearch only, whose writers name no contract.
 	writers, err := storagewriter.Live(
-		ctx, r.APIReader, r.ClaimNamespace, key, out.Input.StorageClaim, cluster.UID,
+		ctx, r.APIReader, r.ClaimNamespace, key, out.Input.StorageClaim, "", cluster.UID,
 	)
 	if err != nil {
 		return err

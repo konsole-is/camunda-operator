@@ -895,6 +895,7 @@ func writersSeenByAnotherCluster(g Gomega, backend string) []string {
 		claimNamespace,
 		backend,
 		camundacluster.StorageClaimSchema().LeaseName(backend),
+		"",
 		"uid-of-another-cluster",
 	)
 	g.Expect(err).NotTo(HaveOccurred())

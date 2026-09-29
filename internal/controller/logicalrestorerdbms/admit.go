@@ -200,8 +200,12 @@ func (r *Reconciler) admit(
 	// reads the claim after this registration exists, so a cluster that takes
 	// the claim before that check is what the check finds, and one that takes
 	// it after lists this restore as a writer.
-	err = restore.RegisterWriter(
-		ctx, r.Client, r.APIReader, r.opts.ClaimNamespace, backend, lrr, lrr.Status.TargetClusterUID,
+	contract, err := restore.ContractOf(ctx, r.APIReader, storage)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	err = restore.RegisterDatabaseWriter(
+		ctx, r.Client, r.APIReader, r.opts.ClaimNamespace, backend, contract, lrr, lrr.Status.TargetClusterUID,
 	)
 	if err != nil {
 		return restore.Outcome{}, err

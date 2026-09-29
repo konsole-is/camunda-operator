@@ -66,7 +66,7 @@ func TestOtherWritersListsEveryRegistrationButTheOwnOne(t *testing.T) {
 	require.NoError(t, RegisterWriter(ctx, c, c, writerNamespace, backend, earlier, "uid-target"))
 	require.NoError(t, RegisterWriter(ctx, c, c, writerNamespace, backend, next, "uid-target"))
 
-	writers, err := OtherWriters(ctx, c, writerNamespace, backend, next)
+	writers, err := OtherWriters(ctx, c, writerNamespace, backend, "", next)
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/earlier"}, writers)
@@ -85,4 +85,23 @@ func TestReleaseWritersEndsTheRegistrationsOfTheOwnerOnEveryBackend(t *testing.T
 	leases := writerLeases(t, c)
 	require.Len(t, leases, 1)
 	assert.Equal(t, "LogicalRestoreRDBMS apps/other", leases[0].Annotations[storagewriter.WriterAnnotation])
+}
+
+func TestADatabaseWriterHoldsItsContractAtAMovedAddress(t *testing.T) {
+	ctx := context.Background()
+	c := writerClient(t)
+	contract := DatabaseContract(types.NamespacedName{Namespace: "apps", Name: "pg"}, "camunda")
+	earlier, next := writingRestore("earlier"), writingRestore("next")
+	require.NoError(t, RegisterDatabaseWriter(
+		ctx, c, c, writerNamespace, "rdbms|old.apps.svc:5432/camunda", contract, earlier, "uid-target",
+	))
+	require.NoError(
+		t,
+		RegisterWriter(ctx, c, c, writerNamespace, "rdbms|old.apps.svc:5432/camunda", earlier, "uid-target"),
+	)
+
+	writers, err := OtherWriters(ctx, c, writerNamespace, "rdbms|new.apps.svc:5432/camunda", contract, next)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/earlier"}, writers, "a registration without a contract keeps it")
 }
