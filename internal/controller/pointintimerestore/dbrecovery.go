@@ -338,6 +338,14 @@ func (r *Reconciler) recoveryAnswered(
 	if failure != nil {
 		return r.holdRecovering(pitr, failure), nil
 	}
+	// Admission checked the endpoint before the rollback, not the one it moved to.
+	failure, err = r.backendFree(ctx, pitr, resolved, pitr.Status.Backend)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	if failure != nil {
+		return r.holdRecovering(pitr, failure), nil
+	}
 
 	// The pin is replaced, not compared. The rollback was asked for by this
 	// restore, so the server behind the contract is meant to be another one,

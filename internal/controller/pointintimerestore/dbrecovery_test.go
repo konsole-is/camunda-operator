@@ -99,8 +99,8 @@ func answerRecovery(w *world, result v1.RecoveryResult, message string) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// repointContract moves the endpoint of the contract to the server that the
-// recovery built.
+// repointContract moves the contract to the recovered server, and claims that
+// endpoint for the cluster as its controller does.
 func repointContract(w *world) {
 	GinkgoHelper()
 
@@ -110,6 +110,7 @@ func repointContract(w *world) {
 		contract.Spec.Host = recoveredHost
 		g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
+	holdBackend(w.cluster)
 }
 
 // publishContractReady records the probe that the contract controller writes
@@ -734,6 +735,43 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		after := expectBackendHeld(pitr)
 		Expect(strings.Contains(after, recoveredHost)).To(BeTrue(), after)
 		Expect(writersSeenByAnotherCluster(before)).To(BeEmpty())
+	})
+
+	It("holds after the answer while another cluster holds the endpoint the contract moved to", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectBackendHeld(pitr)
+
+		repointContract(w)
+		other := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "other-" + w.cluster.Name, Namespace: w.namespace},
+			Spec:       *w.cluster.Spec.DeepCopy(),
+		}
+		Expect(k8sClient.Create(ctx, other)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, other) })
+		holdBackend(other)
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+		publishContractReady(w, recoveredIdentifier)
+
+		Eventually(func(g Gomega) {
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
+			condition := ready(current)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Reason).To(Equal(v1.ReasonStorageAlreadyAttached))
+			g.Expect(condition.Message).To(ContainSubstring(other.Name))
+		}, timeout, interval).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
+		}, time.Second, interval).Should(Succeed())
+
+		By("going on once its own cluster holds the moved endpoint")
+		holdBackend(w.cluster)
+		wake(w.cluster)
+		Eventually(func(g Gomega) {
+			g.Expect(readRestore(g, pitr).Status.Phase).NotTo(Equal(v1.PointInTimeRestoreRestoringDatabase))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("asks nothing of a contract that nobody rolls back", func() {

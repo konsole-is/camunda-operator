@@ -176,31 +176,12 @@ func (r *Reconciler) admit(
 	if failure != nil {
 		return r.waiting(pitr, failure), nil
 	}
-	failure, err = restore.CheckBackend(ctx, r.Client, r.APIReader, restore.BackendCheck{
-		ClaimNamespace: r.ClaimNamespace,
-		Cluster:        resolved.cluster,
-		Storage:        resolved.storage,
-		Pinned:         backend,
-	})
+	failure, err = r.backendFree(ctx, pitr, resolved, backend)
 	if err != nil {
 		return restore.Outcome{}, err
 	}
 	if failure != nil {
 		return r.waiting(pitr, failure), nil
-	}
-	// A deleted restore into the same cluster can still roll the server back.
-	writers, err := restore.OtherWriters(ctx, r.APIReader, r.ClaimNamespace, backend, pitr, r.WriterClock.Since())
-	if err != nil {
-		return restore.Outcome{}, err
-	}
-	if len(writers) > 0 {
-		return r.waiting(pitr, &conditions.PreCheckFailure{
-			Reason: v1.ReasonWaitingForHandover,
-			Message: fmt.Sprintf(
-				"%s still write the database %q. The restore starts when they are done",
-				strings.Join(writers, ", "), backend,
-			),
-		}), nil
 	}
 
 	// Everything that this restore is allowed to act on is now known: the
@@ -236,6 +217,41 @@ func (r *Reconciler) admit(
 	pitr.Status.Phase = v1.PointInTimeRestoreValidatingDatabaseState
 
 	return r.validateDatabaseState(ctx, pitr, resolved)
+}
+
+// backendFree reports why the restore must not write backend yet, or nil when
+// the target holds it and no other writer is on it.
+func (r *Reconciler) backendFree(
+	ctx context.Context,
+	pitr *v1.PointInTimeRestore,
+	resolved *chain,
+	backend string,
+) (*conditions.PreCheckFailure, error) {
+	failure, err := restore.CheckBackend(ctx, r.Client, r.APIReader, restore.BackendCheck{
+		ClaimNamespace: r.ClaimNamespace,
+		Cluster:        resolved.cluster,
+		Storage:        resolved.storage,
+		Pinned:         backend,
+	})
+	if err != nil || failure != nil {
+		return failure, err
+	}
+	// A deleted restore into the same cluster can still roll the server back.
+	writers, err := restore.OtherWriters(ctx, r.APIReader, r.ClaimNamespace, backend, pitr, r.WriterClock.Since())
+	if err != nil {
+		return nil, err
+	}
+	if len(writers) > 0 {
+		return &conditions.PreCheckFailure{
+			Reason: v1.ReasonWaitingForHandover,
+			Message: fmt.Sprintf(
+				"%s still write the database %q. The restore goes on when they are done",
+				strings.Join(writers, ", "), backend,
+			),
+		}, nil
+	}
+
+	return nil, nil
 }
 
 // resolve reads the storage chain of the restore and the facts of the live
