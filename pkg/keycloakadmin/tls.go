@@ -64,12 +64,10 @@ func WithRootCAs(pool *x509.CertPool) Option {
 	}
 }
 
-// defaultTransport copies the standard transport of net/http. The copy keeps
-// the proxy settings, the connection limits, and the TLS settings of every
-// other client of the operator. It has its own idle connections, so a
-// CloseIdleConnections call on the standard transport does not break a
-// request of the client. The copy carries its own TLS settings, so a caller
-// can write to them.
+// defaultTransport copies the standard transport of net/http, so a client
+// that changes the certificate pool keeps the proxy settings, the connection
+// limits, and the TLS settings of every other client of the operator. The
+// copy carries its own TLS settings, so a caller can write to them.
 //
 // A standard transport that another package replaced with an implementation
 // of its own cannot be copied. A plain transport answers for it, because a
