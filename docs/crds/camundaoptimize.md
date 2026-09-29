@@ -247,7 +247,7 @@ Zero replicas is the state you asked for, so `ImporterReady` and `Ready` stay `T
 
 The importer is replaced, not rolled: the old pod stops before the new one starts. Two importers that write the same indices at the same time make the analytics data inconsistent. So a new version or a changed setting stops the import for the time of one restart. The webapp rolls and keeps serving.
 
-When a Secret or a resource that this `CamundaOptimize` references changes, such as a rotated Elasticsearch password, the pods restart with the new value. A Secret that you attach yourself through `extraEnv` or `extraEnvFrom` does not restart them. Restart the workload yourself after you change one.
+When a resource that this `CamundaOptimize` references changes, the pods restart with the new value. So does a change to a key that Optimize reads from a referenced Secret, such as a rotated Elasticsearch password. A change to the labels or annotations of the Secret restarts nothing. A Secret that you attach yourself through `extraEnv` or `extraEnvFrom` does not restart the pods. Restart the workload yourself after you change one.
 
 ## Monitoring
 

@@ -188,9 +188,8 @@ func TestFailRecordsTheReasonAndTheMessage(t *testing.T) {
 	assert.Equal(t, "the partition counts differ", progress.FailureMessage)
 }
 
-// The message carries an external error whose size the operator cannot know,
-// for example the reason of a Job or of a pod. The status field is free form,
-// so the message is bounded before it reaches it.
+// The message carries an external error of unknown size, for example the
+// reason of a Job or of a pod, and the status field is free form.
 func TestFailBoundsTheMessage(t *testing.T) {
 	t.Parallel()
 
@@ -216,10 +215,8 @@ func TestStageTerminalStagesTheRecordedOutcome(t *testing.T) {
 	require.NotNil(t, condition)
 	assert.Equal(t, metav1.ConditionTrue, condition.Status)
 	assert.Equal(t, v1.ReasonCompleted, condition.Reason)
-	// The message no longer tells the reader to unsuspend the cluster. A
-	// restore that suspended it has already withdrawn that suspension by the
-	// time anybody reads this, and a cluster that its owner suspended is
-	// theirs to unsuspend.
+	// The message says nothing about the suspension. The look that withdraws
+	// it comes later, and a cluster that its owner suspended stays suspended.
 	assert.Equal(t, "The restore finished", condition.Message)
 	assert.Equal(t, int64(4), completed.Status.ObservedGeneration)
 

@@ -117,3 +117,4 @@ nav:
           - LogicalRestoreElasticsearch: crds/logicalrestoreelasticsearch.md
           - LogicalRestoreRDBMS: crds/logicalrestorerdbms.md
           - PointInTimeRestore: crds/pointintimerestore.md
+      - API reference: crds/api-reference.md

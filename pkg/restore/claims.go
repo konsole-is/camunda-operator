@@ -40,10 +40,9 @@ type Progress struct {
 	Done bool
 	// Message says what the step waits for. It reaches the Ready condition.
 	Message string
-	// Recreated names every claim whose old volume is gone: the ones this
-	// call deleted, and the ones it found already absent. It is the recorded
-	// list of the input, grown by this call. The caller writes it to status
-	// before it acts again, and a recorded name is never deleted.
+	// Recreated names every claim whose old volume is gone: the input list
+	// and the names that this call added. The caller writes it to status
+	// before it acts again.
 	Recreated []string
 }
 
@@ -63,23 +62,14 @@ type ClaimInput struct {
 }
 
 // RecreateClaims gives the brokers the empty data volumes that the restore
-// application needs. It deletes every claim that the recorded list does not
-// name yet, and it applies the claim the StatefulSet expects once the old one
-// is gone. It reports Done only when every claim exists again as an empty
-// volume.
+// application needs. It deletes each claim that in.Recreated does not name,
+// and it reports Done only when every claim exists again as an empty volume.
 //
-// The caller has two duties, and the safety of the restore rests on them:
+// Persist Progress.Recreated before you apply any restore Job. After a Job
+// starts to write, a call without that record erases restored data.
 //
-//   - Persist Progress.Recreated before it applies any restore Job. Until
-//     that write lands, a reconcile that re-enters deletes the empty volume
-//     again and creates it again. That costs a pass and loses nothing. After
-//     a Job starts writing, the same pass erases restored data.
-//   - Stop calling once Progress.Done. Done means the volumes are empty and
-//     the Jobs can run. A later call deletes what the Jobs wrote.
-//
-// The reader must be uncached. A claim that was just deleted or applied is
-// what the next decision reads. The same reader also reads the pods of the
-// namespace, to name what holds a volume that still terminates.
+// reader must be uncached, because the next decision reads a claim that was
+// just deleted or applied. reader also lists the pods of the namespace.
 func RecreateClaims(
 	ctx context.Context,
 	c client.Client,
@@ -103,7 +93,6 @@ func RecreateClaims(
 
 		switch {
 		case apierrors.IsNotFound(err):
-			// The old volume is gone, so the empty one can take its place.
 			if !slices.Contains(progress.Recreated, name) {
 				progress.Recreated = append(progress.Recreated, name)
 			}
@@ -113,22 +102,15 @@ func RecreateClaims(
 				return Progress{}, fmt.Errorf("applying the broker volume %s: %w", name, err)
 			}
 		case !slices.Contains(progress.Recreated, name):
-			// The volume still holds the data of the cluster. It goes now, and
-			// the caller persists the record of that before anything is created.
+			// A claim that is not recorded yet still holds the data of the cluster.
 			if err := c.Delete(ctx, &current); err != nil && !apierrors.IsNotFound(err) {
 				return Progress{}, fmt.Errorf("deleting the broker volume %s: %w", name, err)
 			}
 			progress.Recreated = append(progress.Recreated, name)
 			progress.hold(fmt.Sprintf("the broker volume %s is deleted and comes back empty", name))
 		case current.DeletionTimestamp != nil:
-			// A pod still holds the volume, so the protection finalizer keeps
-			// it alive. The pod is a broker pod of a cluster that nobody
-			// suspended, or a Job pod of a restore that failed, and the two
-			// need different remedies. The message names the one it found.
-			//
-			// The guard is what bounds the cost. Naming the holder lists the
-			// pods of the namespace, and only the first hold reaches the
-			// caller, so a later terminating volume pays for nothing.
+			// A pod still holds the volume. Naming the pod lists the pods of the
+			// namespace, and only the first hold reaches the caller.
 			if progress.Done {
 				progress.hold(terminatingMessage(ctx, reader, in.Target, name))
 			}
@@ -159,12 +141,9 @@ func (t *Target) claimName(ordinal int32) string {
 }
 
 // BuildClaim renders the broker data claim of one ordinal at the given size.
-// Everything but the size comes from the claim template, so the StatefulSet
-// selector and the discovery labels keep working.
-//
-// The claim carries no owner reference. The StatefulSet owns the broker
-// volumes. An owner reference to a restore deletes a live broker volume as
-// soon as somebody deletes the restore resource.
+// Its spec, labels and annotations come from the claim template, so the
+// discovery labels keep working. The claim carries no owner reference: one to
+// a restore deletes a live broker volume with the restore.
 func (t *Target) BuildClaim(ordinal int32, size resource.Quantity) *corev1.PersistentVolumeClaim {
 	spec := *t.ClaimTemplate.Spec.DeepCopy()
 	spec.Resources.Requests = corev1.ResourceList{corev1.ResourceStorage: size}
@@ -181,9 +160,8 @@ func (t *Target) BuildClaim(ordinal int32, size resource.Quantity) *corev1.Persi
 	}
 }
 
-// hold records that the step is not done. The first claim that holds it
-// names the message, so the reported reason is the lowest broker that waits
-// and does not change with every pass.
+// hold records that the step is not done. The first claim that holds it names
+// the message, so the message names the lowest broker that waits.
 func (p *Progress) hold(message string) {
 	if !p.Done {
 		return
@@ -192,10 +170,10 @@ func (p *Progress) hold(message string) {
 	p.Message = message
 }
 
-// ClaimSize returns the storage request of a recreated broker volume:
-// recorded when the backup recorded an effective restore size, and the
-// request of the claim template otherwise. A restored volume holds the data
-// of the backup, which the template size can be too small for.
+// ClaimSize returns the storage request of a recreated broker volume. Pass
+// the effective restore size that the backup recorded as recorded, or nil to
+// get the request of the claim template, which can be too small for the data
+// of the backup.
 func (t *Target) ClaimSize(recorded *resource.Quantity) resource.Quantity {
 	if recorded != nil {
 		return *recorded

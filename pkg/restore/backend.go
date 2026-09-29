@@ -32,7 +32,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 )
 
-// BackendCheck is what a logical restore needs to decide whether it may write
+// BackendCheck is what a logical restore needs to decide whether it can write
 // the secondary storage of its target.
 type BackendCheck struct {
 	// ClaimNamespace holds the storage claim Leases, see
@@ -136,10 +136,10 @@ func get(
 	return nil, nil
 }
 
-// CheckBackend reports why a restore must not write the backend it pinned,
-// or nil when it may: check.Storage still resolves to that backend, the
-// target holds its storage claim, and nothing but the restore writes it.
-// reader must read the API server directly.
+// CheckBackend reports why a restore must not write the backend it pinned.
+// It returns nil when check.Storage still resolves to that backend, the target
+// holds its storage claim, and nothing but the restore writes it. reader must
+// read the API server directly.
 func CheckBackend(
 	ctx context.Context,
 	c client.Client,
@@ -198,8 +198,8 @@ func CheckBackend(
 	return nil, nil
 }
 
-// MovedBackend reports the backend key of cluster that is not the pinned
-// one as a failure, or nil when they match.
+// MovedBackend returns a failure when key, the backend that cluster resolves
+// to now, is not pinned. It returns nil when they match.
 func MovedBackend(cluster *v1.CamundaCluster, key, pinned string) *conditions.PreCheckFailure {
 	if key == pinned {
 		return nil

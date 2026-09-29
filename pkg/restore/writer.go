@@ -28,9 +28,9 @@ import (
 )
 
 // RegisterWriter registers owner, a restore into the cluster with UID target,
-// as a writer of backend. A cluster on backend waits while the registration
-// exists, see storagewriter.Live. claimNamespace holds the storage claim
-// Leases. A registration that exists already is fine.
+// as a writer of backend. Another cluster on backend waits while the
+// registration exists. claimNamespace holds the storage claim Leases. A
+// registration that exists already is fine.
 func RegisterWriter(
 	ctx context.Context,
 	c client.Client,
@@ -71,9 +71,8 @@ func ReleaseWriter(
 	return storagewriter.Release(ctx, c, claimNamespace, backend, writerOf(owner, target))
 }
 
-// ReleaseWriters ends every registration of owner, on every backend,
-// including one that status never recorded. The reader must read the API
-// server directly.
+// ReleaseWriters ends every registration of owner on every backend, also one
+// that status never recorded. reader must read the API server directly.
 func ReleaseWriters(
 	ctx context.Context,
 	c client.Client,

@@ -54,8 +54,7 @@ func TestFieldManagersAreStable(t *testing.T) {
 	)
 }
 
-// Every recreated broker volume goes through Apply, so this pins the whole
-// server-side apply convention of every restore kind in one place: an apply
+// This pins the server-side apply convention of every restore kind: an apply
 // patch, forced ownership, and the field manager of the calling kind.
 func TestApplyForcesOwnershipUnderTheFieldManager(t *testing.T) {
 	t.Parallel()

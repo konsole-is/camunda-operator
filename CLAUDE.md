@@ -132,6 +132,7 @@ go -C api test ./...        # ./... never crosses a module boundary
 make lint                   # both modules, expect 0 issues
 make lint-renovate          # renovate.json5 against the validator of RENOVATE_VERSION; needs npx
 make manifests generate     # then `git status --porcelain config api` prints nothing
+make api-docs               # then `git status --porcelain docs/crds` prints nothing
 go vet -tags=e2e ./test/e2e/  # go test ./... never compiles this package
 mkdocs build --strict       # catches a broken link or a missing nav entry
 ```

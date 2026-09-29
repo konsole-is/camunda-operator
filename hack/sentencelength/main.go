@@ -22,9 +22,9 @@ limitations under the License.
 // Usage: sentencelength [dir]
 //
 // The directory defaults to docs. The command reads every .md file below it,
-// except docs/crds/TEMPLATE.md. It prints one line per finding, then the
-// count for each page and the total. It exits with status 1 when it reports
-// a finding.
+// except docs/crds/TEMPLATE.md and the generated docs/crds/api-reference.md.
+// It prints one line per finding, then the count for each page and the total.
+// It exits with status 1 when it reports a finding.
 //
 // What it reads:
 //   - Paragraphs, list items, admonition bodies, blockquotes, and each table
@@ -169,6 +169,13 @@ func main() {
 	}
 }
 
+// make api-docs renders api-reference.md from the GoDoc in api/v1, so a
+// finding on that page is fixed in the GoDoc, not on the page.
+var skippedPages = map[string]bool{
+	filepath.Join("crds", "TEMPLATE.md"):      true,
+	filepath.Join("crds", "api-reference.md"): true,
+}
+
 func checkDir(root string) ([]finding, error) {
 	var findings []finding
 
@@ -181,7 +188,7 @@ func checkDir(root string) ([]finding, error) {
 		if relErr != nil {
 			return relErr
 		}
-		if d.IsDir() || filepath.Ext(path) != ".md" || rel == filepath.Join("crds", "TEMPLATE.md") {
+		if d.IsDir() || filepath.Ext(path) != ".md" || skippedPages[rel] {
 			return nil
 		}
 

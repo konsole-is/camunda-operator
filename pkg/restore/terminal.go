@@ -26,18 +26,15 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// Finish is the terminal branch of every restore kind. The controller runs it
-// on every look of a restore that reached a terminal phase, in place of the
-// phase it would otherwise advance. It gives back the Jobs of a completed
-// restore, what Resume gives back, and the claim on the cluster. cluster is
-// the name of the target, which lives in the namespace of the restore.
+// Finish is the terminal branch of every restore kind. Call it on every look
+// of a restore in a terminal phase, in place of the next phase. It removes the
+// Jobs of a completed restore, gives back what Resume gives back, and releases
+// the claim on the cluster. cluster is the name of the target, in the
+// namespace of the restore.
 //
-// It reports Done only when all of them are given back. Until then it reports
-// Outcome.Wait, which is a wait and not a failure, and the controller looks
-// again after it.
-//
-// Every step is safe on every look, so a call that failed is safe to repeat.
-// An error keeps the claim, and the step that failed heals on the next look.
+// It reports Done once the claim is released, and Outcome.Wait until then. A
+// failed restore keeps its Jobs, its hold and the suspension. After an error,
+// call it again: the claim stays until the other steps succeed.
 func Finish(
 	ctx context.Context,
 	c client.Client,
@@ -47,31 +44,26 @@ func Finish(
 	cluster string,
 ) (Outcome, error) {
 	// A conflict on the terminal flush can restore a stale Ready from the
-	// server. Staging it again on every look heals that.
+	// server. Staging it again on every look corrects that.
 	StageTerminal(owner, p)
 
-	// The Jobs go first, and the two steps below wait for them. A completed
-	// Job keeps its pod, and a pod that mounts a broker data volume counts as
-	// a user of it under the pvc-protection finalizer. Done says that no such
-	// pod is left.
+	// A completed Job keeps its pod, and the pvc-protection finalizer keeps a
+	// broker volume that such a pod mounts.
 	collected, err := CollectJobs(ctx, c, reader, owner, p)
 	if err != nil || !collected.Done {
 		return collected, err
 	}
 
-	// The unsuspend sits behind that gate, and a tidy-up must not lift it out.
-	// It starts the brokers again, and a broker that the scheduler places on
-	// another node cannot attach a ReadWriteOnce volume that a completed pod
-	// still holds, so the cluster would stall on the very volumes this branch
-	// is freeing.
+	// Resume can start the brokers again. A broker on another node cannot attach
+	// a ReadWriteOnce volume that a Job pod still holds, so it waits for Done.
 	if err := Resume(ctx, c, reader, owner, p, types.NamespacedName{
 		Namespace: owner.GetNamespace(), Name: cluster,
 	}); err != nil {
 		return Outcome{}, err
 	}
 
-	// The claim goes last. It is what tells the next operation that the
-	// cluster is free, so the volumes are asked for before it.
+	// The claim goes last, because it tells the next operation that the
+	// cluster is free.
 	if err := Give(ctx, c, reader, owner, cluster); err != nil {
 		return Outcome{}, err
 	}

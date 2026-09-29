@@ -69,9 +69,9 @@ type Input struct {
 	// Suspended is spec.suspend. It scales every workload of the management
 	// plane to zero.
 	Suspended bool
-	// HashInputs are the resource versions of the referenced Secrets and the
+	// HashInputs are the data digests of the referenced Secrets and the
 	// generations of the referenced custom resources, as
-	// "kind/namespace/name=version" strings. ConfigHash sorts them, so the
+	// "kind/namespace/name=value" strings. ConfigHash sorts them, so the
 	// order does not matter.
 	HashInputs []string
 	// ComponentHashInputs are the same strings for what one component alone
