@@ -469,8 +469,9 @@ var _ = Describe("LogicalRestoreRDBMS cluster claim", func() {
 	})
 
 	// A look can create the writer Lease and crash before status records the
-	// backend. The finalizer finds that Lease by the UID of the restore.
-	It("gives back a writer Lease that status never recorded when it is deleted", func() {
+	// backend. A restore in Pending writes nothing, so it gives that Lease back
+	// without a delete.
+	It("gives back a writer Lease that status never recorded while it waits in Pending", func() {
 		w := newWorld()
 		other := &v1.CamundaCluster{
 			ObjectMeta: metav1.ObjectMeta{Namespace: w.namespace, Name: "other", UID: "uid-other"},
@@ -482,23 +483,46 @@ var _ = Describe("LogicalRestoreRDBMS cluster claim", func() {
 		Expect(reached.Status.Backend).To(BeEmpty())
 
 		By("standing in for a look that registered the writer and crashed before its status write")
+		crashed := "rdbms|crashed.example.svc:5432/camunda"
 		Expect(restorepkg.RegisterWriter(
-			ctx,
-			k8sClient,
-			k8sClient,
-			claimNamespace,
-			"rdbms|crashed.example.svc:5432/camunda",
-			reached,
-			reached.Status.TargetClusterUID,
+			ctx, k8sClient, k8sClient, claimNamespace, crashed, reached, reached.Status.TargetClusterUID,
 		)).To(Succeed())
-		Expect(writersNaming(lrr)).To(HaveLen(1))
 
+		Eventually(func(g Gomega) {
+			g.Expect(writersSeenByAnotherCluster(g, crashed)).To(BeEmpty())
+			g.Expect(writersNaming(lrr)).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+		current := latestOf(lrr)
+		Expect(current.DeletionTimestamp).To(BeNil())
+		Expect(current.Status.Phase).To(Equal(v1.LogicalRestorePending))
+	})
+
+	// A crash can also leave a Lease that status does not name after the
+	// restore left Pending. The finalizer finds it by the UID of the restore.
+	It("gives back every writer Lease when it is deleted, also one that status never recorded", func() {
+		w := newWorld()
+		backup := createBackup(w)
+		lrr := createRestore(w, backup.Name)
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, lrr).Status.SecondaryJobName).NotTo(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+		current := latestOf(lrr)
+
+		By("standing in for a look that registered a second writer and crashed before its status write")
+		crashed := "rdbms|crashed.example.svc:5432/camunda"
+		Expect(restorepkg.RegisterWriter(
+			ctx, k8sClient, k8sClient, claimNamespace, crashed, current, current.Status.TargetClusterUID,
+		)).To(Succeed())
+		Expect(writersNaming(lrr)).To(HaveLen(2))
+
+		collectDeletedJobs(w.namespace)
 		Expect(k8sClient.Delete(ctx, lrr)).To(Succeed())
 
 		Eventually(func(g Gomega) {
 			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(lrr), &v1.LogicalRestoreRDBMS{})
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			g.Expect(writersNaming(lrr)).To(BeEmpty())
+			g.Expect(writersSeenByAnotherCluster(g, crashed)).To(BeEmpty())
 		}, timeout, interval).Should(Succeed())
 	})
 

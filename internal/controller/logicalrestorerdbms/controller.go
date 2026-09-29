@@ -275,6 +275,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, err
 	}
 
+	// A restore in Pending without a backend writes nothing. A writer Lease of it
+	// is left over from a look that crashed before its status write.
+	if lrr.Status.Phase == v1.LogicalRestorePending && lrr.Status.Backend == "" {
+		if err := restore.ReleaseWriters(ctx, r.Client, r.APIReader, r.opts.ClaimNamespace, &lrr); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	// A restore that reached its terminal phase in this look keeps the claim
 	// until the flush of this reconcile makes that phase durable. The look
 	// that the flush wakes releases it through the branch above. A Lease that
