@@ -60,3 +60,6 @@ site/
 **/.claude/agent-memory-local
 **/.claude/first-run
 **/.claude/assistant-daemon-state.json
+
+# Planning scratch from the superpowers and feature-dev-workflow skills: specs, plans, state files.
+docs/superpowers/
