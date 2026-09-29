@@ -33,15 +33,12 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// A restore writes two fields on the cluster it restores: the suspension it
-// needs for its whole run, and the Camunda version that its backup was taken
-// with. Each field carries a field manager of its own, so one apply is a
-// statement about one field and about nothing else. A single manager that
-// applied both would remove whichever of the two an apply left out.
+// A restore writes two fields on its cluster, each under a field manager of
+// its own. A single manager that applied both would remove whichever field an
+// apply left out.
 //
-// The names are the contract. A GitOps tool that owns the CamundaCluster, and
-// the layer above this operator, both read them to tell a write of a restore
-// from a write of their own.
+// The names are API surface. A GitOps tool and the layer above this operator
+// read them to tell a write of a restore from a write of their own.
 const (
 	// FieldManagerTargetSuspend owns spec.suspend of the cluster that a
 	// restore prepares. The restore withdraws the field when it completes.
@@ -53,49 +50,34 @@ const (
 )
 
 // versionPattern is the shape that spec.version of a CamundaCluster accepts.
-// A backup that recorded anything else names no version that the restore can
-// write, and the version rule of the restore kind reports what that means.
 var versionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 
-// PrepareInput is what the preparation step of a restore reads. Every value
-// is live, read in this look: the step decides from the state of the cluster
-// now, and it writes to that cluster.
+// PrepareInput is what the preparation step of a restore reads. Read every
+// value live, in the same look, because the step writes to the cluster.
 type PrepareInput struct {
 	// Owner is the restore resource. The step stages its Ready condition on
 	// it while it works.
 	Owner conditions.Owner
 	// Cluster is the target cluster of the restore.
 	Cluster *v1.CamundaCluster
-	// Target is the live broker StatefulSet and the facts read off it. The
-	// step reads the running broker count and the Camunda version from it,
-	// because both answer what the cluster does rather than what it was
-	// asked to do.
+	// Target is the live broker StatefulSet and the facts read off it.
 	Target *Target
 	// Version is the Camunda version that the backup recorded. The step
-	// writes it on the cluster, so the brokers start again on the version
-	// whose state the volumes hold by then.
-	//
-	// An empty value, and a value that is not of the form x.y.z, write
-	// nothing. Such a backup breaks the version rule of its kind, and that
-	// rule reports it. A PointInTimeRestore reads no backup at all and
-	// passes nothing.
+	// writes it on the cluster. A value that WritesVersion rejects writes
+	// nothing.
 	Version string
 	// Poll paces a step that waits for the cluster to converge.
 	Poll time.Duration
 }
 
 // Prepare carries the cluster of a restore to the state that the restore needs,
-// and reports Done once the cluster is there. It puts the suspension hold of
-// the restore on the cluster, suspends the cluster, waits until the brokers are
-// gone, and sets the Camunda version of the backup. The caller adds
-// HoldFinalizer to the restore first, and runs Prepare during admission, before
-// it leaves the phase in which the restore has destroyed nothing.
+// and reports Done once the cluster is there: it carries the suspension hold of
+// the restore, it is suspended with its brokers gone, and its broker
+// StatefulSet carries the Camunda version of the backup. A re-entry repeats no
+// write.
 //
-// Resume removes the hold, and withdraws the suspension only when this restore
-// applied it. The version is not withdrawn: the cluster keeps running the
-// version of the backup.
-//
-// The step is idempotent, so a caller that re-enters it repeats no write.
+// Add HoldFinalizer to the restore first. Run Prepare during admission, before
+// the restore destroys anything.
 func Prepare(
 	ctx context.Context,
 	c client.Client,
@@ -116,15 +98,10 @@ func Prepare(
 		return suspendTarget(ctx, c, p, in, key)
 	}
 
-	// A restore that failed leaves the cluster suspended, and so does one that
-	// somebody deleted while it ran. The remedy for both is a new restore, and
-	// that restore has to give the suspension back when it finishes. Without
-	// the takeover it never applied the field, so it would record nothing,
-	// withdraw nothing, and leave the cluster down for good.
-	//
-	// The field manager is what tells the two apart. A suspension that only a
-	// restore declares carries the suspend manager of this package. One that
-	// the owner declared carries theirs, and no restore adopts it.
+	// A failed or deleted restore leaves the cluster suspended. The remedy is
+	// a new restore, which must give that suspension back when it finishes.
+	// The field manager tells a suspension of a restore from one of the owner,
+	// and no restore adopts the suspension of the owner.
 	if !p.ClusterSuspended && suspendedByARestore(in.Cluster) {
 		p.ClusterSuspended = true
 		progressing(in.Owner, fmt.Sprintf(
@@ -135,9 +112,8 @@ func Prepare(
 		return Outcome{Wait: Shortly}, nil
 	}
 
-	// spec.suspend says what was asked for. The StatefulSet says what
-	// happened. A version that reaches the brokers while they still run is
-	// the downgrade of a running cluster that this order exists to avoid.
+	// spec.suspend does not show that the brokers stopped. A version that
+	// reaches running brokers downgrades a running cluster.
 	if running := in.Target.StatefulSet.Status.Replicas; running != 0 {
 		progressing(in.Owner, fmt.Sprintf(
 			"CamundaCluster %s is suspended, and %d of its brokers still run. The restore waits "+
@@ -150,13 +126,7 @@ func Prepare(
 	return versionTarget(ctx, c, in, key)
 }
 
-// suspendTarget suspends the cluster of the restore. It records that this
-// restore is the one that suspended it, and it lets the record become durable
-// before it writes.
-//
-// The order is what keeps the cluster recoverable. A crash between the write
-// and the record would leave a suspended cluster that no restore ever
-// unsuspends again, because Resume reads the record to decide.
+// suspendTarget makes its record durable before it writes.
 func suspendTarget(
 	ctx context.Context,
 	c client.Client,
@@ -183,14 +153,9 @@ func suspendTarget(
 	return Outcome{Wait: in.Poll}, nil
 }
 
-// suspendedByARestore reports whether the suspension of the cluster came from
-// a restore rather than from its owner. It reads the managed fields: the
-// suspend manager of this package owns spec.suspend only where a restore
-// applied it.
-//
-// Co-ownership answers true as well, and that is safe. Server-side apply keeps
-// a field that another manager still declares, so a withdrawal by a restore
-// leaves the value of that other manager in place.
+// suspendedByARestore also answers true when another manager co-owns
+// spec.suspend. That is safe: server-side apply keeps a field that another
+// manager still declares, so a withdrawal leaves its value in place.
 func suspendedByARestore(cluster *v1.CamundaCluster) bool {
 	for _, entry := range cluster.ManagedFields {
 		if entry.Manager != string(FieldManagerTargetSuspend) || entry.FieldsV1 == nil {
@@ -204,9 +169,8 @@ func suspendedByARestore(cluster *v1.CamundaCluster) bool {
 	return false
 }
 
-// declaresSuspend reports whether a managed-fields entry names spec.suspend.
-// The encoding is the field set of the API server, where every key carries the
-// "f:" prefix of a field name. An entry that does not parse names nothing.
+// declaresSuspend reads the fieldsV1 encoding, where each field name carries
+// the "f:" prefix. An entry that does not parse names nothing.
 func declaresSuspend(raw []byte) bool {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
@@ -227,38 +191,15 @@ func declaresSuspend(raw []byte) bool {
 	return ok
 }
 
-// versionTarget sets the Camunda version of the backup on the cluster and
-// waits until the brokers carry it.
+// versionTarget waits on the broker StatefulSet, not on spec.version: a cluster
+// can take its version from a preset and have no spec.version, and a cluster
+// part way through an upgrade declares a version that its StatefulSet does not
+// carry yet.
 //
-// The two comparisons answer two questions. spec.version says which version
-// the cluster was asked to run, and it decides whether the step still has a
-// write to make. The tag of the broker image says which version a broker
-// would really start on, and it alone decides that the cluster converged: a
-// cluster that takes its version from a preset carries no spec.version at
-// all, and a spec.version that the cluster controller has not rolled out yet
-// says nothing about a broker. The tag is also what the restore Jobs run,
-// because they copy the broker image.
-//
-// Both are needed. A cluster that is part way through an upgrade carries the
-// newer version in spec.version and the older one on its image. Reading the
-// image alone would call that cluster converged, and the cluster controller
-// would then roll the newer image in under the restore.
-//
-// A version that has not converged yet is a wait, not a failure. The restore
-// has destroyed nothing at this point, so the wait costs nothing.
-//
-// The apply carries the UID of the cluster and no resource version, so it does
-// not fail when the cluster changed since the read that proved the suspension.
-// A resource version would: the cluster carries the status its own controller
-// writes, that status moves on nearly every reconcile, and an apply that
-// refused every such change would never land. What bounds the gap instead is
-// that a broker of the older version cannot reach the state of the newer one.
-// A manager that clears spec.suspend between the read and this write starts
-// brokers on the older version, and suspendTarget takes the suspension back on
-// the next look. Such a broker reads a snapshot that a newer version wrote,
-// reports the downgrade, and goes unhealthy without writing. The volumes it
-// found are erased before the restore application runs, and the phase that
-// erases them reads the suspension again on every look.
+// The apply carries the UID of the cluster and no resource version. The status
+// of the cluster moves on nearly every reconcile, so an apply with a resource
+// version would never land. The gap is safe: a broker of Camunda 8.9 refuses a
+// snapshot that a newer version wrote, before it processes anything.
 func versionTarget(
 	ctx context.Context,
 	c client.Client,
@@ -269,16 +210,15 @@ func versionTarget(
 		return Outcome{Done: true}, nil
 	}
 
-	// The sanction is part of the write. A cluster that already declares the
-	// version but carries no annotation, because a hand edit preceded the
-	// restore or a tool pruned it, would leave the cluster controller
-	// refusing a move that the restore waits on.
+	// A cluster mid-upgrade can carry the backup version on its StatefulSet and a
+	// newer spec.version, which its controller would roll in under the restore. A
+	// pruned annotation leaves the declared version without its sanction, and the
+	// cluster controller then refuses the move that the restore waits on.
 	sanctioned := in.Cluster.Annotations[components.AllowVersionDowngradeAnnotation]
 	if in.Cluster.Spec.Version != in.Version ||
 		(in.Target.Version != in.Version && sanctioned != in.Version) {
-		// The version outlives the restore. A manifest that leaves spec.version out
-		// takes nothing back: server-side apply removes a field only from the
-		// manager that declared it.
+		// A manifest that leaves spec.version out takes nothing back: server-side
+		// apply removes a field only from the manager that declared it.
 		if err := applyVersion(ctx, c, key, in.Cluster.UID, in.Version); err != nil {
 			return Outcome{}, err
 		}
@@ -302,13 +242,10 @@ func versionTarget(
 	return Outcome{Done: true}, nil
 }
 
-// MovedVersion reports the target whose brokers no longer carry the Camunda
-// version of the backup, or nil when they do. A phase after admission asks it
-// on every look, because another manager can take spec.version back while the
-// restore runs and the restore Jobs copy the broker image.
-//
-// It answers nil for a backup whose version the restore never wrote, which
-// WritesVersion decides.
+// MovedVersion returns a failure when the broker StatefulSet no longer carries
+// the Camunda version of the backup. It returns nil when it does, and when
+// WritesVersion rejects the backup version. Ask it on every look after
+// admission: another manager can move spec.version while the restore runs.
 func MovedVersion(backupVersion, targetVersion string) *conditions.PreCheckFailure {
 	if !WritesVersion(backupVersion) || targetVersion == backupVersion {
 		return nil
@@ -326,23 +263,17 @@ func MovedVersion(backupVersion, targetVersion string) *conditions.PreCheckFailu
 }
 
 // WritesVersion reports whether a restore writes version on the cluster it
-// prepares. A backup that recorded no version, and one whose recorded value is
-// not of the form x.y.z, name nothing that the restore can write, and the
-// version rule of the restore kind reports what such a backup means.
-//
-// A phase that holds the cluster to the version of its backup asks this
-// first. Holding a cluster to a version that the restore never wrote would
-// wait for something nothing brings about.
+// prepares: only a value of the form x.y.z. Ask it before you hold a cluster to
+// the version of its backup, because nothing brings about any other value.
 func WritesVersion(version string) bool {
 	return versionPattern.MatchString(version)
 }
 
 // Resume gives the cluster back once the restore completed: it removes the
 // suspension hold of the restore, and withdraws spec.suspend when the restore
-// recorded that it suspended the cluster. A cluster that its owner suspended
-// stays suspended, and a failed restore keeps both its hold and the
-// suspension. Call it only after CollectJobs reports Done, because the pods of
-// the Jobs hold the broker volumes.
+// recorded that it suspended the cluster. A failed restore keeps both its hold
+// and the suspension. Call it only after CollectJobs reports Done, because the
+// pods of the Jobs hold the broker volumes.
 func Resume(
 	ctx context.Context,
 	c client.Client,
@@ -374,18 +305,15 @@ func Resume(
 	if existing.UID != p.TargetClusterUID {
 		return nil
 	}
-	// A cluster that already runs has nothing to withdraw. The terminal branch
-	// of a controller looks on every event of the restore and of its cluster,
-	// and a cluster that starts again produces many of those, so an apply that
-	// changes nothing is still an apply worth not making.
+	// The terminal branch runs on every event of the restore and of its
+	// cluster, so an apply that changes nothing here repeats many times.
 	if !existing.Spec.Suspend {
 		return nil
 	}
 
 	if err := applySuspend(ctx, c, cluster, existing.UID, false); err != nil {
-		// The cluster went between the read and the write, which is the one
-		// thing the UID precondition refuses. Such a cluster needs no
-		// withdrawal.
+		// The UID precondition refuses only a cluster that went between the
+		// read and the write, and such a cluster needs no withdrawal.
 		if apierrors.IsConflict(err) {
 			return nil
 		}
@@ -396,9 +324,8 @@ func Resume(
 	return nil
 }
 
-// applySuspend applies spec.suspend of the cluster under the suspend manager.
-// Suspend is omitempty, so a false value applies an object that carries no
-// spec.suspend, which is the withdrawal.
+// applySuspend withdraws the field for false: Suspend is omitempty, so the
+// apply carries no spec.suspend.
 func applySuspend(
 	ctx context.Context,
 	c client.Client,
@@ -414,12 +341,9 @@ func applySuspend(
 	return nil
 }
 
-// applyVersion applies spec.version of the cluster under the version manager,
-// together with the annotation that sanctions the move, because that move can
-// be a downgrade. The cluster controller refuses a version below the one the
-// brokers run without that annotation, and it removes the annotation once the
-// brokers carry the version. One apply carries both, so no crash leaves the
-// version without its sanction.
+// applyVersion writes the downgrade sanction in the same apply, so no crash
+// leaves the version without it. The cluster controller refuses a downgrade
+// without the sanction, and removes it once the brokers carry the version.
 func applyVersion(
 	ctx context.Context,
 	c client.Client,
@@ -436,14 +360,9 @@ func applyVersion(
 	return nil
 }
 
-// targetPatch returns the apply object of one field of a cluster: a
-// CamundaCluster that carries its own identity and the given spec, and
-// nothing else. Every other field of the cluster stays with whoever owns it.
-//
-// The apply carries uid as a precondition. Server-side apply creates the
-// object that it does not find, so an apply against a cluster that went
-// between the read and the write would otherwise put an empty CamundaCluster
-// in its place.
+// targetPatch carries uid as a precondition. Server-side apply creates an
+// object that it does not find, so without it an apply against a deleted
+// cluster puts an empty CamundaCluster in its place.
 func targetPatch(
 	cluster types.NamespacedName,
 	uid types.UID,

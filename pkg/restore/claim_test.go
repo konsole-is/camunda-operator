@@ -114,8 +114,7 @@ func leaseHolder(t *testing.T, c client.Client) string {
 	}.String()
 }
 
-// A cluster that nobody holds is the restore's, and the Lease says so. Every
-// phase that touches storage runs behind this claim.
+// A cluster that nobody holds is the restore's, and the Lease says so.
 func TestTakeClaimsAnUnclaimedCluster(t *testing.T) {
 	t.Parallel()
 

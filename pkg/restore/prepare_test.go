@@ -172,9 +172,6 @@ func (w *prepareWorld) live(t *testing.T) *v1.CamundaCluster {
 	return &current
 }
 
-// The names appear in the managedFields of every cluster that a restore
-// prepares. A GitOps tool and the layer above this operator both read them
-// there, so they are API surface.
 func TestTargetFieldManagersAreStable(t *testing.T) {
 	t.Parallel()
 
@@ -182,9 +179,6 @@ func TestTargetFieldManagersAreStable(t *testing.T) {
 	assert.Equal(t, client.FieldOwner("camunda-operator/restore-version"), FieldManagerTargetVersion)
 }
 
-// A crash between the write and the record would leave a suspended cluster
-// that nothing ever unsuspends again, so the record comes first and the write
-// waits for the look that follows its flush.
 func TestPrepareRecordsTheSuspensionBeforeItWritesIt(t *testing.T) {
 	t.Parallel()
 
@@ -217,8 +211,6 @@ func TestPrepareSuspendsTheClusterOnTheLookAfterTheRecord(t *testing.T) {
 	assert.True(t, w.live(t).Spec.Suspend)
 }
 
-// A cluster that its owner suspended keeps no record of this restore, so the
-// restore leaves it suspended when it finishes.
 func TestPrepareRecordsNothingForAClusterThatIsAlreadySuspended(t *testing.T) {
 	t.Parallel()
 
@@ -231,9 +223,6 @@ func TestPrepareRecordsNothingForAClusterThatIsAlreadySuspended(t *testing.T) {
 	assert.Empty(t, *w.applies)
 }
 
-// spec.suspend says what was asked for. The StatefulSet says what happened. A
-// version that reaches the brokers while they still run is the downgrade of a
-// running cluster that the whole order exists to avoid.
 func TestPrepareWaitsUntilTheBrokersAreGone(t *testing.T) {
 	t.Parallel()
 
@@ -270,8 +259,8 @@ func TestPrepareWritesTheVersionOfTheBackup(t *testing.T) {
 	assert.Equal(t, "8.9.8", w.live(t).Spec.Version)
 }
 
-// The step is done only when spec.version and the tag of the broker image
-// both carry the version of the backup.
+// The step is done only when spec.version and the broker StatefulSet both
+// carry the version of the backup.
 func TestPrepareIsDoneWhenTheSpecAndTheImageBothCarryTheVersion(t *testing.T) {
 	t.Parallel()
 
@@ -283,9 +272,6 @@ func TestPrepareIsDoneWhenTheSpecAndTheImageBothCarryTheVersion(t *testing.T) {
 	assert.Empty(t, *w.applies)
 }
 
-// A cluster that takes its version from a preset carries no spec.version at
-// all. The restore writes the field, so the cluster keeps the version of the
-// backup once the restore is over.
 func TestPrepareWritesTheVersionOfAClusterThatDeclaresNone(t *testing.T) {
 	t.Parallel()
 
@@ -320,10 +306,6 @@ func TestPrepareWaitsForTheImageWithoutWritingAgain(t *testing.T) {
 	assert.Contains(t, ready(w.restore).Message, "brokers carry "+newerVersion)
 }
 
-// A hand edit can declare the version before the restore runs, and a tool
-// that prunes annotations can remove the sanction after the write. Either
-// way the cluster controller refuses the move, so the step owes the write
-// for as long as the brokers have not converged.
 func TestPrepareRestoresAMissingSanction(t *testing.T) {
 	t.Parallel()
 
@@ -340,10 +322,6 @@ func TestPrepareRestoresAMissingSanction(t *testing.T) {
 	)
 }
 
-// A cluster part way through an upgrade declares the newer version and still
-// runs the older image. Reading the image alone would call it converged, and
-// the cluster controller would then roll the newer image in under the
-// restore.
 func TestPrepareWritesTheVersionOfAClusterThatIsMidUpgrade(t *testing.T) {
 	t.Parallel()
 
@@ -360,9 +338,6 @@ func TestPrepareWritesTheVersionOfAClusterThatIsMidUpgrade(t *testing.T) {
 	assert.Equal(t, "8.9.9", (*w.applies)[0].cluster.Spec.Version)
 }
 
-// A backup that recorded no version, and one whose recorded version is not a
-// version, name nothing that the restore can write. The version rule of the
-// restore kind reports what such a backup means.
 func TestPrepareWritesNoVersionItCannotWrite(t *testing.T) {
 	t.Parallel()
 
@@ -385,8 +360,6 @@ func TestPrepareWritesNoVersionItCannotWrite(t *testing.T) {
 	}
 }
 
-// Every entry point that renders from a Target rejects an incomplete one. A
-// nil target takes the manager down inside a reconcile.
 func TestPrepareRejectsAnIncompleteTarget(t *testing.T) {
 	t.Parallel()
 
@@ -400,17 +373,14 @@ func TestPrepareRejectsAnIncompleteTarget(t *testing.T) {
 	assert.Contains(t, outcome.Failure.Message, "cannot prepare its cluster")
 }
 
-// completed records the terminal outcome of a restore that finished, the way
-// the complete step of a controller records it. Resume reads the recorded
-// reason, so a case that does not record one is not a terminal restore at all.
+// completed records the terminal outcome of a restore that finished. Resume
+// reads the recorded reason.
 func (w *prepareWorld) completed() *v1.RestoreProgress {
 	Complete(w.progress(), metav1.Now())
 
 	return w.progress()
 }
 
-// A restore that did not suspend its cluster withdraws nothing. That is what
-// keeps a cluster suspended that its owner suspended.
 func TestResumeWritesNothingWithoutTheRecord(t *testing.T) {
 	t.Parallel()
 
@@ -424,8 +394,6 @@ func TestResumeWritesNothingWithoutTheRecord(t *testing.T) {
 	assert.True(t, w.live(t).Spec.Suspend)
 }
 
-// The withdrawal applies an object without spec.suspend, so server-side apply
-// removes the field that this manager owns.
 func TestResumeWithdrawsTheSuspensionItApplied(t *testing.T) {
 	t.Parallel()
 
@@ -442,9 +410,6 @@ func TestResumeWithdrawsTheSuspensionItApplied(t *testing.T) {
 	assert.Equal(t, clusterUID, suspends[0].cluster.UID)
 }
 
-// The terminal branch of a controller looks on every event of the restore and
-// of its cluster. Once the cluster runs again there is nothing left to
-// withdraw, and a second apply is one the operator does not make.
 func TestResumeWritesNothingOnceTheClusterRunsAgain(t *testing.T) {
 	t.Parallel()
 
@@ -464,8 +429,6 @@ func TestResumeWritesNothingOnceTheClusterRunsAgain(t *testing.T) {
 	)
 }
 
-// An apply against a cluster that is gone would put an empty CamundaCluster
-// in its place, so a cluster that no longer exists needs no withdrawal.
 func TestResumeWritesNothingForAClusterThatIsGone(t *testing.T) {
 	t.Parallel()
 
@@ -481,8 +444,6 @@ func TestResumeWritesNothingForAClusterThatIsGone(t *testing.T) {
 	assert.Empty(t, w.appliesBy(FieldManagerTargetSuspend))
 }
 
-// A cluster created again under the same name is not the cluster this restore
-// suspended.
 func TestResumeWritesNothingForAClusterCreatedAgain(t *testing.T) {
 	t.Parallel()
 
@@ -502,9 +463,6 @@ func TestResumeWritesNothingForAClusterCreatedAgain(t *testing.T) {
 	assert.True(t, w.live(t).Spec.Suspend)
 }
 
-// The broker volumes of a failed restore can be empty or half written, and
-// brokers that start over them are worse than a cluster that is down. The
-// recorded terminal reason is what decides, the same field CollectJobs reads.
 func TestResumeLeavesTheClusterOfAFailedRestoreSuspended(t *testing.T) {
 	t.Parallel()
 
@@ -520,9 +478,6 @@ func TestResumeLeavesTheClusterOfAFailedRestoreSuspended(t *testing.T) {
 	assert.True(t, w.live(t).Spec.Suspend)
 }
 
-// A phase that holds its cluster to the version of the backup asks this
-// first. Holding for a version that the restore never writes would wait for
-// something nothing brings about.
 func TestWritesVersionAnswersForTheValuesARestoreCanWrite(t *testing.T) {
 	t.Parallel()
 
@@ -543,9 +498,6 @@ func TestWritesVersionAnswersForTheValuesARestoreCanWrite(t *testing.T) {
 	}
 }
 
-// The restore owns spec.version of its cluster while it runs, and the restore
-// Jobs copy the broker image. A version that another manager moves under a
-// running restore therefore runs the wrong binary against the backup.
 func TestMovedVersionHoldsTheTargetToTheVersionOfItsBackup(t *testing.T) {
 	t.Parallel()
 
@@ -598,9 +550,6 @@ func suspendedBy(cluster *v1.CamundaCluster, manager string) {
 	})
 }
 
-// A restore that failed leaves the cluster suspended, and the remedy is a new
-// restore. That restore has to give the suspension back when it finishes, so
-// it takes over the one an earlier restore left.
 func TestPrepareTakesOverTheSuspensionOfAnEarlierRestore(t *testing.T) {
 	t.Parallel()
 
@@ -615,8 +564,6 @@ func TestPrepareTakesOverTheSuspensionOfAnEarlierRestore(t *testing.T) {
 	assert.Contains(t, ready(w.restore).Message, "took over the suspension")
 }
 
-// A cluster that its owner suspended carries the manager of the owner. No
-// restore adopts it, and it stays suspended when the restore finishes.
 func TestPrepareLeavesTheSuspensionOfTheOwnerAlone(t *testing.T) {
 	t.Parallel()
 
@@ -640,8 +587,6 @@ func TestPrepareLeavesTheSuspensionOfTheOwnerAlone(t *testing.T) {
 	}
 }
 
-// A cluster that carries no managed fields for spec.suspend answers no. The
-// restore records nothing rather than guessing.
 func TestPrepareAdoptsNothingWithoutAManagedField(t *testing.T) {
 	t.Parallel()
 
@@ -653,8 +598,6 @@ func TestPrepareAdoptsNothingWithoutAManagedField(t *testing.T) {
 	assert.False(t, w.progress().ClusterSuspended)
 }
 
-// The takeover happens once. A restore that already recorded the suspension
-// does not stage the message again on every look.
 func TestPrepareTakesOverOnlyOnce(t *testing.T) {
 	t.Parallel()
 
@@ -669,8 +612,6 @@ func TestPrepareTakesOverOnlyOnce(t *testing.T) {
 	assert.Empty(t, *w.applies)
 }
 
-// A managed-fields entry that names other fields of the spec is not a
-// suspension, and one that does not parse names nothing.
 func TestSuspendedByARestoreReadsTheFieldSet(t *testing.T) {
 	t.Parallel()
 

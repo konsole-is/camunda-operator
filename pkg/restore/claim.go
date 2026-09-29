@@ -27,21 +27,16 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// Take claims the cluster for owner. A cluster that no live holder claims is
-// claimed, and Take reports Done. A cluster that another live holder claims
-// is not, and Take reports a failure with v1.ReasonClusterClaimed that names
-// the holder.
+// Take claims the cluster for owner. cluster is the name of the target, in
+// the namespace of the restore. Take reports Done when owner holds the claim.
+// When another live holder claims the cluster, Take reports a failure with
+// v1.ReasonClusterClaimed that names the holder. Nothing bounds that wait: a
+// later call takes the claim over once clusterclaim.HolderActive reports the
+// holder inactive.
 //
-// The cluster lives in the namespace of the restore: a cluster reference of a
-// restore never crosses a namespace.
-//
-// Nothing bounds the hold. The restore starts on its own when the holder
-// reaches a terminal phase, because the next look takes the claim over. The
-// holder can be a backup or another restore, so the reason names no kind.
-//
-// A restore takes the claim when its admission passes, which is before every
-// phase that touches storage. Two restores of one cluster therefore never
-// both pass validation.
+// Call it when admission passes, before each phase that touches storage, so
+// two restores of one cluster never both pass validation. reader must read
+// the API server directly.
 func Take(
 	ctx context.Context,
 	c client.Client,
@@ -76,10 +71,8 @@ func Take(
 	}}, nil
 }
 
-// Give returns the claim that owner holds on the cluster. Finish calls it
-// last of the three releases of a terminal restore, on every look, so a
-// release that failed heals on the next one. A Lease that another claimant
-// holds is left alone.
+// Give releases the claim that owner holds on the cluster. A Lease that
+// another claimant holds is left alone.
 func Give(
 	ctx context.Context,
 	c client.Client,
@@ -96,9 +89,6 @@ func Give(
 	return nil
 }
 
-// claimantOf returns the identity under which a restore holds the claim on
-// its cluster. Every restore kind derives it from the same three fields, so
-// no controller writes the identity of its own resource by hand.
 func claimantOf(owner conditions.Owner) clusterclaim.Claimant {
 	return clusterclaim.Claimant{
 		Kind: owner.GetKind(), Name: owner.GetName(), UID: owner.GetUID(),

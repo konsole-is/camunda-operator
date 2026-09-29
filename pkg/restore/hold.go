@@ -37,9 +37,9 @@ import (
 // hold from its cluster.
 const HoldFinalizer = "core.camunda.io/suspension-hold"
 
-// AddHoldFinalizer adds HoldFinalizer to the restore. The caller runs it on
-// every look of a restore that is not being deleted, before Prepare can put
-// a hold on the cluster.
+// AddHoldFinalizer adds HoldFinalizer to the restore. Call it on every look of
+// a restore that is not being deleted, before Prepare can put a hold on the
+// cluster.
 func AddHoldFinalizer(ctx context.Context, c client.Client, owner client.Object) error {
 	if controllerutil.ContainsFinalizer(owner, HoldFinalizer) {
 		return nil
@@ -61,12 +61,11 @@ func AddHoldFinalizer(ctx context.Context, c client.Client, owner client.Object)
 // FinalizeHold removes the Jobs, the writer Leases, the suspension hold and
 // HoldFinalizer of a deleted restore, in that order, so the backend stays held
 // until no Job pod of the restore writes it. Outcome.Done reports that the
-// finalizer is gone. claimNamespace holds the writer Leases. label is the
-// owner label that the Job pods of the restore carry. cluster is the name of
-// the target, which lives in the namespace of the restore. The suspension that
-// the restore applied through spec.suspend stays. The reader must be uncached.
-// A caller whose restore still writes the backend in another way calls it only
-// after that work has stopped.
+// finalizer is gone. The suspension that the restore applied through
+// spec.suspend stays. claimNamespace holds the writer Leases. label is the
+// owner label of the Job pods. cluster is the name of the target, in the
+// namespace of the restore. reader must be uncached. If the restore still
+// writes the backend in another way, call it only after that work stopped.
 func FinalizeHold(
 	ctx context.Context,
 	c client.Client,

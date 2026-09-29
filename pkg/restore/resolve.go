@@ -30,22 +30,15 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 )
 
-// The reads of this file are what a logical restore resolves on every look,
-// from admission to the last phase. Each one answers a value, or the
-// *conditions.PreCheckFailure that the user must see, or a transient error
-// that the caller retries. Pass the uncached API reader: a phase that deletes
-// an index or a broker volume must not act on a stale suspend flag or a stale
-// storage reference.
-//
-// A PointInTimeRestore reads its own cluster and its own storage. It pins the
-// cluster UID lazily and ends terminally when the cluster was replaced, and
-// its storage read also refuses a backend that is not relational.
+// Each read of this file returns a value, or a *conditions.PreCheckFailure
+// that the user must see, or a transient error that the caller retries. Pass
+// the uncached API reader: a phase that deletes an index or a broker volume
+// must not act on a stale suspend flag or a stale storage reference.
 
 // ResolveCluster reads the target cluster of a restore. A cluster that does
-// not exist is a failure the user corrects. After admission the pinned UID
-// must match too: a cluster that was deleted and created again under the same
-// name is another cluster, and this restore is not its restore. Pass the empty
-// UID while the restore has pinned none.
+// not exist, or whose UID differs from pinned, is a failure: a cluster created
+// again under the same name is another cluster. Pass the empty pinned UID
+// while the restore has pinned none.
 func ResolveCluster(
 	ctx context.Context,
 	reader client.Reader,
@@ -71,17 +64,15 @@ func ResolveCluster(
 	return &cluster, nil, nil
 }
 
-// ResolveStorage reads the secondary storage contract of the target cluster.
-// A restore reaches the secondary storage of the target through it, with the
-// credentials the target's own workloads use.
+// ResolveStorage reads the SecondaryStorageConfig of the target cluster. An
+// unset spec.storageRef, or a config that does not exist, is a failure.
 func ResolveStorage(
 	ctx context.Context,
 	reader client.Reader,
 	cluster *v1.CamundaCluster,
 ) (*v1.SecondaryStorageConfig, *conditions.PreCheckFailure, error) {
 	// A Get with an empty name is an invalid request, not a NotFound, so an
-	// unset reference would loop as a transient error instead of reporting
-	// itself.
+	// unset reference loops as a transient error without this check.
 	if cluster.Spec.StorageRef == "" {
 		return nil, logicalbackup.InvalidReference(
 			"CamundaCluster %s/%s has no spec.storageRef", cluster.Namespace, cluster.Name,
@@ -105,13 +96,9 @@ func ResolveStorage(
 }
 
 // ResolveTarget reads the facts a restore needs off the live broker
-// StatefulSet of the cluster. Every phase after admission needs them: the
-// broker count, the partition count, the Camunda version, and the claim
-// template all come from that StatefulSet, because the management binding of
-// a suspended cluster is unset.
-//
-// A StatefulSet that cannot answer one of them is a failure the user
-// corrects. A transport error is one the caller retries.
+// StatefulSet of the cluster. It works on a suspended cluster, whose
+// management binding is unset. A StatefulSet that cannot answer one of the
+// facts is a failure. A transport error is one the caller retries.
 func ResolveTarget(
 	ctx context.Context,
 	reader client.Reader,

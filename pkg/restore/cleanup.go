@@ -29,26 +29,16 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// CollectJobs removes the per-broker restore Jobs of a restore that completed,
-// and reports whether they are gone.
+// CollectJobs removes the per-broker restore Jobs of a completed restore. It
+// reports Outcome.Done when no recorded Job of the restore is left, and only
+// then are the broker volumes free. Until then it reports Outcome.Wait. Call
+// it again on each look. A Job that another writer owns now counts as gone.
 //
-// The recorded terminal reason decides what happens. A completed restore gives
-// its Jobs up, and a failed restore keeps them, because the logs of a failed
-// Job are the diagnosis. A restore that failed after it recorded its Jobs
-// therefore holds the broker data volumes until somebody deletes the restore.
-// That delete takes its Jobs with it.
+// A restore that did not complete keeps its Jobs. Its Jobs hold the broker
+// volumes until somebody deletes the restore, and CollectJobs reports Done at
+// once.
 //
-// Outcome.Done reports that no recorded Job is left, and only then are the
-// broker volumes free. Outcome.Wait paces the look that follows.
-//
-// It is safe to call again on every look, and the answer converges. A Job that
-// is gone, a Job that another writer owns now, and a restore that recorded no
-// Job at all are all complete.
-//
-// The reader must be uncached. Only the controller reference proves that a Job
-// under a recorded name belongs to this restore, and a stale read of that
-// reference removes the Job of somebody else. A cached read also reports a Job
-// that is already gone, so it reports the volumes free too early.
+// reader must be uncached. A stale read reports the volumes free too early.
 func CollectJobs(
 	ctx context.Context,
 	c client.Client,
@@ -56,6 +46,7 @@ func CollectJobs(
 	owner client.Object,
 	p *v1.RestoreProgress,
 ) (Outcome, error) {
+	// The logs of a failed Job are the diagnosis.
 	if p.TerminalReason != v1.ReasonCompleted {
 		return Outcome{Done: true}, nil
 	}
@@ -78,29 +69,23 @@ func CollectJobs(
 			continue
 		}
 
-		// The Job of this restore is still here, so its pods can still be here,
-		// and a pod is what holds the broker volume. Under foreground
-		// propagation the Job outlives its pods by design, so a deletion
-		// timestamp says the delete was asked for, never that it finished.
+		// A pod of the Job holds the broker volume. Under foreground propagation
+		// the Job outlives its pods, so a deletion timestamp is not the end.
 		collected = false
 
 		if job.DeletionTimestamp != nil {
 			continue
 		}
 
-		// The precondition closes the gap between the read and the delete.
-		// Another writer can claim the name in between, and its Job then
-		// carries another UID.
+		// Another writer can claim the name between the read and the delete.
 		err = c.Delete(
 			ctx,
 			&job,
 			client.PropagationPolicy(metav1.DeletePropagationForeground),
 			client.Preconditions{UID: &job.UID},
 		)
-		// A Conflict says that the precondition did not hold, so another writer
-		// owns the name now. That Job is not this restore's to remove, and it
-		// is the same answer as a Job that is already gone. The next look reads
-		// the winner and reports the name complete.
+		// A Conflict means that another writer owns the name now. The next look
+		// reads that Job and skips it.
 		if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
 			return Outcome{}, fmt.Errorf("removing the restore Job %s: %w", key, err)
 		}

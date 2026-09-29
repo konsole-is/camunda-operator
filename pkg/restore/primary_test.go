@@ -187,8 +187,7 @@ func finish(t *testing.T, c client.Client, name string, kind batchv1.JobConditio
 	require.NoError(t, c.Status().Update(t.Context(), &job))
 }
 
-// ownedJob is the restore Job of one broker as this restore created it. A
-// case that starts with Jobs in place uses it.
+// ownedJob is the restore Job of one broker as this restore created it.
 func ownedJob(t *testing.T, w *primaryWorld, ordinal int32) *batchv1.Job {
 	t.Helper()
 
@@ -206,8 +205,6 @@ func ownedJob(t *testing.T, w *primaryWorld, ordinal int32) *batchv1.Job {
 	return job
 }
 
-// The StatefulSet owns the broker volumes. An owner reference to the restore
-// deletes a live broker volume as soon as somebody deletes the restore.
 func TestPrimaryRecreatesTheClaimsWithoutAnOwnerReference(t *testing.T) {
 	t.Parallel()
 
@@ -222,9 +219,8 @@ func TestPrimaryRecreatesTheClaimsWithoutAnOwnerReference(t *testing.T) {
 	}
 }
 
-// The count is read from the live StatefulSet and pinned before the phase
-// deletes anything, so the status says how many volumes and Jobs this restore
-// covers even when it fails halfway.
+// The status names how many volumes and Jobs the restore covers, also when it
+// fails halfway.
 func TestPrimaryRecordsTheBrokerCountBeforeItDeletesAnything(t *testing.T) {
 	t.Parallel()
 
@@ -237,9 +233,8 @@ func TestPrimaryRecordsTheBrokerCountBeforeItDeletesAnything(t *testing.T) {
 	assert.Empty(t, w.progress().RecreatedClaims, "the phase deleted nothing yet")
 }
 
-// A volume whose deletion is not recorded is deleted again by the next look.
-// That costs a pass while nothing runs, and it erases restored data once a Job
-// writes, so the record covers every volume the phase touched.
+// A volume whose deletion is not recorded is deleted again by the next look,
+// and that erases restored data once a Job writes.
 func TestPrimaryRecordsEveryClaimBeforeItDeletesIt(t *testing.T) {
 	t.Parallel()
 
@@ -254,9 +249,6 @@ func TestPrimaryRecordsEveryClaimBeforeItDeletesIt(t *testing.T) {
 	assert.Empty(t, w.jobs(t), "no Job runs before the volumes are empty")
 }
 
-// The names are derived from the restore and the ordinal, so recording them
-// before the first Job exists claims exactly the Jobs that the next look
-// applies.
 func TestPrimaryRecordsEveryJobNameBeforeItAppliesAJob(t *testing.T) {
 	t.Parallel()
 
@@ -276,8 +268,6 @@ func TestPrimaryRecordsEveryJobNameBeforeItAppliesAJob(t *testing.T) {
 	assert.Len(t, w.claims(t), 3, "the volumes are back and empty")
 }
 
-// The per-broker event is the only signal a user gets while the restore
-// application runs.
 func TestPrimaryEmitsOneEventForEachBrokerThatStarts(t *testing.T) {
 	t.Parallel()
 
@@ -302,9 +292,6 @@ func TestPrimaryEmitsOneEventForEachBrokerThatStarts(t *testing.T) {
 	}
 }
 
-// The restore acts on the brokers it recorded. A cluster that lost a broker
-// while the restore waited cannot run that work, and the render error
-// underneath names only the counts, so the phase names the real cause.
 func TestPrimaryRefusesAnOrdinalPastTheLiveBrokerCount(t *testing.T) {
 	t.Parallel()
 
@@ -325,9 +312,6 @@ func TestPrimaryRefusesAnOrdinalPastTheLiveBrokerCount(t *testing.T) {
 	assert.Contains(t, outcome.Failure.Message, "recorded 3")
 }
 
-// A second Job of one broker runs the restore application on a volume that
-// the first one already wrote. The phase reports the removal instead, because
-// nothing resolves it on its own.
 func TestPrimaryFailsWhenARecordedJobIsGone(t *testing.T) {
 	t.Parallel()
 
@@ -350,8 +334,7 @@ func TestPrimaryFailsWhenARecordedJobIsGone(t *testing.T) {
 }
 
 // A restore that crashed between two creates finds a prefix of its Jobs. The
-// Jobs that are missing behind it were never created, so the phase creates
-// them instead of reporting them gone.
+// Jobs behind the prefix were never created, so they are not gone.
 func TestPrimaryCreatesTheJobsThatFollowTheLastOneItApplied(t *testing.T) {
 	t.Parallel()
 
@@ -366,7 +349,6 @@ func TestPrimaryCreatesTheJobsThatFollowTheLastOneItApplied(t *testing.T) {
 	assert.Len(t, w.jobs(t), 3)
 }
 
-// The restore is over when every broker restored, and not before.
 func TestPrimaryIsDoneWhenEveryJobCompleted(t *testing.T) {
 	t.Parallel()
 
@@ -383,9 +365,6 @@ func TestPrimaryIsDoneWhenEveryJobCompleted(t *testing.T) {
 	assert.Equal(t, Outcome{Done: true}, w.look(t))
 }
 
-// One failing Job fails the restore and names its broker: the partitions of
-// that broker are not restored, and a second attempt needs empty volumes
-// again, which only a new restore arranges.
 func TestPrimaryFailsWhenABrokerCannotRestore(t *testing.T) {
 	t.Parallel()
 
@@ -400,10 +379,6 @@ func TestPrimaryFailsWhenABrokerCannotRestore(t *testing.T) {
 	assert.Contains(t, outcome.Failure.Message, "broker 1")
 }
 
-// The name of a Job comes from the name of the restore and the ordinal, so a
-// restore that somebody deleted and created again under one name finds the
-// Jobs of its predecessor. Only the controller reference proves that a Job is
-// this restore's own.
 func TestPrimaryRefusesAJobThatAnotherRestoreOwns(t *testing.T) {
 	t.Parallel()
 
@@ -421,10 +396,6 @@ func TestPrimaryRefusesAJobThatAnotherRestoreOwns(t *testing.T) {
 	assert.Contains(t, outcome.Failure.Message, "Remove the Job of the earlier restore")
 }
 
-// A Create that lost the name asks the API server who won, never the cache. A
-// cache that still holds a Job of this restore under a name that another
-// writer owns now reports the name as claimed by self. The phase then counts
-// a foreign Job as its own and goes on to the next broker.
 func TestPrimaryReadsTheWinnerOfAJobNameLive(t *testing.T) {
 	t.Parallel()
 
@@ -449,9 +420,6 @@ func TestPrimaryReadsTheWinnerOfAJobNameLive(t *testing.T) {
 	assert.Len(t, list.Items, 1, "no Job of a later broker was created against the stale read")
 }
 
-// The recorded name and the derived name are one truth. A restore that polls
-// for a Job whose name it never derives waits for ever, so the mismatch ends
-// it instead.
 func TestPrimaryFailsWhenARecordedNameIsNotTheNameOfThatJob(t *testing.T) {
 	t.Parallel()
 
@@ -465,9 +433,6 @@ func TestPrimaryFailsWhenARecordedNameIsNotTheNameOfThatJob(t *testing.T) {
 	assert.Contains(t, outcome.Failure.Message, "not-the-name-of-this-job")
 }
 
-// A pod that cannot start consumes no retry of its Job, so the Job stays
-// active and reports nothing. Without this look the restore waits without a
-// bound on a missing Secret or an image that does not pull.
 func TestPrimaryHoldsOnAPodThatCannotStart(t *testing.T) {
 	t.Parallel()
 
@@ -503,14 +468,6 @@ func TestPrimaryHoldsOnAPodThatCannotStart(t *testing.T) {
 	assert.Contains(t, condition.Message, pod.Name)
 }
 
-// A Target that is missing any of its parts reaches Primary only through
-// misuse, because readTarget fills all of them. Such a target is a render
-// failure, not a wait: nothing changes on its own.
-//
-// The check runs before the phase pins the broker count, because the count is
-// read off the target. A nil target takes the manager down inside a reconcile,
-// and a target without brokers pins a count of zero that no later look ever
-// replaces.
 func TestPrimaryRejectsAnIncompleteTarget(t *testing.T) {
 	t.Parallel()
 
@@ -533,9 +490,6 @@ func TestPrimaryRejectsAnIncompleteTarget(t *testing.T) {
 	}
 }
 
-// A Job whose name is free is created, never applied. A read that finds no
-// Job and a forced apply after it are two calls, and a Job of an earlier
-// restore can land between them.
 func TestPrimaryCreatesTheJobsItOwns(t *testing.T) {
 	t.Parallel()
 
@@ -556,9 +510,6 @@ func TestPrimaryCreatesTheJobsItOwns(t *testing.T) {
 	assert.True(t, apierrors.IsNotFound(err), "the phase runs the brokers it recorded, no more")
 }
 
-// The hook runs only after a Job already failed, and its answer replaces the
-// generic failure of the phase. It is how a kind reports a refusal that only
-// the restore application can see.
 func TestPrimaryReportsTheFailureThatTheKindNames(t *testing.T) {
 	t.Parallel()
 
@@ -584,8 +535,6 @@ func TestPrimaryReportsTheFailureThatTheKindNames(t *testing.T) {
 	assert.Equal(t, int32(1), sawOrdinal)
 }
 
-// A hook that recognises nothing must leave the failure the phase already
-// found. A restore that failed for an unrelated reason keeps that reason.
 func TestPrimaryKeepsItsOwnFailureWhenTheKindNamesNone(t *testing.T) {
 	t.Parallel()
 
@@ -604,8 +553,6 @@ func TestPrimaryKeepsItsOwnFailureWhenTheKindNamesNone(t *testing.T) {
 	assert.Contains(t, outcome.Failure.Message, "broker 1")
 }
 
-// The hook belongs to the failure path alone. A restore whose Jobs all
-// completed never reads a log.
 func TestPrimaryNeverAsksTheKindAboutAJobThatCompleted(t *testing.T) {
 	t.Parallel()
 

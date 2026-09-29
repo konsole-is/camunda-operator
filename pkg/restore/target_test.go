@@ -103,8 +103,6 @@ func brokerStatefulSet() *appsv1.StatefulSet {
 }
 
 // incompleteTargets are the Target shapes that readTarget never produces.
-// Every entry point that renders from a Target rejects each of them, instead
-// of dereferencing it and taking the manager down.
 func incompleteTargets() map[string]struct {
 	target *Target
 	text   string
@@ -161,9 +159,6 @@ func TestReadTargetReadsTheFactsOffTheLiveBroker(t *testing.T) {
 	assert.Equal(t, "my-cluster", target.ClusterName)
 }
 
-// The broker count comes from the live container, never from spec.replicas.
-// A suspended StatefulSet runs at zero replicas, and a restore still has to
-// recreate every broker volume.
 func TestReadTargetTakesTheBrokerCountFromTheContainerNotTheReplicas(t *testing.T) {
 	t.Parallel()
 
@@ -187,9 +182,6 @@ func TestReadTargetReportsAMissingStatefulSetAsAnInvalidReference(t *testing.T) 
 	assert.Contains(t, failure.Message, "my-cluster-zeebe")
 }
 
-// Every fact the restore needs must be readable off the StatefulSet. A
-// StatefulSet that cannot answer one of them is an invalid reference with a
-// message that names what is missing.
 func TestReadTargetReportsEveryUnreadableFact(t *testing.T) {
 	t.Parallel()
 
@@ -281,9 +273,6 @@ func TestReadTargetReportsEveryUnreadableFact(t *testing.T) {
 	}
 }
 
-// The version decides whether a backup restores into this cluster at all. It
-// comes from the annotation the cluster controller renders, not from the
-// image tag: a release can pin an image whose tag names no version.
 func TestReadTargetTakesTheVersionFromTheAnnotation(t *testing.T) {
 	t.Parallel()
 
