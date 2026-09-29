@@ -52,9 +52,8 @@ const testClaimNamespace = "default"
 const retryInterval = 5 * time.Second
 
 // watchWindow is the budget of a wake that a watch delivers. The chain is the
-// watch event, the enqueue, one reconcile, and the status write. The queue of
-// the restores that the earlier specs left running sits in front of it. The
-// window stays under retryInterval, so only a watch ends a hold inside it.
+// watch event, the enqueue, one reconcile, and the status write. The window
+// stays under retryInterval, so only a watch ends a hold inside it.
 const watchWindow = 2 * time.Second
 
 var (

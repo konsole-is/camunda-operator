@@ -1510,7 +1510,7 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 			holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
 			createCluster(holder)
 			expectClaimedBy(binding, holder)
-			writer := registerWriter(kind, holder, storageKeyOf(binding), time.Now())
+			writer := registerWriter(kind, holder, storageKeyOf(binding))
 
 			parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
 			createCluster(parked)
@@ -1542,8 +1542,7 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
 		createCluster(holder)
 		expectClaimedBy(binding, holder)
-		registered := time.Now().Add(-storagewriter.Duration + 5*time.Second)
-		writer := registerWriter("LogicalRestoreRDBMS", holder, storageKeyOf(binding), registered)
+		writer := registerWriter("LogicalRestoreRDBMS", holder, storageKeyOf(binding))
 
 		parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
 		createCluster(parked)
@@ -1557,6 +1556,11 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 			Equal(v1.ReasonWaitingForHandover),
 			ContainSubstring(writer.String()),
 		)
+
+		// The registration ages out only after the wait is seen, so the time
+		// that the steps above take cannot end the wait before it is read.
+		By("letting the registration expire without a release")
+		expireWriter(storageKeyOf(binding), writer)
 		expectHolds(parked)
 		expectClaimedBy(binding, parked)
 		Eventually(func(g Gomega) {
@@ -1572,8 +1576,8 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 })
 
 // registerWriter registers a writer of kind for target on backend, as a
-// running restore into target does, with its last renewal at registered.
-func registerWriter(kind string, target *v1.CamundaCluster, backend string, registered time.Time) storagewriter.Writer {
+// running restore into target does, with its last renewal now.
+func registerWriter(kind string, target *v1.CamundaCluster, backend string) storagewriter.Writer {
 	GinkgoHelper()
 	writer := storagewriter.Writer{
 		Kind:       kind,
@@ -1583,10 +1587,23 @@ func registerWriter(kind string, target *v1.CamundaCluster, backend string, regi
 		ClusterUID: target.UID,
 	}
 	claim := components.StorageClaimSchema().LeaseName(backend)
-	Expect(storagewriter.Register(ctx, k8sClient, k8sClient, testClaimNamespace, backend, claim, writer, registered)).
+	Expect(storagewriter.Register(ctx, k8sClient, k8sClient, testClaimNamespace, backend, claim, writer, time.Now())).
 		To(Succeed())
 
 	return writer
+}
+
+// expireWriter ages out the registration of writer on backend, as a writer
+// that stopped without a release leaves it.
+func expireWriter(backend string, writer storagewriter.Writer) {
+	GinkgoHelper()
+	key := types.NamespacedName{Namespace: testClaimNamespace, Name: storagewriter.LeaseName(backend, writer.UID)}
+	Eventually(func(g Gomega) {
+		var lease coordinationv1.Lease
+		g.Expect(k8sClient.Get(ctx, key, &lease)).To(Succeed())
+		lease.Spec.RenewTime = &metav1.MicroTime{Time: time.Now().Add(-storagewriter.Duration)}
+		g.Expect(k8sClient.Update(ctx, &lease)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 }
 
 // deleteHolder deletes a cluster and waits until it is gone, so that it gives

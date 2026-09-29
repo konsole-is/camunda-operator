@@ -187,11 +187,15 @@ func expectStorageShrinkIgnored(cluster *v1.ElasticsearchCluster, applied string
 			To(Equal(resource.MustParse(applied)))
 	}, timeout, interval).Should(Succeed())
 
-	var latest v1.ElasticsearchCluster
-	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
-	ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
-	Expect(ready).NotTo(BeNil())
-	Expect(ready.Reason).NotTo(Equal(v1.ReasonInvalidReference))
+	// The status flush ends that reconcile, after the apply, so Ready is
+	// polled as well.
+	Eventually(func(g Gomega) {
+		var latest v1.ElasticsearchCluster
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+		ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
+		g.Expect(ready).NotTo(BeNil())
+		g.Expect(ready.Reason).NotTo(Equal(v1.ReasonInvalidReference))
+	}, timeout, interval).Should(Succeed())
 }
 
 // expectVolumes polls until status.volumes of cluster lists exactly the
@@ -1390,13 +1394,14 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(string(recreated.Data["password"])).NotTo(Equal(oldPassword))
 		}, timeout, interval).Should(Succeed())
 
-		var contract v1.SecondaryStorageConfig
-		Expect(k8sClient.Get(
-			ctx, client.ObjectKey{
-				Namespace: cluster.Namespace, Name: cluster.Spec.SecondaryStorageConfig,
-			}, &contract,
-		)).To(Succeed())
-		Expect(contract.Spec.Elasticsearch.CredentialsSecretRef.Name).To(Equal(secretKey.Name))
+		// The contract is applied after the Secret, so it can still be
+		// missing when the new Secret shows up.
+		contractKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Spec.SecondaryStorageConfig}
+		Eventually(func(g Gomega) {
+			var contract v1.SecondaryStorageConfig
+			g.Expect(k8sClient.Get(ctx, contractKey, &contract)).To(Succeed())
+			g.Expect(contract.Spec.Elasticsearch.CredentialsSecretRef.Name).To(Equal(secretKey.Name))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("flows a preset edit to referencing clusters without touching the CR", func() {
@@ -1560,8 +1565,12 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		))
 		Expect(container.Env).To(ContainElement(HaveField("Name", "ES_PASSWORD")))
 
+		// One reconcile applies the Deployment and then the Service, so the
+		// Service can still be missing when the Deployment shows up.
 		var metrics corev1.Service
-		Expect(k8sClient.Get(ctx, metricsKey, &metrics)).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, metricsKey, &metrics)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
 		expectControlledBy(&metrics, cluster)
 		Expect(metrics.Spec.Ports).To(ConsistOf(HaveField("Port", int32(9114))))
 

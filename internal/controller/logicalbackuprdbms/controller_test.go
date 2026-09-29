@@ -36,6 +36,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
@@ -304,9 +305,30 @@ func createBackup(w *world, mutate ...func(*v1.LogicalBackupRDBMS)) *v1.LogicalB
 	for _, m := range mutate {
 		m(backup)
 	}
-	Expect(k8sClient.Create(ctx, backup)).To(Succeed())
+	createAndDelete(backup)
 
 	return backup
+}
+
+// createAndDelete creates backup and removes it past its finalizer when the spec ends.
+func createAndDelete(backup *v1.LogicalBackupRDBMS) {
+	GinkgoHelper()
+
+	Expect(k8sClient.Create(ctx, backup)).To(Succeed())
+	// A backup left behind reconciles every second, and the one worker makes later specs wait.
+	DeferCleanup(func() {
+		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, backup))).To(Succeed())
+		key := client.ObjectKeyFromObject(backup)
+		Eventually(func(g Gomega) {
+			var current v1.LogicalBackupRDBMS
+			err := k8sClient.Get(ctx, key, &current)
+			if controllerutil.RemoveFinalizer(&current, logicalbackup.Finalizer) {
+				g.Expect(client.IgnoreNotFound(k8sClient.Update(ctx, &current))).To(Succeed())
+				err = k8sClient.Get(ctx, key, &current)
+			}
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+	})
 }
 
 // jobOf waits for the dump Job of backup in the cluster namespace and returns
@@ -684,7 +706,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			ObjectMeta: metav1.ObjectMeta{Name: "backup-" + utilrand.String(6), Namespace: namespace},
 			Spec:       v1.LogicalBackupRDBMSSpec{ClusterRef: v1.ClusterRef{Name: "nowhere"}},
 		}
-		Expect(k8sClient.Create(ctx, backup)).To(Succeed())
+		createAndDelete(backup)
 
 		expectPending(backup, v1.ReasonInvalidReference)
 	})
