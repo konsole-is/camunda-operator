@@ -78,6 +78,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/podstate"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
+	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 )
 
 // controllerName is the name the controller registers with controller-runtime.
@@ -166,6 +167,10 @@ type Reconciler struct {
 	// each Database occupies. It is the namespace of the operator, and
 	// SetupWithManager refuses an empty one.
 	ClaimNamespace string
+	// WriterClock tells when this operator started to lead, see
+	// storagewriter.Clock. Nil counts a writer registration from its last
+	// renewal only.
+	WriterClock *storagewriter.Clock
 
 	opts Options
 }

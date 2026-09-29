@@ -191,7 +191,7 @@ func (r *Reconciler) admit(
 		return r.waiting(pitr, failure), nil
 	}
 	// A deleted restore into the same cluster can still roll the server back.
-	writers, err := restore.OtherWriters(ctx, r.APIReader, r.ClaimNamespace, backend, pitr)
+	writers, err := restore.OtherWriters(ctx, r.APIReader, r.ClaimNamespace, backend, pitr, r.WriterClock.Since())
 	if err != nil {
 		return restore.Outcome{}, err
 	}

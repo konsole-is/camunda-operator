@@ -19,7 +19,6 @@ package restore
 import (
 	"context"
 	"errors"
-	"slices"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -143,28 +142,22 @@ func ReleaseWriter(
 
 // OtherWriters returns the live writers of backend other than owner, the
 // writers for its own target included. reader must read the API server
-// directly.
+// directly. since is storagewriter.Clock.Since.
 func OtherWriters(
 	ctx context.Context,
 	reader client.Reader,
 	claimNamespace, backend string,
 	owner conditions.Owner,
+	since time.Time,
 ) ([]string, error) {
-	writers, err := storagewriter.Live(
+	return storagewriter.LiveExcept(
 		ctx,
 		reader,
 		claimNamespace,
 		backend,
 		clustercomponents.StorageClaimSchema().LeaseName(backend),
-		"",
+		writerOf(owner, ""),
 		time.Now(),
-		time.Time{},
+		since,
 	)
-	if err != nil {
-		return nil, err
-	}
-
-	self := writerOf(owner, "").String()
-
-	return slices.DeleteFunc(writers, func(w string) bool { return w == self }), nil
 }

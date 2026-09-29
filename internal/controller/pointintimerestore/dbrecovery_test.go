@@ -312,7 +312,12 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 
 		// The same name and the same point, and a different resource. The
 		// standing answer belongs to the restore that is gone.
+		held := readRestore(Default, first)
 		Expect(k8sClient.Delete(ctx, first)).To(Succeed())
+		// The Lease of the deleted restore would lapse two minutes later.
+		Expect(storagewriter.Release(ctx, k8sClient, testClaimNamespace, held.Status.Backend, storagewriter.Writer{
+			Kind: "PointInTimeRestore", Namespace: held.Namespace, Name: held.Name, UID: held.UID,
+		})).To(Succeed())
 		second := &v1.PointInTimeRestore{
 			ObjectMeta: metav1.ObjectMeta{Name: first.Name, Namespace: w.namespace},
 			Spec:       first.Spec,

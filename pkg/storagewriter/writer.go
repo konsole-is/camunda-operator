@@ -280,6 +280,35 @@ func Live(
 	return writers, nil
 }
 
+// LiveExcept returns the live writers of the backend key, as sorted "Kind
+// namespace/name" entries, leaving out the registration of w only. The
+// writers for every cluster count. The reader must read the API server
+// directly. since is Clock.Since.
+func LiveExcept(
+	ctx context.Context,
+	reader client.Reader,
+	namespace, key, claim string,
+	w Writer,
+	now, since time.Time,
+) ([]string, error) {
+	leases, err := registrations(ctx, reader, namespace, key, claim)
+	if err != nil {
+		return nil, err
+	}
+
+	own := LeaseName(key, w.UID)
+	var writers []string
+	for _, lease := range leases {
+		if lease.Name == own || expired(lease, now, since) {
+			continue
+		}
+		writers = append(writers, lease.Annotations[WriterAnnotation])
+	}
+	slices.Sort(writers)
+
+	return writers, nil
+}
+
 // PruneExpired deletes the expired registrations on the backend key. The
 // delete carries the resource version that was read, so a registration that
 // its writer renewed in between stays. since is Clock.Since.
