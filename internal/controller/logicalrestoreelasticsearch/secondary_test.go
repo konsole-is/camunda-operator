@@ -51,7 +51,7 @@ var _ = Describe("LogicalRestoreElasticsearch of secondary storage", func() {
 		))
 
 		By("deleting the Camunda indices of the target in one request, and keeping Optimize")
-		Expect(w.search.IndexDeleteCalls()).To(Equal(1))
+		Eventually(w.search.IndexDeleteCalls, timeout, interval).Should(Equal(1))
 		Expect(w.search.DeletedIndices()).To(ConsistOf(targetIndices[:4]))
 		Expect(w.search.Indices()).To(ConsistOf(targetIndices[4]))
 

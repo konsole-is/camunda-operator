@@ -53,6 +53,8 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/utils/ptr"
+
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -66,7 +68,6 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
-	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/podstate"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
@@ -192,24 +193,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	// The Jobs of a restore carry a controller reference to it, so the garbage
-	// collector removes them with the restore.
-	if !lres.DeletionTimestamp.IsZero() {
-		finalized, err := restore.FinalizeHold(
-			ctx,
-			r.Client,
-			r.APIReader,
-			&lres,
-			labels.LogicalRestoreElasticsearch(lres.Name),
-			lres.Spec.TargetClusterRef.Name,
-		)
-
-		return ctrl.Result{RequeueAfter: finalized.Wait}, err
-	}
-	if err := restore.AddHoldFinalizer(ctx, r.Client, &lres); err != nil {
-		return ctrl.Result{}, err
-	}
-
 	rec := component.ReconcileContext{
 		Client:        r.Client,
 		Scheme:        r.Scheme,
@@ -218,13 +201,40 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		APIReader:     r.APIReader,
 		Owner:         &lres,
 	}
+	// A restore whose finalizer this look removed is gone, and so is its status.
+	finalized := false
 	defer func() {
+		if finalized {
+			return
+		}
 		if flushErr := component.FlushStatus(ctx, rec, nil); flushErr != nil {
 			err = errors.Join(err, flushErr)
 		}
 	}()
 
+	// The Jobs of a restore carry a controller reference to it, so the garbage
+	// collector removes them with the restore.
+	if !lres.DeletionTimestamp.IsZero() {
+		wait, err := r.finalize(ctx, &lres)
+		finalized = err == nil && wait == 0
+
+		return ctrl.Result{RequeueAfter: wait}, err
+	}
+	if err := restore.AddHoldFinalizer(ctx, r.Client, &lres); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if lres.Terminal() {
+		held, err := r.holdRecovery(ctx, &lres)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		// Elasticsearch still writes the target, so the writer, the suspension and the claim all stay.
+		if held > 0 {
+			restore.StageTerminal(&lres, &lres.Status.RestoreProgress)
+
+			return ctrl.Result{RequeueAfter: held}, nil
+		}
 		// The terminal branch that every restore kind shares. It stages the
 		// recorded outcome again, and it gives the Jobs, the suspension, and
 		// the claim back in the one order that frees the broker volumes. The
@@ -361,6 +371,7 @@ func (r *Reconciler) fail(lres *v1.LogicalRestoreElasticsearch, reason, message 
 		"The restore failed: %s",
 		lres.Status.FailureMessage,
 	)
+	r.holdForRecovery(lres)
 }
 
 // SetupWithManager registers the controller, the two field indexes, and the
@@ -416,7 +427,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 			var registrations []restore.Registration
 			for i := range list.Items {
 				item := &list.Items[i]
-				if restore.Renewable(item.Status.Backend, item.Terminal(), item.DeletionTimestamp) {
+				held := ptr.Deref(item.Status.RecoveryHeld, false) && item.Status.Backend != ""
+				if held || restore.Renewable(item.Status.Backend, item.Terminal(), item.DeletionTimestamp) {
 					registrations = append(registrations, restore.Registration{
 						Owner: item, Backend: item.Status.Backend, Target: item.Status.TargetClusterUID,
 					})

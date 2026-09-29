@@ -75,9 +75,7 @@ type Renewer struct {
 	Client         client.Client
 	Reader         client.Reader
 	ClaimNamespace string
-	// List returns the restores that are not terminal and that registered a
-	// backend.
-	List func(ctx context.Context) ([]Registration, error)
+	List           func(ctx context.Context) ([]Registration, error)
 }
 
 // NeedLeaderElection makes the manager run Start only on the leader.
