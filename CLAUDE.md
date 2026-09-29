@@ -17,16 +17,29 @@ the detail. Do not work from memory when a skill covers the task.
 | Before you ... | Load this skill |
 | --- | --- |
 | Write, change, or review any Go code | `how-we-write-go` |
+| Write, edit, or delete a comment in code. In Go, the comment rules of `how-we-write-go` come first | `feature-dev-workflow:writing-code-comments` |
 | Write or edit the user docs: `docs/`, `README.md`, `dist/chart/README.md`, CRD field descriptions | `writing-operator-docs` |
-| Write or edit other prose: GoDoc, comments, error and condition messages | `simple-english:simple-english` |
+| Write or edit other prose: error and condition messages, commit bodies | `simple-english:simple-english` |
 | Write or change Camunda application config (env vars, Spring properties) | `verifying-camunda-app-config` |
 | Design or review how a controller or component is structured | `ocf:structuring-operators` |
 | Create or change an ocf component: builder, lifecycle, conditions, status, `FlushStatus` | `ocf:building-components` |
 | Create or edit resource primitives, mutations, feature gates | `ocf:using-primitives` |
 | Wrap a custom resource as an ocf primitive with `pkg/generic` | `ocf:custom-resource-wrappers` |
+| Write or change a test and decide what it asserts | `feature-dev-workflow:testing-a-feature` |
 | Write or update tests for a component: mutation tests, golden snapshots, version matrix | `ocf:testing-operators` |
+| Decide if a change needs an e2e test under `test/e2e`, and what it asserts | `feature-dev-workflow:testing-end-to-end` |
+| Run a test suite, the linter, a build, a generator, or envtest (each gate in [Commands](#commands)) | `feature-dev-workflow:bounding-heavy-commands` |
+| Scope a rough product idea into an epic | `feature-dev-workflow:product-epic` |
 | Start a feature, plan it, or split it into PRs | `feature-dev-workflow:planning-a-feature`, then `feature-dev-workflow:developing-a-feature` |
+| Continue feature work from a state file in `docs/superpowers/states/` | `feature-dev-workflow:resuming-a-feature` |
+| Dispatch parallel agents into worktrees for the PRs of one feature | `feature-dev-workflow:fanning-out-with-worktrees` and `feature-dev-workflow:maintaining-architectural-coherence` |
+| Stop at a checkpoint: between fan-out waves, before an integration PR, before you mark it ready | `feature-dev-workflow:reviewing-feature-progress` |
+| Base a PR on the branch of another open PR | `feature-dev-workflow:stacking-dependent-prs` |
+| Create, edit, or comment on a GitHub issue | `feature-dev-workflow:writing-github-issues` |
 | Open or edit a pull request | `feature-dev-workflow:opening-a-pull-request` |
+| Act on review feedback: Copilot, a person, or a local review | `feature-dev-workflow:addressing-review-feedback` |
+| Run a review loop on a PR until it is clean | `feature-dev-workflow:copilot-review-loop` |
+| Draft or publish a release | `feature-dev-workflow:drafting-a-release`, then the release steps in `AGENTS.md` |
 | Say that work is complete | `superpowers:verification-before-completion` |
 
 The operator uses the operator component framework (ocf):
@@ -58,23 +71,6 @@ change the doc in the same change.
 
 ---
 
-## Architecture
-
-This operator is the bottom layer of the operator stack. It has no knowledge of
-`camunda-cloud-operator`.
-
-```
-CloudCamundaCluster (camunda-cloud-operator)
-└─ CamundaCluster (this operator)
-   └─ Workloads (Deployments, StatefulSets, Services)
-```
-
-Core principle: features attach to workloads. Workloads do not know about features. `CamundaCluster`
-creates labeled workloads. Extensions find them and attach through `clusterRef` or label selectors.
-`CamundaCluster` never imports or calls an extension controller.
-
----
-
 ## Rules that are not in a skill
 
 ### Resources and status
@@ -95,7 +91,8 @@ creates labeled workloads. Extensions find them and attach through `clusterRef` 
 
 - Each exported symbol has a GoDoc comment. Update it when you change the behavior, the signature, or
   the meaning.
-- Update the docs in the same response as the code change:
+- Update the docs in the same change as the code. A doc that your change made false is part of
+  your change:
 
 | Code area changed | Docs to update |
 | --- | --- |
@@ -110,12 +107,23 @@ creates labeled workloads. Extensions find them and attach through `clusterRef` 
 - Never create cloud infrastructure resources (IAM, KMS, buckets). That work belongs to
   `camunda-cloud-operator`.
 
+### Commits and pull requests
+
+- Commit subjects and PR titles use `<type>(<area>): <imperative summary>`. The types are `feat`,
+  `fix`, `refactor`, `test`, `chore`, and `docs`. The area is the package or subsystem, as in
+  `git log`: `camundacluster`, `e2e`, `makefile`.
+- Branches use `<type>/<slug>`, with the same type as the PR title.
+- `docs/superpowers/` is gitignored. The planning skills write the spec, the plan, and the state
+  file there, but they stay local: do not commit them, and skip the teardown commit that deletes
+  them. Put a decision that must last into `docs/architecture.md`, `docs/crds/`, or the tracking
+  issue.
+
 ---
 
 ## Commands
 
 Run every gate below before you open a pull request. Each one catches something the
-others do not.
+others do not. Each gate is a heavy command: run it through `feature-dev-workflow:bounding-heavy-commands`.
 
 ```bash
 make setup-envtest          # writes KUBEBUILDER_ASSETS; every envtest suite fails without it
