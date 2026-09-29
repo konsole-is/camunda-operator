@@ -253,7 +253,7 @@ The importer is replaced, not rolled: the old pod stops before the new one start
 
 The webapp rolls in the usual way and keeps serving during the change.
 
-The pod templates carry a hash of the settings the operator resolves. When a key that Optimize reads from a referenced Secret changes, such as a rotated Elasticsearch password, the pods roll and pick the new value up. A change to the labels or annotations of the Secret rolls nothing. You restart nothing by hand. The importer is replaced during that roll, so a credential rotation stops the import for the length of one restart.
+The pod templates carry a hash of the settings the operator resolves. When a key that Optimize reads from a referenced Secret changes, the pods roll and pick the new value up. A rotated Elasticsearch password is an example. A change to the labels or annotations of the Secret rolls nothing. You restart nothing by hand. The importer is replaced during that roll, so a credential rotation stops the import for the length of one restart.
 
 A Secret that you attach yourself through `extraEnv` or `extraEnvFrom` is not part of the hash. Roll the workload yourself after you change one.
 

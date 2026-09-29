@@ -330,7 +330,7 @@ When `spec.monitoring.serviceMonitor.enabled` is true, the operator creates one 
 
 ## Changes and referenced Secrets
 
-A change to the cluster, to a referenced resource, or to a key that the cluster reads from a referenced Secret rolls out to the pods on its own. A change to the labels or annotations of a Secret, or to a key that the cluster does not read, rolls nothing. The [CamundaPlatformConfig](camundaplatformconfig.md) is cluster-scoped, so the Secrets it names are copied into the namespace of the cluster, and each copy follows its source.
+A change to the cluster or to a referenced resource rolls out to the pods on its own. So does a change to a key that the cluster reads from a referenced Secret. A change to the labels or annotations of a Secret, or to a key that the cluster does not read, rolls nothing. The [CamundaPlatformConfig](camundaplatformconfig.md) is cluster-scoped, so the Secrets it names are copied into the namespace of the cluster, and each copy follows its source.
 
 The API server accepts a cluster that names something you did not create yet, so you can create the resources in any order. A missing `CamundaPlatformConfig`, `CamundaClusterPreset`, `CamundaRelease`, `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` sets `Ready` to `False` with reason `InvalidReference`. A missing Secret or key sets reason `MissingSecret`.
 

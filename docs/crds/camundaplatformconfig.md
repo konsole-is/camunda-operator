@@ -135,7 +135,7 @@ The default repository of an image can change with the version. From Camunda 8.1
 
 ## Changes and referenced Secrets
 
-When you change this resource or one of its Secrets, every referencing cluster rolls its pods with the new values. No operator restart is needed.
+When you change this resource, every referencing cluster rolls its pods with the new values. So does a change to a key that the clusters read from one of its Secrets. A change to the labels or annotations of a Secret rolls nothing. No operator restart is needed.
 
 When a referenced Secret or key is missing, `Ready` is `False` with reason `MissingSecret`. The message starts with the spec path of the reference, for example `spec.auth.oidc.management.clients.identity.clientSecretRef`.
 

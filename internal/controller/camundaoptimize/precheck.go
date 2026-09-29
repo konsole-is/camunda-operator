@@ -84,8 +84,8 @@ type resolver struct {
 	optimize *v1.CamundaOptimize
 	mirrors  mirroredSecrets
 	// inputs are the hash inputs of the objects that this controller reads and
-	// never writes: the generation of a custom resource and the resource
-	// version of a Secret. They roll the pods when a referenced object changes
+	// never writes: the generation of a custom resource and the data digest
+	// of a Secret. They roll the pods when a referenced object changes
 	// behind an unchanged reference.
 	//
 	// An object that this controller writes must never go in. Its own write
