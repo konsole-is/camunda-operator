@@ -79,7 +79,7 @@ Each write is a server-side apply of one field or annotation, under a field mana
 | Field | Field manager | What happens at the end |
 | --- | --- | --- |
 | `spec.suspend` | `camunda-operator/restore-suspend` | The restore withdraws it when it reaches `Completed`. |
-| The annotation `suspension-hold.camunda.io/<restore UID>` | `camunda-operator/suspension-hold-<restore UID>` | The restore removes it when it reaches `Completed`. When you delete the restore, it removes the hold once its Jobs are gone. A failed restore keeps it. |
+| The annotation `suspension-hold.camunda.io/<restore UID>` | `camunda-operator/suspension-hold-<restore UID>` | The restore removes it when it reaches `Completed`. When you delete the restore, it removes the hold once its Jobs and their pods are gone. A failed restore keeps it. |
 | `spec.version` and the annotation `camunda.io/allow-version-downgrade` | `camunda-operator/restore-version` | The restore keeps `spec.version`. The operator removes the annotation once the brokers carry the version, and as soon as it names another version. |
 
 These names are published. A GitOps tool reads them in a conflict message, and they tell a write of a restore from a write of a user.
@@ -117,8 +117,8 @@ The operator refuses a downgrade that you do by hand on a running cluster, outsi
 The restore withdraws its suspension when it reaches `Completed`, and only when `status.clusterSuspended` is `true`.
 
 - **A target that you suspended yourself stays suspended.** The restore recorded no suspension of its own, so it withdraws none.
-- **A failed restore leaves the target suspended.** Its broker volumes can be empty or half written. Brokers that start over such volumes are worse than a cluster that is down. Read `status.failureMessage`, correct the cause, and create a new restore. The failed restore also keeps its suspension hold, so clearing `spec.suspend` does not start the target. Delete the restore to remove the hold.
-- **A restore that you delete while it runs leaves the target suspended.** A delete never unsuspends the target. It removes the suspension hold of the restore, and `spec.suspend` decides from then on. Brokers that start over volumes the restore already erased are worse than a cluster that is down. Unsuspend the cluster yourself once you know what its volumes hold.
+- **A failed restore leaves the target suspended.** Its broker volumes can be empty or half written. Brokers that start over such volumes are worse than a cluster that is down. Read `status.failureMessage` and correct the cause. Delete the failed restore, then create a new one. The failed restore keeps its suspension hold until you delete it. While `status.recoveryHeld` is `true`, the delete waits until that hold ends, as [After a failure or a delete](#after-a-failure-or-a-delete) describes. Until then, neither `spec.suspend: false` nor a new restore starts the target.
+- **A restore that you delete while it runs leaves the target suspended.** A delete never unsuspends the target. It removes the suspension hold of the restore, and `spec.suspend` decides from then on. While `status.recoveryHeld` is `true`, the delete waits until that hold ends. Brokers that start over volumes the restore already erased are worse than a cluster that is down. Unsuspend the cluster yourself once you know what its volumes hold.
 
 ### A GitOps tool that owns the CamundaCluster
 
@@ -133,15 +133,15 @@ A tool that also declares one of these fields fights the operator for it. Argo C
 
 ## One operation at a time
 
-A cluster holds one backup or one restore at a time. This restore holds the target from the moment it starts to prepare it, which it reports as `Pending`. It gives the hold back when it reaches a terminal phase. A failed restore that keeps the backend for a recovery also keeps the target until that recovery ends.
+A cluster holds one backup or one restore at a time. This restore holds the target from the moment it starts to prepare it, which it reports as `Pending`. It gives the hold back when it reaches a terminal phase. A failed restore that keeps the backend for a recovery also keeps the target until its `status.recoveryHeld` is `false`.
 
-A restore whose target another operation holds waits in `Pending` with the reason `ClusterClaimed`, and the message names the holder. Nothing bounds this wait, and you change nothing. The restore starts on its own a short time after the holder reaches a terminal phase.
+A restore whose target another operation holds waits in `Pending` with the reason `ClusterClaimed`, and the message names the holder. Nothing bounds this wait, and you change nothing. The restore starts on its own a short time after the holder reaches a terminal phase and its `status.recoveryHeld` is not `true`.
 
 ## The backend
 
 A restore writes into the backend of its target. That is the Elasticsearch that the `SecondaryStorageConfig` of the target resolves to. The restore writes it only while the target holds that backend. When the restore leaves `Pending`, it records the backend in `status.backend`.
 
-From then until the restore reaches `Completed` or `Failed`, no other `CamundaCluster` starts on that backend. This also holds when you delete the target during the restore, or point it at another backend. The next cluster on the backend reports `WaitingForHandover`, and the message names this restore. The hold lasts even when the restore stops making progress. To free the backend from a restore that does not move, delete the restore. A deleted restore gives the backend back at once, unless Elasticsearch still recovers its snapshots. [CamundaCluster: Secondary storage](camundacluster.md#secondary-storage) has the rule for the cluster.
+From then until the restore reaches `Completed` or `Failed`, and after a failure while `status.recoveryHeld` is `true`, no other `CamundaCluster` starts on that backend. This also holds when you delete the target during the restore, or point it at another backend. The next cluster on the backend reports `WaitingForHandover`, and the message names this restore. The hold lasts even when the restore stops making progress. To free the backend from a restore that does not move, delete the restore. A deleted restore gives the backend back at once, unless `status.recoveryHeld` is `true`. [CamundaCluster: Secondary storage](camundacluster.md#secondary-storage) has the rule for the cluster.
 
 The restore itself waits in `Pending` while the target does not hold its backend:
 
@@ -153,7 +153,7 @@ After the restore left `Pending`, these two reasons hold it for 10 minutes, and 
 
 ### After a failure or a delete
 
-Elasticsearch recovers the snapshots that it accepted, even when the restore fails or you delete it. The restore keeps the backend until no index that it replaces recovers any more. Until then, `status.recoveryHeld` is `true`. A deleted restore stays until then too, and so does its suspension hold on the target. Another backup or restore of the target waits in `Pending` with the reason `ClusterClaimed`.
+Elasticsearch recovers the snapshots that it accepted, even when the restore fails or you delete it. The restore keeps the backend until no index that it replaces recovers any more. Until then, `status.recoveryHeld` is `true`. A deleted restore stays until then too, and so does its suspension hold on the target. Another restore of the target waits in `Pending` with the reason `ClusterClaimed`. A backup of the target waits with the reason `ClusterSuspended`.
 
 ```yaml
 status:
@@ -163,7 +163,7 @@ status:
 
 The event `RecoveryHeld` marks the start of this hold. The event `RecoveryEnded` marks its end when Elasticsearch finishes the recovery.
 
-If the restore cannot read the recovery for 10 minutes, it gives the backend back and records the Warning event `RecoveryUnknown`. That happens when the Elasticsearch does not answer, when the target is gone, or when the target now points at another Elasticsearch. `status.recoveryUnknownSince` shows when the restore first failed to read the recovery. After a `RecoveryUnknown` event, make sure that no index recovery is active before you start another cluster on this Elasticsearch.
+If the restore cannot read the recovery for 10 minutes, it gives the backend back and records the Warning event `RecoveryUnknown`. That happens when the Elasticsearch does not answer, when the target is gone, or when the target now points at another Elasticsearch. `status.recoveryUnknownSince` shows since when the restore cannot read the recovery. After a `RecoveryUnknown` event, make sure that no index recovery is active before you start another cluster on this Elasticsearch.
 
 ## The snapshot repository
 
@@ -189,7 +189,7 @@ CAUTION: A failure between the delete and the restore leaves the secondary stora
 
 ### An Optimize attached to the target
 
-A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names the target follows `spec.suspend` of that cluster. So its webapp and its importer go to zero with the cluster. The restore waits in `Pending` until the importer pod is gone, so no import runs when this phase deletes the indices. You do not have to stop the import by hand.
+A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names the target follows the suspension of that cluster. So its webapp and its importer go to zero with the cluster. The restore waits in `Pending` until the importer pod is gone, so no import runs when this phase deletes the indices. You do not have to stop the import by hand.
 
 This matters because the Optimize importer reads Elasticsearch directly, not through the orchestration cluster. An importer that keeps running reads indices that are half restored and writes analytics from them. It also holds an import position that disagrees with the restored data. Both workloads start again when you unsuspend the cluster, and the importer reads the restored indices.
 
@@ -236,7 +236,7 @@ kubectl logs -n my-cluster-ns job/my-cluster-restore-lres-0
 
 ## Deletion
 
-Deleting the restore removes its Jobs. A restore that completed already removed them. A restore that failed still has them, and this is how you remove them. A restore whose snapshots Elasticsearch still recovers stays until the recovery ends, as [After a failure or a delete](#after-a-failure-or-a-delete) describes. The recreated broker volumes stay, and so does everything the restore wrote into Elasticsearch.
+Deleting the restore removes its Jobs. A restore that completed already removed them. A restore that failed still has them, and this is how you remove them. The recreated broker volumes stay, and so does everything the restore wrote into Elasticsearch. The restore stays until the last pod of its Jobs is gone. While `status.recoveryHeld` is `true`, it also stays until that hold ends, as [After a failure or a delete](#after-a-failure-or-a-delete) describes.
 
 The delete removes the suspension hold of the restore from the target. A target that the restore suspended through `spec.suspend` stays suspended. That is deliberate. Brokers that start over volumes the restore already erased are worse than a cluster that is down. Unsuspend the cluster yourself once you know what its volumes hold.
 
@@ -245,10 +245,10 @@ The delete removes the suspension hold of the restore from the target. A target 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Progressing` | A phase of the restore runs. | Wait. The message names the work. |
-| `Ready` | `Completed` | The restore finished, and it gives back the suspension it applied, so the target starts again a moment later. `Ready` is `True`. | Nothing. Unsuspend the target yourself only when you suspended it yourself. |
-| `Ready` | `Failed` | The restore ended. | Read `status.failureMessage`. Correct the cause and create a new restore. |
+| `Ready` | `Completed` | The restore finished, and it gives back the suspension it applied, so the target starts again a moment later, unless another hold remains on it. `Ready` is `True`. | Nothing. Unsuspend the target yourself only when you suspended it yourself. |
+| `Ready` | `Failed` | The restore ended. | Read `status.failureMessage`. Correct the cause. Delete the failed restore, then create a new one. |
 | `Ready` | `ClusterNotSuspended` | Somebody removed the suspension hold of the restore from the target and cleared `spec.suspend`. | Suspend the cluster again. A restore that already erased something fails 10 minutes after the first outage. |
-| `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster. | Wait. The restore starts when the holder reaches a terminal phase. A failed restore that keeps the backend for a recovery holds the cluster until the recovery ends. |
+| `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster. | Wait. The restore starts when the holder reaches a terminal phase. A failed restore that keeps the backend for a recovery holds the cluster until its `status.recoveryHeld` is `false`. |
 | `Ready` | `StorageAlreadyAttached` | Another cluster holds the Elasticsearch of the target. The message names it. | Read "The backend" above. The restore starts when the target holds the Elasticsearch. |
 | `Ready` | `WaitingForHandover` | The target does not hold its Elasticsearch yet, or pods still write it. | Wait. If the target does not hold the backend yet, the message names the target and the backend. The restore starts once the target takes it. If pods still write the backend, the message names them. The restore starts when they are gone. |
 | `Ready` | `IncompatibleTarget` | The target cannot hold the backup. The message names both values. | Read "Compatibility" above. A backup restores into the cluster it was taken from alone. |
@@ -263,7 +263,7 @@ These status fields report what the restore did:
 - `status.repository` is the snapshot repository on the Elasticsearch of the target.
 - `status.restoredSnapshots` names every snapshot that the operator asked Elasticsearch to restore.
 - `status.recoveryHeld` is `true` while a restore that failed, or that you deleted, keeps the backend for the recovery of its snapshots.
-- `status.recoveryUnknownSince` is when a held restore first failed to read that recovery.
+- `status.recoveryUnknownSince` is the time since which a held restore cannot read that recovery.
 - `status.clusterSuspended` records that this restore suspended the target. The restore withdraws that suspension when it completes.
 - `status.brokers` is the broker count that the restore recorded before it deleted a volume.
 - `status.recreatedClaims` names the broker data volumes that the restore deleted and created again.

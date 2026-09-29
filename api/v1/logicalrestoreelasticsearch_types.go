@@ -60,11 +60,12 @@ type LogicalRestoreElasticsearchStatus struct {
 	// snapshots that the restore asked for. While it is true, no other
 	// CamundaCluster starts on the backend, the target stays suspended, and no
 	// other backup or restore of the target starts. A deleted restore stays
-	// while it is true. It is unset on a restore that never held the backend.
+	// while it is true. It is unset on a restore that was never held for a
+	// recovery, and false once the hold is over.
 	// +optional
 	RecoveryHeld *bool `json:"recoveryHeld,omitempty"`
-	// recoveryUnknownSince is when a held restore first failed to read the
-	// recovery from Elasticsearch. When the recovery stays unknown for ten
+	// recoveryUnknownSince is the time since which a held restore cannot read
+	// the recovery from Elasticsearch. When the recovery stays unknown for ten
 	// minutes, the restore gives the backend back.
 	// +optional
 	RecoveryUnknownSince *metav1.Time `json:"recoveryUnknownSince,omitempty"`

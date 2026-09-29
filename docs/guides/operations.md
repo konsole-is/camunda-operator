@@ -234,9 +234,9 @@ kubectl get camundacluster my-cluster -n my-cluster-ns \
   -o jsonpath='{.metadata.managedFields[*].manager}'
 ```
 
-`camunda-operator/restore-suspend` among those managers means that a restore applied the suspension. A restore that reaches `Completed` gives it back on its own, so wait for that. A restore that failed keeps it, and it keeps its [suspension hold](../crds/camundacluster.md#suspension-holds) too. Once you know what the volumes hold, delete the failed restore. Then the cluster is yours to start again.
+`camunda-operator/restore-suspend` among those managers means that a restore applied the suspension. A restore that reaches `Completed` gives it back on its own, so wait for that. A restore that failed keeps it, and it keeps its [suspension hold](../crds/camundacluster.md#suspension-holds) too. Once you know what the volumes hold, delete the failed restore. A `LogicalRestoreElasticsearch` whose `status.recoveryHeld` is `true` stays until that hold ends. Then the cluster is yours to start again.
 
-CAUTION: A merge patch of `spec.suspend` takes the field from the restore that owns it. A restore that is still running suspends the cluster again at once, and the patch achieves nothing. A restore that already failed leaves the cluster to you, and the volumes hold what the restore wrote before it stopped.
+CAUTION: A merge patch of `spec.suspend` takes the field from the restore that owns it. A restore that is still running suspends the cluster again at once, and the patch achieves nothing. A restore that already failed keeps its suspension hold, so the patch starts nothing until you delete that restore. The volumes hold what the restore wrote before it stopped.
 
 The restore pages hold the rules: [LogicalRestoreElasticsearch](../crds/logicalrestoreelasticsearch.md), [LogicalRestoreRDBMS](../crds/logicalrestorerdbms.md), and [PointInTimeRestore](../crds/pointintimerestore.md).
 
