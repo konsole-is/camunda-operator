@@ -516,7 +516,9 @@ docs-build: ## Build the documentation site in strict mode.
 
 .PHONY: api-docs
 api-docs: crd-ref-docs ## Render the API reference in docs/crds/api-reference.md from the types in api/v1.
-	"$(CRD_REF_DOCS)" --source-path=api/v1 --config=hack/crd-ref-docs/config.yaml \
+	{ cat hack/crd-ref-docs/config.yaml; \
+		printf 'render:\n  kubernetesVersion: %s\n' "$(ENVTEST_K8S_VERSION)"; } > "$(LOCALBIN)/crd-ref-docs.yaml"
+	"$(CRD_REF_DOCS)" --source-path=api/v1 --config="$(LOCALBIN)/crd-ref-docs.yaml" \
 		--renderer=markdown --output-path=docs/crds/api-reference.md
 
 .PHONY: docs-sentences

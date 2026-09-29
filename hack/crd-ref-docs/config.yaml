@@ -1,12 +1,9 @@
 # Configuration of crd-ref-docs for `make api-docs`, which renders
-# docs/crds/api-reference.md from the types in api/v1.
+# docs/crds/api-reference.md from the types in api/v1. make api-docs appends
+# render.kubernetesVersion, the minor of k8s.io/api in go.mod, so the links to
+# Kubernetes types follow a bump of k8s.io/api.
 processor:
   ignoreTypes:
     - "List$"
   ignoreFields:
     - "TypeMeta$"
-
-render:
-  # The minor of k8s.io/api in go.mod. The links to Kubernetes types point at
-  # the API reference of this version.
-  kubernetesVersion: 1.36
