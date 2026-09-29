@@ -125,7 +125,7 @@ func TestEnqueueForBrokerClaim(t *testing.T) {
 }
 
 // A cluster that waits for a writer on its backend starts once the writer
-// releases its registration. A renewal frees nothing, so only the release
+// releases its registration. An update frees nothing, so only the release
 // wakes the waiting clusters, and only for a writer Lease.
 func TestWriterReleased(t *testing.T) {
 	writer := &coordinationv1.Lease{}
@@ -138,7 +138,7 @@ func TestWriterReleased(t *testing.T) {
 
 	assert.True(t, released.Delete(event.DeleteEvent{Object: writer}))
 	assert.False(t, released.Delete(event.DeleteEvent{Object: other}), "a Lease that is no writer")
-	assert.False(t, released.Update(event.UpdateEvent{ObjectOld: writer, ObjectNew: writer}), "a renewal")
+	assert.False(t, released.Update(event.UpdateEvent{ObjectOld: writer, ObjectNew: writer}), "an update")
 	assert.False(t, released.Create(event.CreateEvent{Object: writer}))
 }
 

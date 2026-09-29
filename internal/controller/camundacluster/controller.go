@@ -42,7 +42,6 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
-	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 )
 
 // controllerName is the name the controller registers with controller-runtime.
@@ -85,10 +84,6 @@ type CamundaClusterReconciler struct {
 	// resolve one backend meet on one Lease. SetupWithManager refuses an
 	// empty value.
 	ClaimNamespace string
-	// WriterClock tells when this operator started to lead, see
-	// storagewriter.Clock. Nil counts a writer registration from its last
-	// renewal only.
-	WriterClock *storagewriter.Clock
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used
@@ -356,9 +351,8 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// A failed rotation looks again on a timer, because no watch fires when the
 	// user API recovers or accepts the credentials again. A cluster the claim
 	// suspends looks again for the holder of its backend, or for the pods of
-	// another cluster on it, which nothing watches either, and for a writer
-	// Lease that expires. A released writer Lease wakes it through
-	// enqueueWaitingForHandover.
+	// another cluster on it, which nothing watches either. A released writer
+	// Lease wakes it through enqueueWaitingForHandover.
 	if cred.failure != nil || claimSuspends(in.Storage) {
 		wait = r.retryInterval()
 	}

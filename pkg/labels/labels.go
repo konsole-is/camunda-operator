@@ -58,6 +58,10 @@ const (
 	// labels, so this one tells the pods of a deleted instance apart from
 	// those of the instance that took its place.
 	OptimizeUIDKey = "camunda.io/optimize-uid"
+	// WriterUIDKey names the UID of the resource that holds a writer Lease,
+	// so that the resource finds all of its Leases, whatever backend each
+	// one names.
+	WriterUIDKey = "camunda.io/writer-uid"
 	// StorageClaimKey names the storage claim Lease of the backend that a pod
 	// of a CamundaCluster, or of the CamundaOptimize attached to it, writes.
 	// It is on the pod, never on the selector, so a change of backend rolls

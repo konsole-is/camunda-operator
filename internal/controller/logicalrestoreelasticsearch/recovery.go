@@ -58,19 +58,17 @@ func (r *Reconciler) finalize(ctx context.Context, lres *v1.LogicalRestoreElasti
 		return wait, err
 	}
 
-	if lres.Status.Backend != "" {
-		err := restore.ReleaseWriter(
-			ctx, r.Client, r.opts.ClaimNamespace, lres.Status.Backend, lres, lres.Status.TargetClusterUID,
-		)
-		if err != nil {
-			return 0, err
-		}
+	// Only the recovery writes the Elasticsearch backend. A Job pod writes the
+	// broker volumes, so a pod that keeps the restore does not keep the backend.
+	if err := restore.ReleaseWriters(ctx, r.Client, r.APIReader, r.opts.ClaimNamespace, lres); err != nil {
+		return 0, err
 	}
 
 	finalized, err := restore.FinalizeHold(
 		ctx,
 		r.Client,
 		r.APIReader,
+		r.opts.ClaimNamespace,
 		lres,
 		labels.LogicalRestoreElasticsearch(lres.Name),
 		lres.Spec.TargetClusterRef.Name,
@@ -160,8 +158,8 @@ func (r *Reconciler) keepWriter(ctx context.Context, lres *v1.LogicalRestoreElas
 	if lres.Status.Backend == "" {
 		return r.opts.PollInterval, nil
 	}
-	// A look that released the registration can crash before the cleared hold is
-	// in status, so the next look registers it again rather than only renewing it.
+	// A look that released the registration can crash before the cleared hold
+	// is in status, so the next look registers it again.
 	err := restore.RegisterWriter(
 		ctx, r.Client, r.APIReader, r.opts.ClaimNamespace, lres.Status.Backend, lres, lres.Status.TargetClusterUID,
 	)

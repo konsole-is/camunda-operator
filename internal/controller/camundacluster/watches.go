@@ -261,8 +261,8 @@ func (r *CamundaClusterReconciler) enqueueWaitingForHandover() handler.EventHand
 	})
 }
 
-// writerReleased passes the deletion of a writer Lease. A renewal writes the
-// Lease far more often and frees nothing.
+// writerReleased passes the deletion of a writer Lease. A create or an update
+// of one frees nothing.
 func writerReleased() predicate.Funcs {
 	return predicate.Funcs{
 		CreateFunc:  func(event.CreateEvent) bool { return false },

@@ -392,8 +392,8 @@ func (r *Reconciler) followBackend(
 	if err != nil {
 		return nil, err
 	}
-	// The renewer renews status.backend only, so the new key goes there
-	// before the old one is released.
+	// The new key is held before the old one goes, so the database is never
+	// free in between.
 	old := pitr.Status.Backend
 	pitr.Status.Backend = backend
 	if old == "" {

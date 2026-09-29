@@ -861,3 +861,43 @@ func failRestore(w *world, lrr *v1.LogicalRestoreRDBMS) {
 	markJob(w.namespace, jobName, batchv1.JobFailed)
 	expectReason(lrr, v1.LogicalRestoreFailed, v1.ReasonFailed)
 }
+
+// ageWriterLeases makes every writer Lease of the writer with UID uid read as
+// renewed a year ago with a one-second duration.
+func ageWriterLeases(uid types.UID) {
+	GinkgoHelper()
+	old := metav1.NewMicroTime(time.Now().AddDate(-1, 0, 0))
+	Eventually(func(g Gomega) {
+		var leases coordinationv1.LeaseList
+		g.Expect(k8sClient.List(
+			ctx,
+			&leases,
+			client.InNamespace(claimNamespace),
+			client.MatchingLabels{labels.WriterUIDKey: string(uid)},
+		)).To(Succeed())
+		g.Expect(leases.Items).NotTo(BeEmpty())
+		for i := range leases.Items {
+			lease := &leases.Items[i]
+			lease.Spec.AcquireTime = &old
+			lease.Spec.RenewTime = &old
+			lease.Spec.LeaseDurationSeconds = new(int32(1))
+			g.Expect(k8sClient.Update(ctx, lease)).To(Succeed())
+		}
+	}, timeout, interval).Should(Succeed())
+}
+
+// writersSeenByAnotherCluster returns the writers that a cluster other than
+// the target of a restore waits for on backend.
+func writersSeenByAnotherCluster(g Gomega, backend string) []string {
+	writers, err := storagewriter.Live(
+		ctx,
+		k8sClient,
+		claimNamespace,
+		backend,
+		camundacluster.StorageClaimSchema().LeaseName(backend),
+		"uid-of-another-cluster",
+	)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	return writers
+}

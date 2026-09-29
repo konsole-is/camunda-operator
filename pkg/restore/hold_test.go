@@ -136,7 +136,15 @@ func TestFinalizeHoldRemovesTheHoldAndThenTheFinalizer(t *testing.T) {
 	owner := w.liveRestore(t)
 	require.NoError(t, AddHoldFinalizer(t.Context(), w.client, owner))
 
-	finalized, err := FinalizeHold(t.Context(), w.client, w.client, owner, podLabel(owner), w.cluster.Name)
+	finalized, err := FinalizeHold(
+		t.Context(),
+		w.client,
+		w.client,
+		writerNamespace,
+		owner,
+		podLabel(owner),
+		w.cluster.Name,
+	)
 	require.NoError(t, err)
 	assert.True(t, finalized.Done)
 
@@ -155,7 +163,15 @@ func TestFinalizeHoldLetsGoWhenTheClusterIsGone(t *testing.T) {
 	require.NoError(t, AddHoldFinalizer(t.Context(), w.client, owner))
 	require.NoError(t, w.client.Delete(t.Context(), w.cluster))
 
-	finalized, err := FinalizeHold(t.Context(), w.client, w.client, owner, podLabel(owner), w.cluster.Name)
+	finalized, err := FinalizeHold(
+		t.Context(),
+		w.client,
+		w.client,
+		writerNamespace,
+		owner,
+		podLabel(owner),
+		w.cluster.Name,
+	)
 	require.NoError(t, err)
 	assert.True(t, finalized.Done)
 
@@ -179,7 +195,15 @@ func TestFinalizeHoldKeepsTheHoldUntilTheJobsOfTheRestoreAreGone(t *testing.T) {
 	require.NoError(t, controllerutil.SetControllerReference(owner, job, w.client.Scheme()))
 	require.NoError(t, w.client.Create(t.Context(), job))
 
-	finalized, err := FinalizeHold(t.Context(), w.client, w.client, owner, podLabel(owner), w.cluster.Name)
+	finalized, err := FinalizeHold(
+		t.Context(),
+		w.client,
+		w.client,
+		writerNamespace,
+		owner,
+		podLabel(owner),
+		w.cluster.Name,
+	)
 	require.NoError(t, err)
 	assert.False(t, finalized.Done)
 	assert.Positive(t, finalized.Wait)
@@ -193,7 +217,15 @@ func TestFinalizeHoldKeepsTheHoldUntilTheJobsOfTheRestoreAreGone(t *testing.T) {
 	deleting.Finalizers = nil
 	require.NoError(t, w.client.Update(t.Context(), &deleting))
 
-	finalized, err = FinalizeHold(t.Context(), w.client, w.client, w.liveRestore(t), podLabel(owner), w.cluster.Name)
+	finalized, err = FinalizeHold(
+		t.Context(),
+		w.client,
+		w.client,
+		writerNamespace,
+		w.liveRestore(t),
+		podLabel(owner),
+		w.cluster.Name,
+	)
 	require.NoError(t, err)
 	assert.True(t, finalized.Done)
 	assert.Len(t, w.appliesBy(holdManager(owner)), 1)
@@ -215,17 +247,71 @@ func TestFinalizeHoldKeepsTheHoldUntilTheJobPodsOfTheRestoreAreGone(t *testing.T
 	}}
 	require.NoError(t, w.client.Create(t.Context(), pod))
 
-	finalized, err := FinalizeHold(t.Context(), w.client, w.client, owner, label, w.cluster.Name)
+	finalized, err := FinalizeHold(t.Context(), w.client, w.client, writerNamespace, owner, label, w.cluster.Name)
 	require.NoError(t, err)
 	assert.False(t, finalized.Done)
 	assert.Empty(t, w.appliesBy(holdManager(owner)))
 
 	require.NoError(t, w.client.Delete(t.Context(), pod))
 
-	finalized, err = FinalizeHold(t.Context(), w.client, w.client, w.liveRestore(t), label, w.cluster.Name)
+	finalized, err = FinalizeHold(
+		t.Context(),
+		w.client,
+		w.client,
+		writerNamespace,
+		w.liveRestore(t),
+		label,
+		w.cluster.Name,
+	)
 	require.NoError(t, err)
 	assert.True(t, finalized.Done)
 	assert.Len(t, w.appliesBy(holdManager(owner)), 1)
+}
+
+// The backend stays held while a Job pod of the restore can still write it.
+// The status of the restore records no backend, so the release finds the
+// writer Leases by the UID of the restore.
+func TestFinalizeHoldReleasesTheWriterLeasesOnceTheJobsAreGone(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	owner := w.liveRestore(t)
+	require.NoError(t, AddHoldFinalizer(t.Context(), w.client, owner))
+	require.NoError(t, RegisterWriter(
+		t.Context(), w.client, w.client, writerNamespace, "rdbms|db.ns.svc:5432/camunda", owner, clusterUID,
+	))
+	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
+		Name:       "r-pitr-0",
+		Namespace:  owner.Namespace,
+		Finalizers: []string{"test/pods-remain"},
+	}}
+	require.NoError(t, controllerutil.SetControllerReference(owner, job, w.client.Scheme()))
+	require.NoError(t, w.client.Create(t.Context(), job))
+
+	finalized, err := FinalizeHold(
+		t.Context(),
+		w.client,
+		w.client,
+		writerNamespace,
+		owner,
+		podLabel(owner),
+		w.cluster.Name,
+	)
+	require.NoError(t, err)
+	assert.False(t, finalized.Done)
+	assert.Len(t, writerLeases(t, w.client), 1, "a Job of the restore is still there")
+
+	var deleting batchv1.Job
+	require.NoError(t, w.client.Get(t.Context(), client.ObjectKeyFromObject(job), &deleting))
+	deleting.Finalizers = nil
+	require.NoError(t, w.client.Update(t.Context(), &deleting))
+
+	finalized, err = FinalizeHold(
+		t.Context(), w.client, w.client, writerNamespace, w.liveRestore(t), podLabel(owner), w.cluster.Name,
+	)
+	require.NoError(t, err)
+	assert.True(t, finalized.Done)
+	assert.Empty(t, writerLeases(t, w.client))
 }
 
 // A failed read is an error, not a wait.
@@ -240,6 +326,7 @@ func TestFinalizeHoldReturnsAFailedReadWithoutAWait(t *testing.T) {
 		t.Context(),
 		w.client,
 		failingLister{w.client},
+		writerNamespace,
 		owner,
 		podLabel(owner),
 		w.cluster.Name,

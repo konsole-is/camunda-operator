@@ -46,6 +46,9 @@ const (
 // is the namespace of the operator.
 const testClaimNamespace = "default"
 
+// midRunGrace is the mid-run grace of the restores in this suite.
+const midRunGrace = 3 * time.Second
+
 // retryInterval paces a hold in Pending that no watch resolves. It stays under
 // the test timeout, so a spec that waits for the timer still finishes. It stays
 // above watchWindow, so watchWindow tells a watch from the timer.
@@ -146,7 +149,7 @@ var _ = BeforeSuite(func() {
 			// one look does not terminalize before it asserts the hold, and
 			// short enough that the spec which waits out the grace fits in
 			// the test timeout.
-			MidRunGrace:   3 * time.Second,
+			MidRunGrace:   midRunGrace,
 			ReadPositions: exporter.read,
 			ReadJobLog:    jobLogs.read,
 		}).SetupWithManager(mgr)

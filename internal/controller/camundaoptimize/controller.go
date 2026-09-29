@@ -44,7 +44,6 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
-	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 )
 
@@ -93,10 +92,6 @@ type Reconciler struct {
 	// the backend its importer writes. SetupWithManager refuses an empty
 	// value.
 	ClaimNamespace string
-	// WriterClock tells when this operator started to lead, see
-	// storagewriter.Clock. Nil counts a writer registration from its last
-	// renewal only.
-	WriterClock *storagewriter.Clock
 	// RetryInterval overrides how long the controller waits on something no
 	// watch reports. Zero means defaultRetryInterval; tests shorten it.
 	RetryInterval time.Duration
