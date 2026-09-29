@@ -65,9 +65,9 @@ const (
 	// eventActionRemoveUser is the action of the events about the Web Modeler
 	// user on an orchestration cluster.
 	eventActionRemoveUser = "RemoveWebModelerUser"
-	// eventReasonUserRemovalFailed is recorded when the finalizer could not
-	// remove the user. The management cluster is deleted either way, so an
-	// administrator has to remove it by hand.
+	// eventReasonUserRemovalFailed is recorded when a cluster refused the
+	// removal of the user. The finalizer does not retry it, so after a
+	// deletion an administrator has to remove the user by hand.
 	eventReasonUserRemovalFailed = "WebModelerUserRemovalFailed"
 	// eventReasonUserLeftBehind is recorded when the operator stops trying to
 	// remove the user, because nothing on that cluster authenticates with it.
@@ -115,17 +115,17 @@ var webModelerAuthorizations = []camundaadmin.Authorization{
 // they type, so that deploying from Web Modeler never needs the administrator
 // of the orchestration cluster.
 //
-// What one cluster answers is a row of that cluster: a refused call reports
-// BasicAuthUserFailed in status.clusters and the reconcile carries on. Only a
-// failure of the Kubernetes API comes back as an error, because the operator
-// cannot publish the password it just set.
+// What one cluster answers is not an error: a refused call reports
+// BasicAuthUserFailed in status.clusters, a refused removal is a warning event
+// and a UID in the returned set, and the reconcile carries on. Only a failure
+// of the Kubernetes API comes back as an error.
 func (r *Reconciler) syncWebModelerUsers(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	clusters []v1.CamundaCluster,
 	attached []components.AttachedCluster,
 	rows []v1.AttachedClusterStatus,
-) error {
+) (map[types.UID]bool, error) {
 	served := map[types.UID]bool{}
 
 	var errs []error
@@ -146,7 +146,9 @@ func (r *Reconciler) syncWebModelerUsers(
 		}
 	}
 
-	return errors.Join(append(errs, r.withdrawUnservedUsers(ctx, mc, clusters, served, false))...)
+	refused, err := r.withdrawUnservedUsers(ctx, mc, clusters, served, false)
+
+	return refused, errors.Join(append(errs, err)...)
 }
 
 // webModelerUser converges the user on one cluster. It returns the message of
@@ -485,7 +487,9 @@ func (r *Reconciler) withdrawWebModelerUsers(
 	mc *v1.CamundaManagementCluster,
 	clusters []v1.CamundaCluster,
 ) error {
-	return r.withdrawUnservedUsers(ctx, mc, clusters, nil, true)
+	_, err := r.withdrawUnservedUsers(ctx, mc, clusters, nil, true)
+
+	return err
 }
 
 // withdrawUnservedUsers removes the user of every published Secret whose
@@ -497,16 +501,16 @@ func (r *Reconciler) withdrawWebModelerUsers(
 // cluster at all. A cluster is never read one at a time; clusters is the list
 // the reconcile already made, and it names the cluster to call.
 //
-// A removal that fails keeps its Secret and returns the error, so the next
-// reconcile tries again; bestEffort drops the Secret all the same, for the
-// finalizer.
+// A removal that a cluster refused keeps its Secret and puts the UID of that
+// cluster in the returned set; bestEffort drops the Secret all the same and
+// never reports a refusal.
 func (r *Reconciler) withdrawUnservedUsers(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	clusters []v1.CamundaCluster,
 	served map[types.UID]bool,
 	bestEffort bool,
-) error {
+) (map[types.UID]bool, error) {
 	var users corev1.SecretList
 	if err := r.APIReader.List(
 		ctx, &users,
@@ -515,7 +519,7 @@ func (r *Reconciler) withdrawUnservedUsers(
 			labels.Managed(labels.ManagementCluster(mc.Name), components.ComponentWebModelerClusterUser),
 		),
 	); err != nil {
-		return fmt.Errorf("listing the Web Modeler user Secrets: %w", err)
+		return nil, fmt.Errorf("listing the Web Modeler user Secrets: %w", err)
 	}
 
 	byUID := make(map[types.UID]*v1.CamundaCluster, len(clusters))
@@ -524,6 +528,7 @@ func (r *Reconciler) withdrawUnservedUsers(
 	}
 
 	var errs []error
+	refused := map[types.UID]bool{}
 	for i := range users.Items {
 		published := &users.Items[i]
 
@@ -531,39 +536,43 @@ func (r *Reconciler) withdrawUnservedUsers(
 		if served[uid] {
 			continue
 		}
-		errs = append(errs, r.withdrawWebModelerUser(ctx, mc, published, byUID[uid], bestEffort))
+		held, err := r.withdrawWebModelerUser(ctx, mc, published, byUID[uid], bestEffort)
+		if held {
+			refused[uid] = true
+		}
+		errs = append(errs, err)
 	}
 
-	return errors.Join(errs...)
+	return refused, errors.Join(errs...)
 }
 
 // withdrawWebModelerUser removes the user from one cluster and deletes the
 // Secret that published its password. A nil cluster is one that Kubernetes no
-// longer holds, and leaves nothing to remove the user from. A removal that
-// fails keeps the Secret, which is what makes the next reconcile try again,
-// unless bestEffort says the Secret goes regardless.
+// longer holds, and leaves nothing to remove the user from. A refused removal
+// keeps the Secret and returns true, unless bestEffort drops the Secret.
 func (r *Reconciler) withdrawWebModelerUser(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	published *corev1.Secret,
 	cluster *v1.CamundaCluster,
 	bestEffort bool,
-) error {
+) (bool, error) {
 	if cluster != nil {
-		if err := r.removeWebModelerUser(ctx, mc, cluster); err != nil && !bestEffort {
-			return err
+		refused, err := r.removeWebModelerUser(ctx, mc, cluster)
+		if (refused || err != nil) && !bestEffort {
+			return refused, err
 		}
 	}
 
 	// The password goes with the user. A Secret that outlived the user would
 	// let a later reconcile trust a credential the cluster no longer holds.
 	if err := r.Delete(ctx, published); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf(
+		return false, fmt.Errorf(
 			"deleting Secret %q: %w", client.ObjectKeyFromObject(published), err,
 		)
 	}
 
-	return nil
+	return false, nil
 }
 
 // removeWebModelerUser removes the Web Modeler user from one cluster.
@@ -572,14 +581,13 @@ func (r *Reconciler) withdrawWebModelerUser(
 // remove: no credential of that cluster authenticates any more, so the user
 // row grants nobody anything and no call can delete it. Such a removal reports
 // a normal event and succeeds, which is what lets the claim of the cluster go
-// free. Every other failure is a warning event and an error, so the caller
-// decides whether it holds the withdrawal: the sync path keeps the Secret and
-// tries again, the finalizer lets the deletion go on.
+// free. Every other refusal records a warning event and returns true. An error
+// is a failure of the Kubernetes API.
 func (r *Reconciler) removeWebModelerUser(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	cluster *v1.CamundaCluster,
-) error {
+) (bool, error) {
 	attached := components.AttachedCluster{
 		Name:      cluster.Name,
 		Namespace: cluster.Namespace,
@@ -591,7 +599,7 @@ func (r *Reconciler) removeWebModelerUser(
 
 	users, failure, err := r.clusterUserClient(ctx, attached)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if failure == "" {
 		if err := users.DeleteUser(ctx, components.WebModelerClusterUsername); err != nil {
@@ -599,12 +607,12 @@ func (r *Reconciler) removeWebModelerUser(
 		}
 	}
 	if failure == "" {
-		return nil
+		return false, nil
 	}
 
 	inert, why, err := r.basicAuthGone(ctx, cluster)
 	if err != nil {
-		return err
+		return false, err
 	}
 	name := cluster.Namespace + "/" + cluster.Name
 
@@ -619,7 +627,7 @@ func (r *Reconciler) removeWebModelerUser(
 			components.WebModelerClusterUsername, name, why, failure,
 		)
 
-		return nil
+		return false, nil
 	}
 
 	r.EventRecorder.Eventf(
@@ -632,10 +640,7 @@ func (r *Reconciler) removeWebModelerUser(
 		components.WebModelerClusterUsername, name, failure,
 	)
 
-	return fmt.Errorf(
-		"removing the user %q from CamundaCluster %q: %s",
-		components.WebModelerClusterUsername, name, failure,
-	)
+	return true, nil
 }
 
 // basicAuthGone reports whether the Web Modeler user of a cluster
