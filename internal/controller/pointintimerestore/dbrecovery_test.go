@@ -17,15 +17,20 @@ limitations under the License.
 package pointintimerestore
 
 import (
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 )
 
 // recoveredIdentifier is the identity that the contract publishes after its
@@ -94,8 +99,8 @@ func answerRecovery(w *world, result v1.RecoveryResult, message string) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// repointContract moves the endpoint of the contract to the server that the
-// recovery built.
+// repointContract moves the contract to the recovered server, and claims that
+// endpoint for the cluster as its controller does.
 func repointContract(w *world) {
 	GinkgoHelper()
 
@@ -105,6 +110,7 @@ func repointContract(w *world) {
 		contract.Spec.Host = recoveredHost
 		g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
+	holdBackend(w.cluster)
 }
 
 // publishContractReady records the probe that the contract controller writes
@@ -190,6 +196,67 @@ func expectFailed(pitr *v1.PointInTimeRestore, reason string) string {
 	return message
 }
 
+// backendsHeldBy returns the backends of the writer Leases that name the
+// restore.
+func backendsHeldBy(pitr *v1.PointInTimeRestore) []string {
+	GinkgoHelper()
+
+	var leases coordinationv1.LeaseList
+	Expect(k8sClient.List(
+		ctx,
+		&leases,
+		client.InNamespace(testClaimNamespace),
+		client.MatchingLabels{labels.ComponentKey: storagewriter.Component},
+	)).To(Succeed())
+
+	var backends []string
+	for i := range leases.Items {
+		annotations := leases.Items[i].Annotations
+		if annotations[storagewriter.WriterAnnotation] == "PointInTimeRestore "+pitr.Namespace+"/"+pitr.Name {
+			backends = append(backends, annotations[storagewriter.KeyAnnotation])
+		}
+	}
+
+	return backends
+}
+
+// writersSeenByAnotherCluster returns the writers that a cluster other than
+// the target of the restore waits for on backend.
+func writersSeenByAnotherCluster(backend string) []string {
+	GinkgoHelper()
+
+	now := time.Now()
+	writers, err := storagewriter.Live(
+		ctx,
+		k8sClient,
+		testClaimNamespace,
+		backend,
+		clustercomponents.StorageClaimSchema().LeaseName(backend),
+		"uid-of-another-cluster",
+		now,
+		now,
+	)
+	Expect(err).NotTo(HaveOccurred())
+
+	return writers
+}
+
+// expectBackendHeld waits until the restore holds exactly one backend, and
+// returns it.
+func expectBackendHeld(pitr *v1.PointInTimeRestore) string {
+	GinkgoHelper()
+
+	var backend string
+	Eventually(func(g Gomega) {
+		current := readRestore(g, pitr)
+		g.Expect(current.Status.Backend).NotTo(BeEmpty())
+		g.Expect(backendsHeldBy(pitr)).To(Equal([]string{current.Status.Backend}))
+		backend = current.Status.Backend
+	}, timeout, interval).Should(Succeed())
+
+	return backend
+}
+
 var _ = Describe("PointInTimeRestore database recovery", func() {
 	It("asks the contract to roll its server back, and waits for the answer", func() {
 		w := operatorRecoveryWorld()
@@ -234,7 +301,43 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		}, timeout, interval).Should(Succeed())
 
 		message := expectFailed(pitr, v1.ReasonFailed)
-		Expect(message).To(ContainSubstring("storage chain of the cluster changed"))
+		Expect(message).To(ContainSubstring("no DatabaseServerConfig can answer"))
+	})
+
+	It("fails and gives its database back when its contract is deleted while it waits", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		backend := expectBackendHeld(pitr)
+
+		Expect(k8sClient.Delete(ctx, w.server)).To(Succeed())
+
+		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring(w.server.Name))
+		Eventually(func() []string {
+			return writersSeenByAnotherCluster(backend)
+		}, timeout, interval).Should(BeEmpty())
+	})
+
+	It("keeps its database held for the grace when its cluster and its contract are both deleted", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		backend := expectBackendHeld(pitr)
+
+		Expect(k8sClient.Delete(ctx, w.server)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+
+		Consistently(func(g Gomega) {
+			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
+			g.Expect(writersSeenByAnotherCluster(backend)).NotTo(BeEmpty())
+		}, time.Second, interval).Should(Succeed())
+
+		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring("no DatabaseServerConfig can answer"))
+		Eventually(func() []string {
+			return writersSeenByAnotherCluster(backend)
+		}, timeout, interval).Should(BeEmpty())
 	})
 
 	It("asks again when a restore of its name and its point was answered before it", func() {
@@ -246,7 +349,12 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 
 		// The same name and the same point, and a different resource. The
 		// standing answer belongs to the restore that is gone.
+		held := readRestore(Default, first)
 		Expect(k8sClient.Delete(ctx, first)).To(Succeed())
+		// The Lease of the deleted restore would lapse two minutes later.
+		Expect(storagewriter.Release(ctx, k8sClient, testClaimNamespace, held.Status.Backend, storagewriter.Writer{
+			Kind: "PointInTimeRestore", Namespace: held.Namespace, Name: held.Name, UID: held.UID,
+		})).To(Succeed())
 		second := &v1.PointInTimeRestore{
 			ObjectMeta: metav1.ObjectMeta{Name: first.Name, Namespace: w.namespace},
 			Spec:       first.Spec,
@@ -379,6 +487,343 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		Expect(message).To(ContainSubstring("the server is suspended"))
 	})
 
+	It("holds its database against other clusters while the server rolls back", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+
+		backend := expectBackendHeld(pitr)
+		Expect(writersSeenByAnotherCluster(backend)).To(
+			Equal([]string{"PointInTimeRestore " + w.namespace + "/" + pitr.Name}),
+		)
+
+		answerRecovery(w, v1.RecoveryResultFailed, "the server is suspended")
+		expectFailed(pitr, v1.ReasonFailed)
+		Eventually(func() []string {
+			return backendsHeldBy(pitr)
+		}, timeout, interval).Should(BeEmpty(), "a terminal restore gives its database back")
+		Expect(writersSeenByAnotherCluster(backend)).To(BeEmpty())
+	})
+
+	It("keeps its database held for the grace when its request is cleared and its cluster is deleted", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		backend := expectBackendHeld(pitr)
+
+		Eventually(func(g Gomega) {
+			var contract v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), &contract)).To(Succeed())
+			contract.Spec.Recovery = nil
+			g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+
+		Consistently(func(g Gomega) {
+			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
+			g.Expect(writersSeenByAnotherCluster(backend)).NotTo(BeEmpty())
+		}, time.Second, interval).Should(Succeed())
+		expectFailed(pitr, v1.ReasonFailed)
+	})
+
+	It("keeps its database held when its cluster is deleted, until the server answers", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		backend := expectBackendHeld(pitr)
+
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		expectRecovering(pitr, "was deleted", w.server.Name)
+
+		repointContract(w)
+		Eventually(func(g Gomega) {
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Backend).To(ContainSubstring(recoveredHost))
+			g.Expect(backendsHeldBy(pitr)).To(Equal([]string{current.Status.Backend}))
+			backend = current.Status.Backend
+		}, timeout, interval).Should(Succeed())
+		Consistently(func() []string {
+			return writersSeenByAnotherCluster(backend)
+		}, "2s", interval).Should(HaveLen(1))
+
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+		message := expectFailed(pitr, v1.ReasonFailed)
+		Expect(message).To(ContainSubstring("was deleted"))
+		Eventually(func() []string {
+			return writersSeenByAnotherCluster(backend)
+		}, timeout, interval).Should(BeEmpty(), "the restore gives the database back once the rollback ended")
+	})
+
+	It("follows a contract that moves and stops recovering while its cluster is gone", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		expectBackendHeld(pitr)
+
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		expectRecovering(pitr, "was deleted", w.server.Name)
+
+		Eventually(func(g Gomega) {
+			var contract v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), &contract)).To(Succeed())
+			contract.Spec.Host = recoveredHost
+			contract.Spec.PITR.Recovery = v1.RecoveryModeExternal
+			g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(readRestore(g, pitr).Status.Backend).To(ContainSubstring(recoveredHost))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("follows a moved contract without waiting for its retry timer while its cluster is gone", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		expectBackendHeld(pitr)
+
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		expectRecovering(pitr, "was deleted", w.server.Name)
+
+		repointContract(w)
+		Eventually(func(g Gomega) {
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Backend).To(ContainSubstring(recoveredHost))
+			g.Expect(backendsHeldBy(pitr)).To(ContainElement(current.Status.Backend))
+		}, watchWindow, interval).Should(Succeed())
+	})
+
+	It("keeps its database held when its cluster is still being deleted, until the server answers", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		backend := expectBackendHeld(pitr)
+
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+			cluster.Finalizers = append(cluster.Finalizers, "test.camunda.io/keep")
+			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		DeferCleanup(func() {
+			var cluster v1.CamundaCluster
+			if k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster) == nil {
+				cluster.Finalizers = nil
+				_ = k8sClient.Update(ctx, &cluster)
+			}
+		})
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		expectRecovering(pitr, "was deleted", w.server.Name)
+
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring("was deleted"))
+		Eventually(func() []string {
+			return writersSeenByAnotherCluster(backend)
+		}, timeout, interval).Should(BeEmpty())
+	})
+
+	It("keeps its database held when its cluster is repointed, until the server answers", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		backend := expectBackendHeld(pitr)
+
+		other := &v1.DatabaseConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "other-config", Namespace: w.namespace},
+			Spec: v1.DatabaseConfigSpec{
+				ServerRef:            w.server.Name,
+				DatabaseName:         "other_database",
+				CredentialsSecretRef: w.dbConfig.Spec.CredentialsSecretRef,
+			},
+		}
+		Expect(k8sClient.Create(ctx, other)).To(Succeed())
+		otherStorage := &v1.SecondaryStorageConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "other-storage", Namespace: w.namespace},
+			Spec: v1.SecondaryStorageConfigSpec{
+				Type:  v1.SecondaryStorageTypeRDBMS,
+				RDBMS: &v1.RDBMSStorage{DatabaseConfigRef: other.Name},
+			},
+		}
+		Expect(k8sClient.Create(ctx, otherStorage)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+			cluster.Spec.StorageRef = otherStorage.Name
+			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		expectRecovering(pitr, "storage chain", w.server.Name)
+		Expect(writersSeenByAnotherCluster(backend)).To(HaveLen(1))
+
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring("other-storage"))
+		Eventually(func() []string {
+			return writersSeenByAnotherCluster(backend)
+		}, timeout, interval).Should(BeEmpty())
+	})
+
+	It("keeps its database held when its cluster runs again, until the server answers", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		backend := expectBackendHeld(pitr)
+
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+			cluster.Spec.Suspend = false
+			for key := range cluster.Annotations {
+				if strings.HasPrefix(key, v1.SuspensionHoldPrefix) {
+					delete(cluster.Annotations, key)
+				}
+			}
+			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		expectRecovering(pitr, "started running again", w.server.Name)
+
+		By("following the endpoint that the contract names while it holds")
+		repointContract(w)
+		Eventually(func(g Gomega) {
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Backend).To(ContainSubstring(recoveredHost))
+			g.Expect(backendsHeldBy(pitr)).To(Equal([]string{current.Status.Backend}))
+			backend = current.Status.Backend
+		}, timeout, interval).Should(Succeed())
+
+		By("holding past the mid-run grace while the request is unanswered")
+		Consistently(func(g Gomega) {
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
+			g.Expect(ready(current).Reason).To(Equal(v1.ReasonClusterNotSuspended))
+			g.Expect(writersSeenByAnotherCluster(backend)).To(HaveLen(1))
+		}, 5*time.Second, interval).Should(Succeed())
+
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring("is not suspended"))
+		Eventually(func() []string {
+			return writersSeenByAnotherCluster(backend)
+		}, timeout, interval).Should(BeEmpty())
+	})
+
+	It("gives its database back when the chain stops resolving after the server answered", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		backend := expectBackendHeld(pitr)
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+			cluster.Spec.StorageRef = "no-such-storage"
+			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring("no-such-storage"))
+		Eventually(func() []string {
+			return writersSeenByAnotherCluster(backend)
+		}, timeout, interval).Should(BeEmpty())
+	})
+
+	It("holds the endpoint that the contract names before the contract reaches it", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		before := expectBackendHeld(pitr)
+
+		repointContract(w)
+
+		var named string
+		Eventually(func(g Gomega) {
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Backend).NotTo(Equal(before))
+			g.Expect(backendsHeldBy(pitr)).To(Equal([]string{current.Status.Backend}))
+			named = current.Status.Backend
+		}, timeout, interval).Should(Succeed())
+		Expect(named).To(ContainSubstring(recoveredHost))
+		Expect(writersSeenByAnotherCluster(named)).To(
+			Equal([]string{"PointInTimeRestore " + w.namespace + "/" + pitr.Name}),
+		)
+		Expect(readRestore(Default, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
+
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+		Consistently(func() []string {
+			return backendsHeldBy(pitr)
+		}, time.Second, interval).Should(Equal([]string{named}))
+
+		publishContractReady(w, recoveredIdentifier)
+		Eventually(func(g Gomega) {
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestoreRestoringDatabase))
+			g.Expect(backendsHeldBy(pitr)).To(Equal([]string{named}))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("moves its hold to the endpoint of the recovered server", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		before := expectBackendHeld(pitr)
+
+		repointContract(w)
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+		publishContractReady(w, recoveredIdentifier)
+
+		Eventually(func(g Gomega) {
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestoreRestoringDatabase))
+			g.Expect(current.Status.Backend).NotTo(Equal(before))
+		}, timeout, interval).Should(Succeed())
+		after := expectBackendHeld(pitr)
+		Expect(strings.Contains(after, recoveredHost)).To(BeTrue(), after)
+		Expect(writersSeenByAnotherCluster(before)).To(BeEmpty())
+	})
+
+	It("holds after the answer while another cluster holds the endpoint the contract moved to", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectBackendHeld(pitr)
+
+		repointContract(w)
+		other := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "other-" + w.cluster.Name, Namespace: w.namespace},
+			Spec:       *w.cluster.Spec.DeepCopy(),
+		}
+		Expect(k8sClient.Create(ctx, other)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, other) })
+		holdBackend(other)
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+		publishContractReady(w, recoveredIdentifier)
+
+		Eventually(func(g Gomega) {
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
+			condition := ready(current)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Reason).To(Equal(v1.ReasonStorageAlreadyAttached))
+			g.Expect(condition.Message).To(ContainSubstring(other.Name))
+		}, timeout, interval).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
+		}, time.Second, interval).Should(Succeed())
+
+		By("going on once its own cluster holds the moved endpoint")
+		holdBackend(w.cluster)
+		wake(w.cluster)
+		Eventually(func(g Gomega) {
+			g.Expect(readRestore(g, pitr).Status.Phase).NotTo(Equal(v1.PointInTimeRestoreRestoringDatabase))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("asks nothing of a contract that nobody rolls back", func() {
 		w := createWorld()
 		pitr := createRestore(w)
@@ -389,5 +834,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		var contract v1.DatabaseServerConfig
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), &contract)).To(Succeed())
 		Expect(contract.Spec.Recovery).To(BeNil())
+		Expect(readRestore(Default, pitr).Status.Backend).To(BeEmpty())
+		Expect(backendsHeldBy(pitr)).To(BeEmpty(), "a restore that writes no database holds none")
 	})
 })

@@ -212,7 +212,10 @@ func (w *world) finish(mutate ...func(*v1.CamundaCluster)) {
 func (w *world) holdBackend(holder *v1.CamundaCluster) {
 	GinkgoHelper()
 
-	key, failure, err := restorepkg.ResolveBackend(ctx, k8sClient, w.cluster)
+	storage, failure, err := restorepkg.ResolveStorage(ctx, k8sClient, w.cluster)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(failure).NotTo(HaveOccurred())
+	key, failure, err := restorepkg.BackendOf(ctx, k8sClient, storage)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(failure).NotTo(HaveOccurred())
 

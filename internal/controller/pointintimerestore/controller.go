@@ -79,6 +79,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/podstate"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
+	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 )
 
 // controllerName is the name the controller registers with controller-runtime.
@@ -90,6 +91,11 @@ const (
 	// clusterRef, so an event on a cluster wakes the restores that wait for
 	// it, for example on the flip of spec.suspend.
 	clusterRefField = "pointintimerestore.spec.clusterRef"
+	// pinnedContractField indexes the restores that are not terminal by the
+	// DatabaseServerConfig they pinned. A cluster claims a moved endpoint on its
+	// own watch, so the restore has to follow the move on the same event, not
+	// on a timer.
+	pinnedContractField = "pointintimerestore.status.storage.databaseServerConfig"
 	// defaultPollInterval paces a running phase.
 	defaultPollInterval = 5 * time.Second
 	// defaultRetryInterval paces a hold that no watch resolves.
@@ -167,6 +173,10 @@ type Reconciler struct {
 	// each Database occupies. It is the namespace of the operator, and
 	// SetupWithManager refuses an empty one.
 	ClaimNamespace string
+	// WriterClock tells when this operator started to lead, see
+	// storagewriter.Clock. Nil counts a writer registration from its last
+	// renewal only.
+	WriterClock *storagewriter.Clock
 
 	opts Options
 }
@@ -269,11 +279,28 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// the claim back in the one order that frees the broker volumes. The
 		// Jobs of a completed restore take more than one look to go, so an
 		// answer that is not Done holds the two steps behind them.
+		if pitr.Status.Backend != "" {
+			err := restore.ReleaseWriter(
+				ctx, r.Client, r.ClaimNamespace, pitr.Status.Backend, &pitr, pitr.Status.TargetClusterUID,
+			)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
 		finished, err := restore.Finish(
 			ctx, r.Client, r.APIReader, &pitr, &pitr.Status.RestoreProgress, pitr.Spec.ClusterRef.Name,
 		)
 
 		return ctrl.Result{RequeueAfter: finished.Wait}, err
+	}
+
+	if pitr.Status.Backend != "" {
+		err := restore.RegisterWriter(
+			ctx, r.Client, r.APIReader, r.ClaimNamespace, pitr.Status.Backend, &pitr, pitr.Status.TargetClusterUID,
+		)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	var outcome restore.Outcome
@@ -427,6 +454,40 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	); err != nil {
 		return fmt.Errorf("indexing PointInTimeRestore by clusterRef: %w", err)
 	}
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&v1.PointInTimeRestore{},
+		pinnedContractField,
+		pinnedContractKeys,
+	); err != nil {
+		return fmt.Errorf("indexing PointInTimeRestore by pinned DatabaseServerConfig: %w", err)
+	}
+
+	renewer := &restore.Renewer{
+		Client:         mgr.GetClient(),
+		Reader:         mgr.GetAPIReader(),
+		ClaimNamespace: r.ClaimNamespace,
+		List: func(ctx context.Context) ([]restore.Registration, error) {
+			var list v1.PointInTimeRestoreList
+			if err := mgr.GetClient().List(ctx, &list); err != nil {
+				return nil, fmt.Errorf("listing the PointInTimeRestore resources: %w", err)
+			}
+			var registrations []restore.Registration
+			for i := range list.Items {
+				item := &list.Items[i]
+				if restore.Renewable(item.Status.Backend, item.Terminal(), item.DeletionTimestamp) {
+					registrations = append(registrations, restore.Registration{
+						Owner: item, Backend: item.Status.Backend, Target: item.Status.TargetClusterUID,
+					})
+				}
+			}
+
+			return registrations, nil
+		},
+	}
+	if err := mgr.Add(renewer); err != nil {
+		return fmt.Errorf("adding the writer renewer: %w", err)
+	}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.PointInTimeRestore{}).
@@ -448,6 +509,26 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 				refindex.ObjectNamespacedName,
 			),
 		).
+		Watches(
+			&v1.DatabaseServerConfig{},
+			refindex.Enqueue(
+				mgr.GetClient(),
+				&v1.PointInTimeRestoreList{},
+				pinnedContractField,
+				refindex.ObjectNamespacedName,
+			),
+		).
 		Named(controllerName).
 		Complete(r)
+}
+
+// A terminal restore keeps status.storage, and a key for it would wake every
+// finished restore on each change of the contract.
+func pinnedContractKeys(obj client.Object) []string {
+	pitr := obj.(*v1.PointInTimeRestore)
+	if pitr.Status.Storage == nil || pitr.Terminal() {
+		return nil
+	}
+
+	return []string{refindex.NamespacedKey(pitr.Namespace, pitr.Status.Storage.DatabaseServerConfig)}
 }

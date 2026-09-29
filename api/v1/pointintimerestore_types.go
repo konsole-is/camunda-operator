@@ -168,6 +168,15 @@ type PointInTimeRestoreStatus struct {
 	// when a later look disagrees.
 	// +optional
 	Storage *PointInTimeRestoreStorage `json:"storage,omitempty"`
+	// Backend names the database that the restore holds while its server rolls
+	// back: the host, the port, and the database name. The operator records it
+	// just before it asks for the rollback, and it follows each endpoint that
+	// the contract names. From then to the terminal phase, no other
+	// CamundaCluster starts on this database, except in the moment after the
+	// contract moves to a new endpoint. A restore whose server is rolled back
+	// outside the operator records none.
+	// +optional
+	Backend string `json:"backend,omitempty"`
 	// ObservedPositions are the exporter positions the pre-check read, in
 	// partition order. They record what the operator saw when it let the
 	// restore past the database-state check, or what held it.
@@ -177,8 +186,9 @@ type PointInTimeRestoreStatus struct {
 	ObservedPositions []PartitionPosition `json:"observedPositions,omitempty"`
 	// RestoreProgress is the part of the status that every restore kind has.
 	// Its Ready condition carries the reasons Progressing, Completed, Failed,
-	// ClusterNotSuspended, ClusterClaimed, InvalidReference, PitrUnavailable,
-	// SharedServer, DatabaseNotRestored, MissingSecret, and ConnectionFailed.
+	// ClusterNotSuspended, ClusterClaimed, StorageAlreadyAttached,
+	// WaitingForHandover, InvalidReference, PitrUnavailable, SharedServer,
+	// DatabaseNotRestored, MissingSecret, and ConnectionFailed.
 	RestoreProgress `json:",inline"`
 }
 

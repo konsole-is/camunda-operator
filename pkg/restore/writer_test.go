@@ -125,3 +125,24 @@ func TestTheRenewerRunsOnlyOnTheLeader(t *testing.T) {
 
 	assert.True(t, renewer.NeedLeaderElection())
 }
+
+func TestOtherWritersKeepsARegistrationLiveInsideTheLeadGrace(t *testing.T) {
+	ctx := context.Background()
+	c := renewClient(t)
+	earlier := restoreInto("earlier")
+	claim := clustercomponents.StorageClaimSchema().LeaseName(earlier.Backend)
+	renewed := time.Now().Add(-storagewriter.Duration - time.Minute)
+	require.NoError(t, storagewriter.Register(
+		ctx, c, c, renewNamespace, earlier.Backend, claim, writerOf(earlier.Owner, earlier.Target), renewed,
+	))
+	next := restoreInto("next").Owner
+
+	led := time.Now().Add(-time.Minute)
+	writers, err := OtherWriters(ctx, c, renewNamespace, earlier.Backend, next, led)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/earlier"}, writers)
+
+	writers, err = OtherWriters(ctx, c, renewNamespace, earlier.Backend, next, time.Time{})
+	require.NoError(t, err)
+	assert.Empty(t, writers, "without the lead time, the registration reads as expired")
+}

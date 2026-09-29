@@ -84,18 +84,15 @@ var errChainChanged = errors.New("the storage chain of the cluster changed")
 
 // admit runs every rule that must hold before the operator reads the
 // database, in the documented order. A rule that does not hold keeps the
-// restore in Pending, where it touches nothing and recovers on its own once
-// the cause is gone.
+// restore in Pending, and it recovers on its own once the cause is gone.
 //
-// It ends by claiming the cluster and suspending it. The claim comes first,
-// because it is what serialises the operations on a cluster, and admission is
-// about to write to that cluster's spec.
+// It claims the cluster before it suspends it, because the claim serialises
+// the operations on a cluster, and admission is about to write to that
+// cluster's spec.
 //
-// Admission ends by reading the database in the same reconcile. The read is
-// the first call that leaves the cluster, but it changes nothing, and a
-// restore that the database holds back must report Pending. The phase is
-// staged first, so the one status write of this reconcile records whichever
-// of the two outcomes the read produced.
+// Admission ends in the same reconcile: it reads the database, or it registers
+// the restore as a writer for a server that rolls itself back. A restore that
+// the database holds back reports Pending.
 func (r *Reconciler) admit(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
@@ -175,6 +172,18 @@ func (r *Reconciler) admit(
 		return prepared, nil
 	}
 
+	backend, failure := restore.DatabaseBackend(resolved.storage, resolved.dbConfig, resolved.server)
+	if failure != nil {
+		return r.waiting(pitr, failure), nil
+	}
+	failure, err = r.backendFree(ctx, pitr, resolved, backend)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	if failure != nil {
+		return r.waiting(pitr, failure), nil
+	}
+
 	// Everything that this restore is allowed to act on is now known: the
 	// chain, the rules of the server, and the clock of the brokers. The record
 	// goes in before the database is read, so every later look is measured
@@ -185,6 +194,16 @@ func (r *Reconciler) admit(
 	// contract that declares external is rolled back before the restore was
 	// created, and the database is read as it stands.
 	if resolved.server.OperatorRecovers() {
+		// Status.Backend is set only after the registration succeeds, so the renewer
+		// never keeps a backend alive that the restore did not register.
+		err := restore.RegisterWriter(
+			ctx, r.Client, r.APIReader, r.ClaimNamespace, backend, pitr, pitr.Status.TargetClusterUID,
+		)
+		if err != nil {
+			return restore.Outcome{}, err
+		}
+		pitr.Status.Backend = backend
+
 		pitr.Status.Phase = v1.PointInTimeRestoreRestoringDatabase
 		r.progressing(pitr, fmt.Sprintf(
 			"DatabaseServerConfig %s rolls its own server back. The restore asks it for %s",
@@ -198,6 +217,41 @@ func (r *Reconciler) admit(
 	pitr.Status.Phase = v1.PointInTimeRestoreValidatingDatabaseState
 
 	return r.validateDatabaseState(ctx, pitr, resolved)
+}
+
+// backendFree reports why the restore must not write backend yet, or nil when
+// the target holds it and no other writer is on it.
+func (r *Reconciler) backendFree(
+	ctx context.Context,
+	pitr *v1.PointInTimeRestore,
+	resolved *chain,
+	backend string,
+) (*conditions.PreCheckFailure, error) {
+	failure, err := restore.CheckBackend(ctx, r.Client, r.APIReader, restore.BackendCheck{
+		ClaimNamespace: r.ClaimNamespace,
+		Cluster:        resolved.cluster,
+		Storage:        resolved.storage,
+		Pinned:         backend,
+	})
+	if err != nil || failure != nil {
+		return failure, err
+	}
+	// A deleted restore into the same cluster can still roll the server back.
+	writers, err := restore.OtherWriters(ctx, r.APIReader, r.ClaimNamespace, backend, pitr, r.WriterClock.Since())
+	if err != nil {
+		return nil, err
+	}
+	if len(writers) > 0 {
+		return &conditions.PreCheckFailure{
+			Reason: v1.ReasonWaitingForHandover,
+			Message: fmt.Sprintf(
+				"Other writers still write the database %q: %s. The restore goes on when they are done",
+				backend, strings.Join(writers, ", "),
+			),
+		}, nil
+	}
+
+	return nil, nil
 }
 
 // resolve reads the storage chain of the restore and the facts of the live

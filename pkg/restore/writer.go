@@ -137,3 +137,25 @@ func ReleaseWriter(
 ) error {
 	return storagewriter.Release(ctx, c, claimNamespace, backend, writerOf(owner, target))
 }
+
+// OtherWriters returns the live writers of backend other than owner, the
+// writers for its own target included. reader must read the API server
+// directly. since is storagewriter.Clock.Since.
+func OtherWriters(
+	ctx context.Context,
+	reader client.Reader,
+	claimNamespace, backend string,
+	owner conditions.Owner,
+	since time.Time,
+) ([]string, error) {
+	return storagewriter.LiveExcept(
+		ctx,
+		reader,
+		claimNamespace,
+		backend,
+		clustercomponents.StorageClaimSchema().LeaseName(backend),
+		writerOf(owner, ""),
+		time.Now(),
+		since,
+	)
+}

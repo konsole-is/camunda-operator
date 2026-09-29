@@ -51,23 +51,6 @@ type BackendCheck struct {
 	OwnPod func(podLabels map[string]string) bool
 }
 
-// ResolveBackend returns the backend that the secondary storage of cluster
-// resolves to, as the key that the storage claim of the cluster uses, see
-// camundacluster.StorageClaimKey. A chain that does not resolve is a failure
-// the user corrects.
-func ResolveBackend(
-	ctx context.Context,
-	reader client.Reader,
-	cluster *v1.CamundaCluster,
-) (string, *conditions.PreCheckFailure, error) {
-	storage, failure, err := ResolveStorage(ctx, reader, cluster)
-	if err != nil || failure != nil {
-		return "", failure, err
-	}
-
-	return BackendOf(ctx, reader, storage)
-}
-
 // BackendOf returns the claim key of the backend that storage describes. A
 // chain that does not resolve is a failure the user corrects.
 func BackendOf(

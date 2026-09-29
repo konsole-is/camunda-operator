@@ -74,6 +74,26 @@ func TestRegisterMakesTheWriterLiveForOtherClusters(t *testing.T) {
 	assert.Empty(t, own, "a writer for the cluster itself does not hold that cluster")
 }
 
+func TestLiveExceptLeavesOutOnlyTheRegistrationOfTheWriter(t *testing.T) {
+	ctx := context.Background()
+	c := newClient(t)
+	earlier := restore("restore", "target")
+	again := earlier
+	again.UID = "uid-restore-again"
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, earlier, start))
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, again, start))
+
+	live, err := LiveExcept(ctx, c, claimNamespace, backend, claim, again, start, time.Time{})
+
+	require.NoError(t, err)
+	assert.Equal(
+		t,
+		[]string{"LogicalRestoreRDBMS apps/restore"},
+		live,
+		"a writer of the same name and another UID counts, the one for the same cluster too",
+	)
+}
+
 func TestAWriterOfAnotherBackendIsNotLive(t *testing.T) {
 	ctx := context.Background()
 	c := newClient(t)

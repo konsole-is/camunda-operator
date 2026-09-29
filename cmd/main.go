@@ -374,10 +374,12 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "LogicalBackupElasticsearch")
 		os.Exit(1)
 	}
-	if err := pointintimerestore.New(
+	pitrReconciler := pointintimerestore.New(
 		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), operatorNamespace,
 		pointintimerestore.Options{},
-	).SetupWithManager(mgr); err != nil {
+	)
+	pitrReconciler.WriterClock = writerClock
+	if err := pitrReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "PointInTimeRestore")
 		os.Exit(1)
 	}

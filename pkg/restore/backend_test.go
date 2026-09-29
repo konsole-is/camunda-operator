@@ -31,6 +31,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
@@ -102,11 +103,25 @@ func backendClient(t *testing.T, objects ...client.Object) client.Client {
 		Build()
 }
 
-func TestResolveBackendIsTheClaimKeyOfTheCluster(t *testing.T) {
+// resolveBackend resolves the backend the way the restore controllers do.
+func resolveBackend(t *testing.T, c client.Client, cluster *v1.CamundaCluster) (string, *conditions.PreCheckFailure) {
+	t.Helper()
+
+	storage, failure, err := ResolveStorage(context.Background(), c, cluster)
+	require.NoError(t, err)
+	if failure != nil {
+		return "", failure
+	}
+	key, failure, err := BackendOf(context.Background(), c, storage)
+	require.NoError(t, err)
+
+	return key, failure
+}
+
+func TestBackendOfIsTheClaimKeyOfTheCluster(t *testing.T) {
 	c := backendClient(t, backendObjects()...)
 
-	key, failure, err := ResolveBackend(context.Background(), c, backendTarget("storage"))
-	require.NoError(t, err)
+	key, failure := resolveBackend(t, c, backendTarget("storage"))
 	require.Nil(t, failure)
 	assert.Equal(
 		t,
@@ -117,8 +132,7 @@ func TestResolveBackendIsTheClaimKeyOfTheCluster(t *testing.T) {
 
 	// A bare host resolves in the namespace of the contract, the same way the
 	// cluster computes its own key.
-	key, failure, err = ResolveBackend(context.Background(), c, backendTarget("rdbms-storage"))
-	require.NoError(t, err)
+	key, failure = resolveBackend(t, c, backendTarget("rdbms-storage"))
 	require.Nil(t, failure)
 	want, err := clustercomponents.StorageClaimKey(clustercomponents.Storage{
 		Type:      v1.SecondaryStorageTypeRDBMS,
@@ -130,12 +144,11 @@ func TestResolveBackendIsTheClaimKeyOfTheCluster(t *testing.T) {
 	assert.Contains(t, key, "postgres.ns.svc")
 }
 
-func TestResolveBackendReportsABrokenChain(t *testing.T) {
+func TestBackendOfReportsABrokenChain(t *testing.T) {
 	objects := backendObjects()[:2] // no DatabaseConfig, no server
 	c := backendClient(t, objects...)
 
-	_, failure, err := ResolveBackend(context.Background(), c, backendTarget("rdbms-storage"))
-	require.NoError(t, err)
+	_, failure := resolveBackend(t, c, backendTarget("rdbms-storage"))
 	require.NotNil(t, failure)
 	assert.Equal(t, v1.ReasonInvalidReference, failure.Reason)
 	assert.Contains(t, failure.Message, "DatabaseConfig ns/db does not exist")
@@ -265,15 +278,14 @@ func TestCheckBackend(t *testing.T) {
 
 // A pg_restore Job writes the database of the objects it was built from, so
 // their key must be the one the check covered.
-func TestDatabaseBackendIsTheKeyThatResolveBackendPins(t *testing.T) {
+func TestDatabaseBackendIsTheKeyThatBackendOfPins(t *testing.T) {
 	objects := backendObjects()
 	c := backendClient(t, objects...)
 	storage := objects[1].(*v1.SecondaryStorageConfig)
 	config := objects[2].(*v1.DatabaseConfig)
 	server := objects[3].(*v1.DatabaseServerConfig)
 
-	pinned, failure, err := ResolveBackend(context.Background(), c, backendTarget("rdbms-storage"))
-	require.NoError(t, err)
+	pinned, failure := resolveBackend(t, c, backendTarget("rdbms-storage"))
 	require.Nil(t, failure)
 
 	key, failure := DatabaseBackend(storage, config, server)
