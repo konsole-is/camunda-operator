@@ -141,9 +141,9 @@ func (t *Target) claimName(ordinal int32) string {
 }
 
 // BuildClaim renders the broker data claim of one ordinal at the given size.
-// Everything but the size comes from the claim template, so the discovery
-// labels keep working. The claim carries no owner
-// reference: one to a restore deletes a live broker volume with the restore.
+// Its spec, labels and annotations come from the claim template, so the
+// discovery labels keep working. The claim carries no owner reference: one to
+// a restore deletes a live broker volume with the restore.
 func (t *Target) BuildClaim(ordinal int32, size resource.Quantity) *corev1.PersistentVolumeClaim {
 	spec := *t.ClaimTemplate.Spec.DeepCopy()
 	spec.Resources.Requests = corev1.ResourceList{corev1.ResourceStorage: size}
