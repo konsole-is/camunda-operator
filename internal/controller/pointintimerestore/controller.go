@@ -92,8 +92,9 @@ const (
 	// it, for example on the flip of spec.suspend.
 	clusterRefField = "pointintimerestore.spec.clusterRef"
 	// pinnedContractField indexes the restores that are not terminal by the
-	// DatabaseServerConfig they pinned. A cluster claims a moved endpoint on its own watch, so the
-	// restore has to follow the move on the same event, not on a timer.
+	// DatabaseServerConfig they pinned. A cluster claims a moved endpoint on its
+	// own watch, so the restore has to follow the move on the same event, not
+	// on a timer.
 	pinnedContractField = "pointintimerestore.status.storage.databaseServerConfig"
 	// defaultPollInterval paces a running phase.
 	defaultPollInterval = 5 * time.Second
