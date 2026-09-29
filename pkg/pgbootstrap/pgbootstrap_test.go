@@ -32,7 +32,12 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
-// adminConn is the shared connection target of the postgres:17 container that
+// postgresImage is postgres:17 from mirror.gcr.io, the Docker Hub mirror of
+// Google. A Docker Hub pull first gets a token from auth.docker.io, and a reset
+// of that request fails every spec. The mirror serves pulls without a token.
+const postgresImage = "mirror.gcr.io/library/postgres:17"
+
+// adminConn is the shared connection target of the PostgreSQL container that
 // TestMain starts once per test binary.
 var adminConn Connection
 
@@ -41,7 +46,7 @@ func TestMain(m *testing.M) {
 	defer cancel()
 
 	container, err := postgres.Run(
-		ctx, "postgres:17",
+		ctx, postgresImage,
 		postgres.WithDatabase("postgres"),
 		postgres.WithUsername("postgres"),
 		postgres.WithPassword("admin-secret"),

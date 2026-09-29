@@ -45,6 +45,11 @@ CREATE TABLE EXPORTER_POSITION (
 	LAST_UPDATED TIMESTAMP WITHOUT TIME ZONE
 )`
 
+// postgresImage is postgres:17 from mirror.gcr.io, the Docker Hub mirror of
+// Google. A Docker Hub pull first gets a token from auth.docker.io, and a reset
+// of that request fails every spec. The mirror serves pulls without a token.
+const postgresImage = "mirror.gcr.io/library/postgres:17"
+
 // startPostgres runs one PostgreSQL server for the test and returns the
 // connection that reaches it. The reader of the exporter position is the one
 // part of this controller that no fake can cover: the table name, the column
@@ -57,7 +62,7 @@ func startPostgres(t *testing.T) pgbootstrap.Connection {
 	defer cancel()
 
 	container, err := postgres.Run(
-		ctx, "postgres:17",
+		ctx, postgresImage,
 		postgres.WithDatabase("camunda"),
 		postgres.WithUsername("camunda"),
 		postgres.WithPassword("app-secret"),
