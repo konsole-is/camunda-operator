@@ -1593,9 +1593,8 @@ func registerWriter(kind string, target *v1.CamundaCluster, backend string) stor
 	return writer
 }
 
-// expireWriter moves the last renewal of the registration of writer on
-// backend back by the registration duration, as a writer that stopped without
-// a release leaves it.
+// expireWriter ages out the registration of writer on backend, as a writer
+// that stopped without a release leaves it.
 func expireWriter(backend string, writer storagewriter.Writer) {
 	GinkgoHelper()
 	key := types.NamespacedName{Namespace: testClaimNamespace, Name: storagewriter.LeaseName(backend, writer.UID)}
