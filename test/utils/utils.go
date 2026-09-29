@@ -93,7 +93,7 @@ var certManagerDeployments = []string{"cert-manager", "cert-manager-cainjector",
 // was re-installed after uninstalling on a cluster.
 func InstallCertManager() error {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
-	if _, err := Run(exec.Command("kubectl", "apply", "-f", url)); err != nil {
+	if err := applyRemoteManifest(url); err != nil {
 		return err
 	}
 

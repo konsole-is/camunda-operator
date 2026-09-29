@@ -220,9 +220,7 @@ func cnpgReleaseBranch(version string) (string, error) {
 // CRD larger than the annotation that client-side apply records. Apply also
 // completes a partial install, where create stops with AlreadyExists.
 func applyManifest(url string) error {
-	_, err := Run(exec.Command("kubectl", "apply", "--server-side", "-f", url))
-
-	return err
+	return applyRemoteManifest(url, "--server-side")
 }
 
 // waitForRollout waits until the named Deployment of cnpgNamespace is rolled
