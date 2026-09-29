@@ -45,9 +45,8 @@ CREATE TABLE EXPORTER_POSITION (
 	LAST_UPDATED TIMESTAMP WITHOUT TIME ZONE
 )`
 
-// postgresImage is postgres:17 from mirror.gcr.io, the Docker Hub mirror of
-// Google. A Docker Hub pull first gets a token from auth.docker.io, and a reset
-// of that request fails every spec. The mirror serves pulls without a token.
+// A Docker Hub pull first gets a token from auth.docker.io, and a reset of
+// that request fails every spec. Google's mirror of Docker Hub needs no token.
 const postgresImage = "mirror.gcr.io/library/postgres:17"
 
 // startPostgres runs one PostgreSQL server for the test and returns the

@@ -26,7 +26,8 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:17
+          # Google's mirror of Docker Hub needs no token from auth.docker.io.
+          image: mirror.gcr.io/library/postgres:17
           ports:
             - containerPort: 5432
               name: postgres

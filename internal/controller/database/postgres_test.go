@@ -43,9 +43,8 @@ var (
 	testPostgresErr    error
 )
 
-// postgresImage is postgres:17 from mirror.gcr.io, the Docker Hub mirror of
-// Google. A Docker Hub pull first gets a token from auth.docker.io, and a reset
-// of that request fails every spec. The mirror serves pulls without a token.
+// A Docker Hub pull first gets a token from auth.docker.io, and a reset of
+// that request fails every spec. Google's mirror of Docker Hub needs no token.
 const postgresImage = "mirror.gcr.io/library/postgres:17"
 
 // testPostgres starts the shared PostgreSQL container on first use and
