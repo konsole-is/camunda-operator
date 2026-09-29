@@ -54,6 +54,7 @@ type UserAPI struct {
 	// duplicates included: the real endpoint creates rather than converges.
 	authorizations []Authorization
 	updateCalls    int
+	deleteCalls    int
 	refusals       int
 	refusalReason  string
 }
@@ -183,6 +184,15 @@ func (s *UserAPI) UpdateCalls() int {
 	defer s.Unlock()
 
 	return s.updateCalls
+}
+
+// DeleteCalls counts the delete requests that reached the fake, the failed
+// ones included.
+func (s *UserAPI) DeleteCalls() int {
+	s.Lock()
+	defer s.Unlock()
+
+	return s.deleteCalls
 }
 
 // handle routes one request to the endpoint it names. It runs under the lock
@@ -320,6 +330,7 @@ func (s *UserAPI) deleteUser(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusNotFound, "no such endpoint: "+r.Method+" "+r.URL.Path)
 		return
 	}
+	s.deleteCalls++
 
 	if s.injected(w, "deleteUser") || !s.authenticated(w, r) {
 		return

@@ -299,13 +299,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// aggregates that condition. The refusal must therefore reach the CR
 	// before the aggregate, or Ready reads True beside it.
 	claimErr := stepRecordClaim.wrap(r.recordInitialClaim(ctx, &mc, res.Input.Provider.Mode))
-	userErr := stepWebModelerUsers.wrap(r.syncWebModelerUsers(ctx, &mc, clusters, attached, rows))
+	removalRefused, userErr := r.syncWebModelerUsers(ctx, &mc, clusters, attached, rows)
+	userErr = stepWebModelerUsers.wrap(userErr)
 	pingErr := stepPing.wrap(r.syncPing(ctx, &mc, clusters, attached))
 	// The claim of a cluster that left the selector goes last, once its user
 	// and its ping are gone, so that no other management plane adopts a user
 	// this one still has to remove.
 	var releaseErr error
-	if userErr == nil && pingErr == nil {
+	if userErr == nil && pingErr == nil && !removalRefused {
 		releaseErr = stepReleaseClaims.wrap(r.releaseClaims(ctx, &mc, clusters, namespaces))
 	}
 	contractErr := r.writeContract(ctx, &mc, res)
@@ -336,7 +337,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// or a login callback that somebody removed there.
 	var result ctrl.Result
 	switch {
-	case anyRow(rows, v1.ReasonBasicAuthUserFailed), callbackRetry, heldRealm:
+	case anyRow(rows, v1.ReasonBasicAuthUserFailed), removalRefused, callbackRetry, heldRealm:
 		result.RequeueAfter = r.retryInterval()
 	case convergesUsers(&mc, attached), len(res.Input.OptimizeURLs) > 0:
 		result.RequeueAfter = r.convergeInterval()
@@ -370,7 +371,8 @@ func (r *Reconciler) reconcileUnresolved(
 		ctx, mc, "the identity provider of the spec is not resolved",
 	)
 	callbackErr := stepWithdrawCallbacks.wrap(withdrawErr)
-	releaseErr := stepReleaseClaims.wrap(r.withdrawFromDeselected(ctx, mc))
+	removalRefused, releaseErr := r.withdrawFromDeselected(ctx, mc)
+	releaseErr = stepReleaseClaims.wrap(releaseErr)
 	// A step that failed says more than the pre-check it ran beside: the
 	// pre-check names something of the spec, and the step names a call that
 	// the operator could not make at all.
@@ -382,7 +384,7 @@ func (r *Reconciler) reconcileUnresolved(
 		// on its own.
 		return ctrl.Result{}, errors.Join(sweepErr, callbackErr, releaseErr)
 	}
-	if retry || heldRealm {
+	if retry || heldRealm || removalRefused {
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 
@@ -412,7 +414,10 @@ func (r *Reconciler) reconcileParked(
 		ctx, mc, "the realm of the spec answers to another management plane",
 	)
 	callbackErr := stepWithdrawCallbacks.wrap(withdrawErr)
-	releaseErr := stepReleaseClaims.wrap(r.withdrawFromDeselected(ctx, mc))
+	// A refused removal needs no retry of its own: a parked plane always
+	// comes back on the retry interval.
+	_, releaseErr := r.withdrawFromDeselected(ctx, mc)
+	releaseErr = stepReleaseClaims.wrap(releaseErr)
 	if failed := firstStep(callbackErr, releaseErr); failed != nil {
 		conditions.Stage(mc, failed.condition(mc))
 
@@ -687,24 +692,25 @@ func (r *Reconciler) retryInterval() time.Duration {
 //
 // The order is the order of the attached path: the user and the ping first,
 // the claim last and only once both are gone, so that no other management
-// plane adopts a cluster whose user this one still has to remove.
+// plane adopts a cluster whose user this one still has to remove. It reports
+// whether a cluster refused the removal of the user.
 func (r *Reconciler) withdrawFromDeselected(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
-) error {
+) (bool, error) {
 	clusters, err := r.listClusters(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	namespaces, err := r.selectedNamespaces(ctx, mc)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	selected, err := selectedClusters(mc, clusters, namespaces)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	users := make(map[types.UID]bool, len(selected))
@@ -714,13 +720,13 @@ func (r *Reconciler) withdrawFromDeselected(
 		pings[client.ObjectKeyFromObject(cluster)] = true
 	}
 
-	userErr := r.withdrawUnservedUsers(ctx, mc, clusters, users, false)
+	refused, userErr := r.withdrawUnservedUsers(ctx, mc, clusters, users, false)
 	pingErr := r.withdrawPingUnserved(ctx, mc, clusters, pings)
-	if err := errors.Join(userErr, pingErr); err != nil {
-		return err
+	if err := errors.Join(userErr, pingErr); err != nil || refused {
+		return refused, err
 	}
 
-	return r.releaseClaims(ctx, mc, clusters, namespaces)
+	return false, r.releaseClaims(ctx, mc, clusters, namespaces)
 }
 
 // reconcileComponents reconciles comps in order. It continues past a failing
