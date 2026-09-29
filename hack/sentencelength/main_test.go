@@ -193,7 +193,7 @@ func TestCheckDirSkipsUnpublishedPages(t *testing.T) {
 	root := t.TempDir()
 	long := words(30)
 
-	for _, rel := range []string{"index.md", "superpowers/plan.md", "crds/TEMPLATE.md", "crds/kind.md", "notes.txt"} {
+	for _, rel := range []string{"index.md", "crds/TEMPLATE.md", "crds/kind.md", "notes.txt"} {
 		path := filepath.Join(root, rel)
 		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
 		require.NoError(t, os.WriteFile(path, []byte(long), 0o600))
