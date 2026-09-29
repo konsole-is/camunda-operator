@@ -43,18 +43,6 @@ const recoveryFieldManager client.FieldOwner = "camunda-operator/pointintimerest
 
 // enterDatabaseRecovery asks the database server to roll itself back to
 // spec.timestamp and waits for the answer.
-//
-// The restore reaches this phase only when the contract declares
-// pitr.recovery: operator. It writes spec.recovery on the contract, holds
-// until pitr.lastRecovery answers that request, and reads the result. Nothing
-// bounds the hold while the pinned contract exists.
-//
-// A Completed answer is not the end of the wait. Pointing the contract at the
-// recovered server is a change of its spec, which clears the identity it
-// published until it reaches the server again. The restore then refreshes its
-// pinned chain, so the phases that erase volumes are measured against the
-// endpoint the database now lives behind. The identity itself comes back
-// unchanged: a physical recovery restores the pg_control of the base backup.
 func (r *Reconciler) enterDatabaseRecovery(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
