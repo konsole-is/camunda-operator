@@ -16,8 +16,8 @@ limitations under the License.
 
 // Package esadmintest fakes the Elasticsearch administration APIs that
 // pkg/esadmin calls: snapshot repositories, snapshots, snapshot restores,
-// index resolution and deletion, index recovery, secure-settings reload, and
-// node filesystem statistics.
+// index resolution and deletion, index recovery, the shard routing table,
+// secure-settings reload, and node filesystem statistics.
 package esadmintest
 
 import (
@@ -77,6 +77,16 @@ type Snapshot struct {
 	Metadata map[string]any
 }
 
+// Shard is the fake's routing entry of one shard copy.
+type Shard struct {
+	// Primary is true for the primary copy and false for a replica.
+	Primary bool
+	// State in the Elasticsearch vocabulary, for example INITIALIZING.
+	State string
+	// UnassignedReason of an UNASSIGNED copy, for example NEW_INDEX_RESTORED.
+	UnassignedReason string
+}
+
 // RestoreRequest is the fake's record of one snapshot restore.
 type RestoreRequest struct {
 	// Repo that holds the snapshot.
@@ -100,7 +110,7 @@ type RestoreRequest struct {
 // The operations that the inherited FailNext and DropNext name are
 // "repository", "snapshotCreate", "snapshotStatus", "snapshotDelete",
 // "repositoryGet", "snapshotRestore", "indexResolve", "indexDelete",
-// "recovery", "reload", and
+// "recovery", "shards", "reload", and
 // "stats". A failing operation answers 500; a dropped one closes the
 // connection.
 //
@@ -135,6 +145,9 @@ type Server struct {
 	// recoveryActive drives the stage that _recovery reports for every
 	// queried index.
 	recoveryActive bool
+
+	// shards drives the routing table of a seeded index, keyed by index name.
+	shards map[string][]Shard
 
 	// nodeFS drives _nodes/stats/fs, keyed by node name.
 	nodeFS map[string]nodeFS
@@ -172,6 +185,7 @@ func newServer() *Server {
 		snapshots:       map[string]*Snapshot{},
 		snapshotCreates: map[string]int{},
 		indices:         map[string]struct{}{},
+		shards:          map[string][]Shard{},
 		nodeFS:          map[string]nodeFS{"node-0": {total: 100 << 30, used: 10 << 30}},
 	}
 }
@@ -313,6 +327,14 @@ func (s *Server) SetRecoveryActive(active bool) {
 	s.recoveryActive = active
 }
 
+// SetShards sets the routing table entry of the seeded index name. A seeded
+// index without one reports a single STARTED primary.
+func (s *Server) SetShards(index string, shards ...Shard) {
+	s.Lock()
+	defer s.Unlock()
+	s.shards[index] = slices.Clone(shards)
+}
+
 // ReloadCalls reports the number of secure-settings reloads.
 func (s *Server) ReloadCalls() int {
 	s.Lock()
@@ -384,6 +406,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"nodes": nodes})
+
+	case len(parts) == 4 && parts[0] == "_cluster" && parts[1] == "state" && parts[2] == "routing_table" &&
+		r.Method == http.MethodGet:
+		s.handleRoutingTable(w, r, parts[3])
 
 	case len(parts) == 2 && parts[0] == snapshotPath:
 		s.handleRepository(w, r, parts[1])
@@ -645,6 +671,52 @@ func (s *Server) handleRecovery(w http.ResponseWriter, target string) {
 		}}}
 	}
 	adminhttptest.WriteJSON(w, http.StatusOK, indices)
+}
+
+// handleRoutingTable serves GET /_cluster/state/routing_table/<target>. It
+// answers the routing table of the seeded indices that the target matches.
+func (s *Server) handleRoutingTable(w http.ResponseWriter, r *http.Request, target string) {
+	if s.Dropping(w, "shards") {
+		return
+	}
+	if s.Failing("shards") {
+		errorBody(w, http.StatusInternalServerError, "injected shards failure")
+		return
+	}
+	if !tolerates(r.URL.Query()) {
+		errorBodyTyped(
+			w, http.StatusNotFound,
+			"index_not_found_exception", "no such index ["+target+"]",
+		)
+		return
+	}
+
+	indices := map[string]any{}
+	for _, name := range s.matching(target) {
+		shards, ok := s.shards[name]
+		if !ok {
+			shards = []Shard{{Primary: true, State: "STARTED"}}
+		}
+
+		copies := make([]map[string]any, 0, len(shards))
+		for _, shard := range shards {
+			entry := map[string]any{
+				"state":   shard.State,
+				"primary": shard.Primary,
+				"shard":   0,
+				"index":   name,
+			}
+			if shard.UnassignedReason != "" {
+				entry["unassigned_info"] = map[string]any{"reason": shard.UnassignedReason}
+			}
+			copies = append(copies, entry)
+		}
+		indices[name] = map[string]any{"shards": map[string]any{"0": copies}}
+	}
+	adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{
+		"cluster_name":  "fake",
+		"routing_table": map[string]any{"indices": indices},
+	})
 }
 
 // handleIndex routes the requests that name indices: the resolution and the

@@ -208,6 +208,7 @@ func TestRestoreProgressFollowsTheRecovery(t *testing.T) {
 	assert.Equal(t, esadmin.RestoreDone, state)
 
 	server.FailNext("recovery", 1)
+	server.FailNext("shards", 1)
 	state, err = client.RestoreProgress(ctx, nil)
 	require.NoError(t, err)
 	assert.Equal(t, esadmin.RestoreDone, state)
@@ -224,6 +225,108 @@ func TestRestoreProgressMapsBothErrorClasses(t *testing.T) {
 	assert.Contains(t, err.Error(), "injected recovery failure")
 
 	server.DropNext("recovery", 1)
+	_, err = client.RestoreProgress(ctx, patterns)
+	require.ErrorIs(t, err, esadmin.ErrUnreachable)
+
+	_, err = client.RestoreProgress(ctx, patterns)
+	assert.NoError(t, err, "one drop, then reachable again")
+}
+
+// A restored index can hold a shard that Elasticsearch has not started to
+// recover yet: it is initializing before its recovery is registered, or it
+// waits for allocation. No recovery reports it, and it still reads as in
+// progress. A replica that no node can hold, as on a single node, never
+// recovers and must not keep the restore waiting.
+func TestRestoreProgressCountsAShardThatHasNotStarted(t *testing.T) {
+	patterns := []string{"camunda-record*"}
+	started := esadmintest.Shard{Primary: true, State: "STARTED"}
+
+	tests := []struct {
+		name   string
+		shards []esadmintest.Shard
+		want   esadmin.RestoreState
+	}{
+		{
+			name:   "an initializing primary",
+			shards: []esadmintest.Shard{{Primary: true, State: "INITIALIZING"}},
+			want:   esadmin.RestoreInProgress,
+		},
+		{
+			name:   "an initializing replica",
+			shards: []esadmintest.Shard{started, {State: "INITIALIZING"}},
+			want:   esadmin.RestoreInProgress,
+		},
+		{
+			name: "a primary of a new index that waits for allocation",
+			shards: []esadmintest.Shard{
+				{Primary: true, State: "UNASSIGNED", UnassignedReason: "NEW_INDEX_RESTORED"},
+			},
+			want: esadmin.RestoreInProgress,
+		},
+		{
+			name: "a primary of an existing index that waits for allocation",
+			shards: []esadmintest.Shard{
+				{Primary: true, State: "UNASSIGNED", UnassignedReason: "EXISTING_INDEX_RESTORED"},
+			},
+			want: esadmin.RestoreInProgress,
+		},
+		{
+			name: "an unassigned replica beside a started primary",
+			shards: []esadmintest.Shard{
+				started, {State: "UNASSIGNED", UnassignedReason: "NEW_INDEX_RESTORED"},
+			},
+			want: esadmin.RestoreDone,
+		},
+		{
+			name: "a primary that Elasticsearch failed to allocate",
+			shards: []esadmintest.Shard{
+				{Primary: true, State: "UNASSIGNED", UnassignedReason: "ALLOCATION_FAILED"},
+			},
+			want: esadmin.RestoreDone,
+		},
+		{
+			name:   "every primary started",
+			shards: []esadmintest.Shard{started},
+			want:   esadmin.RestoreDone,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, server := newClient(t)
+			server.SetIndices("camunda-record-1")
+			server.SetShards("camunda-record-1", tt.shards...)
+			server.SetRecoveryActive(false)
+
+			state, err := client.RestoreProgress(t.Context(), patterns)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, state)
+		})
+	}
+}
+
+// A shard of an index outside the patterns is not part of the restore.
+func TestRestoreProgressIgnoresShardsOfOtherIndices(t *testing.T) {
+	client, server := newClient(t)
+	server.SetIndices("camunda-record-1", "other-1")
+	server.SetShards("other-1", esadmintest.Shard{Primary: true, State: "INITIALIZING"})
+
+	state, err := client.RestoreProgress(t.Context(), []string{"camunda-record*"})
+	require.NoError(t, err)
+	assert.Equal(t, esadmin.RestoreDone, state)
+}
+
+func TestRestoreProgressMapsBothErrorClassesOfTheShardRead(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+	server.SetIndices("camunda-record-1")
+	patterns := []string{"camunda-record*"}
+
+	server.FailNext("shards", 1)
+	_, err := client.RestoreProgress(ctx, patterns)
+	require.ErrorIs(t, err, esadmin.ErrRejected)
+	assert.Contains(t, err.Error(), "injected shards failure")
+
+	server.DropNext("shards", 1)
 	_, err = client.RestoreProgress(ctx, patterns)
 	require.ErrorIs(t, err, esadmin.ErrUnreachable)
 

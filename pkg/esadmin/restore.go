@@ -34,6 +34,15 @@ import (
 // TRANSLOG, FINALIZE) is a recovery that still runs.
 const recoveryStageDone = "DONE"
 
+// The shard states and unassigned reasons of the routing table that
+// RestoreProgress reads.
+const (
+	shardInitializing          = "INITIALIZING"
+	shardUnassigned            = "UNASSIGNED"
+	unassignedNewRestored      = "NEW_INDEX_RESTORED"
+	unassignedExistingRestored = "EXISTING_INDEX_RESTORED"
+)
+
 // RestoreState is how far the restore of a set of indices has come.
 type RestoreState string
 
@@ -205,17 +214,14 @@ func (c *Client) RestoreSnapshot(ctx context.Context, repo, name string, indices
 }
 
 // RestoreProgress reports whether a shard of the indices that patterns match
-// still recovers. It is RestoreInProgress while one does, and RestoreDone
-// when none does.
+// still recovers or has yet to start. It is RestoreInProgress while one does,
+// and RestoreDone when none does.
 //
-// A shard counts as active when its recovery stage is not DONE. The query
-// carries active_only, so Elasticsearch already drops the recoveries it
-// finished, and the stage is read on top of that: a finished recovery stays
-// in the cluster state, and it must never read as a restore that still runs.
-// The stage is read for every shard of the target, whatever the recovery
-// type. A restore writes entries of type SNAPSHOT, whose source names the
-// repository and the snapshot, but an index of the restore set that recovers
-// for another reason is not ready either, and waiting is the safe direction.
+// A shard counts when it has a recovery that is not DONE, whatever the
+// recovery type, or when it is INITIALIZING. A primary counts while it is
+// UNASSIGNED and waits for the allocation of its restore. A replica that no
+// node can hold, and a primary that Elasticsearch failed to allocate, do not
+// count: no recovery comes for them without a change to the cluster.
 //
 // An empty pattern list is RestoreDone and sends no request, because an empty
 // target asks about every index in the cluster.
@@ -224,6 +230,32 @@ func (c *Client) RestoreProgress(ctx context.Context, patterns []string) (Restor
 		return RestoreDone, nil
 	}
 
+	recovering, err := c.shardRecovering(ctx, patterns)
+	if err != nil {
+		return "", err
+	}
+	if recovering {
+		return RestoreInProgress, nil
+	}
+
+	// A shard of a restored index can be initializing before its recovery is
+	// registered, and a primary can wait for allocation behind the
+	// concurrent recoveries limit. Neither has a recovery entry yet.
+	pending, err := c.shardPending(ctx, patterns)
+	if err != nil {
+		return "", err
+	}
+	if pending {
+		return RestoreInProgress, nil
+	}
+
+	return RestoreDone, nil
+}
+
+// shardRecovering reports whether a shard of the target has a recovery that
+// is not DONE. The query carries active_only, but a finished recovery can
+// stay in the cluster state, so the stage is read too.
+func (c *Client) shardRecovering(ctx context.Context, patterns []string) (bool, error) {
 	// An index of the restore set that does not exist yet has no recovery,
 	// and a target that matches nothing must read as such rather than fail
 	// the poll.
@@ -233,7 +265,7 @@ func (c *Client) RestoreProgress(ctx context.Context, patterns []string) (Restor
 			"/_recovery?active_only=true&ignore_unavailable=true&allow_no_indices=true",
 	})
 	if err != nil {
-		return "", err
+		return false, err
 	}
 
 	var response map[string]struct {
@@ -242,18 +274,65 @@ func (c *Client) RestoreProgress(ctx context.Context, patterns []string) (Restor
 		} `json:"shards"`
 	}
 	if err := json.Unmarshal(payload, &response); err != nil {
-		return "", fmt.Errorf("decoding recovery status: %w", err)
+		return false, fmt.Errorf("decoding recovery status: %w", err)
 	}
 
 	for _, index := range response {
 		for _, shard := range index.Shards {
 			if shard.Stage != recoveryStageDone {
-				return RestoreInProgress, nil
+				return true, nil
 			}
 		}
 	}
 
-	return RestoreDone, nil
+	return false, nil
+}
+
+// shardPending reports whether the routing table holds a shard of the target
+// that is INITIALIZING, or a primary that is UNASSIGNED since its restore.
+func (c *Client) shardPending(ctx context.Context, patterns []string) (bool, error) {
+	payload, _, err := c.api.Do(ctx, adminhttp.Request{
+		Method: http.MethodGet,
+		Path: "/_cluster/state/routing_table/" + indexTarget(patterns) +
+			"?ignore_unavailable=true&allow_no_indices=true",
+	})
+	if err != nil {
+		return false, err
+	}
+
+	var response struct {
+		RoutingTable struct {
+			Indices map[string]struct {
+				Shards map[string][]struct {
+					State          string `json:"state"`
+					Primary        bool   `json:"primary"`
+					UnassignedInfo struct {
+						Reason string `json:"reason"`
+					} `json:"unassigned_info"`
+				} `json:"shards"`
+			} `json:"indices"`
+		} `json:"routing_table"`
+	}
+	if err := json.Unmarshal(payload, &response); err != nil {
+		return false, fmt.Errorf("decoding routing table: %w", err)
+	}
+
+	for _, index := range response.RoutingTable.Indices {
+		for _, copies := range index.Shards {
+			for _, shard := range copies {
+				if shard.State == shardInitializing {
+					return true, nil
+				}
+				reason := shard.UnassignedInfo.Reason
+				if shard.Primary && shard.State == shardUnassigned &&
+					(reason == unassignedNewRestored || reason == unassignedExistingRestored) {
+					return true, nil
+				}
+			}
+		}
+	}
+
+	return false, nil
 }
 
 // indexTarget joins patterns into the multi-target path segment of an index
