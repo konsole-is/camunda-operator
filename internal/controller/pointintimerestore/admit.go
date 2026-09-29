@@ -190,6 +190,20 @@ func (r *Reconciler) admit(
 	if failure != nil {
 		return r.waiting(pitr, failure), nil
 	}
+	// A deleted restore into the same cluster can still roll the server back.
+	writers, err := restore.OtherWriters(ctx, r.APIReader, r.ClaimNamespace, backend, pitr)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	if len(writers) > 0 {
+		return r.waiting(pitr, &conditions.PreCheckFailure{
+			Reason: v1.ReasonWaitingForHandover,
+			Message: fmt.Sprintf(
+				"%s still write the database %q. The restore starts when they are done",
+				strings.Join(writers, ", "), backend,
+			),
+		}), nil
+	}
 
 	// Everything that this restore is allowed to act on is now known: the
 	// chain, the rules of the server, and the clock of the brokers. The record

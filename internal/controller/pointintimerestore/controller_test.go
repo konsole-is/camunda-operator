@@ -45,6 +45,7 @@ import (
 	databasecomponents "github.com/konsole-is/camunda-operator/pkg/components/database"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
+	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
@@ -749,6 +750,35 @@ var _ = Describe("PointInTimeRestore admission", func() {
 
 		By("starting once its own cluster holds the database")
 		holdBackend(w.cluster)
+		wake(w.cluster)
+		expectRecovering(pitr)
+	})
+
+	It("waits while a deleted restore into the same cluster still holds the database", func() {
+		w := operatorRecoveryWorld()
+		storage, failure, err := restore.ResolveStorage(ctx, k8sClient, w.cluster)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(failure).NotTo(HaveOccurred())
+		backend, failure, err := restore.BackendOf(ctx, k8sClient, storage)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(failure).NotTo(HaveOccurred())
+		earlier := storagewriter.Writer{
+			Kind: "PointInTimeRestore", Namespace: w.namespace, Name: "earlier", UID: "earlier-uid",
+			ClusterUID: w.cluster.UID,
+		}
+		Expect(storagewriter.Register(
+			ctx, k8sClient, k8sClient, testClaimNamespace, backend,
+			components.StorageClaimSchema().LeaseName(backend), earlier, time.Now(),
+		)).To(Succeed())
+		DeferCleanup(func() { _ = storagewriter.Release(ctx, k8sClient, testClaimNamespace, backend, earlier) })
+		pitr := createRestore(w)
+
+		Expect(expectHeld(pitr, v1.ReasonWaitingForHandover)).To(ContainSubstring("earlier"))
+		var contract v1.DatabaseServerConfig
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), &contract)).To(Succeed())
+		Expect(contract.Spec.Recovery).To(BeNil())
+
+		Expect(storagewriter.Release(ctx, k8sClient, testClaimNamespace, backend, earlier)).To(Succeed())
 		wake(w.cluster)
 		expectRecovering(pitr)
 	})
