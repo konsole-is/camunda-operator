@@ -85,6 +85,8 @@ type Shard struct {
 	State string
 	// UnassignedReason of an UNASSIGNED copy, for example NEW_INDEX_RESTORED.
 	UnassignedReason string
+	// AllocationStatus of an UNASSIGNED copy, for example deciders_no.
+	AllocationStatus string
 }
 
 // RestoreRequest is the fake's record of one snapshot restore.
@@ -707,7 +709,10 @@ func (s *Server) handleRoutingTable(w http.ResponseWriter, r *http.Request, targ
 				"index":   name,
 			}
 			if shard.UnassignedReason != "" {
-				entry["unassigned_info"] = map[string]any{"reason": shard.UnassignedReason}
+				entry["unassigned_info"] = map[string]any{
+					"reason":            shard.UnassignedReason,
+					"allocation_status": shard.AllocationStatus,
+				}
 			}
 			copies = append(copies, entry)
 		}

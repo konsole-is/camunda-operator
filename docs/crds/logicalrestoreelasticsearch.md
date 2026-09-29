@@ -153,7 +153,7 @@ After the restore left `Pending`, these two reasons hold it for 10 minutes, and 
 
 ### After a failure or a delete
 
-Elasticsearch recovers the snapshots that it accepted, even when the restore fails or you delete it. The restore keeps the backend until no shard of an index that it replaces recovers or waits to start its recovery. A replica that no node can hold does not count. Until then, `status.recoveryHeld` is `true`. A deleted restore stays until then too, and so does its suspension hold on the target. Another restore of the target waits in `Pending` with the reason `ClusterClaimed`. A backup of the target waits with the reason `ClusterSuspended`.
+Elasticsearch recovers the snapshots that it accepted, even when the restore fails or you delete it. The restore keeps the backend until each shard of the indices that it replaces is on a node and recovered. An unassigned replica does not count, and neither does a primary shard that Elasticsearch cannot place on any node. Until then, `status.recoveryHeld` is `true`. A deleted restore stays until then too, and so does its suspension hold on the target. Another restore of the target waits in `Pending` with the reason `ClusterClaimed`. A backup of the target waits with the reason `ClusterSuspended`.
 
 ```yaml
 status:
@@ -181,7 +181,9 @@ A hand-chosen repository name gives no prefix. If the target holds no registrati
 
 The operator deletes the Camunda indices of the target first, then asks Elasticsearch to restore every snapshot of the backup. It names the Optimize indices only when the backup holds an Optimize snapshot. A backup without one cannot put those indices back, so the operator keeps them. One `CamundaCluster` holds one contract, see [Secondary storage](camundacluster.md#secondary-storage), so the Camunda indices on the Elasticsearch of the target belong to the target. A second contract that names the same Elasticsearch puts another cluster's data in reach of this delete. Give one contract to one backend.
 
-The restore of a snapshot is asynchronous. The operator waits until the restored indices exist and no shard of them recovers or waits to start its recovery. Then it moves on.
+The restore of a snapshot is asynchronous. The operator waits until the restored indices exist and each of their shards is on a node and recovered. An unassigned replica does not count. Then it moves on.
+
+If Elasticsearch cannot place a primary shard of a restored index on any node, the restore does not wait for it. The restore still reaches `Completed`, and that index stays red. After the restore, make sure that no restored index is red with `GET _cluster/health?level=indices`. For a red index, `GET _cluster/allocation/explain` tells you why its shard has no node. Correct the cause that it names.
 
 `status.restoredSnapshots` names every snapshot the restore already asked for. A restore that names one deletes no index a second time.
 

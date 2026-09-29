@@ -235,8 +235,9 @@ func TestRestoreProgressMapsBothErrorClasses(t *testing.T) {
 // A restored index can hold a shard that Elasticsearch has not started to
 // recover yet: it is initializing before its recovery is registered, or it
 // waits for allocation. No recovery reports it, and it still reads as in
-// progress. A replica that no node can hold, as on a single node, never
-// recovers and must not keep the restore waiting.
+// progress. A shard that no node will take must not keep the restore waiting:
+// an unassigned replica on a single node, or a primary that the allocation
+// deciders refuse.
 func TestRestoreProgressCountsAShardThatHasNotStarted(t *testing.T) {
 	patterns := []string{"camunda-record*"}
 	started := esadmintest.Shard{Primary: true, State: "STARTED"}
@@ -258,17 +259,59 @@ func TestRestoreProgressCountsAShardThatHasNotStarted(t *testing.T) {
 		},
 		{
 			name: "a primary of a new index that waits for allocation",
-			shards: []esadmintest.Shard{
-				{Primary: true, State: "UNASSIGNED", UnassignedReason: "NEW_INDEX_RESTORED"},
-			},
+			shards: []esadmintest.Shard{{
+				Primary: true, State: "UNASSIGNED",
+				UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "no_attempt",
+			}},
 			want: esadmin.RestoreInProgress,
 		},
 		{
 			name: "a primary of an existing index that waits for allocation",
-			shards: []esadmintest.Shard{
-				{Primary: true, State: "UNASSIGNED", UnassignedReason: "EXISTING_INDEX_RESTORED"},
-			},
+			shards: []esadmintest.Shard{{
+				Primary: true, State: "UNASSIGNED",
+				UnassignedReason: "EXISTING_INDEX_RESTORED", AllocationStatus: "no_attempt",
+			}},
 			want: esadmin.RestoreInProgress,
+		},
+		{
+			name: "a restored primary that the allocation throttle holds back",
+			shards: []esadmintest.Shard{{
+				Primary: true, State: "UNASSIGNED",
+				UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "deciders_throttled",
+			}},
+			want: esadmin.RestoreInProgress,
+		},
+		{
+			name: "a restored primary whose allocation is delayed",
+			shards: []esadmintest.Shard{{
+				Primary: true, State: "UNASSIGNED",
+				UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "delayed_allocation",
+			}},
+			want: esadmin.RestoreInProgress,
+		},
+		{
+			name: "a restored primary that waits for shard data",
+			shards: []esadmintest.Shard{{
+				Primary: true, State: "UNASSIGNED",
+				UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "fetching_shard_data",
+			}},
+			want: esadmin.RestoreInProgress,
+		},
+		{
+			name: "a restored primary that the allocation deciders refuse",
+			shards: []esadmintest.Shard{{
+				Primary: true, State: "UNASSIGNED",
+				UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "deciders_no",
+			}},
+			want: esadmin.RestoreDone,
+		},
+		{
+			name: "a restored primary with no valid shard copy",
+			shards: []esadmintest.Shard{{
+				Primary: true, State: "UNASSIGNED",
+				UnassignedReason: "EXISTING_INDEX_RESTORED", AllocationStatus: "no_valid_shard_copy",
+			}},
+			want: esadmin.RestoreDone,
 		},
 		{
 			name: "an unassigned replica beside a started primary",
@@ -280,7 +323,10 @@ func TestRestoreProgressCountsAShardThatHasNotStarted(t *testing.T) {
 		{
 			name: "a primary that Elasticsearch failed to allocate",
 			shards: []esadmintest.Shard{
-				{Primary: true, State: "UNASSIGNED", UnassignedReason: "ALLOCATION_FAILED"},
+				{
+					Primary: true, State: "UNASSIGNED",
+					UnassignedReason: "ALLOCATION_FAILED", AllocationStatus: "no_attempt",
+				},
 			},
 			want: esadmin.RestoreDone,
 		},

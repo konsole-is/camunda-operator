@@ -34,14 +34,25 @@ import (
 // TRANSLOG, FINALIZE) is a recovery that still runs.
 const recoveryStageDone = "DONE"
 
-// The shard states and unassigned reasons of the routing table that
-// RestoreProgress reads.
+// The shard states of the routing table that RestoreProgress reads.
 const (
-	shardInitializing          = "INITIALIZING"
-	shardUnassigned            = "UNASSIGNED"
-	unassignedNewRestored      = "NEW_INDEX_RESTORED"
-	unassignedExistingRestored = "EXISTING_INDEX_RESTORED"
+	shardInitializing = "INITIALIZING"
+	shardUnassigned   = "UNASSIGNED"
 )
+
+var restoredReasons = map[string]bool{
+	"NEW_INDEX_RESTORED":      true,
+	"EXISTING_INDEX_RESTORED": true,
+}
+
+// waitingAllocations are the allocation statuses of an unassigned shard that a
+// node can still take.
+var waitingAllocations = map[string]bool{
+	"deciders_throttled":  true,
+	"fetching_shard_data": true,
+	"delayed_allocation":  true,
+	"no_attempt":          true,
+}
 
 // RestoreState is how far the restore of a set of indices has come.
 type RestoreState string
@@ -219,9 +230,10 @@ func (c *Client) RestoreSnapshot(ctx context.Context, repo, name string, indices
 //
 // A shard counts when it has a recovery that is not DONE, whatever the
 // recovery type, or when it is INITIALIZING. A primary counts while it is
-// UNASSIGNED and waits for the allocation of its restore. A replica that no
-// node can hold, and a primary that Elasticsearch failed to allocate, do not
-// count: no recovery comes for them without a change to the cluster.
+// UNASSIGNED and waits for the allocation of its restore. An unassigned
+// replica does not count, and neither does a primary that Elasticsearch
+// failed to allocate or that no node will take: no recovery comes for them
+// without a change to the cluster.
 //
 // An empty pattern list is RestoreDone and sends no request, because an empty
 // target asks about every index in the cluster.
@@ -289,7 +301,8 @@ func (c *Client) shardRecovering(ctx context.Context, patterns []string) (bool, 
 }
 
 // shardPending reports whether the routing table holds a shard of the target
-// that is INITIALIZING, or a primary that is UNASSIGNED since its restore.
+// that is INITIALIZING, or a primary that is UNASSIGNED since its restore and
+// that a node can still take.
 func (c *Client) shardPending(ctx context.Context, patterns []string) (bool, error) {
 	payload, _, err := c.api.Do(ctx, adminhttp.Request{
 		Method: http.MethodGet,
@@ -307,7 +320,8 @@ func (c *Client) shardPending(ctx context.Context, patterns []string) (bool, err
 					State          string `json:"state"`
 					Primary        bool   `json:"primary"`
 					UnassignedInfo struct {
-						Reason string `json:"reason"`
+						Reason           string `json:"reason"`
+						AllocationStatus string `json:"allocation_status"`
 					} `json:"unassigned_info"`
 				} `json:"shards"`
 			} `json:"indices"`
@@ -323,9 +337,9 @@ func (c *Client) shardPending(ctx context.Context, patterns []string) (bool, err
 				if shard.State == shardInitializing {
 					return true, nil
 				}
-				reason := shard.UnassignedInfo.Reason
 				if shard.Primary && shard.State == shardUnassigned &&
-					(reason == unassignedNewRestored || reason == unassignedExistingRestored) {
+					restoredReasons[shard.UnassignedInfo.Reason] &&
+					waitingAllocations[shard.UnassignedInfo.AllocationStatus] {
 					return true, nil
 				}
 			}
