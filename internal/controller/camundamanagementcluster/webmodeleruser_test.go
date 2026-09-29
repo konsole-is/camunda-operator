@@ -363,13 +363,53 @@ var _ = Describe("Web Modeler", func() {
 		refused := api.DeleteCalls()
 		Eventually(api.DeleteCalls, 15*time.Second, interval).Should(BeNumerically(">=", refused+5))
 		Eventually(func(g Gomega) {
-			g.Expect(eventReasons(g, s.mc)).To(ContainElement("WebModelerUserRemovalFailed"))
+			g.Expect(eventReasons(g, s.mc)).To(ContainElement(eventReasonUserRemovalFailed))
 		}, timeout, interval).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(conditionOf(g, s.mc, v1.ConditionReady).Reason).NotTo(Equal(v1.ReasonStepFailed))
+		}, 2*time.Second, interval).Should(Succeed())
 
 		api.FailNext("deleteUser", 0)
 		Eventually(func(g Gomega) {
 			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeFalse())
 			g.Expect(readOrchestrationCluster(g, cluster).Annotations).NotTo(HaveKey(components.ClaimAnnotation))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("releases a deselected cluster while another one refuses the removal", func() {
+		refusing, removing := newClusterUserAPI(), newClusterUserAPI()
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		held := createBasicCluster(s, refusing.URL())
+		released := createBasicCluster(s, removing.URL())
+
+		expectAttached(s.mc, held)
+		expectAttached(s.mc, released)
+		Eventually(func(g Gomega) {
+			g.Expect(refusing.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+			g.Expect(removing.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		refusing.FailNext("deleteUser", 1000)
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.ClusterSelector = nil
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(removing.Exists(components.WebModelerClusterUsername)).To(BeFalse())
+			g.Expect(readOrchestrationCluster(g, released).Annotations).NotTo(HaveKey(components.ClaimAnnotation))
+		}, timeout, interval).Should(Succeed())
+		g := Default
+		g.Expect(refusing.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+		g.Expect(readOrchestrationCluster(g, held).Annotations).To(
+			HaveKeyWithValue(components.ClaimAnnotation, ClaimValue(s.mc)),
+		)
+
+		refusing.FailNext("deleteUser", 0)
+		Eventually(func(g Gomega) {
+			g.Expect(refusing.Exists(components.WebModelerClusterUsername)).To(BeFalse())
+			g.Expect(readOrchestrationCluster(g, held).Annotations).NotTo(HaveKey(components.ClaimAnnotation))
 		}, timeout, interval).Should(Succeed())
 	})
 

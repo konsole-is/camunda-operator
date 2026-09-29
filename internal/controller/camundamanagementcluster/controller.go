@@ -306,8 +306,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// and its ping are gone, so that no other management plane adopts a user
 	// this one still has to remove.
 	var releaseErr error
-	if userErr == nil && pingErr == nil && !removalRefused {
-		releaseErr = stepReleaseClaims.wrap(r.releaseClaims(ctx, &mc, clusters, namespaces))
+	if userErr == nil && pingErr == nil {
+		releaseErr = stepReleaseClaims.wrap(r.releaseClaims(ctx, &mc, clusters, namespaces, removalRefused))
 	}
 	contractErr := r.writeContract(ctx, &mc, res)
 	if contractErr == nil && previousContract != "" && previousContract != res.ContractName {
@@ -337,7 +337,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// or a login callback that somebody removed there.
 	var result ctrl.Result
 	switch {
-	case anyRow(rows, v1.ReasonBasicAuthUserFailed), removalRefused, callbackRetry, heldRealm:
+	case anyRow(rows, v1.ReasonBasicAuthUserFailed), len(removalRefused) > 0, callbackRetry, heldRealm:
 		result.RequeueAfter = r.retryInterval()
 	case convergesUsers(&mc, attached), len(res.Input.OptimizeURLs) > 0:
 		result.RequeueAfter = r.convergeInterval()
@@ -722,11 +722,11 @@ func (r *Reconciler) withdrawFromDeselected(
 
 	refused, userErr := r.withdrawUnservedUsers(ctx, mc, clusters, users, false)
 	pingErr := r.withdrawPingUnserved(ctx, mc, clusters, pings)
-	if err := errors.Join(userErr, pingErr); err != nil || refused {
-		return refused, err
+	if err := errors.Join(userErr, pingErr); err != nil {
+		return len(refused) > 0, err
 	}
 
-	return false, r.releaseClaims(ctx, mc, clusters, namespaces)
+	return len(refused) > 0, r.releaseClaims(ctx, mc, clusters, namespaces, refused)
 }
 
 // reconcileComponents reconciles comps in order. It continues past a failing

@@ -117,16 +117,15 @@ var webModelerAuthorizations = []camundaadmin.Authorization{
 //
 // What one cluster answers is not an error: a refused call reports
 // BasicAuthUserFailed in status.clusters, a refused removal is a warning event
-// and the first result, and the reconcile carries on. Only a failure of the
-// Kubernetes API comes back as an error, because the operator cannot publish
-// the password it just set.
+// and a UID in the returned set, and the reconcile carries on. Only a failure
+// of the Kubernetes API comes back as an error.
 func (r *Reconciler) syncWebModelerUsers(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	clusters []v1.CamundaCluster,
 	attached []components.AttachedCluster,
 	rows []v1.AttachedClusterStatus,
-) (bool, error) {
+) (map[types.UID]bool, error) {
 	served := map[types.UID]bool{}
 
 	var errs []error
@@ -502,16 +501,16 @@ func (r *Reconciler) withdrawWebModelerUsers(
 // cluster at all. A cluster is never read one at a time; clusters is the list
 // the reconcile already made, and it names the cluster to call.
 //
-// A removal that a cluster refused keeps its Secret and makes the first result
-// true, so the caller tries again; bestEffort drops the Secret all the same,
-// for the finalizer, and never reports a refusal.
+// A removal that a cluster refused keeps its Secret, and the UID of that
+// cluster is in the returned set, so the caller tries again; bestEffort drops
+// the Secret all the same, for the finalizer, and never reports a refusal.
 func (r *Reconciler) withdrawUnservedUsers(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	clusters []v1.CamundaCluster,
 	served map[types.UID]bool,
 	bestEffort bool,
-) (bool, error) {
+) (map[types.UID]bool, error) {
 	var users corev1.SecretList
 	if err := r.APIReader.List(
 		ctx, &users,
@@ -520,7 +519,7 @@ func (r *Reconciler) withdrawUnservedUsers(
 			labels.Managed(labels.ManagementCluster(mc.Name), components.ComponentWebModelerClusterUser),
 		),
 	); err != nil {
-		return false, fmt.Errorf("listing the Web Modeler user Secrets: %w", err)
+		return nil, fmt.Errorf("listing the Web Modeler user Secrets: %w", err)
 	}
 
 	byUID := make(map[types.UID]*v1.CamundaCluster, len(clusters))
@@ -529,7 +528,7 @@ func (r *Reconciler) withdrawUnservedUsers(
 	}
 
 	var errs []error
-	anyRefused := false
+	refused := map[types.UID]bool{}
 	for i := range users.Items {
 		published := &users.Items[i]
 
@@ -537,12 +536,14 @@ func (r *Reconciler) withdrawUnservedUsers(
 		if served[uid] {
 			continue
 		}
-		refused, err := r.withdrawWebModelerUser(ctx, mc, published, byUID[uid], bestEffort)
-		anyRefused = anyRefused || refused
+		held, err := r.withdrawWebModelerUser(ctx, mc, published, byUID[uid], bestEffort)
+		if held {
+			refused[uid] = true
+		}
 		errs = append(errs, err)
 	}
 
-	return anyRefused, errors.Join(errs...)
+	return refused, errors.Join(errs...)
 }
 
 // withdrawWebModelerUser removes the user from one cluster and deletes the
