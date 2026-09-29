@@ -34,30 +34,24 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// ComponentRestore is the camunda.io/component of every resource that a
-// restore renders.
+// ComponentRestore is the camunda.io/component of the per-broker Jobs and
+// their pods. A recreated broker volume keeps the labels of the claim template.
 const ComponentRestore = "restore"
 
 // Target is everything a restore reads off the live broker StatefulSet of its
-// cluster. The restore never re-renders the broker configuration. It copies
-// it, so the restore application and the brokers cannot disagree.
+// cluster. A restore copies the broker configuration from it and never renders
+// its own, so the restore application and the brokers cannot disagree.
 //
-// readTarget is the only constructor, and ResolveTarget is how a caller
-// reaches it. It either fills every field, with both counts at one or more, or
-// it returns an error. The methods on Target read those fields directly, so a
-// Target that a caller built by hand panics in them. Every entry point that
-// renders from a Target checks the whole of it first: Prepare, Primary,
-// BuildJob, and RecreateClaims.
+// Get a Target from ResolveTarget. The methods of a Target that a caller built
+// by hand can panic. Prepare and Primary report a failure Outcome for an
+// incomplete Target, and BuildJob and RecreateClaims return an error.
 type Target struct {
-	// ClusterName is the CamundaCluster the StatefulSet belongs to. Every
-	// resource a restore renders carries it, so an extension finds the
-	// restore of a cluster by the same label it finds the cluster's workloads
-	// by.
+	// ClusterName is the CamundaCluster the StatefulSet belongs to. The
+	// restore Jobs carry it in their cluster label.
 	ClusterName string
 	// StatefulSet is the live broker StatefulSet, <cluster>-zeebe.
 	StatefulSet *appsv1.StatefulSet
-	// Broker is the container named camunda in the pod template. The Job
-	// copies its image, environment, mounts, resources, and security context.
+	// Broker is the container named camunda in the pod template.
 	Broker *corev1.Container
 	// Brokers is the broker count, read from CAMUNDA_CLUSTER_SIZE on the
 	// broker container, and always one or more. A suspended StatefulSet runs
@@ -70,23 +64,13 @@ type Target struct {
 	// Version is the Camunda version, read from the camunda.io/broker-version
 	// annotation of the StatefulSet.
 	Version string
-	// ClaimTemplate is the data claim template of the StatefulSet. It carries
-	// the storage class, the access modes, the labels, and the size that a
-	// recreated volume keeps.
+	// ClaimTemplate is the data claim template of the StatefulSet.
 	ClaimTemplate *corev1.PersistentVolumeClaim
 }
 
-// readTarget reads the broker StatefulSet of cluster and extracts the facts a
-// restore needs from it. Every fact that the StatefulSet cannot answer is a
-// *conditions.PreCheckFailure with v1.ReasonInvalidReference, whose message
-// names what is missing. A transport error is a plain wrapped error.
-//
-// ResolveTarget is the entry point of every caller: it separates the two, so
-// a phase reports the failure and retries the error.
-//
-// A cluster whose broker StatefulSet was deleted cannot restore until its own
-// controller applies it again. Suspending a cluster keeps the StatefulSet in
-// place, so this is an edge, not a flow.
+// readTarget returns a *conditions.PreCheckFailure with
+// v1.ReasonInvalidReference for a fact that the StatefulSet cannot answer, and
+// a wrapped error for a failed read.
 func readTarget(
 	ctx context.Context,
 	reader client.Reader,
@@ -149,11 +133,9 @@ func readTarget(
 	}, nil
 }
 
-// complete reports whether the target holds every fact that a render reads
-// off it. readTarget fills all of them or returns an error, so a target that
-// fails this check was built by hand. The check exists because the callers
-// run inside a reconcile, where a nil dereference takes the manager down with
-// every other controller. It answers for a nil target too.
+// complete returns an error when the target lacks a pointer or a count that a
+// render reads, also for a nil target. The callers run inside a reconcile,
+// where a nil dereference takes the whole manager down.
 func (t *Target) complete() error {
 	switch {
 	case t == nil:
@@ -173,8 +155,6 @@ func (t *Target) complete() error {
 	return nil
 }
 
-// invalidTarget builds the one failure shape that every unreadable fact of
-// the broker StatefulSet reports.
 func invalidTarget(name, format string, args ...any) *conditions.PreCheckFailure {
 	return &conditions.PreCheckFailure{
 		Reason: v1.ReasonInvalidReference,
@@ -194,14 +174,9 @@ func containerNamed(containers []corev1.Container, name string) *corev1.Containe
 	return nil
 }
 
-// envCount reads one plain positive count off the broker container. A
-// variable that carries a ValueFrom is not readable here: its value lives in
-// a Secret, a ConfigMap, or a field of the pod, and only the kubelet resolves
-// it.
-//
-// A count below one is a failure, not a small cluster. Zero brokers makes a
-// restore recreate no volume and run no Job, and then report that it
-// finished. A negative count is not a size at all.
+// envCount cannot read a variable that carries a ValueFrom: only the kubelet
+// resolves it. A count below one is a failure, because zero brokers makes a
+// restore recreate no volume, run no Job, and report that it finished.
 func envCount(sts string, broker *corev1.Container, key camundaconfig.Key) (int32, error) {
 	name := key.Env()
 	for _, env := range broker.Env {

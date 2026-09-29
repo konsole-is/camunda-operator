@@ -14,23 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package restore is the shared machinery of every restore kind, in the role
-// that pkg/logicalbackup has for the backup pair. It holds the facts a
-// restore reads off the live broker StatefulSet, the claim it takes on the
-// cluster, the preparation that carries the cluster to the state a restore
-// needs, the broker data volumes it deletes and creates again, the
-// restore-application Job it runs once per broker, and the mid-run grace and
-// the terminal branch that every kind shares.
+// Package restore holds the code that every restore kind shares: the facts
+// read off the live broker StatefulSet, the claim on the cluster, the
+// preparation of the cluster, the recreated broker volumes, the restore Jobs,
+// and the terminal branch.
 //
-// The restore Jobs never re-render the broker configuration. They copy it
-// from the StatefulSet that the CamundaCluster controller applied, which
-// still exists while the cluster is suspended. The restore application then
-// always runs with the configuration the brokers run with, and the two
-// cannot drift.
-//
-// The package reads no restore CR's spec. It reads and writes
-// [v1.RestoreProgress] in place, which every restore status embeds, and it
-// never writes status.phase: each kind owns its own phase vocabulary. A
-// driver step reports an [Outcome], and the controller maps that outcome onto
-// its own phase.
+// The package reads no restore spec. It reads and writes [v1.RestoreProgress],
+// which every restore status embeds. It never writes status.phase: a step
+// reports an [Outcome], and the controller maps it onto its own phase.
 package restore

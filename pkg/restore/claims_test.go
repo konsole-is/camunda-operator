@@ -316,8 +316,8 @@ func terminatingClaim(name string) *corev1.PersistentVolumeClaim {
 	return claim
 }
 
-// heldClaim is the broker volume that every terminating-hold case leaves in
-// Terminating. terminatingHold builds the world around it.
+// heldClaim is the broker volume that every terminatingHold case leaves in
+// Terminating.
 const heldClaim = "data-my-cluster-zeebe-1"
 
 // holdingPod is a pod that mounts heldClaim, under the given controller.
@@ -386,9 +386,8 @@ func terminatingHold(t *testing.T, objects ...client.Object) string {
 	return progress.Message
 }
 
-// A volume that a finished restore holds names a volume, and a user cannot
-// act on that. The message names the pod, the restore that runs it, and the
-// one action that frees the volume.
+// A message that names only the volume gives a user nothing to act on. It
+// names the pod, the restore that runs it, and the action that frees it.
 func TestRecreateClaimsNamesTheRestoreThatHoldsATerminatingClaim(t *testing.T) {
 	t.Parallel()
 

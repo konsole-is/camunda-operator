@@ -109,16 +109,10 @@ func collectWorld(t *testing.T, recorder *deleteRecorder, jobs ...*batchv1.Job) 
 		Build()
 }
 
-// A completed Job keeps its pod, and that pod holds the broker volume it
-// mounts. The next operation on the cluster waits on that volume without end,
-// so a restore that completed gives its Jobs up.
-//
-// The propagation policy is the point of the delete. Background propagation
-// returns before the pods are gone, and the pods are what hold the volume.
-//
-// The look that asks for the delete is therefore never the look that reports
-// the volumes free. Under foreground propagation the Job outlives its pods, so
-// only a look that finds no Job left is done.
+// A completed Job keeps its pod, and that pod holds the broker volume, so a
+// completed restore gives its Jobs up. The delete is foreground, because
+// background propagation returns before the pods are gone. The Job then
+// outlives its pods, so only a look that finds no Job left is done.
 func TestCollectJobsRemovesEveryJobOfACompletedRestore(t *testing.T) {
 	t.Parallel()
 
@@ -142,8 +136,6 @@ func TestCollectJobsRemovesEveryJobOfACompletedRestore(t *testing.T) {
 	require.NoError(t, c.List(ctx, &left, client.InNamespace("ns")))
 	assert.Empty(t, left.Items)
 
-	// The next look finds nothing of this restore, which is what frees the
-	// broker volumes and lets the caller go on.
 	done, err := CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress)
 	require.NoError(t, err)
 	assert.Equal(t, Outcome{Done: true}, done)
@@ -191,9 +183,8 @@ func TestCollectJobsKeepsTheJobsOfAFailedRestore(t *testing.T) {
 	assert.Len(t, left.Items, 3)
 }
 
-// The terminal branch runs on every look, so the call repeats until the Jobs
-// are gone. A Job that is already gone is the outcome this call wants, and a
-// restore whose Jobs are all gone is complete.
+// The terminal branch repeats the call until the Jobs are gone, so a Job that
+// is already gone is the outcome that the call wants.
 func TestCollectJobsTreatsAMissingJobAsDone(t *testing.T) {
 	t.Parallel()
 
@@ -242,10 +233,9 @@ func TestCollectJobsLeavesAJobOfAnotherOwner(t *testing.T) {
 	assert.Len(t, left.Items, 1)
 }
 
-// Foreground propagation keeps the Job in place until its pods are gone, so
-// every later look reads a Job that already terminates. A second delete of it
-// buys nothing, and the collection is not done: the pods that hold the broker
-// volumes are exactly what the Job is waiting for.
+// Foreground propagation keeps the Job until its pods are gone, so a later
+// look reads a Job that already terminates. A second delete of it gains
+// nothing, and the collection is not done while its pods hold the volumes.
 func TestCollectJobsSkipsAJobThatAlreadyTerminates(t *testing.T) {
 	t.Parallel()
 

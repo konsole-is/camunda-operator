@@ -86,7 +86,7 @@ func TestEnqueueForCluster(t *testing.T) {
 
 // Every Secret that the spec names itself lives in the management namespace.
 // Without this index, a rotation of one of them would refresh neither its
-// resource version input nor the pods that read it.
+// digest input nor the pods that read it.
 func TestSecretRefsIndexesEveryReferenceOfTheSpec(t *testing.T) {
 	t.Parallel()
 

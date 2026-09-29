@@ -81,9 +81,9 @@ type resolver struct {
 // checked for its keys through the uncached reader. A Secret outside the
 // cluster namespace is copied into the returned mirrors, and the input
 // references the copy, so the renderer only ever names Secrets of the
-// cluster namespace. HashInputs carry the
-// resource version of every Secret and the generation of every CR read,
-// sorted, so a change to any of them rolls the pods. A failed check returns a
+// cluster namespace. HashInputs carry a digest of the keys read from every
+// Secret and the generation of every CR read, sorted, so a change to any of
+// them rolls the pods. A failed check returns a
 // *conditions.PreCheckFailure: InvalidReference for a dangling reference or
 // an invalid effective spec, MissingSecret for a missing Secret or key. Any
 // other error is a transient API failure.
@@ -419,7 +419,7 @@ func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose
 }
 
 // checkLocalSecret checks that the Secret named name in the cluster namespace
-// carries keys, and records its resource version as a render input. Every
+// carries keys, and records a digest of their values as a render input. Every
 // reference of a namespaced kind resolves here, so no copy is involved.
 func (res *resolver) checkLocalSecret(ctx context.Context, name string, keys ...string) error {
 	_, err := res.secret(ctx, client.ObjectKey{Namespace: res.cluster.Namespace, Name: name}, "", keys...)
@@ -428,7 +428,7 @@ func (res *resolver) checkLocalSecret(ctx context.Context, name string, keys ...
 }
 
 // secret checks that the Secret at key carries every one of keys and records
-// its resource version as a hash input. When purpose is set and the Secret
+// a digest of their values as a hash input. When purpose is set and the Secret
 // lives outside the cluster namespace, it copies the keys into the mirror of
 // that purpose and returns the key of the copy in the cluster namespace, the
 // key that pkg/mirror resolves for a reader; otherwise it returns key
@@ -446,7 +446,7 @@ func (res *resolver) secret(
 	if msg != "" {
 		return client.ObjectKey{}, &conditions.PreCheckFailure{Reason: v1.ReasonMissingSecret, Message: msg}
 	}
-	res.inputs = append(res.inputs, "Secret/"+objectPath(key)+"="+secret.ResourceVersion)
+	res.inputs = append(res.inputs, "Secret/"+objectPath(key)+"="+secretref.DataDigest(secret, keys...))
 
 	if purpose == "" || !mirror.Needed(res.cluster, key.Namespace) {
 		return key, nil

@@ -136,8 +136,7 @@ func richTarget() *Target {
 	return target
 }
 
-// restoreInput is the input that every case starts from: a rich target, the
-// fixture restore as the owner, and the arguments of the restore application.
+// restoreInput is the input that every case starts from.
 func restoreInput() JobInput {
 	return JobInput{
 		Target:     richTarget(),
@@ -228,10 +227,6 @@ func TestBuildJobMirrorsTheBrokerAndPinsTheNodeID(t *testing.T) {
 	assert.Equal(t, corev1.RestartPolicyNever, job.Spec.Template.Spec.RestartPolicy)
 }
 
-// The restore pods spread exactly as the brokers do, so the recreated volumes
-// land in zones the brokers can schedule into afterwards. The selector has to
-// point at the restore pods: they carry camunda.io/component: restore, so the
-// broker's own selector would count nothing.
 func TestBuildJobSpreadsTheRestorePodsLikeTheBrokers(t *testing.T) {
 	t.Parallel()
 
@@ -260,8 +255,6 @@ func TestBuildJobSpreadsTheRestorePodsLikeTheBrokers(t *testing.T) {
 	assert.Subset(t, job.Spec.Template.Labels, spread.LabelSelector.MatchLabels)
 }
 
-// A Job pod has a random host name, so the broker's node-id shell wrapper
-// cannot run here. The ordinal arrives as a plain value instead.
 func TestBuildJobReplacesTheBrokerCommand(t *testing.T) {
 	t.Parallel()
 
@@ -278,10 +271,6 @@ func TestBuildJobReplacesTheBrokerCommand(t *testing.T) {
 	assert.Equal(t, "0", envValue(container.Env, "CAMUNDA_CLUSTER_NODEID"))
 }
 
-// The pod runs the restore application and nothing else. A broker init
-// container prepares a broker, and the platform injects its own again when
-// the Job pod is created, so carrying the broker's copy over would run it
-// twice.
 func TestBuildJobDropsTheBrokerInitContainers(t *testing.T) {
 	t.Parallel()
 
@@ -298,10 +287,6 @@ func TestBuildJobDropsTheBrokerInitContainers(t *testing.T) {
 	assert.Equal(t, ComponentRestore, job.Spec.Template.Spec.Containers[0].Name)
 }
 
-// The trust store container is the exception. The restore container mounts
-// the volume it fills, and the restore JVM runs with the trust store options
-// of the broker. Without it that JVM reads a store that no container wrote,
-// and the restore cannot reach the backup store over TLS.
 func TestBuildJobKeepsTheTrustStoreInitContainer(t *testing.T) {
 	t.Parallel()
 
@@ -318,9 +303,7 @@ func TestBuildJobKeepsTheTrustStoreInitContainer(t *testing.T) {
 	assert.Equal(t, []corev1.Container{trustStore}, job.Spec.Template.Spec.InitContainers)
 }
 
-// One Target renders one Job per broker. Nothing the builder returns may
-// share memory with the Target or with another Job, or a caller that edits
-// one Job silently edits the live StatefulSet copy and every sibling.
+// A caller that edits one Job must not edit the Target or a sibling Job.
 func TestBuildJobSharesNothingWithTheTargetOrASibling(t *testing.T) {
 	t.Parallel()
 
@@ -386,10 +369,6 @@ func TestBuildJobRunsUnderTheRestoreProfile(t *testing.T) {
 	assert.Equal(t, 1, count, "the copied broker value must be replaced, not repeated")
 }
 
-// The restore application refuses a non-empty data directory. A second pod
-// would find the directory the first one wrote and fail for the wrong reason.
-// A failed restore is retried with a new restore resource, which recreates
-// the volume first.
 func TestBuildJobNeverRetriesAPod(t *testing.T) {
 	t.Parallel()
 
@@ -406,8 +385,6 @@ func TestBuildJobNeverRetriesAPod(t *testing.T) {
 	assert.Nil(t, container.StartupProbe)
 }
 
-// The Job pods look like broker pods to a topology spread constraint, but the
-// operator labels always win over the copied ones.
 func TestBuildJobLabelsThePodsLikeBrokersUnderTheRestoreOwner(t *testing.T) {
 	t.Parallel()
 
@@ -424,9 +401,6 @@ func TestBuildJobLabelsThePodsLikeBrokersUnderTheRestoreOwner(t *testing.T) {
 	assert.Equal(t, "camunda-operator", pod["app.kubernetes.io/managed-by"])
 }
 
-// BuildJob renders without a scheme, so it sets no owner reference. The
-// controller adds the controller reference before it applies the Job. This
-// pins that deliberate gap, so nobody assumes garbage collection is wired.
 func TestBuildJobSetsNoOwnerReference(t *testing.T) {
 	t.Parallel()
 
@@ -439,9 +413,6 @@ func TestBuildJobSetsNoOwnerReference(t *testing.T) {
 	assert.Equal(t, restoreJob0, job.Name)
 }
 
-// Two restores of different kinds and the same name can live in one
-// namespace. Without the kind in the Job name they would fight over one Job,
-// each adopting the other's.
 func TestJobNameCarriesTheRestoreKind(t *testing.T) {
 	t.Parallel()
 
@@ -453,8 +424,6 @@ func TestJobNameCarriesTheRestoreKind(t *testing.T) {
 	}
 }
 
-// An owner that names no restore kind yields no name. BuildJob turns that
-// into an error rather than applying a Job under a name nothing can find.
 func TestJobNameRefusesAnythingButARestoreOwner(t *testing.T) {
 	t.Parallel()
 
@@ -464,9 +433,6 @@ func TestJobNameRefusesAnythingButARestoreOwner(t *testing.T) {
 	assert.Empty(t, JobName(labels.PointInTimeRestore("r"), -1))
 }
 
-// The Job takes its name from OwnerLabel and its namespace from Owner. If the
-// two name different resources, the Job lands under one restore's name in the
-// other's namespace, and neither controller finds it.
 func TestBuildJobRejectsAnOwnerThatDisagreesWithItsLabel(t *testing.T) {
 	t.Parallel()
 
@@ -481,15 +447,14 @@ func TestBuildJobRejectsAnOwnerThatDisagreesWithItsLabel(t *testing.T) {
 }
 
 // The infix of a Job name is the short name of its CRD, so a user who reads
-// a Job name can reach the restore with the kubectl alias they already know.
-// The marker is the source of truth:
+// a Job name can reach the restore with its kubectl alias. The shortName
+// markers in api/v1 are the source of the infixes:
 //
 //	api/v1/logicalrestoreelasticsearch_types.go: +kubebuilder:resource:path=logicalrestoreelasticsearches,shortName=lres
 //	api/v1/logicalrestorerdbms_types.go: +kubebuilder:resource:path=logicalrestorerdbmses,shortName=lrrdbms
 //	api/v1/pointintimerestore_types.go: +kubebuilder:resource:path=pointintimerestores,shortName=pitr
 //
-// Changing a marker without changing the infix breaks that promise, and this
-// test is what says so. Every restore kind needs an entry of its own here.
+// Change the infix together with its marker. Every restore kind needs an entry.
 func TestJobNameInfixesMatchTheCRDShortNames(t *testing.T) {
 	t.Parallel()
 
@@ -502,9 +467,6 @@ func TestJobNameInfixesMatchTheCRDShortNames(t *testing.T) {
 	)
 }
 
-// A consumer that builds a selector by hand misses every Job of a restore
-// whose name passes a label value, because the owner label carries the
-// bounded name. The exported helpers are the only correct source.
 func TestJobSelectorRoundTripsALongRestoreName(t *testing.T) {
 	t.Parallel()
 
@@ -541,10 +503,8 @@ func TestJobSelectorRoundTripsALongRestoreName(t *testing.T) {
 	assert.Subset(t, full, selector)
 }
 
-// The cluster label sits beside the owner label and is bounded with it. A
-// cluster name is a DNS subdomain and can pass what a label value admits, and
-// the API server rejects a whole selector over one long value, so an
-// unbounded cluster label would stop every Job of the restore from applying.
+// A cluster name can pass what a label value admits, and the API server
+// rejects a Job whose label value is too long.
 func TestJobLabelsBoundsALongClusterName(t *testing.T) {
 	t.Parallel()
 
@@ -555,14 +515,10 @@ func TestJobLabelsBoundsALongClusterName(t *testing.T) {
 	assert.LessOrEqual(t, len(labelled[labels.ClusterKey]), validation.LabelValueMaxLength)
 	assert.Empty(t, validation.IsValidLabelValue(labelled[labels.ClusterKey]))
 
-	// The bound ends in a hash of the whole name, so two clusters that share
-	// a head still label their Jobs apart.
 	other := JobLabels(labels.PointInTimeRestore("restore"), long+"x")
 	assert.NotEqual(t, labelled[labels.ClusterKey], other[labels.ClusterKey])
 }
 
-// A Target that is missing any of its parts reaches BuildJob only through
-// misuse, because readTarget fills all of them. It still must not panic.
 func TestBuildJobRejectsAnIncompleteTarget(t *testing.T) {
 	t.Parallel()
 
@@ -581,9 +537,8 @@ func TestBuildJobRejectsAnIncompleteTarget(t *testing.T) {
 	}
 }
 
-// BuildJob runs inside a reconcile. A panic there takes the whole manager
-// down with every other controller, so every input it cannot render is an
-// error.
+// BuildJob runs inside a reconcile, where a panic takes the whole manager
+// down.
 func TestBuildJobRejectsAnInputItCannotRender(t *testing.T) {
 	t.Parallel()
 
@@ -637,9 +592,6 @@ func TestBuildJobRejectsAnInputItCannotRender(t *testing.T) {
 	}
 }
 
-// A restore name can be a full DNS subdomain, but a Job name is a DNS label.
-// A long name truncates deterministically and stays unique through a hash of
-// the whole name.
 func TestJobNameStaysADNSLabel(t *testing.T) {
 	t.Parallel()
 
@@ -757,11 +709,9 @@ func TestJobGoldenLogicalRestoreRDBMSBroker0(t *testing.T) {
 	)
 }
 
-// The manager caches pods through an informer that labels.ManagedSelector
-// scopes. A pod that the selector does not match is a pod that podstate.Stuck
-// cannot see, and a container that cannot start then reads as progress.
-// The operator labels go over the labels of a user, so a user cannot take the
-// key away.
+// The pod cache of the manager is scoped by labels.ManagedSelector. A pod
+// outside it is not visible to podstate.Stuck, and a container that cannot
+// start then reads as progress.
 func TestBuildJobPodsMatchTheManagedSelector(t *testing.T) {
 	t.Parallel()
 

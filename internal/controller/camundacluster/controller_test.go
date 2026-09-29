@@ -1213,6 +1213,42 @@ var _ = Describe("CamundaCluster controller", func() {
 		configHash(cluster, hash)
 	})
 
+	It("rolls the brokers for a new value of a referenced Secret key, not for new Secret metadata", func() {
+		ns := newNamespace()
+		binding := createBinding(ns, true)
+		cluster := newCluster(ns, createPlatformConfig(), binding)
+		createCluster(cluster)
+		hash := configHash(cluster, "")
+		stsKey := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"}
+		generation := fetchStatefulSet(stsKey).Generation
+		secretKey := client.ObjectKey{Namespace: ns, Name: binding.Spec.Elasticsearch.CredentialsSecretRef.Name}
+
+		By("annotating and labelling the credentials Secret of the binding")
+		Eventually(func(g Gomega) {
+			var latest corev1.Secret
+			g.Expect(k8sClient.Get(ctx, secretKey, &latest)).To(Succeed())
+			latest.Annotations = map[string]string{"example.com/refreshed-at": "now"}
+			latest.Labels = map[string]string{"example.com/team": "platform"}
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Consistently(func(g Gomega) {
+			var sts appsv1.StatefulSet
+			g.Expect(k8sClient.Get(ctx, stsKey, &sts)).To(Succeed())
+			g.Expect(sts.Generation).To(Equal(generation))
+			g.Expect(sts.Spec.Template.Annotations[components.ConfigHashAnnotation]).To(Equal(hash))
+		}, "5s", interval).Should(Succeed())
+
+		By("changing the value of a referenced key")
+		Eventually(func(g Gomega) {
+			var latest corev1.Secret
+			g.Expect(k8sClient.Get(ctx, secretKey, &latest)).To(Succeed())
+			latest.StringData = map[string]string{"password": "rotated"}
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		configHash(cluster, hash)
+		Expect(fetchStatefulSet(stsKey).Generation).To(BeNumerically(">", generation))
+	})
+
 	It("rolls an RDBMS cluster when its DatabaseServerConfig or DatabaseConfig changes", func() {
 		ns := newNamespace()
 		server := newDatabaseServerConfig(ns)

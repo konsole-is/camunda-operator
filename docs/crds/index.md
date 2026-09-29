@@ -3,6 +3,8 @@
 The operator defines the custom resources below in the API group `core.camunda.io/v1`.
 Each page opens with what the kind is and a minimal manifest. Then it covers one topic per section, and it ends with the status conditions and the full spec reference.
 
+The [API reference](api-reference.md) lists every type and field of the API group on one page, with its default and its validation. The page is generated from the API types, so it matches the CRDs of the same release.
+
 ## Cluster
 
 | Kind | Scope | What it is |

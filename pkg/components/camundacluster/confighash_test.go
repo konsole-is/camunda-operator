@@ -44,7 +44,7 @@ func TestConfigHashStableAndSensitive(t *testing.T) {
 
 	bumped := fixtureDefault(t)
 	bumped.HashInputs[0] = "Secret/my-cluster-ns/es-user=13"
-	assert.NotEqual(t, base, hash(bumped), "a resource version change rolls the pods")
+	assert.NotEqual(t, base, hash(bumped), "a changed Secret digest rolls the pods")
 
 	url := fixtureDefault(t)
 	url.Storage.Elasticsearch.Endpoint = "https://other:9200"

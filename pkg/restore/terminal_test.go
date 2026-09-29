@@ -50,9 +50,8 @@ type terminalWorld struct {
 type terminalOptions struct {
 	// reason is the recorded terminal reason of the restore.
 	reason string
-	// terminating keeps every Job in the state that foreground propagation
-	// leaves behind: deleted, and held by the foreground finalizer until its
-	// pods are gone.
+	// terminating keeps every Job deleted and held by the foreground finalizer,
+	// as foreground propagation leaves it until its pods are gone.
 	terminating bool
 	// jobReadError fails every read of a Job.
 	jobReadError error
@@ -78,9 +77,8 @@ func newTerminalWorld(t *testing.T, opts terminalOptions) *terminalWorld {
 	for _, name := range owner.Status.PrimaryJobNames {
 		job := recordedJob(name, owner.UID)
 		if opts.terminating {
-			// The API server stamps the finalizer and keeps the Job until the
-			// collector reports its pods gone. Until then the pods can exist,
-			// and a pod is what holds a broker volume.
+			// The API server keeps the Job until the garbage collector reports
+			// its pods gone, and a pod is what holds a broker volume.
 			job.DeletionTimestamp = new(metav1.NewTime(time.Now()))
 			job.Finalizers = []string{metav1.FinalizerDeleteDependents}
 		}
@@ -192,8 +190,7 @@ func (w *terminalWorld) jobsLeft(t *testing.T) int {
 }
 
 // withdrawals are the applies that took spec.suspend off the cluster. A
-// server-side apply is what withdraws it, so the apply is the observable
-// fact, as it is for Resume itself.
+// server-side apply withdraws it, so the apply is the observable fact.
 func (w *terminalWorld) withdrawals() []applied {
 	withdrawn := make([]applied, 0, len(*w.applies))
 	for _, apply := range *w.applies {

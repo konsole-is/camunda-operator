@@ -161,7 +161,7 @@ func (res *resolver) objectStorage(ctx context.Context, ref string) (*v1.ObjectS
 }
 
 // checkBucketCredentials checks the static credentials of bucket and records
-// the resource version of their Secret as a render input, so a rotated key
+// a digest of their Secret data as a render input, so a rotated key
 // rolls the pods. The bucket lives in the namespace of the cluster and names
 // its Secret there, so the pods mount the Secret the contract names. A bucket
 // that authenticates with workload identity references no Secret and is left
