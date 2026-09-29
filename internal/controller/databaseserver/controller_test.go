@@ -1242,16 +1242,17 @@ var _ = Describe("DatabaseServer controller", func() {
 			if err == nil && metav1.IsControlledBy(&stale, &v1.DatabaseServer{
 				ObjectMeta: metav1.ObjectMeta{UID: ownerRef.UID},
 			}) {
-				g.Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &stale))).To(Succeed())
+				precondition := client.Preconditions{UID: &stale.UID}
+				g.Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &stale, precondition))).To(Succeed())
 			}
 
 			condition := conditionOf(second, v1.ConditionContractReady)
 			g.Expect(condition).NotTo(BeNil())
 			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue), condition.Message)
+			contract := publishedContract(g, second)
+			g.Expect(metav1.IsControlledBy(contract, reconciledServer(second))).To(BeTrue())
+			g.Expect(contract.Spec.Host).To(Equal("second-rw." + second.Namespace + ".svc"))
 		}, timeout, interval).Should(Succeed())
-		contract := publishedContract(Default, second)
-		Expect(metav1.IsControlledBy(contract, reconciledServer(second))).To(BeTrue())
-		Expect(contract.Spec.Host).To(Equal("second-rw." + second.Namespace + ".svc"))
 	})
 
 	// A DatabaseServerConfig that a person wrote is the bring-your-own-server
