@@ -631,7 +631,6 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 
 		repointContract(w)
 
-		// status.backend is what the renewer renews.
 		var named string
 		Eventually(func(g Gomega) {
 			current := readRestore(g, pitr)

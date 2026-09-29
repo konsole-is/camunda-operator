@@ -170,10 +170,10 @@ type PointInTimeRestoreStatus struct {
 	Storage *PointInTimeRestoreStorage `json:"storage,omitempty"`
 	// Backend names the database that the restore holds while its server rolls
 	// back: the host, the port, and the database name. The operator records it
-	// when it asks for the rollback, and it moves to the endpoint of the recovered
-	// server. From then to the terminal phase, no other CamundaCluster starts on
-	// this database. A restore whose server is rolled back outside the operator
-	// records none.
+	// when it asks for the rollback, and it follows each endpoint that the
+	// contract names. From then to the terminal phase, no other CamundaCluster
+	// starts on this database. A restore whose server is rolled back outside the
+	// operator records none.
 	// +optional
 	Backend string `json:"backend,omitempty"`
 	// ObservedPositions are the exporter positions the pre-check read, in

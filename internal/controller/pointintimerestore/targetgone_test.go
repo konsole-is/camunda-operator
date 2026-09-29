@@ -106,7 +106,7 @@ func TestFollowBackendRecordsTheNewBackendWhenTheOldReleaseFails(t *testing.T) {
 
 // rollbackWithSecondClusterRead returns a restore that waits for the answer
 // of a contract that already names a new endpoint, and a reconciler whose
-// second read of the cluster goes through second.
+// reads of the cluster after the first go through second.
 func rollbackWithSecondClusterRead(
 	t *testing.T,
 	second func(read *v1.CamundaCluster) error,
