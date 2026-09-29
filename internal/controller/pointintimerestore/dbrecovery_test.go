@@ -32,6 +32,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/restore"
 	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 )
 
@@ -198,6 +199,11 @@ func expectFailed(pitr *v1.PointInTimeRestore, reason string) string {
 	return message
 }
 
+// contractOf returns the contract of the database of the world.
+func contractOf(w *world) string {
+	return restore.DatabaseContract(client.ObjectKeyFromObject(w.server), w.dbConfig.Spec.DatabaseName)
+}
+
 // backendsHeldBy returns the backends of the writer Leases that name the
 // restore.
 func backendsHeldBy(pitr *v1.PointInTimeRestore) []string {
@@ -223,8 +229,9 @@ func backendsHeldBy(pitr *v1.PointInTimeRestore) []string {
 }
 
 // writersSeenByAnotherCluster returns the writers that a cluster other than
-// the target of the restore waits for on backend.
-func writersSeenByAnotherCluster(backend string) []string {
+// the target of the restore waits for on backend, or on any backend when a
+// writer names contract. An empty contract matches on backend alone.
+func writersSeenByAnotherCluster(backend, contract string) []string {
 	GinkgoHelper()
 
 	writers, err := storagewriter.Live(
@@ -233,7 +240,7 @@ func writersSeenByAnotherCluster(backend string) []string {
 		testClaimNamespace,
 		backend,
 		clustercomponents.StorageClaimSchema().LeaseName(backend),
-		"",
+		contract,
 		"uid-of-another-cluster",
 	)
 	Expect(err).NotTo(HaveOccurred())
@@ -315,7 +322,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 
 		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring(w.server.Name))
 		Eventually(func() []string {
-			return writersSeenByAnotherCluster(backend)
+			return writersSeenByAnotherCluster(backend, "")
 		}, timeout, interval).Should(BeEmpty())
 	})
 
@@ -331,12 +338,12 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 
 		Consistently(func(g Gomega) {
 			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
-			g.Expect(writersSeenByAnotherCluster(backend)).NotTo(BeEmpty())
+			g.Expect(writersSeenByAnotherCluster(backend, "")).NotTo(BeEmpty())
 		}, time.Second, interval).Should(Succeed())
 
 		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring("no DatabaseServerConfig can answer"))
 		Eventually(func() []string {
-			return writersSeenByAnotherCluster(backend)
+			return writersSeenByAnotherCluster(backend, "")
 		}, timeout, interval).Should(BeEmpty())
 	})
 
@@ -364,14 +371,14 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		}, timeout, interval).Should(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(readRestore(g, pitr).DeletionTimestamp).NotTo(BeNil())
-			g.Expect(writersSeenByAnotherCluster(backend)).To(HaveLen(1))
+			g.Expect(writersSeenByAnotherCluster(backend, "")).To(HaveLen(1))
 		}, midRunGrace+2*time.Second, interval).Should(Succeed())
 
 		answerRecovery(w, v1.RecoveryResultCompleted, "")
 		Eventually(func(g Gomega) {
 			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pitr), &v1.PointInTimeRestore{})
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
-			g.Expect(writersSeenByAnotherCluster(backend)).To(BeEmpty())
+			g.Expect(writersSeenByAnotherCluster(backend, "")).To(BeEmpty())
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -390,12 +397,12 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 
 		Consistently(func(g Gomega) {
 			g.Expect(readRestore(g, pitr).DeletionTimestamp).NotTo(BeNil())
-			g.Expect(writersSeenByAnotherCluster(backend)).NotTo(BeEmpty())
+			g.Expect(writersSeenByAnotherCluster(backend, "")).NotTo(BeEmpty())
 		}, time.Second, interval).Should(Succeed())
 		Eventually(func(g Gomega) {
 			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pitr), &v1.PointInTimeRestore{})
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
-			g.Expect(writersSeenByAnotherCluster(backend)).To(BeEmpty())
+			g.Expect(writersSeenByAnotherCluster(backend, "")).To(BeEmpty())
 		}, midRunGrace+timeout, interval).Should(Succeed())
 	})
 
@@ -547,8 +554,13 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		expectRecovering(pitr)
 
 		backend := expectBackendHeld(pitr)
-		Expect(writersSeenByAnotherCluster(backend)).To(
+		Expect(writersSeenByAnotherCluster(backend, "")).To(
 			Equal([]string{"PointInTimeRestore " + w.namespace + "/" + pitr.Name}),
+		)
+		elsewhere := "rdbms|elsewhere." + w.namespace + ".svc:5432/" + w.dbConfig.Spec.DatabaseName
+		Expect(writersSeenByAnotherCluster(elsewhere, contractOf(w))).To(
+			Equal([]string{"PointInTimeRestore " + w.namespace + "/" + pitr.Name}),
+			"a cluster on the contract waits at any address",
 		)
 
 		answerRecovery(w, v1.RecoveryResultFailed, "the server is suspended")
@@ -556,7 +568,8 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		Eventually(func() []string {
 			return backendsHeldBy(pitr)
 		}, timeout, interval).Should(BeEmpty(), "a terminal restore gives its database back")
-		Expect(writersSeenByAnotherCluster(backend)).To(BeEmpty())
+		Expect(writersSeenByAnotherCluster(backend, "")).To(BeEmpty())
+		Expect(writersSeenByAnotherCluster(elsewhere, contractOf(w))).To(BeEmpty())
 	})
 
 	It("keeps its database held for the grace when its request is cleared and its cluster is deleted", func() {
@@ -576,7 +589,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 
 		Consistently(func(g Gomega) {
 			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
-			g.Expect(writersSeenByAnotherCluster(backend)).NotTo(BeEmpty())
+			g.Expect(writersSeenByAnotherCluster(backend, "")).NotTo(BeEmpty())
 		}, time.Second, interval).Should(Succeed())
 		expectFailed(pitr, v1.ReasonFailed)
 	})
@@ -599,14 +612,14 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 			backend = current.Status.Backend
 		}, timeout, interval).Should(Succeed())
 		Consistently(func() []string {
-			return writersSeenByAnotherCluster(backend)
+			return writersSeenByAnotherCluster(backend, "")
 		}, "2s", interval).Should(HaveLen(1))
 
 		answerRecovery(w, v1.RecoveryResultCompleted, "")
 		message := expectFailed(pitr, v1.ReasonFailed)
 		Expect(message).To(ContainSubstring("was deleted"))
 		Eventually(func() []string {
-			return writersSeenByAnotherCluster(backend)
+			return writersSeenByAnotherCluster(backend, "")
 		}, timeout, interval).Should(BeEmpty(), "the restore gives the database back once the rollback ended")
 	})
 
@@ -677,7 +690,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		answerRecovery(w, v1.RecoveryResultCompleted, "")
 		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring("was deleted"))
 		Eventually(func() []string {
-			return writersSeenByAnotherCluster(backend)
+			return writersSeenByAnotherCluster(backend, "")
 		}, timeout, interval).Should(BeEmpty())
 	})
 
@@ -713,12 +726,12 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		}, timeout, interval).Should(Succeed())
 
 		expectRecovering(pitr, "storage chain", w.server.Name)
-		Expect(writersSeenByAnotherCluster(backend)).To(HaveLen(1))
+		Expect(writersSeenByAnotherCluster(backend, "")).To(HaveLen(1))
 
 		answerRecovery(w, v1.RecoveryResultCompleted, "")
 		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring("other-storage"))
 		Eventually(func() []string {
-			return writersSeenByAnotherCluster(backend)
+			return writersSeenByAnotherCluster(backend, "")
 		}, timeout, interval).Should(BeEmpty())
 	})
 
@@ -756,13 +769,13 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 			current := readRestore(g, pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
 			g.Expect(ready(current).Reason).To(Equal(v1.ReasonClusterNotSuspended))
-			g.Expect(writersSeenByAnotherCluster(backend)).To(HaveLen(1))
+			g.Expect(writersSeenByAnotherCluster(backend, "")).To(HaveLen(1))
 		}, 5*time.Second, interval).Should(Succeed())
 
 		answerRecovery(w, v1.RecoveryResultCompleted, "")
 		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring("is not suspended"))
 		Eventually(func() []string {
-			return writersSeenByAnotherCluster(backend)
+			return writersSeenByAnotherCluster(backend, "")
 		}, timeout, interval).Should(BeEmpty())
 	})
 
@@ -783,7 +796,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 
 		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring("no-such-storage"))
 		Eventually(func() []string {
-			return writersSeenByAnotherCluster(backend)
+			return writersSeenByAnotherCluster(backend, "")
 		}, timeout, interval).Should(BeEmpty())
 	})
 
@@ -794,6 +807,14 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		before := expectBackendHeld(pitr)
 
 		repointContract(w)
+		recovered := w.server.DeepCopy()
+		recovered.Spec.Host = recoveredHost
+		moved, failure := restore.DatabaseBackend(w.storage, w.dbConfig, recovered)
+		Expect(failure).NotTo(HaveOccurred())
+		Expect(writersSeenByAnotherCluster(moved, contractOf(w))).To(
+			Equal([]string{"PointInTimeRestore " + w.namespace + "/" + pitr.Name}),
+			"the restore holds the new endpoint whether or not it followed the move yet",
+		)
 
 		var named string
 		Eventually(func(g Gomega) {
@@ -803,7 +824,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 			named = current.Status.Backend
 		}, timeout, interval).Should(Succeed())
 		Expect(named).To(ContainSubstring(recoveredHost))
-		Expect(writersSeenByAnotherCluster(named)).To(
+		Expect(writersSeenByAnotherCluster(named, "")).To(
 			Equal([]string{"PointInTimeRestore " + w.namespace + "/" + pitr.Name}),
 		)
 		Expect(readRestore(Default, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
@@ -838,7 +859,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		}, timeout, interval).Should(Succeed())
 		after := expectBackendHeld(pitr)
 		Expect(strings.Contains(after, recoveredHost)).To(BeTrue(), after)
-		Expect(writersSeenByAnotherCluster(before)).To(BeEmpty())
+		Expect(writersSeenByAnotherCluster(before, "")).To(BeEmpty())
 	})
 
 	It("holds after the answer while another cluster holds the endpoint the contract moved to", func() {

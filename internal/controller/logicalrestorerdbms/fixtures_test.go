@@ -887,15 +887,16 @@ func ageWriterLeases(uid types.UID) {
 }
 
 // writersSeenByAnotherCluster returns the writers that a cluster other than
-// the target of a restore waits for on backend.
-func writersSeenByAnotherCluster(g Gomega, backend string) []string {
+// the target of a restore waits for on backend, or on any backend when a
+// writer names contract. An empty contract matches on backend alone.
+func writersSeenByAnotherCluster(g Gomega, backend, contract string) []string {
 	writers, err := storagewriter.Live(
 		ctx,
 		k8sClient,
 		claimNamespace,
 		backend,
 		camundacluster.StorageClaimSchema().LeaseName(backend),
-		"",
+		contract,
 		"uid-of-another-cluster",
 	)
 	g.Expect(err).NotTo(HaveOccurred())

@@ -1502,7 +1502,11 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 			writer,
 		)).To(Succeed())
 		Expect(storagewriter.Release(ctx, k8sClient, testClaimNamespace, old, writer)).To(Succeed())
-		expectWaitingForWriter(parked, moved, writer)
+		claim := client.ObjectKey{Namespace: testClaimNamespace, Name: components.StorageClaimSchema().LeaseName(moved)}
+		Consistently(func(g Gomega) {
+			err := k8sClient.Get(ctx, claim, &coordinationv1.Lease{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, "2s", interval).Should(Succeed(), "the release of the old key wakes the cluster, and it still waits")
 
 		Expect(storagewriter.Release(ctx, k8sClient, testClaimNamespace, moved, writer)).To(Succeed())
 		expectHolds(parked)

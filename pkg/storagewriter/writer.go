@@ -81,10 +81,9 @@ func (w Writer) String() string {
 }
 
 // Register creates the registration of w on the backend key. It restores the
-// labels, the annotations and the holder of a registration that exists. A w
-// with no Contract keeps the contract that an existing registration names.
-// claim is the name of the storage claim Lease of key. namespace is the storage
-// claim namespace.
+// labels, the annotations and the holder of a registration that exists. claim
+// is the name of the storage claim Lease of key. namespace is the storage claim
+// namespace.
 func Register(
 	ctx context.Context,
 	c client.Client,
@@ -109,10 +108,6 @@ func Register(
 		return fmt.Errorf("reading the writer Lease of %s: %w", w, err)
 	}
 
-	if w.Contract == "" && lease.Annotations[ContractAnnotation] != "" {
-		w.Contract = lease.Annotations[ContractAnnotation]
-		want = newLease(namespace, key, claim, w)
-	}
 	if matches(&lease, want) {
 		return nil
 	}
@@ -311,13 +306,28 @@ func registrations(
 	if err != nil {
 		return nil, err
 	}
+	// A writer that follows a move holds the old key and the new one for a
+	// moment, and it counts once.
+	seen := make(map[string]bool, len(out))
+	for _, lease := range out {
+		seen[writerOf(lease)] = true
+	}
 	for _, lease := range byContract {
-		if lease.Annotations[KeyAnnotation] != key {
+		if !seen[writerOf(lease)] {
+			seen[writerOf(lease)] = true
 			out = append(out, lease)
 		}
 	}
 
 	return out, nil
+}
+
+func writerOf(lease *coordinationv1.Lease) string {
+	if uid := lease.Labels[labels.WriterUIDKey]; uid != "" {
+		return uid
+	}
+
+	return lease.Name
 }
 
 // listMatching lists the writer Leases whose label is value and keeps those

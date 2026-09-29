@@ -247,6 +247,7 @@ The status also records what the restore pinned and what it did:
 - `status.backupId` pins the backup id. A backup that is deleted and created again under one name carries another id, and the restore fails.
 - `status.targetClusterUID` pins the identity of the target. A cluster that is deleted and created again under one name fails the restore.
 - `status.backend` is the logical database that the restore writes, as the host, the port, and the database name.
+- `status.contract` is the `DatabaseServerConfig` and the database name that the hold stays on when the address moves.
 - `status.secondaryJobName` is the `pg_restore` Job, while it exists.
 - `status.clusterSuspended` records that this restore suspended the target. The restore withdraws that suspension when it completes.
 - `status.brokers` is the broker count that the operator read off the broker StatefulSet.

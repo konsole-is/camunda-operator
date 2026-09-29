@@ -30,8 +30,7 @@ import (
 // RegisterWriter registers owner, a restore into the cluster with UID target,
 // as a writer of backend. A cluster on backend waits while the registration
 // exists, see storagewriter.Live. claimNamespace holds the storage claim
-// Leases. A registration that exists already is fine, and it keeps the
-// contract that RegisterDatabaseWriter gave it.
+// Leases. A registration that exists already is fine.
 func RegisterWriter(
 	ctx context.Context,
 	c client.Client,

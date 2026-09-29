@@ -182,14 +182,14 @@ func (r *Reconciler) admit(
 	if failure != nil {
 		return r.waiting(lrr, failure), nil
 	}
-	backend, failure, err := restore.BackendOf(ctx, r.APIReader, storage)
+	backend, failure, err := restore.ResolveBackend(ctx, r.APIReader, storage)
 	if err != nil {
 		return restore.Outcome{}, err
 	}
 	if failure != nil {
 		return r.waiting(lrr, failure), nil
 	}
-	failure, err = r.checkBackend(ctx, lrr, cluster, storage, backend)
+	failure, err = r.checkBackend(ctx, lrr, cluster, storage, backend.Key)
 	if err != nil {
 		return restore.Outcome{}, err
 	}
@@ -200,17 +200,21 @@ func (r *Reconciler) admit(
 	// reads the claim after this registration exists, so a cluster that takes
 	// the claim before that check is what the check finds, and one that takes
 	// it after lists this restore as a writer.
-	contract, err := restore.ContractOf(ctx, r.APIReader, storage)
-	if err != nil {
-		return restore.Outcome{}, err
-	}
 	err = restore.RegisterDatabaseWriter(
-		ctx, r.Client, r.APIReader, r.opts.ClaimNamespace, backend, contract, lrr, lrr.Status.TargetClusterUID,
+		ctx,
+		r.Client,
+		r.APIReader,
+		r.opts.ClaimNamespace,
+		backend.Key,
+		backend.Contract,
+		lrr,
+		lrr.Status.TargetClusterUID,
 	)
 	if err != nil {
 		return restore.Outcome{}, err
 	}
-	lrr.Status.Backend = backend
+	lrr.Status.Backend = backend.Key
+	lrr.Status.Contract = backend.Contract
 
 	r.start(lrr, cluster, source)
 

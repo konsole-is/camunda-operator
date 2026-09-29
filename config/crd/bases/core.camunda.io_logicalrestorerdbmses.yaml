@@ -209,6 +209,13 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              contract:
+                description: |-
+                  Contract is the DatabaseServerConfig and the database name that held the
+                  address of Backend when the restore started. The hold stays on this
+                  contract when the DatabaseServerConfig moves to another address. A
+                  restore that pinned no contract holds Backend alone.
+                type: string
               failureMessage:
                 description: |-
                   FailureMessage names the failing phase and its error. The Ready

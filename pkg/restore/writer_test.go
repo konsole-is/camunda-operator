@@ -95,13 +95,9 @@ func TestADatabaseWriterHoldsItsContractAtAMovedAddress(t *testing.T) {
 	require.NoError(t, RegisterDatabaseWriter(
 		ctx, c, c, writerNamespace, "rdbms|old.apps.svc:5432/camunda", contract, earlier, "uid-target",
 	))
-	require.NoError(
-		t,
-		RegisterWriter(ctx, c, c, writerNamespace, "rdbms|old.apps.svc:5432/camunda", earlier, "uid-target"),
-	)
 
 	writers, err := OtherWriters(ctx, c, writerNamespace, "rdbms|new.apps.svc:5432/camunda", contract, next)
 
 	require.NoError(t, err)
-	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/earlier"}, writers, "a registration without a contract keeps it")
+	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/earlier"}, writers)
 }

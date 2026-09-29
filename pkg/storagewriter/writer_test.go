@@ -251,6 +251,23 @@ func TestAWriterThatMatchesOnKeyAndContractCountsOnce(t *testing.T) {
 	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/restore"}, live)
 }
 
+func TestAWriterOnTwoKeysOfItsContractCountsOnce(t *testing.T) {
+	ctx := context.Background()
+	c := newClient(t)
+	w := onContract(restore("restore", "t"))
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, w))
+	require.NoError(t, Register(ctx, c, c, claimNamespace, moved, movedClaim, w))
+
+	onMoved, err := Live(ctx, c, claimNamespace, moved, movedClaim, contract, "other-cluster")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/restore"}, onMoved)
+
+	elsewhere := "rdbms|elsewhere.apps.svc:5432/camunda"
+	onThird, err := Live(ctx, c, claimNamespace, elsewhere, "camunda-storage-elsewhere", contract, "other-cluster")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/restore"}, onThird)
+}
+
 // The contract label is a hash, so the annotation decides a match.
 func TestTheContractAnnotationDecidesAMatch(t *testing.T) {
 	ctx := context.Background()
@@ -265,11 +282,13 @@ func TestTheContractAnnotationDecidesAMatch(t *testing.T) {
 	assert.Empty(t, live)
 }
 
-func TestRegisterWithoutAContractKeepsTheRegisteredOne(t *testing.T) {
+func TestRegisterRestoresAStrippedContract(t *testing.T) {
 	ctx := context.Background()
 	c := newClient(t)
-	w := restore("restore", "t")
-	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, onContract(w)))
+	w := onContract(restore("restore", "t"))
+	lease := newLease(claimNamespace, backend, claim, w)
+	delete(lease.Annotations, ContractAnnotation)
+	require.NoError(t, c.Create(ctx, lease))
 
 	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, w))
 
