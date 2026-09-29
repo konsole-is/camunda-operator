@@ -191,14 +191,14 @@ func declaresSuspend(raw []byte) bool {
 	return ok
 }
 
-// versionTarget waits on the broker StatefulSet, not on spec.version: a cluster
-// can take its version from a preset and have no spec.version, and a cluster
-// part way through an upgrade declares a version that its StatefulSet does not
-// carry yet.
+// versionTarget needs both fields, but only the StatefulSet shows convergence:
+// a cluster can take its version from a preset and have no spec.version, and a
+// cluster part way through an upgrade declares a version that its StatefulSet
+// does not carry yet.
 //
 // The apply carries the UID of the cluster and no resource version. The status
-// of the cluster moves on nearly every reconcile, so an apply with a resource
-// version would never land. A broker of Camunda 8.9 refuses a snapshot that a
+// of the cluster moves on nearly every reconcile, so a resource version would
+// conflict again and again. A broker of Camunda 8.9 refuses a snapshot that a
 // newer version wrote unless experimental.versionCheckRestrictionEnabled is off.
 func versionTarget(
 	ctx context.Context,

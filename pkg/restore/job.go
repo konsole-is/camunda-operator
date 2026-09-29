@@ -67,9 +67,9 @@ type JobInput struct {
 }
 
 // BuildJob renders the Job that runs the restore application for one broker.
-// The pod is a copy of the broker pod of the live StatefulSet, so the restore
-// application reads the configuration, the credentials, and the files that the
-// brokers use. The Job never retries its pod.
+// The pod reuses the broker container, volumes and trust store of the live
+// StatefulSet, so the restore application reads the configuration and the
+// credentials that the brokers use. The Job never retries its pod.
 //
 // BuildJob returns an error for an incomplete target, an ordinal outside the
 // broker count, a nil owner, an OwnerLabel of no restore kind or with no

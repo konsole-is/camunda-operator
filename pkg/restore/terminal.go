@@ -54,7 +54,7 @@ func Finish(
 		return collected, err
 	}
 
-	// Resume starts the brokers again. A broker on another node cannot attach
+	// Resume can start the brokers again. A broker on another node cannot attach
 	// a ReadWriteOnce volume that a Job pod still holds, so it waits for Done.
 	if err := Resume(ctx, c, reader, owner, p, types.NamespacedName{
 		Namespace: owner.GetNamespace(), Name: cluster,

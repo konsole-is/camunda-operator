@@ -26,8 +26,8 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// completedMessage says nothing about the suspension of the cluster, because
-// a later look after the terminal phase withdraws the suspension.
+// completedMessage says nothing about the suspension: a later look withdraws
+// one that the restore applied, and one that the owner applied stays.
 const completedMessage = "The restore finished"
 
 // HoldRunning holds a started restore on a dependency that stopped resolving.
