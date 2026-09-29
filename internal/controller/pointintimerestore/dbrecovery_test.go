@@ -706,7 +706,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		}, 5*time.Second, interval).Should(Succeed())
 
 		answerRecovery(w, v1.RecoveryResultCompleted, "")
-		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring("started running again"))
+		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring("is not suspended"))
 		Eventually(func() []string {
 			return writersSeenByAnotherCluster(backend)
 		}, timeout, interval).Should(BeEmpty())
