@@ -97,6 +97,27 @@ func InstallCertManager() error {
 		return err
 	}
 
+	// A race in the key manager of cert-manager can fail a new Certificate
+	// with "CSR not signed by referenced private key"
+	// (cert-manager/cert-manager#6331). The retry then issues it, but the
+	// default first backoff of 1h is longer than any wait of the suite.
+	if _, err := Run(exec.Command(
+		"kubectl", "patch", "deployment", "cert-manager", "-n", "cert-manager", "--type=json",
+		"-p", `[{"op":"add","path":"/spec/template/spec/containers/0/args/-",`+
+			`"value":"--certificate-request-minimum-backoff-duration=5s"}]`,
+	)); err != nil {
+		return err
+	}
+
+	// Available is also true while the pod without the flag still runs.
+	if _, err := Run(exec.Command(
+		"kubectl", "rollout", "status", "deployment/cert-manager",
+		"--namespace", "cert-manager",
+		"--timeout", "5m",
+	)); err != nil {
+		return err
+	}
+
 	// One kubectl wait call names all three Deployments so they share one
 	// 5-minute deadline instead of up to 5 minutes each. The webhook
 	// Deployment answers Available from a plain HTTP health check that runs
