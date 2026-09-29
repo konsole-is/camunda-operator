@@ -36,6 +36,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
@@ -309,15 +310,25 @@ func createBackup(w *world, mutate ...func(*v1.LogicalBackupRDBMS)) *v1.LogicalB
 	return backup
 }
 
-// createAndDelete creates backup and deletes it when the spec ends. A backup
-// that outlives its spec keeps looking again every second. The controller
-// runs one reconcile at a time, so every later spec waits behind those looks.
+// createAndDelete creates backup and removes it past its finalizer when the
+// spec ends. A backup left behind looks again every second, and the one
+// worker of the controller makes every later spec wait behind those looks.
 func createAndDelete(backup *v1.LogicalBackupRDBMS) {
 	GinkgoHelper()
 
 	Expect(k8sClient.Create(ctx, backup)).To(Succeed())
 	DeferCleanup(func() {
 		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, backup))).To(Succeed())
+		key := client.ObjectKeyFromObject(backup)
+		Eventually(func(g Gomega) {
+			var current v1.LogicalBackupRDBMS
+			err := k8sClient.Get(ctx, key, &current)
+			if controllerutil.RemoveFinalizer(&current, logicalbackup.Finalizer) {
+				g.Expect(client.IgnoreNotFound(k8sClient.Update(ctx, &current))).To(Succeed())
+				err = k8sClient.Get(ctx, key, &current)
+			}
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
 	})
 }
 
