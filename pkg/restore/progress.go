@@ -27,7 +27,7 @@ import (
 )
 
 // completedMessage says nothing about the suspension of the cluster, because
-// the look after the terminal phase is the one that withdraws the suspension.
+// a later look after the terminal phase withdraws the suspension.
 const completedMessage = "The restore finished"
 
 // HoldRunning holds a started restore on a dependency that stopped resolving.

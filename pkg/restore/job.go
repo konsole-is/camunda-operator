@@ -39,7 +39,7 @@ const (
 	// distribution (Camunda 8.9 restore guides). It ships in the broker image,
 	// so a restore runs the version of the brokers.
 	RestoreEntrypoint = "/usr/local/camunda/bin/restore"
-	// noRetries is the backoff limit of every restore Job. The restore
+	// noRetries is the backoff limit of the per-broker Jobs. The restore
 	// application refuses a non-empty data directory, so a second pod finds
 	// what the first one wrote and fails for the wrong reason.
 	noRetries = int32(0)

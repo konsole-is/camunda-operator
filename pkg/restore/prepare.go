@@ -73,8 +73,8 @@ type PrepareInput struct {
 // Prepare carries the cluster of a restore to the state that the restore needs,
 // and reports Done once the cluster is there: it carries the suspension hold of
 // the restore, it is suspended with its brokers gone, and its broker
-// StatefulSet carries the Camunda version of the backup. A re-entry repeats no
-// write.
+// StatefulSet carries the Camunda version of the backup when WritesVersion
+// accepts that version. A re-entry repeats no write.
 //
 // Add HoldFinalizer to the restore first. Run Prepare during admission, before
 // the restore destroys anything.

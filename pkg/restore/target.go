@@ -34,8 +34,8 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// ComponentRestore is the camunda.io/component of the restore Jobs and their
-// pods. A recreated broker volume keeps the labels of the claim template.
+// ComponentRestore is the camunda.io/component of the per-broker Jobs and
+// their pods. A recreated broker volume keeps the labels of the claim template.
 const ComponentRestore = "restore"
 
 // Target is everything a restore reads off the live broker StatefulSet of its
