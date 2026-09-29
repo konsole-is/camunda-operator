@@ -294,10 +294,8 @@ func contractKey(server *v1.DatabaseServer) client.ObjectKey {
 	return client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
 }
 
-// publishedContract reads the contract of the server. A caller inside an
-// Eventually or a Consistently passes the Gomega of that poll, so a contract
-// that the server withdraws for a moment is read again instead of ending the
-// spec. A caller at spec level passes Default.
+// publishedContract reads the contract of the server through g: the Gomega
+// of the poll that calls it, or Default outside a poll.
 func publishedContract(g Gomega, server *v1.DatabaseServer) *v1.DatabaseServerConfig {
 	GinkgoHelper()
 
@@ -322,11 +320,13 @@ func reconciledServer(server *v1.DatabaseServer) *v1.DatabaseServer {
 func expectLastRecovery(server *v1.DatabaseServer, result v1.RecoveryResult) *v1.RecoveryOutcome {
 	GinkgoHelper()
 
+	var outcome *v1.RecoveryOutcome
 	Eventually(func(g Gomega) {
 		contract := publishedContract(g, server)
 		g.Expect(contract.Spec.PITR).NotTo(BeNil())
-		g.Expect(contract.Spec.PITR.LastRecovery).NotTo(BeNil())
-		g.Expect(contract.Spec.PITR.LastRecovery.Result).To(Equal(result))
+		outcome = contract.Spec.PITR.LastRecovery
+		g.Expect(outcome).NotTo(BeNil())
+		g.Expect(outcome.Result).To(Equal(result))
 
 		// The answer reaches the contract before it reaches the server: the
 		// operator publishes it first, so a status write that is lost leaves
@@ -334,10 +334,10 @@ func expectLastRecovery(server *v1.DatabaseServer, result v1.RecoveryResult) *v1
 		// the record is waited on here.
 		recorded := reconciledServer(server).Status.Recovery
 		g.Expect(recorded).NotTo(BeNil())
-		g.Expect(recorded.RequestID).To(Equal(contract.Spec.PITR.LastRecovery.RequestID))
+		g.Expect(recorded.RequestID).To(Equal(outcome.RequestID))
 	}, timeout, interval).Should(Succeed())
 
-	return publishedContract(Default, server).Spec.PITR.LastRecovery
+	return outcome
 }
 
 // expectAnsweredRecovery waits until the status of the server records the
@@ -545,8 +545,8 @@ var _ = Describe("DatabaseServer recovery", func() {
 			To(HaveKeyWithValue("serverName", "camunda"))
 
 		By("waiting for CloudNativePG before it touches the contract")
-		Consistently(func() string {
-			return publishedContract(Default, server).Spec.Host
+		Consistently(func(g Gomega) string {
+			return publishedContract(g, server).Spec.Host
 		}, "1s", interval).Should(Equal("camunda-rw." + server.Namespace + ".svc"))
 
 		bringRecoveryClusterUp(server, "camunda-r1")
@@ -559,8 +559,8 @@ var _ = Describe("DatabaseServer recovery", func() {
 		}, timeout, interval).Should(Succeed())
 
 		By("waiting for the contract to reach the server it names now")
-		Consistently(func() *v1.RecoveryOutcome {
-			contract := publishedContract(Default, server)
+		Consistently(func(g Gomega) *v1.RecoveryOutcome {
+			contract := publishedContract(g, server)
 			if contract.Spec.PITR == nil {
 				return nil
 			}
@@ -1346,8 +1346,8 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		// Grading the cluster that is going answers the new request from the
 		// state of the dead one, and it answers it at once.
-		Consistently(func() string {
-			return publishedContract(Default, server).Spec.PITR.LastRecovery.RequestID
+		Consistently(func(g Gomega) string {
+			return publishedContract(g, server).Spec.PITR.LastRecovery.RequestID
 		}, "2s", interval).Should(Equal(first.RequestID))
 
 		By("letting it go")
@@ -1405,8 +1405,8 @@ var _ = Describe("DatabaseServer recovery", func() {
 			g.Expect(latest.Status.Recovery.Cluster).To(BeEmpty())
 		}, timeout, interval).Should(Succeed())
 
-		Eventually(func() string {
-			return publishedContract(Default, server).Spec.Host
+		Eventually(func(g Gomega) string {
+			return publishedContract(g, server).Spec.Host
 		}, timeout, interval).Should(Equal("camunda-rw." + server.Namespace + ".svc"))
 
 		// The archive of the cluster the server runs from stays open: the
@@ -1950,8 +1950,8 @@ var _ = Describe("DatabaseServer recovery", func() {
 			g.Expect(publishedContract(g, server).Spec.Host).To(Equal(strangerHost))
 		}, timeout, interval).Should(Succeed())
 
-		Consistently(func() string {
-			return publishedContract(Default, server).Spec.Host
+		Consistently(func(g Gomega) string {
+			return publishedContract(g, server).Spec.Host
 		}, "1s", interval).Should(Equal(strangerHost))
 
 		// The endpoint is read back only on a look that finds the record
