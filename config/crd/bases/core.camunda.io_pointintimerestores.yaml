@@ -126,10 +126,10 @@ spec:
                 description: |-
                   Backend names the database that the restore holds while its server rolls
                   back: the host, the port, and the database name. The operator records it
-                  when it asks for the rollback, and it follows each endpoint that the
-                  contract names. From then to the terminal phase, no other CamundaCluster
-                  starts on this database, except in the moment after the contract moves
-                  while the target is deleted. A restore whose server is rolled back
+                  just before it asks for the rollback, and it follows each endpoint that
+                  the contract names. From then to the terminal phase, no other
+                  CamundaCluster starts on this database, except in the moment after the
+                  contract moves to a new endpoint. A restore whose server is rolled back
                   outside the operator records none.
                 type: string
               brokers:

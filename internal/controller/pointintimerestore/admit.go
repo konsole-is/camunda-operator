@@ -245,8 +245,8 @@ func (r *Reconciler) backendFree(
 		return &conditions.PreCheckFailure{
 			Reason: v1.ReasonWaitingForHandover,
 			Message: fmt.Sprintf(
-				"%s still write the database %q. The restore goes on when they are done",
-				strings.Join(writers, ", "), backend,
+				"Other writers still write the database %q: %s. The restore goes on when they are done",
+				backend, strings.Join(writers, ", "),
 			),
 		}, nil
 	}
