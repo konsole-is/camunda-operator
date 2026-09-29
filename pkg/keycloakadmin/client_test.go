@@ -365,3 +365,14 @@ func TestUpdateClientWithoutAnID(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no id")
 }
+
+// A request on http.DefaultTransport fails when another user of that
+// transport calls CloseIdleConnections, as every httptest.Server.Close does.
+func TestNewGivesTheClientATransportOfItsOwn(t *testing.T) {
+	t.Parallel()
+
+	client := New("http://keycloak/auth", "camunda-platform", "admin", "secret")
+
+	require.NotNil(t, client.http.Transport)
+	assert.NotSame(t, http.DefaultTransport, client.http.Transport)
+}

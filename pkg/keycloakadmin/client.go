@@ -94,7 +94,8 @@ func New(baseURL, realm, username, password string, opts ...Option) *Client {
 		username: username,
 		password: password,
 		http: &http.Client{
-			Timeout: DefaultTimeout,
+			Timeout:   DefaultTimeout,
+			Transport: defaultTransport(),
 			// A Keycloak this operator does not run is on the other end. A
 			// 307 or a 308 makes Go replay the request body at the new host,
 			// and the body of the sign-in carries the administrator name and
