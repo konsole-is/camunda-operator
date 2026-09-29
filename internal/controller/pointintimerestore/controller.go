@@ -289,8 +289,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	if pitr.Status.Backend != "" {
-		err := restore.RegisterWriter(
-			ctx, r.Client, r.APIReader, r.ClaimNamespace, pitr.Status.Backend, &pitr, pitr.Status.TargetClusterUID,
+		err := restore.RegisterDatabaseWriter(
+			ctx,
+			r.Client,
+			r.APIReader,
+			r.ClaimNamespace,
+			pitr.Status.Backend,
+			pinnedContract(&pitr),
+			&pitr,
+			pitr.Status.TargetClusterUID,
 		)
 		if err != nil {
 			return ctrl.Result{}, err

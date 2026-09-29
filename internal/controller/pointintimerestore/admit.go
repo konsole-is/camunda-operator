@@ -195,8 +195,15 @@ func (r *Reconciler) admit(
 	// created, and the database is read as it stands.
 	if resolved.server.OperatorRecovers() {
 		// Status.Backend names only a backend that the restore holds.
-		err := restore.RegisterWriter(
-			ctx, r.Client, r.APIReader, r.ClaimNamespace, backend, pitr, pitr.Status.TargetClusterUID,
+		err := restore.RegisterDatabaseWriter(
+			ctx,
+			r.Client,
+			r.APIReader,
+			r.ClaimNamespace,
+			backend,
+			pinnedContract(pitr),
+			pitr,
+			pitr.Status.TargetClusterUID,
 		)
 		if err != nil {
 			return restore.Outcome{}, err
@@ -236,7 +243,11 @@ func (r *Reconciler) backendFree(
 		return failure, err
 	}
 	// A deleted restore into the same cluster can still roll the server back.
-	writers, err := restore.OtherWriters(ctx, r.APIReader, r.ClaimNamespace, backend, pitr)
+	contract := restore.DatabaseContract(
+		client.ObjectKeyFromObject(resolved.server),
+		resolved.dbConfig.Spec.DatabaseName,
+	)
+	writers, err := restore.OtherWriters(ctx, r.APIReader, r.ClaimNamespace, backend, contract, pitr)
 	if err != nil {
 		return nil, err
 	}
@@ -713,6 +724,18 @@ func pinnedChain(
 		Endpoint:                  fmt.Sprintf("%s:%d", server.Spec.Host, server.Spec.Port),
 		SystemIdentifier:          server.Status.SystemIdentifier,
 	}
+}
+
+// pinnedContract returns the contract of the database that the restore pinned
+// in status.storage, or the empty string before it pinned one.
+func pinnedContract(pitr *v1.PointInTimeRestore) string {
+	pinned := pitr.Status.Storage
+	if pinned == nil {
+		return ""
+	}
+	server := types.NamespacedName{Namespace: pitr.Namespace, Name: pinned.DatabaseServerConfig}
+
+	return restore.DatabaseContract(server, pinned.DatabaseName)
 }
 
 // credentials reads the application credentials of the logical database. They

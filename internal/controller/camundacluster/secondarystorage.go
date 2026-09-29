@@ -76,7 +76,7 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 	// that runs.
 	var waitingFor *components.StorageHandover
 	blocker, err := res.claims.TakeUnclaimed(ctx, res.cluster, key, func(ctx context.Context) error {
-		waitingFor, err = res.writersOnTheBackend(ctx, key, in.Storage.Claim)
+		waitingFor, err = res.writersOnTheBackend(ctx, key, in.Storage)
 		if err != nil {
 			return err
 		}
@@ -166,7 +166,7 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 	//
 	// The writers are read after the Lease was written, so a writer that this
 	// read misses meets the Lease.
-	in.Storage.Handover, err = res.writersOnTheBackend(ctx, key, in.Storage.Claim)
+	in.Storage.Handover, err = res.writersOnTheBackend(ctx, key, in.Storage)
 
 	return err
 }
@@ -190,18 +190,31 @@ func handoverPossible(suspended, heldAtStart, ownPodOnClaim bool) bool {
 // that the caller reports.
 var errWritersOnBackend = errors.New("another cluster, or a writer for one, writes the backend")
 
-// writersOnTheBackend returns the pods of other clusters on claim and the
-// writers for other clusters on key as the handover this cluster waits for,
-// or nil when there are none. claim is the Lease name of key.
+// writersOnTheBackend returns the pods of other clusters on the claim of
+// storage and the writers for other clusters on key as the handover this
+// cluster waits for, or nil when there are none. A writer that names the
+// contract of storage counts on any key, so a move of the address frees
+// nothing that a writer still holds. storage.Claim is the Lease name of key.
 func (res *resolver) writersOnTheBackend(
 	ctx context.Context,
-	key, claim string,
+	key string,
+	storage components.Storage,
 ) (*components.StorageHandover, error) {
-	pods, err := components.OtherPodsOnClaim(ctx, res.reader, claim, components.PodsOfCluster(res.cluster.UID))
+	pods, err := components.OtherPodsOnClaim(
+		ctx, res.reader, storage.Claim, components.PodsOfCluster(res.cluster.UID),
+	)
 	if err != nil {
 		return nil, err
 	}
-	writers, err := storagewriter.Live(ctx, res.reader, res.claimNamespace, key, claim, res.cluster.UID)
+	writers, err := storagewriter.Live(
+		ctx,
+		res.reader,
+		res.claimNamespace,
+		key,
+		storage.Claim,
+		components.StorageContract(storage),
+		res.cluster.UID,
+	)
 	if err != nil {
 		return nil, err
 	}

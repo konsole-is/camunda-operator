@@ -67,6 +67,9 @@ const (
 	// It is on the pod, never on the selector, so a change of backend rolls
 	// the pods and the new ones carry the new value.
 	StorageClaimKey = "camunda.io/storage-claim"
+	// StorageContractKey names, as a hash, the contract that holds the address
+	// of the backend a writer Lease registers on. See storagewriter.Writer.
+	StorageContractKey = "camunda.io/storage-contract"
 	// ElasticsearchClusterKey names the owning ElasticsearchCluster.
 	ElasticsearchClusterKey = "camunda.io/elasticsearch-cluster"
 	// DatabaseServerKey names the owning DatabaseServer.

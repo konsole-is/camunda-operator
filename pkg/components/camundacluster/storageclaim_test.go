@@ -31,6 +31,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -596,4 +597,33 @@ func leaseGoldenScheme(t *testing.T) *runtime.Scheme {
 	require.NoError(t, coordinationv1.AddToScheme(scheme))
 
 	return scheme
+}
+
+func TestStorageContractNamesTheServerContractAndTheDatabase(t *testing.T) {
+	server := types.NamespacedName{Namespace: "apps", Name: "pg"}
+	rdbms := func(host string) Storage {
+		return Storage{
+			Type:      v1.SecondaryStorageTypeRDBMS,
+			Namespace: "apps",
+			RDBMS:     &RDBMSStorage{Server: server, Host: host, Port: 5432, Database: "camunda"},
+		}
+	}
+
+	assert.Equal(t, "rdbms|apps/pg/camunda", StorageContract(rdbms("old")))
+	assert.Equal(
+		t,
+		StorageContract(rdbms("old")),
+		StorageContract(rdbms("new")),
+		"a move of the address keeps the contract",
+	)
+	elasticsearch := Storage{
+		Type:          v1.SecondaryStorageTypeElasticsearch,
+		Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es:9200"},
+	}
+	assert.Empty(t, StorageContract(elasticsearch))
+	noServer := Storage{
+		Type:  v1.SecondaryStorageTypeRDBMS,
+		RDBMS: &RDBMSStorage{Host: "pg", Port: 5432, Database: "camunda"},
+	}
+	assert.Empty(t, StorageContract(noServer), "a chain that names no server has no contract")
 }

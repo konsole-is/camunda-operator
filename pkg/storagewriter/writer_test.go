@@ -61,11 +61,11 @@ func TestRegisterMakesTheWriterLiveForOtherClusters(t *testing.T) {
 
 	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, w))
 
-	live, err := Live(ctx, c, claimNamespace, backend, claim, "other-cluster")
+	live, err := Live(ctx, c, claimNamespace, backend, claim, "", "other-cluster")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/restore"}, live)
 
-	own, err := Live(ctx, c, claimNamespace, backend, claim, "target")
+	own, err := Live(ctx, c, claimNamespace, backend, claim, "", "target")
 	require.NoError(t, err)
 	assert.Empty(t, own, "a writer for the cluster itself does not hold that cluster")
 }
@@ -95,7 +95,7 @@ func TestAWriterOfAnotherBackendIsNotLive(t *testing.T) {
 	c := newClient(t)
 	require.NoError(t, Register(ctx, c, c, claimNamespace, "rdbms|other:5432/camunda", claim, restore("r", "t")))
 
-	live, err := Live(ctx, c, claimNamespace, backend, claim, "other-cluster")
+	live, err := Live(ctx, c, claimNamespace, backend, claim, "", "other-cluster")
 
 	require.NoError(t, err)
 	assert.Empty(t, live)
@@ -114,7 +114,7 @@ func TestARegistrationHoldsTheBackendWhateverItsAge(t *testing.T) {
 	lease.Spec.LeaseDurationSeconds = new(int32(1))
 	require.NoError(t, c.Create(ctx, lease))
 
-	live, err := Live(ctx, c, claimNamespace, backend, claim, "other-cluster")
+	live, err := Live(ctx, c, claimNamespace, backend, claim, "", "other-cluster")
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/restore"}, live)
@@ -142,7 +142,7 @@ func TestReleaseEndsTheRegistrationAndToleratesAMissingLease(t *testing.T) {
 	require.NoError(t, Release(ctx, c, claimNamespace, backend, w))
 	require.NoError(t, Release(ctx, c, claimNamespace, backend, w))
 
-	live, err := Live(ctx, c, claimNamespace, backend, claim, "other")
+	live, err := Live(ctx, c, claimNamespace, backend, claim, "", "other")
 	require.NoError(t, err)
 	assert.Empty(t, live)
 }
@@ -152,7 +152,6 @@ func TestReleaseAllEndsEveryRegistrationOfTheWriterAndNoOther(t *testing.T) {
 	c := newClient(t)
 	w := restore("restore", "target")
 	other := restore("other", "target")
-	moved := "rdbms|moved.apps.svc:5432/camunda"
 	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, w))
 	require.NoError(t, Register(ctx, c, c, claimNamespace, moved, "other-claim", w))
 	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, other))
@@ -186,12 +185,129 @@ func TestRegisterRestoresTheIdentityOfATamperedLease(t *testing.T) {
 
 	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, w))
 
-	live, err := Live(ctx, c, claimNamespace, backend, claim, "other-cluster")
+	live, err := Live(ctx, c, claimNamespace, backend, claim, "", "other-cluster")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/restore"}, live)
 
 	require.NoError(t, ReleaseAll(ctx, c, c, claimNamespace, w.UID))
-	live, err = Live(ctx, c, claimNamespace, backend, claim, "other-cluster")
+	live, err = Live(ctx, c, claimNamespace, backend, claim, "", "other-cluster")
 	require.NoError(t, err)
 	assert.Empty(t, live, "the restored registration carries the UID of its writer")
+}
+
+const (
+	contract   = "rdbms|apps/pg/camunda"
+	moved      = "rdbms|moved.apps.svc:5432/camunda"
+	movedClaim = "camunda-storage-fedcba9876543210fedcba9876543210fedcba98"
+)
+
+func onContract(w Writer) Writer {
+	w.Contract = contract
+
+	return w
+}
+
+func TestAWriterHoldsItsContractOnEveryKey(t *testing.T) {
+	ctx := context.Background()
+	c := newClient(t)
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, onContract(restore("restore", "t"))))
+
+	live, err := Live(ctx, c, claimNamespace, moved, movedClaim, contract, "other-cluster")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/restore"}, live, "the contract moved to a new address")
+
+	live, err = Live(ctx, c, claimNamespace, moved, movedClaim, "rdbms|apps/pg/other", "other-cluster")
+	require.NoError(t, err)
+	assert.Empty(t, live, "another database of the same server is another contract")
+
+	live, err = Live(ctx, c, claimNamespace, moved, movedClaim, "", "other-cluster")
+	require.NoError(t, err)
+	assert.Empty(t, live, "a reader with no contract matches on the key alone")
+
+	live, err = Live(ctx, c, claimNamespace, moved, movedClaim, contract, "t")
+	require.NoError(t, err)
+	assert.Empty(t, live, "a writer for the cluster itself does not hold that cluster")
+}
+
+func TestTwoContractsOnOneAddressCollideThroughTheKey(t *testing.T) {
+	ctx := context.Background()
+	c := newClient(t)
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, onContract(restore("restore", "t"))))
+
+	live, err := Live(ctx, c, claimNamespace, backend, claim, "rdbms|apps/alias/camunda", "other-cluster")
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/restore"}, live)
+}
+
+func TestAWriterThatMatchesOnKeyAndContractCountsOnce(t *testing.T) {
+	ctx := context.Background()
+	c := newClient(t)
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, onContract(restore("restore", "t"))))
+
+	live, err := Live(ctx, c, claimNamespace, backend, claim, contract, "other-cluster")
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/restore"}, live)
+}
+
+func TestAWriterOnTwoKeysOfItsContractCountsOnce(t *testing.T) {
+	ctx := context.Background()
+	c := newClient(t)
+	w := onContract(restore("restore", "t"))
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, w))
+	require.NoError(t, Register(ctx, c, c, claimNamespace, moved, movedClaim, w))
+
+	onMoved, err := Live(ctx, c, claimNamespace, moved, movedClaim, contract, "other-cluster")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/restore"}, onMoved)
+
+	elsewhere := "rdbms|elsewhere.apps.svc:5432/camunda"
+	onThird, err := Live(ctx, c, claimNamespace, elsewhere, "camunda-storage-elsewhere", contract, "other-cluster")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/restore"}, onThird)
+}
+
+// The contract label is a hash, so the annotation decides a match.
+func TestTheContractAnnotationDecidesAMatch(t *testing.T) {
+	ctx := context.Background()
+	c := newClient(t)
+	lease := newLease(claimNamespace, backend, claim, onContract(restore("restore", "t")))
+	lease.Annotations[ContractAnnotation] = "rdbms|apps/pg/other"
+	require.NoError(t, c.Create(ctx, lease))
+
+	live, err := Live(ctx, c, claimNamespace, moved, movedClaim, contract, "other-cluster")
+
+	require.NoError(t, err)
+	assert.Empty(t, live)
+}
+
+func TestRegisterRestoresAStrippedContract(t *testing.T) {
+	ctx := context.Background()
+	c := newClient(t)
+	w := onContract(restore("restore", "t"))
+	lease := newLease(claimNamespace, backend, claim, w)
+	delete(lease.Annotations, ContractAnnotation)
+	require.NoError(t, c.Create(ctx, lease))
+
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, w))
+
+	live, err := Live(ctx, c, claimNamespace, moved, movedClaim, contract, "other-cluster")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/restore"}, live)
+}
+
+func TestLiveExceptLeavesOutTheWriterOnEveryKeyOfItsContract(t *testing.T) {
+	ctx := context.Background()
+	c := newClient(t)
+	w := onContract(restore("restore", "t"))
+	earlier := onContract(restore("earlier", "t"))
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, w))
+	require.NoError(t, Register(ctx, c, c, claimNamespace, moved, movedClaim, w))
+	require.NoError(t, Register(ctx, c, c, claimNamespace, backend, claim, earlier))
+
+	live, err := LiveExcept(ctx, c, claimNamespace, moved, movedClaim, w)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"LogicalRestoreRDBMS apps/earlier"}, live)
 }

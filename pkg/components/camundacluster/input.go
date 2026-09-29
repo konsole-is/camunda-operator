@@ -81,6 +81,8 @@ type StorageHandover struct {
 // RDBMSStorage is the DatabaseConfig and DatabaseServerConfig chain of an
 // rdbms binding, flattened to what the JDBC URL and the credentials need.
 type RDBMSStorage struct {
+	// Server is the DatabaseServerConfig of the chain. See StorageContract.
+	Server types.NamespacedName
 	// Host and Port come from the DatabaseServerConfig.
 	Host string
 	Port int32

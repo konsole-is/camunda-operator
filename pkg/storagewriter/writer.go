@@ -23,7 +23,9 @@ limitations under the License.
 // backend for as long as it exists: nothing renews it and it never expires.
 // The writer releases it when it stops writing, from its finalizer when it is
 // deleted. A registration that outlives its writer holds the backend until
-// somebody deletes it.
+// somebody deletes it. A registration that names a contract also holds every
+// other backend that the contract resolves to, so a move of the address frees
+// nothing.
 package storagewriter
 
 import (
@@ -51,6 +53,8 @@ const (
 	KeyAnnotation = "camunda.io/storage-writer-key"
 	// WriterAnnotation holds the writer as "Kind namespace/name".
 	WriterAnnotation = "camunda.io/storage-writer"
+	// ContractAnnotation holds the contract of the writer, see Writer.Contract.
+	ContractAnnotation = "camunda.io/storage-writer-contract"
 )
 
 const leasePrefix = "camunda-writer-"
@@ -63,6 +67,11 @@ type Writer struct {
 	Name       string
 	UID        types.UID
 	ClusterUID types.UID
+	// Contract names the resource that holds the address of the backend, for
+	// example a DatabaseServerConfig and a database name. A reader that passes
+	// the same contract to Live finds the writer on any backend key. Empty
+	// names no contract.
+	Contract string
 }
 
 // String returns the writer as "Kind namespace/name", the form that the writer
@@ -129,16 +138,20 @@ func LeaseName(key string, uid types.UID) string {
 
 func newLease(namespace, key, claim string, w Writer) *coordinationv1.Lease {
 	identity := labels.BoundedName(w.String(), 128)
+	annotations := map[string]string{
+		KeyAnnotation:    key,
+		WriterAnnotation: w.String(),
+	}
+	if w.Contract != "" {
+		annotations[ContractAnnotation] = w.Contract
+	}
 
 	return &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      LeaseName(key, w.UID),
-			Labels:    leaseLabels(claim, w),
-			Annotations: map[string]string{
-				KeyAnnotation:    key,
-				WriterAnnotation: w.String(),
-			},
+			Namespace:   namespace,
+			Name:        LeaseName(key, w.UID),
+			Labels:      leaseLabels(claim, w),
+			Annotations: annotations,
 		},
 		Spec: coordinationv1.LeaseSpec{
 			HolderIdentity: &identity,
@@ -148,13 +161,26 @@ func newLease(namespace, key, claim string, w Writer) *coordinationv1.Lease {
 }
 
 func leaseLabels(claim string, w Writer) map[string]string {
-	return map[string]string{
+	out := map[string]string{
 		labels.ManagedByKey:    labels.ManagedBy,
 		labels.ComponentKey:    Component,
 		labels.StorageClaimKey: labels.OwnerName(claim),
 		labels.ClusterUIDKey:   string(w.ClusterUID),
 		labels.WriterUIDKey:    string(w.UID),
 	}
+	if w.Contract != "" {
+		out[labels.StorageContractKey] = contractLabel(w.Contract)
+	}
+
+	return out
+}
+
+// contractLabel holds a hash because a contract has characters, such as "/",
+// that a label value does not admit.
+func contractLabel(contract string) string {
+	sum := sha256.Sum256([]byte(contract))
+
+	return hex.EncodeToString(sum[:])[:40]
 }
 
 // Release removes the registration of w on the backend key. A registration that
@@ -200,17 +226,19 @@ func ReleaseAll(ctx context.Context, c client.Client, reader client.Reader, name
 	return nil
 }
 
-// Live returns the writers of the backend key, as sorted "Kind namespace/name"
-// entries, leaving out the writers for the cluster with UID self. claim is the
-// name of the storage claim Lease of key. The reader must read the API server
-// directly: a stale list lets a cluster start beside a writer.
+// Live returns the writers of the backend key, and the writers that name
+// contract on any key, as sorted, distinct "Kind namespace/name" entries. It leaves out
+// the writers for the cluster with UID self. claim is the name of the storage
+// claim Lease of key. An empty contract matches on the key alone. The reader
+// must read the API server directly: a stale list lets a cluster start beside
+// a writer.
 func Live(
 	ctx context.Context,
 	reader client.Reader,
-	namespace, key, claim string,
+	namespace, key, claim, contract string,
 	self types.UID,
 ) ([]string, error) {
-	leases, err := registrations(ctx, reader, namespace, key, claim)
+	leases, err := registrations(ctx, reader, namespace, key, claim, contract)
 	if err != nil {
 		return nil, err
 	}
@@ -224,40 +252,72 @@ func Live(
 	}
 	slices.Sort(writers)
 
-	return writers, nil
+	// A writer that follows a move holds the old key and the new one for a
+	// moment, and it counts once.
+	return slices.Compact(writers), nil
 }
 
-// LiveExcept is Live, but it leaves out only the registration of w, so the
-// writers for every cluster count.
+// LiveExcept is Live on the contract of w, but it leaves out only the
+// registrations of w, so the writers for every cluster count.
 func LiveExcept(
 	ctx context.Context,
 	reader client.Reader,
 	namespace, key, claim string,
 	w Writer,
 ) ([]string, error) {
-	leases, err := registrations(ctx, reader, namespace, key, claim)
+	leases, err := registrations(ctx, reader, namespace, key, claim, w.Contract)
 	if err != nil {
 		return nil, err
 	}
 
-	own := LeaseName(key, w.UID)
 	var writers []string
 	for _, lease := range leases {
-		if lease.Name == own {
+		if lease.Labels[labels.WriterUIDKey] == string(w.UID) {
 			continue
 		}
 		writers = append(writers, lease.Annotations[WriterAnnotation])
 	}
 	slices.Sort(writers)
 
-	return writers, nil
+	return slices.Compact(writers), nil
 }
 
-// registrations returns the writer Leases of the backend key.
+// registrations returns the writer Leases of the backend key and of contract.
 func registrations(
 	ctx context.Context,
 	reader client.Reader,
-	namespace, key, claim string,
+	namespace, key, claim, contract string,
+) ([]*coordinationv1.Lease, error) {
+	// Two claim names can share a bounded label value, so the key decides.
+	out, err := listMatching(
+		ctx,
+		reader,
+		namespace,
+		labels.StorageClaimKey,
+		labels.OwnerName(claim),
+		KeyAnnotation,
+		key,
+	)
+	if err != nil || contract == "" {
+		return out, err
+	}
+
+	byContract, err := listMatching(
+		ctx, reader, namespace, labels.StorageContractKey, contractLabel(contract), ContractAnnotation, contract,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return append(out, byContract...), nil
+}
+
+// listMatching lists the writer Leases whose label is value and keeps those
+// whose annotation is exactly want.
+func listMatching(
+	ctx context.Context,
+	reader client.Reader,
+	namespace, label, value, annotation, want string,
 ) ([]*coordinationv1.Lease, error) {
 	var leases coordinationv1.LeaseList
 	err := reader.List(
@@ -265,19 +325,18 @@ func registrations(
 		&leases,
 		client.InNamespace(namespace),
 		client.MatchingLabels{
-			labels.ManagedByKey:    labels.ManagedBy,
-			labels.ComponentKey:    Component,
-			labels.StorageClaimKey: labels.OwnerName(claim),
+			labels.ManagedByKey: labels.ManagedBy,
+			labels.ComponentKey: Component,
+			label:               value,
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("listing the writers of the backend %q: %w", key, err)
+		return nil, fmt.Errorf("listing the writers of %q: %w", want, err)
 	}
 
 	var out []*coordinationv1.Lease
 	for i := range leases.Items {
-		// Two claim names can share a bounded label value, so the key decides.
-		if leases.Items[i].Annotations[KeyAnnotation] == key {
+		if leases.Items[i].Annotations[annotation] == want {
 			out = append(out, &leases.Items[i])
 		}
 	}
