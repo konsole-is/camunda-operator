@@ -312,6 +312,7 @@ KIND ?= kind
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
+CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 # The JSON schema that `golangci-lint config verify` checks .golangci.yml against. golangci-lint fetches it itself
 # with a 2 s HTTP timeout and no retry, which fails CI on a slow CDN answer, so lint-config downloads it with
@@ -321,6 +322,8 @@ GOLANGCI_LINT_SCHEMA = $(LOCALBIN)/golangci.$(basename $(GOLANGCI_LINT_VERSION))
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.8.1
 CONTROLLER_TOOLS_VERSION ?= v0.20.1
+# renovate: datasource=go depName=github.com/elastic/crd-ref-docs
+CRD_REF_DOCS_VERSION ?= v0.3.0
 
 #ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
 ENVTEST_VERSION ?= $(shell v='$(call gomodver,sigs.k8s.io/controller-runtime)'; \
@@ -346,6 +349,11 @@ $(KUSTOMIZE): $(LOCALBIN)
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
 $(CONTROLLER_GEN): $(LOCALBIN)
 	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
+
+.PHONY: crd-ref-docs
+crd-ref-docs: $(CRD_REF_DOCS) ## Download crd-ref-docs locally if necessary.
+$(CRD_REF_DOCS): $(LOCALBIN)
+	$(call go-install-tool,$(CRD_REF_DOCS),github.com/elastic/crd-ref-docs,$(CRD_REF_DOCS_VERSION))
 
 .PHONY: setup-envtest
 setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory.
@@ -505,6 +513,11 @@ docs-serve: ## Serve the documentation site locally with live reload.
 .PHONY: docs-build
 docs-build: ## Build the documentation site in strict mode.
 	mkdocs build --strict
+
+.PHONY: api-docs
+api-docs: crd-ref-docs ## Render the API reference in docs/crds/api-reference.md from the types in api/v1.
+	"$(CRD_REF_DOCS)" --source-path=api/v1 --config=hack/crd-ref-docs/config.yaml \
+		--renderer=markdown --output-path=docs/crds/api-reference.md
 
 .PHONY: docs-sentences
 docs-sentences: ## Report the sentences under docs/ that break the simple-english rules: length, semicolons, and the modals would, could, and may.

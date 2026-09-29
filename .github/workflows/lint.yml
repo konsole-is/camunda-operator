@@ -35,6 +35,13 @@ jobs:
           git add --intent-to-add config/prometheus/observability
           git diff --exit-code -- config/prometheus/observability
 
+      # docs/crds/api-reference.md is rendered from the GoDoc in api/v1. A
+      # change to a type must re-render it in the same change.
+      - name: Check that the API reference is rendered
+        run: |
+          make api-docs
+          git diff --exit-code -- docs/crds/api-reference.md
+
       - name: Check the docs against the simple-english rules
         run: make docs-sentences
 
