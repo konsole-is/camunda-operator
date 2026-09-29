@@ -1463,10 +1463,6 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		})
 	}
 
-	// A writer Lease that outlives its restore, because somebody removed the
-	// finalizer of the restore by hand, holds the backend until somebody
-	// deletes it. Its timestamps say it was renewed a year ago with a
-	// one-second duration, which no reader measures.
 	// A restore that rolls the database server back holds the database through
 	// a writer that names the contract. When the contract moves to another
 	// address, the writer and the next cluster react to one change, so the
@@ -1546,6 +1542,10 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		expectDatabaseClaimedBy(moved, parked)
 	})
 
+	// A writer Lease that outlives its restore, because somebody removed the
+	// finalizer of the restore by hand, holds the backend until somebody
+	// deletes it. Its timestamps say it was renewed a year ago with a
+	// one-second duration, which no reader measures.
 	It("waits for a leftover writer Lease until it is deleted by hand", func() {
 		ns := newNamespace()
 		binding := createBinding(ns, true)

@@ -227,7 +227,7 @@ func ReleaseAll(ctx context.Context, c client.Client, reader client.Reader, name
 }
 
 // Live returns the writers of the backend key, and the writers that name
-// contract on any key, as sorted "Kind namespace/name" entries. It leaves out
+// contract on any key, as sorted, distinct "Kind namespace/name" entries. It leaves out
 // the writers for the cluster with UID self. claim is the name of the storage
 // claim Lease of key. An empty contract matches on the key alone. The reader
 // must read the API server directly: a stale list lets a cluster start beside
@@ -252,7 +252,9 @@ func Live(
 	}
 	slices.Sort(writers)
 
-	return writers, nil
+	// A writer that follows a move holds the old key and the new one for a
+	// moment, and it counts once.
+	return slices.Compact(writers), nil
 }
 
 // LiveExcept is Live on the contract of w, but it leaves out only the
@@ -277,7 +279,7 @@ func LiveExcept(
 	}
 	slices.Sort(writers)
 
-	return writers, nil
+	return slices.Compact(writers), nil
 }
 
 // registrations returns the writer Leases of the backend key and of contract.
@@ -306,28 +308,8 @@ func registrations(
 	if err != nil {
 		return nil, err
 	}
-	// A writer that follows a move holds the old key and the new one for a
-	// moment, and it counts once.
-	seen := make(map[string]bool, len(out))
-	for _, lease := range out {
-		seen[writerOf(lease)] = true
-	}
-	for _, lease := range byContract {
-		if !seen[writerOf(lease)] {
-			seen[writerOf(lease)] = true
-			out = append(out, lease)
-		}
-	}
 
-	return out, nil
-}
-
-func writerOf(lease *coordinationv1.Lease) string {
-	if uid := lease.Labels[labels.WriterUIDKey]; uid != "" {
-		return uid
-	}
-
-	return lease.Name
+	return append(out, byContract...), nil
 }
 
 // listMatching lists the writer Leases whose label is value and keeps those

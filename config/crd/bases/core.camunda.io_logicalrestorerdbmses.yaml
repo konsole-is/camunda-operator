@@ -213,8 +213,7 @@ spec:
                 description: |-
                   Contract is the DatabaseServerConfig and the database name that held the
                   address of Backend when the restore started. The hold stays on this
-                  contract when the DatabaseServerConfig moves to another address. A
-                  restore that pinned no contract holds Backend alone.
+                  contract when the DatabaseServerConfig moves to another address.
                 type: string
               failureMessage:
                 description: |-
