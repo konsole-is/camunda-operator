@@ -505,6 +505,28 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		Expect(writersSeenByAnotherCluster(backend)).To(BeEmpty())
 	})
 
+	It("keeps its database held for the grace when its request is cleared and its cluster is deleted", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		backend := expectBackendHeld(pitr)
+
+		Eventually(func(g Gomega) {
+			var contract v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), &contract)).To(Succeed())
+			contract.Spec.Recovery = nil
+			g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+
+		Consistently(func(g Gomega) {
+			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
+			g.Expect(writersSeenByAnotherCluster(backend)).NotTo(BeEmpty())
+		}, time.Second, interval).Should(Succeed())
+		expectFailed(pitr, v1.ReasonFailed)
+	})
+
 	It("keeps its database held when its cluster is deleted, until the server answers", func() {
 		w := operatorRecoveryWorld()
 		pitr := createRestore(w)

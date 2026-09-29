@@ -219,8 +219,8 @@ func (r *Reconciler) holdForRollback(
 }
 
 // runningRollback returns the pinned contract while it carries the request of
-// this restore and has not answered it. unanswerable is true when the rollback
-// can still run but no pinned contract that recovers can answer it.
+// this restore unanswered. unanswerable is true when the rollback can still run
+// but the pinned contract is gone, no longer recovers, or dropped the request.
 func (r *Reconciler) runningRollback(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
@@ -237,9 +237,10 @@ func (r *Reconciler) runningRollback(
 	asked := contract.Spec.Recovery != nil && *contract.Spec.Recovery == request
 	answered := contract.Spec.PITR != nil && request.AnsweredBy(contract.Spec.PITR.LastRecovery)
 	switch {
-	case !asked || answered:
+	case answered:
 		return nil, false, nil
-	case !contract.OperatorRecovers():
+	// The server keeps running a request it accepted, whatever spec.recovery says now.
+	case !asked || !contract.OperatorRecovers():
 		return contract, true, nil
 	}
 
