@@ -280,10 +280,8 @@ func Live(
 	return writers, nil
 }
 
-// LiveExcept returns the live writers of the backend key, as sorted "Kind
-// namespace/name" entries, leaving out the registration of w only. The
-// writers for every cluster count. The reader must read the API server
-// directly. since is Clock.Since.
+// LiveExcept is Live, but it leaves out only the registration of w, so the
+// writers for every cluster count.
 func LiveExcept(
 	ctx context.Context,
 	reader client.Reader,

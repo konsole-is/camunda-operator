@@ -90,11 +90,9 @@ var errChainChanged = errors.New("the storage chain of the cluster changed")
 // the operations on a cluster, and admission is about to write to that
 // cluster's spec.
 //
-// Admission ends by reading the database in the same reconcile. The read is
-// the first call that leaves the cluster, but it changes nothing, and a
-// restore that the database holds back must report Pending. The phase is
-// staged first, so the one status write of this reconcile records whichever
-// of the two outcomes the read produced.
+// Admission ends in the same reconcile: it reads the database, or it registers
+// the restore as a writer for a server that rolls itself back. A restore that
+// the database holds back reports Pending.
 func (r *Reconciler) admit(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
