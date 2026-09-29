@@ -332,60 +332,6 @@ func TestHandoverPossible(t *testing.T) {
 	}
 }
 
-// A holder whose own pods write its backend never reads the handover, so it
-// prunes the expired writer Leases of that backend on its own pass.
-func TestClaimStoragePrunesExpiredWritersOnAHealthyBackend(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, clientgoscheme.AddToScheme(scheme))
-	require.NoError(t, v1.AddToScheme(scheme))
-
-	storage := components.Storage{
-		Type:          v1.SecondaryStorageTypeElasticsearch,
-		Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es.data.svc:9200"},
-	}
-	key, err := components.StorageClaimKey(storage)
-	require.NoError(t, err)
-	claim := components.StorageClaimSchema().LeaseName(key)
-	self := &v1.CamundaCluster{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "holder", UID: "uid-holder"},
-	}
-	own := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
-		Name:      "holder-zeebe-0",
-		Namespace: "apps",
-		Labels:    components.StoragePodLabels("holder", self.UID, claim),
-	}}
-	held := components.StorageClaimSchema().NewLease("camunda-system", key, self)
-	c := storageClaimPodClient(t, scheme, own, held)
-
-	deleted := storagewriter.Writer{
-		Kind: "LogicalRestoreElasticsearch", Namespace: "apps", Name: "gone", UID: "uid-gone", ClusterUID: "uid-old",
-	}
-	registered := time.Now().Add(-storagewriter.Duration)
-	require.NoError(
-		t,
-		storagewriter.Register(context.Background(), c, c, "camunda-system", key, claim, deleted, registered),
-	)
-
-	in := &components.Input{Storage: storage}
-	in.Effective = components.NewEffective(v1.CamundaClusterSpec{})
-	res := &resolver{
-		reader:         c,
-		client:         c,
-		claims:         components.StorageClaimSchema().NewClaim(c, c, "camunda-system"),
-		claimNamespace: "camunda-system",
-		cluster:        self,
-		storage:        &v1.SecondaryStorageConfig{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "storage"}},
-		recorder:       events.NewFakeRecorder(10),
-	}
-
-	require.NoError(t, res.claimStorage(context.Background(), in))
-
-	assert.Nil(t, in.Storage.Handover)
-	lease := types.NamespacedName{Namespace: "camunda-system", Name: storagewriter.LeaseName(key, deleted.UID)}
-	err = c.Get(context.Background(), lease, &coordinationv1.Lease{})
-	assert.True(t, apierrors.IsNotFound(err), "the expired writer Lease is pruned")
-}
-
 // A free backend is not free while pods of another cluster write it. Without
 // this rule, a parked cluster that finds the Lease gone creates it, and the
 // running holder then meets a blocker and scales to zero.
@@ -440,7 +386,6 @@ func TestClaimStorageWaitsUnderThePodsOnAFreeBackend(t *testing.T) {
 			c := storageClaimPodClient(t, scheme, tc.pods...)
 			res := &resolver{
 				reader:  c,
-				client:  c,
 				claims:  components.StorageClaimSchema().NewClaim(c, c, "camunda-system"),
 				cluster: self,
 				storage: &v1.SecondaryStorageConfig{
@@ -509,11 +454,10 @@ func TestClaimStorageWaitsForALiveWriterForAnotherCluster(t *testing.T) {
 	}
 
 	cases := map[string]struct {
-		backend    string
-		writer     storagewriter.Writer
-		registered time.Time
-		held       bool
-		waitsOn    string
+		backend string
+		writer  storagewriter.Writer
+		held    bool
+		waitsOn string
 	}{
 		"an Elasticsearch restore into another cluster": {
 			writer:  restore("LogicalRestoreElasticsearch", "uid-old"),
@@ -527,10 +471,6 @@ func TestClaimStorageWaitsForALiveWriterForAnotherCluster(t *testing.T) {
 			writer:  restore("LogicalRestoreRDBMS", "uid-old"),
 			held:    true,
 			waitsOn: "LogicalRestoreRDBMS apps/restore",
-		},
-		"a writer whose registration expired": {
-			writer:     restore("LogicalRestoreRDBMS", "uid-old"),
-			registered: time.Now().Add(-storagewriter.Duration),
 		},
 		"a writer on another backend": {
 			backend: "elasticsearch|https://other:9200",
@@ -550,12 +490,9 @@ func TestClaimStorageWaitsForALiveWriterForAnotherCluster(t *testing.T) {
 				objects = append(objects, components.StorageClaimSchema().NewLease("camunda-system", key, self))
 			}
 			c := storageClaimPodClient(t, scheme, objects...)
-			backend, registered := key, time.Now()
+			backend := key
 			if tc.backend != "" {
 				backend = tc.backend
-			}
-			if !tc.registered.IsZero() {
-				registered = tc.registered
 			}
 			claim := components.StorageClaimSchema().LeaseName(backend)
 			require.NoError(
@@ -568,12 +505,10 @@ func TestClaimStorageWaitsForALiveWriterForAnotherCluster(t *testing.T) {
 					backend,
 					claim,
 					tc.writer,
-					registered,
 				),
 			)
 			res := &resolver{
 				reader:         c,
-				client:         c,
 				claims:         components.StorageClaimSchema().NewClaim(c, c, "camunda-system"),
 				claimNamespace: "camunda-system",
 				cluster:        self,
@@ -594,12 +529,7 @@ func TestClaimStorageWaitsForALiveWriterForAnotherCluster(t *testing.T) {
 				},
 				lease,
 			)
-			assert.Equal(
-				t,
-				!tc.registered.IsZero(),
-				apierrors.IsNotFound(err),
-				"only an expired writer Lease is pruned",
-			)
+			assert.NoError(t, err, "a cluster never removes a writer Lease")
 
 			if tc.waitsOn == "" {
 				assert.Nil(t, in.Storage.Handover)
@@ -704,7 +634,6 @@ func TestClaimStorageReportsAForeignLeaseAsUnwatched(t *testing.T) {
 
 	res := &resolver{
 		reader:  c,
-		client:  c,
 		claims:  components.StorageClaimSchema().NewClaim(c, c, "camunda-system"),
 		cluster: &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "orders", UID: "uid-1"}},
 		storage: &v1.SecondaryStorageConfig{
@@ -1534,15 +1463,18 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		})
 	}
 
-	// A writer that stops without a release, for example a restore that was
-	// deleted, holds the backend until its registration expires.
-	It("resumes once the writer registration expires", func() {
+	// A writer Lease that outlives its restore, because somebody removed the
+	// finalizer of the restore by hand, holds the backend until somebody
+	// deletes it. Its timestamps say it was renewed a year ago with a
+	// one-second duration, which no reader measures.
+	It("waits for a leftover writer Lease until it is deleted by hand", func() {
 		ns := newNamespace()
 		binding := createBinding(ns, true)
 		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
 		createCluster(holder)
 		expectClaimedBy(binding, holder)
 		writer := registerWriter("LogicalRestoreRDBMS", holder, storageKeyOf(binding))
+		ageWriter(storageKeyOf(binding), writer)
 
 		parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
 		createCluster(parked)
@@ -1556,27 +1488,33 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 			Equal(v1.ReasonWaitingForHandover),
 			ContainSubstring(writer.String()),
 		)
+		Consistently(func(g Gomega) {
+			var current v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(parked), &current)).To(Succeed())
+			ready := meta.FindStatusCondition(current.Status.Conditions, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(v1.ReasonWaitingForHandover))
+		}, 3*time.Second, interval).Should(Succeed())
 
-		// The registration ages out only after the wait is seen, so the time
-		// that the steps above take cannot end the wait before it is read.
-		By("letting the registration expire without a release")
-		expireWriter(storageKeyOf(binding), writer)
+		By("deleting the leftover writer Lease by its labels, as the docs say")
+		Expect(k8sClient.DeleteAllOf(
+			ctx,
+			&coordinationv1.Lease{},
+			client.InNamespace(testClaimNamespace),
+			client.MatchingLabels{
+				labels.ManagedByKey: labels.ManagedBy,
+				labels.ComponentKey: storagewriter.Component,
+				labels.WriterUIDKey: string(writer.UID),
+			},
+		)).To(Succeed())
 		expectHolds(parked)
 		expectClaimedBy(binding, parked)
-		Eventually(func(g Gomega) {
-			key := types.NamespacedName{
-				Namespace: testClaimNamespace,
-				Name:      storagewriter.LeaseName(storageKeyOf(binding), writer.UID),
-			}
-			err := k8sClient.Get(ctx, key, &coordinationv1.Lease{})
-			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
-		}, timeout, interval).Should(Succeed())
 	})
 
 })
 
 // registerWriter registers a writer of kind for target on backend, as a
-// running restore into target does, with its last renewal now.
+// running restore into target does.
 func registerWriter(kind string, target *v1.CamundaCluster, backend string) storagewriter.Writer {
 	GinkgoHelper()
 	writer := storagewriter.Writer{
@@ -1587,21 +1525,24 @@ func registerWriter(kind string, target *v1.CamundaCluster, backend string) stor
 		ClusterUID: target.UID,
 	}
 	claim := components.StorageClaimSchema().LeaseName(backend)
-	Expect(storagewriter.Register(ctx, k8sClient, k8sClient, testClaimNamespace, backend, claim, writer, time.Now())).
+	Expect(storagewriter.Register(ctx, k8sClient, k8sClient, testClaimNamespace, backend, claim, writer)).
 		To(Succeed())
 
 	return writer
 }
 
-// expireWriter ages out the registration of writer on backend, as a writer
-// that stopped without a release leaves it.
-func expireWriter(backend string, writer storagewriter.Writer) {
+// ageWriter makes the registration of writer on backend read as renewed a
+// year ago with a one-second duration.
+func ageWriter(backend string, writer storagewriter.Writer) {
 	GinkgoHelper()
 	key := types.NamespacedName{Namespace: testClaimNamespace, Name: storagewriter.LeaseName(backend, writer.UID)}
+	old := metav1.NewMicroTime(time.Now().AddDate(-1, 0, 0))
 	Eventually(func(g Gomega) {
 		var lease coordinationv1.Lease
 		g.Expect(k8sClient.Get(ctx, key, &lease)).To(Succeed())
-		lease.Spec.RenewTime = &metav1.MicroTime{Time: time.Now().Add(-storagewriter.Duration)}
+		lease.Spec.AcquireTime = &old
+		lease.Spec.RenewTime = &old
+		lease.Spec.LeaseDurationSeconds = new(int32(1))
 		g.Expect(k8sClient.Update(ctx, &lease)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }

@@ -360,6 +360,38 @@ var _ = Describe("LogicalRestoreRDBMS suspension of its target", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// The pg_restore Job writes the database until it is gone. The Lease reads
+	// as renewed a year ago with a one-second duration, so an expiry that a
+	// reader measured would have freed the backend long ago.
+	It("keeps its backend after it is deleted until its Jobs are gone, then gives it back", func() {
+		w := newWorld()
+		backup := createBackup(w)
+		lrr := createRestore(w, backup.Name)
+		var jobName string
+		Eventually(func(g Gomega) {
+			jobName = latest(g, lrr).Status.SecondaryJobName
+			g.Expect(jobName).NotTo(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+		jobNamed(w.namespace, jobName)
+		ageWriterLeases(latestOf(lrr).UID)
+
+		Expect(k8sClient.Delete(ctx, lrr)).To(Succeed())
+
+		// envtest runs no garbage collector, so the Job keeps the finalizer of
+		// its foreground deletion until the spec removes it.
+		Consistently(func(g Gomega) {
+			g.Expect(latest(g, lrr).DeletionTimestamp).NotTo(BeNil())
+			g.Expect(writersNaming(lrr)).To(HaveLen(1))
+		}, "3s", interval).Should(Succeed())
+
+		collectDeletedJobs(w.namespace)
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(lrr), &v1.LogicalRestoreRDBMS{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			g.Expect(writersNaming(lrr)).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// A target that its owner suspended stays suspended. The restore recorded
 	// no suspension of its own, so it withdraws none.
 	It("leaves a target that its owner suspended suspended", func() {
@@ -436,8 +468,42 @@ var _ = Describe("LogicalRestoreRDBMS cluster claim", func() {
 		}, timeout, interval).Should(BeEmpty(), "a terminal restore gives its backend back")
 	})
 
+	// A look can create the writer Lease and crash before status records the
+	// backend. The finalizer finds that Lease by the UID of the restore.
+	It("gives back a writer Lease that status never recorded when it is deleted", func() {
+		w := newWorld()
+		other := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: w.namespace, Name: "other", UID: "uid-other"},
+		}
+		w.holdBackend(other)
+		backup := createBackup(w)
+		lrr := createRestore(w, backup.Name)
+		reached := expectReason(lrr, v1.LogicalRestorePending, v1.ReasonStorageAlreadyAttached)
+		Expect(reached.Status.Backend).To(BeEmpty())
+
+		By("standing in for a look that registered the writer and crashed before its status write")
+		Expect(restorepkg.RegisterWriter(
+			ctx,
+			k8sClient,
+			k8sClient,
+			claimNamespace,
+			"rdbms|crashed.example.svc:5432/camunda",
+			reached,
+			reached.Status.TargetClusterUID,
+		)).To(Succeed())
+		Expect(writersNaming(lrr)).To(HaveLen(1))
+
+		Expect(k8sClient.Delete(ctx, lrr)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(lrr), &v1.LogicalRestoreRDBMS{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			g.Expect(writersNaming(lrr)).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// A restore whose registration fails stays in Pending with no backend, so
-	// the renewer and the next look do not keep a writer Lease for it.
+	// the next look does not keep a writer Lease for it.
 	It("pins no backend while its writer registration fails", func() {
 		w := newWorld()
 		w.holdBackend(w.cluster)

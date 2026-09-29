@@ -204,7 +204,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// collector removes them with the restore.
 	if !lrr.DeletionTimestamp.IsZero() {
 		finalized, err := restore.FinalizeHold(
-			ctx, r.Client, r.APIReader, &lrr, labels.LogicalRestoreRDBMS(lrr.Name), lrr.Spec.TargetClusterRef.Name,
+			ctx,
+			r.Client,
+			r.APIReader,
+			r.opts.ClaimNamespace,
+			&lrr,
+			labels.LogicalRestoreRDBMS(lrr.Name),
+			lrr.Spec.TargetClusterRef.Name,
 		)
 
 		return ctrl.Result{RequeueAfter: finalized.Wait}, err
@@ -233,13 +239,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// the claim back in the one order that frees the broker volumes. The
 		// Jobs of a completed restore take more than one look to go, so an
 		// answer that is not Done holds the two steps behind them.
-		if lrr.Status.Backend != "" {
-			err := restore.ReleaseWriter(
-				ctx, r.Client, r.opts.ClaimNamespace, lrr.Status.Backend, &lrr, lrr.Status.TargetClusterUID,
-			)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
+		if err := restore.ReleaseWriters(ctx, r.Client, r.APIReader, r.opts.ClaimNamespace, &lrr); err != nil {
+			return ctrl.Result{}, err
 		}
 		finished, err := restore.Finish(
 			ctx, r.Client, r.APIReader, &lrr, &lrr.Status.RestoreProgress, lrr.Spec.TargetClusterRef.Name,
@@ -410,32 +411,6 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		},
 	); err != nil {
 		return fmt.Errorf("indexing LogicalRestoreRDBMS by backupRef: %w", err)
-	}
-
-	renewer := &restore.Renewer{
-		Client:         mgr.GetClient(),
-		Reader:         mgr.GetAPIReader(),
-		ClaimNamespace: r.opts.ClaimNamespace,
-		List: func(ctx context.Context) ([]restore.Registration, error) {
-			var list v1.LogicalRestoreRDBMSList
-			if err := mgr.GetClient().List(ctx, &list); err != nil {
-				return nil, fmt.Errorf("listing the LogicalRestoreRDBMS resources: %w", err)
-			}
-			var registrations []restore.Registration
-			for i := range list.Items {
-				item := &list.Items[i]
-				if restore.Renewable(item.Status.Backend, item.Terminal(), item.DeletionTimestamp) {
-					registrations = append(registrations, restore.Registration{
-						Owner: item, Backend: item.Status.Backend, Target: item.Status.TargetClusterUID,
-					})
-				}
-			}
-
-			return registrations, nil
-		},
-	}
-	if err := mgr.Add(renewer); err != nil {
-		return fmt.Errorf("adding the writer renewer: %w", err)
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).

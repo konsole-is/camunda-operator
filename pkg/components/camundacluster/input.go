@@ -73,7 +73,7 @@ type StorageHandover struct {
 	// Pods are the pods and workloads of other clusters on the storage claim,
 	// see OtherPodsOnClaim.
 	Pods []string
-	// Writers are the live writers for other clusters on the backend, see
+	// Writers are the writers for other clusters on the backend, see
 	// storagewriter.Live.
 	Writers []string
 }

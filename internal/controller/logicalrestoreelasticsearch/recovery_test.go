@@ -74,11 +74,14 @@ var _ = Describe("LogicalRestoreElasticsearch after Elasticsearch accepted its s
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// The Lease reads as renewed a year ago with a one-second duration, so an
+	// expiry that a reader measured would have freed the backend long ago.
 	It("stays with its backend and its hold after it is deleted until the recovery ends", func() {
 		w := newWorld()
 		backup := createBackup(w)
 		restore := startedRestore(w, backup)
 		w.search.SetRecoveryActive(true)
+		ageWriterLeases(latestOf(restore).UID)
 
 		Expect(k8sClient.Delete(ctx, restore)).To(Succeed())
 

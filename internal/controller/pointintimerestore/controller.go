@@ -79,7 +79,6 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/podstate"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
-	"github.com/konsole-is/camunda-operator/pkg/storagewriter"
 )
 
 // controllerName is the name the controller registers with controller-runtime.
@@ -173,10 +172,6 @@ type Reconciler struct {
 	// each Database occupies. It is the namespace of the operator, and
 	// SetupWithManager refuses an empty one.
 	ClaimNamespace string
-	// WriterClock tells when this operator started to lead, see
-	// storagewriter.Clock. Nil counts a writer registration from its last
-	// renewal only.
-	WriterClock *storagewriter.Clock
 
 	opts Options
 }
@@ -246,19 +241,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	// The Jobs of a restore carry a controller reference to it, so the garbage
-	// collector removes them with the restore.
-	if !pitr.DeletionTimestamp.IsZero() {
-		finalized, err := restore.FinalizeHold(
-			ctx, r.Client, r.APIReader, &pitr, labels.PointInTimeRestore(pitr.Name), pitr.Spec.ClusterRef.Name,
-		)
-
-		return ctrl.Result{RequeueAfter: finalized.Wait}, err
-	}
-	if err := restore.AddHoldFinalizer(ctx, r.Client, &pitr); err != nil {
-		return ctrl.Result{}, err
-	}
-
 	rec := component.ReconcileContext{
 		Client:        r.Client,
 		Scheme:        r.Scheme,
@@ -267,11 +249,28 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		APIReader:     r.APIReader,
 		Owner:         &pitr,
 	}
+	// A restore whose finalizer this look removed is gone, and so is its status.
+	finalized := false
 	defer func() {
+		if finalized {
+			return
+		}
 		if flushErr := component.FlushStatus(ctx, rec, nil); flushErr != nil {
 			err = errors.Join(err, flushErr)
 		}
 	}()
+
+	// The Jobs of a restore carry a controller reference to it, so the garbage
+	// collector removes them with the restore.
+	if !pitr.DeletionTimestamp.IsZero() {
+		wait, err := r.finalize(ctx, &pitr)
+		finalized = err == nil && wait == 0
+
+		return ctrl.Result{RequeueAfter: wait}, err
+	}
+	if err := restore.AddHoldFinalizer(ctx, r.Client, &pitr); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	if pitr.Terminal() {
 		// The terminal branch that every restore kind shares. It stages the
@@ -279,13 +278,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// the claim back in the one order that frees the broker volumes. The
 		// Jobs of a completed restore take more than one look to go, so an
 		// answer that is not Done holds the two steps behind them.
-		if pitr.Status.Backend != "" {
-			err := restore.ReleaseWriter(
-				ctx, r.Client, r.ClaimNamespace, pitr.Status.Backend, &pitr, pitr.Status.TargetClusterUID,
-			)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
+		if err := restore.ReleaseWriters(ctx, r.Client, r.APIReader, r.ClaimNamespace, &pitr); err != nil {
+			return ctrl.Result{}, err
 		}
 		finished, err := restore.Finish(
 			ctx, r.Client, r.APIReader, &pitr, &pitr.Status.RestoreProgress, pitr.Spec.ClusterRef.Name,
@@ -328,6 +322,35 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// operation start against a cluster whose restore the API still reports
 	// as running.
 	return ctrl.Result{RequeueAfter: outcome.Wait}, nil
+}
+
+// finalize ends a deleted restore. It returns how long to wait before the next
+// look, or zero once the finalizer is gone.
+func (r *Reconciler) finalize(ctx context.Context, pitr *v1.PointInTimeRestore) (time.Duration, error) {
+	// The server keeps running a rollback that it accepted after the restore is
+	// deleted, so the restore holds the database until the rollback ends.
+	if !pitr.Terminal() && pitr.Status.Phase == v1.PointInTimeRestoreRestoringDatabase {
+		outcome, held, err := r.holdForRollback(ctx, pitr, v1.ReasonProgressing, "The restore was deleted")
+		if err != nil {
+			return 0, err
+		}
+		// A held restore with no wait is one that the mid-run grace has just failed.
+		if held && outcome.Wait > 0 {
+			return outcome.Wait, nil
+		}
+	}
+
+	finalized, err := restore.FinalizeHold(
+		ctx,
+		r.Client,
+		r.APIReader,
+		r.ClaimNamespace,
+		pitr,
+		labels.PointInTimeRestore(pitr.Name),
+		pitr.Spec.ClusterRef.Name,
+	)
+
+	return finalized.Wait, err
 }
 
 // complete ends the restore. The brokers now hold the state of the requested
@@ -461,32 +484,6 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		pinnedContractKeys,
 	); err != nil {
 		return fmt.Errorf("indexing PointInTimeRestore by pinned DatabaseServerConfig: %w", err)
-	}
-
-	renewer := &restore.Renewer{
-		Client:         mgr.GetClient(),
-		Reader:         mgr.GetAPIReader(),
-		ClaimNamespace: r.ClaimNamespace,
-		List: func(ctx context.Context) ([]restore.Registration, error) {
-			var list v1.PointInTimeRestoreList
-			if err := mgr.GetClient().List(ctx, &list); err != nil {
-				return nil, fmt.Errorf("listing the PointInTimeRestore resources: %w", err)
-			}
-			var registrations []restore.Registration
-			for i := range list.Items {
-				item := &list.Items[i]
-				if restore.Renewable(item.Status.Backend, item.Terminal(), item.DeletionTimestamp) {
-					registrations = append(registrations, restore.Registration{
-						Owner: item, Backend: item.Status.Backend, Target: item.Status.TargetClusterUID,
-					})
-				}
-			}
-
-			return registrations, nil
-		},
-	}
-	if err := mgr.Add(renewer); err != nil {
-		return fmt.Errorf("adding the writer renewer: %w", err)
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).

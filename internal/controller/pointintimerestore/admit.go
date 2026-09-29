@@ -194,8 +194,7 @@ func (r *Reconciler) admit(
 	// contract that declares external is rolled back before the restore was
 	// created, and the database is read as it stands.
 	if resolved.server.OperatorRecovers() {
-		// Status.Backend is set only after the registration succeeds, so the renewer
-		// never keeps a backend alive that the restore did not register.
+		// Status.Backend names only a backend that the restore holds.
 		err := restore.RegisterWriter(
 			ctx, r.Client, r.APIReader, r.ClaimNamespace, backend, pitr, pitr.Status.TargetClusterUID,
 		)
@@ -237,7 +236,7 @@ func (r *Reconciler) backendFree(
 		return failure, err
 	}
 	// A deleted restore into the same cluster can still roll the server back.
-	writers, err := restore.OtherWriters(ctx, r.APIReader, r.ClaimNamespace, backend, pitr, r.WriterClock.Since())
+	writers, err := restore.OtherWriters(ctx, r.APIReader, r.ClaimNamespace, backend, pitr)
 	if err != nil {
 		return nil, err
 	}

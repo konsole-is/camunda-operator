@@ -18,13 +18,9 @@ package restore
 
 import (
 	"context"
-	"errors"
-	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
@@ -32,9 +28,9 @@ import (
 )
 
 // RegisterWriter registers owner, a restore into the cluster with UID target,
-// as a writer of backend, or renews that registration. A cluster on backend
-// waits while it is live, see storagewriter.Live. claimNamespace holds the
-// storage claim Leases.
+// as a writer of backend. A cluster on backend waits while the registration
+// exists, see storagewriter.Live. claimNamespace holds the storage claim
+// Leases. A registration that exists already is fine.
 func RegisterWriter(
 	ctx context.Context,
 	c client.Client,
@@ -51,70 +47,7 @@ func RegisterWriter(
 		backend,
 		clustercomponents.StorageClaimSchema().LeaseName(backend),
 		writerOf(owner, target),
-		time.Now(),
 	)
-}
-
-// Registration is a restore that holds a writer registration on Backend, for
-// the cluster with UID Target.
-type Registration struct {
-	Owner   conditions.Owner
-	Backend string
-	Target  types.UID
-}
-
-// Renewable reports whether the Renewer renews the registration of a restore
-// with the given backend.
-func Renewable(backend string, terminal bool, deleted *metav1.Time) bool {
-	return backend != "" && !terminal && deleted.IsZero()
-}
-
-// Renewer renews the registrations that List returns, every
-// storagewriter.RenewInterval, while this operator leads.
-type Renewer struct {
-	Client         client.Client
-	Reader         client.Reader
-	ClaimNamespace string
-	List           func(ctx context.Context) ([]Registration, error)
-}
-
-// NeedLeaderElection makes the manager run Start only on the leader.
-func (r *Renewer) NeedLeaderElection() bool { return true }
-
-// Start renews until ctx ends. The manager runs it once this operator leads.
-func (r *Renewer) Start(ctx context.Context) error {
-	ticker := time.NewTicker(storagewriter.RenewInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-			if err := r.renew(ctx, time.Now()); err != nil {
-				log.FromContext(ctx).Error(err, "Could not renew the writer registrations of the restores")
-			}
-		}
-	}
-}
-
-// renew renews every registration that List returns once, and keeps going
-// past a registration that fails.
-func (r *Renewer) renew(ctx context.Context, now time.Time) error {
-	registrations, err := r.List(ctx)
-	if err != nil {
-		return err
-	}
-
-	var errs []error
-	for _, reg := range registrations {
-		w := writerOf(reg.Owner, reg.Target)
-		if err := storagewriter.Renew(ctx, r.Client, r.Reader, r.ClaimNamespace, reg.Backend, w, now); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	return errors.Join(errs...)
 }
 
 func writerOf(owner conditions.Owner, target types.UID) storagewriter.Writer {
@@ -127,7 +60,7 @@ func writerOf(owner conditions.Owner, target types.UID) storagewriter.Writer {
 	}
 }
 
-// ReleaseWriter ends the registration that RegisterWriter made.
+// ReleaseWriter ends the registration that RegisterWriter made on backend.
 func ReleaseWriter(
 	ctx context.Context,
 	c client.Client,
@@ -138,15 +71,26 @@ func ReleaseWriter(
 	return storagewriter.Release(ctx, c, claimNamespace, backend, writerOf(owner, target))
 }
 
-// OtherWriters returns the live writers of backend other than owner, the
-// writers for its own target included. reader must read the API server
-// directly. since is storagewriter.Clock.Since.
+// ReleaseWriters ends every registration of owner, on every backend,
+// including one that status never recorded. The reader must read the API
+// server directly.
+func ReleaseWriters(
+	ctx context.Context,
+	c client.Client,
+	reader client.Reader,
+	claimNamespace string,
+	owner client.Object,
+) error {
+	return storagewriter.ReleaseAll(ctx, c, reader, claimNamespace, owner.GetUID())
+}
+
+// OtherWriters returns the writers of backend other than owner, the writers
+// for its own target included. reader must read the API server directly.
 func OtherWriters(
 	ctx context.Context,
 	reader client.Reader,
 	claimNamespace, backend string,
 	owner conditions.Owner,
-	since time.Time,
 ) ([]string, error) {
 	return storagewriter.LiveExcept(
 		ctx,
@@ -155,7 +99,5 @@ func OtherWriters(
 		backend,
 		clustercomponents.StorageClaimSchema().LeaseName(backend),
 		writerOf(owner, ""),
-		time.Now(),
-		since,
 	)
 }

@@ -23,8 +23,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	coordinationv1 "k8s.io/api/coordination/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -225,7 +227,6 @@ func backendsHeldBy(pitr *v1.PointInTimeRestore) []string {
 func writersSeenByAnotherCluster(backend string) []string {
 	GinkgoHelper()
 
-	now := time.Now()
 	writers, err := storagewriter.Live(
 		ctx,
 		k8sClient,
@@ -233,8 +234,6 @@ func writersSeenByAnotherCluster(backend string) []string {
 		backend,
 		clustercomponents.StorageClaimSchema().LeaseName(backend),
 		"uid-of-another-cluster",
-		now,
-		now,
 	)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -340,6 +339,65 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		}, timeout, interval).Should(BeEmpty())
 	})
 
+	// The server keeps running a rollback that it accepted. The hold outlasts
+	// the mid-run grace, and the Lease reads as renewed a year ago with a
+	// one-second duration, so neither a bound nor an expiry frees the database.
+	It("keeps its database held after it is deleted until the server answers, then gives it back", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		expectBackendHeld(pitr)
+		ageWriterLeases(readRestore(Default, pitr).UID)
+
+		Expect(k8sClient.Delete(ctx, pitr)).To(Succeed())
+
+		expectRecovering(pitr, "The restore was deleted", w.server.Name)
+		repointContract(w)
+		var backend string
+		Eventually(func(g Gomega) {
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Backend).To(ContainSubstring(recoveredHost))
+			g.Expect(backendsHeldBy(pitr)).To(Equal([]string{current.Status.Backend}))
+			backend = current.Status.Backend
+		}, timeout, interval).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(readRestore(g, pitr).DeletionTimestamp).NotTo(BeNil())
+			g.Expect(writersSeenByAnotherCluster(backend)).To(HaveLen(1))
+		}, midRunGrace+2*time.Second, interval).Should(Succeed())
+
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pitr), &v1.PointInTimeRestore{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			g.Expect(writersSeenByAnotherCluster(backend)).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// Without a contract, nothing reports the end of the rollback, so the
+	// hold ends with the mid-run grace.
+	It("keeps its database held after it is deleted for the grace when no contract can answer", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+		expectRecoveryRequest(w)
+		backend := expectBackendHeld(pitr)
+
+		Expect(k8sClient.Delete(ctx, pitr)).To(Succeed())
+		expectRecovering(pitr, "The restore was deleted")
+		Expect(k8sClient.Delete(ctx, w.server)).To(Succeed())
+
+		Consistently(func(g Gomega) {
+			g.Expect(readRestore(g, pitr).DeletionTimestamp).NotTo(BeNil())
+			g.Expect(writersSeenByAnotherCluster(backend)).NotTo(BeEmpty())
+		}, time.Second, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pitr), &v1.PointInTimeRestore{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			g.Expect(writersSeenByAnotherCluster(backend)).To(BeEmpty())
+		}, midRunGrace+timeout, interval).Should(Succeed())
+	})
+
 	It("asks again when a restore of its name and its point was answered before it", func() {
 		w := operatorRecoveryWorld()
 		first := createRestore(w)
@@ -349,12 +407,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 
 		// The same name and the same point, and a different resource. The
 		// standing answer belongs to the restore that is gone.
-		held := readRestore(Default, first)
 		Expect(k8sClient.Delete(ctx, first)).To(Succeed())
-		// The Lease of the deleted restore would lapse two minutes later.
-		Expect(storagewriter.Release(ctx, k8sClient, testClaimNamespace, held.Status.Backend, storagewriter.Writer{
-			Kind: "PointInTimeRestore", Namespace: held.Namespace, Name: held.Name, UID: held.UID,
-		})).To(Succeed())
 		second := &v1.PointInTimeRestore{
 			ObjectMeta: metav1.ObjectMeta{Name: first.Name, Namespace: w.namespace},
 			Spec:       first.Spec,
@@ -838,3 +891,27 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		Expect(backendsHeldBy(pitr)).To(BeEmpty(), "a restore that writes no database holds none")
 	})
 })
+
+// ageWriterLeases makes every writer Lease of the writer with UID uid read as
+// renewed a year ago with a one-second duration.
+func ageWriterLeases(uid types.UID) {
+	GinkgoHelper()
+	old := metav1.NewMicroTime(time.Now().AddDate(-1, 0, 0))
+	Eventually(func(g Gomega) {
+		var leases coordinationv1.LeaseList
+		g.Expect(k8sClient.List(
+			ctx,
+			&leases,
+			client.InNamespace(testClaimNamespace),
+			client.MatchingLabels{labels.WriterUIDKey: string(uid)},
+		)).To(Succeed())
+		g.Expect(leases.Items).NotTo(BeEmpty())
+		for i := range leases.Items {
+			lease := &leases.Items[i]
+			lease.Spec.AcquireTime = &old
+			lease.Spec.RenewTime = &old
+			lease.Spec.LeaseDurationSeconds = new(int32(1))
+			g.Expect(k8sClient.Update(ctx, lease)).To(Succeed())
+		}
+	}, timeout, interval).Should(Succeed())
+}

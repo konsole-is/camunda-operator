@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -138,21 +137,6 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 		)
 	}
 
-	// Every pass prunes: a holder with its own pods skips the handover read.
-	// A stale cached read deletes nothing that was renewed.
-	if err := storagewriter.PruneExpired(
-		ctx,
-		res.client,
-		res.client,
-		res.claimNamespace,
-		key,
-		in.Storage.Claim,
-		time.Now(),
-		res.writersSince,
-	); err != nil {
-		return err
-	}
-
 	// The list costs a read of one namespace, so it is taken only where its
 	// answer decides the gate: a suspended cluster waits for nothing, and a
 	// cluster that took the claim on this pass meets the pods of whoever held
@@ -206,7 +190,7 @@ func handoverPossible(suspended, heldAtStart, ownPodOnClaim bool) bool {
 // that the caller reports.
 var errWritersOnBackend = errors.New("another cluster, or a writer for one, writes the backend")
 
-// writersOnTheBackend returns the pods of other clusters on claim and the live
+// writersOnTheBackend returns the pods of other clusters on claim and the
 // writers for other clusters on key as the handover this cluster waits for,
 // or nil when there are none. claim is the Lease name of key.
 func (res *resolver) writersOnTheBackend(
@@ -217,29 +201,7 @@ func (res *resolver) writersOnTheBackend(
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
-	if err := storagewriter.PruneExpired(
-		ctx,
-		res.client,
-		res.reader,
-		res.claimNamespace,
-		key,
-		claim,
-		now,
-		res.writersSince,
-	); err != nil {
-		return nil, err
-	}
-	writers, err := storagewriter.Live(
-		ctx,
-		res.reader,
-		res.claimNamespace,
-		key,
-		claim,
-		res.cluster.UID,
-		now,
-		res.writersSince,
-	)
+	writers, err := storagewriter.Live(ctx, res.reader, res.claimNamespace, key, claim, res.cluster.UID)
 	if err != nil {
 		return nil, err
 	}

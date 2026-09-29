@@ -20,7 +20,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -321,7 +320,7 @@ func (h *reconcileHarness) runForeignRestore(t *testing.T) {
 		ClusterUID: "uid-other",
 	}
 	require.NoError(t, storagewriter.Register(
-		t.Context(), h.client, h.client, harnessClaimNamespace, h.backend, h.lease.Name, writer, time.Now(),
+		t.Context(), h.client, h.client, harnessClaimNamespace, h.backend, h.lease.Name, writer,
 	))
 }
 

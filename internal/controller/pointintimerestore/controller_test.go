@@ -774,7 +774,7 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		}
 		Expect(storagewriter.Register(
 			ctx, k8sClient, k8sClient, testClaimNamespace, backend,
-			components.StorageClaimSchema().LeaseName(backend), earlier, time.Now(),
+			components.StorageClaimSchema().LeaseName(backend), earlier,
 		)).To(Succeed())
 		DeferCleanup(func() { _ = storagewriter.Release(ctx, k8sClient, testClaimNamespace, backend, earlier) })
 		pitr := createRestore(w)

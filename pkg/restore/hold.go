@@ -58,16 +58,20 @@ func AddHoldFinalizer(ctx context.Context, c client.Client, owner client.Object)
 	return nil
 }
 
-// FinalizeHold removes the Jobs, the suspension hold and HoldFinalizer of a
-// deleted restore. Outcome.Done reports that the finalizer is gone. label is
-// the owner label that the Job pods of the restore carry. cluster is the name
-// of the target, which lives in the namespace of the restore. The suspension
-// that the restore applied through spec.suspend stays. The reader must be
-// uncached.
+// FinalizeHold removes the Jobs, the writer Leases, the suspension hold and
+// HoldFinalizer of a deleted restore, in that order, so the backend stays held
+// until no Job pod of the restore writes it. Outcome.Done reports that the
+// finalizer is gone. claimNamespace holds the writer Leases. label is the
+// owner label that the Job pods of the restore carry. cluster is the name of
+// the target, which lives in the namespace of the restore. The suspension that
+// the restore applied through spec.suspend stays. The reader must be uncached.
+// A caller whose restore still writes the backend in another way calls it only
+// after that work has stopped.
 func FinalizeHold(
 	ctx context.Context,
 	c client.Client,
 	reader client.Reader,
+	claimNamespace string,
 	owner client.Object,
 	label labels.Owner,
 	cluster string,
@@ -84,6 +88,10 @@ func FinalizeHold(
 	}
 	if !removed {
 		return Outcome{Wait: Shortly}, nil
+	}
+
+	if err := ReleaseWriters(ctx, c, reader, claimNamespace, owner); err != nil {
+		return Outcome{}, err
 	}
 
 	key := types.NamespacedName{Namespace: owner.GetNamespace(), Name: cluster}

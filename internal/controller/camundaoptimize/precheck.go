@@ -23,7 +23,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -337,7 +336,7 @@ func (r *Reconciler) gateOnStorageClaim(
 	// A writer for another cluster, such as a restore, writes the backend with
 	// no pod of that cluster, so the pods alone do not show it.
 	writers, err := storagewriter.Live(
-		ctx, r.APIReader, r.ClaimNamespace, key, out.Input.StorageClaim, cluster.UID, time.Now(), r.WriterClock.Since(),
+		ctx, r.APIReader, r.ClaimNamespace, key, out.Input.StorageClaim, cluster.UID,
 	)
 	if err != nil {
 		return err

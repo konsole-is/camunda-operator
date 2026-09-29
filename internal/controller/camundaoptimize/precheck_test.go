@@ -19,7 +19,6 @@ package camundaoptimize
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -100,9 +99,8 @@ func TestPreCheckSuspendsWhileTheClusterDoesNotHoldItsBackend(t *testing.T) {
 	}
 }
 
-// The importer waits for a live writer for another cluster, such as a restore.
-// A writer for this cluster is its own work, and a registration that expired
-// writes nothing.
+// The importer waits for a writer for another cluster, such as a restore. A
+// writer for this cluster is its own work.
 func TestPreCheckSuspendsWhileAWriterForAnotherClusterWritesTheBackend(t *testing.T) {
 	const (
 		namespace  = gateNamespace
@@ -111,15 +109,11 @@ func TestPreCheckSuspendsWhileAWriterForAnotherClusterWritesTheBackend(t *testin
 	)
 
 	cases := map[string]struct {
-		target     types.UID
-		registered time.Time
-		suspended  bool
+		target    types.UID
+		suspended bool
 	}{
-		"a live writer for another cluster": {target: "other-uid", registered: time.Now(), suspended: true},
-		"a live writer for this cluster":    {target: "cluster-uid", registered: time.Now()},
-		"an expired writer for another cluster": {
-			target: "other-uid", registered: time.Now().Add(-storagewriter.Duration),
-		},
+		"a writer for another cluster": {target: "other-uid", suspended: true},
+		"a writer for this cluster":    {target: "cluster-uid"},
 	}
 
 	for name, tc := range cases {
@@ -139,7 +133,7 @@ func TestPreCheckSuspendsWhileAWriterForAnotherClusterWritesTheBackend(t *testin
 			}
 			claim := clustercomponents.StorageClaimSchema().LeaseName(key)
 			require.NoError(t, storagewriter.Register(
-				context.Background(), c, c, claimSpace, key, claim, writer, tc.registered,
+				context.Background(), c, c, claimSpace, key, claim, writer,
 			))
 			r := &Reconciler{Client: c, APIReader: c, Scheme: scheme, ClaimNamespace: claimSpace}
 
