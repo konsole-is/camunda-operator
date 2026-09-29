@@ -365,3 +365,15 @@ func TestUpdateClientWithoutAnID(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no id")
 }
+
+// httptest.Server.Close calls CloseIdleConnections on http.DefaultTransport.
+func TestNewSharesOnePoolThatIsNotTheDefaultTransport(t *testing.T) {
+	t.Parallel()
+
+	first := New("http://keycloak/auth", "camunda-platform", "admin", "secret")
+	second := New("http://keycloak/auth", "camunda-platform", "admin", "secret")
+
+	require.NotNil(t, first.http.Transport)
+	assert.NotSame(t, http.DefaultTransport, first.http.Transport)
+	assert.Same(t, first.http.Transport, second.http.Transport)
+}

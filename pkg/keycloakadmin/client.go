@@ -60,6 +60,10 @@ const (
 	adminClientID = "admin-cli"
 )
 
+// A reconcile builds a new Client each time, so a transport per Client opens
+// a connection per reconcile.
+var sharedTransport = defaultTransport()
+
 // Representation is one Keycloak client as the administration API returned
 // it. It keeps every field the server holds, the ones this package does not
 // read included, so that an update sends them all back unchanged.
@@ -94,7 +98,8 @@ func New(baseURL, realm, username, password string, opts ...Option) *Client {
 		username: username,
 		password: password,
 		http: &http.Client{
-			Timeout: DefaultTimeout,
+			Timeout:   DefaultTimeout,
+			Transport: sharedTransport,
 			// A Keycloak this operator does not run is on the other end. A
 			// 307 or a 308 makes Go replay the request body at the new host,
 			// and the body of the sign-in carries the administrator name and
