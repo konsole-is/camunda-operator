@@ -33,25 +33,13 @@ import (
 )
 
 // unknownHolder names both causes of a broker volume that does not finish
-// terminating, and the remedy for each. A lookup that finds no pod cannot
-// tell the two apart.
+// terminating, because a lookup that finds no pod cannot tell them apart.
 const unknownHolder = "a pod still holds it. A cluster that is not suspended keeps its broker pods, " +
 	"and a restore that failed keeps its Jobs. Suspend the cluster, or delete the restore that ran " +
 	"before this one"
 
 // terminatingMessage says why a broker data volume still terminates, and what
 // frees it.
-//
-// A pod that mounts the volume keeps it alive under the
-// kubernetes.io/pvc-protection finalizer, so the message names that pod and
-// the resource that runs it. Two causes reach here. A cluster that nobody
-// suspended still runs its broker pods, and a restore that failed still keeps
-// its Jobs. The remedy follows the holder, and a pod of any other workload
-// gets no remedy that the operator cannot promise.
-//
-// A lookup that finds no pod, and a lookup that fails, both report the two
-// causes together. The wording of a wait is never worth a failed restore, so
-// the error is logged and the restore goes on.
 func terminatingMessage(
 	ctx context.Context,
 	reader client.Reader,
@@ -59,6 +47,7 @@ func terminatingMessage(
 	claim string,
 ) string {
 	holder, err := claimHolder(ctx, reader, target, claim)
+	// The wording of a wait is not worth a failed restore, so the error is only logged.
 	if err != nil {
 		logf.FromContext(ctx).Error(
 			err, "Could not read the pod that holds a terminating broker volume", "claim", claim,
@@ -74,13 +63,6 @@ func terminatingMessage(
 // claimHolder returns the phrase that names the pod which still holds claim,
 // together with the remedy for it. It returns the empty string when no pod of
 // the namespace mounts the claim.
-//
-// The pod alone does not name a cause that a user can act on. A restore Job
-// pod belongs to a Job, and that Job belongs to a restore, so the lookup
-// follows the controller reference one step further when it finds a Job.
-//
-// The lowest name wins when more than one pod references the claim, so the
-// reported reason is stable and does not change with every look.
 func claimHolder(
 	ctx context.Context,
 	reader client.Reader,
@@ -94,9 +76,8 @@ func claimHolder(
 		return "", fmt.Errorf("listing the pods of namespace %s: %w", namespace, err)
 	}
 
-	// The order of a list is not part of the contract, and a cached reader
-	// answers from a map. Two pods that reference one claim would otherwise
-	// take turns in the reported message on every look.
+	// The order of a list is not part of its contract. Without the sort, two
+	// pods of one claim take turns in the message on every look.
 	slices.SortFunc(pods.Items, func(a, b corev1.Pod) int {
 		return strings.Compare(a.Name, b.Name)
 	})
@@ -134,17 +115,12 @@ func isJob(ref *metav1.OwnerReference) bool {
 	return ref.Kind == "Job" && ref.APIVersion == batchv1.SchemeGroupVersion.String()
 }
 
-// workloadHolder names a pod that a workload runs.
-//
-// The broker StatefulSet of the target is the one workload whose remedy the
-// operator knows: a suspended cluster runs no broker pod, so the volume goes
-// free. Any other workload belongs to somebody else, and the message asks for
-// the pod instead of naming a remedy the operator cannot promise.
-//
-// The UID decides, not the name. A StatefulSet that somebody deleted and
-// created again under one name leaves the pods of its predecessor behind, and
-// suspending the cluster removes none of them.
+// workloadHolder names a pod that a workload runs. Only the broker StatefulSet
+// of the target gets the remedy to suspend the cluster: a suspended cluster
+// runs no broker pod.
 func workloadHolder(pod string, brokers *appsv1.StatefulSet, controller *metav1.OwnerReference) string {
+	// The UID decides: a StatefulSet created again under one name leaves the
+	// pods of its predecessor, and a suspend removes none of them.
 	if brokers.UID != "" && controller.UID == brokers.UID {
 		return fmt.Sprintf(
 			"pod %s of StatefulSet %s holds it. Suspend the cluster to free the volume",
@@ -160,15 +136,6 @@ func workloadHolder(pod string, brokers *appsv1.StatefulSet, controller *metav1.
 
 // jobHolder names the resource that runs the pod, through the Job that owns
 // it.
-//
-// The UID of the reference decides which Job that is. A restore that somebody
-// deleted and created again derives the names of its predecessor's Jobs, so a
-// Job read by name alone can belong to another restore, and the message would
-// ask the user to delete a resource that holds nothing.
-//
-// Three answers name the pod itself: a Job that is gone, a Job under that name
-// with another UID, and a Job that no resource owns. Removing the pod frees
-// the volume in all three.
 func jobHolder(
 	ctx context.Context,
 	reader client.Reader,
@@ -188,6 +155,8 @@ func jobHolder(
 
 	owner := metav1.GetControllerOf(&job)
 	switch {
+	// A restore created again under one name reuses the Job names of its
+	// predecessor, so only the UID tells which Job ran the pod.
 	case job.UID != ref.UID:
 		return podOfGoneJob(pod, ref.Name), nil
 	case owner == nil:
@@ -203,8 +172,7 @@ func jobHolder(
 }
 
 // podOfGoneJob names a pod whose Job the operator cannot read any more: the
-// Job is gone, or another Job holds its name now. The pod outlived it and
-// still holds the volume, so the pod is what has to go.
+// Job is gone, or another Job holds its name now.
 func podOfGoneJob(pod, name string) string {
 	return fmt.Sprintf(
 		"pod %s holds it. The Job %s that ran it is gone. Remove that pod to free the volume",

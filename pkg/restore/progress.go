@@ -26,23 +26,17 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// completedMessage is the Ready message of every restore that finished. It
-// says nothing about the suspension of the cluster, and it must not: the
-// controller persists the terminal phase first, and the look that follows is
-// the one that collects the Jobs and withdraws the suspension. A reader of
-// this message can therefore still find the cluster suspended.
+// completedMessage says nothing about the suspension: a later look withdraws
+// one that the restore applied, and one that the owner applied stays.
 const completedMessage = "The restore finished"
 
 // HoldRunning holds a started restore on a dependency that stopped resolving.
-// It stages the failure as the Ready condition of owner, records when the
-// failure started, and fails the restore once the grace is over: a restore
-// that already erased a broker volume has nothing to go back to, so it must
-// reach a terminal phase and tell whoever owns the cluster to act.
-//
-// The grace counts from the first failure and is never extended, so a
-// dependency that flaps cannot hold a started restore for ever. A restore
-// that has not started holds without a bound instead, through the Pending
-// path of its controller.
+// It sets p.FirstFailedAt on the first failure. Until grace has passed since
+// p.FirstFailedAt, it stages failure as the Ready condition of owner and
+// reports Outcome.Wait of poll. Once grace has passed, it reports a Failure
+// with v1.ReasonFailed instead.
+// HoldRunning never extends the grace, so a dependency that flaps cannot hold
+// a started restore for ever.
 func HoldRunning(
 	owner conditions.Owner,
 	p *v1.RestoreProgress,
@@ -54,6 +48,8 @@ func HoldRunning(
 		p.FirstFailedAt = &now
 	}
 
+	// A started restore has nothing to go back to, so it must end and tell
+	// the owner of the cluster to act.
 	if now.Sub(p.FirstFailedAt.Time) > grace {
 		return Outcome{Failure: &conditions.PreCheckFailure{
 			Reason: v1.ReasonFailed,
@@ -71,18 +67,13 @@ func HoldRunning(
 	return Outcome{Wait: poll}
 }
 
-// Recovered records that the restore made progress again, which gives the
-// next failure the full mid-run grace.
-//
-// A restore that already erased a broker volume or recorded a Job keeps its
-// clock. That restore has started. Without the guard, a dependency that flaps
-// in and out resets the grace on every pass and holds the restore for ever.
-// Only a restore that has touched no volume yet gets its clock back.
-//
-// The guard reads the primary-storage record alone. It does not see the
-// indices that the secondary-storage phase deletes. That phase therefore
-// calls this before its first delete and never after it.
+// Recovered records that the restore made progress again, so the next failure
+// gets the full grace of HoldRunning. A restore that recorded a recreated
+// claim or a Job keeps its clock. Recovered does not see the indices that the
+// secondary-storage phase deletes, so call it there only before the first
+// delete.
 func Recovered(p *v1.RestoreProgress) {
+	// Without the guard, a dependency that flaps resets the grace on every pass.
 	if len(p.RecreatedClaims) > 0 || len(p.PrimaryJobNames) > 0 {
 		return
 	}
@@ -97,10 +88,9 @@ func Complete(p *v1.RestoreProgress, now metav1.Time) {
 	p.TerminalReason = v1.ReasonCompleted
 }
 
-// Fail records the terminal failure with its Ready reason and message. The
-// message carries an external error whose size the operator cannot know, for
-// example the reason of a Job or of a pod, so it is bounded before it reaches
-// the free-form status field. The caller writes the phase of its own kind.
+// Fail records the terminal failure with its Ready reason and message. It
+// bounds the size of message, so message can carry an external error. The
+// caller writes the phase of its own kind.
 func Fail(p *v1.RestoreProgress, reason, message string, now metav1.Time) {
 	p.CompletionTime = &now
 	p.TerminalReason = reason
@@ -108,13 +98,9 @@ func Fail(p *v1.RestoreProgress, reason, message string, now metav1.Time) {
 }
 
 // StageTerminal stages the Ready condition of a terminal restore from the
-// recorded reason and message. It is idempotent, so a terminal restore stages
-// it again on every look: a write conflict on the terminal flush can restore
-// a stale condition from the server, and staging heals that.
-//
-// Only a caller that knows the restore is terminal calls it. Completed is the
-// one outcome that records no message, so every other recorded reason reports
-// a failure, and a terminal restore without a recorded reason reports Failed.
+// recorded reason and message. Call it only for a terminal restore, and again
+// on every look. Every reason other than Completed reports a failure, and a
+// restore without a recorded reason reports Failed.
 func StageTerminal(owner conditions.Owner, p *v1.RestoreProgress) {
 	if p.TerminalReason == v1.ReasonCompleted {
 		conditions.Stage(owner, conditions.Ready(

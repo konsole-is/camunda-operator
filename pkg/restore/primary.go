@@ -82,41 +82,26 @@ type PrimaryInput struct {
 	// Grace bounds how long the phase waits on a dependency that stopped
 	// resolving before the restore fails.
 	Grace time.Duration
-	// JobFailure reads a cause of its own out of a restore Job that already
-	// failed. It runs on the failure path alone, so it can never hold back or
-	// break a restore that works. A hook that answers nil leaves the generic
-	// failure of the phase in place, and so does a nil hook.
-	//
-	// Only a kind whose restore application refuses for a reason the operator
-	// can name supplies one. The two logical kinds pass nothing.
+	// JobFailure names the cause of a failed restore Job, for a kind that can
+	// read one. A nil hook keeps the generic failure of the phase.
 	JobFailure JobFailure
 }
 
 // JobFailure translates a failed restore Job into the failure that the
-// calling kind reports. It answers nil when it recognises nothing, and it
-// never reports an error: a cause that the operator cannot read must leave
-// the failure the phase already found.
+// calling kind reports. Primary calls it only for a failed Job. It answers nil
+// when it recognizes nothing, and then the phase keeps its own failure.
 type JobFailure func(ctx context.Context, job *batchv1.Job, ordinal int32) *conditions.PreCheckFailure
 
-// Primary drives the whole primary-storage phase: it records the broker
-// count, deletes and creates the broker data volumes, and runs the restore
+// Primary drives the primary-storage phase: it records the broker count,
+// deletes and creates the broker data volumes, and runs the restore
 // application once per broker. It reports Done when every Job completed, and
 // a Failure that nothing resolves on its own when the restore cannot go on.
 //
-// It never writes status.phase. The caller persists the phase before it calls
-// Primary the first time, because the phase is the resume marker of the
-// destructive step.
+// Persist the phase before the first call, because the phase is the resume
+// marker of the destructive step. Primary never writes status.phase.
 //
-// The order is the safety property. The broker count is durable before the
-// first volume is deleted. The record of a deleted volume is durable before
-// the first Job exists. A reconcile that re-enters therefore never deletes a
-// volume that a Job already wrote to. Once the Jobs are recorded, the volumes
-// are never touched again.
-//
-// The reader must be uncached. Every decision here reads live state: a stale
-// claim or a stale Job lets a restore act twice on one volume. The one read
-// that goes through the cached client c is the look at the pods of the
-// running Jobs, which decides nothing on its own. See podstate.Stuck.
+// The reader must be uncached: a stale claim or a stale Job lets a restore act
+// twice on one volume. Only the look at the pods of the Jobs reads through c.
 func Primary(
 	ctx context.Context,
 	c client.Client,
@@ -125,29 +110,22 @@ func Primary(
 	p *v1.RestoreProgress,
 	in PrimaryInput,
 ) (Outcome, error) {
-	// Every entry point that renders from a Target rejects an incomplete one.
-	// The check comes first here, because the phase reads the broker count off
-	// the target before it renders anything. A nil target takes the manager
-	// down inside a reconcile, and a target without brokers pins a count of
-	// zero that no later look ever replaces.
+	// An incomplete target is a render failure, not a wait. readTarget fills
+	// every part, so nothing changes on its own.
 	if err := in.Target.complete(); err != nil {
 		return failure(fmt.Sprintf(
 			"the restore cannot run the primary-storage phase: %s", err,
 		)), nil
 	}
 
-	// The count is pinned at the first look. The restore recreates the volumes
-	// of the brokers it read and runs a Job for each of them, and a cluster
-	// that is scaled while it runs changes neither. The live count still
-	// decides whether a Job can run at all, which runJobs checks.
+	// A cluster that is scaled while the restore runs changes neither the
+	// volumes nor the Jobs of the restore. applyJob still checks the live count.
 	if p.Brokers == 0 {
 		p.Brokers = in.Target.Brokers
 
-		// Every volume this restore deletes is counted against the pinned
-		// count, so the count is durable first. A restore that re-enters from
-		// a count it never persisted reads the live one again. A cluster that
-		// was scaled in between then loses volumes that this restore never
-		// read.
+		// The count is durable before the first volume is deleted. Otherwise a
+		// re-entry reads the live count again, and a cluster scaled in between
+		// loses volumes that this restore never read.
 		progressing(in.Owner, fmt.Sprintf(
 			"the restore covers %d brokers. Their volumes are emptied next", p.Brokers,
 		))
@@ -164,9 +142,6 @@ func Primary(
 	return runJobs(ctx, c, reader, scheme, p, in, &pinned)
 }
 
-// recreateClaims gives every broker an empty data volume, because the restore
-// application refuses a data directory that holds data. It records every
-// volume whose old data is gone before it lets a Job start.
 func recreateClaims(
 	ctx context.Context,
 	c client.Client,
@@ -190,9 +165,8 @@ func recreateClaims(
 	recorded := !slices.Equal(progress.Recreated, p.RecreatedClaims)
 	p.RecreatedClaims = progress.Recreated
 
-	// The record comes first. This pass deleted the volumes that it names, and
-	// Recovered reads the record to see them. A clock that is cleared before
-	// the record gives the next failure a full grace over erased volumes.
+	// Recovered reads the record, so the record comes first. A clock cleared
+	// before the record gives the next failure a full grace over erased volumes.
 	Recovered(p)
 
 	// The record of a deleted volume must be durable before any Job runs. Its
@@ -215,8 +189,6 @@ func recreateClaims(
 	return Outcome{Wait: Shortly}
 }
 
-// jobNames returns the name of the restore Job of every broker, in broker
-// order.
 func jobNames(owner labels.Owner, brokers int32) []string {
 	names := make([]string, 0, brokers)
 	for ordinal := range brokers {
@@ -226,13 +198,6 @@ func jobNames(owner labels.Owner, brokers int32) []string {
 	return names
 }
 
-// runJobs applies the restore Job of every broker that has none yet, and
-// tracks the Jobs to a terminal outcome.
-//
-// The recorded names are the work of this restore. The live broker count can
-// change while the restore runs. A Job derived from the new count writes to a
-// volume that this restore never emptied, or it leaves a recorded broker
-// without a Job.
 func runJobs(
 	ctx context.Context,
 	c client.Client,
@@ -256,14 +221,7 @@ func runJobs(
 	return trackJobs(ctx, c, p, in, existing)
 }
 
-// readJobs reads every recorded Job live and proves that it belongs to this
-// restore. A Job that is absent comes back nil, and applyMissingJobs decides
-// what that means.
-//
-// A restore that somebody deleted and created again under one name derives
-// the names of its predecessor's Jobs. Tracking such a Job counts work that
-// this restore never did, on volumes that it already emptied, so only the
-// controller reference proves ownership.
+// readJobs returns nil for a recorded Job that is absent.
 func readJobs(
 	ctx context.Context,
 	reader client.Reader,
@@ -275,9 +233,8 @@ func readJobs(
 	for index, name := range p.PrimaryJobNames {
 		ordinal := int32(index)
 
-		// The recorded name and the derived name are one truth. A restore that
-		// polls for a Job whose name it never derives waits for ever, so a
-		// mismatch ends it here instead.
+		// A restore that polls for a Job whose name it never derives waits for
+		// ever.
 		if derived := JobName(in.OwnerLabel, ordinal); derived != name {
 			return nil, new(failure(fmt.Sprintf(
 				"the restore recorded the Job %q for broker %d, but the Job of that broker is "+
@@ -304,13 +261,9 @@ func readJobs(
 	return jobs, nil, nil
 }
 
-// applyMissingJobs creates the Jobs that do not exist yet, in broker order.
-//
-// The Jobs are created in that order, so the Jobs of a restore that is part
-// way through applying them are a prefix of the recorded names. A gap in that
-// prefix is therefore a Job that was created and then removed, and the
-// restore fails: a second Job would run the restore application on a volume
-// that the first one already wrote.
+// applyMissingJobs creates the Jobs in broker order, so a gap before a later
+// Job is a Job that was removed. The restore then fails: a second Job would
+// run on a volume that the first one already wrote.
 func applyMissingJobs(
 	ctx context.Context,
 	c client.Client,
@@ -342,17 +295,9 @@ func applyMissingJobs(
 	return nil, nil
 }
 
-// applyJob creates the restore Job of one broker as an identity claim:
-// create-only, never a forced apply. The create carries the field manager of
-// the calling kind, so every resource of a restore names the same owner of its
-// fields.
-//
-// A forced apply after a NotFound is not atomic. Between the read and the
-// apply, another writer can create a Job under this name, and the apply then
-// overwrites its owner reference and its fields before anything looked at
-// them. A Create is atomic, so the API server decides who owns the name. On
-// AlreadyExists the winner is read and rejected unless this restore owns it.
-// The pg_restore Job of a LogicalRestoreRDBMS claims its name the same way.
+// applyJob creates the Job and never applies it with force. Between a read
+// that finds no Job and a forced apply, another writer can create a Job under
+// the name, and the apply then takes over its fields.
 func applyJob(
 	ctx context.Context,
 	c client.Client,
@@ -363,9 +308,8 @@ func applyJob(
 	pinned *Target,
 	ordinal int32,
 ) (*Outcome, error) {
-	// The cluster lost brokers while the restore ran. The restore cannot run
-	// the work it recorded, and the render error underneath names only the
-	// counts, so the real cause is reported here.
+	// The render error for this case names only the counts, so the real cause
+	// is reported here.
 	if ordinal >= in.Target.Brokers {
 		return new(failure(fmt.Sprintf(
 			"the cluster was resized during the restore. It runs %d brokers now, and the restore "+
@@ -387,9 +331,6 @@ func applyJob(
 		))), nil
 	}
 
-	// Without the controller reference, deleting the restore leaves its Jobs
-	// behind, and the next restore of the cluster finds pods that write to the
-	// broker volumes.
 	if err := controllerutil.SetControllerReference(in.Owner, job, scheme); err != nil {
 		return nil, fmt.Errorf("owning the restore Job of broker %d: %w", ordinal, err)
 	}
@@ -415,14 +356,8 @@ func applyJob(
 	return nil, nil
 }
 
-// claimedByAnother answers a Create that lost the name. The winner is read
-// live: a Job that this restore owns is the one an earlier look created, and
-// any other Job ends the restore. A name that is free again is claimed by the
-// next look.
-//
-// The read goes through the uncached reader. A cache that still holds a Job of
-// this restore under a name that another writer now owns reports the name as
-// claimed by self, and the phase counts a foreign Job as its own.
+// claimedByAnother reads the winner through the uncached reader. A stale cache
+// can hold a Job of this restore under a name that another writer now owns.
 func claimedByAnother(
 	ctx context.Context,
 	reader client.Reader,
@@ -444,14 +379,8 @@ func claimedByAnother(
 	return nil, nil
 }
 
-// trackJobs follows the Jobs that already existed at the start of this look to
-// their end. The restore finishes when every one of them completed. One
-// failing Job fails the restore and names its broker: the partitions of that
-// broker are not restored, and a second attempt needs empty volumes again,
-// which only a new restore arranges.
-//
-// pods reads the pods of those Jobs. It is the cached client, unlike every
-// other read of this phase. See podstate.Stuck.
+// trackJobs fails the restore on the first failed Job: a second attempt needs
+// empty volumes again, which only a new restore arranges.
 func trackJobs(
 	ctx context.Context,
 	pods client.Reader,
@@ -515,17 +444,14 @@ func trackJobs(
 	return Outcome{Wait: in.Poll}, nil
 }
 
-// ownedBy reports whether job is a Job that this restore created. The UID
-// answers it, not the name: a restore that somebody deleted and created again
-// carries the same name and another UID.
+// ownedBy compares UIDs, not names: a restore that somebody deleted and
+// created again carries the same name and another UID.
 func ownedBy(job *batchv1.Job, owner client.Object) bool {
 	controller := metav1.GetControllerOf(job)
 
 	return controller != nil && controller.UID == owner.GetUID()
 }
 
-// foreignJob ends the restore because a Job under the name of one of its Jobs
-// belongs to somebody else.
 func foreignJob(key types.NamespacedName) Outcome {
 	return failure(fmt.Sprintf(
 		"Job %s exists, but no controller reference of this restore owns it. Remove the Job of the "+
@@ -533,8 +459,6 @@ func foreignJob(key types.NamespacedName) Outcome {
 	))
 }
 
-// outcomeOrZero unwraps an outcome that a step decided, or the zero outcome
-// when it decided none. A caller that returns an error ignores it.
 func outcomeOrZero(outcome *Outcome) Outcome {
 	if outcome == nil {
 		return Outcome{}
