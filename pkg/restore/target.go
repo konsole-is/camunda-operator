@@ -46,8 +46,8 @@ const ComponentRestore = "restore"
 // by hand can panic. Prepare and Primary report a failure Outcome for an
 // incomplete Target, and BuildJob and RecreateClaims return an error.
 type Target struct {
-	// ClusterName is the CamundaCluster the StatefulSet belongs to. Every
-	// resource that a restore renders carries it in the cluster label.
+	// ClusterName is the CamundaCluster the StatefulSet belongs to. The
+	// restore Jobs carry it in their cluster label.
 	ClusterName string
 	// StatefulSet is the live broker StatefulSet, <cluster>-zeebe.
 	StatefulSet *appsv1.StatefulSet

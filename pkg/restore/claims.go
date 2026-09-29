@@ -141,8 +141,8 @@ func (t *Target) claimName(ordinal int32) string {
 }
 
 // BuildClaim renders the broker data claim of one ordinal at the given size.
-// Everything but the size comes from the claim template, so the StatefulSet
-// selector and the discovery labels keep working. The claim carries no owner
+// Everything but the size comes from the claim template, so the discovery
+// labels keep working. The claim carries no owner
 // reference: one to a restore deletes a live broker volume with the restore.
 func (t *Target) BuildClaim(ordinal int32, size resource.Quantity) *corev1.PersistentVolumeClaim {
 	spec := *t.ClaimTemplate.Spec.DeepCopy()
@@ -170,10 +170,10 @@ func (p *Progress) hold(message string) {
 	p.Message = message
 }
 
-// ClaimSize returns the storage request of a recreated broker volume:
-// recorded, the effective restore size that the backup recorded, when there
-// is one, and the request of the claim template otherwise. The template size
-// can be too small for the data of the backup.
+// ClaimSize returns the storage request of a recreated broker volume. Pass
+// the effective restore size that the backup recorded as recorded, or nil to
+// get the request of the claim template, which can be too small for the data
+// of the backup.
 func (t *Target) ClaimSize(recorded *resource.Quantity) resource.Quantity {
 	if recorded != nil {
 		return *recorded

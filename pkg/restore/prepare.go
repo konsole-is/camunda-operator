@@ -100,8 +100,8 @@ func Prepare(
 
 	// A failed or deleted restore leaves the cluster suspended. The remedy is
 	// a new restore, which must give that suspension back when it finishes.
-	// The field manager tells a suspension of a restore from one of the owner,
-	// and no restore adopts the suspension of the owner.
+	// The field manager tells a suspension that a restore applied from one
+	// that the owner applied, and no restore adopts the one of the owner.
 	if !p.ClusterSuspended && suspendedByARestore(in.Cluster) {
 		p.ClusterSuspended = true
 		progressing(in.Owner, fmt.Sprintf(
@@ -113,7 +113,7 @@ func Prepare(
 	}
 
 	// spec.suspend does not show that the brokers stopped. A version that
-	// reaches running brokers downgrades a running cluster.
+	// reaches running brokers changes the version of a running cluster.
 	if running := in.Target.StatefulSet.Status.Replicas; running != 0 {
 		progressing(in.Owner, fmt.Sprintf(
 			"CamundaCluster %s is suspended, and %d of its brokers still run. The restore waits "+
@@ -198,8 +198,8 @@ func declaresSuspend(raw []byte) bool {
 //
 // The apply carries the UID of the cluster and no resource version. The status
 // of the cluster moves on nearly every reconcile, so an apply with a resource
-// version would never land. The gap is safe: a broker of Camunda 8.9 refuses a
-// snapshot that a newer version wrote, before it processes anything.
+// version would never land. A broker of Camunda 8.9 refuses a snapshot that a
+// newer version wrote unless experimental.versionCheckRestrictionEnabled is off.
 func versionTarget(
 	ctx context.Context,
 	c client.Client,

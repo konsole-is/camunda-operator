@@ -32,9 +32,9 @@ import (
 // the claim on the cluster. cluster is the name of the target, in the
 // namespace of the restore.
 //
-// It reports Done only when all three are given back, and Outcome.Wait until
-// then. After an error, call it again. The claim stays until the other steps
-// succeed.
+// It reports Done once the claim is released, and Outcome.Wait until then. A
+// failed restore keeps its Jobs, its hold and the suspension. After an error,
+// call it again: the claim stays until the other steps succeed.
 func Finish(
 	ctx context.Context,
 	c client.Client,

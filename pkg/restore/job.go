@@ -290,8 +290,8 @@ func spreadOverRestorePods(
 	return retargeted
 }
 
-// JobSelector returns the labels that select every restore Job of one restore
-// and every pod of those Jobs, for a List and for podstate.Stuck.
+// JobSelector returns the labels that select the Jobs that BuildJob renders for
+// one restore and their pods, for a List and for podstate.Stuck.
 func JobSelector(owner labels.Owner) map[string]string {
 	return labels.Discovery(owner, ComponentRestore)
 }
