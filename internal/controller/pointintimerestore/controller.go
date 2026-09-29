@@ -90,6 +90,10 @@ const (
 	// clusterRef, so an event on a cluster wakes the restores that wait for
 	// it, for example on the flip of spec.suspend.
 	clusterRefField = "pointintimerestore.spec.clusterRef"
+	// pinnedContractField indexes restores by the DatabaseServerConfig they
+	// pinned. A cluster claims a moved endpoint on its own watch, so the
+	// restore has to follow the move on the same event, not on a timer.
+	pinnedContractField = "pointintimerestore.status.storage.databaseServerConfig"
 	// defaultPollInterval paces a running phase.
 	defaultPollInterval = 5 * time.Second
 	// defaultRetryInterval paces a hold that no watch resolves.
@@ -442,6 +446,21 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	); err != nil {
 		return fmt.Errorf("indexing PointInTimeRestore by clusterRef: %w", err)
 	}
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&v1.PointInTimeRestore{},
+		pinnedContractField,
+		func(obj client.Object) []string {
+			pitr := obj.(*v1.PointInTimeRestore)
+			if pitr.Status.Storage == nil {
+				return nil
+			}
+
+			return []string{refindex.NamespacedKey(pitr.Namespace, pitr.Status.Storage.DatabaseServerConfig)}
+		},
+	); err != nil {
+		return fmt.Errorf("indexing PointInTimeRestore by pinned DatabaseServerConfig: %w", err)
+	}
 
 	renewer := &restore.Renewer{
 		Client:         mgr.GetClient(),
@@ -486,6 +505,15 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 				mgr.GetClient(),
 				&v1.PointInTimeRestoreList{},
 				clusterRefField,
+				refindex.ObjectNamespacedName,
+			),
+		).
+		Watches(
+			&v1.DatabaseServerConfig{},
+			refindex.Enqueue(
+				mgr.GetClient(),
+				&v1.PointInTimeRestoreList{},
+				pinnedContractField,
 				refindex.ObjectNamespacedName,
 			),
 		).

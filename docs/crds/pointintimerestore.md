@@ -250,7 +250,7 @@ A cluster that the restore suspended stays suspended. That is deliberate. Broker
 | `Ready` | `ConnectionFailed` | The database rejects the operator. | Correct the endpoint or the credentials. |
 | `Ready` | `Failed` | A phase failed. | Read `status.failureMessage`. Correct the cause and create a new restore. |
 
-A restore that already started keeps a broken dependency for ten minutes. After that it fails, because a restore that recreated a volume must not wait without an end. A restore that still waits in `Pending` has no such limit: it deleted nothing. While the server rolls the database back, a broken dependency holds the restore until the contract answers.
+A restore that already started keeps a broken dependency for ten minutes. After that it fails, because a restore that recreated a volume must not wait without an end. A restore that still waits in `Pending` has no such limit: it deleted nothing. While the server rolls the database back, a broken dependency holds the restore until the contract answers. If no `DatabaseServerConfig` can answer, the restore fails after ten minutes.
 
 The status also records what the restore pinned and what it did:
 

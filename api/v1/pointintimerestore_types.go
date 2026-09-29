@@ -185,8 +185,9 @@ type PointInTimeRestoreStatus struct {
 	ObservedPositions []PartitionPosition `json:"observedPositions,omitempty"`
 	// RestoreProgress is the part of the status that every restore kind has.
 	// Its Ready condition carries the reasons Progressing, Completed, Failed,
-	// ClusterNotSuspended, ClusterClaimed, InvalidReference, PitrUnavailable,
-	// SharedServer, DatabaseNotRestored, MissingSecret, and ConnectionFailed.
+	// ClusterNotSuspended, ClusterClaimed, StorageAlreadyAttached,
+	// WaitingForHandover, InvalidReference, PitrUnavailable, SharedServer,
+	// DatabaseNotRestored, MissingSecret, and ConnectionFailed.
 	RestoreProgress `json:",inline"`
 }
 
