@@ -90,10 +90,32 @@ var certManagerDeployments = []string{"cert-manager", "cert-manager-cainjector",
 
 // InstallCertManager installs the cert manager bundle and waits until every
 // one of its Deployments is Available, which can take time if cert-manager
-// was re-installed after uninstalling on a cluster.
+// was re-installed after uninstalling on a cluster. A failed issuance retries
+// after seconds, not after the default of one hour.
 func InstallCertManager() error {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
 	if _, err := Run(exec.Command("kubectl", "apply", "-f", url)); err != nil {
+		return err
+	}
+
+	// A race in the key manager of cert-manager can fail a new Certificate
+	// with "CSR not signed by referenced private key"
+	// (cert-manager/cert-manager#6331). The retry then issues it, but the
+	// default first backoff of 1h is longer than any wait of the suite.
+	if _, err := Run(exec.Command(
+		"kubectl", "patch", "deployment", "cert-manager", "-n", "cert-manager", "--type=json",
+		"-p", `[{"op":"add","path":"/spec/template/spec/containers/0/args/-",`+
+			`"value":"--certificate-request-minimum-backoff-duration=5s"}]`,
+	)); err != nil {
+		return err
+	}
+
+	// Available is also true while the pod without the flag still runs.
+	if _, err := Run(exec.Command(
+		"kubectl", "rollout", "status", "deployment/cert-manager",
+		"--namespace", "cert-manager",
+		"--timeout", "5m",
+	)); err != nil {
 		return err
 	}
 
