@@ -2,14 +2,14 @@
 
 `CamundaOptimize` runs Camunda Optimize for one orchestration cluster. You create it, or another tool creates it for you.
 
-Optimize reads the Zeebe records that the cluster exports to Elasticsearch, and it writes its own analytics indices to the same Elasticsearch. It is not part of the orchestration cluster. It has its own version, its own deployment lifecycle, and it signs in against Management Identity instead of the built-in authentication of the cluster.
+Optimize reads the Zeebe records that the cluster exports to Elasticsearch, and it writes its own analytics indices to the same Elasticsearch. It is not part of the orchestration cluster. It has its own version, and it signs in against Management Identity instead of the built-in authentication of the cluster.
 
-The operator creates two Deployments and their Services: the webapp, which serves the user interface, and the importer, which reads the exported records. It also turns the Elasticsearch exporter of the cluster on. That exporter is off by default from Camunda 8.8, and without it the source indices that Optimize reads are never written.
+Before you create one, make sure that these exist:
 
-The cluster must store its data in Elasticsearch. Optimize does not read an RDBMS secondary storage.
-
-!!! note "A private certificate authority is a setting of the cluster"
-    Optimize reads the `zeebe-record` indices that the Zeebe Elasticsearch exporter writes. The exporter reaches an HTTPS endpoint only when the broker trusts its certificate. A cluster on an [ElasticsearchCluster](elasticsearchcluster.md) trusts it without a step from you. For an Elasticsearch of your own behind a private authority, name the CA Secret under `elasticsearch.caSecretRef` of the `SecondaryStorageConfig`, see [Secondary storage over TLS](camundacluster.md#secondary-storage-over-tls). Without it, Optimize reads no records.
+- A [CamundaCluster](camundacluster.md) in the same namespace, on a [SecondaryStorageConfig](secondarystorageconfig.md) of type `elasticsearch`. Optimize does not read an RDBMS secondary storage.
+- A [ManagementAuthConfig](managementauthconfig.md). A [CamundaManagementCluster](camundamanagementcluster.md) writes one for you.
+- An Optimize version on the same minor as the cluster.
+- If your own Elasticsearch uses a certificate from a private authority, the CA Secret on the storage contract. A [contract](index.md#contracts) is a resource that publishes the address and the credentials of a service for other resources to reference. See [Secondary storage over TLS](camundacluster.md#secondary-storage-over-tls). Without it, the exporter writes no records for Optimize.
 
 The smallest manifest names the cluster, the authentication contract, and the version:
 
@@ -32,9 +32,9 @@ graph LR
     OPT -.->|managementAuthRef| MAC[ManagementAuthConfig]
     OPT -.->|"turns the exporter on"| CC
     CC -.->|storageRef| SSC[SecondaryStorageConfig]
-    OPT -->|creates| WA[optimize-webapp]
-    OPT -->|creates| IMP[optimize-importer]
-    IMP -.->|"reads zeebe-record indices"| ES["Elasticsearch (external)"]
+    OPT -->|creates| WA["my-cluster-optimize-webapp"]
+    OPT -->|creates| IMP["my-cluster-optimize-importer"]
+    IMP -.->|"reads zeebe-record indices"| ES["Elasticsearch"]
     WA -.->|"reads and writes analytics indices"| ES
 ```
 
@@ -47,59 +47,56 @@ The operator creates two Deployments in the namespace of the resource, and one S
 | `<name>-webapp` | Serves the Optimize user interface. | `http` 8090, `management` 8092 |
 | `<name>-importer` | Reads the exported records and writes the analytics indices. | `http` 8090, `management` 8092 |
 
-A Service name stops at 63 characters, which is the tightest bound of the derived names. A `CamundaOptimize` name that is too long to carry the suffix is cut, and a hash of the full name is added. Two such resources stay apart. The operator applies the same bound to the Secrets that it mirrors into the namespace, and to the value of the `camunda.io/cluster` label.
+A name that is too long for the suffix is cut, and a hash of the full name is added. Both Deployments carry the label `camunda.io/cluster` with the name of the cluster, so `kubectl get deploy,svc -l camunda.io/cluster=my-cluster` lists them next to the workloads of the cluster.
 
-The pods also carry the label `camunda.io/storage-claim` with the storage claim of the backend that the cluster writes. They carry `camunda.io/cluster-uid` with the UID of that cluster. A cluster that takes that backend over waits for these pods as it waits for the pods of the previous holder, see [CamundaCluster](camundacluster.md#secondary-storage).
-
-Read the names back with `kubectl get deploy,svc -l camunda.io/cluster=<cluster>`. The selector matches while the cluster name is 63 characters or less. For a longer name the label carries the cut form. `kubectl get deploy --show-labels` shows the value to select on.
-
-`kubectl get camundaoptimize` shows whether each instance is ready, why, and the cluster it reads:
+The operator creates no Ingress. To open the user interface, publish `<name>-webapp` yourself, or reach it for a moment with a port forward:
 
 ```bash
-kubectl get camundaoptimize -n my-cluster-ns
+kubectl port-forward -n my-cluster-ns svc/my-cluster-optimize-webapp 8090:8090
 ```
+
+`kubectl get camundaoptimize` shows whether each instance is ready, why, and the cluster it reads:
 
 ```
 NAME                  READY   REASON    CLUSTER      AGE
 my-cluster-optimize   True    Healthy   my-cluster   6m
 ```
 
-`kubectl describe camundaoptimize <name>` shows the condition messages that the table under [Status](#status) tells you to read.
-
-The operator creates no Ingress and no route from outside the Kubernetes cluster. To open the user interface, publish `<name>-webapp` yourself, or reach it for a moment with `kubectl port-forward svc/<name>-webapp 8090:8090`.
-
 ## The exporter settings on the cluster
 
-The operator adds five or six entries to `spec.zeebe.extraEnv` of the referenced cluster. All carry a value, except the two credentials. These carry a reference to the Secret that `credentialsSecretRef` of the storage contract names:
+Optimize reads the `zeebe-record` indices that the Zeebe Elasticsearch exporter writes. From Camunda 8.8, that exporter is off by default. The operator turns it on: it adds these entries to `spec.zeebe.extraEnv` of the referenced cluster.
 
-| Entry | What it carries |
+| Entry | Value |
 | --- | --- |
-| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME` | The exporter class, as a value. |
-| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_URL` | The Elasticsearch endpoint of the contract, as a value. |
-| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PREFIX` | `zeebe-record`, as a value. |
-| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_USERNAME` | A `secretKeyRef` to the username key. |
-| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD` | A `secretKeyRef` to the password key. |
-| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_NUMBEROFREPLICAS` | The [index replica count](#index-replicas), as a value. Only when a count applies. |
+| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME` | The exporter class. |
+| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_URL` | The Elasticsearch endpoint of the storage contract. |
+| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PREFIX` | `zeebe-record`. |
+| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_USERNAME` | A `secretKeyRef` to the credentials Secret of the storage contract. |
+| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD` | A `secretKeyRef` to the credentials Secret of the storage contract. |
+| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_NUMBEROFREPLICAS` | The [index replica count](#index-replicas). Only when a count applies. |
 
-No credential is written to the `CamundaCluster`. The kubelet reads the Secret and gives the value to the broker container. So the password never appears in the spec of the cluster, and rotating the Secret does not change these entries.
+No password is written to the `CamundaCluster`. A rotated Elasticsearch password does not change these entries. The index prefix has no field: the operator sets the same prefix on the exporter and on the importer.
 
-It owns those entries, under its own field manager. Every other entry on the list stays as it is, whether you or a GitOps tool put it there. The operator changes nothing else on the cluster.
+The operator owns only these entries, under the field manager `camunda-operator/camundaoptimize`. Every other entry of the list, and every other field of the cluster, stays as you or your GitOps tool wrote it. If your GitOps tool manages one of these names too, remove the name from what the tool manages. Otherwise the two keep changing the entry back.
 
-These entries are part of the Zeebe pod template. Attaching Optimize therefore rolls the Zeebe pods of the cluster, and so does deleting it. Plan the first attach like any other cluster change.
+The entries are part of the Zeebe pod template. So the first attachment of Optimize restarts the Zeebe pods of the cluster, and so does the deletion. Plan both like any other change of the cluster.
 
-The index prefix is `zeebe-record` and there is no field for it. The operator sets both sides, the exporter on the cluster and the importer of Optimize, so the two always agree.
+The cluster can already carry one of these names with the other kind of value. That is a literal where the operator needs a `secretKeyRef`, or the reverse. Then `Ready` reports `ExporterConflict`:
 
-One case needs your attention. The cluster can already carry an entry under one of the names above. Two outcomes are possible.
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: ExporterConflict
+      message: 'spec.zeebe.extraEnv of CamundaCluster "my-cluster" carries CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD with the other kind of value; remove the entries or let the operator own them'
+```
 
-Your entry can supply a literal value where the operator supplies a Secret reference, or the reverse. `Ready` then reports `ExporterConflict`, and the message names the entry. The operator reads the Elasticsearch password from a Secret, so a literal password under that name collides with it. Delete your entry from the cluster. The operator then applies its own.
-
-If your entry supplies its value the same way as the operator, it is not a conflict. The operator takes the entry over and its value wins. A GitOps tool that also manages that entry fights the operator for it, so remove those names from what your tool manages.
-
-The entries change only when the storage contract of the cluster changes, such as a new Elasticsearch endpoint, or when the index replica count changes. Rotating the password behind the Secret does not change them, so it does not roll the Zeebe pods.
+Remove the named entries from the cluster. The operator then applies its own. An entry that supplies its value the same way as the operator is no conflict: the operator takes it over, and its value wins.
 
 ## Index replicas
 
-`spec.indexReplicas` sets the number of replicas of each Optimize index. It also sets the replicas of the `zeebe-record` indices that the exporter of the cluster writes for Optimize.
+`spec.indexReplicas` sets the number of replicas of each Optimize index. It also sets the replicas of the `zeebe-record` indices that the exporter writes.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -112,48 +109,40 @@ spec:
   # ... the rest of your Optimize
 ```
 
-When you do not set it, the node count of the [SecondaryStorageConfig](secondarystorageconfig.md#node-count) of the cluster gives the count. One node gives 0 replicas. Two or more nodes give 1 replica. Without a node count, Optimize and the exporter keep their own defaults. The count of Optimize does not follow [`indexReplicas`](camundacluster.md#index-replicas) of the cluster. Each one sets its own count.
+When you do not set it, the [node count](secondarystorageconfig.md#node-count) of the storage contract gives the count. One node gives 0 replicas, and two or more nodes give 1 replica. Without a node count, Optimize and the exporter keep their own defaults. This count is separate from [`indexReplicas`](camundacluster.md#index-replicas) of the cluster.
 
-If you set a count that the node count cannot place, Optimize runs with it. The indices then stay at yellow health, and Optimize records the Warning event `IndexReplicasExceedNodes`.
+A count that the nodes cannot place is kept. The indices then stay at yellow health, and the `CamundaOptimize` records a Warning event `IndexReplicasExceedNodes`:
 
-Optimize applies the count to its existing indices each time it starts. The exporter applies it to the `zeebe-record` indices that it creates after the change. A `zeebe-record` index that exists already keeps its count. A change of the count restarts the Optimize pods and the Zeebe pods of the cluster.
+```
+indexReplicas 2 needs 3 Elasticsearch nodes, but the storage contract names 1. The indices stay yellow
+```
+
+Optimize applies the count to its existing indices each time it starts. The exporter applies it only to the `zeebe-record` indices that it creates after the change. A change of the count restarts the Optimize pods and the Zeebe pods of the cluster.
 
 ## One Optimize for one cluster
 
-One cluster carries one Optimize instance. The Optimize index prefix is fixed, so two instances write the same analytics indices in the same Elasticsearch. There is no second instance for high availability. Scale `spec.webapp.replicas` to serve the user interface from more than one pod.
+One cluster carries one Optimize instance, because two instances write the same analytics indices. To serve the user interface from more than one pod, scale `spec.webapp.replicas`. The importer runs one pod at most.
 
-The API server accepts a second `CamundaOptimize` that names a cluster that is already attached. The operator picks one holder, the oldest, with the name breaking a tie. Every other one reports `ClusterAlreadyAttached`, names the holder in the message, creates no workloads, and changes nothing on the cluster. If you delete the holder, the next one takes the cluster.
+The API server accepts a second `CamundaOptimize` for a cluster that already has one. The oldest one holds the cluster. When two were created in the same second, the name that sorts first holds it. Every other one reports `ClusterAlreadyAttached`, names the holder in the message, and creates nothing.
+
+If you delete the holder, the next one takes the cluster. It reports `WaitingForHandover` until the importer Deployment of the previous one is gone. While the pods of that importer still stop, the workloads stay at zero with reason `Suspended`, see [Suspension](#suspension). So two importers never write the indices at the same time.
 
 `spec.clusterRef` is immutable. To attach Optimize to another cluster, delete this resource and create a new one.
 
-## Handover
-
-The attachment moves in two cases. You delete the holder, and a waiting resource takes the cluster. Or a new resource turns out to be the older one and takes the cluster from a holder that already runs.
-
-The second case is narrow. A creation timestamp records whole seconds, so two resources created in the same second are equally old, and then the name decides. A resource created a moment after the holder, with a name that sorts earlier, therefore wins.
-
-On both paths the resource that had the attachment deletes its own workloads first. The new one reports `WaitingForHandover` and creates nothing until the importer Deployment of the previous one is gone.
-
-Pods that are already ordered to stop can run for their termination grace period after that Deployment goes. The new resource waits for them too. Its importer starts once the importer pod of the previous resource is gone, so two importers never write the indices at once.
-
 ## Authentication
 
-`spec.managementAuthRef` names a [ManagementAuthConfig](managementauthconfig.md), which is cluster-scoped. Its `clientSecretRef` names one Secret in one namespace, for every consumer.
+`spec.managementAuthRef` names a cluster-scoped [ManagementAuthConfig](managementauthconfig.md). That page lists the fields of the contract and the keys its Secret must carry.
 
-A pod reads a Secret of its own namespace only. The contract is cluster-scoped, so the operator copies the Secret it names into the namespace of the `CamundaOptimize` and points the pods at the copy. It does the same for the license Secret of the [CamundaPlatformConfig](camundaplatformconfig.md). Every other Secret already lives in the namespace of the `CamundaOptimize`. `MirroredSecretsReady` reports on the copies.
+The client Secret of the contract, and the license Secret of the [CamundaPlatformConfig](camundaplatformconfig.md) of the cluster, can live in another namespace. The operator copies them into the namespace of the `CamundaOptimize`, as `<name>-optimize-auth-client` and `<name>-optimize-license`. `MirroredSecretsReady` reports on the copies.
 
-Optimize connects its Identity SDK to `spec.baseUrl` of the contract. The SDK reads tenants and users from the API of Management Identity, so `baseUrl` is the root of that service. It is not the Identity URL of the orchestration cluster.
-
-See the [ManagementAuthConfig](managementauthconfig.md) page for the fields of the contract and the keys its Secret must carry.
+Optimize reads tenants and users from `spec.baseUrl` of the contract. That URL is the root of Management Identity, not the Identity URL of the orchestration cluster.
 
 ### The login callback
 
-A person who opens the Optimize user interface is sent to the identity provider and then back. The identity provider accepts only the callback URLs that its Optimize client lists, so that URL has to be registered before anybody signs in.
+After a person signs in, the identity provider sends the browser back to Optimize. The provider accepts only the callback URLs that its Optimize client lists.
 
-Where you register it depends on who runs the identity provider:
-
-- A [CamundaManagementCluster](camundamanagementcluster.md) in one of the two Keycloak modes registers it for you. Set `spec.externalUrl` to the URL a browser reaches this Optimize at. The management plane then puts the callback on the `optimize` Keycloak client. One management plane serves as many Optimize instances as you run, each with its own URL.
-- A `CamundaManagementCluster` in the `oidc` mode registers nothing, and `spec.externalUrl` has no effect. You created the Optimize application at your provider yourself, so add the callback of every Optimize there. Camunda names the exact path in [component-specific configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/#component-specific-configuration).
+- In the two Keycloak modes of a [CamundaManagementCluster](camundamanagementcluster.md), set `spec.externalUrl` to the URL of this Optimize in a browser. The management plane registers the callback for you. See [Optimize](camundamanagementcluster.md#optimize) on that page.
+- In the `oidc` mode, the operator registers nothing, and `spec.externalUrl` has no effect. Add the callback of each Optimize to the Optimize application at your provider. Camunda names the path in [component-specific configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/#component-specific-configuration).
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -167,31 +156,31 @@ spec:
   # ... the rest of your Optimize
 ```
 
-`status.optimize` on the management plane lists the Optimize instances it found and the addresses it will register. Whether the realm carries them is the `OptimizeCallbacksReady` condition, so read that one for the result. See [Optimize](camundamanagementcluster.md#optimize).
-
-A callback URL that does not match is a failed sign-in. It does not change the status of this resource. `Ready` stays `Healthy`, and the identity provider shows the error in the browser.
+A missing callback does not change the status of this resource. The sign-in fails, and the identity provider shows the error in the browser.
 
 ## Versions
 
-`spec.version` is the Optimize version, as a full semantic version such as `8.9.0`. Optimize has its own patch line, so this is not inherited from the cluster.
+`spec.version` is the Optimize version, as a full semantic version such as `8.9.0`. Optimize has its own patch line, so it does not follow the version of the cluster.
 
-The major and the minor must match the effective version of the cluster. Camunda supports Optimize only on a matching minor. A difference reports `VersionMismatch`, and the message names both versions, so it tells you which minor to use.
+The major and the minor must match the effective version of the cluster. That is `spec.version` of the `CamundaCluster`, or the value of its preset or release. Camunda supports Optimize only on a matching minor. A difference reports `VersionMismatch`:
 
-The effective version of the cluster is `spec.version` of the `CamundaCluster`, or the value its `presetRef` supplies when the cluster sets none. An upgrade of the cluster to a new minor therefore puts Optimize into `VersionMismatch` until you raise `spec.version` here as well. Both workloads keep running on the previous minor through that window. When you raise `spec.version` to the minor of the cluster, the operator rolls them to the new one.
+```
+spec.version "8.9.0" is on minor 8.9; CamundaCluster "my-cluster" runs 8.10.0, on minor 8.10
+```
+
+To upgrade Optimize, raise `spec.version` to a release on the minor of the cluster. The importer stops for one restart, and the webapp rolls, see [Rollouts](#rollouts). When you upgrade the cluster to a new minor, Optimize reports `VersionMismatch` until you raise `spec.version` too. Both workloads keep running on the previous version in that time.
 
 ## Suspension
 
-The importer connects to Elasticsearch directly. It does not go through the orchestration cluster, so nothing stops it when that cluster stops. The operator stops it instead, with the cluster.
+The Optimize workloads stop with the cluster. The importer reads Elasticsearch directly, so the operator scales the webapp and the importer to zero in these cases:
 
-`spec.suspend` on the referenced `CamundaCluster` therefore reaches the Optimize workloads too. The operator scales the webapp and the importer to zero with the workloads of the cluster. It starts them again when you clear the field and the checks of this instance pass. `suspend` means "stop everything attached to this cluster", not "stop the workloads of this cluster". The operator also suspends a cluster on its own, in two states. One is another cluster holding the storage claim of its backend. The other is a wait for the pods of another cluster, or a restore into another cluster, to stop writing that backend. The Optimize workloads follow both. A suspension hold on the cluster stops them too.
+- The cluster is suspended: by `spec.suspend`, by a suspension hold, or by the operator. See [Suspend and pause](camundacluster.md#suspend-and-pause).
+- The cluster does not hold its backend yet: the Elasticsearch that its storage contract points at. See [Secondary storage](camundacluster.md#secondary-storage).
+- Another writer still writes that backend: pods of another cluster, the importer pods of a previous `CamundaOptimize`, or a restore into another cluster.
 
-The workloads also stay at zero while the cluster does not hold the storage claim of its backend, see [CamundaCluster](camundacluster.md#secondary-storage). A cluster that is parked, or that waits for a handover, never has an importer running beside it. An instance that already runs records the event `StorageClaimAwaited` when this wait scales its workloads to zero. The cluster itself can still report `Ready` as `True` in that moment. An instance that starts parked renders its workloads at zero from the start, so it records no event and reports the wait on `Ready` alone.
+A [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md) suspends the cluster, so the import stops for the restore without a step from you.
 
-`Ready` reads `True` with reason `Suspended` while either wait holds. A cluster with `spec.suspend` reports the same. A cluster that another cluster parked reports `Ready` `False` with reason `StorageAlreadyAttached` instead, see [CamundaCluster](camundacluster.md#secondary-storage). Zero replicas is the state you asked for, so the Optimize condition is not an error.
-
-The condition does not name the cluster, but the events do. `kubectl describe camundaoptimize <name>` shows `ClusterSuspended` or `StorageClaimAwaited` when the workloads go to zero. It shows `ClusterResumed` when they start again. Each marks the decision. `WebappReady` and `ImporterReady` say whether the workloads have followed it yet.
-
-`status.suspendedBy` says which wait holds the workloads at zero. It reads `Cluster` while the referenced cluster is suspended. It reads `StorageClaim` while the storage claim of the backend holds them. The field is empty while the workloads follow their spec. It keeps its value while a failed check holds the workloads at zero after the cluster resumed.
+While the workloads are at zero, `Ready` reads `True` with reason `Suspended`. `status.suspendedBy` says which case holds them:
 
 ```yaml
 status:
@@ -202,25 +191,22 @@ status:
       reason: Suspended
 ```
 
-The operator keeps the exporter settings on the cluster while the suspension holds. A suspension is not a detachment, and the brokers are at zero, so nothing exports. Only deletion withdraws the settings.
+`suspendedBy` is `Cluster` for the first case, and `StorageClaim` for the other two. It is empty while the workloads follow their spec. The events of the `CamundaOptimize` name the cluster: `ClusterSuspended` or `StorageClaimAwaited` when the workloads go to zero, and `ClusterResumed` when they start again.
 
-A failed check of a reference does not stop a running instance. `Ready` carries the failure reason, and what happens to the workloads depends on the state of the cluster:
+The exporter settings stay on the cluster while it is suspended. Only deletion removes them.
 
-| State | Workloads |
+### A failed check
+
+When a check of a reference fails, `Ready` carries the failure reason. The workloads then do this:
+
+| State of the cluster | Workloads |
 | --- | --- |
-| A running instance on a running cluster | They keep the configuration that the operator applied last. |
-| An instance whose first check fails | It has none yet. It creates them when the check passes. |
-| The cluster is suspended | Both go to zero, because the importer reads Elasticsearch on its own. The message of `Ready` names the suspension. |
-| The cluster resumed while the check still fails | The ones that stopped stay at zero and return to their configured replica counts when the check passes. Their conditions read `Suspended` with the message `Kept at zero until the reference check passes`. `Ready` carries the failure message, and adds `The Optimize workloads that stopped stay at zero until the reference check passes` when every stop succeeded. A workload whose stop the API server refuses keeps running. A condition of it that still claimed a suspension is removed, and the render stages it again. That leaves the note off `Ready` and records the Warning event `WorkloadStopRefused`, which carries the refusal. |
-| The cluster is gone, or another instance holds it | The operator removes them. Their pods hold the backend that cluster wrote, against the next cluster that takes it over. It builds them again when the cluster comes back, or when this instance regains the attachment. |
+| Running | They keep the configuration that the operator applied last. A new instance creates none until the check passes. |
+| Suspended | They go to zero. The message of `Ready` adds the suspension. |
+| Resumed, while the check still fails | Those that stopped stay at zero until the check passes. The message of `Ready` ends with `The Optimize workloads that stopped stay at zero until the reference check passes`. |
+| Deleted, or held by another `CamundaOptimize` | The operator removes them, and builds them again when the cluster returns or this instance holds it again. |
 
-The importer never starts while one of these states holds:
-
-- The cluster does not hold the storage claim of its backend.
-- Pods of another cluster still write that backend after the cluster took it over.
-- The importer of a deleted instance of the cluster is still stopping.
-
-In the first state the cluster has not claimed the backend yet, or another cluster holds it and writes it. In every state, if two importers run on one set of analytics indices, they overwrite each other. `Ready` names the wait.
+If the API server refuses to scale a workload to zero, that workload keeps running. The `CamundaOptimize` then records a Warning event `WorkloadStopRefused` with the refusal.
 
 ```yaml
 status:
@@ -236,78 +222,78 @@ status:
 
 ## Stopping the import
 
-Set `spec.importer.replicas` to `0` to stop the import while the cluster keeps running. Use it for an index rewrite. The webapp keeps serving what is already imported. Set it back to `1` to start the import again.
+To stop the import while the cluster keeps running, for example for an index rewrite, set `spec.importer.replicas` to `0`:
 
-Zero replicas is the state you asked for, so `ImporterReady` stays healthy and `Ready` stays `True` while the import is off. Do not use `Ready` alone to tell you that data still arrives. Watch the ready replicas of the `<name>-importer` Deployment, or the age of the newest document in the Optimize indices.
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaOptimize
+metadata:
+  name: my-cluster-optimize
+  namespace: my-cluster-ns
+spec:
+  importer:
+    replicas: 0
+  # ... the rest of your Optimize
+```
+
+The webapp keeps serving what is already imported. Set the field back to `1` to start the import again.
+
+Zero replicas is the state you asked for, so `ImporterReady` and `Ready` stay `True`. `Ready` alone does not tell you that data still arrives. To know that, read the ready replicas of the `<name>-importer` Deployment.
 
 !!! warning "Do not set the importer variables through `extraEnv`"
-    An entry of `extraEnv` replaces the entry of the same name that the operator renders. Two of those names decide what a pod does.
-
-    `CAMUNDA_OPTIMIZE_ZEEBE_ENABLED` is the switch that makes a pod an importer. A webapp that carries it becomes a second importer on the same indices, which is the state that one Optimize per cluster exists to prevent. `CAMUNDA_OPTIMIZE_ZEEBE_NAME` is the index prefix the importer reads. A changed prefix makes Optimize read indices that no exporter writes.
-
-    The operator does not refuse those entries. `extraEnv` is the same escape hatch on every kind of this operator, and it overrides a rendered setting by design.
+    An entry of `extraEnv` replaces the entry of the same name that the operator renders. The operator does not refuse one. Two names decide what a pod does. `CAMUNDA_OPTIMIZE_ZEEBE_ENABLED` makes a pod an importer, so a webapp that carries it becomes a second importer on the same indices. `CAMUNDA_OPTIMIZE_ZEEBE_NAME` is the index prefix that the importer reads, and no exporter writes a changed prefix.
 
 ## Rollouts
 
-The importer is replaced, not rolled: the old pod stops before the new one starts. A rolling update does the reverse. Two importers that write the same indices at the same time make the analytics data inconsistent. A new version or a changed setting therefore stops the import for the length of one restart.
+The importer is replaced, not rolled: the old pod stops before the new one starts. Two importers that write the same indices at the same time make the analytics data inconsistent. So a new version or a changed setting stops the import for the time of one restart. The webapp rolls and keeps serving.
 
-The webapp rolls in the usual way and keeps serving during the change.
-
-The pod templates carry a hash of the settings the operator resolves. When a referenced Secret changes, such as a rotated Elasticsearch password, the pods roll and pick the new value up. You restart nothing by hand. The importer is replaced during that roll, so a credential rotation stops the import for the length of one restart.
-
-A Secret that you attach yourself through `extraEnv` or `extraEnvFrom` is not part of the hash. Roll the workload yourself after you change one.
+When a Secret or a resource that this `CamundaOptimize` references changes, such as a rotated Elasticsearch password, the pods restart with the new value. A Secret that you attach yourself through `extraEnv` or `extraEnvFrom` does not restart them. Restart the workload yourself after you change one.
 
 ## Monitoring
 
-Set `spec.monitoring.serviceMonitor.enabled` to `true` to get one ServiceMonitor per Deployment. They scrape `/actuator/prometheus` on the `management` port, 8092. Use `spec.monitoring.serviceMonitor.labels` to add the label that your Prometheus instance selects on.
+Set `spec.monitoring.serviceMonitor.enabled` to `true` to get one ServiceMonitor per Deployment, with the name of the Deployment. It scrapes `/actuator/prometheus` on the `management` port, 8092. Add the label that your Prometheus selects on with `spec.monitoring.serviceMonitor.labels`.
 
-The operator creates them only when the Kubernetes cluster serves the `ServiceMonitor` kind. You can install the Prometheus operator afterwards, and the operator creates them then.
+The operator creates them only when the Kubernetes cluster serves the `ServiceMonitor` kind. If you install the Prometheus operator later, the operator creates them then.
 
 ## Deletion
 
-When you delete the `CamundaOptimize`, the operator removes the exporter settings it added to the cluster. Entries that you own stay. The Deployments, the Services, the ServiceMonitors, and the copies of referenced Secrets carry an owner reference, so Kubernetes removes them.
+When you delete the `CamundaOptimize`, the operator removes its exporter entries from the cluster and records the event `ExporterRemoved`. Entries that you own stay. Kubernetes removes the Deployments, the Services, the ServiceMonitors, and the copies of Secrets.
 
-The analytics indices in Elasticsearch are not removed. Delete them yourself if you want the storage back. A new `CamundaOptimize` on the same cluster reads the indices that are already there.
+The analytics indices in Elasticsearch stay. Delete them yourself if you want the storage back. A new `CamundaOptimize` on the same cluster reads the indices that are already there.
 
-The `zeebe-record` indices belong to the cluster and stay. The cluster stops writing new records to them, because the exporter settings are gone.
+The `zeebe-record` indices also stay. The cluster stops writing new records to them.
 
-A `CamundaOptimize` that never held the attachment removes nothing from the cluster.
+A `CamundaOptimize` that never held the cluster removes nothing from it.
 
 ## Status
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
-| `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a Secret that a cluster-scoped resource names is applied, or no such Secret exists. | Nothing. |
-| `WebappReady` | `Healthy` | Every webapp replica is ready. | Nothing. |
-| `ImporterReady` | `Healthy` | The importer replica is ready, or `spec.importer.replicas` is `0`. | Nothing. |
-| `WebappReady` / `ImporterReady` | `Creating` / `Updating` / `Scaling` | The Deployment rolls out or scales. | Wait. |
-| `WebappReady` / `ImporterReady` | `Suspending` / `Suspended` | The referenced cluster is suspended, so the Deployment stops or is at zero. | Nothing. See [Suspension](#suspension). |
-| `WebappReady` / `ImporterReady` | `Failing` | The Deployment has replicas that do not become ready. | Read the pods of the named Deployment. |
-| `WebappReady` / `ImporterReady` | `Degraded` / `Down` | Some or no replicas are ready after the grace period. | Read the pods and events of the named Deployment. |
+| `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a Secret from another namespace is applied, or there is no such Secret. | Nothing. |
+| `WebappReady` / `ImporterReady` | `Healthy` | Every replica is ready, or the replica count is `0`. | Nothing. |
+| `WebappReady` / `ImporterReady` | `Creating` / `Updating` / `Scaling` | The Deployment rolls out or scales. The reason stays while a replica does not become ready. | Wait. If the reason stays, read the pods and events of the Deployment. |
+| `WebappReady` / `ImporterReady` | `Suspending` / `Suspended` | The Deployment stops, or is at zero, with the cluster. | Nothing. See [Suspension](#suspension). |
+| `WebappReady` / `ImporterReady` | `Failing` | The Deployment has replicas that do not become ready. | Read the pods of the Deployment. |
 | `Ready` | `Healthy` | Every condition that takes part is healthy. | Nothing. |
-| `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Degraded` / `Down` | The reason of the governing condition. The message names it. | Read the row of that condition. |
-| `Ready` | `Suspended` | Both workloads are at zero, because the referenced cluster is not writing its backend. `spec.suspend`, a suspension hold, or the operator suspended the cluster. Or the cluster does not hold the storage claim of its backend yet. `Ready` is `True`. | Nothing. Optimize starts again when the cluster does, once its own checks pass. |
-| `Ready` | `ClusterAlreadyAttached` | Another `CamundaOptimize` is already attached to the referenced cluster. | Delete one of the two. The message names the one that holds the cluster. |
-| `Ready` | `WaitingForHandover` | This resource now holds the cluster, and the importer Deployment of the previous one still exists. | Wait. The message names the Deployment. The state clears on its own. |
-| `Ready` | `InvalidReference` | The `clusterRef`, the `managementAuthRef`, or the `storageRef` chain of the cluster does not resolve. It also reports a referenced cluster whose effective spec is invalid, such as a version below `8.9.0`. When the referenced `CamundaCluster` no longer exists, the operator removes the workloads of this `CamundaOptimize`, and builds them again when that cluster returns. | Read the message. Create the missing resource, or correct the field it names. |
-| `Ready` | `StorageTypeMismatch` | The `storageRef` of the cluster resolves to a `SecondaryStorageConfig` of type `rdbms`. Optimize reads Elasticsearch only. | Attach Optimize to a cluster on Elasticsearch secondary storage. |
-| `Ready` | `VersionMismatch` | The major and the minor of `spec.version` differ from those of the effective version of the cluster. | Set `spec.version` to a release on the minor of the cluster. |
+| `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` | The reason of the condition that governs `Ready`. The message names it. | Read the row of that condition. |
+| `Ready` | `Suspended` | Both workloads are at zero with the cluster. `Ready` is `True`. | Nothing. Optimize starts again with the cluster. |
+| `Ready` | `ClusterAlreadyAttached` | Another `CamundaOptimize` holds the cluster. The message names it. | Delete one of the two. |
+| `Ready` | `WaitingForHandover` | This resource now holds the cluster, and the importer Deployment of the previous one still exists. The message names it. The pods of that importer are a separate wait, under `Suspended`. | Wait. It clears on its own. |
+| `Ready` | `InvalidReference` | A referenced resource does not exist: the cluster, the `ManagementAuthConfig`, or a resource that the cluster references. It also reports a cluster whose effective spec is invalid, such as a version below `8.9.0`. | Read the message. Create the missing resource, or correct the field it names. |
+| `Ready` | `StorageTypeMismatch` | The secondary storage of the cluster is of type `rdbms`. | Attach Optimize to a cluster on Elasticsearch. |
+| `Ready` | `VersionMismatch` | The minor of `spec.version` differs from the minor of the cluster. | Set `spec.version` to a release on the minor of the cluster. |
 | `Ready` | `MissingSecret` | A referenced Secret does not exist or lacks a key. | Create the Secret with the named key. |
-| `Ready` | `ExporterConflict` | `spec.zeebe.extraEnv` of the cluster already carries an exporter name, and that entry supplies its value the other way. | Remove the named entries from the cluster. |
+| `Ready` | `ExporterConflict` | The cluster already carries an exporter entry with the other kind of value. | Remove the named entries from the cluster. |
 
-`Ready` is `True` only when every condition that takes part in it is `True`. When one of them is not `True`, `Ready` repeats its reason and its message, and the message names the condition it came from. Read the row of that condition to know what to do.
+`Ready` is `True` only when every condition that takes part in it is `True`. `WebappReady` and `ImporterReady` always take part. `MirroredSecretsReady` takes part only when a copy exists.
 
-`WebappReady` and `ImporterReady` always take part. `MirroredSecretsReady` takes part when a referenced Secret lives in another namespace, and reports `Disabled` when none does.
-
-What a failed check does to the workloads depends on the state of the cluster. [Suspension](#suspension) has the table.
-
-`status.suspendedBy` is `Cluster` or `StorageClaim` while the workloads follow the referenced cluster to zero. It keeps that value while a failed check holds them at zero after the cluster resumed. It is empty while the workloads follow their spec. See [Suspension](#suspension).
+`status.suspendedBy` is described under [Suspension](#suspension).
 
 `status.observedGeneration` is the last generation the operator reconciled.
 
 ## Spec reference
 
-`webapp` and `importer` are the same workload block as the per-process sections of [CamundaCluster](camundacluster.md). There is no `platformConfigRef`. The image registry and the license come from the platform config of the referenced cluster.
+`webapp` and `importer` are the same workload block as the per-process sections of [CamundaCluster](camundacluster.md). There is no `platformConfigRef`: the image registry and the license come from the platform config of the referenced cluster.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -320,7 +306,7 @@ spec:
   version: "8.9.0"
   # string. Required. Name of the cluster-scoped ManagementAuthConfig that Optimize signs in against.
   managementAuthRef: management-auth
-  # string. Optional. The URL a browser reaches this Optimize at. It carries no comma, no query, and no fragment, and it does not end with a slash. In the two Keycloak modes the management plane registers the login callback under it. Unused in the oidc mode.
+  # string. Optional. The URL a browser reaches this Optimize at. In the two Keycloak modes the management plane registers the login callback under it. Unused in the oidc mode.
   externalUrl: "https://optimize.camunda.example.com"
   # object. Required. The CamundaCluster this Optimize instance attaches to. Immutable.
   clusterRef:
@@ -370,7 +356,7 @@ spec:
     podAnnotations: {}
     # object. Optional. Scheduling constraints (nodeAffinity, tolerations, podAffinity) for the importer pod.
     scheduling: {}
-  # integer. Optional, minimum 0. Replicas of each Optimize index and of each zeebe-record index. Default: 0 when the storage contract of the cluster names one node, 1 when it names more, the Optimize default when it names no node count.
+  # integer. Optional, minimum 0. Replicas of each Optimize index and of each zeebe-record index. Default: 0 when the storage contract names one node, 1 when it names more, the Optimize default when it names no node count.
   indexReplicas: 0
   # object. Optional. Prometheus integration.
   monitoring:
@@ -389,18 +375,18 @@ spec:
 The API server enforces these at admission:
 
 - `spec.version` must be a full semantic version such as `8.9.0`. A two-segment version is rejected.
-- `spec.managementAuthRef` and `spec.clusterRef.name` must not be empty.
-- `spec.externalUrl` must be an `http` or `https` URL. It carries no comma, no whitespace, no query, and no fragment, and it does not end with a slash.
-- `spec.importer.replicas` must be `0` or `1`. Optimize supports one active importer, and more than one makes the analytics data inconsistent.
+- `spec.managementAuthRef` must not be empty.
+- `spec.externalUrl` must be an `http` or `https` URL with a host. It carries no comma, no whitespace, no query, and no fragment, and it does not end with a slash.
+- `spec.importer.replicas` must be `0` or `1`.
 - `spec.clusterRef` is immutable.
 
-The API server accepts a resource that breaks the rules below, because they depend on live state. The operator reports the result on `Ready` instead:
+The rules below depend on live state, so the API server accepts a resource that breaks them. `Ready` reports the result:
 
 - The references resolve.
 - The secondary storage of the cluster is Elasticsearch.
 - The minor of `spec.version` matches the minor of the cluster.
 - No other `CamundaOptimize` holds the cluster.
-- No exporter name collides with an entry on the cluster.
+- No exporter entry on the cluster has the other kind of value.
 
 ### A production-shaped example
 
@@ -439,34 +425,11 @@ spec:
       enabled: true
 ```
 
-### The import during a restore
-
-A [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md) needs a suspended target cluster, and it replaces the Elasticsearch indices under it. An importer that keeps running through that restore reads indices that are half restored and writes analytics from them. It also keeps an import position that disagrees with the restored data. The analytics are then wrong, and nothing reports it, because zero replicas was never asked for.
-
-The operator closes that for you. A restore suspends the cluster, and the Optimize workloads follow it to zero, as [Suspension](#suspension) describes. You do not have to stop the import by hand.
-
-Set `spec.importer.replicas` to `0` yourself only when you rewrite the indices without suspending the cluster:
-
-```yaml
-apiVersion: core.camunda.io/v1
-kind: CamundaOptimize
-metadata:
-  name: my-cluster-optimize
-  namespace: my-cluster-ns
-spec:
-  version: "8.9.0"
-  managementAuthRef: management-auth
-  clusterRef:
-    name: my-cluster
-  importer:
-    replicas: 0
-```
-
 ## Related
 
-- [CamundaCluster](camundacluster.md): referenced through `clusterRef`. The operator adds the exporter settings to `spec.zeebe.extraEnv` of that cluster.
+- [CamundaCluster](camundacluster.md): referenced through `clusterRef`. The operator adds the exporter entries to `spec.zeebe.extraEnv` of that cluster.
 - [ManagementAuthConfig](managementauthconfig.md): referenced through `managementAuthRef`.
-- [SecondaryStorageConfig](secondarystorageconfig.md): resolved through the `storageRef` of the cluster. It carries the Elasticsearch endpoint and credentials.
-- [CamundaManagementCluster](camundamanagementcluster.md): produces the `ManagementAuthConfig` in a self-managed installation.
-- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md): backs up the cluster, which includes the `zeebe-record` indices that Optimize reads. It does not back up the Optimize analytics indices. Optimize keeps those behind a backup API of its own, which the operator does not call yet.
-- [ElasticsearchCluster](elasticsearchcluster.md): the ECK-managed Elasticsearch behind the contract.
+- [SecondaryStorageConfig](secondarystorageconfig.md): the storage contract of the cluster. It carries the Elasticsearch endpoint and credentials.
+- [CamundaManagementCluster](camundamanagementcluster.md): writes the `ManagementAuthConfig` and registers the login callbacks in the Keycloak modes.
+- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md): backs up the cluster, with the `zeebe-record` indices. It does not back up the Optimize analytics indices.
+- [ElasticsearchCluster](elasticsearchcluster.md): an Elasticsearch that the operator runs for the storage contract.

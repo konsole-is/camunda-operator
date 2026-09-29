@@ -1,19 +1,19 @@
 # ObjectStorageConfig
 
-`ObjectStorageConfig` is a namespaced contract kind that describes one bucket, for backups or for document storage, and how consumers authenticate to it. You create it, or another tool creates it for you.
+`ObjectStorageConfig` is a namespaced [contract](index.md#contracts) kind that describes one bucket, for backups or for document storage, and how consumers authenticate to it. You create it, or another tool creates it for you.
 
-Orchestration clusters write backups and documents to a bucket, but the operator never creates cloud infrastructure. This kind carries the location of the bucket and the authentication choice. The thing that provisions the bucket and the thing that writes to it do not need to know each other. The operator only validates the contract and reports the result on `Ready`. It never provisions anything from it.
+The operator never creates a bucket. This kind carries the location of a bucket that exists, and the authentication choice. The producer of the bucket and the resources that write to it do not need to know each other. The operator checks the Secret that the contract names and reports the result on `Ready`.
 
 | Role | Who |
 | --- | --- |
 | Producers | You, by hand, or another tool that provisions the bucket and creates the contract for you |
-| Consumers | [CamundaCluster](camundacluster.md) (through `backupStorageRef` and `documentStorageRef`), [ElasticsearchCluster](elasticsearchcluster.md) (through `snapshotStorageRef`), [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) (through the `backupStorageRef` of the cluster they back up) |
+| Consumers | [CamundaCluster](camundacluster.md) (through `backupStorageRef` and `documentStorageRef`), [ElasticsearchCluster](elasticsearchcluster.md) (through `snapshotStorageRef`), [DatabaseServer](databaseserver.md) (through `archive.objectStorageRef`), [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) (through the `backupStorageRef` of the cluster they back up) |
 
 A consumer names the contract and reads it in its own namespace. A `CamundaCluster` in `my-cluster-ns` with `backupStorageRef: my-backup-bucket` reads the contract `my-backup-bucket` of `my-cluster-ns`. A contract of the same name in another namespace is a different bucket. Two consumers in one namespace can share one contract. A consumer in another namespace needs a contract of its own, even when both point at one bucket.
 
 `spec.type` selects the storage API of the bucket. Exactly the block with the same name carries its fields: `s3`, `gcs`, or `azureBlob`. Each block has its own `auth` block, because the three storage types authenticate in different ways.
 
-The smallest contract names an AWS bucket, accessed through IRSA:
+The smallest contract names an AWS bucket, accessed through IRSA (IAM Roles for Service Accounts on EKS):
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -38,6 +38,7 @@ graph LR
     OSC -.->|auth.credentials.secretRef| SEC[Secret]
     CC[CamundaCluster] -.->|backupStorageRef, documentStorageRef| OSC
     EC[ElasticsearchCluster] -.->|snapshotStorageRef| OSC
+    DBS[DatabaseServer] -.->|archive.objectStorageRef| OSC
     LBE[LogicalBackupElasticsearch] -.->|through the cluster backupStorageRef| OSC
     LBR[LogicalBackupRDBMS] -.->|through the cluster backupStorageRef| OSC
 ```
@@ -54,22 +55,17 @@ graph LR
 
 On `AzureBlob` with `workloadIdentity`, the consumer also puts the label `azure.workload.identity/use: "true"` on its pods. The Azure webhook injects nothing into a pod without that label.
 
-An empty or absent `workloadIdentity` block means "trust the ServiceAccount chain, add nothing". Use it for mechanisms that need no annotation, for example EKS Pod Identity and GKE Workload Identity Federation. There the binding lives on the cloud side and names the ServiceAccount. The principal to bind is `system:serviceaccount:<namespace>:<serviceAccount name>` of the consuming resource. On a `CamundaCluster`, that ServiceAccount is named `<cluster-name>-camunda` by default.
+An empty or absent `workloadIdentity` block means that the consumer adds no annotation. The cloud then trusts the ServiceAccount of the pods as it is. Use it for mechanisms that need no annotation, for example EKS Pod Identity and GKE Workload Identity Federation. There the binding lives on the cloud side and names the ServiceAccount. The principal to bind is `system:serviceaccount:<namespace>:<serviceAccount name>` of the consuming resource. By default, that ServiceAccount is `<name>-camunda` for a `CamundaCluster` and `<name>-es` for an `ElasticsearchCluster`. For a `DatabaseServer`, it is the ServiceAccount that CloudNativePG creates for the instance pods, see [DatabaseServer](databaseserver.md#authentication-to-the-bucket).
 
 `credentials` names a Secret of the namespace of the contract that holds a static key. Use it for S3-compatible storage such as MinIO or Ceph, and for a cloud bucket that you access with keys. The shape of the Secret differs per storage type. `S3` takes an access key pair, `GCS` a service-account JSON key, and `AzureBlob` an account key.
 
 ## Validation checks
 
-The operator creates no resources from this kind. It validates the contract and writes the result to `status`.
+With `auth.type: credentials`, the operator makes sure that the Secret exists in the namespace of the contract and holds the configured keys. The operator checks again when you edit the contract or the Secret. With `type: workloadIdentity`, there is nothing to check, and `Ready` is `True`. The operator does not reach the bucket to test it.
 
-- If the active `auth` block has `type: credentials`, the operator makes sure that the Secret exists and holds the configured keys.
-- If the active `auth` block has `type: workloadIdentity`, there is nothing to check, and `Ready` is `True`.
+## Deletion
 
-If the Secret of `auth.credentials` or one of its keys is missing, `Ready` is `False` with reason `MissingSecret`. The message names the Secret and the key.
-
-When you edit the contract or the referenced Secret, the operator validates the contract again. Consumers read the contract by name and do not care who produced it.
-
-The Secret lives in the namespace of the contract. A contract can reach no Secret of another namespace.
+Deleting the contract removes nothing from the bucket. A consumer that references it reports the missing reference on its own `Ready` condition.
 
 ## Status
 
@@ -79,6 +75,17 @@ The Secret lives in the namespace of the contract. A contract can reach no Secre
 | --- | --- | --- | --- |
 | `Ready` | `Healthy` | The contract is valid. A Secret in `auth.credentials`, if any, exists and holds the configured keys. | Nothing. |
 | `Ready` | `MissingSecret` | The Secret of `auth.credentials` is missing, or it lacks a configured key. | Create the Secret, or add the key. The message names the Secret and the key. |
+
+A missing key reads:
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: MissingSecret
+      message: Secret my-cluster-ns/minio-credentials is missing key "secretAccessKey"
+```
 
 `status.observedGeneration` is the last generation of the contract that the operator validated.
 
@@ -112,7 +119,7 @@ spec:
     auth:
       # string enum: workloadIdentity | credentials. Optional, default: workloadIdentity.
       type: workloadIdentity
-      # object. Optional, only valid with type workloadIdentity. Absent means "trust the ServiceAccount chain".
+      # object. Optional, only valid with type workloadIdentity. Absent means that no annotation is added.
       workloadIdentity:
         # string. Optional. IAM role that the bucket trusts. It becomes the eks.amazonaws.com/role-arn annotation on the ServiceAccount of the consumer.
         roleArn: "arn:aws:iam::123456789012:role/my-cluster-workload-role"
@@ -136,7 +143,7 @@ spec:
     auth:
       # string enum: workloadIdentity | credentials. Optional, default: workloadIdentity.
       type: workloadIdentity
-      # object. Optional, only valid with type workloadIdentity. Absent means "trust the ServiceAccount chain".
+      # object. Optional, only valid with type workloadIdentity. Absent means that no annotation is added.
       workloadIdentity:
         # string. Optional. Google service account that the bucket trusts. It becomes the iam.gke.io/gcp-service-account annotation.
         serviceAccountEmail: "my-cluster-workload@my-project.iam.gserviceaccount.com"
@@ -162,7 +169,7 @@ spec:
     auth:
       # string enum: workloadIdentity | credentials. Optional, default: workloadIdentity.
       type: workloadIdentity
-      # object. Optional, only valid with type workloadIdentity. Absent means "trust the ServiceAccount chain".
+      # object. Optional, only valid with type workloadIdentity. Absent means that no annotation is added.
       workloadIdentity:
         # string. Optional. Managed identity that the container trusts. It becomes the azure.workload.identity/client-id annotation.
         clientId: "11111111-2222-3333-4444-555555555555"

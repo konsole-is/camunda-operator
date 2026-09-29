@@ -1,23 +1,21 @@
 # SecondaryStorageConfig
 
-`SecondaryStorageConfig` is a namespaced contract kind that tells an orchestration cluster where its secondary storage is and how to authenticate. An `ElasticsearchCluster` or a `Database` creates it, or you create it by hand.
+`SecondaryStorageConfig` is a namespaced [contract](index.md#contracts) kind that tells an orchestration cluster where its secondary storage is and how to authenticate. An `ElasticsearchCluster` or a `Database` creates it, or you create it by hand.
 
-Camunda stores workflow, decision, and task data in secondary storage. The orchestration cluster needs the connection details and the credentials of that backend. This kind carries them, so the thing that provisions the backend and the thing that uses it do not need to know each other. The operator only validates the contract and reports the result on `Ready`. It never provisions anything from it.
+The orchestration cluster needs the connection details and the credentials of its secondary storage. This kind carries them, so the producer of the backend and the cluster that uses it do not need to know each other. The operator provisions nothing from it. It checks the references and reports the result on `Ready`.
 
 The contract lives in the namespace of the consuming cluster. A `CamundaCluster` finds it by name in its own namespace.
 
 | Role | Who |
 | --- | --- |
 | Producers | [ElasticsearchCluster](elasticsearchcluster.md) (always, named by its `secondaryStorageConfig` field), [Database](database.md) (when its `secondaryStorageConfig` field is set, as a `rdbms` contract), or you, by hand |
-| Consumers | [CamundaCluster](camundacluster.md) (through `storageRef`, one cluster per backend, see [Secondary storage](camundacluster.md#secondary-storage)), [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) (through the `storageRef` of the cluster they back up) |
+| Consumers | [CamundaCluster](camundacluster.md) through `spec.storageRef`. [CamundaOptimize](camundaoptimize.md), and the backup and restore kinds, read the contract of their cluster. |
 
-This contract models the two backends the operator integrates with: `elasticsearch` and `rdbms`.
+The two backends are `elasticsearch` and `rdbms`.
 
-## The claim
+## One cluster per backend
 
-One `CamundaCluster` writes one backend. The claim belongs to the backend that the contract resolves to, not to the contract. Two contracts that resolve to one address are one claim, whatever namespace each one lives in. Only a bare Service name takes its address from the namespace of the contract, see [CamundaCluster](camundacluster.md#secondary-storage). A deleted contract does not free the backend for another cluster.
-
-[Secondary storage](camundacluster.md#secondary-storage) of the cluster reference has the rule in full, and how a backend moves from one cluster to the next. The status table of that page names every reason a cluster reports on `Ready` for its backend.
+One `CamundaCluster` writes one backend. The operator claims the address that the contract resolves to, not the contract. Two contracts that resolve to one address are one backend, in any namespace. A deleted contract does not free the backend for another cluster. [Secondary storage](camundacluster.md#secondary-storage) of the cluster reference has the rule in full, and the reasons a cluster reports on `Ready` for its backend.
 
 The smallest contract for an Elasticsearch backend names the endpoint and the credentials:
 
@@ -58,7 +56,7 @@ spec:
     nodeCount: 1
 ```
 
-Without `nodeCount`, each consumer keeps the default of its Camunda application. The consumers are [CamundaCluster](camundacluster.md#index-replicas) and [CamundaOptimize](camundaoptimize.md#index-replicas), and each one can set its own count. A change of `nodeCount` is a change of the contract, so it restarts every consumer of the contract.
+Without `nodeCount`, each consumer keeps the default of its Camunda application. The consumers are [CamundaCluster](camundacluster.md#index-replicas) and [CamundaOptimize](camundaoptimize.md#index-replicas), and each one can set its own count.
 
 ```mermaid
 graph LR
@@ -73,16 +71,18 @@ graph LR
 
 ## Validation checks
 
-The operator creates no resources from this kind. It validates the contract and writes the result to `status`.
+- For `type: elasticsearch`, the operator makes sure that the Secret in `credentialsSecretRef` exists and holds `usernameKey` and `passwordKey`. If `caSecretRef` is set, it makes sure that this Secret exists and holds `key`. Both Secrets must be in the namespace of the contract.
+- For `type: rdbms`, the operator makes sure that the [DatabaseConfig](databaseconfig.md) named in `rdbms.databaseConfigRef` exists in the namespace of the contract.
 
-- For `type: elasticsearch`, the operator makes sure that the Secret in `credentialsSecretRef` exists and holds `usernameKey` and `passwordKey`. If `caSecretRef` is set, it makes sure that this Secret exists and holds `key`.
-- For `type: rdbms`, the operator makes sure that the [DatabaseConfig](databaseconfig.md) named in `rdbms.databaseConfigRef` exists in the same namespace as the contract.
+The operator checks again when you edit the contract, a referenced Secret, or the referenced `DatabaseConfig`.
 
-If a Secret or a key is missing, `Ready` is `False` with reason `MissingSecret`. If the `DatabaseConfig` is missing, `Ready` is `False` with reason `InvalidReference`. The message names the missing object.
+The operator does not connect to the Elasticsearch endpoint. A wrong or unreachable endpoint still gives `Ready` `True`. The Camunda pods then do not become ready, and the [CamundaCluster](camundacluster.md#status) reports it on its own `Ready` condition.
 
-When you edit the contract, a referenced Secret, or the referenced `DatabaseConfig`, the operator validates the contract again. Consumers read the contract by name and do not care who produced it.
+A change of the spec, `nodeCount` included, restarts the pods of every `CamundaCluster` that uses the contract.
 
-> **Note:** A Secret reference can name any namespace, and the status message says whether it exists. Grant write access to this kind with care.
+## Deletion
+
+Deleting the contract removes nothing from the backend. A `CamundaCluster` that references it reports `Ready` `False` with reason `InvalidReference`, and its running workloads stay.
 
 ## Status
 
@@ -93,6 +93,17 @@ When you edit the contract, a referenced Secret, or the referenced `DatabaseConf
 | `Ready` | `Healthy` | All referenced Secrets and kinds exist and hold the required keys. | Nothing. |
 | `Ready` | `MissingSecret` | A Secret named by `credentialsSecretRef` or `caSecretRef` is missing, or it lacks a configured key. | Create the Secret, or add the key. The message names the Secret and the key. |
 | `Ready` | `InvalidReference` | The `DatabaseConfig` named by `rdbms.databaseConfigRef` does not exist in the namespace of the contract. | Create the `DatabaseConfig`, or fix the name. |
+
+A missing Secret reads:
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: MissingSecret
+      message: Secret my-cluster-ns/my-cluster-es-credentials not found
+```
 
 `status.observedGeneration` is the last generation of the contract that the operator validated.
 
@@ -124,7 +135,7 @@ spec:
     # object. Optional. CA bundle that consumers use to verify the TLS certificate of the endpoint. Set it when the certificate is not signed by a well-known CA, for example the self-signed certificate of an ECK cluster.
     caSecretRef:
       # string. Required. Name of the Secret that holds the CA bundle.
-      name: my-cluster-es-http-certs-public
+      name: my-cluster-es-es-http-certs-public
       # string. Required. Key in the Secret that holds the CA bundle.
       key: ca.crt
     # string. Optional. Name of the snapshot repository, registered in this Elasticsearch cluster, that backups write to. An ElasticsearchCluster with a snapshotStorageRef fills it. Set it by hand for an Elasticsearch cluster the operator does not manage. A cluster that takes backups needs it.
@@ -150,7 +161,7 @@ spec:
 
 ### An ECK cluster with a self-signed certificate
 
-A manifest for an ECK cluster with a self-signed certificate and a registered snapshot repository:
+A manifest for an ECK cluster with a self-signed certificate and a registered snapshot repository. The names are the ones that an `ElasticsearchCluster` named `my-cluster-es` publishes:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -161,13 +172,13 @@ metadata:
 spec:
   type: elasticsearch
   elasticsearch:
-    endpoint: "https://my-cluster-es-http.my-cluster-ns.svc:9200"
+    endpoint: "https://my-cluster-es-es-http.my-cluster-ns.svc:9200"
     credentialsSecretRef:
-      name: my-cluster-es-user
+      name: my-cluster-es-es-user
       usernameKey: username
       passwordKey: password
     caSecretRef:
-      name: my-cluster-es-http-certs-public
+      name: my-cluster-es-es-http-certs-public
       key: ca.crt
     snapshotRepository: my-cluster-ns.my-cluster-es
 ```

@@ -7,7 +7,9 @@ import the operator.
 
 The module depends on `k8s.io/api` and `k8s.io/apimachinery` only. It does not
 depend on controller-runtime, on the operator component framework, or on the
-operator packages under `pkg/`.
+operator packages under `pkg/`. Your program gets at least the versions of
+`k8s.io/api` and `k8s.io/apimachinery` that the `go.mod` of the api module
+requires.
 
 ## Get the module
 

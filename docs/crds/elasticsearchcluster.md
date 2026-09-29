@@ -1,20 +1,16 @@
 # ElasticsearchCluster
 
-`ElasticsearchCluster` runs an Elasticsearch cluster for secondary storage through the ECK operator. You create it, or another tool creates it for you.
+`ElasticsearchCluster` runs an Elasticsearch cluster for secondary storage through the ECK operator (Elastic Cloud on Kubernetes). You create it, or another tool creates it for you.
 
-An orchestration cluster needs secondary storage. `ElasticsearchCluster` gives you one Elasticsearch cluster with generated credentials and a `SecondaryStorageConfig` that a `CamundaCluster` can reference. The operator does not run Elasticsearch itself. It creates an ECK `Elasticsearch` resource, and the ECK operator runs the nodes. The operator looks for the ECK CRDs when it starts. Install ECK before you create this kind. If you install ECK after the operator, restart the operator.
+The operator does not run Elasticsearch itself. It creates an ECK `Elasticsearch` resource named `<name>`, and the ECK operator runs the nodes. Install ECK before you start the operator. The operator looks for the ECK CRDs only when it starts, so if you install ECK later, restart the operator.
 
-Use it when you want the operator to own the Elasticsearch cluster, its credentials, and its snapshot repository. If you want an RDBMS as secondary storage, use [Database](database.md) instead. An `ElasticsearchCluster` never references a `CamundaCluster`. The two meet only through the `SecondaryStorageConfig`.
+Use this kind when you want the operator to own the Elasticsearch cluster, its credentials, and its snapshot repository. If you want PostgreSQL as secondary storage, use [Database](database.md) instead. An `ElasticsearchCluster` never references a `CamundaCluster`. The two meet only through the `SecondaryStorageConfig` that `spec.secondaryStorageConfig` names. The operator creates that [contract](index.md#contracts) in the same namespace, and it carries:
 
-From an `ElasticsearchCluster` named `<name>`, the operator creates an ECK `Elasticsearch` resource named `<name>`, and ECK runs the nodes. The operator creates a user `camunda` for the orchestration cluster. It publishes everything a consumer needs in the `SecondaryStorageConfig` named in `spec.secondaryStorageConfig`, in the same namespace:
-
-- The HTTPS endpoint.
-- A reference to the user Secret `<name>-es-user` (keys `username` and `password`).
-- The CA of the self-signed certificate.
-- The node count, as `nodeCount`.
+- The HTTPS endpoint `https://<name>-es-http.<namespace>.svc:9200`.
+- The user `camunda`, in the Secret `<name>-es-user` (keys `username` and `password`).
+- The CA of the self-signed certificate, in the Secret `<name>-es-http-certs-public` (key `ca.crt`).
+- The node count, as `nodeCount`. Consumers take their default index replica count from it, so a one-node cluster stays green. [Node count](secondarystorageconfig.md#node-count) has the rule.
 - `snapshotRepository`, once a repository is registered.
-
-The node count sets the default index replica count of the consumers. A one-node cluster then stays `Ready` while Camunda writes to it. [Node count](secondarystorageconfig.md#node-count) has the rule.
 
 The Elasticsearch pods and their data volumes carry the labels `camunda.io/elasticsearch-cluster: <name>` and `camunda.io/component: elasticsearch`.
 
@@ -51,7 +47,7 @@ Three layers make the configuration of a cluster. Each later layer wins over the
 2. The [CamundaRelease](camundarelease.md) that `spec.releaseRef` names holds the version, in `spec.elasticsearch.version`.
 3. The `ElasticsearchCluster` itself holds what belongs to this one cluster, and it overrides both.
 
-A field set on the `ElasticsearchCluster` replaces the value of the layer below for that field. The `scheduling` and `monitoring` blocks are replaced as a whole, never merged field by field. An edit of the preset or the release reaches every cluster that references it.
+A field set on the `ElasticsearchCluster` replaces the value of the layer below for that field. An object, a list, or a map is replaced as a whole. [Merge rules](elasticsearchclusterpreset.md#merge-rules) has the details. An edit of the preset or the release reaches every cluster that references it.
 
 A preset rejects `version`. A cluster that follows a fleet version leaves `spec.version` unset and names a release. A cluster that must move before the fleet does sets `spec.version`, which wins over the release.
 
@@ -76,23 +72,47 @@ You can increase `spec.storageSize` at any time. You cannot decrease it. The API
 
 ## Snapshot repository
 
-Set `spec.snapshotStorageRef` to an `ObjectStorageConfig` to take part in backups. The operator registers the snapshot repository `<namespace>.<name>` in Elasticsearch with the base path `<basePath>/<namespace>/<name>`, where `<basePath>` comes from the bucket. The bucket must be the same one that the `CamundaCluster` references in its `backupStorageRef`. The operator gives the nodes the credentials or the workload identity of the bucket. For an `AzureBlob` bucket, the endpoint must reduce to an endpoint suffix (`https://<account>.blob.<suffix>`), or `Ready` reports `InvalidReference`. `SnapshotRepositoryReady` reports the registration, and the `SecondaryStorageConfig` carries `snapshotRepository` only after the registration succeeds.
+Set `spec.snapshotStorageRef` to an `ObjectStorageConfig` to take part in backups. Use the bucket that the `CamundaCluster` references in its `backupStorageRef`.
 
-The name carries the namespace. Two `ElasticsearchCluster` resources of one name in two namespaces therefore never share a repository. This matters when both reach one Elasticsearch server. A `SecondaryStorageConfig` that points at the Elasticsearch of another `ElasticsearchCluster` puts them there. Your snapshots stay under the base path of your own cluster. A restore of a backup from another cluster does not move them.
+```yaml
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchCluster
+metadata:
+  name: my-cluster-es
+  namespace: my-cluster-ns
+spec:
+  snapshotStorageRef: "my-backup-bucket"
+  # ... the rest of your cluster
+```
 
-A repository name stops at 253 characters, which is the bound of the `snapshotRepository` field. ECK rejects an `Elasticsearch` name over 36 characters, and a namespace stops at 63. The longest name the operator can build is therefore 100 characters, so the bound is out of reach.
+The operator registers the snapshot repository `<namespace>.<name>` in Elasticsearch. The snapshots go under `<basePath>/<namespace>/<name>` in the bucket, where `<basePath>` comes from the `ObjectStorageConfig`. Because the name carries the namespace, two clusters of one name in two namespaces never share a repository. The operator gives the nodes the credentials or the workload identity of the bucket.
+
+`SnapshotRepositoryReady` reports the registration. After it succeeds, `status.snapshotRepository` and the `snapshotRepository` field of the `SecondaryStorageConfig` carry the name. Until then, both are empty, and the `CamundaCluster` cannot take backups.
+
+For an `AzureBlob` bucket, the endpoint must have the form `https://<account>.blob.<suffix>`, without a port or a path. Otherwise `Ready` reports `InvalidReference`.
 
 ## Credentials
 
-The operator generates the password once and keeps it. To rotate it, delete the Secret `<name>-es-user`. The operator then generates a new password and publishes it in a new Secret.
+The operator generates the password of the user `camunda` once and keeps it. To rotate it, delete the Secret `<name>-es-user`. The operator then generates a new password and publishes it in a new Secret. The `CamundaCluster` that uses the contract restarts its pods with the new password.
 
 ## Monitoring
 
-Elasticsearch serves no Prometheus endpoint itself. So when `spec.monitoring.serviceMonitor.enabled` is `true`, the operator also runs the Prometheus `elasticsearch_exporter` next to the cluster. It creates a ServiceMonitor for the exporter when the Kubernetes cluster serves that kind.
+Elasticsearch serves no Prometheus endpoint itself. With monitoring on, the operator runs the Prometheus `elasticsearch_exporter` in the Deployment `<name>-es-exporter`. It also creates the ServiceMonitor `<name>-es-metrics` when the Kubernetes cluster serves that kind. `MetricsReady` reports the exporter, and it is not part of `Ready`.
 
-## Missing references
-
-If `spec.presetRef`, `spec.releaseRef`, or `spec.snapshotStorageRef` names a resource that does not exist, `Ready` is `False` with reason `InvalidReference`. If the bucket names a Secret or a key that does not exist, the reason is `MissingSecret`. If `spec.serviceAccount.create` is `false` and the ServiceAccount does not exist, the reason is `InvalidReference`.
+```yaml
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchCluster
+metadata:
+  name: my-cluster-es
+  namespace: my-cluster-ns
+spec:
+  monitoring:
+    serviceMonitor:
+      enabled: true
+      labels:
+        release: prometheus
+  # ... the rest of your cluster
+```
 
 ## Suspend
 
@@ -110,21 +130,40 @@ Deletion removes everything the operator created: the ECK resource, the Secrets,
 | --- | --- | --- | --- |
 | `Ready` | `ECKNotInstalled` | The ECK CRDs were not installed when the operator started. The operator does not create the ECK resource, the Secrets, or the `SecondaryStorageConfig`. | Install ECK, then restart the operator. |
 | `Ready` | `InvalidReference` | `spec.presetRef`, `spec.releaseRef`, or `spec.snapshotStorageRef` names a resource that does not exist, or the merged spec lacks `version`, `replicas`, or `storageSize`. Or the version is below the floor, the bucket has settings that Elasticsearch cannot use, or a ServiceAccount with `create: false` does not exist. | Read the message. Create the missing resource, or fix the field it names. |
-| `Ready` | `MissingSecret` | The bucket of `spec.snapshotStorageRef` names a Secret or a key that does not exist. Or the components are healthy and the ECK Secrets that the repository registration needs do not exist yet. | Create the Secret with the keys that the `ObjectStorageConfig` names. If `SnapshotRepositoryReady` reports `MissingSecret`, wait for ECK. |
+| `Ready` | `MissingSecret` | A Secret or a key does not exist. The message names it. It is a Secret that the bucket of `spec.snapshotStorageRef` names, or a Secret that ECK creates with the cluster: `<name>-es-elastic-user` or `<name>-es-http-certs-public`. | For a Secret of the bucket, create it with the keys that the `ObjectStorageConfig` names. For a Secret of ECK, wait. ECK creates it when the cluster starts. |
 | `Ready` | `Suspended` | `Ready` is `True`. The cluster is suspended by `spec.suspend: true`. The data volumes stay. | Nothing. To serve again, set `spec.suspend: false`. To wait for a serving cluster, require `Ready=True` and a reason other than `Suspended`. |
 | `Ready` | `ConnectionFailed` | The components are healthy, but the snapshot repository is not registered. See `SnapshotRepositoryReady`. | Read the message of `SnapshotRepositoryReady`. Make sure that the bucket and its credentials are correct. The operator retries on its own. |
-| `Ready` | component status | `Ready` is `True` only when every component is `True`. The reason comes from the component that is not ready, for example `Creating`, `Updating`, `Failing`, `Degraded` (yellow health), `Down` (red health), or `Error`. The message names the component. | Wait while the reason is `Creating` or `Updating`. For other reasons, read the component condition and the ECK resource `<name>`. If the yellow health stays, look for the Warning event `IndexReplicasExceedNodes` on the `CamundaCluster` or `CamundaOptimize` that writes to it. That consumer asks for more index replicas than the nodes can hold. |
+| `Ready` | component status | `Ready` is `True` only when every component is `True`. The reason comes from the component that is not ready, for example `Creating` or `Updating` (also yellow health), `Failing` (also red health), or `Error`. The message names the component. | Wait while the reason is `Creating` or `Updating`. For other reasons, read the component condition and the ECK resource `<name>`. If yellow health stays, find the Warning event `IndexReplicasExceedNodes` on the `CamundaCluster` or `CamundaOptimize` that writes here. That consumer asks for more index replicas than the nodes can hold. |
 | `CredentialsReady`, `KeystoreReady`, `ElasticsearchReady`, `StorageContractReady` | component status | The detail of each component that makes up `Ready`. `KeystoreReady` is `Disabled` unless the bucket needs keystore entries. | Read the message of the component that is not `True`. |
 | `SnapshotRepositoryReady` | `Healthy` | The snapshot repository `<namespace>.<name>` is registered. The condition is absent when `spec.snapshotStorageRef` is unset. | Nothing. |
 | `SnapshotRepositoryReady` | `ConnectionFailed` | Elasticsearch did not answer, or it rejected the registration. `Ready` is `False` while this holds. | Make sure that the bucket, its credentials, and the identity of the pods are correct. |
 | `SnapshotRepositoryReady` | `MissingSecret` | The `elastic` user Secret or the CA Secret of ECK does not exist yet. | Wait. ECK creates them with the cluster. |
 | `MetricsReady` | component status | The exporter. It is not part of `Ready`. It is `Disabled` while monitoring is off and `Suspended` while the cluster is suspended. | Read the exporter Deployment `<name>-es-exporter` when it is `Failing`. |
 
-`status.version` is the Elasticsearch version the cluster runs. It is the merged version, so it names what runs whether the release, the preset, or the cluster supplies it. `kubectl get elasticsearchcluster` prints it in the `VERSION` column. It is empty until the first reconcile resolves the references of the cluster.
+```yaml
+status:
+  version: "9.2.4"
+  snapshotRepository: my-cluster-ns.my-cluster-es
+  volumes:
+    - name: elasticsearch-data-my-cluster-es-es-default-0
+      capacity: 64Gi
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Healthy
+    - type: SnapshotRepositoryReady
+      status: "True"
+      reason: Healthy
+      message: snapshot repository "my-cluster-ns.my-cluster-es" is registered
+```
+
+`status.version` is the Elasticsearch version that runs, from the cluster, the release, or the preset. It is empty until the operator resolves the references of the cluster.
+
+`status.snapshotRepository` is the registered snapshot repository. It is empty without `spec.snapshotStorageRef`, and until the first registration succeeds.
+
+`status.volumes` lists the bound data PersistentVolumeClaims, sorted by name, each with `name` and `capacity`. The claims can differ in size when a claim was resized outside the spec.
 
 `status.observedGeneration` is the last generation that the operator reconciled.
-
-`status.volumes` lists the bound data PersistentVolumeClaims of the cluster, sorted by name, each with `name` and `capacity`. The claims can differ in size when one claim was resized outside the spec.
 
 ## Spec reference
 

@@ -1,6 +1,6 @@
 # Secondary storage
 
-Camunda keeps its data in two places. Primary storage is the Zeebe log and state on the broker volumes. Secondary storage holds the exported data that Operate, Tasklist, and the search API read, and Camunda describes it in [Configure secondary storage](https://docs.camunda.io/docs/self-managed/concepts/secondary-storage/configuring-secondary-storage/). The operator supports two secondary storage backends: Elasticsearch and PostgreSQL. It runs Elasticsearch through the ECK operator. It runs PostgreSQL through the CloudNativePG operator, or it prepares a database on a server you run. A `CamundaCluster` never sees the backend. It only references a `SecondaryStorageConfig` by name, through `spec.storageRef`.
+Camunda keeps its data in two places. Primary storage is the Zeebe log and state on the broker volumes. Secondary storage holds the exported data that Operate, Tasklist, and the search API read, and Camunda describes it in [Configure secondary storage](https://docs.camunda.io/docs/self-managed/concepts/secondary-storage/configuring-secondary-storage/). The operator supports two backends: Elasticsearch through the ECK operator, and PostgreSQL through the CloudNativePG operator or on a server you run. A `CamundaCluster` does not name the backend. It names a `SecondaryStorageConfig` in `spec.storageRef`, and this [contract](../crds/index.md#contracts) points at the backend.
 
 This guide tells you which backend to pick, which resources to create for each backend, and in which order.
 
@@ -10,25 +10,24 @@ This guide tells you which backend to pick, which resources to create for each b
 | --- | --- | --- |
 | Who runs the backend | The ECK operator, in your Kubernetes cluster. You install ECK first. | The CloudNativePG operator, or you. See [PostgreSQL](#postgresql). |
 | What you create | One `ElasticsearchCluster`. | One `DatabaseServer` and one `Database`, or a `DatabaseServerConfig` for your own server and one `Database`. |
-| What the operator creates | The ECK `Elasticsearch` resource, a user Secret, and the `SecondaryStorageConfig`. | A logical database, two SQL roles, two credential Secrets, a `DatabaseConfig`, and the `SecondaryStorageConfig`. With a `DatabaseServer`, the PostgreSQL instances and their archive as well. |
-| Camunda 8.9 support | Elasticsearch 8.19+ and 9.2+. | RDBMS secondary storage is available since Camunda 8.9. The operator prepares PostgreSQL servers only. |
+| Versions | Elasticsearch 8.19+ and 9.2+. | See [The PostgreSQL version](../crds/databaseserver.md#the-postgresql-version). |
 | Backup | Elasticsearch snapshots, through [LogicalBackupElasticsearch](../crds/logicalbackupelasticsearch.md). | A `pg_dump` of the database plus a Zeebe backup of primary storage, through [LogicalBackupRDBMS](../crds/logicalbackuprdbms.md). |
 | Optimize | Supported. | Not supported. Camunda Optimize needs Elasticsearch or OpenSearch. |
 | Not supported by the operator | OpenSearch. The operator does not model it. | Other database engines. `DatabaseServerConfig` accepts `engine: postgres` only. |
 
-If you have no strong reason to pick one, pick Elasticsearch. It is the backend that Camunda benchmarks the most. If your organization already runs PostgreSQL at scale and you do not need Optimize, pick PostgreSQL.
+If you need Optimize, pick Elasticsearch. If you already run PostgreSQL and do not need Optimize, you can pick PostgreSQL. Camunda compares the throughput and the sizing of the backends in [Size your environment](https://docs.camunda.io/docs/components/best-practices/architecture/sizing-your-environment/#secondary-storage).
 
 ## One cluster per backend
 
-A backend belongs to one `CamundaCluster`. Camunda fixes the index names in Elasticsearch and the tables in a database, so two clusters on one backend write each other's data. Give every cluster its own `ElasticsearchCluster` or its own `Database`, each with its own contract. Two clusters can share one PostgreSQL server, each with its own database.
+A backend belongs to one `CamundaCluster`. Camunda fixes the index names in Elasticsearch and the tables in a database, so two clusters on one backend write each other's data. Give every cluster its own `ElasticsearchCluster` or its own `Database`, each with its own contract. Two clusters can share one PostgreSQL server, each with its own database, see [One server per orchestration cluster](#one-server-per-orchestration-cluster).
 
-The operator holds one claim per backend address. For Elasticsearch that address is the scheme, the host, and the port of the endpoint. For PostgreSQL it is the host, the port, and the database name, so two databases on one server are two backends. Two contracts that name one address are one backend. If a second cluster resolves a backend that another cluster holds, the operator suspends the second cluster. Its `Ready` condition reads `False` with reason `StorageAlreadyAttached` and names the holder and the backend. It resumes on its own once the holder releases the backend and the pods of that holder are gone. It reports `WaitingForHandover` while it waits for those pods. A running restore into another cluster keeps it waiting the same way. The [CamundaCluster reference](../crds/camundacluster.md#secondary-storage) has the rule in full.
+If a second cluster names a backend that another cluster holds, the operator keeps the second cluster suspended. Its `Ready` condition reads `False` with reason `StorageAlreadyAttached`. The [CamundaCluster reference](../crds/camundacluster.md#secondary-storage) has the rule in full.
 
 ## Elasticsearch
 
 Prerequisite: the ECK operator is installed in the Kubernetes cluster, and the camunda-operator started after the ECK CRDs were installed. The operator does not run Elasticsearch nodes itself. It creates an ECK `Elasticsearch` resource, and ECK runs the nodes.
 
-This chain is ready to apply in [`config/example/camunda-cluster/elasticsearch`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-cluster/elasticsearch).
+This chain is ready to apply in [`config/example/camunda-cluster/elasticsearch`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-cluster/elasticsearch). The link opens the main branch. For a release, open the same path under the tag of the release.
 
 1. Create an `ElasticsearchCluster`. The sizes below are for trying out. For production, use more nodes and larger volumes. On one node, the Camunda indices get no replica, so the node keeps green health. [Node count](../crds/secondarystorageconfig.md#node-count) has the rule.
 
@@ -98,20 +97,13 @@ graph LR
     CC[CamundaCluster] -.->|storageRef| SSC
 ```
 
-What the `SecondaryStorageConfig` carries:
-
-- `type: elasticsearch` and the endpoint `https://my-cluster-es-es-http.my-cluster-ns.svc:9200`.
-- `credentialsSecretRef` to the Secret `my-cluster-es-es-user` with the keys `username` and `password`. The username is `camunda`. The operator generates the password once. To rotate it, delete the Secret.
-- `caSecretRef` to the Secret `my-cluster-es-es-http-certs-public`, key `ca.crt`. ECK creates this Secret with the CA of the self-signed HTTPS certificate. The orchestration cluster uses it to trust the endpoint.
-- `snapshotRepository`, only when `spec.snapshotStorageRef` names a backup bucket and the repository is registered. See [Backup](./backup.md).
-
-For all fields, see [ElasticsearchCluster](../crds/elasticsearchcluster.md) and [SecondaryStorageConfig](../crds/secondarystorageconfig.md).
+The contract carries the endpoint, the user Secret `my-cluster-es-es-user`, and the CA of the self-signed certificate. For backups, also set `spec.snapshotStorageRef`, see [Backup](./backup.md). [ElasticsearchCluster](../crds/elasticsearchcluster.md) has every field, the credentials, and the status.
 
 ## PostgreSQL
 
 The chain has two halves. The first half is the server, and you get it in one of two ways. The second half is the logical database on that server, and it is the same either way.
 
-[`config/example/camunda-cluster/rdbms`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-cluster/rdbms) is ready to apply. It takes the `DatabaseServer` route, and it holds the `Database`, the platform configuration, and the `CamundaCluster`.
+[`config/example/camunda-cluster/rdbms`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-cluster/rdbms) on the main branch is ready to apply. It takes the `DatabaseServer` route, and it holds the `Database`, the platform configuration, and the `CamundaCluster`.
 
 | | A `DatabaseServer` | A server you run |
 | --- | --- | --- |
@@ -127,9 +119,7 @@ Give every orchestration cluster a PostgreSQL server of its own. Two clusters ca
 
 A point-in-time restore rolls back the whole server, not one database. Every database on it goes back to the same point. A restore for one cluster therefore erases the recent data of every other cluster on that server. A `PointInTimeRestore` holds in `Pending` while more than one `Database` uses the server. Its `Ready` condition reads `False` with reason `SharedServer`. The hold lifts when one `Database` is left.
 
-Sizing and the PostgreSQL version are shared too. One `DatabaseServer` carries one instance count, one `spec.storageSize`, one `spec.walStorageSize` when it is set, and one PostgreSQL major. Every change reaches every cluster on the server. A larger `spec.storageSize` or `spec.walStorageSize` grows that volume in place, and it needs a StorageClass that allows expansion. New resources or a new image restart the instances, and every cluster on the server sees that restart.
-
-The major cannot change once the server runs. A `spec.version` that names another major is refused: `Ready` reads `False` with reason `VersionChangeRefused`, and the server keeps the major it has. To reach a later major, create a `DatabaseServer` on that version and move the data to it. A [LogicalBackupRDBMS](../crds/logicalbackuprdbms.md) and a [LogicalRestoreRDBMS](../crds/logicalrestorerdbms.md) move the data of one cluster. See [The PostgreSQL version](../crds/databaseserver.md#the-postgresql-version).
+Sizing and the version are shared too. One `DatabaseServer` has one instance count, one set of volumes, and one PostgreSQL major. A change to any of them reaches every cluster on the server. When a change restarts the instances, every cluster on the server sees that restart. The major cannot change once the server runs, see [The PostgreSQL version](../crds/databaseserver.md#the-postgresql-version).
 
 A shared server is cheaper, and it fits a fleet of small clusters that never needs a point-in-time restore. Choose it only when you accept both losses above.
 
@@ -300,24 +290,7 @@ graph LR
     CC[CamundaCluster] -.->|storageRef| SSC
 ```
 
-What the `Database` creates on the server and in the cluster:
-
-- The logical database `camunda`.
-- The application role `camunda`. It owns the database. Its credentials are in the Secret `my-camunda-db-credentials` in `my-cluster-ns`, keys `username` and `password`.
-- The backup role `camunda_backup`. It can read every table and run a restore. Its credentials are in the Secret `my-camunda-db-backup-credentials`. If you do not want this role, turn it off on the `Database`:
-
-    ```yaml
-    spec:
-      backupCredentials:
-        disabled: true
-    ```
-
-- The `DatabaseConfig` `my-camunda-db` in `my-cluster-ns`. It references the server, the database name, and both credential Secrets.
-- The `SecondaryStorageConfig` `my-storage-config` in `my-cluster-ns`, with `type: rdbms` and `rdbms.databaseConfigRef: my-camunda-db`.
-
-The operator generates each password once. To rotate one, delete its Secret. The operator sets a new password on the server and publishes it in a new Secret.
-
-> **Note:** Deletion of a `Database` removes the `DatabaseConfig`, the `SecondaryStorageConfig`, and the credential Secrets. It never drops the logical database or the SQL roles. Data removal is a manual act.
+The `Database` also creates the database, its roles, and their credential Secrets. [Database](../crds/database.md) names them, and says how to rotate a password and what deletion keeps.
 
 For all fields, see [DatabaseServerConfig](../crds/databaseserverconfig.md), [Database](../crds/database.md), [DatabaseConfig](../crds/databaseconfig.md), and [SecondaryStorageConfig](../crds/secondarystorageconfig.md).
 
@@ -347,7 +320,11 @@ spec:
     caSecretRef:
       name: my-elasticsearch-ca
       key: ca.crt
+    # The number of data nodes. It sets the default index replica count.
+    nodeCount: 3
 ```
+
+Without `nodeCount`, Camunda keeps its own default replica count, see [Node count](../crds/secondarystorageconfig.md#node-count).
 
 For PostgreSQL, write a `DatabaseServerConfig` for the server, a `DatabaseConfig` for the database, and a `SecondaryStorageConfig` with `type: rdbms`. All three live in the namespace of the cluster. Create the database, the application role, and the credentials Secret on your side first. The `DatabaseServerConfig` still needs admin credentials, because the operator validates it by a connection to the server.
 

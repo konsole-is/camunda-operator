@@ -1,8 +1,8 @@
 # DatabaseServer
 
-`DatabaseServer` is a namespaced kind that runs one PostgreSQL instance, which one or more orchestration clusters use through `Database` resources. You create it. The operator runs the server through a CloudNativePG cluster and publishes its connection details as a [DatabaseServerConfig](databaseserverconfig.md). With `spec.archive` it also keeps a continuous archive of the server in an object storage bucket.
+`DatabaseServer` is a namespaced kind that runs one PostgreSQL server. You create it. The operator runs the server as a CloudNativePG cluster and publishes its connection details as a [DatabaseServerConfig](databaseserverconfig.md). That is a [contract](index.md#contracts): a resource that carries the address and credentials of the server for other resources to reference. With `spec.archive`, it also keeps a continuous archive of the server in an object storage bucket.
 
-The server is the relational secondary storage of the clusters that use it. A [Database](database.md) creates the logical database and its users on the published contract, and a `CamundaCluster` reaches it from there. With an archive, the contract declares `pitr.enabled: true`, which a [PointInTimeRestore](pointintimerestore.md) requires.
+The server is the relational secondary storage of the clusters that use it. A [Database](database.md) creates a logical database and its users on the published contract, and a `CamundaCluster` connects through that `Database`. An archive lets a [PointInTimeRestore](pointintimerestore.md) roll the server back to a point in time.
 
 The operator needs the [CloudNativePG](https://cloudnative-pg.io/) operator on the Kubernetes cluster. An archive also needs the [Barman Cloud plugin](https://cloudnative-pg.io/plugin-barman-cloud/) and cert-manager. See [Installation](../installation.md).
 
@@ -20,15 +20,7 @@ spec:
   databaseServerConfig: my-db-server
 ```
 
-The name of the server names the CloudNativePG cluster and every address that comes off it. It must start with a lowercase letter, hold only lowercase letters, digits, and `-`, and be 46 characters or shorter. CloudNativePG takes 50, and a rollback adds a suffix of up to four characters, `-r99`.
-
-The name must also be free. If a CloudNativePG cluster of that name is already there, and this server does not own it, the server runs nothing. `ClusterReady` reports `ClusterTaken`. The message names the owner, or says that no owner controls it. The server also withdraws the contract, the base backup schedule, and the `PodMonitor`, because all three name the cluster of that name. See [Status](#status).
-
-Every other object the server derives a name for is left alone the same way. Another owner can control the `ObjectStore`, the archive Secret, the base backup schedule, or the `PodMonitor` under one of those names. The server then neither writes on that object nor removes it. While the server manages that object, `ArchiveReady` or `MonitoringReady` reads `False` with a message that names the owner. A server that manages no archive reports nothing about a foreign schedule under its name.
-
-The `ObjectStore` of that name is also the object the cluster archives through. If another owner controls it, this server archives nothing. Its cluster writes no write-ahead log, it takes no base backup, and its contract publishes `pitr.enabled: false`. `ArchiveReady` reports `ArchiveTaken`, and the message names the owner. The archive the server wrote before, and `status.archive.history`, stay as they are. Remove that `ObjectStore`, or give this server a name of its own. Then the server archives again under the record it already had. The bucket holds no write-ahead log of the time the name was held, so no rollback reaches a point inside that window.
-
-A rollback builds its cluster under the name of the server plus that suffix. The number in the suffix counts the archive records in `status.archive.history`. A rollback, an archive you re-enable, and a change of bucket each add one. A name inside the bound reaches the new cluster whole while that number stays below 100. Above it, the operator shortens the name to a head and a hash.
+The name of the server is also the name of its CloudNativePG cluster. It must start with a lowercase letter, hold only lowercase letters, digits, and `-`, and be 46 characters or shorter.
 
 ```mermaid
 graph LR
@@ -43,13 +35,9 @@ graph LR
 
 ## Endpoints and credentials
 
-The published contract carries everything a consumer needs. Its `host` is the read-write address of the server, `my-db-rw.my-cluster-ns.svc`, and its port is 5432. Its `adminCredentialsSecretRef` names the Secret `my-db-superuser`, which CloudNativePG writes with the keys `username` and `password`. No password passes through the operator.
+The published contract carries the connection details. Its `host` is the read-write Service of the server, `my-db-rw.my-cluster-ns.svc`, on port 5432. Its `adminCredentialsSecretRef` names the Secret `my-db-superuser`, which CloudNativePG writes with the keys `username` and `password`.
 
-The contract appears only after that Secret exists. Until then `ContractReady` is `False` and the message names the Secret. This keeps a consumer from reading credentials that are not there yet.
-
-Change `spec.databaseServerConfig` and the server publishes the new name and removes the contract of the name before it. A `Database` that still names the old one reports `Ready` `False` with reason `InvalidReference`. Point it at the new name, or rename the contract back. Two contracts of the server outlive a rename: one that carries the answer of the last rollback, and one that a rollback still runs on. See [Recovery](#recovery).
-
-The name must also be free. A `DatabaseServerConfig` that already exists under it, with or without an owner, is not taken over. The server publishes nothing on it and reports `ContractReady` `False` with reason `ContractTaken`. The message names the owner, or says that no owner controls it. A contract that a person wrote for an external server keeps its endpoint and its credentials. A contract of another `DatabaseServer` keeps the endpoint of that server. Give this server a name of its own, or remove that contract. The waiting server then publishes the name.
+The contract appears only after that Secret exists. Until then, `ContractReady` is `False` with reason `Blocked`.
 
 Give the contract to a `Database` in the same namespace:
 
@@ -65,11 +53,13 @@ spec:
   # ... the rest of your database
 ```
 
+If you change `spec.databaseServerConfig`, the server publishes the contract under the new name and removes the old one. A `Database` that still names the old contract reports `Ready` `False` with reason `InvalidReference`. Point it at the new name. The contract that asked for the last rollback stays, because it holds the answer. See [Recovery](#recovery).
+
 ## Sizing and storage
 
-`spec.instances` is how many PostgreSQL instances run. One instance has no failover: the server is down until its volume is reattached. Two or more give CloudNativePG a standby to promote. `spec.resources` sets the CPU and memory of each instance.
+`spec.instances` is the number of PostgreSQL instances. One instance has no failover. Two or more give CloudNativePG a standby to promote. `spec.resources` sets the CPU and memory of each instance.
 
-`spec.storageSize` is the size of the data volume of each instance. `spec.walStorageSize` puts the write-ahead log on a volume of its own, which keeps a burst of log writes off the data volume.
+`spec.storageSize` is the size of the data volume of each instance. `spec.walStorageSize` puts the write-ahead log on a separate volume of that size.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -85,17 +75,15 @@ spec:
   # ... the rest of your server
 ```
 
-Neither volume size can shrink. The API server rejects a lower inline value. If a preset lowers a size under a running server, the operator keeps the current size and records a Warning event with reason `StorageShrinkIgnored`. Raise a size and CloudNativePG grows the volumes in place, if the StorageClass allows it. To get a smaller volume, delete and recreate the server.
+A volume cannot shrink. The API server rejects a lower value on the server. If a preset lowers a size under a running server, the server keeps its current size and records a Warning event with reason `StorageShrinkIgnored`. If you raise a size, CloudNativePG grows the volumes in place when the StorageClass allows volume expansion.
 
-The write-ahead log volume cannot be removed either. You can add `walStorageSize` to a server that runs without one. If you clear it, or a preset clears it, the operator keeps the volume at the size it has. It also records a Warning event with reason `WALStorageKept`. To run the log on the data volume again, delete and recreate the server.
+You can add `walStorageSize` to a running server, but you cannot remove the volume again. If you or a preset clear the field, the server keeps the volume and records a Warning event with reason `WALStorageKept`. To get a smaller volume or no write-ahead log volume, create a new server.
 
-`status.volumes` lists every bound volume of the cluster the contract points at, and the capacity each one reports. A server with a write-ahead log volume reports that one here too, under the name of its data volume with the suffix `-wal`. A server that reports `ClusterReady` `ClusterTaken` lists none of them, and no size of that cluster reaches its own spec. The volumes under a held name belong to the cluster that holds it.
+`status.volumes` lists the volumes of the server and the capacity of each. A write-ahead log volume has the name of its data volume with the suffix `-wal`.
 
 ## The archive
 
-Without `spec.archive` the server keeps no archive. Its contract publishes `pitr.enabled: false`, and no point-in-time restore can reach it. Removing the block from a server that had one stops the archive at once and returns the contract to `pitr.enabled: false`. What the server already wrote stays, in the bucket and in [the archive history](#the-archive-history).
-
-With `spec.archive` the operator writes the write-ahead log of the server to the bucket that an [ObjectStorageConfig](objectstorageconfig.md) names, and takes base backups on a schedule. Both together are what a restore replays.
+Without `spec.archive`, the server keeps no archive, and no point-in-time restore can reach it. With `spec.archive`, the server writes its write-ahead log to the bucket that an [ObjectStorageConfig](objectstorageconfig.md) names, and takes base backups on a schedule. A restore starts from a base backup and replays the log up to the requested point.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -111,74 +99,74 @@ spec:
   # ... the rest of your server
 ```
 
-`retentionPeriodDays` is how far into the past a restore can reach. The operator enforces it on the bucket and publishes the same number as `pitr.retentionPeriodDays` on the contract. So the declared window and the enforced window are one. It covers the archive the server writes now, and no other. An archive that the server left behind, after a rollback or a change of bucket, stays in the bucket until you remove it. A [PointInTimeRestore](pointintimerestore.md) still reaches no point older than `retentionPeriodDays` of now, whichever archive holds it.
+The contract of a server with an archive declares `pitr.enabled: true`, `pitr.recovery: operator`, and `pitr.retentionPeriodDays`. A [PointInTimeRestore](pointintimerestore.md) reads these values.
 
-Raise `retentionPeriodDays` and the window widens only as the archive writes past what the shorter period pruned. The bucket dropped the older points while the shorter period was in force, and nothing brings them back. `status.archive.reachableFrom` is the oldest point the bucket still goes back to, and a rollback to a point before it is refused with `result: Unavailable`.
+### Retention
 
-`baseBackupSchedule` is a six-field cron in UTC, seconds first: seconds, minutes, hours, day of month, month, day of week. It defaults to `0 0 2 * * *`, which is daily at 02:00. Each field takes `*`, `?`, a number, a range, a list, or a step such as `*/15`. The month and the day of week also take their names, such as `JAN` and `SUN`. The descriptors `@yearly`, `@annually`, `@monthly`, `@weekly`, `@daily`, `@midnight`, `@hourly`, and `@every 6h` are accepted too.
+`retentionPeriodDays` is how far into the past a restore can reach. The bucket keeps the archive for that number of days, and the contract publishes the same number.
 
-The API server checks each field against the values CloudNativePG takes there:
+A raised retention period does not bring back what the shorter one already removed. The window grows only as the archive writes new data. `status.archive.reachableFrom` is the oldest point that the bucket still holds.
 
-- 0-59 for seconds and minutes.
-- 0-23 for hours.
-- 1-31 for the day of the month.
-- 1-12 or `JAN`-`DEC` for the month.
-- 0-6 or `SUN`-`SAT` for the day of the week.
+### Schedule
 
-The API server rejects the five-field cron of a Kubernetes CronJob, because CloudNativePG reads the first field as seconds. So `0 2 * * *` runs every hour at two minutes past, not daily at 02:00. A step takes at most three digits, and the number in `@every` takes at most six digits on each side of the point. A longer number is refused, because CloudNativePG cannot read it and the base backups stop. The API server cannot compare the two ends of a range. The operator refuses a range that reads downward, such as `FRI-MON`. `Ready` reports `InvalidReference` with the schedule in the message, and no base backup schedule reaches the cluster.
+`baseBackupSchedule` is a six-field cron in UTC, with seconds first: seconds, minutes, hours, day of month, month, day of week. The default `0 0 2 * * *` runs daily at 02:00. The descriptors `@yearly`, `@annually`, `@monthly`, `@weekly`, `@daily`, `@midnight`, `@hourly`, and `@every <duration>` are also accepted. CloudNativePG reads the schedule in the [robfig/cron format](https://pkg.go.dev/github.com/robfig/cron#hdr-CRON_Expression_Format).
 
-The first base backup runs as soon as the server is up, whatever the schedule says. `ArchiveReady` is `False` until that first base backup completes: an archive that holds write-ahead log and no base backup cannot be recovered to any point.
+The API server rejects these values:
 
-`ArchiveReady` reports the write-ahead log as well. Uploads that keep failing for five minutes turn it `False` with reason `ArchiveFailing`, and `Ready` follows. An outage shorter than that moves neither condition. The message says what CloudNativePG reports.
+- A five-field cron. CloudNativePG reads its first field as seconds, so `0 2 * * *` runs every hour, not daily.
+- A value outside the range of its field, for example hour `24`.
+- A step of more than three digits, or an `@every` number of more than six digits on each side of the point.
 
-The archive still holds every point up to the last segment that arrived, and a restore to a later point reaches nothing. Repair the bucket, or the credentials of the bucket. The plugin uploads the segments it held back once the uploads run again, and both conditions go back to `True`.
+A range that reads downward, such as `FRI-MON`, passes the API server. The server then reports `Ready` `False` with reason `InvalidReference`, and the message names the schedule.
 
-The archive lives under a prefix of the bucket that holds this server alone: `<basePath>/databaseserver/<namespace>/<name>-<id>`. The `<id>` is the first eight hex characters of the SHA-256 of the UID that Kubernetes gave the server. A server that you delete and create again under the same name gets a prefix of its own. The Barman Cloud plugin refuses a new cluster whose prefix already holds an archive. One bucket can serve a whole fleet.
+### Readiness of the archive
+
+The first base backup runs as soon as the server is up, whatever the schedule says. `ArchiveReady` is `False` with reason `Blocked` until that backup completes, because no restore can start without a base backup.
+
+If uploads of the write-ahead log fail for more than five minutes, `ArchiveReady` and `Ready` turn `False` with reason `ArchiveFailing`. The message says what CloudNativePG reports. The archive holds every point up to the last segment that arrived. Repair the bucket or its credentials. The plugin then uploads the held-back segments, and both conditions return to `True`.
 
 ### The archive history
 
-`status.archive.history` records each archive the server has written. Each record has these fields:
+`status.archive.history` records each archive that the server has written. A restore can reach a point only inside one of these intervals.
+
+```yaml
+status:
+  archive:
+    history:
+      - serverName: my-db
+        objectStorageRef: my-backup-bucket
+        location: s3://my-backup-bucket/clusters/databaseserver/my-cluster-ns/my-db-4c2a9f1e (region eu-west-1)
+        from: "2026-08-01T10:00:00Z"
+        to: "2026-08-20T15:02:11Z"
+      - serverName: my-db-r1
+        objectStorageRef: my-backup-bucket
+        location: s3://my-backup-bucket/clusters/databaseserver/my-cluster-ns/my-db-4c2a9f1e (region eu-west-1)
+        from: "2026-08-20T15:20:40Z"
+    reachableFrom: "2026-07-25T09:58:04Z"
+```
 
 - `serverName` is the directory in the bucket that holds the archive.
-- `objectStorageRef` is the `ObjectStorageConfig` of that bucket.
-- `location` is where in object storage the archive was written: the bucket, the path, and the endpoint or region that selects the service.
-- `from` is the earliest point a restore can reach in the archive, and `to` is the latest.
+- `objectStorageRef` and `location` name the bucket and the path. Each server writes under a path of its own, so one bucket can hold the archives of many servers.
+- `from` is the earliest point a restore can reach in the archive, and `to` is the latest. The record without `to` is the archive that the server writes now.
+- `unverifiedFrom` is set on the open record while uploads fail. A restore to a point after it can find no data.
 
-An open record, one without `to`, is the archive the server writes now.
+The server closes the open record and opens a new one in these cases:
 
-`unverifiedFrom` is on the open record while the uploads of the server are failing. It is the point from which the archive can be missing write-ahead log, so a restore to a point after it can reach nothing. It goes when the uploads run again, because the plugin uploads the segments it held back. `ArchiveReady` names the same outage.
+- A rollback replaces the cluster.
+- You remove `spec.archive`, then add it again.
+- The archive moves to another location. A change of `spec.archive.objectStorageRef` to another bucket does this. So does an edit of the `ObjectStorageConfig` to another bucket, path, endpoint, or region.
 
-`status.archive.reachableFrom` is the oldest point the objects in the bucket still go back to. An interval says which archive wrote a point, and this says what the bucket kept. It moves forward with the retention period, and it stands still while a raised period widens the window.
-
-A rollback closes the record of the archive it read. That record ends at whichever comes first: the contract moves to the recovered server, or that server takes its first base backup. The recovered server opens a record of its own at that first base backup. The window between the two lies in no interval either way, so no restore can reach a point in it.
-
-Remove `spec.archive` and the open record closes at that moment. The list itself stays, and no new record is written. The bucket still holds those objects, so a restore can still reach a point inside a closed interval.
-
-Ask for an archive again, and the server opens a record of its own. That record starts at the first base backup of the new archive. `ArchiveReady` stays `False` until that backup completes, because the backups of the archive the server wrote before reach no point in the new one. The window between the two records lies inside no interval, so no restore can reach a point in it.
-
-If you ask for it again on another location, no record is open to close. The server records the move as `status.archive.boundary` when the archive arrives there, and clears it when the new record opens. A base backup that was still running to the location the server left ends after the move. The boundary keeps it from opening the new record.
-
-Change `spec.archive.objectStorageRef` and the same happens, as long as the new reference resolves to another location. Two references to one bucket and one prefix are one archive, and a change between them closes no record. The open record closes when the archive arrives at the new location, and a record of that location opens at its first base backup. A rollback reads the location the server archives to now, so a point inside a record of an earlier location is refused with `result: Unavailable`. The message names both the bucket contract and the location of each. Point `spec.archive.objectStorageRef` back at the earlier bucket only if you accept that the current interval closes as well.
-
-A move takes effect when the operator writes the new archive settings for the bucket. Until it can write them, the record stays open and the write-ahead log still goes to the location the server came from. `ArchiveReady` reports what holds the move up.
-
-The same happens when you edit the [ObjectStorageConfig](objectstorageconfig.md) in place, or remove it and create it again on another bucket. The exception is a rollback that is reading that archive. A rollback holds the archive where it recorded it. `Ready` goes `False` with reason `InvalidReference`, and the message names both locations. The operator leaves the archive settings as they are until you put the bucket back or the rollback ends. The operator holds the workload identity of the bucket together with those archive settings. So the pods keep the identity that reads the archive the rollback asked for. An identity or a credential that you change alone, without moving the bucket, reaches the server at once. The name of the contract stays, the location behind it changes, and the location is what the operator compares. A new endpoint or region counts as a new location, because the objects are then on another service. A rollback to a point in the interval before the move is refused the same way.
-
-A [PointInTimeRestore](pointintimerestore.md) reaches any point inside a recorded interval. See [Recovery](#recovery).
+A new record starts at the first base backup of the new archive. No restore can reach a point between two records. A rollback reads only the location that the server archives to now. A point in a record of an earlier location is refused, and the message names both locations.
 
 ### Base backups are not the backup model
 
-The base backups belong to the archive. They are physical copies of the whole server. [BackupSchedule](backupschedule.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) take logical dumps instead, coordinated with the Camunda backup API, and they never see these base backups. A base backup produces no `LogicalBackupRDBMS` and shows in no backup list. Only a point-in-time recovery of the server reads one.
-
-Run both on one cluster. The logical backups give you a restore of the Camunda data. The archive gives you a restore of the server to a timestamp.
+The base backups belong to the archive. [BackupSchedule](backupschedule.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) take logical dumps instead, and they never use these base backups. Run both on one cluster. The logical backups restore the Camunda data. The archive restores the server to a point in time.
 
 ## Recovery
 
-The server rolls itself back to any point that one of its archives holds. Its contract declares this with `pitr.recovery: operator`, so a [PointInTimeRestore](pointintimerestore.md) asks for the rollback itself and you prepare nothing.
+A server with an archive rolls itself back to any point in its archive history. For a Camunda cluster, use a [PointInTimeRestore](pointintimerestore.md). It suspends the cluster, asks the server for the rollback, and restores the primary storage in step with it.
 
-For a Camunda cluster, the safe action is a [PointInTimeRestore](pointintimerestore.md). It suspends the cluster, asks for the rollback, and restores the primary storage in order. A request that you write by hand rolls the database back alone. It is for a consumer outside the operator. That consumer stops every writer first, then brings its own state back in line.
-
-Ask for it by hand by writing `spec.recovery` on the published contract:
+You can also ask for a rollback by hand, for a consumer outside the operator. Stop every writer first. Then write `spec.recovery` on the published contract:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -194,44 +182,41 @@ spec:
   # ... the rest of your contract
 ```
 
-The answer arrives in `spec.pitr.lastRecovery` on the same contract. [DatabaseServerConfig](databaseserverconfig.md) documents the request and the three results.
+The answer arrives in `spec.pitr.lastRecovery` on the same contract. [DatabaseServerConfig](databaseserverconfig.md#recovery-request) documents the request and the results.
 
-A rollback replaces the server. The operator builds a second CloudNativePG cluster from the archive that holds `targetTime`. Its name is the name of the server, `-r`, and the number of archives the server has written. So the first rollback of a server that only ever wrote one archive builds `my-db-r1`. A server that stopped and started its archive counts those too and recovers into a higher number. `status.recovery.cluster` names the cluster the rollback builds, and `status.cluster` names the one the contract points at.
+**CAUTION: A rollback erases everything that the server wrote after `targetTime`.** It rolls back every logical database on the server. For this reason, a [PointInTimeRestore](pointintimerestore.md) refuses a server that more than one `Database` uses, with reason `SharedServer`.
 
-The operator never writes to a cluster of that name that the server does not own. It refuses the rollback with `result: Failed`, and the message names the cluster. A cluster that somebody replaces under that name after the contract has moved to it is refused the same way. The server then runs from the cluster it came from again, and the replacement is left alone.
+### What a rollback does
 
-The operator points the contract at the new cluster once CloudNativePG reports it healthy, and it then removes the old cluster and its data volumes. Every consumer of the contract reads the new `host` and the superuser Secret of the new cluster. A `CamundaCluster` rolls its pods to pick them up.
+The operator builds a new CloudNativePG cluster from the archive. Its name is the server name, `-r`, and the number of records in the archive history. For example, the first rollback of `my-db` builds `my-db-r1`. `status.recovery.cluster` names the cluster that the rollback builds.
 
-The recovered cluster writes an archive of its own, under its own name in the same bucket. The archive it recovered from stays, so a later restore can reach back across the rollback. That archive ends at whichever comes first: the contract moves to the recovered cluster, or that cluster takes its first base backup. The new archive starts at that first base backup. The gap between the two lies in no interval either way, so no restore can reach a point in it.
+When the new cluster is healthy, the contract points at it, and the operator removes the old cluster and its volumes. The contract then carries a new `host` and a new superuser Secret. A `CamundaCluster` restarts its pods to use them. `status.cluster` names the cluster that the contract points at.
 
-The server names one contract while a rollback runs. Change `spec.databaseServerConfig` in the middle and `Ready` reports `InvalidReference` until the rollback ends. The server keeps publishing the contract that asked. Once the answer is out, it publishes the new name as well.
+The new cluster writes an archive of its own in the same bucket. The old archive stays, so a later restore can reach a point before the rollback.
 
-The server keeps its whole archive while a rollback runs, because the rollback recovers out of it. Each of these edits makes `Ready` report `InvalidReference` until the rollback ends:
+If another owner already has a CloudNativePG cluster of that name, the rollback ends with `result: Failed`. The message names the cluster.
 
-- An edit of `objectStorageRef`, `retentionPeriodDays`, or `baseBackupSchedule`.
-- A move of the bucket under the name that `objectStorageRef` holds.
-- A removal of `spec.archive`.
-- A change of one of those fields in the preset the server reads.
+While a rollback runs, an edit of `spec.databaseServerConfig`, of `spec.archive`, or of the bucket waits until the rollback is answered. Until then, `Ready` reports `InvalidReference`, and the message says what to put back.
 
-The message names what to put back. The archive keeps every setting it had when the rollback started, and the edit applies once the answer is out. A shorter `retentionPeriodDays` is the one that matters most. It becomes the retention policy of the bucket, and it can prune the base backup the rollback starts from.
+### Refused requests
 
-Everything outside `spec.archive` still applies while a rollback runs. Only the contract name and the archive are held.
-
-The contract that asked stays. It is the only place the answer is published, so whoever asked can still read `spec.pitr.lastRecovery` on it. It goes when the next rollback answers on another contract.
-
-**CAUTION: A rollback erases everything the server wrote after `targetTime`.** It rolls back every logical database on the server, not one of them. A [PointInTimeRestore](pointintimerestore.md) therefore needs the server to itself, and it holds while more than one `Database` uses the server.
-
-A suspended server refuses the request with `result: Failed`. Unsuspend it, then ask again. A server whose `ObjectStore` another owner controls refuses the request with `result: Unavailable`, because it reads no archive of its own. `ArchiveReady` names the owner. A point that no archive of the server holds is refused with `result: Unavailable`, and the message names the windows the server does hold. A point that an archive of an earlier bucket holds is refused the same way, and the message names both buckets. A point in the future, and a point older than `spec.archive.retentionPeriodDays`, are refused the same way, because the bucket holds no copy of either. A point that a shorter `retentionPeriodDays` pruned before you raised it is refused the same way. The message names the oldest point the bucket still goes back to.
+| `result` | Cause |
+| --- | --- |
+| `Failed` | The server is suspended. Unsuspend it, then ask again. |
+| `Unavailable` | The server has no archive, or another owner controls its `ObjectStore`. |
+| `Unavailable` | `targetTime` is in the future, or older than `retentionPeriodDays`. |
+| `Unavailable` | `targetTime` is older than `status.archive.reachableFrom`. |
+| `Unavailable` | No record of the archive history holds `targetTime`, or the record is in an earlier location. The message names the windows that the server holds. |
 
 ## Authentication to the bucket
 
-An `ObjectStorageConfig` that holds static credentials names a Secret of its own namespace, which is the namespace of the server. The Barman Cloud plugin reads its own Secret, so the operator copies the keys into the Secret `my-db-archive` next to the server. Anyone who can read Secrets in that namespace can then read the bucket credentials. Use workload identity where you want to keep them out.
+If the `ObjectStorageConfig` holds static credentials, the operator copies them into the Secret `my-db-archive` next to the server. Anyone who can read Secrets in that namespace can then read the bucket credentials. Use workload identity to keep them out of the namespace.
 
-An `ObjectStorageConfig` that uses workload identity binds the ServiceAccount that CloudNativePG creates for the instance pods. The operator puts the annotation of the bucket on that ServiceAccount. Add your own annotations with `spec.serviceAccount.annotations`. A value you set wins over the derived one on the same key.
+If the `ObjectStorageConfig` uses workload identity, the operator puts its annotation on the ServiceAccount of the instance pods. Add your own annotations with `spec.serviceAccount.annotations`. A value that you set wins over the derived value of the same key.
 
 ## Monitoring
 
-CloudNativePG serves Prometheus metrics on every instance pod. Set `spec.monitoring.podMonitor.enabled` to create a `PodMonitor` over them.
+CloudNativePG serves Prometheus metrics on every instance pod. Set `spec.monitoring.podMonitor.enabled` to create a `PodMonitor` named `my-db-metrics` over them.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -249,29 +234,27 @@ spec:
   # ... the rest of your server
 ```
 
-The `PodMonitor` is named `my-db-metrics`. On a Kubernetes cluster that does not serve the `PodMonitor` kind, the operator creates nothing and the server stays ready.
+If the Kubernetes cluster does not serve the `PodMonitor` kind, the operator creates nothing and the server stays ready.
 
 ## Suspend
 
-`spec.suspend: true` hibernates the server. CloudNativePG removes the instance pods and keeps the volumes. `ClusterReady` reports `Suspending` while the pods go away, then `Suspended`. `Ready` stays `True`, because the server is in the state you asked for.
+`spec.suspend: true` stops the instances and keeps their volumes. `ClusterReady` reports `Suspending`, then `Suspended`. `Ready` stays `True` with reason `Suspended`.
 
-The base backup schedule is suspended with the server. The instances are gone. Without the suspension, each slot that the schedule reaches starts a backup that cannot run. The archive itself stays configured, and the write-ahead log of the last moments before the instances go still reaches the bucket.
+The base backup schedule stops with the server. The write-ahead log of the last moments before the stop still reaches the bucket.
 
-`ArchiveReady` stays `True` for as long as the suspension lasts, even on a server suspended before its first base backup completed. There is nothing left to wait for while the schedule is suspended. The condition takes the first base backup into account again when you unsuspend the server.
+The published contract stays, but the server does not answer. Suspend a server only after every cluster that uses it is suspended.
 
-The published contract stays. A consumer that reads it reaches a server that does not answer. So suspend a server only when the cluster that uses it is suspended too.
-
-Set the field back to `false` and the instances come back on the same volumes.
+Set the field back to `false`, and the instances start again on the same volumes.
 
 ## Presets and releases
 
-Three layers make the configuration of a server. Each later layer wins over the one before it:
+Three layers make the configuration of a server. Each layer wins over the one before it:
 
 1. The [DatabaseServerPreset](databaseserverpreset.md) that `spec.presetRef` names holds the shape: the instance count, the volume sizes, the resources.
 2. The [CamundaRelease](camundarelease.md) that `spec.releaseRef` names holds the version, in `spec.databaseServer.version`.
-3. The `DatabaseServer` itself holds what belongs to this one server, and it overrides both.
+3. The `DatabaseServer` itself.
 
-A field you set on the server replaces the value of the layer below for that field. A field you leave unset comes from the layer below.
+A field that you set on the server replaces the value of the layer below. A field that you leave unset comes from the layer below.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -285,33 +268,17 @@ spec:
   databaseServerConfig: my-db-server
 ```
 
-A preset rejects `version`. A server that follows a fleet version leaves `spec.version` unset and names a release.
-
 ## The PostgreSQL version
 
-`spec.version` is a bare PostgreSQL major, such as `17`. It selects the image tag. Camunda 8.9 supports PostgreSQL 14 and later.
+`spec.version` is a bare PostgreSQL major, such as `17`. It selects the image tag. Camunda 8.9 supports PostgreSQL 14 and later. See the [RDBMS version support policy](https://docs.camunda.io/docs/self-managed/concepts/databases/relational-db/rdbms-support-policy/).
 
-The major of a running server cannot change. A `spec.version` that names another major, higher or lower, is refused. `Ready` goes `False` with reason `VersionChangeRefused`, and the server records a Warning event of the same name. The server keeps running the major it has. Everything else about it stays maintained, so a rollback in flight finishes and the contract and the archive keep working.
+The major of a running server cannot change, up or down. A change on the server or on its release is refused with `Ready` `False`, reason `VersionChangeRefused`, and a Warning event of the same name. The server keeps running its major. Set the version back to clear the refusal.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: DatabaseServer
-metadata:
-  name: my-db
-  namespace: my-cluster-ns
-spec:
-  # A bare major. It cannot change once the server runs.
-  version: "17"
-  # ... the rest of your server
-```
-
-A release carries the version too. A new `spec.databaseServer.version` on a [CamundaRelease](camundarelease.md) reaches every server that reads it, and it is refused the same way. Set the version back, on the server or on the release, and the refusal clears. No annotation lets the change through.
-
-To run a later major, create a `DatabaseServer` on that version and move the data to it. A point-in-time restore is no help here: only the major that wrote an archive can read it back.
+To run a later major, create a new `DatabaseServer` on that major and move the data to it. A point-in-time restore cannot do this, because only the major that wrote an archive can read it.
 
 ## Images
 
-The PostgreSQL image is `ghcr.io/cloudnative-pg/postgresql:<version>` by default. `spec.platformConfigRef` names a [CamundaPlatformConfig](camundaplatformconfig.md), and the image then comes from that config. An air-gapped cluster needs this.
+The PostgreSQL image is `ghcr.io/cloudnative-pg/postgresql:<version>` by default. For an air-gapped cluster, name a [CamundaPlatformConfig](camundaplatformconfig.md) in `spec.platformConfigRef`, and set the repository there:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -320,18 +287,26 @@ metadata:
   name: my-platform-config
 spec:
   images:
-    # The repository that the PostgreSQL image is pulled from.
     postgres: "mirror.example.com/postgresql"
   # ... the rest of your platform config
 ```
 
-The version of the server is the tag, so the repository you name must publish the same major version tags.
+The tag is the major version, so the repository must publish the same tags.
+
+## Name collisions
+
+The server never writes on an object that another owner holds under a name that the server derives. Each case shows on a condition, and the message names the owner:
+
+- A CloudNativePG cluster of the server name that this server does not own: `ClusterReady` reports `ClusterTaken`. The server runs nothing, and it removes its contract, its base backup schedule, and its `PodMonitor`.
+- A `DatabaseServerConfig` of the name in `spec.databaseServerConfig` that this server did not publish: `ContractReady` reports `ContractTaken`. The server publishes nothing, and the contract keeps its endpoint and credentials.
+- A Barman Cloud `ObjectStore` of the server name that another owner controls: `ArchiveReady` reports `ArchiveTaken`. The server writes no archive, its contract declares `pitr.enabled: false`, and it refuses rollbacks.
+- The archive Secret, the base backup schedule, or the `PodMonitor` under another owner: `ArchiveReady` or `MonitoringReady` reports `False`.
+
+Remove the other object, or give this server a name of its own. The server then continues with the archive history that it had. While the `ObjectStore` name was held, the server wrote no archive, so no restore can reach a point in that time.
 
 ## Deletion
 
-Deleting a `DatabaseServer` removes the CloudNativePG cluster, the published contract, and the archive settings. CloudNativePG removes the data volumes with its cluster.
-
-The objects already in the bucket stay. Remove them yourself when you no longer need them. A server that you create again under the same name writes to a prefix of its own, and reads nothing that the first one left.
+Deleting a `DatabaseServer` removes the CloudNativePG cluster, its data volumes, and the published contract. The objects in the bucket stay. If you no longer need them, remove them yourself.
 
 ## Status
 
@@ -341,27 +316,22 @@ The objects already in the bucket stay. Remove them yourself when you no longer 
 status:
   observedGeneration: 3
   version: "17"
-  cluster: my-db
+  cluster: my-db-r1
   systemIdentifier: "7370000000000000001"
   archive:
-    history:
-      - serverName: my-db
-        objectStorageRef: my-backup-bucket
-        location: s3://my-backup-bucket/clusters/databaseserver/my-cluster-ns/my-db-4c2a9f1e (region eu-west-1)
-        from: "2026-08-01T10:00:00Z"
-    reachableFrom: "2026-07-25T09:58:04Z"
+    # ... see The archive history
   recovery:
     requestID: 3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e
-    contract: my-database-server
+    contract: my-db-server
     requestedBy: my-cluster-ns/my-restore
     targetTime: "2026-08-20T14:30:00Z"
     cluster: my-db-r1
     result: Completed
     completedAt: "2026-08-20T15:02:11Z"
   volumes:
-    - name: my-db-1
+    - name: my-db-r1-1
       capacity: 256Gi
-    - name: my-db-1-wal
+    - name: my-db-r1-1-wal
       capacity: 32Gi
   conditions:
     - type: Ready
@@ -385,37 +355,39 @@ status:
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Healthy` | Every part of the server is in its desired state. | Nothing. |
-| `Ready` | `Blocked` | The archive that the server asks for holds no base backup yet, so no restore can reach the server. | Wait. |
-| `Ready` | `ArchiveFailing` | The server asks for an archive, and its write-ahead log stopped reaching the bucket. `ArchiveReady` carries the same reason. | Read `ArchiveReady`. |
-| `Ready` | `Suspended` | `spec.suspend` is true and the instances are gone. | Nothing. |
+| `Ready` | `Blocked` | The archive holds no base backup yet. | Wait. |
+| `Ready` | `ArchiveFailing` | The write-ahead log does not reach the bucket. | Read `ArchiveReady`. |
+| `Ready` | `Suspended` | `spec.suspend` is true and the instances are stopped. | Nothing. |
+| `Ready` | `ClusterTaken`, `ContractTaken`, `ArchiveTaken` | Another owner holds a name that the server derives. | See [Name collisions](#name-collisions). |
 | `Ready` | `CNPGNotInstalled` | The Kubernetes cluster did not serve the CloudNativePG kinds when the operator started. | Install CloudNativePG, then restart the operator. |
 | `Ready` | `BarmanPluginNotInstalled` | The server asks for an archive, and the Kubernetes cluster did not serve the Barman Cloud plugin when the operator started. | Install the plugin, then restart the operator. |
-| `Ready` | `InvalidReference` | A referenced resource does not exist, or the merged spec lacks a field. The message names it. | Create the resource, or fix the spec. |
+| `Ready` | `InvalidReference` | A referenced resource does not exist, the merged spec lacks a field or breaks a rule, or an edit waits for a rollback. The message names it. | Create the resource, or fix the spec. |
 | `Ready` | `MissingSecret` | The credentials Secret of the bucket is missing or lacks a key. The message names it. | Create the Secret, or fix its keys. |
-| `Ready` | `VersionChangeRefused` | `version` names a PostgreSQL major other than the one the server runs. The message names both. | Set the version back to the major the server runs. See [The PostgreSQL version](#the-postgresql-version). |
-| `ClusterReady` | `Creating`, `Updating` | CloudNativePG is converging the instances. | Wait. |
-| `ClusterReady` | `Healthy` | Every instance the spec asks for is ready. | Nothing. |
-| `ClusterReady` | `AliveFailing` | CloudNativePG reports a phase it cannot leave on its own. The message names the phase. | Read the CloudNativePG cluster for the reason. |
-| `ClusterReady` | `ClusterTaken` | A CloudNativePG cluster of the name this server derives already exists, and this server does not own it. The message names the owner, or says that no owner controls it. The server writes nothing on that cluster. It also removes the contract, the base backup schedule, and the `PodMonitor`, because all three name the cluster of that name. The bucket settings and `status.archive.history` stay, so the server comes back when the name is free. | Remove that cluster, or give this server a name of its own. |
+| `Ready` | `VersionChangeRefused` | `version` names a major other than the one the server runs. The message names both. | Set the version back. See [The PostgreSQL version](#the-postgresql-version). |
+| `ClusterReady` | `Creating`, `Updating` | CloudNativePG is starting or changing the instances. | Wait. |
+| `ClusterReady` | `Healthy` | Every instance is ready. | Nothing. |
+| `ClusterReady` | `Failing` | CloudNativePG reports a phase that it does not leave on its own. The message names the phase. | Read the CloudNativePG cluster for the cause. |
+| `ClusterReady` | `Suspending`, `Suspended` | `spec.suspend` is true. | Nothing. |
+| `ClusterReady` | `ClusterTaken` | A CloudNativePG cluster of the server name belongs to another owner. | See [Name collisions](#name-collisions). |
 | `ArchiveReady` | `Disabled` | The server has no `archive` block. | Nothing. |
-| `ArchiveReady` | `Blocked` | The archive the server writes now holds no base backup yet. A new server and a server that asked for an archive again both start here. A suspended server never does. | Wait. If it never completes, read the CloudNativePG backup for the reason. |
-| `ArchiveReady` | `ArchiveFailing` | The write-ahead log of the server stopped reaching the bucket, and it has been failing for longer than five minutes. The message says what CloudNativePG reports. The archive holds every point up to the last segment that arrived, and the open record of `status.archive.history` carries `unverifiedFrom` from that point. | Repair the bucket, or the credentials of the bucket. The held-back segments arrive once the uploads run again. |
-| `ArchiveReady` | `ArchiveTaken` | A Barman Cloud `ObjectStore` of the name this server derives already exists, and another owner controls it. The message names the owner. The cluster of this server carries no archive plugin, so it writes no write-ahead log and takes no base backup. Its contract publishes `pitr.enabled: false`, and a rollback request is refused with `result: Unavailable`. The archive the server wrote before and `status.archive.history` stay, so the server archives again when the name is free. No rollback reaches a point inside the window the name was held, because the bucket holds no write-ahead log of it. | Remove that `ObjectStore`, or give this server a name of its own. |
-| `ArchiveReady` | `Healthy` | The archive holds a base backup and takes the write-ahead log. | Nothing. |
+| `ArchiveReady` | `Blocked` | The archive holds no base backup yet. | Wait. If it never completes, read the CloudNativePG `Backup` for the cause. |
+| `ArchiveReady` | `ArchiveFailing` | Uploads of the write-ahead log have failed for more than five minutes. | Repair the bucket or its credentials. |
+| `ArchiveReady` | `ArchiveTaken` | A Barman Cloud `ObjectStore` of the server name belongs to another owner. | See [Name collisions](#name-collisions). |
+| `ArchiveReady` | `Healthy` | The archive holds a base backup and receives the write-ahead log. | Nothing. |
 | `ContractReady` | `Blocked` | The superuser Secret does not exist yet. | Wait for the instances to start. |
-| `ContractReady` | `ContractTaken` | A `DatabaseServerConfig` of the name `spec.databaseServerConfig` asks for already exists, and this server did not publish it. The message names the owner, or says that no owner controls it. The server writes nothing on that contract, so the endpoint and the credentials its consumers read stay what they are. | Give this server a contract name of its own, or remove that contract. |
-| `ContractReady` | `Disabled` | The name of the cluster is taken, so the server withdrew the contract. `ClusterReady` says who holds the name. | Read `ClusterReady`. |
+| `ContractReady` | `ContractTaken` | The contract name belongs to another owner. | See [Name collisions](#name-collisions). |
+| `ContractReady` | `Disabled` | The cluster name is taken, so the server removed the contract. | Read `ClusterReady`. |
 | `ContractReady` | `Healthy` | The contract is published. | Nothing. |
 | `MonitoringReady` | `Disabled` | Scraping is off. | Nothing. |
-| `MonitoringReady` | `Healthy` | The `PodMonitor` is applied. | Nothing. |
+| `MonitoringReady` | `Healthy` | The `PodMonitor` exists. | Nothing. |
 
-A part that the spec switches off is reported on its own condition and never on `Ready`. `MonitoringReady` stays out of `Ready` always, and `ArchiveReady` stays out of it on a server with no `archive` block. A server that runs therefore reads `Ready: Healthy` whether or not it scrapes, and so does a server with no `archive` block. A server that asks for an archive reads `Ready: Blocked` until its first base backup completes.
+`MonitoringReady` never affects `Ready`. `ArchiveReady` affects `Ready` only on a server with an `archive` block.
 
-`status.version` is the PostgreSQL major the server runs. It is the merged version, so it names what runs whether the release, the preset, or the server supplies it. `kubectl get databaseserver` prints it in the `VERSION` column. While a version change is refused it stays on the major of the data directory, not the one the spec asks for. It is empty until the first reconcile resolves the references of the server.
+`status.version` is the PostgreSQL major that the server runs. `status.cluster` is the CloudNativePG cluster that the contract points at, and it changes after a rollback.
 
-`status.cluster` is the CloudNativePG cluster that the contract points at. `status.systemIdentifier` is the identity of the PostgreSQL instance behind it, which a [Database](database.md) uses to tell two servers apart. `status.observedGeneration` is the last generation the operator reconciled.
+`status.recovery` is the rollback that the server works on now, or the last one it answered. `result` and `completedAt` are empty while the rollback runs.
 
-`status.recovery` is the rollback request the server works on now, or the last one it answered. `contract` is the `DatabaseServerConfig` that asked. `cluster` is the CloudNativePG cluster it builds, and it is empty for a request the server refused before it built one. `archive` is the archive it recovers out of. `serverName` and `location` say where it is. `objectStorageRef`, `retentionPeriodDays`, and `baseBackupSchedule` are the settings the server had when the rollback started. Those three are what an edit of `spec.archive` is held against, and what the server keeps rendering until the rollback is answered. `identity` is the workload identity of that bucket at the same moment. The server holds it together with those three settings, and it is unset for a bucket that holds static credentials. `completedAt` and `result` are unset while the rollback runs. The same answer is published on the contract, in `spec.pitr.lastRecovery`, and the server writes it there again if the contract loses it.
+`status.observedGeneration` is the last generation that the operator reconciled.
 
 ## Spec reference
 
@@ -434,8 +406,7 @@ spec:
   releaseRef: "camunda-8-9-4"
   # string. Optional. Name of a cluster-scoped CamundaPlatformConfig. Only its image settings are read.
   platformConfigRef: "my-platform-config"
-  # string. Required, unless the release provides it. PostgreSQL major version, 14 or later. Rejected in a preset.
-  # It cannot move to another major once the server runs.
+  # string. Required, unless the release provides it. PostgreSQL major, 14 or later, fixed once the server runs.
   version: "17"
   # integer. Optional, default: 1. Number of PostgreSQL instances, at least 1.
   instances: 3
@@ -447,8 +418,7 @@ spec:
   storageSize: "256Gi"
   # string. Optional, default: the default StorageClass of the Kubernetes cluster. StorageClass of the volumes.
   storageClassName: "ssd"
-  # string (resource quantity). Optional. Size of a separate volume for the write-ahead log.
-  # It cannot be cleared once the server has the volume.
+  # string (resource quantity). Optional. Size of a separate volume for the write-ahead log. It cannot be cleared.
   walStorageSize: "32Gi"
   # object. Optional. The ServiceAccount that CloudNativePG creates for the instance pods.
   serviceAccount:
@@ -483,11 +453,11 @@ spec:
   archive:
     # string. Required in this block. Name of an ObjectStorageConfig in this namespace.
     objectStorageRef: my-backup-bucket
-    # integer. Required in this block. How many days into the past a restore can reach, at least 1.
+    # integer. Required in this block. How many days into the past a restore can reach, from 1 to 36500.
     retentionPeriodDays: 30
     # string. Optional, default: "0 0 2 * * *". Six-field cron in UTC, seconds first, for the base backups.
     baseBackupSchedule: "0 0 2 * * *"
-  # boolean. Optional, default: false. Hibernates the server and keeps its volumes.
+  # boolean. Optional, default: false. Stops the instances and keeps their volumes.
   suspend: false
 ```
 
@@ -495,12 +465,11 @@ spec:
 
 - `metadata.name` must be a DNS-1035 label of 46 characters or fewer: lowercase letters, digits, and `-`, starting with a letter.
 - `databaseServerConfig` is required on a `DatabaseServer` and must not be set in a preset.
-- `storageSize` and `walStorageSize` cannot shrink. The API server rejects a lower inline value, and a lower preset value is ignored with the Warning event `StorageShrinkIgnored`.
-- `walStorageSize` cannot be cleared once the server has a write-ahead log volume. The operator keeps the volume and records the Warning event `WALStorageKept`.
-- `version` is a bare major, such as `17`. Anything below 14 is rejected on the `Ready` condition with reason `InvalidReference`, because Camunda 8.9 supports PostgreSQL 14 and later. See the [RDBMS version support policy](https://docs.camunda.io/docs/self-managed/concepts/databases/relational-db/rdbms-support-policy/).
+- `storageSize` and `walStorageSize` cannot shrink. See [Sizing and storage](#sizing-and-storage).
+- `version` is a bare major, such as `17`. A major below 14 is reported on `Ready` with reason `InvalidReference`.
 - `version` cannot move to another major once the server runs. See [The PostgreSQL version](#the-postgresql-version).
-- `archive.retentionPeriodDays` must be from 1 to 36500. The upper bound is a hundred years. It keeps the reachable window that the operator computes from the retention inside the range its clock arithmetic can hold.
-- `archive.baseBackupSchedule` must be a six-field cron or a descriptor, and every range in it must read upward. See [The archive](#the-archive).
+- `archive.retentionPeriodDays` must be from 1 to 36500.
+- `archive.baseBackupSchedule` must be a six-field cron or a descriptor. See [Schedule](#schedule).
 - `version` and `storageSize` must be present after the merge. Set them inline, or take `storageSize` from a preset and `version` from a release. A missing field is reported on `Ready` with reason `InvalidReference`.
 
 ### A production-shaped example

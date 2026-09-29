@@ -47,7 +47,7 @@ The [authentication guide](../guides/authentication.md) explains the setup of bo
 
 ## The clients of the management plane
 
-`spec.auth.oidc.management.clients` names the identity provider application of each component of the management plane. A [CamundaManagementCluster](camundamanagementcluster.md) in the `oidc` mode reads them. It is the one mode where you register the applications yourself. In the two Keycloak modes, Management Identity creates every client, and this block stays empty.
+`spec.auth.oidc.management.clients` names the identity provider application of each component of the management plane. A [CamundaManagementCluster](camundamanagementcluster.md#identity-provider) reads them only when its `spec.identityProvider` is `oidc`, your own OIDC provider. Then you register the applications at your provider yourself. When `spec.identityProvider` is `keycloak` or `externalKeycloak`, Management Identity creates every client, and this block stays empty.
 
 Declare the client of each component you deploy:
 
@@ -119,25 +119,29 @@ spec:
 
 An Optimize instance of version `8.9.9` then pulls `mirror.example.com/camunda/optimize:8.9.9`.
 
-Three rules govern the field:
+Two rules govern the field:
 
 - A value is a full repository, registry included. It carries no tag and no digest. The tag always comes from the `version` field of the resource that runs the image.
-- An image that `spec.images` does not name keeps its default repository.
-- A mirror is one entry per image that you rename.
+- An image that `spec.images` does not name keeps its default repository. To mirror every image, name every image.
 
 A value that names a registry with a port needs a path after the port, as in `registry:5000/camunda/optimize`. The tag goes on the end of the value, so the bare `registry:5000` becomes the image `registry:5000:8.9.9`, which no runtime accepts.
 
 To pin one exact reference, digest or patched tag included, for the clusters of one rollout, use `spec.images` on a [CamundaRelease](camundarelease.md) instead.
 
-The tag of the Keycloak image is `quay-optimized-<version>`, not the bare version. Camunda publishes its Keycloak build under that tag, as [Keycloak deployment](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/#keycloak-deployment) states.
+Two images need care in a mirror:
 
-The default repository of an image can change with the version. From Camunda 8.10 the two Web Modeler images become `camunda/hub` and `camunda/hub-websockets`, which the [8.10 chart README](https://github.com/camunda/camunda-platform-helm/blob/main/charts/camunda-platform-8.10/README.md) names. A rename of your own always wins, so a mirror stays a mirror across that change.
+- Keycloak pulls the tag `quay-optimized-<version>`, not the bare version. Copy that tag into your mirror. Camunda publishes its Keycloak build under it, see [Keycloak deployment](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/#keycloak-deployment).
+- From Camunda 8.10, Web Modeler runs from `camunda/hub` and `camunda/hub-websockets`, as the [8.10 chart README](https://github.com/camunda/camunda-platform-helm/blob/main/charts/camunda-platform-8.10/README.md) names. Your rename still applies at 8.10. So before you move to 8.10, copy these two images into the repositories that `webModelerRestapi` and `webModelerWebsockets` name.
 
 ## Changes and referenced Secrets
 
-When you change this resource or one of its Secrets, every referencing cluster rolls its pods with the new values. No operator restart is needed.
+When you change this resource or one of its Secrets, every referencing cluster rolls its pods with the new values. The Secrets live in the namespace that each reference names. The operator copies them into the namespace of each cluster that uses them.
 
-When a referenced Secret or key is missing, `Ready` is `False` with reason `MissingSecret`. The message starts with the spec path of the reference, for example `spec.auth.oidc.management.clients.identity.clientSecretRef`.
+When a referenced Secret or key is missing, `Ready` is `False` with reason `MissingSecret`. The message starts with the spec path of the reference, for example `spec.auth.oidc.management.clients.identity.clientSecretRef`. Each referencing cluster also reports `MissingSecret` and keeps its workloads.
+
+## Deletion
+
+A platform config owns nothing, so a delete removes nothing else. A `CamundaCluster` that still names it reports `Ready: False` with reason `InvalidReference` and keeps running on the configuration that the operator applied last.
 
 ## Status
 
@@ -257,10 +261,13 @@ spec:
     webModelerWebsockets: "mirror.example.com/camunda/web-modeler-websockets"
     # string. Optional, default: camunda/keycloak. The Keycloak that the operator runs.
     keycloak: "mirror.example.com/camunda/keycloak"
+    # string. Optional, default: ghcr.io/cloudnative-pg/postgresql. The PostgreSQL that a DatabaseServer runs. The tag is the major version of the server, so a mirror must publish the same tags.
+    postgres: "mirror.example.com/cloudnative-pg/postgresql"
 ```
 
 ### Validation rules
 
+- `spec.auth.method` is `basic` or `oidc`. `spec.auth.oidc.providerType` is `generic` or `microsoft`.
 - `spec.auth.oidc` is required when `spec.auth.method` is `oidc`, and forbidden when the method is `basic`.
 - In `spec.auth.oidc`, `issuerUrl`, `clientId`, and `clientSecretRef` are required.
 - `issuerUrl` must be an http or https URL. `jwksUrl`, `tokenUrl`, and `authUrl` must be empty or an http or https URL.

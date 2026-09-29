@@ -2,7 +2,7 @@
 
 A `CamundaCluster` is one Camunda orchestration cluster: the Zeebe brokers, the gateway, the web applications Operate, Tasklist, and Admin, and optionally the connectors runtime. The operator turns it into StatefulSets, Deployments, and Services for Camunda 8.9 or later, and keeps them healthy.
 
-The cluster owns only its workloads. Secondary storage comes from a [SecondaryStorageConfig](secondarystorageconfig.md), and bucket storage from an [ObjectStorageConfig](objectstorageconfig.md). Shared settings come from a [CamundaPlatformConfig](camundaplatformconfig.md), sizing defaults from a [CamundaClusterPreset](camundaclusterpreset.md), and the versions from a [CamundaRelease](camundarelease.md). Backups attach from the outside through [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md).
+The cluster owns only its workloads. Secondary storage comes from a [SecondaryStorageConfig](secondarystorageconfig.md), and bucket storage from an [ObjectStorageConfig](objectstorageconfig.md). Both are [contracts](index.md#contracts): resources that publish the address and the credentials of a storage for other resources to reference. Shared settings come from a [CamundaPlatformConfig](camundaplatformconfig.md), sizing defaults from a [CamundaClusterPreset](camundaclusterpreset.md), and the versions from a [CamundaRelease](camundarelease.md). Backups attach from the outside through [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md).
 
 The smallest cluster names a platform configuration, a version, and a storage contract:
 
@@ -32,34 +32,70 @@ graph LR
 
 ## Topology
 
-Camunda 8.9 ships the orchestration cluster as one binary. Zeebe, the gateway, and the web applications are one image, and configuration selects which parts run in a process. The topology is a choice on this resource:
+Zeebe, the gateway, and the web applications run from one Camunda image. Each block of the spec says where its process runs:
 
 - `zeebe` is always a StatefulSet of brokers with persistent volumes.
 - `gateway` runs `Standalone` (its own Deployment) or `Embedded` (inside the brokers). The default is `Standalone`.
 - `operate`, `tasklist`, and `admin` each run `Standalone` (their own Deployment) or `Embedded`. The default is `Embedded`. An embedded web application runs inside the gateway when the gateway is standalone, otherwise inside the brokers.
 - `connectors` is a separate runtime. When enabled, it is always its own Deployment.
 
+A cluster that gives Operate its own pods and runs connectors:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  operate:
+    mode: Standalone
+    replicas: 2
+  connectors:
+    enabled: true
+    version: "8.9.7"
+  # ... the rest of your cluster
+```
+
 ## Endpoints
 
-Each enabled process gets a workload and a Service named `<name>-<component>`. The gateway Service (`<name>-zeebe` when the gateway is `Embedded`) serves gRPC on port `26500` and HTTP on port `8080`. HTTP serves the REST API under `/v2/` and the embedded web applications under `/operate/`, `/tasklist/`, and `/admin/`. A standalone web application serves on its own Service on port `8080`. A Service name stops at 63 characters, which is the tightest bound of the derived names. A cluster name that is too long to carry the suffix is cut, and a hash of the full name is added. Two such clusters stay apart. The operator applies the same bound to the Secrets that it derives from the cluster name, and to the value of the `camunda.io/cluster` label.
+Each enabled process gets a workload and a Service named `<name>-<component>`. A standalone gateway serves on the Service `<name>-gateway`, with gRPC on port `26500` and HTTP on port `8080`. An embedded gateway serves the same ports on `<name>-zeebe`. HTTP serves the REST API under `/v2/` and the embedded web applications under `/operate/`, `/tasklist/`, and `/admin/`. A standalone web application serves on its own Service on port `8080`.
 
-Read the names back with `kubectl get deploy,sts,svc -l camunda.io/cluster=<name>`. The selector matches while the cluster name is 63 characters or less. For a longer name the label carries the cut form. `kubectl get deploy --show-labels` shows the value to select on.
+`status.gateway` publishes the two client addresses, so you do not have to work out which Service runs the gateway. See [Status](#status).
 
-Every resource carries the labels `camunda.io/cluster` and `camunda.io/component`. The cluster label carries the cluster name under the same bound. The component is one of `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, and `connectors`.
+Every resource carries the labels `camunda.io/cluster` and `camunda.io/component`. The component is one of `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, and `connectors`. List the workloads of a cluster:
 
-The operator creates no Ingress. You route traffic to the cluster, and `spec.externalUrl` tells the cluster its public base URL for OIDC redirects and links.
+```bash
+kubectl get deploy,sts,svc -n my-cluster-ns -l camunda.io/cluster=my-cluster
+```
+
+A Service name has at most 63 characters. When the cluster name is too long for its suffix, the operator cuts the name and adds a hash of the full name. The `camunda.io/cluster` label and the derived Secret names carry the same cut form. For such a cluster, read the label value with `kubectl get deploy --show-labels` and select on that value.
+
+The operator creates no Ingress. You route traffic to the cluster. `spec.externalUrl` tells the cluster its public base URL for OIDC redirects and links.
 
 ## Authentication
 
-Under basic authentication the operator creates the admin user `admin` and stores the password in the Secret `<name>-camunda-admin` (keys `username` and `password`). Under OIDC the identity provider authenticates every caller, and `spec.auth.admin` names the identities that get the `admin` role. An OIDC cluster without `spec.auth.admin` has no administrator. A cluster whose only administrator is a client still shows the setup page in the browser, so list a user too. The [authentication guide](../guides/authentication.md) explains both methods.
+The authentication method, basic or OIDC, comes from the [CamundaPlatformConfig](camundaplatformconfig.md) that `platformConfigRef` names. A cluster cannot choose its own method.
 
-The operator generates the admin password once and keeps it stable. To rotate it, set `spec.auth.basic.passwordRotation` to a new value. The operator generates a new password and sets it on the `admin` user through the user API of the running cluster. Then it publishes the password in the Secret and restarts the connectors Deployment. `status.adminPassword.rotation` records the applied value. The [authentication guide](../guides/authentication.md#rotate-the-password) has the details and the failure modes.
+Under basic authentication the operator creates the admin user `admin`. It stores the credentials in the Secret `<name>-camunda-admin`, under the keys `username`, `password`, and `email`. To rotate the password, set `spec.auth.basic.passwordRotation` to a new value. `status.adminPassword.rotation` records the value that the operator applied.
+
+Under OIDC the identity provider authenticates every caller, and `spec.auth.admin` names the identities that get the `admin` role. An OIDC cluster without `spec.auth.admin` has no administrator.
+
+The [authentication guide](../guides/authentication.md) explains both methods, the admin role, and the rotation with its failure modes.
 
 ## Version
 
-The effective version is `spec.version`, or the version of the [CamundaRelease](camundarelease.md) of `releaseRef` when the field is absent. It is the version the operator deploys, and a new version rolls every workload. A release can also pin the exact image reference to pull. The version stays the one the rules below read, whatever the image tag says.
+The effective version is `spec.version`, or the version of the [CamundaRelease](camundarelease.md) of `releaseRef` when the field is absent. A release can also pin the image to pull, but the rules below read the version, not the image. `spec.connectors.version` does not follow the Camunda version. Set it on its own.
 
-The operator refuses a version below the one the brokers run. Camunda does not support a downgrade of a running cluster, see [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/). A broker that starts on data that a newer version wrote marks itself unhealthy. The cluster reports `Ready: False` with reason `VersionDowngradeRefused`, records the Warning event `VersionDowngradeRefused`, and applies nothing. The brokers keep the version they have.
+### Upgrade
+
+To upgrade, raise `spec.version`, or raise the version of the release that `releaseRef` names. The operator rolls every workload to the new version. `kubectl get camundacluster` shows the new version at once, and `Ready` reads `Updating` until every process is healthy again.
+
+Move one minor at a time, and move to the latest patch of your minor first. Camunda blocks the start after a skipped minor, see [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/#required-upgrade-procedure). [Prepare for upgrade](https://docs.camunda.io/docs/self-managed/upgrade/prepare-for-upgrade/) lists what changes in each minor. An attached [CamundaOptimize](camundaoptimize.md#versions) reports `VersionMismatch` until you raise its version to the same minor.
+
+### A lower version is refused
+
+The operator refuses a version below the one that the brokers run. Camunda does not support a downgrade of a running cluster, see [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/). The cluster reports `Ready: False` with reason `VersionDowngradeRefused` and records a Warning event with the same name. It applies no change of the spec, and the brokers keep the version they have.
 
 ```yaml
 status:
@@ -80,21 +116,15 @@ status:
       lastTransitionTime: "2026-08-20T09:14:00Z"
 ```
 
-The rule reads the effective version. Three edits therefore meet it the same way:
+The rule reads the effective version. A lower `spec.version`, a removed `spec.version` over a lower release, and a lowered release all meet it.
 
-- A lower `spec.version`.
-- A removed `spec.version`, when the release carries a lower version.
-- A release whose version is lowered.
+The running version is the version that the operator last applied to the brokers, even before the pods have rolled. The operator also writes it on each broker volume, as the annotation `camunda.io/broker-version`. So a cluster that you create again on retained volumes ([Storage](#storage)) obeys the rule too. A new cluster with new volumes has no running version.
 
-The running version is the version that the operator stamped on the broker workload. After a version change it is the new version, even before the pods have rolled. The refusal message names it. The operator also stamps the highest version it asked each broker volume to run, as the annotation `camunda.io/broker-version`. A cluster recreated on retained volumes ([Storage](#storage)) reads its running version from that stamp, so the rule holds for it. A new cluster with new volumes has no running version, and the rule does not apply to it.
-
-A cluster whose backend another cluster holds is suspended before the rule applies, see [Secondary storage](#secondary-storage). One edit that repoints `spec.storageRef` to a held backend and lowers the version scales the workloads to zero on the running version. `Ready` reports `StorageAlreadyAttached`. When the holder releases the backend, the rule applies and the cluster reports `VersionDowngradeRefused`. It stays at zero until you set the version forward again or sanction the downgrade.
-
-A restore sanctions its own move to the version of its backup. The [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md#why-the-downgrade-is-safe-here) and [LogicalRestoreRDBMS](logicalrestorerdbms.md#why-the-downgrade-is-safe-here) pages explain why that move is safe.
+A suspended cluster reports the refusal when it resumes. It then stays at zero until you set the version forward again or sanction the downgrade.
 
 ### Downgrade on purpose
 
-CAUTION: Do not downgrade a cluster over data that a newer version wrote. The rule above gives the reason and the source. To recover, set the version back to the one that wrote the data. To run the lower version on the data of a backup taken with it, restore that backup after that. The restore sets the version itself, so do not lower `spec.version` for it. A restore cannot start while the refusal stands: it suspends the cluster first, and a refused cluster applies nothing, so the brokers never stop.
+CAUTION: Do not downgrade a cluster over data that a newer version wrote. To recover, set the version back to the one that wrote the data. To run the lower version on the data of a backup taken with it, restore that backup. Do not lower `spec.version` for it. The restore sets the version itself, see [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md#why-the-downgrade-is-safe-here) and [LogicalRestoreRDBMS](logicalrestorerdbms.md#why-the-downgrade-is-safe-here). A restore cannot start while the refusal stands.
 
 To downgrade on purpose, set the annotation `camunda.io/allow-version-downgrade` to the target version. Set `spec.version` to the same value in the same edit.
 
@@ -111,25 +141,36 @@ spec:
   # ... the rest of your cluster
 ```
 
-The annotation sanctions a move to that version and to no other. The operator removes the annotation once the brokers carry the version. It also removes an annotation that does not name the effective version. Set the annotation in the same edit as the version, or after the refusal. The refusal keeps the lower effective version pending, so an annotation set after it matches.
+The annotation sanctions a move to that version and to no other. The operator removes the annotation when the brokers carry the version. It also removes an annotation that does not name the effective version. You can also set the annotation after the refusal, because the refusal keeps the lower version pending.
 
-After a restore, you can give the release control of the version again. Set the annotation to the version of the release, and remove `spec.version` in the same edit. You can also remove `spec.version` first, and set the annotation after the refusal.
+After a restore, you can give the release control of the version again. Set the annotation to the version of the release, and remove `spec.version` in the same edit.
 
 ## Storage
 
-The brokers keep their data on one PersistentVolumeClaim per pod. `spec.zeebe.storageClassName` is fixed at creation. When `spec.zeebe.storageSize` grows, the operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. The operator never shrinks a volume: a smaller size from a preset is ignored with the Warning event `StorageShrinkIgnored`.
+The brokers keep their data on one PersistentVolumeClaim per pod. `spec.zeebe.storageClassName` is fixed at creation. When `spec.zeebe.storageSize` grows, the operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. The operator never shrinks a volume. A smaller size from a preset is ignored, and the cluster records the Warning event `StorageShrinkIgnored`.
 
 `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` decides what happens to the volumes when you delete the cluster. `Delete` (the default) removes them. `Retain` keeps them for a later cluster with the same name. A scale-down and a suspension always keep them.
 
 ## Secondary storage
 
-`spec.storageRef` names the `SecondaryStorageConfig` in the namespace of the cluster. The contract tells the cluster where its secondary storage is.
+`spec.storageRef` names the `SecondaryStorageConfig` in the namespace of the cluster. This contract tells the cluster where its backend is: the Elasticsearch or the database that holds its secondary storage. The [secondary storage guide](../guides/secondary-storage.md) shows how to set up Elasticsearch or PostgreSQL.
 
-One `CamundaCluster` writes one backend. Camunda fixes the index names and the tables. Two clusters on one backend write each other's data, and a restore of one deletes the data of the other.
+One `CamundaCluster` writes one backend. Camunda fixes the index names and the tables, so two clusters on one backend write each other's data. A restore of one of them deletes the data of the other.
 
-The operator claims the backend, not the contract. The backend is the address the contract resolves to. For Elasticsearch that address is the scheme, the host, and the port of the endpoint. A path prefix does not tell two backends apart. Optimize connects to the host and the port, so the operator treats two such endpoints as one backend. For an RDBMS it is the host, the port, and the database name of the PostgreSQL chain. Two contracts that resolve to one address are one backend, whatever namespace each one lives in. The namespace matters only for the spelling of a bare Service name. A name with no dot, such as `es`, counts in the namespace of the contract, where the pods of the cluster resolve it. So `es` in two namespaces is two backends, and `es` beside `es.<namespace>.svc` is one. The first cluster that claims a backend holds it until it moves to another backend, or until you delete it. A cluster whose contract is deleted keeps its backend and keeps running. A claim that you remove by hand comes back to the cluster whose pods write the backend. That cluster claims the backend again on its next pass. Every other cluster waits while those pods run. The removal changes nothing while the holder runs.
+The operator knows a backend by the address that the contract resolves to, not by the contract:
 
-The API server accepts a second cluster on a held backend. That cluster is suspended: every workload at zero and the volumes kept. Its `Ready` is `False` with reason `StorageAlreadyAttached`, and the message names the holder and the backend.
+- For Elasticsearch, the address is the scheme, the host, and the port of the endpoint. A path prefix does not make a second backend.
+- For an RDBMS, the address is the host, the port, and the database name.
+- Two contracts that resolve to one address are one backend, in any namespace.
+- A bare Service name, such as `es`, resolves in the namespace of the contract. So `es` in two namespaces is two backends, and `es` beside `es.<namespace>.svc` is one.
+
+The operator compares addresses, not servers. Two contracts that reach one Elasticsearch through two host names are not caught. Give one backend one address.
+
+The first cluster on a backend holds it until the cluster moves to another backend or you delete the cluster. A cluster whose contract you delete keeps its backend and keeps running.
+
+### A second cluster on a held backend
+
+The API server accepts a second cluster on a held backend. The operator suspends that cluster: every workload at zero, and the volumes kept. Its `Ready` is `False` with reason `StorageAlreadyAttached`, and the message names the holder and the backend.
 
 ```yaml
 status:
@@ -144,9 +185,17 @@ status:
         until that cluster moves to another backend or is deleted
 ```
 
-The suspended cluster looks again every 30 seconds. When you delete the holder, the suspended cluster takes the claim and resumes on its own. When the holder moves to another backend, it gives this one back. That happens once the new address resolves and no pod of the holder writes the old backend, nor can one start there again. A suspended cluster releases the backend it wrote before, so two clusters that swap backends in one step both resume. A paused holder keeps its claim until you unpause it.
+When you delete the holder, or move it to another backend, the waiting cluster takes the backend and starts on its own. A paused holder keeps the backend until you unpause it. Two clusters that swap backends in one edit both start. A holder that you point away and back again can find the backend taken, and then reports `StorageAlreadyAttached` itself.
 
-A cluster stays at zero while pods of another cluster still write the backend it resolves. It also stays at zero while a workload can still start a pod that writes that backend. Such a workload is a StatefulSet, a Deployment, a ReplicaSet that asks for replicas, or a Job that can still start a pod. The cluster waits that way whether it holds the claim of that backend already, or waits to take it. Every workload is at zero, and the volumes are kept. A running cluster that you move to such a backend stops the same way, because its own pods still write the backend it left. Those pods count in every namespace, because two clusters of two namespaces can name one backend. The pods of a deleted holder go after the cluster, and the pods of a holder that moved go when its rollout replaces them. Until then, its `Ready` is `False` with reason `WaitingForHandover`, and the message names the backend, those pods, and the workloads that can start one. The state clears on its own.
+### Waiting for a handover
+
+A cluster does not start while something else still writes its backend. It reports `Ready: False` with reason `WaitingForHandover`, keeps every workload at zero, and keeps the volumes. The state clears on its own. The cluster waits for these writers:
+
+- Pods of another cluster, or of its [CamundaOptimize](camundaoptimize.md), on the backend, in any namespace. When you delete that cluster, its pods stop after the cluster is gone. When you move that cluster to another backend, its old pods stop as its rollout replaces them.
+- Workloads of another cluster that can still start such a pod: a StatefulSet, a Deployment, a ReplicaSet that asks for replicas, or a Job.
+- A restore into another cluster, see [Restores hold the backend](#restores-hold-the-backend).
+
+A running cluster that you move to such a backend stops the same way. The message names the backend and what still writes it:
 
 ```yaml
 status:
@@ -155,36 +204,39 @@ status:
       status: "False"
       reason: WaitingForHandover
       message: >-
-        Pods of another cluster, or of its Optimize instance, still write the
-        backend "elasticsearch|https://es-http.my-cluster-ns.svc:9200":
+        Pods of another cluster, or of its Optimize instance, or workloads
+        that start one, still write the backend
+        "elasticsearch|https://es-http.my-cluster-ns.svc:9200":
         my-cluster-ns/my-other-cluster-zeebe-0. This cluster starts when they
         are gone
 ```
 
-A running restore into another cluster holds the backend the same way. A [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md#the-backend) or a [LogicalRestoreRDBMS](logicalrestorerdbms.md#the-backend) writes the backend from the moment it leaves `Pending` until it reaches `Completed` or `Failed`. A [PointInTimeRestore](pointintimerestore.md#who-rolls-the-database-back) whose server declares `pitr.recovery: operator` holds the database from just before its rollback request until it reaches `Completed` or `Failed`. You can delete its target during that time, or point the target at another backend. The next cluster on the backend still waits, with reason `WaitingForHandover`, and the message names the restore. One case is not covered. A running cluster on the same database can start just after a `PointInTimeRestore` contract moves to a new endpoint. A restore into this cluster itself is no reason to wait. The wait lasts as long as the restore is not finished, even when it stops making progress. To free the backend from a restore that does not move, delete the restore. A restore that you delete keeps the backend until its work stops, and then gives it back at once. A restart of the operator does not change this. A `LogicalRestoreRDBMS` keeps it until its Jobs and their pods are gone. A `PointInTimeRestore` keeps it until the `DatabaseServerConfig` answers its rollback request. If no contract can answer, it keeps the backend for at most ten minutes. A `LogicalRestoreElasticsearch` that fails, or that you delete, keeps the backend while Elasticsearch still recovers its snapshots. [LogicalRestoreElasticsearch: After a failure or a delete](logicalrestoreelasticsearch.md#after-a-failure-or-a-delete) has the details.
+If the named pods never go, delete them. If a named workload keeps them coming back, scale it to zero or delete it.
 
-```yaml
-status:
-  conditions:
-    - type: Ready
-      status: "False"
-      reason: WaitingForHandover
-      message: >-
-        Writers for another cluster still write the backend
-        "elasticsearch|https://es-http.my-cluster-ns.svc:9200":
-        LogicalRestoreElasticsearch my-cluster-ns/my-other-cluster-restore.
-        This cluster starts when they are gone
+The pods that the operator runs on a backend carry the label `camunda.io/storage-claim`, whose value names the backend. Find every pod on one backend by that value:
+
+```bash
+kubectl get pods -n my-cluster-ns -L camunda.io/storage-claim
+kubectl get pods -A -l camunda.io/storage-claim=camunda-storage-8bd62d6c1f48cf988b142a51c9e7010d105e168c
 ```
 
-The hold of a restore on the backend is a Lease in the namespace of the operator. The restore removes it before the restore itself goes. If somebody removes the finalizers of a restore by hand, the restore goes and the Lease stays. The next cluster then waits with `WaitingForHandover` for a restore that no longer exists. Nothing removes that Lease for you. Before you remove it, make sure that the work of the restore has stopped:
+### Restores hold the backend
 
-- For a `LogicalRestoreRDBMS`, make sure that no pod of its Jobs runs. The labels below find such a pod by the storage claim.
-- For a `LogicalRestoreElasticsearch`, make sure that no index recovery is active on the Elasticsearch.
-- For a `PointInTimeRestore`, wait until `spec.pitr.lastRecovery` on the `DatabaseServerConfig` answers its request.
+A restore into another cluster holds the backend while it runs. The next cluster on the backend waits with `WaitingForHandover`, and the message names the restore, for example `LogicalRestoreElasticsearch my-cluster-ns/my-other-cluster-restore`.
 
-The commands use the namespace `camunda-operator-system`. If you installed the operator in another namespace, use that one.
+The hold lasts until the restore reaches `Completed` or `Failed`, even when the restore stops making progress. It also lasts when you delete the target of the restore, or point it at another backend. A restore into this cluster itself is no reason to wait. To free the backend from a restore that does not move, delete the restore. A deleted restore keeps the backend until its work stops. Each restore page says when its work stops:
 
-1. List the writer Leases. The `WRITER` column shows the restore that the message of `WaitingForHandover` names:
+- [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md#the-backend), and [After a failure or a delete](logicalrestoreelasticsearch.md#after-a-failure-or-a-delete).
+- [LogicalRestoreRDBMS](logicalrestorerdbms.md#the-backend).
+- [PointInTimeRestore](pointintimerestore.md#who-rolls-the-database-back).
+
+### A restore that is gone still holds the backend
+
+This happens only when somebody removed the finalizers of a restore by hand. The restore is gone, but its hold stays, and nothing removes the hold for you. The hold is a Lease in the namespace of the operator, `camunda-operator-system` in the commands below.
+
+Before you remove it, make sure that the work of the restore has stopped. For a `LogicalRestoreRDBMS`, no pod with its storage claim label runs. For a `LogicalRestoreElasticsearch`, no index recovery is active. For a `PointInTimeRestore`, `spec.pitr.lastRecovery` on the `DatabaseServerConfig` answers its request.
+
+1. List the Leases. The `WRITER` column shows the restore that the `WaitingForHandover` message names:
 
     ```bash
     kubectl get leases -n camunda-operator-system \
@@ -192,7 +244,7 @@ The commands use the namespace `camunda-operator-system`. If you installed the o
       -o custom-columns='WRITER:.metadata.annotations.camunda\.io/storage-writer,UID:.metadata.labels.camunda\.io/writer-uid'
     ```
 
-2. Delete every Lease of that restore. Use the value of its `UID` column:
+2. Delete every Lease of that restore, by the value of its `UID` column:
 
     ```bash
     kubectl delete leases -n camunda-operator-system \
@@ -201,27 +253,11 @@ The commands use the namespace `camunda-operator-system`. If you installed the o
 
 The waiting cluster starts a short time after the last Lease is gone.
 
-Every pod of the cluster carries two labels. `camunda.io/storage-claim` holds the storage claim of the backend it writes, and `camunda.io/cluster-uid` holds the UID of its cluster. The pods of an [Optimize instance](camundaoptimize.md) attached to the cluster carry both, because its importer writes that backend as well. The `pg_restore` pod of a [LogicalRestoreRDBMS](logicalrestorerdbms.md#the-backend) carries the storage claim and no cluster UID. Find it by the claim. Read the claim of every pod in a namespace:
-
-```bash
-kubectl get pods -n my-cluster-ns -L camunda.io/storage-claim
-```
-
-The value is the same for every pod on one backend, whatever cluster or namespace it belongs to. Select them all with the value that the command above prints:
-
-```bash
-kubectl get pods -A -l camunda.io/storage-claim=camunda-storage-8bd62d6c1f48cf988b142a51c9e7010d105e168c
-```
-
-A holder that you point at another backend and back finds the claim with the cluster that took it. The returning cluster is suspended with `StorageAlreadyAttached` until that cluster moves off the backend or is deleted. It starts no pod beside the new holder, and the new holder starts once the pods of the returning cluster are gone.
-
-The operator compares addresses, not servers. Two contracts that reach one Elasticsearch through two host names are not caught. Give one backend one address.
-
 ## Secondary storage over TLS
 
 When the [SecondaryStorageConfig](secondarystorageconfig.md) names a certificate authority under `elasticsearch.caSecretRef`, the brokers, the gateway, and the web applications trust that authority. A cluster on an [ElasticsearchCluster](elasticsearchcluster.md) gets this without a step from you, because that kind fills `caSecretRef` itself. For an Elasticsearch of your own behind a private authority, set `caSecretRef` on the contract.
 
-The Zeebe Elasticsearch exporter needs this trust. It has no TLS setting of its own ([camunda/camunda#9839](https://github.com/camunda/camunda/issues/9839)), so without `caSecretRef` it writes no records and [CamundaOptimize](camundaoptimize.md) stays empty. Every TLS client in those processes then trusts the authority, not only the exporter.
+The Zeebe Elasticsearch exporter needs this trust. It has no TLS setting of its own ([camunda/camunda#9839](https://github.com/camunda/camunda/issues/9839)). Without `caSecretRef` it writes no records, and [CamundaOptimize](camundaoptimize.md) stays empty. Every TLS client in those processes then trusts the authority, not only the exporter.
 
 The trust arrives through `JAVA_TOOL_OPTIONS`. If you set that variable yourself, read [Environment and JVM](#environment-and-jvm).
 
@@ -242,48 +278,50 @@ spec:
 
 When you do not set it, the node count of the [SecondaryStorageConfig](secondarystorageconfig.md#node-count) gives the count. One node gives 0 replicas. Two or more nodes give 1 replica. The contract of an [ElasticsearchCluster](elasticsearchcluster.md) always carries the node count. A contract without a node count leaves the count to Camunda.
 
-Elasticsearch never puts a replica on the node that holds its primary. An index with more replicas than the other nodes can hold stays at yellow health, and the `ElasticsearchCluster` then is not `Ready`. If you set a count that the node count cannot place, the cluster runs with it. It records the Warning event `IndexReplicasExceedNodes`, which names the count and the node count.
+Elasticsearch never puts a replica on the node that holds its primary. An index with more replicas than the other nodes can hold stays at yellow health, and the `ElasticsearchCluster` is then not `Ready`. If you set a count that the nodes cannot place, the cluster runs with it and records the Warning event `IndexReplicasExceedNodes`.
 
-The cluster applies the count to its existing indices each time it starts. A change of `indexReplicas` restarts the cluster. A change of the storage contract, the node count included, also restarts it. A relational secondary storage ignores the field.
+The cluster applies the count to its existing indices each time it starts. A change of `indexReplicas` restarts the cluster, and so does a change of the storage contract. A relational secondary storage ignores the field.
 
-Camunda also reads two older keys for the same count: `CAMUNDA_DATABASE_INDEX_NUMBEROFREPLICAS` and `ZEEBE_BROKER_EXPORTERS_CAMUNDAEXPORTER_ARGS_INDEX_NUMBEROFREPLICAS`. Camunda does not start when one of them and the count differ. If the `extraEnv` of a process sets one of them, the operator sets no default count on that process. That process then uses the value of the key. If you also set `indexReplicas`, give both the same value. The operator does not read the sources of `extraEnvFrom`. If such a source supplies an older key, set `indexReplicas` to the same value.
+If your `extraEnv` or `extraEnvFrom` sets `CAMUNDA_DATABASE_INDEX_NUMBEROFREPLICAS` or `ZEEBE_BROKER_EXPORTERS_CAMUNDAEXPORTER_ARGS_INDEX_NUMBEROFREPLICAS`, give `indexReplicas` the same value. Camunda does not start when they differ.
 
 ## Backups
 
-Without `spec.backupStorageRef` the cluster takes no backups. With it, the brokers write primary-storage backups to the referenced bucket. On S3 and GCS, they write under the prefix `<basePath>/<namespace>/<name>`, so two clusters never share a prefix. Azure Blob has no prefix: every cluster needs an `ObjectStorageConfig` with its own container, and a second cluster on the same Azure contract reports `InvalidReference`.
+Without `spec.backupStorageRef` the cluster takes no backups. With it, the brokers write primary-storage backups to the referenced bucket. On S3 and GCS, each cluster writes under its own prefix, so clusters can share a bucket. On Azure Blob, give each cluster its own container. A second cluster on the same Azure contract reports `InvalidReference`.
 
-On the Elasticsearch path the storage contract must carry `elasticsearch.snapshotRepository`, or the cluster reports `InvalidReference`. On the RDBMS path `spec.backup.primaryStorage` configures the backup scheduler of Zeebe with the defaults `schedule: PT1H`, `checkpointInterval: PT15M`, `retention.window: P7D`, and `retention.cleanupSchedule: PT1H`. `continuous` defaults to true unless the schedule is `none`. The [backup guide](../guides/backup.md) covers the backup kinds.
+On the Elasticsearch path the storage contract must carry `elasticsearch.snapshotRepository`, or the cluster reports `InvalidReference`. On the RDBMS path `spec.backup.primaryStorage` configures the backup scheduler of Zeebe. The [spec reference](#spec-reference) lists its defaults.
+
+On the RDBMS path, the backup credentials of the `DatabaseConfig` feed the dump Job. When they do not resolve, the cluster keeps running and records the Warning event `DumpCredentialsUnresolved`. The backups of the cluster then wait. The [backup guide](../guides/backup.md) covers the backup kinds.
 
 ## Workload identity
 
-The pods run under the ServiceAccount `<name>-camunda`, or `spec.serviceAccount.name`. When a referenced bucket carries a workload identity, the operator puts the matching annotation on that ServiceAccount ([ObjectStorageConfig](objectstorageconfig.md#authentication) lists them). An annotation in `spec.serviceAccount.annotations` wins over the derived one. A bucket without an identity block adds no annotation, and the cloud side binds the principal `system:serviceaccount:<namespace>:<name>-camunda` itself. Two buckets that name different identities of one cloud report `InvalidReference`. With `serviceAccount.create: false` the operator does not create the ServiceAccount and reports `InvalidReference` while it is absent.
+The pods run under the default ServiceAccount of the namespace, unless the cluster needs an account of its own. The cluster gets one when `spec.serviceAccount` is set, or when a referenced bucket has no credentials Secret and authenticates through workload identity. That account is `<name>-camunda`, or `spec.serviceAccount.name`. `status.serviceAccountName` shows the account that the pods use.
+
+When a referenced bucket names a workload identity, the operator puts the matching annotation on the ServiceAccount. [ObjectStorageConfig](objectstorageconfig.md#authentication) lists the annotations. An annotation in `spec.serviceAccount.annotations` wins over the derived one. A bucket without an identity block adds no annotation, and you bind the principal `system:serviceaccount:<namespace>:<name>-camunda` on the cloud side. Two buckets that name different identities of one cloud report `InvalidReference`.
+
+With `serviceAccount.create: false`, the operator does not create the ServiceAccount. It reports `InvalidReference` while the ServiceAccount does not exist.
 
 ## Environment and JVM
 
-The operator renders its own configuration first. Then it renders the user entries in this order:
+The operator renders its own environment first. Then it adds your entries in this order:
 
 1. The top-level `extraEnv`.
 2. The `extraEnv` of the embedded gateway (on the brokers).
 3. The `extraEnv` of every embedded web application that the process hosts.
 4. The `extraEnv` of the process itself.
 
-A later entry with the same name wins, and an entry replaces an operator entry with the same name. `extraEnvFrom` sources are concatenated in the same order. Connectors get the top-level entries and their own block only.
+A later entry with the same name wins, and your entry replaces an operator entry with the same name. `extraEnvFrom` sources are added in the same order. Connectors get the top-level entries and their own block only.
 
-The per-process `extraEnv` blocks and the top-level `spec.extraEnv` merge by name under server-side apply. A field manager owns only the entries that it applies. Another operator can therefore add an entry next to yours, and neither side removes the other. A [CamundaManagementCluster](camundamanagementcluster.md) that serves this cluster owns the four `CAMUNDA_CONSOLE_PING_*` entries (`CAMUNDA_HUB_PING_*` on Camunda 8.10 and later) and replaces what you set under those names. One applied manifest cannot hold two entries with the same name, and the API server rejects one that does. `spec.backup.dump.extraEnv` stays an atomic list, because the backup kinds share that block. Every `extraEnvFrom` stays atomic too, because a source carries no name to merge on.
+When two tools apply the cluster, for example your GitOps tool and the operator, each `extraEnv` list merges by name. Each tool owns the entries that it applies, and another tool can add entries next to them. An entry sets `value` or `valueFrom`, never both. A [CamundaManagementCluster](camundamanagementcluster.md) that serves the cluster owns four names, see [Management plane](#management-plane). `extraEnvFrom` and `spec.backup.dump.extraEnv` do not merge. A tool that applies one of these lists replaces the whole list.
 
-Two field managers that apply the same name do not collide. The merge is per field inside the entry, so one manager can own `value` while the other owns `valueFrom`. One entry cannot carry both, and the API server refuses to store that combination. The second apply then fails with a clear message instead of stalling a rollout. The four ping names are the exception. The management plane owns them, and it removes an entry under one of those names that carries `valueFrom`. Give your entry a name that no operator writes, or let the operator own the name.
+Every Camunda process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError`, so the kubelet restarts a pod after an OutOfMemoryError. The heap size comes from the container-aware defaults of the JVM. To change the JVM options, set `JAVA_TOOL_OPTIONS` in the `extraEnv` of the process. Keep `-XX:+ExitOnOutOfMemoryError` in your value. When the storage contract names a certificate authority, the operator adds the trust store options after your value.
 
-Every unified process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError`, so the kubelet restarts a pod after an OutOfMemoryError. Heap size comes from the container-aware defaults of the JVM. To change the JVM options, set `JAVA_TOOL_OPTIONS` in `extraEnv` of the process. When the storage contract names a certificate authority, the trust store options go on the same variable after your value. Heap tuning and the trust store work together.
+To use a trust store of your own, name it with `-Djavax.net.ssl.trustStore` in your value. The operator then adds no trust store options, and the JVM reads your store only. That store must hold the certificate authority of the Elasticsearch endpoint, or the exporter fails and Optimize reads no records. This is also how you trust a second private authority, for example an OIDC provider or a backup store. Put every authority in one store. The spec has no volume field, so build the Camunda image with the store in it. Then name the image under `images.camunda` on the [CamundaPlatformConfig](camundaplatformconfig.md), or pin it on a [CamundaRelease](camundarelease.md).
 
-To use a trust store of your own, name it with `-Djavax.net.ssl.trustStore` in your value. The JVM then reads your store and no other. That store must hold the certificate authority of the Elasticsearch endpoint, or the exporter fails and Optimize reads no records. This is also the way to trust a second private authority, for example an OIDC provider or a backup store. Put every authority in one store and name it. The spec has no volume field, so the store must already be in the process image. Build the Camunda image with the file in it. Then name the image under `images.camunda` on the [CamundaPlatformConfig](camundaplatformconfig.md), or pin it on a [CamundaRelease](camundarelease.md).
-
-A `JAVA_TOOL_OPTIONS` entry that reads its value from a Secret or a ConfigMap cannot take the trust store options. The cluster records the Warning event `TrustStoreOptionsNotApplied` and names the processes. The store still exists at `/etc/camunda/es-truststore/cacerts` with the password `changeit`. Name it in the referenced value, or name a store of your own that holds the authority.
+A `JAVA_TOOL_OPTIONS` entry that reads its value from a Secret or a ConfigMap cannot take the trust store options. The cluster records the Warning event `TrustStoreOptionsNotApplied`, which names the processes. The operator still builds the store at `/etc/camunda/es-truststore/cacerts` with the password `changeit`. Name that store in the referenced value, or name a store of your own that holds the authority.
 
 ## Management plane
 
-A [CamundaManagementCluster](camundamanagementcluster.md) can serve this cluster. It reaches clusters in every namespace through a label selector, so nothing on this resource points at it. A cluster it serves shows two changes.
-
-The first is an annotation that says which management plane serves this cluster:
+A [CamundaManagementCluster](camundamanagementcluster.md) can serve this cluster. It selects clusters in every namespace through a label selector, so nothing on this resource points at it. A cluster that it serves carries the annotation `camunda.io/management-cluster`:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -295,7 +333,15 @@ metadata:
     camunda.io/management-cluster: my-management-ns/my-management
 ```
 
-The second appears while the management plane sets `spec.console`. Four entries in `spec.extraEnv` make the cluster report to Console:
+While the management plane sets `spec.console`, it also adds four entries to `spec.extraEnv`, which make the cluster report to Console: `CAMUNDA_CONSOLE_PING_ENABLED`, `CAMUNDA_CONSOLE_PING_ENDPOINT`, `CAMUNDA_CONSOLE_PING_CLUSTERNAME`, and `CAMUNDA_CONSOLE_PING_PINGPERIOD`. On Camunda 8.10 and later the four names are `CAMUNDA_HUB_PING_*`. The management plane owns these names and replaces what you set under one of them. To keep an entry of your own, give it another name. The entries change `spec`, so the pods roll once when they arrive and once when they go.
+
+To remove the annotation and the entries, take the cluster out of `spec.clusterSelector` of the `CamundaManagementCluster`. Change the selector, or remove the label that it matches on. Removing `spec.console` from the management plane removes the four entries only. If you delete the annotation or the entries by hand, the management plane writes them again.
+
+`kubectl get camundamanagementcluster -A` shows the management planes. `status.clusters` of each one lists the clusters that it serves.
+
+## Monitoring
+
+When `spec.monitoring.serviceMonitor.enabled` is true, the operator creates one ServiceMonitor per process, named like its workload. It scrapes `/actuator/prometheus` on port `9600` of a Camunda process and on port `8080` of connectors. On a Kubernetes cluster without the `ServiceMonitor` kind, the operator creates none and reports no error.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -304,41 +350,21 @@ metadata:
   name: my-cluster
   namespace: my-cluster-ns
 spec:
-  extraEnv:
-    - name: CAMUNDA_CONSOLE_PING_ENABLED
-      value: "true"
-    - name: CAMUNDA_CONSOLE_PING_ENDPOINT
-      value: http://my-management-console.my-management-ns.svc:80
-    - name: CAMUNDA_CONSOLE_PING_CLUSTERNAME
-      value: my-cluster
-    - name: CAMUNDA_CONSOLE_PING_PINGPERIOD
-      value: 1h
+  monitoring:
+    serviceMonitor:
+      enabled: true
+      labels:
+        prometheus: "platform"
   # ... the rest of your cluster
 ```
 
-On Camunda 8.10 and later the four names are `CAMUNDA_HUB_PING_*` instead. The management plane owns these names and replaces what you set under one of them. It removes an entry that sets `valueFrom` under one of them, because one entry cannot hold `value` and `valueFrom` together. The `CamundaManagementCluster` then records the Warning event `ConsolePingEntryRemoved`, which names the entry, and every field manager that owns its `valueFrom` when `metadata.managedFields` holds one. To keep an entry of your own, give it a name that the management plane does not own.
-
-The entries change `spec`, so the pods roll once when they arrive and once when they go. After that they stay as they are.
-
-To remove both changes, take the cluster out of `spec.clusterSelector` of the [CamundaManagementCluster](camundamanagementcluster.md), by changing the selector or by removing the label it matches on. The management plane then withdraws the annotation and the four entries by itself. Removing `spec.console` from the management plane withdraws the four entries alone, and the annotation stays. Deleting either by hand does not work: the management plane still selects the cluster and writes them again.
-
-`kubectl get camundamanagementcluster -A` shows the management planes on the Kubernetes cluster. `status.clusters` of each one says which clusters it serves.
-
-## Monitoring
-
-When `spec.monitoring.serviceMonitor.enabled` is true, the operator creates one ServiceMonitor per process. On a Kubernetes cluster without the `ServiceMonitor` kind it creates none and reports no error.
-
 ## Changes and referenced Secrets
 
-A change to the cluster, to a referenced resource, or to a referenced Secret rolls out to the pods on its own. The [CamundaPlatformConfig](camundaplatformconfig.md) is cluster-scoped, so the Secrets it names are copied into the namespace of the cluster, and each copy follows its source.
+A change to the cluster, to a referenced resource, or to a referenced Secret rolls out to the pods on its own. The [CamundaPlatformConfig](camundaplatformconfig.md) is cluster-scoped, so the operator copies the Secrets it names into the namespace of the cluster. Each copy follows its source.
 
 The API server accepts a cluster that names something you did not create yet, so you can create the resources in any order. A missing `CamundaPlatformConfig`, `CamundaClusterPreset`, `CamundaRelease`, `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` sets `Ready` to `False` with reason `InvalidReference`. A missing Secret or key sets reason `MissingSecret`.
 
-When one of these checks fails for a running cluster, the workloads stay up. They keep the configuration that the operator applied last, and they keep serving. `status.gateway` and `status.management` keep their endpoints, and the cluster keeps the storage claim of its backend. `Ready` carries the failure reason. The per-process conditions keep the values they last observed until the check passes. A workload that a suspension stopped is the exception: its condition reports that suspension. When the check passes again, the cluster takes the change.
-
-A suspension that stopped the workloads while the check failed holds them at zero until the check passes. `spec.suspend`, a suspension hold, and an operator suspension are the causes. A cluster that reported `StorageAlreadyAttached` or `WaitingForHandover` holds those workloads at zero when that state ends while a check still fails. Clearing `spec.suspend` or removing a hold does not start them, and neither does the end of an operator suspension. When the check passes, the workloads return to the replica counts of the effective spec. A process you configured at zero stays at zero.
-
-The condition of each stopped workload reads `Suspending` while its pods drain, then `Suspended` with the message `Kept at zero until the reference check passes`. `Ready` carries the failure message, and adds `The workloads that stopped stay at zero until the reference check passes` when every stop succeeded. `status.gateway` and `status.management` stay empty while the workload that serves them is at zero. A workload whose stop the API server refuses keeps running, and the operator tries again on the next pass. A condition of it that still claimed a suspension is removed, and the render stages it again. Every other condition of it stays. That leaves the note off `Ready` and records the Warning event `WorkloadStopRefused`, which names the workload and carries the refusal. The endpoints of a workload that keeps running stay published.
+When one of these checks fails for a running cluster, the workloads stay up on the configuration that the operator applied last. `Ready` carries the failure, and the cluster keeps its backend. When the check passes again, the cluster takes the change. A suspension still stops the workloads while a check fails, see [Suspend and pause](#suspend-and-pause).
 
 ```yaml
 status:
@@ -354,9 +380,9 @@ status:
 
 ## Suspend and pause
 
-`spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` is empty. When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
+`spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` and `status.gateway` are empty. When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
 
-`suspend` stops the workloads while a reference check fails as well. You do not have to correct the reference first. `Ready` then reports the failure, and the message says that the workloads are at zero because you set the field.
+`suspend` also stops the workloads while a reference check fails. You do not have to correct the reference first. `Ready` then reports the failure, and the message says why the workloads are at zero:
 
 ```yaml
 status:
@@ -369,13 +395,32 @@ status:
         are scaled to zero because the cluster is suspended
 ```
 
-The operator also suspends a cluster on its own, to keep two clusters off one backend, and for a restore. `spec.suspend` stays yours. A restore holds its target with a [suspension hold](#suspension-holds). A cluster whose backend another cluster holds reports `StorageAlreadyAttached`. A cluster that waits for the pods of another cluster, or for a restore into another cluster, on its backend reports `WaitingForHandover` (see [Secondary storage](#secondary-storage)). These two states end on their own when their cause is gone. Every other failure leaves the workloads up.
+When the suspension ends while the check still fails, the stopped workloads stay at zero until the check passes. The message of `Ready` then ends with `The workloads that stopped stay at zero until the reference check passes`.
 
-`suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it. It starts them again when you clear the field and its own reference checks pass. The Optimize importer reads Elasticsearch directly. Without this, it keeps importing while the cluster is down. Every suspension by the operator reaches them the same way. A `CamundaOptimize` attached to a suspended cluster scales to zero, and a backup of it waits with reason `ClusterSuspended`.
+If the API server refuses to stop a workload, that workload keeps running and its endpoints stay published. The cluster records the Warning event `WorkloadStopRefused`, which names the workload and carries the refusal.
+
+Every suspension reaches the [CamundaOptimize](camundaoptimize.md) attached to this cluster. Its webapp and its importer scale to zero with the cluster, and they start again when the cluster resumes.
+
+`spec.pause: true` freezes the cluster. The operator changes nothing that it manages for this cluster, and it writes no status. It records a `Paused` event each time it looks at the resource. Set `pause` back to `false`, and the operator continues.
+
+### Why the cluster is at zero replicas
+
+The operator also holds a cluster at zero on its own. `spec.suspend` stays yours. The reason on `Ready` tells you who holds it. `Ready: True` means that you asked for zero. `Ready: False` means that a step of yours is needed, or that something else must finish first.
+
+| Ready | Reason | Cause | What to do |
+| --- | --- | --- | --- |
+| `True` | `Suspended` | You set `spec.suspend: true`. | Set `suspend: false` to resume. |
+| `False` | `SuspensionHeld` | A restore writes the storage of this cluster. | Wait for the restore. For a failed restore, see [Suspension holds](#suspension-holds). |
+| `False` | `StorageAlreadyAttached` | Another cluster holds the backend. | Give this cluster a backend of its own, or delete the holder. See [A second cluster on a held backend](#a-second-cluster-on-a-held-backend). |
+| `False` | `WaitingForHandover` | Something else still writes the backend. | Wait, or remove what the message names. See [Waiting for a handover](#waiting-for-a-handover). |
+| `False` | `InvalidReference` / `MissingSecret` | The suspension ended while a reference check fails. The message ends with `stay at zero until the reference check passes`. | Correct the reference that the message names. |
+| `False` | `VersionDowngradeRefused` | The cluster resumed on a version below the one that its brokers run. | Set the version forward, or [downgrade on purpose](#downgrade-on-purpose). |
 
 ### Suspension holds
 
-A suspension hold is an annotation whose key starts with `suspension-hold.camunda.io/`. A cluster that carries at least one hold stays suspended, whatever `spec.suspend` says. The value of the annotation says who holds the cluster, and why. A restore puts a hold on its target, so that the target cannot start while the restore rewrites its storage. The restore removes the hold when it completes. When you delete the restore, it removes the hold once its Jobs and their pods are gone. A `LogicalRestoreElasticsearch` whose `status.recoveryHeld` is `true` also waits until that hold ends. A `PointInTimeRestore` also waits while its database server rolls back. A failed restore keeps its hold.
+A suspension hold is an annotation whose key starts with `suspension-hold.camunda.io/`. A cluster that carries at least one hold stays suspended, whatever `spec.suspend` says. The value of the annotation says who holds the cluster, and why.
+
+A restore puts a hold on its target, so that the target cannot start while the restore writes its storage. The restore removes the hold when it completes, or when you delete it and its work has stopped. A failed restore keeps its hold. The restore pages say when each restore lets go.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -388,7 +433,7 @@ metadata:
 # ... the rest of your cluster
 ```
 
-A held cluster reports `SuspensionHeld`, and the message names each hold:
+A held cluster reports `SuspensionHeld`, and the message names each hold. If a reference check fails, `Ready` reports that failure instead.
 
 ```yaml
 status:
@@ -403,23 +448,19 @@ status:
         (LogicalRestoreRDBMS my-cluster-ns/my-restore restores into this cluster)
 ```
 
-If a reference check fails, `Ready` reports that failure instead, and the message says that the workloads are at zero.
+A change to `spec.suspend` does not remove a hold. To end the hold of a failed restore, delete the restore, or remove the annotation by hand. If the restore also set `spec.suspend`, the cluster stays suspended until you clear it.
 
-A change to `spec.suspend` does not remove a hold. To end the hold of a failed restore, delete the restore. You can also remove the annotation by hand. If the restore also set `spec.suspend`, the cluster stays suspended until you clear it.
-
-CAUTION: Do not remove the hold of a restore that still runs. If `spec.suspend` is also false, the brokers can start over storage that the restore rewrites. The restore then reports `ClusterNotSuspended` and fails ten minutes later. Suspend the cluster again before then.
-
-`spec.pause: true` freezes the cluster. The operator changes nothing that it manages for this cluster, and it writes no status. It records a `Paused` event each time it looks at the resource. Set `pause` back to `false`, and the operator continues.
+CAUTION: Do not remove the hold of a restore that still runs. If `spec.suspend` is also false, the brokers can start over storage that the restore writes. The restore then reports `ClusterNotSuspended` and fails ten minutes later. Suspend the cluster again before then.
 
 ## Deletion
 
-Deleting the cluster removes every resource that the operator created for it, and it releases the backend the cluster held. Another cluster on that backend starts once the pods of the deleted one are gone. The broker volumes follow `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` (see [Storage](#storage)). The `ElasticsearchCluster`, the `Database`, and the contracts are separate resources and stay.
+Deleting the cluster removes every resource that the operator created for it, and it releases the backend that the cluster held. Another cluster on that backend starts when the pods of the deleted one are gone. The broker volumes follow `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` (see [Storage](#storage)). The `ElasticsearchCluster`, the `Database`, and the contracts are separate resources and stay.
 
 ## Status
 
 `kubectl get camundacluster` shows `Ready`, its reason, the Camunda version, and the age. A suspended cluster shows no version.
 
-`Ready` is `True` only when every component that the cluster needs is `True`. Its reason and message come from the component that governs: the first component that is not `True`, or the healthiest one when all are. A component that the cluster does not need (an embedded gateway or web application, disabled connectors) reads `True` with reason `Disabled` and stays out of `Ready`.
+`Ready` is `True` only when every process that the cluster needs is `True`. Its reason and message come from the first process that is not `True`. An embedded gateway or web application, and disabled connectors, read `True` with reason `Disabled` and stay out of `Ready`.
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
@@ -428,23 +469,32 @@ Deleting the cluster removes every resource that the operator created for it, an
 | `OperateReady` / `TasklistReady` / `AdminReady` | `Healthy` / `Disabled` | The standalone web application is ready, or it is embedded. | Nothing. |
 | `ConnectorsReady` | `Healthy` / `Disabled` | Every connectors replica is ready, or connectors are not enabled. | Nothing. |
 | `AdminSecretReady` | `Healthy` / `Disabled` | The Secret `<name>-camunda-admin` is applied, or the cluster uses OIDC. | Nothing. |
-| `AdminSecretReady` | `ConnectionFailed` | An update of the `admin` user, of its password or of its email, is not applied yet: the cluster did not answer. The Secret keeps the active password, and `email-applied` the address the cluster holds. `email` already shows the address you asked for. | The operator retries. It clears when the user API of the gateway answers again. |
-| `AdminSecretReady` | `InvalidCredentials` | An update of the `admin` user is not applied yet: the cluster refused the password that the Secret publishes. The Secret keeps the active password, and `email-applied` the address the cluster holds. | The operator retries. Set the password from the Secret on the `admin` user in the Admin web application. |
-| `AdminSecretReady` | `Rejected` | An update of the `admin` user is not applied yet: the cluster accepted the password and refused the call itself. The Secret keeps the active password, and `email-applied` the address the cluster holds. | The operator retries. Read the condition message, which names the reason. |
+| `AdminSecretReady` | `ConnectionFailed` | A change of the password or the email of the `admin` user is not applied yet, because the cluster did not answer. The Secret keeps the active password. | The operator tries again. It clears when the gateway answers. |
+| `AdminSecretReady` | `InvalidCredentials` | A change of the `admin` user is not applied yet, because the cluster refused the password that the Secret publishes. | The operator tries again. Set the password from the Secret on the `admin` user in the Admin web application. |
+| `AdminSecretReady` | `Rejected` | A change of the `admin` user is not applied yet, because the cluster refused the call itself. | Read the message, which names the reason. |
 | `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a Secret that the [CamundaPlatformConfig](camundaplatformconfig.md) names is applied, or no such Secret exists. | Nothing. |
-| `Ready` | `Healthy` | Every component that the cluster needs is healthy. | Nothing. |
-| `Ready` | `Creating` / `Updating` / `Scaling` | A component rolls out or scales. | Wait. The message names the component. |
-| `Ready` | `Failing` | A component has replicas that do not become ready. | Read the pods of the named component. |
-| `Ready` | `Degraded` / `Down` | Some or no replicas of a component are ready after the grace period. | Read the pods and events of the named component. |
-| `Ready` | `Suspended` | `spec.suspend` is true and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to resume. |
-| `Ready` | `SuspensionHeld` | The cluster carries at least one suspension hold, so it stays suspended whatever `spec.suspend` says. The message names each hold and its value. | Wait for the holder to end. For a failed restore, delete the restore, then clear `spec.suspend`. See [Suspension holds](#suspension-holds). |
-| `Ready` | `StorageAlreadyAttached` | Another `CamundaCluster` holds the storage claim of the backend that `storageRef` resolves to. This cluster is suspended. | Give this cluster a backend of its own, or delete the holder. The message names both, and the last apply error of the workloads when one occurred. |
-| `Ready` | `WaitingForHandover` | Pods of another cluster, or a writer for another cluster such as a restore, still write the backend that `storageRef` resolves to. This cluster holds the storage claim of it already, or waits to take it. The operator renders every workload of it at zero and keeps the volumes. | Wait. The message names the backend, those pods, the workloads that can start one, and the writers, such as a restore. It also names the last apply error of the workloads when one occurred. The state clears on its own. If the pods never go, delete them. If a named workload keeps them coming back, scale it to zero or delete it. A restore ends in `Completed` or `Failed`. A failed or deleted `LogicalRestoreElasticsearch` holds the backend while its `status.recoveryHeld` is `true`. That lasts until Elasticsearch finishes the recovery, or at most 10 minutes when the restore cannot read the recovery. A deleted restore holds the backend until its work stops. A writer whose restore no longer exists holds it until you delete its Lease, see [Secondary storage](#secondary-storage). |
-| `Ready` | `InvalidReference` | A referenced resource does not exist, or a ServiceAccount with `create: false` is absent. Or two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. A Lease of the operator namespace that this operator did not write reads the same way, and it blocks the storage claim of the backend. A running cluster keeps its workloads. | Read the message. Create the missing resource, correct the field it names, or delete the named Lease once nothing else uses it. The cluster takes the change on its own. |
-| `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. A running cluster keeps its workloads. | Create the Secret with the named key. The cluster takes the change on its own. |
-| `Ready` | `VersionDowngradeRefused` | The effective version is below the version the brokers run, and no annotation sanctions the move. The operator applies nothing, and the brokers keep the version they have. | Read [Version](#version). Set the version forward again, or sanction the downgrade. |
+| `Ready` | `Healthy` | Every process that the cluster needs is healthy. | Nothing. |
+| `Ready` | `Creating` / `Updating` / `Scaling` | A process rolls out or scales. The reason stays while a replica does not become ready. | Wait. If the reason stays, read the pods and events of the process that the message names. |
+| `Ready` | `Failing` | A process has replicas that do not become ready. | Read the pods of the named process. |
+| `Ready` | `Suspended` / `SuspensionHeld` / `StorageAlreadyAttached` / `WaitingForHandover` | Every workload is at zero. Only `Suspended` has `Ready: True`. | See [Why the cluster is at zero replicas](#why-the-cluster-is-at-zero-replicas). |
+| `Ready` | `InvalidReference` | A referenced resource does not exist, or the merged spec is invalid. Other causes are an absent ServiceAccount with `create: false`, two conflicting buckets, a shared Azure container, or a missing snapshot repository. A running cluster keeps its workloads. | Read the message. Create the missing resource or correct the named field. |
+| `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. A running cluster keeps its workloads. | Create the Secret with the named key. |
+| `Ready` | `VersionDowngradeRefused` | The effective version is below the version that the brokers run, and no annotation sanctions the move. The operator applies nothing. | Set the version forward again, or [downgrade on purpose](#downgrade-on-purpose). |
 
-`status.management` publishes the address of the management API, so a backup kind calls it without knowing which process hosts it. It is empty while the cluster is suspended.
+When the operator cannot apply a workload of a cluster in `StorageAlreadyAttached` or `WaitingForHandover`, the message also carries the last apply error.
+
+`status.gateway` publishes the address of the client APIs. It is empty while the cluster is suspended.
+
+```yaml
+status:
+  gateway:
+    # The Service of the process that runs the gateway, on port 26500. No scheme: a Zeebe client takes the address in this form.
+    grpcEndpoint: my-cluster-gateway.my-cluster-ns.svc:26500
+    # The same Service, on port 8080. The base URL of the /v2 REST API.
+    restEndpoint: http://my-cluster-gateway.my-cluster-ns.svc:8080
+```
+
+`status.management` publishes the address of the management API, which the backup kinds call. It is empty while the cluster is suspended.
 
 ```yaml
 status:
@@ -460,22 +510,11 @@ status:
     backupRepository: my-cluster-ns.my-cluster-es
 ```
 
-`status.gateway` publishes the address of the client APIs, so a client or another resource connects without knowing which process runs the gateway. It is empty while the cluster is suspended.
+`status.adminPassword.rotation` is the last `passwordRotation` value that the operator applied, after the preset merge. A rotation is in progress while the effective value is not empty and differs from it. A cluster that inherits the value from its preset has none in its own spec, so compare the preset value with the status.
 
-```yaml
-status:
-  gateway:
-    # The Service of the process that runs the gateway, on port 26500. No scheme: a Zeebe client takes the address in this form.
-    grpcEndpoint: my-cluster-gateway.my-cluster-ns.svc:26500
-    # The same Service, on port 8080. The base URL of the /v2 REST API.
-    restEndpoint: http://my-cluster-gateway.my-cluster-ns.svc:8080
-```
+`status.serviceAccountName` is the ServiceAccount that the pods run under, or empty for the default account of the namespace. A backup Job runs under the same account.
 
-`status.adminPassword.rotation` is the last admin password rotation that the operator applied. It holds the effective `spec.auth.basic.passwordRotation` value, after the preset merge, that produced the password in the admin Secret. It follows the Secret: the operator publishes the applied value there together with the password it answers, and the status projects it. A rotation is in progress while the effective value is not empty and differs from it. Clearing the field does not stop a rotation that the operator already staged. That rotation completes, and the status then records the value that staged it. A cluster that inherits the value from its preset carries none of its own in the spec. So compare the preset value with the status of each cluster.
-
-`status.serviceAccountName` is the ServiceAccount that the pods run under. It is empty when they run under the default account of the namespace. A backup Job runs under the same account.
-
-`status.volumes` lists every bound broker volume, sorted by name, with its `name` and the `capacity` that it reports. `status.observedGeneration` is the last generation the operator reconciled.
+`status.volumes` lists every bound broker volume, sorted by name, with its `name` and its `capacity`. `status.observedGeneration` is the last generation the operator reconciled.
 
 ## Spec reference
 
@@ -488,26 +527,26 @@ metadata:
   name: my-cluster
   namespace: my-cluster-ns
 spec:
-  # string. Required. Name of the cluster-scoped CamundaPlatformConfig that provides auth, license, and image repositories.
+  # string. Required. Name of the cluster-scoped CamundaPlatformConfig.
   platformConfigRef: "my-platform-config"
-  # string. Optional. Name of a cluster-scoped CamundaClusterPreset that provides the baseline.
+  # string. Optional. Name of a cluster-scoped CamundaClusterPreset.
   presetRef: "medium"
-  # string. Optional. Name of a cluster-scoped CamundaRelease that provides the versions, the pinned images, and the environment of a version.
+  # string. Optional. Name of a cluster-scoped CamundaRelease.
   releaseRef: "camunda-8-9-4"
   # string. Required unless the release provides it. Camunda version as x.y.z, 8.9.0 or later. It wins over the release.
   version: "8.9.0"
-  # string. Optional. External base URL of the cluster, used for OIDC redirect URLs and web application links. The operator creates no Ingress.
+  # string. Optional. External base URL of the cluster, for OIDC redirect URLs and web application links.
   externalUrl: "https://my-cluster.camunda.example.com"
-  # object. Optional. ServiceAccount of every workload pod.
+  # object. Optional. ServiceAccount of every workload pod. See Workload identity.
   serviceAccount:
     # string. Optional, default: <name>-camunda. Name of the ServiceAccount.
     name: "camunda-prod"
-    # boolean. Optional, default: true. When false, the ServiceAccount must already exist. The operator does not create, annotate, or own it.
+    # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it.
     create: true
-    # map[string]string. Optional. Annotations on the ServiceAccount, for example workload identity. A value here wins over a derived one. Ignored when create is false.
+    # map[string]string. Optional. Annotations on the ServiceAccount. Ignored when create is false.
     annotations:
       eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-cluster-role"
-  # object. Optional. OIDC client credentials of this cluster and the identities that get its admin role. The credentials override the platform config and the preset.
+  # object. Optional. OIDC client of this cluster and its administrators. Overrides the platform config and the preset.
   auth:
     # string. Optional. OIDC client ID of this cluster.
     clientId: "my-cluster-client"
@@ -519,35 +558,35 @@ spec:
       name: "my-cluster-oidc-secret"
       # string. Required. Key in the Secret.
       key: "client-secret"
-    # object. Optional. Identities that get the admin role. Applies under OIDC only. Basic authentication ignores it.
+    # object. Optional. Identities that get the admin role. OIDC only.
     admin:
-      # []string. Optional. Values of the username claim of the platform config that get the admin role.
+      # []string. Optional. Values of the username claim.
       users:
         - "ada@example.com"
-      # []string. Optional. Values of the client id claim that get the admin role. Matches only when the platform config sets clientIdClaim.
+      # []string. Optional. Values of the client id claim. Needs clientIdClaim on the platform config.
       clients:
         - "my-cluster-client"
-      # []object. Optional. Rules that give the admin role to every token whose claim holds a value. All three fields are required.
+      # []object. Optional. Each rule matches a claim value. All three fields are required.
       mappingRules:
-        # string. Name of the rule, as the Admin web application lists it. 1 to 256 characters.
+        # string. Name of the rule in the Admin web application. 1 to 256 characters.
         - id: "platform-admins"
           # string. Name of a claim, or a JSONPath expression that points at one.
           claimName: "groups"
           # string. Value that the claim must hold.
           claimValue: "camunda-admins"
-    # object. Optional. The admin credential that the operator owns. Applies under basic authentication only. OIDC ignores it.
+    # object. Optional. The admin user. Basic authentication only.
     basic:
-      # string. Optional, max 253 characters. The email address of the admin user. Defaults to admin@example.com. A changed value is applied to the running cluster.
+      # string. Optional, default: admin@example.com, max 253 characters. Email of the admin user.
       adminEmail: "platform-team@example.com"
-      # string. Optional, max 253 characters. A changed value requests one rotation of the admin password. status.adminPassword.rotation records the applied value.
+      # string. Optional, max 253 characters. A changed value rotates the admin password once.
       passwordRotation: "2026-08"
   # object. Optional. The brokers. Always a StatefulSet.
   zeebe:
-    # integer. Optional, default: 1. Number of brokers.
+    # integer. Optional, default: 1, minimum 0. Number of brokers.
     replicas: 3
-    # integer. Optional, default: 1. Number of partitions. Cannot be decreased or removed once set.
+    # integer. Optional, default: 1, minimum 1. Number of partitions. Cannot be decreased or removed once set.
     partitions: 3
-    # integer. Optional, default: 1. Number of brokers that hold a copy of each partition. Must not exceed replicas.
+    # integer. Optional, default: 1, minimum 1. Copies of each partition. Must not exceed replicas.
     replicationFactor: 3
     # object. Optional. CPU and memory of the broker container.
     resources:
@@ -556,11 +595,11 @@ spec:
     storageClassName: "ssd"
     # quantity. Optional, default: 10Gi. Size of the data volume of each broker. Can only grow.
     storageSize: "32Gi"
-    # object. Optional. What happens to the broker volumes when the cluster is deleted. A scale-down and a suspension always keep them.
+    # object. Optional. What happens to the broker volumes when the cluster is deleted.
     persistentVolumeClaimRetentionPolicy:
-      # string (Retain | Delete). Optional, default: Delete. Retain keeps the volumes, and a later cluster with the same name reattaches them.
+      # string (Retain | Delete). Optional, default: Delete.
       whenDeleted: Delete
-    # []EnvVar. Optional. Extra environment variables of the broker container. An entry replaces an operator entry with the same name.
+    # []EnvVar. Optional. Extra environment variables of the broker container.
     extraEnv:
       - name: JAVA_TOOL_OPTIONS
         value: "-XX:+ExitOnOutOfMemoryError -Xmx4g"
@@ -582,7 +621,7 @@ spec:
       tolerations: []
   # object. Optional. The gateway.
   gateway:
-    # string (Standalone | Embedded). Optional, default: Standalone. Standalone is its own Deployment. Embedded runs inside the brokers.
+    # string (Standalone | Embedded). Optional, default: Standalone.
     mode: Standalone
     # integer. Optional, default: 1. Replicas. Standalone only.
     replicas: 2
@@ -598,52 +637,24 @@ spec:
     podAnnotations: {}
     # object. Optional. Scheduling constraints, same shape as zeebe.scheduling. Standalone only.
     scheduling: {}
-  # object. Optional. The Operate web application.
+  # object. Optional. The Operate web application. The other fields are those of gateway. An embedded Operate applies its extraEnv and extraEnvFrom to the host process.
   operate:
-    # string (Standalone | Embedded). Optional, default: Embedded. Embedded runs inside the gateway, or inside the brokers when the gateway is Embedded.
+    # string (Standalone | Embedded). Optional, default: Embedded.
     mode: Embedded
-    # integer. Optional, default: 1. Replicas. Standalone only.
-    replicas: 1
-    # object. Optional. CPU and memory. Standalone only.
-    resources: {}
-    # []EnvVar. Optional. Extra environment variables. Applied to the host process when Embedded.
-    extraEnv: []
-    # []EnvFromSource. Optional. Extra environment sources. Applied to the host process when Embedded.
-    extraEnvFrom: []
-    # map[string]string. Optional. Extra pod labels. Standalone only.
-    podLabels: {}
-    # map[string]string. Optional. Extra pod annotations. Standalone only.
-    podAnnotations: {}
-    # object. Optional. Scheduling constraints. Standalone only.
-    scheduling: {}
   # object. Optional. The Tasklist web application. Same fields as operate.
   tasklist:
     # string (Standalone | Embedded). Optional, default: Embedded.
     mode: Embedded
-  # object. Optional. The Admin web application (Identity before Camunda 8.9). Same fields as operate.
+  # object. Optional. The Admin web application (Orchestration Cluster Identity before Camunda 8.9). Same fields as operate.
   admin:
     # string (Standalone | Embedded). Optional, default: Embedded.
     mode: Embedded
-  # object. Optional. The connectors runtime. Always its own Deployment.
+  # object. Optional. The connectors runtime, always its own Deployment. It has no mode. The other fields are those of gateway.
   connectors:
     # boolean. Optional, default: false. Runs the connectors runtime when true.
     enabled: true
-    # string. Required when enabled, unless the release provides it. Version of the connectors bundle image as x.y.z. It does not follow spec.version.
+    # string. Required when enabled, unless the release provides it. Version of the connectors bundle image as x.y.z.
     version: "8.9.7"
-    # integer. Optional, default: 1. Replicas.
-    replicas: 2
-    # object. Optional. CPU and memory.
-    resources: {}
-    # []EnvVar. Optional. Extra environment variables.
-    extraEnv: []
-    # []EnvFromSource. Optional. Extra environment sources.
-    extraEnvFrom: []
-    # map[string]string. Optional. Extra pod labels.
-    podLabels: {}
-    # map[string]string. Optional. Extra pod annotations.
-    podAnnotations: {}
-    # object. Optional. Scheduling constraints.
-    scheduling: {}
   # []EnvVar. Optional. Extra environment variables of every workload. A per-component entry with the same name wins.
   extraEnv: []
   # []EnvFromSource. Optional. Extra environment sources of every workload.
@@ -656,25 +667,25 @@ spec:
   scheduling: {}
   # string. Required. Name of the SecondaryStorageConfig in the namespace of this cluster.
   storageRef: "my-storage-config"
-  # integer. Optional, minimum 0. Replicas of each index in an Elasticsearch secondary storage. Default: 0 when the contract names one node, 1 when it names more, the Camunda default when it names no node count. Allowed in a preset.
+  # integer. Optional, minimum 0. Replicas of each index in an Elasticsearch secondary storage. Default: from the node count, see Index replicas.
   indexReplicas: 1
   # string. Optional. Name of an ObjectStorageConfig in this namespace, for backups.
   backupStorageRef: "my-backup-bucket"
   # string. Optional. Name of an ObjectStorageConfig in this namespace, for document storage. Only its workload identity is wired.
   documentStorageRef: "my-document-bucket"
-  # object. Optional. How backups of this cluster behave. Allowed in a preset. Applies to an RDBMS cluster with a backupStorageRef.
+  # object. Optional. How backups of an RDBMS cluster with a backupStorageRef behave. Allowed in a preset.
   backup:
     # object. Optional. The backups that Zeebe takes of its own primary storage.
     primaryStorage:
-      # boolean. Optional, default: true unless schedule is "none". Keeps every log segment until it is backed up. Must not be true with a schedule of "none".
+      # boolean. Optional, default: true unless schedule is "none". Keeps every log segment until it is backed up.
       continuous: true
       # string. Optional, default: PT1H. How often Zeebe takes a backup: an ISO 8601 duration, a CRON expression, or "none".
       schedule: "PT1H"
-      # string. Optional, default: PT15M. How often Zeebe writes a checkpoint, as an ISO 8601 duration of days and time. It is the granularity of a point-in-time restore.
+      # string. Optional, default: PT15M. How often Zeebe writes a checkpoint, the granularity of a point-in-time restore.
       checkpointInterval: "PT15M"
       # object. Optional. How long Zeebe keeps its primary-storage backups.
       retention:
-        # string. Optional, default: P7D. The restore window, as an ISO 8601 duration of days and time.
+        # string. Optional, default: P7D. The restore window.
         window: "P7D"
         # string. Optional, default: PT1H. How often Zeebe removes backups outside the window: a duration, a CRON expression, or "none".
         cleanupSchedule: "PT1H"
@@ -682,9 +693,9 @@ spec:
     dump:
       # object. Optional. CPU and memory of the dump pod.
       resources: {}
-      # integer. Optional, default: 86400 when unset in the cluster and the preset. Seconds the dump Job can run before it fails.
+      # integer. Optional, default: 86400. Seconds the dump Job can run before it fails.
       activeDeadlineSeconds: 7200
-      # string. Optional, default: postgres:<major version of the database server>. Image that runs pg_dump. Set it for a mirror or an exact tag.
+      # string. Optional, default: postgres:<major version of the database server>. Image that runs pg_dump.
       postgresImage: ""
       # []EnvVar. Optional. Extra environment variables of every container of the dump pod.
       extraEnv: []
@@ -697,7 +708,7 @@ spec:
         sidecar.istio.io/inject: "false"
       # object. Optional. Scheduling constraints of the dump pod. Replaces the preset block entirely.
       scheduling: {}
-      # object. Optional. Where the dump is written before the upload. Replaces the preset block entirely. Unset means an emptyDir bounded by the node.
+      # object. Optional. Where the dump is written before the upload. Replaces the preset block entirely. Unset means node-local storage.
       scratchVolume:
         # quantity. Optional. Size of the scratch volume.
         sizeLimit: 50Gi
@@ -730,17 +741,19 @@ The API server enforces these rules at admission:
 - `spec.zeebe.storageSize` cannot be decreased.
 - `spec.zeebe.replicationFactor` must not exceed `spec.zeebe.replicas`.
 - `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` is `Delete` or `Retain`.
+- An `extraEnv` entry sets `value` or `valueFrom`, never both.
+- `spec.auth.basic.adminEmail` is empty or an address with a dot in its domain.
 - `spec.backup.dump.extraEnvFrom` holds at most 8 sources. `spec.backup.dump.scratchVolume.storageClassName` requires `sizeLimit`.
 - `spec.backup.primaryStorage.checkpointInterval` and `retention.window` are ISO 8601 durations of days and time. Weeks, months, and years are rejected.
 
-The operator checks these rules on the merged spec after the preset and the release are applied, and reports `Ready: InvalidReference` when one fails:
+The operator checks these rules on the merged spec after the preset and the release are applied. When one fails, it reports `Ready: InvalidReference` with a message that starts with `invalid effective spec:`.
 
 - The effective version is present and 8.9.0 or later.
 - The effective `replicationFactor` does not exceed the effective `replicas`, and the effective `partitions` is at least 1.
 - `connectors.version` is present when connectors are enabled.
 - `backup.primaryStorage.continuous` is not true with a `schedule` of `none`.
 
-A separate rule refuses an effective version below the one the brokers run, with reason `VersionDowngradeRefused`. [Version](#version) states it.
+A separate rule refuses an effective version below the one that the brokers run, with reason `VersionDowngradeRefused`. [A lower version is refused](#a-lower-version-is-refused) states it.
 
 ### A production-shaped example
 

@@ -2,7 +2,7 @@
 
 `BackupSchedule` takes logical backups of one `CamundaCluster` on a cron schedule. You create it, or another tool creates it for you.
 
-At each trigger the operator creates one backup of the kind that matches the secondary storage of the cluster. The kind is `LogicalBackupElasticsearch` for an Elasticsearch cluster and `LogicalBackupRDBMS` for a relational one. That backup then runs on its own. The schedule also owns retention: it deletes its own terminal backups beyond `spec.retained`, and the deletion removes the stored artifacts too.
+At each trigger the operator creates one backup of the kind that matches the secondary storage of the cluster: `LogicalBackupElasticsearch` or `LogicalBackupRDBMS`. That backup then runs on its own. The schedule also deletes its own finished backups beyond `spec.retained`, together with their stored artifacts.
 
 `kubectl get backupschedules` lists the schedules with `Ready`, its reason, the cron expression, and the age. `kubectl get backupschedules -o wide` adds the cluster, the last schedule, and the last backup.
 
@@ -59,8 +59,6 @@ You can change `spec.schedule` and `spec.retained` at any time. The new values a
 
 ## The backups that a schedule creates
 
-The `SecondaryStorageConfig` of the cluster selects the kind. An Elasticsearch cluster gets a `LogicalBackupElasticsearch`. A relational cluster gets a `LogicalBackupRDBMS`.
-
 The name of a created backup is `<schedule>-<unix-timestamp>` of the trigger. The labels name the cluster and the schedule:
 
 ```yaml
@@ -83,7 +81,7 @@ To list the backups of one schedule, select on the label:
 kubectl get lbrdbms -n my-cluster-ns -l camunda.io/backup-schedule=my-cluster-schedule
 ```
 
-A backup name stops at 253 characters and a label value at 63. A schedule name that is too long for one of the two is cut there, and a hash of the full name is added. Two such schedules stay apart. The selector above matches while the schedule name is 63 characters or less. For a longer name the label carries the cut form. `kubectl get lbrdbms --show-labels` shows the value to select on.
+For a schedule name of more than 63 characters, the label value is shortened and ends in a hash. `kubectl get lbrdbms --show-labels` shows it.
 
 Each creation records the Normal event `BackupCreated` on the schedule. The event names the kind and the backup.
 
@@ -91,17 +89,17 @@ Each creation records the Normal event `BackupCreated` on the schedule. The even
 
 The operator creates no backup when:
 
-- The cluster is suspended. A suspended cluster is not backed up. The schedule skips the trigger and records the Normal event `TriggerSkipped`, which names the cluster and the trigger time. A backup that already exists waits with reason `ClusterSuspended` instead. `spec.suspend` suspends the cluster, and so do these two `Ready` reasons of the `CamundaCluster`: `StorageAlreadyAttached` and `WaitingForHandover`. A workload of it that still runs is one the API server refused to stop, which its `WorkloadStopRefused` event says. Read `Ready` on the `CamundaCluster` and correct the cause there. Backups start again at the next trigger after the cluster resumes.
-- The backup cannot start, and the cluster is not suspended. Both kinds start only while the cluster publishes a `status.management` that the operator can use. A `LogicalBackupRDBMS` also needs the `Ready` condition of the cluster at `True`. A `LogicalBackupElasticsearch` needs `status.management.backupRepository` instead, and starts also when `Ready` is `False` with a reason such as `Degraded`. A backup that cannot start waits in `Pending`, so the schedule skips the trigger and records the Normal event `TriggerSkipped`. The event names the cluster, the cause, and the state of its `Ready` condition. Read `Ready` on the `CamundaCluster` and correct the cause there.
-- A backup of this schedule has not reached a terminal phase. Two backups of one schedule never overlap, and a backup of either kind counts. If a backup regularly runs past the next trigger, give the schedule a longer gap.
-- An object already holds the name of the new backup and belongs to something else. The name carries the trigger time, so only that one trigger is skipped and the next one runs. Find out what created that object, and remove it if it does not belong there.
-- A reference does not resolve. The `CamundaCluster` is missing, or it has no `spec.storageRef` or `spec.backupStorageRef`, or the `SecondaryStorageConfig` it names is missing. The `Ready` condition of the schedule names the one that applies. Create the resource, or set the missing field.
+- The cluster is suspended. This is the case with `spec.suspend: true` and while a restore holds the cluster. It is also the case while the `Ready` reason of the cluster is `StorageAlreadyAttached` or `WaitingForHandover`, because the cluster then waits for its backend. Read `Ready` on the `CamundaCluster` for the cause. Backups start again at the next trigger after the cluster resumes.
+- The backup cannot start on the cluster. Both kinds need a usable `status.management` on the cluster. A `LogicalBackupRDBMS` also needs the `Ready` condition of the cluster at `True`. A `LogicalBackupElasticsearch` needs `status.management.backupRepository` instead, and does not need `Ready`. The event names the cause and the state of the `Ready` condition of the cluster. Correct the cause on the `CamundaCluster`.
+- A backup of this schedule is not `Completed` or `Failed` yet. Two backups of one schedule never overlap. If a backup often runs past the next trigger, give the schedule a longer gap.
+- An object already holds the name of the new backup and belongs to something else. Only that one trigger is skipped, because the name carries the trigger time. Find out what created that object, and remove it if it does not belong there.
+- A reference does not resolve. The `CamundaCluster` is missing, or it has no `spec.storageRef` or `spec.backupStorageRef`, or its `SecondaryStorageConfig` is missing. The `Ready` condition of the schedule names the cause. Create the resource, or set the missing field.
 - `spec.schedule` is not a valid cron expression. No trigger fires at all, and `Ready` names `spec.schedule`. Correct the expression.
-- More than one trigger passed unconsumed, for example while the operator was not running. The schedule takes the latest of them and skips the earlier ones. See [The cron expression](#the-cron-expression).
+- More than one trigger passed while the operator was not running. The schedule takes the latest of them, see [The cron expression](#the-cron-expression). The earlier triggers record no event.
 
-The first three cases record the Normal event `TriggerSkipped`. A name that belongs to something else records the Warning event `BackupNameTaken`. The other three record no event. The `Ready` condition of the schedule carries the unresolved reference and the invalid cron expression. Unconsumed triggers record nothing at all.
+The first three cases record the Normal event `TriggerSkipped`. A name that belongs to something else records the Warning event `BackupNameTaken`. A reference that does not resolve and an invalid cron expression show on `Ready` of the schedule, with no event.
 
-When the operator skips a trigger, it consumes that trigger and `status.lastScheduleTime` moves to it. The operator does not retry it and does not create the backup later. The next backup runs at the next trigger of the cron expression. When `status.lastScheduleTime` jumps over several triggers of the cron expression, the schedule took only the last of them.
+A skipped trigger is not retried. `status.lastScheduleTime` moves to it, and the next backup runs at the next trigger of the cron expression.
 
 `kubectl describe backupschedule my-cluster-schedule -n my-cluster-ns` shows the events:
 
@@ -132,15 +130,11 @@ spec:
   # ... the rest of your schedule
 ```
 
-The operator deletes the oldest completed backups beyond `retained.completed`, by completion time. It deletes the oldest failed backups beyond `retained.failed` the same way. A backup that is still `Pending` or `Running` is never deleted.
+The operator deletes the oldest completed backups beyond `retained.completed`, by completion time. It deletes the oldest failed backups beyond `retained.failed` the same way. A backup that is still `Pending` or `Running` is never deleted. A schedule that sets no bounds keeps 7 completed and 3 failed backups. If you lower a bound, the overflow is deleted at once.
 
-Retention is schedule-owned. The operator prunes only the backups that carry the label `camunda.io/backup-schedule` of this schedule. A backup that you create by hand carries no such label, so no schedule ever prunes it.
+The operator deletes only the backups that carry the label `camunda.io/backup-schedule` of this schedule. A backup that you create by hand carries no such label, so no schedule ever deletes it.
 
-A pruned backup takes its stored artifacts with it. For an Elasticsearch backup these are the snapshots and the partition backup. For a relational backup this is the database dump. Each deletion records the Normal event `BackupPruned`.
-
-The operator prunes at each trigger, after a change to the schedule, and when one of its backups reaches a terminal phase. If you lower a bound, the overflow is deleted at once.
-
-`spec.retained` is always in effect. A schedule that sets no bounds keeps 7 completed and 3 failed backups.
+A deleted backup takes its stored artifacts with it. For an Elasticsearch backup these are the snapshots and the partition backup. For a relational backup this is the database dump. Each deletion records the Normal event `BackupPruned`.
 
 ## Backups that outlive the primary storage
 
@@ -161,9 +155,9 @@ The operator records no such warning when `spec.backup.primaryStorage.retention.
 
 ## Deletion
 
-When you delete a `BackupSchedule`, its backups stay. They carry no owner reference to the schedule, on purpose. No trigger fires again, and nothing prunes those backups again. Delete the backups you no longer want. Or create a schedule of the same name again to take the pruning back.
+When you delete a `BackupSchedule`, its backups and their artifacts stay. No trigger fires again, and no retention applies to those backups. Delete the backups you no longer want. Or create a schedule of the same name again, and its retention applies to them again.
 
-A schedule has no suspend field. To stop the backups for a time, delete the schedule. While the cluster itself is suspended, or while the backup cannot start on it, every trigger is skipped.
+A schedule has no suspend field. To stop the backups for a time, delete the schedule.
 
 ## Status
 
@@ -172,7 +166,7 @@ A schedule has no suspend field. To stop the backups for a time, delete the sche
 | `Ready` | `Healthy` | The references resolve and the schedule can run its backups. | Nothing. |
 | `Ready` | `InvalidReference` | The `CamundaCluster` does not exist, it has no `spec.storageRef` or `spec.backupStorageRef`, its `SecondaryStorageConfig` does not exist, or `spec.schedule` is not a valid cron expression. The message names the cause. | Create the resource, set the missing field, or correct `spec.schedule`. |
 
-`Ready` reports the references only. A skipped trigger is an event, not a condition. A suspended cluster, a backup that cannot start, and a running backup are expected states.
+`Ready` reports the references and the cron expression only. A skipped trigger is an event, see [Skipped triggers](#skipped-triggers).
 
 A healthy schedule that took a backup reads:
 
