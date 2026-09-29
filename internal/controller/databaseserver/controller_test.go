@@ -83,14 +83,12 @@ func serverNamed(
 	return server
 }
 
-// createServer creates server and deletes it when the spec ends. A server
-// that outlives its spec keeps looking again on its retry timer. The
-// controller runs one reconcile at a time, so every later spec waits behind
-// those looks.
+// createServer creates server and deletes it when the spec ends.
 func createServer(server *v1.DatabaseServer) {
 	GinkgoHelper()
 
 	Expect(k8sClient.Create(ctx, server)).To(Succeed())
+	// A server left running reconciles on its retry timer, and the one worker makes later specs wait.
 	DeferCleanup(func() {
 		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, server))).To(Succeed())
 	})
@@ -1234,8 +1232,8 @@ var _ = Describe("DatabaseServer controller", func() {
 		Expect(k8sClient.Delete(ctx, owner)).To(Succeed())
 		// envtest runs no garbage collector, so the spec deletes the contract
 		// that the owner reference points at. A reconcile of the owner that
-		// was in flight can write it once more, and the collector deletes
-		// that one too.
+		// was in flight can write it once more, so the poll deletes that one
+		// too.
 		Eventually(func(g Gomega) {
 			var stale v1.DatabaseServerConfig
 			err := k8sClient.Get(ctx, contractKey(owner), &stale)

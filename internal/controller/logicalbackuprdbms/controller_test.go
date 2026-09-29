@@ -310,13 +310,12 @@ func createBackup(w *world, mutate ...func(*v1.LogicalBackupRDBMS)) *v1.LogicalB
 	return backup
 }
 
-// createAndDelete creates backup and removes it past its finalizer when the
-// spec ends. A backup left behind looks again every second, and the one
-// worker of the controller makes every later spec wait behind those looks.
+// createAndDelete creates backup and removes it past its finalizer when the spec ends.
 func createAndDelete(backup *v1.LogicalBackupRDBMS) {
 	GinkgoHelper()
 
 	Expect(k8sClient.Create(ctx, backup)).To(Succeed())
+	// A backup left behind reconciles every second, and the one worker makes later specs wait.
 	DeferCleanup(func() {
 		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, backup))).To(Succeed())
 		key := client.ObjectKeyFromObject(backup)
