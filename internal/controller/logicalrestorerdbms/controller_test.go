@@ -278,6 +278,8 @@ var _ = Describe("LogicalRestoreRDBMS suspension of its target", func() {
 		expectReason(lrr, v1.LogicalRestoreCompleted, v1.ReasonCompleted)
 		Eventually(func(g Gomega) {
 			g.Expect(clusterSuspended(g, w)).To(BeFalse())
+			_, held := holdOf(g, w, lrr)
+			g.Expect(held).To(BeFalse(), "a completed restore removes its hold")
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -298,7 +300,64 @@ var _ = Describe("LogicalRestoreRDBMS suspension of its target", func() {
 		expectReason(lrr, v1.LogicalRestoreFailed, v1.ReasonFailed)
 		Consistently(func(g Gomega) {
 			g.Expect(clusterSuspended(g, w)).To(BeTrue())
+			_, held := holdOf(g, w, lrr)
+			g.Expect(held).To(BeTrue(), "a failed restore keeps its hold")
 		}, "1s", interval).Should(Succeed())
+	})
+
+	It("keeps its hold when somebody clears spec.suspend of the target", func() {
+		w := newWorld()
+		backup := createBackup(w)
+		lrr := createRestore(w, backup.Name)
+
+		By("clearing spec.suspend once the restore holds the target")
+		Eventually(func(g Gomega) {
+			reason, held := holdOf(g, w, lrr)
+			g.Expect(held).To(BeTrue())
+			g.Expect(reason).To(ContainSubstring("LogicalRestoreRDBMS " + w.namespace + "/" + lrr.Name))
+		}, timeout, interval).Should(Succeed())
+		w.suspend(false)
+
+		By("clearing it again once the pg_restore Job exists")
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, lrr).Status.SecondaryJobName).NotTo(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+		w.suspend(false)
+
+		Consistently(func(g Gomega) {
+			_, held := holdOf(g, w, lrr)
+			g.Expect(held).To(BeTrue())
+			condition := readyCondition(latest(g, lrr))
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Reason).NotTo(Equal(v1.ReasonClusterNotSuspended))
+		}, "2s", interval).Should(Succeed())
+		expectPhase(lrr, v1.LogicalRestoreRestoringSecondaryStorage)
+	})
+
+	// Deleting a restore is how a user lets go of the target.
+	It("removes its hold when it is deleted, and keeps the target suspended", func() {
+		w := newWorld(func(cluster *v1.CamundaCluster) { cluster.Spec.Suspend = false })
+		backup := createBackup(w)
+		lrr := createRestore(w, backup.Name)
+		Eventually(func(g Gomega) {
+			_, held := holdOf(g, w, lrr)
+			g.Expect(held).To(BeTrue())
+			g.Expect(latest(g, lrr).Finalizers).To(ContainElement(restorepkg.HoldFinalizer))
+			g.Expect(clusterSuspended(g, w)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+		uid := latestOf(lrr).UID
+		collectDeletedJobs(w.namespace)
+
+		Expect(k8sClient.Delete(ctx, lrr)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(lrr), &v1.LogicalRestoreRDBMS{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+			g.Expect(cluster.Annotations).NotTo(HaveKey(v1.SuspensionHoldPrefix + string(uid)))
+			g.Expect(cluster.Spec.Suspend).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
 	})
 
 	// A target that its owner suspended stays suspended. The restore recorded
@@ -858,8 +917,8 @@ var _ = Describe("LogicalRestoreRDBMS of primary storage", func() {
 		completeSecondaryStorage(w, lrr)
 		expectPhase(lrr, v1.LogicalRestoreRestoringPrimaryStorage)
 
-		By("starting the workloads of the target again")
-		w.suspend(false)
+		By("clearing spec.suspend and removing the hold of the restore")
+		w.overrideHolds()
 
 		// The restore deletes the data volumes of the brokers in this phase.
 		// A cluster whose workloads run again must hold it, and the grace

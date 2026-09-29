@@ -512,8 +512,8 @@ var _ = Describe("LogicalRestoreElasticsearch of primary storage", func() {
 		backup := createBackup(w)
 		restore := startedRestore(w, backup)
 
-		By("starting the workloads of the target again")
-		w.suspend(false)
+		By("clearing spec.suspend and removing the hold of the restore")
+		w.overrideHolds()
 
 		// The restore deletes the data volumes of the brokers in this phase.
 		// A cluster whose workloads run again must hold it, and the grace

@@ -66,6 +66,7 @@ func newTerminalWorld(t *testing.T, opts terminalOptions) *terminalWorld {
 
 	owner := terminalOwner(opts.reason)
 	owner.Status.ClusterSuspended = true
+	owner.Status.TargetClusterUID = clusterUID
 
 	cluster := &v1.CamundaCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "ns", UID: clusterUID},

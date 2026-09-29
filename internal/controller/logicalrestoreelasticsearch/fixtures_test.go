@@ -18,6 +18,7 @@ package logicalrestoreelasticsearch
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -370,12 +371,17 @@ func (w *world) rollBrokerImage(version string) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// suspend flips spec.suspend of the target.
-func (w *world) suspend(suspended bool) {
+// overrideHolds clears spec.suspend and every suspension hold of the target.
+func (w *world) overrideHolds() {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), w.cluster)).To(Succeed())
-		w.cluster.Spec.Suspend = suspended
+		w.cluster.Spec.Suspend = false
+		for key := range w.cluster.Annotations {
+			if strings.HasPrefix(key, v1.SuspensionHoldPrefix) {
+				delete(w.cluster.Annotations, key)
+			}
+		}
 		g.Expect(k8sClient.Update(ctx, w.cluster)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }

@@ -626,15 +626,16 @@ func onInstance(identifier string) func(key string) bool {
 // itself, so a cluster that is not suspended there is one that the restore is
 // about to suspend.
 func notSuspended(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
-	if cluster.Spec.Suspend {
+	if cluster.SuspendRequested() {
 		return nil
 	}
 
 	return &conditions.PreCheckFailure{
 		Reason: v1.ReasonClusterNotSuspended,
 		Message: fmt.Sprintf(
-			"CamundaCluster %s/%s started running again while the restore ran. A restore rewrites "+
-				"its primary storage, so it runs only while spec.suspend is true",
+			"CamundaCluster %s/%s is not suspended: somebody removed the suspension hold of the "+
+				"restore and spec.suspend is false. A restore rewrites the storage of its target, so it "+
+				"runs only while the target is suspended",
 			cluster.Namespace, cluster.Name,
 		),
 	}
