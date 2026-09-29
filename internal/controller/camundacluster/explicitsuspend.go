@@ -14,11 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// This file stops the workloads of a cluster that spec.suspend suspends while
-// its pre-check fails. A failed pre-check leaves nothing to render from, so the
-// suspended render never runs. Without this, the instruction of the user waits
-// for a reference that it does not depend on. A broken Secret is exactly when a
-// user reaches for suspend.
+// This file stops the workloads of a cluster that spec.suspend or a
+// suspension hold suspends while its pre-check fails. A failed pre-check
+// leaves nothing to render from, so the suspended render never runs. Without
+// this, the suspension waits for a reference that it does not depend on. A
+// broken Secret is exactly when a user reaches for suspend.
 
 package camundacluster
 
@@ -42,24 +42,24 @@ import (
 // suspendNote is appended to the failure message of a cluster whose workloads
 // an explicit suspend stopped, so Ready says both what failed and what
 // happened to the workloads.
-const suspendNote = ". The workloads are scaled to zero because spec.suspend is set"
+const suspendNote = ". The workloads are scaled to zero because the cluster is suspended"
 
 // suspendedMessage is the message of the per-process condition of a workload
 // that an explicit suspend stopped and whose pods are gone.
-const suspendedMessage = "Scaled to zero because spec.suspend is set"
+const suspendedMessage = "Scaled to zero because the cluster is suspended"
 
 // keptAtZeroNote is appended to the failure message of a cluster whose
 // workloads a suspension left at zero and whose suspension ended.
 const keptAtZeroNote = ". The workloads that stopped stay at zero until the reference check passes"
 
 // suspendExplicitly scales every workload that cluster controls to zero when
-// spec.suspend is set, and keeps everything else: the volumes, the Services, and
-// the Secrets. It does nothing for a cluster that does not set the field.
+// spec.suspend or a suspension hold is set, and keeps everything else: the
+// volumes, the Services, and the Secrets.
 func (r *CamundaClusterReconciler) suspendExplicitly(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 ) (bool, error) {
-	if !cluster.Spec.Suspend {
+	if !cluster.SuspendRequested() {
 		return false, nil
 	}
 
@@ -197,7 +197,7 @@ func (r *CamundaClusterReconciler) recordStop(
 		corev1.EventTypeNormal,
 		workloadsuspend.EventReasonWorkloadsSuspended,
 		workloadsuspend.EventActionSuspend,
-		"Scaled %q to zero because spec.suspend is set",
+		"Scaled %q to zero because the cluster is suspended",
 		workload,
 	)
 }

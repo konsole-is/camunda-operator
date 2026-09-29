@@ -64,11 +64,12 @@ The operator writes nothing else on the cluster. It writes no credential, and no
 
 ### What the operator writes, and what it keeps
 
-Each write is a server-side apply of one field, under a field manager of its own:
+Each write is a server-side apply of one field or annotation, under a field manager of its own:
 
 | Field | Field manager | What happens at the end |
 | --- | --- | --- |
 | `spec.suspend` | `camunda-operator/restore-suspend` | The restore withdraws it when it reaches `Completed`. |
+| The annotation `suspension-hold.camunda.io/<restore UID>` | `camunda-operator/suspension-hold-<restore UID>` | The restore removes it when it reaches `Completed`. When you delete the restore, it removes the hold once its Jobs and their pods are gone. A failed restore keeps it. |
 
 These names are published. A GitOps tool reads them in a conflict message, and they tell a write of a restore from a write of a user.
 
@@ -79,8 +80,8 @@ This kind writes no version. It restores the primary storage of the cluster from
 The restore withdraws its suspension when it reaches `Completed`, and only when `status.clusterSuspended` is `true`.
 
 - **A cluster that you suspended yourself stays suspended.** The restore recorded no suspension of its own, so it withdraws none.
-- **A failed restore leaves the cluster suspended.** Its broker volumes can be empty or half written. Brokers that start over such volumes are worse than a cluster that is down. Read `status.failureMessage`, correct the cause, and create a new restore.
-- **A restore that you delete while it runs leaves the cluster suspended.** A delete never unsuspends the cluster. Brokers that start over volumes the restore already erased are worse than a cluster that is down. Unsuspend the cluster yourself once you know what its volumes hold.
+- **A failed restore leaves the cluster suspended.** Its broker volumes can be empty or half written. Brokers that start over such volumes are worse than a cluster that is down. Read `status.failureMessage` and correct the cause. Delete the failed restore, then create a new one. The failed restore keeps its suspension hold until you delete it. Until then, neither `spec.suspend: false` nor a new restore starts the cluster.
+- **A restore that you delete while it runs leaves the cluster suspended.** A delete never unsuspends the cluster. It removes the suspension hold of the restore, and `spec.suspend` decides from then on. Brokers that start over volumes the restore already erased are worse than a cluster that is down. Unsuspend the cluster yourself once you know what its volumes hold.
 
 ### A GitOps tool that owns the CamundaCluster
 
@@ -90,8 +91,9 @@ A tool that also declares one of these fields fights the operator for it. Argo C
 
 - Remove `spec.suspend` from the manifest for the time of the restore, or mark the field as an ignored difference.
 - Let the tool declare `spec.suspend: false` again after the restore, if it declared the field before.
+- A tool that prunes annotations it does not declare removes the suspension hold of the restore. Exclude the annotations that start with `suspension-hold.camunda.io/` from pruning.
 
-The cluster must stay suspended for the whole restore, not only at the start. A cluster that somebody unsuspends while the restore runs holds the restore in its current phase, and fails it after ten minutes with reason `ClusterNotSuspended`. While the server rolls the database back, the ten minutes start when the contract answers.
+The cluster stays suspended for the whole restore. The restore puts a suspension hold on it, and a cluster with a hold stays suspended whatever `spec.suspend` says (see [Suspension holds](camundacluster.md#suspension-holds)). If somebody removes the hold by hand and clears `spec.suspend`, the restore holds in its current phase. It fails ten minutes later with reason `ClusterNotSuspended`. While the server rolls the database back, the ten minutes start when the contract answers.
 
 ## One operation at a time
 
@@ -227,17 +229,17 @@ kubectl logs -n my-cluster-ns job/my-cluster-pitr-pitr-0
 
 ## Deletion
 
-When you delete the restore, the operator deletes the Jobs it created. A restore that completed already removed them. A restore that failed still has them, and this is how you remove them. The restore wrote nothing to the backup store, so the delete leaves no artifact there. The recreated broker volumes stay.
+When you delete the restore, the operator deletes the Jobs it created. A restore that completed already removed them. A restore that failed still has them, and this is how you remove them. The restore wrote nothing to the backup store, so the delete leaves no artifact there. The recreated broker volumes stay. The restore stays until the last pod of its Jobs is gone.
 
-A cluster that the restore suspended stays suspended. That is deliberate. Brokers that start over volumes the restore already erased are worse than a cluster that is down. Unsuspend the cluster yourself once you know what its volumes hold.
+The delete removes the suspension hold of the restore from the cluster. A cluster that the restore suspended through `spec.suspend` stays suspended. That is deliberate. Brokers that start over volumes the restore already erased are worse than a cluster that is down. Unsuspend the cluster yourself once you know what its volumes hold.
 
 ## Status
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Progressing` | A restore phase runs. | Wait. The message names the phase. |
-| `Ready` | `Completed` | The restore finished, and it gives back the suspension it applied, so the cluster starts again a moment later. `Ready` is `True`. | Nothing. Unsuspend the cluster yourself only when you suspended it yourself. |
-| `Ready` | `ClusterNotSuspended` | The cluster started running again while the restore ran. | Suspend the cluster again. A restore that already erased something fails ten minutes after the first outage. |
+| `Ready` | `Completed` | The restore finished, and it gives back the suspension it applied, so the cluster starts again a moment later, unless another hold remains on it. `Ready` is `True`. | Nothing. Unsuspend the cluster yourself only when you suspended it yourself. |
+| `Ready` | `ClusterNotSuspended` | Somebody removed the suspension hold of the restore from the cluster and cleared `spec.suspend`. | Suspend the cluster again. A restore that already erased something fails ten minutes after the first outage. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster. The message names it. | Wait. The restore starts when that operation finishes. |
 | `Ready` | `InvalidReference` | The cluster or a link in its storage chain does not exist, or the storage is not relational. Or the cluster names no backup storage, or the `DatabaseServerConfig` publishes no system identifier. Or a `Database` claims no logical database, no `Database` uses the server, or the broker StatefulSet is gone. Or a Lease claims the database and names no cluster. Or the cluster was deleted, replaced, or repointed while the server rolls back. | Correct the reference that the message names. After a change during the rollback, wait. The restore fails when the contract answers. Create a new restore then. |
 | `Ready` | `PitrUnavailable` | The server does not declare point-in-time recovery, or `spec.timestamp` lies outside its retention period or in the future. Or the server answered a rollback request with `Unavailable`, or the brokers of the cluster do not run in UTC. | Enable `pitr` on the server, choose a point the server holds, or run the brokers in UTC. |
@@ -248,7 +250,7 @@ A cluster that the restore suspended stays suspended. That is deliberate. Broker
 | `Ready` | `ExporterPositionNotCovered` | The point you chose lies outside the window that the primary-storage backups cover. The broker volumes are already erased. | Choose an earlier point, restore the database to it, and create a new restore. See "Choosing the point to restore to". |
 | `Ready` | `MissingSecret` | A credentials Secret of the cluster is missing or lacks a key. | Create the Secret that the message names. |
 | `Ready` | `ConnectionFailed` | The database rejects the operator. | Correct the endpoint or the credentials. |
-| `Ready` | `Failed` | A phase failed. | Read `status.failureMessage`. Correct the cause and create a new restore. |
+| `Ready` | `Failed` | A phase failed. | Read `status.failureMessage`. Correct the cause. Delete the failed restore, then create a new one. |
 
 A restore that already started keeps a broken dependency for ten minutes. After that it fails, because a restore that recreated a volume must not wait without an end. A restore that still waits in `Pending` has no such limit: it deleted nothing. While the server rolls the database back, a broken dependency holds the restore until the contract answers. If the cluster also changed and no `DatabaseServerConfig` can answer, the restore fails after ten minutes. A contract that only stops declaring `pitr.recovery: operator` holds the restore until you set it back or delete the restore.
 

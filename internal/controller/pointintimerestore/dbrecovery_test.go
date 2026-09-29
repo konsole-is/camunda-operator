@@ -679,6 +679,11 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 			var cluster v1.CamundaCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
 			cluster.Spec.Suspend = false
+			for key := range cluster.Annotations {
+				if strings.HasPrefix(key, v1.SuspensionHoldPrefix) {
+					delete(cluster.Annotations, key)
+				}
+			}
 			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 		expectRecovering(pitr, "started running again", w.server.Name)

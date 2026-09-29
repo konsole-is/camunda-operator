@@ -67,4 +67,8 @@ const (
 	// restore holds, and writes nothing into the backend. The message names
 	// the holder and the backend.
 	ReasonStorageAlreadyAttached = "StorageAlreadyAttached"
+	// ReasonSuspensionHeld means that a CamundaCluster carries at least one
+	// suspension hold annotation, so it stays suspended whatever spec.suspend
+	// says. The message names each hold and its reason.
+	ReasonSuspensionHeld = "SuspensionHeld"
 )

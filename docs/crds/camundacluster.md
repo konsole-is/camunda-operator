@@ -311,7 +311,7 @@ The API server accepts a cluster that names something you did not create yet, so
 
 When one of these checks fails for a running cluster, the workloads stay up. They keep the configuration that the operator applied last, and they keep serving. `status.gateway` and `status.management` keep their endpoints, and the cluster keeps the storage claim of its backend. `Ready` carries the failure reason. The per-process conditions keep the values they last observed until the check passes. A workload that a suspension stopped is the exception: its condition reports that suspension. When the check passes again, the cluster takes the change.
 
-A suspension that stopped the workloads while the check failed holds them at zero until the check passes. `spec.suspend` is one cause, and an operator suspension is the other. A cluster that reported `StorageAlreadyAttached` or `WaitingForHandover` holds those workloads at zero when that state ends while a check still fails. Clearing `spec.suspend` does not start them, and neither does the end of an operator suspension. When the check passes, the workloads return to the replica counts of the effective spec. A process you configured at zero stays at zero.
+A suspension that stopped the workloads while the check failed holds them at zero until the check passes. `spec.suspend`, a suspension hold, and an operator suspension are the causes. A cluster that reported `StorageAlreadyAttached` or `WaitingForHandover` holds those workloads at zero when that state ends while a check still fails. Clearing `spec.suspend` or removing a hold does not start them, and neither does the end of an operator suspension. When the check passes, the workloads return to the replica counts of the effective spec. A process you configured at zero stays at zero.
 
 The condition of each stopped workload reads `Suspending` while its pods drain, then `Suspended` with the message `Kept at zero until the reference check passes`. `Ready` carries the failure message, and adds `The workloads that stopped stay at zero until the reference check passes` when every stop succeeded. `status.gateway` and `status.management` stay empty while the workload that serves them is at zero. A workload whose stop the API server refuses keeps running, and the operator tries again on the next pass. A condition of it that still claimed a suspension is removed, and the render stages it again. Every other condition of it stays. That leaves the note off `Ready` and records the Warning event `WorkloadStopRefused`, which names the workload and carries the refusal. The endpoints of a workload that keeps running stay published.
 
@@ -341,12 +341,48 @@ status:
       reason: MissingSecret
       message: >-
         Secret my-cluster-ns/my-storage-credentials not found. The workloads
-        are scaled to zero because spec.suspend is set
+        are scaled to zero because the cluster is suspended
 ```
 
-The operator also suspends a cluster on its own, and only to keep two clusters off one backend. `spec.suspend` stays yours. A cluster whose backend another cluster holds reports `StorageAlreadyAttached`. A cluster that waits for the pods of another cluster, or for a restore into another cluster, on its backend reports `WaitingForHandover` (see [Secondary storage](#secondary-storage)). These are the only two. Each of them ends on its own when its cause is gone. Every other failure leaves the workloads up.
+The operator also suspends a cluster on its own, to keep two clusters off one backend, and for a restore. `spec.suspend` stays yours. A restore holds its target with a [suspension hold](#suspension-holds). A cluster whose backend another cluster holds reports `StorageAlreadyAttached`. A cluster that waits for the pods of another cluster, or for a restore into another cluster, on its backend reports `WaitingForHandover` (see [Secondary storage](#secondary-storage)). These two states end on their own when their cause is gone. Every other failure leaves the workloads up.
 
 `suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it. It starts them again when you clear the field and its own reference checks pass. The Optimize importer reads Elasticsearch directly. Without this, it keeps importing while the cluster is down. Every suspension by the operator reaches them the same way. A `CamundaOptimize` attached to a suspended cluster scales to zero, and a backup of it waits with reason `ClusterSuspended`.
+
+### Suspension holds
+
+A suspension hold is an annotation whose key starts with `suspension-hold.camunda.io/`. A cluster that carries at least one hold stays suspended, whatever `spec.suspend` says. The value of the annotation says who holds the cluster, and why. A restore puts a hold on its target, so that the target cannot start while the restore rewrites its storage. The restore removes the hold when it completes. When you delete the restore, it removes the hold once its Jobs and their pods are gone. A failed restore keeps its hold.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+  annotations:
+    suspension-hold.camunda.io/0d9c2a41-5e0b-4c7f-9a53-2f1e8b6c7d10: LogicalRestoreRDBMS my-cluster-ns/my-restore restores into this cluster
+# ... the rest of your cluster
+```
+
+A held cluster reports `SuspensionHeld`, and the message names each hold:
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: SuspensionHeld
+      message: >-
+        The cluster stays suspended while it carries a suspension hold,
+        whatever spec.suspend says. Holds:
+        suspension-hold.camunda.io/0d9c2a41-5e0b-4c7f-9a53-2f1e8b6c7d10
+        (LogicalRestoreRDBMS my-cluster-ns/my-restore restores into this cluster)
+```
+
+If a reference check fails, `Ready` reports that failure instead, and the message says that the workloads are at zero.
+
+A change to `spec.suspend` does not remove a hold. To end the hold of a failed restore, delete the restore. You can also remove the annotation by hand. If the restore also set `spec.suspend`, the cluster stays suspended until you clear it.
+
+CAUTION: Do not remove the hold of a restore that still runs. If `spec.suspend` is also false, the brokers can start over storage that the restore rewrites. The restore then reports `ClusterNotSuspended` and fails ten minutes later. Suspend the cluster again before then.
 
 `spec.pause: true` freezes the cluster. The operator changes nothing that it manages for this cluster, and it writes no status. It records a `Paused` event each time it looks at the resource. Set `pause` back to `false`, and the operator continues.
 
@@ -376,6 +412,7 @@ Deleting the cluster removes every resource that the operator created for it, an
 | `Ready` | `Failing` | A component has replicas that do not become ready. | Read the pods of the named component. |
 | `Ready` | `Degraded` / `Down` | Some or no replicas of a component are ready after the grace period. | Read the pods and events of the named component. |
 | `Ready` | `Suspended` | `spec.suspend` is true and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to resume. |
+| `Ready` | `SuspensionHeld` | The cluster carries at least one suspension hold, so it stays suspended whatever `spec.suspend` says. The message names each hold and its value. | Wait for the holder to end. For a failed restore, delete the restore, then clear `spec.suspend`. See [Suspension holds](#suspension-holds). |
 | `Ready` | `StorageAlreadyAttached` | Another `CamundaCluster` holds the storage claim of the backend that `storageRef` resolves to. This cluster is suspended. | Give this cluster a backend of its own, or delete the holder. The message names both, and the last apply error of the workloads when one occurred. |
 | `Ready` | `WaitingForHandover` | Pods of another cluster, or a writer for another cluster such as a restore, still write the backend that `storageRef` resolves to. This cluster holds the storage claim of it already, or waits to take it. The operator renders every workload of it at zero and keeps the volumes. | Wait. The message names the backend, those pods, the workloads that can start one, and the writers, such as a restore. It also names the last apply error of the workloads when one occurred. The state clears on its own. If the pods never go, delete them. If a named workload keeps them coming back, scale it to zero or delete it. A restore ends in `Completed` or `Failed`. A writer that stops without an end, such as a deleted restore, holds the backend for about two minutes. After an operator restart, the two minutes count from its start. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, or a ServiceAccount with `create: false` is absent. Or two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. A Lease of the operator namespace that this operator did not write reads the same way, and it blocks the storage claim of the backend. A running cluster keeps its workloads. | Read the message. Create the missing resource, correct the field it names, or delete the named Lease once nothing else uses it. The cluster takes the change on its own. |

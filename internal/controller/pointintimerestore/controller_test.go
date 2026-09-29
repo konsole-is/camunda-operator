@@ -2040,7 +2040,7 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	It("holds a restore whose cluster was unsuspended under it", func() {
+	It("holds a restore whose cluster was unsuspended and unheld under it", func() {
 		w := createWorld()
 		pitr := createRestore(w)
 		expectJobs(pitr)
@@ -2049,6 +2049,11 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 			var cluster v1.CamundaCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
 			cluster.Spec.Suspend = false
+			for key := range cluster.Annotations {
+				if strings.HasPrefix(key, v1.SuspensionHoldPrefix) {
+					delete(cluster.Annotations, key)
+				}
+			}
 			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
