@@ -161,7 +161,7 @@ status:
         are gone
 ```
 
-A running restore into another cluster holds the backend the same way. A [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md#the-backend) or a [LogicalRestoreRDBMS](logicalrestorerdbms.md#the-backend) writes the backend from the moment it leaves `Pending` until it reaches `Completed` or `Failed`. A [PointInTimeRestore](pointintimerestore.md#who-rolls-the-database-back) whose server declares `pitr.recovery: operator` holds the database from just before its rollback request until it reaches `Completed` or `Failed`. You can delete its target during that time, or point the target at another backend. The next cluster on the backend still waits, with reason `WaitingForHandover`, and the message names the restore. One case is not covered. A running cluster on the same database can start just after a `PointInTimeRestore` contract moves to a new endpoint. A restore into this cluster itself is no reason to wait. The wait lasts as long as the restore is not finished, even when it stops making progress. To free the backend from a restore that does not move, delete the restore. A `LogicalRestoreRDBMS` or a `PointInTimeRestore` that you delete while it runs holds the backend for about two more minutes. When the operator restarts in that time, the two minutes count from its start. A `LogicalRestoreElasticsearch` that fails, or that you delete, keeps the backend while Elasticsearch still recovers its snapshots. [LogicalRestoreElasticsearch: After a failure or a delete](logicalrestoreelasticsearch.md#after-a-failure-or-a-delete) has the details.
+A running restore into another cluster holds the backend the same way. A [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md#the-backend) or a [LogicalRestoreRDBMS](logicalrestorerdbms.md#the-backend) writes the backend from the moment it leaves `Pending` until it reaches `Completed` or `Failed`. A [PointInTimeRestore](pointintimerestore.md#who-rolls-the-database-back) whose server declares `pitr.recovery: operator` holds the database from just before its rollback request until it reaches `Completed` or `Failed`. You can delete its target during that time, or point the target at another backend. The next cluster on the backend still waits, with reason `WaitingForHandover`, and the message names the restore. One case is not covered. A running cluster on the same database can start just after a `PointInTimeRestore` contract moves to a new endpoint. A restore into this cluster itself is no reason to wait. The wait lasts as long as the restore is not finished, even when it stops making progress. To free the backend from a restore that does not move, delete the restore. A restore that you delete keeps the backend until its work stops, and then gives it back at once. A restart of the operator does not change this. A `LogicalRestoreRDBMS` keeps it until its Jobs and their pods are gone. A `PointInTimeRestore` keeps it until the `DatabaseServerConfig` answers its rollback request. If no contract can answer, it keeps the backend for at most ten minutes. A `LogicalRestoreElasticsearch` that fails, or that you delete, keeps the backend while Elasticsearch still recovers its snapshots. [LogicalRestoreElasticsearch: After a failure or a delete](logicalrestoreelasticsearch.md#after-a-failure-or-a-delete) has the details.
 
 ```yaml
 status:
@@ -175,6 +175,31 @@ status:
         LogicalRestoreElasticsearch my-cluster-ns/my-other-cluster-restore.
         This cluster starts when they are gone
 ```
+
+The hold of a restore on the backend is a Lease in the namespace of the operator. The restore removes it before the restore itself goes. If somebody removes the finalizers of a restore by hand, the restore goes and the Lease stays. The next cluster then waits with `WaitingForHandover` for a restore that no longer exists. Nothing removes that Lease for you. Before you remove it, make sure that the work of the restore has stopped:
+
+- For a `LogicalRestoreRDBMS`, make sure that no pod of its Jobs runs. The labels below find such a pod by the storage claim.
+- For a `LogicalRestoreElasticsearch`, make sure that no index recovery is active on the Elasticsearch.
+- For a `PointInTimeRestore`, wait until `spec.pitr.lastRecovery` on the `DatabaseServerConfig` answers its request.
+
+The commands use the namespace `camunda-operator-system`. If you installed the operator in another namespace, use that one.
+
+1. List the writer Leases. The `WRITER` column shows the restore that the message of `WaitingForHandover` names:
+
+    ```bash
+    kubectl get leases -n camunda-operator-system \
+      -l app.kubernetes.io/managed-by=camunda-operator,camunda.io/component=storage-writer \
+      -o custom-columns='WRITER:.metadata.annotations.camunda\.io/storage-writer,UID:.metadata.labels.camunda\.io/writer-uid'
+    ```
+
+2. Delete every Lease of that restore. Use the value of its `UID` column:
+
+    ```bash
+    kubectl delete leases -n camunda-operator-system \
+      -l app.kubernetes.io/managed-by=camunda-operator,camunda.io/component=storage-writer,camunda.io/writer-uid=0d9c2a41-5e0b-4c7f-9a53-2f1e8b6c7d10
+    ```
+
+The waiting cluster starts a short time after the last Lease is gone.
 
 Every pod of the cluster carries two labels. `camunda.io/storage-claim` holds the storage claim of the backend it writes, and `camunda.io/cluster-uid` holds the UID of its cluster. The pods of an [Optimize instance](camundaoptimize.md) attached to the cluster carry both, because its importer writes that backend as well. The `pg_restore` pod of a [LogicalRestoreRDBMS](logicalrestorerdbms.md#the-backend) carries the storage claim and no cluster UID. Find it by the claim. Read the claim of every pod in a namespace:
 
@@ -350,7 +375,7 @@ The operator also suspends a cluster on its own, to keep two clusters off one ba
 
 ### Suspension holds
 
-A suspension hold is an annotation whose key starts with `suspension-hold.camunda.io/`. A cluster that carries at least one hold stays suspended, whatever `spec.suspend` says. The value of the annotation says who holds the cluster, and why. A restore puts a hold on its target, so that the target cannot start while the restore rewrites its storage. The restore removes the hold when it completes. When you delete the restore, it removes the hold once its Jobs and their pods are gone. A `LogicalRestoreElasticsearch` whose `status.recoveryHeld` is `true` also waits until that hold ends. A failed restore keeps its hold.
+A suspension hold is an annotation whose key starts with `suspension-hold.camunda.io/`. A cluster that carries at least one hold stays suspended, whatever `spec.suspend` says. The value of the annotation says who holds the cluster, and why. A restore puts a hold on its target, so that the target cannot start while the restore rewrites its storage. The restore removes the hold when it completes. When you delete the restore, it removes the hold once its Jobs and their pods are gone. A `LogicalRestoreElasticsearch` whose `status.recoveryHeld` is `true` also waits until that hold ends. A `PointInTimeRestore` also waits while its database server rolls back. A failed restore keeps its hold.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -414,7 +439,7 @@ Deleting the cluster removes every resource that the operator created for it, an
 | `Ready` | `Suspended` | `spec.suspend` is true and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to resume. |
 | `Ready` | `SuspensionHeld` | The cluster carries at least one suspension hold, so it stays suspended whatever `spec.suspend` says. The message names each hold and its value. | Wait for the holder to end. For a failed restore, delete the restore, then clear `spec.suspend`. See [Suspension holds](#suspension-holds). |
 | `Ready` | `StorageAlreadyAttached` | Another `CamundaCluster` holds the storage claim of the backend that `storageRef` resolves to. This cluster is suspended. | Give this cluster a backend of its own, or delete the holder. The message names both, and the last apply error of the workloads when one occurred. |
-| `Ready` | `WaitingForHandover` | Pods of another cluster, or a writer for another cluster such as a restore, still write the backend that `storageRef` resolves to. This cluster holds the storage claim of it already, or waits to take it. The operator renders every workload of it at zero and keeps the volumes. | Wait. The message names the backend, those pods, the workloads that can start one, and the writers, such as a restore. It also names the last apply error of the workloads when one occurred. The state clears on its own. If the pods never go, delete them. If a named workload keeps them coming back, scale it to zero or delete it. A restore ends in `Completed` or `Failed`. A failed or deleted `LogicalRestoreElasticsearch` holds the backend while its `status.recoveryHeld` is `true`. That lasts until Elasticsearch finishes the recovery, or at most 10 minutes when the restore cannot read the recovery. A writer that stops without an end, such as a deleted `LogicalRestoreRDBMS` or `PointInTimeRestore`, holds the backend for about two minutes. After an operator restart, the two minutes count from its start. |
+| `Ready` | `WaitingForHandover` | Pods of another cluster, or a writer for another cluster such as a restore, still write the backend that `storageRef` resolves to. This cluster holds the storage claim of it already, or waits to take it. The operator renders every workload of it at zero and keeps the volumes. | Wait. The message names the backend, those pods, the workloads that can start one, and the writers, such as a restore. It also names the last apply error of the workloads when one occurred. The state clears on its own. If the pods never go, delete them. If a named workload keeps them coming back, scale it to zero or delete it. A restore ends in `Completed` or `Failed`. A failed or deleted `LogicalRestoreElasticsearch` holds the backend while its `status.recoveryHeld` is `true`. That lasts until Elasticsearch finishes the recovery, or at most 10 minutes when the restore cannot read the recovery. A deleted restore holds the backend until its work stops. A writer whose restore no longer exists holds it until you delete its Lease, see [Secondary storage](#secondary-storage). |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, or a ServiceAccount with `create: false` is absent. Or two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. A Lease of the operator namespace that this operator did not write reads the same way, and it blocks the storage claim of the backend. A running cluster keeps its workloads. | Read the message. Create the missing resource, correct the field it names, or delete the named Lease once nothing else uses it. The cluster takes the change on its own. |
 | `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. A running cluster keeps its workloads. | Create the Secret with the named key. The cluster takes the change on its own. |
 | `Ready` | `VersionDowngradeRefused` | The effective version is below the version the brokers run, and no annotation sanctions the move. The operator applies nothing, and the brokers keep the version they have. | Read [Version](#version). Set the version forward again, or sanction the downgrade. |
