@@ -275,9 +275,10 @@ func psql(namespace, name string, ref v1.LocalCredentialsSecretRef, sql string) 
 			Namespace: namespace,
 		},
 		Spec: corev1.PodSpec{
+			// Google's mirror of Docker Hub needs no token from auth.docker.io.
 			Containers: []corev1.Container{{
 				Name:    "psql",
-				Image:   "postgres:17",
+				Image:   "mirror.gcr.io/library/postgres:17",
 				Command: []string{"psql", "-v", "ON_ERROR_STOP=1", "-tA", "-c", sql},
 				Env: []corev1.EnvVar{
 					{Name: "PGHOST", Value: postgresService},
