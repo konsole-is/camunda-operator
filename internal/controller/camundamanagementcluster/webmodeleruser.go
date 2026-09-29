@@ -501,9 +501,9 @@ func (r *Reconciler) withdrawWebModelerUsers(
 // cluster at all. A cluster is never read one at a time; clusters is the list
 // the reconcile already made, and it names the cluster to call.
 //
-// A removal that a cluster refused keeps its Secret, and the UID of that
-// cluster is in the returned set, so the caller tries again; bestEffort drops
-// the Secret all the same, for the finalizer, and never reports a refusal.
+// A removal that a cluster refused keeps its Secret and puts the UID of that
+// cluster in the returned set; bestEffort drops the Secret all the same and
+// never reports a refusal.
 func (r *Reconciler) withdrawUnservedUsers(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
@@ -548,10 +548,8 @@ func (r *Reconciler) withdrawUnservedUsers(
 
 // withdrawWebModelerUser removes the user from one cluster and deletes the
 // Secret that published its password. A nil cluster is one that Kubernetes no
-// longer holds, and leaves nothing to remove the user from. A removal that
-// fails keeps the Secret, which is what makes the next reconcile try again,
-// unless bestEffort says the Secret goes regardless. It reports whether the
-// cluster refused the removal and the Secret stays.
+// longer holds, and leaves nothing to remove the user from. A refused removal
+// keeps the Secret and returns true, unless bestEffort drops the Secret.
 func (r *Reconciler) withdrawWebModelerUser(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
@@ -583,10 +581,8 @@ func (r *Reconciler) withdrawWebModelerUser(
 // remove: no credential of that cluster authenticates any more, so the user
 // row grants nobody anything and no call can delete it. Such a removal reports
 // a normal event and succeeds, which is what lets the claim of the cluster go
-// free. Every other refusal is a warning event and a true result, so the
-// caller decides whether it holds the withdrawal: the sync path keeps the
-// Secret and tries again, the finalizer lets the deletion go on. An error is a
-// failure of the Kubernetes API.
+// free. Every other refusal records a warning event and returns true. An error
+// is a failure of the Kubernetes API.
 func (r *Reconciler) removeWebModelerUser(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
