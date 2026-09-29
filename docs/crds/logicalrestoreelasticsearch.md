@@ -163,7 +163,7 @@ status:
 
 The event `RecoveryHeld` marks the start of this hold. The event `RecoveryEnded` marks its end when Elasticsearch finishes the recovery.
 
-If the restore cannot read the recovery for 10 minutes, it gives the backend back and records the Warning event `RecoveryUnknown`. That happens when the Elasticsearch does not answer, when the target is gone, or when the target now points at another Elasticsearch. `status.recoveryHeld` is then `false`, the same as after `RecoveryEnded`. `status.recoveryUnknownSince` shows since when the restore cannot read the recovery. After a `RecoveryUnknown` event, make sure that no index recovery is active before you start another cluster on this Elasticsearch.
+If the restore cannot read the recovery for 10 minutes, it gives the backend back and records the Warning event `RecoveryUnknown`. That happens when the Elasticsearch does not answer, when the target is gone, or when the target now points at another Elasticsearch. `status.recoveryHeld` is then `false`, the same as after `RecoveryEnded`. While the restore is held, `status.recoveryUnknownSince` shows since when it cannot read the recovery. The field is gone once the hold ends. After a `RecoveryUnknown` event, make sure that no index recovery is active before you start another cluster on this Elasticsearch.
 
 ## The snapshot repository
 

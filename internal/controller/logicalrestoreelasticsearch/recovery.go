@@ -105,6 +105,11 @@ func (r *Reconciler) holdRecovery(ctx context.Context, lres *v1.LogicalRestoreEl
 		return 0, nil
 	}
 
+	wait, err := r.keepWriter(ctx, lres)
+	if err != nil {
+		return 0, err
+	}
+
 	recovering, failure, err := r.readRecovery(ctx, lres)
 	if err != nil {
 		return 0, err
@@ -117,7 +122,7 @@ func (r *Reconciler) holdRecovery(ctx context.Context, lres *v1.LogicalRestoreEl
 			lres.Status.RecoveryUnknownSince = &now
 		}
 		if now.Sub(lres.Status.RecoveryUnknownSince.Time) < r.opts.MidRunGrace {
-			return r.keepWriter(ctx, lres)
+			return wait, nil
 		}
 		r.EventRecorder.Eventf(
 			lres,
@@ -133,7 +138,7 @@ func (r *Reconciler) holdRecovery(ctx context.Context, lres *v1.LogicalRestoreEl
 	case recovering:
 		lres.Status.RecoveryUnknownSince = nil
 
-		return r.keepWriter(ctx, lres)
+		return wait, nil
 	default:
 		r.EventRecorder.Eventf(
 			lres,
