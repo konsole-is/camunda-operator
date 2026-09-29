@@ -45,14 +45,14 @@ type ManagementAuthConfigSpec struct {
 	// JwksURL is the JWKS endpoint used to fetch token signing keys.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="jwksUrl must be a valid http or https URL"
 	JwksURL string `json:"jwksUrl"`
-	// ClientID is the default machine-to-machine client ID.
+	// ClientID is the ID of the client that Optimize signs in with.
 	// +kubebuilder:validation:MinLength=1
 	ClientID string `json:"clientId"`
 	// Audience expected in access tokens issued for this client.
 	// +kubebuilder:validation:MinLength=1
 	Audience string `json:"audience"`
-	// ClientSecretRef names the Secret key holding the client secret for the
-	// machine-to-machine client.
+	// ClientSecretRef names the Secret key that holds the secret of that
+	// client.
 	ClientSecretRef SecretKeyRef `json:"clientSecretRef"`
 }
 
