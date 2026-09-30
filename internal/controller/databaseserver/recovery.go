@@ -846,8 +846,8 @@ func (r *DatabaseServerReconciler) abandonRecovery(
 // next look reads that object, and the ownership test in advanceRecovery
 // decides what it is.
 //
-// It creates nothing, and returns no error, until the ServiceAccount of the
-// server carries the annotations the cluster needs.
+// It creates nothing, and returns no error, until the server controls its
+// ServiceAccount and the account carries the annotations the cluster needs.
 func (r *DatabaseServerReconciler) createRecoveryCluster(
 	ctx context.Context,
 	server *v1.DatabaseServer,
@@ -867,7 +867,8 @@ func (r *DatabaseServerReconciler) createRecoveryCluster(
 
 		return fmt.Errorf("reading the ServiceAccount %s: %w", key, err)
 	}
-	if !components.ServiceAccountCarries(&account, server, resolved.merged, resolved.archive) {
+	if !metav1.IsControlledBy(&account, server) ||
+		!components.ServiceAccountCarries(&account, server, resolved.merged, resolved.archive) {
 		return nil
 	}
 

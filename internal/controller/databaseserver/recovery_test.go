@@ -35,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -2491,12 +2492,19 @@ func recoveryWrite() (*v1.DatabaseServer, resolvedSpec, v1.ArchiveRecord) {
 const recoveryWriteTarget = "2026-08-20T14:30:00Z"
 
 // recoveryWriteAccount is the ServiceAccount of recoveryWrite, carrying the
-// identity of its bucket.
-func recoveryWriteAccount(roleARN string) *corev1.ServiceAccount {
+// identity of its bucket, under the controller with controllerUID.
+func recoveryWriteAccount(roleARN string, controllerUID types.UID) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{
 		Name:        "camunda-postgres",
 		Namespace:   "camunda-ns",
 		Annotations: map[string]string{v1.IRSARoleARNAnnotation: roleARN},
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: v1.GroupVersion.String(),
+			Kind:       "DatabaseServer",
+			Name:       "camunda",
+			UID:        controllerUID,
+			Controller: new(true),
+		}},
 	}}
 }
 
@@ -2505,7 +2513,9 @@ func recoveryWriteAccount(roleARN string) *corev1.ServiceAccount {
 func recoveryWriter(t *testing.T, objects ...client.Object) *DatabaseServerReconciler {
 	t.Helper()
 
-	return recoveryWriterWith(t, recoveryWriteAccount("arn:aws:iam::123456789012:role/camunda"), objects...)
+	account := recoveryWriteAccount("arn:aws:iam::123456789012:role/camunda", "server-uid")
+
+	return recoveryWriterWith(t, account, objects...)
 }
 
 // recoveryWriterWith is recoveryWriter with the given ServiceAccount.
@@ -2586,7 +2596,7 @@ func TestCreateRecoveryClusterWaitsForTheIdentityOfTheServiceAccount(t *testing.
 	t.Parallel()
 
 	server, resolved, source := recoveryWrite()
-	reconciler := recoveryWriterWith(t, recoveryWriteAccount("arn:aws:iam::123456789012:role/old"))
+	reconciler := recoveryWriterWith(t, recoveryWriteAccount("arn:aws:iam::123456789012:role/old", "server-uid"))
 
 	require.NoError(t, reconciler.createRecoveryCluster(
 		t.Context(), server, resolved, source, recoveryWriteTarget,
@@ -2595,4 +2605,21 @@ func TestCreateRecoveryClusterWaitsForTheIdentityOfTheServiceAccount(t *testing.
 	key := client.ObjectKey{Namespace: server.Namespace, Name: server.Status.Recovery.Cluster}
 	err := reconciler.Get(t.Context(), key, &cnpgv1.Cluster{})
 	assert.True(t, apierrors.IsNotFound(err), "no cluster before the account carries the identity")
+}
+
+// Another owner can take the ServiceAccount after the pre-check read it. The
+// pods would then run under an account that is not the server's.
+func TestCreateRecoveryClusterWaitsWhileAnotherOwnerHoldsTheServiceAccount(t *testing.T) {
+	t.Parallel()
+
+	server, resolved, source := recoveryWrite()
+	reconciler := recoveryWriterWith(t, recoveryWriteAccount("arn:aws:iam::123456789012:role/camunda", "other-uid"))
+
+	require.NoError(t, reconciler.createRecoveryCluster(
+		t.Context(), server, resolved, source, recoveryWriteTarget,
+	))
+
+	key := client.ObjectKey{Namespace: server.Namespace, Name: server.Status.Recovery.Cluster}
+	err := reconciler.Get(t.Context(), key, &cnpgv1.Cluster{})
+	assert.True(t, apierrors.IsNotFound(err), "no cluster under an account of another owner")
 }
