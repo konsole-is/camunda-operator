@@ -60,7 +60,7 @@ const (
 	// its target cluster does not hold a free backend yet, or while another
 	// backup or restore still writes the database.
 	ReasonWaitingForHandover = "WaitingForHandover"
-	// ReasonStorageAlreadyAttached means that another CamundaCluster than the
+	// ReasonStorageAlreadyAttached means that a CamundaCluster other than the
 	// one that this resource names holds the storage claim of the backend.
 	// One backend serves one CamundaCluster. The index names and the tables
 	// are fixed, so two clusters on one backend write to the data of each

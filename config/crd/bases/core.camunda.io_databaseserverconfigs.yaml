@@ -219,7 +219,8 @@ spec:
                       TargetTime is the point to roll back to, as RFC 3339 with a zone, for
                       example 2026-08-20T14:30:00Z. The API server refuses a timestamp
                       without a zone. PostgreSQL reads such a timestamp as the local time of
-                      the server, which can be another point than the writer intended.
+                      the server, which can be a different point from the one that the
+                      writer intended.
                     format: date-time
                     pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$
                     type: string

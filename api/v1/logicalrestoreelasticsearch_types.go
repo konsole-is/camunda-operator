@@ -65,8 +65,8 @@ type LogicalRestoreElasticsearchStatus struct {
 	// unset on a restore that was never held, and false when the hold ends.
 	// +optional
 	RecoveryHeld *bool `json:"recoveryHeld,omitempty"`
-	// RecoveryUnknownSince is the time since when a held restore cannot read
-	// the recovery from Elasticsearch. If the recovery stays unknown for ten
+	// RecoveryUnknownSince is the start of the current period in which a held
+	// restore cannot read the recovery from Elasticsearch. If the recovery stays unknown for ten
 	// minutes, the restore releases the backend.
 	// +optional
 	RecoveryUnknownSince *metav1.Time `json:"recoveryUnknownSince,omitempty"`

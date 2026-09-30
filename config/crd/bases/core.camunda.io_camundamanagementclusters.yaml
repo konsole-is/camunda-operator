@@ -5025,8 +5025,8 @@ spec:
                         cluster. NotReady means that the cluster publishes no gateway endpoints,
                         or that it changed while the operator claimed it. InvalidReference
                         means that the operator cannot read the platform config of the cluster.
-                        It also means that the cluster uses OIDC with another issuer than the
-                        management plane. WriteFailed means that the API server refused the
+                        It also means that the OIDC issuer of the cluster differs from the
+                        issuer of the management plane. WriteFailed means that the API server refused the
                         write of the Console ping settings. The fifth value,
                         BasicAuthUserFailed, is on an attached row.
                         The management plane serves the cluster, but the Web Modeler user on
