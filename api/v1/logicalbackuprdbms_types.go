@@ -110,9 +110,10 @@ type LogicalBackupRDBMSStatus struct {
 	ZeebeBackupRequestedAt *metav1.Time `json:"zeebeBackupRequestedAt,omitempty"`
 	// WorkloadConfigHash records the configuration of Zeebe when the backup
 	// started. It is the config hash of the Zeebe pod template. The operator
-	// requests the Zeebe backup only while the hash is unchanged. Otherwise,
-	// for example after a change of the database, the dump pairs with a Zeebe
-	// backup of another configuration. The generation of the cluster is not
+	// requests the Zeebe backup only while the hash is unchanged. Thus the
+	// dump never pairs with a Zeebe backup of another configuration, for
+	// example after a change of the database. If the hash changes, the backup
+	// fails after the grace period. The generation of the cluster is not
 	// sufficient, because a change of a referenced object changes the hash
 	// but not the generation.
 	// +optional

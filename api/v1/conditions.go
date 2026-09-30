@@ -56,15 +56,18 @@ const (
 	// claim, or it can wait to take it. Until these workloads are gone, it
 	// keeps its own workloads stopped, or its own work on hold. The message
 	// names what it waits for. The CRD doc of each resource that reports it
-	// names the workloads that it waits for.
+	// names the workloads that it waits for. A restore also reports it while
+	// its target cluster does not hold a free backend yet.
 	ReasonWaitingForHandover = "WaitingForHandover"
 	// ReasonStorageAlreadyAttached means that another CamundaCluster than the
 	// one that this resource names holds the storage claim of the backend.
 	// One backend serves one CamundaCluster. The index names and the tables
 	// are fixed, so two clusters on one backend write to the data of each
 	// other. A CamundaCluster stays suspended, with its volumes, until the
-	// holder moves to another backend or is deleted. Then it resumes
-	// automatically. A restore waits and writes nothing to the backend. The
+	// holder moves to another backend or is deleted. Then it takes the
+	// backend. It can still wait for old writers with WaitingForHandover, or
+	// stay suspended by spec.suspend or a suspension hold. A restore waits
+	// and writes nothing to the backend. The
 	// message names the holder and the backend.
 	ReasonStorageAlreadyAttached = "StorageAlreadyAttached"
 	// ReasonSuspensionHeld means that a CamundaCluster has at least one
