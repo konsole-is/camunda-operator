@@ -202,8 +202,8 @@ type CamundaPlatformConfigSpec struct {
 	// repository with its registry and no tag. The tag always comes from the
 	// version field of the resource that runs the image. A registry with a
 	// port needs a path after the port, as in registry:5000/camunda/optimize.
-	// The operator appends the tag to the value. Thus registry:5000 alone
-	// becomes the image registry:5000:<version>.
+	// The operator appends the tag to the value, as in
+	// registry:5000/camunda/optimize:<version>.
 	// +optional
 	Images *ImagesSpec `json:"images,omitempty"`
 }

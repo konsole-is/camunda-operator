@@ -500,9 +500,10 @@ type CamundaManagementClusterStatus struct {
 	// +optional
 	CallbackRealm *KeycloakRealmTarget `json:"callbackRealm,omitempty"`
 	// Conditions represent the current state. Ready holds the reason of a
-	// failed pre-check, or it follows the conditions of the deployed
-	// components.
-	// The per-component conditions (KeycloakReady, IdentityReady,
+	// failed pre-check, or StepFailed for a failed step. Otherwise it follows
+	// the conditions of the deployed components. When all of them are True, a
+	// failed OptimizeCallbacksReady makes Ready False with its reason. The
+	// per-component conditions (KeycloakReady, IdentityReady,
 	// ConsoleReady, WebModelerReady, ManagementAuthReady, SecretsReady,
 	// MirroredSecretsReady) and OptimizeCallbacksReady also appear here.
 	// +listType=map

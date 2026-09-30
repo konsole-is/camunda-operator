@@ -28,8 +28,7 @@ const ReasonResumeFailed = "ResumeFailed"
 
 // LogicalBackupElasticsearchStep is the current step of the backup. After a
 // crash or a restart of the operator, the backup continues at this step.
-// Every step reads the current state before it acts, so the backup does not
-// repeat a call.
+// The request to pause exporting can be sent again after a restart.
 // +kubebuilder:validation:Enum=PauseExporting;BackupHistory;SnapshotRecords;BackupRuntime;ResumeExporting
 type LogicalBackupElasticsearchStep string
 
