@@ -26,7 +26,7 @@ import (
 const (
 	// ConditionKeycloakReady is the condition of the Keycloak that the
 	// operator runs. It reads Disabled in the externalKeycloak and the oidc
-	// mode, which run none.
+	// modes, because the operator runs no Keycloak in these modes.
 	ConditionKeycloakReady = "KeycloakReady"
 	// ConditionIdentityReady is the condition of the Management Identity
 	// workload.
@@ -42,19 +42,19 @@ const (
 	ConditionManagementAuthReady = "ManagementAuthReady"
 	// ConditionSecretsReady is the condition of the Secrets that the operator
 	// generates: the client secrets and the initial admin password. It reads
-	// Disabled in the oidc mode, where the platform config names every client
-	// secret and the first administrator is a token claim.
+	// Disabled in the oidc mode. In that mode, the platform config names every
+	// client secret, and the first administrator is a token claim.
 	ConditionSecretsReady = "SecretsReady"
-	// ConditionOptimizeCallbacksReady reports what the operator did about the
-	// login callback of every Optimize in status.optimize. It reads Healthy
-	// once the Optimize client of the realm carries all of them and the first
-	// administrator holds the Optimize role of the realm.
+	// ConditionOptimizeCallbacksReady reports the state of the login callback
+	// of every Optimize in status.optimize. It reads Healthy when the Optimize
+	// client of the realm has all of the callbacks and the first
+	// administrator has the Optimize role of the realm.
 	//
-	// Two reasons read True without saying anything about the realm. Disabled
-	// is the oidc mode, where the identity provider of the platform config
-	// holds the callback URLs and the operator administers nothing. Suspended
-	// is a plane that spec.suspend scaled to zero, whose realm is left as it
-	// is and never read.
+	// Two reasons read True and say nothing about the realm. Disabled is the
+	// oidc mode. In that mode, the identity provider of the platform config
+	// holds the callback URLs, and the operator changes nothing. Suspended is
+	// a plane that spec.suspend scaled to zero. The operator does not read or
+	// change its realm.
 	ConditionOptimizeCallbacksReady = "OptimizeCallbacksReady"
 
 	// ReasonKeycloakOperatorNotInstalled means that spec.identityProvider
@@ -62,70 +62,69 @@ const (
 	// Keycloak kind of the Keycloak Operator. Install the Keycloak Operator,
 	// or select another mode.
 	ReasonKeycloakOperatorNotInstalled = "KeycloakOperatorNotInstalled"
-	// ReasonConflict means that a cluster-scoped object of the name this
-	// management cluster writes already exists and belongs to another owner.
+	// ReasonConflict means that a cluster-scoped object with the name that
+	// this management cluster writes already exists and has another owner.
 	// The message names the object. Set managementAuthConfigName to a free
 	// name, or remove the object.
 	ReasonConflict = "Conflict"
-	// ReasonWriteFailed means that a write of the operator was refused: the
-	// ManagementAuthConfig on Ready, and the Optimize client of the realm on
-	// OptimizeCallbacksReady. The message carries what the API server or
-	// Keycloak answered. The operator tries again.
+	// ReasonWriteFailed means that a write of the operator was refused. On
+	// Ready, the write is the ManagementAuthConfig. On OptimizeCallbacksReady,
+	// it is the Optimize client of the realm. The message holds the answer of
+	// the API server or of Keycloak. The operator tries again.
 	ReasonWriteFailed = "WriteFailed"
-	// ReasonStepFailed means that a step of the reconcile did not finish. A
+	// ReasonStepFailed means that a step of the operator did not finish. A
 	// step is work that the management plane does outside its workloads,
-	// almost always a call to the Kubernetes API. The message names the step
-	// and carries what went wrong. Ready is False for that pass even when
-	// every workload is healthy, because the operator did not get to the end
-	// of its work. Every other condition keeps the value it last had. The
-	// operator tries again.
+	// usually a call to the Kubernetes API. The message names the step and
+	// the error. Ready is False even when every workload is healthy, because
+	// the operator did not complete its work. Every other condition keeps its
+	// last value. The operator tries again.
 	ReasonStepFailed = "StepFailed"
 	// ReasonUnsupportedVersion means that a version in the spec is outside
-	// the range that the operator supports: below the floor of its component,
-	// or, for the Keycloak that the operator runs, at or above the ceiling.
-	// The message names the field and the bound it crossed.
+	// the range that the operator supports. The version is below the minimum
+	// of its component, or, for the Keycloak that the operator runs, at or
+	// above the maximum. The message names the field and the limit.
 	ReasonUnsupportedVersion = "UnsupportedVersion"
-	// ReasonClaimedElsewhere means that a selected CamundaCluster is already
-	// claimed by another management cluster. One cluster answers to one
-	// management plane, so this operator leaves the cluster untouched. The
-	// message names the holder.
+	// ReasonClaimedElsewhere means that another management cluster already
+	// claims a selected CamundaCluster. A cluster has one management plane,
+	// so the operator does not change the cluster. The message names the
+	// holder.
 	ReasonClaimedElsewhere = "ClaimedElsewhere"
-	// ReasonRealmClaimedElsewhere means that the Keycloak realm that
-	// spec.identityProvider names is not this management cluster's to
-	// administer: another management cluster holds it, or a
-	// Lease that this operator did not write blocks it. One realm answers to
-	// one management plane, so the operator starts nothing new for this one,
-	// writes nothing in that realm, and looks again on its retry interval.
-	// Workloads the plane already ran keep running. The message names the
-	// holder, or the Lease to remove. Both Keycloak modes report it: the realm
-	// of a Keycloak that the operator runs is claimed like any other, because
-	// an externalKeycloak plane can name the Service address of it.
+	// ReasonRealmClaimedElsewhere means that this management cluster cannot
+	// use the Keycloak realm that spec.identityProvider names. Another
+	// management cluster holds the realm, or a Lease that this operator did
+	// not write blocks it. A realm has one management plane. Thus the operator
+	// starts nothing new for this plane and writes nothing in that realm. It
+	// tries again on its retry interval. Workloads that already run keep
+	// running. The message names the holder, or the Lease to remove.
+	//
+	// Both Keycloak modes report this reason. An externalKeycloak plane can
+	// name the Service address of a Keycloak that the operator runs. Thus the
+	// realm of that Keycloak is claimed like any other realm.
 	ReasonRealmClaimedElsewhere = "RealmClaimedElsewhere"
 	// ReasonNotReady means that a selected CamundaCluster is not attached
-	// yet: it publishes no gateway endpoints, so Web Modeler cannot deploy to
-	// it, or it changed while the operator claimed it. The state clears when
-	// the cluster settles.
+	// yet. The cluster publishes no gateway endpoints, so Web Modeler cannot
+	// deploy to it, or the cluster changed while the operator claimed it. The
+	// reason clears when the cluster is stable.
 	ReasonNotReady = "NotReady"
 	// ReasonImmutableAfterStart means that identity.admin changed after
 	// Management Identity started. Identity stores the initial administrator
-	// in its database and reads the setting only on the first start, so the
-	// operator refuses the change instead of rendering a value that has no
-	// effect.
+	// in its database and reads the setting only on the first start. Thus the
+	// operator refuses the change, because it has no effect.
 	ReasonImmutableAfterStart = "ImmutableAfterStart"
 	// ReasonBasicAuthUserFailed means that the operator could not create the
 	// Web Modeler user on a basic-auth CamundaCluster. The row of that
 	// cluster in status.clusters carries the message.
 	ReasonBasicAuthUserFailed = "BasicAuthUserFailed"
-	// ReasonOptimizeClientMissing means that the realm holds no Optimize
-	// client and Management Identity has finished starting. Identity creates
-	// that client while it starts and never after, so the client comes back
-	// only when Management Identity starts again. While Identity is still
-	// rolling out the condition reports PrerequisiteNotMet instead. The
-	// operator looks again on its retry interval.
+	// ReasonOptimizeClientMissing means that the realm has no Optimize
+	// client and Management Identity has started. Identity creates that
+	// client only while it starts. Thus the client comes back only when
+	// Management Identity starts again. While Identity still rolls out, the
+	// condition shows PrerequisiteNotMet. The operator tries again on its
+	// retry interval.
 	ReasonOptimizeClientMissing = "OptimizeClientMissing"
-	// ReasonNoCallbacks means that no Optimize behind this management plane
-	// names a URL, so there is no login callback to register. Give a
-	// CamundaOptimize that names this management plane a spec.externalUrl.
+	// ReasonNoCallbacks means that no Optimize of this management plane
+	// names a URL, so there is no login callback to register. Set
+	// spec.externalUrl on a CamundaOptimize that names this management plane.
 	ReasonNoCallbacks = "NoCallbacks"
 	// ReasonAdminRoleGrantFailed means that the operator could not give the
 	// first administrator the Optimize role of the realm. The message says
@@ -142,33 +141,32 @@ const (
 )
 
 // CamundaManagementClusterSpec describes one management plane: Management
-// Identity, its identity provider, and optionally Console and Web Modeler.
+// Identity, its identity provider, and, when set, Console and Web Modeler.
 // +kubebuilder:validation:XValidation:rule="has(self.identityProvider.oidc) ? has(self.identity.admin.claimName) : has(self.identity.admin.username)",message="identity.admin: set claimName and claimValue in oidc mode, username in the keycloak modes"
 // +kubebuilder:validation:XValidation:rule="!has(self.identityProvider.oidc) || !has(self.identity.admin.passwordSecretRef)",message="identity.admin.passwordSecretRef applies to the keycloak modes only"
 // +kubebuilder:validation:XValidation:rule="!has(self.webModeler) || has(self.identityProvider.oidc) || has(self.identity.admin.email)",message="identity.admin.email is required when webModeler is set in a keycloak mode"
 type CamundaManagementClusterSpec struct {
 	// PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that
-	// carries the license, the image settings, and, in the oidc mode, the
-	// identity provider and every client of the management plane.
+	// holds the license and the image settings. In the oidc mode, it also
+	// holds the identity provider and every client of the management plane.
 	// +kubebuilder:validation:MinLength=1
 	PlatformConfigRef string `json:"platformConfigRef"`
 	// Suspend scales every workload of this management cluster to zero. The
 	// ManagementAuthConfig, the claims on the orchestration clusters, and the
-	// Console ping settings stay, so nothing else has to change while the
+	// Console ping settings stay. Thus nothing else must change while the
 	// management plane is down.
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
-	// ClusterSelector selects the CamundaClusters, in every namespace that
-	// namespaceSelector admits, that Console and Web Modeler serve. It
-	// follows the Kubernetes label selector convention: an unset selector
-	// selects no cluster, and an empty selector ({}) selects every cluster.
+	// ClusterSelector selects the CamundaClusters that Console and Web
+	// Modeler serve, in every namespace that namespaceSelector permits. An
+	// unset selector selects no cluster. An empty selector ({}) selects every
+	// cluster.
 	// +optional
 	ClusterSelector *metav1.LabelSelector `json:"clusterSelector,omitempty"`
-	// NamespaceSelector narrows clusterSelector to the namespaces whose
-	// labels match. It selects on the labels of the Namespace objects, the
-	// way the namespaceSelector of an admission webhook does. An unset or
-	// empty ({}) selector puts no bound on the namespace, so clusterSelector
-	// alone decides.
+	// NamespaceSelector limits clusterSelector to the namespaces whose labels
+	// match. It selects on the labels of the Namespace objects, as the
+	// namespaceSelector of an admission webhook does. An unset or empty ({})
+	// selector permits every namespace.
 	// +optional
 	NamespaceSelector *metav1.LabelSelector `json:"namespaceSelector,omitempty"`
 	// ManagementAuthConfigName is the name of the cluster-scoped
@@ -182,13 +180,14 @@ type CamundaManagementClusterSpec struct {
 	// +kubebuilder:validation:XValidation:rule="[has(self.keycloak), has(self.externalKeycloak), has(self.oidc)].filter(x, x).size() == 1",message="exactly one identity provider: keycloak, externalKeycloak, or oidc"
 	IdentityProvider IdentityProviderSpec `json:"identityProvider"`
 	// Identity configures Management Identity. Console, Web Modeler, and
-	// Optimize all authenticate through it, so it is always deployed.
+	// Optimize authenticate through it, so the operator always deploys it.
 	Identity IdentitySpec `json:"identity"`
-	// Console configures Console. Console is not deployed while this is unset.
+	// Console configures Console. While it is unset, the operator does not
+	// deploy Console.
 	// +optional
 	Console *ConsoleSpec `json:"console,omitempty"`
-	// WebModeler configures Web Modeler. Web Modeler is not deployed while
-	// this is unset.
+	// WebModeler configures Web Modeler. While it is unset, the operator does
+	// not deploy Web Modeler.
 	// +optional
 	WebModeler *WebModelerSpec `json:"webModeler,omitempty"`
 }
@@ -214,18 +213,18 @@ type IdentityProviderSpec struct {
 // the Keycloak Operator.
 type ManagedKeycloakSpec struct {
 	// Version is the Keycloak version, as a full semantic version. Camunda
-	// 8.9 supports Keycloak 26 only. The image is
-	// camunda/keycloak:quay-optimized-<version> unless the platform config
-	// overrides the repository.
+	// 8.9 supports only Keycloak 26. The image is
+	// camunda/keycloak:quay-optimized-<version>, unless the platform config
+	// sets another repository.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	Version string `json:"version"`
-	// ExternalURL is the URL that browsers reach Keycloak at, including the
-	// /auth path. It is the front-channel issuer of every token. Management
+	// ExternalURL is the URL where browsers reach Keycloak, with the /auth
+	// path. It is the front-channel issuer of every token. Management
 	// Identity uses the front-channel URL since 8.5.3, so the Identity pods
 	// must also reach it. Management Identity administers Keycloak through
 	// the Service that the Keycloak Operator creates, not through this URL.
 	//
-	// The operator appends /realms/<realm> to this URL, so the URL carries no
+	// The operator appends /realms/<realm> to this URL, so the URL has no
 	// query and no fragment.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	// +kubebuilder:validation:XValidation:rule="!isURL(self) || url(self).getEscapedPath() == '/auth'",message="externalUrl must carry the /auth path, for example https://keycloak.example.com/auth"
@@ -252,26 +251,26 @@ type ManagedKeycloakSpec struct {
 // run.
 // +kubebuilder:validation:XValidation:rule="!has(self.caBundleSecretRef) || !isURL(self.url) || url(self.url).getScheme() == 'https'",message="caBundleSecretRef requires an https url"
 type ExternalKeycloakSpec struct {
-	// URL is the URL of Keycloak, including the /auth path when it has one.
-	// Management Identity reaches this URL, so it must resolve from inside
-	// the Kubernetes cluster.
+	// URL is the URL of Keycloak, with the /auth path when Keycloak has one.
+	// Management Identity uses this URL, so it must resolve from inside the
+	// Kubernetes cluster.
 	//
-	// The operator appends /realms/<realm> to this URL, so the URL carries no
-	// query and no fragment. The URL also lands in the annotations of the
-	// Lease that claims the realm, so it is bounded.
+	// The operator appends /realms/<realm> to this URL, so the URL has no
+	// query and no fragment. The URL is also in the annotations of the Lease
+	// that claims the realm, so its length has a limit.
 	//
-	// The URL carries no user and no password. The operator does not support
-	// a Keycloak behind a proxy that needs basic authentication.
+	// The URL has no user and no password. The operator does not support a
+	// Keycloak behind a proxy that needs basic authentication.
 	// +kubebuilder:validation:MaxLength=2048
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="url must be a valid http or https URL"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('?') && !self.contains('#')",message="url must carry no query and no fragment"
 	// +kubebuilder:validation:XValidation:rule="!self.matches('^[a-zA-Z][a-zA-Z0-9+.-]*://[^/?#]*@')",message="url must carry no user and no password, for example https://keycloak.example.com/auth. The operator does not support a Keycloak behind a proxy that needs basic authentication"
 	URL string `json:"url"`
-	// Realm is the realm that Management Identity uses and creates. Empty
-	// means camunda-platform. The realm lands in the issuer, the token, and
-	// the JWKS path of every URL that Management Identity builds, so it holds
-	// letters, digits, dots, hyphens, and underscores only, and it is bounded
-	// the way the URL is.
+	// Realm is the realm that Management Identity creates and uses. Empty
+	// means camunda-platform. The realm is part of the issuer, the token, and
+	// the JWKS URLs that Management Identity builds. Thus it holds only
+	// letters, digits, dots, hyphens, and underscores, and its length has a
+	// limit, as the URL has.
 	// +kubebuilder:validation:MaxLength=255
 	// +kubebuilder:validation:XValidation:rule="self == '' || self.matches('^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$')",message="realm must hold letters, digits, dots, hyphens, and underscores, and start and end with a letter or a digit"
 	// +optional
@@ -281,36 +280,38 @@ type ExternalKeycloakSpec struct {
 	// realm, the clients, and the initial administrator.
 	AdminCredentialsSecretRef LocalCredentialsSecretRef `json:"adminCredentialsSecretRef"`
 	// CABundleSecretRef names the Secret key that holds the certificate
-	// authority of Keycloak, in PEM form. The operator trusts it in addition
-	// to the trust store of its own image when it signs in to Keycloak to
-	// register the login callbacks of Optimize. Set it when Keycloak serves a
-	// certificate that a public authority did not sign. It is only valid with
-	// an https url.
+	// authority of Keycloak, in PEM form. The operator signs in to Keycloak to
+	// register the login callbacks of Optimize. It then trusts this authority
+	// and the trust store of its own image. Set it when a public authority did
+	// not sign the certificate of Keycloak. It is valid only with an https
+	// url.
 	// +optional
 	CABundleSecretRef *LocalSecretKeyRef `json:"caBundleSecretRef,omitempty"`
 }
 
 // ManagementOIDCSpec selects the identity provider of the referenced
-// CamundaPlatformConfig. The clients of the management plane live there, under
-// spec.auth.oidc.management.clients, so this block carries no fields.
+// CamundaPlatformConfig. The clients of the management plane are in that
+// config, under spec.auth.oidc.management.clients, so this block has no
+// fields.
 type ManagementOIDCSpec struct{}
 
 // IdentitySpec configures Management Identity.
 //
 // The operator owns the Keycloak URL and the realm of the container. Both
-// follow from spec.identityProvider, so an entry of extraEnv that replaces
-// either one is refused. In a Keycloak mode the operator renders them and this
-// management plane claims exactly the realm they name, so an override would
-// have Management Identity write the login callbacks of Optimize into a realm
-// that status.callbackRealm never names, that no withdrawal reaches, and that
-// another management plane can hold.
+// come from spec.identityProvider, so the API server refuses an extraEnv
+// entry for KEYCLOAK_URL or KEYCLOAK_REALM. In a Keycloak mode, this
+// management plane claims the realm that they name. With an override,
+// Management Identity writes the login callbacks of Optimize to another
+// realm. status.callbackRealm does not name that realm, the operator does
+// not remove the callbacks from it, and another management plane can hold
+// it.
 // +kubebuilder:validation:XValidation:rule="!has(self.extraEnv) || self.extraEnv.all(e, e.name != 'KEYCLOAK_URL' && e.name != 'KEYCLOAK_REALM')",message="extraEnv must not set KEYCLOAK_URL or KEYCLOAK_REALM. Both follow from spec.identityProvider, and in a Keycloak mode this management plane claims the realm they name"
 type IdentitySpec struct {
 	// Version is the Management Identity version, as a full semantic version.
 	// The operator supports 8.9.0 and later.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	Version string `json:"version"`
-	// ExternalURL is the URL that browsers reach Management Identity at.
+	// ExternalURL is the URL where browsers reach Management Identity.
 	// Identity registers it as the redirect URI of its own client.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	ExternalURL string `json:"externalUrl"`
@@ -325,34 +326,34 @@ type IdentitySpec struct {
 }
 
 // IdentityAdminSpec names the first administrator of the management plane.
-// Management Identity reads it on the first start only and stores the result
+// Management Identity reads it only on the first start and stores the result
 // in its database.
 //
-// In the oidc mode the administrator is a claim of the tokens that the
-// provider issues, so set claimName and claimValue; a later change of the
-// claim reports ImmutableAfterStart. In the two Keycloak modes the
-// administrator is the first Keycloak user, so set username; a later change
-// creates a second user and the first one keeps its access.
+// In the oidc mode, the administrator is a claim of the tokens that the
+// provider issues. Set claimName and claimValue. A later change of the claim
+// shows ImmutableAfterStart. In the two Keycloak modes, the administrator is
+// the first Keycloak user. Set username. A later change creates a second
+// user, and the first user keeps its access.
 // +kubebuilder:validation:XValidation:rule="(has(self.claimName) && has(self.claimValue)) != has(self.username)",message="set claimName and claimValue (oidc mode) or username (keycloak modes)"
 // +kubebuilder:validation:XValidation:rule="has(self.claimName) == has(self.claimValue)",message="set claimName and claimValue together"
 type IdentityAdminSpec struct {
 	// ClaimName is the token claim that identifies the administrator, for
 	// example oid or sub. Set it in the oidc mode. The operator records the
-	// claim as <claimName>=<claimValue> and reads it back at the first equals
-	// sign, so the name holds no equals sign.
+	// claim as <claimName>=<claimValue> and splits it at the first equals
+	// sign. Thus the name cannot hold an equals sign.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:XValidation:rule="!self.contains('=')",message="claimName must not hold an equals sign"
 	// +optional
 	ClaimName string `json:"claimName,omitempty"`
-	// ClaimValue is the value that the claim carries for the administrator.
+	// ClaimValue is the value of the claim for the administrator.
 	// Set it in the oidc mode.
 	// +kubebuilder:validation:MinLength=1
 	// +optional
 	ClaimValue string `json:"claimValue,omitempty"`
 	// Username is the name of the first Keycloak user. Set it in the keycloak
-	// and the externalKeycloak mode. Management Identity creates the user on
-	// its first start, so a later change to this field creates a second user
-	// rather than renaming the first one.
+	// and the externalKeycloak modes. Management Identity creates the user on
+	// its first start. A later change of this field creates a second user and
+	// does not rename the first user.
 	// +kubebuilder:validation:MinLength=1
 	// +optional
 	Username string `json:"username,omitempty"`
@@ -362,8 +363,8 @@ type IdentityAdminSpec struct {
 	// +optional
 	PasswordSecretRef *LocalSecretKeyRef `json:"passwordSecretRef,omitempty"`
 	// Email is the email address of the first Keycloak user. Web Modeler
-	// needs an address for every person who signs in, so it is required when
-	// webModeler is set in a Keycloak mode.
+	// needs an address for every person who signs in. Thus it is required
+	// when webModeler is set in a Keycloak mode.
 	// +kubebuilder:validation:MinLength=3
 	// +optional
 	Email string `json:"email,omitempty"`
@@ -375,10 +376,10 @@ type ConsoleSpec struct {
 	// operator supports 8.9.0 and later.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	Version string `json:"version"`
-	// ExternalURL is the URL that browsers reach Console at. Console serves
+	// ExternalURL is the URL where browsers reach Console. Console serves
 	// under the path of this URL. Every selected CamundaCluster reports to
-	// Console over the Service of the Kubernetes cluster, so the operator
-	// needs no Ingress in front of it.
+	// Console through its Kubernetes Service. Thus the clusters do not need
+	// an Ingress in front of Console.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	ExternalURL  string `json:"externalUrl"`
 	WorkloadSpec `json:",inline"`
@@ -391,11 +392,11 @@ type WebModelerSpec struct {
 	// operator supports 8.9.0 and later.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	Version string `json:"version"`
-	// ExternalURL is the URL that browsers reach Web Modeler at.
+	// ExternalURL is the URL where browsers reach Web Modeler.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	ExternalURL string `json:"externalUrl"`
-	// WebsocketsExternalURL is the URL that browsers reach the websockets
-	// process at. Web Modeler pushes live updates over it.
+	// WebsocketsExternalURL is the URL where browsers reach the websockets
+	// process. Web Modeler sends live updates through it.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="websocketsExternalUrl must be a valid http or https URL"
 	WebsocketsExternalURL string `json:"websocketsExternalUrl"`
 	// DatabaseConfigRef names the DatabaseConfig of the Web Modeler database,
@@ -428,7 +429,7 @@ type WebModelerMailSpec struct {
 	// FromAddress is the address that Web Modeler sends from.
 	// +kubebuilder:validation:MinLength=3
 	FromAddress string `json:"fromAddress"`
-	// FromName is the display name that Web Modeler sends under.
+	// FromName is the display name of the sender of Web Modeler mail.
 	// +optional
 	FromName string `json:"fromName,omitempty"`
 	// TLS turns STARTTLS on. Defaults to true.
@@ -452,51 +453,54 @@ type CamundaManagementClusterStatus struct {
 	// +optional
 	ManagementAuthConfig string `json:"managementAuthConfig,omitempty"`
 	// Clusters lists every CamundaCluster that clusterSelector matched, and
-	// reports whether the management plane serves it.
+	// shows whether the management plane serves it.
 	// +listType=map
 	// +listMapKey=namespace
 	// +listMapKey=name
 	// +optional
 	Clusters []AttachedClusterStatus `json:"clusters,omitempty"`
 	// Optimize lists every CamundaOptimize that names the ManagementAuthConfig
-	// of this management cluster and sets spec.externalUrl, ordered by
-	// namespace and name. The management plane registers the login callback of
-	// each one on the Optimize client of the realm.
+	// of this management cluster and sets spec.externalUrl, sorted by
+	// namespace and name. The management plane registers the login callback
+	// of each one on the Optimize client of the realm.
 	//
-	// The list holds no row in the oidc mode, where the identity provider of
-	// the platform config holds the callback URLs.
+	// The list is empty in the oidc mode. In that mode, the identity provider
+	// of the platform config holds the callback URLs.
 	// +listType=map
 	// +listMapKey=namespace
 	// +listMapKey=name
 	// +optional
 	Optimize []AttachedOptimizeStatus `json:"optimize,omitempty"`
 	// CallbackRealm is the Keycloak realm that this management plane last
-	// pointed Management Identity at, in the externalKeycloak mode. Identity
-	// registers the login callbacks of Optimize there while it starts, so the
-	// field appears with the realm and not with the first registration. A
-	// non-nil value does not say that the callbacks are still there: when the
-	// spec names another realm, or the oidc mode, the operator removes them
-	// from this realm first, and the field then outlives the emptied realm
-	// until nothing of that realm's configuration can put them back: no
-	// Management Identity pod of it that can still run, and no Deployment or
-	// ReplicaSet of it that can still start one. It goes when that drain
-	// is over, so its disappearance, or its move to the new realm, is the
-	// completion signal of a move.
+	// gave to Management Identity, in the externalKeycloak mode. Identity
+	// registers the login callbacks of Optimize in this realm when it starts.
+	// Thus the field appears with the realm, not with the first registration.
 	//
-	// It is absent once a move into the keycloak or the oidc mode is over,
-	// and while no login callback of this operator is registered anywhere and
-	// nothing remains that could write them back. The operator runs the
-	// Keycloak of the keycloak mode and deletes it with the management plane
-	// or with a move away from that mode, so that realm is never recorded.
-	// During a move into either mode the field still names the realm that the
-	// plane is leaving. A Keycloak that is gone for good never answers, so
-	// the annotation camunda.io/forget-callback-realm, set to the value that
-	// the OptimizeCallbacksReady message names, lets go of it with the
-	// callbacks still in it.
+	// A value does not mean that the callbacks are still in the realm. When
+	// the spec names another realm or the oidc mode, the operator first
+	// removes the callbacks from this realm. The field stays until no
+	// configuration of the old realm can write them back. That is the case
+	// when no Management Identity pod of the old realm can run, and no
+	// Deployment or ReplicaSet of it can start one. The field then disappears
+	// or moves to the new realm. This change shows that the move is complete.
+	//
+	// The field is absent after a move into the keycloak or the oidc mode.
+	// It is also absent while no login callback of this operator is
+	// registered and nothing can write one back. The operator runs the
+	// Keycloak of the keycloak mode, and deletes it with the management plane
+	// or when the plane leaves that mode. Thus the field never names the
+	// realm of that Keycloak. During a move into either mode, the field still
+	// names the realm that the plane leaves.
+	//
+	// A Keycloak that is permanently gone never answers. To release its realm
+	// with the callbacks still in it, set the annotation
+	// camunda.io/forget-callback-realm to the value that the
+	// OptimizeCallbacksReady message names.
 	// +optional
 	CallbackRealm *KeycloakRealmTarget `json:"callbackRealm,omitempty"`
-	// Conditions represent the current state. Ready carries a pre-check
-	// reason, or it is derived from the conditions of the deployed components.
+	// Conditions represent the current state. Ready holds the reason of a
+	// failed pre-check, or it follows the conditions of the deployed
+	// components.
 	// The per-component conditions (KeycloakReady, IdentityReady,
 	// ConsoleReady, WebModelerReady, ManagementAuthReady, SecretsReady,
 	// MirroredSecretsReady) and OptimizeCallbacksReady also appear here.
@@ -512,18 +516,21 @@ type AttachedClusterStatus struct {
 	Name string `json:"name"`
 	// Namespace is the namespace of the CamundaCluster.
 	Namespace string `json:"namespace"`
-	// Attached reports whether the management plane serves this cluster.
-	// Console lists it and Web Modeler deploys to it only while this is true.
+	// Attached shows whether the management plane serves this cluster.
+	// Console lists the cluster, and Web Modeler deploys to it, only while
+	// this is true.
 	Attached bool `json:"attached"`
-	// Reason names what the management plane found on this cluster. It is one
-	// of five values. Four of them say why the cluster is not attached:
-	// ClaimedElsewhere, another management plane holds it; NotReady, it
-	// publishes no gateway endpoints or it changed while the operator claimed
-	// it; InvalidReference, its platform config cannot be read, or the cluster
-	// authenticates with OIDC and names another issuer than the management
-	// plane; WriteFailed, the Console ping settings were refused. The fifth,
-	// BasicAuthUserFailed, accompanies an attached row: the management plane
-	// serves the cluster, and only the Web Modeler user on it is missing.
+	// Reason names what the management plane found on this cluster. It has
+	// one of five values. Four values tell why the cluster is not attached.
+	// ClaimedElsewhere means that another management plane holds the
+	// cluster. NotReady means that the cluster publishes no gateway endpoints,
+	// or that it changed while the operator claimed it. InvalidReference
+	// means that the operator cannot read the platform config of the cluster,
+	// or that the cluster uses OIDC with another issuer than the management
+	// plane. WriteFailed means that the cluster refused the Console ping
+	// settings. The fifth value, BasicAuthUserFailed, is on an attached row.
+	// The management plane serves the cluster, but the Web Modeler user on
+	// it is missing.
 	// +optional
 	Reason string `json:"reason,omitempty"`
 	// Message explains the reason in one sentence.
@@ -539,17 +546,16 @@ type AttachedOptimizeStatus struct {
 	// Namespace is the namespace of the CamundaOptimize.
 	Namespace string `json:"namespace"`
 	// ExternalURL is spec.externalUrl of that CamundaOptimize. The registered
-	// callback is this URL plus the login path of Optimize.
+	// callback is this URL with the login path of Optimize.
 	ExternalURL string `json:"externalUrl"`
 }
 
 // KeycloakRealmTarget is one Keycloak realm and how the operator signs in to
-// it. Two targets name the same realm when their url and their realm are the
-// same, whichever administrator and certificate authority each of them
-// carries.
+// it. Two targets name the same realm when their url and their realm are
+// equal. Their administrators and certificate authorities can differ.
 type KeycloakRealmTarget struct {
-	// URL is the URL of Keycloak that the operator reaches, the /auth path
-	// included when Keycloak serves one.
+	// URL is the URL of Keycloak that the operator uses, with the /auth path
+	// when Keycloak has one.
 	URL string `json:"url"`
 	// Realm is the Keycloak realm.
 	Realm string `json:"realm"`
@@ -558,8 +564,8 @@ type KeycloakRealmTarget struct {
 	// resource.
 	AdminCredentialsSecretRef LocalCredentialsSecretRef `json:"adminCredentialsSecretRef"`
 	// CABundleSecretRef names the Secret key with the certificate authority of
-	// Keycloak, in the namespace of this resource. It is absent for a Keycloak
-	// whose certificate a public authority signed.
+	// Keycloak, in the namespace of this resource. It is absent when a public
+	// authority signed the certificate of Keycloak.
 	// +optional
 	CABundleSecretRef *LocalSecretKeyRef `json:"caBundleSecretRef,omitempty"`
 }
@@ -572,14 +578,14 @@ type KeycloakRealmTarget struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // CamundaManagementCluster describes one Camunda management plane: Management
-// Identity, an identity provider, and optionally Console and Web Modeler. The
-// operator turns it into Deployments and Services, writes the
-// ManagementAuthConfig that Optimize reads, and attaches the management plane
+// Identity, an identity provider, and, when set, Console and Web Modeler. The
+// operator creates its Deployments and Services. It writes the
+// ManagementAuthConfig that Optimize reads. It attaches the management plane
 // to the orchestration clusters that clusterSelector matches.
 //
-// Creating a CamundaManagementCluster is a platform-administrator action,
-// because the selector reaches CamundaClusters in every namespace and the
-// operator annotates the ones it matches.
+// Only a platform administrator creates a CamundaManagementCluster. The
+// selector reaches CamundaClusters in every namespace, and the operator
+// adds annotations to the clusters that it matches.
 type CamundaManagementCluster struct {
 	metav1.TypeMeta `json:",inline"`
 
