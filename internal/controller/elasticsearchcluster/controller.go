@@ -372,8 +372,9 @@ func (r *ElasticsearchClusterReconciler) keepAppliedStorageSize(
 	merged.StorageSize = largest
 
 	// A suspended cluster has no ECK CR to carry the request, so the event
-	// waits for the CR that the resume applies.
-	if merged.Suspend || volumes.requestApplied(*requested) {
+	// waits for the CR that the resume applies. A CR that another owner
+	// controls never takes the request.
+	if merged.Suspend || volumes.foreign || volumes.requestApplied(*requested) {
 		return requested
 	}
 
@@ -395,11 +396,12 @@ func (r *ElasticsearchClusterReconciler) keepAppliedStorageSize(
 // dataVolumes are the data volumes that the cluster has: one entry per data
 // PersistentVolumeClaim that reports a capacity, sorted by name, and the
 // claim size and the requested storage size annotation of the applied ECK CR
-// when that CR exists.
+// when that CR exists. foreign is true for a CR that another owner controls.
 type dataVolumes struct {
 	volumes   []v1.VolumeStatus
 	applied   *resource.Quantity
 	requested string
+	foreign   bool
 }
 
 // largest returns the largest of the claim capacities and the applied claim
@@ -564,6 +566,7 @@ func (r *ElasticsearchClusterReconciler) dataVolumes(
 	}
 	volumes.applied = appliedDataClaimSize(&es)
 	volumes.requested = es.Annotations[components.RequestedStorageSizeAnnotation]
+	volumes.foreign = metav1.GetControllerOf(&es) != nil && !metav1.IsControlledBy(&es, cluster)
 
 	return volumes, nil
 }
