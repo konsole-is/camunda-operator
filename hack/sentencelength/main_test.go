@@ -109,6 +109,10 @@ func TestCheckPage(t *testing.T) {
 			want: []finding{{line: 3, words: 26, limit: 25}},
 		},
 		{
+			name: "a line break in a table cell is a space, not a word",
+			page: "| a |\n| --- |\n| " + words(20) + "<br />" + words(20) + "<br>" + words(25) + " |",
+		},
+		{
 			name: "a blank line ends a text",
 			page: "The " + strings.Repeat("word ", 15) + "\n\n" + strings.Repeat("word ", 15) + "end.",
 		},

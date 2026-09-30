@@ -40,7 +40,8 @@ limitations under the License.
 //   - Inline code, URLs, text in parentheses, and text in double quotes count
 //     as one word and are not checked for semicolons or modals. A link counts
 //     as the words of its text. A hyphenated word counts as one word. A token
-//     without a letter or a digit is no word.
+//     without a letter or a digit is no word. An HTML line break counts as a
+//     space.
 //
 // How it classifies a sentence:
 //   - A sentence in an ordered list item is procedural.
@@ -106,6 +107,7 @@ var (
 	bareURL       = regexp.MustCompile(`https?://[^\s<>]*[^\s<>.,:;!?)]`)
 	quoted        = regexp.MustCompile(`"[^"]*"|“[^”]*”`)
 	parens        = regexp.MustCompile(`\([^()]*\)`)
+	lineBreak     = regexp.MustCompile(`(?i)<br\s*/?>`)
 	banned        = regexp.MustCompile(`;|(?i:\b(?:would|could|may)(?:n['’]t)?\b)`)
 )
 
@@ -385,9 +387,11 @@ func firstWords(s string, n int) string {
 }
 
 // mask rewrites the spans that count as one word into runs of "x" of the same
-// byte length, and blanks link targets, so offsets stay valid.
+// byte length, and blanks link targets and line breaks, so offsets stay valid.
 func mask(s string) string {
-	b := []byte(s)
+	b := lineBreak.ReplaceAllFunc([]byte(s), func(m []byte) []byte {
+		return []byte(strings.Repeat(" ", len(m)))
+	})
 	fill := func(re *regexp.Regexp, keepGroup bool) {
 		for _, m := range re.FindAllSubmatchIndex(b, -1) {
 			for i := m[0]; i < m[1]; i++ {
