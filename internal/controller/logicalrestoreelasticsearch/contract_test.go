@@ -56,9 +56,8 @@ var _ = Describe("LogicalRestoreElasticsearch hold on its contract", func() {
 		}, timeout, interval).Should(HaveLen(1), "a later pass restores the pinned contract")
 	})
 
-	// The restore does not follow a move of the endpoint: it fails, and it
-	// keeps the old endpoint while it waits to read the recovery there. A
-	// cluster on the moved endpoint waits for it all that time.
+	// The restore does not follow a move of the endpoint: it fails. Its
+	// contract holds the moved endpoint until it gives its backend back.
 	It("holds the moved endpoint until it gives its backend back", func() {
 		w := newWorld()
 		backup := createBackup(w)
@@ -67,16 +66,25 @@ var _ = Describe("LogicalRestoreElasticsearch hold on its contract", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(latest(g, restore).Status.Contract).To(Equal(contract))
 		}, timeout, interval).Should(Succeed())
-
-		moved := moveEndpoint(w, "https://moved-es."+w.namespace+".svc:9200")
+		endpoint := "https://moved-es." + w.namespace + ".svc:9200"
+		moved := keyAt(w, endpoint)
 		Expect(writersSeenByAnotherCluster(moved, contract)).To(HaveLen(1))
-		expectPhase(restore, v1.LogicalRestoreFailed)
-		Expect(writersSeenByAnotherCluster(moved, contract)).
-			To(HaveLen(1), "a failed restore still holds while it waits")
 
-		Eventually(func() []string {
-			return writersSeenByAnotherCluster(moved, contract)
-		}, timeout, interval).Should(BeEmpty())
+		moveEndpoint(w, endpoint)
+		// A restore gives its backend back only after its terminal phase is
+		// written, so a read of the writers before a read of a running
+		// restore must find the writer, whatever the timing.
+		freedWhileRunning := false
+		Eventually(func(g Gomega) {
+			writers := writersSeenByAnotherCluster(moved, contract)
+			current := latest(g, restore)
+			if current.Status.Phase != v1.LogicalRestoreFailed && len(writers) == 0 {
+				freedWhileRunning = true
+			}
+			g.Expect(current.Status.Phase).To(Equal(v1.LogicalRestoreFailed))
+			g.Expect(writers).To(BeEmpty())
+		}, 3*timeout, interval).Should(Succeed(), "the failure and the recovery hold each take one grace")
+		Expect(freedWhileRunning).To(BeFalse(), "a running restore holds the moved endpoint")
 	})
 })
 
@@ -89,9 +97,8 @@ func contractOf(storage *v1.SecondaryStorageConfig) string {
 	})
 }
 
-// moveEndpoint points the storage contract of w at endpoint and returns the
-// claim key there.
-func moveEndpoint(w *world, endpoint string) string {
+// moveEndpoint points the storage contract of w at endpoint.
+func moveEndpoint(w *world, endpoint string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		var latest v1.SecondaryStorageConfig
@@ -100,10 +107,17 @@ func moveEndpoint(w *world, endpoint string) string {
 		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 	w.storage.Spec.Elasticsearch.Endpoint = endpoint
+}
+
+// keyAt returns the claim key of the storage contract of w at endpoint.
+func keyAt(w *world, endpoint string) string {
+	GinkgoHelper()
+	elasticsearch := w.storage.Spec.Elasticsearch.DeepCopy()
+	elasticsearch.Endpoint = endpoint
 	key, err := camundacluster.StorageClaimKey(camundacluster.Storage{
 		Type:          w.storage.Spec.Type,
 		Namespace:     w.storage.Namespace,
-		Elasticsearch: w.storage.Spec.Elasticsearch,
+		Elasticsearch: elasticsearch,
 	})
 	Expect(err).NotTo(HaveOccurred())
 

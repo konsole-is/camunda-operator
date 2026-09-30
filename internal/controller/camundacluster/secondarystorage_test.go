@@ -1806,7 +1806,7 @@ var _ = Describe("CamundaCluster writer of a moved Elasticsearch contract", func
 
 	// Two contracts stay apart: a writer of one contract does not hold a
 	// cluster on another contract at another endpoint.
-	It("lets a cluster on another contract run beside a writer of the moved one", func() {
+	It("lets a cluster run beside a writer of another contract", func() {
 		ns := newNamespace()
 		binding := createBinding(ns, true)
 		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
