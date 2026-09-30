@@ -2,24 +2,17 @@
 
 `LogicalBackupElasticsearch` is one backup of a `CamundaCluster` that stores its data in Elasticsearch. You create it, or another tool creates it for you.
 
-An orchestration cluster on Elasticsearch holds its data in three places: the web-application indices, the exported Zeebe record indices, and the Zeebe partitions. One `LogicalBackupElasticsearch` captures all three under one backup ID. The operator takes the backup while the cluster runs. A completed backup is one restore point.
+An orchestration cluster on Elasticsearch holds its data in three places: the web-application indices, the exported Zeebe record indices, and the Zeebe partitions. One `LogicalBackupElasticsearch` captures all three under one backup ID. The operator takes the backup while the cluster runs. A completed backup is one restore point for a [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md).
 
 One resource is one backup. The spec is immutable, and the backup runs once. To take another backup, or to retry a failed one, create a new resource. `kubectl get lbes` lists the backups with their phase, step, and backup ID.
 
 Before you create a backup, make sure that:
 
-- The `CamundaCluster` has `spec.backupStorageRef` and is `Ready`. It is not suspended.
-- The `ElasticsearchCluster` has `spec.snapshotStorageRef` on the same `ObjectStorageConfig`. Its `SecondaryStorageConfig` carries `snapshotRepository`.
+- The `CamundaCluster` has `spec.backupStorageRef`, is not suspended, and publishes `status.management`.
+- The `SecondaryStorageConfig` of the cluster carries `elasticsearch.snapshotRepository`. An `ElasticsearchCluster` with `spec.snapshotStorageRef` publishes it. The cluster then shows the name in `status.management.backupRepository`.
 - The backup lives in the namespace of the cluster.
 
-A `LogicalBackupElasticsearch` writes one set of artifacts under one backup ID:
-
-- The snapshots of the web-application indices and of the exported Zeebe record indices, in the snapshot repository of the cluster.
-- The Zeebe partition backup, in the bucket of the cluster's `backupStorageRef`.
-
-The status records the ID, the repository, and the snapshot names.
-
-The operator creates no Kubernetes resources from this kind. It calls the management API of the cluster and the Elasticsearch API of the `SecondaryStorageConfig`.
+The backup writes the snapshots of the web-application indices and of the exported Zeebe record indices to the snapshot repository. It writes the Zeebe partition backup to the bucket of `spec.backupStorageRef` of the cluster. The operator creates no Kubernetes resources from this kind.
 
 The smallest backup names the cluster:
 
@@ -49,25 +42,21 @@ graph LR
 
 The backup soft pauses exporting before it writes and resumes it at the end. Records still flow into Elasticsearch while exporting is soft paused, and Camunda describes what the mode blocks in [Management API](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/zeebe/operations/management-api/). Broker disk usage grows for as long as a backup runs. If a step fails, the backup resumes exporting before it ends as `Failed`.
 
-## One backup at a time
+## One operation at a time
 
-The operator runs one backup of a cluster at a time, across both backup kinds. A second backup waits in `Pending` with reason `BackupInProgress` and names the backup that runs.
+A cluster holds one backup or one restore at a time. A backup that finds another backup or a restore on the cluster waits in `Pending` with reason `BackupInProgress`, and the message names the holder. A restore also suspends the cluster, so the backup can wait with reason `ClusterSuspended` instead. The backup starts on its own when the holder ends. A backup that ended as `ResumeFailed` holds the cluster until you delete it.
 
 ## Time limits
 
-If the management API or Elasticsearch is unreachable during a step, the backup retries for 10 minutes. After that, the step fails and the backup resumes exporting. The resume of exporting is retried for 30 minutes. After that, the backup ends as `Failed` with reason `ResumeFailed`, and exporting stays paused. While the cluster is suspended, the backup waits, and the time does not count.
+If the management API or Elasticsearch is unreachable during a step, the backup retries for 10 minutes. After that, the step fails and the backup resumes exporting. The resume of exporting is retried for 30 minutes. After that, the backup ends as `Failed` with reason `ResumeFailed`, and exporting stays paused. If the cluster is suspended during the run, the backup waits in its step.
 
 ## Changes
 
-Do not change the storage or the backup bucket of the cluster while a backup runs. The backup fails, and the message names the recorded and the current value. If you delete the cluster during the run, the backup ends as `Failed`. If you delete and recreate it under the same name, the backup also ends as `Failed` without a call to the new cluster.
-
-## Missing references
-
-If the cluster, its `SecondaryStorageConfig`, or its `ObjectStorageConfig` does not exist, `Ready` reports `InvalidReference`. If the cluster publishes no `snapshotRepository`, the reason is `InvalidReference` as well. If `status.management` of the cluster names a credentials Secret that does not exist, the reason is `MissingSecret`.
+Do not change the storage or the backup bucket of the cluster while a backup runs. The backup fails, and the message names the recorded and the current value. If you delete the cluster during the run, the backup ends as `Failed`. This is also the case when you create a new cluster under the same name. The backup does not touch the new cluster.
 
 ## Deletion
 
-When you delete the backup, the operator deletes the snapshots and the partition backup that this backup wrote. If the backup still runs, or ended as `ResumeFailed`, the operator resumes exporting first. It deletes only snapshots and backups that are its own. A history backup that Camunda still reports as in progress holds the deletion until it ends. If the cluster is suspended, the deletion waits until the cluster runs again. If the cluster or the bucket is gone, the operator releases the resource without cleanup and records an event that says so.
+When you delete the backup, the operator deletes the snapshots and the partition backup that this backup wrote. If the backup still runs, or ended as `ResumeFailed`, the operator resumes exporting first. It deletes only snapshots and backups that are its own. If Camunda still reports the backup of the web-application indices as in progress, the deletion waits until it ends. If the cluster is suspended, the deletion waits until the cluster runs again. If the cluster or its `ObjectStorageConfig` is gone, the operator releases the resource and records the Warning event `ArtifactsUnreachable`. The event names what it left behind.
 
 ## Status
 
@@ -77,14 +66,14 @@ When you delete the backup, the operator deletes the snapshots and the partition
 | `Ready` | `Completed` | The backup finished. `Ready` is `True`. | Nothing. Record `status.backupId` for a restore. |
 | `Ready` | `Failed` | A step failed. Exporting runs again. | Read `status.failureMessage`. Correct the cause and create a new backup. |
 | `Ready` | `ResumeFailed` | A step failed or finished, and exporting did not resume within 30 minutes. Exporting stays paused. | Repair the management API, then delete this backup. The deletion resumes exporting. No other backup of the cluster starts before that. |
-| `Ready` | `ClusterSuspended` | The cluster is suspended, by `spec.suspend` or by the operator. The operator suspends it while another cluster holds the storage claim of its backend. It also suspends the cluster while the cluster waits for the pods of another cluster to leave that backend. The backup waits. | Read the `Ready` condition of the cluster. Set `spec.suspend` to `false`, or remove what suspends it. |
-| `Ready` | `BackupInProgress` | Another backup of the cluster runs. This one waits. | Wait. If the message says that the cluster is paused, delete or repair the named backup. |
+| `Ready` | `ClusterSuspended` | The cluster is suspended: by `spec.suspend`, by a restore, or by the operator to keep two clusters off one backend. The backup waits. | Read the `Ready` condition of the cluster for the cause. |
+| `Ready` | `BackupInProgress` | Another backup or a restore holds the cluster. This one waits. | Wait. If the message says that the cluster is still paused, delete or repair the named backup. |
 | `Ready` | `StorageTypeMismatch` | The cluster does not store its data in Elasticsearch. | Use `LogicalBackupRDBMS` for a relational cluster. |
-| `Ready` | `InvalidReference` | A referenced resource does not exist, or the cluster publishes no snapshot repository. | Read the message. Create the resource, or set `snapshotStorageRef` on the `ElasticsearchCluster`. |
-| `Ready` | `MissingSecret` | `status.management` of the cluster names a credentials Secret that does not exist. | Create the Secret that the message names. |
+| `Ready` | `InvalidReference` | The cluster, its `SecondaryStorageConfig`, or its `ObjectStorageConfig` does not exist, or the cluster publishes no snapshot repository. | Read the message. Create the resource, or set `snapshotStorageRef` on the `ElasticsearchCluster`. |
+| `Ready` | `MissingSecret` | A credentials Secret does not exist: the one that `status.management` of the cluster names, or the Elasticsearch credentials. | Create the Secret that the message names. |
 | `Ready` | `ConnectionFailed` | The management API or Elasticsearch is unreachable. The step is retried. | Make sure that the endpoint answers. After 10 minutes the step fails. |
 
-`status.phase` is `Pending`, `Running`, `Completed`, or `Failed`. `Completed` and `Failed` are terminal. `status.step` is the current step: `PauseExporting`, `BackupHistory`, `SnapshotRecords`, `BackupRuntime`, or `ResumeExporting`.
+`status.phase` is `Pending`, `Running`, `Completed`, or `Failed`. `Completed` and `Failed` are terminal. The phase `Failed` has the reason `Failed` or `ResumeFailed`, and `ResumeFailed` means that exporting also stays paused. `status.step` is the current step: `PauseExporting`, `BackupHistory`, `SnapshotRecords`, `BackupRuntime`, or `ResumeExporting`.
 
 A restore needs these fields:
 
@@ -145,5 +134,7 @@ After the backup completes, `kubectl get lbes -n my-cluster-ns` shows the phase 
 - [SecondaryStorageConfig](secondarystorageconfig.md): carries the Elasticsearch endpoint and `snapshotRepository`.
 - [ObjectStorageConfig](objectstorageconfig.md): the bucket that holds the snapshots and the partition backup.
 - [LogicalBackupRDBMS](logicalbackuprdbms.md): the backup kind for a relational cluster.
+- [BackupSchedule](backupschedule.md): creates backups of this kind on a cron schedule.
+- [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md): restores a cluster from a completed backup of this kind.
 - [Backup guide](../guides/backup.md): how to set up backup storage and take a backup.
 - [Secondary storage guide](../guides/secondary-storage.md): how to choose and connect the secondary storage.

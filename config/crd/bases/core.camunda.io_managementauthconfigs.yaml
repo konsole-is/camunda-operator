@@ -73,13 +73,14 @@ spec:
                   rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
                     == 'https')
               clientId:
-                description: ClientID is the default machine-to-machine client ID.
+                description: ClientID is the ID of the client that Optimize signs
+                  in with.
                 minLength: 1
                 type: string
               clientSecretRef:
                 description: |-
-                  ClientSecretRef names the Secret key holding the client secret for the
-                  machine-to-machine client.
+                  ClientSecretRef names the Secret key that holds the secret of that
+                  client.
                 properties:
                   key:
                     description: Key in the Secret holding the value.

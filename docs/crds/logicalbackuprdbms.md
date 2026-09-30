@@ -2,7 +2,7 @@
 
 `LogicalBackupRDBMS` is one backup of a `CamundaCluster` that stores its data in a relational database. You create it, or another tool creates it for you.
 
-An orchestration cluster on a relational database holds its data in two places. The Zeebe log and snapshots are the primary storage. The exported relational data is the secondary storage. One `LogicalBackupRDBMS` writes one `pg_dump` of the whole logical database to the backup bucket. Then it requests one Zeebe backup of the primary storage through the management API. The dump holds the exporter position, and the Zeebe backup holds the matching Zeebe state. Together they are one restore point.
+An orchestration cluster on a relational database holds its data in two places. The Zeebe log and snapshots are the primary storage. The exported relational data is the secondary storage. One `LogicalBackupRDBMS` writes one `pg_dump` of the whole logical database to the backup bucket. Then it takes one Zeebe backup of the primary storage. Together they are one restore point for a [LogicalRestoreRDBMS](logicalrestorerdbms.md).
 
 One resource is one backup. The spec is immutable, and the backup runs once. To take another backup, or to retry a failed one, create a new resource. `kubectl get lbrdbms` lists the backups with their phase, step, and backup ID.
 
@@ -13,9 +13,9 @@ Before you create a backup, make sure that:
 - The `DatabaseServerConfig` is `Ready` and has `status.serverVersion`.
 - The backup lives in the namespace of the cluster.
 
-A `LogicalBackupRDBMS` named `<name>` runs the Job `<name>-dump` in its namespace, under the ServiceAccount that the cluster publishes in `status.serviceAccountName`. The Job runs `pg_dump` of the whole logical database. It uploads the file to the bucket of the cluster's `backupStorageRef`, under the prefix of the cluster. `status.objectKey` records the key. When the upload is done, the operator requests one Zeebe backup of the primary storage through the management API. Camunda generates its ID and writes it to the same bucket. `status.zeebeBackupId` records the ID.
+A `LogicalBackupRDBMS` named `<name>` runs the Job `<name>-dump` in its namespace, under the ServiceAccount that the cluster publishes in `status.serviceAccountName`. The Job uploads the dump to the bucket of `spec.backupStorageRef` of the cluster, and `status.objectKey` records the key. Then the operator requests the Zeebe backup, which Camunda writes to the same bucket. `status.zeebeBackupId` records its ID.
 
-The Job and its pod carry the label `camunda.io/cluster: <cluster>`.
+The Job and its pod carry the label `camunda.io/cluster: <cluster>`. The operator deletes the Job when the dump is uploaded. A Job that failed stays, so that you can read its logs, until you delete the backup.
 
 The smallest backup names the cluster:
 
@@ -47,9 +47,9 @@ graph LR
 
 The dump pod takes its settings from `spec.backup.dump` of the cluster. If this resource sets `spec.dump`, that block replaces the cluster block as a whole. The two never merge. The image that runs `pg_dump` always comes from the cluster: `spec.backup.dump.postgresImage`, or `postgres:<serverVersion>` by default. The `extraEnv` and `extraEnvFrom` of this resource reach the container that runs `pg_dump` only, never the container that uploads.
 
-## One backup at a time
+## One operation at a time
 
-The operator runs one backup of a cluster at a time, across both backup kinds. A second backup waits in `Pending` with reason `BackupInProgress` and names the backup that runs.
+A cluster holds one backup or one restore at a time. A backup that finds another backup or a restore on the cluster waits in `Pending` with reason `BackupInProgress`, and the message names the holder. A restore also suspends the cluster, so the backup can wait with reason `ClusterSuspended` instead. The backup starts on its own when the holder ends.
 
 ## Time limits
 
@@ -57,15 +57,11 @@ The dump Job fails after `activeDeadlineSeconds`, 24 hours by default. A depende
 
 ## Changes
 
-Do not change the backup storage of the cluster, or roll the cluster, while a backup runs. The backup waits 10 minutes with reason `InvalidReference` for the change to be reverted, then fails. A dump and a Zeebe backup taken under different configurations do not form one restore point. A backup on a cluster that is still rolling out waits with reason `Progressing` before it starts. If you delete and recreate the cluster under the same name during the run, the backup fails at once.
-
-## Missing references
-
-If the cluster, its `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` does not exist, `Ready` reports `InvalidReference`. If the `DatabaseConfig` has no `backupCredentialsSecretRef`, or that Secret does not exist, the reason is `MissingSecret`. If the bucket uses static credentials and they do not resolve, the reason is `MissingCredentials`.
+Do not change the backup storage of the cluster, or roll the cluster, while a backup runs. The backup waits 10 minutes for the change to be reverted, then fails. A dump and a Zeebe backup taken under different configurations do not form one restore point. A backup on a cluster that is still rolling out waits with reason `Progressing` before it starts. If you delete and recreate the cluster under the same name during the run, the backup fails at once.
 
 ## Deletion
 
-When you delete the backup, the operator deletes a Job that still runs, waits until its pods are gone, and then deletes the dump object. It never deletes Zeebe backups. If the bucket uses workload identity, the cleanup runs as the Job `<name>-cleanup` under the ServiceAccount of the cluster. A failed cleanup Job holds the deletion and records an event that names the Job. Read its logs, correct the cause, and delete the Job to retry. The cluster, the bucket, or its credentials can be gone, or the bucket can now point at another location. In each case, the operator leaves the object and releases the resource. The event says what it left behind.
+When you delete the backup, the operator deletes a Job that still runs, waits until its pods are gone, and then deletes the dump object. It never deletes Zeebe backups. If the bucket uses workload identity, the cleanup runs as the Job `<name>-cleanup` under the ServiceAccount of the cluster. A failed cleanup Job holds the deletion and records an event that names the Job. Read its logs, correct the cause, and delete the Job to retry. If the cluster, the bucket, or its credentials are gone, or the bucket now points at another location, the operator cannot reach the dump. The dump object then stays in the bucket, and the `LogicalBackupRDBMS` is deleted. The Warning event `ArtifactCleanupFailed` names the object that stays.
 
 ## Status
 
@@ -74,11 +70,11 @@ When you delete the backup, the operator deletes a Job that still runs, waits un
 | `Ready` | `Progressing` | The backup runs, or it waits for the cluster to finish a rollout or to publish its management API in `status.management`. | Wait. The message names the step or the wait. |
 | `Ready` | `Completed` | The backup finished. `Ready` is `True`. | Nothing. Record `status.backupId` and `status.zeebeBackupId` for a restore. |
 | `Ready` | `Failed` | The backup failed. | Read `status.failureMessage`. Correct the cause and create a new backup. |
-| `Ready` | `ClusterSuspended` | The cluster is suspended, by `spec.suspend` or by the operator. The operator suspends it while another cluster holds the storage claim of its backend. It also suspends the cluster while the cluster waits for the pods of another cluster to leave that backend. The backup waits. | Read the `Ready` condition of the cluster. Set `spec.suspend` to `false`, or remove what suspends it. |
-| `Ready` | `BackupInProgress` | Another backup of the cluster runs. This one waits. | Wait for the named backup to end. |
+| `Ready` | `ClusterSuspended` | The cluster is suspended: by `spec.suspend`, by a restore, or by the operator to keep two clusters off one backend. The backup waits. | Read the `Ready` condition of the cluster for the cause. |
+| `Ready` | `BackupInProgress` | Another backup or a restore holds the cluster. This one waits. | Wait for the named holder to end. |
 | `Ready` | `StorageTypeMismatch` | The cluster does not store its data in a relational database. | Use `LogicalBackupElasticsearch` for an Elasticsearch cluster. |
-| `Ready` | `InvalidReference` | A referenced resource does not exist, the server has no current `status.serverVersion`, or the dump pod cannot pull its image. | Read the message. Create the resource, or wait for the `DatabaseServerConfig` to become `Ready`. |
-| `Ready` | `MissingSecret` | The database credentials for the dump do not resolve, or the dump pod cannot start for a missing Secret. | Set `backupCredentialsSecretRef` on the `DatabaseConfig` and create the Secret. |
+| `Ready` | `InvalidReference` | The cluster, its `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` does not exist. Or the server has no current `status.serverVersion`, the dump pod cannot pull its image, or `spec.dump.extraEnv` names a reserved variable. | Read the message. Create the resource, or wait for the `DatabaseServerConfig` to become `Ready`. For a reserved variable, create a new backup without it. |
+| `Ready` | `MissingSecret` | The `DatabaseConfig` has no `backupCredentialsSecretRef`, that Secret does not exist, or the dump pod cannot start for a missing Secret. | Set `backupCredentialsSecretRef` on the `DatabaseConfig` and create the Secret. |
 | `Ready` | `MissingCredentials` | The static credentials of the bucket do not resolve. | Create the Secret that the `ObjectStorageConfig` names, with all of its keys. |
 | `Ready` | `ConnectionFailed` | The management API is unreachable or rejects the call. | Make sure that the cluster answers on its management port. After 10 minutes the backup fails. |
 
@@ -89,10 +85,10 @@ A restore needs these fields:
 - `status.backupId` identifies the dump.
 - `status.objectKey` is the full key of the dump in the bucket.
 - `status.zeebeBackupId` is the Zeebe backup that pairs with the dump.
-- `status.version` is the Camunda version of the cluster when the backup started. A restore of this backup runs with the same version, or with one minor version newer.
+- `status.version` is the Camunda version of the cluster when the backup started. A restore of this backup needs a cluster on the same Camunda minor, or one minor newer.
 - `status.storageSizes.zeebe` is the recorded size of one Zeebe data volume, when the operator can compute it.
 
-`status.jobName` names the dump Job while it exists. A failed Job stays until you delete the backup. `status.bucketRef` and `status.bucketLocation` record the bucket that holds the dump. `status.failureMessage` says why a `Failed` backup failed. `status.completionTime` is when the backup ended. `status.observedGeneration` is the last generation that the operator reconciled.
+`status.jobName` names the dump Job while it exists. `status.bucketRef` and `status.bucketLocation` record the bucket that holds the dump. `status.failureMessage` says why a `Failed` backup failed. `status.completionTime` is when the backup ended. `status.observedGeneration` is the last generation that the operator reconciled.
 
 ## Spec reference
 
@@ -116,7 +112,7 @@ spec:
       requests:
         cpu: "500m"
         memory: "1Gi"
-    # list. Optional. Extra environment variables of the dump container. Names under PG or UPLOAD_ are rejected.
+    # list. Optional. Extra environment variables of the dump container. A name that starts with PG or UPLOAD_ keeps the backup in Pending.
     extraEnv: []
     # list. Optional, max 8. Extra environment sources of the dump container. Each source needs a prefix that cannot spell a PG* or UPLOAD_* name.
     extraEnvFrom: []
@@ -132,7 +128,7 @@ spec:
       sizeLimit: "20Gi"
       # string. Optional. Storage class of a PersistentVolumeClaim that replaces the emptyDir. Needs sizeLimit.
       storageClassName: "standard"
-    # integer. Optional, default: 86400. Seconds that the Job can run before it fails.
+    # integer. Optional, default: 86400. Seconds that the Job can run before it fails. Minimum 1.
     activeDeadlineSeconds: 86400
 ```
 
@@ -140,9 +136,10 @@ spec:
 
 - The whole `spec` is immutable. To retry, create a new resource.
 - `spec.clusterRef.name` is required and must not be empty. The cluster must live in the namespace of the backup.
-- `spec.dump.extraEnv` must not name a variable under the prefix `PG` or `UPLOAD_`.
 - Every source in `spec.dump.extraEnvFrom` needs a `prefix`. The prefix must not start a `PG*` or `UPLOAD_*` name. At most 8 sources are allowed.
 - `spec.dump.scratchVolume.storageClassName` needs `sizeLimit`.
+- `spec.dump.activeDeadlineSeconds` must be 1 or more.
+- The API server accepts a `spec.dump.extraEnv` name that starts with `PG` or `UPLOAD_`. The backup then stays in `Pending` with reason `InvalidReference`, because the spec cannot change. Create a new backup without that name.
 
 ### A production-shaped example
 
@@ -179,5 +176,7 @@ After the backup completes, `kubectl get lbrdbms -n my-cluster-ns` shows the pha
 - [DatabaseServerConfig](databaseserverconfig.md): names the server. Its `status.serverVersion` picks the `pg_dump` version.
 - [ObjectStorageConfig](objectstorageconfig.md): the bucket that holds the dump and the Zeebe backups.
 - [LogicalBackupElasticsearch](logicalbackupelasticsearch.md): the backup kind for an Elasticsearch cluster.
+- [BackupSchedule](backupschedule.md): creates backups of this kind on a cron schedule.
+- [LogicalRestoreRDBMS](logicalrestorerdbms.md): restores a cluster from a completed backup of this kind.
 - [Backup guide](../guides/backup.md): how to set up backup storage and take a backup.
 - [Secondary storage guide](../guides/secondary-storage.md): how to choose and connect the secondary storage.

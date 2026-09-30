@@ -11,7 +11,7 @@ The operator has three preset kinds and one release kind:
 | `DatabaseServerPreset` | The shape of a PostgreSQL server | `DatabaseServer` | `spec.presetRef` |
 | `CamundaRelease` | Every version and the pinned images | `CamundaCluster`, `ElasticsearchCluster`, `DatabaseServer` | `spec.releaseRef` |
 
-All four are cluster-scoped. They are passive data, and they create nothing. The resource that references them merges the preset first, then the release, then its own spec. The preset baseline is `spec.cluster` on the two cluster presets, and `spec.server` on `DatabaseServerPreset`.
+All four are cluster-scoped. They create nothing, and they report no status. The resource that references them merges the preset first, then the release, then its own spec. A later layer wins. The preset baseline is `spec.cluster` on the two cluster presets, and `spec.server` on `DatabaseServerPreset`.
 
 No preset holds a version. All three reject one, so a version roll never edits a preset.
 
@@ -34,7 +34,7 @@ graph LR
 | `CamundaRelease` | Every version of the platform, pinned images, the environment a version needs | The platform team | Once per rollout, for example `camunda-8-9-4` |
 | `CamundaCluster` | The references, the URL, the storage, and any override | The team that owns the cluster | Once per cluster |
 
-The platform config does not merge. Every cluster that references it gets the same values. The preset merges under the release, and both merge under the cluster, field by field, as the [merge rules](../crds/camundaclusterpreset.md#merge-rules) describe.
+The platform config does not merge. Every cluster that references it gets the same values. The other three merge field by field: the preset first, then the release, then the cluster. The [merge rules](../crds/camundaclusterpreset.md#merge-rules) describe each field.
 
 ## A cluster in a few lines
 
@@ -56,7 +56,7 @@ spec:
 
 The broker count, the partitions, the volumes, the connectors, the backup policy, and the administrators all come from the preset `medium`. The versions come from the release `camunda-8-9-4`. The authentication method and the identity provider come from the platform config `production`.
 
-The fields that a cluster must set itself are the ones that belong to one cluster. They are `platformConfigRef`, `presetRef`, `releaseRef`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `externalUrl`, `serviceAccount`, `monitoring`, `suspend`, and `pause`. A preset that sets one of them is rejected, and so is a preset that sets `version` or `connectors.version`.
+A cluster sets the fields that belong to it alone: the references, the URL, the ServiceAccount, monitoring, `suspend`, and `pause`. The API server rejects a preset that sets one of them, or that sets `version` or `connectors.version`. The [validation rules](../crds/camundaclusterpreset.md#validation-rules) list them.
 
 An `ElasticsearchCluster` works the same way. The instance-bound fields are `presetRef`, `releaseRef`, `secondaryStorageConfig`, and `suspend`:
 
@@ -157,9 +157,7 @@ A `DatabaseServerPreset` carries the shape of a PostgreSQL server under `spec.se
 
 The [CamundaClusterPreset](../crds/camundaclusterpreset.md), [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md), and [DatabaseServerPreset](../crds/databaseserverpreset.md) pages list every field.
 
-Three ready-to-apply presets are in [`config/example/presets`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/presets), and the release that the example clusters and their storage name is in [`config/example/releases`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/releases). The [example inventories](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example) next to them name both. A `CamundaCluster` there keeps its references and the fields that belong to that one cluster.
-
-That release carries the name of the minor line, `camunda-8-9`, because you edit that one release in place. When you want two releases side by side, name each one for the version it runs. An example is `camunda-8-9-4` for Camunda 8.9.4.
+Three ready-to-apply presets are in [`config/example/presets`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/presets), and the release that the example clusters and their storage name is in [`config/example/releases`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/releases). The [example inventories](https://github.com/konsole-is/camunda-operator/tree/main/config/example) next to them name both. A `CamundaCluster` there keeps its references and the fields that belong to that one cluster. The example release is `camunda-8-9`, a release that you edit in place, see [Change a fleet](#change-a-fleet).
 
 ## Override one field
 
@@ -181,15 +179,20 @@ spec:
     partitions: 5
 ```
 
-Most fields merge like this, value by value. A few blocks replace as a whole, because a half-merged block is not a valid configuration: `scheduling`, and `auth.admin`. A cluster that sets `auth.admin` names every administrator again. The [merge rules](../crds/camundaclusterpreset.md#merge-rules) hold the full table.
+Most fields merge like this, value by value. A few blocks replace as a whole: `scheduling`, `auth.admin`, `auth.basic`, and `backup.dump.scratchVolume`. A cluster that sets `auth.admin` names every administrator again. The [merge rules](../crds/camundaclusterpreset.md#merge-rules) hold the full table.
 
 ## Change a fleet
 
-When you edit a preset, every cluster that references it takes the new baseline. A larger `storageSize` grows the volumes of every cluster in place. A lower `storageSize` is ignored for a running cluster, which keeps its volumes and records the event `StorageShrinkIgnored`.
+When you edit a preset, every cluster that references it takes the new baseline and rolls its pods. A change under `auth.basic` rolls no pods. A larger `storageSize` grows the volumes of every cluster in place. A lower `storageSize` is ignored for a cluster that applied a larger size. That cluster keeps its volumes and records the event `StorageShrinkIgnored`.
 
-To roll a fleet to a new version, edit the release. Every resource that references it rolls its pods, whatever preset sizes it. To roll in steps, create a second release, for example `camunda-8-9-5`. Then move resources to it one at a time by changing `releaseRef`. When every resource is on the new release, delete the old one.
+You can roll versions in two ways. Name the release for the way you pick:
 
-Every cluster whose brokers run a higher version refuses a lower one. Each one reports `Ready: False` with reason `VersionDowngradeRefused` and keeps the version its brokers run. To lower a fleet on purpose, lower the release first and let every cluster refuse. Then set the annotation `camunda.io/allow-version-downgrade` to the version of the release, on each cluster you want to move. The [CamundaCluster page](../crds/camundacluster.md#version) states the rule.
+- To move every resource at one time, edit the release in place. Name it for the minor line, for example `camunda-8-9`. Every resource that references it rolls its pods, whatever preset sizes it.
+- To move resources in steps, keep one release per version, for example `camunda-8-9-4`. Create the next one, for example `camunda-8-9-5`. Then move resources to it one at a time by changing `releaseRef`. When every resource is on the new release, delete the old one.
+
+The examples on this page use the second way.
+
+Every cluster whose brokers run a higher version refuses a lower one. Each one reports `Ready: False` with reason `VersionDowngradeRefused` and keeps the version its brokers run. To lower a fleet on purpose, lower the release first and let every cluster refuse. Then set the annotation `camunda.io/allow-version-downgrade` to the version of the release, on each cluster you want to move. Read the caution in [Downgrade on purpose](../crds/camundacluster.md#downgrade-on-purpose) first.
 
 A `DatabaseServer` refuses a PostgreSQL major other than the one its data directory runs, higher or lower. It reports `Ready: False` with reason `VersionChangeRefused` and keeps the major it has. No annotation lets that change through. To run a later major, create a server on it and move the data over. The [DatabaseServer page](../crds/databaseserver.md#the-postgresql-version) states the rule.
 

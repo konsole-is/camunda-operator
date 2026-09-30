@@ -1,10 +1,20 @@
 # Observability
 
-The manager serves Prometheus metrics on `/metrics`. Two dashboards and three sets of alert rules ship with the operator. Together they answer the two questions of the person on call: is the operator healthy, and which custom resources are not `Ready`.
+The manager serves Prometheus metrics on `/metrics`, over HTTPS on port 8443. A scraper authenticates with the token of a ServiceAccount that has the ClusterRole `camunda-operator-metrics-reader`, which the install creates. Two dashboards and three sets of alert rules ship with the operator. Together they answer the two questions of the person on call: is the operator healthy, and which custom resources are not `Ready`.
+
+The install does not bind that ClusterRole to a scraper. This is true with the `ServiceMonitor` too. Bind it to the ServiceAccount of your Prometheus, here `prometheus` in the namespace `monitoring`:
+
+```bash
+kubectl create clusterrolebinding prometheus-camunda-operator-metrics \
+  --clusterrole=camunda-operator-metrics-reader \
+  --serviceaccount=monitoring:prometheus
+```
+
+A scraper that already has `get` on the URL `/metrics` through another ClusterRole needs no binding.
 
 ## Metrics
 
-Every series carries a `controller` label. Its value is the lower-cased kind of the custom resource that the controller reconciles, for example `camundacluster`. The same value labels the `controller_runtime_*` and `workqueue_*` series of that controller.
+The `camunda_operator_*` and `ocf_*` series carry a `controller` label. Its value is the lower-cased kind of the custom resource that the controller reconciles, for example `camundacluster`. The same value labels the `controller_runtime_*` and `workqueue_*` series of that controller.
 
 | Metric | What it reports |
 | --- | --- |
@@ -22,6 +32,8 @@ The chart value `prometheus.enable=true` installs the `ServiceMonitor`. The dash
 ```bash
 kubectl apply -n monitoring -k "https://github.com/konsole-is/camunda-operator//config/prometheus/observability?ref=<version>"
 ```
+
+Replace `<version>` with the version of your operator, for example `0.1.0`.
 
 This creates:
 
@@ -49,7 +61,7 @@ kubectl apply -n monitoring -k .
 
 Apply this directory once per cluster. If you run the operator in two namespaces, both installs share the one copy: every rule tells the installs apart by their scrape job. The two `ocf-*` rule sets are shared by every operator that is built on the same framework. If two of these operators run in one cluster, keep one copy of the `ocf-*` rules. A second copy in another namespace fires every shared alert twice, once from each copy.
 
-The dashboards are Grafana JSON. Without the sidecar, import the two files under [`config/prometheus/observability/dashboards`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/prometheus/observability/dashboards) through the Grafana UI.
+The dashboards are Grafana JSON. Without the sidecar, import the two files under [`config/prometheus/observability/dashboards`](https://github.com/konsole-is/camunda-operator/tree/main/config/prometheus/observability/dashboards) through the Grafana UI. The link shows the `main` branch. Select the tag of your release on GitHub to get the files of that version.
 
 ## Dashboards
 
@@ -59,7 +71,9 @@ The `CRD Conditions Browser` lists the custom resources of one kind by condition
 
 ## Alerts
 
-Every rule ships with `severity: warning`. The thresholds are the defaults of the framework. To change a threshold, a duration, or the severity, add a patch to the overlay above. This example makes `CustomResourceNotReady` wait one hour:
+The commands in the tables below use the names of the default install from [Installation](installation.md): the namespace `camunda-operator-system` and the Deployment `camunda-operator-controller-manager`.
+
+Every rule ships with `severity: warning`. The thresholds are the defaults of the framework. To change a threshold, a duration, or the severity, add a patch to the overlay above. This example makes `CustomResourceNotReady` wait one hour. `CustomResourceNotReady` is the first rule of the first group in `camunda-operator-crd-conditions`, so the path is `/spec/groups/0/rules/0/for`:
 
 ```yaml
 # kustomization.yaml
@@ -98,7 +112,7 @@ Both alerts fire per resource type of one controller, not per custom resource. T
 | --- | --- | --- |
 | `ControllerReconcileErrors` | More than a quarter of the reconciles of one controller return an error, over 10 minutes, for 15 minutes. | Read the manager logs: `kubectl logs -n camunda-operator-system deployment/camunda-operator-controller-manager`. |
 | `ControllerReconcilePanics` | A reconcile panicked in the last 10 minutes. | Read the manager logs and report the stack trace as a bug. |
-| `ControllerWorkqueueBacklog` | Items wait more than 100 seconds for a worker, at the 99th percentile, for 15 minutes. | The manager is too slow for the number of custom resources. Give it more CPU. |
+| `ControllerWorkqueueBacklog` | Items wait more than 100 seconds for a worker, at the 99th percentile, for 15 minutes. | The manager is too slow for the number of custom resources. Give it more CPU with the chart value `manager.resources`. |
 | `ControllerReconcileLatencyHigh` | A reconcile takes more than 30 seconds, at the 99th percentile, for 15 minutes. | A call to the Kubernetes API or to a Camunda cluster is slow. Read the manager logs for the resource that is slow. |
 | `OperatorLeaderMissing` | No replica of the manager holds the leader lease for 5 minutes. | Make sure that a manager pod runs: `kubectl get pods -n camunda-operator-system`. |
 

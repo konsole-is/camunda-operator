@@ -5,30 +5,30 @@ Each page opens with what the kind is and a minimal manifest. Then it covers one
 
 The [API reference](api-reference.md) lists every type and field of the API group on one page, with its default and its validation. The page is generated from the API types, so it matches the CRDs of the same release.
 
+Some kinds need an operator that this operator does not install. `ElasticsearchCluster` needs the ECK operator. `DatabaseServer` needs the CloudNativePG operator, and `spec.archive` also needs the Barman Cloud plugin and cert-manager. `CamundaManagementCluster` with `spec.identityProvider.keycloak` needs the Keycloak Operator. Install what you use before the manager starts, or restart the manager after. See [Installation](../installation.md#requirements).
+
 ## Cluster
 
 | Kind | Scope | What it is |
 | --- | --- | --- |
 | [CamundaCluster](camundacluster.md) | Namespaced | One orchestration cluster: Zeebe, gateway, web applications, connectors. |
 | [CamundaPlatformConfig](camundaplatformconfig.md) | Cluster | Settings shared by all clusters: authentication, license, image repositories. |
-| [CamundaClusterPreset](camundaclusterpreset.md) | Cluster | A baseline spec that clusters inherit. Passive data. |
-| [CamundaRelease](camundarelease.md) | Cluster | Every version of the platform, the pinned images, and the environment those versions need. Passive data. |
+| [CamundaClusterPreset](camundaclusterpreset.md) | Cluster | A baseline spec that clusters inherit. It has no status. Other kinds read it. |
+| [CamundaRelease](camundarelease.md) | Cluster | One set of versions that a platform runs: Camunda, connectors, Elasticsearch, and PostgreSQL. It can pin images and add the environment that a version needs. It has no status. Other kinds read it. |
 
 ## Storage backends
 
 | Kind | Scope | What it is |
 | --- | --- | --- |
 | [ElasticsearchCluster](elasticsearchcluster.md) | Namespaced | An Elasticsearch cluster run by ECK, published as a `SecondaryStorageConfig`. |
-| [ElasticsearchClusterPreset](elasticsearchclusterpreset.md) | Cluster | A baseline spec that Elasticsearch clusters inherit. Passive data. |
-| [DatabaseServer](databaseserver.md) | Namespaced | A PostgreSQL server run by CloudNativePG, archived to a bucket, published as a `DatabaseServerConfig`. |
-| [DatabaseServerPreset](databaseserverpreset.md) | Cluster | A baseline spec that database servers inherit. Passive data. |
+| [ElasticsearchClusterPreset](elasticsearchclusterpreset.md) | Cluster | A baseline spec that Elasticsearch clusters inherit. It has no status. Other kinds read it. |
+| [DatabaseServer](databaseserver.md) | Namespaced | A PostgreSQL server run by CloudNativePG, published as a `DatabaseServerConfig`. It can archive to a bucket. |
+| [DatabaseServerPreset](databaseserverpreset.md) | Cluster | A baseline spec that database servers inherit. It has no status. Other kinds read it. |
 | [Database](database.md) | Namespaced | A logical database and its users on an existing PostgreSQL server, published as a `DatabaseConfig`. |
-
-Each backend kind needs an operator that this operator does not install. `ElasticsearchCluster` needs the ECK operator. `DatabaseServer` needs the CloudNativePG operator, and `spec.archive` also needs the Barman Cloud plugin and cert-manager. Install what you use, then restart the manager. See [Installation](../installation.md#requirements).
 
 ## Contracts
 
-A contract carries connection details and credential references. The operator validates it and reports `Ready`. It provisions nothing from it. You can write a contract by hand or let a resource above write it.
+A contract is a resource that carries connection details and credential references from the resource that provides a backend to the resources that use it. The operator validates it and reports `Ready`. It provisions nothing from it. You can write a contract by hand or let a resource above write it.
 
 | Kind | Scope | What it carries |
 | --- | --- | --- |
@@ -36,7 +36,7 @@ A contract carries connection details and credential references. The operator va
 | [ObjectStorageConfig](objectstorageconfig.md) | Namespaced | One bucket on S3, GCS, or Azure Blob, and how to authenticate. |
 | [DatabaseServerConfig](databaseserverconfig.md) | Namespaced | A database server, its admin credentials, and its point-in-time-recovery capability. |
 | [DatabaseConfig](databaseconfig.md) | Namespaced | One logical database and its credentials. |
-| [ManagementAuthConfig](managementauthconfig.md) | Cluster | The OIDC configuration of Management Identity. `CamundaOptimize` reads it. |
+| [ManagementAuthConfig](managementauthconfig.md) | Cluster | The OIDC configuration of Management Identity. A `CamundaManagementCluster` writes it, and `CamundaOptimize` reads it. |
 
 ## Management
 
@@ -93,6 +93,7 @@ graph LR
     MAC[ManagementAuthConfig]
     OPT[CamundaOptimize]
     MC[CamundaManagementCluster]
+    PITR[PointInTimeRestore]
 
     ESC -.->|presetRef| ESCP
     ESC -.->|releaseRef| CR
@@ -101,6 +102,7 @@ graph LR
     DBS -.->|presetRef| DBSP
     DBS -.->|releaseRef| CR
     DBS -.->|archive.objectStorageRef| OSC
+    DBS -.->|platformConfigRef| PFC
     DBS -->|creates| DBSC
     DB -->|creates| DBC
     DB -->|"creates (optional)"| SSC
@@ -120,6 +122,7 @@ graph LR
     LRE -.->|targetClusterRef| CC
     LRR -.->|backupRef| LBR
     LRR -.->|targetClusterRef| CC
+    PITR -.->|clusterRef| CC
 
     OPT -.->|clusterRef| CC
     OPT -.->|managementAuthRef| MAC

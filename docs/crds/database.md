@@ -2,15 +2,9 @@
 
 `Database` creates a logical database and its users on an existing PostgreSQL server, and publishes the connection details. You create it, or another tool creates it for you.
 
-An orchestration cluster can use an RDBMS as secondary storage. `Database` bootstraps a logical database on a PostgreSQL server that you already run, cloud-managed or self-hosted. It uses plain SQL with the admin credentials of a `DatabaseServerConfig`. It needs network access to the server and nothing else. It calls no cloud API and creates no server.
+An orchestration cluster can use an RDBMS as secondary storage. A `Database` creates the logical database on a PostgreSQL server that you already run, cloud-managed, self-hosted, or run by a [DatabaseServer](databaseserver.md). It connects with the admin credentials of a `DatabaseServerConfig` and runs plain SQL. It needs network access to the server and calls no cloud API. A `Database` can create any logical database, not only secondary storage. For Elasticsearch as secondary storage, use [ElasticsearchCluster](elasticsearchcluster.md) instead.
 
-A `Database` is namespaced. It resolves `spec.serverRef` in its own namespace, and everything it publishes lands there too. The server and the logical database are separate kinds, so many logical databases can share one server. A `Database` can bootstrap any logical database, not only secondary storage. This kind serves PostgreSQL-compatible servers only. If you want Elasticsearch as secondary storage, use [ElasticsearchCluster](elasticsearchcluster.md) instead.
-
-On the server, the operator creates the logical database `spec.databaseName` and two SQL roles with generated passwords. The application role, named like the database, owns it. The backup role, named `<databaseName>_backup`, can read every table, including tables created later, and has the rights that a restore needs. It is never the owner. Set `spec.backupCredentials.disabled: true` to skip the backup role. Only these roles can connect to the database.
-
-In Kubernetes, in the namespace of the `Database`, the operator writes one credential Secret per role (keys `username` and `password`). It also writes a `DatabaseConfig` that names the server, the database, and both Secrets. When `spec.secondaryStorageConfig` is set, it also writes a `SecondaryStorageConfig` of `type: rdbms` that references the `DatabaseConfig`. An orchestration cluster in that namespace can then use the database as secondary storage. Create the `Database` in the namespace of the cluster that uses it. The Spec reference below gives the default names.
-
-Every resource carries the label `camunda.io/database: <name>`.
+A `Database` resolves `spec.serverRef` in its own namespace, and everything it publishes lands in that namespace too. Create it in the namespace of the cluster that uses it.
 
 The smallest database names the server and the logical database:
 
@@ -31,52 +25,60 @@ graph TD
     DB -->|creates| SEC["Credential Secrets"]
     DB -->|creates| DBC[DatabaseConfig]
     DB -->|"creates (optional)"| SSC["SecondaryStorageConfig (type rdbms)"]
-    DB -->|SQL| PG["PostgreSQL server (external)"]
+    DB -->|SQL| PG["PostgreSQL server"]
     CC[CamundaCluster] -.->|storageRef| SSC
 ```
+
+## What it creates
+
+On the server, the operator creates the logical database `spec.databaseName` and two SQL roles with generated passwords:
+
+- The application role has the name of the database and owns it.
+- The backup role is named `<databaseName>_backup`. It can read every table, including tables created later, and has the rights that a restore needs. It does not own the database. For a database name of more than 56 characters, the operator shortens the role name and adds a hash. The backup credentials Secret holds the exact name. Set `spec.backupCredentials.disabled: true` to skip this role.
+
+Only these roles can connect to the database.
+
+In the namespace of the `Database`, the operator publishes these objects:
+
+| Object | Default name | Content |
+| --- | --- | --- |
+| Secret | `my-camunda-db-credentials` | `username` and `password` of the application role |
+| Secret | `my-camunda-db-backup-credentials` | `username` and `password` of the backup role, unless disabled |
+| [DatabaseConfig](databaseconfig.md) | `my-camunda-db` | The server, the database name, and both Secrets |
+| [SecondaryStorageConfig](secondarystorageconfig.md) | none | Only when `spec.secondaryStorageConfig` is set. Its `type` is `rdbms`, and it references the `DatabaseConfig`. |
+
+Every object carries the label `camunda.io/database: my-camunda-db`. An orchestration cluster in that namespace uses the database as secondary storage through the `SecondaryStorageConfig`.
 
 ## Credentials
 
 The operator generates each password once and keeps it. To rotate one, delete its credential Secret. The operator generates a new password, sets it on the server, and publishes a new Secret.
 
-## Missing references
-
-If `spec.serverRef` names no `DatabaseServerConfig` in this namespace, `Ready` is `False` with reason `InvalidReference`. If that contract has not published `status.systemIdentifier` yet, the reason is `ServerIdentityUnknown`, and the `Database` claims nothing and runs no SQL until it does. A contract whose `status.probedEndpoint` names an endpoint that its spec no longer names reads the same way. That identity belongs to the server before the change. If the admin credentials Secret of the server is missing or lacks a key, the reason is `MissingSecret`. If the server does not answer or rejects the admin credentials, the reason is `ConnectionFailed` and the operator retries every 30 seconds.
-
 ## Uniqueness
 
-One `Database` owns one logical database name on one PostgreSQL server. The server is the instance that the contract reaches, not the contract itself. Two `DatabaseServerConfig` objects that describe one instance under different hosts are one server here. The operator reads the identity of the instance from `status.systemIdentifier` of the contract.
+Give each `Database` its own `databaseName` on a PostgreSQL server. A name belongs to one `Database` per server, across all namespaces. Two `DatabaseServerConfig` objects that reach one server under different hosts count as one server.
 
-The claim therefore crosses namespaces. The first `Database` to claim a logical database name on an instance owns it. A `Database` of any namespace that claims the same name after that reports `InvalidReference`, names the holder, and runs no SQL.
-
-While no `Database` holds the name, the operator prefers the older `Database`. On an equal creation timestamp it prefers the first `<namespace>/<name>` in alphabetical order. This is a preference, not a guarantee. Two `Database` resources that reach a free name at the same moment can take it in either order. Give each `Database` its own `databaseName` when you need a known owner.
-
-A claim stays with its holder. An older `Database` whose contract reaches the same server later does not take the logical database from the `Database` that runs on it. The holder owns the SQL roles, and the passwords in its Secrets are the ones the server accepts.
-
-A `Database` gives its claim back when you delete it. It also gives it back when you point it at another logical database or at another server, once it reaches the new one. Until then it keeps the name it had. A `Database` that waits for a missing server, or for one that does not answer, therefore keeps its old name. Another `Database` can take that name once it is given back.
-
-A `Database` can lose a claim after it published under it. That happens when you point `spec.databaseName` at a logical database that another `Database` holds. The holder owns that database and resets the role passwords, so the credentials of the loser open nothing. The loser therefore withdraws what it published: the `DatabaseConfig`, the `SecondaryStorageConfig`, and both credential Secrets are deleted, and `BindingsReady` reads `Disabled`.
-
-The loser gives back the objects it published, not the objects its spec names now. One edit can change `spec.databaseName` and the names of the bindings together. The names in the spec then point at nothing, and the operator still deletes the objects under the names from before that edit.
-
-It withdraws only what it owns. Two `Database` resources can name one `databaseConfig` or one credential Secret, and the loser leaves an object that belongs to the winner in place. An object of another `Database` stays in place under any name, whether the spec of the loser names it now or named it before. The `Ready` message then names what stayed.
-
-`status.collisionKey` shows the logical database that a `Database` last resolved, as the system identifier and the database name:
+The first `Database` to claim a name keeps it. Another `Database` with the same name on the same server runs no SQL. It reports `Ready` `False` with reason `InvalidReference`, and the message names the holder:
 
 ```yaml
 status:
-  collisionKey: 7412345678901234567/camunda
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: InvalidReference
+      message: Database other-ns/other-db already claims database "camunda" on the same server
 ```
 
-Every claimant records this field, the one that loses included, so it shows the logical database a `Database` asked for and not one it owns. A `Database` that reports `InvalidReference` and names another `Database` does not own the name it shows. The operator resolves the key only after it reaches the server. You can point a `Database` at a server that does not exist. You can also point it at a server that the operator has not reached for the spec it has now. In both cases, that `Database` keeps the key from before until that server answers. The operator never clears the field. An owner whose server or contract is gone keeps the logical database. Delete that `Database` to release the name.
+To fix it, change `databaseName` on one of them, or delete the holder. A `Database` frees its name when you delete it, or after it reaches a new name or a new server.
+
+If you change `databaseName` to a name that another `Database` holds, this `Database` removes the `DatabaseConfig`, the `SecondaryStorageConfig`, and the credential Secrets that it published. Its `BindingsReady` then reads `Disabled`.
 
 ## Changes
 
-All SQL is idempotent, so the operator can run it again safely. If you rename a binding, the operator publishes the object under the new name and leaves the object under the old name in place. If you clear `spec.secondaryStorageConfig`, the existing `SecondaryStorageConfig` stays in the same way. Both objects stay until you delete the `Database`. A `Database` that loses its claim removes them sooner. See [Uniqueness](#uniqueness).
+If you rename a binding, the operator publishes the object under the new name and leaves the object under the old name in place. If you clear `spec.secondaryStorageConfig`, the existing `SecondaryStorageConfig` also stays. Both objects stay until you delete the `Database`, or until it loses its claim. See [Uniqueness](#uniqueness).
 
 ## Deletion
 
-Deletion removes the `DatabaseConfig`, the `SecondaryStorageConfig`, and the credential Secrets. It also releases the claim, so another `Database` can take the logical database name. The operator never drops the logical database or the SQL users. Data removal is a manual act on the server.
+Deletion removes the `DatabaseConfig`, the `SecondaryStorageConfig`, and the credential Secrets. It also releases the claim, so another `Database` can take the name. The operator never drops the logical database or the SQL roles. To remove the data, drop them on the server yourself.
 
 ## Status
 
@@ -84,16 +86,18 @@ Deletion removes the `DatabaseConfig`, the `SecondaryStorageConfig`, and the cre
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
-| `Ready` | `InvalidReference` | `spec.serverRef` names no `DatabaseServerConfig` in this namespace. Or another `Database`, named in the message as `<namespace>/<name>`, holds the same logical database name on the same server. Or nothing holds that name yet and another `Database` goes first for it, which the message says. | Create the `DatabaseServerConfig`, or change `databaseName`, or delete the `Database` that the message names. A message that another `Database` goes first says that nothing held the name when the operator looked. That `Database` can still take it, and it can take it before it becomes `Ready`. If it does not take it, read its `Ready` condition and clear what stops it. Or change `databaseName` here, or delete it. |
-| `Ready` | `ServerIdentityUnknown` | The `DatabaseServerConfig` has not published `status.systemIdentifier` yet, or it published one for an endpoint that its spec no longer names. The operator cannot tell which server the contract reaches, so it claims nothing and runs no SQL. | Wait until the `DatabaseServerConfig` is probed again for the endpoint and the credentials its spec names now. It publishes the identity as soon as it reaches the server. |
+| `Ready` | `InvalidReference` | `spec.serverRef` names no `DatabaseServerConfig` in this namespace. Or another `Database`, named in the message as `<namespace>/<name>`, holds the same logical database name on the same server. | Create the `DatabaseServerConfig`, or change `databaseName`, or delete the `Database` that the message names. |
+| `Ready` | `InvalidReference` | The message says that another `Database` goes first. Nothing holds the name yet. | Wait for that `Database` to take the name, or read its `Ready` condition. Or change `databaseName` here. |
+| `Ready` | `InvalidReference` | The message names a Lease in the namespace of the operator. The Lease holds the name, and no `Database` owns it. | If nothing else uses that Lease, delete it. The `Database` then takes the name. |
+| `Ready` | `ServerIdentityUnknown` | The `DatabaseServerConfig` has not published `status.systemIdentifier` for the endpoint and the credentials that its spec names now. The `Database` claims nothing and runs no SQL. | Wait until the `DatabaseServerConfig` reports `Ready`. |
 | `Ready` | `MissingSecret` | The admin credentials Secret of the server is missing or lacks a key. | Create the Secret with the keys that the `DatabaseServerConfig` names. |
-| `Ready` | `ConnectionFailed` | The server does not answer, or it rejects the admin credentials. The operator retries every 30 seconds. | Make sure that the operator can reach the server and that the admin credentials are correct. |
-| `Ready` | component status | The pre-checks passed. `Ready` takes the status and reason of `BindingsReady`, for example `Healthy`, `Creating`, `Updating`, `Failing`, or `Error`. | Wait while the reason is `Creating` or `Updating`. For other reasons, read the message of `BindingsReady`. |
-| `BindingsReady` | component status | The detail of the published Secrets, `DatabaseConfig`, and `SecondaryStorageConfig`. `Disabled` means this `Database` lost its claim and withdrew them. | Read the message when it is not `True`. |
+| `Ready` | `ConnectionFailed` | The server does not answer, or it rejects the admin credentials. The operator tries again every 30 seconds. | Make sure that the operator can reach the server and that the admin credentials are correct. |
+| `Ready` | the reason of `BindingsReady` | The checks passed. `Ready` takes the status and reason of `BindingsReady`, for example `Healthy`, `Creating`, `Updating`, or `Failing`. | Wait while the reason is `Creating` or `Updating`. For other reasons, read the message of `BindingsReady`. |
+| `BindingsReady` | `Healthy`, `Creating`, `Updating`, `Failing`, `Disabled` | The state of the published Secrets, `DatabaseConfig`, and `SecondaryStorageConfig`. `Disabled` means that this `Database` lost its claim and removed them. | If the status is not `True`, read the message. |
 
 | Field | Meaning |
 | --- | --- |
-| `status.collisionKey` | The logical database that this `Database` last resolved: the system identifier of the server and the database name. Every claimant records it, so it is not a record of ownership. It stays on the last one the operator resolved until a new server answers. The operator never clears it. |
+| `status.collisionKey` | The logical database that this `Database` last resolved, as `<system identifier>/<database name>`. While the server of the spec is missing or not probed, it keeps the value from before. It does not show who holds the name. |
 | `status.observedGeneration` | The last generation that the operator reconciled. |
 
 ## Spec reference
@@ -131,7 +135,7 @@ spec:
 
 - `spec.databaseName` must match `^[a-z_][a-z0-9_]{0,62}$`: a lowercase PostgreSQL identifier of at most 63 characters.
 - `spec.databaseConfig` and `spec.secondaryStorageConfig` must be valid resource names.
-- The operator enforces the uniqueness of the logical database name per server, and the API server does not. See `InvalidReference` above.
+- The API server does not check that the logical database name is unique per server. The operator does. See [Uniqueness](#uniqueness).
 
 ### A production-shaped example
 
@@ -156,7 +160,7 @@ spec:
 ## Related
 
 - [DatabaseServerConfig](databaseserverconfig.md): the server that `spec.serverRef` names, with its admin credentials.
-- [DatabaseConfig](databaseconfig.md): the contract that this kind creates under `spec.databaseConfig`.
+- [DatabaseConfig](databaseconfig.md): the [contract](index.md#contracts) that this kind creates under `spec.databaseConfig`.
 - [SecondaryStorageConfig](secondarystorageconfig.md): the contract that this kind creates under `spec.secondaryStorageConfig`.
 - [CamundaCluster](camundacluster.md): references the `SecondaryStorageConfig` through `storageRef`.
 - [ElasticsearchCluster](elasticsearchcluster.md): the other secondary storage kind. An orchestration cluster uses one or the other.

@@ -4,7 +4,7 @@
 
 A preset holds one Elasticsearch sizing as data: node count, resources, storage, scheduling, and more. Each `ElasticsearchCluster` that references it stays small and consistent. A platform team can publish a set of presets, for example `small`, `standard`, and `large`, and each team picks one. What runs on that shape, the Elasticsearch version, lives in a [CamundaRelease](camundarelease.md), so a version roll never edits a preset.
 
-A preset is passive data. It creates nothing and reports no status. An `ElasticsearchCluster` uses it through `spec.presetRef`.
+A preset creates nothing and reports no status. An `ElasticsearchCluster` uses it through `spec.presetRef`.
 
 The smallest preset sets a node count and a volume size:
 
@@ -27,15 +27,32 @@ graph LR
 
 ## Merge rules
 
-`spec.cluster` of the preset is the baseline. The [CamundaRelease](camundarelease.md) of `releaseRef` merges over it, and the cluster spec merges over both. A field set on the `ElasticsearchCluster` replaces the value of the layer below for that field. A field left unset on the cluster comes from the layer below. An empty list or map (`extraEnv`, `extraEnvFrom`, `podLabels`, `podAnnotations`, `secureSettings`) counts as unset. To remove a list that the preset provides, set the list you want on the cluster. Or reference a preset without that list.
+`spec.cluster` of the preset is the baseline. The [CamundaRelease](camundarelease.md) of `releaseRef` merges over it, and the cluster spec merges over both. A field set on the `ElasticsearchCluster` replaces the value of the layer below for that field. A field left unset on the cluster comes from the layer below.
 
-The blocks `scheduling`, `monitoring`, `serviceAccount`, `resources`, and `persistentVolumeClaimRetentionPolicy` are replaced as a whole, never merged field by field. A cluster that sets its own `scheduling` block drops every scheduling rule of the preset.
+Every object, list, and map is replaced as a whole, never merged field by field or key by key. This includes `resources`, `serviceAccount`, `scheduling`, `monitoring`, `persistentVolumeClaimRetentionPolicy`, `secureSettings`, `extraEnv`, `extraEnvFrom`, `podLabels`, and `podAnnotations`. A cluster that sets its own `scheduling` block drops every scheduling rule of the preset. A cluster that sets one pod label drops every pod label of the preset.
 
-`version` is not part of a preset. It belongs to a [CamundaRelease](camundarelease.md) or to the cluster. An apply that sets it is rejected by the API server with `version belongs to a CamundaRelease and must not be set in a preset`. Move the version to a release, and point every cluster at it with `releaseRef`.
+An empty list or map (for example `extraEnv: []` or `podLabels: {}`) counts as unset, so it does not remove the value of the preset. To remove it, set the value that you want on the cluster. Or reference a preset without that field.
 
 ## Fleet settings
 
-A preset can set `snapshotStorageRef`, `serviceAccount`, `secureSettings`, and `monitoring`. A preset alone can put every cluster that references it on one snapshot bucket. It can also give each cluster its `<name>-es` ServiceAccount and turn on metrics scraping.
+A preset can set `snapshotStorageRef`, `serviceAccount`, `secureSettings`, and `monitoring`. So one preset can put every cluster that references it on one snapshot bucket. Each cluster writes its snapshots under its own path in that bucket. The preset can also give each cluster its `<name>-es` ServiceAccount and turn on metrics scraping.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchClusterPreset
+metadata:
+  name: standard
+spec:
+  cluster:
+    replicas: 3
+    storageSize: "64Gi"
+    snapshotStorageRef: "my-backup-bucket"
+    monitoring:
+      serviceMonitor:
+        enabled: true
+```
+
+`snapshotStorageRef` names an `ObjectStorageConfig` in the namespace of each cluster. Each namespace that uses the preset needs an `ObjectStorageConfig` of that name.
 
 ## Changes
 
@@ -51,7 +68,7 @@ A preset has no status. It reports no conditions and no `status.observedGenerati
 
 ## Spec reference
 
-`spec.cluster` has the same type as the spec of `ElasticsearchCluster`. The fields `presetRef`, `releaseRef`, `secondaryStorageConfig`, and `suspend` belong to one cluster and must stay unset in a preset, and so must `version`. Every other field is inheritable.
+`spec.cluster` has the same type as the spec of `ElasticsearchCluster`. The fields `presetRef`, `releaseRef`, `secondaryStorageConfig`, and `suspend` belong to one cluster and must stay unset in a preset. [Validation rules](#validation-rules) has the rule for `version`. Every other field is inheritable.
 
 Every field, with its type, whether it is required, and its default:
 
@@ -123,8 +140,8 @@ spec:
 
 ### Validation rules
 
-- `spec.cluster` must not set `presetRef`, `releaseRef`, `secondaryStorageConfig`, or `suspend`. An empty `presetRef` and `suspend: false` count as unset, so templated YAML that renders zero values still applies. An empty `secondaryStorageConfig` is rejected by the name pattern. Omit the field instead.
-- `version` is rejected in `spec.cluster`. It belongs to a [CamundaRelease](camundarelease.md) or to the cluster. An empty `version` is rejected by the three-segment pattern. Omit the field instead.
+- `spec.cluster` must not set `presetRef`, `releaseRef`, `secondaryStorageConfig`, or `suspend`. An empty `presetRef`, an empty `releaseRef`, and `suspend: false` count as unset, so templated YAML that renders zero values still applies. An empty `secondaryStorageConfig` is rejected by the name pattern. Omit the field instead.
+- `version` is rejected in `spec.cluster` with `version belongs to a CamundaRelease and must not be set in a preset`. Move the version to a [CamundaRelease](camundarelease.md), and point every cluster at it with `releaseRef`. An empty `version` is rejected by the three-segment pattern. Omit the field instead.
 - The no-shrink rule of `ElasticsearchCluster` for `storageSize` does not bind a preset. You can lower the baseline at any time.
 - Whether the merged configuration is complete is checked on the `ElasticsearchCluster`, not on the preset.
 - Every other rule of the `ElasticsearchCluster` schema applies to `spec.cluster`: `replicas` at least 1, and valid resource names.

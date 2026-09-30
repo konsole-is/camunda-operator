@@ -2,7 +2,7 @@
 
 A `CamundaManagementCluster` is one Camunda management plane: Management Identity, the identity provider behind it, and optionally Console and Web Modeler. Management Identity controls who signs in to Console, Web Modeler, and Optimize. It is a separate identity system from the one inside an orchestration cluster, which Camunda describes in [Management Identity](https://docs.camunda.io/docs/self-managed/components/management-identity/overview/).
 
-You create one management plane per platform. It serves the orchestration clusters that `spec.clusterSelector` matches, in every namespace that `spec.namespaceSelector` admits (every namespace, unless you set one). Creating this resource is a platform-administrator action, because the selector reaches [CamundaClusters](camundacluster.md) outside its own namespace and the operator annotates the ones it matches.
+You create one management plane per platform. It serves the orchestration clusters that `spec.clusterSelector` matches, in every namespace that `spec.namespaceSelector` admits. Creating this resource is a platform-administrator action, because the selector reaches [CamundaClusters](camundacluster.md) in other namespaces and the operator annotates the ones it matches.
 
 The smallest management plane names a platform configuration, an identity provider, and Management Identity:
 
@@ -43,22 +43,24 @@ graph LR
 
 The operator creates these Deployments in the namespace of the resource, and one Service of the same name in front of each:
 
-| Deployment and Service | What it does | Deployed when |
-| --- | --- | --- |
-| `my-management-identity` | Management Identity. Console, Web Modeler, and Optimize authenticate through it. | Always. |
-| `my-management-console` | Console. | `spec.console` is set. |
-| `my-management-web-modeler-restapi` | The Web Modeler application and its API. | `spec.webModeler` is set. |
-| `my-management-web-modeler-websockets` | The Web Modeler process that pushes live updates to a browser. | `spec.webModeler` is set. |
+| Deployment and Service | Service port | What it does | Deployed when |
+| --- | --- | --- | --- |
+| `my-management-identity` | 80 | Management Identity. Console, Web Modeler, and Optimize authenticate through it. | Always. |
+| `my-management-console` | 80 | Console. | `spec.console` is set. |
+| `my-management-web-modeler-restapi` | 80 | The Web Modeler application and its API. | `spec.webModeler` is set. |
+| `my-management-web-modeler-websockets` | 80 | The Web Modeler process that pushes live updates to a browser. | `spec.webModeler` is set. |
 
-In the `keycloak` mode the operator also creates a `Keycloak` resource named `my-management-keycloak`. The Keycloak Operator turns it into pods and into the Service `my-management-keycloak-service`.
+In the `keycloak` mode the operator also creates a `Keycloak` resource named `my-management-keycloak`. The Keycloak Operator runs it behind the Service `my-management-keycloak-service`, on port 8080.
 
-There is no block that turns a component on. Console runs while `spec.console` is set. Web Modeler runs while `spec.webModeler` is set. Remove the block to remove the workloads.
+A component runs while its block is set. Remove `spec.console` or `spec.webModeler` to remove its workloads.
 
-A long resource name is shortened in the derived names and in the owner label, so read both back instead of assuming them.
+The operator creates no Ingress. Route traffic to each Service yourself. The `externalUrl` fields tell each component the address that a browser uses.
 
-The operator creates no Ingress. You route traffic to each Service yourself, and the `externalUrl` fields tell each component the address a browser reaches it at.
+A long resource name is shortened in the derived names. Read the names back:
 
-Read the names back with `kubectl get deploy,svc -n my-management-ns -l camunda.io/management-cluster=my-management`.
+```bash
+kubectl get deploy,svc -n my-management-ns -l camunda.io/management-cluster=my-management
+```
 
 ## Identity provider
 
@@ -66,7 +68,7 @@ Read the names back with `kubectl get deploy,svc -n my-management-ns -l camunda.
 
 ### The operator runs Keycloak
 
-`identityProvider.keycloak` runs Keycloak through the [Keycloak Operator](https://www.keycloak.org/operator/installation), which you install first (see [Installation](../installation.md#requirements)). Management Identity then creates the realm `camunda-platform`, the client of every component, and the first user in it.
+`identityProvider.keycloak` runs Keycloak through the [Keycloak Operator](https://www.keycloak.org/operator/installation). Install the Keycloak Operator first (see [Installation](../installation.md#requirements)). Management Identity creates the realm `camunda-platform`, the client of every component, and the first user in it.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -84,23 +86,21 @@ spec:
   # ... the rest of your management cluster
 ```
 
-`externalUrl` is the address a browser reaches Keycloak at, and it must carry the `/auth` path. Camunda publishes its Keycloak build under that path, and every token that the realm issues names this URL as its issuer. The Identity pods must reach it too. The operator appends `/realms/<realm>` to this URL, so it must carry no query and no fragment.
+`externalUrl` is the address that a browser reaches Keycloak at. Its path must be exactly `/auth`, because the Camunda build of Keycloak serves under that path. Every token of the realm names this URL as its issuer, so the Identity pods must reach it too.
 
-`version` is the Keycloak version. The operator supports `26.0.0` and later, and below `27.0.0`. Camunda 8.9 supports Keycloak 26 only, as its [supported environments](https://docs.camunda.io/docs/reference/supported-environments/) page states.
+`version` is the Keycloak version. The operator accepts `26.0.0` and later, below `27.0.0`. Camunda 8.9 supports Keycloak 26 only, as its [supported environments](https://docs.camunda.io/docs/reference/supported-environments/) page states.
 
-Stay below `26.7.0` with Management Identity 8.9. From 26.7.0, Keycloak refuses every change to its `realm-management` client (the fix of [CVE-2026-9796](https://github.com/keycloak/keycloak/pull/49624)). Management Identity 8.9 changes that client when it creates the realm, so it stops with `HTTP 403 Forbidden` and `IdentityReady` never leaves `Creating`. Install the Keycloak Operator of the same release as `version`. The [Keycloak Operator](https://www.keycloak.org/operator/customizing-keycloak) supports the Keycloak it was released with.
+> **Caution:** With Management Identity 8.9, use a Keycloak version below `26.7.0`. From 26.7.0, Keycloak refuses every change to its `realm-management` client (the fix of [CVE-2026-9796](https://github.com/keycloak/keycloak/pull/49624)). Management Identity 8.9 changes that client when it creates the realm. It then stops with `HTTP 403 Forbidden`, and `IdentityReady` stays at `Creating`.
+
+Install the Keycloak Operator of the same release as `version`. The [Keycloak Operator](https://www.keycloak.org/operator/customizing-keycloak) supports the Keycloak that it was released with.
 
 Keycloak needs a PostgreSQL database of its own. `databaseConfigRef` names a [DatabaseConfig](databaseconfig.md) in the namespace of this resource.
 
-`scheduling` places the Keycloak pods: `nodeAffinity`, `podAffinity`, and `tolerations`, the same block every other workload of this resource takes.
-
-The Keycloak Operator writes the first Keycloak administrator into the Secret `my-management-keycloak-initial-admin`. Management Identity signs in with it to create the realm.
-
-The realm of this Keycloak answers to this management plane alone. Another plane that names the address of this Keycloak under `identityProvider.externalKeycloak` waits with the `Ready` reason `RealmClaimedElsewhere`. See [One realm answers to one management plane](#one-realm-answers-to-one-management-plane).
+The Keycloak Operator writes the first Keycloak administrator into the Secret `my-management-keycloak-initial-admin`.
 
 ### You run Keycloak
 
-`identityProvider.externalKeycloak` connects Management Identity to a Keycloak that you run. Management Identity still creates the realm, the clients, and the first user in it. Run Keycloak 26, below 26.7.0, for the reason the [section above](#the-operator-runs-keycloak) gives.
+`identityProvider.externalKeycloak` connects Management Identity to a Keycloak that you run. Management Identity still creates the realm, the clients, and the first user in it. Run Keycloak 26, below 26.7.0, for the reason in [The operator runs Keycloak](#the-operator-runs-keycloak).
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -120,23 +120,15 @@ spec:
   # ... the rest of your management cluster
 ```
 
-`url` serves browsers and containers alike, so it must resolve from inside the Kubernetes cluster. If your Keycloak serves under the `/auth` path, include that path. The operator appends `/realms/<realm>` to this URL, so it must carry no query and no fragment. It must also carry no user and no password. The operator does not support a Keycloak behind a proxy that needs basic authentication.
+`url` serves browsers and containers alike, so it must also resolve from inside the Kubernetes cluster. If your Keycloak serves under the `/auth` path, include that path. The URL carries no query, no fragment, no user, and no password. The operator does not support a Keycloak behind a proxy that needs basic authentication.
 
-`realm` defaults to `camunda-platform`. The realm lands in the issuer, the token, and the JWKS path that Management Identity builds. It holds letters, digits, dots, hyphens, and underscores only, and it starts and ends with a letter or a digit.
-
-`adminCredentialsSecretRef` names the Keycloak administrator that Management Identity bootstraps the realm with. The Secret lives in the namespace of this resource.
+`realm` defaults to `camunda-platform`. `adminCredentialsSecretRef` names a Secret in the namespace of this resource, with a Keycloak administrator. Management Identity uses it to create the realm.
 
 #### One realm answers to one management plane
 
-The first `CamundaManagementCluster` that reaches the realm holds it. Management Identity administers the clients of that realm, and the plane owns the login callbacks of its `optimize` client. So a second plane on the same realm can undo both.
+The first `CamundaManagementCluster` that claims a realm holds it. The realm of a Keycloak that the operator runs is held the same way. Give every management plane a realm of its own.
 
-The holder is not always the plane you created first. A suspended plane takes no realm until it resumes, and it keeps every realm it already holds.
-
-The realm of a Keycloak that the operator runs is held the same way. Its address is reachable inside the Kubernetes cluster, so a plane that names it under `identityProvider.externalKeycloak` waits for that realm.
-
-The realm that Management Identity administers is the realm this plane claims, so `spec.identity.extraEnv` refuses an entry named `KEYCLOAK_URL` or `KEYCLOAK_REALM`. Such an override can put Management Identity in a realm that another plane holds.
-
-A second plane that names the same `url` and `realm` waits, from any namespace. The operator starts nothing new for it and writes nothing in that realm, and `Ready` names the holder:
+A second plane that names the same `url` and `realm`, from any namespace, waits. The operator starts nothing new for it and writes nothing in that realm. Workloads that it already ran keep running. `Ready` names the holder:
 
 ```yaml
 status:
@@ -147,24 +139,15 @@ status:
       message: 'CamundaManagementCluster my-management-ns/my-management holds realm "camunda-platform" of Keycloak "https://keycloak.example.com/auth". One realm answers to one management plane, so this one waits and starts nothing new until that claim is released. Give it a realm of its own, or delete the holder'
 ```
 
-Give the waiting plane a realm of its own, or delete the holder. The waiting plane then proceeds on its own. A holder releases a realm when it is deleted. It also releases a realm that its spec no longer names, once two things are true of that realm:
+Give the waiting plane a realm of its own, or delete the holder. The waiting plane then continues without a further step. A holder also releases a realm that its spec no longer names, after the login callbacks of Optimize left that realm. See [Change the identity provider](#change-the-identity-provider).
 
-- The login callbacks have left it.
-- No Management Identity of the plane points at it any more.
-
-Two planes on one Keycloak with two realms work today.
-
-A plane that you retarget into the wait leaves the old realm first. While `status.callbackRealm` names a realm, the plane removes its login callbacks from that realm. Once they are out, it stops the Management Identity that points there, and this plane signs nobody in until it holds a realm again. An old Keycloak that does not let the callbacks go keeps that Management Identity running, and everybody keeps signing in through the old realm meanwhile. The plane keeps the claim on the old realm while any workload of it still points there. So no other plane takes a realm that this one starts against again. Give the waiting plane a realm of its own, and its Management Identity comes back in that realm. Or delete the plane, and it gives back every realm it holds.
-
-A pod of that Management Identity can restart while it waits. That pod writes the clients of the old realm again, and the login callbacks of this plane with them. The operator removes them again. It keeps removing them while `status.callbackRealm` names that realm, and the record goes once nothing of the plane can write it. The claim on the realm goes after the record. Callbacks stay behind in a realm when you let go of it with the [`camunda.io/forget-callback-realm`](#moving-the-callbacks-to-another-realm) annotation. The record then goes at once. The claim still waits until no Management Identity of the plane points at the realm. You then remove the callbacks from the `optimize` client of that realm yourself.
-
-A plane can also come into the wait on the realm its own workloads run against. You upgrade a cluster where two planes already share one realm, or somebody removes a claim by hand and another plane takes it. The operator then writes nothing more in that realm, and `Ready` names the holder. But the Management Identity of the waiting plane keeps running against it, as every workload of a waiting plane does. Correct the spec of that plane, or delete it. Both of these remove the login callbacks of that plane from the realm, and they take the callbacks of the holder with them. The holder registers its own again soon after.
+If the message names a Lease instead of a `CamundaManagementCluster`, delete that Lease when nothing else uses it.
 
 #### Trust of an https Keycloak
 
-The operator signs in to Keycloak itself, to register the login callback of every Optimize this management plane serves. It trusts the certificate authorities of its own image, which are the public ones. A Keycloak whose certificate comes from an authority of your own therefore fails the handshake, and `OptimizeCallbacksReady` reads `ConnectionFailed`.
+The operator signs in to Keycloak itself, to register the login callback of every Optimize of this management plane. It trusts the public certificate authorities. A Keycloak with a certificate from your own authority fails the handshake, and `OptimizeCallbacksReady` reads `ConnectionFailed`.
 
-`caBundleSecretRef` names the key of a Secret that holds that authority, in PEM form. The operator then trusts it in addition to the authorities of its image:
+`caBundleSecretRef` names the key of a Secret that holds your authority, in PEM form:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -184,15 +167,13 @@ spec:
   # ... the rest of your management cluster
 ```
 
-The Secret lives in the namespace of this resource. A key that holds no certificate in PEM form reports `InvalidCABundle`. A Secret that does not exist reports `MissingSecret`. The operator reads the Secret again when it changes, so a rotated authority needs no restart.
+The Secret is in the namespace of this resource. A key with no PEM certificate reports `InvalidCABundle`. A Secret that does not exist reports `MissingSecret`. A rotated authority needs no restart.
 
-The field is only valid with an `https` url, because the operator makes no handshake with an `http` one. In the `keycloak` mode the operator reaches the Keycloak it runs through the in-cluster Service, over `http`, so that mode carries no such field.
-
-The field changes what the operator trusts. It does not reach the pods of Management Identity, Console, or Web Modeler.
+The field requires an `https` url. It changes what the operator trusts. It does not change what Management Identity, Console, or Web Modeler trust. The `keycloak` mode has no such field, because the operator reaches that Keycloak over `http` inside the Kubernetes cluster.
 
 ### Your own OIDC provider
 
-`identityProvider.oidc` connects Management Identity to the identity provider of the referenced [CamundaPlatformConfig](camundaplatformconfig.md). Nothing is created for you here. You register one application per component at your provider, and the platform config names them.
+`identityProvider.oidc` connects Management Identity to the identity provider of the referenced [CamundaPlatformConfig](camundaplatformconfig.md). The operator creates no client and no user. You register one application per component at your provider, and the platform config names them.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -214,26 +195,24 @@ spec:
   # ... the rest of your management cluster
 ```
 
-The platform config must set `spec.auth.method: oidc`, and it must carry `authUrl`, `tokenUrl`, and `jwksUrl` under `spec.auth.oidc`. Those three are optional for an orchestration cluster, which reads them from the discovery document of your provider. The [ManagementAuthConfig](managementauthconfig.md) carries all three, and the operator asks your provider for nothing. Read them from the discovery document and set them on the platform config.
+The platform config must set `spec.auth.method: oidc`. It must also set `authUrl`, `tokenUrl`, and `jwksUrl` under `spec.auth.oidc`. An orchestration cluster reads these three from the discovery document of your provider, but the management plane does not. Copy them from the discovery document. [The clients of the management plane](camundaplatformconfig.md#the-clients-of-the-management-plane) lists the clients to declare.
 
-`spec.externalUrl` on a [CamundaOptimize](camundaoptimize.md) has no effect in this mode. The platform config declares the Optimize client, and your provider holds its callback URLs.
-
-The redirect URI of each component is the one Camunda documents in [component-specific configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/#component-specific-configuration). Register it at your provider before the component starts.
+Register the redirect URI of each component at your provider before the component starts. Camunda lists them in [component-specific configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/#component-specific-configuration).
 
 ### The generated Secrets
 
-In the two Keycloak modes the operator generates the credentials that Management Identity gives to the Optimize client and to the first user:
+In the two Keycloak modes the operator generates two Secrets in the namespace of this resource:
 
 | Secret | Key | What it holds |
 | --- | --- | --- |
 | `my-management-optimize-client` | `client-secret` | The client secret of Optimize. The `ManagementAuthConfig` points at this Secret. |
 | `my-management-identity-admin` | `password` | The password of the first Keycloak user. Absent while `spec.identity.admin.passwordSecretRef` names a Secret of your own. |
 
-Delete `my-management-optimize-client` to rotate that client secret. The operator generates a new value, writes it back, and rolls the pods that read it. There is no Secret for the client of Management Identity itself. Management Identity creates its `camunda-identity` client in the realm and gives it a new secret on every start. Nothing outside Management Identity needs that secret.
+To rotate the Optimize client secret, delete `my-management-optimize-client`. The operator generates a new value and rolls the pods that read it.
 
-> **Caution:** Do not delete `my-management-identity-admin`. Management Identity sets that password on the Keycloak user once, on its first start, and never reads it again. A deleted Secret comes back with a new password that the Keycloak user does not hold. Only a password reset in Keycloak recovers the account. To rotate the password, change it in Keycloak.
+> **Caution:** Do not delete `my-management-identity-admin`. Management Identity sets that password on the Keycloak user once, on its first start. A deleted Secret comes back with a new password that the Keycloak user does not hold. Only a password reset in Keycloak recovers the account. To rotate the password, change it in Keycloak.
 
-The `oidc` mode generates none of these. Your provider issues every client secret, and the platform config names it.
+The `oidc` mode generates no Secret. Your provider issues every client secret, and the platform config names it.
 
 ## Management Identity
 
@@ -261,19 +240,17 @@ spec:
   # ... the rest of your management cluster
 ```
 
-`spec.identity.version` is the Management Identity version. The operator supports `8.9.0` and later.
+The operator supports `version` `8.9.0` and later.
 
-Management Identity needs a PostgreSQL database of its own. Each component that opens a database owns every table in it, so Management Identity, Keycloak, and Web Modeler must each name a different [DatabaseConfig](databaseconfig.md).
+Management Identity needs a PostgreSQL database of its own. Management Identity, Keycloak, and Web Modeler must each name a different [DatabaseConfig](databaseconfig.md). Two components that name one report `InvalidReference`.
 
 ### The first administrator
 
-`spec.identity.admin` names the person who signs in first and grants the rest. Management Identity reads it on its first start only and stores the result in its database.
+`spec.identity.admin` names the person who signs in first and grants access to the rest. Management Identity reads it on its first start only and stores the result in its database.
 
-In the two Keycloak modes, set `username`. Management Identity creates that Keycloak user. If you also set `spec.webModeler`, `email` is required. Web Modeler needs an address for every person who signs in, and the API server refuses the resource without one. `passwordSecretRef` names a password of your own. Without it the operator generates one into `my-management-identity-admin`.
+In the two Keycloak modes, set `username`. Management Identity creates that Keycloak user. If you also set `spec.webModeler`, `email` is required, because Web Modeler needs an address for every person who signs in. `passwordSecretRef` names a password of your own. Without it, the operator generates one into `my-management-identity-admin`. A later change to `username` does not rename the first user. Management Identity creates a second user, and the first one keeps its access.
 
-A later change to `username` does not rename the first user. Management Identity creates a second one, and the first one keeps its access.
-
-In the `oidc` mode, set `claimName` and `claimValue` instead. They name the token claim that identifies the administrator, for example `oid` or `sub`. The operator records the pair as `<claimName>=<claimValue>`, so `claimName` holds no equals sign. This pair is fixed once Management Identity has started. A later change reports `IdentityReady` and `Ready` with reason `ImmutableAfterStart`, and the message names the recorded value and the value you asked for:
+In the `oidc` mode, set `claimName` and `claimValue` instead. They name the token claim that identifies the administrator, for example `oid` or `sub`. `claimName` holds no equals sign. After Management Identity started, a change to this pair has no effect. The operator reports it on `IdentityReady` and `Ready`, and the message names the recorded value and the value you asked for:
 
 ```yaml
 status:
@@ -282,28 +259,19 @@ status:
       status: "False"
       reason: ImmutableAfterStart
       message: 'Management Identity started with the administrator claim "oid=8f1c...e2" and stores it in its database; spec.identity.admin now asks for "oid=41ab...77", which only a change in the database can do'
-    - type: Ready
-      status: "False"
-      reason: ImmutableAfterStart
-      message: 'management-identity: Management Identity started with the administrator claim "oid=8f1c...e2" and stores it in its database; spec.identity.admin now asks for "oid=41ab...77", which only a change in the database can do'
 ```
 
-There are two ways out, and the operator cannot do either for you.
+The operator cannot correct this for you. You have three ways out:
 
-The recorded administrator is a real person. Put the recorded value back on `spec.identity.admin`. Sign in as that person, and grant the rest in the Management Identity user interface.
+- If the recorded claim belongs to a real person, put the recorded value back on `spec.identity.admin`. Sign in as that person, and grant access to the rest in Management Identity.
+- If nobody holds the recorded claim, change the administrator in the database of Management Identity. Camunda names the values in [OIDC configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/#oidc-configuration). Then set the annotation `camunda.io/identity-initial-claim` to the pair that `spec.identity.admin` names, and both conditions clear:
 
-Nobody holds the recorded claim, so nobody can sign in. The operator records the claim that Management Identity started with in the annotation `camunda.io/identity-initial-claim` on this resource, and renders that recorded value from then on. Put the claim you want on the annotation:
+    ```bash
+    kubectl annotate --overwrite camundamanagementcluster my-management -n my-management-ns \
+      camunda.io/identity-initial-claim=oid=41ab...77
+    ```
 
-```bash
-kubectl annotate --overwrite camundamanagementcluster my-management -n my-management-ns \
-  camunda.io/identity-initial-claim=oid=41ab...77
-```
-
-The operator renders what the annotation records, so that claim reaches Management Identity on its next start. Set the annotation to the pair that `spec.identity.admin` names, and both conditions clear. Management Identity itself reads the claim on its first start only, so the administrator in its own database has to change as well. Camunda names the values in [OIDC configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/#oidc-configuration).
-
-An empty database does the same. Point `spec.identity.databaseConfigRef` at one, and Management Identity starts over. It then loses the roles and the tenants it held. Your identity provider keeps every user and client, because they never lived in that database.
-
-Get the pair right before the first start, and the question does not arise.
+- Point `spec.identity.databaseConfigRef` at an empty database. Management Identity starts again from nothing and loses the roles and the tenants it held. Your identity provider keeps every user and client.
 
 ## Console
 
@@ -322,7 +290,7 @@ spec:
   # ... the rest of your management cluster
 ```
 
-A cluster appears in Console once it reports to Console. The operator adds four entries to `spec.extraEnv` of every attached cluster, so you add nothing to a cluster yourself:
+A cluster appears in Console after it reports to Console. The operator adds four entries to `spec.extraEnv` of every attached cluster, so you add nothing to a cluster yourself:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -343,17 +311,17 @@ spec:
   # ... the rest of your cluster
 ```
 
-The endpoint is the Console Service, reached from inside the Kubernetes cluster. Console therefore needs no Ingress for a cluster to report to it. Camunda documents what the entries mean in [Console ping configuration](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/zeebe/configuration/broker-config/#console-ping-configuration).
+The endpoint is the Console Service inside the Kubernetes cluster, so a cluster reports to Console without an Ingress. Camunda documents the entries in [Console ping configuration](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/zeebe/configuration/broker-config/#console-ping-configuration).
 
-The operator owns these four names and replaces what you set under them. An entry that sets `valueFrom` under one of them cannot hold the operator's `value` too. The operator removes that entry and records the Warning event `ConsolePingEntryRemoved`. The event names every field manager that owns the `valueFrom` of the entry, when `metadata.managedFields` holds one. It removes the four entries again when the cluster leaves `spec.clusterSelector`, when you remove `spec.console`, or when you delete this resource. See [Management plane](camundacluster.md#management-plane) on the cluster page.
+The operator owns these four names and replaces what you set under them. If an entry sets `valueFrom` under one of the names, the operator removes it and records the Warning event `ConsolePingEntryRemoved`. The event names the field manager that set the entry. The operator removes the four entries when the cluster leaves the selectors, when you remove `spec.console`, and when you delete this resource. The cluster then rolls its pods once. See [Management plane](camundacluster.md#management-plane) on the cluster page.
 
-Camunda 8.10 renamed Console to Hub and the ping settings with it, and it expects machine-to-machine credentials under the ping. The [8.10 chart README](https://github.com/camunda/camunda-platform-helm/blob/main/charts/camunda-platform-8.10/README.md) lists those settings. A cluster of version 8.10 or later gets the four `CAMUNDA_HUB_PING_*` names instead. The management plane issues no credentials yet, so such a cluster logs a validation error and reports to nobody.
+A cluster of version 8.10 or later gets the four `CAMUNDA_HUB_PING_*` names instead, because Camunda 8.10 renamed Console to Hub. Camunda 8.10 also expects machine-to-machine credentials for the ping, which the management plane does not issue. Such a cluster logs a validation error and reports to no Console.
 
-Camunda marks cluster discovery in Console experimental in 8.9. It is documented under [experimental features](https://docs.camunda.io/docs/self-managed/components/console/configuration/#experimental-features).
+Camunda marks cluster discovery in Console as experimental in 8.9, under [experimental features](https://docs.camunda.io/docs/self-managed/components/console/configuration/#experimental-features).
 
 ## Web Modeler
 
-Web Modeler runs as two processes: the application and its API, and a second process that pushes live updates to a browser. Set `spec.webModeler` to deploy both.
+Web Modeler runs as two processes: the application with its API, and a process that pushes live updates to a browser. Set `spec.webModeler` to deploy both.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -379,26 +347,22 @@ spec:
   # ... the rest of your management cluster
 ```
 
-Route `externalUrl` to `my-management-web-modeler-restapi` and `websocketsExternalUrl` to `my-management-web-modeler-websockets`. A browser opens both, so both must be reachable from outside the Kubernetes cluster.
+Route `externalUrl` to `my-management-web-modeler-restapi` and `websocketsExternalUrl` to `my-management-web-modeler-websockets`. A browser opens both.
 
-Web Modeler needs an SMTP server and does not start without one. Camunda states this in [Web Modeler configuration](https://docs.camunda.io/docs/self-managed/components/modeler/web-modeler/configuration/). Leave `credentialsSecretRef` unset for a server that needs no credentials.
+Web Modeler needs an SMTP server, as Camunda states in [Web Modeler configuration](https://docs.camunda.io/docs/self-managed/components/modeler/web-modeler/configuration/). Leave `credentialsSecretRef` unset for a server that needs no credentials. Web Modeler also needs a PostgreSQL database of its own, named by `databaseConfigRef`.
 
-Web Modeler needs a PostgreSQL database of its own, named by `databaseConfigRef`.
+The two processes authenticate to each other with credentials in the generated Secret `my-management-web-modeler-pusher`. Delete that Secret to rotate them. Both processes then roll together.
 
-The two processes authenticate to each other with credentials that the operator generates into the Secret `my-management-web-modeler-pusher`. Delete that Secret to rotate them. Both processes then roll together.
+### Deploy to a cluster
 
-### Deploying to a cluster
+The deploy dialog of Web Modeler lists every attached orchestration cluster. You name no cluster on this resource. Web Modeler authenticates against a cluster by the method of that cluster:
 
-Web Modeler lists every attached orchestration cluster in its deploy dialog. The operator fills the list, so you name no cluster here.
+- An OIDC cluster takes the token of the person who is signed in.
+- A basic-auth cluster asks the person for a user name and a password in the deploy dialog.
 
-How Web Modeler authenticates against a cluster follows the authentication method of that cluster:
+For every attached basic-auth cluster, the operator creates the user `web-modeler` on that cluster. The user can deploy a process, start an instance, and read both. If a `web-modeler` user already exists there, it gets the password of the operator. Do not create a `web-modeler` user of your own on those clusters.
 
-- An OIDC cluster takes the token of the person who is signed in. Nothing else is needed.
-- A basic-auth cluster asks the person for a user name and a password in the deploy dialog. No setting of Web Modeler carries them.
-
-For every attached basic-auth cluster, the operator creates the user `web-modeler` on that cluster. That user name is reserved on every attached basic-auth cluster. A user of that name that already exists there gets the password of the operator. The operator removes it when the cluster leaves the management plane. Do not create a `web-modeler` user of your own on those clusters. It publishes the password of that user in a Secret of the management namespace, named `my-management-web-modeler-cluster-<uid>`. The `<uid>` is the first eight characters of the UID of the `CamundaCluster`. The user holds only the permissions that deploying and starting a process needs.
-
-Read the password and give it to the people who deploy from Web Modeler. Each Secret carries the name and the namespace of its cluster as labels, so select the one cluster you are after:
+The operator publishes the password in the Secret `my-management-web-modeler-cluster-<uid>` of the management namespace. `<uid>` is the first eight characters of the UID of the `CamundaCluster`. Select the Secret of one cluster by its labels:
 
 ```bash
 kubectl get secret -n my-management-ns \
@@ -406,34 +370,18 @@ kubectl get secret -n my-management-ns \
   -o custom-columns='SECRET:.metadata.name,PASSWORD:.data.password'
 ```
 
-Drop the two cluster labels from the selector to list every cluster's Secret.
+Remove the two cluster labels from the selector to list the Secrets of all clusters. The values are base64 encoded. The key `applied` means that the cluster holds the user under that password. A Secret without `applied` holds a password that never reached the cluster.
 
-Every value is base64 encoded. The key `applied` next to the password means that the cluster took the user under that password. A Secret without it is a password that never reached the cluster.
+If the cluster refuses the user, its row in `status.clusters` reads `BasicAuthUserFailed`. The management plane still serves the cluster, and Web Modeler still lists it.
 
-A cluster that refuses the call keeps its row in `status.clusters` with the reason `BasicAuthUserFailed`. The management plane still serves the cluster, and Web Modeler still lists it. Only the user is missing.
+The operator reads every cluster again at most every 10 minutes. It creates the user again if somebody removed it, and it grants a permission again if somebody revoked it. It does not repair these:
 
-### Repair of the cluster user
+- A password that somebody changed on the cluster. Delete the Secret to publish a new password and set it on the cluster.
+- The name and the email address of the user.
 
-The operator reads every attached basic-auth cluster again and repairs the user there. It repairs two things:
+A cluster that leaves the management plane loses the user, and the Secret goes too. The cluster leaves when it leaves the selectors, when you remove `spec.webModeler`, or when you delete the cluster. Some clusters keep the user: a cluster that stopped using basic authentication, and a cluster whose `spec.platformConfigRef` names no `CamundaPlatformConfig`. The operator then deletes the Secret and records the event `WebModelerUserLeftBehind` on this resource. Remove that user yourself if you do not want it.
 
-- A user that somebody removed on the cluster. It comes back with the password that the Secret publishes.
-- A permission that somebody revoked. The operator grants only the permissions that are missing, so it does not add a second row of a permission the user already holds.
-
-The operator does not repair these:
-
-- A password that somebody changed on the cluster. No API gives a password back, so the operator cannot see the change. Delete the Secret to publish a new password and set it on the cluster.
-- The name and the email address of the user. They are yours to change.
-- A `web-modeler` user on a cluster that this management plane does not serve.
-
-One cluster is read at most once every 10 minutes, so a repair takes up to that long. The row of a cluster that refused the repair reports the reason `BasicAuthUserFailed`.
-
-### Withdrawal of the cluster user
-
-A cluster that leaves the management plane loses the user, and the Secret that published its password goes with it. The cluster leaves when it leaves `spec.clusterSelector` or the namespace bound, when you remove `spec.webModeler`, or when you delete the cluster.
-
-A cluster that refuses the removal keeps the user, and the Secret keeps its password. That cluster also stays claimed by this management plane, so that no other plane takes it while it holds the user. The other clusters that left go free. The operator records the Warning event `WebModelerUserRemovalFailed` on the `CamundaManagementCluster` with the answer of the cluster. It tries again until the removal succeeds. Correct what the event names, for example a missing administrator Secret or a cluster that does not answer.
-
-A cluster that stopped accepting basic credentials keeps the user. Nothing signs in with it there, and the cluster no longer publishes the administrator credential that a removal needs. A cluster whose `spec.platformConfigRef` names no `CamundaPlatformConfig` counts the same. The operator cannot read how it authenticates, and a removal that fails there holds the cluster forever. In both cases the operator deletes the Secret, records the event `WebModelerUserLeftBehind` on the `CamundaManagementCluster` with the reason, and lets the cluster go. Remove that user yourself if you do not want it there.
+A cluster that refuses the removal keeps the user, and the Secret keeps its password. This management plane keeps its claim on that cluster until the removal succeeds, and tries again. The operator records the Warning event `WebModelerUserRemovalFailed` on this resource, with the answer of the cluster. Correct what the event names, for example a missing administrator Secret or a cluster that does not answer.
 
 ## Clusters
 
@@ -443,7 +391,7 @@ A cluster that stopped accepting basic credentials keeps the user. Nothing signs
 - `{}` selects every `CamundaCluster` of the Kubernetes cluster, in every namespace.
 - A selector with terms selects the clusters whose labels match.
 
-`spec.namespaceSelector` narrows the search to the namespaces whose labels match, the way the `namespaceSelector` of an admission webhook does. Unset or `{}` puts no bound on the namespace. It selects on the labels of the `Namespace` objects, so label the namespaces, not the clusters:
+`spec.namespaceSelector` selects on the labels of the `Namespace` objects, so label the namespaces, not the clusters. Unset or `{}` puts no limit on the namespace.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -460,34 +408,6 @@ spec:
       team: payments
   # ... the rest of your management cluster
 ```
-
-A cluster whose namespace leaves the bound is deselected like one that leaves `clusterSelector`. The claim, the Console settings, and the Web Modeler user go by themselves.
-
-### An OIDC cluster must name the same issuer
-
-Console and Web Modeler call an OIDC cluster with the token of the person who is signed in. The identity provider of the management plane issues that token. A cluster that validates the tokens of another issuer refuses every such call.
-
-A selected OIDC cluster is therefore attached only while it names the issuer of this management plane. The cluster names it in `spec.auth.oidc.issuerUrl`, on the [CamundaPlatformConfig](camundaplatformconfig.md) that the `spec.platformConfigRef` of that cluster points at.
-
-The issuer of the management plane follows from the `spec.identityProvider` block of this resource:
-
-| `spec.identityProvider` | The issuer of the management plane |
-| --- | --- |
-| `keycloak` | `<keycloak.externalUrl>/realms/camunda-platform`. The in-cluster address `http://my-management-keycloak-service.my-management-ns.svc:8080/auth/realms/camunda-platform` names the same Keycloak realm, and it is accepted too. |
-| `externalKeycloak` | `<externalKeycloak.url>/realms/<externalKeycloak.realm>` |
-| `oidc` | `spec.auth.oidc.issuerUrl` of the platform config that the `spec.platformConfigRef` of **this** resource names |
-
-Two issuer URLs name the same issuer when they differ only in one of these:
-
-- the case of the scheme, such as `HTTPS://` against `https://`
-- the case of the host, such as `LOGIN.Example.com` against `login.example.com`
-- a trailing slash
-
-A different port names a different issuer, and so does a different path.
-
-A cluster on another issuer gets `attached: false` with the reason `InvalidReference`. The message names both issuers. Console does not list that cluster, and Web Modeler does not deploy to it. The cluster itself keeps running. It keeps the `camunda.io/management-cluster` annotation while the selector matches it, and the operator removes its `CAMUNDA_CONSOLE_PING_*` entries.
-
-A basic-auth cluster has no such rule. Web Modeler signs in to it with the `web-modeler` user that the operator creates there.
 
 `status.clusters` lists one row per selected cluster and says whether the management plane serves it:
 
@@ -507,19 +427,35 @@ status:
 | Reason | Meaning | What to do |
 | --- | --- | --- |
 | (empty, `attached: true`) | Console lists the cluster and Web Modeler deploys to it. | Nothing. |
-| `NotReady` | The cluster publishes no `status.gateway` yet, or it changed while the operator claimed it. | Wait. The row clears when the cluster settles. |
+| `NotReady` | The cluster publishes no `status.gateway` yet, for example because it is suspended. Or the cluster changed while the operator claimed it. | Wait. The row clears when the cluster runs. |
 | `ClaimedElsewhere` | Another management plane already serves this cluster. The message names it. | One cluster answers to one management plane. Remove the cluster from one of the two selectors. |
-| `InvalidReference` | The `platformConfigRef` of the cluster does not resolve, or the cluster authenticates with `oidc` on another issuer than the management plane. The message says which. | Create the named `CamundaPlatformConfig`, or correct the reference on the cluster. Or point the cluster at the issuer of the management plane. |
+| `InvalidReference` | The `platformConfigRef` of the cluster does not resolve, or the cluster uses OIDC with another issuer than the management plane. The message says which. | Correct the reference on the cluster, or point the cluster at the issuer of the management plane. See [An OIDC cluster must name the same issuer](#an-oidc-cluster-must-name-the-same-issuer). |
 | `WriteFailed` | The operator failed to write the Console settings on the cluster. | Read the message. The operator tries again. |
 | `BasicAuthUserFailed` | The operator failed to create the Web Modeler user on this basic-auth cluster. `attached` stays true. | Read the message. It usually names a missing administrator Secret or a cluster that does not answer. |
 
-An attached cluster carries the annotation `camunda.io/management-cluster`, whose value is `my-management-ns/my-management`. It is how one management plane tells its clusters from the clusters of another. The operator removes the annotation when the cluster leaves the selector, and when you delete this resource.
+A problem of one cluster shows only in its row. It never holds `Ready` back.
+
+A selected cluster carries the annotation `camunda.io/management-cluster: my-management-ns/my-management`. The operator removes it when the cluster leaves the selectors, and when you delete this resource.
+
+### An OIDC cluster must name the same issuer
+
+Console and Web Modeler call an OIDC cluster with the token of the person who is signed in. The identity provider of the management plane issues that token. So a selected OIDC cluster is attached only while its platform config names the issuer of this management plane in `spec.auth.oidc.issuerUrl`:
+
+| `spec.identityProvider` | The issuer of the management plane |
+| --- | --- |
+| `keycloak` | `<keycloak.externalUrl>/realms/camunda-platform`. The in-cluster address `http://my-management-keycloak-service.my-management-ns.svc:8080/auth/realms/camunda-platform` is accepted too. |
+| `externalKeycloak` | `<externalKeycloak.url>/realms/<externalKeycloak.realm>` |
+| `oidc` | `spec.auth.oidc.issuerUrl` of the platform config that **this** resource names |
+
+The comparison ignores the case of the scheme and the host, and a trailing slash. A different port or path is a different issuer.
+
+A cluster on another issuer gets `attached: false` with the reason `InvalidReference`, and the message names both issuers. The cluster keeps running, but Console does not list it and Web Modeler does not deploy to it. A basic-auth cluster has no such rule.
 
 ## Optimize
 
-This resource deploys no Optimize. [CamundaOptimize](camundaoptimize.md) is its own resource, and one management plane serves as many of them as you run.
+This resource deploys no Optimize. [CamundaOptimize](camundaoptimize.md) is a separate resource, and one management plane serves as many of them as you run.
 
-In the two Keycloak modes, give each `CamundaOptimize` the address a browser reaches it at. The management plane registers the login callback under that address on the `optimize` client of the realm. So a person who signs in there comes back there:
+In the two Keycloak modes, give each `CamundaOptimize` the address that a browser reaches it at. The management plane registers `<externalUrl>/api/authentication/callback` on the `optimize` client of the realm, so a person who signs in there comes back there:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -533,9 +469,9 @@ spec:
   # ... the rest of your Optimize
 ```
 
-An Optimize that names no address gets no callback from this management plane. Keycloak then refuses the return of a sign-in, unless somebody put that callback in the realm by hand.
+An Optimize without `spec.externalUrl` gets no callback, and Keycloak refuses the return of a sign-in.
 
-`status.optimize` lists what this management plane found, ordered by namespace and name. It is what the plane will register, not what the realm carries. The condition below reports what the realm carries:
+`status.optimize` lists the Optimize instances that the management plane found and will register. `OptimizeCallbacksReady` reports whether the realm carries them:
 
 ```yaml
 status:
@@ -543,37 +479,26 @@ status:
     - namespace: my-cluster-ns
       name: my-cluster-optimize
       externalUrl: "https://optimize.camunda.example.com"
+  conditions:
+    - type: OptimizeCallbacksReady
+      status: "True"
+      reason: Healthy
+      message: Client "optimize" of realm "camunda-platform" carries every login callback of this management plane (1)
 ```
 
-The `OptimizeCallbacksReady` condition reports the realm. It reads `Healthy` while the `optimize` client carries the callback of every row above and the first administrator holds the `Optimize` role. See [Status](#status).
+The management plane owns every redirect URI of the `optimize` client that ends in `/api/authentication/callback`. It removes such a URI when no Optimize names it, also one that you add by hand. Other redirect URIs stay. So an Optimize that this operator does not run cannot sign in through this management plane. Give that Optimize a realm of its own, or run it as a `CamundaOptimize`.
 
-The operator owns the login callbacks of the addresses above and nothing else on that client. It adds the ones that are missing and removes the ones of an Optimize that went away. A redirect URI of another shape stays where it is. A login callback you register by hand does not: it has the shape the operator owns, so the operator removes it again. Give the Optimize a `spec.externalUrl` instead.
+Management Identity restarts when the first Optimize with an address arrives and when the last one goes. Other additions and removals do not restart it.
 
-Management Identity restarts when the first Optimize of a management plane arrives and when the last one goes. Adding or removing an Optimize while another one stays leaves it running. The addresses live in the ConfigMap `my-management-identity-optimize-urls`, which the Identity pods read the list from, so a change to the list does not restart them. Those two moments are where Management Identity starts and stops creating the Optimize client at all. So a plane that empties and fills again restarts at each one.
+The first Optimize also brings the `Optimize` role into the realm. The management plane gives that role to the user that `spec.identity.admin.username` names, and gives it back if somebody takes it away. A role held through a group counts as held. The management plane touches no other role and no other user. Camunda documents the roles in [Manage roles](https://docs.camunda.io/docs/self-managed/components/management-identity/application-user-group-role-management/manage-roles/).
 
-Management Identity writes the whole client while it starts, so the operator waits for its rollout to finish before it writes to the realm.
+In the `oidc` mode the management plane registers nothing, and `OptimizeCallbacksReady` reads `Disabled`. One application at your provider serves every Optimize of the management plane. Add the callback of each Optimize to that application yourself.
 
-The first Optimize of a management plane brings the `Optimize` role into the realm with it. Management Identity gives the roles of the realm to the first administrator on its very first start and never again. So an administrator who was there before that first Optimize does not hold the role. The management plane gives it to them. Every time it converges the realm, it reads the user that `spec.identity.admin.username` names. It adds the `Optimize` role when that user does not hold it. A role you take away in Keycloak comes back on the next converge.
+## Change the identity provider
 
-A role that the administrator holds through a group of the realm counts as held. A group that carries the `Optimize` role keeps carrying it, and the management plane writes nothing.
+You can change `spec.identityProvider` on a running management plane. The first administrator does not move: Management Identity keeps the one in its database. The login callbacks of Optimize move from the old realm to the new one. This section applies when the old mode is `externalKeycloak`.
 
-This is the only role and the only user the management plane touches. Every other role of that administrator, and every other user of the realm, stays yours to manage in Management Identity. `OptimizeCallbacksReady` reads `AdminRoleGrantFailed` when the realm holds no user of that name, when it holds no `Optimize` role, or when Keycloak refused the grant. See [Status](#status).
-
-Deleting this resource removes those callbacks from the realm that `status.callbackRealm` names. While that field is absent, the realm of the spec loses them, and only a plane that holds the `ManagementAuthConfig` it names removes anything there. A Keycloak that does not answer at that moment keeps them. The deletion goes through anyway, so the orchestration clusters this plane holds are always freed.
-
-This resource carries no Optimize address of its own. Every address comes from a `CamundaOptimize`, and the management plane owns the whole login callback list of the `optimize` client.
-
-An Optimize that this operator does not run therefore cannot sign in through this management plane in a Keycloak mode. Registering its callback by hand does not last, because the operator removes it again. Give that Optimize a realm of its own, or run it as a `CamundaOptimize`.
-
-One realm answers to one management plane. A second plane that names the same `url` and `realm` waits with the `Ready` reason `RealmClaimedElsewhere`, and the operator starts nothing new for it. See [One realm answers to one management plane](#one-realm-answers-to-one-management-plane).
-
-There is one window where a callback added by hand survives. While `OptimizeCallbacksReady` reads `NoCallbacks`, no Optimize behind this management plane names an address, and the plane stops reading the realm. A callback added in that state stays and works until the first `CamundaOptimize` with a `spec.externalUrl` appears. The operator removes the callback then. Do not build on that window.
-
-The `oidc` mode registers nothing. Your provider holds the callback URLs, so `spec.externalUrl` is out of use there and `OptimizeCallbacksReady` reads `Disabled`. One application at your provider serves every Optimize of the management plane, so add the callback of each one to that application yourself.
-
-### Moving the callbacks to another realm
-
-When `spec.identityProvider` starts naming another Keycloak, another `realm`, or the `oidc` mode, the login callbacks leave the realm they were in. On a move from one Keycloak to another, a plane that serves an Optimize empties the old realm first. Then it registers the callbacks in the new one. A move to the `oidc` mode and a plane that serves no Optimize register nothing in a realm, so neither waits. `status.callbackRealm` names the realm the plane last pointed Management Identity at. Identity registers the callbacks there while it starts, so the field appears with the realm and not with the first registration. During a move, it keeps naming the old realm until the callbacks have left it. After that, it keeps naming it until nothing is left that can write them back:
+`status.callbackRealm` names the realm of a Keycloak that you run, where the callbacks are registered:
 
 ```yaml
 status:
@@ -586,17 +511,13 @@ status:
       passwordKey: "password"
 ```
 
-`status.callbackRealm` also keeps naming the old realm until no Management Identity of the old configuration can put the callbacks back into it. A move restarts Management Identity, and nobody signs in while it restarts. A move that the old realm holds back keeps Management Identity on the old realm until that realm is empty. Everybody keeps signing in there meanwhile. A move to the `oidc` mode, and a plane that serves no Optimize, are never held. Their Management Identity moves while the old realm is still being emptied.
+After a change, the field keeps naming the old realm until the operator removed the callbacks from it and no Management Identity points at it. The move is complete when the field names the new realm or disappears. Keep the old administrator Secret, and the old `caBundleSecretRef` Secret if there is one, until then.
 
-Keep the Secret that `adminCredentialsSecretRef` names there. If the old Keycloak needed a `caBundleSecretRef` Secret, keep that one too. Keep both until `status.callbackRealm` stops naming the old realm. The operator signs in to the old Keycloak with them one last time. The record is the completion signal of a move, because the condition ends at `Healthy`, `Disabled`, or `NoCallbacks`, whichever the new mode reaches.
+A move to another Keycloak waits while the plane serves an Optimize. The workloads stay on the old Keycloak until the old realm is empty, and everybody keeps signing in there. A move to the `oidc` mode, and a plane that serves no Optimize, move at once.
 
-A move to the `oidc` mode empties the old realm the same way. `status.callbackRealm` then goes, and `OptimizeCallbacksReady` reads `Disabled`.
+A move away from the `keycloak` mode deletes the Keycloak that the operator runs. Its database keeps the realm.
 
-The old realm never waits for the new one. The callbacks leave it even while the new identity provider cannot be used yet. For example, they leave while its administrator Secret is missing, or while its Keycloak does not answer Management Identity.
-
-The field is absent once a move into the `keycloak` mode is over. The operator runs that Keycloak, so its realm is never recorded. After a move into it from a Keycloak that you ran, the field keeps naming the old realm. It names that realm until the realm is empty and nothing of it can write again. A move away from the `keycloak` mode deletes the Keycloak that the operator runs. The database of that Keycloak keeps the realm as it was.
-
-On a move from one Keycloak to another, an old Keycloak that does not let go keeps the whole plane. The workloads stay on the old Keycloak, and the new realm gets nothing. Everybody keeps signing in through the old one. `OptimizeCallbacksReady` reads `ConnectionFailed`, `WriteFailed`, `MissingSecret`, or `InvalidCABundle`, the message names the old realm, and `Ready` reads the same reason. Management Identity registers nothing in a realm in the `oidc` mode. So on a move to that mode, the plane moves at once and only `OptimizeCallbacksReady` reports the failure. The operator keeps trying to empty the old realm:
+If the old Keycloak does not answer, `OptimizeCallbacksReady` names the old realm and the reason (`ConnectionFailed`, `WriteFailed`, `MissingSecret`, or `InvalidCABundle`). On a move to another Keycloak, `Ready` reads the same reason. The operator keeps trying:
 
 ```yaml
 status:
@@ -607,116 +528,74 @@ status:
       message: 'Realm "camunda-platform" of Keycloak "https://old-keycloak.example.com/auth" still carries the login callbacks of this management plane, and this operator could not remove them: signing in at Keycloak: Post "https://old-keycloak.example.com/auth/realms/master/protocol/openid-connect/token": dial tcp: connection refused. If that Keycloak is gone for good, set the annotation camunda.io/forget-callback-realm="https://old-keycloak.example.com/auth/realms/camunda-platform" on this resource to leave them there'
 ```
 
-A Management Identity pod that starts against the old realm holds the removal back. Such a pod writes the whole `optimize` client of that realm while it starts. `OptimizeCallbacksReady` reads `PrerequisiteNotMet` then. The operator stops the Management Identity of the old realm. The wait therefore ends even when the pod never becomes ready. A Keycloak that is gone for good is one such case:
-
-```yaml
-status:
-  conditions:
-    - type: OptimizeCallbacksReady
-      status: "False"
-      reason: PrerequisiteNotMet
-      message: 'A Management Identity pod is starting against realm "camunda-platform" of Keycloak "https://old-keycloak.example.com/auth", and it owns the Optimize client of that realm while it starts. That Management Identity is stopped, and this operator empties the realm once the pod is gone. If that Keycloak is gone for good, set the annotation camunda.io/forget-callback-realm="https://old-keycloak.example.com/auth/realms/camunda-platform" on this resource to leave the login callbacks there'
-```
-
-A plane that serves no Optimize is not held. It fills no realm, so the workloads move at once, `Ready` stays with them, and only `OptimizeCallbacksReady` keeps naming the realm still to be emptied.
-
-If the old Keycloak is gone for good, set the annotation that the message names. Use the exact value that the message prints. A Keycloak that never answered takes the same route. `status.callbackRealm` names the realm from the moment the plane points Management Identity at it. So a `url` with a typo in it is a realm to let go of. The corrected `url` is a move away from it. The value is the old realm, as `<url>/realms/<realm>`. A spelling that differs only in the case of the host, a default port, or a trailing slash matches too:
+If the old Keycloak is gone for good, set the annotation that the message names. Use the exact value that the message prints. This also applies to a `url` with a typo that never answered.
 
 ```bash
 kubectl annotate camundamanagementcluster my-management -n my-management-ns \
   camunda.io/forget-callback-realm="https://old-keycloak.example.com/auth/realms/camunda-platform"
 ```
 
-The management plane then lets go of the old realm, records the Warning event `OptimizeCallbacksLeftBehind`, and removes the annotation. The move goes on from there. The plane registers the callbacks in the new realm when the new mode holds one and the plane serves an Optimize. A move to the `oidc` mode registers none, and `OptimizeCallbacksReady` reads `Disabled`. The callbacks stay in the old realm. This plane holds the old realm until two things are true of it:
+The management plane then lets go of the old realm, records the Warning event `OptimizeCallbacksLeftBehind`, and removes the annotation. The move continues. The callbacks stay in the old realm, so remove them from its `optimize` client yourself if that Keycloak comes back. An annotation that names another realm than `status.callbackRealm` has no effect. The operator removes it and records the Warning event `ForgetCallbackRealmIgnored`.
 
-- The withdrawal removed the callbacks, or this annotation told the operator to leave them there.
-- No Management Identity of the plane points at that realm any more.
-
-Only then can another management plane claim it. If that Keycloak comes back, remove the callbacks from its `optimize` client yourself. The annotation lets go of the realm it names and of no other. One that names another realm than `status.callbackRealm` is removed unused, and the Warning event `ForgetCallbackRealmIgnored` names the recorded realm and what the annotation carried. One on a plane whose `status.callbackRealm` is absent is removed too, with the event `ForgetCallbackRealmRemoved`. That plane records no realm, so the annotation lets go of nothing.
-
-A suspended management plane leaves every realm as it is. An annotation that names the realm of `status.callbackRealm` waits until the plane resumes, and the callbacks move then. An annotation that names another realm is removed while the plane sleeps, the same as when it runs. Deleting a suspended plane removes the callbacks from the realm that `status.callbackRealm` names.
+A suspended management plane leaves every realm as it is. The move continues when the plane resumes.
 
 ## The contract that Optimize reads
 
-The operator writes one cluster-scoped [ManagementAuthConfig](managementauthconfig.md) with the endpoints of the identity provider, the base URL of Management Identity, and the Optimize client. A `CamundaOptimize` reads it through `managementAuthRef`.
+The operator writes one cluster-scoped [ManagementAuthConfig](managementauthconfig.md) with the endpoints of the identity provider, the address of Management Identity, and the Optimize client. A `CamundaOptimize` reads it through `managementAuthRef`.
 
-The contract is named after this resource unless `spec.managementAuthConfigName` names another. `status.managementAuthConfig` reports the name in use:
+The contract has the name of this resource, unless `spec.managementAuthConfigName` names another. `status.managementAuthConfig` reports the name in use:
 
 ```yaml
 status:
   managementAuthConfig: my-management
 ```
 
-The contract is cluster-scoped, so two management planes in two namespaces can ask for the same name. The first one there keeps it, and the second reports `Ready=False` with reason `Conflict`.
+The contract is cluster-scoped, so two management planes in two namespaces can ask for the same name. The first one keeps it, and the second reports `Ready=False` with reason `Conflict`.
 
-If you change `spec.managementAuthConfigName` later, the operator writes the contract under the new name and removes the old one. A `CamundaOptimize` that names the old one in its `managementAuthRef` loses its contract, so change that reference at the same time.
+If you change `spec.managementAuthConfigName`, the operator writes the contract under the new name and removes the old one. Change the `managementAuthRef` of every `CamundaOptimize` at the same time.
 
 ## Images
 
-Every image of the management plane has two sources on the referenced [CamundaPlatformConfig](camundaplatformconfig.md), in this order:
-
-1. A rename under `spec.images`.
-2. The default repository of Camunda.
-
-The tag comes from the `version` field of the component that runs the image. Keycloak is the exception: its tag is `quay-optimized-<version>`, which is what Camunda publishes its Keycloak build under. See [Images](camundaplatformconfig.md#images).
+Every image of the management plane comes from the default Camunda repository, unless `spec.images` of the referenced [CamundaPlatformConfig](camundaplatformconfig.md#images) renames it. The tag is the `version` of the component. The Keycloak tag is `quay-optimized-<version>`, which is the tag of the Camunda build of Keycloak.
 
 ## Suspension
 
-`spec.suspend: true` scales every workload of the management plane to zero, Keycloak included. The databases keep everything, so a resume brings the same realm, the same users, and the same projects back.
+`spec.suspend: true` scales every workload of the management plane to zero, Keycloak included. The databases keep everything, so a resume brings back the same realm, users, and projects.
 
-The `ManagementAuthConfig`, the claims on the orchestration clusters, the claim on the Keycloak realm, and the Console settings stay while the suspension holds. Nothing else has to change while the management plane is down. A realm that the spec started naming during the suspension is claimed on resume.
+The `ManagementAuthConfig`, the annotations on the orchestration clusters, the claim on the Keycloak realm, and the Console settings stay. `Ready` reads `True` with reason `Suspended`.
 
-`Ready` reads `True` with reason `Suspended`. Zero replicas is the state you asked for, so this is not an error.
-
-Nobody can sign in to Console, Web Modeler, or Optimize while the management plane is down. All three authenticate through Management Identity, and in the `keycloak` mode the provider behind it is down as well. A `CamundaOptimize` keeps its own `Ready` condition, because the contract it reads is still there. The orchestration clusters run on, and they keep exporting, executing, and serving their own web applications.
+Nobody can sign in to Console, Web Modeler, or Optimize while the management plane is suspended, because all three authenticate through Management Identity. The orchestration clusters continue to run.
 
 ## Deletion
 
 Deleting the `CamundaManagementCluster` removes:
 
 - Every Deployment, Service, and generated Secret.
-- The `Keycloak` resource in the `keycloak` mode, and with it the Keycloak pods.
+- The `Keycloak` resource in the `keycloak` mode, and its pods.
 - The `ManagementAuthConfig`. A `CamundaOptimize` that reads it then reports `InvalidReference`.
-- The Console settings and the `camunda.io/management-cluster` annotation on every orchestration cluster it served.
-- The `web-modeler` user on every basic-auth cluster it created one on. This is best effort. A cluster that is gone or unreachable records the Warning event `WebModelerUserRemovalFailed`, and the deletion goes on. Remove that user yourself.
-- The claim on the Keycloak realm. A management plane waiting for that realm then proceeds.
+- The Console settings and the `camunda.io/management-cluster` annotation on every orchestration cluster it served. Those clusters roll their pods once.
+- The `web-modeler` user on every basic-auth cluster. If a cluster is gone or does not answer, the operator records the Warning event `WebModelerUserRemovalFailed` and continues. Remove that user yourself.
+- The login callbacks in the realm of a Keycloak that you run. If that Keycloak does not answer, the callbacks stay and the deletion continues. Remove them from the `optimize` client yourself.
+- The claim on the Keycloak realm. A management plane that waits for that realm then continues.
 
 Deletion keeps:
 
-- The PostgreSQL databases of Management Identity, Keycloak, and Web Modeler, and everything in them. They belong to the [DatabaseConfig](databaseconfig.md) resources, not to this one.
-- Every user, group, and client in Keycloak, including the first administrator. Deleting the `Keycloak` resource removes the pods, not the database behind them.
-- The Secrets that you referenced. Only the copies of the Secrets that the [CamundaPlatformConfig](camundaplatformconfig.md) names go.
-- The orchestration clusters themselves. They keep running, and nothing else about them changes. They roll their pods once, when the Console settings go.
+- The PostgreSQL databases of Management Identity, Keycloak, and Web Modeler, and all their data. They belong to the [DatabaseConfig](databaseconfig.md) resources.
+- Every user, group, and client in Keycloak.
+- The Secrets that you referenced.
+- The orchestration clusters.
 
-Two things hold the deletion open, and the resource stays in `Terminating` until you act:
-
-- A Deployment named `my-management-identity` in this namespace that another owner runs. Such a Deployment writes the clients of the realm, and the operator does not remove a workload of somebody else. Delete that Deployment, or give it another name.
-- A Kubernetes API that does not answer. The operator tries again on its own.
-
-The operator log names both. A Keycloak that does not answer holds nothing: the deletion leaves the login callbacks in that realm and goes on. Remove them from the `optimize` client of the realm yourself.
+The resource stays in `Terminating` while the Kubernetes API refuses a call, or while a Deployment named `my-management-identity` of another owner exists in this namespace. The operator log names the cause. Delete or rename that Deployment.
 
 ## Status
 
 `kubectl get camundamanagementcluster` shows `Ready`, its reason, and the age.
 
-A condition reads `True` under the reasons `Healthy`, `Disabled`, `Suspended`, and `NoCallbacks`, and `False` under every other reason in the table.
+A condition reads `True` under the reasons `Healthy`, `Disabled`, `Suspended`, and `NoCallbacks`, and `False` under every other reason in the table. A condition that reads `Disabled` does not hold `Ready` back.
 
-`OptimizeCallbacksReady` holds `Ready` back only while this management plane serves an Optimize. Nobody can sign in to an Optimize that does not exist, so a plane that serves none stays ready. It reports what it found in the realm.
+A failed check of the spec reports on `Ready`, and the other conditions keep the value they last had. Read `Ready` first.
 
-A failed pre-check reports on `Ready` and stops, so every other condition keeps the value it last had. Read `Ready` first, and take the rest as of the last time the pre-checks passed.
-
-The management plane also does work that no workload condition reports. Each one of these is a step:
-
-- It finds the orchestration clusters and the Optimize instances behind the contract.
-- It claims the clusters that the selectors match, and releases the ones that left.
-- It gives Web Modeler a user on every basic-auth cluster.
-- It points the attached clusters at Console.
-- It writes the `ManagementAuthConfig`.
-- It registers the login callbacks of Optimize in the realm.
-
-A step fails when the Kubernetes API refuses the operator. What one orchestration cluster answers is not a step. A refused user or a refused ping is a row of that cluster in `status.clusters`, and it never holds `Ready` back. See [Clusters](#clusters). What Keycloak answers about the `optimize` client is not a step either. It reports on `OptimizeCallbacksReady`, and `Ready` takes the reason of that row.
-
-When a step fails, `Ready` reads `StepFailed`. The message names the action that failed:
+`Ready` reads `StepFailed` when the operator failed to do work outside the workloads, almost always because the Kubernetes API refused a call. The message names the action:
 
 ```yaml
 status:
@@ -727,65 +606,55 @@ status:
       message: 'Could not find the orchestration clusters: listing the CamundaClusters: etcdserver: request timed out'
 ```
 
-`Ready` is never `True` while a step fails, whatever the workloads report. Every other condition keeps the value it last had. The operator tries the step again on its own, and `Ready` goes back to the state of the workloads once every step succeeds.
-
-The `ManagementAuthConfig` is the one step that reads `WriteFailed` on `Ready` instead of `StepFailed`. `ManagementAuthReady` carries the answer of the API server beside it.
+`OptimizeCallbacksReady` holds `Ready` back only while `status.optimize` has a row.
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
-| `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a Secret that the [CamundaPlatformConfig](camundaplatformconfig.md) names is applied, or no such Secret exists. | Nothing. |
-| `SecretsReady` | `Healthy` / `Disabled` | The generated Secrets are applied, or the mode generates none (`oidc`). | Nothing. |
+| `MirroredSecretsReady` | `Healthy` / `Disabled` | The copies of the Secrets that the [CamundaPlatformConfig](camundaplatformconfig.md) names are in place, or there is no such Secret. | Nothing. |
+| `SecretsReady` | `Healthy` / `Disabled` | The generated Secrets are in place, or the mode generates none (`oidc`). | Nothing. |
 | `KeycloakReady` | `Healthy` | The Keycloak Operator reports the Keycloak ready. | Nothing. |
-| `KeycloakReady` | absent | The Kubernetes cluster does not serve the `Keycloak` kind, in any mode. | If you use the `keycloak` mode, install the Keycloak Operator. Otherwise, nothing. |
+| `KeycloakReady` | absent | The Kubernetes cluster does not serve the `Keycloak` kind. | In the `keycloak` mode, install the Keycloak Operator. Otherwise, nothing. |
 | `KeycloakReady` | `Creating` / `Updating` | The Keycloak Operator rolls the Keycloak pods. | Wait. |
 | `KeycloakReady` | `Failing` | Keycloak reports errors, or it does not become ready. The message carries what Keycloak said. | Read the pods and events of `my-management-keycloak`. |
-| `KeycloakReady` | `Disabled` | The mode is `externalKeycloak` or `oidc`, so the operator runs no Keycloak. | Nothing. |
-| `IdentityReady` | `Healthy` | Every Management Identity replica is ready. | Nothing. |
-| `IdentityReady` | `PrerequisiteNotMet` | The mode is `keycloak` and `KeycloakReady` is not `True` yet. Management Identity waits for Keycloak, so this is normal while Keycloak starts. | Read the `KeycloakReady` row. It clears when Keycloak is ready. |
-| `IdentityReady` | `ImmutableAfterStart` | `spec.identity.admin` asks for an administrator claim that Management Identity did not start with. | Put the recorded value back, or remove the recorded claim and change the administrator in the database. See [The first administrator](#the-first-administrator). |
-| `ConsoleReady`, `WebModelerReady` | `Healthy` / `Disabled` | Every replica is ready, or the block is unset. | Nothing. |
-| `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Creating` / `Updating` / `Scaling` | The workload rolls out or scales. | Wait. If the reason does not change, read the pods of the named Deployment. |
-| `KeycloakReady`, `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Suspended` | `spec.suspend` is `true`, so the workload is at zero. | Nothing. |
-| `KeycloakReady`, `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Suspending` | `spec.suspend` is `true` and the workload still runs pods. | Wait. |
+| `KeycloakReady` | `Disabled` | The mode is `externalKeycloak` or `oidc`. | Nothing. |
 | `KeycloakReady` | `PendingSuspension` | `spec.suspend` is `true` and the `Keycloak` resource does not ask for zero instances yet. | Wait. |
+| `IdentityReady` | `Healthy` | Every Management Identity replica is ready. | Nothing. |
+| `IdentityReady` | `PrerequisiteNotMet` | In the `keycloak` mode, Management Identity waits for Keycloak. | Read the `KeycloakReady` row. |
+| `IdentityReady` | `ImmutableAfterStart` | `spec.identity.admin` asks for an administrator claim that Management Identity did not start with. | See [The first administrator](#the-first-administrator). |
+| `ConsoleReady`, `WebModelerReady` | `Healthy` / `Disabled` | Every replica is ready, or the block is unset. | Nothing. |
+| `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Creating` / `Updating` / `Scaling` | The workload rolls out or scales. | Wait. If the reason does not change, read the pods of the Deployment. |
+| `KeycloakReady`, `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Suspending` / `Suspended` | `spec.suspend` is `true`. The workload goes to zero, or is at zero. | Nothing. |
 | `ManagementAuthReady` | `Healthy` | The `ManagementAuthConfig` is up to date. | Nothing. |
 | `ManagementAuthReady` | `WriteFailed` | The operator failed to write the `ManagementAuthConfig`. The message carries the answer of the API server. | Read the message. The operator tries again. |
-| `OptimizeCallbacksReady` | `Healthy` | The `optimize` client of the realm carries the login callback of every row of `status.optimize`, and the first administrator holds the `Optimize` role. | Nothing. |
-| `OptimizeCallbacksReady` | `NoCallbacks` | No Optimize behind this management plane names an address, so there is no login callback to register. The management plane stops reading the realm while this holds. | Nothing, until you run an Optimize. Then set `spec.externalUrl` on it. See [Optimize](#optimize). |
-| `OptimizeCallbacksReady` | `OptimizeClientMissing` | The realm holds no `optimize` client and Management Identity has finished starting. Management Identity creates that client while it starts and never after. While it is still starting, this condition reads `PrerequisiteNotMet` instead. | Restart Management Identity. A client that was removed from the realm comes back on the next start. |
-| `OptimizeCallbacksReady` | `ConnectionFailed` | Keycloak did not answer the operator, or it refused the administrator. The message carries what Keycloak said. When the message names a realm that the spec no longer names, it is the old Keycloak that did not answer. | Read the message. Make sure that Keycloak answers and that the administrator Secret holds valid credentials. If the message names a certificate, set `caBundleSecretRef`. See [Trust of an https Keycloak](#trust-of-an-https-keycloak). For an old Keycloak that is gone for good, see [Moving the callbacks to another realm](#moving-the-callbacks-to-another-realm). |
-| `OptimizeCallbacksReady` | `InvalidCABundle` | The key that `caBundleSecretRef` names holds no certificate in PEM form. | Put the certificate authority of Keycloak in that key, in PEM form. See [Trust of an https Keycloak](#trust-of-an-https-keycloak). |
-| `OptimizeCallbacksReady` | `InvalidReference` | The identity provider names no Keycloak administrator, so the operator cannot sign in to the realm. | Read the identity provider block. Both Keycloak modes name an administrator, so this is a report worth an issue. |
-| `OptimizeCallbacksReady` | `MissingSecret` | The Secret that the Keycloak Operator writes with the first Keycloak administrator, or the Secret of `caBundleSecretRef`, does not exist or lacks a key. The message names the Secret and the key. When the message names a realm that the spec no longer names, the Secret is the one of the old Keycloak, in `status.callbackRealm`. | Wait for the Keycloak Operator to write it, or create the Secret the message names. In the `externalKeycloak` mode a missing `adminCredentialsSecretRef` Secret reports on `Ready` instead, and this condition keeps what it last read. For the Secret of an old Keycloak, see [Moving the callbacks to another realm](#moving-the-callbacks-to-another-realm). |
-| `OptimizeCallbacksReady` | `WriteFailed` | Keycloak refused the change to the `optimize` client. The message carries what Keycloak said. When the message names a realm that the spec no longer names, the old Keycloak refused the removal of the callbacks. | Read the message. Make sure that the administrator can change clients of the realm. |
-| `OptimizeCallbacksReady` | `AdminRoleGrantFailed` | The first administrator did not get the `Optimize` role of the realm. The realm holds no user of that name, or it holds no `Optimize` role, or Keycloak refused the grant. The message names which. | Read the message. A missing user or a missing role is one somebody removed from the realm, so put it back, or correct `spec.identity.admin.username`. |
-| `OptimizeCallbacksReady` | `Disabled` | The mode is `oidc`, so your provider holds the callback URLs. | Nothing. |
-| `OptimizeCallbacksReady` | `Suspended` | `spec.suspend` is `true`, so every realm is left as it is, the one in `status.callbackRealm` included. | Nothing. |
-| `OptimizeCallbacksReady` | `RealmClaimedElsewhere` | Another management plane holds the realm of this plane, so this one registers no login callback in it. `Ready` reads the same reason. | Read the `Ready` row. |
-| `OptimizeCallbacksReady` | `PrerequisiteNotMet` | The operator waits for one of three things before it touches a realm. The first is Management Identity, which owns the Optimize client while it starts. The second is the `ManagementAuthConfig`, which decides who this plane serves. The third, on a move to another identity provider, is the stop of the Management Identity pods of the realm the plane is leaving. The message names which one. | Read the row the message names, or wait. On a move, the operator stops the old Management Identity itself and moves on when its pods are gone. For an old Keycloak that is gone for good, see [Moving the callbacks to another realm](#moving-the-callbacks-to-another-realm). |
-| `Ready` | `Healthy` | Every condition that takes part is healthy and the contract is written. The callbacks are registered too while `status.optimize` holds a row. A plane that serves no Optimize reads `Healthy` whatever the realm says. | Nothing. |
-| `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Suspending` / `PendingSuspension` / `PrerequisiteNotMet` | The reason of the governing condition. The message names it. | Read the row of that condition. |
-| `Ready` | `ImmutableAfterStart` | `spec.identity.admin` asks for an administrator claim that Management Identity did not start with. | Read the `IdentityReady` row. |
-| `Ready` | `Suspended` | `spec.suspend` is `true` and every workload is at zero. `Ready` is `True`. | Nothing is wrong. Set `suspend` back to `false` to bring the management plane up. |
-| `Ready` | `KeycloakOperatorNotInstalled` | `spec.identityProvider.keycloak` is set and the Kubernetes cluster does not serve the `Keycloak` kind. | Install the Keycloak Operator and restart the operator, or select the `externalKeycloak` or the `oidc` mode. See [Installation](../installation.md#requirements). |
-| `Ready` | `UnsupportedVersion` | A version field is outside the range the operator supports. The message names the field and the bound. | Set a supported version. |
-| `Ready` | `InvalidReference` | A referenced resource does not exist, two components name one `DatabaseConfig`, or the platform config cannot serve the `oidc` mode. | Read the message. Create the missing resource, or correct the field it names. |
+| `OptimizeCallbacksReady` | `Healthy` | The `optimize` client carries the callback of every row of `status.optimize`, and the first administrator holds the `Optimize` role. | Nothing. |
+| `OptimizeCallbacksReady` | `NoCallbacks` | No Optimize of this management plane names an address. | Nothing. If you run an Optimize, set its `spec.externalUrl`. |
+| `OptimizeCallbacksReady` | `Disabled` | The mode is `oidc`. Your provider holds the callback URLs. | Nothing. |
+| `OptimizeCallbacksReady` | `Suspended` | `spec.suspend` is `true`. The realm is left as it is. | Nothing. |
+| `OptimizeCallbacksReady` | `PrerequisiteNotMet` | The operator waits before it changes a realm. It waits for Management Identity to start, for the `ManagementAuthConfig`, or, on a move, for the old Management Identity to stop. The message says which. | Wait, or read the row that the message names. On a move to a Keycloak that is gone for good, see [Change the identity provider](#change-the-identity-provider). |
+| `OptimizeCallbacksReady` | `OptimizeClientMissing` | The realm holds no `optimize` client, and Management Identity finished starting. | Restart Management Identity. It creates the client when it starts. |
+| `OptimizeCallbacksReady` | `ConnectionFailed` | Keycloak did not answer, or it refused the administrator. The message carries what Keycloak said. | Make sure that Keycloak answers and that the administrator Secret is correct. If the message names a certificate, set `caBundleSecretRef`. If the message names an old realm, see [Change the identity provider](#change-the-identity-provider). |
+| `OptimizeCallbacksReady` | `InvalidCABundle` | The key of `caBundleSecretRef` holds no PEM certificate. | Put the certificate authority of Keycloak in that key, in PEM form. |
+| `OptimizeCallbacksReady` | `MissingSecret` | A Keycloak administrator Secret or the `caBundleSecretRef` Secret does not exist, or lacks a key. The message names both. | Create the Secret, or wait for the Keycloak Operator to write `my-management-keycloak-initial-admin`. |
+| `OptimizeCallbacksReady` | `WriteFailed` | Keycloak refused the change to the `optimize` client. | Make sure that the administrator can change the clients of the realm. |
+| `OptimizeCallbacksReady` | `AdminRoleGrantFailed` | The first administrator did not get the `Optimize` role. The realm holds no such user or no such role, or Keycloak refused the grant. The message says which. | Put back the user or the role that somebody removed, or correct `spec.identity.admin.username`. |
+| `OptimizeCallbacksReady` | `InvalidReference` | The operator has no Keycloak administrator to sign in with. | Report an issue. |
+| `OptimizeCallbacksReady` | `RealmClaimedElsewhere` | Another management plane holds the realm. | Read the `Ready` row. |
+| `Ready` | `Healthy` | Every workload is ready, the contract is written, and the callbacks are registered. | Nothing. |
+| `Ready` | `Suspended` | `spec.suspend` is `true` and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to bring the management plane back. |
+| `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Suspending` / `PendingSuspension` / `PrerequisiteNotMet` / `ImmutableAfterStart` | The reason of the condition that holds `Ready` back. The message names it. | Read the row of that condition. |
+| `Ready` | `OptimizeClientMissing` / `ConnectionFailed` / `AdminRoleGrantFailed` / `InvalidCABundle` | The realm is not in the state the management plane needs. | Read the `OptimizeCallbacksReady` row. |
+| `Ready` | `KeycloakOperatorNotInstalled` | `spec.identityProvider.keycloak` is set and the Kubernetes cluster does not serve the `Keycloak` kind. | Install the Keycloak Operator and restart the operator, or select another mode. See [Installation](../installation.md#requirements). |
+| `Ready` | `UnsupportedVersion` | A version field is outside the supported range. The message names the field and the limit. | Set a supported version. |
+| `Ready` | `InvalidReference` | A referenced resource does not exist, two components name one `DatabaseConfig`, or the platform config cannot serve the `oidc` mode. The message names the field. | Create the missing resource, or correct the field. |
 | `Ready` | `MissingSecret` | A referenced Secret does not exist or lacks a key. The message names both. | Create the Secret with the named key. |
-| `Ready` | `Conflict` | A `ManagementAuthConfig` of that name exists and belongs to another owner. The message names the holder. | Set `spec.managementAuthConfigName` to a free name, or remove the object. |
-| `Ready` | `RealmClaimedElsewhere` | Another management plane holds the Keycloak realm of this plane, or a Lease that this operator did not write blocks it. The operator starts nothing new for this plane and writes nothing in that realm. Workloads it already ran keep running, except that a plane retargeted into the wait leaves its old realm and loses the Management Identity of it. The message names the holder, or the Lease to remove. | Give this plane a realm of its own, or delete the holder or the named Lease. See [One realm answers to one management plane](#one-realm-answers-to-one-management-plane). |
+| `Ready` | `Conflict` | A `ManagementAuthConfig` of that name belongs to another owner. The message names it. | Set `spec.managementAuthConfigName` to a free name, or remove the object. |
+| `Ready` | `RealmClaimedElsewhere` | Another management plane, or a Lease that the operator did not write, holds the Keycloak realm. The message names it. | Give this plane a realm of its own, or delete the holder. See [One realm answers to one management plane](#one-realm-answers-to-one-management-plane). |
 | `Ready` | `WriteFailed` | The operator failed to write the `ManagementAuthConfig`, or Keycloak refused the change to the `optimize` client. | Read the `ManagementAuthReady` and `OptimizeCallbacksReady` rows. |
-| `Ready` | `StepFailed` | A step did not finish, usually because the Kubernetes API refused a call. The message names the action that failed. | Read the message. The operator tries again. If the reason stays, correct what the message names. |
-| `Ready` | `OptimizeClientMissing` / `ConnectionFailed` / `AdminRoleGrantFailed` | The realm is not in the state the management plane wants: the login callbacks are missing, or the first administrator holds no `Optimize` role. | Read the `OptimizeCallbacksReady` row. |
-
-`Ready` is `True` only when three things hold. Every condition that takes part in it is `True`, the `ManagementAuthConfig` is written, and every step of the pass went through. The login callbacks hold it back only while this management plane serves an Optimize, as the paragraph above says.
-
-A condition that reads `Disabled` stays out of `Ready`. This is not an error.
-
-The rows of `status.clusters` are their own report and never hold `Ready` back. One broken cluster does not stop the management plane. Those rows use some of the same reason names, and each one means something different there, about that one cluster. See [Clusters](#clusters).
+| `Ready` | `StepFailed` | The operator failed to complete an action, usually because the Kubernetes API refused a call. The message names the action. | Read the message. The operator tries again. |
 
 `status.observedGeneration` is the generation of the spec that the status describes.
 
-Some messages of the identity provider name the field to correct:
+A message of the `oidc` mode names the field to correct:
 
 ```yaml
 status:
@@ -818,7 +687,7 @@ spec:
     matchLabels:
       environment: "production"
   # object. Optional, default: every namespace. Label selector over the Namespace objects that
-  # clusterSelector searches. {} puts no bound on the namespace.
+  # clusterSelector searches. {} puts no limit on the namespace.
   namespaceSelector:
     matchLabels:
       team: "payments"
@@ -831,7 +700,7 @@ spec:
       # string. Required. Keycloak version, as major.minor.patch. Supported: 26.0.0 and later, below 27.0.0.
       # With Management Identity 8.9, stay below 26.7.0. See "The operator runs Keycloak".
       version: "26.6.4"
-      # string. Required. The URL a browser reaches Keycloak at, including the /auth path. It is the issuer of every token.
+      # string. Required. The URL a browser reaches Keycloak at. Its path is exactly /auth. It is the issuer of every token.
       # It carries no query and no fragment.
       externalUrl: "https://camunda.example.com/auth"
       # string. Required. Name of the DatabaseConfig of the Keycloak database, in this namespace.
@@ -861,7 +730,7 @@ spec:
         # string. Optional, default: password. Key that holds the password.
         passwordKey: "password"
       # object. Optional. Secret key with the certificate authority of Keycloak, in PEM form. The operator trusts it
-      # in addition to the authorities of its own image. Only valid with an https url.
+      # in addition to the public authorities. Only valid with an https url.
       caBundleSecretRef:
         # string. Required. Name of the Secret.
         name: "my-keycloak-ca"
@@ -891,13 +760,12 @@ spec:
         name: "my-identity-admin"
         key: "password"
       # string. Optional, required with spec.webModeler in the keycloak modes. Email address of the first Keycloak user.
-      # Web Modeler needs one for every person who signs in.
       email: "admin@example.com"
     # integer. Optional, default: 1. Number of Management Identity replicas.
     replicas: 1
     # object. Optional. CPU and memory of the container.
     resources: {}
-    # list. Optional. Extra environment variables of the container.
+    # list. Optional. Extra environment variables of the container. KEYCLOAK_URL and KEYCLOAK_REALM are refused.
     extraEnv: []
     # list. Optional. Extra environment sources (ConfigMaps, Secrets) of the container.
     extraEnvFrom: []
@@ -964,30 +832,32 @@ spec:
 The API server refuses an apply that breaks one of these:
 
 - `spec.identityProvider` sets exactly one of `keycloak`, `externalKeycloak`, and `oidc`.
-- `spec.identity.admin` sets `claimName` and `claimValue` together, or `username`, never both pairs.
+- `spec.identity.admin` sets `claimName` and `claimValue` together, or `username`, never both.
 - `spec.identity.admin.claimName` is required in the `oidc` mode. `spec.identity.admin.username` is required in the two Keycloak modes.
 - `spec.identity.admin.passwordSecretRef` is forbidden in the `oidc` mode.
 - `spec.identity.admin.email` is required when `spec.webModeler` is set in one of the two Keycloak modes.
 - `spec.identity.admin.claimName` holds no equals sign.
-- Every `externalUrl`, `websocketsExternalUrl`, and `url` is an `http` or `https` URL. `spec.identityProvider.keycloak.externalUrl` must carry the `/auth` path.
+- Every `externalUrl`, `websocketsExternalUrl`, and `url` is an `http` or `https` URL with a host.
+- The path of `spec.identityProvider.keycloak.externalUrl` is exactly `/auth`.
 - `spec.identityProvider.keycloak.externalUrl` and `spec.identityProvider.externalKeycloak.url` carry no query and no fragment.
-- `spec.identityProvider.externalKeycloak.url` carries no user and no password. The operator does not support a Keycloak behind a proxy that needs basic authentication.
+- `spec.identityProvider.externalKeycloak.url` carries no user and no password.
+- `spec.identityProvider.externalKeycloak.caBundleSecretRef` requires an `https` url.
 - `spec.identityProvider.externalKeycloak.realm` holds letters, digits, dots, hyphens, and underscores. It starts and ends with a letter or a digit.
 - Every `version` is three numbers separated by dots, for example `8.9.0`.
-- An `extraEnv` entry sets `value` or `valueFrom`, never both. The rule binds `spec.identity`, `spec.console`, `spec.webModeler.restapi`, and `spec.webModeler.websockets`.
-- `spec.identity.extraEnv` sets no `KEYCLOAK_URL` and no `KEYCLOAK_REALM`. Both follow from `spec.identityProvider`, and in a Keycloak mode the operator administers that realm alone.
+- An `extraEnv` entry sets `value` or `valueFrom`, never both.
+- `spec.identity.extraEnv` sets no `KEYCLOAK_URL` and no `KEYCLOAK_REALM`. Both follow from `spec.identityProvider`.
 
 The operator checks these after you apply the resource and reports them on `Ready`:
 
-- `spec.identity.version`, `spec.console.version`, and `spec.webModeler.version` are `8.9.0` or later. `spec.identityProvider.keycloak.version` is `26.0.0` or later and below `27.0.0`. A version outside a range reports `UnsupportedVersion`. The operator accepts `26.7.0` and later, and Management Identity 8.9 does not start against them. See [The operator runs Keycloak](#the-operator-runs-keycloak).
-- Management Identity, Keycloak, and Web Modeler name three different `DatabaseConfig` resources. Two that name one report `InvalidReference`.
+- `spec.identity.version`, `spec.console.version`, and `spec.webModeler.version` are `8.9.0` or later. `spec.identityProvider.keycloak.version` is `26.0.0` or later and below `27.0.0`. A version outside its range reports `UnsupportedVersion`.
+- Management Identity, Keycloak, and Web Modeler name three different `DatabaseConfig` resources. Otherwise the resource reports `InvalidReference`.
 - Every referenced resource and Secret exists. A missing one reports `InvalidReference` or `MissingSecret`.
 
-The API server refuses no change to a field that already has a value. `spec.identity.admin` is the one setting where a change has no effect anyway. Management Identity read it on its first start and stored the result in its own database. In the `oidc` mode the operator reports that as `ImmutableAfterStart`. See [The first administrator](#the-first-administrator).
+No field is immutable. A change to `spec.identity.admin` has no effect after the first start of Management Identity. See [The first administrator](#the-first-administrator).
 
 ### A production-shaped example
 
-A management plane on a Keycloak that the operator runs, serving every cluster labeled `environment: production`:
+A management plane on a Keycloak that the operator runs, which serves every cluster labeled `environment: production`:
 
 ```yaml
 apiVersion: core.camunda.io/v1

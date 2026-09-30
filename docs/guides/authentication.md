@@ -1,24 +1,16 @@
 # Authentication
 
-You configure authentication once per environment, on a `CamundaPlatformConfig`. Every `CamundaCluster` that references that platform config uses the same authentication method. The OIDC client credentials of one cluster and its administrators go on the `CamundaCluster`, or on a `CamundaClusterPreset` that many clusters share.
+You choose the authentication method once per environment, on a `CamundaPlatformConfig`. Every `CamundaCluster` that references that platform config uses the same method. The OIDC client of one cluster and its administrators go on the `CamundaCluster`, or on a `CamundaClusterPreset` that many clusters share.
 
 The orchestration cluster supports two methods: `basic` and `oidc`. The operator uses `basic` when the platform config has no `auth` block.
 
-If you want the whole picture in one place, read [A complete OIDC example](#a-complete-oidc-example) first. The sections before it explain each part.
+This guide covers the orchestration cluster. Management Identity, Console, Web Modeler, and Optimize sign in through the management plane. See [CamundaManagementCluster](../crds/camundamanagementcluster.md) and [CamundaOptimize](../crds/camundaoptimize.md#authentication).
+
+For the whole OIDC setup in one place, read [A complete OIDC example](#a-complete-oidc-example).
 
 ## Basic authentication
 
-Under basic authentication the orchestration cluster stores its users itself, and every caller sends a username and a password. The operator creates the first administrator for you. The user is named `admin` and is a member of the `admin` role. You manage every other user in the Admin web application.
-
-The credentials live in the Secret `<name>-camunda-admin`, in the namespace of the `CamundaCluster`. Read `username` (`admin`) and `password`. The Secret also carries `email`, the address of that user, and `email-applied`, the address the cluster has accepted. The operator generates the password once and keeps it. The Secret also holds the bookkeeping of a rotation. `password-rotation` names the request that the current password answers. `password-pending` with `password-pending-rotation` appear only while a rotation is in flight. Do not read those keys. They are for the operator. The condition `AdminSecretReady` reports that the Secret is applied, and it takes part in `Ready`.
-
-The connectors runtime authenticates against the cluster with the same user and password. You configure nothing for it.
-
-To read the password of the cluster `my-cluster`:
-
-```bash
-kubectl get secret my-cluster-camunda-admin -n my-cluster-ns -o go-template='{{.data.password | base64decode}}'
-```
+Under basic authentication the orchestration cluster stores its users itself, and every caller sends a username and a password. The operator creates the first administrator for you: the user `admin`, a member of the `admin` role. You manage every other user in the Admin web application.
 
 A minimal platform config for basic authentication:
 
@@ -33,6 +25,16 @@ spec:
 ```
 
 A platform config with no `auth` block has the same effect.
+
+The credentials of `admin` are in the Secret `<name>-camunda-admin`, in the namespace of the `CamundaCluster`. Read the keys `username` and `password`. The other keys are for the operator. The operator generates the password once and keeps it. The condition `AdminSecretReady` reports that the Secret is applied, and it takes part in `Ready`.
+
+To read the password of the cluster `my-cluster`:
+
+```bash
+kubectl get secret my-cluster-camunda-admin -n my-cluster-ns -o go-template='{{.data.password | base64decode}}'
+```
+
+The connectors runtime signs in with the same user and password. You configure nothing for it.
 
 ### Rotate the password
 
@@ -51,27 +53,36 @@ spec:
       passwordRotation: "2026-08"
 ```
 
-The operator generates a new password and sets it on the `admin` user through the user API of the running cluster. Then it publishes the password in the Secret. The connectors Deployment restarts with the new password. The brokers, the gateway, and the web applications keep running. Every other user keeps its password. `status.adminPassword.rotation` shows the value when the rotation is complete. The same value never rotates twice, so a GitOps tool can apply it repeatedly. A suspended cluster serves no user API, so a requested rotation waits and applies after the cluster resumes.
+The operator generates a new password and sets it on the `admin` user through the user API of the running cluster. Then it publishes the password in the Secret, and the connectors Deployment restarts with it. The brokers, the gateway, and the web applications keep running, and every other user keeps its password.
 
-If the call fails, the Secret keeps the active password, and the operator calls again until it succeeds. `AdminSecretReady` reports which of the three failures it is, and each one asks for something different from you. The same three reasons report a failed change of `adminEmail`, because that is an update of the same user.
+`status.adminPassword.rotation` shows the value when the rotation is complete. The same value never rotates twice, so a GitOps tool can apply it again and again. A preset can set `passwordRotation` too. Then it rotates the password of every cluster that uses the preset. A suspended cluster serves no user API, so the rotation waits until the cluster resumes.
+
+> **Caution:** Between the update of the user and the restart of the connectors pods, the cluster refuses a connectors call with the old password. Rotate outside of peak hours.
+
+If the call fails, the Secret keeps the active password, and the operator tries again. `AdminSecretReady` tells you which failure it is:
 
 | Reason | What happened | What to do |
 | --- | --- | --- |
-| `ConnectionFailed` | The cluster did not answer. | Nothing. It clears when the user API of the gateway answers again. `AdminSecretReady` takes part in `Ready`, so the cluster stays not `Ready` until it does. |
-| `InvalidCredentials` | The cluster refused the password that the Secret publishes. Somebody changed it in the Admin web application. | Set the password from the Secret on the `admin` user there. The next retry succeeds. |
-| `Rejected` | The cluster accepted the password and refused the call itself. | Read the condition message, which carries the answer of the cluster and names the reason. A new password does not help. |
+| `ConnectionFailed` | The cluster did not answer. | Nothing. It clears when the user API of the gateway answers again. Until then, the cluster is not `Ready`. |
+| `InvalidCredentials` | The cluster refused the password that the Secret publishes. Somebody changed it in the Admin web application. | Set the password from the Secret on the `admin` user there. The next try succeeds. |
+| `Rejected` | The cluster accepted the password and refused the call itself. | Read the condition message. It carries the answer of the cluster. A new password does not help. |
 
-> **Caution:** Between the update of the user and the restart of the connectors pods, a connectors call with the old password is rejected. Plan a rotation outside of peak hours.
+A failed change of `adminEmail` reports the same three reasons, because it is an update of the same user.
 
-Do not rotate by deletion. A deleted Secret gets a new password, but the `admin` user keeps the old one. The old password is not published again, so read and keep it before you delete the Secret.
+### Do not rotate by deletion
 
-The operator publishes the new password and rolls the connectors Deployment onto it by itself. Connectors then fail to authenticate, because the `admin` user still has the old password. They keep failing until you repair it. Sign in to the Admin web application with the old password. Then set the new password from the new Secret on the `admin` user. You do not need to restart connectors afterwards. A `passwordRotation` requested after the deletion fails with `InvalidCredentials` until the same repair, because the operator no longer holds a password that the cluster accepts.
+If you delete the Secret, the operator publishes a new password, and the connectors restart with it. But the `admin` user keeps the old password. The orchestration cluster creates its initial user only when no user of that name exists, so it ignores the new password. Only `passwordRotation` changes the password of a running cluster.
 
-The extra steps of a deletion come from the orchestration cluster, not from the operator. The operator passes the user and the password as the initial user of the cluster. The cluster creates that user at start if it does not exist, and it decides that by the username alone. A user that is already there keeps the password it has, and the one in the configuration is ignored. `passwordRotation` exists because of that: it sets the password through the user API of the running cluster, which is the only path that changes it.
+After a deletion, the connectors fail to sign in, and a `passwordRotation` fails with `InvalidCredentials`. To repair it:
+
+1. Sign in to the Admin web application as `admin` with the old password.
+2. Set the password from the new Secret on the `admin` user.
+
+The old password is not published again. If you must delete the Secret, read and keep the password first. You do not need to restart the connectors after the repair.
 
 ### Set the address of the administrator
 
-The operator gives the `admin` user an email address, because the orchestration cluster stores one on every user and the Admin web application shows it. Name the address of the person or the team that owns the cluster:
+The orchestration cluster stores an email address on every user, and the Admin web application shows it. Set the address of the person or the team that owns the cluster:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -86,13 +97,15 @@ spec:
       adminEmail: platform-team@example.com
 ```
 
-An unset value publishes `admin@example.com`. That domain is reserved for documentation, so an operator that never asked for an address does not claim one that somebody owns.
+Without the field, the address is `admin@example.com`. That domain is reserved for documentation, so it belongs to nobody.
 
-A changed value is applied to the running cluster. The operator publishes the new address in the Secret at once, for the processes to seed from, and calls the user API. It leaves the password alone, and records the address under `email-applied` only after the cluster accepts it, which is what tells it to stop calling. The workloads read `email` from the Secret, so a change restarts nothing. The user API validates the address and refuses a domain without a dot. A refused address shows on `AdminSecretReady` with the answer of the cluster. Until a call succeeds and the two agree again, `email` still shows the address you asked for and `email-applied` the one the cluster holds.
+The operator applies a changed address to the running cluster through the user API, and restarts nothing. The user API refuses an address with no dot in the domain. A refused address shows on `AdminSecretReady` with the answer of the cluster. Until the cluster accepts the address, the Secret key `email` shows the address you asked for, and `email-applied` shows the one the cluster holds.
 
 ## OIDC
 
-Under OIDC an external identity provider authenticates every caller, and the orchestration cluster stores no users. Camunda describes the mode and what it needs from a provider in [Connect Camunda to any OIDC provider](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/authentication-and-authorization/generic-oidc-provider/). The provider authenticates the caller. It does not authorize the caller. A new OIDC cluster has no administrator until you name one on the `CamundaCluster` or on its preset.
+Under OIDC an external identity provider authenticates every caller, and the orchestration cluster stores no users. Camunda describes the mode and what it needs from a provider in [Connect Camunda to any OIDC provider](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/authentication-and-authorization/generic-oidc-provider/).
+
+The provider authenticates a caller. It does not authorize one. A new OIDC cluster has no administrator until you name one on the `CamundaCluster` or on its preset.
 
 ### Configure the identity provider
 
@@ -104,15 +117,18 @@ Create one confidential client in your identity provider for the orchestration c
 | The client id | `spec.auth.oidc.clientId` on the platform config, or `spec.auth.clientId` on the preset or the cluster |
 | The client secret, in a Secret | `spec.auth.oidc.clientSecretRef` on the platform config, or `spec.auth.clientSecretRef` on the preset or the cluster |
 
-Register the redirect URI of the cluster on that client. The operator derives it from `spec.externalUrl` of the `CamundaCluster`: the redirect URI is `<externalUrl>/sso-callback`. For the cluster at `https://camunda.example.com` it is `https://camunda.example.com/sso-callback`. If the cluster has no `externalUrl`, the operator sets no redirect URI, and the orchestration cluster uses its own default.
+Register the redirect URI of each cluster on that client: `<externalUrl>/sso-callback`, from `spec.externalUrl` of the `CamundaCluster`. For the cluster at `https://camunda.example.com` it is `https://camunda.example.com/sso-callback`. If the cluster has no `externalUrl`, the orchestration cluster uses its own default.
 
 Make sure that the access tokens carry these claims:
 
-- `aud` holds the audience that the cluster validates. The audience is the client id unless you set `audience`. Some providers need a mapper for this. Keycloak, for example, issues `aud: account` by default, and the cluster refuses that token.
-- The claim that you name in `usernameClaim` holds the username of a person. Common names are `preferred_username`, `email`, and `sub`.
-- The claim that you name in `clientIdClaim` holds the client id of a machine client. This claim must be absent from the tokens of persons. See [How a token becomes a person or a client](#how-a-token-becomes-a-person-or-a-client).
+- `aud` holds the audience that the cluster validates. The audience is the client id unless you set `audience`.
+- The claim that you name in `usernameClaim` on the platform config holds the username of a person. Common names are `preferred_username`, `email`, and `sub`.
+- The claim that you name in `clientIdClaim` on the platform config holds the client id of a machine client. A machine client is an application that signs in with its own client id and client secret, not a person in a browser. This claim must be absent from the tokens of persons. See [How a token becomes a person or a client](#how-a-token-becomes-a-person-or-a-client).
 
-The end-to-end tests of the operator run this flow against Keycloak. The realm has one confidential client with service accounts enabled. It also has an audience mapper that puts the client id in `aud`. A hardcoded-claim mapper puts `client_id` in the access tokens of the client. Keycloak names the client in `azp`, and `azp` is also present in the tokens of persons. That is why the tests add a separate claim.
+For Keycloak, add these two mappers to the client:
+
+- An audience mapper that puts the client id in `aud`. Keycloak issues `aud: account` by default, and the cluster refuses that token.
+- A hardcoded-claim mapper that puts `client_id` in the access tokens of the client. Keycloak puts the client in `azp`, but `azp` is also in the tokens of persons, so it cannot identify a client.
 
 ### Configure the operator
 
@@ -156,7 +172,9 @@ spec:
         key: client-secret
 ```
 
-The platform config is cluster-scoped, so this Secret can live in any namespace. If it is not in the namespace of a cluster, the operator copies the key into that namespace as the Secret `<name>-camunda-oidc-client`. When you change the client secret there, the operator updates the copy and rolls the pods that read it. You do not restart anything.
+The platform config is cluster-scoped, so this Secret can live in any namespace. If it lives outside the namespace of a cluster, the operator copies the key into that namespace as the Secret `<name>-camunda-oidc-client`. When you change the client secret, the operator updates the copy and restarts the pods that read it.
+
+[CamundaPlatformConfig](../crds/camundaplatformconfig.md) lists every field of the block.
 
 ### How a token becomes a person or a client
 
@@ -168,11 +186,11 @@ The platform config is cluster-scoped, so this Secret can live in any namespace.
 
 If `clientIdClaim` is unset, every token becomes a person. The claims only say who the caller is. They grant nothing. The `spec.auth.admin` block of the `CamundaCluster` makes a caller an administrator.
 
-> **Caution:** The claim that you name in `clientIdClaim` must be present in the tokens of machine clients only. If the tokens of persons also carry that claim, every person becomes a machine client, and the user list of `spec.auth.admin` never matches anybody. Keycloak, for example, puts `azp` in every token, so `azp` is a bad choice. One client can serve both the browser login and the machine callers. In that case, add a claim that the provider puts in machine tokens only. Then name that claim. The Camunda documentation gives the same advice.
+> **Caution:** Name a `clientIdClaim` that only the tokens of machine clients carry. If the tokens of persons carry it too, every person becomes a machine client, and the `users` of `spec.auth.admin` never match anybody. Keycloak puts `azp` in every token, so do not use `azp`. One client can serve both the browser login and the machine callers. Then add a claim that only machine tokens carry, and name that claim.
 
 ### Name the administrators
 
-Nothing authorizes a caller until `spec.auth.admin` names one. A cluster without this block, on the cluster or on its preset, has no administrator. The block takes three kinds of member, and all of them become members of the `admin` role:
+Nothing authorizes a caller until `spec.auth.admin` names one. The block takes three kinds of member, and all of them become members of the `admin` role:
 
 | Field | Matched against | Needs |
 | --- | --- | --- |
@@ -180,21 +198,7 @@ Nothing authorizes a caller until `spec.auth.admin` names one. A cluster without
 | `clients` | The value of `clientIdClaim` in the token | `clientIdClaim` set on the platform config |
 | `mappingRules` | A claim name and a claim value in the token | Nothing |
 
-A mapping rule is the general form. It gives the role to every token whose claim `claimName` holds `claimValue`, so one rule can cover a whole group from the identity provider.
-
-The block names members of the `admin` role only. The orchestration cluster has other default roles, for example `readonly-admin`, and it lets you create roles, groups, and authorizations of your own. The operator has no field for those. You have two ways to manage them:
-
-- In the Admin web application of the cluster, as an administrator. This is the usual way.
-- With the `CAMUNDA_SECURITY_INITIALIZATION_*` environment variables of the orchestration cluster, through `extraEnv` on the cluster or the preset. The cluster reads them at first start. It creates an entity once and does not update it when the value changes. See [Identity as Code](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/configuration/admin-identity-as-code/) in the Camunda documentation. For example, to give a user the `readonly-admin` role:
-
-    ```yaml
-    spec:
-      extraEnv:
-        - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_READONLYADMIN_USERS_0
-          value: "grace@example.com"
-    ```
-
-> **Caution:** The web applications show the first-run setup page at `/admin/setup` while the `admin` role has no user. A cluster whose only administrator is a client works over the API, but a browser still lands on that page. List a user too when people sign in to the cluster.
+A mapping rule gives the role to every token whose claim `claimName` holds `claimValue`. So one rule can cover a whole group from the identity provider.
 
 A cluster with one administrator of each kind:
 
@@ -220,6 +224,26 @@ spec:
           claimValue: "camunda-admins"
 ```
 
+> **Caution:** An administrator that is only a client works over the API. A person who signs in with a browser gets no access until `users` or `mappingRules` matches that person. Camunda shows the result in [Test user authentication](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/admin/connect-external-identity-provider/#step-6-test-user-authentication). If people sign in to the cluster, list a user or a mapping rule too.
+
+The block names members of the `admin` role only. The operator has no field for other roles, groups, or authorizations. You can manage them in two ways:
+
+- In the Admin web application of the cluster, as an administrator.
+- With the `CAMUNDA_SECURITY_INITIALIZATION_*` environment variables of the orchestration cluster, through `extraEnv` on the cluster or the preset. The cluster creates each entity once, at first start, and does not update it when the value changes. See [Identity as Code](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/configuration/admin-identity-as-code/). For example, to give a user the `rpa` role:
+
+    ```yaml
+    apiVersion: core.camunda.io/v1
+    kind: CamundaCluster
+    metadata:
+      name: my-cluster
+      namespace: my-cluster-ns
+    spec:
+      extraEnv:
+        - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_RPA_USERS_0
+          value: "grace@example.com"
+      # ... the rest of your cluster
+    ```
+
 ### Per-cluster client
 
 A cluster can use a client of its own:
@@ -241,30 +265,25 @@ spec:
       key: client-secret
 ```
 
-Each field overrides the default of the platform config on its own. The issuer, the endpoints, and the claim names always come from the platform config.
+Each field overrides the default of the platform config on its own. The Secret of `clientSecretRef` is in the namespace of the cluster. The issuer, the endpoints, and the claim names always come from the platform config.
 
-When you set `clientId` and not `audience`, the audience becomes the new client id, not the audience of the platform config. This is a rule of the operator. The audience belongs to a client. The provider puts the id of the client that a token was issued for in `aud`. So a new client id most often means a new audience. If your new client uses a different audience, set `audience` next to `clientId`. The orchestration cluster itself has no default audience. The operator always sets one.
+When the cluster or its preset sets `clientId`, the audience of the platform config no longer applies. The audience is then the `audience` of the cluster or the preset, or else the new client id. If your new client uses another audience, set `audience` next to `clientId`.
 
-A `CamundaClusterPreset` can carry the same `spec.auth` fields as a baseline for many clusters. The cluster overrides the client fields of the preset one by one. The `admin` block never merges: when the cluster sets `spec.auth.admin`, it replaces the whole block of the preset.
+A `CamundaClusterPreset` can carry the same `spec.auth` fields as a baseline for many clusters. The cluster overrides `clientId`, `audience`, and `clientSecretRef` of the preset one by one. The `admin` block never merges: when the cluster sets `spec.auth.admin`, it replaces the whole block of the preset.
 
-Under basic authentication the cluster ignores `spec.auth`. It does not reject it.
+The operator uses `spec.auth.basic` only under basic authentication, and every other field of `spec.auth` only under OIDC. The API server accepts both on either method.
 
 ### Connectors
 
-You configure nothing for the connectors runtime. The operator gives it the credentials of the cluster:
+You configure nothing for the connectors runtime. Under OIDC it signs in with the OIDC client of the cluster: the resolved client id, client secret, issuer URL, and audience. A cluster with a [per-cluster client](#per-cluster-client) gives that client to the runtime.
 
-- Under basic authentication, the `admin` user and its password from the Secret `<name>-camunda-admin`.
-- Under OIDC, the OIDC client of the cluster: the resolved client id, client secret, issuer URL, and audience.
-
-The runtime needs the `connectors` role of the cluster. The operator gives that role to the OIDC client when both conditions hold: `spec.connectors.enabled` is `true`, and the platform config sets `clientIdClaim`. Without a client id claim, the cluster reads the token of the runtime as a person, and a client member never matches it. In that case, give the `connectors` role to that person yourself in the Admin web application. The username is the value of `usernameClaim` in the token of the client.
-
-The only authentication choice for connectors is therefore which OIDC client the cluster uses. A cluster that shares the client of the platform config shares it with the runtime too. A cluster with a [per-cluster client](#per-cluster-client) gives that client to the runtime.
+The runtime needs the `connectors` role of the cluster. The operator gives that role to the OIDC client of the cluster when `spec.connectors.enabled` is `true` and the platform config sets `clientIdClaim`. Without a client id claim, the cluster reads the token of the runtime as a person. In that case, give the `connectors` role to that person yourself in the Admin web application. The username is the value of `usernameClaim` in the token of the client.
 
 ## A complete OIDC example
 
-This example sets up one environment in which a team can create a cluster in a few lines. It has four resources that you create once, and one resource per cluster.
+This example sets up one environment in which a team can create a cluster in a few lines. You create three resources once, and one resource per cluster.
 
-The identity provider has one confidential client `camunda` with the secret in the Secret `oidc-credentials`. Its access tokens carry `aud: camunda`, `preferred_username` for persons, and `client_id` for the client.
+The identity provider has one confidential client `camunda`. Its access tokens carry `aud: camunda`, `preferred_username` for persons, and `client_id` for the client.
 
 1. The Secret with the client secret, and the platform config with the provider connection. The client of the platform config is the default client of every cluster.
 
@@ -295,7 +314,7 @@ The identity provider has one confidential client `camunda` with the secret in t
             key: client-secret
     ```
 
-2. A preset with the sizing, connectors, and the administrators that every cluster gets. The administrators are the members of the group `camunda-admins` in the provider, and the client `camunda` for automation. The `connectors` role of the client comes from the operator, because `clientIdClaim` is set.
+2. A preset with the sizing, connectors, and the administrators of every cluster. The administrators are the members of the group `camunda-admins` in the provider, and the client `camunda` for automation. The client gets the `connectors` role from the operator, because `clientIdClaim` is set.
 
     ```yaml
     apiVersion: core.camunda.io/v1
@@ -321,7 +340,7 @@ The identity provider has one confidential client `camunda` with the secret in t
                 claimValue: "camunda-admins"
     ```
 
-3. One cluster. It inherits the client, the administrators, and connectors from the layers above, and its versions from a [CamundaRelease](../crds/camundarelease.md). It sets only what is its own: the names of the references, the URL, and the storage.
+3. One cluster. It gets the client, the administrators, and connectors from the layers above, and its versions from a [CamundaRelease](../crds/camundarelease.md). It sets only what is its own: the references, the URL, and the storage.
 
     ```yaml
     apiVersion: core.camunda.io/v1
@@ -368,7 +387,7 @@ The identity provider has one confidential client `camunda` with the secret in t
               claimValue: "camunda-admins"
     ```
 
-    The audience of this cluster is `camunda-payments`, because `audience` is unset. The connectors runtime of this cluster authenticates as `camunda-payments` and gets the `connectors` role from the operator.
+    The audience of this cluster is `camunda-payments`, because neither the cluster nor the preset sets `audience`. The connectors runtime of this cluster signs in as `camunda-payments` and gets the `connectors` role from the operator.
 
 ## Where settings live
 
@@ -378,14 +397,16 @@ The identity provider has one confidential client `camunda` with the secret in t
 | Issuer URL and explicit endpoints | `CamundaPlatformConfig` `spec.auth.oidc.issuerUrl`, `jwksUrl`, `tokenUrl`, `authUrl` | Only the platform config sets them |
 | `usernameClaim`, `clientIdClaim` | `CamundaPlatformConfig` `spec.auth.oidc` | Only the platform config sets them |
 | Client id, audience, client secret | `CamundaPlatformConfig` `spec.auth.oidc`, then `CamundaClusterPreset` `spec.cluster.auth`, then `CamundaCluster` `spec.auth` | The cluster, then the preset, then the platform config, field by field |
-| Administrators | `CamundaClusterPreset` `spec.cluster.auth.admin`, then `CamundaCluster` `spec.auth.admin` | The cluster replaces the whole block of the preset |
+| Administrators under OIDC | `CamundaClusterPreset` `spec.cluster.auth.admin`, then `CamundaCluster` `spec.auth.admin` | The cluster replaces the whole block of the preset |
 | Redirect URI | `CamundaCluster` `spec.externalUrl` | Only the cluster sets it |
+| Admin email and password rotation under basic | `CamundaClusterPreset` `spec.cluster.auth.basic`, then `CamundaCluster` `spec.auth.basic` | The cluster replaces the whole block of the preset |
+| Admin password under basic | Secret `<name>-camunda-admin` | The operator generates it |
 | Connectors credentials | None. The operator derives them from the rows above | - |
-| Basic-auth admin password | Secret `<name>-camunda-admin` | The operator generates it |
 
 ## Related
 
-- [Presets](presets.md): how the platform config, the preset, and the cluster layer, and why a cluster stays small.
+- [Presets](presets.md): how the platform config, the preset, and the cluster layer.
 - [CamundaPlatformConfig](../crds/camundaplatformconfig.md): the authentication method and the identity provider connection.
-- [CamundaCluster](../crds/camundacluster.md): the per-cluster client credentials, the administrators, and `externalUrl`.
+- [CamundaCluster](../crds/camundacluster.md): the per-cluster client, the administrators, and `externalUrl`.
 - [CamundaClusterPreset](../crds/camundaclusterpreset.md): the baseline between the platform config and the cluster, and the merge rules.
+- [CamundaManagementCluster](../crds/camundamanagementcluster.md): sign-in for Management Identity, Console, Web Modeler, and Optimize.

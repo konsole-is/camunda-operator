@@ -1,11 +1,11 @@
 # Getting started
 
 This guide takes you from an empty Kubernetes cluster to a running Camunda orchestration cluster that you can log in to.
-You create four resources: an `ElasticsearchCluster` for secondary storage, a `CamundaPlatformConfig` for authentication, and a `CamundaCluster`, plus a namespace.
+You create a namespace and three resources: an `ElasticsearchCluster` for secondary storage, a `CamundaPlatformConfig` for authentication, and a `CamundaCluster`.
 
 The sizes in this guide fit a local [kind](https://kind.sigs.k8s.io/) cluster. They are not production sizes.
 
-The same four resources are ready to apply in [`config/example/camunda-cluster/elasticsearch`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/camunda-cluster/elasticsearch). Follow the steps below to learn what each one does. Or apply that directory to get the cluster in one command.
+The same manifests are ready to apply in [`config/example/camunda-cluster/elasticsearch`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-cluster/elasticsearch). The link shows the `main` branch. Select the tag of your release on GitHub to get the manifests of that version. Follow the steps below to learn what each one does, or apply that directory in one command.
 
 ## Before you start
 
@@ -13,7 +13,8 @@ You need:
 
 - `kubectl` and `helm` 3.8 or later
 - a Kubernetes 1.30+ cluster with a default StorageClass that can bind at least 2Gi
-- about 4 GB of free memory on the nodes, and the Camunda image (about 2 GB) must be pullable
+- about 4 GB of free memory on the nodes
+- nodes that can pull images from Docker Hub, `docker.elastic.co`, and `ghcr.io`
 
 On a kind cluster, Elasticsearch needs `vm.max_map_count` of at least 262144 on the host:
 
@@ -23,7 +24,7 @@ sudo sysctl -w vm.max_map_count=262144
 
 ## 1. Install the ECK operator
 
-The operator runs Elasticsearch through [Elastic Cloud on Kubernetes (ECK)](https://www.elastic.co/guide/en/cloud-on-k8s/current/index.html). Install ECK first. The operator looks for the ECK CRDs when it starts. If you install ECK later, restart the operator. If you use only an RDBMS as secondary storage, you can skip this step.
+The operator runs Elasticsearch through [Elastic Cloud on Kubernetes (ECK)](https://www.elastic.co/guide/en/cloud-on-k8s/current/index.html). Install ECK before the operator. The operator looks for the ECK CRDs when it starts. If you install ECK later, restart the operator.
 
 ```bash
 kubectl apply --server-side -f https://download.elastic.co/downloads/eck/3.5.0/crds.yaml
@@ -32,7 +33,7 @@ kubectl apply --server-side -f https://download.elastic.co/downloads/eck/3.5.0/o
 
 Use `--server-side`: the ECK CRD manifest is larger than the annotation that client-side apply writes.
 
-This guide uses Elasticsearch. For PostgreSQL secondary storage, install the [CloudNativePG operator](https://cloudnative-pg.io/documentation/current/installation_upgrade/) instead of ECK, and run the server with a [DatabaseServer](crds/databaseserver.md). A continuous archive of that server also needs the [Barman Cloud plugin](https://cloudnative-pg.io/plugin-barman-cloud/docs/installation/) and [cert-manager](https://cert-manager.io/docs/installation/). [Installation](installation.md#install-cloudnativepg-and-the-barman-cloud-plugin) has the commands, and the [secondary storage guide](guides/secondary-storage.md#postgresql) has the resources.
+This guide uses Elasticsearch. For PostgreSQL secondary storage, install CloudNativePG instead of ECK. [Installation](installation.md#install-cloudnativepg-and-the-barman-cloud-plugin) has the commands, and the [secondary storage guide](guides/secondary-storage.md#postgresql) has the resources.
 
 ## 2. Install the operator
 
@@ -60,7 +61,7 @@ kubectl create namespace my-cluster-ns
 
 ## 4. Create the Elasticsearch cluster
 
-Apply an `ElasticsearchCluster`. The operator creates an ECK `Elasticsearch` resource, a user for Camunda, and a `SecondaryStorageConfig` named `my-storage-config` with the connection details.
+Apply an `ElasticsearchCluster`. The operator creates an ECK `Elasticsearch` resource, a user for Camunda, and a `SecondaryStorageConfig` with the connection details. The field `secondaryStorageConfig` sets the name of that `SecondaryStorageConfig`, here `my-storage-config`.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -69,7 +70,7 @@ metadata:
   name: my-cluster-es
   namespace: my-cluster-ns
 spec:
-  version: "9.2.4"
+  version: "9.2.8"
   replicas: 1
   storageSize: 1Gi
   resources:
@@ -86,7 +87,7 @@ kubectl wait elasticsearchcluster/my-cluster-es -n my-cluster-ns \
 
 ## 5. Create the platform configuration
 
-A `CamundaPlatformConfig` holds the settings that all clusters share. This one selects basic authentication and sets no license key. Without a license key, Camunda runs in non-production mode. See the Camunda licensing documentation for what that means.
+A `CamundaPlatformConfig` holds the settings that all clusters share. This one selects basic authentication and sets no license key. Without a license key, Camunda runs under its Non-Production License, and Operate and Tasklist show a note that says so.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -109,7 +110,7 @@ metadata:
   name: my-cluster
   namespace: my-cluster-ns
 spec:
-  version: "8.9.9"
+  version: "8.9.21"
   platformConfigRef: my-platform-config
   storageRef: my-storage-config
   zeebe:
@@ -121,7 +122,7 @@ spec:
       requests: { cpu: 500m, memory: 512Mi }
 ```
 
-This is the default topology of Camunda 8.9: one Zeebe broker, and one gateway that also serves Operate, Tasklist, and Admin.
+This cluster runs the default topology of a `CamundaCluster`: one Zeebe broker, and one gateway that also serves Operate, Tasklist, and Admin.
 
 In a shared environment, the sizing comes from a `CamundaClusterPreset`, the version from a `CamundaRelease`, and a cluster sets only `presetRef`, `releaseRef`, and its references. See the [presets guide](guides/presets.md).
 
@@ -135,7 +136,7 @@ kubectl get camundacluster -n my-cluster-ns
 
 ```
 NAME         READY   REASON    VERSION   AGE
-my-cluster   True    Healthy   8.9.9     12m
+my-cluster   True    Healthy   8.9.21    12m
 ```
 
 If `Ready` stays `False`, read the conditions. The reason names the problem, for example a missing reference:
@@ -146,7 +147,7 @@ kubectl describe camundacluster my-cluster -n my-cluster-ns
 
 ## 7. Log in
 
-With basic authentication the operator creates the first administrator. The credentials are in the Secret `my-cluster-camunda-admin`:
+With basic authentication, the operator creates the first administrator. The Secret `my-cluster-camunda-admin` holds the password:
 
 ```bash
 kubectl get secret my-cluster-camunda-admin -n my-cluster-ns \

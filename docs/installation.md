@@ -12,16 +12,16 @@ The manager never runs the CLI itself. The Jobs that the operator creates run it
 - The [CloudNativePG operator](https://cloudnative-pg.io/documentation/current/installation_upgrade/), version 1.26 or later, if you use `DatabaseServer`. Use 1.27 or later with the Barman Cloud plugin. The manager looks for the CloudNativePG CRDs when it starts. If it does not find them, every `DatabaseServer` reports `Ready=False` with reason `CNPGNotInstalled`. If you install CloudNativePG after the manager, restart the manager.
 - The [Barman Cloud plugin](https://cloudnative-pg.io/plugin-barman-cloud/docs/installation/), version 0.14 or later, and [cert-manager](https://cert-manager.io/docs/installation/), if you use `DatabaseServer` with `spec.archive`. Both install into the namespace of the CloudNativePG operator. Without the plugin, a `DatabaseServer` with an archive reports `Ready=False` with reason `BarmanPluginNotInstalled`. If you install the plugin after the manager, restart the manager.
 - A PostgreSQL server that a `DatabaseServerConfig` describes, if you use `Database` without a `DatabaseServer`. The operator runs PostgreSQL only through `DatabaseServer`.
-- The [Keycloak Operator](https://www.keycloak.org/operator/installation), if you use `CamundaManagementCluster` with `spec.identityProvider.keycloak`. The manager looks for the Keycloak CRDs when it starts. If it does not find them, every `CamundaManagementCluster` in that mode reports `Ready=False` with reason `KeycloakOperatorNotInstalled`. If you install the Keycloak Operator after the manager, restart the manager. Install the Keycloak Operator release that matches `spec.identityProvider.keycloak.version`, which stays below 26.7.0 for Camunda 8.9. See [The operator runs Keycloak](crds/camundamanagementcluster.md#the-operator-runs-keycloak). The other two identity provider modes do not need it. Camunda documents the same prerequisite in [Keycloak deployment](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/#keycloak-deployment).
+- The [Keycloak Operator](https://www.keycloak.org/operator/installation), if you use `CamundaManagementCluster` with `spec.identityProvider.keycloak`. The other two identity provider modes do not need it. The manager looks for the Keycloak CRDs when it starts. If it does not find them, every `CamundaManagementCluster` in that mode reports `Ready=False` with reason `KeycloakOperatorNotInstalled`. If you install the Keycloak Operator after the manager, restart the manager. Install the Keycloak Operator release that matches `spec.identityProvider.keycloak.version`. With Camunda 8.9, keep that version below 26.7.0. [The operator runs Keycloak](crds/camundamanagementcluster.md#the-operator-runs-keycloak) gives the reason. Camunda documents the same prerequisite in [Keycloak deployment](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/#keycloak-deployment).
 
-The end-to-end suite of each release runs against ECK 3.5.0, CloudNativePG 1.30.0, and the Barman Cloud plugin 0.14.0. These are the versions the release is tested with. Newer patch releases of each line work the same way.
+The end-to-end suite of each release runs against ECK 3.5.0, CloudNativePG 1.30.1, the Barman Cloud plugin 0.14.0, and the Keycloak Operator 26.6.4.
 
 ### Install CloudNativePG and the Barman Cloud plugin
 
-Install cert-manager first. The plugin serves its endpoint over a certificate that cert-manager issues.
+Install [cert-manager](https://cert-manager.io/docs/installation/) first. The plugin gets its certificates from cert-manager.
 
 ```bash
-kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.30/releases/cnpg-1.30.0.yaml
+kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.30/releases/cnpg-1.30.1.yaml
 kubectl apply --server-side -f https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.14.0/manifest.yaml
 kubectl rollout status deployment/cnpg-controller-manager -n cnpg-system
 kubectl rollout status deployment/barman-cloud -n cnpg-system
@@ -54,7 +54,9 @@ The [chart README](https://github.com/konsole-is/camunda-operator/blob/main/dist
 | `prometheus.enable` | `false` | Install a `ServiceMonitor` for the manager. Needs the prometheus-operator CRDs. The alert rules and dashboards are applied separately, see [Observability](observability.md). |
 | `rbacHelpers.enable` | `false` | Install admin, editor, and viewer `ClusterRole`s for every custom resource. |
 | `crd.enable` | `true` | Install the CRDs with the chart. Set `false` to manage them yourself (below). |
-| `certManager.enable` | `false` | Use a cert-manager certificate for the metrics endpoint. The chart does not create the certificate. Leave it `false` unless you provide the Secret `metrics-server-cert`. |
+| `certManager.enable` | `false` | Make the `ServiceMonitor` verify the metrics endpoint with the certificate in the Secret `metrics-server-cert`. The chart does not create that Secret. |
+
+To pull from a mirror, set `manager.image.repository` and `manager.cliImage.repository`, and put the pull Secret in `manager.imagePullSecrets`. That Secret applies to the manager Pod only, not to the Jobs that run the CLI image. Those Jobs and the Camunda pods run under the ServiceAccount of their `CamundaCluster`. Add the pull Secret to the `imagePullSecrets` of that ServiceAccount, see [Workload identity](crds/camundacluster.md#workload-identity). The [chart README](https://github.com/konsole-is/camunda-operator/blob/main/dist/chart/README.md) lists these values.
 
 Example:
 
@@ -79,11 +81,11 @@ Use `--server-side`: the `CamundaCluster` CRD is larger than the annotation that
 
 The manifest differs from the chart defaults in two ways. It creates the namespace `camunda-operator-system`. And it includes the admin, editor, and viewer `ClusterRole`s for every custom resource, the same set the chart renders with `rbacHelpers.enable=true`.
 
-The manifest pins the CLI image in the manager's `CAMUNDA_OPERATOR_CLI_IMAGE` environment variable. To use a mirror, edit that value before you apply.
+The manifest pins the CLI image in the manager's `CAMUNDA_OPERATOR_CLI_IMAGE` environment variable. To use a mirror, edit that value and the image of the manager Deployment before you apply.
 
 ## Install the CRDs separately
 
-Helm stores everything a chart renders in the release Secret, and etcd limits the size of that Secret. If your cluster also carries large custom resources, install the CRDs yourself and keep them out of the release:
+Install the CRDs yourself when you manage them outside Helm, for example with a GitOps tool. This also keeps them out of the Helm release Secret, which etcd limits to about 1 MB:
 
 ```bash
 kubectl apply --server-side -f https://github.com/konsole-is/camunda-operator/releases/download/<version>/crds.yaml
@@ -123,7 +125,11 @@ helm upgrade camunda-operator \
   --namespace camunda-operator-system
 ```
 
+Without `--set` or `-f`, Helm keeps the values of the last release. If you pass a value, Helm uses the chart defaults for all the values you do not pass. In that case, pass every value of the install again. Do not use `--reuse-values`, because it keeps the image tags of the old chart.
+
 The CRDs carry the annotation `helm.sh/resource-policy: keep`. Helm updates them in place and never deletes them.
+
+To upgrade a manifest install, apply the `install.yaml` of the new release with `--server-side`, as in [Install without Helm](#install-without-helm). Make the same mirror edits again before you apply.
 
 ## Uninstall
 
@@ -131,11 +137,17 @@ The CRDs carry the annotation `helm.sh/resource-policy: keep`. Helm updates them
 helm uninstall camunda-operator --namespace camunda-operator-system
 ```
 
-Because of the `keep` policy, the CRDs and every custom resource stored in them survive the uninstall.
+Because of the `keep` policy, the CRDs and every custom resource stored in them survive the uninstall. The Camunda workloads keep running, but nothing manages them.
 
-> **Caution:** Deleting the CRDs deletes every custom resource of the operator, and with them every Camunda cluster, Elasticsearch cluster, and backup that the operator manages. The data volumes follow the retention policy of each resource.
+To remove everything, do these steps in this order:
 
-To remove the CRDs, delete them by name. The CRD manifests carry no labels, so a label selector does not match them:
+1. Delete your custom resources while the manager runs. Some of them, for example a `CamundaCluster` or a backup, wait for the manager before they go away. Without the manager, they stay in deletion, and the delete of their CRD does not finish.
+2. Uninstall the chart.
+3. Delete the CRDs.
+
+> **Caution:** When you delete a backup resource, the operator deletes the snapshots or the dump of that backup from the bucket. If you delete the cluster or its `ObjectStorageConfig` first, the backup goes and leaves its artifacts in the bucket. When you delete a `CamundaCluster`, the broker volumes follow `spec.zeebe.persistentVolumeClaimRetentionPolicy`. The default deletes them.
+
+Delete the CRDs by name. The CRD manifests carry no labels, so a label selector does not match them:
 
 ```bash
 kubectl delete -f https://github.com/konsole-is/camunda-operator/releases/download/<version>/crds.yaml
@@ -159,4 +171,4 @@ make helm-generate IMG=<registry>/camunda-operator:<tag> CLI_IMG=<registry>/camu
 make helm-deploy   IMG=<registry>/camunda-operator:<tag> CLI_IMG=<registry>/camunda-operator-cli:<tag>
 ```
 
-`make helm-generate` renders `dist/chart/` from `config/`. The chart is generated, not checked in. `IMG` and `CLI_IMG` set the two images for `make deploy`, `make build-installer`, and `make helm-deploy` in the same way.
+This needs Docker, Go, and the `kubebuilder` CLI. `make helm-generate` renders `dist/chart/values.yaml` and `dist/chart/templates/` from `config/`. The repository holds only `Chart.yaml` and `README.md` of the chart. `IMG` and `CLI_IMG` set the two images for `make deploy`, `make build-installer`, and `make helm-deploy` in the same way.

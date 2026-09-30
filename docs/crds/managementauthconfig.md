@@ -1,15 +1,8 @@
 # ManagementAuthConfig
 
-`ManagementAuthConfig` is a cluster-scoped contract kind that carries the OIDC configuration of Management Identity: endpoints, a machine-to-machine client, and an audience. A [CamundaManagementCluster](camundamanagementcluster.md) writes it for you, or you create it by hand.
+`ManagementAuthConfig` is a cluster-scoped contract that tells Optimize how to sign in through Management Identity. It holds the endpoints of the identity provider, the address of Management Identity, and the client that Optimize uses. A [CamundaManagementCluster](camundamanagementcluster.md) writes it for you. If you run Management Identity another way, you write it by hand.
 
-Components outside the orchestration cluster authenticate against Management Identity, which is a separate identity system from the one inside the orchestration cluster. This kind carries the OIDC endpoints and the default machine-to-machine client those components need. The thing that runs Management Identity and the thing that uses it do not need to know each other.
-
-[CamundaOptimize](camundaoptimize.md) consumes this contract. The operator validates it and never provisions anything from it.
-
-| Role | Who |
-| --- | --- |
-| Producers | A [CamundaManagementCluster](camundamanagementcluster.md), you by hand, or another tool that runs Management Identity |
-| Consumers | [CamundaOptimize](camundaoptimize.md) |
+A [CamundaOptimize](camundaoptimize.md) reads the contract through `managementAuthRef`. The operator checks the contract and creates nothing from it.
 
 The smallest contract names the endpoints, the client, the audience, and the client secret:
 
@@ -20,15 +13,15 @@ metadata:
   name: my-management-auth
 spec:
   baseUrl: "https://identity.camunda.example.com"
-  issuerUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform"
-  authUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/auth"
-  tokenUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/token"
-  jwksUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/certs"
-  clientId: camunda-management
-  audience: camunda-management
+  issuerUrl: "https://camunda.example.com/auth/realms/camunda-platform"
+  authUrl: "https://camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/auth"
+  tokenUrl: "https://camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/token"
+  jwksUrl: "https://camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/certs"
+  clientId: optimize
+  audience: optimize-api
   clientSecretRef:
-    name: my-management-auth-secret
-    namespace: my-cluster-ns
+    name: my-optimize-client
+    namespace: my-management-ns
     key: client-secret
 ```
 
@@ -46,14 +39,14 @@ A contract that a [CamundaManagementCluster](camundamanagementcluster.md) wrote 
 
 | Label | Value |
 | --- | --- |
-| `camunda.io/management-cluster` | the name of the `CamundaManagementCluster` |
+| `camunda.io/management-cluster` | the name of the `CamundaManagementCluster`, shortened when it is long |
 | `camunda.io/management-cluster-namespace` | its namespace |
 
 Read them with `kubectl get managementauthconfig my-management-auth --show-labels`. A contract without them is one that you or another tool wrote.
 
-The owner keeps every field of a contract it wrote up to date. An edit of your own to such a contract goes back to the value the management plane computes.
+The management plane keeps every field of its contract up to date. If you edit such a contract, the field goes back to the value of the management plane.
 
-This kind is cluster-scoped, so two management planes in two namespaces can ask for one name. The first one there keeps it. The second reports `Ready=False` with reason `Conflict`, and its message names the holder:
+This kind is cluster-scoped, so two management planes in two namespaces can ask for one name. The first one keeps it. The second one reports `Ready=False` with reason `Conflict`, and its message names the holder:
 
 ```yaml
 status:
@@ -64,19 +57,13 @@ status:
       message: ManagementAuthConfig "my-management-auth" exists and belongs to CamundaManagementCluster my-management-ns/my-management; set spec.managementAuthConfigName to a free name, or remove the object
 ```
 
-A contract that you wrote by hand carries no owner labels. A management plane that asks for its name reports `Conflict` against "another writer" and leaves the object alone.
+A management plane that asks for the name of a contract that you wrote reports `Conflict` against "another writer" and does not change the contract.
 
-## Validation checks
+## Client secret
 
-The operator creates no resources from this kind. It validates the contract and writes the result to `status`.
+The operator makes sure that the Secret in `clientSecretRef` exists and holds the configured `key`. If the Secret or the key is missing, `Ready` is `False` with reason `MissingSecret`, and the message names both. The operator checks again when you edit the contract or the Secret.
 
-- The operator makes sure that the Secret in `clientSecretRef` exists and holds the configured `key`.
-
-If the Secret or the key is missing, `Ready` is `False` with reason `MissingSecret`. The message names the Secret and the key.
-
-When you edit the contract or the referenced Secret, the operator validates the contract again.
-
-> **Note:** A Secret reference can name any namespace, and the status message says whether it exists. Grant write access to this kind with care.
+> **Note:** `clientSecretRef` can name a Secret in any namespace, and the status message says whether that Secret exists. Give write access to this kind only to platform administrators.
 
 ## Status
 
@@ -87,7 +74,7 @@ When you edit the contract or the referenced Secret, the operator validates the 
 | `Ready` | `Healthy` | The Secret exists and holds the configured key. | Nothing. |
 | `Ready` | `MissingSecret` | The Secret named by `clientSecretRef` is missing, or it lacks the configured key. | Create the Secret, or add the key. The message names the Secret and the key. |
 
-`status.observedGeneration` is the last generation of the contract that the operator validated.
+`status.observedGeneration` is the last generation of the contract that the operator checked.
 
 ## Spec reference
 
@@ -100,28 +87,28 @@ kind: ManagementAuthConfig
 metadata:
   name: my-management-auth
 spec:
-  # string. Required. Base URL of the Management Identity service.
+  # string. Required. Base URL of Management Identity.
   baseUrl: "https://identity.camunda.example.com"
-  # string. Required. OIDC issuer URL that consumers use to validate tokens.
-  issuerUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform"
+  # string. Required. OIDC issuer URL that Optimize uses to validate tokens.
+  issuerUrl: "https://camunda.example.com/auth/realms/camunda-platform"
   # string. Optional, default: the value of issuerUrl. Issuer URL for traffic inside the Kubernetes cluster.
-  issuerBackendUrl: "http://identity.camunda-management.svc.cluster.local/auth/realms/camunda-platform"
+  issuerBackendUrl: "http://my-management-keycloak-service.my-management-ns.svc:8080/auth/realms/camunda-platform"
   # string. Required. OIDC authorization endpoint for browser login redirects.
-  authUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/auth"
+  authUrl: "https://camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/auth"
   # string. Required. OIDC token endpoint for machine-to-machine tokens.
-  tokenUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/token"
+  tokenUrl: "https://camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/token"
   # string. Required. JWKS endpoint that serves the token signing keys.
-  jwksUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/certs"
-  # string. Required. Default machine-to-machine client ID.
-  clientId: camunda-management
+  jwksUrl: "https://camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/certs"
+  # string. Required. ID of the client that Optimize signs in with.
+  clientId: optimize
   # string. Required. Audience expected in access tokens issued for this client.
-  audience: camunda-management
-  # object. Required. Client secret of the machine-to-machine client.
+  audience: optimize-api
+  # object. Required. Client secret of that client.
   clientSecretRef:
     # string. Required. Name of the Secret that holds the client secret.
-    name: my-management-auth-secret
+    name: my-optimize-client
     # string. Required. Namespace of the Secret. This kind is cluster-scoped, so there is no default.
-    namespace: my-cluster-ns
+    namespace: my-management-ns
     # string. Required. Key in the Secret that holds the client secret.
     key: client-secret
 ```
@@ -143,16 +130,16 @@ metadata:
   name: my-management-auth
 spec:
   baseUrl: "https://identity.camunda.example.com"
-  issuerUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform"
-  issuerBackendUrl: "http://identity.camunda-management.svc.cluster.local/auth/realms/camunda-platform"
-  authUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/auth"
-  tokenUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/token"
-  jwksUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/certs"
-  clientId: camunda-management
-  audience: camunda-management
+  issuerUrl: "https://camunda.example.com/auth/realms/camunda-platform"
+  issuerBackendUrl: "http://my-management-keycloak-service.my-management-ns.svc:8080/auth/realms/camunda-platform"
+  authUrl: "https://camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/auth"
+  tokenUrl: "http://my-management-keycloak-service.my-management-ns.svc:8080/auth/realms/camunda-platform/protocol/openid-connect/token"
+  jwksUrl: "http://my-management-keycloak-service.my-management-ns.svc:8080/auth/realms/camunda-platform/protocol/openid-connect/certs"
+  clientId: optimize
+  audience: optimize-api
   clientSecretRef:
-    name: my-management-auth-secret
-    namespace: my-cluster-ns
+    name: my-optimize-client
+    namespace: my-management-ns
     key: client-secret
 ```
 
@@ -161,5 +148,4 @@ spec:
 - [CamundaManagementCluster](camundamanagementcluster.md): writes this contract and keeps it up to date.
 - [CamundaOptimize](camundaoptimize.md): reads this contract through `managementAuthRef`.
 - [Management plane guide](../guides/management-plane.md): where this contract fits in the order of creation.
-- [Authentication guide](../guides/authentication.md): how authentication works in the operator.
 - [CamundaPlatformConfig](camundaplatformconfig.md): the contract that carries the identity configuration of an orchestration cluster.

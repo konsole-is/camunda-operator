@@ -1,6 +1,6 @@
 # camunda-operator Helm chart
 
-Core Kubernetes operator for the Camunda platform.
+The Kubernetes operator that runs Camunda 8.9+ orchestration clusters, their storage backends, backups, Optimize, and the management plane.
 
 ```bash
 helm install camunda-operator \
@@ -9,22 +9,24 @@ helm install camunda-operator \
   --namespace camunda-operator-system --create-namespace
 ```
 
-Full installation guide, including verification and the large-CRD install path:
+The installation guide covers signature verification, CRDs installed separately, upgrades, and removal:
 <https://github.com/konsole-is/camunda-operator/blob/main/docs/installation.md>
 
 ## Values
 
+The defaults are the values of a released chart.
+
 | Key | Default | Description |
 |---|---|---|
-| `manager.replicas` | `1` | Controller manager replica count. |
-| `manager.image.repository` | `controller` | Manager image repository. Set at release time. |
-| `manager.image.tag` | `latest` | Manager image tag. Set at release time. |
-| `manager.image.pullPolicy` | `IfNotPresent` | Image pull policy. |
-| `manager.cliImage.repository` | `ghcr.io/konsole-is/camunda-operator-cli` | camunda-operator-cli image repository. The operator's Jobs run this image; passed to the manager as `--camunda-operator-cli-image`. Set at release time. |
-| `manager.cliImage.tag` | `latest` | camunda-operator-cli image tag. Set at release time. |
-| `manager.args` | `["--leader-elect"]` | Arguments passed to the manager. |
+| `manager.replicas` | `1` | Number of manager replicas. Leader election is on. |
+| `manager.image.repository` | `ghcr.io/konsole-is/camunda-operator` | Manager image repository. |
+| `manager.image.tag` | the chart version | Manager image tag. |
+| `manager.image.pullPolicy` | `IfNotPresent` | Image pull policy of the manager. |
+| `manager.cliImage.repository` | `ghcr.io/konsole-is/camunda-operator-cli` | Repository of the CLI image that the Jobs of the operator run. The manager gets it as `--camunda-operator-cli-image`. If you mirror the manager image, mirror this one too. |
+| `manager.cliImage.tag` | the chart version | CLI image tag. |
+| `manager.args` | `["--leader-elect"]` | Arguments of the manager. Keep `--leader-elect` when you run more than one replica. |
 | `manager.env` | `[]` | Environment variables. |
-| `manager.envOverrides` | `{}` | Per-variable overrides; wins over `manager.env`. |
+| `manager.envOverrides` | `{}` | Environment variables as a map. A name here wins over the same name in `manager.env`. |
 | `manager.imagePullSecrets` | `[]` | Image pull secrets. |
 | `manager.podSecurityContext` | `runAsNonRoot: true`, `seccompProfile.type: RuntimeDefault` | Pod security context. |
 | `manager.securityContext` | drops `ALL`, read-only root FS, no privilege escalation | Container security context. |
@@ -32,15 +34,14 @@ Full installation guide, including verification and the large-CRD install path:
 | `manager.affinity` | `{}` | Pod affinity. |
 | `manager.nodeSelector` | `{}` | Pod node selector. |
 | `manager.tolerations` | `[]` | Pod tolerations. |
-| `crd.enable` | `true` | Install CRDs with the chart. Set `false` when applying CRDs out of band. |
-| `crd.keep` | `true` | Annotate CRDs `helm.sh/resource-policy: keep` so uninstall does not delete custom resources. |
-| `rbacHelpers.enable` | `false` | Install convenience admin/editor/viewer ClusterRoles for each CRD. |
+| `crd.enable` | `true` | Install the CRDs with the chart. Set `false` when you apply `crds.yaml` of the release yourself. |
+| `crd.keep` | `true` | Annotate the CRDs with `helm.sh/resource-policy: keep`. Then `helm uninstall` keeps the CRDs and your custom resources. |
+| `rbacHelpers.enable` | `false` | Install admin, editor, and viewer `ClusterRole`s for each CRD. |
 | `metrics.enable` | `true` | Expose the RBAC-protected `/metrics` endpoint. |
 | `metrics.port` | `8443` | Metrics server port. |
-| `certManager.enable` | `false` | Switches the `ServiceMonitor` to a cert-manager-backed TLS config expecting a `metrics-server-cert` secret. The chart does not provision that certificate — leave `false` unless you supply it yourself. |
-| `prometheus.enable` | `false` | Install a `ServiceMonitor`. Requires prometheus-operator CRDs. The alert rules and dashboards are applied separately, see `docs/observability.md`. |
-| `nameOverride` | unset | Partially override the generated resource name. |
-| `fullnameOverride` | unset | Fully override the generated resource name. |
+| `certManager.enable` | `false` | Make the `ServiceMonitor` verify the metrics endpoint with the certificate in the Secret `metrics-server-cert`. The chart does not create that Secret. |
+| `prometheus.enable` | `false` | Install a `ServiceMonitor`. Needs the prometheus-operator CRDs. You apply the alert rules and dashboards yourself, see [Observability](https://github.com/konsole-is/camunda-operator/blob/main/docs/observability.md). |
+| `nameOverride` | unset | Replace the chart name in the resource names and in the `app.kubernetes.io/name` label. |
+| `fullnameOverride` | unset | Replace the release and chart name at the start of each resource name. |
 
-`values.yaml` is regenerated by `make helm-generate` and must not be hand-edited.
-Change defaults in `config/` instead.
+`make helm-generate` writes `values.yaml` from `config/`. Do not edit `values.yaml`. Change the defaults in `config/`.

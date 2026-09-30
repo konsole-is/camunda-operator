@@ -4,7 +4,7 @@
 
 A release separates what runs from the shape of a resource. The shape lives in a preset: [CamundaClusterPreset](camundaclusterpreset.md), [ElasticsearchClusterPreset](elasticsearchclusterpreset.md), or [DatabaseServerPreset](databaseserverpreset.md). A platform team keeps a handful of presets, such as `small` and `medium`, and one release per rollout, such as `camunda-8-9-4`. To move a fleet to a new version set, the team edits one release. To move one resource, the owner changes one `releaseRef`.
 
-A release is passive data. It creates nothing, and it reports no status. A resource that fits no release leaves `releaseRef` unset and sets `version` inline.
+A release creates nothing, and it reports no status. A resource that fits no release leaves `releaseRef` unset and sets `version` inline.
 
 The smallest release names one version:
 
@@ -32,11 +32,9 @@ A `CamundaCluster`, an `ElasticsearchCluster`, and a `DatabaseServer` each merge
 
 A resource that sets `spec.version` next to a `releaseRef` runs its own version. Leave `spec.version` unset to follow the release.
 
-A `releaseRef` that names no existing release gives `Ready: False` with reason `InvalidReference` on the resource that names it.
-
 ## Versions
 
-No version below follows `spec.version`. Each one moves on a line of its own, and `spec.databaseServer.version` is a bare PostgreSQL major rather than three segments.
+Each version in the table below moves on its own. The connectors, Elasticsearch, and PostgreSQL versions do not change when `spec.version` changes. `spec.databaseServer.version` is a bare PostgreSQL major, not three segments.
 
 | Field | What runs it | Kind that reads it |
 | --- | --- | --- |
@@ -68,7 +66,7 @@ When you edit a release, every resource that references it rolls to the new vers
 
 - A cluster whose brokers run a higher version refuses the move and reports `Ready: False` with reason `VersionDowngradeRefused`. The [CamundaCluster page](camundacluster.md#version) states the rule and the annotation that sanctions a downgrade.
 - A server whose data directory runs another PostgreSQL major refuses the change and reports `Ready: False` with reason `VersionChangeRefused`. It keeps the major it has. The [DatabaseServer page](databaseserver.md#the-postgresql-version) states the rule.
-- An Elasticsearch cluster below the Camunda 8.9 floor of 8.19 or 9.2 reports `Ready: False` with reason `InvalidReference`.
+- Camunda 8.9 needs Elasticsearch 8.19 or later on major 8, or 9.2 or later on major 9. An `ElasticsearchCluster` on an earlier version reports `Ready: False` with reason `InvalidReference`.
 
 ## Pinned images
 
@@ -89,11 +87,11 @@ A pinned image changes only what is pulled. The version gates, the downgrade rul
 
 A pin belongs to the version of the release. A cluster that runs another version does not pull it. When `spec.version` on the cluster wins over the release, or a restore sets the version, the cluster pulls the normal repository at that version. The `connectors` pin follows `connectors.version` the same way.
 
-`spec.images` holds these two entries and no more. Elasticsearch takes its image from `elasticsearch.version` through the ECK operator. PostgreSQL takes its repository from `images.postgres` on the [CamundaPlatformConfig](camundaplatformconfig.md#images). So neither has a pull reference for a release to replace.
+A release pins no Elasticsearch or PostgreSQL image. Those take their tag from `elasticsearch.version` and `databaseServer.version`.
 
 To pin an image for a few clusters only, create a second release with the pin. Then point the `releaseRef` of those clusters at it.
 
-To rename every image of an environment to a mirror, use `spec.images` on the [CamundaPlatformConfig](camundaplatformconfig.md#images) instead. A release pins one exact reference for the clusters that use this release. A platform config renames the repository for every cluster and lets the version supply the tag.
+To rename every image of an environment to a mirror, PostgreSQL included, use `spec.images` on the [CamundaPlatformConfig](camundaplatformconfig.md#images) instead. A release pins one exact reference for the clusters that use this release. A platform config renames the repository for every cluster and lets the version supply the tag.
 
 ## Environment
 
@@ -115,9 +113,15 @@ spec:
         value: "-Xmx8g"
 ```
 
+## Deletion
+
+A release owns nothing, so a delete removes nothing else. A resource that still names the deleted release reports `Ready: False` with reason `InvalidReference` and keeps running as it is. Move every resource to another release before you delete one.
+
 ## Status
 
-A release reports no status. Reference errors appear on the referencing `CamundaCluster`: a missing release gives `Ready: False` with reason `InvalidReference`.
+A release reports no status. `kubectl get camundarelease` shows the Camunda version and the age. `kubectl get camundarelease -o wide` adds the connectors, Elasticsearch, and PostgreSQL versions.
+
+Problems appear on the resource that references the release. A missing release gives `Ready: False` with reason `InvalidReference`.
 
 ## Spec reference
 
@@ -130,7 +134,7 @@ metadata:
   # Cluster-scoped: no namespace.
   name: camunda-8-9-4
 spec:
-  # string. Required. Camunda version as x.y.z. The referencing cluster checks the floor of 8.9.0.
+  # string. Required. Camunda version as x.y.z. The referencing cluster requires 8.9.0 or later.
   version: "8.9.4"
   # object. Optional. The connectors runtime of this release.
   connectors:
@@ -142,11 +146,11 @@ spec:
     extraEnvFrom: []
   # object. Optional. The Elasticsearch of this release.
   elasticsearch:
-    # string. Optional. Elasticsearch version as x.y.z. The referencing cluster checks the floor of 8.19 or 9.2.
+    # string. Optional. Elasticsearch version as x.y.z. The referencing cluster requires 8.19 or later on major 8, and 9.2 or later on major 9.
     version: "9.2.8"
   # object. Optional. The PostgreSQL server of this release.
   databaseServer:
-    # string. Optional. PostgreSQL major version as a bare number. The referencing server checks the floor of 14.
+    # string. Optional. PostgreSQL major version as a bare number. The referencing server requires 14 or later.
     version: "17"
   # object. Optional. Complete image references, pulled as they are. A pin applies only while the version of the release is the effective one, and the version stays what the operator believes the process runs.
   images:
@@ -154,11 +158,11 @@ spec:
     camunda: "mirror.example.com/camunda/camunda@sha256:7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730"
     # string. Optional. Image of the connectors runtime.
     connectors: "mirror.example.com/camunda/connectors-bundle:8.9.7"
-  # []EnvVar. Optional. Environment variables of every workload. They merge by name over the preset entries and under the cluster entries.
+  # []EnvVar. Optional. Environment variables of every workload. An entry replaces a preset entry with the same name, and a cluster entry replaces it.
   extraEnv:
     - name: CAMUNDA_SOME_NEW_FLAG
       value: "true"
-  # []EnvFromSource. Optional. Environment sources of every workload. They follow the preset sources and precede the cluster sources.
+  # []EnvFromSource. Optional. Environment sources of every workload. They come after the preset sources and before the cluster sources.
   extraEnvFrom: []
   # object. Optional. Environment of the brokers. The same shape as zeebe applies to gateway, operate, tasklist, and admin.
   zeebe:
@@ -170,7 +174,7 @@ spec:
 
 ### Validation rules
 
-- `spec.version` is required and must be of the form `x.y.z`. The floor of 8.9.0 is checked by the referencing cluster on the merged spec.
+- `spec.version` is required and must be of the form `x.y.z`. The referencing cluster requires 8.9.0 or later on the merged spec.
 - `spec.connectors.version` and `spec.elasticsearch.version` must be of the form `x.y.z`.
 - `spec.databaseServer.version` must be a bare number.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both.
@@ -201,7 +205,7 @@ spec:
 
 ## Related
 
-- [`config/example/releases`](https://github.com/konsole-is/camunda-operator/tree/<version>/config/example/releases): a ready-to-apply release that the example inventories name.
+- [`config/example/releases`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/releases): a ready-to-apply release that the example inventories name.
 - [CamundaCluster](camundacluster.md): references this resource through `releaseRef` and runs what it names.
 - [ElasticsearchCluster](elasticsearchcluster.md): takes `elasticsearch.version` through `releaseRef`.
 - [DatabaseServer](databaseserver.md): takes `databaseServer.version` through `releaseRef`.

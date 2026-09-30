@@ -1,15 +1,15 @@
 # DatabaseServerConfig
 
-`DatabaseServerConfig` is a namespaced contract kind that describes one database server: engine, host, port, and admin credentials. You create it, or another tool creates it for you.
+`DatabaseServerConfig` is a namespaced [contract](index.md#contracts) kind that describes one PostgreSQL server. It holds the engine, the host, the port, and an admin user that can create databases and roles. A [DatabaseServer](databaseserver.md) publishes it for the server it runs. For a server that the operator does not run, such as a managed cloud database, you create it, or another tool creates it for you.
 
-The operator creates logical databases on a database server that already exists. It never provisions the server. This kind carries the connection details of the server and an admin user that can create databases and roles. The thing that runs the server and the thing that uses it do not need to know each other. The operator validates the contract, probes the server, and reports the result on `Ready`. It never provisions anything from it.
+The operator never provisions a server from this kind. It checks the admin credentials against the server and reports the result on `Ready`.
 
-A consumer resolves `serverRef` in its own namespace, so the whole relational chain of a cluster lives with that cluster. The admin credentials Secret lives in the namespace of this contract. Two namespaces can describe one shared server, each with a contract of its own.
+A consumer resolves `serverRef` in its own namespace. The admin credentials Secret is in the namespace of the contract. Two namespaces can describe one shared server, each with a contract of its own.
 
 | Role | Who |
 | --- | --- |
-| Producers | [DatabaseServer](databaseserver.md), which runs the server and publishes this contract, or you by hand, or another tool that provisions the server for you |
-| Consumers | [Database](database.md) (through `serverRef`, to create logical databases and users), [DatabaseConfig](databaseconfig.md) (through `serverRef`, to name the server of a logical database), [LogicalBackupRDBMS](logicalbackuprdbms.md) (reads `status.serverVersion` to pick the dump tools) |
+| Producers | [DatabaseServer](databaseserver.md), or you by hand, or another tool that provisions the server |
+| Consumers | [Database](database.md) (through `serverRef`, to create logical databases and users), [DatabaseConfig](databaseconfig.md) (through `serverRef`, to name the server of a logical database), [LogicalBackupRDBMS](logicalbackuprdbms.md) (reads `status.serverVersion` to pick the dump tools), [PointInTimeRestore](pointintimerestore.md) (reads `spec.pitr`) |
 
 The smallest contract names the engine, the host, the port, and the admin credentials:
 
@@ -37,47 +37,56 @@ graph LR
     LBR[LogicalBackupRDBMS] -.->|status.serverVersion| DBSC
 ```
 
-## Validation checks
-
-The operator creates no resources from this kind. It validates the contract, probes the server, and writes the result to `status`.
-
-- The operator makes sure that the Secret in `adminCredentialsSecretRef` exists and holds `usernameKey` and `passwordKey`.
-- The operator connects to the server with the admin credentials and reads the major version the server reports. It publishes it as `status.serverVersion` and records the time in `status.probedAt`.
-- The operator reads the system identifier that the server reports and publishes it as `status.systemIdentifier`. This value names the PostgreSQL instance, not the endpoint. Two contracts that reach one instance under different hosts publish one value.
-- `Ready` is `True` only when the server answered the admin credentials. It means the server is usable as declared, not only that a Secret exists.
-
-If the Secret or a key is missing, `Ready` is `False` with reason `MissingSecret`. If the server does not answer, `Ready` is `False` with reason `ConnectionFailed`, and the message names the host, the port, and the error. `status.serverVersion` and `status.systemIdentifier` keep their last known values while the server is unreachable.
-
-A change to `spec.host`, `spec.port`, `spec.adminCredentialsSecretRef.name`, `spec.adminCredentialsSecretRef.usernameKey`, or `spec.adminCredentialsSecretRef.passwordKey` clears the whole record of the last probe: `status.serverVersion`, `status.systemIdentifier`, `status.probedAt`, `status.probedEndpoint`, `status.probedSecretName`, `status.probedSecretKeys`, and `status.probedSecretVersion`. Those fields can name another server, or another user on it, so the recorded answer can describe a server that this contract no longer names. Every other change to the spec keeps the record. A `pitr` block, a `spec.recovery` request, and the answer in `pitr.lastRecovery` do not move the endpoint. The contract publishes the record again on the next successful probe, and a `Database` waits with `ServerIdentityUnknown` in between.
-
 ## Server probe
 
-A reachable server is probed again every 10 minutes. A major upgrade behind the same endpoint therefore reaches `status` without a change to the spec. An unreachable server is probed again every 30 seconds. Each probe times out after 30 seconds. A change to the spec or to the admin credentials Secret causes a new probe at once.
-
-When you change the admin credentials Secret, the operator probes the server again with the new credentials before the next interval. A backup that needs `status.serverVersion` waits until the operator publishes it.
-
-## Server identity
-
-`status.systemIdentifier` is the identity of the PostgreSQL instance behind `spec.host`. PostgreSQL generates it when the data directory is created, so it names the instance and not the address you reach it at.
+The operator connects to the server with the admin credentials. It reads the major version and the system identifier of the server, and publishes them in `status`:
 
 ```yaml
 status:
   serverVersion: "17"
   systemIdentifier: "7412345678901234567"
+  probedAt: "2026-08-20T14:30:00Z"
+  probedEndpoint: "postgres.my-cluster-ns.svc.cluster.local:5432"
+  probedSecretName: my-db-server-admin-credentials
+  probedSecretKeys: username/password
+  probedSecretVersion: "48213"
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Healthy
+      message: "Reached the server; it runs major version 17"
 ```
 
-Two rules of the operator key on this value.
+`Ready` is `True` only when the server accepted the admin credentials. If the Secret or a key is missing, `Ready` is `False` with reason `MissingSecret`. If the server does not answer, `Ready` is `False` with reason `ConnectionFailed`, and the message names the host, the port, and the error.
 
-- A [Database](database.md) claims a logical database name on the instance. Two `Database` objects of two namespaces that resolve to one instance contest one claim, even when each names a contract of its own.
-- A [PointInTimeRestore](pointintimerestore.md) refuses a server that more than one `Database` uses, counted across all namespaces by this identity.
+The operator probes a reachable server again every 10 minutes, so a major upgrade behind the same endpoint shows in `status` without a spec change. It probes an unreachable server again every 30 seconds. Each probe times out after 30 seconds.
 
-A `Database` whose contract has not published this value yet waits with `Ready=False` and reason `ServerIdentityUnknown`.
+A new probe also starts at once when one of these changes:
+
+- `spec.host` or `spec.port`.
+- The name or the keys of `spec.adminCredentialsSecretRef`.
+- The content of the admin credentials Secret.
+
+A change to `spec.host`, `spec.port`, or the name or the keys of `spec.adminCredentialsSecretRef` names another server or another user. It therefore clears every `status` field of the last probe, until the next probe succeeds. Other spec changes, such as a `pitr` block or a recovery request, keep the record. While the server is unreachable, `status.serverVersion` and `status.systemIdentifier` keep their last values.
+
+A backup that needs `status.serverVersion` waits until the operator publishes it.
+
+## Server identity
+
+`status.systemIdentifier` is the identity of the PostgreSQL instance behind `spec.host`. PostgreSQL generates it when it creates the data directory. It therefore names the instance, not the address. Two contracts that reach one instance under different hosts publish one value.
+
+Two rules of the operator use this value:
+
+- A [Database](database.md) claims a logical database name on the instance. Two `Database` objects that reach one instance contest one claim, even from different namespaces.
+- A [PointInTimeRestore](pointintimerestore.md) refuses a server that more than one `Database` uses, counted across all namespaces.
+
+A `Database` whose contract has not published this value yet waits with `Ready` `False` and reason `ServerIdentityUnknown`.
 
 ## Point-in-time recovery
 
-The `pitr` block is a declaration. It states that the server archives WAL for the given number of days. [PointInTimeRestore](pointintimerestore.md) reads it to decide whether the server can serve a requested point.
+The `pitr` block declares that the server archives its write-ahead log for the given number of days. [PointInTimeRestore](pointintimerestore.md) reads it to decide if the server can reach a requested point.
 
-`pitr.recovery` states who rolls the server back to a point in time. It defaults to `external`, which means that nobody does it for you. With `external` you roll the database back yourself before you create a [PointInTimeRestore](pointintimerestore.md).
+`pitr.recovery` says who rolls the server back. The default `external` means that nobody does it for you: roll the database back yourself before you create a `PointInTimeRestore`. `operator` means that the producer of the contract rolls the server back on request. It needs `pitr.enabled: true`. A [DatabaseServer](databaseserver.md) with an archive publishes `operator`.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -93,13 +102,11 @@ spec:
   # ... the rest of your contract
 ```
 
-`operator` means that whoever publishes the contract rolls the server back on request. It needs `pitr.enabled: true`. A [DatabaseServer](databaseserver.md) publishes `operator` on every contract of a server that archives.
-
 ## Recovery request
 
-`spec.recovery` asks for the rollback. A [PointInTimeRestore](pointintimerestore.md) writes it on a contract that declares `pitr.recovery: operator`, and never on one that declares `external`. You can write it by hand against a contract that a `DatabaseServer` publishes.
+`spec.recovery` asks for a rollback. A [PointInTimeRestore](pointintimerestore.md) writes it on a contract that declares `pitr.recovery: operator`. You can also write it by hand on a contract that a `DatabaseServer` publishes.
 
-For a Camunda cluster, the safe action is a [PointInTimeRestore](pointintimerestore.md). It suspends the cluster, asks for the rollback, and restores the primary storage in order. A request that you write by hand rolls the database back alone. It is for a consumer outside the operator. That consumer stops every writer first, then brings its own state back in line.
+For a Camunda cluster, use a [PointInTimeRestore](pointintimerestore.md). It suspends the cluster, asks for the rollback, and restores the primary storage in step with it. A request that you write by hand rolls back the database only. It is for a consumer outside the operator, which must stop every writer first.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -115,9 +122,11 @@ spec:
   # ... the rest of your contract
 ```
 
-`targetTime` is RFC 3339 with a zone. A timestamp without a zone is rejected. `targetTime` must name a point in the past that is still inside the retention period of the archive. A retention period that was raised reaches the older points only as the archive writes past what the shorter one pruned. `requestedBy` names the resource that asks, as `<namespace>/<name>`. `requestID` is a UUID that belongs to this request alone. A `PointInTimeRestore` writes its own `metadata.uid`. A request you write by hand carries any UUID, for example from `uuidgen`.
+- `targetTime` is RFC 3339 with a zone. It must be in the past and inside the retention period.
+- `requestedBy` names the resource that asks, as `<namespace>/<name>`.
+- `requestID` is a UUID for this request only. A `PointInTimeRestore` writes its own `metadata.uid`. For a request by hand, use any new UUID, for example from `uuidgen`.
 
-The answer comes back in `pitr.lastRecovery`, and it repeats the request it answers:
+The answer comes back in `spec.pitr.lastRecovery`, not in `status`. It repeats the request that it answers:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -134,20 +143,17 @@ spec:
       targetTime: "2026-08-20T14:30:00Z"
       completedAt: "2026-08-20T15:02:11Z"
       result: Completed
-      message: ""
 ```
 
 | `result` | Meaning | What to do |
 | --- | --- | --- |
-| `Completed` | The server holds the state of `targetTime`. `spec.host` now names it. | Nothing. Read `spec.host` again for the endpoint. |
-| `Unavailable` | The server holds no copy of `targetTime`. `message` says why. | Ask for a point that the archive still reaches. |
-| `Failed` | The rollback started and did not finish. `message` says what stopped it. | Correct the cause, then ask again. |
+| `Completed` | The server holds the state of `targetTime`. `spec.host` names the recovered server. | Wait for `Ready` `True`. Then read `spec.host` for the new endpoint. |
+| `Unavailable` | The server holds no copy of `targetTime`. `message` says why. | Ask for a point that the archive still holds. |
+| `Failed` | The rollback did not finish. `message` says what stopped it. | Correct the cause, then ask again. |
 
-Both fields stay on the contract after the answer, as the record of the last request. A request with a new `requestID` starts a new rollback, whatever it asks for. A `PointInTimeRestore` runs once, so you retry a rollback by creating a new restore resource. The new resource carries a new uid. The server reads it as a new request even when the point is the same.
+The request and the answer stay on the contract after the answer. A request with a new `requestID` starts a new rollback, even for the same point. A `PointInTimeRestore` runs once, so to try again, create a new restore resource.
 
-A rollback moves `spec.host` to another server, so the record of the last probe clears. See [Validation checks](#validation-checks). Wait for `Ready` before you read those fields again. `status.systemIdentifier` then reads the same value as before. A recovery restores the `pg_control` of the base backup it reads, so the recovered instance keeps the identity it recovered from.
-
-Writing the request itself clears nothing. A request and its answer leave `Ready` and the identity alone, so the databases on the server keep running while the rollback is asked for.
+A completed rollback changes `spec.host`, so the record of the last probe clears. Wait for `Ready` before you read it again. `status.systemIdentifier` then has the same value as before, because the recovered instance keeps the identity of its base backup. A request that has no answer in `spec.pitr.lastRecovery` yet changes neither `Ready` nor the identity.
 
 ## Status
 
@@ -155,22 +161,20 @@ Writing the request itself clears nothing. A request and its answer leave `Ready
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
-| `Ready` | `Healthy` | The server answered the admin credentials and reported its version. | Nothing. |
-| `Ready` | `MissingSecret` | The Secret named by `adminCredentialsSecretRef` is missing, or it lacks a configured key. | Create the Secret, or add the key. The message names the Secret and the key. |
-| `Ready` | `ConnectionFailed` | The server did not answer the admin credentials. The message names the host, the port, and the error. | Make sure that the host and port are correct and that the server is up. Make sure that the network allows the connection and that the credentials are valid. The operator tries again every 30 seconds. |
+| `Ready` | `Healthy` | The server accepted the admin credentials and reported its version. | Nothing. |
+| `Ready` | `MissingSecret` | The Secret named by `adminCredentialsSecretRef` is missing, or it lacks a configured key. The message names the Secret and the key. | Create the Secret, or add the key. |
+| `Ready` | `ConnectionFailed` | The server did not accept the admin credentials, or did not answer. The message names the host, the port, and the error. | Make sure that the host and the port are correct and that the server is up. Make sure that the network allows the connection and that the credentials are valid. |
 
 | Field | Meaning |
 | --- | --- |
-| `status.serverVersion` | The major version the server reported the last time the operator reached it, for example `"17"`. It keeps the last known value while the server is unreachable. A change of server clears it. |
-| `status.systemIdentifier` | The identity of the PostgreSQL instance behind `spec.host`, for example `"7412345678901234567"`. Two contracts that reach one instance publish one value. It keeps the last known value while the server is unreachable. A change of server clears it. |
-| `status.probedAt` | When the operator last reached the server and read `serverVersion` and `systemIdentifier`. A change of server clears it. |
-| `status.probedEndpoint` | The `host:port` that the last probe reached. It is what tells a change of server from any other spec change. |
+| `status.serverVersion` | The major version that the server reported on the last successful probe, for example `"17"`. |
+| `status.systemIdentifier` | The identity of the PostgreSQL instance behind `spec.host`. See [Server identity](#server-identity). |
+| `status.probedAt` | When the last successful probe ran. |
+| `status.probedEndpoint` | The `host:port` that the last probe reached. |
 | `status.probedSecretName` | The admin credentials Secret that the last probe read. |
-| `status.probedSecretKeys` | The keys of that Secret that the last probe read, as `<usernameKey>/<passwordKey>`. Another key names another user. |
-| `status.probedSecretVersion` | The `resourceVersion` of the admin credentials Secret that the last probe used. A change of server clears it. |
-| `status.observedGeneration` | The last generation of the contract that the operator validated. |
-
-A change of server means a change to `spec.host`, `spec.port`, or the name or the keys of `spec.adminCredentialsSecretRef`. Every other spec change, including a recovery request and its answer, leaves the record of the probe alone.
+| `status.probedSecretKeys` | The keys of that Secret that the last probe read, as `<usernameKey>/<passwordKey>`. |
+| `status.probedSecretVersion` | The `resourceVersion` of the admin credentials Secret that the last probe read. |
+| `status.observedGeneration` | The last generation of the contract that the operator checked. |
 
 ## Spec reference
 
@@ -199,9 +203,9 @@ spec:
     passwordKey: password
   # object. Optional. Point-in-time-recovery capability of the server, read by PointInTimeRestore.
   pitr:
-    # boolean. Optional, default: false. Whether the server archives WAL for point-in-time recovery.
+    # boolean. Optional, default: false. Whether the server archives its write-ahead log for point-in-time recovery.
     enabled: true
-    # integer. Required when enabled is true, at least 1. How many days into the past a point-in-time restore can target.
+    # integer. Required when enabled is true, from 1 to 36500. How many days into the past a point-in-time restore can target.
     retentionPeriodDays: 7
     # string enum: operator, external. Optional, default: external. Who rolls the server back to a point in time.
     recovery: operator
@@ -232,20 +236,18 @@ spec:
 ### Validation rules
 
 - `spec.engine` must be `postgres`.
-- `spec.host` must not be empty.
-- `spec.adminCredentialsSecretRef.name` must not be empty.
+- `spec.host` and `spec.adminCredentialsSecretRef.name` must not be empty.
 - `spec.port` must be from 1 to 65535.
-- If `spec.pitr.enabled` is `true`, `spec.pitr.retentionPeriodDays` must be set and from 1 to 36500. The upper bound is a hundred years.
+- If `spec.pitr.enabled` is `true`, `spec.pitr.retentionPeriodDays` must be set and from 1 to 36500.
 - If `spec.pitr.recovery` is `operator`, `spec.pitr.enabled` must be `true`.
-- `spec.recovery.targetTime` must be RFC 3339 with a zone, for example `2026-08-20T14:30:00Z`.
+- `spec.recovery.targetTime` and `spec.pitr.lastRecovery.targetTime` must be RFC 3339 with a zone, for example `2026-08-20T14:30:00Z`.
 - `spec.recovery.requestedBy` must name a namespace and a name, separated by `/`.
 - `spec.recovery.requestID` and `spec.pitr.lastRecovery.requestID` must be a UUID.
-- `spec.pitr.lastRecovery.targetTime` must be RFC 3339 with a zone, like the request it answers.
 - No field is immutable.
 
 ### A production-shaped example
 
-A managed PostgreSQL server that archives WAL for 7 days:
+A managed PostgreSQL server that archives its write-ahead log for 7 days:
 
 ```yaml
 apiVersion: core.camunda.io/v1

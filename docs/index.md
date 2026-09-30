@@ -3,8 +3,8 @@
 A Kubernetes operator that runs [Camunda 8.9+](https://docs.camunda.io/) orchestration clusters.
 You describe a cluster in one resource. The operator creates the workloads, wires the storage, and keeps the cluster healthy.
 
-The operator also manages what a cluster needs around it. These are an Elasticsearch cluster through ECK, a logical database on a PostgreSQL server you provide, and backups to a bucket.
-It runs the management plane too: Management Identity, Console, and Web Modeler, over as many orchestration clusters as you give it.
+The operator also runs what a cluster needs around it: Elasticsearch through ECK, PostgreSQL through CloudNativePG, and backups to a bucket.
+It runs the management plane too: Management Identity, Console, and Web Modeler, over as many orchestration clusters as you give it. A `CamundaOptimize` runs Optimize for one cluster.
 
 ## Start here
 
@@ -29,9 +29,6 @@ It runs the management plane too: Management Identity, Console, and Web Modeler,
 
 ## Requirements
 
-- Kubernetes 1.30 or later.
-- The [ECK operator](https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html), if you use `ElasticsearchCluster`. Install ECK before you create one, then restart the operator.
-- A PostgreSQL server, if you use `Database`.
-- The [Keycloak Operator](https://www.keycloak.org/operator/installation), if you want a `CamundaManagementCluster` to run Keycloak for you.
+Kubernetes 1.30 or later. A storage backend that the operator runs for you needs another operator, which this operator does not install. [Installation](installation.md#requirements) lists them.
 
 The source is at [github.com/konsole-is/camunda-operator](https://github.com/konsole-is/camunda-operator).
