@@ -254,7 +254,7 @@ Use the same form for `app-integrations` and `task-worker`: `..._DEFAULTROLES_TA
 
 A key that matches no role ID, such as `READONLYADMIN`, has no effect. The cluster starts and logs no error, and the user gets no role. To confirm a membership, open the role in the Admin web application, or call `POST /v2/roles/readonly-admin/users/search` as an administrator.
 
-The operator refuses each `extraEnv` entry under `CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_` that Camunda cannot read as `<role>_<type>_<n>` or `<role>_<type>`. The type must be `USERS`, `CLIENTS`, `GROUPS`, `ROLES`, or `MAPPINGRULES`. `MAPPING_RULES` and `MAPPING-RULES` also work. Camunda stops the identity initialization on any other form, as the caution above says. Some Camunda pages write `MAPPINGS` as the type. The operator refuses it too, so write `MAPPINGRULES`.
+The operator refuses each `extraEnv` entry of the brokers under `CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_` that Camunda cannot read as `<role>_<type>_<n>` or `<role>_<type>`. The type must be `USERS`, `CLIENTS`, `GROUPS`, `ROLES`, or `MAPPINGRULES`. `MAPPING_RULES` and `MAPPING-RULES` also work. Camunda stops the identity initialization on any other form, as the caution above says. The entries of the brokers are the top-level entries, the `zeebe` entries, and the entries of each block that runs embedded on the brokers. Some Camunda pages write `MAPPINGS` as the type. The operator refuses it too, so write `MAPPINGRULES`.
 
 When the operator refuses an entry, the cluster reports `Ready: InvalidReference`. A running cluster keeps the configuration that it runs:
 
