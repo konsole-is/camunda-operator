@@ -113,6 +113,7 @@ func TestKeepAppliedStorageSizeReportsOncePerRequest(t *testing.T) {
 		name      string
 		merged    v1.DatabaseServerSpec
 		requested map[string]string
+		hold      bool
 		reason    string
 	}{
 		{
@@ -140,6 +141,15 @@ func TestKeepAppliedStorageSizeReportsOncePerRequest(t *testing.T) {
 			},
 			requested: nil,
 			reason:    eventReasonStorageShrinkIgnored,
+		},
+		{
+			name: "a smaller data volume, while the server is held for suspension",
+			merged: v1.DatabaseServerSpec{
+				StorageSize:    new(resource.MustParse("1Gi")),
+				WALStorageSize: new(resource.MustParse("2Gi")),
+			},
+			requested: map[string]string{components.RequestedStorageSizeAnnotation: "4Gi"},
+			hold:      true,
 		},
 		{
 			name: "no write-ahead log volume, first asked for",
@@ -187,14 +197,14 @@ func TestKeepAppliedStorageSizeReportsOncePerRequest(t *testing.T) {
 				appliedWAL:  new(resource.MustParse("2Gi")),
 				requested:   tt.requested,
 			}
-			merged := tt.merged
+			resolved := resolvedSpec{merged: tt.merged, holdForSuspension: tt.hold}
 
-			requested := r.keepAppliedStorageSize(server, &merged, volumes)
+			r.keepAppliedStorageSize(server, &resolved, volumes)
 
-			assert.Equal(t, "4Gi", merged.StorageSize.String())
-			assert.Equal(t, "2Gi", merged.WALStorageSize.String())
-			assert.Equal(t, tt.merged.StorageSize, requested.Data)
-			assert.Equal(t, tt.merged.WALStorageSize, requested.WAL)
+			assert.Equal(t, "4Gi", resolved.merged.StorageSize.String())
+			assert.Equal(t, "2Gi", resolved.merged.WALStorageSize.String())
+			assert.Equal(t, tt.merged.StorageSize, resolved.requested.Data)
+			assert.Equal(t, tt.merged.WALStorageSize, resolved.requested.WAL)
 
 			if tt.reason == "" {
 				assert.Empty(t, recorder.Events)

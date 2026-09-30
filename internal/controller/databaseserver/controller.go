@@ -306,7 +306,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Before the recovery below: the cluster a rollback builds carries the
 	// volume sizes of the merged spec, and it must not come back smaller than
 	// the server it replaces.
-	resolved.requested = r.keepAppliedStorageSize(&server, &resolved.merged, volumes)
+	r.keepAppliedStorageSize(&server, &resolved, volumes)
 
 	// Before the hold below: a suspended server refuses a recovery request,
 	// and a request nobody answers holds whoever asked for good.
@@ -1175,26 +1175,32 @@ func parsedSize(size string) *resource.Quantity {
 // CloudNativePG refuses a cluster whose storage is smaller than the one it
 // applied, so a size that reaches it stops the server from converging.
 //
-// It returns the sizes that merged asked for. It records each Warning event
-// once per request: a request that the applied cluster carries was reported
-// before.
+// It sets resolved.requested to the sizes that the merged spec asked for. It
+// records each Warning event once per request: a request that the applied
+// cluster carries was reported before.
 func (r *DatabaseServerReconciler) keepAppliedStorageSize(
 	server *v1.DatabaseServer,
-	merged *v1.DatabaseServerSpec,
+	resolved *resolvedSpec,
 	volumes serverVolumes,
-) components.RequestedStorage {
+) {
+	merged := &resolved.merged
 	requested := components.RequestedStorage{Data: merged.StorageSize, WAL: merged.WALStorageSize}
+	resolved.requested = requested
+
+	// A held server applies no cluster to carry the request, so the event
+	// waits for the apply after the hold ends.
+	reported := func(key string, size *resource.Quantity) bool {
+		return resolved.holdForSuspension || volumes.requestApplied(key, size)
+	}
 
 	merged.StorageSize = r.keepAppliedSize(
 		server, "storageSize", requested.Data, largestVolume(volumes.data, volumes.appliedData),
-		volumes.requestApplied(components.RequestedStorageSizeAnnotation, requested.Data),
+		reported(components.RequestedStorageSizeAnnotation, requested.Data),
 	)
 	merged.WALStorageSize = r.keepAppliedWALSize(
 		server, requested.WAL, largestVolume(volumes.wal, volumes.appliedWAL),
-		volumes.requestApplied(components.RequestedWALStorageSizeAnnotation, requested.WAL),
+		reported(components.RequestedWALStorageSizeAnnotation, requested.WAL),
 	)
-
-	return requested
 }
 
 // keepAppliedWALSize returns the size to render for the write-ahead log volume
