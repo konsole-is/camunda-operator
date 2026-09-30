@@ -46,6 +46,12 @@ const (
 	// size is visible, and the controller records an ignored shrink only when
 	// it changes.
 	RequestedStorageSizeAnnotation = "camunda.io/requested-storage-size"
+	// RequestedStorageClassAnnotation is the annotation of the broker
+	// StatefulSet that carries the effective zeebe.storageClassName. It is
+	// absent when the effective spec sets no class. The claim template keeps
+	// the class it was created with, so this is where the requested class is
+	// visible.
+	RequestedStorageClassAnnotation = "camunda.io/requested-storage-class"
 	// AllowVersionDowngradeAnnotation is the annotation of a CamundaCluster
 	// that sanctions one move of its effective version below the version its
 	// brokers run. The value is the exact target version, x.y.z. The

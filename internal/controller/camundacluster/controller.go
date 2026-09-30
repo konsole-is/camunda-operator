@@ -286,12 +286,13 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// it.
 	r.refusals.forget(req.NamespacedName)
 
-	in.VolumeClaimSize = storage.volumeClaimSize()
+	in.AppliedVolumeClaim = storage.appliedVolumeClaim()
 
 	if err := r.growBrokerClaims(ctx, storage, in.Effective.StorageSize()); err != nil {
 		return ctrl.Result{}, err
 	}
 	r.recordIgnoredShrink(&cluster, storage, in.Effective.StorageSize())
+	r.recordIgnoredClassChange(&cluster, storage, in.Effective.StorageClassName())
 	r.recordUnplaceableReplicas(&cluster, in)
 
 	cred, err := r.resolveAdminCredential(ctx, &cluster, in, storage)

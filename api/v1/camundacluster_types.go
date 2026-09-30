@@ -158,12 +158,14 @@ type ZeebeSpec struct {
 	// +optional
 	ReplicationFactor *int32 `json:"replicationFactor,omitempty"`
 	// StorageClassName is the StorageClass of the broker volumes. Defaults to
-	// the default StorageClass of the Kubernetes cluster. It is immutable
-	// after creation, because a StatefulSet volume claim template cannot
-	// change its storage class. The CEL transition rule that rejects a change
-	// sits on the spec field of CamundaCluster ("zeebe.storageClassName is
-	// immutable"), not here: this type is shared with CamundaClusterPreset,
-	// and a preset baseline stays free to change.
+	// the default StorageClass of the Kubernetes cluster. The class of
+	// existing broker volumes cannot change. Admission rejects a change of a
+	// set inline value on a CamundaCluster through a CEL transition rule.
+	// That rule does not bind this shared field, so a preset can change the
+	// class, and a cluster that inherited a class can set another one. A
+	// cluster whose brokers exist keeps their class and records a
+	// StorageClassChangeIgnored event. The new class applies only to new
+	// clusters.
 	// +optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
 	// StorageSize is the size of the data volume of each broker. Defaults to
