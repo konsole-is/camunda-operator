@@ -19,7 +19,7 @@ package camundacluster
 import (
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/resource"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -129,11 +129,12 @@ type Input struct {
 	// controller. The annotations of spec.serviceAccount merge over them, so
 	// an explicit user value on the same key wins.
 	ServiceAccountAnnotations map[string]string
-	// VolumeClaimSize is the storage request of the broker volume claim
-	// template. A StatefulSet cannot change its claim template, so the
-	// controller sets it to the size of the applied template. When nil, the
-	// template requests the effective storage size.
-	VolumeClaimSize *resource.Quantity
+	// AppliedVolumeClaim is the data claim template of the applied broker
+	// StatefulSet, or nil before the first apply. A StatefulSet cannot change
+	// its claim template, so the rendered template keeps the size and the
+	// storage class of this one. When nil, the template takes the effective
+	// storage size and class.
+	AppliedVolumeClaim *corev1.PersistentVolumeClaimSpec
 	// HashInputs are the data digests of the referenced Secrets and the
 	// generations of the referenced custom resources, as
 	// "kind/namespace/name=value" strings. ConfigHash sorts them, so the order
