@@ -55,7 +55,7 @@ type LogicalRestoreElasticsearchStatus struct {
 	// restore holds while its target does not hold the backend.
 	// +optional
 	Backend string `json:"backend,omitempty"`
-	// contract is the SecondaryStorageConfig that held the endpoint of
+	// Contract is the SecondaryStorageConfig that held the endpoint of
 	// Backend when the restore started. The hold stays on this contract when
 	// its endpoint moves.
 	// +optional

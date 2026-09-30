@@ -212,7 +212,7 @@ spec:
                 x-kubernetes-list-type: map
               contract:
                 description: |-
-                  contract is the SecondaryStorageConfig that held the endpoint of
+                  Contract is the SecondaryStorageConfig that held the endpoint of
                   Backend when the restore started. The hold stays on this contract when
                   its endpoint moves.
                 type: string
