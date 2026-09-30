@@ -45,12 +45,12 @@ const (
 )
 
 // OIDCSpec is the identity provider connection of a platform config. The
-// fields follow the OIDC discovery vocabulary and work with any OIDC-compliant
+// fields use the terms of OIDC discovery and work with any OIDC-compliant
 // provider.
 type OIDCSpec struct {
-	// IssuerURL is the issuer URL of the identity provider. Consumers resolve
-	// the endpoints from its OIDC discovery document unless the explicit
-	// endpoint fields override them.
+	// IssuerURL is the issuer URL of the identity provider. Consumers get the
+	// endpoints from its OIDC discovery document, unless the endpoint fields
+	// below set them.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="issuerUrl must be a valid http or https URL"
 	IssuerURL string `json:"issuerUrl"`
 	// ProviderType names the kind of identity provider. Management Identity
@@ -75,12 +75,12 @@ type OIDCSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == '' || (isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https'))",message="authUrl must be empty or a valid http or https URL"
 	// +optional
 	AuthURL string `json:"authUrl,omitempty"`
-	// ClientID is the default OIDC client ID that all clusters share unless a
-	// preset or a cluster overrides it.
+	// ClientID is the default OIDC client ID of all clusters. A preset or a
+	// cluster can set another value.
 	// +kubebuilder:validation:MinLength=1
 	ClientID string `json:"clientId"`
 	// Audience is the audience that consumers validate in access tokens.
-	// Consumers default it to ClientID when empty.
+	// When empty, consumers use ClientID.
 	// +optional
 	Audience string `json:"audience,omitempty"`
 	// UsernameClaim is the token claim that holds the username of a person.
@@ -88,9 +88,9 @@ type OIDCSpec struct {
 	// +optional
 	UsernameClaim string `json:"usernameClaim,omitempty"`
 	// ClientIDClaim is the token claim that holds the id of a machine client.
-	// Empty means that no claim identifies a client, and every token becomes a
-	// person. The claim must be absent from the tokens of persons, because a
-	// token that carries it always becomes a client.
+	// Empty means that no claim identifies a client, and every token is a
+	// person. The tokens of persons must not have this claim, because a
+	// token with it is always a client.
 	// +optional
 	ClientIDClaim string `json:"clientIdClaim,omitempty"`
 	// ClientSecretRef names the Secret key that holds the default OIDC client
@@ -98,7 +98,7 @@ type OIDCSpec struct {
 	ClientSecretRef SecretKeyRef `json:"clientSecretRef"`
 	// Management holds the clients that the management plane uses at this
 	// identity provider. A CamundaManagementCluster in the oidc mode reads
-	// them. Register one client per component at the provider first.
+	// them. First register one client for each component at the provider.
 	// +optional
 	Management *ManagementOIDCClientsSpec `json:"management,omitempty"`
 }
@@ -106,19 +106,19 @@ type OIDCSpec struct {
 // ManagementOIDCClientsSpec holds the identity provider clients of the
 // management plane.
 type ManagementOIDCClientsSpec struct {
-	// Clients holds one entry per component of the management plane.
+	// Clients holds one entry for each component of the management plane.
 	Clients ManagementClients `json:"clients"`
 }
 
 // ManagementClients names the identity provider client of each component of
 // the management plane. A CamundaManagementCluster reports InvalidReference
-// when a component it deploys has no client here.
+// when a component that it deploys has no client here.
 type ManagementClients struct {
 	// Identity is the client of Management Identity.
 	// +optional
 	Identity *ConfidentialClientSpec `json:"identity,omitempty"`
 	// Optimize is the client of Optimize. The ManagementAuthConfig that the
-	// management cluster writes carries it, and Optimize reads it from there.
+	// management cluster writes holds it, and Optimize reads it from there.
 	// +optional
 	Optimize *ConfidentialClientSpec `json:"optimize,omitempty"`
 	// WebModeler is the client of the Web Modeler user interface. The browser
@@ -180,13 +180,13 @@ type PlatformAuthSpec struct {
 	// +kubebuilder:default=basic
 	// +optional
 	Method AuthenticationMethod `json:"method,omitempty"`
-	// OIDC is the identity provider connection. Required when method is oidc,
-	// forbidden otherwise.
+	// OIDC is the identity provider connection. Required when method is
+	// oidc. Forbidden with other methods.
 	// +optional
 	OIDC *OIDCSpec `json:"oidc,omitempty"`
 }
 
-// CamundaPlatformConfigSpec holds the settings that are identical across all
+// CamundaPlatformConfigSpec holds the settings that are the same for all
 // orchestration clusters of an environment.
 type CamundaPlatformConfigSpec struct {
 	// Auth holds the authentication settings of the orchestration clusters.
@@ -197,22 +197,23 @@ type CamundaPlatformConfigSpec struct {
 	// key. Without it, clusters run in unlicensed non-production mode.
 	// +optional
 	LicenseSecretRef *SecretKeyRef `json:"licenseSecretRef,omitempty"`
-	// Images renames the images that the operator pulls, one entry per
-	// image, for example to a mirror. Each value is a full repository with
-	// its registry and no tag. The tag always comes from the version field
-	// of the resource that runs the image. A value that names a registry
-	// with a port needs a path after the port, as in
-	// registry:5000/camunda/optimize. The tag goes on the end of the value,
-	// so the bare registry:5000 becomes the image registry:5000:<version>.
+	// Images changes the repositories of the images that the operator pulls,
+	// one entry for each image, for example to a mirror. Each value is a full
+	// repository with its registry and no tag. The tag always comes from the
+	// version field of the resource that runs the image. A registry with a
+	// port needs a path after the port, as in registry:5000/camunda/optimize.
+	// The operator appends the tag to the value. Thus registry:5000 alone
+	// becomes the image registry:5000:<version>.
 	// +optional
 	Images *ImagesSpec `json:"images,omitempty"`
 }
 
-// ImagesSpec renames the container images that the operator pulls. Each field
-// holds a repository without a tag or a digest, for example
-// mirror.example.com/camunda/optimize. The version of the component supplies
-// the tag. A repository name is lowercase, as the container registries
-// require. An unset field means the default repository of that image.
+// ImagesSpec changes the repositories of the container images that the
+// operator pulls. Each field holds a repository without a tag or a digest,
+// for example mirror.example.com/camunda/optimize. The version of the
+// component gives the tag. A repository name is lowercase, as the container
+// registries require. An unset field means the default repository of that
+// image.
 type ImagesSpec struct {
 	// Camunda is the image of the orchestration cluster processes. Defaults
 	// to camunda/camunda.
@@ -277,8 +278,8 @@ type CamundaPlatformConfigStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Conditions represent the current validation state; the Ready condition
-	// carries reasons Healthy or MissingSecret.
+	// Conditions represent the current validation state. The Ready condition
+	// has the reasons Healthy or MissingSecret.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -292,10 +293,10 @@ type CamundaPlatformConfigStatus struct {
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// CamundaPlatformConfig is the cluster-scoped CRD that holds the
-// environment-wide platform settings, the identity provider, the license, and
-// the image repositories, that every orchestration cluster referencing it
-// shares.
+// CamundaPlatformConfig is the cluster-scoped CRD that holds the platform
+// settings of an environment: the identity provider, the license, and the
+// image repositories. Every orchestration cluster that references it uses
+// these settings.
 type CamundaPlatformConfig struct {
 	metav1.TypeMeta `json:",inline"`
 

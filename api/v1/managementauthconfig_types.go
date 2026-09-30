@@ -20,35 +20,34 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ManagementAuthConfigSpec carries the Management Identity OIDC configuration:
-// endpoints, machine-to-machine client credentials, and audience.
+// ManagementAuthConfigSpec holds the Management Identity OIDC configuration:
+// the endpoints, the machine-to-machine client credentials, and the audience.
 type ManagementAuthConfigSpec struct {
 	// BaseURL is the base URL of the Management Identity service.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="baseUrl must be a valid http or https URL"
 	BaseURL string `json:"baseUrl"`
-	// IssuerURL is the OIDC issuer URL used to validate tokens.
+	// IssuerURL is the OIDC issuer URL that validates tokens.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="issuerUrl must be a valid http or https URL"
 	IssuerURL string `json:"issuerUrl"`
-	// IssuerBackendURL is the issuer URL for in-cluster container-to-container
-	// communication. Consumers default it to IssuerURL when empty.
+	// IssuerBackendURL is the issuer URL for calls between containers inside
+	// the Kubernetes cluster. When empty, consumers use IssuerURL.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="issuerBackendUrl must be a valid http or https URL"
 	// +optional
 	IssuerBackendURL string `json:"issuerBackendUrl,omitempty"`
-	// AuthURL is the OIDC authorization endpoint used for browser login
-	// redirects.
+	// AuthURL is the OIDC authorization endpoint for the login redirects of
+	// the browser.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="authUrl must be a valid http or https URL"
 	AuthURL string `json:"authUrl"`
-	// TokenURL is the OIDC token endpoint used to acquire machine-to-machine
-	// tokens.
+	// TokenURL is the OIDC token endpoint for machine-to-machine tokens.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="tokenUrl must be a valid http or https URL"
 	TokenURL string `json:"tokenUrl"`
-	// JwksURL is the JWKS endpoint used to fetch token signing keys.
+	// JwksURL is the JWKS endpoint that gives the token signing keys.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="jwksUrl must be a valid http or https URL"
 	JwksURL string `json:"jwksUrl"`
 	// ClientID is the ID of the client that Optimize signs in with.
 	// +kubebuilder:validation:MinLength=1
 	ClientID string `json:"clientId"`
-	// Audience expected in access tokens issued for this client.
+	// Audience is the audience that access tokens for this client must have.
 	// +kubebuilder:validation:MinLength=1
 	Audience string `json:"audience"`
 	// ClientSecretRef names the Secret key that holds the secret of that
@@ -61,8 +60,8 @@ type ManagementAuthConfigStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Conditions represent the current validation state; the Ready condition
-	// carries reasons Healthy or MissingSecret.
+	// Conditions represent the current validation state. The Ready condition
+	// has the reasons Healthy or MissingSecret.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -76,9 +75,10 @@ type ManagementAuthConfigStatus struct {
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// ManagementAuthConfig is the contract CRD that carries the Management
-// Identity OIDC configuration — endpoints, client credentials, and audience —
-// for components that live outside the orchestration cluster.
+// ManagementAuthConfig is the contract CRD that holds the Management Identity
+// OIDC configuration: the endpoints, the client credentials, and the
+// audience. Components outside the orchestration cluster, such as Optimize,
+// read it.
 type ManagementAuthConfig struct {
 	metav1.TypeMeta `json:",inline"`
 
