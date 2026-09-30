@@ -34,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
@@ -468,9 +469,31 @@ func createRestore(w *world, name string) *v1.LogicalRestoreElasticsearch {
 			TargetClusterRef: v1.ClusterRef{Name: w.cluster.Name},
 		},
 	}
-	Expect(k8sClient.Create(ctx, restore)).To(Succeed())
+	createAndDelete(restore)
 
 	return restore
+}
+
+// createAndDelete creates restore and removes it past its finalizer when the spec
+// ends.
+func createAndDelete(restore *v1.LogicalRestoreElasticsearch) {
+	GinkgoHelper()
+
+	Expect(k8sClient.Create(ctx, restore)).To(Succeed())
+	// A restore left behind keeps polling, and the one worker makes later specs wait.
+	DeferCleanup(func() {
+		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, restore))).To(Succeed())
+		key := client.ObjectKeyFromObject(restore)
+		Eventually(func(g Gomega) {
+			var current v1.LogicalRestoreElasticsearch
+			err := k8sClient.Get(ctx, key, &current)
+			if controllerutil.RemoveFinalizer(&current, restorepkg.HoldFinalizer) {
+				g.Expect(client.IgnoreNotFound(k8sClient.Update(ctx, &current))).To(Succeed())
+				err = k8sClient.Get(ctx, key, &current)
+			}
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+	})
 }
 
 // startedRestore creates a restore of a seeded world and drives it through

@@ -37,6 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
@@ -505,9 +506,20 @@ func createRestore(w *world, mutate ...func(*v1.PointInTimeRestore)) *v1.PointIn
 	Expect(k8sClient.Create(ctx, pitr)).To(Succeed())
 	// A restore that outlives its spec keeps polling on its timers. The
 	// controller runs one reconcile at a time, so every later spec waits
-	// behind those polls.
+	// behind those polls. envtest runs no garbage collector, so a deleted
+	// restore whose Jobs never go keeps its finalizer and polls too.
 	DeferCleanup(func() {
 		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, pitr))).To(Succeed())
+		key := client.ObjectKeyFromObject(pitr)
+		Eventually(func(g Gomega) {
+			var current v1.PointInTimeRestore
+			err := k8sClient.Get(ctx, key, &current)
+			if controllerutil.RemoveFinalizer(&current, restore.HoldFinalizer) {
+				g.Expect(client.IgnoreNotFound(k8sClient.Update(ctx, &current))).To(Succeed())
+				err = k8sClient.Get(ctx, key, &current)
+			}
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
 	})
 
 	return pitr

@@ -113,7 +113,7 @@ var _ = Describe("LogicalRestoreElasticsearch admission", func() {
 				TargetClusterRef: v1.ClusterRef{Name: "no-such-cluster"},
 			},
 		}
-		Expect(k8sClient.Create(ctx, restore)).To(Succeed())
+		createAndDelete(restore)
 
 		expectReason(restore, v1.LogicalRestorePending, v1.ReasonInvalidReference)
 	})
@@ -597,7 +597,7 @@ var _ = Describe("LogicalRestoreElasticsearch of primary storage", func() {
 
 		w.seedSnapshots(elasticsearchSnapshots...)
 		w.search.SetRecoveryActive(false)
-		Expect(k8sClient.Create(ctx, restore)).To(Succeed())
+		createAndDelete(restore)
 		serveRestoredIndices(w, restore)
 
 		reached := expectReason(restore, v1.LogicalRestoreFailed, v1.ReasonFailed)
