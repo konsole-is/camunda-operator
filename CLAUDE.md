@@ -86,6 +86,9 @@ change the doc in the same change.
   result. Prefer pure Go unit tests with testify.
 - Do not use `t.Fatal`. Use `assert` and `require`.
 - Tests encode intent, not implementation. Never change a test only to make it pass.
+- A spec must not write the status of an object that a running controller reconciles unless it
+  proves that the controller read the write: wait for a status, event, or condition that only a
+  reconcile that read it can produce, and write it again while an older copy is back.
 
 ### GoDoc and docs
 
