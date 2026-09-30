@@ -35,6 +35,13 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # The Go module proxy sometimes drops a connection. The retry keeps
+      # one dropped download from failing the job.
+      - name: Download the Go modules
+        run: |
+          hack/ci-retry.sh go mod download
+          hack/ci-retry.sh go -C api mod download
+
       - name: Reject a v-prefixed tag
         run: |
           if [[ "${TAG}" == v* ]]; then

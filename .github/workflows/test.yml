@@ -22,9 +22,12 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # The Go module proxy sometimes drops a connection, so tidy is retried.
+      # Tidy downloads the modules that the later steps need. A plain
+      # "go mod download" does not get all the modules that tidy reads.
       - name: Check that go.mod and go.sum are tidy in every module
         run: |
-          make tidy
+          hack/ci-retry.sh make tidy
           git diff --exit-code -- go.mod go.sum api/go.mod api/go.sum
 
       # Four test packages start this image through testcontainers. The pull
