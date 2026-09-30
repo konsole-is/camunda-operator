@@ -17,6 +17,8 @@ limitations under the License.
 package elasticsearchcluster
 
 import (
+	"time"
+
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
@@ -73,11 +75,14 @@ const (
 // is feature-gated on spec.monitoring.serviceMonitor.enabled: disabled, it
 // deletes its resources and reports Disabled. serviceMonitorSupported reports
 // whether the cluster serves the ServiceMonitor kind. When it is false, the
-// ServiceMonitor is omitted and the exporter still runs.
+// ServiceMonitor is omitted and the exporter still runs. gracePeriod is how
+// long the exporter may take to become ready before MetricsReady reports
+// Degraded or Down. Zero keeps the progress reason.
 func MetricsComponent(
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
 	serviceMonitorSupported bool,
+	gracePeriod time.Duration,
 ) (*component.Component, error) {
 	exporter, err := deployment.NewBuilder(exporterDeployment(cluster, merged)).Build()
 	if err != nil {
@@ -105,6 +110,7 @@ func MetricsComponent(
 		WithResource(exporter).
 		WithResource(metrics).
 		IncludeWhen(serviceMonitorSupported, func() component.Resource { return monitor }).
+		WithGracePeriod(gracePeriod).
 		Suspend(merged.Suspend).
 		Build()
 }

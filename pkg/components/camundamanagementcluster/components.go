@@ -34,6 +34,9 @@ type Built struct {
 	Components []*component.Component
 	// Ready are the components that the Ready condition aggregates over.
 	Ready []*component.Component
+	// Graced are the components that run a workload and carry
+	// Input.GracePeriod.
+	Graced []*component.Component
 }
 
 // The probe timings of the management plane. The startup probe allows five
@@ -74,6 +77,7 @@ func Build(in Input) (Built, error) {
 		}
 		built.Components = append(built.Components, rendered.Components...)
 		built.Ready = append(built.Ready, rendered.Ready...)
+		built.Graced = append(built.Graced, rendered.Graced...)
 	}
 
 	return built, nil

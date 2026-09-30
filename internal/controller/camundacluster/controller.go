@@ -42,6 +42,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/grace"
 )
 
 // controllerName is the name the controller registers with controller-runtime.
@@ -101,6 +102,10 @@ type CamundaClusterReconciler struct {
 	// during a password rotation. Nil means components.RESTEndpoint; tests
 	// point it at a fake.
 	RESTEndpoint func(cluster *v1.CamundaCluster, e components.Effective) string
+	// GracePeriods are the grace periods of the process components. The
+	// processes use the workload period. The zero value keeps every process
+	// on its progress reason.
+	GracePeriods grace.Periods
 
 	// refusals remembers the downgrade refusal that the controller recorded
 	// for each cluster, so it records the Warning once and not once per
@@ -299,6 +304,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 	in.AdminPasswordHash = components.PasswordHash(cred.published)
+	in.GracePeriod = r.GracePeriods.Workload
 
 	built, err := r.buildComponents(&cluster, in, mirrors, cred)
 	if err != nil {
@@ -356,6 +362,8 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if cred.failure != nil || claimSuspends(in.Storage) {
 		wait = r.retryInterval()
 	}
+
+	wait = grace.Sooner(wait, grace.Remaining(&cluster, in.GracePeriod, time.Now(), built.processes...))
 
 	return ctrl.Result{RequeueAfter: wait}, nil
 }
@@ -516,10 +524,12 @@ func (r *CamundaClusterReconciler) serviceMonitorSupported() bool {
 }
 
 // clusterComponents are the components of one cluster: all of them are
-// reconciled in order, and the ready ones make up Ready.
+// reconciled in order, the ready ones make up Ready, and the processes carry
+// the grace period.
 type clusterComponents struct {
-	all   []*component.Component
-	ready []*component.Component
+	all       []*component.Component
+	ready     []*component.Component
+	processes []*component.Component
 }
 
 // buildComponents builds every component of the cluster in reconcile order:
@@ -572,6 +582,7 @@ func (r *CamundaClusterReconciler) buildComponents(
 	}
 	for _, pc := range processes {
 		add(pc.Component, pc.Process.Enabled)
+		comps.processes = append(comps.processes, pc.Component)
 	}
 
 	return comps, nil

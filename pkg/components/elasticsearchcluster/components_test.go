@@ -177,7 +177,7 @@ func assertElasticsearchClusterGoldens(
 		golden.WithScheme(scheme), golden.Update(*updateGolden),
 	)
 
-	elasticsearch, err := ElasticsearchComponent(cluster, merged, storage)
+	elasticsearch, err := ElasticsearchComponent(cluster, merged, storage, 0)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "elasticsearch.yaml"), elasticsearch,
@@ -192,7 +192,7 @@ func assertElasticsearchClusterGoldens(
 	)
 
 	if MonitoringEnabled(merged) {
-		metrics, err := MetricsComponent(cluster, merged, true)
+		metrics, err := MetricsComponent(cluster, merged, true, 0)
 		require.NoError(t, err)
 		golden.AssertComponentYAML(
 			t, filepath.Join(base, "metrics.yaml"), metrics,
@@ -325,7 +325,7 @@ func TestForeignServiceAccountIsNamedButNotRendered(t *testing.T) {
 	cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-es", Create: &no}
 	merged := MergeSpec(cluster.Spec, preset, release)
 
-	comp, err := ElasticsearchComponent(cluster, merged, nil)
+	comp, err := ElasticsearchComponent(cluster, merged, nil, 0)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
@@ -390,7 +390,7 @@ func TestPodIdentityRendersTheServiceAccount(t *testing.T) {
 		Type: v1.ObjectStorageAuthTypeWorkloadIdentity,
 	})}
 
-	comp, err := ElasticsearchComponent(cluster, merged, storage)
+	comp, err := ElasticsearchComponent(cluster, merged, storage, 0)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
@@ -419,7 +419,7 @@ func TestMetricsComponentOmitsUnsupportedServiceMonitor(t *testing.T) {
 	t.Parallel()
 
 	cluster := goldenRealisticElasticsearchCluster()
-	comp, err := MetricsComponent(cluster, cluster.Spec, false)
+	comp, err := MetricsComponent(cluster, cluster.Spec, false, 0)
 	require.NoError(t, err)
 
 	// Typed objects carry no TypeMeta until serialized, so compare Go types.
@@ -518,7 +518,7 @@ func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
 		"camunda.io/component":             "not-elasticsearch",
 		"team":                             "platform",
 	}
-	comp, err := ElasticsearchComponent(cluster, cluster.Spec, nil)
+	comp, err := ElasticsearchComponent(cluster, cluster.Spec, nil, 0)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()

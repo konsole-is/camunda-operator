@@ -103,13 +103,14 @@ func consoleComponents(in Input) (Built, error) {
 		WithFeatureGate(gate).
 		WithResource(workload, component.GatedBy(gate)).
 		WithResource(svc, component.GatedBy(gate)).
+		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Suspended).
 		Build()
 	if err != nil {
 		return Built{}, fmt.Errorf("building the %s component: %w", ComponentConsole, err)
 	}
 
-	built := Built{Components: []*component.Component{comp}}
+	built := Built{Components: []*component.Component{comp}, Graced: []*component.Component{comp}}
 	if deployed {
 		built.Ready = built.Components
 	}

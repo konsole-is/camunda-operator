@@ -44,6 +44,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/grace"
 	"github.com/konsole-is/camunda-operator/pkg/workloadsuspend"
 )
 
@@ -95,6 +96,9 @@ type Reconciler struct {
 	// RetryInterval overrides how long the controller waits on something no
 	// watch reports. Zero means defaultRetryInterval; tests shorten it.
 	RetryInterval time.Duration
+	// GracePeriods are the grace periods of the two workloads, which use the
+	// workload period. The zero value keeps them on their progress reason.
+	GracePeriods grace.Periods
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used
@@ -253,6 +257,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	res.Input.ServiceMonitorSupported = r.serviceMonitorSupported()
+	res.Input.GracePeriod = r.GracePeriods.Workload
 
 	if err := r.patchExporter(ctx, res); err != nil {
 		return ctrl.Result{}, err
@@ -269,14 +274,21 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	conditions.Stage(&optimize, conditions.Aggregate(&optimize, built.ready...))
 	r.recordSuspensionChange(&optimize, prior, suspendedBy(res))
 
+	if reconcileErr != nil {
+		return ctrl.Result{}, reconcileErr
+	}
+
 	// No watch reports the storage claim of the backend, or the pods of
 	// another cluster on it, so the workloads they park start again on this
 	// timer.
-	if res.AwaitsBackendClaim && reconcileErr == nil {
-		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+	var wait time.Duration
+	if res.AwaitsBackendClaim {
+		wait = r.retryInterval()
 	}
 
-	return ctrl.Result{}, reconcileErr
+	wait = grace.Sooner(wait, grace.Remaining(&optimize, res.Input.GracePeriod, time.Now(), built.workloads...))
+
+	return ctrl.Result{RequeueAfter: wait}, nil
 }
 
 // retryInterval returns the wait before an unwatched dependency is looked at
@@ -290,10 +302,12 @@ func (r *Reconciler) retryInterval() time.Duration {
 }
 
 // optimizeComponents are the components of one CamundaOptimize: all of them
-// are reconciled in order, and the ready ones make up Ready.
+// are reconciled in order, the ready ones make up Ready, and the workloads
+// carry the grace period.
 type optimizeComponents struct {
-	all   []*component.Component
-	ready []*component.Component
+	all       []*component.Component
+	ready     []*component.Component
+	workloads []*component.Component
 }
 
 // buildComponents builds every component in reconcile order: the copies of
@@ -311,7 +325,10 @@ func (r *Reconciler) buildComponents(res resolved) (optimizeComponents, error) {
 		return optimizeComponents{}, fmt.Errorf("building workload components: %w", err)
 	}
 
-	comps := optimizeComponents{all: append([]*component.Component{mirrored}, workloads...)}
+	comps := optimizeComponents{
+		all:       append([]*component.Component{mirrored}, workloads...),
+		workloads: workloads,
+	}
 	comps.ready = workloads
 	if len(res.Mirrors) > 0 {
 		comps.ready = append([]*component.Component{mirrored}, workloads...)

@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"time"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -106,6 +107,9 @@ const (
 // server's. The cluster then carries no archive plugin: the entry names that
 // ObjectStore, and a cluster that keeps it writes its write-ahead log into the
 // bucket of whoever holds the name.
+//
+// gracePeriod is how long the cluster may take to become ready before
+// ClusterReady reports Degraded or Down. Zero keeps the progress reason.
 func ClusterComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
@@ -113,6 +117,7 @@ func ClusterComponent(
 	archiveTaken string,
 	platform *v1.CamundaPlatformConfigSpec,
 	blocked string,
+	gracePeriod time.Duration,
 ) (*component.Component, *concepts.Data[string], error) {
 	systemIdentifier := concepts.NewData[string]("postgres-system-identifier")
 
@@ -132,6 +137,7 @@ func ClusterComponent(
 		WithName("cluster").
 		WithConditionType(v1.ConditionClusterReady).
 		WithResource(postgres, component.BlockOnForeignController()).
+		WithGracePeriod(gracePeriod).
 		Suspend(merged.Suspend && blocked == "").
 		Build()
 	if err != nil {

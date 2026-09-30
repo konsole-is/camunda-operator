@@ -52,6 +52,7 @@ import (
 	components "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
+	"github.com/konsole-is/camunda-operator/pkg/grace"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/eckelasticsearch"
 )
@@ -128,6 +129,12 @@ type ElasticsearchClusterReconciler struct {
 	// RetryInterval overrides how long the controller waits on something no
 	// watch reports. Zero means defaultRetryInterval; tests shorten it.
 	RetryInterval time.Duration
+
+	// GracePeriods are the grace periods of the elasticsearch component,
+	// which uses the datastore period, and of the metrics exporter, which
+	// uses the workload period. The zero value keeps both on their progress
+	// reason.
+	GracePeriods grace.Periods
 
 	// registeredRepositories remembers, per cluster, a fingerprint of the
 	// last repository registration that converged, so an unchanged repository
@@ -215,7 +222,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
-	core, metrics, err := r.buildComponents(ctx, &cluster, merged, storage)
+	core, elasticsearch, metrics, err := r.buildComponents(ctx, &cluster, merged, storage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -256,11 +263,20 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 	cluster.Status.Volumes = volumes.volumes
 
-	if retryRepository && reconcileErr == nil {
-		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+	if reconcileErr != nil {
+		return ctrl.Result{}, reconcileErr
 	}
 
-	return ctrl.Result{}, reconcileErr
+	var wait time.Duration
+	if retryRepository {
+		wait = r.retryInterval()
+	}
+
+	now := time.Now()
+	wait = grace.Sooner(wait, grace.Remaining(&cluster, r.GracePeriods.Datastore, now, elasticsearch))
+	wait = grace.Sooner(wait, grace.Remaining(&cluster, r.GracePeriods.Workload, now, metrics))
+
+	return ctrl.Result{RequeueAfter: wait}, nil
 }
 
 // preCheck resolves the preset and the release and validates the merged spec.
@@ -411,17 +427,18 @@ func (d dataVolumes) largest() *resource.Quantity {
 	return largest
 }
 
-// buildComponents builds the components in dependency order: the three that
-// make up Ready (credentials, elasticsearch, storage-contract), and the
-// metrics component apart. It reads the password from the existing user
-// Secret without the cache, so the password stays stable after creation. To
-// rotate it, delete the Secret.
+// buildComponents builds the components in dependency order: the ones that
+// make up Ready (credentials, keystore, elasticsearch, storage-contract), and
+// the metrics component apart. It also returns the elasticsearch component on
+// its own, because it carries the datastore grace period. It reads the
+// password from the existing user Secret without the cache, so the password
+// stays stable after creation. To rotate it, delete the Secret.
 func (r *ElasticsearchClusterReconciler) buildComponents(
 	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
 	storage *components.SnapshotStorage,
-) (core []*component.Component, metrics *component.Component, err error) {
+) (core []*component.Component, elasticsearch, metrics *component.Component, err error) {
 	// The contract publishes the repository name only once a registration has
 	// converged: a consumer that read the name earlier would snapshot against
 	// a repository that does not exist. status.snapshotRepository is the
@@ -437,37 +454,39 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 		}, components.PasswordKey,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	credentialsComp, err := components.CredentialsComponent(cluster, password)
 	if err != nil {
-		return nil, nil, fmt.Errorf("building credentials component: %w", err)
+		return nil, nil, nil, fmt.Errorf("building credentials component: %w", err)
 	}
 
 	keystoreComp, err := components.KeystoreComponent(cluster, storage)
 	if err != nil {
-		return nil, nil, fmt.Errorf("building keystore component: %w", err)
+		return nil, nil, nil, fmt.Errorf("building keystore component: %w", err)
 	}
 
-	elasticsearchComp, err := components.ElasticsearchComponent(cluster, merged, storage)
+	elasticsearchComp, err := components.ElasticsearchComponent(cluster, merged, storage, r.GracePeriods.Datastore)
 	if err != nil {
-		return nil, nil, fmt.Errorf("building elasticsearch component: %w", err)
+		return nil, nil, nil, fmt.Errorf("building elasticsearch component: %w", err)
 	}
 
 	storageContractComp, err := components.StorageContractComponent(cluster, merged, storage, registeredName)
 	if err != nil {
-		return nil, nil, fmt.Errorf("building storage-contract component: %w", err)
+		return nil, nil, nil, fmt.Errorf("building storage-contract component: %w", err)
 	}
 
-	metricsComp, err := components.MetricsComponent(cluster, merged, r.serviceMonitorSupported())
+	metricsComp, err := components.MetricsComponent(
+		cluster, merged, r.serviceMonitorSupported(), r.GracePeriods.Workload,
+	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("building metrics component: %w", err)
+		return nil, nil, nil, fmt.Errorf("building metrics component: %w", err)
 	}
 
 	return []*component.Component{
 		credentialsComp, keystoreComp, elasticsearchComp, storageContractComp,
-	}, metricsComp, nil
+	}, elasticsearchComp, metricsComp, nil
 }
 
 // serviceMonitorSupported reports whether the cluster serves the

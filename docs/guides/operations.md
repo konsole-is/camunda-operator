@@ -113,6 +113,8 @@ The reasons that you see most often:
 | `Creating` | The operator created the workload and waits for the first replicas. | Wait. |
 | `Updating`, `Scaling` | The workload rolls out a new configuration or image, or changes its replica count. | Wait. If the reason stays, read the pods and their events. Make sure that secondary storage is reachable. |
 | `Failing` | A replica does not become ready. | Read the pods of the workload. Look for restarts, failed probes, and resource limits. |
+| `Degraded` | The workload is still not ready at the end of its [grace period](../architecture.md#status-conventions), but some replicas are ready. | Read the pods of the workload and their events. |
+| `Down` | The workload is still not ready at the end of its grace period, and no replica is ready. | Read the pods of the workload and their events. Make sure that secondary storage is reachable. |
 | `Suspended` | The workload is at zero replicas, because of `spec.suspend: true`, a suspension hold, or a wait for the backend. | Find out what suspended the cluster before you start it again. See [Suspend and resume](#suspend-and-resume). |
 | `Disabled` | The cluster does not need this component. | Nothing. This reason is not an error, and the condition stays out of `Ready`. |
 | `InvalidReference` | A referenced resource does not exist, or the merged spec is not valid. The message names it. | Create the resource, or fix the field that the message names. |

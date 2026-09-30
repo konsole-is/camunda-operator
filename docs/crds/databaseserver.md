@@ -356,6 +356,7 @@ status:
 | --- | --- | --- | --- |
 | `Ready` | `Healthy` | Every part of the server is in its desired state. | Nothing. |
 | `Ready` | `Blocked` | The archive holds no base backup yet. | Wait. |
+| `Ready` | `Creating`, `Updating`, `Failing`, `Degraded`, `Down` | `ClusterReady` holds `Ready` back. | Read the row of `ClusterReady` with the same reason. |
 | `Ready` | `ArchiveFailing` | The write-ahead log does not reach the bucket. | Read `ArchiveReady`. |
 | `Ready` | `Suspended` | `spec.suspend` is true and the instances are stopped. | Nothing. |
 | `Ready` | `ClusterTaken`, `ContractTaken`, `ArchiveTaken` | Another owner holds a name that the server derives. | See [Name collisions](#name-collisions). |
@@ -367,6 +368,8 @@ status:
 | `ClusterReady` | `Creating`, `Updating` | CloudNativePG is starting or changing the instances. | Wait. |
 | `ClusterReady` | `Healthy` | Every instance is ready. | Nothing. |
 | `ClusterReady` | `Failing` | CloudNativePG reports a phase that it does not leave on its own. The message names the phase. | Read the CloudNativePG cluster for the cause. |
+| `ClusterReady` | `Degraded` | The instances are still not all ready at the end of the [grace period](../architecture.md#status-conventions) of 30 minutes, but at least one instance is ready. The primary serves. | Read the CloudNativePG cluster and the pods of the instances that are not ready. |
+| `ClusterReady` | `Down` | No instance is ready at the end of the grace period. | Read the CloudNativePG cluster and the pods of its instances for the cause. |
 | `ClusterReady` | `Suspending`, `Suspended` | `spec.suspend` is true. | Nothing. |
 | `ClusterReady` | `ClusterTaken` | A CloudNativePG cluster of the server name belongs to another owner. | See [Name collisions](#name-collisions). |
 | `ArchiveReady` | `Disabled` | The server has no `archive` block. | Nothing. |

@@ -17,6 +17,8 @@ limitations under the License.
 package camundaoptimize
 
 import (
+	"time"
+
 	"k8s.io/apimachinery/pkg/types"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -78,6 +80,9 @@ type Input struct {
 	// ServiceMonitorSupported reports whether the Kubernetes cluster serves
 	// the ServiceMonitor kind. When false, no ServiceMonitor is rendered.
 	ServiceMonitorSupported bool
+	// GracePeriod is how long a Deployment may take to become ready before
+	// its condition reports Degraded or Down. Zero keeps the progress reason.
+	GracePeriod time.Duration
 }
 
 // Image returns the container image of both workloads. Optimize has its own

@@ -25,6 +25,7 @@ package elasticsearchcluster
 import (
 	"maps"
 	"strings"
+	"time"
 
 	commonv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/common/v1"
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
@@ -239,10 +240,13 @@ func RolesSecretName(cluster *v1.ElasticsearchCluster) string {
 // preset-merged spec: the ServiceAccount of the pods (gated on
 // spec.serviceAccount) and the ECK Elasticsearch CR. spec.suspend suspends the
 // component, which deletes the ECK CR with its data volumes retained.
+// gracePeriod is how long the cluster may take to become ready before
+// ElasticsearchReady reports Degraded or Down. Zero keeps the progress reason.
 func ElasticsearchComponent(
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
 	storage *SnapshotStorage,
+	gracePeriod time.Duration,
 ) (*component.Component, error) {
 	account, err := serviceaccount.NewBuilder(serviceAccount(cluster, merged, storage)).Build()
 	if err != nil {
@@ -269,6 +273,7 @@ func ElasticsearchComponent(
 			component.GatedBy(feature.NewBooleanGate(usesServiceAccount(merged, storage))),
 		).
 		WithResource(elasticsearch).
+		WithGracePeriod(gracePeriod).
 		Suspend(merged.Suspend).
 		Build()
 }

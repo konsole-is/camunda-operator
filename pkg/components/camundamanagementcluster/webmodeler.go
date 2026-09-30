@@ -198,13 +198,14 @@ func webModelerComponents(in Input) (Built, error) {
 		WithResource(restapiService, component.GatedBy(gate)).
 		WithResource(websockets, component.GatedBy(gate)).
 		WithResource(websocketsService, component.GatedBy(gate)).
+		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Suspended).
 		Build()
 	if err != nil {
 		return Built{}, fmt.Errorf("building the %s component: %w", ComponentWebModeler, err)
 	}
 
-	built := Built{Components: []*component.Component{comp}}
+	built := Built{Components: []*component.Component{comp}, Graced: []*component.Component{comp}}
 	if deployed {
 		built.Ready = built.Components
 	}

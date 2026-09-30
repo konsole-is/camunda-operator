@@ -54,6 +54,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/pointintimerestore"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/manager"
+	"github.com/konsole-is/camunda-operator/pkg/grace"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -128,6 +129,8 @@ func main() {
 			"secondary storage backend of a cluster. Defaults to the "+namespaceEnv+
 			" environment variable, and then to the namespace of the Pod.",
 	)
+	var gracePeriods grace.Periods
+	graceErr := gracePeriods.BindFlags(flag.CommandLine, os.Getenv)
 	opts := zap.Options{
 		Development: true,
 	}
@@ -135,6 +138,14 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	if graceErr == nil {
+		graceErr = gracePeriods.Validate()
+	}
+	if graceErr != nil {
+		setupLog.Error(graceErr, "Failed to read the grace periods")
+		os.Exit(1)
+	}
 
 	// The LogicalBackupRDBMS controller renders Jobs that run the CLI image.
 	// Without one it can only guess, so the manager refuses to start.
@@ -275,6 +286,7 @@ func main() {
 		APIReader:      mgr.GetAPIReader(),
 		Scheme:         mgr.GetScheme(),
 		ClaimNamespace: operatorNamespace,
+		GracePeriods:   gracePeriods,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaCluster")
 		os.Exit(1)
@@ -288,9 +300,10 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&elasticsearchcluster.ElasticsearchClusterReconciler{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Scheme:    mgr.GetScheme(),
+		Client:       mgr.GetClient(),
+		APIReader:    mgr.GetAPIReader(),
+		Scheme:       mgr.GetScheme(),
+		GracePeriods: gracePeriods,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ElasticsearchCluster")
 		os.Exit(1)
@@ -321,9 +334,10 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&databaseserver.DatabaseServerReconciler{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Scheme:    mgr.GetScheme(),
+		Client:       mgr.GetClient(),
+		APIReader:    mgr.GetAPIReader(),
+		Scheme:       mgr.GetScheme(),
+		GracePeriods: gracePeriods,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "DatabaseServer")
 		os.Exit(1)
@@ -379,6 +393,7 @@ func main() {
 		APIReader:      mgr.GetAPIReader(),
 		Scheme:         mgr.GetScheme(),
 		ClaimNamespace: operatorNamespace,
+		GracePeriods:   gracePeriods,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaOptimize")
 		os.Exit(1)
@@ -387,6 +402,7 @@ func main() {
 		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(),
 	)
 	managementCluster.ClaimNamespace = operatorNamespace
+	managementCluster.GracePeriods = gracePeriods
 	if err := managementCluster.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaManagementCluster")
 		os.Exit(1)

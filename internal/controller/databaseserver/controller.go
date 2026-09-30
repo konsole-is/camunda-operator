@@ -49,6 +49,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/grace"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
@@ -187,6 +188,10 @@ type DatabaseServerReconciler struct {
 	// RetryInterval overrides how long the controller waits on the superuser
 	// Secret. Zero means defaultRetryInterval; tests shorten it.
 	RetryInterval time.Duration
+	// GracePeriods are the grace periods of the cluster component, which uses
+	// the datastore period. The zero value keeps ClusterReady on its progress
+	// reason.
+	GracePeriods grace.Periods
 
 	// componentClient is the uncached client that the ocf components reconcile
 	// through. SetupWithManager builds it. The cached client of the manager
@@ -425,7 +430,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, reconcileErr
 	}
 
-	return ctrl.Result{RequeueAfter: r.requeueAfter(&server, resolved, derived, recovering)}, nil
+	return ctrl.Result{RequeueAfter: r.requeueAfter(&server, resolved, derived, recovering, built.cluster)}, nil
 }
 
 // all returns the components in reconcile order. FlushStatus owns every one of
@@ -968,6 +973,7 @@ func (r *DatabaseServerReconciler) requeueAfter(
 	resolved resolvedSpec,
 	derived derivedCluster,
 	recovering bool,
+	cluster *component.Component,
 ) time.Duration {
 	var waits []time.Duration
 
@@ -998,6 +1004,10 @@ func (r *DatabaseServerReconciler) requeueAfter(
 	// it comes rewrite the condition on the cluster, which this controller
 	// owns, so that arrives on a watch and needs no look of its own.
 	if wait := pendingArchiveOutageWait(derived.outage, resolved.merged, time.Now()); wait > 0 {
+		waits = append(waits, wait)
+	}
+
+	if wait := grace.Remaining(server, r.GracePeriods.Datastore, time.Now(), cluster); wait > 0 {
 		waits = append(waits, wait)
 	}
 
@@ -1432,7 +1442,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 
 	cluster, systemIdentifier, err := components.ClusterComponent(
 		server, merged, resolved.archive, resolved.archiveTaken,
-		resolved.platform, resolved.clusterBlocked,
+		resolved.platform, resolved.clusterBlocked, r.GracePeriods.Datastore,
 	)
 	if err != nil {
 		return built, fmt.Errorf("building cluster component: %w", err)

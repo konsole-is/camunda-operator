@@ -152,6 +152,7 @@ func identityComponents(in Input) (Built, error) {
 		WithResource(urls, component.GatedBy(feature.NewBooleanGate(len(in.OptimizeURLs) > 0))).
 		WithResource(workload).
 		WithResource(svc).
+		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Suspended)
 	if in.Provider.Mode == ModeKeycloak {
 		// The Keycloak Operator writes the administrator Secret that
@@ -169,7 +170,7 @@ func identityComponents(in Input) (Built, error) {
 
 	comps := []*component.Component{comp}
 
-	return Built{Components: comps, Ready: comps}, nil
+	return Built{Components: comps, Ready: comps, Graced: comps}, nil
 }
 
 // identityOptimizeURLs renders the ConfigMap that carries the Optimize root

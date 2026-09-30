@@ -271,11 +271,12 @@ A `CamundaOptimize` that never held the cluster removes nothing from it.
 | --- | --- | --- | --- |
 | `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a Secret from another namespace is applied, or there is no such Secret. | Nothing. |
 | `WebappReady` / `ImporterReady` | `Healthy` | Every replica is ready, or the replica count is `0`. | Nothing. |
-| `WebappReady` / `ImporterReady` | `Creating` / `Updating` / `Scaling` | The Deployment rolls out or scales. The reason stays while a replica does not become ready. | Wait. If the reason stays, read the pods and events of the Deployment. |
+| `WebappReady` / `ImporterReady` | `Creating` / `Updating` / `Scaling` | The Deployment rolls out or scales. The reason stays while a replica does not become ready, until the grace period ends. | Wait. If the reason stays, read the pods and events of the Deployment. |
 | `WebappReady` / `ImporterReady` | `Suspending` / `Suspended` | The Deployment stops, or is at zero, with the cluster. | Nothing. See [Suspension](#suspension). |
 | `WebappReady` / `ImporterReady` | `Failing` | The Deployment has replicas that do not become ready. | Read the pods of the Deployment. |
+| `WebappReady` / `ImporterReady` | `Degraded` / `Down` | The Deployment is still not ready at the end of the [grace period](../architecture.md#status-conventions) of 15 minutes. `Degraded` means that some replicas are ready. `Down` means that none is ready. | Read the pods and events of the Deployment. |
 | `Ready` | `Healthy` | Every condition that takes part is healthy. | Nothing. |
-| `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` | The reason of the condition that governs `Ready`. The message names it. | Read the row of that condition. |
+| `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Degraded` / `Down` | The reason of the condition that governs `Ready`. The message names it. | Read the row of that condition. |
 | `Ready` | `Suspended` | Both workloads are at zero with the cluster. `Ready` is `True`. | Nothing. Optimize starts again with the cluster. |
 | `Ready` | `ClusterAlreadyAttached` | Another `CamundaOptimize` holds the cluster. The message names it. | Delete one of the two. |
 | `Ready` | `WaitingForHandover` | This resource now holds the cluster, and the importer Deployment of the previous one still exists. The message names it. The pods of that importer are a separate wait, under `Suspended`. | Wait. It clears on its own. |

@@ -20,6 +20,7 @@ import (
 	"cmp"
 	"fmt"
 	"strings"
+	"time"
 
 	"k8s.io/apimachinery/pkg/types"
 
@@ -82,6 +83,10 @@ type Input struct {
 	// KeycloakCRDServed reports whether the Kubernetes cluster serves the
 	// Keycloak kind of the Keycloak Operator.
 	KeycloakCRDServed bool
+	// GracePeriod is how long a workload or the Keycloak may take to become
+	// ready before its condition reports Degraded or Down. Zero keeps the
+	// progress reason.
+	GracePeriod time.Duration
 }
 
 // ProviderMode is which of the three identity provider modes the spec selects.

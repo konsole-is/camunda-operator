@@ -82,6 +82,8 @@ The reasons that you see most:
 | `Healthy` | Everything the resource needs is in place. |
 | `Creating`, `Updating`, `Scaling` | The workloads roll out. |
 | `Failing` | A workload does not reach the desired state. |
+| `Degraded` | A workload is still not ready at the end of its grace period, but part of it serves. |
+| `Down` | A workload is still not ready at the end of its grace period, and nothing of it serves. |
 | `Suspended` | `spec.suspend` is true. `Ready` is `True`, because the resource is in its desired state. |
 | `SuspensionHeld` | A `CamundaCluster` carries a suspension hold. `Ready` is `False`, because another resource keeps the cluster stopped, not your spec. The message names each hold. |
 | `Disabled` | The component is not part of the current topology. This is not an error. |
@@ -91,6 +93,8 @@ The reasons that you see most:
 | `Error` | The operator hit an error. The message carries it. |
 
 The page of each kind in the [CRD reference](crds/index.md) lists all its reasons and the step for each.
+
+A workload gets a grace period to become ready. The grace period starts when its condition changes to `False`. A change from `Creating` to `Updating` does not start it again. Until the grace period ends, the condition reports its progress: `Creating`, `Updating`, `Scaling`, or `Failing`. After it ends, the condition reports `Degraded` or `Down` until the workload is ready again. The grace period is 15 minutes for a Deployment, a StatefulSet, or a Keycloak, and 30 minutes for an Elasticsearch or PostgreSQL cluster. To change these values, see [Grace periods](installation.md#grace-periods).
 
 The API server accepts a resource that names something you did not create yet, so you can create resources in any order. A resource waits with `InvalidReference` or `MissingSecret` until its references exist.
 
