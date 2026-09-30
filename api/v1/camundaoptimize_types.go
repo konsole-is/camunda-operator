@@ -29,22 +29,22 @@ const (
 	// workload.
 	ConditionImporterReady = "ImporterReady"
 
-	// ReasonVersionMismatch means the major and the minor of spec.version
-	// differ from those of the effective version of the referenced cluster.
-	// Camunda supports Optimize only on a matching minor.
+	// ReasonVersionMismatch means that the major and the minor of
+	// spec.version differ from those of the effective version of the
+	// referenced cluster. Camunda supports Optimize only on the same minor.
 	ReasonVersionMismatch = "VersionMismatch"
 	// ReasonClusterAlreadyAttached means that another CamundaOptimize is
-	// already attached to the referenced cluster. One cluster carries one
-	// Optimize instance: the Optimize index prefix is fixed, so two instances
-	// write the same analytics indices of the same Elasticsearch. The message
-	// names the CamundaOptimize that holds the attachment.
+	// already attached to the referenced cluster. A cluster has one Optimize
+	// instance. The Optimize index prefix is fixed, so two instances write
+	// the same analytics indices in the same Elasticsearch. The message names
+	// the CamundaOptimize that holds the attachment.
 	ReasonClusterAlreadyAttached = "ClusterAlreadyAttached"
 	// ReasonExporterConflict means that spec.zeebe.extraEnv of the referenced
-	// cluster already carries an entry with the name of an exporter setting,
-	// and that entry supplies its value the other way: a literal where the
-	// operator needs a Secret reference, or the reverse. A container rejects
-	// an entry that carries both, so the operator reports the collision
-	// instead of applying it.
+	// cluster already has an entry with the name of an exporter setting, with
+	// the other kind of value. It has a literal value where the operator needs
+	// a Secret reference, or the reverse. A container rejects an entry that
+	// has both, so the operator reports the conflict and does not apply the
+	// setting.
 	ReasonExporterConflict = "ExporterConflict"
 )
 
@@ -53,14 +53,14 @@ const (
 // Elasticsearch.
 //
 // The spec has no platformConfigRef. The image repository and the license come
-// from the CamundaPlatformConfig of the referenced cluster, so the two cannot
-// disagree.
+// from the CamundaPlatformConfig of the referenced cluster, so Optimize and
+// the cluster always use the same values.
 type CamundaOptimizeSpec struct {
 	// Version is the Optimize version to deploy, as a full semantic version.
 	// Optimize has its own patch line, so it does not follow the version of
 	// the cluster. The major and the minor must match the effective version
-	// of the referenced cluster; the controller reports VersionMismatch when
-	// they differ.
+	// of the referenced cluster. If they differ, Ready reports
+	// VersionMismatch.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	Version string `json:"version"`
 	// ManagementAuthRef names the cluster-scoped ManagementAuthConfig that
@@ -69,17 +69,17 @@ type CamundaOptimizeSpec struct {
 	// auth of the orchestration cluster.
 	// +kubebuilder:validation:MinLength=1
 	ManagementAuthRef string `json:"managementAuthRef"`
-	// ExternalURL is the URL that browsers reach this Optimize at.
+	// ExternalURL is the URL where browsers reach this Optimize.
 	//
-	// In the two Keycloak modes the management plane behind managementAuthRef
+	// In the two Keycloak modes, the management plane of managementAuthRef
 	// registers <externalUrl>/api/authentication/callback on the optimize
-	// client of the realm, so a person who signs in here comes back here. An
-	// Optimize that sets no URL gets no callback from that plane, so Keycloak
-	// refuses the return, unless somebody put that callback in the realm by
-	// hand.
+	// client of the realm. Thus a person who signs in here comes back here.
+	// Without a URL, the plane registers no callback, and Keycloak refuses
+	// the return. The exception is a callback that somebody added to the
+	// realm manually.
 	//
-	// In the oidc mode the field has no effect. The identity provider of the
-	// platform config holds the callback URLs, so add this one there.
+	// In the oidc mode, the field has no effect. The identity provider of the
+	// platform config holds the callback URLs, so add this URL there.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	// +kubebuilder:validation:XValidation:rule="!self.contains(',')",message="externalUrl must carry no comma: Management Identity reads the callback list as comma-separated"
 	// +kubebuilder:validation:XValidation:rule="!self.endsWith('/')",message="externalUrl must not end with a slash: the login callback is appended to it"
@@ -88,13 +88,12 @@ type CamundaOptimizeSpec struct {
 	// +optional
 	ExternalURL string `json:"externalUrl,omitempty"`
 	// ClusterRef names the CamundaCluster that this Optimize instance reads.
-	// The secondary storage of that cluster must be Elasticsearch, and no
-	// other CamundaOptimize may be attached to it.
+	// The secondary storage of that cluster must be Elasticsearch. No other
+	// CamundaOptimize can be attached to it.
 	//
-	// The reference is immutable. A repoint would apply the exporter settings
-	// to the new cluster while the old cluster keeps the settings this
-	// operator applied, and it would change the pod selectors of the
-	// Deployments, which Kubernetes does not allow.
+	// The reference is immutable. A change to another cluster changes the pod
+	// selectors of the Deployments, and Kubernetes does not permit that.
+	// Also, the old cluster keeps the exporter settings of this Optimize.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="clusterRef is immutable: delete this CamundaOptimize and create a new one to attach it to another cluster"
 	ClusterRef ClusterRef `json:"clusterRef"`
 	// Webapp configures the Deployment that serves the Optimize user
@@ -103,9 +102,9 @@ type CamundaOptimizeSpec struct {
 	Webapp *WorkloadSpec `json:"webapp,omitempty"`
 	// Importer configures the Deployment that imports the exported cluster
 	// data into the Optimize indices. Optimize supports one active importer,
-	// so replicas must be 0 or 1. Set 0 to stop the import, for example while
-	// a restore or an index rewrite runs; the webapp keeps serving what is
-	// already imported.
+	// so replicas must be 0 or 1. With 0, the import stops, for example
+	// during a restore or an index rewrite. The webapp continues to serve the
+	// data that it already imported.
 	// +optional
 	// +kubebuilder:validation:XValidation:rule="!has(self.replicas) || self.replicas <= 1",message="importer.replicas must be 0 or 1: Optimize supports one active importer"
 	Importer *WorkloadSpec `json:"importer,omitempty"`
@@ -114,10 +113,11 @@ type CamundaOptimizeSpec struct {
 	// Optimize. When it is not set, the nodeCount of the storage contract of
 	// the cluster gives the count: 0 on one node, 1 on two or more nodes.
 	// Without a nodeCount, Optimize and the exporter keep their own defaults.
+	//
 	// Optimize applies the count to its existing indices when it starts. The
-	// exporter applies it to the zeebe-record indices that it creates next. A
-	// count that the nodes cannot place is kept, and Optimize records an
-	// IndexReplicasExceedNodes Warning event.
+	// exporter applies it to the next zeebe-record indices that it creates.
+	// If the nodes cannot place the count, the operator keeps it and records
+	// an IndexReplicasExceedNodes Warning event on the CamundaOptimize.
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	IndexReplicas *int32 `json:"indexReplicas,omitempty"`
@@ -130,8 +130,9 @@ type CamundaOptimizeSpec struct {
 // CamundaOptimize.
 type OptimizeMonitoringSpec struct {
 	// ServiceMonitor configures the Prometheus ServiceMonitors. When enabled,
-	// the operator creates one ServiceMonitor per Deployment, named like the
-	// workload, that scrapes /actuator/prometheus on the management port.
+	// the operator creates one ServiceMonitor for each Deployment, with the
+	// name of the workload. It scrapes /actuator/prometheus on the management
+	// port.
 	// +optional
 	ServiceMonitor *ServiceMonitorSpec `json:"serviceMonitor,omitempty"`
 }
@@ -141,17 +142,17 @@ type CamundaOptimizeStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Conditions represent the current state. Ready carries a pre-check
-	// reason, or it is derived from the conditions of the two workloads.
-	// The per-workload conditions (WebappReady, ImporterReady) also appear
-	// here.
+	// Conditions represent the current state. Ready holds the reason of a
+	// failed pre-check, or it follows the conditions of the two workloads.
+	// The per-workload conditions (WebappReady, ImporterReady) and
+	// MirroredSecretsReady also appear here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	// SuspendedBy says why the Optimize workloads follow the referenced
-	// cluster to zero. It is empty while they follow their spec. It stays set
-	// while a failed check keeps them at zero after the cluster resumed.
+	// SuspendedBy tells why the Optimize workloads are at zero with the
+	// referenced cluster. It is empty while they follow their spec. It stays
+	// set while a failed check keeps them at zero after the cluster resumed.
 	// +optional
 	SuspendedBy OptimizeSuspension `json:"suspendedBy,omitempty"`
 }
@@ -162,14 +163,14 @@ type CamundaOptimizeStatus struct {
 type OptimizeSuspension string
 
 const (
-	// OptimizeSuspensionCluster means that the referenced cluster reports
-	// itself suspended, by spec.suspend or in a state in which the operator
-	// holds it at zero.
+	// OptimizeSuspensionCluster means that the referenced cluster is
+	// suspended, by spec.suspend or by a state in which the operator keeps it
+	// at zero.
 	OptimizeSuspensionCluster OptimizeSuspension = "Cluster"
-	// OptimizeSuspensionStorageClaim means that the referenced cluster does not
-	// hold the storage claim of its backend, or that another writer still
-	// writes that backend: pods of another cluster or of a previous Optimize
-	// instance, or a restore into another cluster.
+	// OptimizeSuspensionStorageClaim means that the referenced cluster does
+	// not hold the storage claim of its backend, or that another writer still
+	// writes to that backend. The writer can be pods of another cluster or of
+	// a previous Optimize instance, or a restore into another cluster.
 	OptimizeSuspensionStorageClaim OptimizeSuspension = "StorageClaim"
 )
 
@@ -181,8 +182,8 @@ const (
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // CamundaOptimize describes one Camunda Optimize instance attached to one
-// CamundaCluster. The operator turns it into a webapp Deployment, an importer
-// Deployment, and their Services. It also turns on the Elasticsearch exporter
+// CamundaCluster. The operator creates a webapp Deployment, an importer
+// Deployment, and their Services. It also enables the Elasticsearch exporter
 // of the referenced cluster, so Optimize has data to import.
 type CamundaOptimize struct {
 	metav1.TypeMeta `json:",inline"`
