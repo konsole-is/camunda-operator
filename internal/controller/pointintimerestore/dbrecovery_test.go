@@ -423,6 +423,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Create(ctx, second)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
+		deleteAtSpecEnd(second)
 
 		expectRecovering(second)
 		Eventually(func(g Gomega) {

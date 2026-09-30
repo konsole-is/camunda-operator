@@ -504,32 +504,41 @@ func createRestore(w *world, mutate ...func(*v1.PointInTimeRestore)) *v1.PointIn
 		m(pitr)
 	}
 	Expect(k8sClient.Create(ctx, pitr)).To(Succeed())
+	deleteAtSpecEnd(pitr)
+
+	return pitr
+}
+
+// deleteAtSpecEnd removes pitr past its finalizer when the spec ends. A restore
+// of the same name that the spec created again stays.
+func deleteAtSpecEnd(pitr *v1.PointInTimeRestore) {
 	// A restore that outlives its spec keeps polling on its timers. The
 	// controller runs one reconcile at a time, so every later spec waits
 	// behind those polls. envtest runs no garbage collector, so a deleted
 	// restore whose Jobs never go keeps its finalizer and polls too.
 	DeferCleanup(func() {
-		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, pitr))).To(Succeed())
+		uid := pitr.UID
+		err := k8sClient.Delete(ctx, pitr, client.Preconditions{UID: &uid})
+		// A conflict is a restore of the same name that the spec created again.
+		Expect(apierrors.IsConflict(err) || client.IgnoreNotFound(err) == nil).To(BeTrue(), "%v", err)
 		key := client.ObjectKeyFromObject(pitr)
 		Eventually(func(g Gomega) {
 			var current v1.PointInTimeRestore
 			err := k8sClient.Get(ctx, key, &current)
-			if controllerutil.RemoveFinalizer(&current, restore.HoldFinalizer) {
+			if err == nil && current.UID == uid && controllerutil.RemoveFinalizer(&current, restore.HoldFinalizer) {
 				g.Expect(client.IgnoreNotFound(k8sClient.Update(ctx, &current))).To(Succeed())
 				err = k8sClient.Get(ctx, key, &current)
 			}
-			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			g.Expect(apierrors.IsNotFound(err) || err == nil && current.UID != uid).To(BeTrue(), "%v", err)
 		}, timeout, interval).Should(Succeed())
 		// The finalizer that this cleanup removes is what releases these Leases.
 		Expect(k8sClient.DeleteAllOf(
 			ctx,
 			&coordinationv1.Lease{},
 			client.InNamespace(testClaimNamespace),
-			client.MatchingLabels{labels.WriterUIDKey: string(pitr.UID)},
+			client.MatchingLabels{labels.WriterUIDKey: string(uid)},
 		)).To(Succeed())
 	})
-
-	return pitr
 }
 
 // readRestore returns the live restore. A caller inside an Eventually or a

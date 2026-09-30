@@ -470,23 +470,26 @@ func createAndDelete(lrr *v1.LogicalRestoreRDBMS) {
 	Expect(k8sClient.Create(ctx, lrr)).To(Succeed())
 	// A restore left behind keeps polling, and the one worker makes later specs wait.
 	DeferCleanup(func() {
-		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, lrr))).To(Succeed())
+		uid := lrr.UID
+		err := k8sClient.Delete(ctx, lrr, client.Preconditions{UID: &uid})
+		// A conflict is a restore of the same name that the spec created again.
+		Expect(apierrors.IsConflict(err) || client.IgnoreNotFound(err) == nil).To(BeTrue(), "%v", err)
 		key := client.ObjectKeyFromObject(lrr)
 		Eventually(func(g Gomega) {
 			var current v1.LogicalRestoreRDBMS
 			err := k8sClient.Get(ctx, key, &current)
-			if controllerutil.RemoveFinalizer(&current, restorepkg.HoldFinalizer) {
+			if err == nil && current.UID == uid && controllerutil.RemoveFinalizer(&current, restorepkg.HoldFinalizer) {
 				g.Expect(client.IgnoreNotFound(k8sClient.Update(ctx, &current))).To(Succeed())
 				err = k8sClient.Get(ctx, key, &current)
 			}
-			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			g.Expect(apierrors.IsNotFound(err) || err == nil && current.UID != uid).To(BeTrue(), "%v", err)
 		}, timeout, interval).Should(Succeed())
 		// The finalizer that this cleanup removes is what releases these Leases.
 		Expect(k8sClient.DeleteAllOf(
 			ctx,
 			&coordinationv1.Lease{},
 			client.InNamespace(claimNamespace),
-			client.MatchingLabels{labels.WriterUIDKey: string(lrr.UID)},
+			client.MatchingLabels{labels.WriterUIDKey: string(uid)},
 		)).To(Succeed())
 	})
 }
