@@ -84,7 +84,7 @@ var _ = Describe("LogicalBackupRDBMS schema", func() {
 
 	// The prefix bound of extraEnvFrom does not fit the CEL cost budget of
 	// the API server without a cap on the list, so the controller enforces
-	// it and admission takes any prefix and any number of sources.
+	// it.
 	It("accepts more than 8 extraEnvFrom sources, whatever their prefixes", func() {
 		backup := valid()
 		backup.Spec.Dump = &v1.DumpPodSpec{}
