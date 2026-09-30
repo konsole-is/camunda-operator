@@ -21,18 +21,22 @@ import (
 	"fmt"
 
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // CollectJobs removes the per-broker restore Jobs of a completed restore. It
-// reports Outcome.Done when no recorded Job of the restore is left, and only
-// then are the broker volumes free. Until then it reports Outcome.Wait. Call
-// it again on each look. A Job that another writer owns now counts as gone.
+// reports Outcome.Done when no recorded Job of the restore and no pod with
+// the JobSelector labels of label is left, and only then are the broker
+// volumes free. Until then it reports Outcome.Wait. Call it again on each
+// look. A Job that another writer owns now counts as gone. label is the owner
+// label of the restore.
 //
 // A restore that did not complete keeps its Jobs. Its Jobs hold the broker
 // volumes until somebody deletes the restore, and CollectJobs reports Done at
@@ -44,6 +48,7 @@ func CollectJobs(
 	c client.Client,
 	reader client.Reader,
 	owner client.Object,
+	label labels.Owner,
 	p *v1.RestoreProgress,
 ) (Outcome, error) {
 	// The logs of a failed Job are the diagnosis.
@@ -95,5 +100,28 @@ func CollectJobs(
 		return Outcome{Wait: Shortly}, nil
 	}
 
+	// A Job that somebody deleted with background propagation is gone before
+	// its pods are.
+	gone, err := podsGone(ctx, reader, owner, JobSelector(label))
+	if err != nil || !gone {
+		return Outcome{Wait: Shortly}, err
+	}
+
 	return Outcome{Done: true}, nil
+}
+
+// podsGone reports whether no pod in the namespace of owner matches selector.
+func podsGone(
+	ctx context.Context,
+	reader client.Reader,
+	owner client.Object,
+	selector map[string]string,
+) (bool, error) {
+	var pods corev1.PodList
+	err := reader.List(ctx, &pods, client.InNamespace(owner.GetNamespace()), client.MatchingLabels(selector))
+	if err != nil {
+		return false, fmt.Errorf("listing the Job pods of %s: %w", client.ObjectKeyFromObject(owner), err)
+	}
+
+	return len(pods.Items) == 0, nil
 }

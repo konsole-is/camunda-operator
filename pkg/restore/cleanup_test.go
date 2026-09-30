@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -35,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // terminalOwner is a restore that reached a terminal phase with the given
@@ -127,7 +129,7 @@ func TestCollectJobsRemovesEveryJobOfACompletedRestore(t *testing.T) {
 	)
 
 	ctx := context.Background()
-	asked, err := CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress)
+	asked, err := CollectJobs(ctx, c, c, owner, podLabel(owner), &owner.Status.RestoreProgress)
 	require.NoError(t, err)
 	assert.False(t, asked.Done, "the look that asks for the delete cannot report the pods gone")
 	assert.Positive(t, asked.Wait)
@@ -136,7 +138,7 @@ func TestCollectJobsRemovesEveryJobOfACompletedRestore(t *testing.T) {
 	require.NoError(t, c.List(ctx, &left, client.InNamespace("ns")))
 	assert.Empty(t, left.Items)
 
-	done, err := CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress)
+	done, err := CollectJobs(ctx, c, c, owner, podLabel(owner), &owner.Status.RestoreProgress)
 	require.NoError(t, err)
 	assert.Equal(t, Outcome{Done: true}, done)
 
@@ -172,7 +174,7 @@ func TestCollectJobsKeepsTheJobsOfAFailedRestore(t *testing.T) {
 	)
 
 	ctx := context.Background()
-	collected, err := CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress)
+	collected, err := CollectJobs(ctx, c, c, owner, podLabel(owner), &owner.Status.RestoreProgress)
 	require.NoError(t, err)
 	assert.Equal(t, Outcome{Done: true}, collected, "a failed restore has nothing to collect")
 
@@ -193,7 +195,7 @@ func TestCollectJobsTreatsAMissingJobAsDone(t *testing.T) {
 	c := collectWorld(t, recorder, recordedJob("my-cluster-pitr-pitr-1", owner.UID))
 
 	ctx := context.Background()
-	asked, err := CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress)
+	asked, err := CollectJobs(ctx, c, c, owner, podLabel(owner), &owner.Status.RestoreProgress)
 	require.NoError(t, err)
 	assert.False(t, asked.Done, "one recorded Job was still here")
 
@@ -201,10 +203,57 @@ func TestCollectJobsTreatsAMissingJobAsDone(t *testing.T) {
 	// nothing are complete already.
 	assert.Equal(t, []string{"my-cluster-pitr-pitr-1"}, keysOf(recorder.options))
 
-	done, err := CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress)
+	done, err := CollectJobs(ctx, c, c, owner, podLabel(owner), &owner.Status.RestoreProgress)
 	require.NoError(t, err)
 	assert.Equal(t, Outcome{Done: true}, done)
 	assert.Equal(t, []string{"my-cluster-pitr-pitr-1"}, keysOf(recorder.options))
+}
+
+// kubectl delete job propagates in the background, so the Job is gone while
+// its pod still mounts the broker volume.
+func TestCollectJobsWaitsForThePodOfABackgroundDeletedJob(t *testing.T) {
+	t.Parallel()
+
+	owner := terminalOwner(v1.ReasonCompleted)
+	c := collectWorld(t, newDeleteRecorder())
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Name:      "my-cluster-pitr-pitr-0-abcde",
+		Namespace: "ns",
+		Labels:    JobLabels(podLabel(owner), "my-cluster"),
+	}}
+	ctx := context.Background()
+	require.NoError(t, c.Create(ctx, pod))
+
+	collected, err := CollectJobs(ctx, c, c, owner, podLabel(owner), &owner.Status.RestoreProgress)
+	require.NoError(t, err)
+	assert.False(t, collected.Done, "the pod still holds the broker volume")
+	assert.Positive(t, collected.Wait)
+
+	require.NoError(t, c.Delete(ctx, pod))
+
+	collected, err = CollectJobs(ctx, c, c, owner, podLabel(owner), &owner.Status.RestoreProgress)
+	require.NoError(t, err)
+	assert.Equal(t, Outcome{Done: true}, collected)
+}
+
+// A logical RDBMS restore keeps its database Job, and that Job carries the
+// owner label too. Its pod mounts no broker volume.
+func TestCollectJobsIgnoresThePodOfAnotherJobOfTheRestore(t *testing.T) {
+	t.Parallel()
+
+	owner := terminalOwner(v1.ReasonCompleted)
+	c := collectWorld(t, newDeleteRecorder())
+	label := podLabel(owner)
+	ctx := context.Background()
+	require.NoError(t, c.Create(ctx, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Name:      "my-cluster-pitr-load-abcde",
+		Namespace: "ns",
+		Labels:    labels.Managed(label, "database-load"),
+	}}))
+
+	collected, err := CollectJobs(ctx, c, c, owner, label, &owner.Status.RestoreProgress)
+	require.NoError(t, err)
+	assert.Equal(t, Outcome{Done: true}, collected)
 }
 
 // A restore that somebody deleted and created again under one name derives
@@ -222,7 +271,7 @@ func TestCollectJobsLeavesAJobOfAnotherOwner(t *testing.T) {
 	)
 
 	ctx := context.Background()
-	collected, err := CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress)
+	collected, err := CollectJobs(ctx, c, c, owner, podLabel(owner), &owner.Status.RestoreProgress)
 	require.NoError(t, err)
 	assert.Equal(t, Outcome{Done: true}, collected, "a Job of another owner is not this restore's")
 
@@ -248,7 +297,7 @@ func TestCollectJobsSkipsAJobThatAlreadyTerminates(t *testing.T) {
 	c := collectWorld(t, recorder, terminating)
 
 	ctx := context.Background()
-	collected, err := CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress)
+	collected, err := CollectJobs(ctx, c, c, owner, podLabel(owner), &owner.Status.RestoreProgress)
 	require.NoError(t, err)
 
 	assert.Empty(t, recorder.options)
@@ -287,7 +336,7 @@ func TestCollectJobsAcceptsAConflictOnTheDelete(t *testing.T) {
 		}).
 		Build()
 
-	collected, err := CollectJobs(context.Background(), c, c, owner, &owner.Status.RestoreProgress)
+	collected, err := CollectJobs(context.Background(), c, c, owner, podLabel(owner), &owner.Status.RestoreProgress)
 	require.NoError(t, err)
 	assert.False(t, collected.Done, "the Job of the winner is read again on the next look")
 }
