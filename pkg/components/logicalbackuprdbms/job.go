@@ -478,9 +478,9 @@ func JobBelongsTo(job *batchv1.Job, backup *v1.LogicalBackupRDBMS) bool {
 // ReservedEnv returns the names in the extraEnv of a per-backup dump block
 // that the Job reserves for itself, in the order they appear. A reserved
 // name is any name under a reserved prefix. It returns nothing when the
-// block is clean. The controller rejects a per-backup block that names one
-// at admission, with the names in the message. Callers run it on the
-// backup's own spec.dump, never on the cluster's block.
+// block is clean. The CRD schema enforces the same rule. This function is
+// the second layer. Callers run it on the backup's own spec.dump, never on
+// the cluster's block.
 func ReservedEnv(dump *v1.DumpPodSpec) []string {
 	if dump == nil {
 		return nil

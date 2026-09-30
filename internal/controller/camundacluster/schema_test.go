@@ -214,6 +214,15 @@ var _ = Describe("CamundaCluster schema", func() {
 		Entry("accepts the minimal doc example", minimalCamundaCluster, func(*v1.CamundaCluster) {}, ""),
 		Entry("accepts the realistic doc example", realisticCamundaCluster, func(*v1.CamundaCluster) {}, ""),
 		Entry(
+			"accepts a PG* name in the cluster's own backup dump extraEnv",
+			minimalCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.Backup = &v1.ClusterBackupSpec{Dump: &v1.BackupDumpSpec{DumpPodSpec: v1.DumpPodSpec{
+					ExtraEnv: []corev1.EnvVar{{Name: "PGOPTIONS", Value: "-c statement_timeout=0"}},
+				}}}
+			},
+			"",
+		),
+		Entry(
 			"rejects a missing storageRef",
 			minimalCamundaCluster, func(o *v1.CamundaCluster) { o.Spec.StorageRef = "" },
 			"spec.storageRef is required",
