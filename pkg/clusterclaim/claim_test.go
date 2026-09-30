@@ -702,9 +702,8 @@ func TestHolderActive(t *testing.T) {
 	}
 }
 
-// The message names a holder of this operator by its kind and name, without
-// the UID. A holder that no claimant can take over names the Lease instead,
-// because only its deletion lets the waiter start.
+// The message names a holder by its kind and name, without the UID. A holder
+// that no claimant can take over makes the message name the Lease instead.
 func TestWaitMessage(t *testing.T) {
 	held := clusterclaim.WaitMessage(first.String(), claimNamespace, "prod", "backup")
 	assert.Contains(t, held, first.Display()+" holds CamundaCluster "+claimNamespace+"/prod")
@@ -716,4 +715,7 @@ func TestWaitMessage(t *testing.T) {
 	assert.Contains(t, foreign, clusterclaim.ClaimLeaseName("prod"))
 	assert.Contains(t, foreign, "This restore waits until you delete that Lease")
 	assert.NotContains(t, foreign, "no longer holds the cluster")
+
+	unknown := clusterclaim.WaitMessage("Unknown/x/uid-x", claimNamespace, "prod", "backup")
+	assert.Contains(t, unknown, "This backup waits until you delete that Lease")
 }

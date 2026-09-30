@@ -326,8 +326,8 @@ func (c Claimant) Display() string {
 // names the kind of operation that waits, such as "backup" or "restore".
 func WaitMessage(holder, namespace, cluster, waiter string) string {
 	parsed, err := ParseClaimant(holder)
-	if err != nil {
-		// No claimant takes over a Lease that names no claimant.
+	if _, known := holderKinds[parsed.Kind]; err != nil || !known {
+		// No claimant takes over a Lease whose holder it cannot read.
 		return fmt.Sprintf(
 			"The claim Lease %s/%s of CamundaCluster %s/%s names the holder %q, which is not a backup "+
 				"or restore of this operator. This %s waits until you delete that Lease",
