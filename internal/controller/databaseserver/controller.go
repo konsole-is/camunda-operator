@@ -2047,12 +2047,7 @@ func (r *DatabaseServerReconciler) podMonitorSupported() bool {
 	return r.served("monitoring.coreos.com", "PodMonitor", "v1")
 }
 
-// SetupWithManager registers the controller, ownership watches on the
-// CloudNativePG cluster, the ObjectStore, the ScheduledBackup, the PodMonitor,
-// and the published contract, a preset watch through a field index on
-// spec.presetRef, watches on the archive bucket and its credentials Secret, and
-// watches on the base backups and data volume claims that CloudNativePG
-// creates.
+// SetupWithManager registers the controller and its watches with mgr.
 //
 // The CloudNativePG and Barman Cloud watches are registered only when the
 // cluster serves those kinds. An informer on a kind that the API server does
