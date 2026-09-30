@@ -315,10 +315,10 @@ status:
         LogicalBackupRDBMS/my-cluster-1748937221000 holds
         CamundaCluster my-cluster-ns/my-cluster. Only one backup or restore of
         a cluster runs at a time, so this restore starts when that operation
-        reaches a terminal phase
+        no longer holds the cluster
 ```
 
-Nothing limits this wait, and you do not act. A failed `LogicalRestoreElasticsearch` also keeps the cluster while its `status.recoveryHeld` is `true`.
+Nothing limits this wait, and usually you do not act. If the message names a claim Lease to delete, no backup or restore of the operator holds it. Delete that Lease, and the restore starts. A failed `LogicalRestoreElasticsearch` also keeps the cluster while its `status.recoveryHeld` is `true`.
 
 ### A failed restore holds the broker volumes
 

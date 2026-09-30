@@ -34,6 +34,8 @@ type Storage struct {
 	// endpoint resolves there, so the claim key qualifies it with this
 	// namespace, see StorageClaimKey.
 	Namespace string
+	// Name is the name of the SecondaryStorageConfig. See StorageContract.
+	Name string
 	// Elasticsearch is set when Type is elasticsearch.
 	Elasticsearch *v1.ElasticsearchStorage
 	// RDBMS is set when Type is rdbms.
@@ -157,10 +159,11 @@ type EffectiveAuth struct {
 	// Method is basic or oidc.
 	Method v1.AuthenticationMethod
 	// OIDC is set when Method is oidc. The issuer and endpoint fields come
-	// from the platform config. The client id, the audience, and the client
-	// secret reference come from the cluster auth (already merged with the
-	// preset auth) when set, otherwise from the platform config. The
-	// audience defaults to the client id.
+	// from the platform config. When the effective cluster auth sets a client
+	// id, the client id, the audience, and the client secret reference come
+	// from it only. Otherwise each of the three comes from the effective
+	// cluster auth when set, else from the platform config. The audience
+	// defaults to the client id.
 	OIDC *v1.OIDCSpec
 	// Admin holds the members of the admin role. It comes from the effective
 	// cluster auth and is set only when Method is oidc, because basic
@@ -185,7 +188,8 @@ func ResolveAdminEmail(auth EffectiveAuth) string {
 // ResolveAuth layers the authentication settings: the platform config gives
 // the method and the identity provider connection, the effective cluster
 // auth (preset then cluster) overrides the client id, the audience, and the
-// client secret reference, and provides the members of the admin role.
+// client secret reference as EffectiveAuth.OIDC states, and provides the
+// members of the admin role.
 // Under basic authentication the effective cluster auth provides the basic
 // block instead. The platform spec is not mutated.
 func ResolveAuth(in Input) EffectiveAuth {
@@ -203,9 +207,10 @@ func ResolveAuth(in Input) EffectiveAuth {
 	oidc := in.Platform.Auth.OIDC.DeepCopy()
 	if override := in.Effective.Auth; override != nil {
 		if override.ClientID != "" {
+			// The platform audience and secret belong to the platform client.
 			oidc.ClientID = override.ClientID
-			// The platform audience belongs to the platform client id.
 			oidc.Audience = ""
+			oidc.ClientSecretRef = v1.SecretKeyRef{}
 		}
 		if override.Audience != "" {
 			oidc.Audience = override.Audience

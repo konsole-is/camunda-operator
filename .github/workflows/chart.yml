@@ -22,10 +22,11 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # Versions below are pinned to .tool-versions. Keep them in sync.
+      # kubebuilder and kind install the versions of .tool-versions, so a
+      # Renovate update of that file moves CI too.
       - name: Install kubebuilder
         run: |
-          VERSION=4.13.1
+          VERSION=$(awk '$1 == "kubebuilder" { print $2 }' .tool-versions)
           OS=$(go env GOOS)
           ARCH=$(go env GOARCH)
           curl -fsSL -o kubebuilder \
@@ -48,7 +49,7 @@ jobs:
 
       - name: Install kind
         run: |
-          VERSION=0.31.0
+          VERSION=$(awk '$1 == "kind" { print $2 }' .tool-versions)
           curl -fsSLo ./kind --retry 5 --retry-delay 10 --retry-all-errors \
             "https://kind.sigs.k8s.io/dl/v${VERSION}/kind-linux-$(go env GOARCH)"
           chmod +x ./kind
@@ -57,15 +58,15 @@ jobs:
 
       # Pinned so the Kubernetes version CI exercises is visible here rather
       # than implied by the kind release. Must be a node image published for
-      # the kind version above; bump both together.
+      # the kind version in .tool-versions; bump both together.
       #
-      # This is 1.35, matching kubectl in .tool-versions. Chart.yaml declares
-      # kubeVersion ">= 1.30.0-0", which CI does not exercise — kind 0.31.0
-      # publishes no 1.30 node image (its oldest is v1.31.14).
+      # This is 1.37, matching kubectl in .tool-versions. Chart.yaml declares
+      # kubeVersion ">= 1.30.0-0", which CI does not exercise — kind 0.33.0
+      # publishes no 1.30 node image (its oldest is v1.34.11).
       - name: Create kind cluster
         run: |
           kind create cluster --image \
-            kindest/node:v1.35.0@sha256:452d707d4862f52530247495d180205e029056831160e22870e37e3f6c1ac31f
+            kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
 
       - name: Build and load the operator image
         run: |
