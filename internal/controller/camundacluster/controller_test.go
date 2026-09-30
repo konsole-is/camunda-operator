@@ -285,17 +285,22 @@ func expectEvent(
 }
 
 // countEvents returns the number of times an event with the given reason was
-// recorded for cluster: the sum of the counts of the matching Event objects,
-// because the recorder aggregates repeats of the same event into one object.
+// recorded for cluster. The recorder folds repeats of one event into one
+// object and counts them in its series.
 func countEvents(g Gomega, cluster *v1.CamundaCluster, reason string) int32 {
 	GinkgoHelper()
 	var events corev1.EventList
 	g.Expect(k8sClient.List(ctx, &events, client.InNamespace(cluster.Namespace))).To(Succeed())
 	var count int32
 	for _, event := range events.Items {
-		if event.Reason == reason && event.InvolvedObject.Name == cluster.Name {
-			count += max(event.Count, 1)
+		if event.Reason != reason || event.InvolvedObject.Name != cluster.Name {
+			continue
 		}
+		times := max(event.Count, 1)
+		if event.Series != nil {
+			times = max(times, event.Series.Count)
+		}
+		count += times
 	}
 	return count
 }
@@ -1485,13 +1490,39 @@ var _ = Describe("CamundaCluster controller", func() {
 			g.Expect(claimTemplateClass(&latest)).To(Equal(new("class-a")))
 		}, 2*time.Second, interval).Should(Succeed())
 
+		By("removing the class from the preset: the annotation goes, with one event for the request")
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaClusterPreset
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preset), &latest)).To(Succeed())
+			latest.Spec.Cluster.Zeebe.StorageClassName = nil
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			var latest appsv1.StatefulSet
+			g.Expect(k8sClient.Get(ctx, zeebeKey, &latest)).To(Succeed())
+			g.Expect(latest.Annotations).NotTo(HaveKey(components.RequestedStorageClassAnnotation))
+		}, timeout, interval).Should(Succeed())
+		updatePresetStorageSize(preset, "30Gi")
+		Eventually(func(g Gomega) {
+			var latest appsv1.StatefulSet
+			g.Expect(k8sClient.Get(ctx, zeebeKey, &latest)).To(Succeed())
+			g.Expect(latest.Annotations).To(HaveKeyWithValue(components.RequestedStorageSizeAnnotation, "30Gi"))
+			g.Expect(countEvents(g, cluster, "StorageClassChangeIgnored")).To(Equal(int32(2)))
+		}, timeout, interval).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(countEvents(g, cluster, "StorageClassChangeIgnored")).To(Equal(int32(2)))
+			var latest appsv1.StatefulSet
+			g.Expect(k8sClient.Get(ctx, zeebeKey, &latest)).To(Succeed())
+			g.Expect(claimTemplateClass(&latest)).To(Equal(new("class-a")))
+		}, 2*time.Second, interval).Should(Succeed())
+
 		By("adding a different inline class: admission accepts it, and the template keeps its class")
 		updateCluster(cluster, func(c *v1.CamundaCluster) {
 			c.Spec.Zeebe = &v1.ZeebeSpec{StorageClassName: new("class-c")}
 		})
 		expectRequestedStorageClass(zeebeKey, "class-c")
 		Eventually(func(g Gomega) {
-			g.Expect(countEvents(g, cluster, "StorageClassChangeIgnored")).To(Equal(int32(2)))
+			g.Expect(countEvents(g, cluster, "StorageClassChangeIgnored")).To(Equal(int32(3)))
 		}, timeout, interval).Should(Succeed())
 		Consistently(func(g Gomega) {
 			var latest appsv1.StatefulSet
