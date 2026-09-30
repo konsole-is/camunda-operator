@@ -166,6 +166,7 @@ func expectRetainingPolicy(cluster *v1.ElasticsearchCluster) {
 // carries size as its requested storage size annotation.
 func expectRequestedStorageSize(cluster *v1.ElasticsearchCluster, size string) {
 	GinkgoHelper()
+
 	Eventually(func(g Gomega) {
 		var es esv1.Elasticsearch
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())
@@ -177,6 +178,7 @@ func expectRequestedStorageSize(cluster *v1.ElasticsearchCluster, size string) {
 // reports that generation, so one more reconcile has run.
 func reconcileClusterAgain(cluster *v1.ElasticsearchCluster) {
 	GinkgoHelper()
+
 	var generation int64
 	Eventually(func(g Gomega) {
 		var latest v1.ElasticsearchCluster
@@ -185,6 +187,7 @@ func reconcileClusterAgain(cluster *v1.ElasticsearchCluster) {
 		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 		generation = latest.Generation
 	}, timeout, interval).Should(Succeed())
+
 	Eventually(func(g Gomega) {
 		var latest v1.ElasticsearchCluster
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
@@ -197,8 +200,10 @@ func reconcileClusterAgain(cluster *v1.ElasticsearchCluster) {
 // counts them in its series.
 func countEvents(g Gomega, cluster *v1.ElasticsearchCluster, reason string) int32 {
 	GinkgoHelper()
+
 	var recorded corev1.EventList
 	g.Expect(k8sClient.List(ctx, &recorded, client.InNamespace(cluster.Namespace))).To(Succeed())
+
 	var count int32
 	for _, event := range recorded.Items {
 		if event.Reason != reason || event.InvolvedObject.Name != cluster.Name {
@@ -210,6 +215,7 @@ func countEvents(g Gomega, cluster *v1.ElasticsearchCluster, reason string) int3
 		}
 		count += times
 	}
+
 	return count
 }
 
