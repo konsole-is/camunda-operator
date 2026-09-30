@@ -138,8 +138,8 @@ type PITRCapability struct {
 	// restore can go. Required when enabled is true.
 	//
 	// The maximum is 36500 days, which is a hundred years. A reader counts
-	// the reachable window in nanoseconds. A longer period overflows that
-	// count, so no restore can reach a point.
+	// the reachable window in nanoseconds, and that count overflows at about
+	// 292 years. The maximum stays well below that limit.
 	// +kubebuilder:validation:Maximum=36500
 	// +optional
 	RetentionPeriodDays *int32 `json:"retentionPeriodDays,omitempty"`

@@ -347,9 +347,11 @@ for a resource name or a label value, the operator shortens it. Then it
 adds a hash of the full name, so two long names stay different.
 
 The backups have no owner reference to the schedule, so a deletion of the
-schedule never deletes its backups. The schedule skips a trigger while the
-cluster is suspended, or while a backup of this schedule is not in a final
-phase. It records an event for each skipped trigger.
+schedule never deletes its backups. The schedule skips a trigger while a
+reference does not resolve, and the Ready condition shows the reason. It
+also skips a trigger while the cluster is suspended or cannot start a
+backup yet. It skips a trigger too while a backup of this schedule is not
+in a final phase. It records an event for each of these skips.
 
 
 
@@ -1177,7 +1179,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `objectStorageRef` _string_ | ObjectStorageRef names an ObjectStorageConfig in the namespace of this<br />server. The operator writes the archive under a prefix of that bucket<br />that only this server uses. |  | MaxLength: 253 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br /> |
-| `retentionPeriodDays` _integer_ | RetentionPeriodDays is how far into the past a restore can reach. The<br />operator enforces this value on the bucket, and the contract of this<br />server publishes the same value.<br />The maximum is 36500 days, which is a hundred years. The operator counts<br />the reachable window in nanoseconds. A longer period overflows that<br />count, so no restore request can reach a point. |  | Maximum: 36500 <br />Minimum: 1 <br /> |
+| `retentionPeriodDays` _integer_ | RetentionPeriodDays is how far into the past a restore can reach. The<br />operator enforces this value on the bucket, and the contract of this<br />server publishes the same value.<br />The maximum is 36500 days, which is a hundred years. The operator counts<br />the reachable window in nanoseconds, and that count overflows at about<br />292 years. The maximum stays well below that limit. |  | Maximum: 36500 <br />Minimum: 1 <br /> |
 | `baseBackupSchedule` _string_ | BaseBackupSchedule is when the server takes a base backup. It is the<br />six-field cron of CloudNativePG (seconds first, in UTC), or one of the<br />descriptors @yearly, @annually, @monthly, @weekly, @daily, @midnight,<br />@hourly and @every. The first base backup runs as soon as the server is<br />up, whatever the schedule says. A recovery from the archive is possible<br />only after that backup completes.<br />The API server refuses the five-field cron of a Kubernetes CronJob.<br />CloudNativePG reads the first field as seconds, so a five-field value<br />runs at a different time than intended.<br />Each field has the bounds that CloudNativePG accepts. Seconds and<br />minutes take 0-59, and hours take 0-23. The day of the month takes<br />1-31, and the month takes 1-12 or JAN-DEC. The day of the week takes<br />0-6 or SUN-SAT. The schema cannot find a range whose first value is<br />above its second, such as FRI-MON. The operator refuses such a range<br />with Ready reason InvalidReference, before it applies anything.<br />A step has at most three digits. An @every number has at most six<br />digits on each side of the point. These limits are stricter than the<br />parser of CloudNativePG. That parser accepts a longer number, then<br />overflows and stops taking base backups. | 0 0 2 * * * | Pattern: `^(\s*([*?]\|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d\{0,2\})?(,([*?]\|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d\{0,2\})?)*\s+([*?]\|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d\{0,2\})?(,([*?]\|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d\{0,2\})?)*\s+([*?]\|([01]?\d\|2[0-3])(-([01]?\d\|2[0-3]))?)(/[1-9]\d\{0,2\})?(,([*?]\|([01]?\d\|2[0-3])(-([01]?\d\|2[0-3]))?)(/[1-9]\d\{0,2\})?)*\s+([*?]\|([1-9]\|[12]\d\|3[01])(-([1-9]\|[12]\d\|3[01]))?)(/[1-9]\d\{0,2\})?(,([*?]\|([1-9]\|[12]\d\|3[01])(-([1-9]\|[12]\d\|3[01]))?)(/[1-9]\d\{0,2\})?)*\s+([*?]\|([1-9]\|1[0-2]\|[Jj]([Aa][Nn]\|[Uu][LlNn])\|[Ff][Ee][Bb]\|[Mm][Aa][RrYy]\|[Aa]([Pp][Rr]\|[Uu][Gg])\|[Ss][Ee][Pp]\|[Oo][Cc][Tt]\|[Nn][Oo][Vv]\|[Dd][Ee][Cc])(-([1-9]\|1[0-2]\|[Jj]([Aa][Nn]\|[Uu][LlNn])\|[Ff][Ee][Bb]\|[Mm][Aa][RrYy]\|[Aa]([Pp][Rr]\|[Uu][Gg])\|[Ss][Ee][Pp]\|[Oo][Cc][Tt]\|[Nn][Oo][Vv]\|[Dd][Ee][Cc]))?)(/[1-9]\d\{0,2\})?(,([*?]\|([1-9]\|1[0-2]\|[Jj]([Aa][Nn]\|[Uu][LlNn])\|[Ff][Ee][Bb]\|[Mm][Aa][RrYy]\|[Aa]([Pp][Rr]\|[Uu][Gg])\|[Ss][Ee][Pp]\|[Oo][Cc][Tt]\|[Nn][Oo][Vv]\|[Dd][Ee][Cc])(-([1-9]\|1[0-2]\|[Jj]([Aa][Nn]\|[Uu][LlNn])\|[Ff][Ee][Bb]\|[Mm][Aa][RrYy]\|[Aa]([Pp][Rr]\|[Uu][Gg])\|[Ss][Ee][Pp]\|[Oo][Cc][Tt]\|[Nn][Oo][Vv]\|[Dd][Ee][Cc]))?)(/[1-9]\d\{0,2\})?)*\s+([*?]\|([0-6]\|[Ss]([Uu][Nn]\|[Aa][Tt])\|[Mm][Oo][Nn]\|[Tt]([Uu][Ee]\|[Hh][Uu])\|[Ww][Ee][Dd]\|[Ff][Rr][Ii])(-([0-6]\|[Ss]([Uu][Nn]\|[Aa][Tt])\|[Mm][Oo][Nn]\|[Tt]([Uu][Ee]\|[Hh][Uu])\|[Ww][Ee][Dd]\|[Ff][Rr][Ii]))?)(/[1-9]\d\{0,2\})?(,([*?]\|([0-6]\|[Ss]([Uu][Nn]\|[Aa][Tt])\|[Mm][Oo][Nn]\|[Tt]([Uu][Ee]\|[Hh][Uu])\|[Ww][Ee][Dd]\|[Ff][Rr][Ii])(-([0-6]\|[Ss]([Uu][Nn]\|[Aa][Tt])\|[Mm][Oo][Nn]\|[Tt]([Uu][Ee]\|[Hh][Uu])\|[Ww][Ee][Dd]\|[Ff][Rr][Ii]))?)(/[1-9]\d\{0,2\})?)*\s*\|@((year\|annual\|month\|week\|dai\|hour)ly\|midnight\|every (\d\{1,6\}(\.\d\{1,6\})?[hms])+))$` <br />Optional: \{\} <br /> |
 
 
@@ -1623,8 +1625,8 @@ _Appears in:_
 | `observedGeneration` _integer_ | ObservedGeneration is the last generation that the operator processed. |  | Optional: \{\} <br /> |
 | `version` _string_ | Version is the Elasticsearch version that the cluster runs, as a full<br />semantic version. It comes from the merged spec, so it is correct when<br />the release, the preset, or the cluster gives the version. It is empty<br />until the operator resolves the references of the cluster for the first<br />time. |  | Optional: \{\} <br /> |
 | `volumes` _[VolumeStatus](#volumestatus) array_ | Volumes lists the bound data PersistentVolumeClaims of the cluster and<br />the capacity that each one reports, sorted by name. |  | Optional: \{\} <br /> |
-| `snapshotRepository` _string_ | SnapshotRepository is the snapshot repository that the operator<br />registered in Elasticsearch for this cluster. The published<br />SecondaryStorageConfig holds the same name. It is empty until the first<br />registration succeeds. Thus the contract never names a repository that<br />Elasticsearch does not have. |  | Optional: \{\} <br /> |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#condition-v1-meta) array_ | Conditions represent the current state. Ready holds the reason of a<br />failed pre-check (InvalidReference, MissingSecret, ECKNotInstalled).<br />Otherwise it follows the component conditions and<br />SnapshotRepositoryReady. The per-component conditions<br />(CredentialsReady, KeystoreReady, ElasticsearchReady,<br />StorageContractReady) also appear here. MetricsReady reports the<br />exporter and never affects Ready. |  | Optional: \{\} <br /> |
+| `snapshotRepository` _string_ | SnapshotRepository is the snapshot repository that the operator<br />registered in Elasticsearch for this cluster. The published<br />SecondaryStorageConfig holds the same name. It is empty until the first<br />registration succeeds. It shows the last registration that succeeded,<br />not a new check that the repository still exists. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#condition-v1-meta) array_ | Conditions represent the current state. Ready holds the reason of a<br />failed pre-check (InvalidReference, MissingSecret, ECKNotInstalled).<br />Otherwise it follows the component conditions and, when<br />spec.snapshotStorageRef is set, SnapshotRepositoryReady. The<br />per-component conditions (CredentialsReady, KeystoreReady,<br />ElasticsearchReady, StorageContractReady) also appear here. MetricsReady reports the<br />exporter and never affects Ready. |  | Optional: \{\} <br /> |
 
 
 #### ElasticsearchStorage
@@ -2326,7 +2328,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `phase` _[LogicalRestorePhase](#logicalrestorephase)_ | Phase is the phase of the restore. After an interruption, the restore<br />continues at this phase. |  | Enum: [Pending ValidatingCompatibility RestoringSecondaryStorage RestoringPrimaryStorage Completed Failed] <br />Optional: \{\} <br /> |
-| `backupId` _integer_ | BackupID is the backup that the restore reads. The operator records it<br />when the restore starts. If the backup resource is deleted later, the<br />restore still reads the same backup. |  | Optional: \{\} <br /> |
+| `backupId` _integer_ | BackupID is the backup that the restore reads. The operator records it<br />when the restore starts. A backup that is deleted and created again<br />with the same name has another ID, and this restore does not read it.<br />Later phases of the restore still read the backup resource, so keep it<br />until the restore completes. |  | Optional: \{\} <br /> |
 | `backend` _string_ | Backend is the Elasticsearch that the restore writes, as the scheme,<br />the host, and the port. The operator records it when the restore<br />starts. From then until the final phase, and after it while<br />recoveryHeld is true, no other CamundaCluster starts on this backend.<br />The restore waits while its target does not hold the backend. |  | Optional: \{\} <br /> |
 | `recoveryHeld` _boolean_ | RecoveryHeld is true while a failed or deleted restore keeps the<br />backend, because Elasticsearch can still recover snapshots that the<br />restore asked for. While it is true, no other CamundaCluster starts on<br />the backend, and the target stays suspended. No other backup or restore<br />of the target starts. A deleted restore stays while it is true. It is<br />unset on a restore that was never held, and false when the hold ends. |  | Optional: \{\} <br /> |
 | `recoveryUnknownSince` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | RecoveryUnknownSince is the time since when a held restore cannot read<br />the recovery from Elasticsearch. If the recovery stays unknown for ten<br />minutes, the restore releases the backend. |  | Optional: \{\} <br /> |
@@ -2876,7 +2878,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `enabled` _boolean_ | Enabled reports whether the server performs continuous WAL archiving. | false | Optional: \{\} <br /> |
-| `retentionPeriodDays` _integer_ | RetentionPeriodDays is how many days into the past a point-in-time<br />restore can go. Required when enabled is true.<br />The maximum is 36500 days, which is a hundred years. A reader counts<br />the reachable window in nanoseconds. A longer period overflows that<br />count, so no restore can reach a point. |  | Maximum: 36500 <br />Optional: \{\} <br /> |
+| `retentionPeriodDays` _integer_ | RetentionPeriodDays is how many days into the past a point-in-time<br />restore can go. Required when enabled is true.<br />The maximum is 36500 days, which is a hundred years. A reader counts<br />the reachable window in nanoseconds, and that count overflows at about<br />292 years. The maximum stays well below that limit. |  | Maximum: 36500 <br />Optional: \{\} <br /> |
 | `recovery` _[RecoveryMode](#recoverymode)_ | Recovery says who rolls the server back to a point in time. Defaults to<br />external. The value operator means that the publisher of this contract<br />answers spec.recovery. It requires enabled: true. The value external<br />means that nobody answers, and you roll the server back manually. | external | Enum: [operator external] <br />Optional: \{\} <br /> |
 | `lastRecovery` _[RecoveryOutcome](#recoveryoutcome)_ | LastRecovery is how the last recovery request ended. It is unset until<br />the first answer. The answer to each later request replaces it. |  | Optional: \{\} <br /> |
 
@@ -3471,7 +3473,9 @@ _Appears in:_
 RetainedBackups limits the backups that a schedule keeps, for each final
 phase. When the count of a phase is more than its limit, the operator
 deletes the oldest backups of that phase, down to the limit. The deletion
-also removes their stored backup data.
+also removes their stored backup data while the cluster and the bucket
+contract exist, and the contract points to the same place. Otherwise the
+data can stay.
 
 
 

@@ -86,8 +86,8 @@ type DatabaseServerArchiveSpec struct {
 	// server publishes the same value.
 	//
 	// The maximum is 36500 days, which is a hundred years. The operator counts
-	// the reachable window in nanoseconds. A longer period overflows that
-	// count, so no restore request can reach a point.
+	// the reachable window in nanoseconds, and that count overflows at about
+	// 292 years. The maximum stays well below that limit.
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=36500
 	RetentionPeriodDays int32 `json:"retentionPeriodDays"`

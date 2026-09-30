@@ -309,16 +309,16 @@ type ElasticsearchClusterStatus struct {
 	// SnapshotRepository is the snapshot repository that the operator
 	// registered in Elasticsearch for this cluster. The published
 	// SecondaryStorageConfig holds the same name. It is empty until the first
-	// registration succeeds. Thus the contract never names a repository that
-	// Elasticsearch does not have.
+	// registration succeeds. It shows the last registration that succeeded,
+	// not a new check that the repository still exists.
 	// +optional
 	SnapshotRepository string `json:"snapshotRepository,omitempty"`
 	// Conditions represent the current state. Ready holds the reason of a
 	// failed pre-check (InvalidReference, MissingSecret, ECKNotInstalled).
-	// Otherwise it follows the component conditions and
-	// SnapshotRepositoryReady. The per-component conditions
-	// (CredentialsReady, KeystoreReady, ElasticsearchReady,
-	// StorageContractReady) also appear here. MetricsReady reports the
+	// Otherwise it follows the component conditions and, when
+	// spec.snapshotStorageRef is set, SnapshotRepositoryReady. The
+	// per-component conditions (CredentialsReady, KeystoreReady,
+	// ElasticsearchReady, StorageContractReady) also appear here. MetricsReady reports the
 	// exporter and never affects Ready.
 	// +listType=map
 	// +listMapKey=type

@@ -46,7 +46,9 @@ type BackupScheduleSpec struct {
 // RetainedBackups limits the backups that a schedule keeps, for each final
 // phase. When the count of a phase is more than its limit, the operator
 // deletes the oldest backups of that phase, down to the limit. The deletion
-// also removes their stored backup data.
+// also removes their stored backup data while the cluster and the bucket
+// contract exist, and the contract points to the same place. Otherwise the
+// data can stay.
 type RetainedBackups struct {
 	// Completed is how many completed backups the schedule keeps.
 	// +kubebuilder:default=7
@@ -102,9 +104,11 @@ type BackupScheduleStatus struct {
 // adds a hash of the full name, so two long names stay different.
 //
 // The backups have no owner reference to the schedule, so a deletion of the
-// schedule never deletes its backups. The schedule skips a trigger while the
-// cluster is suspended, or while a backup of this schedule is not in a final
-// phase. It records an event for each skipped trigger.
+// schedule never deletes its backups. The schedule skips a trigger while a
+// reference does not resolve, and the Ready condition shows the reason. It
+// also skips a trigger while the cluster is suspended or cannot start a
+// backup yet. It skips a trigger too while a backup of this schedule is not
+// in a final phase. It records an event for each of these skips.
 type BackupSchedule struct {
 	metav1.TypeMeta `json:",inline"`
 

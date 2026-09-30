@@ -52,9 +52,11 @@ spec:
           adds a hash of the full name, so two long names stay different.
 
           The backups have no owner reference to the schedule, so a deletion of the
-          schedule never deletes its backups. The schedule skips a trigger while the
-          cluster is suspended, or while a backup of this schedule is not in a final
-          phase. It records an event for each skipped trigger.
+          schedule never deletes its backups. The schedule skips a trigger while a
+          reference does not resolve, and the Ready condition shows the reason. It
+          also skips a trigger while the cluster is suspended or cannot start a
+          backup yet. It skips a trigger too while a backup of this schedule is not
+          in a final phase. It records an event for each of these skips.
         properties:
           apiVersion:
             description: |-
