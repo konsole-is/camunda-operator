@@ -207,10 +207,10 @@ func (r *Reconciler) readRecovery(
 	snapshots := lres.Status.RestoredSnapshots
 	optimize := len(snapshots) == 0 || logicalbackup.HasOptimizeSnapshot(snapshots)
 
-	state, err := admin.RestoreProgress(ctx, logicalbackup.CamundaIndexPatterns(optimize))
+	progress, err := admin.RestoreProgress(ctx, logicalbackup.CamundaIndexPatterns(optimize))
 	if err != nil {
 		return false, elasticsearchFailure("reading the recovery of the restored indices", err), nil
 	}
 
-	return state == esadmin.RestoreInProgress, nil, nil
+	return progress.State == esadmin.RestoreInProgress, nil, nil
 }

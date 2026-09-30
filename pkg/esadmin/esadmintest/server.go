@@ -42,6 +42,7 @@ const resolveWildcards = "open,closed"
 var routingFilter = []string{
 	"routing_table.indices.*.shards.*.state",
 	"routing_table.indices.*.shards.*.primary",
+	"routing_table.indices.*.shards.*.recovery_source.type",
 	"routing_table.indices.*.shards.*.unassigned_info.reason",
 	"routing_table.indices.*.shards.*.unassigned_info.allocation_status",
 }
@@ -91,6 +92,9 @@ type Shard struct {
 	Primary bool
 	// State in the Elasticsearch vocabulary, for example INITIALIZING.
 	State string
+	// RecoverySource is the type of the recovery source, for example SNAPSHOT
+	// for a primary that a restore brings back. Empty reports none.
+	RecoverySource string
 	// UnassignedReason of an UNASSIGNED copy, for example NEW_INDEX_RESTORED.
 	UnassignedReason string
 	// AllocationStatus of an UNASSIGNED copy, for example deciders_no.
@@ -728,6 +732,9 @@ func (s *Server) handleRoutingTable(w http.ResponseWriter, r *http.Request, targ
 				"primary": shard.Primary,
 				"shard":   0,
 				"index":   name,
+			}
+			if shard.RecoverySource != "" {
+				entry["recovery_source"] = map[string]any{"type": shard.RecoverySource}
 			}
 			if shard.UnassignedReason != "" {
 				entry["unassigned_info"] = map[string]any{

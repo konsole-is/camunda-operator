@@ -227,23 +227,45 @@ func (r *Reconciler) trackRestore(
 		return restore.Outcome{Wait: r.opts.PollInterval}, nil
 	}
 
-	state, err := admin.RestoreProgress(ctx, patterns)
+	progress, err := admin.RestoreProgress(ctx, patterns)
 	if err != nil {
 		return r.holdStarted(lres, elasticsearchFailure(
 			"reading the recovery of the restored indices", err,
 		)), nil
 	}
 
-	if state == esadmin.RestoreInProgress {
+	switch progress.State {
+	case esadmin.RestoreInProgress:
 		r.progressing(lres, "Elasticsearch is still recovering the restored indices")
 
 		return restore.Outcome{Wait: r.opts.PollInterval}, nil
+	case esadmin.RestoreStranded:
+		r.fail(lres, v1.ReasonFailed, strandedMessage(progress.Stranded))
+
+		return restore.Outcome{}, nil
 	}
 
 	lres.Status.Phase = v1.LogicalRestoreRestoringPrimaryStorage
 	r.progressing(lres, "the secondary storage is restored. The broker volumes come next")
 
 	return restore.Outcome{Wait: restore.Shortly}, nil
+}
+
+// strandedMessage says which restored primary gets no node, and where the
+// user finds out why. It names the first one only, because a full disk can
+// strand every index of the restore.
+func strandedMessage(stranded []esadmin.StrandedShard) string {
+	first := stranded[0]
+	message := fmt.Sprintf(
+		"Elasticsearch gives no node to shard %d of the restored index %s "+
+			"(unassigned reason %s, allocation status %s), so the index stays red",
+		first.Shard, first.Index, first.Reason, first.AllocationStatus,
+	)
+	if more := len(stranded) - 1; more > 0 {
+		message += fmt.Sprintf(". %d more restored primary shards get no node", more)
+	}
+
+	return message + ". GET _cluster/allocation/explain tells you why"
 }
 
 // restoredIndexPatterns are the index patterns that the restore replaces on

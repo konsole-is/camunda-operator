@@ -198,20 +198,20 @@ func TestRestoreProgressFollowsTheRecovery(t *testing.T) {
 	patterns := []string{"camunda-record*", "operate-list"}
 
 	server.SetRecoveryActive(true)
-	state, err := client.RestoreProgress(ctx, patterns)
+	progress, err := client.RestoreProgress(ctx, patterns)
 	require.NoError(t, err)
-	assert.Equal(t, esadmin.RestoreInProgress, state)
+	assert.Equal(t, esadmin.RestoreInProgress, progress.State)
 
 	server.SetRecoveryActive(false)
-	state, err = client.RestoreProgress(ctx, patterns)
+	progress, err = client.RestoreProgress(ctx, patterns)
 	require.NoError(t, err)
-	assert.Equal(t, esadmin.RestoreDone, state)
+	assert.Equal(t, esadmin.RestoreDone, progress.State)
 
 	server.FailNext("recovery", 1)
 	server.FailNext("shards", 1)
-	state, err = client.RestoreProgress(ctx, nil)
+	progress, err = client.RestoreProgress(ctx, nil)
 	require.NoError(t, err)
-	assert.Equal(t, esadmin.RestoreDone, state)
+	assert.Equal(t, esadmin.RestoreDone, progress.State)
 }
 
 func TestRestoreProgressMapsBothErrorClasses(t *testing.T) {
@@ -233,14 +233,20 @@ func TestRestoreProgressMapsBothErrorClasses(t *testing.T) {
 }
 
 // A restored index can hold a shard that Elasticsearch has not started to
-// recover yet: it is initializing before its recovery is registered, or it
-// waits for allocation. No recovery reports it, and it still reads as in
-// progress. A shard that no node will take must not keep the restore waiting:
-// an unassigned replica on a single node, or a primary that the allocation
-// deciders refuse.
+// recover yet: it is initializing before its recovery is registered, it waits
+// for allocation, or it waits for the retry of a failed recovery. No recovery
+// reports it, and it still reads as in progress. An unassigned replica does
+// not keep the restore waiting, and neither does a primary that does not
+// recover from a snapshot.
 func TestRestoreProgressCountsAShardThatHasNotStarted(t *testing.T) {
 	patterns := []string{"camunda-record*"}
 	started := esadmintest.Shard{Primary: true, State: "STARTED"}
+	restoredPrimary := func(reason, allocation string) esadmintest.Shard {
+		return esadmintest.Shard{
+			Primary: true, State: "UNASSIGNED", RecoverySource: "SNAPSHOT",
+			UnassignedReason: reason, AllocationStatus: allocation,
+		}
+	}
 
 	tests := []struct {
 		name   string
@@ -258,76 +264,48 @@ func TestRestoreProgressCountsAShardThatHasNotStarted(t *testing.T) {
 			want:   esadmin.RestoreInProgress,
 		},
 		{
-			name: "a primary of a new index that waits for allocation",
-			shards: []esadmintest.Shard{{
-				Primary: true, State: "UNASSIGNED",
-				UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "no_attempt",
-			}},
-			want: esadmin.RestoreInProgress,
+			name:   "a primary of a new index that waits for allocation",
+			shards: []esadmintest.Shard{restoredPrimary("NEW_INDEX_RESTORED", "no_attempt")},
+			want:   esadmin.RestoreInProgress,
 		},
 		{
-			name: "a primary of an existing index that waits for allocation",
-			shards: []esadmintest.Shard{{
-				Primary: true, State: "UNASSIGNED",
-				UnassignedReason: "EXISTING_INDEX_RESTORED", AllocationStatus: "no_attempt",
-			}},
-			want: esadmin.RestoreInProgress,
+			name:   "a primary of an existing index that waits for allocation",
+			shards: []esadmintest.Shard{restoredPrimary("EXISTING_INDEX_RESTORED", "no_attempt")},
+			want:   esadmin.RestoreInProgress,
 		},
 		{
-			name: "a restored primary that the allocation throttle holds back",
-			shards: []esadmintest.Shard{{
-				Primary: true, State: "UNASSIGNED",
-				UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "deciders_throttled",
-			}},
-			want: esadmin.RestoreInProgress,
+			name:   "a restored primary that the allocation throttle holds back",
+			shards: []esadmintest.Shard{restoredPrimary("NEW_INDEX_RESTORED", "deciders_throttled")},
+			want:   esadmin.RestoreInProgress,
 		},
 		{
-			name: "a restored primary whose allocation is delayed",
-			shards: []esadmintest.Shard{{
-				Primary: true, State: "UNASSIGNED",
-				UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "delayed_allocation",
-			}},
-			want: esadmin.RestoreInProgress,
+			name:   "a restored primary whose allocation is delayed",
+			shards: []esadmintest.Shard{restoredPrimary("NEW_INDEX_RESTORED", "delayed_allocation")},
+			want:   esadmin.RestoreInProgress,
 		},
 		{
-			name: "a restored primary that waits for shard data",
-			shards: []esadmintest.Shard{{
-				Primary: true, State: "UNASSIGNED",
-				UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "fetching_shard_data",
-			}},
-			want: esadmin.RestoreInProgress,
+			name:   "a restored primary that waits for shard data",
+			shards: []esadmintest.Shard{restoredPrimary("NEW_INDEX_RESTORED", "fetching_shard_data")},
+			want:   esadmin.RestoreInProgress,
 		},
 		{
-			name: "a restored primary that the allocation deciders refuse",
-			shards: []esadmintest.Shard{{
-				Primary: true, State: "UNASSIGNED",
-				UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "deciders_no",
-			}},
-			want: esadmin.RestoreDone,
-		},
-		{
-			name: "a restored primary with no valid shard copy",
-			shards: []esadmintest.Shard{{
-				Primary: true, State: "UNASSIGNED",
-				UnassignedReason: "EXISTING_INDEX_RESTORED", AllocationStatus: "no_valid_shard_copy",
-			}},
-			want: esadmin.RestoreDone,
+			name:   "a restored primary that waits for the retry of a failed recovery",
+			shards: []esadmintest.Shard{restoredPrimary("ALLOCATION_FAILED", "no_attempt")},
+			want:   esadmin.RestoreInProgress,
 		},
 		{
 			name: "an unassigned replica beside a started primary",
 			shards: []esadmintest.Shard{
-				started, {State: "UNASSIGNED", UnassignedReason: "NEW_INDEX_RESTORED"},
+				started, {State: "UNASSIGNED", RecoverySource: "PEER", UnassignedReason: "NEW_INDEX_RESTORED"},
 			},
 			want: esadmin.RestoreDone,
 		},
 		{
-			name: "a primary that Elasticsearch failed to allocate",
-			shards: []esadmintest.Shard{
-				{
-					Primary: true, State: "UNASSIGNED",
-					UnassignedReason: "ALLOCATION_FAILED", AllocationStatus: "no_attempt",
-				},
-			},
+			name: "a primary that recovers from its own store and has no valid copy",
+			shards: []esadmintest.Shard{{
+				Primary: true, State: "UNASSIGNED", RecoverySource: "EXISTING_STORE",
+				UnassignedReason: "NODE_LEFT", AllocationStatus: "no_valid_shard_copy",
+			}},
 			want: esadmin.RestoreDone,
 		},
 		{
@@ -343,11 +321,86 @@ func TestRestoreProgressCountsAShardThatHasNotStarted(t *testing.T) {
 			server.SetShards("camunda-record-1", tt.shards...)
 			server.SetRecoveryActive(false)
 
-			state, err := client.RestoreProgress(t.Context(), patterns)
+			progress, err := client.RestoreProgress(t.Context(), patterns)
 			require.NoError(t, err)
-			assert.Equal(t, tt.want, state)
+			assert.Equal(t, tt.want, progress.State)
+			assert.Empty(t, progress.Stranded)
 		})
 	}
+}
+
+// A restored primary that no node takes does not recover without a change to
+// the cluster. Elasticsearch gives up on it when its recovery failed more
+// often than the retries allow, or when no node accepts it at all. The read
+// names each such primary, so the caller can end the restore and say which
+// index is red.
+func TestRestoreProgressReportsARestoredPrimaryThatNoNodeTakes(t *testing.T) {
+	patterns := []string{"camunda-record*"}
+
+	tests := []struct {
+		name   string
+		reason string
+	}{
+		{name: "a primary whose recovery failed too often", reason: "ALLOCATION_FAILED"},
+		{name: "a primary that the allocation deciders refuse", reason: "NEW_INDEX_RESTORED"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, server := newClient(t)
+			server.SetIndices("camunda-record-1", "camunda-record-2")
+			server.SetShards("camunda-record-2", esadmintest.Shard{
+				Primary: true, State: "UNASSIGNED", RecoverySource: "SNAPSHOT",
+				UnassignedReason: tt.reason, AllocationStatus: "deciders_no",
+			})
+			server.SetRecoveryActive(false)
+
+			progress, err := client.RestoreProgress(t.Context(), patterns)
+			require.NoError(t, err)
+			want := esadmin.StrandedShard{
+				Index: "camunda-record-2", Shard: 0, Reason: tt.reason, AllocationStatus: "deciders_no",
+			}
+			assert.Equal(t, esadmin.RestoreStranded, progress.State)
+			assert.Equal(t, []esadmin.StrandedShard{want}, progress.Stranded)
+		})
+	}
+}
+
+// The stranded primaries come sorted by index and shard, so the same cluster
+// reads the same every time.
+func TestRestoreProgressSortsTheStrandedPrimaries(t *testing.T) {
+	stranded := esadmintest.Shard{
+		Primary: true, State: "UNASSIGNED", RecoverySource: "SNAPSHOT",
+		UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "deciders_no",
+	}
+	client, server := newClient(t)
+	server.SetIndices("camunda-record-b", "camunda-record-a")
+	server.SetShards("camunda-record-b", stranded)
+	server.SetShards("camunda-record-a", stranded)
+
+	progress, err := client.RestoreProgress(t.Context(), []string{"camunda-record*"})
+	require.NoError(t, err)
+	require.Len(t, progress.Stranded, 2)
+	assert.Equal(t, "camunda-record-a", progress.Stranded[0].Index)
+	assert.Equal(t, "camunda-record-b", progress.Stranded[1].Index)
+}
+
+// A shard that still recovers can still write to the backend, so it decides
+// the answer over a primary that no node takes.
+func TestRestoreProgressReportsARecoveryBeforeAStrandedPrimary(t *testing.T) {
+	stranded := esadmintest.Shard{
+		Primary: true, State: "UNASSIGNED", RecoverySource: "SNAPSHOT",
+		UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "deciders_no",
+	}
+	client, server := newClient(t)
+	server.SetIndices("camunda-record-1", "camunda-record-2")
+	server.SetShards("camunda-record-1", esadmintest.Shard{Primary: true, State: "INITIALIZING"})
+	server.SetShards("camunda-record-2", stranded)
+	server.SetRecoveryActive(false)
+
+	progress, err := client.RestoreProgress(t.Context(), []string{"camunda-record*"})
+	require.NoError(t, err)
+	assert.Equal(t, esadmin.RestoreInProgress, progress.State)
+	assert.Empty(t, progress.Stranded)
 }
 
 // A shard of an index outside the patterns is not part of the restore.
@@ -356,9 +409,9 @@ func TestRestoreProgressIgnoresShardsOfOtherIndices(t *testing.T) {
 	server.SetIndices("camunda-record-1", "other-1")
 	server.SetShards("other-1", esadmintest.Shard{Primary: true, State: "INITIALIZING"})
 
-	state, err := client.RestoreProgress(t.Context(), []string{"camunda-record*"})
+	progress, err := client.RestoreProgress(t.Context(), []string{"camunda-record*"})
 	require.NoError(t, err)
-	assert.Equal(t, esadmin.RestoreDone, state)
+	assert.Equal(t, esadmin.RestoreDone, progress.State)
 }
 
 func TestRestoreProgressMapsBothErrorClassesOfTheShardRead(t *testing.T) {
