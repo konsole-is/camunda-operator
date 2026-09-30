@@ -1176,8 +1176,8 @@ func parsedSize(size string) *resource.Quantity {
 // applied, so a size that reaches it stops the server from converging.
 //
 // It sets resolved.requested to the sizes that the merged spec asked for. It
-// records each Warning event once per request: a request that the applied
-// cluster carries was reported before.
+// records a Warning event only for a request that the applied cluster does not
+// carry yet.
 func (r *DatabaseServerReconciler) keepAppliedStorageSize(
 	server *v1.DatabaseServer,
 	resolved *resolvedSpec,
@@ -1240,8 +1240,7 @@ func (r *DatabaseServerReconciler) keepAppliedWALSize(
 
 // keepAppliedSize returns the size to render for one volume of the server:
 // requested, or existing when requested is below it. It records the Warning
-// event when it keeps existing, unless reported says that the event for
-// requested was recorded before.
+// event when it keeps existing, unless reported is true.
 func (r *DatabaseServerReconciler) keepAppliedSize(
 	server *v1.DatabaseServer,
 	field string,

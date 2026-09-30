@@ -404,8 +404,7 @@ type dataVolumes struct {
 
 // largest returns the largest of the claim capacities and the applied claim
 // size, or nil when neither exists. It is the size that a rendered claim must
-// not go below. The claims count on their own during suspension, when the ECK
-// CR is deleted and the volumes stay.
+// not go below.
 func (d dataVolumes) largest() *resource.Quantity {
 	largest := d.applied
 	for i := range d.volumes {
@@ -554,6 +553,8 @@ func (r *ElasticsearchClusterReconciler) dataVolumes(
 
 	var es esv1.Elasticsearch
 	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), &es); err != nil {
+		// The claims count on their own during suspension, when the ECK CR
+		// is deleted and the volumes stay.
 		if apierrors.IsNotFound(err) {
 			return volumes, nil
 		}
