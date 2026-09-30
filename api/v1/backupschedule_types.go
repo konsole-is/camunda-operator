@@ -77,8 +77,8 @@ type BackupScheduleStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions represent the current state. The Ready condition has the
-	// reason Healthy while the schedule can run its backups, and
-	// InvalidReference while a reference does not resolve.
+	// reason Healthy when the references and the cron expression are valid,
+	// and InvalidReference when one of them is not.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

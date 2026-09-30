@@ -402,7 +402,7 @@ _Appears in:_
 | `lastScheduleTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | LastScheduleTime is the last trigger that the schedule used, also when<br />it skipped the trigger. The schedule never tries a skipped trigger<br />again. |  | Optional: \{\} <br /> |
 | `lastBackupName` _string_ | LastBackupName is the backup that the schedule created most recently. |  | Optional: \{\} <br /> |
 | `observedGeneration` _integer_ | ObservedGeneration is the last generation that the operator processed. |  | Optional: \{\} <br /> |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#condition-v1-meta) array_ | Conditions represent the current state. The Ready condition has the<br />reason Healthy while the schedule can run its backups, and<br />InvalidReference while a reference does not resolve. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#condition-v1-meta) array_ | Conditions represent the current state. The Ready condition has the<br />reason Healthy when the references and the cron expression are valid,<br />and InvalidReference when one of them is not. |  | Optional: \{\} <br /> |
 
 
 #### BasicAuthSpec
@@ -2206,8 +2206,7 @@ _Appears in:_
 _Underlying type:_ _string_
 
 LogicalBackupRDBMSStep is the current step of the backup. After an
-interruption, the backup continues at this step. It does not repeat a step
-that already ran.
+interruption, the backup continues at this step.
 
 _Validation:_
 - Enum: [Dumping ZeebeBackup]

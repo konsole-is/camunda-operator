@@ -135,8 +135,8 @@ spec:
               conditions:
                 description: |-
                   Conditions represent the current state. The Ready condition has the
-                  reason Healthy while the schedule can run its backups, and
-                  InvalidReference while a reference does not resolve.
+                  reason Healthy when the references and the cron expression are valid,
+                  and InvalidReference when one of them is not.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

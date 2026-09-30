@@ -29,8 +29,7 @@ import (
 const ReasonMissingCredentials = "MissingCredentials"
 
 // LogicalBackupRDBMSStep is the current step of the backup. After an
-// interruption, the backup continues at this step. It does not repeat a step
-// that already ran.
+// interruption, the backup continues at this step.
 // +kubebuilder:validation:Enum=Dumping;ZeebeBackup
 type LogicalBackupRDBMSStep string
 
