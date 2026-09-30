@@ -2235,8 +2235,9 @@ var _ = Describe("DatabaseServer controller", func() {
 		})
 
 		expectShrinkWarning(server, "storageSize")
-		expectOneEventPerRequest(server, clusterKey, eventReasonStorageShrinkIgnored,
-			components.RequestedStorageSizeAnnotation, "1Gi")
+		expectOneEventPerRequest(
+			server, clusterKey, eventReasonStorageShrinkIgnored, components.RequestedStorageSizeAnnotation, "1Gi",
+		)
 
 		// CloudNativePG refuses a cluster whose storage is smaller than the
 		// one it applied, so a server that let the smaller size through stops
@@ -2273,8 +2274,9 @@ var _ = Describe("DatabaseServer controller", func() {
 		})
 
 		expectShrinkWarning(server, "walStorageSize")
-		expectOneEventPerRequest(server, clusterKey, eventReasonStorageShrinkIgnored,
-			components.RequestedWALStorageSizeAnnotation, "1Gi")
+		expectOneEventPerRequest(
+			server, clusterKey, eventReasonStorageShrinkIgnored, components.RequestedWALStorageSizeAnnotation, "1Gi",
+		)
 
 		Consistently(func(g Gomega) {
 			var cluster cnpgv1.Cluster
@@ -2318,8 +2320,9 @@ var _ = Describe("DatabaseServer controller", func() {
 				HaveField("Type", corev1.EventTypeWarning),
 			)))
 		}, timeout, interval).Should(Succeed())
-		expectOneEventPerRequest(server, clusterKey, eventReasonWALStorageKept,
-			components.RequestedWALStorageSizeAnnotation, "")
+		expectOneEventPerRequest(
+			server, clusterKey, eventReasonWALStorageKept, components.RequestedWALStorageSizeAnnotation, "",
+		)
 
 		Consistently(func(g Gomega) {
 			var cluster cnpgv1.Cluster
