@@ -135,7 +135,7 @@ Two images need care in a mirror:
 
 ## Changes and referenced Secrets
 
-When you change this resource, every referencing cluster rolls its pods with the new values. So does a change to a key that the clusters read from one of its Secrets. A change to the labels or annotations of a Secret rolls nothing. The Secrets live in the namespace that each reference names. The operator copies them into the namespace of each cluster that uses them.
+When you change this resource, every referencing cluster rolls its pods with the new values. So does a change to a key that the clusters read from one of its Secrets. A change to the labels or annotations of a Secret rolls nothing. The Secrets live in the namespace that each reference names. The operator copies them into the namespace of each cluster that uses them, unless they already live there.
 
 When a referenced Secret or key is missing, `Ready` is `False` with reason `MissingSecret`. The message starts with the spec path of the reference, for example `spec.auth.oidc.management.clients.identity.clientSecretRef`. Each referencing cluster also reports `MissingSecret` and keeps its workloads.
 

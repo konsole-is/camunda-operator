@@ -43,7 +43,7 @@ graph LR
 | `ValidatingCompatibility` | The operator compares the backup against the target. |
 | `RestoringSecondaryStorage` | The operator deletes the Camunda indices of the target and restores every snapshot of the backup. |
 | `RestoringPrimaryStorage` | The operator deletes and creates the broker data volumes, and runs the Camunda restore application once per broker with `--backupId=<status.backupId>`. |
-| `Completed` | The restore finished, and the target starts again. |
+| `Completed` | The restore finished. The target starts again, unless you suspended it yourself or another hold remains. |
 | `Failed` | The restore ended. `status.failureMessage` says why. |
 
 ## Compatibility

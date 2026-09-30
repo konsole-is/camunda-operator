@@ -103,7 +103,7 @@ The operator cannot find this out before it erases the broker volumes. Only the 
 | `RestoringDatabase` | Only with `pitr.recovery: operator`. The restore asked the contract for the rollback and waits for the answer. Nothing limits this wait while the contract exists. It erases nothing. |
 | `ValidatingDatabaseState` | The operator reads the exporter position of every partition from the database. The restore stays in this phase only while the operator cannot reach the database. |
 | `RestoringPrimaryStorage` | The operator deletes and creates the broker data volumes, and runs the Camunda restore application once per broker with `--to=<spec.timestamp>`. |
-| `Completed` | The restore finished, and the cluster starts again. |
+| `Completed` | The restore finished. The cluster starts again, unless you suspended it yourself or another hold remains. |
 | `Failed` | The restore ended. `status.failureMessage` says why. |
 
 ## Requirements

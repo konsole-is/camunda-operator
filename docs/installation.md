@@ -145,7 +145,7 @@ To remove everything, do these steps in this order:
 2. Uninstall the chart.
 3. Delete the CRDs.
 
-> **Caution:** When you delete a backup resource, the operator deletes the snapshots or the dump of that backup from the bucket. When you delete a `CamundaCluster`, the broker volumes follow `spec.zeebe.persistentVolumeClaimRetentionPolicy`. The default deletes them.
+> **Caution:** When you delete a backup resource, the operator deletes the snapshots or the dump of that backup from the bucket. If you delete the cluster or its `ObjectStorageConfig` first, the backup goes and leaves its artifacts in the bucket. When you delete a `CamundaCluster`, the broker volumes follow `spec.zeebe.persistentVolumeClaimRetentionPolicy`. The default deletes them.
 
 Delete the CRDs by name. The CRD manifests carry no labels, so a label selector does not match them:
 

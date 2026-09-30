@@ -36,7 +36,7 @@ To call the cluster, a feature reads the status of the `CamundaCluster`. `status
 
 ## How a feature acts on a cluster
 
-A feature that must stop a cluster, such as a restore, does not edit `spec.suspend`. It adds an annotation with the prefix `suspension-hold.camunda.io/` to the `CamundaCluster`. The value says why. The cluster stays suspended while it has at least one of these annotations, and its `Ready` condition reports `SuspensionHeld`. When the feature removes its annotation, the cluster starts again, unless `spec.suspend` is true. See [Suspension holds](crds/camundacluster.md#suspension-holds).
+A feature that must stop a cluster, such as a restore, adds an annotation with the prefix `suspension-hold.camunda.io/` to the `CamundaCluster`. The value says why. The cluster stays suspended while it has at least one of these annotations, and its `Ready` condition reports `SuspensionHeld`. When the feature removes its annotation, the cluster starts again, unless `spec.suspend` is true. See [Suspension holds](crds/camundacluster.md#suspension-holds).
 
 ## Contracts carry connection details
 
@@ -96,7 +96,7 @@ The API server accepts a resource that names something you did not create yet, s
 
 ## How the operator writes
 
-The operator applies the resources that it manages with Server-Side Apply. It owns only the fields that it sets. A field that you set by hand on a managed resource stays until the operator sets that field.
+The operator applies the resources that it keeps in shape, such as the workloads, Services, and Secrets of a cluster, with Server-Side Apply. It owns only the fields that it sets. A field that you set by hand on such a resource stays until the operator sets that field. The Jobs of a backup or a restore are different: the operator creates each one once and does not update it.
 
 ## The api module
 

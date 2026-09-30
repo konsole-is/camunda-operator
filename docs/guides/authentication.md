@@ -172,7 +172,7 @@ spec:
         key: client-secret
 ```
 
-The platform config is cluster-scoped, so this Secret can live in any namespace. The operator copies the key into the namespace of each cluster as the Secret `<name>-camunda-oidc-client`. When you change the client secret, the operator updates the copy and restarts the pods that read it.
+The platform config is cluster-scoped, so this Secret can live in any namespace. If it lives outside the namespace of a cluster, the operator copies the key into that namespace as the Secret `<name>-camunda-oidc-client`. When you change the client secret, the operator updates the copy and restarts the pods that read it.
 
 [CamundaPlatformConfig](../crds/camundaplatformconfig.md) lists every field of the block.
 

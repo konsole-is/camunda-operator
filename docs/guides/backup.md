@@ -334,7 +334,7 @@ You do not lower `spec.version` by hand for a restore. The restore sets the clus
 
 ## Delete a backup
 
-When you delete a backup resource, the operator removes what the backup wrote. The resource stays until the artifacts are gone.
+When you delete a backup resource, the operator removes what the backup wrote. The resource stays until the artifacts are gone. If the cluster or a storage contract of the backup is gone, the operator cannot reach the artifacts. The resource then goes, the artifacts stay in the bucket, and a Warning event on the backup names what stays. The Deletion section of [LogicalBackupElasticsearch](../crds/logicalbackupelasticsearch.md#deletion) and [LogicalBackupRDBMS](../crds/logicalbackuprdbms.md#deletion) names the cases.
 
 - On the Elasticsearch path, the operator deletes the snapshots that this backup created and the Zeebe backup under its id. If the backup still runs, the operator resumes exporting first.
 - On the PostgreSQL path, the operator stops a running dump Job and deletes the dump object. It never deletes Zeebe backups. Zeebe keeps them under `spec.backup.primaryStorage.retention` of the cluster.

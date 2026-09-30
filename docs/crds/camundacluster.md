@@ -224,7 +224,7 @@ kubectl get pods -A -l camunda.io/storage-claim=camunda-storage-8bd62d6c1f48cf98
 
 A restore into another cluster holds the backend while it runs. The next cluster on the backend waits with `WaitingForHandover`, and the message names the restore, for example `LogicalRestoreElasticsearch my-cluster-ns/my-other-cluster-restore`.
 
-The hold lasts until the restore reaches `Completed` or `Failed`, even when the restore stops making progress. It also lasts when you delete the target of the restore, or point it at another backend. A `LogicalRestoreRDBMS` or a `PointInTimeRestore` holds the database by its `DatabaseServerConfig` and database name, so the hold stays when that contract moves to another host or port. A restore into this cluster itself is no reason to wait. To free the backend from a restore that does not move, delete the restore. A deleted restore keeps the backend until its work stops. Each restore page says when its work stops:
+The hold lasts until the restore reaches `Completed` or `Failed`, even when the restore stops making progress. It also lasts when you delete the target of the restore, or point it at another backend. A `LogicalRestoreRDBMS` or a `PointInTimeRestore` holds the database by its `DatabaseServerConfig` and database name. The hold stays when that contract moves to another host or port. A restore into this cluster itself is no reason to wait. To free the backend from a restore that does not move, delete the restore. A deleted restore keeps the backend until its work stops. Each restore page says when its work stops:
 
 - [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md#the-backend), and [After a failure or a delete](logicalrestoreelasticsearch.md#after-a-failure-or-a-delete).
 - [LogicalRestoreRDBMS](logicalrestorerdbms.md#the-backend).
@@ -360,7 +360,7 @@ spec:
 
 ## Changes and referenced Secrets
 
-A change to the cluster or to a referenced resource rolls out to the pods on its own. So does a change to a key that the cluster reads from a referenced Secret. A change to the labels or annotations of a Secret, or to a key that the cluster does not read, rolls nothing. The [CamundaPlatformConfig](camundaplatformconfig.md) is cluster-scoped, so the operator copies the Secrets it names into the namespace of the cluster. Each copy follows its source.
+A change to the cluster or to a referenced resource rolls out to the pods on its own. So does a change to a key that the cluster reads from a referenced Secret. A change to the labels or annotations of a Secret, or to a key that the cluster does not read, rolls nothing. The [CamundaPlatformConfig](camundaplatformconfig.md) is cluster-scoped, so the operator copies the Secrets it names in another namespace into the namespace of the cluster. Each copy follows its source.
 
 The API server accepts a cluster that names something you did not create yet, so you can create the resources in any order. A missing `CamundaPlatformConfig`, `CamundaClusterPreset`, `CamundaRelease`, `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` sets `Ready` to `False` with reason `InvalidReference`. A missing Secret or key sets reason `MissingSecret`.
 

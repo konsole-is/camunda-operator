@@ -97,7 +97,7 @@ Deletion removes the `DatabaseConfig`, the `SecondaryStorageConfig`, and the cre
 
 | Field | Meaning |
 | --- | --- |
-| `status.collisionKey` | The logical database that this `Database` asks for, as `<system identifier>/<database name>`. It does not show who holds the name. |
+| `status.collisionKey` | The logical database that this `Database` last resolved, as `<system identifier>/<database name>`. While the server of the spec is missing or not probed, it keeps the value from before. It does not show who holds the name. |
 | `status.observedGeneration` | The last generation that the operator reconciled. |
 
 ## Spec reference

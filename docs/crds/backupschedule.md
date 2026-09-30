@@ -2,7 +2,7 @@
 
 `BackupSchedule` takes logical backups of one `CamundaCluster` on a cron schedule. You create it, or another tool creates it for you.
 
-At each trigger the operator creates one backup of the kind that matches the secondary storage of the cluster: `LogicalBackupElasticsearch` or `LogicalBackupRDBMS`. That backup then runs on its own. The schedule also deletes its own finished backups beyond `spec.retained`, together with their stored artifacts.
+At each trigger the operator creates one backup of the kind that matches the secondary storage of the cluster: `LogicalBackupElasticsearch` or `LogicalBackupRDBMS`. That backup then runs on its own. The schedule also deletes its own finished backups beyond `spec.retained`.
 
 `kubectl get backupschedules` lists the schedules with `Ready`, its reason, the cron expression, and the age. `kubectl get backupschedules -o wide` adds the cluster, the last schedule, and the last backup.
 
@@ -134,7 +134,7 @@ The operator deletes the oldest completed backups beyond `retained.completed`, b
 
 The operator deletes only the backups that carry the label `camunda.io/backup-schedule` of this schedule. A backup that you create by hand carries no such label, so no schedule ever deletes it.
 
-A deleted backup takes its stored artifacts with it. For an Elasticsearch backup these are the snapshots and the partition backup. For a relational backup this is the database dump. Each deletion records the Normal event `BackupPruned`.
+A deleted backup takes its stored artifacts with it. For an Elasticsearch backup these are the snapshots and the partition backup. For a relational backup this is the database dump. If the cluster or a storage contract of the backup is gone, the artifacts stay in the bucket, and the backup records a Warning event. The Deletion section of [LogicalBackupElasticsearch](logicalbackupelasticsearch.md#deletion) and [LogicalBackupRDBMS](logicalbackuprdbms.md#deletion) names the cases. Each deletion records the Normal event `BackupPruned`.
 
 ## Backups that outlive the primary storage
 
