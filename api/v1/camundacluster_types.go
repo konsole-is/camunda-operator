@@ -164,8 +164,8 @@ type ZeebeSpec struct {
 	// That rule does not bind this shared field, so a preset can change the
 	// class, and a cluster that inherited a class can set another one. A
 	// cluster whose brokers exist keeps their class and records a
-	// StorageClassChangeIgnored event. The new class applies only to new
-	// clusters.
+	// StorageClassChangeIgnored event. A cluster that has not created its
+	// brokers yet takes the new class.
 	// +optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
 	// StorageSize is the size of the data volume of each broker. Defaults to

@@ -149,7 +149,7 @@ After a restore, you can give the release control of the version again. Set the 
 
 The brokers keep their data on one PersistentVolumeClaim per pod. When `spec.zeebe.storageSize` grows, the operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. The operator never shrinks a volume. A smaller size from a preset is ignored, and the cluster records the Warning event `StorageShrinkIgnored`.
 
-The storage class of the broker volumes cannot change after the brokers exist. The API server rejects a change of `spec.zeebe.storageClassName` after you set it. A new class can still come from the preset, or from a class that you add to a cluster that inherited one. The operator then keeps the class that the brokers have. It records the Warning event `StorageClassChangeIgnored` one time for each new class. The new class applies only to a cluster that you create after the change.
+The storage class of the broker volumes cannot change after the brokers exist. The API server rejects a change of `spec.zeebe.storageClassName` after you set it. A new class can still come from the preset, or from a class that you add to a cluster that inherited one. The operator then keeps the class that the brokers have. It records the Warning event `StorageClassChangeIgnored` one time for each new class. A cluster that has not created its brokers yet takes the new class.
 
 `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` decides what happens to the volumes when you delete the cluster. `Delete` (the default) removes them. `Retain` keeps them for a later cluster with the same name. A scale-down and a suspension always keep them.
 

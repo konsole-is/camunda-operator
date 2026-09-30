@@ -183,7 +183,7 @@ Most fields merge like this, value by value. A few blocks replace as a whole: `s
 
 ## Change a fleet
 
-When you edit a preset, every cluster that references it takes the new baseline and rolls its pods. A change under `auth.basic` rolls no pods. A larger `storageSize` grows the volumes of every cluster in place. A lower `storageSize` is ignored for a cluster that applied a larger size. That cluster keeps its volumes and records the event `StorageShrinkIgnored`. A new `storageClassName` applies only to new clusters. A cluster with brokers keeps the class of its volumes and records the event `StorageClassChangeIgnored`.
+When you edit a preset, every cluster that references it takes the new baseline and rolls its pods. A change under `auth.basic` rolls no pods. A larger `storageSize` grows the volumes of every cluster in place. A lower `storageSize` is ignored for a cluster that applied a larger size. That cluster keeps its volumes and records the event `StorageShrinkIgnored`. A new `storageClassName` reaches only the clusters that have not created their brokers yet. A cluster with brokers keeps the class of its volumes and records the event `StorageClassChangeIgnored`.
 
 You can roll versions in two ways. Name the release for the way you pick:
 
