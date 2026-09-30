@@ -580,13 +580,15 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		expectRecoveryRequest(w)
 		backend := expectBackendHeld(pitr)
 
+		// A restore whose cluster still exists asks again for a request that is
+		// cleared, so the cluster goes first.
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
 		Eventually(func(g Gomega) {
 			var contract v1.DatabaseServerConfig
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), &contract)).To(Succeed())
 			contract.Spec.Recovery = nil
 			g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
-		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
 
 		Consistently(func(g Gomega) {
 			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
