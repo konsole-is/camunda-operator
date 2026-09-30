@@ -527,7 +527,7 @@ _Appears in:_
 | `backup` _[ClusterBackupSpec](#clusterbackupspec)_ | Backup configures the backups of this cluster. It sets the schedule and<br />the retention of the primary-storage backups that Zeebe takes, and the<br />pod of the database dump Job. A preset can set this block, but not<br />backupStorageRef. The block applies only to a cluster with relational<br />secondary storage. Only such a cluster has continuous and scheduled<br />primary-storage backups and the dump Job. |  | Optional: \{\} <br /> |
 | `monitoring` _[ClusterMonitoringSpec](#clustermonitoringspec)_ | Monitoring configures the monitoring integrations. |  | Optional: \{\} <br /> |
 | `suspend` _boolean_ | Suspend scales every workload to zero and keeps the data. Defaults to<br />false. An annotation with the prefix suspension-hold.camunda.io/ on the<br />CamundaCluster also suspends it, whatever this field says. |  | Optional: \{\} <br /> |
-| `pause` _boolean_ | Pause stops all work of the operator on this cluster, status included,<br />and leaves the workloads as they are. The operator records a Paused<br />event instead. When you delete a paused cluster, the operator still<br />releases its storage backends. Defaults to false. |  | Optional: \{\} <br /> |
+| `pause` _boolean_ | Pause stops the reconciliation of this cluster: the operator changes no<br />workload and writes no status. It records a Paused event instead. Other<br />resources that use the cluster, such as a BackupSchedule or a restore,<br />still act on it. When you delete a paused cluster, the operator still<br />releases its storage backends. Defaults to false. |  | Optional: \{\} <br /> |
 
 
 #### CamundaClusterStatus

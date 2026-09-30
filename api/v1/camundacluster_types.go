@@ -501,9 +501,10 @@ type CamundaClusterSpec struct {
 	// CamundaCluster also suspends it, whatever this field says.
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
-	// Pause stops all work of the operator on this cluster, status included,
-	// and leaves the workloads as they are. The operator records a Paused
-	// event instead. When you delete a paused cluster, the operator still
+	// Pause stops the reconciliation of this cluster: the operator changes no
+	// workload and writes no status. It records a Paused event instead. Other
+	// resources that use the cluster, such as a BackupSchedule or a restore,
+	// still act on it. When you delete a paused cluster, the operator still
 	// releases its storage backends. Defaults to false.
 	// +optional
 	Pause bool `json:"pause,omitempty"`
