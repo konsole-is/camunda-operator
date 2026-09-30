@@ -190,7 +190,7 @@ type DatabaseServerConfigSpec struct {
 // It holds what the operator read from the server the last time that it
 // reached the server.
 type DatabaseServerConfigStatus struct {
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// ServerVersion is the major version that the server reported the last

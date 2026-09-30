@@ -152,7 +152,7 @@ type RestoreProgress struct {
 	// CompletionTime is when the restore reached a final phase.
 	// +optional
 	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions represent the current state of the restore.

@@ -41,7 +41,7 @@ type DatabaseConfigSpec struct {
 
 // DatabaseConfigStatus is the observed validation state of the contract.
 type DatabaseConfigStatus struct {
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions represent the current validation state. The Ready condition

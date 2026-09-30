@@ -275,7 +275,7 @@ func (in *CamundaPlatformConfigSpec) Method() AuthenticationMethod {
 // CamundaPlatformConfigStatus is the observed validation state of the
 // platform config.
 type CamundaPlatformConfigStatus struct {
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions represent the current validation state. The Ready condition

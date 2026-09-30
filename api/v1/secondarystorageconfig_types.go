@@ -43,7 +43,7 @@ type ElasticsearchStorage struct {
 	CredentialsSecretRef LocalCredentialsSecretRef `json:"credentialsSecretRef"`
 	// CASecretRef names the CA bundle that consumers use to verify the TLS
 	// certificate of the endpoint. Set it when a well-known CA did not sign
-	// the certificate of the endpoint, for example the self-signed
+	// the certificate of the endpoint. An example is the self-signed
 	// certificate of a cluster that ECK runs. Omit it for an endpoint with a
 	// publicly trusted certificate. It is valid only with an https endpoint.
 	// +optional
@@ -120,7 +120,7 @@ type SecondaryStorageConfigSpec struct {
 
 // SecondaryStorageConfigStatus is the observed validation state of the contract.
 type SecondaryStorageConfigStatus struct {
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions represent the current validation state. The Ready condition

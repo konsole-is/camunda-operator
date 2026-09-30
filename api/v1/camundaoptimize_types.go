@@ -111,7 +111,8 @@ type CamundaOptimizeSpec struct {
 	// IndexReplicas is the replica count of each Optimize index, and of each
 	// zeebe-record index that the exporter of the cluster writes for this
 	// Optimize. When it is not set, the nodeCount of the storage contract of
-	// the cluster gives the count: 0 on one node, 1 on two or more nodes.
+	// the cluster gives the count. The count is 0 on one node, and 1 on two or
+	// more nodes.
 	// Without a nodeCount, Optimize and the exporter keep their own defaults.
 	//
 	// Optimize applies the count to its existing indices when it starts. The
@@ -139,7 +140,7 @@ type OptimizeMonitoringSpec struct {
 
 // CamundaOptimizeStatus is the observed state of a CamundaOptimize.
 type CamundaOptimizeStatus struct {
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions represent the current state. Ready holds the reason of a

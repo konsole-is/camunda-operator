@@ -326,7 +326,7 @@ type ObjectStorageConfigSpec struct {
 
 // ObjectStorageConfigStatus is the observed validation state of the contract.
 type ObjectStorageConfigStatus struct {
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions represent the current validation state. The Ready

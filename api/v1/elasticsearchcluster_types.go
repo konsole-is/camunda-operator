@@ -290,7 +290,7 @@ type PersistentVolumeClaimRetentionPolicy struct {
 
 // ElasticsearchClusterStatus is the observed state of an ElasticsearchCluster.
 type ElasticsearchClusterStatus struct {
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Version is the Elasticsearch version that the cluster runs, as a full

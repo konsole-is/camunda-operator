@@ -444,7 +444,7 @@ type WebModelerMailSpec struct {
 // CamundaManagementClusterStatus is the observed state of a
 // CamundaManagementCluster.
 type CamundaManagementClusterStatus struct {
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// ManagementAuthConfig is the name of the ManagementAuthConfig that this
@@ -493,8 +493,8 @@ type CamundaManagementClusterStatus struct {
 	// names the realm that the plane leaves.
 	//
 	// A Keycloak that is permanently gone never answers. To release its realm
-	// with the callbacks still in it, set the annotation
-	// camunda.io/forget-callback-realm to the value that the
+	// with the callbacks in it, set the annotation
+	// camunda.io/forget-callback-realm. Use the value that the
 	// OptimizeCallbacksReady message names.
 	// +optional
 	CallbackRealm *KeycloakRealmTarget `json:"callbackRealm,omitempty"`
@@ -525,9 +525,9 @@ type AttachedClusterStatus struct {
 	// ClaimedElsewhere means that another management plane holds the
 	// cluster. NotReady means that the cluster publishes no gateway endpoints,
 	// or that it changed while the operator claimed it. InvalidReference
-	// means that the operator cannot read the platform config of the cluster,
-	// or that the cluster uses OIDC with another issuer than the management
-	// plane. WriteFailed means that the cluster refused the Console ping
+	// means that the operator cannot read the platform config of the cluster.
+	// It also means that the cluster uses OIDC with another issuer than the
+	// management plane. WriteFailed means that the cluster refused the Console ping
 	// settings. The fifth value, BasicAuthUserFailed, is on an attached row.
 	// The management plane serves the cluster, but the Web Modeler user on
 	// it is missing.

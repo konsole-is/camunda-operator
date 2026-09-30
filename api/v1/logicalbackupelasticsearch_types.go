@@ -145,9 +145,9 @@ type LogicalBackupElasticsearchStatus struct {
 	HistorySnapshots []string `json:"historySnapshots,omitempty"`
 	// Repository records the snapshot repository of every part of the set.
 	// The operator records it when the backup starts, and every later step
-	// and the deletion use this name. Thus a change of the repository on the
-	// storage contract during the backup does not split the set or send the
-	// deletion to the wrong repository.
+	// and the deletion use this name. Thus the whole set goes to one
+	// repository, also when the storage contract changes its repository
+	// during the backup. The deletion also goes to the correct repository.
 	// +optional
 	Repository string `json:"repository,omitempty"`
 	// Storage records the Elasticsearch destination of the set: the storage
@@ -246,7 +246,7 @@ type LogicalBackupElasticsearchStatus struct {
 	// CompletionTime is when the backup reached a final phase.
 	// +optional
 	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions represent the current state. The Ready condition shows the

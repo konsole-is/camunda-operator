@@ -481,12 +481,12 @@ type CamundaClusterSpec struct {
 	// this cluster, for document storage.
 	// +optional
 	DocumentStorageRef string `json:"documentStorageRef,omitempty"`
-	// Backup configures the backups of this cluster: the schedule and the
-	// retention of the primary-storage backups that Zeebe takes, and the pod
-	// of the database dump Job. A preset can set this block, but not
+	// Backup configures the backups of this cluster. It sets the schedule and
+	// the retention of the primary-storage backups that Zeebe takes, and the
+	// pod of the database dump Job. A preset can set this block, but not
 	// backupStorageRef. The block applies only to a cluster with relational
-	// secondary storage, because only such a cluster has continuous and
-	// scheduled primary-storage backups and the dump Job.
+	// secondary storage. Only such a cluster has continuous and scheduled
+	// primary-storage backups and the dump Job.
 	// +optional
 	Backup *ClusterBackupSpec `json:"backup,omitempty"`
 	// Monitoring configures the monitoring integrations.
@@ -518,7 +518,7 @@ type GatewayBinding struct {
 
 // CamundaClusterStatus is the observed state of a CamundaCluster.
 type CamundaClusterStatus struct {
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Volumes lists the bound broker PersistentVolumeClaims and the capacity

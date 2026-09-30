@@ -83,7 +83,7 @@ type DatabaseSpec struct {
 
 // DatabaseStatus is the observed state of a Database.
 type DatabaseStatus struct {
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// CollisionKey is the logical database that this Database last resolved:
@@ -91,8 +91,8 @@ type DatabaseStatus struct {
 	// Database records it, also a Database that loses the name to another.
 	// Thus the field shows what a Database asked for, not what it owns. The
 	// operator sets it only after it reaches the server. If the spec names a
-	// missing server, or a server that is not probed for the current spec,
-	// the old key stays until that server answers.
+	// missing server, the old key stays until that server answers. The same
+	// applies to a server that is not probed for the current spec.
 	//
 	// A Database whose Ready condition reports InvalidReference and names
 	// another Database does not own the name that it shows here. The

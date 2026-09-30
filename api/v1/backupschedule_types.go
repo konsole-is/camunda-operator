@@ -70,7 +70,7 @@ type BackupScheduleStatus struct {
 	// LastBackupName is the backup that the schedule created most recently.
 	// +optional
 	LastBackupName string `json:"lastBackupName,omitempty"`
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions represent the current state. The Ready condition has the
@@ -97,13 +97,13 @@ type BackupScheduleStatus struct {
 // operator creates the backup kind for the storage type of the cluster. The
 // backup has the name <schedule>-<unix-timestamp> and the labels
 // camunda.io/cluster and camunda.io/backup-schedule. If a name is too long
-// for a resource name or a label value, the operator shortens it and adds a
-// hash of the full name. Thus two long names stay different.
+// for a resource name or a label value, the operator shortens it. Then it
+// adds a hash of the full name, so two long names stay different.
 //
 // The backups have no owner reference to the schedule, so a deletion of the
-// schedule never deletes its backups. The schedule skips a trigger, with an
-// event, while the cluster is suspended or while a backup of this schedule
-// is not in a final phase.
+// schedule never deletes its backups. The schedule skips a trigger while the
+// cluster is suspended, or while a backup of this schedule is not in a final
+// phase. It records an event for each skipped trigger.
 type BackupSchedule struct {
 	metav1.TypeMeta `json:",inline"`
 

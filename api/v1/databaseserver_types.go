@@ -66,9 +66,9 @@ type DatabaseServerMonitoringSpec struct {
 	PodMonitor *PodMonitorSpec `json:"podMonitor,omitempty"`
 }
 
-// DatabaseServerArchiveSpec points a server at the bucket that holds its
-// continuous archive: the write-ahead log of every instance, and the base
-// backups that a recovery starts from. A server with an archive publishes
+// DatabaseServerArchiveSpec points a server at the bucket of its continuous
+// archive. The archive holds the write-ahead log of every instance, and the
+// base backups that a recovery starts from. A server with an archive publishes
 // pitr.enabled true on its contract. A server without one publishes false,
 // and no point-in-time restore can reach it.
 //
@@ -102,12 +102,12 @@ type DatabaseServerArchiveSpec struct {
 	// CloudNativePG reads the first field as seconds, so a five-field value
 	// runs at a different time than intended.
 	//
-	// Each field has the bounds that CloudNativePG accepts: 0-59 for seconds
-	// and minutes, 0-23 for hours, 1-31 for the day of the month, 1-12 or
-	// JAN-DEC for the month, and 0-6 or SUN-SAT for the day of the week. The
-	// schema cannot find a range whose first value is above its second, such
-	// as FRI-MON. The operator refuses such a range with Ready reason
-	// InvalidReference, before it applies anything.
+	// Each field has the bounds that CloudNativePG accepts. Seconds and
+	// minutes take 0-59, and hours take 0-23. The day of the month takes
+	// 1-31, and the month takes 1-12 or JAN-DEC. The day of the week takes
+	// 0-6 or SUN-SAT. The schema cannot find a range whose first value is
+	// above its second, such as FRI-MON. The operator refuses such a range
+	// with Ready reason InvalidReference, before it applies anything.
 	//
 	// A step has at most three digits. An @every number has at most six
 	// digits on each side of the point. These limits are stricter than the
@@ -487,7 +487,7 @@ type DatabaseServerRecoveryStatus struct {
 
 // DatabaseServerStatus is the observed state of a DatabaseServer.
 type DatabaseServerStatus struct {
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Version is the PostgreSQL major version that the server runs, as a
