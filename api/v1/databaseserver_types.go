@@ -170,9 +170,10 @@ type DatabaseServerSpec struct {
 	// StorageSize is the size of the data volume of each instance. Required
 	// unless the resolved preset provides it. It cannot shrink, because a
 	// PostgreSQL data volume cannot become smaller in place. The API server
-	// refuses a smaller value in the spec of a DatabaseServer. A preset can set a smaller
-	// value. A server that has a larger size then keeps it and records a
-	// StorageShrinkIgnored event.
+	// refuses a change of this field in a DatabaseServer to a smaller value.
+	// A smaller value is accepted when the field was not set before, or when
+	// a preset lowers the size. The server then keeps its larger size and
+	// records a StorageShrinkIgnored event.
 	// +optional
 	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
 	// StorageClassName is the StorageClass of the data volumes. Defaults to

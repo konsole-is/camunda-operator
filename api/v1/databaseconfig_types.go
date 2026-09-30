@@ -34,7 +34,8 @@ type DatabaseConfigSpec struct {
 	// access to the database.
 	CredentialsSecretRef LocalCredentialsSecretRef `json:"credentialsSecretRef"`
 	// BackupCredentialsSecretRef names a separate user with the privileges
-	// to dump and restore the database. Backups and restores use this user.
+	// to dump the database. Backups use this user. A restore uses the
+	// application user of CredentialsSecretRef.
 	// +optional
 	BackupCredentialsSecretRef *LocalCredentialsSecretRef `json:"backupCredentialsSecretRef,omitempty"`
 }

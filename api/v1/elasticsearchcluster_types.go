@@ -178,9 +178,10 @@ type ElasticsearchClusterSpec struct {
 	// StorageSize is the size of the data volume of each node. Required
 	// unless the resolved preset provides it. It cannot shrink, because an
 	// Elasticsearch data volume cannot become smaller in place. The API
-	// server refuses a smaller value in the spec of an ElasticsearchCluster. A preset can
-	// set a smaller value. A cluster that has a larger size then keeps it and
-	// records a StorageShrinkIgnored event.
+	// server refuses a change of this field in an ElasticsearchCluster to a
+	// smaller value. A smaller value is accepted when the field was not set
+	// before, or when a preset lowers the size. The cluster then keeps its
+	// larger size and records a StorageShrinkIgnored event.
 	// +optional
 	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
 	// StorageClassName is the StorageClass of the data volumes. Defaults to

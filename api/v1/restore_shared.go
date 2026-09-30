@@ -128,11 +128,11 @@ type RestoreProgress struct {
 	// +optional
 	RecreatedClaims []string `json:"recreatedClaims,omitempty"`
 	// FirstFailedAt is when a dependency of the running restore first stopped
-	// resolving. The grace period starts at this time. If the dependency
-	// recovers before the restore records a recreated broker volume or a
-	// broker Job, the field clears. After that point, the field stays set, so a
-	// dependency that fails and recovers again and again does not reset the
-	// grace period.
+	// resolving. The grace period starts at this time. The field clears if
+	// the dependency recovers before the restore deletes target indices or
+	// records a recreated broker volume or a broker Job. After that point, the
+	// field stays set, so a dependency that fails and recovers again and
+	// again does not reset the grace period.
 	// +optional
 	FirstFailedAt *metav1.Time `json:"firstFailedAt,omitempty"`
 	// ClusterSuspended records that this restore suspended its target

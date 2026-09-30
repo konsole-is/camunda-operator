@@ -59,7 +59,8 @@ spec:
               backupCredentialsSecretRef:
                 description: |-
                   BackupCredentialsSecretRef names a separate user with the privileges
-                  to dump and restore the database. Backups and restores use this user.
+                  to dump the database. Backups use this user. A restore uses the
+                  application user of CredentialsSecretRef.
                 properties:
                   name:
                     description: Name is the name of the Secret that holds the credentials.

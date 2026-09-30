@@ -23,8 +23,9 @@ import (
 
 // ReasonMissingCredentials means that the backup bucket uses static
 // credentials, and their copy in the namespace of the cluster does not
-// resolve. The dump Job mounts those credentials. Thus only a
-// LogicalBackupRDBMS and a LogicalRestoreRDBMS report this reason.
+// resolve. The dump Job of a LogicalBackupRDBMS and the pg_restore Job of a
+// LogicalRestoreRDBMS mount those credentials. Thus only these two kinds
+// report this reason.
 const ReasonMissingCredentials = "MissingCredentials"
 
 // LogicalBackupRDBMSStep is the current step of the backup. After an
