@@ -448,7 +448,7 @@ func (d dataVolumes) classRequestApplied(class *string) bool {
 
 // keepAppliedStorageClass keeps in merged the class of the data volume claim
 // of the applied ECK CR. It records at most one Warning event per requested
-// class. It returns the storageClassName that merged asked for.
+// class. It returns the class for the requested class annotation.
 func (r *ElasticsearchClusterReconciler) keepAppliedStorageClass(
 	cluster *v1.ElasticsearchCluster,
 	merged *v1.ElasticsearchClusterSpec,
@@ -462,10 +462,15 @@ func (r *ElasticsearchClusterReconciler) keepAppliedStorageClass(
 	// storage request.
 	merged.StorageClassName = volumes.applied.StorageClassName
 
-	// A suspension deletes the CR that would carry the request, and a CR that
-	// another owner controls never takes it.
-	if merged.Suspend || volumes.foreign || volumes.classRequestApplied(requested) {
+	// A CR that another owner controls never takes the request.
+	if volumes.foreign || volumes.classRequestApplied(requested) {
 		return requested
+	}
+
+	// A suspension can be cancelled before it deletes the CR. The CR then
+	// keeps its old request, so the next reconcile records the event.
+	if merged.Suspend {
+		return volumes.requestedClass
 	}
 
 	r.EventRecorder.Eventf(

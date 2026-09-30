@@ -127,6 +127,9 @@ func TestKeepAppliedStorageClass(t *testing.T) {
 		requested *string
 		wantClass *string
 		wantEvent bool
+		// keepsRequest expects the request that the applied CR carries in
+		// place of the requested class.
+		keepsRequest bool
 	}{
 		{
 			name:      "no applied ECK CR",
@@ -173,11 +176,12 @@ func TestKeepAppliedStorageClass(t *testing.T) {
 			wantClass: new("class-a"),
 		},
 		{
-			name:      "suspended with the ECK CR still there",
-			volumes:   applied(new("class-a"), new("class-a")),
-			suspend:   true,
-			requested: new("class-b"),
-			wantClass: new("class-a"),
+			name:         "suspended with the ECK CR still there",
+			volumes:      applied(new("class-a"), new("class-a")),
+			suspend:      true,
+			requested:    new("class-b"),
+			wantClass:    new("class-a"),
+			keepsRequest: true,
 		},
 		{
 			name: "an ECK CR that another owner controls",
@@ -202,7 +206,11 @@ func TestKeepAppliedStorageClass(t *testing.T) {
 
 			requested := r.keepAppliedStorageClass(cluster, &merged, tt.volumes)
 
-			assert.Equal(t, tt.requested, requested)
+			wantRequested := tt.requested
+			if tt.keepsRequest {
+				wantRequested = tt.volumes.requestedClass
+			}
+			assert.Equal(t, wantRequested, requested)
 			assert.Equal(t, tt.wantClass, merged.StorageClassName)
 			if !tt.wantEvent {
 				assert.Empty(t, recorder.Events)
