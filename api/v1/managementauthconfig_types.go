@@ -26,7 +26,7 @@ type ManagementAuthConfigSpec struct {
 	// BaseURL is the base URL of the Management Identity service.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="baseUrl must be a valid http or https URL"
 	BaseURL string `json:"baseUrl"`
-	// IssuerURL is the OIDC issuer URL that validates tokens.
+	// IssuerURL is the OIDC issuer URL for the validation of tokens.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="issuerUrl must be a valid http or https URL"
 	IssuerURL string `json:"issuerUrl"`
 	// IssuerBackendURL is the issuer URL for calls between containers inside

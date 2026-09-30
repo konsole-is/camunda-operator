@@ -70,7 +70,8 @@ const ReasonInvalidCredentials = "InvalidCredentials"
 const ReasonRejected = "Rejected"
 
 // ReasonVersionDowngradeRefused on Ready means that the effective version
-// of the cluster is below the version that its brokers run. Camunda does not
+// of the cluster is below the version that its brokers run, and no
+// annotation permits the downgrade. Camunda does not
 // support a downgrade of a running cluster. The operator applies nothing
 // while this reason stays. The message names the two versions and the
 // remedies. The annotation camunda.io/allow-version-downgrade, with the
@@ -160,8 +161,8 @@ type ZeebeSpec struct {
 	// +optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
 	// StorageSize is the size of the data volume of each broker. Defaults to
-	// 10Gi. It can only grow. The API server refuses a smaller value on a
-	// CamundaCluster. A preset can set a smaller value. A cluster that has a
+	// 10Gi. It can only grow. The API server refuses a smaller value in the
+	// spec of a CamundaCluster. A preset can set a smaller value. A cluster that has a
 	// larger size then keeps it and records a StorageShrinkIgnored event.
 	// When the size grows, the operator expands the existing claims in place.
 	// The storage class must support volume expansion.
@@ -338,8 +339,8 @@ type AdminMappingRule struct {
 type ClusterMonitoringSpec struct {
 	// ServiceMonitor configures the Prometheus ServiceMonitors. When enabled,
 	// the operator creates one ServiceMonitor for each process, with the name
-	// of the workload. It scrapes /actuator/prometheus on port 9600 of a
-	// unified process and on port 8080 of connectors.
+	// of the workload. It scrapes /actuator/prometheus on the management port
+	// 9600 of a unified process, and on the HTTP port 8080 of connectors.
 	// +optional
 	ServiceMonitor *ServiceMonitorSpec `json:"serviceMonitor,omitempty"`
 }
@@ -368,12 +369,12 @@ type CamundaClusterSpec struct {
 	// +optional
 	ReleaseRef string `json:"releaseRef,omitempty"`
 	// Version is the Camunda version to deploy, as a full semantic version.
-	// The operator refuses a version below 8.9.0. Required unless the
-	// resolved release provides it. Forbidden in a preset. The operator also
-	// refuses a version below the version that the brokers run, with Ready
-	// reason VersionDowngradeRefused. The annotation
-	// camunda.io/allow-version-downgrade on the CamundaCluster, set to that
-	// version, permits it.
+	// Required unless the resolved release provides it. Forbidden in a
+	// preset. The operator refuses a version below 8.9.0, also when it comes
+	// from the release. The operator also refuses a version below the
+	// version that the brokers run, with Ready reason VersionDowngradeRefused.
+	// The annotation camunda.io/allow-version-downgrade on the CamundaCluster,
+	// set to that version, permits it.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	// +optional
 	Version string `json:"version,omitempty"`
@@ -468,7 +469,8 @@ type CamundaClusterSpec struct {
 	//
 	// The cluster applies the count to its existing indices when it starts.
 	// If the nodes cannot place the count, the operator keeps it and records
-	// an IndexReplicasExceedNodes Warning event. A relational secondary
+	// an IndexReplicasExceedNodes Warning event on the CamundaCluster. A
+	// relational secondary
 	// storage ignores this field.
 	// +kubebuilder:validation:Minimum=0
 	// +optional
@@ -497,8 +499,9 @@ type CamundaClusterSpec struct {
 	// CamundaCluster also suspends it, whatever this field says.
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
-	// Pause stops all changes to this cluster by the operator and leaves the
-	// workloads as they are. Defaults to false.
+	// Pause stops all work of the operator on this cluster, status included,
+	// and leaves the workloads as they are. The operator records a Paused
+	// event instead. Defaults to false.
 	// +optional
 	Pause bool `json:"pause,omitempty"`
 }

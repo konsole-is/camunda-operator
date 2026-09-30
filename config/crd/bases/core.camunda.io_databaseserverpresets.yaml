@@ -883,7 +883,7 @@ spec:
                       StorageSize is the size of the data volume of each instance. Required
                       unless the resolved preset provides it. It cannot shrink, because a
                       PostgreSQL data volume cannot become smaller in place. The API server
-                      refuses a smaller value on a DatabaseServer. A preset can set a smaller
+                      refuses a smaller value in the spec of a DatabaseServer. A preset can set a smaller
                       value. A server that has a larger size then keeps it and records a
                       StorageShrinkIgnored event.
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
@@ -899,8 +899,9 @@ spec:
                     description: |-
                       Version is the PostgreSQL major version to run, as a number such as
                       "17". It selects the image tag. Camunda 8.9 supports PostgreSQL 14 and
-                      later, and the operator refuses a lower version. Required unless the
-                      resolved release provides it. Forbidden in a preset.
+                      later. The operator refuses a version below 14, also when it comes
+                      from the release. Required unless the resolved release provides it.
+                      Forbidden in a preset.
 
                       The major version of a running server cannot change. The operator
                       refuses another major version, higher or lower, with Ready reason

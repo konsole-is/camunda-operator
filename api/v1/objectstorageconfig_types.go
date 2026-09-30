@@ -535,8 +535,8 @@ func (in *ObjectStorageConfig) BasePath() string {
 }
 
 // Location returns where the objects of the active storage block are, as one
-// string. The string changes only when a key written through this contract
-// goes to another place. It holds the storage type, the bucket (or the
+// string. The string changes exactly when a key written through this
+// contract goes to another place. It holds the storage type, the bucket (or the
 // account and container), the base path, and the endpoint or region that
 // selects the service. Endpoints are normalized as the clients use them, so
 // a trailing slash never counts as a move. Credentials and auth are not part

@@ -208,8 +208,9 @@ spec:
                   HistoryRequestedTime is when the operator decided to request the
                   backup of the web-application indices. The operator writes it before
                   it sends the request, so the decision stays after a lost response or a
-                  restart. It does not prove that a history backup with this ID belongs
-                  to this backup.
+                  restart. It shows that this backup intended to send the request. It
+                  does not prove that a history backup with this ID belongs to this
+                  backup.
                 format: date-time
                 type: string
               historySnapshots:
@@ -322,8 +323,9 @@ spec:
                 description: |-
                   RuntimeRequestedTime is when the operator decided to request the
                   runtime backup. The operator writes it before it sends the request, so
-                  the decision stays after a lost response or a restart. It does not
-                  prove that a runtime backup with this ID belongs to this backup.
+                  the decision stays after a lost response or a restart. It shows that
+                  this backup intended to send the request. It does not prove that a
+                  runtime backup with this ID belongs to this backup.
                 format: date-time
                 type: string
               step:

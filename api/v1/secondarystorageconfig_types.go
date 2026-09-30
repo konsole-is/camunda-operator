@@ -52,8 +52,8 @@ type ElasticsearchStorage struct {
 	// cluster that backups write to. An ElasticsearchCluster with a
 	// snapshotStorageRef registers the repository and sets this field in the
 	// contract that it publishes. For an Elasticsearch cluster that this
-	// operator does not run, register the repository yourself and then set
-	// this field. A cluster that takes backups needs it. Without it, the
+	// operator does not manage, register the repository yourself and then
+	// set this field. A cluster that takes backups needs it. Without it, the
 	// backup components have no place to write. The name is part of a URL
 	// path of the Elasticsearch API, so it permits only a small set of
 	// characters.
@@ -63,7 +63,8 @@ type ElasticsearchStorage struct {
 	SnapshotRepository string `json:"snapshotRepository,omitempty"`
 	// NodeCount is the number of data nodes of the Elasticsearch cluster. An
 	// ElasticsearchCluster sets it in the contract that it publishes. For an
-	// Elasticsearch cluster that this operator does not run, set it yourself.
+	// Elasticsearch cluster that this operator does not manage, set it
+	// yourself.
 	// A consumer that sets no index replica count of its own gets 0 replicas
 	// on one node and 1 replica on two or more nodes. Without a node count,
 	// the consumer keeps the default of the Camunda application.

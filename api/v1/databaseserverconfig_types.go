@@ -26,8 +26,8 @@ import (
 // +kubebuilder:validation:Enum=postgres
 type DatabaseEngine string
 
-// DatabaseEnginePostgres is the PostgreSQL engine. It is the only engine on
-// which the operator can create databases.
+// DatabaseEnginePostgres is the PostgreSQL engine. At this time, it is the
+// only engine on which the operator can create databases.
 const DatabaseEnginePostgres DatabaseEngine = "postgres"
 
 // RecoveryMode says who rolls the server back to a point in time.
@@ -163,7 +163,7 @@ type DatabaseServerConfigSpec struct {
 	// Engine is the database engine of the server. See DatabaseEngine for
 	// the accepted values.
 	Engine DatabaseEngine `json:"engine"`
-	// Host is the host name of the server.
+	// Host is the host name or the address of the server.
 	// +kubebuilder:validation:MinLength=1
 	Host string `json:"host"`
 	// Port is the port of the server.
@@ -210,7 +210,7 @@ type DatabaseServerConfigStatus struct {
 	// ProbedAt is when the operator last reached the server and read
 	// ServerVersion and SystemIdentifier. The operator probes the server
 	// again when this is older than the probe interval, or when the admin
-	// credentials Secret changed.
+	// credentials Secret changed. Between probes, it does not change.
 	//
 	// A change to the endpoint or to the admin credentials clears this
 	// field, and also ServerVersion, SystemIdentifier, ProbedEndpoint,

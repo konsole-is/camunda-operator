@@ -146,8 +146,9 @@ type DatabaseServerSpec struct {
 	PlatformConfigRef string `json:"platformConfigRef,omitempty"`
 	// Version is the PostgreSQL major version to run, as a number such as
 	// "17". It selects the image tag. Camunda 8.9 supports PostgreSQL 14 and
-	// later, and the operator refuses a lower version. Required unless the
-	// resolved release provides it. Forbidden in a preset.
+	// later. The operator refuses a version below 14, also when it comes
+	// from the release. Required unless the resolved release provides it.
+	// Forbidden in a preset.
 	//
 	// The major version of a running server cannot change. The operator
 	// refuses another major version, higher or lower, with Ready reason
@@ -169,7 +170,7 @@ type DatabaseServerSpec struct {
 	// StorageSize is the size of the data volume of each instance. Required
 	// unless the resolved preset provides it. It cannot shrink, because a
 	// PostgreSQL data volume cannot become smaller in place. The API server
-	// refuses a smaller value on a DatabaseServer. A preset can set a smaller
+	// refuses a smaller value in the spec of a DatabaseServer. A preset can set a smaller
 	// value. A server that has a larger size then keeps it and records a
 	// StorageShrinkIgnored event.
 	// +optional
@@ -262,7 +263,8 @@ const ReasonBarmanPluginNotInstalled = "BarmanPluginNotInstalled"
 // exists and that this server did not publish. The server does not write to
 // it, so its consumers keep the endpoint and the credentials that they read.
 // The server also refuses a contract with no owner. Such a contract is the
-// bring-your-own-server API, for a server that the operator does not run.
+// bring-your-own-server API: a person wrote it for a server that the
+// operator does not run.
 // The message names the owner, or says that no owner controls it. Give this
 // server a name of its own, or remove that contract.
 const ReasonContractTaken = "ContractTaken"
@@ -336,9 +338,9 @@ type ArchiveRecord struct {
 	To *metav1.Time `json:"to,omitempty"`
 	// UnverifiedFrom is the point after which this archive can miss parts of
 	// the write-ahead log. It is set while CloudNativePG reports that the
-	// uploads of the server fail. A restore to a point after it fails. When
-	// the uploads work again, the plugin uploads the segments that it held
-	// back. The field is then cleared, and a restore can reach the whole
+	// uploads of the server fail. A restore cannot reach a point after it.
+	// When the uploads work again, the plugin uploads the segments that it
+	// held back. The field is then cleared, and a restore can reach the whole
 	// interval again. Only the record that the server writes to now has it.
 	// +optional
 	UnverifiedFrom *metav1.Time `json:"unverifiedFrom,omitempty"`
@@ -396,8 +398,8 @@ type DatabaseServerArchiveStatus struct {
 // the bucket, the location of that bucket, and the bucket contract that
 // names it. It also holds the archive settings of the server at that moment.
 // Until the rollback has an answer, the operator keeps the archive as it
-// was. It ignores each edit of spec.archive in that time: a moved bucket, a
-// changed retention or schedule, and a removal.
+// was. It does not apply an edit of spec.archive in that time: a moved
+// bucket, a changed retention or schedule, or a removal.
 type RecoveryArchiveRef struct {
 	// ServerName is the archive directory, equal to the name of the
 	// CloudNativePG cluster that wrote it.

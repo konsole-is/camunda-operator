@@ -161,9 +161,9 @@ type ElasticsearchClusterSpec struct {
 	ReleaseRef string `json:"releaseRef,omitempty"`
 	// Version is the Elasticsearch version to deploy, as a full semantic
 	// version. Camunda 8.9 supports Elasticsearch 8.19 and later, and 9.2 and
-	// later. The operator refuses a lower version with Ready reason
-	// InvalidReference. Required unless the resolved release provides it.
-	// Forbidden in a preset.
+	// later. The operator refuses a lower version, also when it comes from
+	// the release, with Ready reason InvalidReference. Required unless the
+	// resolved release provides it. Forbidden in a preset.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	// +optional
 	Version string `json:"version,omitempty"`
@@ -178,7 +178,7 @@ type ElasticsearchClusterSpec struct {
 	// StorageSize is the size of the data volume of each node. Required
 	// unless the resolved preset provides it. It cannot shrink, because an
 	// Elasticsearch data volume cannot become smaller in place. The API
-	// server refuses a smaller value on an ElasticsearchCluster. A preset can
+	// server refuses a smaller value in the spec of an ElasticsearchCluster. A preset can
 	// set a smaller value. A cluster that has a larger size then keeps it and
 	// records a StorageShrinkIgnored event.
 	// +optional
@@ -309,7 +309,8 @@ type ElasticsearchClusterStatus struct {
 	// SnapshotRepository is the snapshot repository that the operator
 	// registered in Elasticsearch for this cluster. The published
 	// SecondaryStorageConfig holds the same name. It is empty until the first
-	// registration succeeds.
+	// registration succeeds. Thus the contract never names a repository that
+	// Elasticsearch does not have.
 	// +optional
 	SnapshotRepository string `json:"snapshotRepository,omitempty"`
 	// Conditions represent the current state. Ready holds the reason of a

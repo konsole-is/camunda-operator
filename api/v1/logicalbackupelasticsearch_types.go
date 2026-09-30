@@ -175,8 +175,9 @@ type LogicalBackupElasticsearchStatus struct {
 	// HistoryRequestedTime is when the operator decided to request the
 	// backup of the web-application indices. The operator writes it before
 	// it sends the request, so the decision stays after a lost response or a
-	// restart. It does not prove that a history backup with this ID belongs
-	// to this backup.
+	// restart. It shows that this backup intended to send the request. It
+	// does not prove that a history backup with this ID belongs to this
+	// backup.
 	// +optional
 	HistoryRequestedTime *metav1.Time `json:"historyRequestedTime,omitempty"`
 	// HistoryAcceptedTime is when the cluster accepted the history backup
@@ -190,8 +191,9 @@ type LogicalBackupElasticsearchStatus struct {
 	HistoryAcceptedTime *metav1.Time `json:"historyAcceptedTime,omitempty"`
 	// RuntimeRequestedTime is when the operator decided to request the
 	// runtime backup. The operator writes it before it sends the request, so
-	// the decision stays after a lost response or a restart. It does not
-	// prove that a runtime backup with this ID belongs to this backup.
+	// the decision stays after a lost response or a restart. It shows that
+	// this backup intended to send the request. It does not prove that a
+	// runtime backup with this ID belongs to this backup.
 	// +optional
 	RuntimeRequestedTime *metav1.Time `json:"runtimeRequestedTime,omitempty"`
 	// RuntimeAcceptedTime is when the cluster accepted the runtime backup

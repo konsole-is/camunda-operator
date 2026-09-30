@@ -44,8 +44,8 @@ type BackupScheduleSpec struct {
 
 // RetainedBackups limits the backups that a schedule keeps, for each final
 // phase. When the count of a phase is more than its limit, the operator
-// deletes the oldest backups of that phase. The deletion also removes their
-// stored backup data.
+// deletes the oldest backups of that phase, down to the limit. The deletion
+// also removes their stored backup data.
 type RetainedBackups struct {
 	// Completed is how many completed backups the schedule keeps.
 	// +kubebuilder:default=7

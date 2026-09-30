@@ -75,14 +75,15 @@ const (
 	// ReasonStepFailed means that a step of the operator did not finish. A
 	// step is work that the management plane does outside its workloads,
 	// usually a call to the Kubernetes API. The message names the step and
-	// the error. Ready is False even when every workload is healthy, because
-	// the operator did not complete its work. Every other condition keeps its
+	// the error. Ready is False for that attempt, even when every workload is
+	// healthy, because the operator did not complete its work. Every other condition keeps its
 	// last value. The operator tries again.
 	ReasonStepFailed = "StepFailed"
 	// ReasonUnsupportedVersion means that a version in the spec is outside
-	// the range that the operator supports. The version is below the minimum
-	// of its component, or, for the Keycloak that the operator runs, at or
-	// above the maximum. The message names the field and the limit.
+	// the range that the operator supports. The version is below the lowest
+	// supported version of its component. Or, for the Keycloak that the
+	// operator runs, it is at or above the upper limit, which is not
+	// supported. The message names the field and the limit.
 	ReasonUnsupportedVersion = "UnsupportedVersion"
 	// ReasonClaimedElsewhere means that another management cluster already
 	// claims a selected CamundaCluster. A cluster has one management plane,
@@ -486,7 +487,7 @@ type CamundaManagementClusterStatus struct {
 	//
 	// The field is absent after a move into the keycloak or the oidc mode.
 	// It is also absent while no login callback of this operator is
-	// registered and nothing can write one back. The operator runs the
+	// registered anywhere and nothing can write one back. The operator runs the
 	// Keycloak of the keycloak mode, and deletes it with the management plane
 	// or when the plane leaves that mode. Thus the field never names the
 	// realm of that Keycloak. During a move into either mode, the field still
@@ -527,8 +528,9 @@ type AttachedClusterStatus struct {
 	// or that it changed while the operator claimed it. InvalidReference
 	// means that the operator cannot read the platform config of the cluster.
 	// It also means that the cluster uses OIDC with another issuer than the
-	// management plane. WriteFailed means that the cluster refused the Console ping
-	// settings. The fifth value, BasicAuthUserFailed, is on an attached row.
+	// management plane. WriteFailed means that the API server refused the
+	// write of the Console ping settings. The fifth value,
+	// BasicAuthUserFailed, is on an attached row.
 	// The management plane serves the cluster, but the Web Modeler user on
 	// it is missing.
 	// +optional
@@ -583,9 +585,9 @@ type KeycloakRealmTarget struct {
 // ManagementAuthConfig that Optimize reads. It attaches the management plane
 // to the orchestration clusters that clusterSelector matches.
 //
-// Only a platform administrator creates a CamundaManagementCluster. The
-// selector reaches CamundaClusters in every namespace, and the operator
-// adds annotations to the clusters that it matches.
+// The creation of a CamundaManagementCluster is a task for a platform
+// administrator. The selector reaches CamundaClusters in every namespace,
+// and the operator adds annotations to the clusters that it matches.
 type CamundaManagementCluster struct {
 	metav1.TypeMeta `json:",inline"`
 

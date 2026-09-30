@@ -111,7 +111,8 @@ spec:
                   rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
                     == 'https')
               issuerUrl:
-                description: IssuerURL is the OIDC issuer URL that validates tokens.
+                description: IssuerURL is the OIDC issuer URL for the validation of
+                  tokens.
                 type: string
                 x-kubernetes-validations:
                 - message: issuerUrl must be a valid http or https URL

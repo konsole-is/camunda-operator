@@ -97,9 +97,9 @@ type PointInTimeRestoreSpec struct {
 	// back to this point. With external, you roll the server back to it
 	// before you create the restore.
 	//
-	// The point must be at least one backup interval before the cluster
-	// stopped writing. It must also be inside the window in which Zeebe keeps
-	// its primary-storage backups. The CamundaCluster sets these with
+	// Choose a point at least one backup interval before the cluster stopped
+	// writing. Also choose a point inside the window in which Zeebe keeps its
+	// primary-storage backups. The CamundaCluster sets these with
 	// spec.backup.primaryStorage.schedule and retention.window. The defaults
 	// are one hour and seven days. If no backup covers the point, the restore
 	// fails after it erased the broker volumes.
@@ -173,7 +173,8 @@ type PointInTimeRestoreStatus struct {
 	// rolls back: the host, the port, and the database name. The operator
 	// records it just before it asks for the rollback. It follows each
 	// endpoint that the contract names. From then until the final phase, no
-	// other CamundaCluster starts on this database. A restore whose server
+	// other CamundaCluster starts on this database, also when the contract
+	// names another endpoint. A restore whose server
 	// rolls back outside the operator records no backend.
 	// +optional
 	Backend string `json:"backend,omitempty"`

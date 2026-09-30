@@ -54,7 +54,7 @@ const (
 //
 // The spec has no platformConfigRef. The image repository and the license come
 // from the CamundaPlatformConfig of the referenced cluster, so Optimize and
-// the cluster always use the same values.
+// the cluster cannot have different values.
 type CamundaOptimizeSpec struct {
 	// Version is the Optimize version to deploy, as a full semantic version.
 	// Optimize has its own patch line, so it does not follow the version of

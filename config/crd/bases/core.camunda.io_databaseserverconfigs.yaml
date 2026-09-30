@@ -92,7 +92,7 @@ spec:
                 - postgres
                 type: string
               host:
-                description: Host is the host name of the server.
+                description: Host is the host name or the address of the server.
                 minLength: 1
                 type: string
               pitr:
@@ -309,7 +309,7 @@ spec:
                   ProbedAt is when the operator last reached the server and read
                   ServerVersion and SystemIdentifier. The operator probes the server
                   again when this is older than the probe interval, or when the admin
-                  credentials Secret changed.
+                  credentials Secret changed. Between probes, it does not change.
 
                   A change to the endpoint or to the admin credentials clears this
                   field, and also ServerVersion, SystemIdentifier, ProbedEndpoint,
