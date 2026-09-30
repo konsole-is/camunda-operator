@@ -1737,10 +1737,10 @@ func (r *DatabaseServerReconciler) serviceAccountTaken(
 	return fmt.Sprintf("ServiceAccount %q is controlled by %s %q", key.Name, holder.Kind, holder.Name), nil
 }
 
-// archivePluginRoles returns the clusters of the server, the one it runs and,
-// while a rollback runs, the one it builds and the one it leaves, and whether
-// each is granted the Role that the Barman Cloud plugin creates for it. A
-// cluster under another owner is left out.
+// archivePluginRoles returns the clusters of the server, the one it runs and
+// the ones its last rollback built and left while they exist, and whether each
+// is granted the Role that the Barman Cloud plugin creates for it. A cluster
+// under another owner is left out.
 //
 // A cluster is not granted until its Role exists: the API server refuses a
 // RoleBinding to a missing Role unless the writer may bind any Role. It is not
@@ -1752,7 +1752,7 @@ func (r *DatabaseServerReconciler) archivePluginRoles(
 	serviceAccountTaken string,
 ) ([]components.ArchivePluginRole, error) {
 	names := []string{components.ClusterName(server)}
-	if recovery := server.Status.Recovery; recovery != nil && recovery.CompletedAt == nil {
+	if recovery := server.Status.Recovery; recovery != nil {
 		for _, name := range []string{recovery.Cluster, recovery.PreviousCluster} {
 			if name != "" && !slices.Contains(names, name) {
 				names = append(names, name)

@@ -33,11 +33,27 @@ import (
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 )
 
-// Between the cutover and the answer, the cluster that the server left still
-// runs, and so does its binding. That binding must stay in reach, so that it
-// is withdrawn with the others when another owner takes the ServiceAccount.
+// The cluster that a rollback left runs until it is removed, also after the
+// answer. Its binding must stay in reach, so that it goes with the others
+// when another owner takes the ServiceAccount.
 func TestArchivePluginRolesKeepTheClusterTheRollbackLeft(t *testing.T) {
 	t.Parallel()
+
+	for name, completedAt := range map[string]*metav1.Time{
+		"running":  nil,
+		"answered": new(metav1.Now()),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assertBothClustersBound(t, completedAt)
+		})
+	}
+}
+
+// assertBothClustersBound runs archivePluginRoles after a cutover whose
+// recovery completed at completedAt, and expects both clusters granted.
+func assertBothClustersBound(t *testing.T, completedAt *metav1.Time) {
+	t.Helper()
 
 	server := &v1.DatabaseServer{
 		ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: "camunda-ns", UID: "server-uid"},
@@ -46,6 +62,7 @@ func TestArchivePluginRolesKeepTheClusterTheRollbackLeft(t *testing.T) {
 			Recovery: &v1.DatabaseServerRecoveryStatus{
 				Cluster:         "camunda-r1",
 				PreviousCluster: "camunda",
+				CompletedAt:     completedAt,
 			},
 		},
 	}
