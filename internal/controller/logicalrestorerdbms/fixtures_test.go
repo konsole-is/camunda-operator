@@ -481,6 +481,13 @@ func createAndDelete(lrr *v1.LogicalRestoreRDBMS) {
 			}
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 		}, timeout, interval).Should(Succeed())
+		// The finalizer that this cleanup removes is what releases these Leases.
+		Expect(k8sClient.DeleteAllOf(
+			ctx,
+			&coordinationv1.Lease{},
+			client.InNamespace(claimNamespace),
+			client.MatchingLabels{labels.WriterUIDKey: string(lrr.UID)},
+		)).To(Succeed())
 	})
 }
 

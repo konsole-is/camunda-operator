@@ -520,6 +520,13 @@ func createRestore(w *world, mutate ...func(*v1.PointInTimeRestore)) *v1.PointIn
 			}
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 		}, timeout, interval).Should(Succeed())
+		// The finalizer that this cleanup removes is what releases these Leases.
+		Expect(k8sClient.DeleteAllOf(
+			ctx,
+			&coordinationv1.Lease{},
+			client.InNamespace(testClaimNamespace),
+			client.MatchingLabels{labels.WriterUIDKey: string(pitr.UID)},
+		)).To(Succeed())
 	})
 
 	return pitr
