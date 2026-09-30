@@ -19,6 +19,8 @@ package logicalrestoreelasticsearch
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin/esadmintest"
@@ -57,6 +59,18 @@ var _ = Describe("LogicalRestoreElasticsearch with a restored primary that no no
 		Eventually(func(g Gomega) {
 			g.Expect(writersNaming(restore)).To(BeEmpty())
 			g.Expect(latest(g, restore).Status.RecoveryHeld).To(HaveValue(BeFalse()))
+		}, timeout, interval).Should(Succeed())
+
+		By("not reporting that Elasticsearch finished the recovery of a red index")
+		Eventually(func(g Gomega) {
+			var events corev1.EventList
+			g.Expect(k8sClient.List(ctx, &events, client.InNamespace(restore.Namespace))).To(Succeed())
+			g.Expect(events.Items).To(ContainElement(SatisfyAll(
+				HaveField("Reason", "RecoveryEnded"),
+				HaveField("InvolvedObject.Name", restore.Name),
+				HaveField("Message", ContainSubstring("gets no node")),
+				HaveField("Message", Not(ContainSubstring("finished the recovery"))),
+			)))
 		}, timeout, interval).Should(Succeed())
 	})
 
