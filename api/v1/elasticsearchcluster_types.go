@@ -45,7 +45,7 @@ type ServiceAccountSpec struct {
 	// workload-identity annotations (IRSA, GCP Workload Identity, and more)
 	// that give the pods access to cloud resources, such as the snapshot
 	// bucket for backups. The operator also adds the identity annotation of
-	// each bucket contract that the resource uses. An annotation set here
+	// each bucket contract that names an identity. An annotation set here
 	// wins over the operator annotation with the same key.
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
@@ -180,8 +180,9 @@ type ElasticsearchClusterSpec struct {
 	// Elasticsearch data volume cannot become smaller in place. The API
 	// server refuses a change of this field in an ElasticsearchCluster to a
 	// smaller value. A smaller value is accepted when the field was not set
-	// before, or when a preset lowers the size. The cluster then keeps its
-	// larger size and records a StorageShrinkIgnored event.
+	// before, or when a preset lowers the size. A cluster whose volumes are
+	// already larger then keeps that size and records a StorageShrinkIgnored
+	// event.
 	// +optional
 	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
 	// StorageClassName is the StorageClass of the data volumes. Defaults to
@@ -294,9 +295,11 @@ type ElasticsearchClusterStatus struct {
 	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Version is the Elasticsearch version that the cluster runs, as a full
-	// semantic version. It comes from the merged spec, so it is correct when
-	// the release, the preset, or the cluster gives the version. It is empty
+	// Version is the effective Elasticsearch version of the cluster, as a
+	// full semantic version. It comes from the merged spec, so it is correct
+	// when the release, the preset, or the cluster gives the version. During
+	// an upgrade, or when the operator cannot apply the change, the old
+	// version can still run. It is empty
 	// until the operator resolves the references of the cluster for the first
 	// time.
 	// +optional

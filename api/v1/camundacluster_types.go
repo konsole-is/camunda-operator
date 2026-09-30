@@ -163,9 +163,9 @@ type ZeebeSpec struct {
 	// StorageSize is the size of the data volume of each broker. Defaults to
 	// 10Gi. It can only grow. The API server refuses a change of this field
 	// in a CamundaCluster to a smaller value. A smaller value is accepted when
-	// the field was not set before, or when a preset lowers the size. The
-	// cluster then keeps its larger size and records a StorageShrinkIgnored
-	// event.
+	// the field was not set before, or when a preset lowers the size. A
+	// cluster whose volumes are already larger then keeps that size and
+	// records a StorageShrinkIgnored event.
 	// When the size grows, the operator expands the existing claims in place.
 	// The storage class must support volume expansion.
 	// +optional

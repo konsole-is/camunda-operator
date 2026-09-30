@@ -172,8 +172,8 @@ type DatabaseServerSpec struct {
 	// PostgreSQL data volume cannot become smaller in place. The API server
 	// refuses a change of this field in a DatabaseServer to a smaller value.
 	// A smaller value is accepted when the field was not set before, or when
-	// a preset lowers the size. The server then keeps its larger size and
-	// records a StorageShrinkIgnored event.
+	// a preset lowers the size. A server whose volumes are already larger
+	// then keeps that size and records a StorageShrinkIgnored event.
 	// +optional
 	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
 	// StorageClassName is the StorageClass of the data volumes. Defaults to

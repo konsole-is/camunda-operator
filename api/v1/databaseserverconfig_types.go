@@ -203,8 +203,8 @@ type DatabaseServerConfigStatus struct {
 	// endpoint, as the server reported it on the last probe. It identifies
 	// the server itself. Thus two contracts that describe one server with
 	// different hosts publish the same value. The operator uses it to keep
-	// each logical database unique. A change to the endpoint or to the admin
-	// credentials clears it.
+	// each logical database unique. A change to the endpoint or to
+	// adminCredentialsSecretRef clears it.
 	// +optional
 	SystemIdentifier string `json:"systemIdentifier,omitempty"`
 	// ProbedAt is when the operator last reached the server and read
@@ -212,7 +212,7 @@ type DatabaseServerConfigStatus struct {
 	// again when this is older than the probe interval, or when the admin
 	// credentials Secret changed. Between probes, it does not change.
 	//
-	// A change to the endpoint or to the admin credentials clears this
+	// A change to the endpoint or to adminCredentialsSecretRef clears this
 	// field, and also ServerVersion, SystemIdentifier, ProbedEndpoint,
 	// ProbedSecretName, ProbedSecretKeys, and ProbedSecretVersion. These
 	// fields describe the server of the old spec. A change to another field,
