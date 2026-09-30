@@ -495,7 +495,7 @@ type DatabaseServerStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Version is the PostgreSQL major version that the server runs, as a
 	// number such as "17". It comes from the merged spec, so it is correct
-	// when the release, the preset, or the server gives the version. While
+	// when the release or the server gives the version. While
 	// the operator refuses a version change, it shows the major version of the
 	// data directory. It is empty until the operator resolves the references
 	// of the server for the first time.

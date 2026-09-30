@@ -5854,7 +5854,7 @@ spec:
                       Create makes the operator create and own the ServiceAccount. Defaults
                       to true. False names a ServiceAccount that already exists. The operator
                       then does not create, annotate, or own it. If it does not exist, Ready
-                      reports InvalidReference. The operator never takes ownership of a
+                      reports InvalidReference, except on a suspended ElasticsearchCluster. The operator never takes ownership of a
                       ServiceAccount that it did not create, because it deletes an owned one
                       with the resource.
                     type: boolean

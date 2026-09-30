@@ -171,7 +171,9 @@ type LogicalBackupRDBMSStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions represent the current state. The Ready condition has the
-	// phase as its reason. Its message names a failed step.
+	// phase as its reason, and its message names a failed step. For a
+	// Pending backup, Ready has the reason of the check that holds it, and
+	// the message explains that check.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

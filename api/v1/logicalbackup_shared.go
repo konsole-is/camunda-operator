@@ -69,7 +69,8 @@ const (
 // The condition vocabulary that both logical backup kinds report. Reasons
 // that only one kind reports are declared next to that kind.
 const (
-	// ReasonProgressing means that the backup runs.
+	// ReasonProgressing means that the backup runs, or that it waits, for
+	// example for the cluster to run its current spec.
 	ReasonProgressing = "Progressing"
 	// ReasonCompleted means that the backup finished and a restore can use
 	// it.

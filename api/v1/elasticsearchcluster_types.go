@@ -36,7 +36,7 @@ type ServiceAccountSpec struct {
 	// Create makes the operator create and own the ServiceAccount. Defaults
 	// to true. False names a ServiceAccount that already exists. The operator
 	// then does not create, annotate, or own it. If it does not exist, Ready
-	// reports InvalidReference. The operator never takes ownership of a
+	// reports InvalidReference, except on a suspended ElasticsearchCluster. The operator never takes ownership of a
 	// ServiceAccount that it did not create, because it deletes an owned one
 	// with the resource.
 	// +optional
@@ -297,7 +297,7 @@ type ElasticsearchClusterStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Version is the effective Elasticsearch version of the cluster, as a
 	// full semantic version. It comes from the merged spec, so it is correct
-	// when the release, the preset, or the cluster gives the version. During
+	// when the release or the cluster gives the version. During
 	// an upgrade, or when the operator cannot apply the change, the old
 	// version can still run. It is empty
 	// until the operator resolves the references of the cluster for the first
