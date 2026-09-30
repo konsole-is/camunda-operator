@@ -583,6 +583,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		// A restore whose cluster still exists asks again for a request that is
 		// cleared, so the cluster goes first.
 		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		expectRecovering(pitr, "was deleted", w.server.Name)
 		Eventually(func(g Gomega) {
 			var contract v1.DatabaseServerConfig
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), &contract)).To(Succeed())
