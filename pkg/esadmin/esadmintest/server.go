@@ -97,6 +97,8 @@ type Snapshot struct {
 
 // Shard is the fake's routing entry of one shard copy.
 type Shard struct {
+	// Number is the shard number that the copy belongs to.
+	Number int
 	// Primary is true for the primary copy and false for a replica.
 	Primary bool
 	// State in the Elasticsearch vocabulary, for example INITIALIZING.
@@ -760,12 +762,13 @@ func (s *Server) handleRoutingTable(w http.ResponseWriter, r *http.Request, targ
 			shards = []Shard{{Primary: true, State: "STARTED"}}
 		}
 
-		copies := make([]map[string]any, 0, len(shards))
+		copies := map[string][]map[string]any{}
 		for _, shard := range shards {
+			number := strconv.Itoa(shard.Number)
 			entry := map[string]any{
 				"state":   shard.State,
 				"primary": shard.Primary,
-				"shard":   0,
+				"shard":   shard.Number,
 				"index":   name,
 			}
 			if shard.RecoverySource != "" {
@@ -777,9 +780,9 @@ func (s *Server) handleRoutingTable(w http.ResponseWriter, r *http.Request, targ
 					"allocation_status": shard.AllocationStatus,
 				}
 			}
-			copies = append(copies, entry)
+			copies[number] = append(copies[number], entry)
 		}
-		indices[name] = map[string]any{"shards": map[string]any{"0": copies}}
+		indices[name] = map[string]any{"shards": copies}
 	}
 	adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{
 		"cluster_name":  "fake",

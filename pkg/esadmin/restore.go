@@ -85,7 +85,7 @@ const (
 	RestoreStranded RestoreState = "STRANDED"
 )
 
-// Progress is what RestoreProgress read.
+// Progress is the answer of RestoreProgress.
 type Progress struct {
 	State RestoreState
 	// Stranded names each restored primary that no node takes, sorted by index

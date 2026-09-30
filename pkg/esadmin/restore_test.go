@@ -365,23 +365,37 @@ func TestRestoreProgressReportsARestoredPrimaryThatNoNodeTakes(t *testing.T) {
 	}
 }
 
-// The stranded primaries come sorted by index and shard, so the same cluster
-// reads the same every time.
+// The stranded primaries come sorted by index, then by shard number, so the
+// same cluster reads the same every time.
 func TestRestoreProgressSortsTheStrandedPrimaries(t *testing.T) {
-	stranded := esadmintest.Shard{
-		Primary: true, State: "UNASSIGNED", RecoverySource: "SNAPSHOT",
-		UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "deciders_no",
+	stranded := func(number int) esadmintest.Shard {
+		return esadmintest.Shard{
+			Number: number, Primary: true, State: "UNASSIGNED", RecoverySource: "SNAPSHOT",
+			UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "deciders_no",
+		}
 	}
 	client, server := newClient(t)
 	server.SetIndices("camunda-record-b", "camunda-record-a")
-	server.SetShards("camunda-record-b", stranded)
-	server.SetShards("camunda-record-a", stranded)
+	server.SetShards("camunda-record-b", stranded(10), stranded(2))
+	server.SetShards("camunda-record-a", stranded(0))
 
 	progress, err := client.RestoreProgress(t.Context(), []string{"camunda-record*"})
 	require.NoError(t, err)
-	require.Len(t, progress.Stranded, 2)
-	assert.Equal(t, "camunda-record-a", progress.Stranded[0].Index)
-	assert.Equal(t, "camunda-record-b", progress.Stranded[1].Index)
+
+	type position struct {
+		index string
+		shard int
+	}
+	got := make([]position, 0, len(progress.Stranded))
+	for _, shard := range progress.Stranded {
+		got = append(got, position{shard.Index, shard.Shard})
+	}
+	want := []position{
+		{"camunda-record-a", 0},
+		{"camunda-record-b", 2},
+		{"camunda-record-b", 10},
+	}
+	assert.Equal(t, want, got)
 }
 
 // A shard that still recovers can still write to the backend, so it decides
