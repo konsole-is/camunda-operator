@@ -322,14 +322,23 @@ func (c Claimant) Display() string {
 }
 
 // WaitMessage is the condition message of a claimant that waits while holder
-// claims the cluster. holder is the Display form, or the raw identity when it
-// does not parse. waiter names the kind of operation that waits, such as
-// "backup" or "restore".
+// claims the cluster. holder is the identity that Claim returned. waiter
+// names the kind of operation that waits, such as "backup" or "restore".
 func WaitMessage(holder, namespace, cluster, waiter string) string {
+	parsed, err := ParseClaimant(holder)
+	if err != nil {
+		// No claimant takes over a Lease that names no claimant.
+		return fmt.Sprintf(
+			"The claim Lease %s/%s of CamundaCluster %s/%s names the holder %q, which is not a backup "+
+				"or restore of this operator. This %s waits until you delete that Lease",
+			namespace, ClaimLeaseName(cluster), namespace, cluster, holder, waiter,
+		)
+	}
+
 	return fmt.Sprintf(
 		"%s holds CamundaCluster %s/%s. Only one backup or restore of a cluster runs at a time, "+
 			"so this %s starts when that operation no longer holds the cluster",
-		holder, namespace, cluster, waiter,
+		parsed.Display(), namespace, cluster, waiter,
 	)
 }
 

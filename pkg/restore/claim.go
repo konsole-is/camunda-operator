@@ -54,16 +54,9 @@ func Take(
 		return Outcome{Done: true}, nil
 	}
 
-	// The Lease records the exact identity, which carries a UID that says
-	// nothing to a reader of the condition.
-	display := holder
-	if parsed, parseErr := clusterclaim.ParseClaimant(holder); parseErr == nil {
-		display = parsed.Display()
-	}
-
 	return Outcome{Failure: &conditions.PreCheckFailure{
 		Reason:  v1.ReasonClusterClaimed,
-		Message: clusterclaim.WaitMessage(display, namespace, cluster, "restore"),
+		Message: clusterclaim.WaitMessage(holder, namespace, cluster, "restore"),
 	}}, nil
 }
 

@@ -107,10 +107,6 @@ func (r *LogicalBackupRDBMSReconciler) claimCluster(
 	if holder == "" {
 		return "", nil
 	}
-	if parsed, err := clusterclaim.ParseClaimant(holder); err == nil {
-		holder = parsed.Display()
-	}
-
 	return clusterclaim.WaitMessage(holder, backup.Namespace, backup.Spec.ClusterRef.Name, "backup"), nil
 }
 

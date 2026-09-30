@@ -126,7 +126,7 @@ func (r *Reconciler) claimCluster(ctx context.Context, backup *v1.LogicalBackupE
 			parsed.Display(), backup.Namespace, cluster,
 		), nil
 	}
-	return clusterclaim.WaitMessage(parsed.Display(), backup.Namespace, cluster, "backup"), nil
+	return clusterclaim.WaitMessage(holder, backup.Namespace, cluster, "backup"), nil
 }
 
 // releaseClaim gives the claim on the cluster back. It is a no-op when the
