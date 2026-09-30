@@ -145,9 +145,15 @@ func Remaining(
 			continue
 		}
 
+		// A reason that ocf does not know was staged by a controller, which
+		// writes it again after every reconcile, so a wake-up changes nothing.
+		if cond.ComponentStatus().Priority() == 0 {
+			continue
+		}
+
 		switch cond.ComponentStatus() {
 		case component.Down, component.Degraded,
-			component.Unknown, component.PrerequisiteNotMet, component.FeatureGateError,
+			component.PrerequisiteNotMet, component.FeatureGateError,
 			component.PendingSuspension, component.Suspending:
 			continue
 		}

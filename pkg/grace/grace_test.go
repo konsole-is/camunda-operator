@@ -198,6 +198,10 @@ func TestRemaining(t *testing.T) {
 			reason: component.Suspending, since: time.Minute,
 		},
 		{
+			name: "a component with a reason that a controller staged does not wait", status: metav1.ConditionFalse,
+			reason: component.Status("ClusterTaken"), since: time.Minute,
+		},
+		{
 			name: "a component past its period does not wait", status: metav1.ConditionFalse,
 			reason: component.AliveUpdating, since: time.Hour,
 		},
