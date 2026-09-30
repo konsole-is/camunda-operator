@@ -78,7 +78,7 @@ const (
 	// ReasonClusterSuspended means the referenced cluster is suspended, so
 	// its management API is unreachable.
 	ReasonClusterSuspended = "ClusterSuspended"
-	// ReasonBackupInProgress means that another holder claims the cluster, so
-	// this backup waits in Pending. The message names the holder.
+	// ReasonBackupInProgress means that the cluster is claimed, and this backup
+	// waits in Pending. The message names the holder or a Lease to delete.
 	ReasonBackupInProgress = "BackupInProgress"
 )

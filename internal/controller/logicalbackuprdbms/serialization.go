@@ -89,7 +89,7 @@ func blocks(other, backup *v1.LogicalBackupRDBMS) bool {
 }
 
 // claimCluster takes the claim on the cluster for the backup. It returns
-// the message that names the blocking holder, or "" when the backup holds
+// the wait message for the blocking claim, or "" when the backup holds
 // the claim. It runs before the controller allocates and flushes the backup
 // id. A re-entry after a failed flush finds itself as the holder and proceeds.
 func (r *LogicalBackupRDBMSReconciler) claimCluster(

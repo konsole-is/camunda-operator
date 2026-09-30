@@ -322,7 +322,8 @@ func (c Claimant) Display() string {
 }
 
 // WaitMessage is the condition message of a claimant that waits while holder
-// claims the cluster. holder is the identity that Claim returned. waiter
+// claims the cluster. It names the holder, or the Lease to delete when no
+// claimant can take the claim over. holder is the identity that Claim returned. waiter
 // names the kind of operation that waits, such as "backup" or "restore".
 func WaitMessage(holder, namespace, cluster, waiter string) string {
 	if holder == unidentifiedHolder {

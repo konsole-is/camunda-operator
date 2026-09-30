@@ -334,7 +334,7 @@ func brokerClockComparable(
 					"the broker container takes %s from a reference, which only the kubelet resolves",
 					env.Name,
 				),
-				fmt.Sprintf("Set %s as a literal value that names UTC", env.Name),
+				literalRemedy(env.Name),
 			), nil
 		}
 		effective[env.Name] = env.Value
@@ -449,6 +449,17 @@ func zoneFailure(name, value string) *conditions.PreCheckFailure {
 		fmt.Sprintf("the broker container runs with -Duser.timezone=%s in %s", zone, name),
 		"Run the brokers in UTC",
 	)
+}
+
+// literalRemedy tells the user how to set the variable name as a literal
+// that keeps the broker in UTC. TZ takes a zone name, and the Java options
+// take a zone option among the other options.
+func literalRemedy(name string) string {
+	if name == "TZ" {
+		return "Set TZ as a literal value that names UTC"
+	}
+
+	return fmt.Sprintf("Set %s as a literal value. If it sets a zone, use -Duser.timezone=UTC", name)
 }
 
 // clockUnreadable builds the hold of a broker whose clock the operator cannot

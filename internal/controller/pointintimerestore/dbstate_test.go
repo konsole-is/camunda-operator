@@ -207,23 +207,36 @@ func TestZoneFailure(t *testing.T) {
 }
 
 // A zone that only the kubelet resolves holds the restore, and the message
-// names the variable to set as a literal value.
+// says how to set the variable as a literal value.
 func TestBrokerClockComparableHoldsAZoneFromAReference(t *testing.T) {
-	broker := &corev1.Container{Env: []corev1.EnvVar{{
-		Name: "TZ",
-		ValueFrom: &corev1.EnvVarSource{
-			ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: "zone"}, Key: "TZ",
-			},
+	tests := []struct {
+		variable string
+		want     string
+	}{
+		{variable: "TZ", want: "Set TZ as a literal value that names UTC. The restore then continues by itself"},
+		{
+			variable: "JAVA_OPTS",
+			want:     "Set JAVA_OPTS as a literal value. If it sets a zone, use -Duser.timezone=UTC. The restore",
 		},
-	}}}
+	}
 
-	failure, err := brokerClockComparable(t.Context(), nil, "ns", broker)
-	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.variable, func(t *testing.T) {
+			broker := &corev1.Container{Env: []corev1.EnvVar{{
+				Name: tt.variable,
+				ValueFrom: &corev1.EnvVarSource{
+					ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: "zone"}, Key: tt.variable,
+					},
+				},
+			}}}
 
-	require.NotNil(t, failure)
-	assert.Equal(t, v1.ReasonPitrUnavailable, failure.Reason)
-	assert.Contains(
-		t, failure.Message, "Set TZ as a literal value that names UTC. The restore then continues by itself",
-	)
+			failure, err := brokerClockComparable(t.Context(), nil, "ns", broker)
+			require.NoError(t, err)
+
+			require.NotNil(t, failure)
+			assert.Equal(t, v1.ReasonPitrUnavailable, failure.Reason)
+			assert.Contains(t, failure.Message, tt.want)
+		})
+	}
 }
