@@ -457,18 +457,17 @@ func createNamedRestore(w *world, restoreName, backupName string) *v1.LogicalRes
 			TargetClusterRef: v1.ClusterRef{Name: w.cluster.Name},
 		},
 	}
-	createAndDelete(lrr)
+	Expect(k8sClient.Create(ctx, lrr)).To(Succeed())
+	deleteAtSpecEnd(lrr)
 
 	return lrr
 }
 
-// createAndDelete creates lrr and removes it past its finalizer when the spec
-// ends.
-func createAndDelete(lrr *v1.LogicalRestoreRDBMS) {
-	GinkgoHelper()
-
-	Expect(k8sClient.Create(ctx, lrr)).To(Succeed())
+// deleteAtSpecEnd removes lrr past its finalizer when the spec ends. A restore
+// of the same name that the spec created again stays.
+func deleteAtSpecEnd(lrr *v1.LogicalRestoreRDBMS) {
 	// A restore left behind keeps polling, and the one worker makes later specs wait.
+	// envtest runs no garbage collector, so a deleted restore whose Jobs never go keeps its finalizer.
 	DeferCleanup(func() {
 		uid := lrr.UID
 		err := k8sClient.Delete(ctx, lrr, client.Preconditions{UID: &uid})
