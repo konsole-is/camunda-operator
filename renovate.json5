@@ -169,8 +169,10 @@
     {
       // The Renovate release behind `make lint-renovate` is a tool, not an
       // image: it moves with the tools, and it takes a major, because a new
-      // major is when the schema it checks against can change.
+      // major is when the schema it checks against can change. One update
+      // per release, not a patch and a minor on two branches.
       matchDepNames: ["renovate"],
+      separateMinorPatch: false,
       groupName: "tool-versions",
     },
     {
