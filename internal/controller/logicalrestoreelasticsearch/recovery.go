@@ -108,7 +108,7 @@ func (r *Reconciler) holdRecovery(ctx context.Context, lres *v1.LogicalRestoreEl
 		return 0, err
 	}
 
-	recovering, failure, err := r.readRecovery(ctx, lres)
+	state, failure, err := r.readRecovery(ctx, lres)
 	if err != nil {
 		return 0, err
 	}
@@ -133,10 +133,20 @@ func (r *Reconciler) holdRecovery(ctx context.Context, lres *v1.LogicalRestoreEl
 			r.opts.MidRunGrace,
 			failure.Message,
 		)
-	case recovering:
+	case state == esadmin.RestoreInProgress:
 		lres.Status.RecoveryUnknownSince = nil
 
 		return wait, nil
+	case state == esadmin.RestoreStranded:
+		r.EventRecorder.Eventf(
+			lres,
+			nil,
+			corev1.EventTypeNormal,
+			eventReasonRecoveryEnded,
+			restore.EventActionRestore,
+			"Elasticsearch recovers no more of the restored indices, and the restore gives its backend back. "+
+				"A restored primary shard gets no node, so its index stays red",
+		)
 	default:
 		r.EventRecorder.Eventf(
 			lres,
@@ -167,12 +177,12 @@ func (r *Reconciler) keepWriter(ctx context.Context, lres *v1.LogicalRestoreElas
 	return r.opts.PollInterval, err
 }
 
-// readRecovery reports whether Elasticsearch still recovers an index that the
+// readRecovery reads how far Elasticsearch recovered the indices that the
 // restore replaces. A failure says that the recovery cannot be read.
 func (r *Reconciler) readRecovery(
 	ctx context.Context,
 	lres *v1.LogicalRestoreElasticsearch,
-) (bool, *conditions.PreCheckFailure, error) {
+) (esadmin.RestoreState, *conditions.PreCheckFailure, error) {
 	cluster, failure, err := restore.ResolveCluster(
 		ctx,
 		r.APIReader,
@@ -180,26 +190,26 @@ func (r *Reconciler) readRecovery(
 		lres.Status.TargetClusterUID,
 	)
 	if err != nil || failure != nil {
-		return false, failure, err
+		return "", failure, err
 	}
 
 	storage, failure, err := restore.ResolveStorage(ctx, r.APIReader, cluster)
 	if err != nil || failure != nil {
-		return false, failure, err
+		return "", failure, err
 	}
 
 	// A target that moved to another Elasticsearch cannot answer for the recovery on the pinned one.
 	backend, failure, err := restore.BackendOf(ctx, r.APIReader, storage)
 	if err != nil || failure != nil {
-		return false, failure, err
+		return "", failure, err
 	}
 	if failure := restore.MovedBackend(cluster, backend, lres.Status.Backend); failure != nil {
-		return false, failure, nil
+		return "", failure, nil
 	}
 
 	admin, failure, err := secondarystorageconfig.ElasticsearchAdmin(ctx, r.APIReader, storage)
 	if err != nil || failure != nil {
-		return false, failure, err
+		return "", failure, err
 	}
 
 	// A restore that ended before it recorded its snapshots can have asked
@@ -207,10 +217,10 @@ func (r *Reconciler) readRecovery(
 	snapshots := lres.Status.RestoredSnapshots
 	optimize := len(snapshots) == 0 || logicalbackup.HasOptimizeSnapshot(snapshots)
 
-	state, err := admin.RestoreProgress(ctx, logicalbackup.CamundaIndexPatterns(optimize))
+	progress, err := admin.RestoreProgress(ctx, logicalbackup.CamundaIndexPatterns(optimize))
 	if err != nil {
-		return false, elasticsearchFailure("reading the recovery of the restored indices", err), nil
+		return "", elasticsearchFailure("reading the recovery of the restored indices", err), nil
 	}
 
-	return state == esadmin.RestoreInProgress, nil, nil
+	return progress.State, nil, nil
 }
