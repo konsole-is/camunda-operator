@@ -1657,6 +1657,45 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, 3*time.Second, interval).Should(BeTrue())
 	})
 
+	// A healthy server has no retry timer, so only the removal of the account
+	// can bring it back.
+	It("takes its ServiceAccount back once another owner lets it go", func() {
+		server := serverInNamespace(nil)
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000001")
+		expectConditionReason(server, v1.ConditionReady, metav1.ConditionTrue, v1.ReasonHealthy)
+
+		holder := serverNamed(server.Namespace, "holder", "holder", nil)
+		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-postgres"}
+		Eventually(func(g Gomega) {
+			var account corev1.ServiceAccount
+			g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+			account.OwnerReferences = []metav1.OwnerReference{{
+				APIVersion: v1.GroupVersion.String(),
+				Kind:       "DatabaseServer",
+				Name:       holder.Name,
+				UID:        reconciledServer(holder).UID,
+				Controller: new(true),
+			}}
+			g.Expect(k8sClient.Update(ctx, &account)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		expectConditionReason(
+			server, v1.ConditionClusterReady, metav1.ConditionFalse, string(component.GuardBlocked),
+		)
+
+		var taken corev1.ServiceAccount
+		Expect(k8sClient.Get(ctx, key, &taken)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &taken)).To(Succeed())
+
+		expectCondition(server, v1.ConditionClusterReady, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			var account corev1.ServiceAccount
+			g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+			g.Expect(metav1.IsControlledBy(&account, reconciledServer(server))).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("keeps the cluster off an archive store that another owner controls", func() {
 		namespace := "dbs-" + utilrand.String(8)
 		Expect(k8sClient.Create(ctx, &corev1.Namespace{

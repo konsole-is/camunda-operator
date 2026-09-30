@@ -107,7 +107,6 @@ func (r *DatabaseServerReconciler) watches(mgr ctrl.Manager) error {
 
 	return controller.
 		Owns(&corev1.Secret{}, builder.OnlyMetadata).
-		Owns(&corev1.ServiceAccount{}, builder.OnlyMetadata).
 		Owns(&v1.DatabaseServerConfig{}).
 		Watches(
 			&v1.DatabaseServerPreset{},
@@ -127,6 +126,7 @@ func (r *DatabaseServerReconciler) watches(mgr ctrl.Manager) error {
 		Watches(&v1.ObjectStorageConfig{}, r.enqueueForArchiveStorage()).
 		Watches(&corev1.Secret{}, r.enqueueForBucketSecret(), builder.OnlyMetadata).
 		Watches(&corev1.PersistentVolumeClaim{}, r.enqueueForDataClaim()).
+		Watches(&corev1.ServiceAccount{}, r.enqueueForServiceAccount(), builder.OnlyMetadata).
 		Named(controllerName).
 		Complete(r)
 }
@@ -158,6 +158,17 @@ func (r *DatabaseServerReconciler) enqueueForDataClaim() handler.EventHandler {
 
 		return r.serversMatching(ctx, o.GetNamespace(), func(server *v1.DatabaseServer) bool {
 			return components.ClusterName(server) == cluster
+		})
+	})
+}
+
+// enqueueForServiceAccount maps a ServiceAccount event to the server that
+// derives its name, whoever controls it. A server blocked on an account that
+// another owner holds hears of its removal only this way.
+func (r *DatabaseServerReconciler) enqueueForServiceAccount() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		return r.serversMatching(ctx, o.GetNamespace(), func(server *v1.DatabaseServer) bool {
+			return components.ServiceAccountName(server) == o.GetName()
 		})
 	})
 }
