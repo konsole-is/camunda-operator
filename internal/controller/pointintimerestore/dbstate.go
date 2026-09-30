@@ -334,7 +334,7 @@ func brokerClockComparable(
 					"the broker container takes %s from a reference, which only the kubelet resolves",
 					env.Name,
 				),
-				fmt.Sprintf("Set %s as a literal value", env.Name),
+				fmt.Sprintf("Set %s as a literal value that names UTC", env.Name),
 			), nil
 		}
 		effective[env.Name] = env.Value

@@ -114,7 +114,7 @@ Deleting the restore removes its Jobs and their pods. The broker volumes stay, a
 | `Ready` | `Completed` | The restore finished. `Ready` is `True`. The target starts again, unless you suspended it yourself or another hold remains. | Nothing. |
 | `Ready` | `Failed` | The restore ended. | Read `status.failureMessage`. Correct the cause. Delete the failed restore, then create a new one. |
 | `Ready` | `ClusterNotSuspended` | Somebody removed the suspension hold of the restore and cleared `spec.suspend`, after `Pending`. | Suspend the target again. The restore fails 10 minutes after the first outage. |
-| `Ready` | `ClusterClaimed` | Another backup or restore holds the target. The message names it. | Wait. The restore starts when the holder ends. |
+| `Ready` | `ClusterClaimed` | Another backup or restore holds the target. The message names it. | Wait. The restore starts when the holder gives the cluster back. If the message names a claim Lease to delete, delete it. |
 | `Ready` | `StorageAlreadyAttached` | Another cluster holds the logical database of the target. | Read [The backend](#the-backend). |
 | `Ready` | `WaitingForHandover` | The target does not hold its logical database yet, or pods still write it. | Wait. The message names what the restore waits for. |
 | `Ready` | `IncompatibleTarget` | The target cannot hold the backup, or its version moved after `Pending`. | Read [Compatibility](#compatibility). Create a new restore against a target that fits. |

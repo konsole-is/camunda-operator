@@ -325,6 +325,14 @@ func (c Claimant) Display() string {
 // claims the cluster. holder is the identity that Claim returned. waiter
 // names the kind of operation that waits, such as "backup" or "restore".
 func WaitMessage(holder, namespace, cluster, waiter string) string {
+	if holder == unidentifiedHolder {
+		return fmt.Sprintf(
+			"The claim Lease %s/%s of CamundaCluster %s/%s records no holder. "+
+				"This %s waits until you delete that Lease",
+			namespace, ClaimLeaseName(cluster), namespace, cluster, waiter,
+		)
+	}
+
 	parsed, err := ParseClaimant(holder)
 	if _, known := holderKinds[parsed.Kind]; err != nil || !known {
 		// No claimant takes over a Lease whose holder it cannot read.

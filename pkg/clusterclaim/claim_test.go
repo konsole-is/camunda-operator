@@ -719,3 +719,20 @@ func TestWaitMessage(t *testing.T) {
 	unknown := clusterclaim.WaitMessage("Unknown/x/uid-x", claimNamespace, "prod", "backup")
 	assert.Contains(t, unknown, "This backup waits until you delete that Lease")
 }
+
+// A Lease with an empty holderIdentity records no holder, so the message
+// names none.
+func TestWaitMessageForALeaseWithoutAHolder(t *testing.T) {
+	c := claimClient(t)
+	var lease coordinationv1.Lease
+	lease.Namespace = claimNamespace
+	lease.Name = clusterclaim.ClaimLeaseName("prod")
+	require.NoError(t, c.Create(t.Context(), &lease))
+
+	holder, err := clusterclaim.Claim(t.Context(), c, c, claimNamespace, "prod", second)
+	require.NoError(t, err)
+
+	message := clusterclaim.WaitMessage(holder, claimNamespace, "prod", "backup")
+	assert.Contains(t, message, "records no holder. This backup waits until you delete that Lease")
+	assert.NotContains(t, message, "names the holder")
+}

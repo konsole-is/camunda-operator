@@ -49,7 +49,7 @@ The dump pod takes its settings from `spec.backup.dump` of the cluster. If this 
 
 ## One operation at a time
 
-A cluster holds one backup or one restore at a time. A backup that finds another backup or a restore on the cluster waits in `Pending` with reason `BackupInProgress`, and the message names the holder. A restore also suspends the cluster, so the backup can wait with reason `ClusterSuspended` instead. The backup starts on its own when the holder ends.
+A cluster holds one backup or one restore at a time. A backup that finds another backup or a restore on the cluster waits in `Pending` with reason `BackupInProgress`, and the message names the holder. A restore also suspends the cluster, so the backup can wait with reason `ClusterSuspended` instead. The backup starts on its own when the holder gives the cluster back.
 
 ## Time limits
 
@@ -71,7 +71,7 @@ When you delete the backup, the operator deletes a Job that still runs, waits un
 | `Ready` | `Completed` | The backup finished. `Ready` is `True`. | Nothing. Record `status.backupId` and `status.zeebeBackupId` for a restore. |
 | `Ready` | `Failed` | The backup failed. | Read `status.failureMessage`. Correct the cause and create a new backup. |
 | `Ready` | `ClusterSuspended` | The cluster is suspended: by `spec.suspend`, by a restore, or by the operator to keep two clusters off one backend. The backup waits. | Read the `Ready` condition of the cluster for the cause. |
-| `Ready` | `BackupInProgress` | Another backup or a restore holds the cluster. This one waits. | Wait for the named holder to end. |
+| `Ready` | `BackupInProgress` | Another backup or a restore holds the cluster. This one waits. | Wait for the named holder to give the cluster back. If the message names a claim Lease to delete, delete it. |
 | `Ready` | `StorageTypeMismatch` | The cluster does not store its data in a relational database. | Use `LogicalBackupElasticsearch` for an Elasticsearch cluster. |
 | `Ready` | `InvalidReference` | The cluster, its `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` does not exist. Or the server has no current `status.serverVersion`, the dump pod cannot pull its image, or `spec.dump.extraEnv` names a reserved variable. | Read the message. Create the resource, or wait for the `DatabaseServerConfig` to become `Ready`. For a reserved variable, create a new backup without it. |
 | `Ready` | `MissingSecret` | The `DatabaseConfig` has no `backupCredentialsSecretRef`, that Secret does not exist, or the dump pod cannot start for a missing Secret. | Set `backupCredentialsSecretRef` on the `DatabaseConfig` and create the Secret. |

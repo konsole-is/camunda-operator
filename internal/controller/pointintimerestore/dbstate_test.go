@@ -223,5 +223,7 @@ func TestBrokerClockComparableHoldsAZoneFromAReference(t *testing.T) {
 
 	require.NotNil(t, failure)
 	assert.Equal(t, v1.ReasonPitrUnavailable, failure.Reason)
-	assert.Contains(t, failure.Message, "Set TZ as a literal value. The restore then continues by itself")
+	assert.Contains(
+		t, failure.Message, "Set TZ as a literal value that names UTC. The restore then continues by itself",
+	)
 }

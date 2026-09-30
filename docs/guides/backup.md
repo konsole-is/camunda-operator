@@ -318,7 +318,7 @@ On a PostgreSQL cluster, keep the retained dumps inside the primary-storage rete
 
 - On the Elasticsearch path, the operator soft pauses exporting on the cluster. Zeebe keeps processing, and broker disk usage grows while the backup runs. Camunda describes the mode in [Management API](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/zeebe/operations/management-api/). The operator resumes exporting when the set is written, and also when a step fails.
 - On the PostgreSQL path, a Job named `<backup>-dump` runs in the namespace of the cluster, under the ServiceAccount of the cluster. The operator deletes the Job when the dump is uploaded. A Job that failed stays, so that you can read its logs.
-- A cluster holds one backup or one restore at a time. A second backup waits in `Pending` with reason `BackupInProgress`, and starts when the holder ends.
+- A cluster holds one backup or one restore at a time. A second backup waits in `Pending` with reason `BackupInProgress`, and starts when the holder gives the cluster back.
 - If the cluster is suspended, a backup that has not started waits with reason `ClusterSuspended`.
 
 ## What an upgrade does to the backups you hold

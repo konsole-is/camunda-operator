@@ -44,7 +44,7 @@ The backup soft pauses exporting before it writes and resumes it at the end. Rec
 
 ## One operation at a time
 
-A cluster holds one backup or one restore at a time. A backup that finds another backup or a restore on the cluster waits in `Pending` with reason `BackupInProgress`, and the message names the holder. A restore also suspends the cluster, so the backup can wait with reason `ClusterSuspended` instead. The backup starts on its own when the holder ends. A backup that ended as `ResumeFailed` holds the cluster until you delete it.
+A cluster holds one backup or one restore at a time. A backup that finds another backup or a restore on the cluster waits in `Pending` with reason `BackupInProgress`, and the message names the holder. A restore also suspends the cluster, so the backup can wait with reason `ClusterSuspended` instead. The backup starts on its own when the holder gives the cluster back. A backup that ended as `ResumeFailed` holds the cluster until you delete it.
 
 ## Time limits
 
@@ -67,7 +67,7 @@ When you delete the backup, the operator deletes the snapshots and the partition
 | `Ready` | `Failed` | A step failed. Exporting runs again. | Read `status.failureMessage`. Correct the cause and create a new backup. |
 | `Ready` | `ResumeFailed` | A step failed or finished, and exporting did not resume within 30 minutes. Exporting stays paused. | Repair the management API, then delete this backup. The deletion resumes exporting. No other backup of the cluster starts before that. |
 | `Ready` | `ClusterSuspended` | The cluster is suspended: by `spec.suspend`, by a restore, or by the operator to keep two clusters off one backend. The backup waits. | Read the `Ready` condition of the cluster for the cause. |
-| `Ready` | `BackupInProgress` | Another backup or a restore holds the cluster. This one waits. | Wait. If the message says that the cluster is still paused, delete or repair the named backup. |
+| `Ready` | `BackupInProgress` | Another backup or a restore holds the cluster. This one waits. | Wait. If the message says that the cluster is still paused, delete or repair the named backup. If the message names a claim Lease to delete, delete it. |
 | `Ready` | `StorageTypeMismatch` | The cluster does not store its data in Elasticsearch. | Use `LogicalBackupRDBMS` for a relational cluster. |
 | `Ready` | `InvalidReference` | The cluster, its `SecondaryStorageConfig`, or its `ObjectStorageConfig` does not exist, or the cluster publishes no snapshot repository. | Read the message. Create the resource, or set `snapshotStorageRef` on the `ElasticsearchCluster`. |
 | `Ready` | `MissingSecret` | A credentials Secret does not exist: the one that `status.management` of the cluster names, or the Elasticsearch credentials. | Create the Secret that the message names. |
