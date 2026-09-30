@@ -957,6 +957,11 @@ func itRunsAPointInTimeRestoreThroughTheDatabaseServer(cluster *v1.CamundaCluste
 			g.Expect(current.Status.Archive.History[1].ServerName).To(Equal(server + "-r1"))
 			g.Expect(current.Status.Archive.History[1].To).To(BeNil())
 		}, dsReadyTimeout, 5*time.Second).Should(Succeed())
+
+		By("running the recovered instance under the ServiceAccount the server had before")
+		var instance corev1.Pod
+		Expect(utils.Get("pod", server+"-r1-1", cluster.Namespace, &instance)).To(Succeed())
+		Expect(instance.Spec.ServiceAccountName).To(Equal(server + "-postgres"))
 	})
 }
 

@@ -83,7 +83,7 @@ spec:
     storageClassName: "ssd"
     # string (resource quantity). Optional. Size of a separate volume for the write-ahead log.
     walStorageSize: "8Gi"
-    # object. Optional. The ServiceAccount that CloudNativePG creates for the instance pods. See DatabaseServer.
+    # object. Optional. The ServiceAccount <name>-postgres of the instance pods, which the operator creates. See DatabaseServer.
     serviceAccount:
       # map[string]string. Optional. Annotations for workload identity.
       annotations: {}

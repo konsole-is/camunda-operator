@@ -16,10 +16,10 @@ limitations under the License.
 
 // Package databaseserver renders the resources that a DatabaseServer CR
 // publishes. It merges the preset into the spec, validates the merged spec,
-// and assembles the ocf components: the CloudNativePG cluster, the continuous
-// archive, the published DatabaseServerConfig, and the optional PodMonitor.
-// Everything here is pure: spec in, resources out, no API calls. The
-// controller in internal/controller drives it.
+// and assembles the ocf components: the CloudNativePG cluster and its
+// ServiceAccount, the continuous archive, the published DatabaseServerConfig,
+// and the optional PodMonitor. Everything here is pure: spec in, resources
+// out, no API calls. The controller in internal/controller drives it.
 package databaseserver
 
 import (
@@ -32,6 +32,8 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
+	"github.com/sourcehawk/operator-component-framework/pkg/primitives/rolebinding"
+	"github.com/sourcehawk/operator-component-framework/pkg/primitives/serviceaccount"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -81,6 +83,9 @@ const (
 	// superuserSecretSuffix appended to the cluster name yields the Secret
 	// that CloudNativePG writes the superuser credentials to.
 	superuserSecretSuffix = "-superuser"
+	// serviceAccountSuffix appended to the server name yields the
+	// ServiceAccount of the instance pods.
+	serviceAccountSuffix = "-postgres"
 	// defaultInstances is the instance count of a server whose merged spec
 	// leaves it unset.
 	defaultInstances = 1
@@ -108,8 +113,9 @@ func (r RequestedStorage) annotations() map[string]string {
 }
 
 // ClusterComponent builds the cluster component from the preset-merged spec:
-// the CloudNativePG cluster that runs the PostgreSQL instances. spec.suspend
-// suspends the component, which hibernates the cluster and keeps its volumes.
+// the ServiceAccount of the instance pods and the CloudNativePG cluster that
+// runs the PostgreSQL instances. spec.suspend suspends the component, which
+// hibernates the cluster and keeps its volumes.
 //
 // The returned data cell holds the PostgreSQL system identifier that
 // CloudNativePG reports, empty until it has detected one. It is set after the
@@ -142,6 +148,10 @@ func (r RequestedStorage) annotations() map[string]string {
 // larger volumes. The cluster carries it in RequestedStorageSizeAnnotation and
 // RequestedWALStorageSizeAnnotation.
 //
+// While the server archives, each pluginRoles entry with Granted set gets a
+// RoleBinding from the Role of the Barman Cloud plugin to the ServiceAccount of
+// the server: see pluginbinding.go.
+//
 // gracePeriod is how long the cluster may take to become ready before
 // ClusterReady reports Degraded or Down. Zero keeps the progress reason.
 func ClusterComponent(
@@ -152,9 +162,15 @@ func ClusterComponent(
 	archiveTaken string,
 	platform *v1.CamundaPlatformConfigSpec,
 	blocked string,
+	pluginRoles []ArchivePluginRole,
 	gracePeriod time.Duration,
 ) (*component.Component, *concepts.Data[string], error) {
 	systemIdentifier := concepts.NewData[string]("postgres-system-identifier")
+
+	account, err := serviceaccount.NewBuilder(serviceAccount(server, merged, archive)).Build()
+	if err != nil {
+		return nil, nil, err
+	}
 
 	builder := cnpgcluster.NewBuilder(cluster(server, merged, requested, platform)).
 		WithMutation(clusterMutations(server, merged, archive, archiveTaken)...).
@@ -168,9 +184,29 @@ func ClusterComponent(
 		return nil, nil, err
 	}
 
-	comp, err := component.NewComponentBuilder().
+	compBuilder := component.NewComponentBuilder().
 		WithName("cluster").
 		WithConditionType(v1.ConditionClusterReady).
+		// CloudNativePG does not start a cluster whose ServiceAccount is
+		// missing, so the account goes first.
+		WithResource(keptServiceAccount{account}, component.BlockOnForeignController())
+
+	archiving := Archiving(merged) && archiveTaken == ""
+	for _, role := range pluginRoles {
+		binding, err := rolebinding.NewBuilder(archivePluginBinding(server, role)).Build()
+		if err != nil {
+			return nil, nil, err
+		}
+		// Unowned, because the owner reference is the cluster's.
+		compBuilder = compBuilder.WithResource(
+			binding,
+			component.Unowned(),
+			component.GatedBy(feature.NewBooleanGate(archiving && role.Granted)),
+			component.BlockOnForeignController(),
+		)
+	}
+
+	comp, err := compBuilder.
 		WithResource(postgres, component.BlockOnForeignController()).
 		WithGracePeriod(gracePeriod).
 		Suspend(merged.Suspend && blocked == "").
@@ -182,9 +218,91 @@ func ClusterComponent(
 	return comp, systemIdentifier, nil
 }
 
+// keptServiceAccount is the ServiceAccount resource, applied while the
+// component is suspended too. ocf applies only a Suspendable resource then,
+// and CloudNativePG reads the account before it hibernates a cluster, so a
+// server created suspended would never reach Suspended without it.
+type keptServiceAccount struct {
+	*serviceaccount.Resource
+}
+
+// DeleteOnSuspend keeps the account.
+func (keptServiceAccount) DeleteOnSuspend() bool { return false }
+
+// Suspend changes nothing on the account.
+func (keptServiceAccount) Suspend() error { return nil }
+
+// SuspensionStatus reports the account suspended once it is applied.
+func (keptServiceAccount) SuspensionStatus() (concepts.SuspensionStatusWithReason, error) {
+	return concepts.SuspensionStatusWithReason{
+		Status: concepts.SuspensionStatusSuspended,
+		Reason: "The ServiceAccount stays applied.",
+	}, nil
+}
+
+// serviceAccount renders the ServiceAccount of the instance pods. Its
+// annotations are the identity of the archive bucket with the annotations of
+// spec.serviceAccount layered over it, so a value the user states wins over
+// the derived one on the same key.
+func serviceAccount(
+	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
+	archive *ArchiveStorage,
+) *corev1.ServiceAccount {
+	var user map[string]string
+	if merged.ServiceAccount != nil {
+		user = merged.ServiceAccount.Annotations
+	}
+
+	// Not labels.Merge: that helper lets the operator win, because selectors
+	// depend on operator labels. Here the user wins, so an identity stated on
+	// the server overrides the one derived from the bucket.
+	var annotations map[string]string
+	if derived := archive.identityAnnotations(); len(derived) > 0 || len(user) > 0 {
+		annotations = make(map[string]string, len(derived)+len(user))
+		maps.Copy(annotations, derived)
+		maps.Copy(annotations, user)
+	}
+
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        ServiceAccountName(server),
+			Namespace:   server.Namespace,
+			Labels:      managedLabels(server),
+			Annotations: annotations,
+		},
+	}
+}
+
+// ServiceAccountCarries reports whether account carries every annotation that
+// the cluster component renders on it for server.
+func ServiceAccountCarries(
+	account *corev1.ServiceAccount,
+	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
+	archive *ArchiveStorage,
+) bool {
+	for key, value := range serviceAccount(server, merged, archive).Annotations {
+		if account.Annotations[key] != value {
+			return false
+		}
+	}
+
+	return true
+}
+
+// ServiceAccountName returns the name of the ServiceAccount of the instance
+// pods. Every CloudNativePG cluster of the server runs under it, the one a
+// rollback builds too, so a workload identity that names it keeps working
+// through a rollback.
+func ServiceAccountName(server *v1.DatabaseServer) string {
+	return server.Name + serviceAccountSuffix
+}
+
 // cluster renders the baseline CloudNativePG cluster: the instance count, the
-// image, the data volume, the superuser access that the contract publishes,
-// and the metadata that every object of the cluster inherits.
+// image, the data volume, the ServiceAccount of the pods, the superuser access
+// that the contract publishes, and the metadata that every object of the
+// cluster inherits.
 // clusterMutations layers the optional concerns on top.
 func cluster(
 	server *v1.DatabaseServer,
@@ -200,8 +318,9 @@ func cluster(
 			Annotations: requested.annotations(),
 		},
 		Spec: cnpgv1.ClusterSpec{
-			Instances: instances(merged),
-			ImageName: images.Resolve(platform, images.Postgres, merged.Version),
+			Instances:          instances(merged),
+			ImageName:          images.Resolve(platform, images.Postgres, merged.Version),
+			ServiceAccountName: ServiceAccountName(server),
 			// CloudNativePG writes <cluster>-superuser and keeps the password
 			// of the postgres user in step with it. Without this it blanks
 			// that password, and the contract would name a Secret that grants
@@ -266,8 +385,6 @@ func clusterMutations(
 	archive *ArchiveStorage,
 	archiveTaken string,
 ) []cnpgcluster.Mutation {
-	serviceAccountAnnotations := serviceAccountAnnotations(merged, archive)
-
 	return []cnpgcluster.Mutation{
 		{
 			Name:    "InstanceResources",
@@ -308,19 +425,6 @@ func clusterMutations(
 			},
 		},
 		{
-			Name:    "ServiceAccountAnnotations",
-			Feature: feature.NewBooleanGate(len(serviceAccountAnnotations) > 0),
-			Mutate: func(m *cnpgcluster.Mutator) error {
-				m.Edit(func(c *cnpgv1.Cluster) error {
-					c.Spec.ServiceAccountTemplate = &cnpgv1.ServiceAccountTemplate{
-						Metadata: cnpgv1.Metadata{Annotations: serviceAccountAnnotations},
-					}
-					return nil
-				})
-				return nil
-			},
-		},
-		{
 			// The gate reads the spec, not the resolved bucket. The entry
 			// needs neither, and a bucket that stops resolving under a
 			// suspended server must not take the archive off the cluster.
@@ -353,34 +457,6 @@ func clusterMutations(
 			},
 		},
 	}
-}
-
-// serviceAccountAnnotations returns the annotations of the ServiceAccount that
-// CloudNativePG creates for the instance pods: the identity of the archive
-// bucket with the annotations of spec.serviceAccount layered over it, so a
-// value the user states wins over the derived one on the same key.
-func serviceAccountAnnotations(
-	merged v1.DatabaseServerSpec,
-	archive *ArchiveStorage,
-) map[string]string {
-	var user map[string]string
-	if merged.ServiceAccount != nil {
-		user = merged.ServiceAccount.Annotations
-	}
-
-	derived := archive.identityAnnotations()
-	if len(derived) == 0 && len(user) == 0 {
-		return nil
-	}
-
-	// Not labels.Merge: that helper lets the operator win, because selectors
-	// depend on operator labels. Here the user wins, so an identity stated on
-	// the server overrides the one derived from the bucket.
-	annotations := make(map[string]string, len(derived)+len(user))
-	maps.Copy(annotations, derived)
-	maps.Copy(annotations, user)
-
-	return annotations
 }
 
 // takenGuard blocks a resource while the object of the name the server derives

@@ -165,7 +165,7 @@ func assertDatabaseServerGoldens(
 	scheme := goldenScheme(t)
 	base := filepath.Join("testdata", "golden", dir)
 
-	cluster, _, err := ClusterComponent(server, merged, requestedOf(merged), archive, "", nil, "", 0)
+	cluster, _, err := ClusterComponent(server, merged, requestedOf(merged), archive, "", nil, "", nil, 0)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "cluster.yaml"), cluster,
@@ -247,7 +247,7 @@ func archiveSpec() *v1.DatabaseServerArchiveSpec {
 }
 
 // A server whose bucket uses workload identity gets the identity annotation on
-// the ServiceAccount that CloudNativePG creates, and an archive Secret that
+// the ServiceAccount that the operator creates, and an archive Secret that
 // carries the region alone: the plugin reads the region of an S3 bucket from a
 // Secret key whatever authenticates it.
 func TestDatabaseServerGoldenArchiveWorkloadIdentity(t *testing.T) {
@@ -418,7 +418,7 @@ func TestSuspensionKeepsTheDeclaredState(t *testing.T) {
 		server.Spec.Suspend = suspend
 		merged := MergeSpec(server.Spec, preset, release)
 
-		clusterComp, _, err := ClusterComponent(server, merged, requestedOf(merged), archive, "", nil, "", 0)
+		clusterComp, _, err := ClusterComponent(server, merged, requestedOf(merged), archive, "", nil, "", nil, 0)
 		require.NoError(t, err)
 		contractComp, err := ContractComponent(server, merged, "", "", "")
 		require.NoError(t, err)
@@ -475,7 +475,7 @@ func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
 		"team":                       "platform",
 	}
 
-	comp, _, err := ClusterComponent(server, server.Spec, RequestedStorage{}, nil, "", nil, "", 0)
+	comp, _, err := ClusterComponent(server, server.Spec, RequestedStorage{}, nil, "", nil, "", nil, 0)
 	require.NoError(t, err)
 
 	cluster := previewCluster(t, comp)
@@ -493,14 +493,14 @@ func TestClusterImageComesFromThePlatformConfig(t *testing.T) {
 	server, preset, release := goldenMinimalDatabaseServer()
 	merged := MergeSpec(server.Spec, preset, release)
 
-	comp, _, err := ClusterComponent(server, merged, RequestedStorage{}, nil, "", nil, "", 0)
+	comp, _, err := ClusterComponent(server, merged, RequestedStorage{}, nil, "", nil, "", nil, 0)
 	require.NoError(t, err)
 	assert.Equal(t, "ghcr.io/cloudnative-pg/postgresql:17", previewCluster(t, comp).Spec.ImageName)
 
 	platform := &v1.CamundaPlatformConfigSpec{
 		Images: &v1.ImagesSpec{Postgres: "mirror.example.com/postgresql"},
 	}
-	comp, _, err = ClusterComponent(server, merged, RequestedStorage{}, nil, "", platform, "", 0)
+	comp, _, err = ClusterComponent(server, merged, RequestedStorage{}, nil, "", platform, "", nil, 0)
 	require.NoError(t, err)
 	assert.Equal(t, "mirror.example.com/postgresql:17", previewCluster(t, comp).Spec.ImageName)
 }
@@ -567,7 +567,7 @@ func TestClusterCarriesTheRequestedSizes(t *testing.T) {
 	merged.StorageSize = new(resource.MustParse("8Gi"))
 
 	comp, _, err := ClusterComponent(
-		server, merged, RequestedStorage{Data: new(resource.MustParse("1Gi"))}, nil, "", nil, "", 0,
+		server, merged, RequestedStorage{Data: new(resource.MustParse("1Gi"))}, nil, "", nil, "", nil, 0,
 	)
 	require.NoError(t, err)
 	annotations := previewCluster(t, comp).Annotations
@@ -576,7 +576,7 @@ func TestClusterCarriesTheRequestedSizes(t *testing.T) {
 	assert.Empty(t, annotations[RequestedWALStorageSizeAnnotation])
 
 	requested := RequestedStorage{Data: new(resource.MustParse("1Gi")), WAL: new(resource.MustParse("512Mi"))}
-	comp, _, err = ClusterComponent(server, merged, requested, nil, "", nil, "", 0)
+	comp, _, err = ClusterComponent(server, merged, requested, nil, "", nil, "", nil, 0)
 	require.NoError(t, err)
 	assert.Equal(t, "512Mi", previewCluster(t, comp).Annotations[RequestedWALStorageSizeAnnotation])
 }
