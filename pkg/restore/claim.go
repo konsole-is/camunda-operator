@@ -29,10 +29,10 @@ import (
 
 // Take claims the cluster for owner. cluster is the name of the target, in
 // the namespace of the restore. Take reports Done when owner holds the claim.
-// When another live holder claims the cluster, Take reports a failure with
-// v1.ReasonClusterClaimed that names the holder. Nothing bounds that wait: a
-// later call takes the claim over once clusterclaim.HolderActive reports the
-// holder inactive.
+// When another holder claims the cluster, Take reports a failure with
+// v1.ReasonClusterClaimed and clusterclaim.WaitMessage. Nothing bounds that
+// wait: a later call takes the claim over only once clusterclaim.Claim finds
+// the holder inactive, and never from a Lease that the message says to delete.
 //
 // Call it when admission passes, before each phase that touches storage, so
 // two restores of one cluster never both pass validation. reader must read
