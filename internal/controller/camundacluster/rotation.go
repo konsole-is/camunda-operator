@@ -139,7 +139,7 @@ type pendingRotation struct {
 // seeds the initial user at first start, so there is nothing to update. A
 // Secret that went away keeps the recorded rotation instead, because the
 // cluster still holds the password of the deleted Secret; the request then
-// goes to the user API and fails with Rejected there. A suspended cluster
+// goes to the user API and fails with InvalidCredentials there. A suspended cluster
 // serves no user API, so a requested rotation waits, and an in-flight one
 // stays pending, until the cluster resumes. An error is a transient read
 // failure or an exhausted entropy source.
@@ -178,8 +178,7 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		// its applied rotation with it, so this replacement records none.
 		// The orchestration cluster still holds the password of the deleted
 		// Secret, which nobody has any more, so the next reconcile takes the
-		// request to the user API and reports Rejected there. That is what
-		// the authentication guide promises, and it is the point: a
+		// request to the user API and reports InvalidCredentials there. A
 		// replacement that kept the applied value would reach the steady
 		// branch and report a healthy Secret that the cluster does not
 		// accept.

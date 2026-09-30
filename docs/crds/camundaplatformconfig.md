@@ -31,7 +31,7 @@ graph LR
 
 ## Override order
 
-The OIDC client credentials here are the defaults of the environment. A [CamundaClusterPreset](camundaclusterpreset.md) `auth` block overrides them for its clusters, and the `auth` block of a `CamundaCluster` overrides both. The authentication method and the identity provider connection always come from this resource.
+The OIDC client credentials here are the defaults of the environment. A [CamundaClusterPreset](camundaclusterpreset.md) `auth` block overrides them for its clusters, and the `auth` block of a `CamundaCluster` overrides both. When a preset or a cluster sets its own `clientId`, the audience and the client secret of this resource no longer apply to it. [Per-cluster client](../guides/authentication.md#per-cluster-client) explains the rule. The authentication method and the identity provider connection always come from this resource.
 
 ## Claims
 

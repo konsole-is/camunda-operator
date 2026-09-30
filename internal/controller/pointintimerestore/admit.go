@@ -195,7 +195,7 @@ func (r *Reconciler) admit(
 	// created, and the database is read as it stands.
 	if resolved.server.OperatorRecovers() {
 		// Status.Backend names only a backend that the restore holds.
-		err := restore.RegisterDatabaseWriter(
+		err := restore.RegisterWriter(
 			ctx,
 			r.Client,
 			r.APIReader,

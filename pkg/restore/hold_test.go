@@ -278,7 +278,7 @@ func TestFinalizeHoldReleasesTheWriterLeasesOnceTheJobsAreGone(t *testing.T) {
 	owner := w.liveRestore(t)
 	require.NoError(t, AddHoldFinalizer(t.Context(), w.client, owner))
 	require.NoError(t, RegisterWriter(
-		t.Context(), w.client, w.client, writerNamespace, "rdbms|db.ns.svc:5432/camunda", owner, clusterUID,
+		t.Context(), w.client, w.client, writerNamespace, "rdbms|db.ns.svc:5432/camunda", "", owner, clusterUID,
 	))
 	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
 		Name:       "r-pitr-0",

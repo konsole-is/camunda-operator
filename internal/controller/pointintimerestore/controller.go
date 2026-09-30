@@ -295,7 +295,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	if pitr.Status.Backend != "" {
-		err := restore.RegisterDatabaseWriter(
+		err := restore.RegisterWriter(
 			ctx,
 			r.Client,
 			r.APIReader,

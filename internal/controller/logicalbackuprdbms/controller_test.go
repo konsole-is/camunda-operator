@@ -1093,24 +1093,6 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(readyCondition(backup).Message).To(ContainSubstring("current spec"))
 	})
 
-	// The dump block of a backup must not supply anything under
-	// the PG or UPLOAD_ prefixes. The rule is prefix-based, so names that the
-	// Job never sets (PGOPTIONS, PGHOSTADDR) are covered too. PGSSLMODE stays
-	// available in the own block of the cluster, where its owner sets policy.
-	It("rejects a backup dump block that sets a reserved environment variable", func() {
-		w := createWorld()
-		backup := createBackup(w, func(backup *v1.LogicalBackupRDBMS) {
-			backup.Spec.Dump = &v1.DumpPodSpec{ExtraEnv: []corev1.EnvVar{
-				{Name: "TZ", Value: "UTC"},
-				{Name: "PGOPTIONS", Value: "-c synchronous_commit=off"},
-			}}
-		})
-
-		expectPending(backup, v1.ReasonInvalidReference)
-		Expect(readyCondition(backup).Message).To(ContainSubstring("PGOPTIONS"))
-		Expect(readyCondition(backup).Message).NotTo(ContainSubstring("TZ"))
-	})
-
 	// "P" plus a key GHOST spells PGHOST, so a head of a reserved prefix is
 	// unsafe too.
 	It("rejects a backup dump block with an extraEnvFrom source without a safe prefix", func() {

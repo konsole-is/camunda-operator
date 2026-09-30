@@ -64,7 +64,7 @@ The restore can set a version below the one the brokers run. Camunda does not su
 
 The backend is the Elasticsearch that the `SecondaryStorageConfig` of the target resolves to. When the restore leaves `Pending`, it records the backend in `status.backend`, in the form `elasticsearch|<scheme>://<host>:<port>`.
 
-From then until `Completed` or `Failed`, no other `CamundaCluster` starts on that backend. The next cluster reports `WaitingForHandover`, and the message names this restore. [CamundaCluster: Secondary storage](camundacluster.md#secondary-storage) describes that wait. A restore that fails or that you delete keeps the backend while Elasticsearch recovers its snapshots, see [After a failure or a delete](#after-a-failure-or-a-delete).
+From then until `Completed` or `Failed`, no other `CamundaCluster` starts on that backend. The hold is on the `SecondaryStorageConfig` of the target, so it stays when you move the endpoint of that `SecondaryStorageConfig`. The next cluster reports `WaitingForHandover`, and the message names this restore. [CamundaCluster: Secondary storage](camundacluster.md#secondary-storage) describes that wait. A restore that fails or that you delete keeps the backend while Elasticsearch recovers its snapshots, see [After a failure or a delete](#after-a-failure-or-a-delete).
 
 The restore writes the backend only while the target holds it. Until then it waits:
 
@@ -150,7 +150,7 @@ Deleting the restore removes its Jobs and their pods. The broker volumes stay, a
 | `Ready` | `Completed` | The restore finished. `Ready` is `True`. The target starts again, unless you suspended it yourself or another hold remains. | Nothing. |
 | `Ready` | `Failed` | The restore ended. | Read `status.failureMessage`. Correct the cause. Delete the failed restore, then create a new one. |
 | `Ready` | `ClusterNotSuspended` | Somebody removed the suspension hold of the restore and cleared `spec.suspend`, after `Pending`. | Suspend the target again. The restore fails 10 minutes after the first outage. |
-| `Ready` | `ClusterClaimed` | Another backup or restore holds the target. | Wait. The restore starts when the holder ends. |
+| `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster, or a claim Lease that no backup or restore holds. The message names it. | Wait. The restore starts when the holder gives the cluster back. If the message names a claim Lease to delete, delete it. |
 | `Ready` | `StorageAlreadyAttached` | Another cluster holds the Elasticsearch of the target. | Read [The backend](#the-backend). |
 | `Ready` | `WaitingForHandover` | The target does not hold its Elasticsearch yet, or pods still write it. | Wait. The message names what the restore waits for. |
 | `Ready` | `IncompatibleTarget` | The target cannot hold the backup, or its version moved after `Pending`. The message names both values. | Read [Compatibility](#compatibility). Create a new restore against a target that fits. |
@@ -165,6 +165,7 @@ Other status fields:
 - `status.backupId` is the backup that the restore reads. The restore pins it when it starts. A backup that somebody deletes and creates again under the same name ends the restore.
 - `status.targetClusterUID` pins the target. A cluster that somebody deletes and creates again under the same name ends the restore.
 - `status.backend` is the Elasticsearch that the restore writes.
+- `status.contract` is the `SecondaryStorageConfig` that the hold stays on when its endpoint moves.
 - `status.repository` is the snapshot repository on the Elasticsearch of the target.
 - `status.restoredSnapshots` names every snapshot that the restore asked for.
 - `status.recoveryHeld` is `true` while a failed or deleted restore keeps the backend for the recovery of its snapshots.

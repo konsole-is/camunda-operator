@@ -151,6 +151,62 @@ func TestPreCheckSuspendsWhileAWriterForAnotherClusterWritesTheBackend(t *testin
 	}
 }
 
+// A restore holds Elasticsearch through a writer on the endpoint it started
+// on. After a move of the endpoint, the importer still waits for a writer that
+// names the SecondaryStorageConfig of the cluster.
+func TestPreCheckSuspendsWhileAWriterOfTheContractWritesAMovedEndpoint(t *testing.T) {
+	const claimSpace = "camunda-system"
+
+	cases := map[string]struct {
+		contractName string
+		suspended    bool
+	}{
+		"a writer of this contract":    {contractName: "my-storage-config", suspended: true},
+		"a writer of another contract": {contractName: "other-storage-config"},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			scheme, cluster, objects := storageClaimGateFixture(t)
+			key, err := clustercomponents.StorageClaimKey(clustercomponents.Storage{
+				Type:          v1.SecondaryStorageTypeElasticsearch,
+				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: gateEndpoint},
+			})
+			require.NoError(t, err)
+			objects = append(objects, clustercomponents.StorageClaimSchema().NewLease(claimSpace, key, cluster))
+
+			c := storageClaimPodClient(t, scheme, objects...)
+			old := "elasticsearch|https://old-es." + gateNamespace + ".svc:9200"
+			writer := storagewriter.Writer{
+				Kind:       "LogicalRestoreElasticsearch",
+				Namespace:  gateNamespace,
+				Name:       "restore",
+				UID:        "restore-uid",
+				ClusterUID: "other-uid",
+				Contract: clustercomponents.StorageContract(clustercomponents.Storage{
+					Type:      v1.SecondaryStorageTypeElasticsearch,
+					Namespace: gateNamespace,
+					Name:      tc.contractName,
+				}),
+			}
+			claim := clustercomponents.StorageClaimSchema().LeaseName(old)
+			require.NoError(t, storagewriter.Register(context.Background(), c, c, claimSpace, old, claim, writer))
+			r := &Reconciler{Client: c, APIReader: c, Scheme: scheme, ClaimNamespace: claimSpace}
+
+			var optimize v1.CamundaOptimize
+			require.NoError(t, c.Get(
+				context.Background(), client.ObjectKey{Namespace: gateNamespace, Name: "my-optimize"}, &optimize,
+			))
+
+			out, err := r.preCheck(context.Background(), &optimize)
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.suspended, out.Input.Suspended)
+			assert.Equal(t, tc.suspended, out.AwaitsBackendClaim)
+		})
+	}
+}
+
 // The cluster takes the claim of a new backend and records the handover it
 // must wait for in one pass, and its Ready reaches the API server at the end
 // of that pass. This controller can read the claim in between, so the pods on
