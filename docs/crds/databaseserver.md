@@ -203,6 +203,7 @@ While a rollback runs, an edit of `spec.databaseServerConfig`, of `spec.archive`
 | `result` | Cause |
 | --- | --- |
 | `Failed` | The server is suspended. Unsuspend it, then ask again. |
+| `Failed` | Another owner controls the ServiceAccount `my-db-postgres`. Remove that ServiceAccount, then ask again. |
 | `Unavailable` | The server has no archive, or another owner controls its `ObjectStore`. |
 | `Unavailable` | `targetTime` is in the future, or older than `retentionPeriodDays`. |
 | `Unavailable` | `targetTime` is older than `status.archive.reachableFrom`. |

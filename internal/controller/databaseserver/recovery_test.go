@@ -1107,6 +1107,34 @@ var _ = Describe("DatabaseServer recovery", func() {
 		)).To(Succeed())
 	})
 
+	It("refuses a recovery while another owner controls its ServiceAccount", func() {
+		server, from := archivingServer()
+
+		other := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: server.Namespace}}
+		Expect(k8sClient.Create(ctx, other)).To(Succeed())
+		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-postgres"}
+		Eventually(func(g Gomega) {
+			var account corev1.ServiceAccount
+			g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+			account.OwnerReferences = []metav1.OwnerReference{{
+				APIVersion: "v1",
+				Kind:       "ConfigMap",
+				Name:       other.Name,
+				UID:        other.UID,
+				Controller: new(true),
+			}}
+			g.Expect(k8sClient.Update(ctx, &account)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		askForRecovery(server, from.Add(time.Hour))
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultFailed)
+		Expect(outcome.Message).To(ContainSubstring(`ServiceAccount "camunda-postgres"`))
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
+		)).To(MatchError(apierrors.IsNotFound, "not found"))
+	})
+
 	It("abandons a rollback whose cluster another owner took after the cutover", func() {
 		server, from := archivingServer()
 		askForRecovery(server, from.Add(time.Hour))

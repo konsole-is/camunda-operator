@@ -121,6 +121,11 @@ type resolvedSpec struct {
 	// publishes no point-in-time-recovery capability, a rollback is refused,
 	// and ArchiveReady reports ArchiveTaken: see archiveTaken.
 	archiveTaken string
+	// serviceAccountTaken says why the ServiceAccount of the instance pods is
+	// not this server's, and it is empty when the name is free or the account
+	// is the server's own. A rollback is refused while it is set: see
+	// serviceAccountTaken.
+	serviceAccountTaken string
 	// clusterTaken says why a CloudNativePG cluster of the name the server
 	// derives is not this server's to write, and it is empty when the name is
 	// free or the cluster is the server's own. Every component reads it and
@@ -606,6 +611,14 @@ func (r *DatabaseServerReconciler) preCheck(
 		return resolved, err
 	}
 	resolved.archiveTaken = archiveTaken
+
+	// The cluster component blocks on this account, but a rollback builds its
+	// cluster outside the component, so the recovery reads it here.
+	serviceAccountTaken, err := r.serviceAccountTaken(ctx, server)
+	if err != nil {
+		return resolved, err
+	}
+	resolved.serviceAccountTaken = serviceAccountTaken
 
 	return resolved, nil
 }
@@ -1633,6 +1646,32 @@ func (r *DatabaseServerReconciler) archiveTaken(
 	}
 
 	return components.ArchiveTakenMessage(name, *holder), nil
+}
+
+// serviceAccountTaken says why the ServiceAccount of the instance pods is not
+// this server's, and returns the empty string when no object of that name
+// exists, nothing controls it, or this server controls it.
+func (r *DatabaseServerReconciler) serviceAccountTaken(
+	ctx context.Context,
+	server *v1.DatabaseServer,
+) (string, error) {
+	key := types.NamespacedName{Namespace: server.Namespace, Name: components.ServiceAccountName(server)}
+
+	var account corev1.ServiceAccount
+	if err := r.APIReader.Get(ctx, key, &account); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("reading the ServiceAccount %s: %w", key, err)
+	}
+
+	holder := metav1.GetControllerOf(&account)
+	if holder == nil || holder.UID == server.UID {
+		return "", nil
+	}
+
+	return fmt.Sprintf("ServiceAccount %q is controlled by %s %q", key.Name, holder.Kind, holder.Name), nil
 }
 
 // contractTaken says why the DatabaseServerConfig the merged spec names is not

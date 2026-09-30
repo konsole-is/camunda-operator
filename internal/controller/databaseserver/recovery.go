@@ -525,6 +525,16 @@ func recoverySource(
 				"the archive of this server, so the server reads no archive of its own. " +
 				"ArchiveReady names the holder",
 		}
+
+	// The recovered cluster runs under this account, and so under the
+	// identity of whoever controls it.
+	case resolved.serviceAccountTaken != "":
+		return v1.ArchiveRecord{}, &recoveryRefusal{
+			result: v1.RecoveryResultFailed,
+			message: resolved.serviceAccountTaken + ". The instance pods of this server run " +
+				"under it, so the server does not roll back. Remove that ServiceAccount, then " +
+				"create a new restore",
+		}
 	}
 
 	target, err := time.Parse(time.RFC3339Nano, request.TargetTime)
