@@ -146,7 +146,7 @@ type RestoreRequest struct {
 // The fake pins the shape of both index requests: it accepts one only when it
 // tolerates a target that matches nothing, and it accepts a resolution only
 // when the request expands its wildcards to open and closed indices. It
-// accepts a read of a resolution, a recovery, a snapshot, the routing table,
+// accepts a read of a resolution, a recovery, a snapshot status, the routing table,
 // or the node statistics only when its filter_path names the fields that the
 // client reads.
 type Server struct {

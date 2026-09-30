@@ -63,9 +63,10 @@ const (
 )
 
 // waitingAllocations are the allocation statuses of an unassigned shard that a
-// node can still take. Elasticsearch fails the restore of a primary for good
-// once the allocation deciders refuse it.
+// node can still take.
 var waitingAllocations = map[string]bool{
+	// deciders_no is not here: Elasticsearch fails the restore of a primary
+	// for good once the allocation deciders refuse it.
 	"deciders_throttled":  true,
 	"fetching_shard_data": true,
 	"delayed_allocation":  true,
