@@ -223,7 +223,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `type` _[ObjectStorageAuthType](#objectstorageauthtype)_ | Type is the authentication choice. Defaults to workloadIdentity. | workloadIdentity | Enum: [workloadIdentity credentials] <br />Optional: \{\} <br /> |
-| `workloadIdentity` _[AzureBlobWorkloadIdentity](#azureblobworkloadidentity)_ | WorkloadIdentity names the trusted principal. It is valid only with<br />type workloadIdentity. An empty or absent block means that the<br />ServiceAccount already has the identity, and the operator adds nothing. |  | Optional: \{\} <br /> |
+| `workloadIdentity` _[AzureBlobWorkloadIdentity](#azureblobworkloadidentity)_ | WorkloadIdentity names the trusted principal. It is valid only with<br />type workloadIdentity. With an empty or absent block, the operator adds<br />no annotation to the ServiceAccount. The operator still adds the<br />azure.workload.identity/use label to the pods. |  | Optional: \{\} <br /> |
 | `credentials` _[AzureBlobCredentials](#azureblobcredentials)_ | Credentials is a static storage account key. Required with type<br />credentials. Forbidden with other types. |  | Optional: \{\} <br /> |
 
 
@@ -232,8 +232,9 @@ _Appears in:_
 
 
 AzureBlobWorkloadIdentity names the Azure principal that the container
-trusts. An empty block means that the ServiceAccount of the consumer
-already has the identity, so the operator adds nothing.
+trusts. With an empty block, the operator adds no annotation to the
+ServiceAccount of the consumer. The operator still adds the
+azure.workload.identity/use label to the pods of the consumer.
 
 
 
@@ -290,7 +291,7 @@ _Appears in:_
 | `podAnnotations` _object (keys:string, values:string)_ | PodAnnotations are extra annotations of the dump pod. A service mesh<br />sidecar keeps running after the dump finishes, and the Job does not<br />complete. Set the injection annotation of the mesh to false here. |  | Optional: \{\} <br /> |
 | `scheduling` _[SchedulingSpec](#schedulingspec)_ | Scheduling holds the scheduling constraints of the dump pod. When set,<br />it replaces the block of a preset, with no merge. |  | Optional: \{\} <br /> |
 | `scratchVolume` _[ScratchVolumeSpec](#scratchvolumespec)_ | ScratchVolume is where the pod writes the dump before the upload. When<br />set, it replaces the block of a preset, with no merge. The dump pod<br />runs with fsGroup 999, the postgres group. Thus pg_dump can write to a<br />volume that a storage class gives with the root owner. |  | Optional: \{\} <br /> |
-| `activeDeadlineSeconds` _integer_ | ActiveDeadlineSeconds is the number of seconds that the dump Job can<br />run before it fails, counted from its start. When it is unset, the<br />value of the preset applies, and then the default of 86400 (24 hours).<br />The default is large, so that a very large dump can complete. A pod<br />that cannot start uses no retry. Thus, without a deadline, a broken Job<br />stays active for the life of the backup. A lower value fails a stuck<br />dump sooner. A higher value gives a long dump the time that it needs. |  | Minimum: 1 <br />Optional: \{\} <br /> |
+| `activeDeadlineSeconds` _integer_ | ActiveDeadlineSeconds is the number of seconds that the dump Job can<br />run before it fails, counted from its start. When the dump block that<br />applies does not set it, the Job gets 86400 (24 hours). In the block of<br />the cluster, an unset value takes the value of the preset. The<br />spec.dump of a LogicalBackupRDBMS replaces the block of the cluster, so<br />an unset value there gives 86400, not the value of the cluster.<br />The default is large, so that a very large dump can complete. The Job<br />always has a deadline. A pod that cannot start uses no retry, so<br />without a deadline a broken Job stays active for the life of the<br />backup. A lower value fails a stuck dump sooner. A higher value gives a<br />long dump the time that it needs. |  | Minimum: 1 <br />Optional: \{\} <br /> |
 | `postgresImage` _string_ | PostgresImage is the full image reference of the dump container. It<br />replaces the default postgres:<major> of the upstream registry. Set it<br />in an air-gapped installation, where the default image is not<br />available. |  | Optional: \{\} <br /> |
 
 
@@ -338,7 +339,7 @@ _Appears in:_
 
 
 BackupSchedule creates logical backups of one CamundaCluster on a cron
-schedule, and deletes old backups that it created. At each trigger, the
+schedule, and deletes old backups that have its label. At each trigger, the
 operator creates the backup kind for the storage type of the cluster. The
 backup has the name <schedule>-<unix-timestamp> and the labels
 camunda.io/cluster and camunda.io/backup-schedule. If a name is too long
@@ -379,7 +380,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `clusterRef` _[ClusterRef](#clusterref)_ | ClusterRef references the CamundaCluster to back up. At each trigger,<br />the operator creates the backup kind for the storage type of the<br />cluster: LogicalBackupElasticsearch or LogicalBackupRDBMS. |  | Required: \{\} <br /> |
 | `schedule` _string_ | Schedule is when the backups run: a five-field cron expression<br />(minute, hour, day of month, month, day of week), evaluated in UTC. |  | Pattern: `^\s*([0-9A-Za-z*?,/-]+\s+)\{4\}[0-9A-Za-z*?,/-]+\s*$` <br />Required: \{\} <br /> |
-| `retained` _[RetainedBackups](#retainedbackups)_ | Retained limits how many backups of this schedule stay. The schedule<br />deletes only the backups that it created, which have the<br />camunda.io/backup-schedule label. It never deletes a backup that a<br />person created, or a backup that is not in a final phase. | \{  \} | Optional: \{\} <br /> |
+| `retained` _[RetainedBackups](#retainedbackups)_ | Retained limits how many backups of this schedule stay. The schedule<br />counts and deletes the backups in its namespace whose<br />camunda.io/backup-schedule label names this schedule. A backup that you<br />create with that label counts too, and the schedule can delete it. The<br />schedule never deletes a backup that is not in a final phase. | \{  \} | Optional: \{\} <br /> |
 
 
 #### BackupScheduleStatus
@@ -523,7 +524,7 @@ _Appears in:_
 | `backup` _[ClusterBackupSpec](#clusterbackupspec)_ | Backup configures the backups of this cluster. It sets the schedule and<br />the retention of the primary-storage backups that Zeebe takes, and the<br />pod of the database dump Job. A preset can set this block, but not<br />backupStorageRef. The block applies only to a cluster with relational<br />secondary storage. Only such a cluster has continuous and scheduled<br />primary-storage backups and the dump Job. |  | Optional: \{\} <br /> |
 | `monitoring` _[ClusterMonitoringSpec](#clustermonitoringspec)_ | Monitoring configures the monitoring integrations. |  | Optional: \{\} <br /> |
 | `suspend` _boolean_ | Suspend scales every workload to zero and keeps the data. Defaults to<br />false. An annotation with the prefix suspension-hold.camunda.io/ on the<br />CamundaCluster also suspends it, whatever this field says. |  | Optional: \{\} <br /> |
-| `pause` _boolean_ | Pause stops all work of the operator on this cluster, status included,<br />and leaves the workloads as they are. The operator records a Paused<br />event instead. Defaults to false. |  | Optional: \{\} <br /> |
+| `pause` _boolean_ | Pause stops all work of the operator on this cluster, status included,<br />and leaves the workloads as they are. The operator records a Paused<br />event instead. When you delete a paused cluster, the operator still<br />releases its storage backends. Defaults to false. |  | Optional: \{\} <br /> |
 
 
 #### CamundaClusterStatus
@@ -687,7 +688,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `observedGeneration` _integer_ | ObservedGeneration is the last generation that the operator processed. |  | Optional: \{\} <br /> |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#condition-v1-meta) array_ | Conditions represent the current state. Ready holds the reason of a<br />failed pre-check, or it follows the conditions of the two workloads.<br />The per-workload conditions (WebappReady, ImporterReady) and<br />MirroredSecretsReady also appear here. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#condition-v1-meta) array_ | Conditions represent the current state. Ready holds the reason of a<br />failed pre-check. Otherwise it follows the conditions of the two<br />workloads, and MirroredSecretsReady when the Optimize references a<br />Secret in another namespace. The per-workload conditions (WebappReady,<br />ImporterReady) and MirroredSecretsReady also appear here. |  | Optional: \{\} <br /> |
 | `suspendedBy` _[OptimizeSuspension](#optimizesuspension)_ | SuspendedBy tells why the Optimize workloads are at zero with the<br />referenced cluster. It is empty while they follow their spec. It stays<br />set while a failed check keeps them at zero after the cluster resumed. |  | Enum: [Cluster StorageClaim] <br />Optional: \{\} <br /> |
 
 
@@ -1503,7 +1504,7 @@ _Appears in:_
 | `podAnnotations` _object (keys:string, values:string)_ | PodAnnotations are extra annotations of the dump pod. A service mesh<br />sidecar keeps running after the dump finishes, and the Job does not<br />complete. Set the injection annotation of the mesh to false here. |  | Optional: \{\} <br /> |
 | `scheduling` _[SchedulingSpec](#schedulingspec)_ | Scheduling holds the scheduling constraints of the dump pod. When set,<br />it replaces the block of a preset, with no merge. |  | Optional: \{\} <br /> |
 | `scratchVolume` _[ScratchVolumeSpec](#scratchvolumespec)_ | ScratchVolume is where the pod writes the dump before the upload. When<br />set, it replaces the block of a preset, with no merge. The dump pod<br />runs with fsGroup 999, the postgres group. Thus pg_dump can write to a<br />volume that a storage class gives with the root owner. |  | Optional: \{\} <br /> |
-| `activeDeadlineSeconds` _integer_ | ActiveDeadlineSeconds is the number of seconds that the dump Job can<br />run before it fails, counted from its start. When it is unset, the<br />value of the preset applies, and then the default of 86400 (24 hours).<br />The default is large, so that a very large dump can complete. A pod<br />that cannot start uses no retry. Thus, without a deadline, a broken Job<br />stays active for the life of the backup. A lower value fails a stuck<br />dump sooner. A higher value gives a long dump the time that it needs. |  | Minimum: 1 <br />Optional: \{\} <br /> |
+| `activeDeadlineSeconds` _integer_ | ActiveDeadlineSeconds is the number of seconds that the dump Job can<br />run before it fails, counted from its start. When the dump block that<br />applies does not set it, the Job gets 86400 (24 hours). In the block of<br />the cluster, an unset value takes the value of the preset. The<br />spec.dump of a LogicalBackupRDBMS replaces the block of the cluster, so<br />an unset value there gives 86400, not the value of the cluster.<br />The default is large, so that a very large dump can complete. The Job<br />always has a deadline. A pod that cannot start uses no retry, so<br />without a deadline a broken Job stays active for the life of the<br />backup. A lower value fails a stuck dump sooner. A higher value gives a<br />long dump the time that it needs. |  | Minimum: 1 <br />Optional: \{\} <br /> |
 
 
 #### ElasticsearchCluster
@@ -1732,7 +1733,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `type` _[ObjectStorageAuthType](#objectstorageauthtype)_ | Type is the authentication choice. Defaults to workloadIdentity. | workloadIdentity | Enum: [workloadIdentity credentials] <br />Optional: \{\} <br /> |
-| `workloadIdentity` _[GCSWorkloadIdentity](#gcsworkloadidentity)_ | WorkloadIdentity names the trusted principal. It is valid only with<br />type workloadIdentity. An empty or absent block means that the<br />ServiceAccount already has the identity, and the operator adds nothing. |  | Optional: \{\} <br /> |
+| `workloadIdentity` _[GCSWorkloadIdentity](#gcsworkloadidentity)_ | WorkloadIdentity names the trusted principal. It is valid only with<br />type workloadIdentity. With an empty or absent block, the operator adds<br />no annotation. The identity must then be bound on the cloud side, for<br />example with Workload Identity Federation for GKE. |  | Optional: \{\} <br /> |
 | `credentials` _[GCSCredentials](#gcscredentials)_ | Credentials is a static service-account key. Required with type<br />credentials. Forbidden with other types. |  | Optional: \{\} <br /> |
 
 
@@ -1740,10 +1741,10 @@ _Appears in:_
 
 
 
-GCSWorkloadIdentity names the Google principal that the bucket trusts. An
-empty block means that the ServiceAccount of the consumer already has the
-identity (Workload Identity Federation for GKE), so the operator adds
-nothing.
+GCSWorkloadIdentity names the Google principal that the bucket trusts. With
+an empty block, the operator adds no annotation to the ServiceAccount of the
+consumer. The identity must then be bound on the cloud side, for example
+with Workload Identity Federation for GKE.
 
 
 
@@ -2335,7 +2336,7 @@ _Appears in:_
 | `brokers` _integer_ | Brokers is the broker count of the broker StatefulSet. The operator<br />records it before the restore deletes a volume. It sets how many<br />volumes the restore creates again and how many Jobs run. |  | Optional: \{\} <br /> |
 | `primaryJobNames` _string array_ | PrimaryJobNames are the restore application Jobs, one for each broker,<br />in broker order. The operator records them before it creates the Jobs.<br />A completed restore removes these Jobs. The logs of these Jobs explain<br />a failed restore. |  | Optional: \{\} <br /> |
 | `recreatedClaims` _string array_ | RecreatedClaims names the broker data claims that the restore deleted<br />and created again. Thus the restore does not delete a claim two times. |  | Optional: \{\} <br /> |
-| `firstFailedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | FirstFailedAt is when a dependency of the running restore first stopped<br />resolving. The grace period starts at this time. After the restore<br />starts, the field stays set, so a dependency that fails and recovers<br />again and again does not reset the grace period. |  | Optional: \{\} <br /> |
+| `firstFailedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | FirstFailedAt is when a dependency of the running restore first stopped<br />resolving. The grace period starts at this time. If the dependency<br />recovers before the restore records a recreated broker volume or a<br />broker Job, the field clears. After that point, the field stays set, so a<br />dependency that fails and recovers again and again does not reset the<br />grace period. |  | Optional: \{\} <br /> |
 | `clusterSuspended` _boolean_ | ClusterSuspended records that this restore suspended its target<br />cluster. The restore removes that suspension when it reaches<br />Completed. A cluster that its owner suspended has no such record, so<br />it stays suspended. The cluster of a failed restore also stays<br />suspended. |  | Optional: \{\} <br /> |
 | `terminalReason` _string_ | TerminalReason is the Ready reason that the operator recorded when the<br />restore reached its final phase. The operator sets the final condition<br />again from this field, so a write conflict cannot replace the reason. |  | Optional: \{\} <br /> |
 | `failureMessage` _string_ | FailureMessage names the failed phase and its error. The Ready<br />condition has the same message. |  | Optional: \{\} <br /> |
@@ -2449,7 +2450,7 @@ _Appears in:_
 | `brokers` _integer_ | Brokers is the broker count of the broker StatefulSet. The operator<br />records it before the restore deletes a volume. It sets how many<br />volumes the restore creates again and how many Jobs run. |  | Optional: \{\} <br /> |
 | `primaryJobNames` _string array_ | PrimaryJobNames are the restore application Jobs, one for each broker,<br />in broker order. The operator records them before it creates the Jobs.<br />A completed restore removes these Jobs. The logs of these Jobs explain<br />a failed restore. |  | Optional: \{\} <br /> |
 | `recreatedClaims` _string array_ | RecreatedClaims names the broker data claims that the restore deleted<br />and created again. Thus the restore does not delete a claim two times. |  | Optional: \{\} <br /> |
-| `firstFailedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | FirstFailedAt is when a dependency of the running restore first stopped<br />resolving. The grace period starts at this time. After the restore<br />starts, the field stays set, so a dependency that fails and recovers<br />again and again does not reset the grace period. |  | Optional: \{\} <br /> |
+| `firstFailedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | FirstFailedAt is when a dependency of the running restore first stopped<br />resolving. The grace period starts at this time. If the dependency<br />recovers before the restore records a recreated broker volume or a<br />broker Job, the field clears. After that point, the field stays set, so a<br />dependency that fails and recovers again and again does not reset the<br />grace period. |  | Optional: \{\} <br /> |
 | `clusterSuspended` _boolean_ | ClusterSuspended records that this restore suspended its target<br />cluster. The restore removes that suspension when it reaches<br />Completed. A cluster that its owner suspended has no such record, so<br />it stays suspended. The cluster of a failed restore also stays<br />suspended. |  | Optional: \{\} <br /> |
 | `terminalReason` _string_ | TerminalReason is the Ready reason that the operator recorded when the<br />restore reached its final phase. The operator sets the final condition<br />again from this field, so a write conflict cannot replace the reason. |  | Optional: \{\} <br /> |
 | `failureMessage` _string_ | FailureMessage names the failed phase and its error. The Ready<br />condition has the same message. |  | Optional: \{\} <br /> |
@@ -3107,7 +3108,7 @@ _Appears in:_
 | `brokers` _integer_ | Brokers is the broker count of the broker StatefulSet. The operator<br />records it before the restore deletes a volume. It sets how many<br />volumes the restore creates again and how many Jobs run. |  | Optional: \{\} <br /> |
 | `primaryJobNames` _string array_ | PrimaryJobNames are the restore application Jobs, one for each broker,<br />in broker order. The operator records them before it creates the Jobs.<br />A completed restore removes these Jobs. The logs of these Jobs explain<br />a failed restore. |  | Optional: \{\} <br /> |
 | `recreatedClaims` _string array_ | RecreatedClaims names the broker data claims that the restore deleted<br />and created again. Thus the restore does not delete a claim two times. |  | Optional: \{\} <br /> |
-| `firstFailedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | FirstFailedAt is when a dependency of the running restore first stopped<br />resolving. The grace period starts at this time. After the restore<br />starts, the field stays set, so a dependency that fails and recovers<br />again and again does not reset the grace period. |  | Optional: \{\} <br /> |
+| `firstFailedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | FirstFailedAt is when a dependency of the running restore first stopped<br />resolving. The grace period starts at this time. If the dependency<br />recovers before the restore records a recreated broker volume or a<br />broker Job, the field clears. After that point, the field stays set, so a<br />dependency that fails and recovers again and again does not reset the<br />grace period. |  | Optional: \{\} <br /> |
 | `clusterSuspended` _boolean_ | ClusterSuspended records that this restore suspended its target<br />cluster. The restore removes that suspension when it reaches<br />Completed. A cluster that its owner suspended has no such record, so<br />it stays suspended. The cluster of a failed restore also stays<br />suspended. |  | Optional: \{\} <br /> |
 | `terminalReason` _string_ | TerminalReason is the Ready reason that the operator recorded when the<br />restore reached its final phase. The operator sets the final condition<br />again from this field, so a write conflict cannot replace the reason. |  | Optional: \{\} <br /> |
 | `failureMessage` _string_ | FailureMessage names the failed phase and its error. The Ready<br />condition has the same message. |  | Optional: \{\} <br /> |
@@ -3454,7 +3455,7 @@ _Appears in:_
 | `brokers` _integer_ | Brokers is the broker count of the broker StatefulSet. The operator<br />records it before the restore deletes a volume. It sets how many<br />volumes the restore creates again and how many Jobs run. |  | Optional: \{\} <br /> |
 | `primaryJobNames` _string array_ | PrimaryJobNames are the restore application Jobs, one for each broker,<br />in broker order. The operator records them before it creates the Jobs.<br />A completed restore removes these Jobs. The logs of these Jobs explain<br />a failed restore. |  | Optional: \{\} <br /> |
 | `recreatedClaims` _string array_ | RecreatedClaims names the broker data claims that the restore deleted<br />and created again. Thus the restore does not delete a claim two times. |  | Optional: \{\} <br /> |
-| `firstFailedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | FirstFailedAt is when a dependency of the running restore first stopped<br />resolving. The grace period starts at this time. After the restore<br />starts, the field stays set, so a dependency that fails and recovers<br />again and again does not reset the grace period. |  | Optional: \{\} <br /> |
+| `firstFailedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | FirstFailedAt is when a dependency of the running restore first stopped<br />resolving. The grace period starts at this time. If the dependency<br />recovers before the restore records a recreated broker volume or a<br />broker Job, the field clears. After that point, the field stays set, so a<br />dependency that fails and recovers again and again does not reset the<br />grace period. |  | Optional: \{\} <br /> |
 | `clusterSuspended` _boolean_ | ClusterSuspended records that this restore suspended its target<br />cluster. The restore removes that suspension when it reaches<br />Completed. A cluster that its owner suspended has no such record, so<br />it stays suspended. The cluster of a failed restore also stays<br />suspended. |  | Optional: \{\} <br /> |
 | `terminalReason` _string_ | TerminalReason is the Ready reason that the operator recorded when the<br />restore reached its final phase. The operator sets the final condition<br />again from this field, so a write conflict cannot replace the reason. |  | Optional: \{\} <br /> |
 | `failureMessage` _string_ | FailureMessage names the failed phase and its error. The Ready<br />condition has the same message. |  | Optional: \{\} <br /> |
@@ -3553,7 +3554,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `type` _[ObjectStorageAuthType](#objectstorageauthtype)_ | Type is the authentication choice. Defaults to workloadIdentity. | workloadIdentity | Enum: [workloadIdentity credentials] <br />Optional: \{\} <br /> |
-| `workloadIdentity` _[S3WorkloadIdentity](#s3workloadidentity)_ | WorkloadIdentity names the trusted principal. It is valid only with<br />type workloadIdentity. An empty or absent block means that the<br />ServiceAccount already has the identity, and the operator adds nothing. |  | Optional: \{\} <br /> |
+| `workloadIdentity` _[S3WorkloadIdentity](#s3workloadidentity)_ | WorkloadIdentity names the trusted principal. It is valid only with<br />type workloadIdentity. With an empty or absent block, the operator adds<br />no annotation. The identity must then be bound on the cloud side, for<br />example with EKS Pod Identity. |  | Optional: \{\} <br /> |
 | `credentials` _[S3Credentials](#s3credentials)_ | Credentials are static keys. Required with type credentials. Forbidden<br />with other types. |  | Optional: \{\} <br /> |
 
 
@@ -3561,9 +3562,10 @@ _Appears in:_
 
 
 
-S3WorkloadIdentity names the AWS principal that the bucket trusts. An empty
-block means that the ServiceAccount of the consumer already has the
-identity (EKS Pod Identity), so the operator adds nothing.
+S3WorkloadIdentity names the AWS principal that the bucket trusts. With an
+empty block, the operator adds no annotation to the ServiceAccount of the
+consumer. The identity must then be bound on the cloud side, for example
+with EKS Pod Identity.
 
 
 

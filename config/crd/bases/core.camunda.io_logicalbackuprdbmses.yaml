@@ -99,12 +99,17 @@ spec:
                   activeDeadlineSeconds:
                     description: |-
                       ActiveDeadlineSeconds is the number of seconds that the dump Job can
-                      run before it fails, counted from its start. When it is unset, the
-                      value of the preset applies, and then the default of 86400 (24 hours).
-                      The default is large, so that a very large dump can complete. A pod
-                      that cannot start uses no retry. Thus, without a deadline, a broken Job
-                      stays active for the life of the backup. A lower value fails a stuck
-                      dump sooner. A higher value gives a long dump the time that it needs.
+                      run before it fails, counted from its start. When the dump block that
+                      applies does not set it, the Job gets 86400 (24 hours). In the block of
+                      the cluster, an unset value takes the value of the preset. The
+                      spec.dump of a LogicalBackupRDBMS replaces the block of the cluster, so
+                      an unset value there gives 86400, not the value of the cluster.
+
+                      The default is large, so that a very large dump can complete. The Job
+                      always has a deadline. A pod that cannot start uses no retry, so
+                      without a deadline a broken Job stays active for the life of the
+                      backup. A lower value fails a stuck dump sooner. A higher value gives a
+                      long dump the time that it needs.
                     format: int64
                     minimum: 1
                     type: integer

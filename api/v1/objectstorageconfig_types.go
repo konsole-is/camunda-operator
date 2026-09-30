@@ -47,9 +47,10 @@ const (
 	ObjectStorageAuthTypeCredentials      ObjectStorageAuthType = "credentials"
 )
 
-// S3WorkloadIdentity names the AWS principal that the bucket trusts. An empty
-// block means that the ServiceAccount of the consumer already has the
-// identity (EKS Pod Identity), so the operator adds nothing.
+// S3WorkloadIdentity names the AWS principal that the bucket trusts. With an
+// empty block, the operator adds no annotation to the ServiceAccount of the
+// consumer. The identity must then be bound on the cloud side, for example
+// with EKS Pod Identity.
 type S3WorkloadIdentity struct {
 	// RoleARN is the IAM role that consumers assume. When set, the operator
 	// puts it in the eks.amazonaws.com/role-arn annotation of the
@@ -88,8 +89,9 @@ type S3StorageAuth struct {
 	// +optional
 	Type ObjectStorageAuthType `json:"type,omitempty"`
 	// WorkloadIdentity names the trusted principal. It is valid only with
-	// type workloadIdentity. An empty or absent block means that the
-	// ServiceAccount already has the identity, and the operator adds nothing.
+	// type workloadIdentity. With an empty or absent block, the operator adds
+	// no annotation. The identity must then be bound on the cloud side, for
+	// example with EKS Pod Identity.
 	// +optional
 	WorkloadIdentity *S3WorkloadIdentity `json:"workloadIdentity,omitempty"`
 	// Credentials are static keys. Required with type credentials. Forbidden
@@ -170,10 +172,10 @@ func (in *S3Storage) SigningRegion() string {
 	return ""
 }
 
-// GCSWorkloadIdentity names the Google principal that the bucket trusts. An
-// empty block means that the ServiceAccount of the consumer already has the
-// identity (Workload Identity Federation for GKE), so the operator adds
-// nothing.
+// GCSWorkloadIdentity names the Google principal that the bucket trusts. With
+// an empty block, the operator adds no annotation to the ServiceAccount of the
+// consumer. The identity must then be bound on the cloud side, for example
+// with Workload Identity Federation for GKE.
 type GCSWorkloadIdentity struct {
 	// ServiceAccountEmail is the Google service account that consumers
 	// impersonate. When set, the operator puts it in the
@@ -199,8 +201,9 @@ type GCSStorageAuth struct {
 	// +optional
 	Type ObjectStorageAuthType `json:"type,omitempty"`
 	// WorkloadIdentity names the trusted principal. It is valid only with
-	// type workloadIdentity. An empty or absent block means that the
-	// ServiceAccount already has the identity, and the operator adds nothing.
+	// type workloadIdentity. With an empty or absent block, the operator adds
+	// no annotation. The identity must then be bound on the cloud side, for
+	// example with Workload Identity Federation for GKE.
 	// +optional
 	WorkloadIdentity *GCSWorkloadIdentity `json:"workloadIdentity,omitempty"`
 	// Credentials is a static service-account key. Required with type
@@ -227,8 +230,9 @@ type GCSStorage struct {
 }
 
 // AzureBlobWorkloadIdentity names the Azure principal that the container
-// trusts. An empty block means that the ServiceAccount of the consumer
-// already has the identity, so the operator adds nothing.
+// trusts. With an empty block, the operator adds no annotation to the
+// ServiceAccount of the consumer. The operator still adds the
+// azure.workload.identity/use label to the pods of the consumer.
 type AzureBlobWorkloadIdentity struct {
 	// ClientID is the managed identity that consumers use. When set, the
 	// operator puts it in the azure.workload.identity/client-id annotation
@@ -253,8 +257,9 @@ type AzureBlobStorageAuth struct {
 	// +optional
 	Type ObjectStorageAuthType `json:"type,omitempty"`
 	// WorkloadIdentity names the trusted principal. It is valid only with
-	// type workloadIdentity. An empty or absent block means that the
-	// ServiceAccount already has the identity, and the operator adds nothing.
+	// type workloadIdentity. With an empty or absent block, the operator adds
+	// no annotation to the ServiceAccount. The operator still adds the
+	// azure.workload.identity/use label to the pods.
 	// +optional
 	WorkloadIdentity *AzureBlobWorkloadIdentity `json:"workloadIdentity,omitempty"`
 	// Credentials is a static storage account key. Required with type

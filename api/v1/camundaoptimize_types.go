@@ -144,9 +144,10 @@ type CamundaOptimizeStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions represent the current state. Ready holds the reason of a
-	// failed pre-check, or it follows the conditions of the two workloads.
-	// The per-workload conditions (WebappReady, ImporterReady) and
-	// MirroredSecretsReady also appear here.
+	// failed pre-check. Otherwise it follows the conditions of the two
+	// workloads, and MirroredSecretsReady when the Optimize references a
+	// Secret in another namespace. The per-workload conditions (WebappReady,
+	// ImporterReady) and MirroredSecretsReady also appear here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

@@ -34,9 +34,10 @@ type BackupScheduleSpec struct {
 	// +required
 	Schedule string `json:"schedule"`
 	// Retained limits how many backups of this schedule stay. The schedule
-	// deletes only the backups that it created, which have the
-	// camunda.io/backup-schedule label. It never deletes a backup that a
-	// person created, or a backup that is not in a final phase.
+	// counts and deletes the backups in its namespace whose
+	// camunda.io/backup-schedule label names this schedule. A backup that you
+	// create with that label counts too, and the schedule can delete it. The
+	// schedule never deletes a backup that is not in a final phase.
 	// +kubebuilder:default={}
 	// +optional
 	Retained *RetainedBackups `json:"retained,omitempty"`
@@ -93,7 +94,7 @@ type BackupScheduleStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // BackupSchedule creates logical backups of one CamundaCluster on a cron
-// schedule, and deletes old backups that it created. At each trigger, the
+// schedule, and deletes old backups that have its label. At each trigger, the
 // operator creates the backup kind for the storage type of the cluster. The
 // backup has the name <schedule>-<unix-timestamp> and the labels
 // camunda.io/cluster and camunda.io/backup-schedule. If a name is too long

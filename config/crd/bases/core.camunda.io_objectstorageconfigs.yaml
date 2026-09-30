@@ -110,8 +110,9 @@ spec:
                       workloadIdentity:
                         description: |-
                           WorkloadIdentity names the trusted principal. It is valid only with
-                          type workloadIdentity. An empty or absent block means that the
-                          ServiceAccount already has the identity, and the operator adds nothing.
+                          type workloadIdentity. With an empty or absent block, the operator adds
+                          no annotation to the ServiceAccount. The operator still adds the
+                          azure.workload.identity/use label to the pods.
                         properties:
                           clientId:
                             description: |-
@@ -201,8 +202,9 @@ spec:
                       workloadIdentity:
                         description: |-
                           WorkloadIdentity names the trusted principal. It is valid only with
-                          type workloadIdentity. An empty or absent block means that the
-                          ServiceAccount already has the identity, and the operator adds nothing.
+                          type workloadIdentity. With an empty or absent block, the operator adds
+                          no annotation. The identity must then be bound on the cloud side, for
+                          example with Workload Identity Federation for GKE.
                         properties:
                           serviceAccountEmail:
                             description: |-
@@ -289,8 +291,9 @@ spec:
                       workloadIdentity:
                         description: |-
                           WorkloadIdentity names the trusted principal. It is valid only with
-                          type workloadIdentity. An empty or absent block means that the
-                          ServiceAccount already has the identity, and the operator adds nothing.
+                          type workloadIdentity. With an empty or absent block, the operator adds
+                          no annotation. The identity must then be bound on the cloud side, for
+                          example with EKS Pod Identity.
                         properties:
                           roleArn:
                             description: |-
