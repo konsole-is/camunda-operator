@@ -1,3 +1,15 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/my-archive-role
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: postgres
+    camunda.io/database-server: my-cluster-db
+  name: my-cluster-db-postgres
+  namespace: my-cluster-ns
+---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -41,10 +53,7 @@ spec:
     requests:
       cpu: "2"
       memory: 4Gi
-  serviceAccountTemplate:
-    metadata:
-      annotations:
-        eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/my-archive-role
+  serviceAccountName: my-cluster-db-postgres
   storage:
     size: 128Gi
     storageClass: ssd

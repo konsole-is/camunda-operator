@@ -40,10 +40,7 @@ spec:
     syncReplicaElectionConstraint:
       enabled: false
   resources: {}
-  serviceAccountTemplate:
-    metadata:
-      annotations:
-        eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/camunda
+  serviceAccountName: my-cluster-db-postgres
   storage:
     size: 64Gi
 status:

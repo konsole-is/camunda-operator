@@ -1596,6 +1596,47 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, 3*time.Second, interval).Should(Succeed())
 	})
 
+	// A cloud binding names the ServiceAccount, so pods that ran under the
+	// account of another owner would present an identity that is not theirs.
+	It("writes no cluster under a ServiceAccount that another owner controls", func() {
+		namespace := "dbs-" + utilrand.String(8)
+		Expect(k8sClient.Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		})).To(Succeed())
+
+		holder := serverNamed(namespace, "holder", "holder", nil)
+		occupant := &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "camunda-postgres",
+				Namespace: namespace,
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: v1.GroupVersion.String(),
+					Kind:       "DatabaseServer",
+					Name:       holder.Name,
+					UID:        reconciledServer(holder).UID,
+					Controller: new(true),
+				}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, occupant)).To(Succeed())
+
+		server := serverNamed(namespace, "camunda", "camunda", nil)
+
+		blocked := expectConditionReason(
+			server,
+			v1.ConditionClusterReady,
+			metav1.ConditionFalse,
+			string(component.GuardBlocked),
+		)
+		Expect(blocked.Message).To(ContainSubstring("controlled by DatabaseServer holder"))
+
+		Consistently(func() bool {
+			return apierrors.IsNotFound(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: namespace, Name: "camunda"}, &cnpgv1.Cluster{},
+			))
+		}, 3*time.Second, interval).Should(BeTrue())
+	})
+
 	It("keeps the cluster off an archive store that another owner controls", func() {
 		namespace := "dbs-" + utilrand.String(8)
 		Expect(k8sClient.Create(ctx, &corev1.Namespace{

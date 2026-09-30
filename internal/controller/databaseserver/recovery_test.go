@@ -239,17 +239,20 @@ func setBucketRole(bucket *v1.ObjectStorageConfig, roleARN string) {
 }
 
 // clusterRole reads the IAM role that the named CloudNativePG cluster gives
-// its instance pods, or the empty string when it gives them none.
+// its instance pods through their ServiceAccount, or the empty string when it
+// gives them none.
 func clusterRole(g Gomega, server *v1.DatabaseServer, name string) string {
 	var cluster cnpgv1.Cluster
 	g.Expect(k8sClient.Get(
 		ctx, client.ObjectKey{Namespace: server.Namespace, Name: name}, &cluster,
 	)).To(Succeed())
-	if cluster.Spec.ServiceAccountTemplate == nil {
-		return ""
-	}
 
-	return cluster.Spec.ServiceAccountTemplate.Metadata.Annotations[v1.IRSARoleARNAnnotation]
+	var account corev1.ServiceAccount
+	g.Expect(k8sClient.Get(
+		ctx, client.ObjectKey{Namespace: server.Namespace, Name: cluster.Spec.ServiceAccountName}, &account,
+	)).To(Succeed())
+
+	return account.Annotations[v1.IRSARoleARNAnnotation]
 }
 
 // probeContract records the probe that the DatabaseServerConfig controller
@@ -537,6 +540,15 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Eventually(func() error {
 			return k8sClient.Get(ctx, key, &recovered)
 		}, timeout, interval).Should(Succeed())
+
+		// A cloud binding names the ServiceAccount, so a rollback that moved
+		// the pods to another one would cut them off from the bucket.
+		var replaced cnpgv1.Cluster
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &replaced,
+		)).To(Succeed())
+		Expect(replaced.Spec.ServiceAccountName).To(Equal("camunda-postgres"))
+		Expect(recovered.Spec.ServiceAccountName).To(Equal("camunda-postgres"))
 		Expect(recovered.Spec.Bootstrap.Recovery.Source).To(Equal("camunda"))
 		Expect(recovered.Spec.Bootstrap.Recovery.RecoveryTarget.TargetTime).
 			To(Equal(target.UTC().Format(time.RFC3339)))
@@ -578,6 +590,9 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		By("removing the cluster and the base backup schedule it replaced")
 		expectGone(client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &cnpgv1.Cluster{})
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-postgres"}, &corev1.ServiceAccount{},
+		)).To(Succeed(), "the ServiceAccount of the server outlives the cluster it replaced")
 		expectGone(
 			client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &cnpgv1.ScheduledBackup{},
 		)
