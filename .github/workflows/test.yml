@@ -27,6 +27,20 @@ jobs:
           make tidy
           git diff --exit-code -- go.mod go.sum api/go.mod api/go.sum
 
+      # Four test packages start this image through testcontainers. The pull
+      # of testcontainers ignores an error in the pull stream, so a failed
+      # pull gives "No such image" when the container is created. Pull the
+      # image once here, and try again when the pull fails. The tests then
+      # find the image and do not pull it. Keep the tag the same as the
+      # postgresImage constants of the tests.
+      - name: Pull the test Postgres image
+        run: |
+          for attempt in 1 2 3 4 5; do
+            docker pull mirror.gcr.io/library/postgres:17 && exit 0
+            sleep $((attempt * 10))
+          done
+          exit 1
+
       - name: Running Tests
         run: make test
         env:
