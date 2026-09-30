@@ -142,6 +142,9 @@ func TestTakeHoldsWhileAnotherOperationRuns(t *testing.T) {
 	assert.Equal(t, v1.ReasonClusterClaimed, outcome.Failure.Reason)
 	assert.Contains(t, outcome.Failure.Message, "LogicalBackupRDBMS/nightly")
 	assert.Contains(t, outcome.Failure.Message, "my-cluster")
+	assert.Contains(
+		t, outcome.Failure.Message, "so this restore starts when that operation no longer holds the cluster",
+	)
 	assert.False(t, outcome.Done)
 	assert.Equal(t, backupClaimant().String(), leaseHolder(t, c), "the holder keeps its claim")
 }

@@ -291,7 +291,12 @@ func sameMetadata(existing map[string]any, want map[string]string) bool {
 // metadata. A snapshot that does not exist is SnapshotMissing, not an
 // error.
 func (c *Client) SnapshotStatus(ctx context.Context, repo, name string) (Snapshot, error) {
-	payload, status, err := c.api.Do(ctx, adminhttp.Request{Method: http.MethodGet, Path: snapshotPath(repo, name)})
+	// The unfiltered answer names every index of the snapshot. Elasticsearch
+	// does not filter an error answer, so error.type stays readable.
+	payload, status, err := c.api.Do(ctx, adminhttp.Request{
+		Method: http.MethodGet,
+		Path:   snapshotPath(repo, name) + "?filter_path=snapshots.state,snapshots.metadata",
+	})
 	if status == http.StatusNotFound {
 		// A 404 is how Elasticsearch reports an absent snapshot, but also an
 		// absent repository. Only the first is a state; a dropped repository
@@ -381,7 +386,10 @@ func (c *Client) ReloadSecureSettings(ctx context.Context) error {
 // statistics. The two are the inputs of the effective restore size, and they
 // can come from different nodes: each is the worst case of its own kind.
 func (c *Client) MaxNodeFSTotalAndUsedBytes(ctx context.Context) (total, used int64, err error) {
-	payload, _, err := c.api.Do(ctx, adminhttp.Request{Method: http.MethodGet, Path: "/_nodes/stats/fs"})
+	payload, _, err := c.api.Do(ctx, adminhttp.Request{
+		Method: http.MethodGet,
+		Path:   "/_nodes/stats/fs?filter_path=nodes.*.fs.total.total_in_bytes,nodes.*.fs.total.available_in_bytes",
+	})
 	if err != nil {
 		return 0, 0, err
 	}

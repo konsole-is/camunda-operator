@@ -50,7 +50,19 @@ const (
 	// backup guide: continuous mode holds the log until a backup runs.
 	msgContinuousWithoutSchedule = "backup.primaryStorage.continuous is true but the schedule is none: " +
 		"continuous mode holds every log segment until a backup runs, so it always needs a schedule"
+	// msgDefaultRoleEnv names an extraEnv entry that makes Camunda stop the
+	// identity initialization, and the form that works.
+	msgDefaultRoleEnv = "%s entry %s is not a default role membership that Camunda can read. " +
+		"On the brokers, Camunda stops the identity initialization on this entry " +
+		"and creates no configured user and no role member. " +
+		"Write " + defaultRoleEnvPrefix + "<role>_<type>_<n>, " +
+		"with USERS, CLIENTS, GROUPS, ROLES, or MAPPINGRULES as the type. " +
+		"Keep the dash of a role ID, as in READONLY-ADMIN"
 )
+
+// defaultRoleEnvPrefix starts the usual form of the environment variables
+// that bind to camunda.security.initialization.default-roles.
+const defaultRoleEnvPrefix = "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_"
 
 // versionFloor is the lowest Camunda version the operator supports.
 const versionFloor = "8.9.0"
@@ -58,10 +70,12 @@ const versionFloor = "8.9.0"
 // MergeSpec resolves a CamundaCluster spec against its baselines: the
 // preset, then the release over it, then spec over both, under the rules of
 // the CamundaClusterPreset doc. Scalars and pointers override individually:
-// version, the auth fields, per-component mode, replicas, partitions,
-// replicationFactor, storageClassName, storageSize,
-// persistentVolumeClaimRetentionPolicy, indexReplicas, connectors.enabled,
-// and connectors.version. Resources merge per request and limit entry. ExtraEnv
+// version, per-component mode, replicas, partitions, replicationFactor,
+// storageClassName, storageSize, persistentVolumeClaimRetentionPolicy,
+// indexReplicas, connectors.enabled, and connectors.version. Auth.clientId
+// replaces the whole client: a cluster that sets it takes auth.audience and
+// auth.clientSecretRef from spec only, and without it they override
+// individually. Resources merge per request and limit entry. ExtraEnv
 // merges by variable name, lower layer first, and an entry of a higher layer
 // with the same name replaces it. ExtraEnvFrom concatenates, lower layer
 // first. PodLabels and podAnnotations merge by key with the higher layer
@@ -206,7 +220,11 @@ func mergeAuth(base, over *v1.ClusterAuthSpec) *v1.ClusterAuthSpec {
 	}
 
 	if over.ClientID != "" {
+		// The audience and the secret of the preset belong to the preset
+		// client, so a cluster client id takes neither of them.
 		base.ClientID = over.ClientID
+		base.Audience = over.Audience
+		base.ClientSecretRef = over.ClientSecretRef
 	}
 	if over.Audience != "" {
 		base.Audience = over.Audience
@@ -508,7 +526,10 @@ func ReleaseImages(merged v1.CamundaClusterSpec, release *v1.CamundaReleaseSpec)
 // be present, three segments, and 8.9.0 or later. The effective
 // replicationFactor must not exceed the effective replicas, the effective
 // partitions must be at least 1, and connectors.version must be present when
-// connectors are enabled. The error joins every problem with "; ".
+// connectors are enabled. An extraEnv entry that reaches the brokers and that
+// Spring Boot binds under camunda.security.initialization.default-roles must
+// name a role and a member type that Camunda accepts. The entries of extraEnvFrom sources are not
+// checked. The error joins every problem with "; ".
 func ValidateMerged(spec v1.CamundaClusterSpec) error {
 	var problems []string
 	effective := NewEffective(spec)
@@ -538,6 +559,8 @@ func ValidateMerged(spec v1.CamundaClusterSpec) error {
 		b.PrimaryStorage.Schedule == ScheduleNone {
 		problems = append(problems, msgContinuousWithoutSchedule)
 	}
+
+	problems = append(problems, checkDefaultRoleEnv(effective)...)
 
 	if len(problems) > 0 {
 		return fmt.Errorf("%s", strings.Join(problems, "; "))
@@ -584,4 +607,109 @@ func parseVersion(version string) ([3]int, error) {
 	}
 
 	return parsed, nil
+}
+
+// checkDefaultRoleEnv returns one problem for each extraEnv entry that
+// readsAsDefaultRoleMembership refuses among the entries of the brokers,
+// the only processes that run the identity initialization.
+func checkDefaultRoleEnv(effective Effective) []string {
+	fields := []string{"extraEnv"}
+	blocks := [][]corev1.EnvVar{effective.ExtraEnv}
+	for _, p := range Resolve(effective) {
+		if p.Component != ComponentZeebe {
+			continue
+		}
+		for _, component := range envSources(p) {
+			fields = append(fields, component+".extraEnv")
+			blocks = append(blocks, effective.Workload(component).ExtraEnv)
+		}
+	}
+
+	var problems []string
+	for i, block := range blocks {
+		for _, e := range block {
+			if !readsAsDefaultRoleMembership(e.Name) {
+				problems = append(problems, fmt.Sprintf(msgDefaultRoleEnv, fields[i], e.Name))
+			}
+		}
+	}
+
+	return problems
+}
+
+// readsAsDefaultRoleMembership reports whether Camunda can read name as a
+// member of a default role when Spring Boot binds it to
+// camunda.security.initialization.default-roles. Any other name passes.
+func readsAsDefaultRoleMembership(name string) bool {
+	// Spring Boot reads an environment variable in two ways. A name with a
+	// dot binds only in the dotted form, split at each dot. Any other name is
+	// split at each underscore. A bracket also starts a part. A part with no
+	// letter or digit is dropped, and the parts of the key compare without
+	// case and on their letters and digits only.
+	separator := "_"
+	if strings.Contains(name, ".") {
+		separator = "."
+	}
+	split := strings.NewReplacer("[", separator+"[", "]", "]"+separator).Replace(strings.ToLower(name))
+
+	var parts []string
+	for part := range strings.SplitSeq(split, separator) {
+		if strings.ContainsFunc(part, isLetterOrDigit) {
+			parts = append(parts, part)
+		}
+	}
+
+	key := []string{"camunda", "security", "initialization", "defaultroles"}
+	if len(parts) < len(key) {
+		return true
+	}
+	for i, want := range key {
+		if strings.Map(keepLetterOrDigit, parts[i]) != want {
+			return true
+		}
+	}
+
+	// The first part after the key is the role. The parts up to the first
+	// number, joined with dots, are the member type, and Camunda's
+	// PlatformDefaultEntities.getEntityType throws on a type it does not know.
+	// A bracketed number is an index in both forms, a bare number only in the
+	// underscore form.
+	rest := parts[len(key):]
+	if len(rest) < 2 {
+		return false
+	}
+
+	end := len(rest)
+	for i := 2; i < len(rest); i++ {
+		bracketed := strings.HasPrefix(rest[i], "[") && strings.HasSuffix(rest[i], "]")
+		if (bracketed && isDigits(strings.Trim(rest[i], "[]"))) || (separator == "_" && isDigits(rest[i])) {
+			end = i
+			break
+		}
+	}
+	if end < len(rest)-1 {
+		return false
+	}
+
+	switch strings.Join(rest[1:end], ".") {
+	case "users", "clients", "groups", "roles", "mappingrules", "mapping-rules", "mapping.rules":
+		return true
+	default:
+		return false
+	}
+}
+
+func isLetterOrDigit(r rune) bool {
+	return 'a' <= r && r <= 'z' || '0' <= r && r <= '9'
+}
+
+func keepLetterOrDigit(r rune) rune {
+	if isLetterOrDigit(r) {
+		return r
+	}
+	return -1
+}
+
+func isDigits(s string) bool {
+	return s != "" && strings.Trim(s, "0123456789") == ""
 }

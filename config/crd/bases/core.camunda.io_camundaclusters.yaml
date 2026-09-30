@@ -1045,7 +1045,7 @@ spec:
                   audience:
                     description: |-
                       Audience is the audience that access tokens must carry. Defaults to
-                      the clientId.
+                      the client ID that the cluster uses.
                     type: string
                   basic:
                     description: |-
@@ -1089,12 +1089,15 @@ spec:
                         type: string
                     type: object
                   clientId:
-                    description: ClientID is the OIDC client ID of this cluster.
+                    description: |-
+                      ClientID is the OIDC client ID of this cluster. A client ID replaces
+                      the whole client: the audience and the client secret then come from
+                      this block only. Requires clientSecretRef.
                     type: string
                   clientSecretRef:
                     description: |-
                       ClientSecretRef names the Secret that holds the OIDC client secret of
-                      this cluster.
+                      this cluster. Required when clientId is set.
                     properties:
                       key:
                         description: Key in the Secret holding the value.
@@ -1109,6 +1112,9 @@ spec:
                     - name
                     type: object
                 type: object
+                x-kubernetes-validations:
+                - message: clientSecretRef is required when clientId is set
+                  rule: '!has(self.clientId) || size(self.clientId) == 0 || has(self.clientSecretRef)'
               backup:
                 description: |-
                   Backup configures how backups of this cluster behave: the schedule and

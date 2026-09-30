@@ -231,19 +231,24 @@ type ConnectorsSpec struct {
 // ClusterAuthSpec holds the credentials of one cluster and the identities
 // that get its admin role. Under OIDC it carries the client credentials,
 // which override the defaults of the platform config and of the preset, and
-// the identities of the administrators. Under basic authentication it
-// carries the basic block, which configures the admin credential that the
-// operator owns.
+// the identities of the administrators. A block that sets clientId replaces
+// the whole client: the audience and the client secret then come from this
+// block only. A block without clientId overrides the audience and the client
+// secret one by one. Under basic authentication it carries the basic block,
+// which configures the admin credential that the operator owns.
+// +kubebuilder:validation:XValidation:rule="!has(self.clientId) || size(self.clientId) == 0 || has(self.clientSecretRef)",message="clientSecretRef is required when clientId is set"
 type ClusterAuthSpec struct {
-	// ClientID is the OIDC client ID of this cluster.
+	// ClientID is the OIDC client ID of this cluster. A client ID replaces
+	// the whole client: the audience and the client secret then come from
+	// this block only. Requires clientSecretRef.
 	// +optional
 	ClientID string `json:"clientId,omitempty"`
 	// Audience is the audience that access tokens must carry. Defaults to
-	// the clientId.
+	// the client ID that the cluster uses.
 	// +optional
 	Audience string `json:"audience,omitempty"`
 	// ClientSecretRef names the Secret that holds the OIDC client secret of
-	// this cluster.
+	// this cluster. Required when clientId is set.
 	// +optional
 	ClientSecretRef *LocalSecretKeyRef `json:"clientSecretRef,omitempty"`
 	// Admin holds the identities that get the admin role of this cluster. It

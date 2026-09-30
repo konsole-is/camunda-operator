@@ -616,14 +616,31 @@ func TestStorageContractNamesTheServerContractAndTheDatabase(t *testing.T) {
 		StorageContract(rdbms("new")),
 		"a move of the address keeps the contract",
 	)
-	elasticsearch := Storage{
-		Type:          v1.SecondaryStorageTypeElasticsearch,
-		Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es:9200"},
-	}
-	assert.Empty(t, StorageContract(elasticsearch))
 	noServer := Storage{
 		Type:  v1.SecondaryStorageTypeRDBMS,
 		RDBMS: &RDBMSStorage{Host: "pg", Port: 5432, Database: "camunda"},
 	}
 	assert.Empty(t, StorageContract(noServer), "a chain that names no server has no contract")
+}
+
+func TestStorageContractNamesTheSecondaryStorageConfigOfElasticsearch(t *testing.T) {
+	elasticsearch := func(endpoint string) Storage {
+		return Storage{
+			Type:          v1.SecondaryStorageTypeElasticsearch,
+			Namespace:     "apps",
+			Name:          "search",
+			Elasticsearch: &v1.ElasticsearchStorage{Endpoint: endpoint},
+		}
+	}
+
+	assert.Equal(t, "elasticsearch|apps/search", StorageContract(elasticsearch("https://es:9200")))
+	assert.Equal(
+		t,
+		StorageContract(elasticsearch("https://es:9200")),
+		StorageContract(elasticsearch("https://moved-es:9200")),
+		"a move of the endpoint keeps the contract",
+	)
+	unnamed := elasticsearch("https://es:9200")
+	unnamed.Name = ""
+	assert.Empty(t, StorageContract(unnamed), "a chain that names no SecondaryStorageConfig has no contract")
 }

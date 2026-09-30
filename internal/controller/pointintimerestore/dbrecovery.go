@@ -386,7 +386,7 @@ func (r *Reconciler) followBackend(
 		return failure, nil
 	}
 
-	err := restore.RegisterDatabaseWriter(
+	err := restore.RegisterWriter(
 		ctx,
 		r.Client,
 		r.APIReader,

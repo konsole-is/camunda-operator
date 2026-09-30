@@ -25,6 +25,7 @@ import (
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -152,6 +153,35 @@ func TestBackendOfReportsABrokenChain(t *testing.T) {
 	require.NotNil(t, failure)
 	assert.Equal(t, v1.ReasonInvalidReference, failure.Reason)
 	assert.Contains(t, failure.Message, "DatabaseConfig ns/db does not exist")
+}
+
+// A cluster on the contract finds the writer by the contract that the
+// cluster computes, so both must compute one value.
+func TestResolveBackendNamesTheContractThatTheClusterComputes(t *testing.T) {
+	ctx := context.Background()
+	c := backendClient(t, backendObjects()...)
+
+	var elasticsearch v1.SecondaryStorageConfig
+	require.NoError(t, c.Get(ctx, types.NamespacedName{Namespace: "ns", Name: "storage"}, &elasticsearch))
+	backend, failure, err := ResolveBackend(ctx, c, &elasticsearch)
+	require.NoError(t, err)
+	require.Nil(t, failure)
+	want := clustercomponents.StorageContract(clustercomponents.Storage{
+		Type:          v1.SecondaryStorageTypeElasticsearch,
+		Namespace:     "ns",
+		Name:          "storage",
+		Elasticsearch: elasticsearch.Spec.Elasticsearch,
+	})
+	assert.NotEmpty(t, want)
+	assert.Equal(t, want, backend.Contract)
+
+	var rdbms v1.SecondaryStorageConfig
+	require.NoError(t, c.Get(ctx, types.NamespacedName{Namespace: "ns", Name: "rdbms-storage"}, &rdbms))
+	backend, failure, err = ResolveBackend(ctx, c, &rdbms)
+	require.NoError(t, err)
+	require.Nil(t, failure)
+	server := types.NamespacedName{Namespace: "ns", Name: "server"}
+	assert.Equal(t, DatabaseContract(server, "camunda"), backend.Contract)
 }
 
 func TestCheckBackend(t *testing.T) {

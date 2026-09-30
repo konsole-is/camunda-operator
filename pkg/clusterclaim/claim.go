@@ -321,6 +321,36 @@ func (c Claimant) Display() string {
 	return c.Kind + "/" + c.Name
 }
 
+// WaitMessage is the condition message of a claimant that waits while holder
+// claims the cluster. It names the holder, or the Lease to delete when no
+// claimant can take the claim over. holder is the identity that Claim returned. waiter
+// names the kind of operation that waits, such as "backup" or "restore".
+func WaitMessage(holder, namespace, cluster, waiter string) string {
+	if holder == unidentifiedHolder {
+		return fmt.Sprintf(
+			"The claim Lease %s/%s of CamundaCluster %s/%s records no holder that the operator can read. "+
+				"This %s waits until you delete that Lease",
+			namespace, ClaimLeaseName(cluster), namespace, cluster, waiter,
+		)
+	}
+
+	parsed, err := ParseClaimant(holder)
+	if _, known := holderKinds[parsed.Kind]; err != nil || !known {
+		// No claimant takes over a Lease whose holder it cannot read.
+		return fmt.Sprintf(
+			"The claim Lease %s/%s of CamundaCluster %s/%s names the holder %q, which is not a backup "+
+				"or restore of this operator. This %s waits until you delete that Lease",
+			namespace, ClaimLeaseName(cluster), namespace, cluster, holder, waiter,
+		)
+	}
+
+	return fmt.Sprintf(
+		"%s holds CamundaCluster %s/%s. Only one backup or restore of a cluster runs at a time, "+
+			"so this %s starts when that operation no longer holds the cluster",
+		parsed.Display(), namespace, cluster, waiter,
+	)
+}
+
 // holder is what the claim needs of a claimant resource to decide whether it
 // still needs the cluster. Every claimant kind in api/v1 answers Terminal:
 // the kind owns its own phase vocabulary, and the claim never repeats it.
