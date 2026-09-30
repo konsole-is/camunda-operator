@@ -551,8 +551,10 @@ func (r *ElasticsearchClusterReconciler) dataVolumes(
 	}
 	slices.SortFunc(volumes.volumes, func(a, b v1.VolumeStatus) int { return strings.Compare(a.Name, b.Name) })
 
+	// Read live: a cache that missed the last apply holds an old request, and
+	// the clamp reports the same shrink again.
 	var es esv1.Elasticsearch
-	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), &es); err != nil {
+	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(cluster), &es); err != nil {
 		// The claims count on their own during suspension, when the ECK CR
 		// is deleted and the volumes stay.
 		if apierrors.IsNotFound(err) {

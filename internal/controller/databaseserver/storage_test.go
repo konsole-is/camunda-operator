@@ -19,11 +19,15 @@ package databaseserver
 import (
 	"testing"
 
+	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
@@ -215,4 +219,32 @@ func TestKeepAppliedStorageSizeReportsOncePerRequest(t *testing.T) {
 			assert.Contains(t, <-recorder.Events, tt.reason)
 		})
 	}
+}
+
+// The request annotation is read live. The cache can still hold the cluster
+// from before the last apply, and an old request there reports the same shrink
+// again.
+func TestVolumeClaimsReadsTheRequestLive(t *testing.T) {
+	t.Parallel()
+
+	server := &v1.DatabaseServer{ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: "ns", UID: "server-uid"}}
+	stale := &cnpgv1.Cluster{
+		ObjectMeta: ownedClusterMeta(server),
+		Spec:       cnpgv1.ClusterSpec{StorageConfiguration: cnpgv1.StorageConfiguration{Size: "4Gi"}},
+	}
+	applied := stale.DeepCopy()
+	applied.Annotations = map[string]string{components.RequestedStorageSizeAnnotation: "1Gi"}
+
+	s := runtime.NewScheme()
+	require.NoError(t, scheme.AddToScheme(s))
+	require.NoError(t, cnpgv1.AddToScheme(s))
+
+	r := &DatabaseServerReconciler{
+		Client:    fake.NewClientBuilder().WithScheme(s).WithObjects(stale).Build(),
+		APIReader: fake.NewClientBuilder().WithScheme(s).WithObjects(applied).Build(),
+	}
+
+	volumes, err := r.volumeClaims(t.Context(), server)
+	require.NoError(t, err)
+	assert.Equal(t, "1Gi", volumes.requested[components.RequestedStorageSizeAnnotation])
 }

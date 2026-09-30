@@ -1091,9 +1091,11 @@ func (r *DatabaseServerReconciler) volumeClaims(
 ) (serverVolumes, error) {
 	key := types.NamespacedName{Namespace: server.Namespace, Name: components.ClusterName(server)}
 
+	// Read live: a cache that missed the last apply holds an old request,
+	// and the clamp reports the same kept volume again.
 	var cluster cnpgv1.Cluster
 	applied := true
-	if err := r.Get(ctx, key, &cluster); err != nil {
+	if err := r.APIReader.Get(ctx, key, &cluster); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return serverVolumes{}, fmt.Errorf("reading the applied cluster %s: %w", key, err)
 		}
