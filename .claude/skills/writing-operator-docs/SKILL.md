@@ -1,6 +1,6 @@
 ---
 name: writing-operator-docs
-description: Use when about to create, edit, or review a page that a user of the operator reads - anything under docs/, README.md, dist/chart/README.md, or a spec or status field description in api/v1 - before the first edit, and again before you call the docs done.
+description: Use when about to create, edit, or review a page that a user of the operator reads - anything under docs/ except docs/superpowers/, README.md, dist/chart/README.md, or a spec or status field description in api/v1 - before the first edit, and again before you call the docs done.
 ---
 
 # Writing operator docs
@@ -29,6 +29,8 @@ A draft written before step 1 is a draft you rewrite. Do not patch it.
 | `README.md` | What the operator is, install, one taste, pointers into `docs/`. No depth. |
 | `dist/chart/README.md` | The Helm values. Hand-maintained, the plugin preserves it. |
 | GoDoc on spec and status fields in `api/v1` | Shows in `kubectl explain` and in the CRD. Same reader, same rules. |
+
+`docs/superpowers/` is internal working material. mkdocs excludes it. This skill does not apply there.
 
 A kind the operator does not act on yet gets no new page. `docs/crds/index.md` lists such kinds under "Planned kinds".
 

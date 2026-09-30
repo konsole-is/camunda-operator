@@ -195,6 +195,7 @@ func TestCheckDirSkipsUnpublishedAndGeneratedPages(t *testing.T) {
 
 	pages := []string{
 		"index.md",
+		"superpowers/plan.md",
 		"crds/TEMPLATE.md",
 		"crds/api-reference.md",
 		"crds/kind.md",

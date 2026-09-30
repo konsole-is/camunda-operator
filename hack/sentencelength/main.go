@@ -22,9 +22,10 @@ limitations under the License.
 // Usage: sentencelength [dir]
 //
 // The directory defaults to docs. The command reads every .md file below it,
-// except docs/crds/TEMPLATE.md and the generated docs/crds/api-reference.md.
-// It prints one line per finding, then the count for each page and the total.
-// It exits with status 1 when it reports a finding.
+// except docs/superpowers/, docs/crds/TEMPLATE.md, and the generated
+// docs/crds/api-reference.md. It prints one line per finding, then the count
+// for each page and the total. It exits with status 1 when it reports a
+// finding.
 //
 // What it reads:
 //   - Paragraphs, list items, admonition bodies, blockquotes, and each table
@@ -187,6 +188,9 @@ func checkDir(root string) ([]finding, error) {
 		rel, relErr := filepath.Rel(root, path)
 		if relErr != nil {
 			return relErr
+		}
+		if d.IsDir() && rel == "superpowers" {
+			return filepath.SkipDir
 		}
 		if d.IsDir() || filepath.Ext(path) != ".md" || skippedPages[rel] {
 			return nil

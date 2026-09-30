@@ -5,7 +5,9 @@ repo_url: https://github.com/konsole-is/camunda-operator
 repo_name: konsole-is/camunda-operator
 edit_uri: edit/main/docs/
 
+# docs/superpowers/ is internal working material and never published.
 exclude_docs: |
+  superpowers/
   crds/TEMPLATE.md
 
 theme:
