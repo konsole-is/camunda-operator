@@ -114,6 +114,7 @@ var _ = Describe("LogicalRestoreElasticsearch admission", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, restore)).To(Succeed())
+		deleteAtSpecEnd(restore)
 
 		expectReason(restore, v1.LogicalRestorePending, v1.ReasonInvalidReference)
 	})
@@ -299,10 +300,13 @@ var _ = Describe("LogicalRestoreElasticsearch compatibility", func() {
 		restore := createRestore(w, backup.Name)
 
 		By("writing the version of the backup on the target")
+		// The restore writes the version before the status write that first sets
+		// its phase, so a version on the target does not yet mean a phase.
 		Eventually(func(g Gomega) {
 			var cluster v1.CamundaCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
 			g.Expect(cluster.Spec.Version).To(Equal("8.9.10"))
+			g.Expect(latest(g, restore).Status.Phase).To(Equal(v1.LogicalRestorePending))
 		}, timeout, interval).Should(Succeed())
 
 		By("holding until the brokers carry that version")
@@ -595,6 +599,7 @@ var _ = Describe("LogicalRestoreElasticsearch of primary storage", func() {
 		w.seedSnapshots(elasticsearchSnapshots...)
 		w.search.SetRecoveryActive(false)
 		Expect(k8sClient.Create(ctx, restore)).To(Succeed())
+		deleteAtSpecEnd(restore)
 		serveRestoredIndices(w, restore)
 
 		reached := expectReason(restore, v1.LogicalRestoreFailed, v1.ReasonFailed)
