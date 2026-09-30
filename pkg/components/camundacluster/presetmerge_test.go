@@ -736,6 +736,137 @@ func TestValidateMergedJoinsEveryProblem(t *testing.T) {
 	)
 }
 
+func TestValidateMergedDefaultRoleEnv(t *testing.T) {
+	t.Parallel()
+
+	const (
+		roles       = "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_"
+		lowerRoles  = "camunda_security_initialization_defaultroles_"
+		dotted      = "camunda.security.initialization.default-roles."
+		dashedRoles = "CAMUNDA_SECURITY_INITIALIZATION_DEFAULT-ROLES_"
+	)
+
+	tests := []struct {
+		name     string
+		variable string
+		wantErr  bool
+	}{
+		{"users of a role", roles + "ADMIN_USERS_0", false},
+		{"a dash in the role", roles + "READONLY-ADMIN_USERS_0", false},
+		{"groups at a two-digit index", roles + "TASK-WORKER_GROUPS_12", false},
+		{"clients", roles + "ADMIN_CLIENTS_0", false},
+		{"roles", roles + "ADMIN_ROLES_0", false},
+		{"mapping rules", roles + "ADMIN_MAPPINGRULES_0", false},
+		{"mapping rules with an underscore", roles + "ADMIN_MAPPING_RULES_0", false},
+		{"mapping rules with a dash", roles + "ADMIN_MAPPING-RULES_0", false},
+		{"mapping rules with a dot", roles + "ADMIN_MAPPING.RULES_0", false},
+		{"a comma list without an index", roles + "ADMIN_USERS", false},
+		{"lower case", lowerRoles + "admin_users_0", false},
+		{"another initialization key", "CAMUNDA_SECURITY_INITIALIZATION_USERS_0_USERNAME", false},
+		{"a dash in the prefix", dashedRoles + "ADMIN_USERS_0", false},
+		{"the dotted form", dotted + "readonly-admin.users", false},
+		{"the dotted form with mapping rules", dotted + "admin.mapping.rules", false},
+		{"another dotted key", "camunda.security.initialization.users", false},
+		{"a dash in the prefix and an underscore in the role", dashedRoles + "READONLY_ADMIN_USERS_0", true},
+		{"an empty part", "CAMUNDA__SECURITY_INITIALIZATION_DEFAULTROLES_READONLY_ADMIN_USERS_0", true},
+		{"the dotted form with a dot in the role", dotted + "readonly.admin.users", true},
+		{"the dotted form with an index", dotted + "admin.users.0", true},
+		{"a dotted underscore prefix", "CAMUNDA.SECURITY.INITIALIZATION.DEFAULT_ROLES.ADMIN.MAPPING_RULES", true},
+		{"a bracketed index", roles + "ADMIN_USERS[0]", false},
+		{"the dotted form with a bracketed index", dotted + "readonly-admin.users[0]", false},
+		{"punctuation in the prefix", "CAMUNDA!_SECURITY_INITIALIZATION_DEFAULTROLES_READONLY_ADMIN_USERS_0", true},
+		{"the dotted form with a dot in the role and an index", dotted + "readonly.admin.users[0]", true},
+		{"an underscore in the role", roles + "READONLY_ADMIN_USERS_0", true},
+		{"an unknown member type", roles + "ADMIN_MAPPINGS_0", true},
+		{"a part after the index", roles + "ADMIN_USERS_0_NAME", true},
+		{"no member type", roles + "ADMIN", true},
+		{"an index in place of the member type", roles + "ADMIN_0", true},
+		{"no role", roles + "_USERS_0", true},
+		{"lower case with an underscore in the role", lowerRoles + "readonly_admin_users_0", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			spec := v1.CamundaClusterSpec{
+				Version:  "8.9.0",
+				ExtraEnv: []corev1.EnvVar{{Name: tt.variable, Value: "grace"}},
+			}
+
+			err := ValidateMerged(spec)
+
+			if !tt.wantErr {
+				assert.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "extraEnv entry "+tt.variable)
+			assert.Contains(t, err.Error(), "READONLY-ADMIN")
+		})
+	}
+}
+
+// With an embedded gateway, every block of the orchestration cluster reaches
+// the brokers, which run the identity initialization.
+func TestValidateMergedDefaultRoleEnvNamesTheBlock(t *testing.T) {
+	t.Parallel()
+
+	bad := []corev1.EnvVar{{Name: "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_READONLY_ADMIN_USERS_0"}}
+	spec := v1.CamundaClusterSpec{
+		Version:  "8.9.0",
+		Zeebe:    &v1.ZeebeSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: bad}},
+		Gateway:  &v1.GatewaySpec{Mode: v1.ComponentModeEmbedded, WorkloadSpec: v1.WorkloadSpec{ExtraEnv: bad}},
+		Operate:  &v1.WebAppSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: bad}},
+		Tasklist: &v1.WebAppSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: bad}},
+		Admin:    &v1.WebAppSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: bad}},
+	}
+
+	err := ValidateMerged(spec)
+
+	require.Error(t, err)
+	for _, block := range []string{"zeebe", "gateway", "operate", "tasklist", "admin"} {
+		assert.Contains(t, err.Error(), block+".extraEnv entry "+bad[0].Name)
+	}
+}
+
+// Only the brokers run the identity initialization, so a block that does not
+// reach them is not checked.
+func TestValidateMergedDefaultRoleEnvIgnoresBlocksOffTheBrokers(t *testing.T) {
+	t.Parallel()
+
+	bad := v1.WorkloadSpec{ExtraEnv: []corev1.EnvVar{
+		{Name: "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_READONLY_ADMIN_USERS_0"},
+	}}
+
+	tests := []struct {
+		name string
+		spec v1.CamundaClusterSpec
+	}{
+		{"a standalone gateway and the web applications it hosts", v1.CamundaClusterSpec{
+			Gateway:  &v1.GatewaySpec{WorkloadSpec: bad},
+			Operate:  &v1.WebAppSpec{WorkloadSpec: bad},
+			Tasklist: &v1.WebAppSpec{WorkloadSpec: bad},
+			Admin:    &v1.WebAppSpec{WorkloadSpec: bad},
+		}},
+		{"a standalone web application beside an embedded gateway", v1.CamundaClusterSpec{
+			Gateway: &v1.GatewaySpec{Mode: v1.ComponentModeEmbedded},
+			Operate: &v1.WebAppSpec{Mode: v1.ComponentModeStandalone, WorkloadSpec: bad},
+		}},
+		{"connectors", v1.CamundaClusterSpec{Connectors: &v1.ConnectorsSpec{WorkloadSpec: bad}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tt.spec.Version = "8.9.0"
+
+			assert.NoError(t, ValidateMerged(tt.spec))
+		})
+	}
+}
+
 // The admin block never merges per field: a cluster that sets it replaces the
 // block of the preset entirely, so one manifest names every administrator.
 func TestMergeSpecAdminBlockReplacesWholesale(t *testing.T) {

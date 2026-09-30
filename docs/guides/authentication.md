@@ -248,11 +248,33 @@ spec:
   # ... the rest of your cluster
 ```
 
-Use the same form for `app-integrations` and `task-worker`: `..._DEFAULTROLES_TASK-WORKER_USERS_0`. To add more members, count `<n>` up from `0`. To add a group, a client, or a mapping rule, write `GROUPS`, `CLIENTS`, or `MAPPINGRULES` in place of `USERS`, with its ID as the value.
+Use the same form for `app-integrations` and `task-worker`: `..._DEFAULTROLES_TASK-WORKER_USERS_0`. To add more members, count `<n>` up from `0` without a gap. Camunda does not start when an index is missing. To add a group, a client, or a mapping rule, write `GROUPS`, `CLIENTS`, or `MAPPINGRULES` in place of `USERS`, with its ID as the value.
 
-> **Caution:** Do not write an underscore in place of the dash. Camunda reads each underscore as a level of the key, so `..._DEFAULTROLES_READONLY_ADMIN_USERS_0` stops the whole initialization. The cluster starts, but it creates none of the configured users and role members. The members of `spec.auth.admin` get no access too.
+> **Caution:** Do not write an underscore in place of the dash. Camunda reads each underscore as a level of the key, so `..._DEFAULTROLES_READONLY_ADMIN_USERS_0` stops the whole initialization. The cluster starts, but it creates none of the configured users and role members, and no member of `spec.auth.admin` either. The operator refuses such an entry.
 
 A key that matches no role ID, such as `READONLYADMIN`, has no effect. The cluster starts and logs no error, and the user gets no role. To confirm a membership, open the role in the Admin web application, or call `POST /v2/roles/readonly-admin/users/search` as an administrator.
+
+The operator refuses each `extraEnv` entry of the brokers under `CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_` that Camunda cannot read as `<role>_<type>_<n>` or `<role>_<type>`. The type must be `USERS`, `CLIENTS`, `GROUPS`, `ROLES`, or `MAPPINGRULES`. `MAPPING_RULES` and `MAPPING-RULES` also work. Camunda stops the identity initialization on any other form, as the caution above says. The entries of the brokers are the top-level entries, the `zeebe` entries, and the entries of each block that runs embedded on the brokers. Some Camunda pages write `MAPPINGS` as the type. The operator refuses it too, so write `MAPPINGRULES`.
+
+When the operator refuses an entry, the cluster reports `Ready: InvalidReference`. A running cluster keeps the configuration that it runs:
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: InvalidReference
+      message: >-
+        invalid effective spec: extraEnv entry CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_READONLY_ADMIN_USERS_0
+        is not a default role membership that Camunda can read. On the brokers, Camunda stops the identity
+        initialization on this entry and creates no configured user and no role member. Write
+        CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_<role>_<type>_<n>, with USERS, CLIENTS, GROUPS, ROLES,
+        or MAPPINGRULES as the type. Keep the dash of a role ID, as in READONLY-ADMIN
+```
+
+The operator does not read the keys of an `extraEnvFrom` source. It cannot refuse such a name in a ConfigMap or a Secret, so write these variables in `extraEnv`.
+
+The operator does not check the indexes. The operator itself writes the members of `spec.auth.admin` from index `0` of the `admin` role. Under OIDC, it can also write the first client of the `connectors` role. An `extraEnv` entry with the same name replaces the entry of the operator. List administrators in `spec.auth.admin`, not in `extraEnv`.
 
 ### Per-cluster client
 
