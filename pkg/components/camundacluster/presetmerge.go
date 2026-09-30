@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -53,14 +54,15 @@ const (
 	// msgDefaultRoleEnv names an extraEnv entry that makes Camunda stop the
 	// identity initialization, and the form that works.
 	msgDefaultRoleEnv = "%s entry %s is not a default role membership that Camunda can read. " +
-		"Camunda stops the identity initialization on this entry and creates no configured user and no role member. " +
+		"On the brokers, Camunda stops the identity initialization on this entry " +
+		"and creates no configured user and no role member. " +
 		"Write " + defaultRoleEnvPrefix + "<role>_<type>_<n>, " +
 		"with USERS, CLIENTS, GROUPS, ROLES, or MAPPINGRULES as the type. " +
 		"Keep the dash of a role ID, as in READONLY-ADMIN"
 )
 
-// defaultRoleEnvPrefix starts the environment variables that bind to
-// camunda.security.initialization.default-roles.
+// defaultRoleEnvPrefix starts the usual form of the environment variables
+// that bind to camunda.security.initialization.default-roles.
 const defaultRoleEnvPrefix = "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_"
 
 // versionFloor is the lowest Camunda version the operator supports.
@@ -519,12 +521,11 @@ func ReleaseImages(merged v1.CamundaClusterSpec, release *v1.CamundaReleaseSpec)
 // be present, three segments, and 8.9.0 or later. The effective
 // replicationFactor must not exceed the effective replicas, the effective
 // partitions must be at least 1, and connectors.version must be present when
-// connectors are enabled. An extraEnv entry of the orchestration processes
-// (the top level, zeebe, gateway, operate, tasklist, admin) under
-// CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ must read
-// <role>_<type>[_<n>] with a member type that Camunda accepts, in any
-// letter case. The entries of extraEnvFrom sources are not checked. The error
-// joins every problem with "; ".
+// connectors are enabled. An extraEnv entry of an orchestration process (top
+// level, zeebe, gateway, operate, tasklist, admin) that Spring Boot binds under
+// camunda.security.initialization.default-roles must name a role and a member
+// type that Camunda accepts. The entries of extraEnvFrom sources are not
+// checked. The error joins every problem with "; ".
 func ValidateMerged(spec v1.CamundaClusterSpec) error {
 	var problems []string
 	effective := NewEffective(spec)
@@ -637,41 +638,66 @@ func checkDefaultRoleEnv(spec v1.CamundaClusterSpec) []string {
 	return problems
 }
 
-// readsAsDefaultRoleMembership reports whether Camunda can read name, when it
-// is under defaultRoleEnvPrefix, as <role>_<type>[_<n>]. A name outside the
-// prefix passes.
+// readsAsDefaultRoleMembership reports whether Camunda can read name as a
+// member of a default role when Spring Boot binds it to
+// camunda.security.initialization.default-roles. Any other name passes.
 func readsAsDefaultRoleMembership(name string) bool {
-	upper := strings.ToUpper(name)
-	if !strings.HasPrefix(upper, defaultRoleEnvPrefix) {
-		return true
+	// Spring Boot reads an environment variable in two ways. A name with a
+	// dot binds only in the dotted form, split at each dot. Any other name is
+	// split at each underscore. A part with no letter or digit is dropped,
+	// and the parts of the key compare without case, dashes, or underscores.
+	separator := "_"
+	if strings.Contains(name, ".") {
+		separator = "."
 	}
 
-	// Spring Boot splits the name at each underscore. The first part is the
-	// role. The parts up to the first number, joined with dots, are the
-	// member type, which Camunda's PlatformDefaultEntities.getEntityType
-	// throws on unless it knows it.
-	parts := strings.Split(strings.TrimPrefix(upper, defaultRoleEnvPrefix), "_")
-	if len(parts) < 2 || parts[0] == "" {
+	var parts []string
+	for part := range strings.SplitSeq(strings.ToLower(name), separator) {
+		if strings.ContainsFunc(part, isLetterOrDigit) {
+			parts = append(parts, part)
+		}
+	}
+
+	key := []string{"camunda", "security", "initialization", "defaultroles"}
+	if len(parts) < len(key) {
+		return true
+	}
+	for i, want := range key {
+		if strings.NewReplacer("-", "", "_", "").Replace(parts[i]) != want {
+			return true
+		}
+	}
+
+	// The first part after the key is the role. The parts up to the first
+	// number, joined with dots, are the member type, and Camunda's
+	// PlatformDefaultEntities.getEntityType throws on a type it does not know.
+	// Only the underscore form can carry an index.
+	rest := parts[len(key):]
+	if len(rest) < 2 {
 		return false
 	}
 
-	end := len(parts)
-	for i := 2; i < len(parts); i++ {
-		if isDigits(parts[i]) {
+	end := len(rest)
+	for i := 2; separator == "_" && i < len(rest); i++ {
+		if isDigits(rest[i]) {
 			end = i
 			break
 		}
 	}
-	if end < len(parts)-1 {
+	if end < len(rest)-1 {
 		return false
 	}
 
-	switch strings.Join(parts[1:end], ".") {
-	case "USERS", "CLIENTS", "GROUPS", "ROLES", "MAPPINGRULES", "MAPPING-RULES", "MAPPING.RULES":
+	switch strings.Join(rest[1:end], ".") {
+	case "users", "clients", "groups", "roles", "mappingrules", "mapping-rules", "mapping.rules":
 		return true
 	default:
 		return false
 	}
+}
+
+func isLetterOrDigit(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 func isDigits(s string) bool {

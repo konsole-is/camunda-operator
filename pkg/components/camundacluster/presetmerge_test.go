@@ -716,8 +716,10 @@ func TestValidateMergedDefaultRoleEnv(t *testing.T) {
 	t.Parallel()
 
 	const (
-		roles      = "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_"
-		lowerRoles = "camunda_security_initialization_defaultroles_"
+		roles       = "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_"
+		lowerRoles  = "camunda_security_initialization_defaultroles_"
+		dotted      = "camunda.security.initialization.default-roles."
+		dashedRoles = "CAMUNDA_SECURITY_INITIALIZATION_DEFAULT-ROLES_"
 	)
 
 	tests := []struct {
@@ -737,6 +739,15 @@ func TestValidateMergedDefaultRoleEnv(t *testing.T) {
 		{"a comma list without an index", roles + "ADMIN_USERS", false},
 		{"lower case", lowerRoles + "admin_users_0", false},
 		{"another initialization key", "CAMUNDA_SECURITY_INITIALIZATION_USERS_0_USERNAME", false},
+		{"a dash in the prefix", dashedRoles + "ADMIN_USERS_0", false},
+		{"the dotted form", dotted + "readonly-admin.users", false},
+		{"the dotted form with mapping rules", dotted + "admin.mapping.rules", false},
+		{"another dotted key", "camunda.security.initialization.users", false},
+		{"a dash in the prefix and an underscore in the role", dashedRoles + "READONLY_ADMIN_USERS_0", true},
+		{"an empty part", "CAMUNDA__SECURITY_INITIALIZATION_DEFAULTROLES_READONLY_ADMIN_USERS_0", true},
+		{"the dotted form with a dot in the role", dotted + "readonly.admin.users", true},
+		{"the dotted form with an index", dotted + "admin.users.0", true},
+		{"a dotted underscore prefix", "CAMUNDA.SECURITY.INITIALIZATION.DEFAULT_ROLES.ADMIN.MAPPING_RULES", true},
 		{"an underscore in the role", roles + "READONLY_ADMIN_USERS_0", true},
 		{"an unknown member type", roles + "ADMIN_MAPPINGS_0", true},
 		{"a part after the index", roles + "ADMIN_USERS_0_NAME", true},
