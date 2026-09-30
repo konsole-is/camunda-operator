@@ -89,7 +89,7 @@ const (
 	// because their logs show the cause. Thus a restore that reached
 	// RestoringPrimaryStorage holds the broker data volumes until you delete
 	// it. A restore that failed in an earlier phase records no Job in
-	// PrimaryJobNames and holds nothing.
+	// PrimaryJobNames and holds no broker volume.
 	LogicalRestoreFailed LogicalRestorePhase = "Failed"
 )
 
