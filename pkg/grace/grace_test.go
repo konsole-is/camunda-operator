@@ -62,12 +62,12 @@ func TestBindFlags(t *testing.T) {
 			fs := flag.NewFlagSet("manager", flag.ContinueOnError)
 			var p Periods
 
-			require.NoError(t, p.BindFlags(fs, func(name string) string { return tt.env[name] }))
+			check := p.BindFlags(fs, func(name string) string { return tt.env[name] })
 			require.NoError(t, fs.Parse(tt.args))
 
 			assert.Equal(t, tt.wantWorkload, p.Workload)
 			assert.Equal(t, tt.wantDatastore, p.Datastore)
-			assert.NoError(t, p.Validate())
+			assert.NoError(t, check())
 		})
 	}
 }
@@ -75,20 +75,56 @@ func TestBindFlags(t *testing.T) {
 func TestBindFlagsRejectsAnEnvironmentValueThatIsNoDuration(t *testing.T) {
 	for _, name := range []string{WorkloadEnv, DatastoreEnv} {
 		t.Run(name, func(t *testing.T) {
+			fs := flag.NewFlagSet("manager", flag.ContinueOnError)
 			var p Periods
-			err := p.BindFlags(
-				flag.NewFlagSet("manager", flag.ContinueOnError),
-				func(key string) string {
-					if key == name {
-						return "fifteen minutes"
-					}
-					return ""
-				},
-			)
+			check := p.BindFlags(fs, badEnv(name))
+			require.NoError(t, fs.Parse(nil))
+
+			err := check()
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), name)
 		})
+	}
+}
+
+func TestBindFlagsLetsAFlagWinOverAnEnvironmentValueThatIsNoDuration(t *testing.T) {
+	tests := []struct {
+		env  string
+		flag string
+	}{
+		{env: WorkloadEnv, flag: WorkloadFlag},
+		{env: DatastoreEnv, flag: DatastoreFlag},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.env, func(t *testing.T) {
+			fs := flag.NewFlagSet("manager", flag.ContinueOnError)
+			var p Periods
+			check := p.BindFlags(fs, badEnv(tt.env))
+			require.NoError(t, fs.Parse([]string{"--" + tt.flag + "=20m"}))
+
+			assert.NoError(t, check())
+		})
+	}
+}
+
+func TestBindFlagsRejectsANegativeFlag(t *testing.T) {
+	fs := flag.NewFlagSet("manager", flag.ContinueOnError)
+	var p Periods
+	check := p.BindFlags(fs, func(string) string { return "" })
+	require.NoError(t, fs.Parse([]string{"--" + DatastoreFlag + "=-1m"}))
+
+	assert.ErrorContains(t, check(), DatastoreFlag)
+}
+
+// badEnv returns a getenv that holds a value that is not a duration in name.
+func badEnv(name string) func(string) string {
+	return func(key string) string {
+		if key == name {
+			return "fifteen minutes"
+		}
+		return ""
 	}
 }
 

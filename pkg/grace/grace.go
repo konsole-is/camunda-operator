@@ -60,21 +60,15 @@ type Periods struct {
 	Datastore time.Duration
 }
 
-// BindFlags registers WorkloadFlag and DatastoreFlag on fs. The default of
-// each flag is its environment variable, read through getenv, and then
-// DefaultWorkload or DefaultDatastore. It returns an error when an environment
-// variable is set to a value that is not a duration. Call Validate after
-// fs.Parse.
-func (p *Periods) BindFlags(fs *flag.FlagSet, getenv func(string) string) error {
-	workload, err := durationEnv(getenv, WorkloadEnv, DefaultWorkload)
-	if err != nil {
-		return err
-	}
-
-	datastore, err := durationEnv(getenv, DatastoreEnv, DefaultDatastore)
-	if err != nil {
-		return err
-	}
+// BindFlags registers WorkloadFlag and DatastoreFlag on fs and returns the
+// check to call after fs.Parse. The default of each flag is its environment
+// variable, read through getenv, and then DefaultWorkload or DefaultDatastore.
+// The check returns an error when a period is negative, or when an
+// environment variable holds a value that is not a duration and its flag was
+// not set.
+func (p *Periods) BindFlags(fs *flag.FlagSet, getenv func(string) string) func() error {
+	workload, workloadErr := durationEnv(getenv, WorkloadEnv, DefaultWorkload)
+	datastore, datastoreErr := durationEnv(getenv, DatastoreEnv, DefaultDatastore)
 
 	fs.DurationVar(
 		&p.Workload, WorkloadFlag, workload,
@@ -89,11 +83,24 @@ func (p *Periods) BindFlags(fs *flag.FlagSet, getenv func(string) string) error 
 			"Defaults to the "+DatastoreEnv+" environment variable.",
 	)
 
-	return nil
+	return func() error {
+		set := map[string]bool{}
+		fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+
+		if workloadErr != nil && !set[WorkloadFlag] {
+			return workloadErr
+		}
+
+		if datastoreErr != nil && !set[DatastoreFlag] {
+			return datastoreErr
+		}
+
+		return p.Validate()
+	}
 }
 
 // durationEnv returns the duration in the environment variable name, or
-// fallback when the variable is unset or empty.
+// fallback when it is unset or empty, or fallback and an error when it is bad.
 func durationEnv(getenv func(string) string, name string, fallback time.Duration) (time.Duration, error) {
 	value := getenv(name)
 	if value == "" {
@@ -102,7 +109,7 @@ func durationEnv(getenv func(string) string, name string, fallback time.Duration
 
 	d, err := time.ParseDuration(value)
 	if err != nil {
-		return 0, fmt.Errorf("reading %s: %w", name, err)
+		return fallback, fmt.Errorf("reading %s: %w", name, err)
 	}
 
 	return d, nil

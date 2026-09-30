@@ -130,7 +130,7 @@ func main() {
 			" environment variable, and then to the namespace of the Pod.",
 	)
 	var gracePeriods grace.Periods
-	graceErr := gracePeriods.BindFlags(flag.CommandLine, os.Getenv)
+	checkGracePeriods := gracePeriods.BindFlags(flag.CommandLine, os.Getenv)
 	opts := zap.Options{
 		Development: true,
 	}
@@ -139,11 +139,8 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	if graceErr == nil {
-		graceErr = gracePeriods.Validate()
-	}
-	if graceErr != nil {
-		setupLog.Error(graceErr, "Failed to read the grace periods")
+	if err := checkGracePeriods(); err != nil {
+		setupLog.Error(err, "Failed to read the grace periods")
 		os.Exit(1)
 	}
 
