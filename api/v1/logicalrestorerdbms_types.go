@@ -21,49 +21,50 @@ import (
 )
 
 // LogicalRestoreRDBMSSpec names the backup to restore and the cluster to
-// restore into. The whole spec is immutable: a restore is one operation,
-// retried by creating a new resource.
+// restore into. The whole spec is immutable. A restore runs one time. To try
+// again, create a new resource.
 type LogicalRestoreRDBMSSpec struct {
 	// BackupRef references the completed LogicalBackupRDBMS to restore from,
 	// in the namespace of this restore.
 	// +required
 	BackupRef LogicalBackupRef `json:"backupRef"`
-	// TargetClusterRef references the CamundaCluster to restore into. It must
-	// name the cluster the backup was taken from. The restore application
-	// reads the primary-storage backup under the prefix of the cluster it
-	// runs as. The cluster must be suspended for the whole restore.
+	// TargetClusterRef references the CamundaCluster to restore into. It
+	// must name the cluster of the backup, because the restore application
+	// reads the primary-storage backup under the prefix of that cluster. The
+	// cluster must be suspended for the whole restore.
 	// +required
 	TargetClusterRef ClusterRef `json:"targetClusterRef"`
 }
 
-// LogicalRestoreRDBMSStatus tracks the restore to a terminal phase.
+// LogicalRestoreRDBMSStatus is the progress of the restore to a final phase.
 type LogicalRestoreRDBMSStatus struct {
-	// Phase of the restore. It is the resume marker: a reconcile that
-	// re-enters after a crash continues at the recorded phase.
+	// Phase is the phase of the restore. After an interruption, the restore
+	// continues at this phase.
 	// +optional
 	Phase LogicalRestorePhase `json:"phase,omitempty"`
-	// BackupID is the Zeebe backup id that the restore reads, pinned when the
-	// restore starts. A backup that is deleted and created again under one
-	// name carries another id, and this restore is not its restore.
+	// BackupID is the Zeebe backup id that the restore reads. The operator
+	// records it when the restore starts. A backup that is deleted and
+	// created again with the same name has another id, and this restore does
+	// not read it.
 	// +optional
 	BackupID int64 `json:"backupId,omitempty"`
-	// Backend is the logical database that the restore writes, pinned when
-	// the restore starts, in the form of the storage claim key of the target
-	// (the host, the port, and the database name). From the end of admission
-	// to the terminal phase, no other CamundaCluster starts on this backend.
-	// The restore holds while its target does not hold the backend.
+	// Backend is the logical database that the restore writes, as the host,
+	// the port, and the database name. The operator records it when the
+	// restore starts. From then until the final phase, no other
+	// CamundaCluster starts on this backend. The restore waits while its
+	// target does not hold the backend.
 	// +optional
 	Backend string `json:"backend,omitempty"`
-	// Contract is the DatabaseServerConfig and the database name that held the
-	// address of Backend when the restore started. The hold stays on this
-	// contract when the DatabaseServerConfig moves to another address.
+	// Contract is the DatabaseServerConfig and the database name of Backend
+	// when the restore started. When the DatabaseServerConfig moves to
+	// another address, the restore still holds this contract.
 	// +optional
 	Contract string `json:"contract,omitempty"`
-	// SecondaryJobName is the Job that runs pg_restore, while it exists.
+	// SecondaryJobName is the Job that runs pg_restore, while the Job exists.
 	// +optional
 	SecondaryJobName string `json:"secondaryJobName,omitempty"`
 	// RestoreProgress is the part of the status that every restore kind has.
-	// Its Ready condition carries the reasons Progressing, Completed, Failed,
+	// Its Ready condition has the reasons Progressing, Completed, Failed,
 	// ClusterNotSuspended, ClusterClaimed, IncompatibleTarget,
 	// StorageAlreadyAttached, WaitingForHandover, InvalidReference,
 	// MissingSecret, and MissingCredentials.
@@ -79,26 +80,26 @@ type LogicalRestoreRDBMSStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // LogicalRestoreRDBMS restores one completed LogicalBackupRDBMS into one
-// suspended CamundaCluster. The operator writes the dump back into the
-// logical database of the target with pg_restore, gives the brokers empty
-// data volumes, and runs the Camunda restore application on them once per
-// broker.
+// suspended CamundaCluster. The operator writes the dump into the logical
+// database of the target with pg_restore. Then it gives the brokers empty
+// data volumes and runs the Camunda restore application on them, one time
+// for each broker.
 //
 // The restore prepares the target itself. It suspends the target, waits for
-// its brokers to stop, and sets spec.version to the Camunda version that the
-// backup was taken with. It withdraws the suspension when it completes, and
-// only when it applied that suspension itself. A failed restore leaves the
-// target suspended, and so does a restore that somebody deletes while it
-// runs: broker volumes that are empty or half written are worse under running
-// brokers than under none.
+// its brokers to stop, and sets spec.version to the Camunda version of the
+// backup. When it completes, it removes the suspension, but only a
+// suspension that it applied itself. A failed restore leaves the target
+// suspended. A restore that somebody deletes while it runs also leaves the
+// target suspended. Empty or half-written broker volumes cause more damage
+// under running brokers.
 //
-// The restore keeps spec.version, and it owns the field under the manager
-// camunda-operator/restore-version. The target runs the version of the backup
-// until another manager takes that field over or removes it. A manifest that
-// leaves spec.version out takes nothing back, because server-side apply
-// removes a field only from the manager that declared it. A target of a newer
-// minor is therefore left on the minor of the backup, and the owner upgrades
-// it forward again.
+// The restore keeps spec.version, with the field manager
+// camunda-operator/restore-version. The target runs the version of the
+// backup until another manager takes over or removes that field. A manifest
+// without spec.version does not change it, because server-side apply
+// removes a field only for the manager that set it. Thus a target of a newer
+// minor stays on the minor of the backup, and the owner must upgrade it
+// again.
 type LogicalRestoreRDBMS struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -107,7 +108,8 @@ type LogicalRestoreRDBMS struct {
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
 	// spec names the backup to read and the cluster to restore into. It is
-	// immutable: a restore is one-shot, retried by creating a new resource.
+	// immutable. A restore runs one time. To try again, create a new
+	// resource.
 	// +required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable: a restore is one-shot, retried by creating a new resource"
 	Spec LogicalRestoreRDBMSSpec `json:"spec"`
