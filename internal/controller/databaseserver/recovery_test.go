@@ -2589,6 +2589,27 @@ func TestCreateRecoveryClusterBuildsUnderAFreeName(t *testing.T) {
 	assert.Equal(t, recoveryWriteTarget, read.Spec.Bootstrap.Recovery.RecoveryTarget.TargetTime)
 }
 
+// The recovered cluster carries the request of the server, so the cutover to
+// it does not report a kept volume a second time.
+func TestCreateRecoveryClusterCarriesTheRequestedSizes(t *testing.T) {
+	t.Parallel()
+
+	server, resolved, source := recoveryWrite()
+	resolved.requested = components.RequestedStorage{Data: new(resource.MustParse("512Mi"))}
+	reconciler := recoveryWriter(t)
+
+	require.NoError(t, reconciler.createRecoveryCluster(
+		t.Context(), server, resolved, source, recoveryWriteTarget,
+	))
+
+	var read cnpgv1.Cluster
+	key := client.ObjectKey{Namespace: server.Namespace, Name: server.Status.Recovery.Cluster}
+	require.NoError(t, reconciler.Get(t.Context(), key, &read))
+
+	assert.Equal(t, "512Mi", read.Annotations[components.RequestedStorageSizeAnnotation])
+	assert.Contains(t, read.Annotations, components.RequestedWALStorageSizeAnnotation)
+}
+
 // The pods of the recovery cluster take the identity that the ServiceAccount
 // carries when they start. An account that still carries an older identity
 // would put them on it.

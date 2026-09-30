@@ -284,18 +284,23 @@ func expectEvent(
 	}, timeout, interval).Should(Succeed())
 }
 
-// countEvents returns the number of times an event with the given reason was
-// recorded for cluster: the sum of the counts of the matching Event objects,
-// because the recorder aggregates repeats of the same event into one object.
+// countEvents returns how many times an event with reason was recorded for
+// cluster. The recorder folds repeats of one event into one object and
+// counts them in its series.
 func countEvents(g Gomega, cluster *v1.CamundaCluster, reason string) int32 {
 	GinkgoHelper()
 	var events corev1.EventList
 	g.Expect(k8sClient.List(ctx, &events, client.InNamespace(cluster.Namespace))).To(Succeed())
 	var count int32
 	for _, event := range events.Items {
-		if event.Reason == reason && event.InvolvedObject.Name == cluster.Name {
-			count += max(event.Count, 1)
+		if event.Reason != reason || event.InvolvedObject.Name != cluster.Name {
+			continue
 		}
+		times := max(event.Count, 1)
+		if event.Series != nil {
+			times = max(times, event.Series.Count)
+		}
+		count += times
 	}
 	return count
 }

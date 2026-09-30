@@ -43,7 +43,7 @@ func TestArchivePluginRolesAreBoundToTheServiceAccount(t *testing.T) {
 		{Cluster: "my-cluster-db-r1", ClusterUID: "uid-recovering", Granted: true},
 	}
 
-	comp, _, err := ClusterComponent(server, merged, nil, "", nil, "", roles)
+	comp, _, err := ClusterComponent(server, merged, RequestedStorage{}, nil, "", nil, "", roles)
 	require.NoError(t, err)
 	objects, err := comp.Preview()
 	require.NoError(t, err)

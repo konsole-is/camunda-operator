@@ -12,6 +12,8 @@ apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
   annotations:
+    camunda.io/requested-storage-size: 64Gi
+    camunda.io/requested-wal-storage-size: ""
     cnpg.io/hibernation: "off"
   labels:
     app.kubernetes.io/managed-by: camunda-operator

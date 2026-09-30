@@ -34,6 +34,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/rolebinding"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/serviceaccount"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -61,6 +62,14 @@ const (
 	// superuser Secret that CloudNativePG writes.
 	SuperuserUsernameKey = "username"
 	SuperuserPasswordKey = "password"
+	// RequestedStorageSizeAnnotation and RequestedWALStorageSizeAnnotation
+	// are the annotations of the CloudNativePG cluster that carry the volume
+	// sizes that the merged spec asks for. The cluster keeps a larger volume
+	// that is already there, so this is where the requested sizes are
+	// visible, and the controller records a kept volume only when they
+	// change. The empty value asks for no write-ahead log volume.
+	RequestedStorageSizeAnnotation    = "camunda.io/requested-storage-size"
+	RequestedWALStorageSizeAnnotation = "camunda.io/requested-wal-storage-size"
 )
 
 const (
@@ -80,6 +89,27 @@ const (
 	// leaves it unset.
 	defaultInstances = 1
 )
+
+// RequestedStorage is the volume sizes that the merged spec asks for, before
+// the controller raises them to the volumes that are already there. A nil WAL
+// asks for no write-ahead log volume.
+type RequestedStorage struct {
+	Data *resource.Quantity
+	WAL  *resource.Quantity
+}
+
+// annotations returns the annotations that carry r on the cluster.
+func (r RequestedStorage) annotations() map[string]string {
+	annotations := map[string]string{RequestedWALStorageSizeAnnotation: ""}
+	if r.Data != nil {
+		annotations[RequestedStorageSizeAnnotation] = r.Data.String()
+	}
+	if r.WAL != nil {
+		annotations[RequestedWALStorageSizeAnnotation] = r.WAL.String()
+	}
+
+	return annotations
+}
 
 // ClusterComponent builds the cluster component from the preset-merged spec:
 // the ServiceAccount of the instance pods and the CloudNativePG cluster that
@@ -113,12 +143,17 @@ const (
 // ObjectStore, and a cluster that keeps it writes its write-ahead log into the
 // bucket of whoever holds the name.
 //
+// requested is what the merged spec asked for before the controller kept the
+// larger volumes. The cluster carries it in RequestedStorageSizeAnnotation and
+// RequestedWALStorageSizeAnnotation.
+//
 // While the server archives, each pluginRoles entry with Granted set gets a
 // RoleBinding from the Role of the Barman Cloud plugin to the ServiceAccount of
 // the server: see pluginbinding.go.
 func ClusterComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
+	requested RequestedStorage,
 	archive *ArchiveStorage,
 	archiveTaken string,
 	platform *v1.CamundaPlatformConfigSpec,
@@ -132,7 +167,7 @@ func ClusterComponent(
 		return nil, nil, err
 	}
 
-	builder := cnpgcluster.NewBuilder(cluster(server, merged, platform)).
+	builder := cnpgcluster.NewBuilder(cluster(server, merged, requested, platform)).
 		WithMutation(clusterMutations(server, merged, archive, archiveTaken)...).
 		WithGuard(takenGuard[cnpgv1.Cluster](blocked))
 	cnpgcluster.ExtractInto(builder, systemIdentifier, func(c cnpgv1.Cluster) (string, error) {
@@ -244,13 +279,15 @@ func ServiceAccountName(server *v1.DatabaseServer) string {
 func cluster(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
+	requested RequestedStorage,
 	platform *v1.CamundaPlatformConfigSpec,
 ) *cnpgv1.Cluster {
 	return &cnpgv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      ClusterName(server),
-			Namespace: server.Namespace,
-			Labels:    managedLabels(server),
+			Name:        ClusterName(server),
+			Namespace:   server.Namespace,
+			Labels:      managedLabels(server),
+			Annotations: requested.annotations(),
 		},
 		Spec: cnpgv1.ClusterSpec{
 			Instances:          instances(merged),

@@ -24,13 +24,14 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // Finish is the terminal branch of every restore kind. Call it on every look
 // of a restore in a terminal phase, in place of the next phase. It removes the
 // Jobs of a completed restore, gives back what Resume gives back, and releases
-// the claim on the cluster. cluster is the name of the target, in the
-// namespace of the restore.
+// the claim on the cluster. label is the owner label of the restore. cluster
+// is the name of the target, in the namespace of the restore.
 //
 // It reports Done once the claim is released, and Outcome.Wait until then. A
 // failed restore keeps its Jobs, its hold and the suspension. After an error,
@@ -40,6 +41,7 @@ func Finish(
 	c client.Client,
 	reader client.Reader,
 	owner conditions.Owner,
+	label labels.Owner,
 	p *v1.RestoreProgress,
 	cluster string,
 ) (Outcome, error) {
@@ -49,7 +51,7 @@ func Finish(
 
 	// A completed Job keeps its pod, and the pvc-protection finalizer keeps a
 	// broker volume that such a pod mounts.
-	collected, err := CollectJobs(ctx, c, reader, owner, p)
+	collected, err := CollectJobs(ctx, c, reader, owner, label, p)
 	if err != nil || !collected.Done {
 		return collected, err
 	}

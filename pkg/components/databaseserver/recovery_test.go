@@ -413,8 +413,9 @@ func TestRecoveryClusterGolden(t *testing.T) {
 	server, preset, release, archive := recoveryServer()
 	source := server.Status.Archive.History[0]
 
+	merged := MergeSpec(server.Spec, preset, release)
 	recovered, err := RecoveryCluster(
-		server, MergeSpec(server.Spec, preset, release), archive, "", nil, source, "2026-08-20T14:30:00Z",
+		server, merged, requestedOf(merged), archive, "", nil, source, "2026-08-20T14:30:00Z",
 	)
 	require.NoError(t, err)
 
@@ -469,7 +470,8 @@ func TestRecoveryClusterNeedsTheRecordFirst(t *testing.T) {
 	server.Status.Recovery = nil
 
 	_, err := RecoveryCluster(
-		server, MergeSpec(server.Spec, preset, release), archive, "", nil, source, "2026-08-20T14:30:00Z",
+		server, MergeSpec(server.Spec, preset, release), RequestedStorage{},
+		archive, "", nil, source, "2026-08-20T14:30:00Z",
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "records no recovery cluster")
@@ -554,7 +556,7 @@ func TestHeldIdentityStaysOnBothClusters(t *testing.T) {
 		},
 	}
 
-	clusterComp, _, err := ClusterComponent(server, merged, archive, "", nil, "", nil)
+	clusterComp, _, err := ClusterComponent(server, merged, RequestedStorage{}, archive, "", nil, "", nil)
 	require.NoError(t, err)
 	objects, err := clusterComp.Preview()
 	require.NoError(t, err)
@@ -568,7 +570,7 @@ func TestHeldIdentityStaysOnBothClusters(t *testing.T) {
 	assert.Equal(t, held, account.Annotations[v1.IRSARoleARNAnnotation])
 
 	recovered, err := RecoveryCluster(
-		server, merged, archive, "", nil, source, "2026-08-20T14:30:00Z",
+		server, merged, RequestedStorage{}, archive, "", nil, source, "2026-08-20T14:30:00Z",
 	)
 	require.NoError(t, err)
 

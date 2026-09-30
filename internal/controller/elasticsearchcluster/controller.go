@@ -69,9 +69,9 @@ const elasticsearchClusterPresetRefField = "elasticsearchcluster.spec.presetRef"
 const elasticsearchClusterReleaseRefField = "elasticsearchcluster.spec.releaseRef"
 
 // eventReasonStorageShrinkIgnored is the Warning event that the controller
-// records when the merged storageSize is below the applied data volume size.
-// It keeps the applied size, because Elasticsearch data volumes cannot be
-// reduced in place.
+// records once per requested size when the merged storageSize is below the
+// applied data volume size. It keeps the applied size, because Elasticsearch
+// data volumes cannot be reduced in place.
 const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 
 // eventActionResize is the action of the events that the controller records
@@ -211,11 +211,13 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 
 	cluster.Status.Version = merged.Version
 
-	if err := r.keepAppliedStorageSize(ctx, &cluster, &merged); err != nil {
+	existing, err := r.dataVolumes(ctx, &cluster)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
+	requestedStorageSize := r.keepAppliedStorageSize(&cluster, &merged, existing)
 
-	core, metrics, err := r.buildComponents(ctx, &cluster, merged, storage)
+	core, metrics, err := r.buildComponents(ctx, &cluster, merged, requestedStorageSize, storage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -353,25 +355,27 @@ func (r *ElasticsearchClusterReconciler) retryInterval() time.Duration {
 // keepAppliedStorageSize guards against the shrinks that admission cannot
 // see: a preset baseline lowered under a cluster, or an inline storageSize set
 // below a size that a preset provided before. It compares the merged size
-// against the largest data volume that exists: the claim of the applied ECK
-// CR, and the data PersistentVolumeClaims themselves. The claims matter on
-// their own during suspension, when the ECK CR is deleted and the volumes
-// stay. If the merged size is smaller, it keeps the existing size in merged
-// and records a Warning event, because Elasticsearch data volumes cannot be
-// reduced in place. The reconcile continues with that size.
+// against the largest data volume in volumes. If the merged size is smaller,
+// it keeps the existing size in merged, because Elasticsearch data volumes
+// cannot be reduced in place, and records a Warning event once per requested
+// size. It returns the storageSize that merged asked for.
 func (r *ElasticsearchClusterReconciler) keepAppliedStorageSize(
-	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
 	merged *v1.ElasticsearchClusterSpec,
-) error {
-	volumes, err := r.dataVolumes(ctx, cluster)
-	if err != nil {
-		return err
-	}
-
+	volumes dataVolumes,
+) *resource.Quantity {
+	requested := merged.StorageSize
 	largest := volumes.largest()
-	if largest == nil || merged.StorageSize == nil || merged.StorageSize.Cmp(*largest) >= 0 {
-		return nil
+	if largest == nil || requested == nil || requested.Cmp(*largest) >= 0 {
+		return requested
+	}
+	merged.StorageSize = largest
+
+	// A suspended cluster has no ECK CR to carry the request, so the event
+	// waits for the CR that the resume applies. A CR that another owner
+	// controls never takes the request.
+	if merged.Suspend || volumes.foreign || volumes.requestApplied(*requested) {
+		return requested
 	}
 
 	r.EventRecorder.Eventf(
@@ -381,21 +385,23 @@ func (r *ElasticsearchClusterReconciler) keepAppliedStorageSize(
 		eventReasonStorageShrinkIgnored,
 		eventActionResize,
 		"storageSize %s is below the existing data volume size %s; keeping %s, Elasticsearch data volumes cannot be reduced",
-		merged.StorageSize,
+		requested,
 		largest,
 		largest,
 	)
-	merged.StorageSize = largest
 
-	return nil
+	return requested
 }
 
 // dataVolumes are the data volumes that the cluster has: one entry per data
 // PersistentVolumeClaim that reports a capacity, sorted by name, and the
-// claim size of the applied ECK CR when that CR exists.
+// claim size and the requested storage size annotation of the applied ECK CR
+// when that CR exists. foreign is true for a CR that another owner controls.
 type dataVolumes struct {
-	volumes []v1.VolumeStatus
-	applied *resource.Quantity
+	volumes   []v1.VolumeStatus
+	applied   *resource.Quantity
+	requested string
+	foreign   bool
 }
 
 // largest returns the largest of the claim capacities and the applied claim
@@ -411,6 +417,13 @@ func (d dataVolumes) largest() *resource.Quantity {
 	return largest
 }
 
+// requestApplied reports whether the applied ECK CR already carries size as
+// its requested storage size.
+func (d dataVolumes) requestApplied(size resource.Quantity) bool {
+	requested, err := resource.ParseQuantity(d.requested)
+	return err == nil && requested.Cmp(size) == 0
+}
+
 // buildComponents builds the components in dependency order: the three that
 // make up Ready (credentials, elasticsearch, storage-contract), and the
 // metrics component apart. It reads the password from the existing user
@@ -420,6 +433,7 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
+	requestedStorageSize *resource.Quantity,
 	storage *components.SnapshotStorage,
 ) (core []*component.Component, metrics *component.Component, err error) {
 	// The contract publishes the repository name only once a registration has
@@ -450,7 +464,7 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 		return nil, nil, fmt.Errorf("building keystore component: %w", err)
 	}
 
-	elasticsearchComp, err := components.ElasticsearchComponent(cluster, merged, storage)
+	elasticsearchComp, err := components.ElasticsearchComponent(cluster, merged, requestedStorageSize, storage)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building elasticsearch component: %w", err)
 	}
@@ -539,14 +553,20 @@ func (r *ElasticsearchClusterReconciler) dataVolumes(
 	}
 	slices.SortFunc(volumes.volumes, func(a, b v1.VolumeStatus) int { return strings.Compare(a.Name, b.Name) })
 
+	// Read live: a cache that missed the last apply holds an old request, and
+	// the clamp reports the same shrink again.
 	var es esv1.Elasticsearch
-	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), &es); err != nil {
+	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(cluster), &es); err != nil {
+		// The claims count on their own during suspension, when the ECK CR
+		// is deleted and the volumes stay.
 		if apierrors.IsNotFound(err) {
 			return volumes, nil
 		}
 		return dataVolumes{}, fmt.Errorf("reading applied Elasticsearch %q: %w", cluster.Name, err)
 	}
 	volumes.applied = appliedDataClaimSize(&es)
+	volumes.requested = es.Annotations[components.RequestedStorageSizeAnnotation]
+	volumes.foreign = metav1.GetControllerOf(&es) != nil && !metav1.IsControlledBy(&es, cluster)
 
 	return volumes, nil
 }
