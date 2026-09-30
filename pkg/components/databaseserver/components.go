@@ -151,10 +151,7 @@ func ClusterComponent(
 ) (*component.Component, *concepts.Data[string], error) {
 	systemIdentifier := concepts.NewData[string]("postgres-system-identifier")
 
-	baseline := cluster(server, merged, platform)
-	baseline.Annotations = requested.annotations()
-
-	builder := cnpgcluster.NewBuilder(baseline).
+	builder := cnpgcluster.NewBuilder(cluster(server, merged, requested, platform)).
 		WithMutation(clusterMutations(server, merged, archive, archiveTaken)...).
 		WithGuard(takenGuard[cnpgv1.Cluster](blocked))
 	cnpgcluster.ExtractInto(builder, systemIdentifier, func(c cnpgv1.Cluster) (string, error) {
@@ -186,13 +183,15 @@ func ClusterComponent(
 func cluster(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
+	requested RequestedStorage,
 	platform *v1.CamundaPlatformConfigSpec,
 ) *cnpgv1.Cluster {
 	return &cnpgv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      ClusterName(server),
-			Namespace: server.Namespace,
-			Labels:    managedLabels(server),
+			Name:        ClusterName(server),
+			Namespace:   server.Namespace,
+			Labels:      managedLabels(server),
+			Annotations: requested.annotations(),
 		},
 		Spec: cnpgv1.ClusterSpec{
 			Instances: instances(merged),
