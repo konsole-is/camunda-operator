@@ -158,7 +158,12 @@ func ClusterComponent(
 			return nil, nil, err
 		}
 		// Unowned, because the owner reference is the cluster's.
-		compBuilder = compBuilder.WithResource(binding, component.Unowned(), component.GatedBy(archiving))
+		compBuilder = compBuilder.WithResource(
+			binding,
+			component.Unowned(),
+			component.GatedBy(archiving),
+			component.BlockOnForeignController(),
+		)
 	}
 
 	comp, err := compBuilder.

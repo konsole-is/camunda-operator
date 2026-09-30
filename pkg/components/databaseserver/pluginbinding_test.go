@@ -83,4 +83,11 @@ func TestArchivePluginRoleCluster(t *testing.T) {
 
 	_, ok = ArchivePluginRoleCluster("-barman-cloud")
 	assert.False(t, ok)
+
+	cluster, ok = ArchivePluginBindingCluster("my-cluster-db-r1-barman-cloud-postgres")
+	assert.True(t, ok)
+	assert.Equal(t, "my-cluster-db-r1", cluster)
+
+	_, ok = ArchivePluginBindingCluster("my-cluster-db-barman-cloud")
+	assert.False(t, ok)
 }

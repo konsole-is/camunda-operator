@@ -128,7 +128,16 @@ func (r *DatabaseServerReconciler) watches(mgr ctrl.Manager) error {
 		Watches(&corev1.Secret{}, r.enqueueForBucketSecret(), builder.OnlyMetadata).
 		Watches(&corev1.PersistentVolumeClaim{}, r.enqueueForDataClaim()).
 		Watches(&corev1.ServiceAccount{}, r.enqueueForServiceAccount(), builder.OnlyMetadata).
-		Watches(&rbacv1.Role{}, r.enqueueForArchivePluginRole(), builder.OnlyMetadata).
+		Watches(
+			&rbacv1.Role{},
+			r.enqueueForArchivePlugin(components.ArchivePluginRoleCluster),
+			builder.OnlyMetadata,
+		).
+		Watches(
+			&rbacv1.RoleBinding{},
+			r.enqueueForArchivePlugin(components.ArchivePluginBindingCluster),
+			builder.OnlyMetadata,
+		).
 		Named(controllerName).
 		Complete(r)
 }
@@ -175,12 +184,14 @@ func (r *DatabaseServerReconciler) enqueueForServiceAccount() handler.EventHandl
 	})
 }
 
-// enqueueForArchivePluginRole maps an event of a Role that the Barman Cloud
-// plugin creates to the server that runs the cluster the Role is for, or that
-// builds it in a rollback.
-func (r *DatabaseServerReconciler) enqueueForArchivePluginRole() handler.EventHandler {
+// enqueueForArchivePlugin maps an event of the Role that the Barman Cloud
+// plugin creates for a cluster, or of a RoleBinding that grants it, to the
+// server that runs that cluster or builds it in a rollback.
+func (r *DatabaseServerReconciler) enqueueForArchivePlugin(
+	clusterOf func(name string) (string, bool),
+) handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-		cluster, ok := components.ArchivePluginRoleCluster(o.GetName())
+		cluster, ok := clusterOf(o.GetName())
 		if !ok {
 			return nil
 		}

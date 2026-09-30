@@ -724,6 +724,17 @@ var _ = Describe("DatabaseServer recovery", func() {
 		grantArchivePlugin(server, "camunda")
 		expectArchivePluginBound(server, "camunda")
 
+		By("putting the binding back when it is deleted")
+		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-barman-cloud-postgres"}
+		var binding rbacv1.RoleBinding
+		Expect(k8sClient.Get(ctx, key, &binding)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &binding)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var restored rbacv1.RoleBinding
+			g.Expect(k8sClient.Get(ctx, key, &restored)).To(Succeed())
+			g.Expect(restored.UID).NotTo(Equal(binding.UID))
+		}, timeout, interval).Should(Succeed())
+
 		askForRecovery(server, from.Add(time.Hour))
 		expectRecoveryCluster(server)
 		grantArchivePlugin(server, "camunda-r1")

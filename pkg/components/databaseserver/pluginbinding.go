@@ -63,6 +63,17 @@ func ArchivePluginRoleCluster(role string) (string, bool) {
 	return cluster, found && cluster != ""
 }
 
+// ArchivePluginBindingCluster returns the cluster that a RoleBinding from
+// archivePluginBinding is for, or false when binding is not named like one.
+func ArchivePluginBindingCluster(binding string) (string, bool) {
+	role, found := strings.CutSuffix(binding, serviceAccountSuffix)
+	if !found {
+		return "", false
+	}
+
+	return ArchivePluginRoleCluster(role)
+}
+
 // archivePluginBinding renders the RoleBinding that gives the Role of the
 // plugin for one cluster to the ServiceAccount of the server.
 func archivePluginBinding(server *v1.DatabaseServer, role ArchivePluginRole) *rbacv1.RoleBinding {

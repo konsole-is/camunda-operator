@@ -1365,10 +1365,10 @@ _Appears in:_
 
 DatabaseServerServiceAccountSpec configures the ServiceAccount of the
 instance pods. The operator creates it as `<server name>-postgres`. Every
-CloudNativePG cluster of the server runs under it, also the cluster that a
-rollback builds. The operator adds the workload-identity annotations of the
-archive bucket. An annotation set here wins over the derived one on the
-same key.
+CloudNativePG cluster of the server runs under it, including the cluster
+that a rollback builds. The operator adds the workload-identity
+annotations of the archive bucket. An annotation set here wins over the
+derived one on the same key.
 
 
 
