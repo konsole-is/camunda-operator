@@ -328,7 +328,7 @@ func (c Claimant) Display() string {
 func WaitMessage(holder, namespace, cluster, waiter string) string {
 	return fmt.Sprintf(
 		"%s holds CamundaCluster %s/%s. Only one backup or restore of a cluster runs at a time, "+
-			"so this %s starts when that operation reaches a terminal phase",
+			"so this %s starts when that operation no longer holds the cluster",
 		holder, namespace, cluster, waiter,
 	)
 }
