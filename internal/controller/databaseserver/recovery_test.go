@@ -17,6 +17,7 @@ limitations under the License.
 package databaseserver
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -30,7 +31,9 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -313,6 +316,110 @@ func reconciledServer(server *v1.DatabaseServer) *v1.DatabaseServer {
 	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
 
 	return &latest
+}
+
+// loseRecord writes lose into the status of server and returns once a
+// reconcile repaired the loss. repaired must hold only for a status that a
+// reconcile wrote after it read the loss, and lose must give the same result
+// each time it runs.
+func loseRecord(
+	server *v1.DatabaseServer,
+	lose func(*v1.DatabaseServerStatus),
+	repaired func(v1.DatabaseServerStatus) bool,
+) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		loseUntilRepaired(g, server, lose, repaired)
+	}, timeout, interval).Should(Succeed())
+}
+
+// loseUntilRepaired is one poll of loseRecord, for a spec that checks more
+// on each poll.
+func loseUntilRepaired(
+	g Gomega,
+	server *v1.DatabaseServer,
+	lose func(*v1.DatabaseServerStatus),
+	repaired func(v1.DatabaseServerStatus) bool,
+) {
+	var current v1.DatabaseServer
+	g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &current)).To(Succeed())
+
+	// A reconcile that read the server before the write flushes its older
+	// copy over the write on a conflict. No reconcile then reads the loss,
+	// and the old record passes every check of the repair. So the loss is
+	// written again whenever the old record is back.
+	done := repaired(current.Status)
+	if !done {
+		lost := current.DeepCopy()
+		lose(&lost.Status)
+		if !equality.Semantic.DeepEqual(lost.Status, current.Status) {
+			g.Expect(k8sClient.Status().Update(ctx, lost)).To(Succeed())
+		}
+	}
+	g.Expect(done).To(BeTrue(), "no reconcile has repaired the loss yet")
+}
+
+// settleStatus applies mutate to the status of server and returns once no
+// reconcile can write an older copy over it. mutate must give the same result
+// each time it runs.
+func settleStatus(server *v1.DatabaseServer, mutate func(*v1.DatabaseServerStatus)) {
+	GinkgoHelper()
+
+	// The write drops Ready. An older copy cannot bring Ready back, because a
+	// flush that conflicts takes Ready from the server. Only a reconcile that
+	// read the write stages Ready again, and the reconciles of one server run
+	// one at a time. So the next write waits for Ready, and a write that holds
+	// once Ready is back is final.
+	Eventually(func(g Gomega) {
+		var current v1.DatabaseServer
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &current)).To(Succeed())
+		g.Expect(meta.FindStatusCondition(current.Status.Conditions, v1.ConditionReady)).
+			NotTo(BeNil(), "no reconcile has read the last write yet")
+
+		written := current.DeepCopy()
+		mutate(&written.Status)
+		held := equality.Semantic.DeepEqual(written.Status, current.Status)
+		if !held {
+			meta.RemoveStatusCondition(&written.Status.Conditions, v1.ConditionReady)
+			g.Expect(k8sClient.Status().Update(ctx, written)).To(Succeed())
+		}
+		g.Expect(held).To(BeTrue(), "the write does not hold yet")
+	}, timeout, interval).Should(Succeed())
+}
+
+// moveLastRecovery moves the time of the answer that the contract of server
+// publishes a minute back, and returns the new time. The record of a
+// reconcile that read the answer back then differs from an older copy of the
+// record.
+func moveLastRecovery(server *v1.DatabaseServer) metav1.Time {
+	GinkgoHelper()
+
+	var moved metav1.Time
+	Eventually(func(g Gomega) {
+		contract := publishedContract(g, server)
+		g.Expect(contract.Spec.PITR).NotTo(BeNil())
+		g.Expect(contract.Spec.PITR.LastRecovery).NotTo(BeNil())
+		moved = metav1.NewTime(contract.Spec.PITR.LastRecovery.CompletedAt.Add(-time.Minute))
+		contract.Spec.PITR.LastRecovery.CompletedAt = moved
+		g.Expect(k8sClient.Update(ctx, contract)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+
+	return moved
+}
+
+// loseWholeRecord takes away the record of a recovery that completed, and
+// the name of the cluster it moved the server to.
+func loseWholeRecord(status *v1.DatabaseServerStatus) {
+	status.Recovery = nil
+	status.Cluster = "camunda"
+}
+
+// readBackOffContract reports whether a reconcile read the record back off
+// the contract after loseWholeRecord. Only the record that the recovery
+// wrote names the cluster it came from, and the contract does not carry it.
+func readBackOffContract(status v1.DatabaseServerStatus) bool {
+	return status.Recovery != nil && status.Recovery.PreviousCluster == ""
 }
 
 // expectLastRecovery waits until the contract publishes an outcome with the
@@ -957,16 +1064,16 @@ var _ = Describe("DatabaseServer recovery", func() {
 		// The name of the recovery cluster is derived from the number of
 		// archives. A recovery that read it again after the history grew would
 		// build a second cluster and abandon the first.
-		Eventually(func(g Gomega) {
-			var latest v1.DatabaseServer
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
-			latest.Status.Archive.History = append(latest.Status.Archive.History, v1.ArchiveRecord{
-				ServerName: "camunda-x",
-				From:       from,
-				To:         &from,
-			})
-			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		settleStatus(server, func(status *v1.DatabaseServerStatus) {
+			grown := func(record v1.ArchiveRecord) bool { return record.ServerName == "camunda-x" }
+			if !slices.ContainsFunc(status.Archive.History, grown) {
+				status.Archive.History = append(status.Archive.History, v1.ArchiveRecord{
+					ServerName: "camunda-x",
+					From:       from,
+					To:         &from,
+				})
+			}
+		})
 
 		recoverySucceeds(server)
 		expectLastRecovery(server, v1.RecoveryResultCompleted)
@@ -981,22 +1088,22 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		setRecoveryClusterPhase(server, "camunda-r1", cnpgv1.PhaseUnrecoverable, "")
 		expectLastRecovery(server, v1.RecoveryResultFailed)
+		published := moveLastRecovery(server)
 
+		// The look that finds the record incomplete reads the answer back off
+		// the contract. It neither answers again nor builds a second cluster.
 		By("losing the record of the answer")
-		Eventually(func(g Gomega) {
-			var latest v1.DatabaseServer
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
-			latest.Status.Recovery.CompletedAt = nil
-			latest.Status.Recovery.Result = ""
-			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
-
-		// The answer is published before the cluster it abandons goes, so the
-		// look that finds the record incomplete finds the cluster too. It
-		// answers again rather than building a second one.
-		Eventually(func(g Gomega) {
-			g.Expect(reconciledServer(server).Status.Recovery.CompletedAt).NotTo(BeNil())
-		}, timeout, interval).Should(Succeed())
+		loseRecord(
+			server,
+			func(status *v1.DatabaseServerStatus) {
+				status.Recovery.CompletedAt = nil
+				status.Recovery.Result = ""
+			},
+			func(status v1.DatabaseServerStatus) bool {
+				return status.Recovery.CompletedAt != nil && status.Recovery.CompletedAt.Equal(&published)
+			},
+		)
+		Expect(reconciledServer(server).Status.Recovery.Result).To(Equal(v1.RecoveryResultFailed))
 		Expect(expectLastRecovery(server, v1.RecoveryResultFailed).Message).
 			To(ContainSubstring(cnpgv1.PhaseUnrecoverable))
 
@@ -1484,32 +1591,34 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		bringRecoveryClusterUp(server, "camunda-r1")
 		probeContract(server)
-		outcome := expectLastRecovery(server, v1.RecoveryResultCompleted)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
 
 		Eventually(func(g Gomega) {
 			history := archiveHistory(server)
 			g.Expect(history).To(HaveLen(1))
 			g.Expect(history[0].To).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
+		published := moveLastRecovery(server)
 
 		By("losing the status write of the pass that answered")
-		Eventually(func(g Gomega) {
-			var latest v1.DatabaseServer
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
-			latest.Status.Recovery.CompletedAt = nil
-			latest.Status.Recovery.Result = ""
-			latest.Status.Archive.History[0].To = nil
-			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		loseRecord(
+			server,
+			func(status *v1.DatabaseServerStatus) {
+				status.Recovery.CompletedAt = nil
+				status.Recovery.Result = ""
+				status.Archive.History[0].To = nil
+			},
+			func(status v1.DatabaseServerStatus) bool {
+				return status.Recovery.CompletedAt != nil && status.Recovery.CompletedAt.Equal(&published)
+			},
+		)
 
 		// The record closes at the moment the outcome carries, which is when
 		// the contract moved off that cluster.
-		Eventually(func(g Gomega) {
-			history := archiveHistory(server)
-			g.Expect(history).To(HaveLen(1))
-			g.Expect(history[0].ServerName).To(Equal("camunda"))
-			g.Expect(history[0].To).To(Equal(&outcome.CompletedAt))
-		}, timeout, interval).Should(Succeed())
+		history := archiveHistory(server)
+		Expect(history).To(HaveLen(1))
+		Expect(history[0].ServerName).To(Equal("camunda"))
+		Expect(history[0].To).To(Equal(&published))
 	})
 
 	It("keeps the archive of the cluster it built open when the base backup lands first", func() {
@@ -1837,21 +1946,11 @@ var _ = Describe("DatabaseServer recovery", func() {
 		expectLastRecovery(server, v1.RecoveryResultCompleted)
 
 		By("losing the whole record of the recovery")
-		Eventually(func(g Gomega) {
-			var latest v1.DatabaseServer
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
-			latest.Status.Recovery = nil
-			latest.Status.Cluster = "camunda"
-			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		loseRecord(server, loseWholeRecord, readBackOffContract)
 
 		// The contract names the recovered server. Reading status back from
 		// the record alone calls the recovered cluster the one to remove.
-		Eventually(func(g Gomega) {
-			latest := reconciledServer(server)
-			g.Expect(latest.Status.Cluster).To(Equal("camunda-r1"))
-			g.Expect(latest.Status.Recovery).NotTo(BeNil())
-		}, timeout, interval).Should(Succeed())
+		Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda-r1"))
 
 		Consistently(func() error {
 			return k8sClient.Get(

@@ -2475,15 +2475,6 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(ready.Reason).To(Equal(v1.ReasonVersionChangeRefused))
 		}, timeout, interval).Should(Succeed())
 
-		By("losing the record of the cluster the rollback moved to")
-		Eventually(func(g Gomega) {
-			var latest v1.DatabaseServer
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
-			latest.Status.Recovery = nil
-			latest.Status.Cluster = "camunda"
-			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
-
 		// The contract still names the recovered server, so the refusal reads
 		// the major off that cluster and it keeps the image it runs.
 		//
@@ -2493,7 +2484,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		// image back. Once is all CloudNativePG needs.
 		key := client.ObjectKey{Namespace: server.Namespace, Name: recovered}
 		replacedKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
-		Consistently(func(g Gomega) {
+		keepsMajor := func(g Gomega) {
 			var cluster cnpgv1.Cluster
 			g.Expect(k8sClient.Get(ctx, key, &cluster)).To(Succeed())
 			g.Expect(cluster.Spec.ImageName).To(HaveSuffix(":17"))
@@ -2507,7 +2498,21 @@ var _ = Describe("DatabaseServer controller", func() {
 			} else {
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), err.Error())
 			}
-		}, 3*time.Second, "5ms").Should(Succeed())
+		}
+
+		By("losing the record of the cluster the rollback moved to")
+		// The loss is written at the pace of a normal poll. Written every 5ms,
+		// it lands inside every reconcile that the flush of an older copy
+		// starts, and the older copy comes back each time.
+		Eventually(func(g Gomega) {
+			if err := InterceptGomegaFailure(func() {
+				Consistently(keepsMajor, interval, "5ms").Should(Succeed())
+			}); err != nil {
+				StopTrying("the guard let the refused major through").Wrap(err).Now()
+			}
+			loseUntilRepaired(g, server, loseWholeRecord, readBackOffContract)
+		}, timeout, time.Millisecond).Should(Succeed())
+		Consistently(keepsMajor, 3*time.Second, "5ms").Should(Succeed())
 
 		ready := conditionOf(server, v1.ConditionReady)
 		Expect(ready).NotTo(BeNil())
