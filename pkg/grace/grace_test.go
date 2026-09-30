@@ -141,6 +141,18 @@ func TestRemaining(t *testing.T) {
 			reason: component.PrerequisiteNotMet, since: time.Minute,
 		},
 		{
+			name: "a component whose feature gate failed does not wait", status: metav1.ConditionFalse,
+			reason: component.FeatureGateError, since: time.Minute,
+		},
+		{
+			name: "a component that waits to suspend does not wait", status: metav1.ConditionFalse,
+			reason: component.PendingSuspension, since: time.Minute,
+		},
+		{
+			name: "a component that suspends does not wait", status: metav1.ConditionFalse,
+			reason: component.Suspending, since: time.Minute,
+		},
+		{
 			name: "a component past its period does not wait", status: metav1.ConditionFalse,
 			reason: component.AliveUpdating, since: time.Hour,
 		},

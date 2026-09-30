@@ -125,9 +125,9 @@ func (p Periods) Validate() error {
 // requeues after the result, because no watch event arrives when a grace
 // period runs out.
 //
-// A component waits on its grace period while its condition is False and not
-// yet graded: a reason of Down or Degraded is final, and Unknown or
-// PrerequisiteNotMet has not started the grace period yet.
+// A component waits on its grace period while its condition is False, not yet
+// Down or Degraded, and not in a reason that ocf keeps outside the grace
+// period, such as PrerequisiteNotMet or a suspension.
 func Remaining(
 	owner component.OperatorCRD, period time.Duration, now time.Time, comps ...*component.Component,
 ) time.Duration {
@@ -143,7 +143,9 @@ func Remaining(
 		}
 
 		switch cond.ComponentStatus() {
-		case component.Unknown, component.PrerequisiteNotMet, component.Down, component.Degraded:
+		case component.Down, component.Degraded,
+			component.Unknown, component.PrerequisiteNotMet, component.FeatureGateError,
+			component.PendingSuspension, component.Suspending:
 			continue
 		}
 
