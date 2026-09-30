@@ -165,7 +165,9 @@ type ZeebeSpec struct {
 	// the class, and a cluster that inherited a class can set another one. A
 	// cluster whose broker StatefulSet exists, also a suspended one, keeps
 	// its class and records a StorageClassChangeIgnored event. A cluster
-	// without a broker StatefulSet takes the new class.
+	// without a broker StatefulSet takes the new class. Volumes that
+	// whenDeleted Retain kept from a deleted cluster of the same name keep
+	// their class.
 	// +optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
 	// StorageSize is the size of the data volume of each broker. Defaults to

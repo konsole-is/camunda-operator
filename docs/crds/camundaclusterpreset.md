@@ -54,7 +54,7 @@ When you edit a preset, every cluster that references it takes the new baseline 
 
 A preset can lower `zeebe.storageSize`. A cluster that already applied a larger size keeps its volumes and records the Warning event `StorageShrinkIgnored`. A larger size grows the volumes of every cluster in place, if the storage class allows volume expansion. See [Operations: Grow storage](../guides/operations.md#grow-storage).
 
-A change of `zeebe.storageClassName` reaches only the clusters that do not have a broker StatefulSet yet. A cluster that inherits the class and has a broker StatefulSet, also a suspended one, keeps its class and records the Warning event `StorageClassChangeIgnored`.
+A change of `zeebe.storageClassName` reaches only the clusters that do not have a broker StatefulSet yet. A cluster that inherits the class and has a broker StatefulSet, also a suspended one, keeps its class and records the Warning event `StorageClassChangeIgnored`. Volumes that `whenDeleted: Retain` kept from a deleted cluster of the same name keep their class.
 
 ## Deletion
 

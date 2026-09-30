@@ -315,6 +315,10 @@ func (r *CamundaClusterReconciler) recordIgnoredClassChange(
 // carries class in the requested storage class annotation. A nil class
 // matches a StatefulSet without the annotation.
 func (s brokerStorage) requestedClassApplied(class *string) bool {
+	if s.statefulSet == nil {
+		return false
+	}
+
 	requested, ok := s.statefulSet.Annotations[components.RequestedStorageClassAnnotation]
 	if class == nil {
 		return !ok
@@ -323,11 +327,11 @@ func (s brokerStorage) requestedClassApplied(class *string) bool {
 	return ok && requested == *class
 }
 
-// className returns class in quotes, or a name for the default class when
-// class is nil.
+// className returns class in quotes, or a description of no class when class
+// is nil.
 func className(class *string) string {
 	if class == nil {
-		return "(the default StorageClass)"
+		return "(none, so the default StorageClass)"
 	}
 
 	return fmt.Sprintf("%q", *class)
