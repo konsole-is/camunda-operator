@@ -236,8 +236,6 @@ type LogicalBackupElasticsearchStatus struct {
 	LastResumeAttemptTime *metav1.Time `json:"lastResumeAttemptTime,omitempty"`
 	// TerminalReason is the Ready reason that the operator recorded when the
 	// backup reached its final phase: Completed, Failed, or ResumeFailed.
-	// The operator sets the final condition again from it when a write
-	// conflict restored an older condition.
 	// +optional
 	TerminalReason string `json:"terminalReason,omitempty"`
 	// ResumeFailureMessage is the last error of the resume of exporting,

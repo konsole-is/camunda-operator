@@ -75,8 +75,9 @@ type LogicalRestoreElasticsearchStatus struct {
 	// +optional
 	Repository string `json:"repository,omitempty"`
 	// RestoredSnapshots names every snapshot that the restore asked
-	// Elasticsearch to restore. When the restore continues after an
-	// interruption, it does not delete the indices again.
+	// Elasticsearch to restore. After the operator records the names, the
+	// restore does not delete the indices again when it continues after an
+	// interruption.
 	// +optional
 	RestoredSnapshots []string `json:"restoredSnapshots,omitempty"`
 	// RestoreProgress is the part of the status that every restore kind has.

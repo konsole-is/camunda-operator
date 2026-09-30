@@ -1167,8 +1167,7 @@ spec:
               failureMessage:
                 description: |-
                   FailureMessage tells why the backup failed. It is set with the Failed
-                  phase. The Ready condition has the same message. The operator sets the
-                  condition again from this field, so a write conflict never loses it.
+                  phase. The Ready condition has the same message.
                 type: string
               firstFailedAt:
                 description: |-

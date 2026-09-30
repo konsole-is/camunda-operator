@@ -160,8 +160,7 @@ type LogicalBackupRDBMSStatus struct {
 	// +optional
 	StorageSizes LogicalBackupStorageSizes `json:"storageSizes,omitzero"`
 	// FailureMessage tells why the backup failed. It is set with the Failed
-	// phase. The Ready condition has the same message. The operator sets the
-	// condition again from this field, so a write conflict never loses it.
+	// phase. The Ready condition has the same message.
 	// +optional
 	FailureMessage string `json:"failureMessage,omitempty"`
 	// CompletionTime is when the backup reached a final phase.

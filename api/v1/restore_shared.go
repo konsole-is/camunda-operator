@@ -143,8 +143,7 @@ type RestoreProgress struct {
 	// +optional
 	ClusterSuspended bool `json:"clusterSuspended,omitempty"`
 	// TerminalReason is the Ready reason that the operator recorded when the
-	// restore reached its final phase. The operator sets the final condition
-	// again from this field, so a write conflict cannot replace the reason.
+	// restore reached its final phase.
 	// +optional
 	TerminalReason string `json:"terminalReason,omitempty"`
 	// FailureMessage names the failed phase and its error. The Ready

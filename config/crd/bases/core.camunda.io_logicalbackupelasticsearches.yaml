@@ -406,8 +406,6 @@ spec:
                 description: |-
                   TerminalReason is the Ready reason that the operator recorded when the
                   backup reached its final phase: Completed, Failed, or ResumeFailed.
-                  The operator sets the final condition again from it when a write
-                  conflict restored an older condition.
                 type: string
               unreachableSince:
                 description: |-

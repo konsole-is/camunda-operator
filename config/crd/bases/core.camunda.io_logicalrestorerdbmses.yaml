@@ -281,8 +281,7 @@ spec:
               terminalReason:
                 description: |-
                   TerminalReason is the Ready reason that the operator recorded when the
-                  restore reached its final phase. The operator sets the final condition
-                  again from this field, so a write conflict cannot replace the reason.
+                  restore reached its final phase.
                 type: string
             type: object
         required:
