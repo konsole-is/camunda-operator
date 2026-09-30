@@ -724,9 +724,7 @@ var _ = Describe("LogicalRestoreRDBMS compatibility", func() {
 
 		By("continuing once the CamundaCluster controller rolled it out")
 		w.rollBrokerImage("8.10.0")
-		Eventually(func(g Gomega) {
-			g.Expect(latest(g, lrr).Status.BackupID).To(Equal(backupID))
-		}, timeout, interval).Should(Succeed())
+		expectPhase(lrr, v1.LogicalRestoreRestoringSecondaryStorage)
 	})
 
 	// The version rule would accept this target as it is. The restore still
@@ -746,9 +744,7 @@ var _ = Describe("LogicalRestoreRDBMS compatibility", func() {
 		}, timeout, interval).Should(Succeed())
 
 		w.rollBrokerImage(worldVersion)
-		Eventually(func(g Gomega) {
-			g.Expect(latest(g, lrr).Status.BackupID).To(Equal(backupID))
-		}, timeout, interval).Should(Succeed())
+		expectPhase(lrr, v1.LogicalRestoreRestoringSecondaryStorage)
 	})
 
 	// A version that the restore cannot write is not a wait. Such a backup

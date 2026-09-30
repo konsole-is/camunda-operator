@@ -312,9 +312,7 @@ var _ = Describe("LogicalRestoreElasticsearch compatibility", func() {
 
 		By("continuing once the CamundaCluster controller rolled it out")
 		w.rollBrokerImage("8.9.10")
-		Eventually(func(g Gomega) {
-			g.Expect(latest(g, restore).Status.BackupID).To(Equal(backupID))
-		}, timeout, interval).Should(Succeed())
+		expectPhase(restore, v1.LogicalRestoreRestoringSecondaryStorage)
 	})
 
 	// A version that the restore cannot write is not a wait. Such a backup
