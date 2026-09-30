@@ -111,7 +111,7 @@ const (
 	// in its database and reads the setting only on the first start. Thus the
 	// operator refuses the change, because it has no effect.
 	ReasonImmutableAfterStart = "ImmutableAfterStart"
-	// ReasonBasicAuthUserFailed means that the operator could not create the
+	// ReasonBasicAuthUserFailed means that the operator failed to create the
 	// Web Modeler user on a basic-auth CamundaCluster. The row of that
 	// cluster in status.clusters carries the message.
 	ReasonBasicAuthUserFailed = "BasicAuthUserFailed"
@@ -126,7 +126,7 @@ const (
 	// names a URL, so there is no login callback to register. Set
 	// spec.externalUrl on a CamundaOptimize that names this management plane.
 	ReasonNoCallbacks = "NoCallbacks"
-	// ReasonAdminRoleGrantFailed means that the operator could not give the
+	// ReasonAdminRoleGrantFailed means that the operator failed to give the
 	// first administrator the Optimize role of the realm. The message says
 	// what stopped it: the realm holds no user of that name, it holds no
 	// Optimize role, or Keycloak refused the write. The operator tries again

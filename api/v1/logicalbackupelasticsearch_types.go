@@ -22,21 +22,21 @@ import (
 
 // ReasonResumeFailed means that exporting did not resume before the deadline
 // after a backup. The cluster cannot compact its log while exporting is
-// paused, so it needs the attention of an operator. Only
-// LogicalBackupElasticsearch reports it. To pause exporting is a step of the
-// Elasticsearch procedure alone.
+// paused, so a person must act. Only LogicalBackupElasticsearch reports it,
+// because only the Elasticsearch backup pauses exporting.
 const ReasonResumeFailed = "ResumeFailed"
 
-// LogicalBackupElasticsearchStep is the resume marker of the backup
-// procedure. A crash or an operator restart re-enters at the recorded step.
-// Every step queries the current state before it acts, so no call is
-// repeated.
+// LogicalBackupElasticsearchStep is the current step of the backup. After a
+// crash or a restart of the operator, the backup continues at this step.
+// Every step reads the current state before it acts, so the backup does not
+// repeat a call.
 // +kubebuilder:validation:Enum=PauseExporting;BackupHistory;SnapshotRecords;BackupRuntime;ResumeExporting
 type LogicalBackupElasticsearchStep string
 
-// The steps of the Elasticsearch backup procedure, in order. A failure in any
-// step routes to StepResumeExporting. A cluster with paused exporting cannot
-// compact its log, so resume always runs before a terminal phase.
+// The steps of the Elasticsearch backup procedure, in order. After a failure
+// in a step, the backup goes to StepResumeExporting. A cluster with paused
+// exporting cannot compact its log, so the resume always runs before a final
+// phase.
 const (
 	StepPauseExporting  LogicalBackupElasticsearchStep = "PauseExporting"
 	StepBackupHistory   LogicalBackupElasticsearchStep = "BackupHistory"
@@ -61,7 +61,7 @@ const (
 // web-application indices, the exported record indices, or the Zeebe
 // partitions.
 type BackupPart struct {
-	// State of this part.
+	// State is the state of this part.
 	// +optional
 	State BackupPartState `json:"state,omitempty"`
 	// FailureReason is set when State is Failed.
@@ -71,30 +71,30 @@ type BackupPart struct {
 
 // PinnedStorage is the destination of a backup set, recorded when the backup
 // starts. It names the storage contract and the Elasticsearch endpoint that
-// hold the snapshots. It names the backup bucket that holds the runtime
-// backup. The snapshot repository is pinned by name in status.repository.
-// Every step verifies the destination before it writes. The finalizer
-// verifies it before it deletes. A destination that moved mid-run therefore
-// splits no set and aims no delete at the wrong place.
+// hold the snapshots, and the backup bucket that holds the runtime backup.
+// status.repository records the name of the snapshot repository. Every step
+// checks the destination before it writes, and the operator checks it before
+// it deletes. Thus a destination that moves during the backup does not split
+// the set or send a deletion to the wrong place.
 type PinnedStorage struct {
 	// SecondaryStorageConfig is the name of the storage contract, in the
 	// namespace of the backup.
 	SecondaryStorageConfig string `json:"secondaryStorageConfig"`
 	// Endpoint is the Elasticsearch endpoint that the contract named.
 	Endpoint string `json:"endpoint"`
-	// BucketRef is the ObjectStorageConfig that the cluster backed up
-	// through when the backup started: its spec.backupStorageRef then. The
-	// runtime backup lands in that bucket.
+	// BucketRef is the ObjectStorageConfig that the cluster used for backups
+	// when the backup started: its spec.backupStorageRef at that time. The
+	// runtime backup goes to that bucket.
 	BucketRef string `json:"bucketRef"`
-	// BucketLocation is where that contract pointed: the storage type,
-	// bucket, base path, and endpoint. The steps write, and the finalizer
-	// deletes, only while the contract still points there.
+	// BucketLocation is where that contract pointed: the storage type, the
+	// bucket, the base path, and the endpoint. The steps write, and the
+	// operator deletes, only while the contract still points there.
 	BucketLocation string `json:"bucketLocation"`
 }
 
 // LogicalBackupElasticsearchSpec identifies the cluster to back up. The whole
-// spec is immutable: a backup is a one-shot operation, retried by creating a
-// new resource.
+// spec is immutable. A backup runs one time. To try again, create a new
+// resource.
 type LogicalBackupElasticsearchSpec struct {
 	// ClusterRef references the CamundaCluster to back up, in the namespace
 	// of this backup. Its secondary storage must be Elasticsearch.
@@ -102,30 +102,30 @@ type LogicalBackupElasticsearchSpec struct {
 	ClusterRef ClusterRef `json:"clusterRef"`
 }
 
-// LogicalBackupElasticsearchStatus tracks the one-shot backup procedure to
-// completion.
+// LogicalBackupElasticsearchStatus is the progress of the backup to a final
+// phase.
 type LogicalBackupElasticsearchStatus struct {
-	// Phase of the backup. Completed and Failed are terminal.
+	// Phase is the phase of the backup. Completed and Failed are final.
 	// +optional
 	Phase LogicalBackupPhase `json:"phase,omitempty"`
-	// Step is the resume marker of the running procedure.
+	// Step is the current step of the backup. After an interruption, the
+	// backup continues at this step.
 	// +optional
 	Step LogicalBackupElasticsearchStep `json:"step,omitempty"`
-	// BackupID keys every part of the backup set: the web-application
+	// BackupID identifies every part of the backup set: the web-application
 	// snapshots, the record snapshot, and the partition backup. A restore
-	// locates the set by it.
+	// finds the set by this ID.
 	// +optional
 	BackupID int64 `json:"backupId,omitempty"`
 	// PartitionsCount is the partition count of the cluster when the backup
 	// started. A restore must match it.
 	// +optional
 	PartitionsCount int32 `json:"partitionsCount,omitempty"`
-	// StorageSizes are the effective restore sizes, recorded best effort.
-	// They are computed when the backup starts. A value that was not
-	// available then is backfilled while exporting runs: before the pause,
-	// and after the resume. No value is backfilled while exporting is
-	// paused. A value that is absent can therefore still arrive later in
-	// the run.
+	// StorageSizes are the effective restore sizes. The operator computes
+	// them when the backup starts. If a value is not available then, the
+	// operator adds it later while exporting runs: before the pause, or after
+	// the resume. It does not add a value while exporting is paused. Thus an
+	// absent value can still appear later in the backup.
 	// +optional
 	StorageSizes LogicalBackupStorageSizes `json:"storageSizes,omitempty"`
 	// History is the backup of the web-application indices.
@@ -138,125 +138,118 @@ type LogicalBackupElasticsearchStatus struct {
 	// +optional
 	Runtime BackupPart `json:"runtime,omitempty"`
 	// HistorySnapshots names the Elasticsearch snapshots of the
-	// web-application indices. The names are recorded as soon as the
-	// management API names them. The answer to the start names the scheduled
-	// snapshots, and every status report names them again. The finalizer and
-	// a restore can then locate the snapshots after the cluster is gone.
+	// web-application indices. The operator records the names as soon as the
+	// management API gives them. Thus the deletion of the backup and a
+	// restore can find the snapshots after the cluster is gone.
 	// +optional
 	HistorySnapshots []string `json:"historySnapshots,omitempty"`
-	// Repository pins the snapshot repository that every part of the set is
-	// written to. It is recorded when the backup starts. Every later step and
-	// the finalizer use the pinned name. A repository that changes on the
-	// storage contract mid-run can then neither split the set nor aim the
-	// deletion at the wrong repository.
+	// Repository records the snapshot repository of every part of the set.
+	// The operator records it when the backup starts, and every later step
+	// and the deletion use this name. Thus a change of the repository on the
+	// storage contract during the backup does not split the set or send the
+	// deletion to the wrong repository.
 	// +optional
 	Repository string `json:"repository,omitempty"`
-	// Storage pins the Elasticsearch destination of the set: the storage
-	// contract and the endpoint it named when the backup started. The
-	// repository name alone does not identify a cluster. A storage contract
-	// or endpoint that changes mid-run fails the step, and the finalizer
-	// never deletes against a different cluster.
+	// Storage records the Elasticsearch destination of the set: the storage
+	// contract and its endpoint when the backup started. The repository name
+	// alone does not identify a cluster. If the storage contract or the
+	// endpoint changes during the backup, the step fails. The deletion never
+	// runs against another cluster.
 	// +optional
 	Storage *PinnedStorage `json:"storage,omitempty"`
-	// ClusterUID pins the identity of the CamundaCluster that the backup
-	// started against. A cluster that is deleted and recreated under the
-	// same name is a different cluster. Its exporting was never paused by
-	// this backup, and its artifacts are not this backup's. Every
-	// management call after the start verifies the live cluster against
-	// this UID. A mismatch ends the backup without touching the
-	// replacement.
+	// ClusterUID records the identity of the CamundaCluster of the backup. A
+	// cluster that is deleted and created again with the same name is
+	// another cluster. This backup did not pause its exporting, and its
+	// artifacts do not belong to this backup. Every management call after the
+	// start compares the cluster with this UID. If they differ, the backup
+	// ends and does not change the new cluster.
 	// +optional
 	ClusterUID string `json:"clusterUID,omitempty"`
 	// Version is the Camunda version of the cluster when the backup started,
-	// as the management binding reported it. A restore compares it against
-	// the version of its target: an Elasticsearch backup restores only with
-	// the exact same version, and a relational backup restores with the same
-	// Camunda minor or one minor newer. It is the only place a restore can read
-	// the version, because the management binding of a suspended cluster is
-	// unset.
+	// as the management binding reported it. A restore compares it with the
+	// version of its target. An Elasticsearch backup restores only to the
+	// same version. A restore can read the version only here, because a
+	// suspended cluster has no management binding.
 	// +optional
 	Version string `json:"version,omitempty"`
-	// HistoryRequestedTime is when the controller decided to request the
-	// backup of the web-application indices. It is written before the
-	// request is sent, so the intent survives a lost response or a restart.
-	// It proves that this backup meant to request, not that a history
-	// backup under its ID is its own.
+	// HistoryRequestedTime is when the operator decided to request the
+	// backup of the web-application indices. The operator writes it before
+	// it sends the request, so the decision stays after a lost response or a
+	// restart. It does not prove that a history backup with this ID belongs
+	// to this backup.
 	// +optional
 	HistoryRequestedTime *metav1.Time `json:"historyRequestedTime,omitempty"`
 	// HistoryAcceptedTime is when the cluster accepted the history backup
-	// request of this backup, as this controller observed it. It is the
-	// only evidence that the history backup under this ID is this backup's.
-	// A history backup that exists without it is not adopted: the step
-	// fails, and the finalizer does not delete its snapshots. A crash
-	// between the request and the write of this field fails the backup
-	// safely. It can leave a history backup under this ID in the cluster
-	// for the user to remove by hand.
+	// request of this backup. Only this field shows that the history backup
+	// with this ID belongs to this backup. If such a history backup exists
+	// without this field, the step fails, and the operator does not delete
+	// its snapshots. A crash between the request and the write of this field
+	// fails the backup. The cluster can then keep a history backup with this
+	// ID, which you remove manually.
 	// +optional
 	HistoryAcceptedTime *metav1.Time `json:"historyAcceptedTime,omitempty"`
-	// RuntimeRequestedTime is when the controller decided to request the
-	// runtime backup. It is written before the request is sent, so the
-	// intent survives a lost response or a restart. It proves that this
-	// backup meant to request, not that a runtime backup under its ID is
-	// its own.
+	// RuntimeRequestedTime is when the operator decided to request the
+	// runtime backup. The operator writes it before it sends the request, so
+	// the decision stays after a lost response or a restart. It does not
+	// prove that a runtime backup with this ID belongs to this backup.
 	// +optional
 	RuntimeRequestedTime *metav1.Time `json:"runtimeRequestedTime,omitempty"`
-	// RuntimeAcceptedTime is when the cluster accepted the request of this
-	// backup, as this controller observed it. It is the only evidence that
-	// the runtime backup under this ID is this backup's. A runtime backup
-	// that exists without it, after a lost response or because another
-	// actor won the ID, is not adopted. The step fails, and the finalizer
-	// leaves that runtime backup alone. A crash between the request and
-	// the write of this field fails the backup safely. It can leave such a
-	// runtime backup in the cluster for the user to remove by hand. The
-	// cluster registers the backup asynchronously and can report it absent
-	// for a moment after the acceptance. Within a registration grace after
-	// this time, an absent backup is polled. After the grace, an absent
-	// backup fails the step.
+	// RuntimeAcceptedTime is when the cluster accepted the runtime backup
+	// request of this backup. Only this field shows that the runtime backup
+	// with this ID belongs to this backup. A runtime backup can exist without
+	// this field, after a lost response or when another client used the ID
+	// first. Then the step fails, and the operator does not delete that
+	// runtime backup. A crash between the request and the write of this
+	// field fails the backup. The cluster can then keep such a runtime
+	// backup, which you remove manually.
+	//
+	// The cluster registers the backup some time after it accepts it. For a
+	// short grace period after this time, the operator waits for an absent
+	// backup. After the grace period, an absent backup fails the step.
 	// +optional
 	RuntimeAcceptedTime *metav1.Time `json:"runtimeAcceptedTime,omitempty"`
-	// UnreachableSince is when a working step first found its endpoint
-	// unreachable. The endpoint is the management API or Elasticsearch,
-	// whichever the step calls. Exporting can be paused at every working
-	// step, so the retry is bounded. After the bound the step fails and the
-	// procedure resumes exporting. It clears once every call of a reconcile
-	// answered.
+	// UnreachableSince is when a step first failed to reach its endpoint:
+	// the management API or Elasticsearch. Exporting can be paused during
+	// every step, so the retries have a time limit. After the limit, the step
+	// fails, and the backup resumes exporting. The field clears when all
+	// calls succeed again.
 	// +optional
 	UnreachableSince *metav1.Time `json:"unreachableSince,omitempty"`
-	// FailureMessage names the failing step and its error. It is recorded
-	// when a step fails and exporting still has to be resumed. The reason
-	// then survives the resume and reaches the terminal condition.
+	// FailureMessage names the failed step and its error. The operator
+	// records it when a step fails and exporting must still resume. Thus the
+	// final condition shows the reason after the resume.
 	// +optional
 	FailureMessage string `json:"failureMessage,omitempty"`
-	// ResumeStartedTime anchors the resume deadline. Only the accumulated
-	// time of active resume attempts counts against the deadline. A gap in
-	// which the procedure was parked slides the anchor forward and does not
-	// count, for example a suspended cluster or an unpublished binding. The
-	// anchor survives an operator restart.
+	// ResumeStartedTime is the start of the resume deadline. Only the time
+	// of active resume attempts counts against the deadline. A time in which
+	// the backup waits, for example for a suspended cluster or an
+	// unpublished binding, moves the start forward and does not count. The
+	// value stays after a restart of the operator.
 	// +optional
 	ResumeStartedTime *metav1.Time `json:"resumeStartedTime,omitempty"`
-	// LastResumeAttemptTime is when the last resume attempt ended. The gap
-	// from it to the start of the next attempt decides whether the deadline
-	// anchor slides. The time inside an attempt always counts.
+	// LastResumeAttemptTime is when the last resume attempt ended. The time
+	// from it to the start of the next attempt decides whether the start of
+	// the deadline moves. The time inside an attempt always counts.
 	// +optional
 	LastResumeAttemptTime *metav1.Time `json:"lastResumeAttemptTime,omitempty"`
-	// TerminalReason is the Ready reason recorded at the terminal
-	// transition: Completed, Failed, or ResumeFailed. The controller
-	// re-stages the terminal condition from it when a write conflict
-	// restored an older one.
+	// TerminalReason is the Ready reason that the operator recorded when the
+	// backup reached its final phase: Completed, Failed, or ResumeFailed.
+	// The operator sets the final condition again from it when a write
+	// conflict restored an older condition.
 	// +optional
 	TerminalReason string `json:"terminalReason,omitempty"`
-	// ResumeFailureMessage is the last error of resume-exporting when the
-	// procedure gave up on it. It stands beside FailureMessage, so a backup
-	// that failed a step and then failed to resume reports both.
+	// ResumeFailureMessage is the last error of the resume of exporting,
+	// when the backup stopped the attempts. A backup that failed a step and
+	// then failed to resume reports this field and FailureMessage.
 	// +optional
 	ResumeFailureMessage string `json:"resumeFailureMessage,omitempty"`
-	// CompletionTime is when the backup reached a terminal phase.
+	// CompletionTime is when the backup reached a final phase.
 	// +optional
 	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Conditions represent the current state. The Ready condition tracks the
+	// Conditions represent the current state. The Ready condition shows the
 	// backup with the reasons Progressing, Completed, Failed, ResumeFailed,
 	// ClusterSuspended, BackupInProgress, StorageTypeMismatch,
 	// InvalidReference, MissingSecret, and ConnectionFailed.
@@ -274,12 +267,13 @@ type LogicalBackupElasticsearchStatus struct {
 // +kubebuilder:printcolumn:name="Backup ID",type=integer,JSONPath=`.status.backupId`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// LogicalBackupElasticsearch is one backup of an Elasticsearch-backed
-// CamundaCluster. The backup is one coordinated set under one backup ID: the
-// web-application indices, the exported Zeebe record indices, and the Zeebe
-// partitions. It is taken hot, with exporting soft-paused. A restore reads a
-// completed backup by its backup ID and its recorded snapshot names. When you
-// delete the resource, a finalizer deletes the stored artifacts.
+// LogicalBackupElasticsearch is one backup of a CamundaCluster with
+// Elasticsearch secondary storage. The backup is one set under one backup ID:
+// the web-application indices, the exported Zeebe record indices, and the
+// Zeebe partitions. The cluster continues to run during the backup, with
+// exporting soft-paused. A restore reads a completed backup by its backup ID
+// and its recorded snapshot names. When you delete the resource, the
+// operator deletes the stored backup data.
 type LogicalBackupElasticsearch struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -287,8 +281,8 @@ type LogicalBackupElasticsearch struct {
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
-	// spec identifies the cluster to back up. It is immutable: a backup is a
-	// one-shot operation, retried by creating a new resource.
+	// spec identifies the cluster to back up. It is immutable. A backup runs
+	// one time. To try again, create a new resource.
 	// +required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable: a backup is one-shot, retried by creating a new resource"
 	Spec LogicalBackupElasticsearchSpec `json:"spec"`
