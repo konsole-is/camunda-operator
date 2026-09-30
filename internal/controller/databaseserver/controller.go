@@ -1711,8 +1711,11 @@ func (r *DatabaseServerReconciler) archivePluginRoles(
 
 	var roles []components.ArchivePluginRole
 	for _, name := range names {
+		// Live: a binding names its Role, so a stale answer keeps the binding
+		// on a Role that another owner has made again under that name.
 		var cluster cnpgv1.Cluster
-		if err := r.Get(ctx, types.NamespacedName{Namespace: server.Namespace, Name: name}, &cluster); err != nil {
+		clusterKey := types.NamespacedName{Namespace: server.Namespace, Name: name}
+		if err := r.APIReader.Get(ctx, clusterKey, &cluster); err != nil {
 			if apierrors.IsNotFound(err) {
 				continue
 			}
@@ -1727,7 +1730,7 @@ func (r *DatabaseServerReconciler) archivePluginRoles(
 		role.SetGroupVersionKind(rbacv1.SchemeGroupVersion.WithKind("Role"))
 		key := types.NamespacedName{Namespace: server.Namespace, Name: components.ArchivePluginRoleName(name)}
 		granted := serviceAccountTaken == ""
-		if err := r.Get(ctx, key, role); err != nil {
+		if err := r.APIReader.Get(ctx, key, role); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return nil, fmt.Errorf("reading the Role %s: %w", key, err)
 			}

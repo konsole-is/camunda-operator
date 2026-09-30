@@ -334,6 +334,8 @@ The server never writes on an object that another owner holds under a name that 
 - A RoleBinding of the name `<cluster>-barman-cloud-postgres` that another owner controls: `ClusterReady` reports `Blocked`, and the server does not write its CloudNativePG cluster. The name is `my-db-barman-cloud-postgres`, or `my-db-r1-barman-cloud-postgres` after the first rollback.
 - The archive Secret, the base backup schedule, or the `PodMonitor` under another owner: `ArchiveReady` or `MonitoringReady` reports `False`.
 
+While the server is suspended, a ServiceAccount or a RoleBinding under another owner does not change `ClusterReady`, which reports `Suspended`. The collision shows when you resume the server.
+
 Remove the other object, or give this server a name of its own. The server then continues with the archive history that it had. While the `ObjectStore` name was held, the server wrote no archive, so no restore can reach a point in that time.
 
 ## Deletion
