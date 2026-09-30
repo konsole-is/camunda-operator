@@ -733,6 +733,7 @@ func TestValidateMergedDefaultRoleEnv(t *testing.T) {
 		{"mapping rules", roles + "ADMIN_MAPPINGRULES_0", false},
 		{"mapping rules with an underscore", roles + "ADMIN_MAPPING_RULES_0", false},
 		{"mapping rules with a dash", roles + "ADMIN_MAPPING-RULES_0", false},
+		{"mapping rules with a dot", roles + "ADMIN_MAPPING.RULES_0", false},
 		{"a comma list without an index", roles + "ADMIN_USERS", false},
 		{"lower case", lowerRoles + "admin_users_0", false},
 		{"another initialization key", "CAMUNDA_SECURITY_INITIALIZATION_USERS_0_USERNAME", false},
