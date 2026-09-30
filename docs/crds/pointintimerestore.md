@@ -165,7 +165,7 @@ Deleting the restore removes its Jobs and their pods. The broker volumes stay. T
 | `Ready` | `WaitingForHandover` | The cluster does not hold its database yet, or pods or a deleted restore still write it. The message names them. | Wait. |
 | `Ready` | `DatabaseNotRestored` | The database is ahead of `spec.timestamp`, or it has no position for a partition. No volume is touched. | Roll the database back to the point, then wait. |
 | `Ready` | `ExporterPositionNotCovered` | The point lies outside the window of the primary-storage backups. The broker volumes are already erased. | Read [If the point is outside the window](#if-the-point-is-outside-the-window). |
-| `Ready` | `MissingSecret` | A credentials Secret of the cluster is missing or lacks a key. | Create the Secret that the message names. |
+| `Ready` | `MissingSecret` | A credentials Secret of the cluster is missing or lacks a key. Or a pod of a restore Job cannot start, because a Secret it needs does not exist. | Create the Secret that the message names. |
 | `Ready` | `ConnectionFailed` | The operator cannot read the database. | Correct the endpoint or the credentials. |
 
 After `Pending`, a restore that loses a dependency waits 10 minutes, then fails with the reason `Failed`. Once the restore has deleted a broker volume, the 10 minutes count from the first outage, even when a dependency comes back in between.

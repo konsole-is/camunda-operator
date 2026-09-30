@@ -119,7 +119,7 @@ Deleting the restore removes its Jobs and their pods. The broker volumes stay, a
 | `Ready` | `WaitingForHandover` | The target does not hold its logical database yet, or pods still write it. | Wait. The message names what the restore waits for. |
 | `Ready` | `IncompatibleTarget` | The target cannot hold the backup, or its version moved after `Pending`. | Read [Compatibility](#compatibility). Create a new restore against a target that fits. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, or the backup is not `Completed`. Or the database server has no `status.serverVersion`. | Correct what the message names. |
-| `Ready` | `MissingSecret` | The Secret of the database credentials is missing or lacks a key. | Create the Secret that the message names. |
+| `Ready` | `MissingSecret` | The Secret of the database credentials is missing or lacks a key. Or a pod of a restore Job cannot start, because a Secret it needs does not exist. | Create the Secret that the message names. |
 | `Ready` | `MissingCredentials` | The Secret of the bucket credentials is missing or lacks a key. | Create the Secret that the message names. |
 
 After `Pending`, a restore that loses a dependency waits 10 minutes, then fails with the reason `Failed`. Once the restore has deleted a broker volume, the 10 minutes count from the first outage. A dependency that comes back in between does not reset them.

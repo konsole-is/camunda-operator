@@ -133,7 +133,7 @@ If you delete the holder, the next one takes the cluster. It reports `WaitingFor
 
 `spec.managementAuthRef` names a cluster-scoped [ManagementAuthConfig](managementauthconfig.md). That page lists the fields of the contract and the keys its Secret must carry.
 
-The client Secret of the contract, and the license Secret of the [CamundaPlatformConfig](camundaplatformconfig.md) of the cluster, can live in another namespace. The operator copies them into the namespace of the `CamundaOptimize`, as `<name>-optimize-auth-client` and `<name>-optimize-license`. `MirroredSecretsReady` reports on the copies.
+The client Secret of the contract, and the license Secret of the [CamundaPlatformConfig](camundaplatformconfig.md) of the cluster, can live in another namespace. When one does, the operator copies it into the namespace of the `CamundaOptimize`, as `<name>-optimize-auth-client` and `<name>-optimize-license`. `MirroredSecretsReady` reports on the copies.
 
 Optimize reads tenants and users from `spec.baseUrl` of the contract. That URL is the root of Management Identity, not the Identity URL of the orchestration cluster.
 
@@ -162,7 +162,7 @@ A missing callback does not change the status of this resource. The sign-in fail
 
 `spec.version` is the Optimize version, as a full semantic version such as `8.9.0`. Optimize has its own patch line, so it does not follow the version of the cluster.
 
-The major and the minor must match the effective version of the cluster. That is `spec.version` of the `CamundaCluster`, or the value of its preset or release. Camunda supports Optimize only on a matching minor. A difference reports `VersionMismatch`:
+The major and the minor must match the effective version of the cluster. That is `spec.version` of the `CamundaCluster`, or the version of its release. Camunda supports Optimize only on a matching minor. A difference reports `VersionMismatch`:
 
 ```
 spec.version "8.9.0" is on minor 8.9; CamundaCluster "my-cluster" runs 8.10.0, on minor 8.10
