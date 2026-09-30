@@ -86,7 +86,9 @@ spec:
                   backup cannot name anything under PG or UPLOAD_. Every extraEnvFrom
                   source needs a prefix that cannot spell such a name. libpq prefers
                   PGHOSTADDR over the PGHOST of the Job, so an unbounded source can
-                  redirect the dump with the injected credentials. The environment of
+                  redirect the dump with the injected credentials. Admission accepts a
+                  block that breaks this bound. The backup then stays Pending with
+                  reason InvalidReference, and its Job never starts. The environment of
                   this block reaches the dump container only, never the container that
                   uploads: cloud SDKs read endpoint, proxy, and configuration variables
                   from the environment, and a backup must not steer where its dump
@@ -283,11 +285,8 @@ spec:
                     type: array
                   extraEnvFrom:
                     description: |-
-                      ExtraEnvFrom are extra environment sources of the dump pod, at most
-                      8. The cap applies to every block that uses this type, the cluster
-                      and preset blocks included. It keeps the admission rule of a
-                      LogicalBackupRDBMS inside the cost budget of the API server. In the
-                      spec.dump of a LogicalBackupRDBMS, every source also needs a prefix
+                      ExtraEnvFrom are extra environment sources of the dump pod. In the
+                      spec.dump of a LogicalBackupRDBMS, every source needs a prefix
                       that cannot spell a PG* or UPLOAD_* name. The reason is that the
                       writer of the referenced object chooses its keys. Like ExtraEnv, the
                       sources of a backup reach the dump container only. The block of the
@@ -337,7 +336,6 @@ spec:
                           type: object
                           x-kubernetes-map-type: atomic
                       type: object
-                    maxItems: 8
                     type: array
                   podAnnotations:
                     additionalProperties:
@@ -1039,12 +1037,6 @@ spec:
                         to request
                       rule: '!has(self.storageClassName) || has(self.sizeLimit)'
                 type: object
-                x-kubernetes-validations:
-                - message: every extraEnvFrom source of a backup needs a prefix, and
-                    one that cannot spell a PG* or UPLOAD_* name
-                  rule: '!has(self.extraEnvFrom) || self.extraEnvFrom.all(s, has(s.prefix)
-                    && s.prefix != '''' && !s.prefix.startsWith(''PG'') && !''PG''.startsWith(s.prefix)
-                    && !s.prefix.startsWith(''UPLOAD_'') && !''UPLOAD_''.startsWith(s.prefix))'
             required:
             - clusterRef
             type: object

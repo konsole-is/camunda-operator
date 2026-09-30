@@ -17,6 +17,8 @@ limitations under the License.
 package camundacluster
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -197,6 +199,18 @@ func realisticPreset() *v1.CamundaClusterPreset {
 	return preset
 }
 
+func nineEnvFromSources() v1.DumpPodSpec {
+	var spec v1.DumpPodSpec
+	for i := range 9 {
+		spec.ExtraEnvFrom = append(spec.ExtraEnvFrom, corev1.EnvFromSource{
+			ConfigMapRef: &corev1.ConfigMapEnvSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: fmt.Sprintf("extras-%d", i)},
+			},
+		})
+	}
+	return spec
+}
+
 var _ = Describe("CamundaCluster schema", func() {
 	DescribeTable(
 		"admission",
@@ -332,6 +346,13 @@ var _ = Describe("CamundaCluster schema", func() {
 				}
 			},
 			"whenDeleted",
+		),
+		Entry(
+			"accepts more than 8 backup.dump extraEnvFrom sources",
+			minimalCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.Backup = &v1.ClusterBackupSpec{Dump: &v1.BackupDumpSpec{DumpPodSpec: nineEnvFromSources()}}
+			},
+			"",
 		),
 	)
 
@@ -605,6 +626,15 @@ var _ = Describe("CamundaClusterPreset schema", func() {
 				o.Spec.Cluster.Connectors = &v1.ConnectorsSpec{Version: "8.9.7"}
 			},
 			"belong to a CamundaRelease",
+		),
+		Entry(
+			"accepts more than 8 backup.dump extraEnvFrom sources",
+			minimalPreset, func(o *v1.CamundaClusterPreset) {
+				o.Spec.Cluster.Backup = &v1.ClusterBackupSpec{
+					Dump: &v1.BackupDumpSpec{DumpPodSpec: nineEnvFromSources()},
+				}
+			},
+			"",
 		),
 	)
 

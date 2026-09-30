@@ -743,7 +743,7 @@ The API server enforces these rules at admission:
 - `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` is `Delete` or `Retain`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both.
 - `spec.auth.basic.adminEmail` is empty or an address with a dot in its domain.
-- `spec.backup.dump.extraEnvFrom` holds at most 8 sources. `spec.backup.dump.scratchVolume.storageClassName` requires `sizeLimit`.
+- `spec.backup.dump.scratchVolume.storageClassName` requires `sizeLimit`.
 - `spec.backup.primaryStorage.checkpointInterval` and `retention.window` are ISO 8601 durations of days and time. Weeks, months, and years are rejected.
 
 The operator checks these rules on the merged spec after the preset and the release are applied. When one fails, it reports `Ready: InvalidReference` with a message that starts with `invalid effective spec:`.
