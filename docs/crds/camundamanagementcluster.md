@@ -616,7 +616,7 @@ status:
 | `KeycloakReady` | absent | The Kubernetes cluster does not serve the `Keycloak` kind. | In the `keycloak` mode, install the Keycloak Operator. Otherwise, nothing. |
 | `KeycloakReady` | `Creating` / `Updating` | The Keycloak Operator rolls the Keycloak pods. | Wait. |
 | `KeycloakReady` | `Failing` | Keycloak reports errors, or it does not become ready. The message carries what Keycloak said. | Read the pods and events of `my-management-keycloak`. |
-| `KeycloakReady` | `Down` | Keycloak is still not ready, or it reports errors, at the end of the [grace period](../architecture.md#status-conventions) of 15 minutes. The message carries what Keycloak said. | Read the pods and events of `my-management-keycloak`. |
+| `KeycloakReady` | `Down` | Keycloak is still not ready, or it reports errors, at the end of the [grace period](../architecture.md#status-conventions), 15 minutes by default. The message carries what Keycloak said. | Read the pods and events of `my-management-keycloak`. |
 | `KeycloakReady` | `Disabled` | The mode is `externalKeycloak` or `oidc`. | Nothing. |
 | `KeycloakReady` | `PendingSuspension` | `spec.suspend` is `true` and the `Keycloak` resource does not ask for zero instances yet. | Wait. |
 | `IdentityReady` | `Healthy` | Every Management Identity replica is ready. | Nothing. |
@@ -624,7 +624,7 @@ status:
 | `IdentityReady` | `ImmutableAfterStart` | `spec.identity.admin` asks for an administrator claim that Management Identity did not start with. | See [The first administrator](#the-first-administrator). |
 | `ConsoleReady`, `WebModelerReady` | `Healthy` / `Disabled` | Every replica is ready, or the block is unset. | Nothing. |
 | `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Creating` / `Updating` / `Scaling` | The workload rolls out or scales. | Wait. If the reason does not change, read the pods of the Deployment. |
-| `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Degraded` / `Down` | The workload is still not ready at the end of the [grace period](../architecture.md#status-conventions) of 15 minutes. `Degraded` means that some replicas are ready. `Down` means that none is ready. | Read the pods and events of the Deployment that the message names. |
+| `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Degraded` / `Down` | The workload is still not ready at the end of the [grace period](../architecture.md#status-conventions), 15 minutes by default. `Degraded` means that some replicas are ready. `Down` means that none is ready. | Read the pods and events of the Deployment that the message names. |
 | `KeycloakReady`, `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Suspending` / `Suspended` | `spec.suspend` is `true`. The workload goes to zero, or is at zero. | Nothing. |
 | `ManagementAuthReady` | `Healthy` | The `ManagementAuthConfig` is up to date. | Nothing. |
 | `ManagementAuthReady` | `WriteFailed` | The operator failed to write the `ManagementAuthConfig`. The message carries the answer of the API server. | Read the message. The operator tries again. |

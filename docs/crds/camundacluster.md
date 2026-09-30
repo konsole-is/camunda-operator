@@ -474,7 +474,7 @@ Deleting the cluster removes every resource that the operator created for it, an
 | `AdminSecretReady` | `Rejected` | A change of the `admin` user is not applied yet, because the cluster refused the call itself. | Read the message, which names the reason. |
 | `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a Secret that the [CamundaPlatformConfig](camundaplatformconfig.md) names is applied, or no such Secret exists. | Nothing. |
 | `Ready` | `Healthy` | Every process that the cluster needs is healthy. | Nothing. |
-| `Ready` | `Creating` / `Updating` / `Scaling` | A process rolls out or scales. The reason stays while a replica does not become ready, until the [grace period](../architecture.md#status-conventions) of 15 minutes ends. | Wait. If the reason stays, read the pods and events of the process that the message names. |
+| `Ready` | `Creating` / `Updating` / `Scaling` | A process rolls out or scales. The reason stays while a replica does not become ready, until the [grace period](../architecture.md#status-conventions) ends, 15 minutes by default. | Wait. If the reason stays, read the pods and events of the process that the message names. |
 | `Ready` | `Failing` | A process has replicas that do not become ready. | Read the pods of the named process. |
 | `Ready` | `Degraded` | A process is still not ready at the end of its grace period, but some of its replicas are ready. | Read the pods and events of the process that the message names. |
 | `Ready` | `Down` | A process is still not ready at the end of its grace period, and none of its replicas is ready. | Read the pods and events of the process that the message names. |

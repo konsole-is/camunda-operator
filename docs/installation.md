@@ -101,7 +101,7 @@ With `crd.enable=false` you own the CRD lifecycle. Apply the new `crds.yaml` bef
 
 ## Grace periods
 
-A workload that is not ready reports `Creating`, `Updating`, `Scaling`, or `Failing` until its grace period ends. After that, its condition reports `Degraded` or `Down`. The grace period starts when the condition changes to `False`. [Status conventions](architecture.md#status-conventions) describes the reasons.
+A workload that is not ready reports `Creating`, `Updating`, `Scaling`, or `Failing` until its grace period ends. After that, its condition reports `Degraded` or `Down`. The grace period starts when the condition changes from `True` to `False`, or when the workload begins to roll out after a wait. [Status conventions](architecture.md#status-conventions) describes the reasons and the start of the grace period.
 
 | Flag | Environment variable | Default | Applies to |
 | --- | --- | --- | --- |

@@ -368,7 +368,7 @@ status:
 | `ClusterReady` | `Creating`, `Updating` | CloudNativePG is starting or changing the instances. | Wait. |
 | `ClusterReady` | `Healthy` | Every instance is ready. | Nothing. |
 | `ClusterReady` | `Failing` | CloudNativePG reports a phase that it does not leave on its own. The message names the phase. | Read the CloudNativePG cluster for the cause. |
-| `ClusterReady` | `Degraded` | The instances are still not all ready at the end of the [grace period](../architecture.md#status-conventions) of 30 minutes, but at least one instance is ready. The primary serves. | Read the CloudNativePG cluster and the pods of the instances that are not ready. |
+| `ClusterReady` | `Degraded` | The instances are still not all ready at the end of the [grace period](../architecture.md#status-conventions), 30 minutes by default, but at least one instance is ready. The primary serves. | Read the CloudNativePG cluster and the pods of the instances that are not ready. |
 | `ClusterReady` | `Down` | No instance is ready at the end of the grace period. | Read the CloudNativePG cluster and the pods of its instances for the cause. |
 | `ClusterReady` | `Suspending`, `Suspended` | `spec.suspend` is true. | Nothing. |
 | `ClusterReady` | `ClusterTaken` | A CloudNativePG cluster of the server name belongs to another owner. | See [Name collisions](#name-collisions). |
