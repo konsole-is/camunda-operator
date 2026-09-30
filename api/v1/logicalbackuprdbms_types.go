@@ -138,8 +138,10 @@ type LogicalBackupRDBMSStatus struct {
 	// +optional
 	FirstFailedAt *metav1.Time `json:"firstFailedAt,omitempty"`
 	// BucketRef records the ObjectStorageConfig through which the Job wrote
-	// the dump. On deletion, the operator removes the object from that
-	// bucket, also when the backupStorageRef of the cluster changed.
+	// the dump. On deletion, the operator uses this contract, not the
+	// current backupStorageRef of the cluster. It removes the object only
+	// while the cluster, this contract, and its credentials Secret exist,
+	// and the contract points to the same place.
 	// +optional
 	BucketRef string `json:"bucketRef,omitempty"`
 	// BucketLocation records where the Job wrote the object: the storage

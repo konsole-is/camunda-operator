@@ -319,11 +319,11 @@ type ElasticsearchClusterStatus struct {
 	SnapshotRepository string `json:"snapshotRepository,omitempty"`
 	// Conditions represent the current state. Ready holds the reason of a
 	// failed pre-check (InvalidReference, MissingSecret, ECKNotInstalled).
-	// Otherwise it follows the component conditions and, when
-	// spec.snapshotStorageRef is set, SnapshotRepositoryReady. The
+	// Otherwise it follows the component conditions and, when the cluster or
+	// its preset sets snapshotStorageRef, SnapshotRepositoryReady. The
 	// per-component conditions (CredentialsReady, KeystoreReady,
-	// ElasticsearchReady, StorageContractReady) also appear here. MetricsReady reports the
-	// exporter and never affects Ready.
+	// ElasticsearchReady, StorageContractReady) also appear here.
+	// MetricsReady reports the exporter and never affects Ready.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
