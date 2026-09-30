@@ -751,9 +751,64 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(k8sClient.Get(ctx, roleKey, role)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, role)).To(Succeed())
 
-		expectGone(client.ObjectKey{
-			Namespace: server.Namespace, Name: "camunda-barman-cloud-postgres",
-		}, &rbacv1.RoleBinding{})
+		bindingKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-barman-cloud-postgres"}
+		expectGone(bindingKey, &rbacv1.RoleBinding{})
+
+		By("binding no Role of that name that another owner creates")
+		other := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: server.Namespace}}
+		Expect(k8sClient.Create(ctx, other)).To(Succeed())
+		Expect(k8sClient.Create(ctx, &rbacv1.Role{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "camunda-barman-cloud",
+				Namespace: server.Namespace,
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: "v1",
+					Kind:       "ConfigMap",
+					Name:       other.Name,
+					UID:        other.UID,
+					Controller: new(true),
+				}},
+			},
+		})).To(Succeed())
+		Consistently(func() bool {
+			return apierrors.IsNotFound(k8sClient.Get(ctx, bindingKey, &rbacv1.RoleBinding{}))
+		}, 3*time.Second, interval).Should(BeTrue())
+	})
+
+	It("leaves a binding of its name that another owner controls alone", func() {
+		server, _ := archivingServer()
+		grantArchivePlugin(server, "camunda")
+		expectArchivePluginBound(server, "camunda")
+
+		other := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: server.Namespace}}
+		Expect(k8sClient.Create(ctx, other)).To(Succeed())
+		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-barman-cloud-postgres"}
+		Eventually(func(g Gomega) {
+			var binding rbacv1.RoleBinding
+			g.Expect(k8sClient.Get(ctx, key, &binding)).To(Succeed())
+			binding.OwnerReferences = []metav1.OwnerReference{{
+				APIVersion: "v1",
+				Kind:       "ConfigMap",
+				Name:       other.Name,
+				UID:        other.UID,
+				Controller: new(true),
+			}}
+			binding.Subjects = []rbacv1.Subject{{
+				Kind: rbacv1.ServiceAccountKind, Name: "someone", Namespace: server.Namespace,
+			}}
+			g.Expect(k8sClient.Update(ctx, &binding)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		blocked := expectConditionReason(
+			server, v1.ConditionClusterReady, metav1.ConditionFalse, string(component.GuardBlocked),
+		)
+		Expect(blocked.Message).To(ContainSubstring("controlled by ConfigMap holder"))
+
+		Consistently(func(g Gomega) {
+			var binding rbacv1.RoleBinding
+			g.Expect(k8sClient.Get(ctx, key, &binding)).To(Succeed())
+			g.Expect(binding.Subjects).To(ConsistOf(HaveField("Name", "someone")))
+		}, 3*time.Second, interval).Should(Succeed())
 	})
 
 	It("withdraws the binding while another owner controls its ServiceAccount", func() {
@@ -2435,19 +2490,40 @@ func recoveryWrite() (*v1.DatabaseServer, resolvedSpec, v1.ArchiveRecord) {
 // recoveryWriteTarget is the point the recovery of recoveryWrite asks for.
 const recoveryWriteTarget = "2026-08-20T14:30:00Z"
 
+// recoveryWriteAccount is the ServiceAccount of recoveryWrite, carrying the
+// identity of its bucket.
+func recoveryWriteAccount(roleARN string) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{
+		Name:        "camunda-postgres",
+		Namespace:   "camunda-ns",
+		Annotations: map[string]string{v1.IRSARoleARNAnnotation: roleARN},
+	}}
+}
+
 // recoveryWriter is the reconciler that the write cases run, holding the
-// objects the write meets.
+// objects the write meets and the ServiceAccount of recoveryWrite.
 func recoveryWriter(t *testing.T, objects ...client.Object) *DatabaseServerReconciler {
 	t.Helper()
 
+	return recoveryWriterWith(t, recoveryWriteAccount("arn:aws:iam::123456789012:role/camunda"), objects...)
+}
+
+// recoveryWriterWith is recoveryWriter with the given ServiceAccount.
+func recoveryWriterWith(
+	t *testing.T,
+	account *corev1.ServiceAccount,
+	objects ...client.Object,
+) *DatabaseServerReconciler {
+	t.Helper()
+
 	s := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(s))
 	require.NoError(t, v1.AddToScheme(s))
 	require.NoError(t, cnpgv1.AddToScheme(s))
 
-	return &DatabaseServerReconciler{
-		Client: fake.NewClientBuilder().WithScheme(s).WithObjects(objects...).Build(),
-		Scheme: s,
-	}
+	c := fake.NewClientBuilder().WithScheme(s).WithObjects(append(objects, account)...).Build()
+
+	return &DatabaseServerReconciler{Client: c, APIReader: c, Scheme: s}
 }
 
 // The name of the recovery cluster is derived, so it is a name anybody can
@@ -2501,4 +2577,22 @@ func TestCreateRecoveryClusterBuildsUnderAFreeName(t *testing.T) {
 	require.NotNil(t, read.Spec.Bootstrap)
 	require.NotNil(t, read.Spec.Bootstrap.Recovery)
 	assert.Equal(t, recoveryWriteTarget, read.Spec.Bootstrap.Recovery.RecoveryTarget.TargetTime)
+}
+
+// The pods of the recovery cluster take the identity that the ServiceAccount
+// carries when they start. An account that still carries an older identity
+// would put them on it.
+func TestCreateRecoveryClusterWaitsForTheIdentityOfTheServiceAccount(t *testing.T) {
+	t.Parallel()
+
+	server, resolved, source := recoveryWrite()
+	reconciler := recoveryWriterWith(t, recoveryWriteAccount("arn:aws:iam::123456789012:role/old"))
+
+	require.NoError(t, reconciler.createRecoveryCluster(
+		t.Context(), server, resolved, source, recoveryWriteTarget,
+	))
+
+	key := client.ObjectKey{Namespace: server.Namespace, Name: server.Status.Recovery.Cluster}
+	err := reconciler.Get(t.Context(), key, &cnpgv1.Cluster{})
+	assert.True(t, apierrors.IsNotFound(err), "no cluster before the account carries the identity")
 }

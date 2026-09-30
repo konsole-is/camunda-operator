@@ -211,6 +211,23 @@ func serviceAccount(
 	}
 }
 
+// ServiceAccountCarries reports whether account carries every annotation that
+// the cluster component renders on it for server.
+func ServiceAccountCarries(
+	account *corev1.ServiceAccount,
+	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
+	archive *ArchiveStorage,
+) bool {
+	for key, value := range serviceAccount(server, merged, archive).Annotations {
+		if account.Annotations[key] != value {
+			return false
+		}
+	}
+
+	return true
+}
+
 // ServiceAccountName returns the name of the ServiceAccount of the instance
 // pods. Every CloudNativePG cluster of the server runs under it, the one a
 // rollback builds too, so a workload identity that names it keeps working

@@ -845,6 +845,9 @@ func (r *DatabaseServerReconciler) abandonRecovery(
 // A name that another object already holds is not an error of this look. The
 // next look reads that object, and the ownership test in advanceRecovery
 // decides what it is.
+//
+// It creates nothing, and returns no error, until the ServiceAccount of the
+// server carries the annotations the cluster needs.
 func (r *DatabaseServerReconciler) createRecoveryCluster(
 	ctx context.Context,
 	server *v1.DatabaseServer,
@@ -852,6 +855,22 @@ func (r *DatabaseServerReconciler) createRecoveryCluster(
 	source v1.ArchiveRecord,
 	target string,
 ) error {
+	// The pods take the identity that the account carries when they start,
+	// and the cluster component applies the account after this step. The
+	// watch on the account brings the create back once it is there.
+	var account corev1.ServiceAccount
+	key := types.NamespacedName{Namespace: server.Namespace, Name: components.ServiceAccountName(server)}
+	if err := r.APIReader.Get(ctx, key, &account); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("reading the ServiceAccount %s: %w", key, err)
+	}
+	if !components.ServiceAccountCarries(&account, server, resolved.merged, resolved.archive) {
+		return nil
+	}
+
 	recovered, err := components.RecoveryCluster(
 		server, resolved.merged, resolved.archive, resolved.archiveTaken,
 		resolved.platform, source, target,

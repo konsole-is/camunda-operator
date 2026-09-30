@@ -331,7 +331,7 @@ The server never writes on an object that another owner holds under a name that 
 - A `DatabaseServerConfig` of the name in `spec.databaseServerConfig` that this server did not publish: `ContractReady` reports `ContractTaken`. The server publishes nothing, and the contract keeps its endpoint and credentials.
 - A Barman Cloud `ObjectStore` of the server name that another owner controls: `ArchiveReady` reports `ArchiveTaken`. The server writes no archive, its contract declares `pitr.enabled: false`, and it refuses rollbacks.
 - A ServiceAccount of the name `my-db-postgres` that another owner controls: `ClusterReady` reports `Blocked`. The server does not write its CloudNativePG cluster, removes its bindings to the Role of the Barman Cloud plugin, and refuses rollbacks.
-- A RoleBinding of the name `my-db-barman-cloud-postgres` that another owner controls: `ClusterReady` reports `Blocked`, and the server does not write its CloudNativePG cluster.
+- A RoleBinding of the name `<cluster>-barman-cloud-postgres` that another owner controls: `ClusterReady` reports `Blocked`, and the server does not write its CloudNativePG cluster. The name is `my-db-barman-cloud-postgres`, or `my-db-r1-barman-cloud-postgres` after the first rollback.
 - The archive Secret, the base backup schedule, or the `PodMonitor` under another owner: `ArchiveReady` or `MonitoringReady` reports `False`.
 
 Remove the other object, or give this server a name of its own. The server then continues with the archive history that it had. While the `ObjectStore` name was held, the server wrote no archive, so no restore can reach a point in that time.
@@ -400,7 +400,7 @@ status:
 | `ClusterReady` | `Healthy` | Every instance is ready. | Nothing. |
 | `ClusterReady` | `Failing` | CloudNativePG reports a phase that it does not leave on its own. The message names the phase. | Read the CloudNativePG cluster for the cause. |
 | `ClusterReady` | `Suspending`, `Suspended` | `spec.suspend` is true. | Nothing. |
-| `ClusterReady` | `Blocked` | The ServiceAccount `my-db-postgres` or the RoleBinding `my-db-barman-cloud-postgres` belongs to another owner, or the cluster that a rollback moved to is gone. The message says which. | See [Name collisions](#name-collisions), or [Recovery](#recovery). |
+| `ClusterReady` | `Blocked` | The ServiceAccount `my-db-postgres` or a RoleBinding `<cluster>-barman-cloud-postgres` belongs to another owner, or the cluster that a rollback moved to is gone. The message says which. | See [Name collisions](#name-collisions), or [Recovery](#recovery). |
 | `ClusterReady` | `ClusterTaken` | A CloudNativePG cluster of the server name belongs to another owner. | See [Name collisions](#name-collisions). |
 | `ArchiveReady` | `Disabled` | The server has no `archive` block. | Nothing. |
 | `ArchiveReady` | `Blocked` | The archive holds no base backup yet. | Wait. If it never completes, read the CloudNativePG `Backup` for the cause. |

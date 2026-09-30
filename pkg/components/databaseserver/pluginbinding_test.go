@@ -21,7 +21,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 // The Barman Cloud plugin binds its Role to a ServiceAccount named after the
@@ -90,4 +94,33 @@ func TestArchivePluginRoleCluster(t *testing.T) {
 
 	_, ok = ArchivePluginBindingCluster("my-cluster-db-barman-cloud")
 	assert.False(t, ok)
+}
+
+// A rollback builds its cluster outside the cluster component, and its pods
+// take the identity that the ServiceAccount carries when they start.
+func TestServiceAccountCarries(t *testing.T) {
+	t.Parallel()
+
+	server, preset, release := goldenMinimalDatabaseServer()
+	server.Spec.Archive = archiveSpec()
+	merged := MergeSpec(server.Spec, preset, release)
+	archive := &ArchiveStorage{
+		Config: archiveBucket(v1.S3StorageAuth{
+			Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
+			WorkloadIdentity: &v1.S3WorkloadIdentity{RoleARN: "arn:aws:iam::123456789012:role/new"},
+		}),
+	}
+
+	stale := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{
+		Annotations: map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/old"},
+	}}
+	assert.False(t, ServiceAccountCarries(stale, server, merged, archive))
+
+	current := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{
+		Annotations: map[string]string{
+			v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/new",
+			"added-by-someone":       "else",
+		},
+	}}
+	assert.True(t, ServiceAccountCarries(current, server, merged, archive))
 }
