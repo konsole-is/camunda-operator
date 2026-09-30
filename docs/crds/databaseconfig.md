@@ -87,7 +87,7 @@ spec:
     usernameKey: username
     # string. Optional, default: password. Key in the Secret that holds the password.
     passwordKey: password
-  # object. Optional. Separate user with dump and restore privileges. A LogicalBackupRDBMS needs it.
+  # object. Optional. Separate user with dump privileges. A LogicalBackupRDBMS needs it. A restore uses credentialsSecretRef.
   backupCredentialsSecretRef:
     # string. Required. Name of the Secret that holds the backup credentials, in the namespace of this contract.
     name: my-camunda-db-backup-credentials
