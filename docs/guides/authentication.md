@@ -229,20 +229,52 @@ spec:
 The block names members of the `admin` role only. The operator has no field for other roles, groups, or authorizations. You can manage them in two ways:
 
 - In the Admin web application of the cluster, as an administrator.
-- With the `CAMUNDA_SECURITY_INITIALIZATION_*` environment variables of the orchestration cluster, through `extraEnv` on the cluster or the preset. The cluster creates each entity once, at first start, and does not update it when the value changes. See [Identity as Code](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/configuration/admin-identity-as-code/). For example, to give a user the `rpa` role:
+- With the `CAMUNDA_SECURITY_INITIALIZATION_*` environment variables of the orchestration cluster, through `extraEnv` on the cluster or the preset. The cluster creates each entity once, at first start, and does not update it when the value changes. See [Identity as Code](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/configuration/admin-identity-as-code/).
 
-    ```yaml
-    apiVersion: core.camunda.io/v1
-    kind: CamundaCluster
-    metadata:
-      name: my-cluster
-      namespace: my-cluster-ns
-    spec:
-      extraEnv:
-        - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_RPA_USERS_0
-          value: "grace@example.com"
-      # ... the rest of your cluster
-    ```
+### Give a user a default role
+
+Camunda creates the [default roles](https://docs.camunda.io/docs/components/concepts/access-control/authorizations/#default-roles). To make a user a member of one, put the role ID in the name of a `CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_<role>_USERS_<n>` variable. Keep the dash of a role ID such as `readonly-admin`:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  extraEnv:
+    - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_READONLY-ADMIN_USERS_0
+      value: "grace@example.com"
+  # ... the rest of your cluster
+```
+
+Use the same form for `app-integrations` and `task-worker`: `..._DEFAULTROLES_TASK-WORKER_USERS_0`. To add more members, count `<n>` up from `0` without a gap. Camunda does not start when an index is missing. To add a group, a client, or a mapping rule, write `GROUPS`, `CLIENTS`, or `MAPPINGRULES` in place of `USERS`, with its ID as the value.
+
+> **Caution:** Do not write an underscore in place of the dash. Camunda reads each underscore as a level of the key, so `..._DEFAULTROLES_READONLY_ADMIN_USERS_0` stops the whole initialization. The cluster starts, but it creates none of the configured users and role members, and no member of `spec.auth.admin` either. The operator refuses such an entry.
+
+A key that matches no role ID, such as `READONLYADMIN`, has no effect. The cluster starts and logs no error, and the user gets no role. To confirm a membership, open the role in the Admin web application, or call `POST /v2/roles/readonly-admin/users/search` as an administrator.
+
+The operator refuses each `extraEnv` entry of the brokers under `CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_` that Camunda cannot read as `<role>_<type>_<n>` or `<role>_<type>`. The type must be `USERS`, `CLIENTS`, `GROUPS`, `ROLES`, or `MAPPINGRULES`. `MAPPING_RULES` and `MAPPING-RULES` also work. Camunda stops the identity initialization on any other form, as the caution above says. The entries of the brokers are the top-level entries, the `zeebe` entries, and the entries of each block that runs embedded on the brokers. Some Camunda pages write `MAPPINGS` as the type. The operator refuses it too, so write `MAPPINGRULES`.
+
+When the operator refuses an entry, the cluster reports `Ready: InvalidReference`. A running cluster keeps the configuration that it runs:
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: InvalidReference
+      message: >-
+        invalid effective spec: extraEnv entry CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_READONLY_ADMIN_USERS_0
+        is not a default role membership that Camunda can read. On the brokers, Camunda stops the identity
+        initialization on this entry and creates no configured user and no role member. Write
+        CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_<role>_<type>_<n>, with USERS, CLIENTS, GROUPS, ROLES,
+        or MAPPINGRULES as the type. Keep the dash of a role ID, as in READONLY-ADMIN
+```
+
+The operator does not read the keys of an `extraEnvFrom` source. It cannot refuse such a name in a ConfigMap or a Secret, so write these variables in `extraEnv`.
+
+The operator does not check the indexes. The operator itself writes the members of `spec.auth.admin` from index `0` of the `admin` role. Under OIDC, it can also write the first client of the `connectors` role. An `extraEnv` entry with the same name replaces the entry of the operator. List administrators in `spec.auth.admin`, not in `extraEnv`.
 
 ### Per-cluster client
 
@@ -260,16 +292,19 @@ spec:
     clientId: "camunda-my-cluster"
     # Optional. Defaults to the clientId.
     audience: "camunda-my-cluster"
+    # Required when clientId is set.
     clientSecretRef:
       name: my-cluster-oidc
       key: client-secret
 ```
 
-Each field overrides the default of the platform config on its own. The Secret of `clientSecretRef` is in the namespace of the cluster. The issuer, the endpoints, and the claim names always come from the platform config.
+A client id brings its own client. When the cluster sets `clientId`, the audience and the client secret come from `spec.auth` of the cluster only. The cluster takes neither of them from its preset or from the platform config. The audience is then `audience`, or else the new client id. The API server rejects a `clientId` without a `clientSecretRef`.
 
-When the cluster or its preset sets `clientId`, the audience of the platform config no longer applies. The audience is then the `audience` of the cluster or the preset, or else the new client id. If your new client uses another audience, set `audience` next to `clientId`.
+The Secret of `clientSecretRef` is in the namespace of the cluster. The issuer, the endpoints, and the claim names always come from the platform config.
 
-A `CamundaClusterPreset` can carry the same `spec.auth` fields as a baseline for many clusters. The cluster overrides `clientId`, `audience`, and `clientSecretRef` of the preset one by one. The `admin` block never merges: when the cluster sets `spec.auth.admin`, it replaces the whole block of the preset.
+Without `clientId`, the cluster keeps the client id of its preset. When the preset sets no `clientId` either, the cluster keeps the client id of the platform config. The audience and the client secret belong to that client id. An `audience` or a `clientSecretRef` on the cluster overrides one of them on its own, and so does one on a preset without `clientId`. When no layer sets an audience for that client id, the audience is the client id.
+
+A `CamundaClusterPreset` can carry the same `spec.auth` fields as a baseline for many clusters. The same rule applies to it. A preset that sets `clientId` must set `clientSecretRef` too, and its clusters do not get the audience or the secret of the platform config. The `admin` block never merges: when the cluster sets `spec.auth.admin`, it replaces the whole block of the preset.
 
 The operator uses `spec.auth.basic` only under basic authentication, and every other field of `spec.auth` only under OIDC. The API server accepts both on either method.
 
@@ -387,7 +422,7 @@ The identity provider has one confidential client `camunda`. Its access tokens c
               claimValue: "camunda-admins"
     ```
 
-    The audience of this cluster is `camunda-payments`, because neither the cluster nor the preset sets `audience`. The connectors runtime of this cluster signs in as `camunda-payments` and gets the `connectors` role from the operator.
+    The audience of this cluster is `camunda-payments`, because the cluster sets `clientId` and no `audience`. The connectors runtime of this cluster signs in as `camunda-payments` and gets the `connectors` role from the operator.
 
 ## Where settings live
 
@@ -396,7 +431,7 @@ The identity provider has one confidential client `camunda`. Its access tokens c
 | Authentication method | `CamundaPlatformConfig` `spec.auth.method` | Only the platform config sets it |
 | Issuer URL and explicit endpoints | `CamundaPlatformConfig` `spec.auth.oidc.issuerUrl`, `jwksUrl`, `tokenUrl`, `authUrl` | Only the platform config sets them |
 | `usernameClaim`, `clientIdClaim` | `CamundaPlatformConfig` `spec.auth.oidc` | Only the platform config sets them |
-| Client id, audience, client secret | `CamundaPlatformConfig` `spec.auth.oidc`, then `CamundaClusterPreset` `spec.cluster.auth`, then `CamundaCluster` `spec.auth` | The cluster, then the preset, then the platform config, field by field |
+| Client id, audience, client secret | `CamundaPlatformConfig` `spec.auth.oidc`, then `CamundaClusterPreset` `spec.cluster.auth`, then `CamundaCluster` `spec.auth` | The first of the cluster, the preset, and the platform config that sets `clientId` gives the client id. The audience and the client secret come from that layer and the layers that override it, field by field |
 | Administrators under OIDC | `CamundaClusterPreset` `spec.cluster.auth.admin`, then `CamundaCluster` `spec.auth.admin` | The cluster replaces the whole block of the preset |
 | Redirect URI | `CamundaCluster` `spec.externalUrl` | Only the cluster sets it |
 | Admin email and password rotation under basic | `CamundaClusterPreset` `spec.cluster.auth.basic`, then `CamundaCluster` `spec.auth.basic` | The cluster replaces the whole block of the preset |

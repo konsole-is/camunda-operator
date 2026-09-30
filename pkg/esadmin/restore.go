@@ -17,6 +17,7 @@ limitations under the License.
 package esadmin
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/konsole-is/camunda-operator/pkg/adminhttp"
@@ -40,21 +42,31 @@ const (
 	shardUnassigned   = "UNASSIGNED"
 )
 
-var restoredReasons = map[string]bool{
-	"NEW_INDEX_RESTORED":      true,
-	"EXISTING_INDEX_RESTORED": true,
-}
+// snapshotSource is the recovery source type of a primary that a restore
+// brings back. A primary keeps it until its first start, also through a
+// failed recovery.
+const snapshotSource = "SNAPSHOT"
 
-// routingFilter keeps the fields that shardPending reads. The unfiltered
-// routing table of a large cluster passes the 1 MiB that the client reads.
-const routingFilter = "routing_table.indices.*.shards.*.state," +
-	"routing_table.indices.*.shards.*.primary," +
-	"routing_table.indices.*.shards.*.unassigned_info.reason," +
-	"routing_table.indices.*.shards.*.unassigned_info.allocation_status"
+// The filter_path of each read keeps the fields that it uses. The unfiltered
+// answer grows with the size of the cluster and can pass the 1 MiB that the
+// client reads.
+const (
+	// resolveFilter keeps one setting that every index has, so that each
+	// index keeps its entry.
+	resolveFilter  = "*.settings.index.uuid"
+	recoveryFilter = "*.shards.stage"
+	routingFilter  = "routing_table.indices.*.shards.*.state," +
+		"routing_table.indices.*.shards.*.primary," +
+		"routing_table.indices.*.shards.*.recovery_source.type," +
+		"routing_table.indices.*.shards.*.unassigned_info.reason," +
+		"routing_table.indices.*.shards.*.unassigned_info.allocation_status"
+)
 
 // waitingAllocations are the allocation statuses of an unassigned shard that a
 // node can still take.
 var waitingAllocations = map[string]bool{
+	// deciders_no is not here: Elasticsearch fails the restore of a primary
+	// for good once the allocation deciders refuse it.
 	"deciders_throttled":  true,
 	"fetching_shard_data": true,
 	"delayed_allocation":  true,
@@ -68,7 +80,33 @@ type RestoreState string
 const (
 	RestoreInProgress RestoreState = "IN_PROGRESS"
 	RestoreDone       RestoreState = "DONE"
+	// RestoreStranded is a restore that nothing recovers any more, with a
+	// restored primary that no node takes. The index of that primary stays
+	// red until someone changes the cluster.
+	RestoreStranded RestoreState = "STRANDED"
 )
+
+// Progress is the answer of RestoreProgress.
+type Progress struct {
+	// State is RestoreInProgress, RestoreStranded, or RestoreDone.
+	State RestoreState
+	// Stranded names each restored primary that no node takes, sorted by index
+	// and shard. It is empty unless State is RestoreStranded.
+	Stranded []StrandedShard
+}
+
+// StrandedShard is a restored primary that no node takes.
+type StrandedShard struct {
+	// Index is the name of the restored index that holds the primary.
+	Index string
+	// Shard is the shard number.
+	Shard int
+	// Reason is why the shard is unassigned, for example NEW_INDEX_RESTORED or
+	// ALLOCATION_FAILED.
+	Reason string
+	// AllocationStatus is the last allocation status, for example deciders_no.
+	AllocationStatus string
+}
 
 // ResolveIndices returns the concrete index names that patterns match,
 // sorted, or nothing when they match no index. An empty pattern list is
@@ -86,14 +124,13 @@ func (c *Client) ResolveIndices(ctx context.Context, patterns []string) ([]strin
 	payload, _, err := c.api.Do(ctx, adminhttp.Request{
 		Method: http.MethodGet,
 		Path: "/" + indexTarget(patterns) +
-			"?ignore_unavailable=true&allow_no_indices=true&expand_wildcards=open,closed",
+			"?ignore_unavailable=true&allow_no_indices=true&expand_wildcards=open,closed&filter_path=" + resolveFilter,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// The answer is one entry per index, keyed by name. Only the names are
-	// read, so the settings and the mappings of the entry stay raw.
+	// The answer is one entry per index, keyed by name.
 	var response map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &response); err != nil {
 		return nil, fmt.Errorf("decoding index list: %w", err)
@@ -231,44 +268,37 @@ func (c *Client) RestoreSnapshot(ctx context.Context, repo, name string, indices
 	return err
 }
 
-// RestoreProgress reports whether a shard of the indices that patterns match
-// still recovers or has yet to start. It is RestoreInProgress while one does,
-// and RestoreDone when none does.
+// RestoreProgress reports how far the restore of the indices that patterns
+// match has come. It is RestoreInProgress while a shard of them recovers or
+// has yet to start, RestoreStranded when none does and a restored primary
+// gets no node, and RestoreDone otherwise.
 //
-// A shard counts when it has a recovery that is not DONE, whatever the
-// recovery type, or when it is INITIALIZING. A primary counts while it is
-// UNASSIGNED and waits for the allocation of its restore. An unassigned
-// replica does not count, and neither does a primary that Elasticsearch
-// failed to allocate or that no node will take: no recovery comes for them
-// without a change to the cluster.
+// A shard counts as in progress when it has a recovery that is not DONE,
+// whatever the recovery type, or when it is INITIALIZING. A primary that
+// recovers from a snapshot counts while it is UNASSIGNED and a node can still
+// take it, also while it waits for the retry of a failed recovery. An
+// unassigned replica never counts: the restore does not wait for it, and it
+// does not strand the restore.
 //
 // An empty pattern list is RestoreDone and sends no request, because an empty
 // target asks about every index in the cluster.
-func (c *Client) RestoreProgress(ctx context.Context, patterns []string) (RestoreState, error) {
+func (c *Client) RestoreProgress(ctx context.Context, patterns []string) (Progress, error) {
 	if len(patterns) == 0 {
-		return RestoreDone, nil
+		return Progress{State: RestoreDone}, nil
 	}
 
 	recovering, err := c.shardRecovering(ctx, patterns)
 	if err != nil {
-		return "", err
+		return Progress{}, err
 	}
 	if recovering {
-		return RestoreInProgress, nil
+		return Progress{State: RestoreInProgress}, nil
 	}
 
 	// A shard of a restored index can be initializing before its recovery is
 	// registered, and a primary can wait for allocation behind the
 	// concurrent recoveries limit. Neither has a recovery entry yet.
-	pending, err := c.shardPending(ctx, patterns)
-	if err != nil {
-		return "", err
-	}
-	if pending {
-		return RestoreInProgress, nil
-	}
-
-	return RestoreDone, nil
+	return c.routingProgress(ctx, patterns)
 }
 
 // shardRecovering reports whether a shard of the target has a recovery that
@@ -281,7 +311,7 @@ func (c *Client) shardRecovering(ctx context.Context, patterns []string) (bool, 
 	payload, _, err := c.api.Do(ctx, adminhttp.Request{
 		Method: http.MethodGet,
 		Path: "/" + indexTarget(patterns) +
-			"/_recovery?active_only=true&ignore_unavailable=true&allow_no_indices=true",
+			"/_recovery?active_only=true&ignore_unavailable=true&allow_no_indices=true&filter_path=" + recoveryFilter,
 	})
 	if err != nil {
 		return false, err
@@ -307,17 +337,15 @@ func (c *Client) shardRecovering(ctx context.Context, patterns []string) (bool, 
 	return false, nil
 }
 
-// shardPending reports whether the routing table holds a shard of the target
-// that is INITIALIZING, or a primary that is UNASSIGNED since its restore and
-// that a node can still take.
-func (c *Client) shardPending(ctx context.Context, patterns []string) (bool, error) {
+// routingProgress reads the progress of the target from the routing table.
+func (c *Client) routingProgress(ctx context.Context, patterns []string) (Progress, error) {
 	payload, _, err := c.api.Do(ctx, adminhttp.Request{
 		Method: http.MethodGet,
 		Path: "/_cluster/state/routing_table/" + indexTarget(patterns) +
 			"?ignore_unavailable=true&allow_no_indices=true&filter_path=" + routingFilter,
 	})
 	if err != nil {
-		return false, err
+		return Progress{}, err
 	}
 
 	var response struct {
@@ -326,6 +354,9 @@ func (c *Client) shardPending(ctx context.Context, patterns []string) (bool, err
 				Shards map[string][]struct {
 					State          string `json:"state"`
 					Primary        bool   `json:"primary"`
+					RecoverySource struct {
+						Type string `json:"type"`
+					} `json:"recovery_source"`
 					UnassignedInfo struct {
 						Reason           string `json:"reason"`
 						AllocationStatus string `json:"allocation_status"`
@@ -335,25 +366,44 @@ func (c *Client) shardPending(ctx context.Context, patterns []string) (bool, err
 		} `json:"routing_table"`
 	}
 	if err := json.Unmarshal(payload, &response); err != nil {
-		return false, fmt.Errorf("decoding routing table: %w", err)
+		return Progress{}, fmt.Errorf("decoding routing table: %w", err)
 	}
 
-	for _, index := range response.RoutingTable.Indices {
-		for _, copies := range index.Shards {
+	var stranded []StrandedShard
+	for name, index := range response.RoutingTable.Indices {
+		for id, copies := range index.Shards {
+			number, err := strconv.Atoi(id)
+			if err != nil {
+				return Progress{}, fmt.Errorf("decoding routing table: shard number %q of index %s: %w", id, name, err)
+			}
 			for _, shard := range copies {
 				if shard.State == shardInitializing {
-					return true, nil
+					return Progress{State: RestoreInProgress}, nil
 				}
-				if shard.Primary && shard.State == shardUnassigned &&
-					restoredReasons[shard.UnassignedInfo.Reason] &&
-					waitingAllocations[shard.UnassignedInfo.AllocationStatus] {
-					return true, nil
+				if !shard.Primary || shard.State != shardUnassigned || shard.RecoverySource.Type != snapshotSource {
+					continue
 				}
+				if waitingAllocations[shard.UnassignedInfo.AllocationStatus] {
+					return Progress{State: RestoreInProgress}, nil
+				}
+				stranded = append(stranded, StrandedShard{
+					Index:            name,
+					Shard:            number,
+					Reason:           shard.UnassignedInfo.Reason,
+					AllocationStatus: shard.UnassignedInfo.AllocationStatus,
+				})
 			}
 		}
 	}
+	if len(stranded) == 0 {
+		return Progress{State: RestoreDone}, nil
+	}
 
-	return false, nil
+	slices.SortFunc(stranded, func(a, b StrandedShard) int {
+		return cmp.Or(strings.Compare(a.Index, b.Index), cmp.Compare(a.Shard, b.Shard))
+	})
+
+	return Progress{State: RestoreStranded, Stranded: stranded}, nil
 }
 
 // indexTarget joins patterns into the multi-target path segment of an index

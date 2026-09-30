@@ -72,10 +72,10 @@ jobs:
             fi
           done
 
-      # Versions below are pinned to .tool-versions. Keep them in sync.
+      # kubebuilder installs the version of .tool-versions.
       - name: Install kubebuilder
         run: |
-          VERSION=4.13.1
+          VERSION=$(awk '$1 == "kubebuilder" { print $2 }' .tool-versions)
           OS=$(go env GOOS)
           ARCH=$(go env GOARCH)
           curl -fsSL -o kubebuilder \

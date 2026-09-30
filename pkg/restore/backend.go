@@ -55,8 +55,8 @@ type BackendCheck struct {
 type Backend struct {
 	// Key is the claim key of the backend.
 	Key string
-	// Contract is the DatabaseContract of a logical database, or empty for
-	// Elasticsearch.
+	// Contract is the contract that holds the address of the backend, see
+	// camundacluster.StorageContract.
 	Contract string
 }
 
@@ -81,8 +81,16 @@ func ResolveBackend(
 ) (Backend, *conditions.PreCheckFailure, error) {
 	if storage.Spec.Type != v1.SecondaryStorageTypeRDBMS {
 		key, failure := claimKey(storage, nil)
+		if failure != nil {
+			return Backend{}, failure, nil
+		}
+		contract := clustercomponents.StorageContract(clustercomponents.Storage{
+			Type:      storage.Spec.Type,
+			Namespace: storage.Namespace,
+			Name:      storage.Name,
+		})
 
-		return Backend{Key: key}, failure, nil
+		return Backend{Key: key, Contract: contract}, nil, nil
 	}
 	if storage.Spec.RDBMS == nil {
 		return Backend{}, logicalbackup.InvalidReference(
@@ -127,7 +135,7 @@ func DatabaseBackend(
 // DatabaseContract returns the contract of the logical database named
 // database behind the DatabaseServerConfig server. A writer registration that
 // names it holds the database at every address the contract moves to, see
-// RegisterDatabaseWriter.
+// RegisterWriter.
 func DatabaseContract(server types.NamespacedName, database string) string {
 	return clustercomponents.StorageContract(clustercomponents.Storage{
 		Type:  v1.SecondaryStorageTypeRDBMS,

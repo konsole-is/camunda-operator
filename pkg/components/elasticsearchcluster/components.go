@@ -35,6 +35,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/secret"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/serviceaccount"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 
@@ -73,6 +74,12 @@ const (
 	// A volumeClaimTemplate under this name overrides the default claim of
 	// ECK.
 	DataVolumeClaimName = "elasticsearch-data"
+	// RequestedStorageSizeAnnotation is the annotation of the ECK CR that
+	// carries the storageSize that the merged spec asks for. The claim keeps
+	// a larger size that is already there, so this is where the requested
+	// size is visible, and the controller records an ignored shrink only when
+	// it changes.
+	RequestedStorageSizeAnnotation = "camunda.io/requested-storage-size"
 	// username is the file-realm user that the operator provisions for
 	// Camunda.
 	username = "camunda"
@@ -240,11 +247,18 @@ func RolesSecretName(cluster *v1.ElasticsearchCluster) string {
 // preset-merged spec: the ServiceAccount of the pods (gated on
 // spec.serviceAccount) and the ECK Elasticsearch CR. spec.suspend suspends the
 // component, which deletes the ECK CR with its data volumes retained.
+//
+// requestedStorageSize is the storageSize that the merged spec asked for
+// before the controller raised it to a volume that is already there. The ECK
+// CR carries it in RequestedStorageSizeAnnotation, and carries no annotation
+// when it is nil.
+//
 // gracePeriod is how long the cluster may take to become ready before
 // ElasticsearchReady reports Degraded or Down. Zero keeps the progress reason.
 func ElasticsearchComponent(
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
+	requestedStorageSize *resource.Quantity,
 	storage *SnapshotStorage,
 	gracePeriod time.Duration,
 ) (*component.Component, error) {
@@ -253,7 +267,12 @@ func ElasticsearchComponent(
 		return nil, err
 	}
 
-	elasticsearch, err := eckelasticsearch.NewBuilder(elasticsearch(cluster, merged)).
+	baseline := elasticsearch(cluster, merged)
+	if requestedStorageSize != nil {
+		baseline.Annotations = map[string]string{RequestedStorageSizeAnnotation: requestedStorageSize.String()}
+	}
+
+	elasticsearch, err := eckelasticsearch.NewBuilder(baseline).
 		WithMutation(elasticsearchMutations(cluster, merged, storage)...).
 		Build()
 	if err != nil {

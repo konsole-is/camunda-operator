@@ -425,16 +425,20 @@ func StorageClaimKey(storage Storage) (string, error) {
 
 // StorageContract returns the contract that holds the address of the backend
 // that storage addresses, or the empty string when the chain names none. An
-// rdbms contract is the DatabaseServerConfig and the database name, so it stays
-// one value when the server moves to another address. See
-// storagewriter.Writer.Contract.
+// Elasticsearch contract is the SecondaryStorageConfig, and an rdbms contract
+// is the DatabaseServerConfig and the database name. Each stays one value when
+// the address moves. See storagewriter.Writer.Contract.
 func StorageContract(storage Storage) string {
-	if storage.Type != v1.SecondaryStorageTypeRDBMS || storage.RDBMS == nil || storage.RDBMS.Server.Name == "" {
+	switch {
+	case storage.Type == v1.SecondaryStorageTypeElasticsearch && storage.Name != "":
+		return fmt.Sprintf("%s|%s/%s", storage.Type, storage.Namespace, storage.Name)
+	case storage.Type == v1.SecondaryStorageTypeRDBMS && storage.RDBMS != nil && storage.RDBMS.Server.Name != "":
+		server := storage.RDBMS.Server
+
+		return fmt.Sprintf("%s|%s/%s/%s", storage.Type, server.Namespace, server.Name, storage.RDBMS.Database)
+	default:
 		return ""
 	}
-	server := storage.RDBMS.Server
-
-	return fmt.Sprintf("%s|%s/%s/%s", storage.Type, server.Namespace, server.Name, storage.RDBMS.Database)
 }
 
 // StorageClaimKeyFailure is the Ready failure that a contract earns when

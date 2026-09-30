@@ -34,7 +34,7 @@ graph LR
 | `CamundaRelease` | Every version of the platform, pinned images, the environment a version needs | The platform team | Once per rollout, for example `camunda-8-9-4` |
 | `CamundaCluster` | The references, the URL, the storage, and any override | The team that owns the cluster | Once per cluster |
 
-The platform config does not merge. Every cluster that references it gets the same values. The other three merge field by field: the preset first, then the release, then the cluster. The [merge rules](../crds/camundaclusterpreset.md#merge-rules) describe each field.
+The platform config does not merge. Every cluster that references it gets the same values. The other three merge in order: the preset first, then the release, then the cluster. The [merge rules](../crds/camundaclusterpreset.md#merge-rules) describe how each field merges.
 
 ## A cluster in a few lines
 
@@ -161,7 +161,7 @@ Three ready-to-apply presets are in [`config/example/presets`](https://github.co
 
 ## Override one field
 
-A cluster overrides a field of the preset by setting it. The other fields of the preset stay. A cluster that needs more brokers than `medium` gives, and nothing else:
+A cluster overrides a field of the preset by setting it. The other fields of the preset stay, except where the [merge rules](../crds/camundaclusterpreset.md#merge-rules) say otherwise, for example for `auth.clientId`. A cluster that needs more brokers than `medium` gives, and nothing else:
 
 ```yaml
 apiVersion: core.camunda.io/v1

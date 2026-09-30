@@ -115,6 +115,34 @@ var _ = Describe("LogicalBackupRDBMS schema", func() {
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, backup) })
 	})
 
+	// The rule is prefix-based, so names that the Job never sets, such as
+	// PGHOSTADDR, are refused too.
+	DescribeTable(
+		"rejects a backup extraEnv name under PG or UPLOAD_",
+		func(name string) {
+			backup := valid()
+			backup.Spec.Dump = &v1.DumpPodSpec{ExtraEnv: []corev1.EnvVar{
+				{Name: "TZ", Value: "UTC"},
+				{Name: name, Value: "x"},
+			}}
+			err := k8sClient.Create(ctx, backup)
+			Expect(err).To(MatchError(ContainSubstring("PG* or UPLOAD_*")))
+		},
+		Entry("PGHOSTADDR", "PGHOSTADDR"),
+		Entry("PGOPTIONS", "PGOPTIONS"),
+		Entry("UPLOAD_BUCKET", "UPLOAD_BUCKET"),
+	)
+
+	It("accepts a backup extraEnv name outside the reserved prefixes", func() {
+		backup := valid()
+		backup.Spec.Dump = &v1.DumpPodSpec{ExtraEnv: []corev1.EnvVar{
+			{Name: "MY_VAR", Value: "x"},
+			{Name: "XPG", Value: "x"},
+		}}
+		Expect(k8sClient.Create(ctx, backup)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, backup) })
+	})
+
 	It("requires the cluster name", func() {
 		backup := valid()
 		backup.Spec.ClusterRef.Name = ""

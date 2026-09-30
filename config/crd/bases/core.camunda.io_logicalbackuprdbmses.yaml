@@ -1040,6 +1040,10 @@ spec:
                       rule: '!has(self.storageClassName) || has(self.sizeLimit)'
                 type: object
                 x-kubernetes-validations:
+                - message: the extraEnv of a backup cannot name a PG* or UPLOAD_*
+                    variable
+                  rule: '!has(self.extraEnv) || self.extraEnv.all(e, !e.name.startsWith(''PG'')
+                    && !e.name.startsWith(''UPLOAD_''))'
                 - message: every extraEnvFrom source of a backup needs a prefix, and
                     one that cannot spell a PG* or UPLOAD_* name
                   rule: '!has(self.extraEnvFrom) || self.extraEnvFrom.all(s, has(s.prefix)

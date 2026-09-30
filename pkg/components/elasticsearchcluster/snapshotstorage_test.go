@@ -371,7 +371,8 @@ func elasticsearchOf(t *testing.T, storage *SnapshotStorage) *esv1.Elasticsearch
 	cluster, preset, release := goldenMinimalElasticsearchCluster()
 	cluster.Spec.SnapshotStorageRef = "bucket"
 
-	comp, err := ElasticsearchComponent(cluster, MergeSpec(cluster.Spec, preset, release), storage, 0)
+	merged := MergeSpec(cluster.Spec, preset, release)
+	comp, err := ElasticsearchComponent(cluster, merged, merged.StorageSize, storage, 0)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()

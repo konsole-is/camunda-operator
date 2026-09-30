@@ -165,7 +165,7 @@ func assertDatabaseServerGoldens(
 	scheme := goldenScheme(t)
 	base := filepath.Join("testdata", "golden", dir)
 
-	cluster, _, err := ClusterComponent(server, merged, archive, "", nil, "", 0)
+	cluster, _, err := ClusterComponent(server, merged, requestedOf(merged), archive, "", nil, "", 0)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "cluster.yaml"), cluster,
@@ -418,7 +418,7 @@ func TestSuspensionKeepsTheDeclaredState(t *testing.T) {
 		server.Spec.Suspend = suspend
 		merged := MergeSpec(server.Spec, preset, release)
 
-		clusterComp, _, err := ClusterComponent(server, merged, archive, "", nil, "", 0)
+		clusterComp, _, err := ClusterComponent(server, merged, requestedOf(merged), archive, "", nil, "", 0)
 		require.NoError(t, err)
 		contractComp, err := ContractComponent(server, merged, "", "", "")
 		require.NoError(t, err)
@@ -475,7 +475,7 @@ func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
 		"team":                       "platform",
 	}
 
-	comp, _, err := ClusterComponent(server, server.Spec, nil, "", nil, "", 0)
+	comp, _, err := ClusterComponent(server, server.Spec, RequestedStorage{}, nil, "", nil, "", 0)
 	require.NoError(t, err)
 
 	cluster := previewCluster(t, comp)
@@ -493,14 +493,14 @@ func TestClusterImageComesFromThePlatformConfig(t *testing.T) {
 	server, preset, release := goldenMinimalDatabaseServer()
 	merged := MergeSpec(server.Spec, preset, release)
 
-	comp, _, err := ClusterComponent(server, merged, nil, "", nil, "", 0)
+	comp, _, err := ClusterComponent(server, merged, RequestedStorage{}, nil, "", nil, "", 0)
 	require.NoError(t, err)
 	assert.Equal(t, "ghcr.io/cloudnative-pg/postgresql:17", previewCluster(t, comp).Spec.ImageName)
 
 	platform := &v1.CamundaPlatformConfigSpec{
 		Images: &v1.ImagesSpec{Postgres: "mirror.example.com/postgresql"},
 	}
-	comp, _, err = ClusterComponent(server, merged, nil, "", platform, "", 0)
+	comp, _, err = ClusterComponent(server, merged, RequestedStorage{}, nil, "", platform, "", 0)
 	require.NoError(t, err)
 	assert.Equal(t, "mirror.example.com/postgresql:17", previewCluster(t, comp).Spec.ImageName)
 }
@@ -548,4 +548,35 @@ func previewCluster(t *testing.T, comp *component.Component) *cnpgv1.Cluster {
 	require.Fail(t, fmt.Sprintf("no CloudNativePG cluster in %d rendered objects", len(objects)))
 
 	return nil
+}
+
+// requestedOf returns the sizes that merged asks for, as the controller passes
+// them for a server whose volumes are no larger.
+func requestedOf(merged v1.DatabaseServerSpec) RequestedStorage {
+	return RequestedStorage{Data: merged.StorageSize, WAL: merged.WALStorageSize}
+}
+
+// The cluster carries the sizes that the merged spec asks for, also when the
+// rendered volumes are larger, and the empty value when it asks for no
+// write-ahead log volume.
+func TestClusterCarriesTheRequestedSizes(t *testing.T) {
+	t.Parallel()
+
+	server, preset, release := goldenMinimalDatabaseServer()
+	merged := MergeSpec(server.Spec, preset, release)
+	merged.StorageSize = new(resource.MustParse("8Gi"))
+
+	comp, _, err := ClusterComponent(
+		server, merged, RequestedStorage{Data: new(resource.MustParse("1Gi"))}, nil, "", nil, "", 0,
+	)
+	require.NoError(t, err)
+	annotations := previewCluster(t, comp).Annotations
+	assert.Equal(t, "1Gi", annotations[RequestedStorageSizeAnnotation])
+	assert.Contains(t, annotations, RequestedWALStorageSizeAnnotation)
+	assert.Empty(t, annotations[RequestedWALStorageSizeAnnotation])
+
+	requested := RequestedStorage{Data: new(resource.MustParse("1Gi")), WAL: new(resource.MustParse("512Mi"))}
+	comp, _, err = ClusterComponent(server, merged, requested, nil, "", nil, "", 0)
+	require.NoError(t, err)
+	assert.Equal(t, "512Mi", previewCluster(t, comp).Annotations[RequestedWALStorageSizeAnnotation])
 }
