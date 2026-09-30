@@ -594,7 +594,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
 			g.Expect(writersSeenByAnotherCluster(backend, "")).NotTo(BeEmpty())
 		}, time.Second, interval).Should(Succeed())
-		expectFailed(pitr, v1.ReasonFailed)
+		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring("no DatabaseServerConfig can answer"))
 	})
 
 	It("keeps its database held when its cluster is deleted, until the server answers", func() {
