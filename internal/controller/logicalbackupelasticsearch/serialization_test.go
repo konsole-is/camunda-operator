@@ -165,6 +165,7 @@ func TestClaimClusterNamesTheHolderByItsKind(t *testing.T) {
 			assert.Contains(t, message, holder.Display()+" holds CamundaCluster ns/cc")
 			assert.NotContains(t, message, "backup "+tt.kind+"/")
 			assert.Contains(t, message, "Only one backup or restore of a cluster runs at a time")
+			assert.Contains(t, message, "so this backup starts when that operation no longer holds the cluster")
 		})
 	}
 }
