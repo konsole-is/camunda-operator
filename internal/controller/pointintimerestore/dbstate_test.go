@@ -198,6 +198,9 @@ func TestZoneFailure(t *testing.T) {
 			require.NotNil(t, failure)
 			assert.Equal(t, v1.ReasonPitrUnavailable, failure.Reason)
 			assert.Contains(t, failure.Message, tt.contains)
+			// The hold is a wait in Pending, so the restore goes on by itself.
+			assert.NotContains(t, failure.Message, "create the restore again")
+			assert.Contains(t, failure.Message, "Then the restore continues by itself")
 		})
 	}
 }

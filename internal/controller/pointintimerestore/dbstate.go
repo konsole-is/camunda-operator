@@ -452,7 +452,7 @@ func clockUnreadable(what string) *conditions.PreCheckFailure {
 		Message: fmt.Sprintf(
 			"%s. The database records the exporter position with the wall clock of the broker and no "+
 				"zone, so the operator can compare it with spec.timestamp only while the brokers run "+
-				"in UTC. Run the brokers in UTC, then create the restore again",
+				"in UTC. Run the brokers in UTC. Then the restore continues by itself",
 			what,
 		),
 	}
