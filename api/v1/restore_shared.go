@@ -26,8 +26,7 @@ import (
 const (
 	// ReasonClusterNotSuspended means that the target cluster started running
 	// again while the restore ran. A restore writes primary storage, so it
-	// waits until the cluster is suspended again. If the cluster stays
-	// running longer than the grace period, the restore fails.
+	// waits until the cluster is suspended again.
 	//
 	// A restore suspends its cluster itself before it starts, and removes
 	// that suspension when it completes. Thus this reason does not appear
