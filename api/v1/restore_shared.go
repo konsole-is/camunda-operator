@@ -33,9 +33,9 @@ const (
 	// there, and it unsuspends the cluster again when it completes.
 	ReasonClusterNotSuspended = "ClusterNotSuspended"
 	// ReasonClusterClaimed means that another backup or another restore holds
-	// the cluster. The restore waits in Pending until that holder reaches a
-	// terminal phase. Nothing bounds the wait, and the reason names no kind,
-	// because the holder can be either.
+	// the cluster. The restore waits in Pending until that holder no longer
+	// holds the cluster. Nothing bounds the wait, and the reason names no
+	// kind, because the holder can be either.
 	ReasonClusterClaimed = "ClusterClaimed"
 	// ReasonIncompatibleTarget means that the target cluster cannot hold the
 	// backup: the target is not the cluster the backup was taken from, the

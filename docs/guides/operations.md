@@ -315,7 +315,7 @@ status:
         LogicalBackupRDBMS/my-cluster-1748937221000 holds
         CamundaCluster my-cluster-ns/my-cluster. Only one backup or restore of
         a cluster runs at a time, so this restore starts when that operation
-        reaches a terminal phase
+        no longer holds the cluster
 ```
 
 Nothing limits this wait, and you do not act. A failed `LogicalRestoreElasticsearch` also keeps the cluster while its `status.recoveryHeld` is `true`.
