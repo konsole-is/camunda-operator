@@ -42,10 +42,10 @@ type LogicalRestoreRDBMSStatus struct {
 	// continues at this phase.
 	// +optional
 	Phase LogicalRestorePhase `json:"phase,omitempty"`
-	// BackupID is the Zeebe backup id that the restore reads. The operator
-	// records it when the restore starts. A backup that is deleted and
-	// created again with the same name has another id, and this restore does
-	// not read it. Later phases of the restore still read the backup
+	// BackupID is the id of the dump that the restore reads, as the backup
+	// records it. The operator records it when the restore starts. A backup
+	// that is created again later with the same name gets a new, time-based
+	// id. This restore then refuses it. Later phases of the restore still read the backup
 	// resource, so keep it until the restore completes.
 	// +optional
 	BackupID int64 `json:"backupId,omitempty"`

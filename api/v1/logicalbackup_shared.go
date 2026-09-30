@@ -21,7 +21,8 @@ import "k8s.io/apimachinery/pkg/api/resource"
 // LogicalBackupStorageSizes are the effective restore sizes of the
 // components that hold storage. The operator records them when a backup
 // starts, so that a restore can create volumes of the correct size. A value
-// that the operator cannot compute stays unset. The RDBMS kind never sets
+// that the operator cannot compute stays unset. An Elasticsearch backup can
+// add a missing value later, while exporting runs. The RDBMS kind never sets
 // Elasticsearch, because it does not back up Elasticsearch data.
 type LogicalBackupStorageSizes struct {
 	// Elasticsearch is the effective restore size of one Elasticsearch data

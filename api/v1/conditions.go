@@ -57,7 +57,8 @@ const (
 	// keeps its own workloads stopped, or its own work on hold. The message
 	// names what it waits for. The CRD doc of each resource that reports it
 	// names the workloads that it waits for. A restore also reports it while
-	// its target cluster does not hold a free backend yet.
+	// its target cluster does not hold a free backend yet, or while another
+	// backup or restore still writes the database.
 	ReasonWaitingForHandover = "WaitingForHandover"
 	// ReasonStorageAlreadyAttached means that another CamundaCluster than the
 	// one that this resource names holds the storage claim of the backend.

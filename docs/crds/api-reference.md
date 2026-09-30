@@ -2247,7 +2247,8 @@ _Appears in:_
 LogicalBackupStorageSizes are the effective restore sizes of the
 components that hold storage. The operator records them when a backup
 starts, so that a restore can create volumes of the correct size. A value
-that the operator cannot compute stays unset. The RDBMS kind never sets
+that the operator cannot compute stays unset. An Elasticsearch backup can
+add a missing value later, while exporting runs. The RDBMS kind never sets
 Elasticsearch, because it does not back up Elasticsearch data.
 
 
@@ -2285,8 +2286,8 @@ camunda-operator/restore-version. The target runs the version of the
 backup until another manager takes over or removes that field. A manifest
 without spec.version does not change it, because server-side apply
 removes a field only for the manager that set it. This applies also to a
-target that gets its version from a preset. The value of the restore wins
-over the preset until somebody removes the field.
+target that gets its version from a release. The value of the restore wins
+over the release until somebody removes the field.
 
 
 
@@ -2451,7 +2452,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `phase` _[LogicalRestorePhase](#logicalrestorephase)_ | Phase is the phase of the restore. After an interruption, the restore<br />continues at this phase. |  | Enum: [Pending ValidatingCompatibility RestoringSecondaryStorage RestoringPrimaryStorage Completed Failed] <br />Optional: \{\} <br /> |
-| `backupId` _integer_ | BackupID is the Zeebe backup id that the restore reads. The operator<br />records it when the restore starts. A backup that is deleted and<br />created again with the same name has another id, and this restore does<br />not read it. Later phases of the restore still read the backup<br />resource, so keep it until the restore completes. |  | Optional: \{\} <br /> |
+| `backupId` _integer_ | BackupID is the id of the dump that the restore reads, as the backup<br />records it. The operator records it when the restore starts. A backup<br />that is created again later with the same name gets a new, time-based<br />id. This restore then refuses it. Later phases of the restore still read the backup<br />resource, so keep it until the restore completes. |  | Optional: \{\} <br /> |
 | `backend` _string_ | Backend is the logical database that the restore writes, as the host,<br />the port, and the database name. The operator records it when the<br />restore starts. From then until the final phase, no other<br />CamundaCluster starts on this backend. The restore waits while its<br />target does not hold the backend. |  | Optional: \{\} <br /> |
 | `contract` _string_ | Contract is the DatabaseServerConfig and the database name of Backend<br />when the restore started. When the DatabaseServerConfig moves to<br />another address, the restore still holds this contract. |  | Optional: \{\} <br /> |
 | `secondaryJobName` _string_ | SecondaryJobName is the Job that runs pg_restore, while the Job exists. |  | Optional: \{\} <br /> |

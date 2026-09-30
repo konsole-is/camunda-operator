@@ -52,8 +52,8 @@ spec:
           backup until another manager takes over or removes that field. A manifest
           without spec.version does not change it, because server-side apply
           removes a field only for the manager that set it. This applies also to a
-          target that gets its version from a preset. The value of the restore wins
-          over the preset until somebody removes the field.
+          target that gets its version from a release. The value of the restore wins
+          over the release until somebody removes the field.
         properties:
           apiVersion:
             description: |-
