@@ -368,13 +368,13 @@ func TestATakenObjectStoreTakesTheArchiveOffTheCluster(t *testing.T) {
 		Kind: "DatabaseServer", Name: "other",
 	})
 
-	free, _, err := ClusterComponent(server, merged, RequestedStorage{}, archive, "", nil, "")
+	free, _, err := ClusterComponent(server, merged, RequestedStorage{}, archive, "", nil, "", nil)
 	require.NoError(t, err)
 	plugins := previewCluster(t, free).Spec.Plugins
 	require.Len(t, plugins, 1)
 	assert.Equal(t, ObjectStoreName(server), plugins[0].Parameters["barmanObjectName"])
 
-	held, _, err := ClusterComponent(server, merged, RequestedStorage{}, archive, taken, nil, "")
+	held, _, err := ClusterComponent(server, merged, RequestedStorage{}, archive, taken, nil, "", nil)
 	require.NoError(t, err)
 	assert.Empty(t, previewCluster(t, held).Spec.Plugins)
 

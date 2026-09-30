@@ -203,8 +203,8 @@ func (r *DatabaseServerReconciler) clusterOrNil(
 //
 // A nil running means CloudNativePG has not written the data directory yet, so
 // the server is still bootstrapping and is never refused. Every CloudNativePG
-// release this operator supports reports the field: it arrived in 1.26, which
-// is the floor that the installation docs name.
+// release this operator supports reports the field: it arrived in 1.26, before
+// the floor that the installation docs name.
 func refusedMajorChange(version string, running *cnpgv1.ImageInfo) *conditions.PreCheckFailure {
 	if running == nil || running.MajorVersion == 0 {
 		return nil
