@@ -37,7 +37,7 @@ jobs:
         run: |
           for attempt in 1 2 3 4 5; do
             docker pull mirror.gcr.io/library/postgres:17 && exit 0
-            sleep $((attempt * 10))
+            [ "$attempt" -lt 5 ] && sleep $((attempt * 10))
           done
           exit 1
 
