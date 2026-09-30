@@ -17,14 +17,21 @@ limitations under the License.
 package logicalbackupelasticsearch
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
+	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 )
 
 func pending(name string, created time.Time) *v1.LogicalBackupElasticsearch {
@@ -106,5 +113,58 @@ func statusWithAggregateAndParts() camundaadmin.BackupStatus {
 		State:         camundaadmin.StateFailed,
 		FailureReason: "partition 2 lost its snapshot",
 		Details:       []camundaadmin.Detail{{Name: "2", State: "FAILED", Reason: "leader changed"}},
+	}
+}
+
+// A backup that waits names the holder by its kind, because a restore takes
+// the same claim as a backup.
+func TestClaimClusterNamesTheHolderByItsKind(t *testing.T) {
+	tests := []struct {
+		name   string
+		holder client.Object
+		kind   string
+	}{
+		{
+			name: "a restore holds the cluster",
+			holder: &v1.LogicalRestoreElasticsearch{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "my-restore", UID: "uid-restore"},
+			},
+			kind: "LogicalRestoreElasticsearch",
+		},
+		{
+			name: "another backup holds the cluster",
+			holder: &v1.LogicalBackupElasticsearch{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "weekly", UID: "uid-weekly"},
+			},
+			kind: "LogicalBackupElasticsearch",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			s := runtime.NewScheme()
+			require.NoError(t, scheme.AddToScheme(s))
+			require.NoError(t, v1.AddToScheme(s))
+
+			backup := &v1.LogicalBackupElasticsearch{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "nightly", UID: "uid-nightly"},
+				Spec:       v1.LogicalBackupElasticsearchSpec{ClusterRef: v1.ClusterRef{Name: "cc"}},
+			}
+			c := fake.NewClientBuilder().WithScheme(s).WithObjects(backup, tt.holder).Build()
+			r := &Reconciler{Client: c, APIReader: c}
+
+			holder := clusterclaim.Claimant{Kind: tt.kind, Name: tt.holder.GetName(), UID: tt.holder.GetUID()}
+			blocking, err := clusterclaim.Claim(ctx, c, c, "ns", "cc", holder)
+			require.NoError(t, err)
+			require.Empty(t, blocking)
+
+			message, err := r.claimCluster(ctx, backup)
+			require.NoError(t, err)
+
+			assert.Contains(t, message, holder.Display()+" holds CamundaCluster ns/cc")
+			assert.NotContains(t, message, "backup "+tt.kind+"/")
+			assert.Contains(t, message, "Only one backup or restore of a cluster runs at a time")
+		})
 	}
 }

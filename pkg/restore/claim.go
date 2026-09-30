@@ -62,12 +62,8 @@ func Take(
 	}
 
 	return Outcome{Failure: &conditions.PreCheckFailure{
-		Reason: v1.ReasonClusterClaimed,
-		Message: fmt.Sprintf(
-			"%s holds CamundaCluster %s/%s. Only one backup or restore of a cluster runs at a time, "+
-				"so this restore starts when that operation reaches a terminal phase",
-			display, namespace, cluster,
-		),
+		Reason:  v1.ReasonClusterClaimed,
+		Message: clusterclaim.WaitMessage(display, namespace, cluster, "restore"),
 	}}, nil
 }
 

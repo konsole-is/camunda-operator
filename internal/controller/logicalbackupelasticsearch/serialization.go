@@ -113,10 +113,7 @@ func (r *Reconciler) claimCluster(ctx context.Context, backup *v1.LogicalBackupE
 
 	parsed, err := clusterclaim.ParseClaimant(holder)
 	if err != nil {
-		return fmt.Sprintf(
-			"%q holds CamundaCluster %s/%s; backups of one cluster run one at a time",
-			holder, backup.Namespace, cluster,
-		), nil
+		return clusterclaim.WaitMessage(holder, backup.Namespace, cluster, "backup"), nil
 	}
 	paused, err := clusterclaim.HolderKeepsClusterPaused(ctx, r.APIReader, backup.Namespace, parsed)
 	if err != nil {
@@ -129,10 +126,7 @@ func (r *Reconciler) claimCluster(ctx context.Context, backup *v1.LogicalBackupE
 			parsed.Display(), backup.Namespace, cluster,
 		), nil
 	}
-	return fmt.Sprintf(
-		"backup %s of CamundaCluster %s/%s holds the cluster; backups of one cluster run one at a time",
-		parsed.Display(), backup.Namespace, cluster,
-	), nil
+	return clusterclaim.WaitMessage(parsed.Display(), backup.Namespace, cluster, "backup"), nil
 }
 
 // releaseClaim gives the claim on the cluster back. It is a no-op when the

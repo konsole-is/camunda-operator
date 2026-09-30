@@ -321,6 +321,18 @@ func (c Claimant) Display() string {
 	return c.Kind + "/" + c.Name
 }
 
+// WaitMessage is the condition message of a claimant that waits while holder
+// claims the cluster. holder is the Display form, or the raw identity when it
+// does not parse. waiter names the kind of operation that waits, such as
+// "backup" or "restore".
+func WaitMessage(holder, namespace, cluster, waiter string) string {
+	return fmt.Sprintf(
+		"%s holds CamundaCluster %s/%s. Only one backup or restore of a cluster runs at a time, "+
+			"so this %s starts when that operation reaches a terminal phase",
+		holder, namespace, cluster, waiter,
+	)
+}
+
 // holder is what the claim needs of a claimant resource to decide whether it
 // still needs the cluster. Every claimant kind in api/v1 answers Terminal:
 // the kind owns its own phase vocabulary, and the claim never repeats it.

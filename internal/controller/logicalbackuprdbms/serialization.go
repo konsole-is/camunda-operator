@@ -89,9 +89,10 @@ func blocks(other, backup *v1.LogicalBackupRDBMS) bool {
 }
 
 // claimCluster takes the claim on the cluster for the backup. It returns
-// the display name of the holder that blocks, or "" when the backup holds
-// the claim. It runs before the controller allocates and flushes the backup
-// id. A re-entry after a failed flush finds itself as the holder and proceeds.
+// the waiting message that names the holder that blocks, or "" when the
+// backup holds the claim. It runs before the controller allocates and
+// flushes the backup id. A re-entry after a failed flush finds itself as the
+// holder and proceeds.
 func (r *LogicalBackupRDBMSReconciler) claimCluster(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -108,10 +109,10 @@ func (r *LogicalBackupRDBMSReconciler) claimCluster(
 		return "", nil
 	}
 	if parsed, err := clusterclaim.ParseClaimant(holder); err == nil {
-		return parsed.Display(), nil
+		holder = parsed.Display()
 	}
 
-	return holder, nil
+	return clusterclaim.WaitMessage(holder, backup.Namespace, backup.Spec.ClusterRef.Name, "backup"), nil
 }
 
 // releaseClaim gives the claim on the cluster back. It is a no-op when the
