@@ -88,6 +88,7 @@ const (
 
 // Progress is the answer of RestoreProgress.
 type Progress struct {
+	// State is RestoreInProgress, RestoreStranded, or RestoreDone.
 	State RestoreState
 	// Stranded names each restored primary that no node takes, sorted by index
 	// and shard. It is empty unless State is RestoreStranded.
@@ -96,6 +97,7 @@ type Progress struct {
 
 // StrandedShard is a restored primary that no node takes.
 type StrandedShard struct {
+	// Index is the name of the restored index that holds the primary.
 	Index string
 	// Shard is the shard number.
 	Shard int
