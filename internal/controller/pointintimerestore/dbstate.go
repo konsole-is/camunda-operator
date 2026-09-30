@@ -329,10 +329,13 @@ func brokerClockComparable(
 		if env.ValueFrom != nil {
 			// This entry wins over whatever a source carried, and only the
 			// kubelet resolves it, so the effective zone is unknowable here.
-			return clockUnreadable(fmt.Sprintf(
-				"the broker container takes %s from a reference, which only the kubelet resolves",
-				env.Name,
-			)), nil
+			return clockUnreadable(
+				fmt.Sprintf(
+					"the broker container takes %s from a reference, which only the kubelet resolves",
+					env.Name,
+				),
+				fmt.Sprintf("Set %s as a literal value", env.Name),
+			), nil
 		}
 		effective[env.Name] = env.Value
 	}
@@ -413,9 +416,12 @@ func unreadableSource(
 		return nil, nil
 	}
 
-	return clockUnreadable(fmt.Sprintf(
-		"the broker container takes its environment from the %s %s, which does not exist", kind, key,
-	)), nil
+	return clockUnreadable(
+		fmt.Sprintf(
+			"the broker container takes its environment from the %s %s, which does not exist", kind, key,
+		),
+		fmt.Sprintf("Create the %s %s or mark it optional", kind, key),
+	), nil
 }
 
 // zoneFailure reports why the variable name with the given value makes the
@@ -431,7 +437,7 @@ func zoneFailure(name, value string) *conditions.PreCheckFailure {
 			return nil
 		}
 
-		return clockUnreadable(fmt.Sprintf("the broker container runs with TZ %q", value))
+		return clockUnreadable(fmt.Sprintf("the broker container runs with TZ %q", value), "Run the brokers in UTC")
 	}
 
 	zone, set := userTimezone(value)
@@ -439,23 +445,22 @@ func zoneFailure(name, value string) *conditions.PreCheckFailure {
 		return nil
 	}
 
-	return clockUnreadable(fmt.Sprintf(
-		"the broker container runs with -Duser.timezone=%s in %s", zone, name,
-	))
+	return clockUnreadable(
+		fmt.Sprintf("the broker container runs with -Duser.timezone=%s in %s", zone, name),
+		"Run the brokers in UTC",
+	)
 }
 
 // clockUnreadable builds the hold of a broker whose clock the operator cannot
-// compare with spec.timestamp.
-func clockUnreadable(what string) *conditions.PreCheckFailure {
+// compare with spec.timestamp. remedy is the step that removes the cause.
+func clockUnreadable(what, remedy string) *conditions.PreCheckFailure {
 	return &conditions.PreCheckFailure{
 		Reason: v1.ReasonPitrUnavailable,
 		Message: fmt.Sprintf(
 			"%s. The database records the exporter position with the wall clock of the broker and no "+
 				"zone, so the operator can compare it with spec.timestamp only while the brokers run "+
-				"in UTC. Run the brokers in UTC, set each zone variable as a literal value, and make sure "+
-				"that each source of the broker environment that is not optional exists. Then the restore "+
-				"continues by itself",
-			what,
+				"in UTC. %s. The restore then continues by itself",
+			what, remedy,
 		),
 	}
 }

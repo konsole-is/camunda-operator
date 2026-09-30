@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -200,8 +201,27 @@ func TestZoneFailure(t *testing.T) {
 			assert.Contains(t, failure.Message, tt.contains)
 			// The hold is a wait in Pending, so the restore goes on by itself.
 			assert.NotContains(t, failure.Message, "create the restore again")
-			assert.Contains(t, failure.Message, "Then the restore continues by itself")
-			assert.Contains(t, failure.Message, "each source of the broker environment that is not optional exists")
+			assert.Contains(t, failure.Message, "Run the brokers in UTC. The restore then continues by itself")
 		})
 	}
+}
+
+// A zone that only the kubelet resolves holds the restore, and the message
+// names the variable to set as a literal value.
+func TestBrokerClockComparableHoldsAZoneFromAReference(t *testing.T) {
+	broker := &corev1.Container{Env: []corev1.EnvVar{{
+		Name: "TZ",
+		ValueFrom: &corev1.EnvVarSource{
+			ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "zone"}, Key: "TZ",
+			},
+		},
+	}}}
+
+	failure, err := brokerClockComparable(t.Context(), nil, "ns", broker)
+	require.NoError(t, err)
+
+	require.NotNil(t, failure)
+	assert.Equal(t, v1.ReasonPitrUnavailable, failure.Reason)
+	assert.Contains(t, failure.Message, "Set TZ as a literal value. The restore then continues by itself")
 }

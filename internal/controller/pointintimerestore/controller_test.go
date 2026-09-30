@@ -995,7 +995,7 @@ var _ = Describe("PointInTimeRestore admission", func() {
 
 		message := expectHeld(pitr, v1.ReasonPitrUnavailable)
 		Expect(message).To(ContainSubstring("no-such-configmap"))
-		Expect(message).To(ContainSubstring("each source of the broker environment that is not optional exists"))
+		Expect(message).To(ContainSubstring("no-such-configmap or mark it optional. The restore then continues"))
 		expectClaimsUntouched(w)
 	})
 
