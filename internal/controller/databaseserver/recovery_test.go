@@ -776,6 +776,25 @@ var _ = Describe("DatabaseServer recovery", func() {
 		}, 3*time.Second, interval).Should(BeTrue())
 	})
 
+	// A suspended component still deletes what its gates turn off.
+	It("withdraws the binding while the server is suspended and archives no more", func() {
+		server, _ := archivingServer()
+		grantArchivePlugin(server, "camunda")
+		expectArchivePluginBound(server, "camunda")
+
+		suspend(server)
+		Eventually(func(g Gomega) {
+			condition := conditionOf(server, v1.ConditionClusterReady)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Reason).To(Equal("Suspending"))
+		}, timeout, interval).Should(Succeed())
+		setArchive(server, nil)
+
+		expectGone(client.ObjectKey{
+			Namespace: server.Namespace, Name: "camunda-barman-cloud-postgres",
+		}, &rbacv1.RoleBinding{})
+	})
+
 	It("leaves a binding of its name that another owner controls alone", func() {
 		server, _ := archivingServer()
 		grantArchivePlugin(server, "camunda")
