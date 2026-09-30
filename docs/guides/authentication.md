@@ -260,16 +260,19 @@ spec:
     clientId: "camunda-my-cluster"
     # Optional. Defaults to the clientId.
     audience: "camunda-my-cluster"
+    # Required when clientId is set.
     clientSecretRef:
       name: my-cluster-oidc
       key: client-secret
 ```
 
-Each field overrides the default of the platform config on its own. The Secret of `clientSecretRef` is in the namespace of the cluster. The issuer, the endpoints, and the claim names always come from the platform config.
+A client id brings its own client. When the cluster sets `clientId`, the audience and the client secret come from `spec.auth` of the cluster only. The cluster takes neither of them from its preset or from the platform config. The audience is then `audience`, or else the new client id. The API server rejects a `clientId` without a `clientSecretRef`.
 
-When the cluster or its preset sets `clientId`, the audience of the platform config no longer applies. The audience is then the `audience` of the cluster or the preset, or else the new client id. If your new client uses another audience, set `audience` next to `clientId`.
+The Secret of `clientSecretRef` is in the namespace of the cluster. The issuer, the endpoints, and the claim names always come from the platform config.
 
-A `CamundaClusterPreset` can carry the same `spec.auth` fields as a baseline for many clusters. The cluster overrides `clientId`, `audience`, and `clientSecretRef` of the preset one by one. The `admin` block never merges: when the cluster sets `spec.auth.admin`, it replaces the whole block of the preset.
+Without `clientId`, the cluster keeps the client id of its preset. When the preset sets no `clientId` either, the cluster keeps the client id of the platform config. The audience and the client secret belong to that client id. An `audience` or a `clientSecretRef` on the cluster overrides one of them on its own, and so does one on a preset without `clientId`. When no layer sets an audience for that client id, the audience is the client id.
+
+A `CamundaClusterPreset` can carry the same `spec.auth` fields as a baseline for many clusters. The same rule applies to it. A preset that sets `clientId` must set `clientSecretRef` too, and its clusters do not get the audience or the secret of the platform config. The `admin` block never merges: when the cluster sets `spec.auth.admin`, it replaces the whole block of the preset.
 
 The operator uses `spec.auth.basic` only under basic authentication, and every other field of `spec.auth` only under OIDC. The API server accepts both on either method.
 
@@ -387,7 +390,7 @@ The identity provider has one confidential client `camunda`. Its access tokens c
               claimValue: "camunda-admins"
     ```
 
-    The audience of this cluster is `camunda-payments`, because neither the cluster nor the preset sets `audience`. The connectors runtime of this cluster signs in as `camunda-payments` and gets the `connectors` role from the operator.
+    The audience of this cluster is `camunda-payments`, because the cluster sets `clientId` and no `audience`. The connectors runtime of this cluster signs in as `camunda-payments` and gets the `connectors` role from the operator.
 
 ## Where settings live
 
@@ -396,7 +399,7 @@ The identity provider has one confidential client `camunda`. Its access tokens c
 | Authentication method | `CamundaPlatformConfig` `spec.auth.method` | Only the platform config sets it |
 | Issuer URL and explicit endpoints | `CamundaPlatformConfig` `spec.auth.oidc.issuerUrl`, `jwksUrl`, `tokenUrl`, `authUrl` | Only the platform config sets them |
 | `usernameClaim`, `clientIdClaim` | `CamundaPlatformConfig` `spec.auth.oidc` | Only the platform config sets them |
-| Client id, audience, client secret | `CamundaPlatformConfig` `spec.auth.oidc`, then `CamundaClusterPreset` `spec.cluster.auth`, then `CamundaCluster` `spec.auth` | The cluster, then the preset, then the platform config, field by field |
+| Client id, audience, client secret | `CamundaPlatformConfig` `spec.auth.oidc`, then `CamundaClusterPreset` `spec.cluster.auth`, then `CamundaCluster` `spec.auth` | The first of the cluster, the preset, and the platform config that sets `clientId` gives the client id. The audience and the client secret come from that layer and the layers that override it, field by field |
 | Administrators under OIDC | `CamundaClusterPreset` `spec.cluster.auth.admin`, then `CamundaCluster` `spec.auth.admin` | The cluster replaces the whole block of the preset |
 | Redirect URI | `CamundaCluster` `spec.externalUrl` | Only the cluster sets it |
 | Admin email and password rotation under basic | `CamundaClusterPreset` `spec.cluster.auth.basic`, then `CamundaCluster` `spec.auth.basic` | The cluster replaces the whole block of the preset |

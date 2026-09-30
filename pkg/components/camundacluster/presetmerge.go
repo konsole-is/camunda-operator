@@ -206,7 +206,11 @@ func mergeAuth(base, over *v1.ClusterAuthSpec) *v1.ClusterAuthSpec {
 	}
 
 	if over.ClientID != "" {
+		// The audience and the secret of the preset belong to the preset
+		// client, so a cluster client id takes neither of them.
 		base.ClientID = over.ClientID
+		base.Audience = over.Audience
+		base.ClientSecretRef = over.ClientSecretRef
 	}
 	if over.Audience != "" {
 		base.Audience = over.Audience

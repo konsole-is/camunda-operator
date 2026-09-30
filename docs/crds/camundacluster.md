@@ -548,11 +548,11 @@ spec:
       eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-cluster-role"
   # object. Optional. OIDC client of this cluster and its administrators. Overrides the platform config and the preset.
   auth:
-    # string. Optional. OIDC client ID of this cluster.
+    # string. Optional. OIDC client ID of this cluster. The audience and the secret then come from this block only, never from the preset or the platform config.
     clientId: "my-cluster-client"
     # string. Optional, default: the clientId. Audience that access tokens must carry.
     audience: "my-cluster-client"
-    # object. Optional. Secret key that holds the OIDC client secret of this cluster.
+    # object. Optional, required when clientId is set. Secret key that holds the OIDC client secret of this cluster.
     clientSecretRef:
       # string. Required. Name of the Secret.
       name: "my-cluster-oidc-secret"
@@ -743,6 +743,7 @@ The API server enforces these rules at admission:
 - `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` is `Delete` or `Retain`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both.
 - `spec.auth.basic.adminEmail` is empty or an address with a dot in its domain.
+- `spec.auth.clientId` requires `spec.auth.clientSecretRef`.
 - `spec.backup.dump.extraEnvFrom` holds at most 8 sources. `spec.backup.dump.scratchVolume.storageClassName` requires `sizeLimit`.
 - `spec.backup.primaryStorage.checkpointInterval` and `retention.window` are ISO 8601 durations of days and time. Weeks, months, and years are rejected.
 

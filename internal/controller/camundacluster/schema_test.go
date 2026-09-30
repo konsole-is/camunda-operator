@@ -269,6 +269,23 @@ var _ = Describe("CamundaCluster schema", func() {
 			"",
 		),
 		Entry(
+			"accepts a client id with a client secret",
+			minimalCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.Auth = &v1.ClusterAuthSpec{
+					ClientID:        "my-cluster-client",
+					ClientSecretRef: &v1.LocalSecretKeyRef{Name: "my-cluster-oidc", Key: "client-secret"},
+				}
+			},
+			"",
+		),
+		Entry(
+			"rejects a client id without a client secret",
+			minimalCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.Auth = &v1.ClusterAuthSpec{ClientID: "my-cluster-client"}
+			},
+			"clientSecretRef is required when clientId is set",
+		),
+		Entry(
 			"rejects an empty admin user",
 			minimalCamundaCluster, func(o *v1.CamundaCluster) {
 				o.Spec.Auth = &v1.ClusterAuthSpec{Admin: &v1.ClusterAdminSpec{Users: []string{""}}}
@@ -593,6 +610,13 @@ var _ = Describe("CamundaClusterPreset schema", func() {
 			"rejects a releaseRef",
 			minimalPreset, func(o *v1.CamundaClusterPreset) { o.Spec.Cluster.ReleaseRef = "camunda-8-9-4" },
 			instanceBound,
+		),
+		Entry(
+			"rejects a client id without a client secret",
+			minimalPreset, func(o *v1.CamundaClusterPreset) {
+				o.Spec.Cluster.Auth = &v1.ClusterAuthSpec{ClientID: "medium-clusters"}
+			},
+			"clientSecretRef is required when clientId is set",
 		),
 		Entry(
 			"rejects a version",
