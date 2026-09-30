@@ -712,6 +712,97 @@ func TestValidateMergedJoinsEveryProblem(t *testing.T) {
 	)
 }
 
+func TestValidateMergedDefaultRoleEnv(t *testing.T) {
+	t.Parallel()
+
+	const (
+		roles      = "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_"
+		lowerRoles = "camunda_security_initialization_defaultroles_"
+	)
+
+	tests := []struct {
+		name     string
+		variable string
+		wantErr  bool
+	}{
+		{"users of a role", roles + "ADMIN_USERS_0", false},
+		{"a dash in the role", roles + "READONLY-ADMIN_USERS_0", false},
+		{"groups at a later index", roles + "TASK-WORKER_GROUPS_12", false},
+		{"clients", roles + "ADMIN_CLIENTS_0", false},
+		{"roles", roles + "ADMIN_ROLES_0", false},
+		{"mapping rules", roles + "ADMIN_MAPPINGRULES_0", false},
+		{"mapping rules with an underscore", roles + "ADMIN_MAPPING_RULES_0", false},
+		{"mapping rules with a dash", roles + "ADMIN_MAPPING-RULES_0", false},
+		{"a comma list without an index", roles + "ADMIN_USERS", false},
+		{"lower case", lowerRoles + "admin_users_0", false},
+		{"another initialization key", "CAMUNDA_SECURITY_INITIALIZATION_USERS_0_USERNAME", false},
+		{"an underscore in the role", roles + "READONLY_ADMIN_USERS_0", true},
+		{"an unknown member type", roles + "ADMIN_MAPPINGS_0", true},
+		{"a part after the index", roles + "ADMIN_USERS_0_NAME", true},
+		{"no member type", roles + "ADMIN", true},
+		{"an index in place of the member type", roles + "ADMIN_0", true},
+		{"no role", roles + "_USERS_0", true},
+		{"lower case with an underscore in the role", lowerRoles + "readonly_admin_users_0", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			spec := v1.CamundaClusterSpec{
+				Version:  "8.9.0",
+				ExtraEnv: []corev1.EnvVar{{Name: tt.variable, Value: "grace"}},
+			}
+
+			err := ValidateMerged(spec)
+
+			if !tt.wantErr {
+				assert.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "extraEnv entry "+tt.variable)
+			assert.Contains(t, err.Error(), "READONLY-ADMIN")
+		})
+	}
+}
+
+func TestValidateMergedDefaultRoleEnvNamesTheBlock(t *testing.T) {
+	t.Parallel()
+
+	bad := []corev1.EnvVar{{Name: "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_READONLY_ADMIN_USERS_0"}}
+	spec := v1.CamundaClusterSpec{
+		Version:  "8.9.0",
+		Zeebe:    &v1.ZeebeSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: bad}},
+		Gateway:  &v1.GatewaySpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: bad}},
+		Operate:  &v1.WebAppSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: bad}},
+		Tasklist: &v1.WebAppSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: bad}},
+		Admin:    &v1.WebAppSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: bad}},
+	}
+
+	err := ValidateMerged(spec)
+
+	require.Error(t, err)
+	for _, block := range []string{"zeebe", "gateway", "operate", "tasklist", "admin"} {
+		assert.Contains(t, err.Error(), block+".extraEnv entry "+bad[0].Name)
+	}
+}
+
+// Connectors do not run the identity initialization of the orchestration
+// cluster, so their own entries are not checked.
+func TestValidateMergedDefaultRoleEnvIgnoresConnectors(t *testing.T) {
+	t.Parallel()
+
+	spec := v1.CamundaClusterSpec{
+		Version: "8.9.0",
+		Connectors: &v1.ConnectorsSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: []corev1.EnvVar{
+			{Name: "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_READONLY_ADMIN_USERS_0"},
+		}}},
+	}
+
+	assert.NoError(t, ValidateMerged(spec))
+}
+
 // The admin block never merges per field: a cluster that sets it replaces the
 // block of the preset entirely, so one manifest names every administrator.
 func TestMergeSpecAdminBlockReplacesWholesale(t *testing.T) {

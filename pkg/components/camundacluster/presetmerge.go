@@ -50,7 +50,18 @@ const (
 	// backup guide: continuous mode holds the log until a backup runs.
 	msgContinuousWithoutSchedule = "backup.primaryStorage.continuous is true but the schedule is none: " +
 		"continuous mode holds every log segment until a backup runs, so it always needs a schedule"
+	// msgDefaultRoleEnv names an extraEnv entry that makes Camunda stop the
+	// identity initialization, and the form that works.
+	msgDefaultRoleEnv = "%s entry %s is not a default role membership that Camunda can read. " +
+		"Camunda stops the identity initialization on this entry and creates no configured user and no role member. " +
+		"Write " + defaultRoleEnvPrefix + "<role>_<type>_<n>, " +
+		"with USERS, CLIENTS, GROUPS, ROLES, or MAPPINGRULES as the type. " +
+		"Keep the dash of a role ID, as in READONLY-ADMIN"
 )
+
+// defaultRoleEnvPrefix starts the environment variables that bind to
+// camunda.security.initialization.default-roles.
+const defaultRoleEnvPrefix = "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_"
 
 // versionFloor is the lowest Camunda version the operator supports.
 const versionFloor = "8.9.0"
@@ -508,7 +519,12 @@ func ReleaseImages(merged v1.CamundaClusterSpec, release *v1.CamundaReleaseSpec)
 // be present, three segments, and 8.9.0 or later. The effective
 // replicationFactor must not exceed the effective replicas, the effective
 // partitions must be at least 1, and connectors.version must be present when
-// connectors are enabled. The error joins every problem with "; ".
+// connectors are enabled. An extraEnv entry of the orchestration processes
+// (the top level, zeebe, gateway, operate, tasklist, admin) under
+// CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ must read
+// <role>_<type>[_<n>] with a member type that Camunda accepts, in any
+// letter case. The entries of extraEnvFrom sources are not checked. The error
+// joins every problem with "; ".
 func ValidateMerged(spec v1.CamundaClusterSpec) error {
 	var problems []string
 	effective := NewEffective(spec)
@@ -538,6 +554,8 @@ func ValidateMerged(spec v1.CamundaClusterSpec) error {
 		b.PrimaryStorage.Schedule == ScheduleNone {
 		problems = append(problems, msgContinuousWithoutSchedule)
 	}
+
+	problems = append(problems, checkDefaultRoleEnv(spec)...)
 
 	if len(problems) > 0 {
 		return fmt.Errorf("%s", strings.Join(problems, "; "))
@@ -584,4 +602,78 @@ func parseVersion(version string) ([3]int, error) {
 	}
 
 	return parsed, nil
+}
+
+// checkDefaultRoleEnv returns one problem for each extraEnv entry of an
+// orchestration process that readsAsDefaultRoleMembership refuses. Connectors
+// do not run the identity initialization, so their block is skipped.
+func checkDefaultRoleEnv(spec v1.CamundaClusterSpec) []string {
+	blocks := map[string][]corev1.EnvVar{"extraEnv": spec.ExtraEnv}
+	if spec.Zeebe != nil {
+		blocks["zeebe.extraEnv"] = spec.Zeebe.ExtraEnv
+	}
+	if spec.Gateway != nil {
+		blocks["gateway.extraEnv"] = spec.Gateway.ExtraEnv
+	}
+	for field, app := range map[string]*v1.WebAppSpec{
+		"operate.extraEnv":  spec.Operate,
+		"tasklist.extraEnv": spec.Tasklist,
+		"admin.extraEnv":    spec.Admin,
+	} {
+		if app != nil {
+			blocks[field] = app.ExtraEnv
+		}
+	}
+
+	var problems []string
+	for _, field := range slices.Sorted(maps.Keys(blocks)) {
+		for _, e := range blocks[field] {
+			if !readsAsDefaultRoleMembership(e.Name) {
+				problems = append(problems, fmt.Sprintf(msgDefaultRoleEnv, field, e.Name))
+			}
+		}
+	}
+
+	return problems
+}
+
+// readsAsDefaultRoleMembership reports whether Camunda can read name, when it
+// is under defaultRoleEnvPrefix, as <role>_<type>[_<n>]. A name outside the
+// prefix passes.
+func readsAsDefaultRoleMembership(name string) bool {
+	upper := strings.ToUpper(name)
+	if !strings.HasPrefix(upper, defaultRoleEnvPrefix) {
+		return true
+	}
+
+	// Spring Boot splits the name at each underscore. The first part is the
+	// role. The parts up to the first number, joined with dots, are the
+	// member type, which Camunda's PlatformDefaultEntities.getEntityType
+	// throws on unless it knows it.
+	parts := strings.Split(strings.TrimPrefix(upper, defaultRoleEnvPrefix), "_")
+	if len(parts) < 2 || parts[0] == "" {
+		return false
+	}
+
+	end := len(parts)
+	for i := 2; i < len(parts); i++ {
+		if isDigits(parts[i]) {
+			end = i
+			break
+		}
+	}
+	if end < len(parts)-1 {
+		return false
+	}
+
+	switch strings.Join(parts[1:end], ".") {
+	case "USERS", "CLIENTS", "GROUPS", "ROLES", "MAPPINGRULES", "MAPPING-RULES", "MAPPING.RULES":
+		return true
+	default:
+		return false
+	}
+}
+
+func isDigits(s string) bool {
+	return s != "" && strings.Trim(s, "0123456789") == ""
 }

@@ -752,6 +752,7 @@ The operator checks these rules on the merged spec after the preset and the rele
 - The effective `replicationFactor` does not exceed the effective `replicas`, and the effective `partitions` is at least 1.
 - `connectors.version` is present when connectors are enabled.
 - `backup.primaryStorage.continuous` is not true with a `schedule` of `none`.
+- An `extraEnv` entry under `CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_` reads as `<role>_<type>_<n>` or `<role>_<type>`, with `USERS`, `CLIENTS`, `GROUPS`, `ROLES`, or `MAPPINGRULES` as the type. The rule covers the top level and the `zeebe`, `gateway`, `operate`, `tasklist`, and `admin` blocks. Camunda stops the identity initialization on any other form. [Authentication](../guides/authentication.md) shows the form that works.
 
 A separate rule refuses an effective version below the one that the brokers run, with reason `VersionDowngradeRefused`. [A lower version is refused](#a-lower-version-is-refused) states it.
 

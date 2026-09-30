@@ -244,6 +244,29 @@ The block names members of the `admin` role only. The operator has no field for 
       # ... the rest of your cluster
     ```
 
+The operator refuses an `extraEnv` entry under `CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_` that Camunda cannot read as `<role>_<type>_<n>` or `<role>_<type>`. The type must be `USERS`, `CLIENTS`, `GROUPS`, `ROLES`, or `MAPPINGRULES`. Camunda stops the whole identity initialization on any other form, and the members of `spec.auth.admin` lose their access too. Two forms are common mistakes:
+
+- An underscore in place of the dash of a role ID, as in `..._DEFAULTROLES_READONLY_ADMIN_USERS_0`. Write `READONLY-ADMIN`.
+- `MAPPINGS` as the type. Write `MAPPINGRULES`.
+
+When the operator refuses an entry, the cluster reports `Ready: InvalidReference`. A running cluster keeps the configuration that it runs:
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: InvalidReference
+      message: >-
+        invalid effective spec: extraEnv entry CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_READONLY_ADMIN_USERS_0
+        is not a default role membership that Camunda can read. Camunda stops the identity initialization
+        on this entry and creates no configured user and no role member. Write
+        CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_<role>_<type>_<n>, with USERS, CLIENTS, GROUPS, ROLES,
+        or MAPPINGRULES as the type. Keep the dash of a role ID, as in READONLY-ADMIN
+```
+
+The operator does not read the keys of an `extraEnvFrom` source. It cannot refuse such a name in a ConfigMap or a Secret, so write these variables in `extraEnv`.
+
 ### Per-cluster client
 
 A cluster can use a client of its own:
