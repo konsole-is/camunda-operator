@@ -1994,10 +1994,15 @@ Elasticsearch secondary storage. The backup is one set under one backup ID:
 the web-application indices, the exported Zeebe record indices, and the
 Zeebe partitions. The cluster continues to run during the backup, with
 exporting soft-paused. A restore reads a completed backup by its backup ID
-and its recorded snapshot names. When you delete the resource, the
-operator deletes the stored backup data. If the cluster or the pinned
-bucket is gone, the operator releases the resource and the data can stay.
-If the pinned bucket points elsewhere, the deletion waits.
+and its recorded snapshot names.
+
+When you delete the resource, the operator tries to delete the stored
+backup data. The deletion waits while the cluster publishes no management
+binding, for example while it is suspended. It also waits while the pinned
+bucket points elsewhere. The operator removes the resource and can leave
+the data when the cluster is gone or was created again. The same applies
+when the pinned bucket is gone. It also applies when the management client
+cannot be built and the backup holds no pause of exporting.
 
 
 
@@ -2055,7 +2060,7 @@ _Appears in:_
 | `historySnapshots` _string array_ | HistorySnapshots names the Elasticsearch snapshots of the<br />web-application indices. The operator records the names as soon as the<br />management API gives them. Thus the deletion of the backup and a<br />restore can find the snapshots after the cluster is gone. |  | Optional: \{\} <br /> |
 | `repository` _string_ | Repository records the snapshot repository of every part of the set.<br />The operator records it when the backup starts, and every later step<br />and the deletion use this name. Thus the whole set goes to one<br />repository, also when the storage contract changes its repository<br />during the backup. The deletion also goes to the correct repository. |  | Optional: \{\} <br /> |
 | `storage` _[PinnedStorage](#pinnedstorage)_ | Storage records the Elasticsearch destination of the set: the storage<br />contract and its endpoint when the backup started. The repository name<br />alone does not identify a cluster. If the storage contract or the<br />endpoint changes during the backup, the step fails. The deletion never<br />runs against another cluster. |  | Optional: \{\} <br /> |
-| `clusterUID` _string_ | ClusterUID records the identity of the CamundaCluster of the backup. A<br />cluster that is deleted and created again with the same name is<br />another cluster. This backup did not pause its exporting, and its<br />artifacts do not belong to this backup. Every management call after the<br />start compares the cluster with this UID. If they differ, the backup<br />ends and does not change the new cluster. |  | Optional: \{\} <br /> |
+| `clusterUID` _string_ | ClusterUID records the identity of the CamundaCluster of the backup. A<br />cluster that is deleted and created again with the same name is<br />another cluster. This backup never paused the exporting of the new<br />cluster. Every management call after the start compares the cluster<br />with this UID. If they differ, the backup ends and does not change the<br />new cluster. |  | Optional: \{\} <br /> |
 | `version` _string_ | Version is the Camunda version of the cluster when the backup started,<br />as the management binding reported it. A restore compares it with the<br />version of its target. An Elasticsearch backup restores only to the<br />same version. A restore can read the version only here, because a<br />suspended cluster has no management binding. |  | Optional: \{\} <br /> |
 | `historyRequestedTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | HistoryRequestedTime is when the operator decided to request the<br />backup of the web-application indices. The operator writes it before<br />it sends the request, so the decision stays after a lost response or a<br />restart. It shows that this backup intended to send the request. It<br />does not prove that a history backup with this ID belongs to this<br />backup. |  | Optional: \{\} <br /> |
 | `historyAcceptedTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | HistoryAcceptedTime is when the cluster accepted the history backup<br />request of this backup. Only this field shows that the history backup<br />with this ID belongs to this backup. If such a history backup exists<br />without this field, the step fails, and the operator does not delete<br />its snapshots. A crash between the request and the write of this field<br />fails the backup. The cluster can then keep a history backup with this<br />ID, which you remove manually. |  | Optional: \{\} <br /> |

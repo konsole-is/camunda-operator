@@ -158,10 +158,10 @@ type LogicalBackupElasticsearchStatus struct {
 	Storage *PinnedStorage `json:"storage,omitempty"`
 	// ClusterUID records the identity of the CamundaCluster of the backup. A
 	// cluster that is deleted and created again with the same name is
-	// another cluster. This backup did not pause its exporting, and its
-	// artifacts do not belong to this backup. Every management call after the
-	// start compares the cluster with this UID. If they differ, the backup
-	// ends and does not change the new cluster.
+	// another cluster. This backup never paused the exporting of the new
+	// cluster. Every management call after the start compares the cluster
+	// with this UID. If they differ, the backup ends and does not change the
+	// new cluster.
 	// +optional
 	ClusterUID string `json:"clusterUID,omitempty"`
 	// Version is the Camunda version of the cluster when the backup started,
@@ -271,10 +271,15 @@ type LogicalBackupElasticsearchStatus struct {
 // the web-application indices, the exported Zeebe record indices, and the
 // Zeebe partitions. The cluster continues to run during the backup, with
 // exporting soft-paused. A restore reads a completed backup by its backup ID
-// and its recorded snapshot names. When you delete the resource, the
-// operator deletes the stored backup data. If the cluster or the pinned
-// bucket is gone, the operator releases the resource and the data can stay.
-// If the pinned bucket points elsewhere, the deletion waits.
+// and its recorded snapshot names.
+//
+// When you delete the resource, the operator tries to delete the stored
+// backup data. The deletion waits while the cluster publishes no management
+// binding, for example while it is suspended. It also waits while the pinned
+// bucket points elsewhere. The operator removes the resource and can leave
+// the data when the cluster is gone or was created again. The same applies
+// when the pinned bucket is gone. It also applies when the management client
+// cannot be built and the backup holds no pause of exporting.
 type LogicalBackupElasticsearch struct {
 	metav1.TypeMeta `json:",inline"`
 
