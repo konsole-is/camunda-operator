@@ -32,9 +32,9 @@ spec:
       openAPIV3Schema:
         description: |-
           SecondaryStorageConfig is the namespaced contract CRD that tells an
-          orchestration cluster where its secondary storage lives — an Elasticsearch
-          cluster or a relational database — and how to authenticate against it.
-          Consumers resolve references to it by name in their own namespace.
+          orchestration cluster where its secondary storage is and how to
+          authenticate against it. The storage is an Elasticsearch cluster or a
+          relational database. Consumers find it by name in their own namespace.
         properties:
           apiVersion:
             description: |-
@@ -58,23 +58,24 @@ spec:
             properties:
               elasticsearch:
                 description: |-
-                  Elasticsearch connection details. Required when type is elasticsearch,
-                  forbidden otherwise.
+                  Elasticsearch holds the Elasticsearch connection details. Required
+                  when type is elasticsearch. Forbidden with other types.
                 properties:
                   caSecretRef:
                     description: |-
-                      CASecretRef names the CA bundle consumers use to verify the endpoint's
-                      TLS certificate. Set it when the endpoint serves a certificate not
-                      signed by a well-known CA, such as the self-signed certificate of an
-                      ECK-managed cluster. Omit it for publicly trusted endpoints; it is only
-                      valid with an https endpoint.
+                      CASecretRef names the CA bundle that consumers use to verify the TLS
+                      certificate of the endpoint. Set it when a well-known CA did not sign
+                      the certificate of the endpoint. An example is the self-signed
+                      certificate of a cluster that ECK runs. Omit it for an endpoint with a
+                      publicly trusted certificate. It is valid only with an https endpoint.
                     properties:
                       key:
-                        description: Key in the Secret holding the value.
+                        description: Key is the key in the Secret that holds the value.
                         minLength: 1
                         type: string
                       name:
-                        description: Name of the Secret holding the value.
+                        description: Name is the name of the Secret that holds the
+                          value.
                         minLength: 1
                         type: string
                     required:
@@ -83,22 +84,23 @@ spec:
                     type: object
                   credentialsSecretRef:
                     description: |-
-                      CredentialsSecretRef names a basic-auth user with read/write access to
-                      the Camunda indices.
+                      CredentialsSecretRef names a basic-auth user with read and write
+                      access to the Camunda indices.
                     properties:
                       name:
-                        description: Name of the Secret holding the credentials.
+                        description: Name is the name of the Secret that holds the
+                          credentials.
                         minLength: 1
                         type: string
                       passwordKey:
                         default: password
-                        description: PasswordKey is the key in the Secret holding
+                        description: PasswordKey is the key in the Secret that holds
                           the plaintext password.
                         minLength: 1
                         type: string
                       usernameKey:
                         default: username
-                        description: UsernameKey is the key in the Secret holding
+                        description: UsernameKey is the key in the Secret that holds
                           the plaintext username.
                         minLength: 1
                         type: string
@@ -116,8 +118,8 @@ spec:
                   nodeCount:
                     description: |-
                       NodeCount is the number of data nodes of the Elasticsearch cluster. An
-                      ElasticsearchCluster fills it in the contract it produces. Set it by
-                      hand for an Elasticsearch cluster that this operator does not manage.
+                      ElasticsearchCluster sets it in the contract that it publishes. For an
+                      Elasticsearch cluster that this operator does not run, set it yourself.
                       A consumer that sets no index replica count of its own gets 0 replicas
                       on one node and 1 replica on two or more nodes. Without a node count,
                       the consumer keeps the default of the Camunda application.
@@ -126,15 +128,15 @@ spec:
                     type: integer
                   snapshotRepository:
                     description: |-
-                      SnapshotRepository names the snapshot repository, registered in this
-                      Elasticsearch cluster, that backups write to. An ElasticsearchCluster
-                      with a snapshotStorageRef registers the repository and fills this field
-                      in the contract it produces. Set it by hand for an Elasticsearch cluster
-                      that this operator does not manage, after you register the repository
-                      yourself. A cluster that takes backups needs it: without a repository
-                      name, the backup components have nowhere to write. The name is a URL
-                      path segment of the Elasticsearch API, so it is restricted to a
-                      conservative character set.
+                      SnapshotRepository names the snapshot repository in this Elasticsearch
+                      cluster that backups write to. An ElasticsearchCluster with a
+                      snapshotStorageRef registers the repository and sets this field in the
+                      contract that it publishes. For an Elasticsearch cluster that this
+                      operator does not run, register the repository yourself and then set
+                      this field. A cluster that takes backups needs it. Without it, the
+                      backup components have no place to write. The name is part of a URL
+                      path of the Elasticsearch API, so it permits only a small set of
+                      characters.
                     maxLength: 253
                     pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]*$
                     type: string
@@ -147,20 +149,22 @@ spec:
                   rule: '!has(self.caSecretRef) || url(self.endpoint).getScheme()
                     == ''https'''
               rdbms:
-                description: RDBMS backend details. Required when type is rdbms, forbidden
-                  otherwise.
+                description: |-
+                  RDBMS holds the relational database details. Required when type is
+                  rdbms. Forbidden with other types.
                 properties:
                   databaseConfigRef:
                     description: |-
-                      DatabaseConfigRef names the DatabaseConfig, in this contract's own
-                      namespace, describing the logical database to use.
+                      DatabaseConfigRef names the DatabaseConfig of the logical database to
+                      use, in the namespace of this contract.
                     minLength: 1
                     type: string
                 required:
                 - databaseConfigRef
                 type: object
               type:
-                description: Type selects which secondary storage backend this contract
+                description: |-
+                  Type selects the secondary storage backend that this contract
                   describes.
                 enum:
                 - elasticsearch
@@ -178,8 +182,8 @@ spec:
             properties:
               conditions:
                 description: |-
-                  Conditions represent the current validation state; the Ready condition
-                  carries reasons Healthy, MissingSecret, or InvalidReference.
+                  Conditions represent the current validation state. The Ready condition
+                  has the reasons Healthy, MissingSecret, or InvalidReference.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -239,8 +243,8 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               observedGeneration:
-                description: ObservedGeneration is the last generation reconciled
-                  by the operator.
+                description: ObservedGeneration is the last generation that the operator
+                  processed.
                 format: int64
                 type: integer
             type: object

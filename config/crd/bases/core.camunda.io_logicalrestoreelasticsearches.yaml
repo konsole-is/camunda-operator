@@ -35,24 +35,24 @@ spec:
         description: |-
           LogicalRestoreElasticsearch restores one completed
           LogicalBackupElasticsearch into one suspended CamundaCluster. It deletes
-          the Camunda indices of the target, restores every snapshot of the backup
-          into its Elasticsearch, gives the brokers empty data volumes, and runs the
-          Camunda restore application once per broker.
+          the Camunda indices of the target and restores every snapshot of the backup
+          into its Elasticsearch. Then it gives the brokers empty data volumes and
+          runs the Camunda restore application one time for each broker.
 
           The restore prepares the target itself. It suspends the target, waits for
-          its brokers to stop, and sets spec.version to the Camunda version that the
-          backup was taken with. It withdraws the suspension when it completes, and
-          only when it applied that suspension itself. A failed restore leaves the
-          target suspended, and so does a restore that somebody deletes while it
-          runs: broker volumes that are empty or half written are worse under running
-          brokers than under none.
+          its brokers to stop, and sets spec.version to the Camunda version of the
+          backup. When it completes, it removes the suspension, but only a
+          suspension that it applied itself. A failed restore leaves the target
+          suspended. A restore that somebody deletes while it runs also leaves the
+          target suspended. Empty or half-written broker volumes cause more damage
+          under running brokers.
 
-          The restore keeps spec.version, and it owns the field under the manager
-          camunda-operator/restore-version. The target runs the version of the backup
-          until another manager takes that field over or removes it. A manifest that
-          leaves spec.version out takes nothing back, because server-side apply
-          removes a field only from the manager that declared it. Watch for that on a
-          target whose version came from a preset: the value the restore wrote wins
+          The restore keeps spec.version, with the field manager
+          camunda-operator/restore-version. The target runs the version of the
+          backup until another manager takes over or removes that field. A manifest
+          without spec.version does not change it, because server-side apply
+          removes a field only for the manager that set it. This applies also to a
+          target that gets its version from a preset. The value of the restore wins
           over the preset until somebody removes the field.
         properties:
           apiVersion:
@@ -74,16 +74,18 @@ spec:
             type: object
           spec:
             description: |-
-              spec names the backup to restore and the cluster to restore into. It is
-              immutable: a restore is one-shot, retried by creating a new resource.
+              spec names the backup to restore and the cluster to restore into. It
+              is immutable. A restore runs one time. To try again, create a new
+              resource.
             properties:
               backupRef:
                 description: |-
-                  backupRef references the completed LogicalBackupElasticsearch to
-                  restore from. It lives in the namespace of this restore.
+                  BackupRef references the completed LogicalBackupElasticsearch to
+                  restore from, in the namespace of this restore.
                 properties:
                   name:
-                    description: Name of the backup, in the namespace of this restore.
+                    description: Name is the name of the backup, in the namespace
+                      of this restore.
                     minLength: 1
                     type: string
                 required:
@@ -91,13 +93,14 @@ spec:
                 type: object
               targetClusterRef:
                 description: |-
-                  targetClusterRef references the CamundaCluster to restore into. It must
-                  name the cluster the backup was taken from. The restore application
-                  reads the primary-storage backup under the prefix of the cluster it
-                  runs as. The cluster must stay suspended for the whole restore.
+                  TargetClusterRef references the CamundaCluster to restore into. It
+                  must name the cluster of the backup, because the restore application
+                  reads the primary-storage backup under the prefix of that cluster. The
+                  cluster must stay suspended for the whole restore.
                 properties:
                   name:
-                    description: Name of the CamundaCluster, in the namespace of this
+                    description: |-
+                      Name is the name of the CamundaCluster, in the namespace of this
                       object.
                     minLength: 1
                     type: string
@@ -117,37 +120,36 @@ spec:
             properties:
               backend:
                 description: |-
-                  Backend is the Elasticsearch that the restore writes, pinned when the
-                  restore starts, in the form of the storage claim key of the target
-                  (the scheme, the host, and the port). From the end of admission to the
-                  terminal phase, and after it while recoveryHeld is true, no other
-                  CamundaCluster starts on this backend. The
-                  restore holds while its target does not hold the backend.
+                  Backend is the Elasticsearch that the restore writes, as the scheme,
+                  the host, and the port. The operator records it when the restore
+                  starts. From then until the final phase, and after it while
+                  recoveryHeld is true, no other CamundaCluster starts on this backend.
+                  The restore waits while its target does not hold the backend.
                 type: string
               backupId:
                 description: |-
-                  backupId is the backup that the restore reads, pinned when the restore
-                  starts. The backup resource can be deleted afterwards without moving
-                  the restore to another set of artifacts.
+                  BackupID is the backup that the restore reads. The operator records it
+                  when the restore starts. If the backup resource is deleted later, the
+                  restore still reads the same backup.
                 format: int64
                 type: integer
               brokers:
                 description: |-
-                  Brokers is the broker count read from the live broker StatefulSet and
-                  recorded before the restore deletes a volume. It fixes how many volumes
-                  are recreated and how many Jobs run.
+                  Brokers is the broker count of the broker StatefulSet. The operator
+                  records it before the restore deletes a volume. It sets how many
+                  volumes the restore creates again and how many Jobs run.
                 format: int32
                 type: integer
               clusterSuspended:
                 description: |-
                   ClusterSuspended records that this restore suspended its target
-                  cluster. The restore withdraws that suspension when it reaches
-                  Completed. A cluster that its owner suspended carries no such record,
-                  so it stays suspended, and so does the cluster of a failed restore.
+                  cluster. The restore removes that suspension when it reaches
+                  Completed. A cluster that its owner suspended has no such record, so
+                  it stays suspended. The cluster of a failed restore also stays
+                  suspended.
                 type: boolean
               completionTime:
-                description: CompletionTime is when the restore reached a terminal
-                  phase.
+                description: CompletionTime is when the restore reached a final phase.
                 format: date-time
                 type: string
               conditions:
@@ -212,26 +214,26 @@ spec:
                 x-kubernetes-list-type: map
               failureMessage:
                 description: |-
-                  FailureMessage names the failing phase and its error. The Ready
-                  condition carries the same message.
+                  FailureMessage names the failed phase and its error. The Ready
+                  condition has the same message.
                 type: string
               firstFailedAt:
                 description: |-
                   FirstFailedAt is when a dependency of the running restore first stopped
-                  resolving. The operator measures the mid-run grace from it. It stays
-                  set once the restore starts, because a dependency that flaps must not
-                  reset the grace.
+                  resolving. The grace period starts at this time. After the restore
+                  starts, the field stays set, so a dependency that fails and recovers
+                  again and again does not reset the grace period.
                 format: date-time
                 type: string
               observedGeneration:
-                description: ObservedGeneration is the last generation reconciled
-                  by the operator.
+                description: ObservedGeneration is the last generation that the operator
+                  processed.
                 format: int64
                 type: integer
               phase:
                 description: |-
-                  phase of the restore. It is the resume marker: a reconcile that
-                  re-enters after a crash continues at the recorded phase.
+                  Phase is the phase of the restore. After an interruption, the restore
+                  continues at this phase.
                 enum:
                 - Pending
                 - ValidatingCompatibility
@@ -242,63 +244,60 @@ spec:
                 type: string
               primaryJobNames:
                 description: |-
-                  PrimaryJobNames are the per-broker restore-application Jobs, in broker
-                  order. The operator records them before it applies the Jobs, so the
-                  record covers every Job that the next look finds. It is also the list
-                  that a restore which completed removes, and the list whose logs explain
-                  a restore that failed.
+                  PrimaryJobNames are the restore application Jobs, one for each broker,
+                  in broker order. The operator records them before it creates the Jobs.
+                  A completed restore removes these Jobs. The logs of these Jobs explain
+                  a failed restore.
                 items:
                   type: string
                 type: array
               recoveryHeld:
                 description: |-
-                  recoveryHeld is true while a restore that failed, or that is being
-                  deleted, keeps the backend because Elasticsearch can still recover
-                  snapshots that the restore asked for. While it is true, no other
-                  CamundaCluster starts on the backend, the target stays suspended, and no
-                  other backup or restore of the target starts. A deleted restore stays
-                  while it is true. It is unset on a restore that was never held for a
-                  recovery, and false once the hold is over.
+                  RecoveryHeld is true while a failed or deleted restore keeps the
+                  backend, because Elasticsearch can still recover snapshots that the
+                  restore asked for. While it is true, no other CamundaCluster starts on
+                  the backend, and the target stays suspended. No other backup or restore
+                  of the target starts. A deleted restore stays while it is true. It is
+                  unset on a restore that was never held, and false when the hold ends.
                 type: boolean
               recoveryUnknownSince:
                 description: |-
-                  recoveryUnknownSince is the time since which a held restore cannot read
-                  the recovery from Elasticsearch. When the recovery stays unknown for ten
-                  minutes, the restore gives the backend back.
+                  RecoveryUnknownSince is the time since when a held restore cannot read
+                  the recovery from Elasticsearch. If the recovery stays unknown for ten
+                  minutes, the restore releases the backend.
                 format: date-time
                 type: string
               recreatedClaims:
                 description: |-
                   RecreatedClaims names the broker data claims that the restore deleted
-                  and created again. A reconcile that re-enters does not delete a claim
-                  twice.
+                  and created again. Thus the restore does not delete a claim two times.
                 items:
                   type: string
                 type: array
               repository:
                 description: |-
-                  repository is the Elasticsearch snapshot repository that the restore
+                  Repository is the Elasticsearch snapshot repository that the restore
                   reads from, on the Elasticsearch of the target.
                 type: string
               restoredSnapshots:
                 description: |-
-                  restoredSnapshots names every snapshot that the restore asked
-                  Elasticsearch to restore. It is also the resume marker of the
-                  secondary-storage phase: a look that finds it deletes no index again.
+                  RestoredSnapshots names every snapshot that the restore asked
+                  Elasticsearch to restore. When the restore continues after an
+                  interruption, it does not delete the indices again.
                 items:
                   type: string
                 type: array
               targetClusterUID:
                 description: |-
-                  TargetClusterUID pins the identity of the target cluster. A cluster
-                  that is deleted and created again under the same name is another
-                  cluster, and this restore is not its restore.
+                  TargetClusterUID records the identity of the target cluster. A cluster
+                  that is deleted and created again with the same name is another
+                  cluster, and this restore does not apply to it.
                 type: string
               terminalReason:
                 description: |-
-                  TerminalReason is the Ready reason recorded at the terminal transition.
-                  The operator stages the terminal condition again from this field, so a
-                  write conflict cannot replace the reason with a weaker one.
+                  TerminalReason is the Ready reason that the operator recorded when the
+                  restore reached its final phase. The operator sets the final condition
+                  again from this field, so a write conflict cannot replace the reason.
                 type: string
             type: object
         required:

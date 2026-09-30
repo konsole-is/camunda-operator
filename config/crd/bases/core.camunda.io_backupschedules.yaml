@@ -44,15 +44,17 @@ spec:
       openAPIV3Schema:
         description: |-
           BackupSchedule creates logical backups of one CamundaCluster on a cron
-          schedule and prunes the backups it created. At each trigger the operator
-          creates the backup kind that matches the storage type of the cluster,
-          named <schedule>-<unix-timestamp> and labeled camunda.io/cluster and
-          camunda.io/backup-schedule. A name that does not fit the bound of a
-          resource name or of a label value is cut, and a hash of the full name is
-          added, so two long names stay apart. The backups carry no owner reference
-          to the schedule, so deleting a schedule never deletes its backups. A
-          trigger is skipped, with an event, while the cluster is suspended or while
-          a backup of this schedule has not reached a terminal phase.
+          schedule, and deletes old backups that it created. At each trigger, the
+          operator creates the backup kind for the storage type of the cluster. The
+          backup has the name <schedule>-<unix-timestamp> and the labels
+          camunda.io/cluster and camunda.io/backup-schedule. If a name is too long
+          for a resource name or a label value, the operator shortens it. Then it
+          adds a hash of the full name, so two long names stay different.
+
+          The backups have no owner reference to the schedule, so a deletion of the
+          schedule never deletes its backups. The schedule skips a trigger while the
+          cluster is suspended, or while a backup of this schedule is not in a final
+          phase. It records an event for each skipped trigger.
         properties:
           apiVersion:
             description: |-
@@ -76,12 +78,13 @@ spec:
             properties:
               clusterRef:
                 description: |-
-                  ClusterRef references the CamundaCluster to back up. At each trigger
-                  the operator creates the backup kind that matches the storage type of
-                  the cluster: LogicalBackupElasticsearch or LogicalBackupRDBMS.
+                  ClusterRef references the CamundaCluster to back up. At each trigger,
+                  the operator creates the backup kind for the storage type of the
+                  cluster: LogicalBackupElasticsearch or LogicalBackupRDBMS.
                 properties:
                   name:
-                    description: Name of the CamundaCluster, in the namespace of this
+                    description: |-
+                      Name is the name of the CamundaCluster, in the namespace of this
                       object.
                     minLength: 1
                     type: string
@@ -91,11 +94,10 @@ spec:
               retained:
                 default: {}
                 description: |-
-                  Retained bounds how many backups of this schedule are kept. The
-                  schedule prunes only the backups it created, matched by the
-                  camunda.io/backup-schedule label. It never touches a backup that a
-                  human created, and it never touches a backup that has not reached a
-                  terminal phase.
+                  Retained limits how many backups of this schedule stay. The schedule
+                  deletes only the backups that it created, which have the
+                  camunda.io/backup-schedule label. It never deletes a backup that a
+                  person created, or a backup that is not in a final phase.
                 properties:
                   completed:
                     default: 7
@@ -107,8 +109,8 @@ spec:
                   failed:
                     default: 3
                     description: |-
-                      Failed is how many failed backups the schedule keeps. Zero deletes a
-                      failed backup at the first look after it fails.
+                      Failed is how many failed backups the schedule keeps. With zero, the
+                      operator deletes a failed backup soon after it fails.
                     format: int32
                     minimum: 0
                     type: integer
@@ -128,9 +130,9 @@ spec:
             properties:
               conditions:
                 description: |-
-                  Conditions represent the current state. The Ready condition is Healthy
-                  while the schedule can run its backups, and InvalidReference while a
-                  reference does not resolve.
+                  Conditions represent the current state. The Ready condition has the
+                  reason Healthy while the schedule can run its backups, and
+                  InvalidReference while a reference does not resolve.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -195,14 +197,14 @@ spec:
                 type: string
               lastScheduleTime:
                 description: |-
-                  LastScheduleTime is the most recent trigger that the schedule
-                  consumed, whether it created a backup or skipped. A skipped trigger is
-                  never retried.
+                  LastScheduleTime is the last trigger that the schedule used, also when
+                  it skipped the trigger. The schedule never tries a skipped trigger
+                  again.
                 format: date-time
                 type: string
               observedGeneration:
-                description: ObservedGeneration is the last generation reconciled
-                  by the operator.
+                description: ObservedGeneration is the last generation that the operator
+                  processed.
                 format: int64
                 type: integer
             type: object

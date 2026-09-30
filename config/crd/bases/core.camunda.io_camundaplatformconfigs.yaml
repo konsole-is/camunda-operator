@@ -28,10 +28,10 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          CamundaPlatformConfig is the cluster-scoped CRD that holds the
-          environment-wide platform settings, the identity provider, the license, and
-          the image repositories, that every orchestration cluster referencing it
-          shares.
+          CamundaPlatformConfig is the cluster-scoped CRD that holds the platform
+          settings of an environment: the identity provider, the license, and the
+          image repositories. Every orchestration cluster that references it uses
+          these settings.
         properties:
           apiVersion:
             description: |-
@@ -69,13 +69,13 @@ spec:
                     type: string
                   oidc:
                     description: |-
-                      OIDC is the identity provider connection. Required when method is oidc,
-                      forbidden otherwise.
+                      OIDC is the identity provider connection. Required when method is
+                      oidc. Forbidden with other methods.
                     properties:
                       audience:
                         description: |-
                           Audience is the audience that consumers validate in access tokens.
-                          Consumers default it to ClientID when empty.
+                          When empty, consumers use ClientID.
                         type: string
                       authUrl:
                         description: |-
@@ -89,16 +89,16 @@ spec:
                             == 'http' || url(self).getScheme() == 'https'))
                       clientId:
                         description: |-
-                          ClientID is the default OIDC client ID that all clusters share unless a
-                          preset or a cluster overrides it.
+                          ClientID is the default OIDC client ID of all clusters. A preset or a
+                          cluster can set another value.
                         minLength: 1
                         type: string
                       clientIdClaim:
                         description: |-
                           ClientIDClaim is the token claim that holds the id of a machine client.
-                          Empty means that no claim identifies a client, and every token becomes a
-                          person. The claim must be absent from the tokens of persons, because a
-                          token that carries it always becomes a client.
+                          Empty means that no claim identifies a client, and every token is a
+                          person. The tokens of persons must not have this claim, because a
+                          token with it is always a client.
                         type: string
                       clientSecretRef:
                         description: |-
@@ -106,15 +106,17 @@ spec:
                           secret.
                         properties:
                           key:
-                            description: Key in the Secret holding the value.
+                            description: Key is the key in the Secret that holds the
+                              value.
                             minLength: 1
                             type: string
                           name:
-                            description: Name of the Secret holding the value.
+                            description: Name is the name of the Secret that holds
+                              the value.
                             minLength: 1
                             type: string
                           namespace:
-                            description: Namespace of the Secret.
+                            description: Namespace is the namespace of the Secret.
                             minLength: 1
                             type: string
                         required:
@@ -124,9 +126,9 @@ spec:
                         type: object
                       issuerUrl:
                         description: |-
-                          IssuerURL is the issuer URL of the identity provider. Consumers resolve
-                          the endpoints from its OIDC discovery document unless the explicit
-                          endpoint fields override them.
+                          IssuerURL is the issuer URL of the identity provider. Consumers get the
+                          endpoints from its OIDC discovery document, unless the endpoint fields
+                          below set them.
                         type: string
                         x-kubernetes-validations:
                         - message: issuerUrl must be a valid http or https URL
@@ -146,11 +148,11 @@ spec:
                         description: |-
                           Management holds the clients that the management plane uses at this
                           identity provider. A CamundaManagementCluster in the oidc mode reads
-                          them. Register one client per component at the provider first.
+                          them. First register one client for each component at the provider.
                         properties:
                           clients:
-                            description: Clients holds one entry per component of
-                              the management plane.
+                            description: Clients holds one entry for each component
+                              of the management plane.
                             properties:
                               console:
                                 description: |-
@@ -189,17 +191,18 @@ spec:
                                       key that holds the client secret.
                                     properties:
                                       key:
-                                        description: Key in the Secret holding the
-                                          value.
+                                        description: Key is the key in the Secret
+                                          that holds the value.
                                         minLength: 1
                                         type: string
                                       name:
-                                        description: Name of the Secret holding the
-                                          value.
+                                        description: Name is the name of the Secret
+                                          that holds the value.
                                         minLength: 1
                                         type: string
                                       namespace:
-                                        description: Namespace of the Secret.
+                                        description: Namespace is the namespace of
+                                          the Secret.
                                         minLength: 1
                                         type: string
                                     required:
@@ -214,7 +217,7 @@ spec:
                               optimize:
                                 description: |-
                                   Optimize is the client of Optimize. The ManagementAuthConfig that the
-                                  management cluster writes carries it, and Optimize reads it from there.
+                                  management cluster writes holds it, and Optimize reads it from there.
                                 properties:
                                   audience:
                                     description: |-
@@ -231,17 +234,18 @@ spec:
                                       key that holds the client secret.
                                     properties:
                                       key:
-                                        description: Key in the Secret holding the
-                                          value.
+                                        description: Key is the key in the Secret
+                                          that holds the value.
                                         minLength: 1
                                         type: string
                                       name:
-                                        description: Name of the Secret holding the
-                                          value.
+                                        description: Name is the name of the Secret
+                                          that holds the value.
                                         minLength: 1
                                         type: string
                                       namespace:
-                                        description: Namespace of the Secret.
+                                        description: Namespace is the namespace of
+                                          the Secret.
                                         minLength: 1
                                         type: string
                                     required:
@@ -290,17 +294,18 @@ spec:
                                       key that holds the client secret.
                                     properties:
                                       key:
-                                        description: Key in the Secret holding the
-                                          value.
+                                        description: Key is the key in the Secret
+                                          that holds the value.
                                         minLength: 1
                                         type: string
                                       name:
-                                        description: Name of the Secret holding the
-                                          value.
+                                        description: Name is the name of the Secret
+                                          that holds the value.
                                         minLength: 1
                                         type: string
                                       namespace:
-                                        description: Namespace of the Secret.
+                                        description: Namespace is the namespace of
+                                          the Secret.
                                         minLength: 1
                                         type: string
                                     required:
@@ -358,13 +363,13 @@ spec:
                   rule: (self.method == 'oidc') == has(self.oidc)
               images:
                 description: |-
-                  Images renames the images that the operator pulls, one entry per
-                  image, for example to a mirror. Each value is a full repository with
-                  its registry and no tag. The tag always comes from the version field
-                  of the resource that runs the image. A value that names a registry
-                  with a port needs a path after the port, as in
-                  registry:5000/camunda/optimize. The tag goes on the end of the value,
-                  so the bare registry:5000 becomes the image registry:5000:<version>.
+                  Images changes the repositories of the images that the operator pulls,
+                  one entry for each image, for example to a mirror. Each value is a full
+                  repository with its registry and no tag. The tag always comes from the
+                  version field of the resource that runs the image. A registry with a
+                  port needs a path after the port, as in registry:5000/camunda/optimize.
+                  The operator appends the tag to the value. Thus registry:5000 alone
+                  becomes the image registry:5000:<version>.
                 properties:
                   camunda:
                     description: |-
@@ -426,15 +431,15 @@ spec:
                   key. Without it, clusters run in unlicensed non-production mode.
                 properties:
                   key:
-                    description: Key in the Secret holding the value.
+                    description: Key is the key in the Secret that holds the value.
                     minLength: 1
                     type: string
                   name:
-                    description: Name of the Secret holding the value.
+                    description: Name is the name of the Secret that holds the value.
                     minLength: 1
                     type: string
                   namespace:
-                    description: Namespace of the Secret.
+                    description: Namespace is the namespace of the Secret.
                     minLength: 1
                     type: string
                 required:
@@ -448,8 +453,8 @@ spec:
             properties:
               conditions:
                 description: |-
-                  Conditions represent the current validation state; the Ready condition
-                  carries reasons Healthy or MissingSecret.
+                  Conditions represent the current validation state. The Ready condition
+                  has the reasons Healthy or MissingSecret.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -509,8 +514,8 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               observedGeneration:
-                description: ObservedGeneration is the last generation reconciled
-                  by the operator.
+                description: ObservedGeneration is the last generation that the operator
+                  processed.
                 format: int64
                 type: integer
             type: object

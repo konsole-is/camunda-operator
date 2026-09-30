@@ -32,9 +32,9 @@ spec:
       openAPIV3Schema:
         description: |-
           DatabaseConfig is the namespaced contract CRD that describes one logical
-          database — its server, name, and application credentials — for the
-          controllers and components that connect to it. Consumers resolve references
-          to it by name in their own namespace.
+          database: its server, its name, and its application credentials. The
+          components that connect to the database read it. Consumers find it by
+          name in their own namespace.
         properties:
           apiVersion:
             description: |-
@@ -58,22 +58,22 @@ spec:
             properties:
               backupCredentialsSecretRef:
                 description: |-
-                  BackupCredentialsSecretRef names a separate user with dump/restore
-                  privileges, used by the backup and restore controllers.
+                  BackupCredentialsSecretRef names a separate user with the privileges
+                  to dump and restore the database. Backups and restores use this user.
                 properties:
                   name:
-                    description: Name of the Secret holding the credentials.
+                    description: Name is the name of the Secret that holds the credentials.
                     minLength: 1
                     type: string
                   passwordKey:
                     default: password
-                    description: PasswordKey is the key in the Secret holding the
+                    description: PasswordKey is the key in the Secret that holds the
                       plaintext password.
                     minLength: 1
                     type: string
                   usernameKey:
                     default: username
-                    description: UsernameKey is the key in the Secret holding the
+                    description: UsernameKey is the key in the Secret that holds the
                       plaintext username.
                     minLength: 1
                     type: string
@@ -82,22 +82,22 @@ spec:
                 type: object
               credentialsSecretRef:
                 description: |-
-                  CredentialsSecretRef names an application user with read/write access to
-                  the database.
+                  CredentialsSecretRef names an application user with read and write
+                  access to the database.
                 properties:
                   name:
-                    description: Name of the Secret holding the credentials.
+                    description: Name is the name of the Secret that holds the credentials.
                     minLength: 1
                     type: string
                   passwordKey:
                     default: password
-                    description: PasswordKey is the key in the Secret holding the
+                    description: PasswordKey is the key in the Secret that holds the
                       plaintext password.
                     minLength: 1
                     type: string
                   usernameKey:
                     default: username
-                    description: UsernameKey is the key in the Secret holding the
+                    description: UsernameKey is the key in the Secret that holds the
                       plaintext username.
                     minLength: 1
                     type: string
@@ -111,8 +111,8 @@ spec:
                 type: string
               serverRef:
                 description: |-
-                  ServerRef names the DatabaseServerConfig describing the server hosting
-                  this database.
+                  ServerRef names the DatabaseServerConfig of the server that holds this
+                  database.
                 minLength: 1
                 type: string
             required:
@@ -125,8 +125,8 @@ spec:
             properties:
               conditions:
                 description: |-
-                  Conditions represent the current validation state; the Ready condition
-                  carries reasons Healthy, InvalidReference, or MissingSecret.
+                  Conditions represent the current validation state. The Ready condition
+                  has the reasons Healthy, InvalidReference, or MissingSecret.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -186,8 +186,8 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               observedGeneration:
-                description: ObservedGeneration is the last generation reconciled
-                  by the operator.
+                description: ObservedGeneration is the last generation that the operator
+                  processed.
                 format: int64
                 type: integer
             type: object

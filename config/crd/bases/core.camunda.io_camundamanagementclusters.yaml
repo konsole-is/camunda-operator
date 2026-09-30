@@ -29,14 +29,14 @@ spec:
       openAPIV3Schema:
         description: |-
           CamundaManagementCluster describes one Camunda management plane: Management
-          Identity, an identity provider, and optionally Console and Web Modeler. The
-          operator turns it into Deployments and Services, writes the
-          ManagementAuthConfig that Optimize reads, and attaches the management plane
+          Identity, an identity provider, and, when set, Console and Web Modeler. The
+          operator creates its Deployments and Services. It writes the
+          ManagementAuthConfig that Optimize reads. It attaches the management plane
           to the orchestration clusters that clusterSelector matches.
 
-          Creating a CamundaManagementCluster is a platform-administrator action,
-          because the selector reaches CamundaClusters in every namespace and the
-          operator annotates the ones it matches.
+          Only a platform administrator creates a CamundaManagementCluster. The
+          selector reaches CamundaClusters in every namespace, and the operator
+          adds annotations to the clusters that it matches.
         properties:
           apiVersion:
             description: |-
@@ -60,10 +60,10 @@ spec:
             properties:
               clusterSelector:
                 description: |-
-                  ClusterSelector selects the CamundaClusters, in every namespace that
-                  namespaceSelector admits, that Console and Web Modeler serve. It
-                  follows the Kubernetes label selector convention: an unset selector
-                  selects no cluster, and an empty selector ({}) selects every cluster.
+                  ClusterSelector selects the CamundaClusters that Console and Web
+                  Modeler serve, in every namespace that namespaceSelector permits. An
+                  unset selector selects no cluster. An empty selector ({}) selects every
+                  cluster.
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
@@ -109,15 +109,16 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               console:
-                description: Console configures Console. Console is not deployed while
-                  this is unset.
+                description: |-
+                  Console configures Console. While it is unset, the operator does not
+                  deploy Console.
                 properties:
                   externalUrl:
                     description: |-
-                      ExternalURL is the URL that browsers reach Console at. Console serves
+                      ExternalURL is the URL where browsers reach Console. Console serves
                       under the path of this URL. Every selected CamundaCluster reports to
-                      Console over the Service of the Kubernetes cluster, so the operator
-                      needs no Ingress in front of it.
+                      Console through its Kubernetes Service. Thus the clusters do not need
+                      an Ingress in front of Console.
                     type: string
                     x-kubernetes-validations:
                     - message: externalUrl must be a valid http or https URL
@@ -130,15 +131,15 @@ spec:
                       with the same name. The entries of an embedded web application apply to
                       its host process.
 
-                      The list merges by name under server-side apply, so each field manager
-                      owns only the entries that it applies. An extension controller can add
-                      its own entry next to yours. One applied manifest cannot hold two
-                      entries with the same name.
+                      The list merges by name under server-side apply. Each field manager owns
+                      only the entries that it applies, so an extension controller can add its
+                      own entry next to yours. One applied manifest cannot hold two entries
+                      with the same name.
 
-                      Two field managers that apply the same name do not conflict: the merge
-                      is per field inside the entry, so one manager can own value while the
-                      other owns valueFrom. A container rejects an entry that carries both,
-                      so the rule below refuses to store that combination.
+                      Two field managers that apply the same name do not conflict, because the
+                      merge is per field inside the entry. One manager can own value and the
+                      other valueFrom. A container rejects an entry that has both, so the API
+                      server refuses to store such an entry.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -430,10 +431,10 @@ spec:
                     type: object
                   scheduling:
                     description: |-
-                      Scheduling constraints of the pods of this process. When set, it
-                      replaces every scheduling block that would otherwise apply to this
-                      process, with no merge. On a CamundaCluster those are the top-level
-                      block and the block of a preset.
+                      Scheduling holds the scheduling constraints of the pods of this process.
+                      When set, it replaces all other scheduling blocks for this process, with
+                      no merge. On a CamundaCluster, these are the top-level block and the
+                      block of a preset.
                     properties:
                       nodeAffinity:
                         description: NodeAffinity rules for the pods.
@@ -1043,7 +1044,7 @@ spec:
               identity:
                 description: |-
                   Identity configures Management Identity. Console, Web Modeler, and
-                  Optimize all authenticate through it, so it is always deployed.
+                  Optimize authenticate through it, so the operator always deploys it.
                 properties:
                   admin:
                     description: Admin names the first administrator of the management
@@ -1053,8 +1054,8 @@ spec:
                         description: |-
                           ClaimName is the token claim that identifies the administrator, for
                           example oid or sub. Set it in the oidc mode. The operator records the
-                          claim as <claimName>=<claimValue> and reads it back at the first equals
-                          sign, so the name holds no equals sign.
+                          claim as <claimName>=<claimValue> and splits it at the first equals
+                          sign. Thus the name cannot hold an equals sign.
                         minLength: 1
                         type: string
                         x-kubernetes-validations:
@@ -1062,15 +1063,15 @@ spec:
                           rule: '!self.contains(''='')'
                       claimValue:
                         description: |-
-                          ClaimValue is the value that the claim carries for the administrator.
+                          ClaimValue is the value of the claim for the administrator.
                           Set it in the oidc mode.
                         minLength: 1
                         type: string
                       email:
                         description: |-
                           Email is the email address of the first Keycloak user. Web Modeler
-                          needs an address for every person who signs in, so it is required when
-                          webModeler is set in a Keycloak mode.
+                          needs an address for every person who signs in. Thus it is required
+                          when webModeler is set in a Keycloak mode.
                         minLength: 3
                         type: string
                       passwordSecretRef:
@@ -1080,11 +1081,13 @@ spec:
                           unset.
                         properties:
                           key:
-                            description: Key in the Secret holding the value.
+                            description: Key is the key in the Secret that holds the
+                              value.
                             minLength: 1
                             type: string
                           name:
-                            description: Name of the Secret holding the value.
+                            description: Name is the name of the Secret that holds
+                              the value.
                             minLength: 1
                             type: string
                         required:
@@ -1094,9 +1097,9 @@ spec:
                       username:
                         description: |-
                           Username is the name of the first Keycloak user. Set it in the keycloak
-                          and the externalKeycloak mode. Management Identity creates the user on
-                          its first start, so a later change to this field creates a second user
-                          rather than renaming the first one.
+                          and the externalKeycloak modes. Management Identity creates the user on
+                          its first start. A later change of this field creates a second user and
+                          does not rename the first user.
                         minLength: 1
                         type: string
                     type: object
@@ -1115,7 +1118,7 @@ spec:
                     type: string
                   externalUrl:
                     description: |-
-                      ExternalURL is the URL that browsers reach Management Identity at.
+                      ExternalURL is the URL where browsers reach Management Identity.
                       Identity registers it as the redirect URI of its own client.
                     type: string
                     x-kubernetes-validations:
@@ -1129,15 +1132,15 @@ spec:
                       with the same name. The entries of an embedded web application apply to
                       its host process.
 
-                      The list merges by name under server-side apply, so each field manager
-                      owns only the entries that it applies. An extension controller can add
-                      its own entry next to yours. One applied manifest cannot hold two
-                      entries with the same name.
+                      The list merges by name under server-side apply. Each field manager owns
+                      only the entries that it applies, so an extension controller can add its
+                      own entry next to yours. One applied manifest cannot hold two entries
+                      with the same name.
 
-                      Two field managers that apply the same name do not conflict: the merge
-                      is per field inside the entry, so one manager can own value while the
-                      other owns valueFrom. A container rejects an entry that carries both,
-                      so the rule below refuses to store that combination.
+                      Two field managers that apply the same name do not conflict, because the
+                      merge is per field inside the entry. One manager can own value and the
+                      other valueFrom. A container rejects an entry that has both, so the API
+                      server refuses to store such an entry.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -1429,10 +1432,10 @@ spec:
                     type: object
                   scheduling:
                     description: |-
-                      Scheduling constraints of the pods of this process. When set, it
-                      replaces every scheduling block that would otherwise apply to this
-                      process, with no merge. On a CamundaCluster those are the top-level
-                      block and the block of a preset.
+                      Scheduling holds the scheduling constraints of the pods of this process.
+                      When set, it replaces all other scheduling blocks for this process, with
+                      no merge. On a CamundaCluster, these are the top-level block and the
+                      block of a preset.
                     properties:
                       nodeAffinity:
                         description: NodeAffinity rules for the pods.
@@ -2065,19 +2068,20 @@ spec:
                           realm, the clients, and the initial administrator.
                         properties:
                           name:
-                            description: Name of the Secret holding the credentials.
+                            description: Name is the name of the Secret that holds
+                              the credentials.
                             minLength: 1
                             type: string
                           passwordKey:
                             default: password
-                            description: PasswordKey is the key in the Secret holding
-                              the plaintext password.
+                            description: PasswordKey is the key in the Secret that
+                              holds the plaintext password.
                             minLength: 1
                             type: string
                           usernameKey:
                             default: username
-                            description: UsernameKey is the key in the Secret holding
-                              the plaintext username.
+                            description: UsernameKey is the key in the Secret that
+                              holds the plaintext username.
                             minLength: 1
                             type: string
                         required:
@@ -2086,18 +2090,20 @@ spec:
                       caBundleSecretRef:
                         description: |-
                           CABundleSecretRef names the Secret key that holds the certificate
-                          authority of Keycloak, in PEM form. The operator trusts it in addition
-                          to the trust store of its own image when it signs in to Keycloak to
-                          register the login callbacks of Optimize. Set it when Keycloak serves a
-                          certificate that a public authority did not sign. It is only valid with
-                          an https url.
+                          authority of Keycloak, in PEM form. The operator signs in to Keycloak to
+                          register the login callbacks of Optimize. It then trusts this authority
+                          and the trust store of its own image. Set it when a public authority did
+                          not sign the certificate of Keycloak. It is valid only with an https
+                          url.
                         properties:
                           key:
-                            description: Key in the Secret holding the value.
+                            description: Key is the key in the Secret that holds the
+                              value.
                             minLength: 1
                             type: string
                           name:
-                            description: Name of the Secret holding the value.
+                            description: Name is the name of the Secret that holds
+                              the value.
                             minLength: 1
                             type: string
                         required:
@@ -2106,11 +2112,11 @@ spec:
                         type: object
                       realm:
                         description: |-
-                          Realm is the realm that Management Identity uses and creates. Empty
-                          means camunda-platform. The realm lands in the issuer, the token, and
-                          the JWKS path of every URL that Management Identity builds, so it holds
-                          letters, digits, dots, hyphens, and underscores only, and it is bounded
-                          the way the URL is.
+                          Realm is the realm that Management Identity creates and uses. Empty
+                          means camunda-platform. The realm is part of the issuer, the token, and
+                          the JWKS URLs that Management Identity builds. Thus it holds only
+                          letters, digits, dots, hyphens, and underscores, and its length has a
+                          limit, as the URL has.
                         maxLength: 255
                         type: string
                         x-kubernetes-validations:
@@ -2120,16 +2126,16 @@ spec:
                           rule: self == '' || self.matches('^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$')
                       url:
                         description: |-
-                          URL is the URL of Keycloak, including the /auth path when it has one.
-                          Management Identity reaches this URL, so it must resolve from inside
-                          the Kubernetes cluster.
+                          URL is the URL of Keycloak, with the /auth path when Keycloak has one.
+                          Management Identity uses this URL, so it must resolve from inside the
+                          Kubernetes cluster.
 
-                          The operator appends /realms/<realm> to this URL, so the URL carries no
-                          query and no fragment. The URL also lands in the annotations of the
-                          Lease that claims the realm, so it is bounded.
+                          The operator appends /realms/<realm> to this URL, so the URL has no
+                          query and no fragment. The URL is also in the annotations of the Lease
+                          that claims the realm, so its length has a limit.
 
-                          The URL carries no user and no password. The operator does not support
-                          a Keycloak behind a proxy that needs basic authentication.
+                          The URL has no user and no password. The operator does not support a
+                          Keycloak behind a proxy that needs basic authentication.
                         maxLength: 2048
                         type: string
                         x-kubernetes-validations:
@@ -2165,13 +2171,13 @@ spec:
                         type: string
                       externalUrl:
                         description: |-
-                          ExternalURL is the URL that browsers reach Keycloak at, including the
-                          /auth path. It is the front-channel issuer of every token. Management
+                          ExternalURL is the URL where browsers reach Keycloak, with the /auth
+                          path. It is the front-channel issuer of every token. Management
                           Identity uses the front-channel URL since 8.5.3, so the Identity pods
                           must also reach it. Management Identity administers Keycloak through
                           the Service that the Keycloak Operator creates, not through this URL.
 
-                          The operator appends /realms/<realm> to this URL, so the URL carries no
+                          The operator appends /realms/<realm> to this URL, so the URL has no
                           query and no fragment.
                         type: string
                         x-kubernetes-validations:
@@ -2854,9 +2860,9 @@ spec:
                       version:
                         description: |-
                           Version is the Keycloak version, as a full semantic version. Camunda
-                          8.9 supports Keycloak 26 only. The image is
-                          camunda/keycloak:quay-optimized-<version> unless the platform config
-                          overrides the repository.
+                          8.9 supports only Keycloak 26. The image is
+                          camunda/keycloak:quay-optimized-<version>, unless the platform config
+                          sets another repository.
                         pattern: ^\d+\.\d+\.\d+$
                         type: string
                     required:
@@ -2884,11 +2890,10 @@ spec:
                 type: string
               namespaceSelector:
                 description: |-
-                  NamespaceSelector narrows clusterSelector to the namespaces whose
-                  labels match. It selects on the labels of the Namespace objects, the
-                  way the namespaceSelector of an admission webhook does. An unset or
-                  empty ({}) selector puts no bound on the namespace, so clusterSelector
-                  alone decides.
+                  NamespaceSelector limits clusterSelector to the namespaces whose labels
+                  match. It selects on the labels of the Namespace objects, as the
+                  namespaceSelector of an admission webhook does. An unset or empty ({})
+                  selector permits every namespace.
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
@@ -2936,21 +2941,21 @@ spec:
               platformConfigRef:
                 description: |-
                   PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that
-                  carries the license, the image settings, and, in the oidc mode, the
-                  identity provider and every client of the management plane.
+                  holds the license and the image settings. In the oidc mode, it also
+                  holds the identity provider and every client of the management plane.
                 minLength: 1
                 type: string
               suspend:
                 description: |-
                   Suspend scales every workload of this management cluster to zero. The
                   ManagementAuthConfig, the claims on the orchestration clusters, and the
-                  Console ping settings stay, so nothing else has to change while the
+                  Console ping settings stay. Thus nothing else must change while the
                   management plane is down.
                 type: boolean
               webModeler:
                 description: |-
-                  WebModeler configures Web Modeler. Web Modeler is not deployed while
-                  this is unset.
+                  WebModeler configures Web Modeler. While it is unset, the operator does
+                  not deploy Web Modeler.
                 properties:
                   databaseConfigRef:
                     description: |-
@@ -2960,8 +2965,7 @@ spec:
                     minLength: 1
                     type: string
                   externalUrl:
-                    description: ExternalURL is the URL that browsers reach Web Modeler
-                      at.
+                    description: ExternalURL is the URL where browsers reach Web Modeler.
                     type: string
                     x-kubernetes-validations:
                     - message: externalUrl must be a valid http or https URL
@@ -2978,19 +2982,20 @@ spec:
                           the SMTP server. Leave it unset for a server that needs no credentials.
                         properties:
                           name:
-                            description: Name of the Secret holding the credentials.
+                            description: Name is the name of the Secret that holds
+                              the credentials.
                             minLength: 1
                             type: string
                           passwordKey:
                             default: password
-                            description: PasswordKey is the key in the Secret holding
-                              the plaintext password.
+                            description: PasswordKey is the key in the Secret that
+                              holds the plaintext password.
                             minLength: 1
                             type: string
                           usernameKey:
                             default: username
-                            description: UsernameKey is the key in the Secret holding
-                              the plaintext username.
+                            description: UsernameKey is the key in the Secret that
+                              holds the plaintext username.
                             minLength: 1
                             type: string
                         required:
@@ -3002,8 +3007,8 @@ spec:
                         minLength: 3
                         type: string
                       fromName:
-                        description: FromName is the display name that Web Modeler
-                          sends under.
+                        description: FromName is the display name of the sender of
+                          Web Modeler mail.
                         type: string
                       smtpHost:
                         description: SMTPHost is the host name of the SMTP server.
@@ -3034,15 +3039,15 @@ spec:
                           with the same name. The entries of an embedded web application apply to
                           its host process.
 
-                          The list merges by name under server-side apply, so each field manager
-                          owns only the entries that it applies. An extension controller can add
-                          its own entry next to yours. One applied manifest cannot hold two
-                          entries with the same name.
+                          The list merges by name under server-side apply. Each field manager owns
+                          only the entries that it applies, so an extension controller can add its
+                          own entry next to yours. One applied manifest cannot hold two entries
+                          with the same name.
 
-                          Two field managers that apply the same name do not conflict: the merge
-                          is per field inside the entry, so one manager can own value while the
-                          other owns valueFrom. A container rejects an entry that carries both,
-                          so the rule below refuses to store that combination.
+                          Two field managers that apply the same name do not conflict, because the
+                          merge is per field inside the entry. One manager can own value and the
+                          other valueFrom. A container rejects an entry that has both, so the API
+                          server refuses to store such an entry.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -3338,10 +3343,10 @@ spec:
                         type: object
                       scheduling:
                         description: |-
-                          Scheduling constraints of the pods of this process. When set, it
-                          replaces every scheduling block that would otherwise apply to this
-                          process, with no merge. On a CamundaCluster those are the top-level
-                          block and the block of a preset.
+                          Scheduling holds the scheduling constraints of the pods of this process.
+                          When set, it replaces all other scheduling blocks for this process, with
+                          no merge. On a CamundaCluster, these are the top-level block and the
+                          block of a preset.
                         properties:
                           nodeAffinity:
                             description: NodeAffinity rules for the pods.
@@ -3959,15 +3964,15 @@ spec:
                           with the same name. The entries of an embedded web application apply to
                           its host process.
 
-                          The list merges by name under server-side apply, so each field manager
-                          owns only the entries that it applies. An extension controller can add
-                          its own entry next to yours. One applied manifest cannot hold two
-                          entries with the same name.
+                          The list merges by name under server-side apply. Each field manager owns
+                          only the entries that it applies, so an extension controller can add its
+                          own entry next to yours. One applied manifest cannot hold two entries
+                          with the same name.
 
-                          Two field managers that apply the same name do not conflict: the merge
-                          is per field inside the entry, so one manager can own value while the
-                          other owns valueFrom. A container rejects an entry that carries both,
-                          so the rule below refuses to store that combination.
+                          Two field managers that apply the same name do not conflict, because the
+                          merge is per field inside the entry. One manager can own value and the
+                          other valueFrom. A container rejects an entry that has both, so the API
+                          server refuses to store such an entry.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -4263,10 +4268,10 @@ spec:
                         type: object
                       scheduling:
                         description: |-
-                          Scheduling constraints of the pods of this process. When set, it
-                          replaces every scheduling block that would otherwise apply to this
-                          process, with no merge. On a CamundaCluster those are the top-level
-                          block and the block of a preset.
+                          Scheduling holds the scheduling constraints of the pods of this process.
+                          When set, it replaces all other scheduling blocks for this process, with
+                          no merge. On a CamundaCluster, these are the top-level block and the
+                          block of a preset.
                         properties:
                           nodeAffinity:
                             description: NodeAffinity rules for the pods.
@@ -4869,8 +4874,8 @@ spec:
                     type: object
                   websocketsExternalUrl:
                     description: |-
-                      WebsocketsExternalURL is the URL that browsers reach the websockets
-                      process at. Web Modeler pushes live updates over it.
+                      WebsocketsExternalURL is the URL where browsers reach the websockets
+                      process. Web Modeler sends live updates through it.
                     type: string
                     x-kubernetes-validations:
                     - message: websocketsExternalUrl must be a valid http or https
@@ -4906,28 +4911,30 @@ spec:
               callbackRealm:
                 description: |-
                   CallbackRealm is the Keycloak realm that this management plane last
-                  pointed Management Identity at, in the externalKeycloak mode. Identity
-                  registers the login callbacks of Optimize there while it starts, so the
-                  field appears with the realm and not with the first registration. A
-                  non-nil value does not say that the callbacks are still there: when the
-                  spec names another realm, or the oidc mode, the operator removes them
-                  from this realm first, and the field then outlives the emptied realm
-                  until nothing of that realm's configuration can put them back: no
-                  Management Identity pod of it that can still run, and no Deployment or
-                  ReplicaSet of it that can still start one. It goes when that drain
-                  is over, so its disappearance, or its move to the new realm, is the
-                  completion signal of a move.
+                  gave to Management Identity, in the externalKeycloak mode. Identity
+                  registers the login callbacks of Optimize in this realm when it starts.
+                  Thus the field appears with the realm, not with the first registration.
 
-                  It is absent once a move into the keycloak or the oidc mode is over,
-                  and while no login callback of this operator is registered anywhere and
-                  nothing remains that could write them back. The operator runs the
-                  Keycloak of the keycloak mode and deletes it with the management plane
-                  or with a move away from that mode, so that realm is never recorded.
-                  During a move into either mode the field still names the realm that the
-                  plane is leaving. A Keycloak that is gone for good never answers, so
-                  the annotation camunda.io/forget-callback-realm, set to the value that
-                  the OptimizeCallbacksReady message names, lets go of it with the
-                  callbacks still in it.
+                  A value does not mean that the callbacks are still in the realm. When
+                  the spec names another realm or the oidc mode, the operator first
+                  removes the callbacks from this realm. The field stays until no
+                  configuration of the old realm can write them back. That is the case
+                  when no Management Identity pod of the old realm can run, and no
+                  Deployment or ReplicaSet of it can start one. The field then disappears
+                  or moves to the new realm. This change shows that the move is complete.
+
+                  The field is absent after a move into the keycloak or the oidc mode.
+                  It is also absent while no login callback of this operator is
+                  registered and nothing can write one back. The operator runs the
+                  Keycloak of the keycloak mode, and deletes it with the management plane
+                  or when the plane leaves that mode. Thus the field never names the
+                  realm of that Keycloak. During a move into either mode, the field still
+                  names the realm that the plane leaves.
+
+                  A Keycloak that is permanently gone never answers. To release its realm
+                  with the callbacks in it, set the annotation
+                  camunda.io/forget-callback-realm. Use the value that the
+                  OptimizeCallbacksReady message names.
                 properties:
                   adminCredentialsSecretRef:
                     description: |-
@@ -4936,18 +4943,19 @@ spec:
                       resource.
                     properties:
                       name:
-                        description: Name of the Secret holding the credentials.
+                        description: Name is the name of the Secret that holds the
+                          credentials.
                         minLength: 1
                         type: string
                       passwordKey:
                         default: password
-                        description: PasswordKey is the key in the Secret holding
+                        description: PasswordKey is the key in the Secret that holds
                           the plaintext password.
                         minLength: 1
                         type: string
                       usernameKey:
                         default: username
-                        description: UsernameKey is the key in the Secret holding
+                        description: UsernameKey is the key in the Secret that holds
                           the plaintext username.
                         minLength: 1
                         type: string
@@ -4957,15 +4965,16 @@ spec:
                   caBundleSecretRef:
                     description: |-
                       CABundleSecretRef names the Secret key with the certificate authority of
-                      Keycloak, in the namespace of this resource. It is absent for a Keycloak
-                      whose certificate a public authority signed.
+                      Keycloak, in the namespace of this resource. It is absent when a public
+                      authority signed the certificate of Keycloak.
                     properties:
                       key:
-                        description: Key in the Secret holding the value.
+                        description: Key is the key in the Secret that holds the value.
                         minLength: 1
                         type: string
                       name:
-                        description: Name of the Secret holding the value.
+                        description: Name is the name of the Secret that holds the
+                          value.
                         minLength: 1
                         type: string
                     required:
@@ -4977,8 +4986,8 @@ spec:
                     type: string
                   url:
                     description: |-
-                      URL is the URL of Keycloak that the operator reaches, the /auth path
-                      included when Keycloak serves one.
+                      URL is the URL of Keycloak that the operator uses, with the /auth path
+                      when Keycloak has one.
                     type: string
                 required:
                 - adminCredentialsSecretRef
@@ -4988,15 +4997,16 @@ spec:
               clusters:
                 description: |-
                   Clusters lists every CamundaCluster that clusterSelector matched, and
-                  reports whether the management plane serves it.
+                  shows whether the management plane serves it.
                 items:
                   description: AttachedClusterStatus is one CamundaCluster that clusterSelector
                     matched.
                   properties:
                     attached:
                       description: |-
-                        Attached reports whether the management plane serves this cluster.
-                        Console lists it and Web Modeler deploys to it only while this is true.
+                        Attached shows whether the management plane serves this cluster.
+                        Console lists the cluster, and Web Modeler deploys to it, only while
+                        this is true.
                       type: boolean
                     message:
                       description: Message explains the reason in one sentence.
@@ -5009,15 +5019,17 @@ spec:
                       type: string
                     reason:
                       description: |-
-                        Reason names what the management plane found on this cluster. It is one
-                        of five values. Four of them say why the cluster is not attached:
-                        ClaimedElsewhere, another management plane holds it; NotReady, it
-                        publishes no gateway endpoints or it changed while the operator claimed
-                        it; InvalidReference, its platform config cannot be read, or the cluster
-                        authenticates with OIDC and names another issuer than the management
-                        plane; WriteFailed, the Console ping settings were refused. The fifth,
-                        BasicAuthUserFailed, accompanies an attached row: the management plane
-                        serves the cluster, and only the Web Modeler user on it is missing.
+                        Reason names what the management plane found on this cluster. It has
+                        one of five values. Four values tell why the cluster is not attached.
+                        ClaimedElsewhere means that another management plane holds the
+                        cluster. NotReady means that the cluster publishes no gateway endpoints,
+                        or that it changed while the operator claimed it. InvalidReference
+                        means that the operator cannot read the platform config of the cluster.
+                        It also means that the cluster uses OIDC with another issuer than the
+                        management plane. WriteFailed means that the cluster refused the Console ping
+                        settings. The fifth value, BasicAuthUserFailed, is on an attached row.
+                        The management plane serves the cluster, but the Web Modeler user on
+                        it is missing.
                       type: string
                   required:
                   - attached
@@ -5031,8 +5043,9 @@ spec:
                 x-kubernetes-list-type: map
               conditions:
                 description: |-
-                  Conditions represent the current state. Ready carries a pre-check
-                  reason, or it is derived from the conditions of the deployed components.
+                  Conditions represent the current state. Ready holds the reason of a
+                  failed pre-check, or it follows the conditions of the deployed
+                  components.
                   The per-component conditions (KeycloakReady, IdentityReady,
                   ConsoleReady, WebModelerReady, ManagementAuthReady, SecretsReady,
                   MirroredSecretsReady) and OptimizeCallbacksReady also appear here.
@@ -5101,19 +5114,19 @@ spec:
                   managementAuthRef.
                 type: string
               observedGeneration:
-                description: ObservedGeneration is the last generation reconciled
-                  by the operator.
+                description: ObservedGeneration is the last generation that the operator
+                  processed.
                 format: int64
                 type: integer
               optimize:
                 description: |-
                   Optimize lists every CamundaOptimize that names the ManagementAuthConfig
-                  of this management cluster and sets spec.externalUrl, ordered by
-                  namespace and name. The management plane registers the login callback of
-                  each one on the Optimize client of the realm.
+                  of this management cluster and sets spec.externalUrl, sorted by
+                  namespace and name. The management plane registers the login callback
+                  of each one on the Optimize client of the realm.
 
-                  The list holds no row in the oidc mode, where the identity provider of
-                  the platform config holds the callback URLs.
+                  The list is empty in the oidc mode. In that mode, the identity provider
+                  of the platform config holds the callback URLs.
                 items:
                   description: |-
                     AttachedOptimizeStatus is one CamundaOptimize whose login callback this
@@ -5122,7 +5135,7 @@ spec:
                     externalUrl:
                       description: |-
                         ExternalURL is spec.externalUrl of that CamundaOptimize. The registered
-                        callback is this URL plus the login path of Optimize.
+                        callback is this URL with the login path of Optimize.
                       type: string
                     name:
                       description: Name is the name of the CamundaOptimize.
