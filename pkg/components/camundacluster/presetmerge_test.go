@@ -727,7 +727,7 @@ func TestValidateMergedDefaultRoleEnv(t *testing.T) {
 	}{
 		{"users of a role", roles + "ADMIN_USERS_0", false},
 		{"a dash in the role", roles + "READONLY-ADMIN_USERS_0", false},
-		{"groups at a later index", roles + "TASK-WORKER_GROUPS_12", false},
+		{"groups at a two-digit index", roles + "TASK-WORKER_GROUPS_12", false},
 		{"clients", roles + "ADMIN_CLIENTS_0", false},
 		{"roles", roles + "ADMIN_ROLES_0", false},
 		{"mapping rules", roles + "ADMIN_MAPPINGRULES_0", false},

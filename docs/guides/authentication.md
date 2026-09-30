@@ -267,6 +267,8 @@ status:
 
 The operator does not read the keys of an `extraEnvFrom` source. It cannot refuse such a name in a ConfigMap or a Secret, so write these variables in `extraEnv`.
 
+The operator does not check the indexes. For each role and type, count `<n>` up from `0` without a gap. Camunda does not start when an index is missing. The operator itself writes the members of `spec.auth.admin` from index `0` of the `admin` role. Under OIDC, it can also write the first client of the `connectors` role. An `extraEnv` entry with the same name replaces the entry of the operator. List administrators in `spec.auth.admin`, not in `extraEnv`.
+
 ### Per-cluster client
 
 A cluster can use a client of its own:
