@@ -793,7 +793,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `version` _string_ | Version is the Camunda version of the orchestration cluster processes,<br />as a full semantic version. Each cluster that references the release<br />refuses a version below 8.9.0. |  | Pattern: `^\d+\.\d+\.\d+$` <br />Required: \{\} <br /> |
+| `version` _string_ | Version is the Camunda version of the orchestration cluster processes,<br />as a full semantic version. A cluster that references the release<br />refuses an effective version below 8.9.0. Its own spec.version wins over<br />this value. |  | Pattern: `^\d+\.\d+\.\d+$` <br />Required: \{\} <br /> |
 | `connectors` _[ReleaseConnectorsSpec](#releaseconnectorsspec)_ | Connectors holds the version and the environment of the connectors<br />runtime. |  | Optional: \{\} <br /> |
 | `elasticsearch` _[ReleaseElasticsearchSpec](#releaseelasticsearchspec)_ | Elasticsearch holds the version of the Elasticsearch clusters of this<br />release. An ElasticsearchCluster takes it through its releaseRef. |  | Optional: \{\} <br /> |
 | `databaseServer` _[ReleaseDatabaseServerSpec](#releasedatabaseserverspec)_ | DatabaseServer holds the version of the PostgreSQL servers of this<br />release. A DatabaseServer takes it through its releaseRef. |  | Optional: \{\} <br /> |
@@ -2336,7 +2336,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `phase` _[LogicalRestorePhase](#logicalrestorephase)_ | Phase is the phase of the restore. After an interruption, the restore<br />continues at this phase. |  | Enum: [Pending ValidatingCompatibility RestoringSecondaryStorage RestoringPrimaryStorage Completed Failed] <br />Optional: \{\} <br /> |
-| `backupId` _integer_ | BackupID is the backup that the restore reads. The operator records it<br />when the restore starts. A backup that is deleted and created again<br />with the same name has another ID, and this restore does not read it.<br />Later phases of the restore still read the backup resource, so keep it<br />until the restore completes. |  | Optional: \{\} <br /> |
+| `backupId` _integer_ | BackupID is the backup that the restore reads. The operator records it<br />when the restore starts. Later phases of the restore still read the<br />backup resource, so keep it until the restore completes. |  | Optional: \{\} <br /> |
 | `backend` _string_ | Backend is the Elasticsearch that the restore writes, as the scheme,<br />the host, and the port. The operator records it when the restore<br />starts. From then until the final phase, and after it while<br />recoveryHeld is true, no other CamundaCluster starts on this backend.<br />The restore waits while its target does not hold the backend. |  | Optional: \{\} <br /> |
 | `recoveryHeld` _boolean_ | RecoveryHeld is true while a failed or deleted restore keeps the<br />backend, because Elasticsearch can still recover snapshots that the<br />restore asked for. While it is true, no other CamundaCluster starts on<br />the backend, and the target stays suspended. No other backup or restore<br />of the target starts. A deleted restore stays while it is true. It is<br />unset on a restore that was never held, and false when the hold ends. |  | Optional: \{\} <br /> |
 | `recoveryUnknownSince` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | RecoveryUnknownSince is the start of the current period in which a held<br />restore cannot read the recovery from Elasticsearch. If the recovery stays unknown for ten<br />minutes, the restore releases the backend. |  | Optional: \{\} <br /> |
@@ -3389,7 +3389,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `version` _string_ | Version is the PostgreSQL major version of the servers of this release,<br />as a number such as "17". Each server that references the release<br />refuses a version below 14. A server that already runs another major<br />version refuses the change and keeps its major version. |  | Pattern: `^\d+$` <br />Optional: \{\} <br /> |
+| `version` _string_ | Version is the PostgreSQL major version of the servers of this release,<br />as a number such as "17". A server that references the release refuses<br />an effective version below 14. Its own spec.version wins over this<br />value. A server that already runs another major version refuses the<br />change and keeps its major version. |  | Pattern: `^\d+$` <br />Optional: \{\} <br /> |
 
 
 #### ReleaseElasticsearchSpec
@@ -3405,7 +3405,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `version` _string_ | Version is the Elasticsearch version of the clusters of this release,<br />as a full semantic version. Elasticsearch has its own patch line, so it<br />does not follow the Camunda version. Each cluster that references the<br />release refuses a version below 8.19 in the 8 line or below 9.2 in the<br />9 line. |  | Pattern: `^\d+\.\d+\.\d+$` <br />Optional: \{\} <br /> |
+| `version` _string_ | Version is the Elasticsearch version of the clusters of this release,<br />as a full semantic version. Elasticsearch has its own patch line, so it<br />does not follow the Camunda version. A cluster that references the<br />release refuses an effective version below 8.19 in the 8 line or below<br />9.2 in the 9 line. Its own spec.version wins over this value. |  | Pattern: `^\d+\.\d+\.\d+$` <br />Optional: \{\} <br /> |
 
 
 #### ReleaseEnvSpec

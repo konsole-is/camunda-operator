@@ -27,8 +27,9 @@ import (
 // environment that a version needs.
 type CamundaReleaseSpec struct {
 	// Version is the Camunda version of the orchestration cluster processes,
-	// as a full semantic version. Each cluster that references the release
-	// refuses a version below 8.9.0.
+	// as a full semantic version. A cluster that references the release
+	// refuses an effective version below 8.9.0. Its own spec.version wins over
+	// this value.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	// +required
 	Version string `json:"version"`
@@ -112,9 +113,9 @@ type ReleaseConnectorsSpec struct {
 type ReleaseElasticsearchSpec struct {
 	// Version is the Elasticsearch version of the clusters of this release,
 	// as a full semantic version. Elasticsearch has its own patch line, so it
-	// does not follow the Camunda version. Each cluster that references the
-	// release refuses a version below 8.19 in the 8 line or below 9.2 in the
-	// 9 line.
+	// does not follow the Camunda version. A cluster that references the
+	// release refuses an effective version below 8.19 in the 8 line or below
+	// 9.2 in the 9 line. Its own spec.version wins over this value.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	// +optional
 	Version string `json:"version,omitempty"`
@@ -123,9 +124,10 @@ type ReleaseElasticsearchSpec struct {
 // ReleaseDatabaseServerSpec is the PostgreSQL server of a release.
 type ReleaseDatabaseServerSpec struct {
 	// Version is the PostgreSQL major version of the servers of this release,
-	// as a number such as "17". Each server that references the release
-	// refuses a version below 14. A server that already runs another major
-	// version refuses the change and keeps its major version.
+	// as a number such as "17". A server that references the release refuses
+	// an effective version below 14. Its own spec.version wins over this
+	// value. A server that already runs another major version refuses the
+	// change and keeps its major version.
 	// +kubebuilder:validation:Pattern=`^\d+$`
 	// +optional
 	Version string `json:"version,omitempty"`
