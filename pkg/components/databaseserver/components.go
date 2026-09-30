@@ -113,9 +113,9 @@ const (
 // ObjectStore, and a cluster that keeps it writes its write-ahead log into the
 // bucket of whoever holds the name.
 //
-// pluginRoles are the clusters of the server. While the server archives, each
-// granted one gets a RoleBinding from the Role of the Barman Cloud plugin to
-// the ServiceAccount of the server: see pluginbinding.go.
+// While the server archives, each pluginRoles entry with Granted set gets a
+// RoleBinding from the Role of the Barman Cloud plugin to the ServiceAccount of
+// the server: see pluginbinding.go.
 func ClusterComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
