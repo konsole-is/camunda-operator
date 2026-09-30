@@ -23,15 +23,16 @@ import (
 // ElasticsearchClusterPresetSpec defines the desired state of
 // ElasticsearchClusterPreset.
 type ElasticsearchClusterPresetSpec struct {
-	// Cluster is the full configuration baseline consumers inherit. It reuses
-	// the ElasticsearchCluster spec type so the two never drift apart. The
-	// instance-bound fields of that type, presetRef, releaseRef,
-	// secondaryStorageConfig, and suspend, must be left unset inside a preset,
-	// and so must the version, which belongs to a CamundaRelease. Explicit
-	// zero values (an empty presetRef, suspend: false), as templated YAML
-	// renders unset fields, count as unset. monitoring is a baseline like any
-	// other field: a preset can enable scraping and pin the exporter image and
-	// resources for every cluster that references it.
+	// Cluster is the complete configuration baseline that the clusters that
+	// reference the preset get. It uses the ElasticsearchCluster spec type. A
+	// preset must not set the fields that belong to one cluster only:
+	// presetRef, releaseRef, secondaryStorageConfig, and suspend. It must
+	// also not set the version, which belongs to a CamundaRelease. An explicit
+	// zero value, such as an empty presetRef or suspend: false, counts as
+	// unset. Templated YAML often renders unset fields in this way. A preset
+	// can set monitoring like any other field. Thus it can enable scraping
+	// and set the exporter image and resources for every cluster that
+	// references it.
 	// +kubebuilder:validation:XValidation:rule="(!has(self.presetRef) || self.presetRef == '') && (!has(self.releaseRef) || self.releaseRef == '') && (!has(self.secondaryStorageConfig) || self.secondaryStorageConfig == '') && (!has(self.suspend) || !self.suspend)",message="instance-bound fields (presetRef, releaseRef, secondaryStorageConfig, suspend) must not be set in a preset"
 	// +kubebuilder:validation:XValidation:rule="!has(self.version) || self.version == ''",message="version belongs to a CamundaRelease and must not be set in a preset"
 	// +required
@@ -42,10 +43,10 @@ type ElasticsearchClusterPresetSpec struct {
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// ElasticsearchClusterPreset is a cluster-scoped, passive baseline
-// configuration for ElasticsearchCluster resources: no controller reconciles
-// it, it provisions nothing and reports no status. Consumers resolve it via
-// their presetRef and overlay inline fields wholesale.
+// ElasticsearchClusterPreset is a cluster-scoped baseline configuration for
+// ElasticsearchCluster resources. It has no controller, creates nothing, and
+// reports no status. A cluster reads it through its presetRef. A field set on
+// the cluster replaces the value of the preset for that field completely.
 type ElasticsearchClusterPreset struct {
 	metav1.TypeMeta `json:",inline"`
 

@@ -101,17 +101,16 @@ type S3StorageAuth struct {
 // PlaceholderS3Region is the region that a consumer of an S3Storage sends
 // when the block carries an endpoint and no region of its own.
 //
-// The AWS SDK resolves a region even when an endpoint routes every request,
-// and it builds no client when it finds none. A store addressed by endpoint
-// ignores the value, so any region serves, and this one is the conventional
-// choice. Every consumer sends the same one on purpose: the region enters
-// the SigV4 signature, so two consumers of one bucket that disagreed would
-// sign differently, and a store that enforces the region would accept one
-// and reject the other.
+// The AWS SDK needs a region even when an endpoint routes every request. It
+// builds no client without one. A store addressed by endpoint ignores the
+// value, so any region works, and this one is the usual choice. Every
+// consumer sends the same region, because the region is part of the SigV4
+// signature. If two consumers of one bucket sent different regions, a store
+// that enforces the region accepts one and refuses the other.
 //
-// A block without an endpoint is AWS S3 itself. It never gets this value:
-// there the region chain of the pod is a legitimate source, and a
-// placeholder would aim every request at the wrong region.
+// A block without an endpoint is AWS S3 itself. It never gets this value.
+// There the region chain of the pod is a valid source, and a placeholder
+// sends every request to the wrong region.
 const PlaceholderS3Region = "us-east-1"
 
 // The rule compares with size(), not with the empty string literal. gofmt
@@ -535,16 +534,15 @@ func (in *ObjectStorageConfig) BasePath() string {
 	return strings.Trim(block.basePath, "/")
 }
 
-// Location returns where the objects of the active storage block live, as one
-// string that changes when, and only when, a key written through this
-// contract would land somewhere else: the storage type, the bucket (or the
+// Location returns where the objects of the active storage block are, as one
+// string. The string changes only when a key written through this contract
+// goes to another place. It holds the storage type, the bucket (or the
 // account and container), the base path, and the endpoint or region that
-// selects the service — endpoints normalized the way the clients use them,
-// so a trailing slash never reads as a retarget. Credentials and auth are
-// not part of it. Consumers
-// that pin the destination of an object record it, so a later retarget of
-// the contract cannot make them delete an unrelated object at the same key.
-// It is empty when the declared block is not set.
+// selects the service. Endpoints are normalized as the clients use them, so
+// a trailing slash never counts as a move. Credentials and auth are not part
+// of it. Consumers that record the destination of an object store it. Thus a
+// later move of the contract cannot make them delete an unrelated object at
+// the same key. It is empty when the declared block is not set.
 func (in *ObjectStorageConfig) Location() string {
 	return in.LocationOf("")
 }
