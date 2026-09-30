@@ -520,10 +520,9 @@ func ReleaseImages(merged v1.CamundaClusterSpec, release *v1.CamundaReleaseSpec)
 // be present, three segments, and 8.9.0 or later. The effective
 // replicationFactor must not exceed the effective replicas, the effective
 // partitions must be at least 1, and connectors.version must be present when
-// connectors are enabled. An extraEnv entry of an orchestration process (top
-// level, zeebe, gateway, operate, tasklist, admin) that Spring Boot binds under
-// camunda.security.initialization.default-roles must name a role and a member
-// type that Camunda accepts. The entries of extraEnvFrom sources are not
+// connectors are enabled. An extraEnv entry that reaches the brokers and that
+// Spring Boot binds under camunda.security.initialization.default-roles must
+// name a role and a member type that Camunda accepts. The entries of extraEnvFrom sources are not
 // checked. The error joins every problem with "; ".
 func ValidateMerged(spec v1.CamundaClusterSpec) error {
 	var problems []string
@@ -555,7 +554,7 @@ func ValidateMerged(spec v1.CamundaClusterSpec) error {
 		problems = append(problems, msgContinuousWithoutSchedule)
 	}
 
-	problems = append(problems, checkDefaultRoleEnv(spec)...)
+	problems = append(problems, checkDefaultRoleEnv(effective)...)
 
 	if len(problems) > 0 {
 		return fmt.Errorf("%s", strings.Join(problems, "; "))
@@ -604,32 +603,27 @@ func parseVersion(version string) ([3]int, error) {
 	return parsed, nil
 }
 
-// checkDefaultRoleEnv returns one problem for each extraEnv entry of an
-// orchestration process that readsAsDefaultRoleMembership refuses. Connectors
-// do not run the identity initialization, so their block is skipped.
-func checkDefaultRoleEnv(spec v1.CamundaClusterSpec) []string {
-	blocks := map[string][]corev1.EnvVar{"extraEnv": spec.ExtraEnv}
-	if spec.Zeebe != nil {
-		blocks["zeebe.extraEnv"] = spec.Zeebe.ExtraEnv
-	}
-	if spec.Gateway != nil {
-		blocks["gateway.extraEnv"] = spec.Gateway.ExtraEnv
-	}
-	for field, app := range map[string]*v1.WebAppSpec{
-		"operate.extraEnv":  spec.Operate,
-		"tasklist.extraEnv": spec.Tasklist,
-		"admin.extraEnv":    spec.Admin,
-	} {
-		if app != nil {
-			blocks[field] = app.ExtraEnv
+// checkDefaultRoleEnv returns one problem for each extraEnv entry that
+// readsAsDefaultRoleMembership refuses among the entries of the brokers,
+// the only processes that run the identity initialization.
+func checkDefaultRoleEnv(effective Effective) []string {
+	fields := []string{"extraEnv"}
+	blocks := [][]corev1.EnvVar{effective.ExtraEnv}
+	for _, p := range Resolve(effective) {
+		if p.Component != ComponentZeebe {
+			continue
+		}
+		for _, component := range envSources(p) {
+			fields = append(fields, component+".extraEnv")
+			blocks = append(blocks, effective.Workload(component).ExtraEnv)
 		}
 	}
 
 	var problems []string
-	for _, field := range slices.Sorted(maps.Keys(blocks)) {
-		for _, e := range blocks[field] {
+	for i, block := range blocks {
+		for _, e := range block {
 			if !readsAsDefaultRoleMembership(e.Name) {
-				problems = append(problems, fmt.Sprintf(msgDefaultRoleEnv, field, e.Name))
+				problems = append(problems, fmt.Sprintf(msgDefaultRoleEnv, fields[i], e.Name))
 			}
 		}
 	}

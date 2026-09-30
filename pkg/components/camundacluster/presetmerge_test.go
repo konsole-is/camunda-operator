@@ -783,6 +783,8 @@ func TestValidateMergedDefaultRoleEnv(t *testing.T) {
 	}
 }
 
+// With an embedded gateway, every block of the orchestration cluster reaches
+// the brokers, which run the identity initialization.
 func TestValidateMergedDefaultRoleEnvNamesTheBlock(t *testing.T) {
 	t.Parallel()
 
@@ -790,7 +792,7 @@ func TestValidateMergedDefaultRoleEnvNamesTheBlock(t *testing.T) {
 	spec := v1.CamundaClusterSpec{
 		Version:  "8.9.0",
 		Zeebe:    &v1.ZeebeSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: bad}},
-		Gateway:  &v1.GatewaySpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: bad}},
+		Gateway:  &v1.GatewaySpec{Mode: v1.ComponentModeEmbedded, WorkloadSpec: v1.WorkloadSpec{ExtraEnv: bad}},
 		Operate:  &v1.WebAppSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: bad}},
 		Tasklist: &v1.WebAppSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: bad}},
 		Admin:    &v1.WebAppSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: bad}},
@@ -804,19 +806,41 @@ func TestValidateMergedDefaultRoleEnvNamesTheBlock(t *testing.T) {
 	}
 }
 
-// Connectors do not run the identity initialization of the orchestration
-// cluster, so their own entries are not checked.
-func TestValidateMergedDefaultRoleEnvIgnoresConnectors(t *testing.T) {
+// Only the brokers run the identity initialization, so a block that does not
+// reach them is not checked.
+func TestValidateMergedDefaultRoleEnvIgnoresBlocksOffTheBrokers(t *testing.T) {
 	t.Parallel()
 
-	spec := v1.CamundaClusterSpec{
-		Version: "8.9.0",
-		Connectors: &v1.ConnectorsSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: []corev1.EnvVar{
-			{Name: "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_READONLY_ADMIN_USERS_0"},
-		}}},
+	bad := v1.WorkloadSpec{ExtraEnv: []corev1.EnvVar{
+		{Name: "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_READONLY_ADMIN_USERS_0"},
+	}}
+
+	tests := []struct {
+		name string
+		spec v1.CamundaClusterSpec
+	}{
+		{"a standalone gateway and the web applications it hosts", v1.CamundaClusterSpec{
+			Gateway:  &v1.GatewaySpec{WorkloadSpec: bad},
+			Operate:  &v1.WebAppSpec{WorkloadSpec: bad},
+			Tasklist: &v1.WebAppSpec{WorkloadSpec: bad},
+			Admin:    &v1.WebAppSpec{WorkloadSpec: bad},
+		}},
+		{"a standalone web application beside an embedded gateway", v1.CamundaClusterSpec{
+			Gateway: &v1.GatewaySpec{Mode: v1.ComponentModeEmbedded},
+			Operate: &v1.WebAppSpec{Mode: v1.ComponentModeStandalone, WorkloadSpec: bad},
+		}},
+		{"connectors", v1.CamundaClusterSpec{Connectors: &v1.ConnectorsSpec{WorkloadSpec: bad}}},
 	}
 
-	assert.NoError(t, ValidateMerged(spec))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tt.spec.Version = "8.9.0"
+
+			assert.NoError(t, ValidateMerged(tt.spec))
+		})
+	}
 }
 
 // The admin block never merges per field: a cluster that sets it replaces the
