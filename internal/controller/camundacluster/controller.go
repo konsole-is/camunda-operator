@@ -524,8 +524,7 @@ func (r *CamundaClusterReconciler) serviceMonitorSupported() bool {
 }
 
 // clusterComponents are the components of one cluster: all of them are
-// reconciled in order, the ready ones make up Ready, and the processes carry
-// the grace period.
+// reconciled in order, and the ready ones make up Ready.
 type clusterComponents struct {
 	all       []*component.Component
 	ready     []*component.Component

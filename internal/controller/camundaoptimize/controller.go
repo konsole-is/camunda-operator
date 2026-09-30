@@ -302,8 +302,7 @@ func (r *Reconciler) retryInterval() time.Duration {
 }
 
 // optimizeComponents are the components of one CamundaOptimize: all of them
-// are reconciled in order, the ready ones make up Ready, and the workloads
-// carry the grace period.
+// are reconciled in order, and the ready ones make up Ready.
 type optimizeComponents struct {
 	all       []*component.Component
 	ready     []*component.Component

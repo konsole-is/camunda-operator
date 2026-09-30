@@ -429,10 +429,9 @@ func (d dataVolumes) largest() *resource.Quantity {
 
 // buildComponents builds the components in dependency order: the ones that
 // make up Ready (credentials, keystore, elasticsearch, storage-contract), and
-// the metrics component apart. It also returns the elasticsearch component on
-// its own, because it carries the datastore grace period. It reads the
-// password from the existing user Secret without the cache, so the password
-// stays stable after creation. To rotate it, delete the Secret.
+// the metrics component apart. It reads the password from the existing user
+// Secret without the cache, so the password stays stable after creation. To
+// rotate it, delete the Secret.
 func (r *ElasticsearchClusterReconciler) buildComponents(
 	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
