@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -198,6 +199,44 @@ func TestZoneFailure(t *testing.T) {
 			require.NotNil(t, failure)
 			assert.Equal(t, v1.ReasonPitrUnavailable, failure.Reason)
 			assert.Contains(t, failure.Message, tt.contains)
+			// The hold is a wait in Pending, so the restore goes on by itself.
+			assert.NotContains(t, failure.Message, "create the restore again")
+			assert.Contains(t, failure.Message, "Run the brokers in UTC. The restore then continues by itself")
+		})
+	}
+}
+
+// A zone that only the kubelet resolves holds the restore, and the message
+// says how to set the variable as a literal value.
+func TestBrokerClockComparableHoldsAZoneFromAReference(t *testing.T) {
+	tests := []struct {
+		variable string
+		want     string
+	}{
+		{variable: "TZ", want: "Set TZ as a literal value that names UTC. The restore then continues by itself"},
+		{
+			variable: "JAVA_OPTS",
+			want:     "Set JAVA_OPTS as a literal value. If it sets a zone, use -Duser.timezone=UTC. The restore",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.variable, func(t *testing.T) {
+			broker := &corev1.Container{Env: []corev1.EnvVar{{
+				Name: tt.variable,
+				ValueFrom: &corev1.EnvVarSource{
+					ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: "zone"}, Key: tt.variable,
+					},
+				},
+			}}}
+
+			failure, err := brokerClockComparable(t.Context(), nil, "ns", broker)
+			require.NoError(t, err)
+
+			require.NotNil(t, failure)
+			assert.Equal(t, v1.ReasonPitrUnavailable, failure.Reason)
+			assert.Contains(t, failure.Message, tt.want)
 		})
 	}
 }

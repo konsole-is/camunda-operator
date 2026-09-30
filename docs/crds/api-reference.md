@@ -832,9 +832,11 @@ _Appears in:_
 ClusterAuthSpec holds the credentials of one cluster and the identities
 that get its admin role. Under OIDC it carries the client credentials,
 which override the defaults of the platform config and of the preset, and
-the identities of the administrators. Under basic authentication it
-carries the basic block, which configures the admin credential that the
-operator owns.
+the identities of the administrators. A block that sets clientId replaces
+the whole client: the audience and the client secret then come from this
+block only. A block without clientId overrides the audience and the client
+secret one by one. Under basic authentication it carries the basic block,
+which configures the admin credential that the operator owns.
 
 
 
@@ -843,9 +845,9 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `clientId` _string_ | ClientID is the OIDC client ID of this cluster. |  | Optional: \{\} <br /> |
-| `audience` _string_ | Audience is the audience that access tokens must carry. Defaults to<br />the clientId. |  | Optional: \{\} <br /> |
-| `clientSecretRef` _[LocalSecretKeyRef](#localsecretkeyref)_ | ClientSecretRef names the Secret that holds the OIDC client secret of<br />this cluster. |  | Optional: \{\} <br /> |
+| `clientId` _string_ | ClientID is the OIDC client ID of this cluster. A client ID replaces<br />the whole client: the audience and the client secret then come from<br />this block only. Requires clientSecretRef. |  | Optional: \{\} <br /> |
+| `audience` _string_ | Audience is the audience that access tokens must carry. Defaults to<br />the client ID that the cluster uses. |  | Optional: \{\} <br /> |
+| `clientSecretRef` _[LocalSecretKeyRef](#localsecretkeyref)_ | ClientSecretRef names the Secret that holds the OIDC client secret of<br />this cluster. Required when clientId is set. |  | Optional: \{\} <br /> |
 | `admin` _[ClusterAdminSpec](#clusteradminspec)_ | Admin holds the identities that get the admin role of this cluster. It<br />applies under OIDC only. Basic authentication seeds its own<br />administrator and ignores this block. |  | Optional: \{\} <br /> |
 | `basic` _[BasicAuthSpec](#basicauthspec)_ | Basic configures the admin credential that the operator owns. It<br />applies under basic authentication only. OIDC ignores this block, like<br />basic authentication ignores admin. |  | Optional: \{\} <br /> |
 
@@ -1363,12 +1365,12 @@ _Appears in:_
 
 
 
-DatabaseServerServiceAccountSpec configures the ServiceAccount that
-CloudNativePG creates for the instance pods. CloudNativePG owns that
-account and names it after the server, so only its metadata is
-configurable. The operator adds the workload-identity annotations of the
-archive bucket on its own; an annotation set here wins over the derived one
-on the same key.
+DatabaseServerServiceAccountSpec configures the ServiceAccount of the
+instance pods. The operator creates it as `<server name>-postgres`. Every
+CloudNativePG cluster of the server runs under it, including the cluster
+that a rollback builds. The operator adds the workload-identity
+annotations of the archive bucket. An annotation set here wins over the
+derived one on the same key.
 
 
 
@@ -2329,6 +2331,7 @@ _Appears in:_
 | `phase` _[LogicalRestorePhase](#logicalrestorephase)_ | phase of the restore. It is the resume marker: a reconcile that<br />re-enters after a crash continues at the recorded phase. |  | Enum: [Pending ValidatingCompatibility RestoringSecondaryStorage RestoringPrimaryStorage Completed Failed] <br />Optional: \{\} <br /> |
 | `backupId` _integer_ | backupId is the backup that the restore reads, pinned when the restore<br />starts. The backup resource can be deleted afterwards without moving<br />the restore to another set of artifacts. |  | Optional: \{\} <br /> |
 | `backend` _string_ | Backend is the Elasticsearch that the restore writes, pinned when the<br />restore starts, in the form of the storage claim key of the target<br />(the scheme, the host, and the port). From the end of admission to the<br />terminal phase, and after it while recoveryHeld is true, no other<br />CamundaCluster starts on this backend. The<br />restore holds while its target does not hold the backend. |  | Optional: \{\} <br /> |
+| `contract` _string_ | Contract is the SecondaryStorageConfig that held the endpoint of<br />Backend when the restore started. The hold stays on this contract when<br />its endpoint moves. |  | Optional: \{\} <br /> |
 | `recoveryHeld` _boolean_ | recoveryHeld is true while a restore that failed, or that is being<br />deleted, keeps the backend because Elasticsearch can still recover<br />snapshots that the restore asked for. While it is true, no other<br />CamundaCluster starts on the backend, the target stays suspended, and no<br />other backup or restore of the target starts. A deleted restore stays<br />while it is true. It is unset on a restore that was never held for a<br />recovery, and false once the hold is over. |  | Optional: \{\} <br /> |
 | `recoveryUnknownSince` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | recoveryUnknownSince is the time since which a held restore cannot read<br />the recovery from Elasticsearch. When the recovery stays unknown for ten<br />minutes, the restore gives the backend back. |  | Optional: \{\} <br /> |
 | `repository` _string_ | repository is the Elasticsearch snapshot repository that the restore<br />reads from, on the Elasticsearch of the target. |  | Optional: \{\} <br /> |

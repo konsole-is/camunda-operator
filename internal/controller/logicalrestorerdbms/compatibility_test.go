@@ -127,7 +127,7 @@ func TestCheck(t *testing.T) {
 
 				return in
 			}(),
-			want: []string{"8.9.9", "8.11.0", "one minor version newer"},
+			want: []string{"8.9.9", "8.11.0", "same Camunda minor or one minor newer"},
 		},
 		{
 			name: "the target is older than the backup",
@@ -137,7 +137,7 @@ func TestCheck(t *testing.T) {
 
 				return in
 			}(),
-			want: []string{oneMinorNewer, "8.9.9", "one minor version newer"},
+			want: []string{oneMinorNewer, "8.9.9", "same Camunda minor or one minor newer"},
 		},
 		{
 			name: "another major version",
@@ -147,7 +147,7 @@ func TestCheck(t *testing.T) {
 
 				return in
 			}(),
-			want: []string{"one minor version newer"},
+			want: []string{"same Camunda minor or one minor newer"},
 		},
 		{
 			name: "the target version is not a version of the form x.y.z",

@@ -224,7 +224,7 @@ kubectl get pods -A -l camunda.io/storage-claim=camunda-storage-8bd62d6c1f48cf98
 
 A restore into another cluster holds the backend while it runs. The next cluster on the backend waits with `WaitingForHandover`, and the message names the restore, for example `LogicalRestoreElasticsearch my-cluster-ns/my-other-cluster-restore`.
 
-The hold lasts until the restore reaches `Completed` or `Failed`, even when the restore stops making progress. It also lasts when you delete the target of the restore, or point it at another backend. A `LogicalRestoreRDBMS` or a `PointInTimeRestore` holds the database by its `DatabaseServerConfig` and database name. The hold stays when that contract moves to another host or port. A restore into this cluster itself is no reason to wait. To free the backend from a restore that does not move, delete the restore. A deleted restore keeps the backend until its work stops. Each restore page says when its work stops:
+The hold lasts until the restore reaches `Completed` or `Failed`, even when the restore stops making progress. It also lasts when you delete the target of the restore, or point it at another backend. A `LogicalRestoreRDBMS` or a `PointInTimeRestore` holds the database by its `DatabaseServerConfig` and database name. The hold stays when that contract moves to another host or port. A `LogicalRestoreElasticsearch` holds Elasticsearch by the `SecondaryStorageConfig` of its target. That hold stays when you move the endpoint of that `SecondaryStorageConfig`. A restore into this cluster itself is no reason to wait. To free the backend from a restore that does not move, delete the restore. A deleted restore keeps the backend until its work stops. Each restore page says when its work stops:
 
 - [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md#the-backend), and [After a failure or a delete](logicalrestoreelasticsearch.md#after-a-failure-or-a-delete).
 - [LogicalRestoreRDBMS](logicalrestorerdbms.md#the-backend).
@@ -548,11 +548,11 @@ spec:
       eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-cluster-role"
   # object. Optional. OIDC client of this cluster and its administrators. Overrides the platform config and the preset.
   auth:
-    # string. Optional. OIDC client ID of this cluster.
+    # string. Optional. OIDC client ID of this cluster. The audience and the secret then come from this block only, never from the preset or the platform config.
     clientId: "my-cluster-client"
     # string. Optional, default: the clientId. Audience that access tokens must carry.
     audience: "my-cluster-client"
-    # object. Optional. Secret key that holds the OIDC client secret of this cluster.
+    # object. Optional, required when clientId is set. Secret key that holds the OIDC client secret of this cluster.
     clientSecretRef:
       # string. Required. Name of the Secret.
       name: "my-cluster-oidc-secret"
@@ -743,6 +743,7 @@ The API server enforces these rules at admission:
 - `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` is `Delete` or `Retain`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both.
 - `spec.auth.basic.adminEmail` is empty or an address with a dot in its domain.
+- `spec.auth.clientId` requires `spec.auth.clientSecretRef`.
 - `spec.backup.dump.extraEnvFrom` holds at most 8 sources. `spec.backup.dump.scratchVolume.storageClassName` requires `sizeLimit`.
 - `spec.backup.primaryStorage.checkpointInterval` and `retention.window` are ISO 8601 durations of days and time. Weeks, months, and years are rejected.
 
@@ -752,6 +753,7 @@ The operator checks these rules on the merged spec after the preset and the rele
 - The effective `replicationFactor` does not exceed the effective `replicas`, and the effective `partitions` is at least 1.
 - `connectors.version` is present when connectors are enabled.
 - `backup.primaryStorage.continuous` is not true with a `schedule` of `none`.
+- An `extraEnv` entry under `CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_` reads as `<role>_<type>_<n>` or `<role>_<type>`, with `USERS`, `CLIENTS`, `GROUPS`, `ROLES`, or `MAPPINGRULES` as the type. `MAPPING_RULES` and `MAPPING-RULES` also work. Camunda stops the identity initialization on any other form. The brokers alone run the identity initialization. So the rule covers the top level, `zeebe`, and each block that runs embedded on the brokers. [Authentication](../guides/authentication.md) shows the form that works.
 
 A separate rule refuses an effective version below the one that the brokers run, with reason `VersionDowngradeRefused`. [A lower version is refused](#a-lower-version-is-refused) states it.
 

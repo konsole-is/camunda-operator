@@ -116,17 +116,14 @@ func (r *LogicalBackupRDBMSReconciler) admit(
 	// The claim is the gate. The pre-checks above order the claimants and
 	// check the references. Only the Lease decides who holds the cluster.
 	// The backup takes the Lease before it writes its identity.
-	holder, err := r.claimCluster(ctx, backup)
+	blocked, err := r.claimCluster(ctx, backup)
 	if err != nil {
 		return settle, err
 	}
-	if holder != "" {
+	if blocked != "" {
 		return r.parkPending(backup, &conditions.PreCheckFailure{
-			Reason: v1.ReasonBackupInProgress,
-			Message: fmt.Sprintf(
-				"backup %s of CamundaCluster %s/%s holds the cluster; backups of one cluster run one at a time",
-				holder, precheck.Cluster.Namespace, precheck.Cluster.Name,
-			),
+			Reason:  v1.ReasonBackupInProgress,
+			Message: blocked,
 		}), nil
 	}
 
@@ -458,8 +455,8 @@ func (r *LogicalBackupRDBMSReconciler) resolvePod(
 	settings, owned, image := dumpBlock(merged, backup)
 	// The environment bound applies to the backup's own block only. The
 	// spec.backup.dump of the cluster is the policy of its owner inside
-	// their own boundary. The CRD schema enforces the envFrom half too, and
-	// this check is the second layer.
+	// their own boundary. The CRD schema enforces both rules too, and this
+	// check is the second layer.
 	if backup != nil && backup.Spec.Dump != nil {
 		if reserved := components.ReservedEnv(backup.Spec.Dump); len(reserved) > 0 {
 			return nil, logicalbackup.InvalidReference(

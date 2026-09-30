@@ -27,6 +27,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/testing/golden"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/validation"
@@ -529,7 +530,8 @@ func TestRecoveryOutcomePatchStatesOneField(t *testing.T) {
 // place keeps its name, so the record is the only thing that keeps the two
 // clusters on the identity of the archive: the running cluster writes its
 // archive with it, and the recovering cluster reads the archive of the cluster
-// it replaces with it.
+// it replaces with it. Both run under the one ServiceAccount of the server, so
+// a cloud binding that names that account holds for both.
 func TestHeldIdentityStaysOnBothClusters(t *testing.T) {
 	t.Parallel()
 
@@ -554,13 +556,18 @@ func TestHeldIdentityStaysOnBothClusters(t *testing.T) {
 		},
 	}
 
-	clusterComp, _, err := ClusterComponent(server, merged, RequestedStorage{}, archive, "", nil, "")
+	clusterComp, _, err := ClusterComponent(server, merged, RequestedStorage{}, archive, "", nil, "", nil)
 	require.NoError(t, err)
 	objects, err := clusterComp.Preview()
 	require.NoError(t, err)
-	require.Len(t, objects, 1)
-	running, ok := objects[0].(*cnpgv1.Cluster)
+	require.Len(t, objects, 2)
+	account, ok := objects[0].(*corev1.ServiceAccount)
 	require.True(t, ok)
+	running, ok := objects[1].(*cnpgv1.Cluster)
+	require.True(t, ok)
+
+	assert.Equal(t, ServiceAccountName(server), account.Name)
+	assert.Equal(t, held, account.Annotations[v1.IRSARoleARNAnnotation])
 
 	recovered, err := RecoveryCluster(
 		server, merged, RequestedStorage{}, archive, "", nil, source, "2026-08-20T14:30:00Z",
@@ -571,12 +578,9 @@ func TestHeldIdentityStaysOnBothClusters(t *testing.T) {
 		"running": running, "recovering": recovered,
 	} {
 		t.Run(name, func(t *testing.T) {
-			require.NotNil(t, rendered.Spec.ServiceAccountTemplate)
-			assert.Equal(
-				t,
-				held,
-				rendered.Spec.ServiceAccountTemplate.Metadata.Annotations[v1.IRSARoleARNAnnotation],
-			)
+			assert.Equal(t, account.Name, rendered.Spec.ServiceAccountName)
+			// CloudNativePG refuses a cluster that sets both.
+			assert.Nil(t, rendered.Spec.ServiceAccountTemplate)
 			assert.Equal(
 				t, "true", rendered.Spec.InheritedMetadata.Labels[v1.AzureWorkloadIdentityUseLabel],
 			)

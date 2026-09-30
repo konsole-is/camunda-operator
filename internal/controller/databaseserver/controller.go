@@ -34,6 +34,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -121,6 +122,14 @@ type resolvedSpec struct {
 	// publishes no point-in-time-recovery capability, a rollback is refused,
 	// and ArchiveReady reports ArchiveTaken: see archiveTaken.
 	archiveTaken string
+	// serviceAccountTaken says why the ServiceAccount of the instance pods is
+	// not this server's, and it is empty when the name is free or the account
+	// is the server's own. A rollback is refused while it is set: see
+	// serviceAccountTaken.
+	serviceAccountTaken string
+	// archivePluginRoles are the clusters of the server that the Role of the
+	// Barman Cloud plugin is bound for: see archivePluginRoles.
+	archivePluginRoles []components.ArchivePluginRole
 	// clusterTaken says why a CloudNativePG cluster of the name the server
 	// derives is not this server's to write, and it is empty when the name is
 	// free or the cluster is the server's own. Every component reads it and
@@ -217,9 +226,15 @@ type DatabaseServerReconciler struct {
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=clusters;scheduledbackups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=backups,verbs=get;list;watch
 // +kubebuilder:rbac:groups=barmancloud.cnpg.io,resources=objectstores,verbs=get;list;watch;create;update;patch;delete
+// Writes no ObjectStore status. The Role of the Barman Cloud plugin grants it, and the
+// API server lets the operator bind that Role only while it holds every rule of it.
+// +kubebuilder:rbac:groups=barmancloud.cnpg.io,resources=objectstores/status,verbs=update
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=podmonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile converges a DatabaseServer. It resolves the preset and the
@@ -340,6 +355,12 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if err != nil {
 			return ctrl.Result{}, err
 		}
+	}
+
+	// After the recovery, which records the cluster that a rollback builds.
+	resolved.archivePluginRoles, err = r.archivePluginRoles(ctx, &server, resolved.serviceAccountTaken)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// After the recovery, because the recovery is what moves status.cluster:
@@ -608,6 +629,14 @@ func (r *DatabaseServerReconciler) preCheck(
 		return resolved, err
 	}
 	resolved.archiveTaken = archiveTaken
+
+	// The cluster component blocks on this account, but a rollback builds its
+	// cluster outside the component, so the recovery reads it here.
+	serviceAccountTaken, err := r.serviceAccountTaken(ctx, server)
+	if err != nil {
+		return resolved, err
+	}
+	resolved.serviceAccountTaken = serviceAccountTaken
 
 	return resolved, nil
 }
@@ -1480,7 +1509,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 
 	cluster, systemIdentifier, err := components.ClusterComponent(
 		server, merged, resolved.requested, resolved.archive, resolved.archiveTaken,
-		resolved.platform, resolved.clusterBlocked,
+		resolved.platform, resolved.clusterBlocked, resolved.archivePluginRoles,
 	)
 	if err != nil {
 		return built, fmt.Errorf("building cluster component: %w", err)
@@ -1680,6 +1709,86 @@ func (r *DatabaseServerReconciler) archiveTaken(
 	}
 
 	return components.ArchiveTakenMessage(name, *holder), nil
+}
+
+// serviceAccountTaken says why the ServiceAccount of the instance pods is not
+// this server's, and returns the empty string when no object of that name
+// exists, nothing controls it, or this server controls it.
+func (r *DatabaseServerReconciler) serviceAccountTaken(
+	ctx context.Context,
+	server *v1.DatabaseServer,
+) (string, error) {
+	key := types.NamespacedName{Namespace: server.Namespace, Name: components.ServiceAccountName(server)}
+
+	var account corev1.ServiceAccount
+	if err := r.APIReader.Get(ctx, key, &account); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("reading the ServiceAccount %s: %w", key, err)
+	}
+
+	holder := metav1.GetControllerOf(&account)
+	if holder == nil || holder.UID == server.UID {
+		return "", nil
+	}
+
+	return fmt.Sprintf("ServiceAccount %q is controlled by %s %q", key.Name, holder.Kind, holder.Name), nil
+}
+
+// archivePluginRoles returns every CloudNativePG cluster that the server
+// controls, and whether each is granted the Role that the Barman Cloud plugin
+// creates for it.
+//
+// A cluster is not granted until its Role exists: the API server refuses a
+// RoleBinding to a missing Role unless the writer may bind any Role. It is not
+// granted while the Role is not the cluster's or the ServiceAccount is not the
+// server's either: the binding would hand the objects of one owner to another.
+func (r *DatabaseServerReconciler) archivePluginRoles(
+	ctx context.Context,
+	server *v1.DatabaseServer,
+	serviceAccountTaken string,
+) ([]components.ArchivePluginRole, error) {
+	// Every cluster, because one that a rollback left can outlive its record.
+	// Live, because a stale answer keeps a binding on a Role of the same name
+	// that another owner made again.
+	var clusters cnpgv1.ClusterList
+	if err := r.APIReader.List(
+		ctx, &clusters,
+		client.InNamespace(server.Namespace),
+		client.MatchingLabels{labels.DatabaseServerKey: labels.OwnerName(server.Name)},
+	); err != nil {
+		return nil, fmt.Errorf("listing the CloudNativePG clusters of the server: %w", err)
+	}
+
+	var roles []components.ArchivePluginRole
+	for i := range clusters.Items {
+		cluster := &clusters.Items[i]
+		if !ownedByServer(server, cluster) {
+			continue
+		}
+		name := cluster.Name
+
+		role := &metav1.PartialObjectMetadata{}
+		role.SetGroupVersionKind(rbacv1.SchemeGroupVersion.WithKind("Role"))
+		key := types.NamespacedName{Namespace: server.Namespace, Name: components.ArchivePluginRoleName(name)}
+		granted := serviceAccountTaken == ""
+		if err := r.APIReader.Get(ctx, key, role); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return nil, fmt.Errorf("reading the Role %s: %w", key, err)
+			}
+			granted = false
+		} else if !metav1.IsControlledBy(role, cluster) {
+			granted = false
+		}
+
+		roles = append(roles, components.ArchivePluginRole{
+			Cluster: name, ClusterUID: cluster.UID, Granted: granted,
+		})
+	}
+
+	return roles, nil
 }
 
 // contractTaken says why the DatabaseServerConfig the merged spec names is not
@@ -1982,12 +2091,7 @@ func (r *DatabaseServerReconciler) podMonitorSupported() bool {
 	return r.served("monitoring.coreos.com", "PodMonitor", "v1")
 }
 
-// SetupWithManager registers the controller, ownership watches on the
-// CloudNativePG cluster, the ObjectStore, the ScheduledBackup, the PodMonitor,
-// and the published contract, a preset watch through a field index on
-// spec.presetRef, watches on the archive bucket and its credentials Secret, and
-// watches on the base backups and data volume claims that CloudNativePG
-// creates.
+// SetupWithManager registers the controller and its watches with mgr.
 //
 // The CloudNativePG and Barman Cloud watches are registered only when the
 // cluster serves those kinds. An informer on a kind that the API server does

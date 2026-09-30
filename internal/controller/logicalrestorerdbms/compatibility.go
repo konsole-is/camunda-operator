@@ -171,7 +171,8 @@ func checkVersions(in compatibility) *conditions.PreCheckFailure {
 	if target.major != source.major || target.minor < source.minor || target.minor > source.minor+1 {
 		return incompatible(
 			"the backup was taken with Camunda %s and the target cluster runs %s. A relational backup "+
-				"restores with the same version or with one minor version newer",
+				"restores only into a cluster that runs the same Camunda minor or one minor newer. "+
+				"The patch level does not matter",
 			in.BackupVersion, in.TargetVersion,
 		)
 	}

@@ -38,10 +38,20 @@ import (
 // leaves every closed index behind for the restore to collide with.
 const resolveWildcards = "open,closed"
 
+// The filter_path fields that a read must name. An unfiltered answer grows
+// with the size of the cluster and can pass the 1 MiB that the client reads.
+var (
+	resolveFilter  = []string{"*.settings.index.uuid"}
+	recoveryFilter = []string{"*.shards.stage"}
+	snapshotFilter = []string{"snapshots.state", "snapshots.metadata"}
+	statsFilter    = []string{"nodes.*.fs.total.total_in_bytes", "nodes.*.fs.total.available_in_bytes"}
+)
+
 // routingFilter is the filter_path that a routing table read must carry.
 var routingFilter = []string{
 	"routing_table.indices.*.shards.*.state",
 	"routing_table.indices.*.shards.*.primary",
+	"routing_table.indices.*.shards.*.recovery_source.type",
 	"routing_table.indices.*.shards.*.unassigned_info.reason",
 	"routing_table.indices.*.shards.*.unassigned_info.allocation_status",
 }
@@ -87,10 +97,15 @@ type Snapshot struct {
 
 // Shard is the fake's routing entry of one shard copy.
 type Shard struct {
+	// Number is the shard number that the copy belongs to.
+	Number int
 	// Primary is true for the primary copy and false for a replica.
 	Primary bool
 	// State in the Elasticsearch vocabulary, for example INITIALIZING.
 	State string
+	// RecoverySource is the type of the recovery source, for example SNAPSHOT
+	// for a primary that a restore brings back. Empty reports none.
+	RecoverySource string
 	// UnassignedReason of an UNASSIGNED copy, for example NEW_INDEX_RESTORED.
 	UnassignedReason string
 	// AllocationStatus of an UNASSIGNED copy, for example deciders_no.
@@ -131,8 +146,9 @@ type RestoreRequest struct {
 // The fake pins the shape of both index requests: it accepts one only when it
 // tolerates a target that matches nothing, and it accepts a resolution only
 // when the request expands its wildcards to open and closed indices. It
-// accepts a routing table read only when its filter_path names the fields in
-// routingFilter.
+// accepts a read of a resolution, a recovery, a snapshot status, the routing table,
+// or the node statistics only when its filter_path names the fields that the
+// client reads.
 type Server struct {
 	adminhttptest.Fake
 
@@ -398,26 +414,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"nodes": map[string]any{}})
 
 	case r.Method == http.MethodGet && route == "_nodes/stats/fs":
-		s.statsCalls++
-		if s.Dropping(w, "stats") {
-			return
-		}
-		if s.Failing("stats") {
-			errorBody(w, http.StatusInternalServerError, "injected stats failure")
-			return
-		}
-		nodes := map[string]any{}
-		for name, fs := range s.nodeFS {
-			nodes[name] = map[string]any{
-				"fs": map[string]any{
-					"total": map[string]any{
-						"total_in_bytes":     fs.total,
-						"available_in_bytes": fs.total - fs.used,
-					},
-				},
-			}
-		}
-		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"nodes": nodes})
+		s.handleStats(w, r)
 
 	case len(parts) == 4 && parts[0] == "_cluster" && parts[1] == "state" && parts[2] == "routing_table" &&
 		r.Method == http.MethodGet:
@@ -433,13 +430,122 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.handleRestore(w, r, parts)
 
 	case len(parts) == 2 && parts[1] == recoveryPath && r.Method == http.MethodGet:
-		s.handleRecovery(w, parts[0])
+		s.handleRecovery(w, r, parts[0])
 
 	case len(parts) == 1 && parts[0] != "":
 		s.handleIndex(w, r, parts[0])
 
 	default:
 		errorBody(w, http.StatusNotFound, "unknown path "+r.URL.Path)
+	}
+}
+
+// handleStats serves GET /_nodes/stats/fs with the filesystem of each node.
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	s.statsCalls++
+	if s.Dropping(w, "stats") {
+		return
+	}
+	if s.Failing("stats") {
+		errorBody(w, http.StatusInternalServerError, "injected stats failure")
+		return
+	}
+	if !filtered(w, r.URL.Query(), statsFilter) {
+		return
+	}
+
+	nodes := map[string]any{}
+	for name, fs := range s.nodeFS {
+		nodes[name] = map[string]any{
+			"fs": map[string]any{
+				"total": map[string]any{
+					"total_in_bytes":     fs.total,
+					"available_in_bytes": fs.total - fs.used,
+				},
+			},
+		}
+	}
+	writeFiltered(w, r.URL.Query(), map[string]any{"nodes": nodes})
+}
+
+// filtered reports whether the filter_path of query names every field of
+// want. When it does not, it answers the request with a 400.
+func filtered(w http.ResponseWriter, query url.Values, want []string) bool {
+	fields := strings.Split(query.Get("filter_path"), ",")
+	for _, field := range want {
+		if !slices.Contains(fields, field) {
+			errorBodyTyped(
+				w, http.StatusBadRequest, "illegal_argument_exception",
+				"filter_path must name "+field+", or the answer can pass the size limit of the client",
+			)
+			return false
+		}
+	}
+
+	return true
+}
+
+// writeFiltered answers 200 with body, pruned to the filter_path of query the
+// way Elasticsearch prunes it. A client that decodes a field that its filter
+// does not name reads nothing, as it would from a real server.
+func writeFiltered(w http.ResponseWriter, query url.Values, body any) {
+	// A round trip through JSON gives the body the shape that prune reads.
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		errorBody(w, http.StatusInternalServerError, "encoding answer: "+err.Error())
+		return
+	}
+	var decoded any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		errorBody(w, http.StatusInternalServerError, "decoding answer: "+err.Error())
+		return
+	}
+
+	var paths [][]string
+	for filter := range strings.SplitSeq(query.Get("filter_path"), ",") {
+		paths = append(paths, strings.Split(filter, "."))
+	}
+	kept, ok := prune(decoded, paths)
+	if !ok {
+		kept = map[string]any{}
+	}
+	adminhttptest.WriteJSON(w, http.StatusOK, kept)
+}
+
+// prune keeps the parts of value that paths reach, as filter_path does, and
+// reports false when it keeps nothing.
+func prune(value any, paths [][]string) (any, bool) {
+	for _, segments := range paths {
+		if len(segments) == 0 {
+			return value, true
+		}
+	}
+
+	switch value := value.(type) {
+	case map[string]any:
+		kept := map[string]any{}
+		for key, child := range value {
+			var rest [][]string
+			for _, segments := range paths {
+				if ok, _ := path.Match(segments[0], key); ok {
+					rest = append(rest, segments[1:])
+				}
+			}
+			if pruned, ok := prune(child, rest); len(rest) > 0 && ok {
+				kept[key] = pruned
+			}
+		}
+		return kept, len(kept) > 0
+	case []any:
+		kept := []any{}
+		for _, element := range value {
+			if pruned, ok := prune(element, paths); ok {
+				kept = append(kept, pruned)
+			}
+		}
+		return kept, len(kept) > 0
+	default:
+		return nil, false
 	}
 }
 
@@ -548,6 +654,9 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 			errorBody(w, http.StatusInternalServerError, "injected snapshot status failure")
 			return
 		}
+		if !filtered(w, r.URL.Query(), snapshotFilter) {
+			return
+		}
 		if _, ok := s.repos[parts[1]]; !ok {
 			errorBodyTyped(
 				w, http.StatusNotFound,
@@ -567,7 +676,7 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 		if len(snapshot.Metadata) > 0 {
 			info["metadata"] = snapshot.Metadata
 		}
-		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"snapshots": []map[string]any{info}})
+		writeFiltered(w, r.URL.Query(), map[string]any{"snapshots": []map[string]any{info}})
 
 	case http.MethodDelete:
 		if s.Dropping(w, "snapshotDelete") {
@@ -649,12 +758,15 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request, parts []s
 // handleRecovery serves GET /<target>/_recovery. It answers one shard entry
 // per named target, with the source of the last accepted restore, so a client
 // reads the shape that a restored index has.
-func (s *Server) handleRecovery(w http.ResponseWriter, target string) {
+func (s *Server) handleRecovery(w http.ResponseWriter, r *http.Request, target string) {
 	if s.Dropping(w, "recovery") {
 		return
 	}
 	if s.Failing("recovery") {
 		errorBody(w, http.StatusInternalServerError, "injected recovery failure")
+		return
+	}
+	if !filtered(w, r.URL.Query(), recoveryFilter) {
 		return
 	}
 
@@ -682,7 +794,7 @@ func (s *Server) handleRecovery(w http.ResponseWriter, target string) {
 			},
 		}}}
 	}
-	adminhttptest.WriteJSON(w, http.StatusOK, indices)
+	writeFiltered(w, r.URL.Query(), indices)
 }
 
 // handleRoutingTable serves GET /_cluster/state/routing_table/<target>. It
@@ -703,15 +815,8 @@ func (s *Server) handleRoutingTable(w http.ResponseWriter, r *http.Request, targ
 		)
 		return
 	}
-	filters := strings.Split(query.Get("filter_path"), ",")
-	for _, field := range routingFilter {
-		if !slices.Contains(filters, field) {
-			errorBodyTyped(
-				w, http.StatusBadRequest, "illegal_argument_exception",
-				"filter_path must name "+field+", or the routing table can pass the size limit of the client",
-			)
-			return
-		}
+	if !filtered(w, query, routingFilter) {
+		return
 	}
 
 	indices := map[string]any{}
@@ -721,13 +826,17 @@ func (s *Server) handleRoutingTable(w http.ResponseWriter, r *http.Request, targ
 			shards = []Shard{{Primary: true, State: "STARTED"}}
 		}
 
-		copies := make([]map[string]any, 0, len(shards))
+		copies := map[string][]map[string]any{}
 		for _, shard := range shards {
+			number := strconv.Itoa(shard.Number)
 			entry := map[string]any{
 				"state":   shard.State,
 				"primary": shard.Primary,
-				"shard":   0,
+				"shard":   shard.Number,
 				"index":   name,
+			}
+			if shard.RecoverySource != "" {
+				entry["recovery_source"] = map[string]any{"type": shard.RecoverySource}
 			}
 			if shard.UnassignedReason != "" {
 				entry["unassigned_info"] = map[string]any{
@@ -735,11 +844,11 @@ func (s *Server) handleRoutingTable(w http.ResponseWriter, r *http.Request, targ
 					"allocation_status": shard.AllocationStatus,
 				}
 			}
-			copies = append(copies, entry)
+			copies[number] = append(copies[number], entry)
 		}
-		indices[name] = map[string]any{"shards": map[string]any{"0": copies}}
+		indices[name] = map[string]any{"shards": copies}
 	}
-	adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{
+	writeFiltered(w, r.URL.Query(), map[string]any{
 		"cluster_name":  "fake",
 		"routing_table": map[string]any{"indices": indices},
 	})
@@ -784,16 +893,17 @@ func (s *Server) handleIndexResolve(w http.ResponseWriter, r *http.Request, targ
 		)
 		return
 	}
+	if !filtered(w, query, resolveFilter) {
+		return
+	}
 
 	response := map[string]any{}
 	for _, name := range s.matching(target) {
 		response[name] = map[string]any{
-			"aliases":  map[string]any{},
-			"mappings": map[string]any{},
-			"settings": map[string]any{"index": map[string]any{"provided_name": name}},
+			"settings": map[string]any{"index": map[string]any{"uuid": "uuid-" + name}},
 		}
 	}
-	adminhttptest.WriteJSON(w, http.StatusOK, response)
+	writeFiltered(w, r.URL.Query(), response)
 }
 
 // handleIndexDelete serves DELETE /<target>. It removes every seeded index

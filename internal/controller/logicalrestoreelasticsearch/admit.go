@@ -183,14 +183,14 @@ func (r *Reconciler) admit(
 	if failure != nil {
 		return r.waiting(lres, failure), nil
 	}
-	backend, failure, err := restore.BackendOf(ctx, r.APIReader, storage)
+	backend, failure, err := restore.ResolveBackend(ctx, r.APIReader, storage)
 	if err != nil {
 		return restore.Outcome{}, err
 	}
 	if failure != nil {
 		return r.waiting(lres, failure), nil
 	}
-	failure, err = r.checkBackend(ctx, cluster, storage, backend)
+	failure, err = r.checkBackend(ctx, cluster, storage, backend.Key)
 	if err != nil {
 		return restore.Outcome{}, err
 	}
@@ -202,12 +202,20 @@ func (r *Reconciler) admit(
 	// the claim before that check is what the check finds, and one that takes
 	// it after lists this restore as a writer.
 	err = restore.RegisterWriter(
-		ctx, r.Client, r.APIReader, r.opts.ClaimNamespace, backend, lres, lres.Status.TargetClusterUID,
+		ctx,
+		r.Client,
+		r.APIReader,
+		r.opts.ClaimNamespace,
+		backend.Key,
+		backend.Contract,
+		lres,
+		lres.Status.TargetClusterUID,
 	)
 	if err != nil {
 		return restore.Outcome{}, err
 	}
-	lres.Status.Backend = backend
+	lres.Status.Backend = backend.Key
+	lres.Status.Contract = backend.Contract
 
 	r.start(lres)
 
