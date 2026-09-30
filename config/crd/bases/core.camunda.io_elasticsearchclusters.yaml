@@ -1195,9 +1195,9 @@ spec:
               version:
                 description: |-
                   Version is the Elasticsearch version to deploy, as a full semantic
-                  version. Camunda 8.9 supports Elasticsearch 8.19 and later, and 9.2 and
-                  later. The operator refuses a lower version, also when it comes from
-                  the release, with Ready reason InvalidReference. Required unless the
+                  version. Camunda 8.9 supports Elasticsearch 8.x from 8.19, and 9.x from
+                  9.2. The operator refuses a version below 8.19, and 9.0 and 9.1, also
+                  when it comes from the release, with Ready reason InvalidReference. Required unless the
                   resolved release provides it. Forbidden in a preset.
                 pattern: ^\d+\.\d+\.\d+$
                 type: string

@@ -1591,7 +1591,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `presetRef` _string_ | PresetRef names a cluster-scoped ElasticsearchClusterPreset to use as<br />the configuration baseline. A field set on the cluster replaces the<br />value of the preset for that field completely. |  | Optional: \{\} <br /> |
 | `releaseRef` _string_ | ReleaseRef names a cluster-scoped CamundaRelease that provides the<br />Elasticsearch version. It merges over the preset and under this spec.<br />Forbidden in a preset. |  | Optional: \{\} <br /> |
-| `version` _string_ | Version is the Elasticsearch version to deploy, as a full semantic<br />version. Camunda 8.9 supports Elasticsearch 8.19 and later, and 9.2 and<br />later. The operator refuses a lower version, also when it comes from<br />the release, with Ready reason InvalidReference. Required unless the<br />resolved release provides it. Forbidden in a preset. |  | Pattern: `^\d+\.\d+\.\d+$` <br />Optional: \{\} <br /> |
+| `version` _string_ | Version is the Elasticsearch version to deploy, as a full semantic<br />version. Camunda 8.9 supports Elasticsearch 8.x from 8.19, and 9.x from<br />9.2. The operator refuses a version below 8.19, and 9.0 and 9.1, also<br />when it comes from the release, with Ready reason InvalidReference. Required unless the<br />resolved release provides it. Forbidden in a preset. |  | Pattern: `^\d+\.\d+\.\d+$` <br />Optional: \{\} <br /> |
 | `replicas` _integer_ | Replicas is the number of Elasticsearch nodes. Required unless the<br />resolved preset provides it. |  | Minimum: 1 <br />Optional: \{\} <br /> |
 | `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#resourcerequirements-v1-core)_ | Resources are the CPU and memory for each Elasticsearch node. |  | Optional: \{\} <br /> |
 | `storageSize` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#quantity-resource-api)_ | StorageSize is the size of the data volume of each node. Required<br />unless the resolved preset provides it. It cannot shrink, because an<br />Elasticsearch data volume cannot become smaller in place. The API<br />server refuses a change of this field in an ElasticsearchCluster to a<br />smaller value. A smaller value is accepted when the field was not set<br />before, or when a preset lowers the size. A cluster whose volumes are<br />already larger then keeps that size and records a StorageShrinkIgnored<br />event. |  | Optional: \{\} <br /> |
@@ -3479,8 +3479,8 @@ _Appears in:_
 
 RetainedBackups limits the backups that a schedule keeps, for each final
 phase. When the count of a phase is more than its limit, the operator
-deletes the oldest backups of that phase, down to the limit. The deletion
-also tries to remove their stored backup data.
+deletes the oldest backups of that phase. The deletion also tries to
+remove their stored backup data.
 
 
 
