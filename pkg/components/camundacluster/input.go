@@ -34,6 +34,8 @@ type Storage struct {
 	// endpoint resolves there, so the claim key qualifies it with this
 	// namespace, see StorageClaimKey.
 	Namespace string
+	// Name is the name of the SecondaryStorageConfig. See StorageContract.
+	Name string
 	// Elasticsearch is set when Type is elasticsearch.
 	Elasticsearch *v1.ElasticsearchStorage
 	// RDBMS is set when Type is rdbms.

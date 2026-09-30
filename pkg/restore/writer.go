@@ -29,23 +29,10 @@ import (
 
 // RegisterWriter registers owner, a restore into the cluster with UID target,
 // as a writer of backend. Another cluster on backend waits while the
-// registration exists. claimNamespace holds the storage claim Leases. A
-// registration that exists already is fine.
+// registration exists. A non-empty contract, see Backend.Contract, also holds
+// every other backend that the contract moves to. claimNamespace holds the
+// storage claim Leases. A registration that exists already is fine.
 func RegisterWriter(
-	ctx context.Context,
-	c client.Client,
-	reader client.Reader,
-	claimNamespace, backend string,
-	owner conditions.Owner,
-	target types.UID,
-) error {
-	return RegisterDatabaseWriter(ctx, c, reader, claimNamespace, backend, "", owner, target)
-}
-
-// RegisterDatabaseWriter is RegisterWriter for a logical database. The
-// registration also names contract, see DatabaseContract, so a cluster on
-// that database waits for it after the contract moves to another address.
-func RegisterDatabaseWriter(
 	ctx context.Context,
 	c client.Client,
 	reader client.Reader,
