@@ -236,6 +236,24 @@ func TestCollectJobsWaitsForThePodOfABackgroundDeletedJob(t *testing.T) {
 	assert.Equal(t, Outcome{Done: true}, collected)
 }
 
+func TestCollectJobsReportsAFailedPodList(t *testing.T) {
+	t.Parallel()
+
+	owner := terminalOwner(v1.ReasonCompleted)
+	c := fake.NewClientBuilder().
+		WithScheme(testScheme(t)).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+				return errors.New("the API server does not answer")
+			},
+		}).
+		Build()
+
+	collected, err := CollectJobs(context.Background(), c, c, owner, podLabel(owner), &owner.Status.RestoreProgress)
+	require.Error(t, err)
+	assert.Equal(t, Outcome{}, collected)
+}
+
 // A logical RDBMS restore keeps its database Job, and that Job carries the
 // owner label too. Its pod mounts no broker volume.
 func TestCollectJobsIgnoresThePodOfAnotherJobOfTheRestore(t *testing.T) {

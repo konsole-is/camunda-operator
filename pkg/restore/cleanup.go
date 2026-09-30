@@ -103,8 +103,11 @@ func CollectJobs(
 	// A Job that somebody deleted with background propagation is gone before
 	// its pods are.
 	gone, err := podsGone(ctx, reader, owner, JobSelector(label))
-	if err != nil || !gone {
-		return Outcome{Wait: Shortly}, err
+	if err != nil {
+		return Outcome{}, err
+	}
+	if !gone {
+		return Outcome{Wait: Shortly}, nil
 	}
 
 	return Outcome{Done: true}, nil
