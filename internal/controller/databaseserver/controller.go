@@ -34,6 +34,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -126,6 +127,9 @@ type resolvedSpec struct {
 	// is the server's own. A rollback is refused while it is set: see
 	// serviceAccountTaken.
 	serviceAccountTaken string
+	// archivePluginRoles are the clusters of the server for which the Barman
+	// Cloud plugin has created its Role: see archivePluginRoles.
+	archivePluginRoles []components.ArchivePluginRole
 	// clusterTaken says why a CloudNativePG cluster of the name the server
 	// derives is not this server's to write, and it is empty when the name is
 	// free or the cluster is the server's own. Every component reads it and
@@ -219,6 +223,9 @@ type DatabaseServerReconciler struct {
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=clusters;scheduledbackups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=backups,verbs=get;list;watch
 // +kubebuilder:rbac:groups=barmancloud.cnpg.io,resources=objectstores,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=barmancloud.cnpg.io,resources=objectstores/status,verbs=update
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=podmonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch
@@ -343,6 +350,12 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if err != nil {
 			return ctrl.Result{}, err
 		}
+	}
+
+	// After the recovery, which records the cluster that a rollback builds.
+	resolved.archivePluginRoles, err = r.archivePluginRoles(ctx, &server)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// After the recovery, because the recovery is what moves status.cluster:
@@ -1446,7 +1459,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 
 	cluster, systemIdentifier, err := components.ClusterComponent(
 		server, merged, resolved.archive, resolved.archiveTaken,
-		resolved.platform, resolved.clusterBlocked,
+		resolved.platform, resolved.clusterBlocked, resolved.archivePluginRoles,
 	)
 	if err != nil {
 		return built, fmt.Errorf("building cluster component: %w", err)
@@ -1672,6 +1685,58 @@ func (r *DatabaseServerReconciler) serviceAccountTaken(
 	}
 
 	return fmt.Sprintf("ServiceAccount %q is controlled by %s %q", key.Name, holder.Kind, holder.Name), nil
+}
+
+// archivePluginRoles returns the clusters of the server, the one it runs and
+// the one a running rollback builds, for which the Barman Cloud plugin has
+// created its Role.
+//
+// A RoleBinding to a Role that does not exist yet is refused by the API server
+// unless the writer may bind any Role, so a cluster is left out until its
+// Role is there. A cluster or a Role under another owner is left out too:
+// binding it would give the pods of this server the objects of somebody else.
+func (r *DatabaseServerReconciler) archivePluginRoles(
+	ctx context.Context,
+	server *v1.DatabaseServer,
+) ([]components.ArchivePluginRole, error) {
+	names := []string{components.ClusterName(server)}
+	if recovery := server.Status.Recovery; recovery != nil && recovery.CompletedAt == nil &&
+		recovery.Cluster != "" && recovery.Cluster != names[0] {
+		names = append(names, recovery.Cluster)
+	}
+
+	var roles []components.ArchivePluginRole
+	for _, name := range names {
+		var cluster cnpgv1.Cluster
+		if err := r.Get(ctx, types.NamespacedName{Namespace: server.Namespace, Name: name}, &cluster); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+
+			return nil, fmt.Errorf("reading the CloudNativePG cluster %s: %w", name, err)
+		}
+		if !ownedByServer(server, &cluster) {
+			continue
+		}
+
+		role := &metav1.PartialObjectMetadata{}
+		role.SetGroupVersionKind(rbacv1.SchemeGroupVersion.WithKind("Role"))
+		key := types.NamespacedName{Namespace: server.Namespace, Name: components.ArchivePluginRoleName(name)}
+		if err := r.Get(ctx, key, role); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+
+			return nil, fmt.Errorf("reading the Role %s: %w", key, err)
+		}
+		if !metav1.IsControlledBy(role, &cluster) {
+			continue
+		}
+
+		roles = append(roles, components.ArchivePluginRole{Cluster: name, ClusterUID: cluster.UID})
+	}
+
+	return roles, nil
 }
 
 // contractTaken says why the DatabaseServerConfig the merged spec names is not

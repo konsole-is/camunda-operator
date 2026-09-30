@@ -165,7 +165,7 @@ func assertDatabaseServerGoldens(
 	scheme := goldenScheme(t)
 	base := filepath.Join("testdata", "golden", dir)
 
-	cluster, _, err := ClusterComponent(server, merged, archive, "", nil, "")
+	cluster, _, err := ClusterComponent(server, merged, archive, "", nil, "", nil)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "cluster.yaml"), cluster,
@@ -418,7 +418,7 @@ func TestSuspensionKeepsTheDeclaredState(t *testing.T) {
 		server.Spec.Suspend = suspend
 		merged := MergeSpec(server.Spec, preset, release)
 
-		clusterComp, _, err := ClusterComponent(server, merged, archive, "", nil, "")
+		clusterComp, _, err := ClusterComponent(server, merged, archive, "", nil, "", nil)
 		require.NoError(t, err)
 		contractComp, err := ContractComponent(server, merged, "", "", "")
 		require.NoError(t, err)
@@ -475,7 +475,7 @@ func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
 		"team":                       "platform",
 	}
 
-	comp, _, err := ClusterComponent(server, server.Spec, nil, "", nil, "")
+	comp, _, err := ClusterComponent(server, server.Spec, nil, "", nil, "", nil)
 	require.NoError(t, err)
 
 	cluster := previewCluster(t, comp)
@@ -493,14 +493,14 @@ func TestClusterImageComesFromThePlatformConfig(t *testing.T) {
 	server, preset, release := goldenMinimalDatabaseServer()
 	merged := MergeSpec(server.Spec, preset, release)
 
-	comp, _, err := ClusterComponent(server, merged, nil, "", nil, "")
+	comp, _, err := ClusterComponent(server, merged, nil, "", nil, "", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "ghcr.io/cloudnative-pg/postgresql:17", previewCluster(t, comp).Spec.ImageName)
 
 	platform := &v1.CamundaPlatformConfigSpec{
 		Images: &v1.ImagesSpec{Postgres: "mirror.example.com/postgresql"},
 	}
-	comp, _, err = ClusterComponent(server, merged, nil, "", platform, "")
+	comp, _, err = ClusterComponent(server, merged, nil, "", platform, "", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "mirror.example.com/postgresql:17", previewCluster(t, comp).Spec.ImageName)
 }

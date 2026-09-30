@@ -30,6 +30,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -253,6 +254,61 @@ func clusterRole(g Gomega, server *v1.DatabaseServer, name string) string {
 	)).To(Succeed())
 
 	return account.Annotations[v1.IRSARoleARNAnnotation]
+}
+
+// grantArchivePlugin creates the Role that the Barman Cloud plugin creates for
+// the named cluster, controlled by that cluster. The plugin does not run in
+// this suite.
+func grantArchivePlugin(server *v1.DatabaseServer, name string) {
+	GinkgoHelper()
+
+	var cluster cnpgv1.Cluster
+	Eventually(func() error {
+		return k8sClient.Get(ctx, client.ObjectKey{Namespace: server.Namespace, Name: name}, &cluster)
+	}, timeout, interval).Should(Succeed())
+
+	Expect(k8sClient.Create(ctx, &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name + "-barman-cloud",
+			Namespace: server.Namespace,
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: cnpgv1.SchemeGroupVersion.String(),
+				Kind:       "Cluster",
+				Name:       cluster.Name,
+				UID:        cluster.UID,
+				Controller: new(true),
+			}},
+		},
+		Rules: []rbacv1.PolicyRule{{
+			APIGroups:     []string{"barmancloud.cnpg.io"},
+			Resources:     []string{"objectstores"},
+			ResourceNames: []string{server.Name},
+			Verbs:         []string{"get", "list", "watch"},
+		}},
+	})).To(Succeed())
+}
+
+// expectArchivePluginBound waits for the RoleBinding that gives the Role of
+// the plugin for the named cluster to the ServiceAccount of the server.
+func expectArchivePluginBound(server *v1.DatabaseServer, name string) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var binding rbacv1.RoleBinding
+		g.Expect(k8sClient.Get(
+			ctx, client.ObjectKey{
+				Namespace: server.Namespace, Name: name + "-barman-cloud-postgres",
+			}, &binding,
+		)).To(Succeed())
+		g.Expect(binding.RoleRef.Kind).To(Equal("Role"))
+		g.Expect(binding.RoleRef.Name).To(Equal(name + "-barman-cloud"))
+		g.Expect(binding.Subjects).To(ConsistOf(rbacv1.Subject{
+			Kind: "ServiceAccount", Name: server.Name + "-postgres", Namespace: server.Namespace,
+		}))
+		// It goes with the cluster whose Role it binds.
+		g.Expect(binding.OwnerReferences).To(ConsistOf(HaveField("Name", name)))
+		g.Expect(binding.OwnerReferences[0].Kind).To(Equal("Cluster"))
+	}, timeout, interval).Should(Succeed())
 }
 
 // probeContract records the probe that the DatabaseServerConfig controller
@@ -660,6 +716,18 @@ var _ = Describe("DatabaseServer recovery", func() {
 			g.Expect(outcome.Message).To(ContainSubstring("lies in none of those windows"))
 		}, timeout, interval).Should(Succeed())
 
+	})
+
+	It("binds the Role of the archive plugin to its ServiceAccount on every cluster", func() {
+		server, from := archivingServer()
+
+		grantArchivePlugin(server, "camunda")
+		expectArchivePluginBound(server, "camunda")
+
+		askForRecovery(server, from.Add(time.Hour))
+		expectRecoveryCluster(server)
+		grantArchivePlugin(server, "camunda-r1")
+		expectArchivePluginBound(server, "camunda-r1")
 	})
 
 	It("refuses a point that no archive of the server holds", func() {

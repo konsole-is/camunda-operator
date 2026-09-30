@@ -22,6 +22,7 @@ import (
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -127,6 +128,7 @@ func (r *DatabaseServerReconciler) watches(mgr ctrl.Manager) error {
 		Watches(&corev1.Secret{}, r.enqueueForBucketSecret(), builder.OnlyMetadata).
 		Watches(&corev1.PersistentVolumeClaim{}, r.enqueueForDataClaim()).
 		Watches(&corev1.ServiceAccount{}, r.enqueueForServiceAccount(), builder.OnlyMetadata).
+		Watches(&rbacv1.Role{}, r.enqueueForArchivePluginRole(), builder.OnlyMetadata).
 		Named(controllerName).
 		Complete(r)
 }
@@ -169,6 +171,24 @@ func (r *DatabaseServerReconciler) enqueueForServiceAccount() handler.EventHandl
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
 		return r.serversMatching(ctx, o.GetNamespace(), func(server *v1.DatabaseServer) bool {
 			return components.ServiceAccountName(server) == o.GetName()
+		})
+	})
+}
+
+// enqueueForArchivePluginRole maps an event of a Role that the Barman Cloud
+// plugin creates to the server that runs the cluster the Role is for, or that
+// builds it in a rollback.
+func (r *DatabaseServerReconciler) enqueueForArchivePluginRole() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		cluster, ok := components.ArchivePluginRoleCluster(o.GetName())
+		if !ok {
+			return nil
+		}
+
+		return r.serversMatching(ctx, o.GetNamespace(), func(server *v1.DatabaseServer) bool {
+			recovery := server.Status.Recovery
+			return components.ClusterName(server) == cluster ||
+				(recovery != nil && recovery.Cluster == cluster)
 		})
 	})
 }

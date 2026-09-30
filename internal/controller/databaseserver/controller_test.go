@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -732,6 +733,22 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(k8sClient.Get(ctx, key, &restored)).To(Succeed())
 			g.Expect(restored.UID).NotTo(Equal(account.UID))
 		}, timeout, interval).Should(Succeed())
+	})
+
+	It("binds no Role of the archive plugin on a server that does not archive", func() {
+		server := serverInNamespace(nil)
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000001")
+		grantArchivePlugin(server, "camunda")
+		expectConditionReason(server, v1.ConditionReady, metav1.ConditionTrue, v1.ReasonHealthy)
+
+		Consistently(func() bool {
+			return apierrors.IsNotFound(k8sClient.Get(
+				ctx, client.ObjectKey{
+					Namespace: server.Namespace, Name: "camunda-barman-cloud-postgres",
+				}, &rbacv1.RoleBinding{},
+			))
+		}, 3*time.Second, interval).Should(BeTrue())
 	})
 
 	It("mirrors the system identifier and the cluster CloudNativePG reports", func() {

@@ -213,7 +213,7 @@ While a rollback runs, an edit of `spec.databaseServerConfig`, of `spec.archive`
 
 If the `ObjectStorageConfig` holds static credentials, the operator copies them into the Secret `my-db-archive` next to the server. Anyone who can read Secrets in that namespace can then read the bucket credentials. Use workload identity to keep them out of the namespace.
 
-The instance pods run under the ServiceAccount `my-db-postgres`, the server name and `-postgres`. The operator creates it. A rollback does not change it, so a cloud binding that names it stays valid. The principal to bind is `system:serviceaccount:my-cluster-ns:my-db-postgres`.
+The instance pods run under the ServiceAccount `my-db-postgres`, the server name and `-postgres`. The operator creates it. A rollback does not change it, so a cloud binding that names it stays valid. The principal to bind is `system:serviceaccount:my-cluster-ns:my-db-postgres`. While the server archives, the operator also binds the Role of the Barman Cloud plugin to this ServiceAccount. The pods can then read the archive settings.
 
 If the `ObjectStorageConfig` uses workload identity, the operator puts its annotation on that ServiceAccount. Add your own annotations with `spec.serviceAccount.annotations`. A value that you set wins over the derived value of the same key.
 

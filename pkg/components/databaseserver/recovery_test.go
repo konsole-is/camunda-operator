@@ -554,7 +554,7 @@ func TestHeldIdentityStaysOnBothClusters(t *testing.T) {
 		},
 	}
 
-	clusterComp, _, err := ClusterComponent(server, merged, archive, "", nil, "")
+	clusterComp, _, err := ClusterComponent(server, merged, archive, "", nil, "", nil)
 	require.NoError(t, err)
 	objects, err := clusterComp.Preview()
 	require.NoError(t, err)
