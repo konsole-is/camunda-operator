@@ -305,7 +305,7 @@ func (r *CamundaClusterReconciler) recordIgnoredClassChange(
 		corev1.EventTypeWarning,
 		eventReasonStorageClassChangeIgnored,
 		eventActionApply,
-		"requested storageClassName %s is not applied: the broker volumes keep the class %s, because their class cannot change",
+		"requested storageClassName %s is not applied: the claim template of the broker StatefulSet keeps the class %s, because a StatefulSet cannot change it",
 		className(class),
 		className(applied.StorageClassName),
 	)

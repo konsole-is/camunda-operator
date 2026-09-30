@@ -93,8 +93,8 @@ func (e Effective) StorageSize() resource.Quantity {
 	return *e.Zeebe.StorageSize
 }
 
-// StorageClassName returns the StorageClass of the broker volumes, or nil for
-// the default StorageClass of the Kubernetes cluster.
+// StorageClassName returns the StorageClass that the spec requests for the
+// broker volumes, or nil for the default StorageClass.
 func (e Effective) StorageClassName() *string {
 	if e.Zeebe == nil {
 		return nil
