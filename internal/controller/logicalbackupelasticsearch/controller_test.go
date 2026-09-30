@@ -815,7 +815,9 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 			var gone v1.LogicalBackupElasticsearch
 			return k8sClient.Get(ctx, client.ObjectKeyFromObject(running), &gone) != nil
 		}, timeout, interval).Should(BeTrue())
-		Expect(r.leaseHolder()).To(BeEmpty())
+		// The finalizer is removed before the claim is released, so the
+		// Lease can outlive the object for a moment.
+		Eventually(r.leaseHolder, timeout, interval).Should(BeEmpty())
 	})
 
 	// Round 14 (from #85's review, mirrored here): the claim is taken
