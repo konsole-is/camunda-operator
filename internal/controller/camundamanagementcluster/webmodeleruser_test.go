@@ -823,11 +823,7 @@ func createBasicCluster(s scenario, endpoint string) *v1.CamundaCluster {
 		clustercomponents.AdminPasswordKey: clusterAdminPassword,
 	})
 
-	cluster.Status.Gateway = &v1.GatewayBinding{
-		GRPCEndpoint: cluster.Name + "-gateway." + s.namespace + ".svc:26500",
-		RESTEndpoint: endpoint,
-	}
-	Expect(k8sClient.Status().Update(ctx, cluster)).To(Succeed())
+	publishGateway(cluster, endpoint)
 
 	return cluster
 }
