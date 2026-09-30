@@ -119,10 +119,12 @@ status:
     Elasticsearch gives no node to shard 0 of the restored index
     operate-flownode-instance-8.9.0_ (unassigned reason NEW_INDEX_RESTORED,
     allocation status deciders_no), so the index stays red.
-    GET _cluster/allocation/explain tells you why
+    GET _cluster/allocation/explain with the body
+    {"index":"operate-flownode-instance-8.9.0_","shard":0,"primary":true}
+    tells you why
 ```
 
-`GET _cluster/allocation/explain` tells you why the shard has no node. Correct the cause that it names. Then delete the failed restore and create a new one.
+Send the request that the message names. Its answer tells you why that shard has no node. Correct the cause that it names. Then delete the failed restore and create a new one.
 
 CAUTION: Do not delete the backup while the restore runs. A failure after the delete of the indices leaves the secondary storage of the target empty until the restore finishes or you restore again.
 

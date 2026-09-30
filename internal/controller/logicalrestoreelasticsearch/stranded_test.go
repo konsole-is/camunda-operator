@@ -48,6 +48,9 @@ var _ = Describe("LogicalRestoreElasticsearch with a restored primary that no no
 		failed := expectReason(restore, v1.LogicalRestoreFailed, v1.ReasonFailed)
 		Expect(failed.Status.FailureMessage).To(ContainSubstring(targetIndices[0]))
 		Expect(failed.Status.FailureMessage).To(ContainSubstring("deciders_no"))
+		Expect(failed.Status.FailureMessage).To(ContainSubstring(
+			`{"index":"`+targetIndices[0]+`","shard":0,"primary":true}`,
+		), "the allocation explain request names this primary, not the first unassigned shard")
 		Expect(failed.Status.PrimaryJobNames).To(BeEmpty(), "the broker volumes were never restored")
 	})
 

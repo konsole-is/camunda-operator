@@ -265,7 +265,10 @@ func strandedMessage(stranded []esadmin.StrandedShard) string {
 		message += fmt.Sprintf(". %d more restored primary shards get no node", more)
 	}
 
-	return message + ". GET _cluster/allocation/explain tells you why"
+	return message + fmt.Sprintf(
+		`. GET _cluster/allocation/explain with the body {"index":%q,"shard":%d,"primary":true} tells you why`,
+		first.Index, first.Shard,
+	)
 }
 
 // restoredIndexPatterns are the index patterns that the restore replaces on
