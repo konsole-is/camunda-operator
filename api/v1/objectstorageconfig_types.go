@@ -40,35 +40,35 @@ type ObjectStorageAuthType string
 
 // ObjectStorageAuthTypeWorkloadIdentity and ObjectStorageAuthTypeCredentials
 // are the supported authentication choices. Workload identity binds a cloud
-// principal to the consumer's ServiceAccount; credentials are static keys in
-// a Secret.
+// principal to the ServiceAccount of the consumer. Credentials are static
+// keys in a Secret.
 const (
 	ObjectStorageAuthTypeWorkloadIdentity ObjectStorageAuthType = "workloadIdentity"
 	ObjectStorageAuthTypeCredentials      ObjectStorageAuthType = "credentials"
 )
 
 // S3WorkloadIdentity names the AWS principal that the bucket trusts. An empty
-// block means the consumer's ServiceAccount chain already carries the
+// block means that the ServiceAccount of the consumer already has the
 // identity (EKS Pod Identity), so the operator adds nothing.
 type S3WorkloadIdentity struct {
 	// RoleARN is the IAM role that consumers assume. When set, the operator
-	// puts it in the eks.amazonaws.com/role-arn annotation of the consumer's
-	// ServiceAccount (IRSA).
+	// puts it in the eks.amazonaws.com/role-arn annotation of the
+	// ServiceAccount of the consumer (IRSA).
 	// +optional
 	RoleARN string `json:"roleArn,omitempty"`
 }
 
-// S3CredentialsSecretRef references an access-key pair stored in a Secret of
-// the namespace of the contract.
+// S3CredentialsSecretRef references an access-key pair in a Secret in the
+// namespace of the contract.
 type S3CredentialsSecretRef struct {
-	// Name of the Secret holding the keys.
+	// Name is the name of the Secret that holds the keys.
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
-	// AccessKeyIDKey is the key in the Secret holding the access key ID.
+	// AccessKeyIDKey is the key in the Secret that holds the access key ID.
 	// +kubebuilder:validation:MinLength=1
 	AccessKeyIDKey string `json:"accessKeyIdKey"`
-	// SecretAccessKeyKey is the key in the Secret holding the secret access
-	// key.
+	// SecretAccessKeyKey is the key in the Secret that holds the secret
+	// access key.
 	// +kubebuilder:validation:MinLength=1
 	SecretAccessKeyKey string `json:"secretAccessKeyKey"`
 }
@@ -87,13 +87,13 @@ type S3StorageAuth struct {
 	// +kubebuilder:default=workloadIdentity
 	// +optional
 	Type ObjectStorageAuthType `json:"type,omitempty"`
-	// WorkloadIdentity names the trusted principal. Only valid with type
-	// workloadIdentity; an empty or absent block means "trust the
-	// ServiceAccount chain, add nothing".
+	// WorkloadIdentity names the trusted principal. It is valid only with
+	// type workloadIdentity. An empty or absent block means that the
+	// ServiceAccount already has the identity, and the operator adds nothing.
 	// +optional
 	WorkloadIdentity *S3WorkloadIdentity `json:"workloadIdentity,omitempty"`
-	// Credentials are static keys. Required with type credentials, forbidden
-	// otherwise.
+	// Credentials are static keys. Required with type credentials. Forbidden
+	// with other types.
 	// +optional
 	Credentials *S3Credentials `json:"credentials,omitempty"`
 }
@@ -114,14 +114,14 @@ type S3StorageAuth struct {
 // placeholder would aim every request at the wrong region.
 const PlaceholderS3Region = "us-east-1"
 
-// S3Storage describes an S3 or S3-compatible bucket.
-//
-// The rule below compares with size() rather than the empty string literal:
-// gofmt rewrites a doubled single quote in the doc comment of a declaration
-// into a typographic quote, which would silently invalidate the expression.
+// The rule compares with size(), not with the empty string literal. gofmt
+// changes a doubled single quote in a doc comment into a typographic quote,
+// and the expression then breaks without an error.
 // +kubebuilder:validation:XValidation:rule="(has(self.region) && self.region.size() > 0) || (has(self.endpoint) && self.endpoint.size() > 0)",message="region is required unless endpoint is set"
+
+// S3Storage describes an S3 or S3-compatible bucket.
 type S3Storage struct {
-	// BucketName is the bucket name as used by storage client SDKs.
+	// BucketName is the name of the bucket, as storage client SDKs use it.
 	// +kubebuilder:validation:MinLength=1
 	BucketName string `json:"bucketName"`
 	// BasePath is the key prefix under which consumers write objects,
@@ -129,7 +129,7 @@ type S3Storage struct {
 	// +kubebuilder:validation:Pattern=`^[^/]+(/[^/]+)*$`
 	// +optional
 	BasePath string `json:"basePath,omitempty"`
-	// Region of the bucket. Required unless endpoint is set.
+	// Region is the region of the bucket. Required unless endpoint is set.
 	// +optional
 	Region string `json:"region,omitempty"`
 	// Endpoint is the URL of an S3-compatible store (MinIO, Ceph, and more).
@@ -142,7 +142,7 @@ type S3Storage struct {
 	// +optional
 	ForcePathStyle bool `json:"forcePathStyle,omitempty"`
 	// Auth selects how consumers authenticate. An absent block means
-	// workload identity through the ServiceAccount chain.
+	// workload identity through the ServiceAccount.
 	// +kubebuilder:default={type: workloadIdentity}
 	// +optional
 	Auth S3StorageAuth `json:"auth,omitempty"`
@@ -172,14 +172,14 @@ func (in *S3Storage) SigningRegion() string {
 }
 
 // GCSWorkloadIdentity names the Google principal that the bucket trusts. An
-// empty block means the consumer's ServiceAccount chain already carries the
+// empty block means that the ServiceAccount of the consumer already has the
 // identity (Workload Identity Federation for GKE), so the operator adds
 // nothing.
 type GCSWorkloadIdentity struct {
 	// ServiceAccountEmail is the Google service account that consumers
 	// impersonate. When set, the operator puts it in the
-	// iam.gke.io/gcp-service-account annotation of the consumer's
-	// ServiceAccount.
+	// iam.gke.io/gcp-service-account annotation of the ServiceAccount of the
+	// consumer.
 	// +optional
 	ServiceAccountEmail string `json:"serviceAccountEmail,omitempty"`
 }
@@ -199,20 +199,20 @@ type GCSStorageAuth struct {
 	// +kubebuilder:default=workloadIdentity
 	// +optional
 	Type ObjectStorageAuthType `json:"type,omitempty"`
-	// WorkloadIdentity names the trusted principal. Only valid with type
-	// workloadIdentity; an empty or absent block means "trust the
-	// ServiceAccount chain, add nothing".
+	// WorkloadIdentity names the trusted principal. It is valid only with
+	// type workloadIdentity. An empty or absent block means that the
+	// ServiceAccount already has the identity, and the operator adds nothing.
 	// +optional
 	WorkloadIdentity *GCSWorkloadIdentity `json:"workloadIdentity,omitempty"`
 	// Credentials is a static service-account key. Required with type
-	// credentials, forbidden otherwise.
+	// credentials. Forbidden with other types.
 	// +optional
 	Credentials *GCSCredentials `json:"credentials,omitempty"`
 }
 
 // GCSStorage describes a Google Cloud Storage bucket.
 type GCSStorage struct {
-	// BucketName is the bucket name as used by storage client SDKs.
+	// BucketName is the name of the bucket, as storage client SDKs use it.
 	// +kubebuilder:validation:MinLength=1
 	BucketName string `json:"bucketName"`
 	// BasePath is the key prefix under which consumers write objects,
@@ -221,19 +221,19 @@ type GCSStorage struct {
 	// +optional
 	BasePath string `json:"basePath,omitempty"`
 	// Auth selects how consumers authenticate. An absent block means
-	// workload identity through the ServiceAccount chain.
+	// workload identity through the ServiceAccount.
 	// +kubebuilder:default={type: workloadIdentity}
 	// +optional
 	Auth GCSStorageAuth `json:"auth,omitempty"`
 }
 
 // AzureBlobWorkloadIdentity names the Azure principal that the container
-// trusts. An empty block means the consumer's ServiceAccount chain already
-// carries the identity, so the operator adds nothing.
+// trusts. An empty block means that the ServiceAccount of the consumer
+// already has the identity, so the operator adds nothing.
 type AzureBlobWorkloadIdentity struct {
 	// ClientID is the managed identity that consumers use. When set, the
 	// operator puts it in the azure.workload.identity/client-id annotation
-	// of the consumer's ServiceAccount.
+	// of the ServiceAccount of the consumer.
 	// +optional
 	ClientID string `json:"clientId,omitempty"`
 }
@@ -253,13 +253,13 @@ type AzureBlobStorageAuth struct {
 	// +kubebuilder:default=workloadIdentity
 	// +optional
 	Type ObjectStorageAuthType `json:"type,omitempty"`
-	// WorkloadIdentity names the trusted principal. Only valid with type
-	// workloadIdentity; an empty or absent block means "trust the
-	// ServiceAccount chain, add nothing".
+	// WorkloadIdentity names the trusted principal. It is valid only with
+	// type workloadIdentity. An empty or absent block means that the
+	// ServiceAccount already has the identity, and the operator adds nothing.
 	// +optional
 	WorkloadIdentity *AzureBlobWorkloadIdentity `json:"workloadIdentity,omitempty"`
 	// Credentials is a static storage account key. Required with type
-	// credentials, forbidden otherwise.
+	// credentials. Forbidden with other types.
 	// +optional
 	Credentials *AzureBlobCredentials `json:"credentials,omitempty"`
 }
@@ -283,7 +283,7 @@ type AzureBlobStorage struct {
 	// +optional
 	Endpoint string `json:"endpoint,omitempty"`
 	// Auth selects how consumers authenticate. An absent block means
-	// workload identity through the ServiceAccount chain.
+	// workload identity through the ServiceAccount.
 	// +kubebuilder:default={type: workloadIdentity}
 	// +optional
 	Auth AzureBlobStorageAuth `json:"auth,omitempty"`
@@ -305,22 +305,22 @@ func (in *AzureBlobStorage) ServiceEndpoint() string {
 }
 
 // ObjectStorageConfigSpec describes a bucket and how consumers authenticate
-// against it. It is a discriminated union: type selects exactly one of the
-// s3, gcs, and azureBlob blocks.
+// against it. The type field selects exactly one of the s3, gcs, and
+// azureBlob blocks.
 // +kubebuilder:validation:XValidation:rule="(self.type == 'S3') == has(self.s3) && (self.type == 'GCS') == has(self.gcs) && (self.type == 'AzureBlob') == has(self.azureBlob)",message="exactly the block matching spec.type must be set"
 type ObjectStorageConfigSpec struct {
 	// Type selects the storage API of the bucket.
 	Type ObjectStorageType `json:"type"`
-	// S3 describes an S3 or S3-compatible bucket. Required when type is S3,
-	// forbidden otherwise.
+	// S3 describes an S3 or S3-compatible bucket. Required when type is S3.
+	// Forbidden with other types.
 	// +optional
 	S3 *S3Storage `json:"s3,omitempty"`
 	// GCS describes a Google Cloud Storage bucket. Required when type is
-	// GCS, forbidden otherwise.
+	// GCS. Forbidden with other types.
 	// +optional
 	GCS *GCSStorage `json:"gcs,omitempty"`
 	// AzureBlob describes an Azure Blob Storage container. Required when
-	// type is AzureBlob, forbidden otherwise.
+	// type is AzureBlob. Forbidden with other types.
 	// +optional
 	AzureBlob *AzureBlobStorage `json:"azureBlob,omitempty"`
 }
@@ -330,8 +330,8 @@ type ObjectStorageConfigStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Conditions represent the current validation state; the Ready condition
-	// carries the reasons Healthy and MissingSecret.
+	// Conditions represent the current validation state. The Ready
+	// condition has the reasons Healthy and MissingSecret.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -346,10 +346,10 @@ type ObjectStorageConfigStatus struct {
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=`.spec.type`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// ObjectStorageConfig is the contract CRD that describes a bucket — for
-// backups or document storage — and how consumers authenticate against it:
-// workload identity on the consumer's ServiceAccount, or static credentials
-// in a Secret.
+// ObjectStorageConfig is the contract CRD that describes a bucket for
+// backups or document storage. It also describes how consumers
+// authenticate against the bucket: with workload identity on the
+// ServiceAccount of the consumer, or with static credentials in a Secret.
 type ObjectStorageConfig struct {
 	metav1.TypeMeta `json:",inline"`
 
