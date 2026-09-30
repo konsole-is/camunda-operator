@@ -117,10 +117,10 @@ status:
   phase: Failed
   failureMessage: >-
     Elasticsearch gives no node to shard 0 of the restored index
-    operate-flownode-instance-8.9.0_ (unassigned reason NEW_INDEX_RESTORED,
+    operate-flownode-instance-8.3.1_ (unassigned reason NEW_INDEX_RESTORED,
     allocation status deciders_no), so the index stays red.
     GET _cluster/allocation/explain with the body
-    {"index":"operate-flownode-instance-8.9.0_","shard":0,"primary":true}
+    {"index":"operate-flownode-instance-8.3.1_","shard":0,"primary":true}
     tells you why
 ```
 

@@ -17,6 +17,7 @@ limitations under the License.
 package esadmintest_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -77,6 +78,33 @@ func TestServerRefusesAReadWithoutItsFilter(t *testing.T) {
 			assert.NotEqual(t, http.StatusBadRequest, get(t, server.URL()+tt.path+tt.filtered))
 		})
 	}
+}
+
+// The fake prunes a filtered answer the way Elasticsearch does, so a client
+// that decodes a field that its filter does not name reads nothing in a test
+// too.
+func TestServerAnswersOnlyTheFilteredFields(t *testing.T) {
+	server := esadmintest.New()
+	t.Cleanup(server.Close)
+	server.SetIndices("camunda-1")
+
+	request, err := http.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		server.URL()+"/camunda-1/_recovery?filter_path=*.shards.stage",
+		nil,
+	)
+	require.NoError(t, err)
+	response, err := http.DefaultClient.Do(request)
+	require.NoError(t, err)
+	defer func() { _ = response.Body.Close() }()
+
+	var body any
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&body))
+	want := map[string]any{
+		"camunda-1": map[string]any{"shards": []any{map[string]any{"stage": "DONE"}}},
+	}
+	assert.Equal(t, want, body)
 }
 
 func get(t *testing.T, url string) int {

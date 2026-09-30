@@ -52,6 +52,12 @@ var _ = Describe("LogicalRestoreElasticsearch with a restored primary that no no
 			`{"index":"`+targetIndices[0]+`","shard":0,"primary":true}`,
 		), "the allocation explain request names this primary, not the first unassigned shard")
 		Expect(failed.Status.PrimaryJobNames).To(BeEmpty(), "the broker volumes were never restored")
+
+		By("giving the backend back, because no recovery comes for that primary")
+		Eventually(func(g Gomega) {
+			g.Expect(writersNaming(restore)).To(BeEmpty())
+			g.Expect(latest(g, restore).Status.RecoveryHeld).To(HaveValue(BeFalse()))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("gives its backend back after it fails, because no recovery comes for that primary", func() {

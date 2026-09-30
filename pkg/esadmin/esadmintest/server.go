@@ -465,7 +465,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 			},
 		}
 	}
-	adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"nodes": nodes})
+	writeFiltered(w, r.URL.Query(), map[string]any{"nodes": nodes})
 }
 
 // filtered reports whether the filter_path of query names every field of
@@ -483,6 +483,70 @@ func filtered(w http.ResponseWriter, query url.Values, want []string) bool {
 	}
 
 	return true
+}
+
+// writeFiltered answers 200 with body, pruned to the filter_path of query the
+// way Elasticsearch prunes it. A client that decodes a field that its filter
+// does not name reads nothing, as it would from a real server.
+func writeFiltered(w http.ResponseWriter, query url.Values, body any) {
+	// A round trip through JSON gives the body the shape that prune reads.
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		errorBody(w, http.StatusInternalServerError, "encoding answer: "+err.Error())
+		return
+	}
+	var decoded any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		errorBody(w, http.StatusInternalServerError, "decoding answer: "+err.Error())
+		return
+	}
+
+	var paths [][]string
+	for filter := range strings.SplitSeq(query.Get("filter_path"), ",") {
+		paths = append(paths, strings.Split(filter, "."))
+	}
+	kept, ok := prune(decoded, paths)
+	if !ok {
+		kept = map[string]any{}
+	}
+	adminhttptest.WriteJSON(w, http.StatusOK, kept)
+}
+
+// prune keeps the parts of value that paths reach, as filter_path does, and
+// reports false when it keeps nothing.
+func prune(value any, paths [][]string) (any, bool) {
+	for _, segments := range paths {
+		if len(segments) == 0 {
+			return value, true
+		}
+	}
+
+	switch value := value.(type) {
+	case map[string]any:
+		kept := map[string]any{}
+		for key, child := range value {
+			var rest [][]string
+			for _, segments := range paths {
+				if ok, _ := path.Match(segments[0], key); ok {
+					rest = append(rest, segments[1:])
+				}
+			}
+			if pruned, ok := prune(child, rest); len(rest) > 0 && ok {
+				kept[key] = pruned
+			}
+		}
+		return kept, len(kept) > 0
+	case []any:
+		kept := []any{}
+		for _, element := range value {
+			if pruned, ok := prune(element, paths); ok {
+				kept = append(kept, pruned)
+			}
+		}
+		return kept, len(kept) > 0
+	default:
+		return nil, false
+	}
 }
 
 func errorBody(w http.ResponseWriter, status int, message string) {
@@ -612,7 +676,7 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 		if len(snapshot.Metadata) > 0 {
 			info["metadata"] = snapshot.Metadata
 		}
-		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"snapshots": []map[string]any{info}})
+		writeFiltered(w, r.URL.Query(), map[string]any{"snapshots": []map[string]any{info}})
 
 	case http.MethodDelete:
 		if s.Dropping(w, "snapshotDelete") {
@@ -730,7 +794,7 @@ func (s *Server) handleRecovery(w http.ResponseWriter, r *http.Request, target s
 			},
 		}}}
 	}
-	adminhttptest.WriteJSON(w, http.StatusOK, indices)
+	writeFiltered(w, r.URL.Query(), indices)
 }
 
 // handleRoutingTable serves GET /_cluster/state/routing_table/<target>. It
@@ -784,7 +848,7 @@ func (s *Server) handleRoutingTable(w http.ResponseWriter, r *http.Request, targ
 		}
 		indices[name] = map[string]any{"shards": copies}
 	}
-	adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{
+	writeFiltered(w, r.URL.Query(), map[string]any{
 		"cluster_name":  "fake",
 		"routing_table": map[string]any{"indices": indices},
 	})
@@ -839,7 +903,7 @@ func (s *Server) handleIndexResolve(w http.ResponseWriter, r *http.Request, targ
 			"settings": map[string]any{"index": map[string]any{"uuid": "uuid-" + name}},
 		}
 	}
-	adminhttptest.WriteJSON(w, http.StatusOK, response)
+	writeFiltered(w, r.URL.Query(), response)
 }
 
 // handleIndexDelete serves DELETE /<target>. It removes every seeded index
