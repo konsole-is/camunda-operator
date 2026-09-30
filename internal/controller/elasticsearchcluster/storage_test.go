@@ -47,7 +47,10 @@ func TestDataVolumesReadsTheRequestLive(t *testing.T) {
 	cluster := &v1.ElasticsearchCluster{ObjectMeta: metav1.ObjectMeta{Name: "es", Namespace: "ns"}}
 	stale := &esv1.Elasticsearch{ObjectMeta: metav1.ObjectMeta{Name: "es", Namespace: "ns"}}
 	applied := stale.DeepCopy()
-	applied.Annotations = map[string]string{components.RequestedStorageSizeAnnotation: "512Mi"}
+	applied.Annotations = map[string]string{
+		components.RequestedStorageSizeAnnotation:  "512Mi",
+		components.RequestedStorageClassAnnotation: "class-b",
+	}
 
 	r := &ElasticsearchClusterReconciler{
 		Client:    fake.NewClientBuilder().WithScheme(s).WithObjects(stale).Build(),
@@ -57,6 +60,7 @@ func TestDataVolumesReadsTheRequestLive(t *testing.T) {
 	volumes, err := r.dataVolumes(t.Context(), cluster)
 	require.NoError(t, err)
 	assert.Equal(t, "512Mi", volumes.requested)
+	assert.Equal(t, new("class-b"), volumes.requestedClass)
 }
 
 // An ECK CR of the same name that another owner controls never takes the
@@ -102,4 +106,111 @@ func TestKeepAppliedStorageSizeRecordsNothingUnderAForeignCR(t *testing.T) {
 	r.keepAppliedStorageSize(cluster, &merged, volumes)
 
 	assert.Empty(t, recorder.Events)
+}
+
+// The data volume claim keeps the class of the applied ECK CR, and a new
+// requested class records one event: the applied CR carries the class that
+// its last apply asked for.
+func TestKeepAppliedStorageClass(t *testing.T) {
+	t.Parallel()
+
+	applied := func(class *string, requested *string) dataVolumes {
+		return dataVolumes{
+			applied:        &corev1.PersistentVolumeClaimSpec{StorageClassName: class},
+			requestedClass: requested,
+		}
+	}
+
+	tests := []struct {
+		name      string
+		volumes   dataVolumes
+		suspend   bool
+		requested *string
+		wantClass *string
+		wantEvent bool
+	}{
+		{
+			name:      "no applied ECK CR",
+			volumes:   dataVolumes{},
+			requested: new("class-b"),
+			wantClass: new("class-b"),
+		},
+		{
+			name:      "the applied class",
+			volumes:   applied(new("class-a"), new("class-a")),
+			requested: new("class-a"),
+			wantClass: new("class-a"),
+		},
+		{
+			name:      "another class, first asked for",
+			volumes:   applied(new("class-a"), new("class-a")),
+			requested: new("class-b"),
+			wantClass: new("class-a"),
+			wantEvent: true,
+		},
+		{
+			name:      "another class, already asked for",
+			volumes:   applied(new("class-a"), new("class-b")),
+			requested: new("class-b"),
+			wantClass: new("class-a"),
+		},
+		{
+			name:      "a class on a claim without one",
+			volumes:   applied(nil, nil),
+			requested: new("class-b"),
+			wantEvent: true,
+		},
+		{
+			name:      "no class on a claim with one",
+			volumes:   applied(new("class-a"), new("class-a")),
+			requested: nil,
+			wantClass: new("class-a"),
+			wantEvent: true,
+		},
+		{
+			name:      "no class, already asked for",
+			volumes:   applied(new("class-a"), nil),
+			requested: nil,
+			wantClass: new("class-a"),
+		},
+		{
+			name:      "suspended with the ECK CR still there",
+			volumes:   applied(new("class-a"), new("class-a")),
+			suspend:   true,
+			requested: new("class-b"),
+			wantClass: new("class-a"),
+		},
+		{
+			name: "an ECK CR that another owner controls",
+			volumes: dataVolumes{
+				applied:        &corev1.PersistentVolumeClaimSpec{StorageClassName: new("class-a")},
+				requestedClass: new("class-a"),
+				foreign:        true,
+			},
+			requested: new("class-b"),
+			wantClass: new("class-a"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := events.NewFakeRecorder(1)
+			r := &ElasticsearchClusterReconciler{EventRecorder: recorder}
+			cluster := &v1.ElasticsearchCluster{ObjectMeta: metav1.ObjectMeta{Name: "es", Namespace: "ns"}}
+			merged := v1.ElasticsearchClusterSpec{StorageClassName: tt.requested, Suspend: tt.suspend}
+
+			requested := r.keepAppliedStorageClass(cluster, &merged, tt.volumes)
+
+			assert.Equal(t, tt.requested, requested)
+			assert.Equal(t, tt.wantClass, merged.StorageClassName)
+			if !tt.wantEvent {
+				assert.Empty(t, recorder.Events)
+				return
+			}
+			require.Len(t, recorder.Events, 1)
+			assert.Contains(t, <-recorder.Events, eventReasonStorageClassChangeIgnored)
+		})
+	}
 }

@@ -70,6 +70,8 @@ spec:
 
 You can increase `spec.storageSize` at any time. You cannot decrease it. The API server rejects a lower inline value. If a preset lowers the size under a running cluster, the operator keeps the current size and records a Warning event with reason `StorageShrinkIgnored`. To get a smaller volume, delete and recreate the cluster.
 
+The storage class of the data volumes cannot change while the ECK resource of the cluster exists. A new class can still come from the preset or from `spec.storageClassName`. The operator then keeps the class of the ECK resource. It records the Warning event `StorageClassChangeIgnored` one time for each requested class, also when the preset removes its class. A suspended cluster has no ECK resource, so it takes the new class when it resumes. The volumes that the suspension kept keep their class. Volumes that `whenDeleted: Retain` kept from a deleted cluster of the same name keep their class.
+
 ## Snapshot repository
 
 Set `spec.snapshotStorageRef` to an `ObjectStorageConfig` to take part in backups. Use the bucket that the `CamundaCluster` references in its `backupStorageRef`.
@@ -190,7 +192,7 @@ spec:
     limits: { memory: "2Gi" }
   # string (resource quantity). Required unless the preset provides it. Size of the data volume of each node. It can grow but not shrink.
   storageSize: "64Gi"
-  # string. Optional, default: the default StorageClass of the Kubernetes cluster. StorageClass of the data volumes.
+  # string. Optional, default: the default StorageClass of the Kubernetes cluster. StorageClass of the data volumes. A change after the ECK resource exists is ignored.
   storageClassName: "ssd"
   # string. Optional. Name of an ObjectStorageConfig in this namespace that holds the snapshot bucket. Set it to take part in backups. It must be the bucket that the CamundaCluster references.
   snapshotStorageRef: "my-backup-bucket"
