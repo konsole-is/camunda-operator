@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	batchv1 "k8s.io/api/batch/v1"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -154,18 +153,7 @@ func removeJobs(
 
 	// A Job that somebody deleted with background propagation is gone before
 	// its pods are.
-	var pods corev1.PodList
-	err := reader.List(
-		ctx,
-		&pods,
-		client.InNamespace(owner.GetNamespace()),
-		client.MatchingLabels{label.Key: label.Name},
-	)
-	if err != nil {
-		return false, fmt.Errorf("listing the Job pods of %s: %w", client.ObjectKeyFromObject(owner), err)
-	}
-
-	return len(pods.Items) == 0, nil
+	return podsGone(ctx, reader, owner, map[string]string{label.Key: label.Name})
 }
 
 // releaseHold removes the suspension hold of the restore from its cluster. A

@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/gomega"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -218,16 +219,45 @@ func completeBackup(r *rig, backup *v1.LogicalBackupElasticsearch) int64 {
 
 // keepRegistrationGraceOpen stamps the history and runtime acceptance times
 // of a terminal backup ahead of now. The registration grace measured from
-// them then cannot elapse while the spec runs, whatever the load. The
-// controller does not rewrite the status of a terminal backup.
+// them then cannot elapse while the spec runs, whatever the load.
 func keepRegistrationGraceOpen(backup *v1.LogicalBackupElasticsearch) {
 	GinkgoHelper()
+	// The API server stores the time in whole seconds.
+	ahead := metav1.NewTime(time.Now().Add(time.Hour).Truncate(time.Second))
+	settleTerminalStatus(backup, func(status *v1.LogicalBackupElasticsearchStatus) {
+		status.HistoryAcceptedTime = &ahead
+		status.RuntimeAcceptedTime = &ahead
+	})
+}
+
+// settleTerminalStatus applies mutate to the status of a terminal backup and
+// returns once no reconcile can write an older copy over it. mutate must
+// give the same result each time it runs.
+func settleTerminalStatus(
+	backup *v1.LogicalBackupElasticsearch,
+	mutate func(*v1.LogicalBackupElasticsearchStatus),
+) {
+	GinkgoHelper()
+	// A reconcile that read the backup before the write flushes its copy
+	// over the write on a conflict. The write drops Ready. That older copy
+	// cannot bring Ready back, because the flush takes Ready from the
+	// server. Only a reconcile that read the write stages Ready again, and
+	// the reconciles of one backup run one at a time. So the next write
+	// waits for Ready, and a write that holds once Ready is back is final.
 	Eventually(func(g Gomega) {
-		current := currentBackup(backup)
-		ahead := metav1.NewTime(time.Now().Add(time.Hour))
-		current.Status.HistoryAcceptedTime = &ahead
-		current.Status.RuntimeAcceptedTime = &ahead
-		g.Expect(k8sClient.Status().Update(ctx, current)).To(Succeed())
+		var current v1.LogicalBackupElasticsearch
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &current)).To(Succeed())
+		g.Expect(meta.FindStatusCondition(current.Status.Conditions, v1.ConditionReady)).
+			NotTo(BeNil(), "no reconcile has read the last write yet")
+
+		written := current.DeepCopy()
+		mutate(&written.Status)
+		held := equality.Semantic.DeepEqual(written.Status, current.Status)
+		if !held {
+			meta.RemoveStatusCondition(&written.Status.Conditions, v1.ConditionReady)
+			g.Expect(k8sClient.Status().Update(ctx, written)).To(Succeed())
+		}
+		g.Expect(held).To(BeTrue(), "the write does not hold yet")
 	}, timeout, interval).Should(Succeed())
 }
 
@@ -570,11 +600,9 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		By("moving the id of the sibling far ahead of the clock, as a stepped-back clock would see it")
 		ahead := time.Now().Add(365 * 24 * time.Hour).UnixMilli()
-		Eventually(func(g Gomega) {
-			current := currentBackup(sibling)
-			current.Status.BackupID = ahead
-			g.Expect(k8sClient.Status().Update(ctx, current)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		settleTerminalStatus(sibling, func(status *v1.LogicalBackupElasticsearchStatus) {
+			status.BackupID = ahead
+		})
 
 		backup := r.newBackup()
 		Expect(backupID(backup)).To(Equal(ahead + 1))
@@ -787,7 +815,9 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 			var gone v1.LogicalBackupElasticsearch
 			return k8sClient.Get(ctx, client.ObjectKeyFromObject(running), &gone) != nil
 		}, timeout, interval).Should(BeTrue())
-		Expect(r.leaseHolder()).To(BeEmpty())
+		// The finalizer is removed before the claim is released, so the
+		// Lease can outlive the object for a moment.
+		Eventually(r.leaseHolder, timeout, interval).Should(BeEmpty())
 	})
 
 	// Round 14 (from #85's review, mirrored here): the claim is taken
@@ -2204,11 +2234,9 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		}
 
 		By("forgetting the names, as a resource that died before recording them would have")
-		Eventually(func(g Gomega) {
-			current := currentBackup(backup)
-			current.Status.HistorySnapshots = nil
-			g.Expect(k8sClient.Status().Update(ctx, current)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		settleTerminalStatus(backup, func(status *v1.LogicalBackupElasticsearchStatus) {
+			status.HistorySnapshots = nil
+		})
 
 		By("deleting while every snapshot delete is rejected: nothing goes, the names come back durably")
 		r.search.FailNext("snapshotDelete", 1000000)

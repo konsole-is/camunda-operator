@@ -229,20 +229,30 @@ spec:
 The block names members of the `admin` role only. The operator has no field for other roles, groups, or authorizations. You can manage them in two ways:
 
 - In the Admin web application of the cluster, as an administrator.
-- With the `CAMUNDA_SECURITY_INITIALIZATION_*` environment variables of the orchestration cluster, through `extraEnv` on the cluster or the preset. The cluster creates each entity once, at first start, and does not update it when the value changes. See [Identity as Code](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/configuration/admin-identity-as-code/). For example, to give a user the `rpa` role:
+- With the `CAMUNDA_SECURITY_INITIALIZATION_*` environment variables of the orchestration cluster, through `extraEnv` on the cluster or the preset. The cluster creates each entity once, at first start, and does not update it when the value changes. See [Identity as Code](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/configuration/admin-identity-as-code/).
 
-    ```yaml
-    apiVersion: core.camunda.io/v1
-    kind: CamundaCluster
-    metadata:
-      name: my-cluster
-      namespace: my-cluster-ns
-    spec:
-      extraEnv:
-        - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_RPA_USERS_0
-          value: "grace@example.com"
-      # ... the rest of your cluster
-    ```
+### Give a user a default role
+
+Camunda creates the [default roles](https://docs.camunda.io/docs/components/concepts/access-control/authorizations/#default-roles). To make a user a member of one, put the role ID in the name of a `CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_<role>_USERS_<n>` variable. Keep the dash of a role ID such as `readonly-admin`:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  extraEnv:
+    - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_READONLY-ADMIN_USERS_0
+      value: "grace@example.com"
+  # ... the rest of your cluster
+```
+
+Use the same form for `app-integrations` and `task-worker`: `..._DEFAULTROLES_TASK-WORKER_USERS_0`. To add more members, count `<n>` up from `0`. To add a group, a client, or a mapping rule, write `GROUPS`, `CLIENTS`, or `MAPPINGRULES` in place of `USERS`, with its ID as the value.
+
+> **Caution:** Do not write an underscore in place of the dash. Camunda reads each underscore as a level of the key, so `..._DEFAULTROLES_READONLY_ADMIN_USERS_0` stops the whole initialization. The cluster starts, but it creates none of the configured users and role members. The members of `spec.auth.admin` get no access too.
+
+A key that matches no role ID, such as `READONLYADMIN`, has no effect. The cluster starts and logs no error, and the user gets no role. To confirm a membership, open the role in the Admin web application, or call `POST /v2/roles/readonly-admin/users/search` as an administrator.
 
 The operator refuses an `extraEnv` entry under `CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_` that Camunda cannot read as `<role>_<type>_<n>` or `<role>_<type>`. The type must be `USERS`, `CLIENTS`, `GROUPS`, `ROLES`, or `MAPPINGRULES`. Camunda stops the whole identity initialization on any other form, and the members of `spec.auth.admin` lose their access too. Two forms are common mistakes:
 
