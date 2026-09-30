@@ -27,9 +27,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 )
 
@@ -182,6 +184,92 @@ func TestStampBrokerVersion(t *testing.T) {
 			} else {
 				assert.Equal(t, applied, live.ResourceVersion, "a current stamp is not rewritten")
 			}
+		})
+	}
+}
+
+// A class change is reported until the StatefulSet carries the requested
+// class.
+func TestRecordIgnoredClassChange(t *testing.T) {
+	t.Parallel()
+
+	applied := func(class *string, annotations map[string]string) brokerStorage {
+		return brokerStorage{statefulSet: &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Annotations: annotations},
+			Spec: appsv1.StatefulSetSpec{
+				VolumeClaimTemplates: []corev1.PersistentVolumeClaim{{
+					ObjectMeta: metav1.ObjectMeta{Name: components.DataVolumeName},
+					Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: class},
+				}},
+			},
+		}}
+	}
+	requested := func(class string) map[string]string {
+		return map[string]string{components.RequestedStorageClassAnnotation: class}
+	}
+
+	tests := []struct {
+		name      string
+		storage   brokerStorage
+		class     *string
+		wantEvent bool
+	}{
+		{
+			name:    "no StatefulSet before the first apply",
+			storage: brokerStorage{},
+			class:   new("class-b"),
+		},
+		{
+			name:    "the applied class",
+			storage: applied(new("class-a"), requested("class-a")),
+			class:   new("class-a"),
+		},
+		{
+			name:      "another class, first asked for",
+			storage:   applied(new("class-a"), requested("class-a")),
+			class:     new("class-b"),
+			wantEvent: true,
+		},
+		{
+			name:    "another class, already applied",
+			storage: applied(new("class-a"), requested("class-b")),
+			class:   new("class-b"),
+		},
+		{
+			name:      "a class on a template without one",
+			storage:   applied(nil, nil),
+			class:     new("class-b"),
+			wantEvent: true,
+		},
+		{
+			name:      "no class on a template with one",
+			storage:   applied(new("class-a"), requested("class-a")),
+			class:     nil,
+			wantEvent: true,
+		},
+		{
+			name:    "no class, already applied",
+			storage: applied(new("class-a"), nil),
+			class:   nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := events.NewFakeRecorder(1)
+			r := &CamundaClusterReconciler{EventRecorder: recorder}
+			cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "ns"}}
+
+			r.recordIgnoredClassChange(cluster, tt.storage, tt.class)
+
+			if !tt.wantEvent {
+				assert.Empty(t, recorder.Events)
+				return
+			}
+			require.Len(t, recorder.Events, 1)
+			assert.Contains(t, <-recorder.Events, eventReasonStorageClassChangeIgnored)
 		})
 	}
 }

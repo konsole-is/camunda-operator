@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -447,6 +448,100 @@ func TestBrokerClaimSelector(t *testing.T) {
 		map[string]string{"camunda.io/cluster": "my-cluster", "camunda.io/component": "zeebe"},
 		BrokerClaimSelector(fixtureMinimal(t).Cluster),
 	)
+}
+
+// A StatefulSet cannot change its claim template, so the broker template
+// keeps the size and the class of the applied one. The annotations carry
+// what the effective spec asks for.
+func TestBrokerClaimTemplateKeepsTheAppliedTemplate(t *testing.T) {
+	t.Parallel()
+
+	applied := func(class *string, size string) *corev1.PersistentVolumeClaimSpec {
+		return &corev1.PersistentVolumeClaimSpec{
+			StorageClassName: class,
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(size)},
+			},
+		}
+	}
+
+	tests := []struct {
+		name               string
+		in                 Input
+		applied            *corev1.PersistentVolumeClaimSpec
+		wantClass          *string
+		wantSize           string
+		wantRequestedClass *string
+	}{
+		{
+			name:               "before the first apply, the effective class and size",
+			in:                 fixtureDefault(t),
+			wantClass:          new("ssd"),
+			wantSize:           "32Gi",
+			wantRequestedClass: new("ssd"),
+		},
+		{
+			name:               "an applied template with another class and size",
+			in:                 fixtureDefault(t),
+			applied:            applied(new("standard"), "16Gi"),
+			wantClass:          new("standard"),
+			wantSize:           "16Gi",
+			wantRequestedClass: new("ssd"),
+		},
+		{
+			name:               "an applied template without a class",
+			in:                 fixtureDefault(t),
+			applied:            applied(nil, "16Gi"),
+			wantSize:           "16Gi",
+			wantRequestedClass: new("ssd"),
+		},
+		{
+			name:      "no effective class",
+			in:        fixtureMinimal(t),
+			applied:   applied(new("standard"), "10Gi"),
+			wantClass: new("standard"),
+			wantSize:  "10Gi",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tt.in.AppliedVolumeClaim = tt.applied
+			sts := brokerStatefulSet(t, tt.in)
+
+			require.Len(t, sts.Spec.VolumeClaimTemplates, 1)
+			claim := sts.Spec.VolumeClaimTemplates[0].Spec
+			assert.Equal(t, tt.wantClass, claim.StorageClassName)
+			assert.Equal(t, resource.MustParse(tt.wantSize), claim.Resources.Requests[corev1.ResourceStorage])
+			size := tt.in.Effective.StorageSize()
+			assert.Equal(t, size.String(), sts.Annotations[RequestedStorageSizeAnnotation])
+			requested, ok := sts.Annotations[RequestedStorageClassAnnotation]
+			if tt.wantRequestedClass == nil {
+				assert.False(t, ok)
+				return
+			}
+			assert.Equal(t, *tt.wantRequestedClass, requested)
+		})
+	}
+}
+
+// brokerStatefulSet returns the broker StatefulSet that in renders.
+func brokerStatefulSet(t *testing.T, in Input) *appsv1.StatefulSet {
+	t.Helper()
+
+	comps, err := Build(in)
+	require.NoError(t, err)
+	for _, pc := range comps {
+		for _, obj := range previewObjects(t, pc.Component) {
+			if sts, ok := obj.(*appsv1.StatefulSet); ok && sts.Name == WorkloadName(in.Cluster, ComponentZeebe) {
+				return sts
+			}
+		}
+	}
+	require.Fail(t, "no broker StatefulSet in the previewed objects")
+	return nil
 }
 
 // While a rotation is in flight the Secret carries the requested password
