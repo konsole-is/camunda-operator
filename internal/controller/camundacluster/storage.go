@@ -26,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -38,9 +39,18 @@ import (
 // reduced in place.
 const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 
+// eventReasonStorageClassChangeIgnored is the Warning event that the
+// controller records when the effective storageClassName differs from the
+// class of the applied broker claim template. The template keeps its class, because a StatefulSet cannot change
+// its claim template.
+const eventReasonStorageClassChangeIgnored = "StorageClassChangeIgnored"
+
 // eventActionResize is the action of the events that the controller records
 // about the size of the broker claims.
 const eventActionResize = "Resize"
+
+// eventActionApply is the action of the class-change event.
+const eventActionApply = "Apply"
 
 // brokerStorage is what the storage lifecycle reads before the components are
 // built: the applied broker StatefulSet, or nil, and the bound broker claims.
@@ -96,21 +106,17 @@ func (r *CamundaClusterReconciler) readBrokerStorage(
 	return storage, nil
 }
 
-// volumeClaimSize returns the size that the rendered claim template must
-// carry: the size of the applied template, because a StatefulSet cannot
-// change its claim template, or nil before the first apply, so the renderer
-// uses the effective size.
-func (s brokerStorage) volumeClaimSize() *resource.Quantity {
+// appliedVolumeClaim returns the data claim template of the applied
+// StatefulSet, which the rendered template must keep, or nil before the
+// first apply.
+func (s brokerStorage) appliedVolumeClaim() *corev1.PersistentVolumeClaimSpec {
 	if s.statefulSet == nil {
 		return nil
 	}
 
 	for _, claim := range s.statefulSet.Spec.VolumeClaimTemplates {
-		if claim.Name != components.DataVolumeName {
-			continue
-		}
-		if size, ok := claim.Spec.Resources.Requests[corev1.ResourceStorage]; ok {
-			return &size
+		if claim.Name == components.DataVolumeName {
+			return &claim.Spec
 		}
 	}
 
@@ -275,4 +281,53 @@ func (s brokerStorage) largestClaimSize() *resource.Quantity {
 		}
 	}
 	return largest
+}
+
+// recordIgnoredClassChange records StorageClassChangeIgnored when class
+// differs from the class of the applied claim template, until the
+// StatefulSet carries class as its requested class.
+func (r *CamundaClusterReconciler) recordIgnoredClassChange(
+	cluster *v1.CamundaCluster,
+	storage brokerStorage,
+	class *string,
+) {
+	applied := storage.appliedVolumeClaim()
+	if applied == nil || ptr.Equal(applied.StorageClassName, class) || storage.requestedClassApplied(class) {
+		return
+	}
+
+	r.EventRecorder.Eventf(
+		cluster,
+		nil,
+		corev1.EventTypeWarning,
+		eventReasonStorageClassChangeIgnored,
+		eventActionApply,
+		"requested storageClassName %s is not applied: the claim template of the broker StatefulSet keeps the class %s, because a StatefulSet cannot change it",
+		className(class),
+		className(applied.StorageClassName),
+	)
+}
+
+// requestedClassApplied reports whether the applied StatefulSet already
+// carries class in the requested storage class annotation. A nil class
+// matches a StatefulSet without the annotation.
+func (s brokerStorage) requestedClassApplied(class *string) bool {
+	if s.statefulSet == nil {
+		return false
+	}
+
+	requested, ok := s.statefulSet.Annotations[components.RequestedStorageClassAnnotation]
+	if class == nil {
+		return !ok
+	}
+
+	return ok && requested == *class
+}
+
+func className(class *string) string {
+	if class == nil {
+		return "(none, so the default StorageClass)"
+	}
+
+	return fmt.Sprintf("%q", *class)
 }
