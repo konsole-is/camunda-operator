@@ -58,10 +58,12 @@ const versionFloor = "8.9.0"
 // MergeSpec resolves a CamundaCluster spec against its baselines: the
 // preset, then the release over it, then spec over both, under the rules of
 // the CamundaClusterPreset doc. Scalars and pointers override individually:
-// version, the auth fields, per-component mode, replicas, partitions,
-// replicationFactor, storageClassName, storageSize,
-// persistentVolumeClaimRetentionPolicy, indexReplicas, connectors.enabled,
-// and connectors.version. Resources merge per request and limit entry. ExtraEnv
+// version, per-component mode, replicas, partitions, replicationFactor,
+// storageClassName, storageSize, persistentVolumeClaimRetentionPolicy,
+// indexReplicas, connectors.enabled, and connectors.version. Auth.clientId
+// replaces the whole client: a cluster that sets it takes auth.audience and
+// auth.clientSecretRef from spec only, and without it they override
+// individually. Resources merge per request and limit entry. ExtraEnv
 // merges by variable name, lower layer first, and an entry of a higher layer
 // with the same name replaces it. ExtraEnvFrom concatenates, lower layer
 // first. PodLabels and podAnnotations merge by key with the higher layer
@@ -206,7 +208,11 @@ func mergeAuth(base, over *v1.ClusterAuthSpec) *v1.ClusterAuthSpec {
 	}
 
 	if over.ClientID != "" {
+		// The audience and the secret of the preset belong to the preset
+		// client, so a cluster client id takes neither of them.
 		base.ClientID = over.ClientID
+		base.Audience = over.Audience
+		base.ClientSecretRef = over.ClientSecretRef
 	}
 	if over.Audience != "" {
 		base.Audience = over.Audience

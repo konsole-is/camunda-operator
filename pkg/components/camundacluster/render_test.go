@@ -512,18 +512,27 @@ func TestRenderOIDCClusterAuthWins(t *testing.T) {
 	assertEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_AUDIENCES", "preset-audience")
 	assertSecretEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTSECRET", "preset-oidc", "secret")
 
-	in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{ClientID: "cluster-client"}
+	in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{
+		ClientID:        "cluster-client",
+		ClientSecretRef: &v1.LocalSecretKeyRef{Name: "cluster-oidc", Key: "secret"},
+	}
 	preset := &v1.CamundaClusterPresetSpec{
-		Cluster: v1.CamundaClusterSpec{Auth: &v1.ClusterAuthSpec{ClientID: "preset-client"}},
+		Cluster: v1.CamundaClusterSpec{Auth: &v1.ClusterAuthSpec{
+			ClientID:        "preset-client",
+			Audience:        "preset-audience",
+			ClientSecretRef: &v1.LocalSecretKeyRef{Name: "preset-oidc", Key: "secret"},
+		}},
 	}
 	in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, preset, nil))
 	r = render(in, process(t, in, ComponentGateway))
 
 	assertEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTID", "cluster-client")
 	assertEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_AUDIENCES", "cluster-client")
-	assertSecretEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTSECRET", "platform-oidc", "client-secret")
+	assertSecretEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTSECRET", "cluster-oidc", "secret")
 }
 
+// A client id owns its audience and its secret: a lower layer never adds the
+// values of its own client.
 func TestResolveAuth(t *testing.T) {
 	t.Parallel()
 
@@ -531,22 +540,140 @@ func TestResolveAuth(t *testing.T) {
 	assert.Equal(t, v1.AuthenticationMethodBasic, basic.Method)
 	assert.Nil(t, basic.OIDC)
 
-	in := newInput(t, func(in *Input) {
-		in.Platform = oidcPlatform()
-		in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{
-			ClientID:        "cluster-client",
-			ClientSecretRef: &v1.LocalSecretKeyRef{Name: "cluster-oidc", Key: "secret"},
-		}
-		in.Effective = NewEffective(in.Cluster.Spec)
-	})
-	oidc := ResolveAuth(in)
-	assert.Equal(t, v1.AuthenticationMethodOIDC, oidc.Method)
-	require.NotNil(t, oidc.OIDC)
-	assert.Equal(t, "cluster-client", oidc.OIDC.ClientID)
-	assert.Equal(t, "cluster-client", oidc.OIDC.Audience)
-	assert.Equal(t, "cluster-oidc", oidc.OIDC.ClientSecretRef.Name)
-	assert.Equal(t, "https://idp.example.com/realms/camunda", oidc.OIDC.IssuerURL)
-	assert.Equal(t, "platform-client", in.Platform.Auth.OIDC.ClientID, "the platform spec is not mutated")
+	presetSecret := &v1.LocalSecretKeyRef{Name: "preset-oidc", Key: "secret"}
+	clusterSecret := &v1.LocalSecretKeyRef{Name: "cluster-oidc", Key: "secret"}
+	platformRef := v1.SecretKeyRef{Name: "platform-oidc", Namespace: "camunda-system", Key: "client-secret"}
+	presetRef := v1.SecretKeyRef{Name: "preset-oidc", Namespace: "my-cluster-ns", Key: "secret"}
+	clusterRef := v1.SecretKeyRef{Name: "cluster-oidc", Namespace: "my-cluster-ns", Key: "secret"}
+
+	tests := []struct {
+		name         string
+		preset       *v1.ClusterAuthSpec
+		cluster      *v1.ClusterAuthSpec
+		wantClientID string
+		wantAudience string
+		wantSecret   v1.SecretKeyRef
+	}{
+		{
+			name:         "no preset or cluster auth uses the platform client",
+			wantClientID: "platform-client",
+			wantAudience: "platform-audience",
+			wantSecret:   platformRef,
+		},
+		{
+			name:         "a cluster client id replaces the platform client",
+			cluster:      &v1.ClusterAuthSpec{ClientID: "C", ClientSecretRef: clusterSecret},
+			wantClientID: "C",
+			wantAudience: "C",
+			wantSecret:   clusterRef,
+		},
+		{
+			name:         "a cluster client id replaces the preset client id",
+			preset:       &v1.ClusterAuthSpec{ClientID: "P", ClientSecretRef: presetSecret},
+			cluster:      &v1.ClusterAuthSpec{ClientID: "C", ClientSecretRef: clusterSecret},
+			wantClientID: "C",
+			wantAudience: "C",
+			wantSecret:   clusterRef,
+		},
+		{
+			name:         "a cluster client id drops the audience of the preset client",
+			preset:       &v1.ClusterAuthSpec{ClientID: "P", Audience: "PA", ClientSecretRef: presetSecret},
+			cluster:      &v1.ClusterAuthSpec{ClientID: "C", ClientSecretRef: clusterSecret},
+			wantClientID: "C",
+			wantAudience: "C",
+			wantSecret:   clusterRef,
+		},
+		{
+			name:         "a cluster client id drops a preset audience that names no client",
+			preset:       &v1.ClusterAuthSpec{Audience: "PA"},
+			cluster:      &v1.ClusterAuthSpec{ClientID: "C", ClientSecretRef: clusterSecret},
+			wantClientID: "C",
+			wantAudience: "C",
+			wantSecret:   clusterRef,
+		},
+		{
+			name:         "a cluster client id keeps the audience of the cluster",
+			preset:       &v1.ClusterAuthSpec{ClientID: "P", Audience: "PA", ClientSecretRef: presetSecret},
+			cluster:      &v1.ClusterAuthSpec{ClientID: "C", Audience: "CA", ClientSecretRef: clusterSecret},
+			wantClientID: "C",
+			wantAudience: "CA",
+			wantSecret:   clusterRef,
+		},
+		{
+			name:         "a cluster client id without a secret never gets the secret of another client",
+			preset:       &v1.ClusterAuthSpec{ClientID: "P", ClientSecretRef: presetSecret},
+			cluster:      &v1.ClusterAuthSpec{ClientID: "C"},
+			wantClientID: "C",
+			wantAudience: "C",
+		},
+		{
+			name:         "a preset client applies to a cluster without auth",
+			preset:       &v1.ClusterAuthSpec{ClientID: "P", Audience: "PA", ClientSecretRef: presetSecret},
+			wantClientID: "P",
+			wantAudience: "PA",
+			wantSecret:   presetRef,
+		},
+		{
+			name:         "a cluster audience overrides the audience of the preset client",
+			preset:       &v1.ClusterAuthSpec{ClientID: "P", ClientSecretRef: presetSecret},
+			cluster:      &v1.ClusterAuthSpec{Audience: "CA"},
+			wantClientID: "P",
+			wantAudience: "CA",
+			wantSecret:   presetRef,
+		},
+		{
+			name:         "a cluster secret overrides the secret of the preset client",
+			preset:       &v1.ClusterAuthSpec{ClientID: "P", ClientSecretRef: presetSecret},
+			cluster:      &v1.ClusterAuthSpec{ClientSecretRef: clusterSecret},
+			wantClientID: "P",
+			wantAudience: "P",
+			wantSecret:   clusterRef,
+		},
+		{
+			name:         "a preset client id drops the audience and the secret of the platform client",
+			preset:       &v1.ClusterAuthSpec{ClientID: "P"},
+			wantClientID: "P",
+			wantAudience: "P",
+		},
+		{
+			name:         "without a client id the preset overrides the platform client field by field",
+			preset:       &v1.ClusterAuthSpec{Audience: "PA", ClientSecretRef: presetSecret},
+			wantClientID: "platform-client",
+			wantAudience: "PA",
+			wantSecret:   presetRef,
+		},
+		{
+			name:         "without a client id the cluster overrides the platform client field by field",
+			cluster:      &v1.ClusterAuthSpec{ClientSecretRef: clusterSecret},
+			wantClientID: "platform-client",
+			wantAudience: "platform-audience",
+			wantSecret:   clusterRef,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			in := newInput(t, func(in *Input) {
+				in.Platform = oidcPlatform()
+				in.Platform.Auth.OIDC.Audience = "platform-audience"
+				in.Cluster.Spec.Auth = tt.cluster.DeepCopy()
+				preset := &v1.CamundaClusterPresetSpec{
+					Cluster: v1.CamundaClusterSpec{Auth: tt.preset.DeepCopy()},
+				}
+				in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, preset, nil))
+			})
+			got := ResolveAuth(in)
+
+			assert.Equal(t, v1.AuthenticationMethodOIDC, got.Method)
+			require.NotNil(t, got.OIDC)
+			assert.Equal(t, tt.wantClientID, got.OIDC.ClientID)
+			assert.Equal(t, tt.wantAudience, got.OIDC.Audience)
+			assert.Equal(t, tt.wantSecret, got.OIDC.ClientSecretRef)
+			assert.Equal(t, "https://idp.example.com/realms/camunda", got.OIDC.IssuerURL)
+			assert.Equal(t, "platform-client", in.Platform.Auth.OIDC.ClientID, "the platform spec is not mutated")
+		})
+	}
 }
 
 func TestRenderLicenseAndRegistry(t *testing.T) {

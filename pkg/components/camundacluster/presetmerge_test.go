@@ -111,12 +111,36 @@ func TestMergeSpec(t *testing.T) {
 		want func(t *testing.T, got v1.CamundaClusterSpec)
 	}{
 		{
-			"auth fields override individually",
+			"a cluster client id replaces the whole client of the preset",
+			v1.CamundaClusterSpec{Auth: &v1.ClusterAuthSpec{
+				ClientID:        "mine",
+				ClientSecretRef: &v1.LocalSecretKeyRef{Name: "c", Key: "s"},
+			}},
+			func(t *testing.T, got v1.CamundaClusterSpec) {
+				require.NotNil(t, got.Auth)
+				assert.Equal(t, "mine", got.Auth.ClientID)
+				assert.Empty(t, got.Auth.Audience, "the preset audience belongs to the preset client")
+				require.NotNil(t, got.Auth.ClientSecretRef)
+				assert.Equal(t, "c", got.Auth.ClientSecretRef.Name)
+			},
+		},
+		{
+			"a cluster client id without a secret does not inherit the preset secret",
 			v1.CamundaClusterSpec{Auth: &v1.ClusterAuthSpec{ClientID: "mine"}},
 			func(t *testing.T, got v1.CamundaClusterSpec) {
 				require.NotNil(t, got.Auth)
 				assert.Equal(t, "mine", got.Auth.ClientID)
-				assert.Equal(t, "preset-audience", got.Auth.Audience)
+				assert.Empty(t, got.Auth.Audience)
+				assert.Nil(t, got.Auth.ClientSecretRef, "the preset secret belongs to the preset client")
+			},
+		},
+		{
+			"without a cluster client id the auth fields override individually",
+			v1.CamundaClusterSpec{Auth: &v1.ClusterAuthSpec{Audience: "mine"}},
+			func(t *testing.T, got v1.CamundaClusterSpec) {
+				require.NotNil(t, got.Auth)
+				assert.Equal(t, "preset-client", got.Auth.ClientID)
+				assert.Equal(t, "mine", got.Auth.Audience)
 				require.NotNil(t, got.Auth.ClientSecretRef)
 				assert.Equal(t, "p", got.Auth.ClientSecretRef.Name)
 			},

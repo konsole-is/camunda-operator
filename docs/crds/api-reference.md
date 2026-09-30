@@ -832,9 +832,11 @@ _Appears in:_
 ClusterAuthSpec holds the credentials of one cluster and the identities
 that get its admin role. Under OIDC it carries the client credentials,
 which override the defaults of the platform config and of the preset, and
-the identities of the administrators. Under basic authentication it
-carries the basic block, which configures the admin credential that the
-operator owns.
+the identities of the administrators. A block that sets clientId replaces
+the whole client: the audience and the client secret then come from this
+block only. A block without clientId overrides the audience and the client
+secret one by one. Under basic authentication it carries the basic block,
+which configures the admin credential that the operator owns.
 
 
 
@@ -843,9 +845,9 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `clientId` _string_ | ClientID is the OIDC client ID of this cluster. |  | Optional: \{\} <br /> |
-| `audience` _string_ | Audience is the audience that access tokens must carry. Defaults to<br />the clientId. |  | Optional: \{\} <br /> |
-| `clientSecretRef` _[LocalSecretKeyRef](#localsecretkeyref)_ | ClientSecretRef names the Secret that holds the OIDC client secret of<br />this cluster. |  | Optional: \{\} <br /> |
+| `clientId` _string_ | ClientID is the OIDC client ID of this cluster. A client ID replaces<br />the whole client: the audience and the client secret then come from<br />this block only. Requires clientSecretRef. |  | Optional: \{\} <br /> |
+| `audience` _string_ | Audience is the audience that access tokens must carry. Defaults to<br />the client ID that the cluster uses. |  | Optional: \{\} <br /> |
+| `clientSecretRef` _[LocalSecretKeyRef](#localsecretkeyref)_ | ClientSecretRef names the Secret that holds the OIDC client secret of<br />this cluster. Required when clientId is set. |  | Optional: \{\} <br /> |
 | `admin` _[ClusterAdminSpec](#clusteradminspec)_ | Admin holds the identities that get the admin role of this cluster. It<br />applies under OIDC only. Basic authentication seeds its own<br />administrator and ignores this block. |  | Optional: \{\} <br /> |
 | `basic` _[BasicAuthSpec](#basicauthspec)_ | Basic configures the admin credential that the operator owns. It<br />applies under basic authentication only. OIDC ignores this block, like<br />basic authentication ignores admin. |  | Optional: \{\} <br /> |
 
