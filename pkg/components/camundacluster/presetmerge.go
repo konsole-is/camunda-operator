@@ -22,7 +22,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -644,15 +643,17 @@ func checkDefaultRoleEnv(spec v1.CamundaClusterSpec) []string {
 func readsAsDefaultRoleMembership(name string) bool {
 	// Spring Boot reads an environment variable in two ways. A name with a
 	// dot binds only in the dotted form, split at each dot. Any other name is
-	// split at each underscore. A part with no letter or digit is dropped,
-	// and the parts of the key compare without case, dashes, or underscores.
+	// split at each underscore. A bracket also starts a part. A part with no
+	// letter or digit is dropped, and the parts of the key compare without
+	// case and on their letters and digits only.
 	separator := "_"
 	if strings.Contains(name, ".") {
 		separator = "."
 	}
+	split := strings.NewReplacer("[", separator+"[", "]", "]"+separator).Replace(strings.ToLower(name))
 
 	var parts []string
-	for part := range strings.SplitSeq(strings.ToLower(name), separator) {
+	for part := range strings.SplitSeq(split, separator) {
 		if strings.ContainsFunc(part, isLetterOrDigit) {
 			parts = append(parts, part)
 		}
@@ -663,7 +664,7 @@ func readsAsDefaultRoleMembership(name string) bool {
 		return true
 	}
 	for i, want := range key {
-		if strings.NewReplacer("-", "", "_", "").Replace(parts[i]) != want {
+		if strings.Map(keepLetterOrDigit, parts[i]) != want {
 			return true
 		}
 	}
@@ -671,15 +672,17 @@ func readsAsDefaultRoleMembership(name string) bool {
 	// The first part after the key is the role. The parts up to the first
 	// number, joined with dots, are the member type, and Camunda's
 	// PlatformDefaultEntities.getEntityType throws on a type it does not know.
-	// Only the underscore form can carry an index.
+	// A bracketed number is an index in both forms, a bare number only in the
+	// underscore form.
 	rest := parts[len(key):]
 	if len(rest) < 2 {
 		return false
 	}
 
 	end := len(rest)
-	for i := 2; separator == "_" && i < len(rest); i++ {
-		if isDigits(rest[i]) {
+	for i := 2; i < len(rest); i++ {
+		bracketed := strings.HasPrefix(rest[i], "[") && strings.HasSuffix(rest[i], "]")
+		if (bracketed && isDigits(strings.Trim(rest[i], "[]"))) || (separator == "_" && isDigits(rest[i])) {
 			end = i
 			break
 		}
@@ -697,7 +700,14 @@ func readsAsDefaultRoleMembership(name string) bool {
 }
 
 func isLetterOrDigit(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsDigit(r)
+	return 'a' <= r && r <= 'z' || '0' <= r && r <= '9'
+}
+
+func keepLetterOrDigit(r rune) rune {
+	if isLetterOrDigit(r) {
+		return r
+	}
+	return -1
 }
 
 func isDigits(s string) bool {
