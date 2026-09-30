@@ -531,9 +531,8 @@ func TestRenderOIDCClusterAuthWins(t *testing.T) {
 	assertSecretEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTSECRET", "cluster-oidc", "secret")
 }
 
-// A client id owns its audience and its secret. The layer that sets the
-// client id (platform config, preset, or cluster) gives the audience and the
-// secret, and a lower layer never adds the values of its own client.
+// A client id owns its audience and its secret: a lower layer never adds the
+// values of its own client.
 func TestResolveAuth(t *testing.T) {
 	t.Parallel()
 

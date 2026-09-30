@@ -161,7 +161,7 @@ Three ready-to-apply presets are in [`config/example/presets`](https://github.co
 
 ## Override one field
 
-A cluster overrides a field of the preset by setting it. The other fields of the preset stay. A cluster that needs more brokers than `medium` gives, and nothing else:
+A cluster overrides a field of the preset by setting it. The other fields of the preset stay, except where the [merge rules](../crds/camundaclusterpreset.md#merge-rules) say otherwise, for example for `auth.clientId`. A cluster that needs more brokers than `medium` gives, and nothing else:
 
 ```yaml
 apiVersion: core.camunda.io/v1
