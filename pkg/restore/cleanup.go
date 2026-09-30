@@ -32,11 +32,10 @@ import (
 )
 
 // CollectJobs removes the per-broker restore Jobs of a completed restore. It
-// reports Outcome.Done when no recorded Job of the restore and no pod with
-// the JobSelector labels of label is left, and only then are the broker
-// volumes free. Until then it reports Outcome.Wait. Call it again on each
-// look. A Job that another writer owns now counts as gone. label is the owner
-// label of the restore.
+// reports Outcome.Done when no recorded Job of the restore and no pod of those
+// Jobs is left, and only then are the broker volumes free. Until then it
+// reports Outcome.Wait. Call it again on each look. A Job that another writer
+// owns now counts as gone. label is the owner label of the restore.
 //
 // A restore that did not complete keeps its Jobs. Its Jobs hold the broker
 // volumes until somebody deletes the restore, and CollectJobs reports Done at
@@ -113,7 +112,6 @@ func CollectJobs(
 	return Outcome{Done: true}, nil
 }
 
-// podsGone reports whether no pod in the namespace of owner matches selector.
 func podsGone(
 	ctx context.Context,
 	reader client.Reader,
