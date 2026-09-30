@@ -215,6 +215,39 @@ func TestRemainingReturnsTheSoonestOfSeveralComponents(t *testing.T) {
 	assert.Equal(t, 2*time.Minute+time.Second, Remaining(owner, 10*time.Minute, now, first, second))
 }
 
+func TestRestart(t *testing.T) {
+	tests := []struct {
+		name     string
+		reason   string
+		wantKept bool
+	}{
+		{name: "removes a condition with a listed reason", reason: "ClusterTaken"},
+		{name: "removes a condition with another listed reason", reason: string(component.GuardBlocked)},
+		{name: "keeps a condition with another reason", reason: string(component.AliveCreating), wantKept: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			owner, _ := ownerWith(t, "WorkloadReady", metav1.Condition{
+				Status: metav1.ConditionFalse,
+				Reason: tt.reason,
+			})
+
+			Restart(owner, "WorkloadReady", "ClusterTaken", string(component.GuardBlocked))
+
+			assert.Equal(t, tt.wantKept, len(owner.Status.Conditions) == 1)
+		})
+	}
+}
+
+func TestRestartWithoutTheConditionChangesNothing(t *testing.T) {
+	owner := &v1.Database{}
+
+	Restart(owner, "WorkloadReady", "ClusterTaken")
+
+	assert.Empty(t, owner.Status.Conditions)
+}
+
 func TestSooner(t *testing.T) {
 	assert.Equal(t, time.Second, Sooner(0, time.Second))
 	assert.Equal(t, time.Second, Sooner(time.Second, 0))

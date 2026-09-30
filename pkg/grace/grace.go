@@ -21,9 +21,11 @@ package grace
 import (
 	"flag"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -162,6 +164,19 @@ func Remaining(
 	}
 
 	return soonest
+}
+
+// Restart removes the condition of conditionType from owner when its reason
+// is one of reasons, so the component starts a new grace period when it
+// reconciles next. ocf counts the grace period from the lastTransitionTime of
+// the condition it finds. A controller calls Restart before the reconcile
+// when a reason that holds the component back, such as one that the
+// controller staged itself, no longer applies.
+func Restart(owner component.OperatorCRD, conditionType string, reasons ...string) {
+	cond := meta.FindStatusCondition(*owner.GetStatusConditions(), conditionType)
+	if cond != nil && slices.Contains(reasons, cond.Reason) {
+		meta.RemoveStatusCondition(owner.GetStatusConditions(), conditionType)
+	}
 }
 
 // Sooner returns the shorter of two waits. Zero means no wait, so it returns
