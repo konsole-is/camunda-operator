@@ -275,7 +275,9 @@ type LogicalBackupElasticsearchStatus struct {
 // Zeebe partitions. The cluster continues to run during the backup, with
 // exporting soft-paused. A restore reads a completed backup by its backup ID
 // and its recorded snapshot names. When you delete the resource, the
-// operator deletes the stored backup data.
+// operator deletes the stored backup data. If the cluster or the pinned
+// bucket is gone, the operator releases the resource and the data can stay.
+// If the pinned bucket points elsewhere, the deletion waits.
 type LogicalBackupElasticsearch struct {
 	metav1.TypeMeta `json:",inline"`
 

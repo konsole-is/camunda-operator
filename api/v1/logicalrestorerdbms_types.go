@@ -45,7 +45,8 @@ type LogicalRestoreRDBMSStatus struct {
 	// BackupID is the Zeebe backup id that the restore reads. The operator
 	// records it when the restore starts. A backup that is deleted and
 	// created again with the same name has another id, and this restore does
-	// not read it.
+	// not read it. Later phases of the restore still read the backup
+	// resource, so keep it until the restore completes.
 	// +optional
 	BackupID int64 `json:"backupId,omitempty"`
 	// Backend is the logical database that the restore writes, as the host,

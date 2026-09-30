@@ -351,7 +351,8 @@ schedule never deletes its backups. The schedule skips a trigger while a
 reference does not resolve, and the Ready condition shows the reason. It
 also skips a trigger while the cluster is suspended or cannot start a
 backup yet. It skips a trigger too while a backup of this schedule is not
-in a final phase. It records an event for each of these skips.
+in a final phase. It records an event for these three skips, and no event
+for a reference that does not resolve.
 
 
 
@@ -1994,7 +1995,9 @@ the web-application indices, the exported Zeebe record indices, and the
 Zeebe partitions. The cluster continues to run during the backup, with
 exporting soft-paused. A restore reads a completed backup by its backup ID
 and its recorded snapshot names. When you delete the resource, the
-operator deletes the stored backup data.
+operator deletes the stored backup data. If the cluster or the pinned
+bucket is gone, the operator releases the resource and the data can stay.
+If the pinned bucket points elsewhere, the deletion waits.
 
 
 
@@ -2444,7 +2447,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `phase` _[LogicalRestorePhase](#logicalrestorephase)_ | Phase is the phase of the restore. After an interruption, the restore<br />continues at this phase. |  | Enum: [Pending ValidatingCompatibility RestoringSecondaryStorage RestoringPrimaryStorage Completed Failed] <br />Optional: \{\} <br /> |
-| `backupId` _integer_ | BackupID is the Zeebe backup id that the restore reads. The operator<br />records it when the restore starts. A backup that is deleted and<br />created again with the same name has another id, and this restore does<br />not read it. |  | Optional: \{\} <br /> |
+| `backupId` _integer_ | BackupID is the Zeebe backup id that the restore reads. The operator<br />records it when the restore starts. A backup that is deleted and<br />created again with the same name has another id, and this restore does<br />not read it. Later phases of the restore still read the backup<br />resource, so keep it until the restore completes. |  | Optional: \{\} <br /> |
 | `backend` _string_ | Backend is the logical database that the restore writes, as the host,<br />the port, and the database name. The operator records it when the<br />restore starts. From then until the final phase, no other<br />CamundaCluster starts on this backend. The restore waits while its<br />target does not hold the backend. |  | Optional: \{\} <br /> |
 | `contract` _string_ | Contract is the DatabaseServerConfig and the database name of Backend<br />when the restore started. When the DatabaseServerConfig moves to<br />another address, the restore still holds this contract. |  | Optional: \{\} <br /> |
 | `secondaryJobName` _string_ | SecondaryJobName is the Job that runs pg_restore, while the Job exists. |  | Optional: \{\} <br /> |

@@ -108,7 +108,8 @@ type BackupScheduleStatus struct {
 // reference does not resolve, and the Ready condition shows the reason. It
 // also skips a trigger while the cluster is suspended or cannot start a
 // backup yet. It skips a trigger too while a backup of this schedule is not
-// in a final phase. It records an event for each of these skips.
+// in a final phase. It records an event for these three skips, and no event
+// for a reference that does not resolve.
 type BackupSchedule struct {
 	metav1.TypeMeta `json:",inline"`
 
