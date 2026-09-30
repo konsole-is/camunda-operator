@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/konsole-is/camunda-operator/pkg/esadmin/esadmintest"
+	"github.com/konsole-is/camunda-operator/pkg/grace"
 	"github.com/konsole-is/camunda-operator/test/envtest"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -50,7 +51,16 @@ var (
 	// Repository names are cluster names, and cluster names are unique, so
 	// one fake serves them all.
 	elasticsearch *esadmintest.Server
+
+	// reconciler is the reconciler that the manager runs. A spec calls it
+	// directly to read the result of one reconcile.
+	reconciler *ElasticsearchClusterReconciler
 )
+
+// suiteGracePeriods are longer than any spec, so no condition of the suite
+// reaches Degraded or Down. The two periods differ, so a spec can tell which
+// one a requeue comes from.
+var suiteGracePeriods = grace.Periods{Workload: time.Hour, Datastore: 2 * time.Hour}
 
 func TestElasticsearchClusterController(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -67,7 +77,7 @@ var _ = BeforeSuite(func() {
 	elasticsearch = esadmintest.NewTLS()
 
 	env = envtest.Start(func(mgr ctrl.Manager) error {
-		return (&ElasticsearchClusterReconciler{
+		reconciler = &ElasticsearchClusterReconciler{
 			Client:      mgr.GetClient(),
 			APIReader:   mgr.GetAPIReader(),
 			Scheme:      mgr.GetScheme(),
@@ -75,7 +85,9 @@ var _ = BeforeSuite(func() {
 			// Short, so the tests exercise the unwatched-dependency requeue
 			// (ECK Secrets, foreign ServiceAccounts) inside their timeout.
 			RetryInterval: 500 * time.Millisecond,
-		}).SetupWithManager(mgr)
+			GracePeriods:  suiteGracePeriods,
+		}
+		return reconciler.SetupWithManager(mgr)
 	})
 
 	ctx, k8sClient = env.Ctx, env.Client
