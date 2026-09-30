@@ -186,7 +186,7 @@ func (r *DatabaseServerReconciler) enqueueForServiceAccount() handler.EventHandl
 
 // enqueueForArchivePlugin maps an event of the Role that the Barman Cloud
 // plugin creates for a cluster, or of a RoleBinding that grants it, to the
-// server that runs that cluster or builds it in a rollback.
+// server that runs that cluster, or builds or leaves it in a rollback.
 func (r *DatabaseServerReconciler) enqueueForArchivePlugin(
 	clusterOf func(name string) (string, bool),
 ) handler.EventHandler {
@@ -199,7 +199,7 @@ func (r *DatabaseServerReconciler) enqueueForArchivePlugin(
 		return r.serversMatching(ctx, o.GetNamespace(), func(server *v1.DatabaseServer) bool {
 			recovery := server.Status.Recovery
 			return components.ClusterName(server) == cluster ||
-				(recovery != nil && recovery.Cluster == cluster)
+				(recovery != nil && (recovery.Cluster == cluster || recovery.PreviousCluster == cluster))
 		})
 	})
 }
