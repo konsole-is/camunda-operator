@@ -127,8 +127,8 @@ type resolvedSpec struct {
 	// is the server's own. A rollback is refused while it is set: see
 	// serviceAccountTaken.
 	serviceAccountTaken string
-	// archivePluginRoles are the clusters of the server for which the Barman
-	// Cloud plugin has created its Role: see archivePluginRoles.
+	// archivePluginRoles are the clusters of the server that the Role of the
+	// Barman Cloud plugin is bound for: see archivePluginRoles.
 	archivePluginRoles []components.ArchivePluginRole
 	// clusterTaken says why a CloudNativePG cluster of the name the server
 	// derives is not this server's to write, and it is empty when the name is
@@ -353,7 +353,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// After the recovery, which records the cluster that a rollback builds.
-	resolved.archivePluginRoles, err = r.archivePluginRoles(ctx, &server)
+	resolved.archivePluginRoles, err = r.archivePluginRoles(ctx, &server, resolved.serviceAccountTaken)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -1688,16 +1688,18 @@ func (r *DatabaseServerReconciler) serviceAccountTaken(
 }
 
 // archivePluginRoles returns the clusters of the server, the one it runs and
-// the one a running rollback builds, for which the Barman Cloud plugin has
-// created its Role.
+// the one a running rollback builds, and whether each is granted the Role that
+// the Barman Cloud plugin creates for it. A cluster under another owner is
+// left out.
 //
-// A RoleBinding to a Role that does not exist yet is refused by the API server
-// unless the writer may bind any Role, so a cluster is left out until its
-// Role is there. A cluster or a Role under another owner is left out too:
-// binding it would give the pods of this server the objects of somebody else.
+// A cluster is not granted until its Role exists: the API server refuses a
+// RoleBinding to a missing Role unless the writer may bind any Role. It is not
+// granted while the Role is not the cluster's or the ServiceAccount is not the
+// server's either: the binding would hand the objects of one owner to another.
 func (r *DatabaseServerReconciler) archivePluginRoles(
 	ctx context.Context,
 	server *v1.DatabaseServer,
+	serviceAccountTaken string,
 ) ([]components.ArchivePluginRole, error) {
 	names := []string{components.ClusterName(server)}
 	if recovery := server.Status.Recovery; recovery != nil && recovery.CompletedAt == nil &&
@@ -1722,18 +1724,19 @@ func (r *DatabaseServerReconciler) archivePluginRoles(
 		role := &metav1.PartialObjectMetadata{}
 		role.SetGroupVersionKind(rbacv1.SchemeGroupVersion.WithKind("Role"))
 		key := types.NamespacedName{Namespace: server.Namespace, Name: components.ArchivePluginRoleName(name)}
+		granted := serviceAccountTaken == ""
 		if err := r.Get(ctx, key, role); err != nil {
-			if apierrors.IsNotFound(err) {
-				continue
+			if !apierrors.IsNotFound(err) {
+				return nil, fmt.Errorf("reading the Role %s: %w", key, err)
 			}
-
-			return nil, fmt.Errorf("reading the Role %s: %w", key, err)
-		}
-		if !metav1.IsControlledBy(role, &cluster) {
-			continue
+			granted = false
+		} else if !metav1.IsControlledBy(role, &cluster) {
+			granted = false
 		}
 
-		roles = append(roles, components.ArchivePluginRole{Cluster: name, ClusterUID: cluster.UID})
+		roles = append(roles, components.ArchivePluginRole{
+			Cluster: name, ClusterUID: cluster.UID, Granted: granted,
+		})
 	}
 
 	return roles, nil

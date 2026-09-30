@@ -35,8 +35,8 @@ func TestArchivePluginRolesAreBoundToTheServiceAccount(t *testing.T) {
 	server.Spec.Archive = archiveSpec()
 	merged := MergeSpec(server.Spec, preset, release)
 	roles := []ArchivePluginRole{
-		{Cluster: "my-cluster-db", ClusterUID: "uid-running"},
-		{Cluster: "my-cluster-db-r1", ClusterUID: "uid-recovering"},
+		{Cluster: "my-cluster-db", ClusterUID: "uid-running", Granted: true},
+		{Cluster: "my-cluster-db-r1", ClusterUID: "uid-recovering", Granted: true},
 	}
 
 	comp, _, err := ClusterComponent(server, merged, nil, "", nil, "", roles)

@@ -113,8 +113,8 @@ const (
 // ObjectStore, and a cluster that keeps it writes its write-ahead log into the
 // bucket of whoever holds the name.
 //
-// pluginRoles are the clusters of the server for which the Barman Cloud plugin
-// has created its Role. While the server archives, each gets a RoleBinding to
+// pluginRoles are the clusters of the server. While the server archives, each
+// granted one gets a RoleBinding from the Role of the Barman Cloud plugin to
 // the ServiceAccount of the server: see pluginbinding.go.
 func ClusterComponent(
 	server *v1.DatabaseServer,
@@ -151,7 +151,7 @@ func ClusterComponent(
 		// missing, so the account goes first.
 		WithResource(account, component.BlockOnForeignController())
 
-	archiving := feature.NewBooleanGate(Archiving(merged) && archiveTaken == "")
+	archiving := Archiving(merged) && archiveTaken == ""
 	for _, role := range pluginRoles {
 		binding, err := rolebinding.NewBuilder(archivePluginBinding(server, role)).Build()
 		if err != nil {
@@ -161,7 +161,7 @@ func ClusterComponent(
 		compBuilder = compBuilder.WithResource(
 			binding,
 			component.Unowned(),
-			component.GatedBy(archiving),
+			component.GatedBy(feature.NewBooleanGate(archiving && role.Granted)),
 			component.BlockOnForeignController(),
 		)
 	}

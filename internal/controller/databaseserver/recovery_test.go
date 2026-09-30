@@ -741,6 +741,47 @@ var _ = Describe("DatabaseServer recovery", func() {
 		expectArchivePluginBound(server, "camunda-r1")
 	})
 
+	It("withdraws the binding when the Role of the archive plugin goes", func() {
+		server, _ := archivingServer()
+		grantArchivePlugin(server, "camunda")
+		expectArchivePluginBound(server, "camunda")
+
+		role := &rbacv1.Role{}
+		roleKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-barman-cloud"}
+		Expect(k8sClient.Get(ctx, roleKey, role)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, role)).To(Succeed())
+
+		expectGone(client.ObjectKey{
+			Namespace: server.Namespace, Name: "camunda-barman-cloud-postgres",
+		}, &rbacv1.RoleBinding{})
+	})
+
+	It("withdraws the binding while another owner controls its ServiceAccount", func() {
+		server, _ := archivingServer()
+		grantArchivePlugin(server, "camunda")
+		expectArchivePluginBound(server, "camunda")
+
+		other := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: server.Namespace}}
+		Expect(k8sClient.Create(ctx, other)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var account corev1.ServiceAccount
+			key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-postgres"}
+			g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+			account.OwnerReferences = []metav1.OwnerReference{{
+				APIVersion: "v1",
+				Kind:       "ConfigMap",
+				Name:       other.Name,
+				UID:        other.UID,
+				Controller: new(true),
+			}}
+			g.Expect(k8sClient.Update(ctx, &account)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		expectGone(client.ObjectKey{
+			Namespace: server.Namespace, Name: "camunda-barman-cloud-postgres",
+		}, &rbacv1.RoleBinding{})
+	})
+
 	It("refuses a point that no archive of the server holds", func() {
 		server, from := archivingServer()
 

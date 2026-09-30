@@ -39,14 +39,17 @@ import (
 // Barman Cloud plugin creates for that cluster.
 const archivePluginRoleSuffix = "-barman-cloud"
 
-// ArchivePluginRole names a CloudNativePG cluster of the server for which the
-// Barman Cloud plugin has created its Role.
+// ArchivePluginRole names a CloudNativePG cluster of the server, and whether
+// its pods get the Role that the Barman Cloud plugin creates for it.
 type ArchivePluginRole struct {
 	// Cluster is the name of the cluster.
 	Cluster string
 	// ClusterUID is the UID of the cluster. The RoleBinding carries it as an
 	// owner reference, so it goes when the cluster goes.
 	ClusterUID types.UID
+	// Granted says whether the pods get the Role. The binding is removed while
+	// it is false.
+	Granted bool
 }
 
 // ArchivePluginRoleName returns the name of the Role that the Barman Cloud

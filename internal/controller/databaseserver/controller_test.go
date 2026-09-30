@@ -735,6 +735,27 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	It("takes over a ServiceAccount made beforehand and keeps its pull Secrets", func() {
+		namespace := "dbs-" + utilrand.String(8)
+		Expect(k8sClient.Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		})).To(Succeed())
+		Expect(k8sClient.Create(ctx, &corev1.ServiceAccount{
+			ObjectMeta:       metav1.ObjectMeta{Name: "camunda-postgres", Namespace: namespace},
+			ImagePullSecrets: []corev1.LocalObjectReference{{Name: "my-mirror-pull"}},
+		})).To(Succeed())
+
+		server := serverNamed(namespace, "camunda", "camunda", nil)
+
+		Eventually(func(g Gomega) {
+			var account corev1.ServiceAccount
+			key := client.ObjectKey{Namespace: namespace, Name: "camunda-postgres"}
+			g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+			g.Expect(metav1.IsControlledBy(&account, reconciledServer(server))).To(BeTrue())
+			g.Expect(account.ImagePullSecrets).To(ConsistOf(corev1.LocalObjectReference{Name: "my-mirror-pull"}))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("binds no Role of the archive plugin on a server that does not archive", func() {
 		server := serverInNamespace(nil)
 		writeSuperuserSecret(server)
