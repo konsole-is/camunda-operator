@@ -362,18 +362,18 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	resolved.clusterBlocked = clusterGuardReason(&server, derived)
 	resolved.archiveOutage = reportedArchiveOutage(derived.outage, resolved.merged)
 
+	built, err := r.buildComponents(&server, resolved, archiveStart)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	comps = built.all()
+
 	// A cluster that was held back gets the whole grace period once it may
 	// start. Without this, a name held longer than the period reports the new
 	// cluster Down on its first reconcile.
 	if resolved.clusterBlocked == "" {
 		grace.Restart(&server, v1.ConditionClusterReady, v1.ReasonClusterTaken, string(component.GuardBlocked))
 	}
-
-	built, err := r.buildComponents(&server, resolved, archiveStart)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	comps = built.all()
 
 	reconcileErr := reconcileComponents(ctx, recCtx, built.applying(resolved.holdArchive))
 

@@ -31,7 +31,7 @@ import (
 
 const (
 	// DefaultWorkload is the default of Periods.Workload.
-	DefaultWorkload = 15 * time.Minute
+	DefaultWorkload = 30 * time.Minute
 	// DefaultDatastore is the default of Periods.Datastore.
 	DefaultDatastore = 30 * time.Minute
 )
@@ -49,8 +49,8 @@ const (
 
 // Periods are the grace periods of the components that run a workload. A
 // component that is not ready when its grace period runs out reports Degraded
-// or Down in place of any other not-ready reason, such as Creating, Failing,
-// or Blocked. Zero turns the grading off for that class.
+// or Down in place of a not-ready reason, such as Creating, Failing, or
+// Blocked. Zero turns the grading off for that class.
 type Periods struct {
 	// Workload is the grace period of a component that runs a Deployment, a
 	// StatefulSet, or a Keycloak.
@@ -111,11 +111,11 @@ func durationEnv(getenv func(string) string, name string, fallback time.Duration
 // Validate returns an error when a grace period is negative.
 func (p Periods) Validate() error {
 	if p.Workload < 0 {
-		return fmt.Errorf("--%s must not be negative, got %s", WorkloadFlag, p.Workload)
+		return fmt.Errorf("--%s (%s) must not be negative, got %s", WorkloadFlag, WorkloadEnv, p.Workload)
 	}
 
 	if p.Datastore < 0 {
-		return fmt.Errorf("--%s must not be negative, got %s", DatastoreFlag, p.Datastore)
+		return fmt.Errorf("--%s (%s) must not be negative, got %s", DatastoreFlag, DatastoreEnv, p.Datastore)
 	}
 
 	return nil

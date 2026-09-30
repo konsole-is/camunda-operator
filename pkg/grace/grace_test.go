@@ -93,8 +93,17 @@ func TestBindFlagsRejectsAnEnvironmentValueThatIsNoDuration(t *testing.T) {
 }
 
 func TestValidateRejectsANegativePeriod(t *testing.T) {
-	assert.ErrorContains(t, Periods{Workload: -time.Second}.Validate(), WorkloadFlag)
-	assert.ErrorContains(t, Periods{Datastore: -time.Second}.Validate(), DatastoreFlag)
+	workload := Periods{Workload: -time.Second}.Validate()
+	assert.ErrorContains(t, workload, WorkloadFlag)
+	assert.ErrorContains(t, workload, WorkloadEnv)
+
+	datastore := Periods{Datastore: -time.Second}.Validate()
+	assert.ErrorContains(t, datastore, DatastoreFlag)
+	assert.ErrorContains(t, datastore, DatastoreEnv)
+}
+
+func TestWorkloadDefaultCoversTheDatastoreDefault(t *testing.T) {
+	assert.GreaterOrEqual(t, DefaultWorkload, DefaultDatastore)
 }
 
 func TestRemaining(t *testing.T) {

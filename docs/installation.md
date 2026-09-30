@@ -105,12 +105,12 @@ A workload that is not ready reports `Creating`, `Updating`, `Scaling`, or `Fail
 
 | Flag | Environment variable | Default | Applies to |
 | --- | --- | --- | --- |
-| `--workload-grace-period` | `CAMUNDA_OPERATOR_WORKLOAD_GRACE_PERIOD` | `15m` | The processes of a `CamundaCluster`. The webapp and importer of a `CamundaOptimize`. The Keycloak and the workloads of a `CamundaManagementCluster`. The exporter of an `ElasticsearchCluster`. |
+| `--workload-grace-period` | `CAMUNDA_OPERATOR_WORKLOAD_GRACE_PERIOD` | `30m` | The processes of a `CamundaCluster`. The webapp and importer of a `CamundaOptimize`. The Keycloak and the workloads of a `CamundaManagementCluster`. The exporter of an `ElasticsearchCluster`. |
 | `--datastore-grace-period` | `CAMUNDA_OPERATOR_DATASTORE_GRACE_PERIOD` | `30m` | The Elasticsearch cluster of an `ElasticsearchCluster` and the PostgreSQL cluster of a `DatabaseServer`. |
 
 A value is a Go duration, for example `20m` or `1h`. The flag wins over the environment variable. With `0`, the condition keeps its progress reason and never reports `Degraded` or `Down`. The manager does not start with a negative value or with a value that is not a duration.
 
-Set a value that is longer than your slowest rollout. A value that is too short reports `Degraded` or `Down` for a workload that starts slowly but correctly. A rolling update of many brokers, or the first start of a large Elasticsearch cluster, can take longer than the default.
+Set a value that is longer than your slowest rollout. Keep the workload grace period at or above the datastore grace period. A cluster on Elasticsearch and its Optimize are not ready until that Elasticsearch is. A shorter workload period reports them `Down` while Elasticsearch still starts. A value that is too short reports `Degraded` or `Down` for a workload that starts slowly but correctly. A rolling update of many brokers, or the first start of a large Elasticsearch cluster, can take longer than the default.
 
 With Helm, set the environment variables in `manager.envOverrides`:
 
