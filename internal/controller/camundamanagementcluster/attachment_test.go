@@ -454,14 +454,28 @@ func createOrchestrationClusterOn(
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, cluster) })
 
 	if ready {
-		cluster.Status.Gateway = &v1.GatewayBinding{
-			GRPCEndpoint: cluster.Name + "-gateway." + s.namespace + ".svc:26500",
-			RESTEndpoint: "http://" + cluster.Name + "-gateway." + s.namespace + ".svc:8080",
-		}
-		Expect(k8sClient.Status().Update(ctx, cluster)).To(Succeed())
+		publishGateway(cluster, "http://"+cluster.Name+"-gateway."+s.namespace+".svc:8080")
 	}
 
 	return cluster
+}
+
+// publishGateway writes the gateway binding that the controller of cluster
+// would publish, with restEndpoint as its REST address.
+func publishGateway(cluster *v1.CamundaCluster, restEndpoint string) {
+	GinkgoHelper()
+
+	// The management plane can claim the cluster as soon as it exists, and
+	// the claim moves the resourceVersion under this write.
+	Eventually(func(g Gomega) {
+		var latest v1.CamundaCluster
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+		latest.Status.Gateway = &v1.GatewayBinding{
+			GRPCEndpoint: cluster.Name + "-gateway." + cluster.Namespace + ".svc:26500",
+			RESTEndpoint: restEndpoint,
+		}
+		g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 }
 
 // createPlatformConfig creates a CamundaPlatformConfig on the given issuer and

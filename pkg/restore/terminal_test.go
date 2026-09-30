@@ -167,7 +167,13 @@ func (w *terminalWorld) look(t *testing.T) (Outcome, []string, error) {
 
 	*w.touched = nil
 	outcome, err := Finish(
-		t.Context(), w.client, w.client, w.restore, &w.restore.Status.RestoreProgress, "my-cluster",
+		t.Context(),
+		w.client,
+		w.client,
+		w.restore,
+		podLabel(w.restore),
+		&w.restore.Status.RestoreProgress,
+		"my-cluster",
 	)
 
 	return outcome, *w.touched, err

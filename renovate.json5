@@ -181,6 +181,19 @@
       enabled: true,
     },
     {
+      // Helm is pinned in .tool-versions, in the Makefile for install-helm,
+      // and in the setup-helm steps of the workflows. One pull request moves
+      // all of them, so a contributor and CI run the same Helm.
+      matchPackageNames: ["helm/helm"],
+      separateMinorPatch: false,
+      groupName: "tool-versions",
+    },
+    {
+      matchPackageNames: ["helm/helm"],
+      matchUpdateTypes: ["major", "minor"],
+      enabled: true,
+    },
+    {
       // CloudNativePG stays on the minor that test/envtest/crds/cnpg
       // vendors the CRDs from: a new minor changes the schema the envtest
       // suites check against, and 1.31 removes the in-tree Barman Cloud

@@ -116,6 +116,7 @@ var _ = Describe("LogicalRestoreRDBMS admission", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, lrr)).To(Succeed())
+		deleteAtSpecEnd(lrr)
 
 		expectReason(lrr, v1.LogicalRestorePending, v1.ReasonInvalidReference)
 	})
@@ -820,6 +821,7 @@ var _ = Describe("LogicalRestoreRDBMS of the logical database", func() {
 		createForeignJob(w, components.JobName(lrr))
 
 		Expect(k8sClient.Create(ctx, lrr)).To(Succeed())
+		deleteAtSpecEnd(lrr)
 
 		reached := expectReason(lrr, v1.LogicalRestoreFailed, v1.ReasonFailed)
 		Expect(reached.Status.FailureMessage).To(ContainSubstring(components.JobName(lrr)))
