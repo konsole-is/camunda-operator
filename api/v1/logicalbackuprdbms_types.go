@@ -112,10 +112,10 @@ type LogicalBackupRDBMSStatus struct {
 	// started. It is the config hash of the Zeebe pod template. The operator
 	// requests the Zeebe backup only while the hash is unchanged. Thus the
 	// dump never pairs with a Zeebe backup of another configuration, for
-	// example after a change of the database. If the hash changes, the backup
-	// fails after the grace period. The generation of the cluster is not
-	// sufficient, because a change of a referenced object changes the hash
-	// but not the generation.
+	// example after a change of the database. If the hash changes before the
+	// operator requests the Zeebe backup, the backup fails after the grace
+	// period. The generation of the cluster is not sufficient, because a
+	// change of a referenced object changes the hash but not the generation.
 	// +optional
 	WorkloadConfigHash string `json:"workloadConfigHash,omitempty"`
 	// ClusterUID records the CamundaCluster of the backup. A cluster that is
@@ -140,8 +140,9 @@ type LogicalBackupRDBMSStatus struct {
 	// BucketRef records the ObjectStorageConfig through which the Job wrote
 	// the dump. On deletion, the operator uses this contract, not the
 	// current backupStorageRef of the cluster. It removes the object only
-	// while the cluster, this contract, and its credentials Secret exist,
-	// and the contract points to the same place.
+	// while the cluster and this contract exist, and the contract points to
+	// the same place. For a bucket with static credentials, the credentials
+	// Secret must also exist.
 	// +optional
 	BucketRef string `json:"bucketRef,omitempty"`
 	// BucketLocation records where the Job wrote the object: the storage

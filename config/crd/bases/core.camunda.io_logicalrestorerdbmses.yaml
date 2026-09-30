@@ -129,10 +129,9 @@ spec:
               backupId:
                 description: |-
                   BackupID is the id of the dump that the restore reads, as the backup
-                  records it. The operator records it when the restore starts. A backup
-                  that is created again later with the same name gets a new, time-based
-                  id. This restore then refuses it. Later phases of the restore still read the backup
-                  resource, so keep it until the restore completes.
+                  records it. The operator records it when the restore starts. Later
+                  phases of the restore still read the backup resource, so keep it until
+                  the restore completes.
                 format: int64
                 type: integer
               brokers:
@@ -228,7 +227,7 @@ spec:
               firstFailedAt:
                 description: |-
                   FirstFailedAt is when a dependency of the running restore first stopped
-                  resolving. The grace period starts at this time. The field clears if
+                  resolving. The grace period starts at this time. The field can clear if
                   the dependency recovers before the restore deletes target indices or
                   records a recreated broker volume or a broker Job. After that point, the
                   field stays set, so a dependency that fails and recovers again and

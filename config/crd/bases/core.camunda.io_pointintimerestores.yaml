@@ -221,7 +221,7 @@ spec:
               firstFailedAt:
                 description: |-
                   FirstFailedAt is when a dependency of the running restore first stopped
-                  resolving. The grace period starts at this time. The field clears if
+                  resolving. The grace period starts at this time. The field can clear if
                   the dependency recovers before the restore deletes target indices or
                   records a recreated broker volume or a broker Job. After that point, the
                   field stays set, so a dependency that fails and recovers again and
