@@ -188,8 +188,8 @@ func TestStampBrokerVersion(t *testing.T) {
 	}
 }
 
-// A class change is reported once per requested class: the StatefulSet
-// carries the class that its last apply asked for.
+// A class change is reported until the StatefulSet carries the requested
+// class.
 func TestRecordIgnoredClassChange(t *testing.T) {
 	t.Parallel()
 

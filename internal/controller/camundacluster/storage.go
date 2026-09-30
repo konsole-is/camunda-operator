@@ -40,9 +40,8 @@ import (
 const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 
 // eventReasonStorageClassChangeIgnored is the Warning event that the
-// controller records once per requested class when the effective
-// storageClassName differs from the class of the applied broker claim
-// template. The template keeps its class, because a StatefulSet cannot change
+// controller records when the effective storageClassName differs from the
+// class of the applied broker claim template. The template keeps its class, because a StatefulSet cannot change
 // its claim template.
 const eventReasonStorageClassChangeIgnored = "StorageClassChangeIgnored"
 
@@ -50,8 +49,7 @@ const eventReasonStorageClassChangeIgnored = "StorageClassChangeIgnored"
 // about the size of the broker claims.
 const eventActionResize = "Resize"
 
-// eventActionApply is the action of the events that the controller records
-// about the broker claim template that it applies.
+// eventActionApply is the action of the class-change event.
 const eventActionApply = "Apply"
 
 // brokerStorage is what the storage lifecycle reads before the components are
@@ -286,9 +284,8 @@ func (s brokerStorage) largestClaimSize() *resource.Quantity {
 }
 
 // recordIgnoredClassChange records StorageClassChangeIgnored when class
-// differs from the class of the applied claim template, once per requested
-// class: the event fires until the StatefulSet carries the requested class
-// annotation, which the apply of this reconcile writes.
+// differs from the class of the applied claim template, until the
+// StatefulSet carries class as its requested class.
 func (r *CamundaClusterReconciler) recordIgnoredClassChange(
 	cluster *v1.CamundaCluster,
 	storage brokerStorage,
@@ -327,8 +324,6 @@ func (s brokerStorage) requestedClassApplied(class *string) bool {
 	return ok && requested == *class
 }
 
-// className returns class in quotes, or a description of no class when class
-// is nil.
 func className(class *string) string {
 	if class == nil {
 		return "(none, so the default StorageClass)"

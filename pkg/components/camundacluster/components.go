@@ -219,7 +219,7 @@ func managedLabels(cluster *v1.CamundaCluster, comp string) map[string]string {
 // zeebeStatefulSet renders the base broker StatefulSet: parallel pod
 // management, a rolling update, the data volume claim template with the size
 // and class of in.AppliedVolumeClaim (the effective ones when unset), the
-// requested storage size and class annotations, and the default retention
+// requested storage size annotation, and the default retention
 // policy (the volumes go with the cluster; a scale-down always retains).
 // statefulSetMutations layer the overrides on top.
 func zeebeStatefulSet(in Input, p Process) *appsv1.StatefulSet {
