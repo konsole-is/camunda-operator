@@ -47,8 +47,8 @@ const (
 
 // Periods are the grace periods of the components that run a workload. A
 // component that is not ready when its grace period runs out reports Degraded
-// or Down in place of Creating, Updating, or Scaling. Zero turns the grading
-// off for that class: the component keeps its progress reason.
+// or Down in place of any other not-ready reason, such as Creating, Failing,
+// or Blocked. Zero turns the grading off for that class.
 type Periods struct {
 	// Workload is the grace period of a component that runs a Deployment, a
 	// StatefulSet, or a Keycloak.

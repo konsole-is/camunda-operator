@@ -82,8 +82,8 @@ The reasons that you see most:
 | `Healthy` | Everything the resource needs is in place. |
 | `Creating`, `Updating`, `Scaling` | The workloads roll out. |
 | `Failing` | A workload does not reach the desired state. |
-| `Degraded` | A workload is still not ready at the end of its grace period, but part of it serves. |
-| `Down` | A workload is still not ready at the end of its grace period, and nothing of it serves. |
+| `Degraded` | A workload is still not ready at the end of its grace period. It reports a partial state, for example some ready replicas or yellow Elasticsearch health. |
+| `Down` | A workload is still not ready at the end of its grace period. It reports a critical state, for example no ready replica or red Elasticsearch health. |
 | `Suspended` | `spec.suspend` is true. `Ready` is `True`, because the resource is in its desired state. |
 | `SuspensionHeld` | A `CamundaCluster` carries a suspension hold. `Ready` is `False`, because another resource keeps the cluster stopped, not your spec. The message names each hold. |
 | `Disabled` | The component is not part of the current topology. This is not an error. |
