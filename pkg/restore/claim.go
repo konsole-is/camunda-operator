@@ -29,10 +29,10 @@ import (
 
 // Take claims the cluster for owner. cluster is the name of the target, in
 // the namespace of the restore. Take reports Done when owner holds the claim.
-// When another live holder claims the cluster, Take reports a failure with
-// v1.ReasonClusterClaimed that names the holder. Nothing bounds that wait: a
-// later call takes the claim over once clusterclaim.HolderActive reports the
-// holder inactive.
+// When another holder claims the cluster, Take reports a failure with
+// v1.ReasonClusterClaimed and clusterclaim.WaitMessage. Nothing bounds that
+// wait: a later call takes the claim over only once clusterclaim.Claim finds
+// the holder inactive, and never from a Lease that the message says to delete.
 //
 // Call it when admission passes, before each phase that touches storage, so
 // two restores of one cluster never both pass validation. reader must read
@@ -54,20 +54,9 @@ func Take(
 		return Outcome{Done: true}, nil
 	}
 
-	// The Lease records the exact identity, which carries a UID that says
-	// nothing to a reader of the condition.
-	display := holder
-	if parsed, parseErr := clusterclaim.ParseClaimant(holder); parseErr == nil {
-		display = parsed.Display()
-	}
-
 	return Outcome{Failure: &conditions.PreCheckFailure{
-		Reason: v1.ReasonClusterClaimed,
-		Message: fmt.Sprintf(
-			"%s holds CamundaCluster %s/%s. Only one backup or restore of a cluster runs at a time, "+
-				"so this restore starts when that operation reaches a terminal phase",
-			display, namespace, cluster,
-		),
+		Reason:  v1.ReasonClusterClaimed,
+		Message: clusterclaim.WaitMessage(holder, namespace, cluster, "restore"),
 	}}, nil
 }
 

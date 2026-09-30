@@ -1021,7 +1021,9 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		})
 		pitr := createRestore(w)
 
-		Expect(expectHeld(pitr, v1.ReasonPitrUnavailable)).To(ContainSubstring("no-such-configmap"))
+		message := expectHeld(pitr, v1.ReasonPitrUnavailable)
+		Expect(message).To(ContainSubstring("no-such-configmap"))
+		Expect(message).To(ContainSubstring("no-such-configmap or mark it optional. The restore then continues"))
 		expectClaimsUntouched(w)
 	})
 

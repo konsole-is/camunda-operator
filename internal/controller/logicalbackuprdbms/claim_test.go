@@ -25,9 +25,11 @@ import (
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 )
 
 // TestClaimGateBreaksTheTieBreakDeadlock replays the interleaving that the
@@ -73,7 +75,7 @@ func TestClaimGateBreaksTheTieBreakDeadlock(t *testing.T) {
 	assert.Empty(t, blocking, "the tie-break lets B through")
 	holder, err = r.claimCluster(ctx, b)
 	require.NoError(t, err)
-	assert.Equal(t, "LogicalBackupRDBMS/a", holder, "the Lease names the active holder; no takeover")
+	assert.Contains(t, holder, "LogicalBackupRDBMS/a holds", "the Lease names the active holder; no takeover")
 
 	// A re-enters. The tie-break alone sends it behind B forever. The holder
 	// goes first.
@@ -87,4 +89,58 @@ func TestClaimGateBreaksTheTieBreakDeadlock(t *testing.T) {
 	// For contrast, the tie-break alone: without the claim, B blocks A.
 	assert.True(t, blocks(b, a))
 	assert.False(t, blocks(a, b))
+}
+
+// A backup that waits names the holder by its kind, because a restore takes
+// the same claim as a backup.
+func TestClaimClusterNamesTheHolderByItsKind(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		holder client.Object
+		kind   string
+	}{
+		{
+			name: "a restore holds the cluster",
+			holder: &v1.LogicalRestoreRDBMS{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "camunda", Name: "my-restore", UID: "uid-restore"},
+			},
+			kind: "LogicalRestoreRDBMS",
+		},
+		{
+			name: "another backup holds the cluster",
+			holder: &v1.LogicalBackupRDBMS{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "camunda", Name: "weekly", UID: "uid-weekly"},
+			},
+			kind: "LogicalBackupRDBMS",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := context.Background()
+			backup := &v1.LogicalBackupRDBMS{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "camunda", Name: "nightly", UID: "uid-nightly"},
+				Spec:       v1.LogicalBackupRDBMSSpec{ClusterRef: v1.ClusterRef{Name: "my-cluster"}},
+			}
+			c := fake.NewClientBuilder().WithScheme(dumpScheme(t)).WithObjects(backup, tt.holder).Build()
+			r := &LogicalBackupRDBMSReconciler{Client: c, APIReader: c}
+
+			holder := clusterclaim.Claimant{Kind: tt.kind, Name: tt.holder.GetName(), UID: tt.holder.GetUID()}
+			blocking, err := clusterclaim.Claim(ctx, c, c, "camunda", "my-cluster", holder)
+			require.NoError(t, err)
+			require.Empty(t, blocking)
+
+			message, err := r.claimCluster(ctx, backup)
+			require.NoError(t, err)
+
+			assert.Contains(t, message, holder.Display()+" holds CamundaCluster camunda/my-cluster")
+			assert.NotContains(t, message, "backup "+tt.kind+"/")
+			assert.Contains(t, message, "Only one backup or restore of a cluster runs at a time")
+			assert.Contains(t, message, "so this backup starts when that operation no longer holds the cluster")
+		})
+	}
 }

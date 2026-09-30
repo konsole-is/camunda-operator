@@ -32,10 +32,10 @@ const (
 	// Admission never reports the reason. A restore suspends its own cluster
 	// there, and it unsuspends the cluster again when it completes.
 	ReasonClusterNotSuspended = "ClusterNotSuspended"
-	// ReasonClusterClaimed means that another backup or another restore holds
-	// the cluster. The restore waits in Pending until that holder reaches a
-	// terminal phase. Nothing bounds the wait, and the reason names no kind,
-	// because the holder can be either.
+	// ReasonClusterClaimed means that another holder claims the cluster,
+	// usually a backup or another restore. The restore waits in Pending until
+	// the claim is free, and nothing bounds the wait. The message names the
+	// holder, or a claim Lease that the user must delete.
 	ReasonClusterClaimed = "ClusterClaimed"
 	// ReasonIncompatibleTarget means that the target cluster cannot hold the
 	// backup: the target is not the cluster the backup was taken from, the

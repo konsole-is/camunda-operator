@@ -701,3 +701,40 @@ func TestHolderActive(t *testing.T) {
 		})
 	}
 }
+
+// The message names a holder by its kind and name, without the UID. A holder
+// that no claimant can take over makes the message name the Lease instead.
+func TestWaitMessage(t *testing.T) {
+	held := clusterclaim.WaitMessage(first.String(), claimNamespace, "prod", "backup")
+	assert.Contains(t, held, first.Display()+" holds CamundaCluster "+claimNamespace+"/prod")
+	assert.Contains(t, held, "so this backup starts when that operation no longer holds the cluster")
+	assert.NotContains(t, held, string(first.UID))
+
+	foreign := clusterclaim.WaitMessage("someone-else", claimNamespace, "prod", "restore")
+	assert.Contains(t, foreign, `"someone-else"`)
+	assert.Contains(t, foreign, clusterclaim.ClaimLeaseName("prod"))
+	assert.Contains(t, foreign, "This restore waits until you delete that Lease")
+	assert.NotContains(t, foreign, "no longer holds the cluster")
+
+	unknown := clusterclaim.WaitMessage("Unknown/x/uid-x", claimNamespace, "prod", "backup")
+	assert.Contains(t, unknown, "This backup waits until you delete that Lease")
+}
+
+// A Lease with an empty holderIdentity records no holder, so the message
+// names none.
+func TestWaitMessageForALeaseWithoutAHolder(t *testing.T) {
+	c := claimClient(t)
+	var lease coordinationv1.Lease
+	lease.Namespace = claimNamespace
+	lease.Name = clusterclaim.ClaimLeaseName("prod")
+	require.NoError(t, c.Create(t.Context(), &lease))
+
+	holder, err := clusterclaim.Claim(t.Context(), c, c, claimNamespace, "prod", second)
+	require.NoError(t, err)
+
+	message := clusterclaim.WaitMessage(holder, claimNamespace, "prod", "backup")
+	assert.Contains(
+		t, message, "records no holder that the operator can read. This backup waits until you delete that Lease",
+	)
+	assert.NotContains(t, message, "names the holder")
+}
