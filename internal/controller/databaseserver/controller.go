@@ -66,15 +66,15 @@ const controllerName = "databaseserver"
 const defaultRetryInterval = 30 * time.Second
 
 // eventReasonStorageShrinkIgnored is the Warning event that the controller
-// records when a merged volume size is below the size that is already there.
-// It keeps the size that is there, because PostgreSQL volumes cannot be
-// reduced in place.
+// records once per requested size when a merged volume size is below the size
+// that is already there. It keeps the size that is there, because PostgreSQL
+// volumes cannot be reduced in place.
 const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 
 // eventReasonWALStorageKept is the Warning event that the controller records
-// when a merged spec asks for no write-ahead log volume under a server that
-// has one. It keeps the volume, because CloudNativePG refuses a cluster that
-// gives one up.
+// once, when a merged spec starts to ask for no write-ahead log volume under a
+// server that has one. It keeps the volume, because CloudNativePG refuses a
+// cluster that gives one up.
 const eventReasonWALStorageKept = "WALStorageKept"
 
 // eventActionResize is the action of the events that the controller records
@@ -138,6 +138,9 @@ type resolvedSpec struct {
 	// component, it reports ArchiveFailing, and it marks the open archive
 	// record: see reportedArchiveOutage.
 	archiveOutage *components.ArchiveOutage
+	// requested is what the merged spec asked for before keepAppliedStorageSize
+	// raised it to the volumes that are there.
+	requested components.RequestedStorage
 }
 
 // serverComponents are the components of one reconcile, in the order they
@@ -303,7 +306,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Before the recovery below: the cluster a rollback builds carries the
 	// volume sizes of the merged spec, and it must not come back smaller than
 	// the server it replaces.
-	r.keepAppliedStorageSize(&server, &resolved.merged, volumes)
+	resolved.requested = r.keepAppliedStorageSize(&server, &resolved.merged, volumes)
 
 	// Before the hold below: a suspended server refuses a recovery request,
 	// and a request nobody answers holds whoever asked for good.
@@ -1040,12 +1043,14 @@ func pendingArchiveOutageWait(
 // PersistentVolumeClaim that reports a capacity, split by what the claim
 // holds, and the sizes the applied CloudNativePG cluster asks for. The applied
 // sizes matter on their own while the server is suspended, when the claims are
-// there and report their capacity before any instance comes back.
+// there and report their capacity before any instance comes back. requested
+// holds the annotations of the applied cluster.
 type serverVolumes struct {
 	data        []v1.VolumeStatus
 	wal         []v1.VolumeStatus
 	appliedData *resource.Quantity
 	appliedWAL  *resource.Quantity
+	requested   map[string]string
 }
 
 // all returns every claim of the cluster, sorted by name.
@@ -1054,6 +1059,21 @@ func (v serverVolumes) all() []v1.VolumeStatus {
 	slices.SortFunc(volumes, func(a, b v1.VolumeStatus) int { return strings.Compare(a.Name, b.Name) })
 
 	return volumes
+}
+
+// requestApplied reports whether the applied cluster carries size in the
+// annotation key. The empty value stands for no size.
+func (v serverVolumes) requestApplied(key string, size *resource.Quantity) bool {
+	value, ok := v.requested[key]
+	if !ok {
+		return false
+	}
+	if size == nil {
+		return value == ""
+	}
+
+	applied, err := resource.ParseQuantity(value)
+	return err == nil && applied.Cmp(*size) == 0
 }
 
 // volumeClaims reads the volumes of the current cluster. CloudNativePG labels
@@ -1122,6 +1142,7 @@ func (r *DatabaseServerReconciler) volumeClaims(
 	}
 
 	volumes.appliedData = parsedSize(cluster.Spec.StorageConfiguration.Size)
+	volumes.requested = cluster.Annotations
 	if cluster.Spec.WalStorage != nil {
 		volumes.appliedWAL = parsedSize(cluster.Spec.WalStorage.Size)
 	}
@@ -1153,22 +1174,33 @@ func parsedSize(size string) *resource.Quantity {
 // touches it.
 // CloudNativePG refuses a cluster whose storage is smaller than the one it
 // applied, so a size that reaches it stops the server from converging.
+//
+// It returns the sizes that merged asked for. It records each Warning event
+// once per request: a request that the applied cluster carries was reported
+// before.
 func (r *DatabaseServerReconciler) keepAppliedStorageSize(
 	server *v1.DatabaseServer,
 	merged *v1.DatabaseServerSpec,
 	volumes serverVolumes,
-) {
+) components.RequestedStorage {
+	requested := components.RequestedStorage{Data: merged.StorageSize, WAL: merged.WALStorageSize}
+
 	merged.StorageSize = r.keepAppliedSize(
-		server, "storageSize", merged.StorageSize, largestVolume(volumes.data, volumes.appliedData),
+		server, "storageSize", requested.Data, largestVolume(volumes.data, volumes.appliedData),
+		volumes.requestApplied(components.RequestedStorageSizeAnnotation, requested.Data),
 	)
 	merged.WALStorageSize = r.keepAppliedWALSize(
-		server, merged.WALStorageSize, largestVolume(volumes.wal, volumes.appliedWAL),
+		server, requested.WAL, largestVolume(volumes.wal, volumes.appliedWAL),
+		volumes.requestApplied(components.RequestedWALStorageSizeAnnotation, requested.WAL),
 	)
+
+	return requested
 }
 
 // keepAppliedWALSize returns the size to render for the write-ahead log volume
 // of the server: the clamp of keepAppliedSize, and the size that is there when
-// the merged spec asks for no such volume at all.
+// the merged spec asks for no such volume at all. reported applies to both
+// events as it does in keepAppliedSize.
 //
 // CloudNativePG refuses a cluster that gives up the write-ahead log volume it
 // applied, with "walStorage cannot be disabled once configured". It accepts
@@ -1176,9 +1208,13 @@ func (r *DatabaseServerReconciler) keepAppliedStorageSize(
 func (r *DatabaseServerReconciler) keepAppliedWALSize(
 	server *v1.DatabaseServer,
 	requested, existing *resource.Quantity,
+	reported bool,
 ) *resource.Quantity {
 	if requested != nil || existing == nil {
-		return r.keepAppliedSize(server, "walStorageSize", requested, existing)
+		return r.keepAppliedSize(server, "walStorageSize", requested, existing, reported)
+	}
+	if reported {
+		return existing
 	}
 
 	r.EventRecorder.Eventf(
@@ -1198,14 +1234,19 @@ func (r *DatabaseServerReconciler) keepAppliedWALSize(
 
 // keepAppliedSize returns the size to render for one volume of the server:
 // requested, or existing when requested is below it. It records the Warning
-// event whenever it keeps existing.
+// event when it keeps existing, unless reported says that the event for
+// requested was recorded before.
 func (r *DatabaseServerReconciler) keepAppliedSize(
 	server *v1.DatabaseServer,
 	field string,
 	requested, existing *resource.Quantity,
+	reported bool,
 ) *resource.Quantity {
 	if requested == nil || existing == nil || requested.Cmp(*existing) >= 0 {
 		return requested
+	}
+	if reported {
+		return existing
 	}
 
 	r.EventRecorder.Eventf(
@@ -1431,7 +1472,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 	var built serverComponents
 
 	cluster, systemIdentifier, err := components.ClusterComponent(
-		server, merged, resolved.archive, resolved.archiveTaken,
+		server, merged, resolved.requested, resolved.archive, resolved.archiveTaken,
 		resolved.platform, resolved.clusterBlocked,
 	)
 	if err != nil {
