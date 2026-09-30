@@ -733,6 +733,8 @@ func TestWaitMessageForALeaseWithoutAHolder(t *testing.T) {
 	require.NoError(t, err)
 
 	message := clusterclaim.WaitMessage(holder, claimNamespace, "prod", "backup")
-	assert.Contains(t, message, "records no holder. This backup waits until you delete that Lease")
+	assert.Contains(
+		t, message, "records no holder that the operator can read. This backup waits until you delete that Lease",
+	)
 	assert.NotContains(t, message, "names the holder")
 }

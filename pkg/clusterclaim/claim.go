@@ -328,7 +328,7 @@ func (c Claimant) Display() string {
 func WaitMessage(holder, namespace, cluster, waiter string) string {
 	if holder == unidentifiedHolder {
 		return fmt.Sprintf(
-			"The claim Lease %s/%s of CamundaCluster %s/%s records no holder. "+
+			"The claim Lease %s/%s of CamundaCluster %s/%s records no holder that the operator can read. "+
 				"This %s waits until you delete that Lease",
 			namespace, ClaimLeaseName(cluster), namespace, cluster, waiter,
 		)
