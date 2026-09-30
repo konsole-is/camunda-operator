@@ -1737,10 +1737,9 @@ func (r *DatabaseServerReconciler) serviceAccountTaken(
 	return fmt.Sprintf("ServiceAccount %q is controlled by %s %q", key.Name, holder.Kind, holder.Name), nil
 }
 
-// archivePluginRoles returns the clusters of the server, the one it runs and
-// the ones its last rollback built and left while they exist, and whether each
-// is granted the Role that the Barman Cloud plugin creates for it. A cluster
-// under another owner is left out.
+// archivePluginRoles returns every CloudNativePG cluster that the server
+// controls, and whether each is granted the Role that the Barman Cloud plugin
+// creates for it.
 //
 // A cluster is not granted until its Role exists: the API server refuses a
 // RoleBinding to a missing Role unless the writer may bind any Role. It is not
@@ -1751,31 +1750,25 @@ func (r *DatabaseServerReconciler) archivePluginRoles(
 	server *v1.DatabaseServer,
 	serviceAccountTaken string,
 ) ([]components.ArchivePluginRole, error) {
-	names := []string{components.ClusterName(server)}
-	if recovery := server.Status.Recovery; recovery != nil {
-		for _, name := range []string{recovery.Cluster, recovery.PreviousCluster} {
-			if name != "" && !slices.Contains(names, name) {
-				names = append(names, name)
-			}
-		}
+	// Every cluster, because one that a rollback left can outlive its record.
+	// Live, because a stale answer keeps a binding on a Role of the same name
+	// that another owner made again.
+	var clusters cnpgv1.ClusterList
+	if err := r.APIReader.List(
+		ctx, &clusters,
+		client.InNamespace(server.Namespace),
+		client.MatchingLabels{labels.DatabaseServerKey: labels.OwnerName(server.Name)},
+	); err != nil {
+		return nil, fmt.Errorf("listing the CloudNativePG clusters of the server: %w", err)
 	}
 
 	var roles []components.ArchivePluginRole
-	for _, name := range names {
-		// Live: a binding names its Role, so a stale answer keeps the binding
-		// on a Role that another owner has made again under that name.
-		var cluster cnpgv1.Cluster
-		clusterKey := types.NamespacedName{Namespace: server.Namespace, Name: name}
-		if err := r.APIReader.Get(ctx, clusterKey, &cluster); err != nil {
-			if apierrors.IsNotFound(err) {
-				continue
-			}
-
-			return nil, fmt.Errorf("reading the CloudNativePG cluster %s: %w", name, err)
-		}
-		if !ownedByServer(server, &cluster) {
+	for i := range clusters.Items {
+		cluster := &clusters.Items[i]
+		if !ownedByServer(server, cluster) {
 			continue
 		}
+		name := cluster.Name
 
 		role := &metav1.PartialObjectMetadata{}
 		role.SetGroupVersionKind(rbacv1.SchemeGroupVersion.WithKind("Role"))
@@ -1786,7 +1779,7 @@ func (r *DatabaseServerReconciler) archivePluginRoles(
 				return nil, fmt.Errorf("reading the Role %s: %w", key, err)
 			}
 			granted = false
-		} else if !metav1.IsControlledBy(role, &cluster) {
+		} else if !metav1.IsControlledBy(role, cluster) {
 			granted = false
 		}
 

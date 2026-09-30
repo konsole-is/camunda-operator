@@ -23,6 +23,7 @@ import (
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -186,7 +187,7 @@ func (r *DatabaseServerReconciler) enqueueForServiceAccount() handler.EventHandl
 
 // enqueueForArchivePlugin maps an event of the Role that the Barman Cloud
 // plugin creates for a cluster, or of a RoleBinding that grants it, to the
-// server that runs that cluster, or builds or leaves it in a rollback.
+// server that controls that cluster.
 func (r *DatabaseServerReconciler) enqueueForArchivePlugin(
 	clusterOf func(name string) (string, bool),
 ) handler.EventHandler {
@@ -196,11 +197,22 @@ func (r *DatabaseServerReconciler) enqueueForArchivePlugin(
 			return nil
 		}
 
-		return r.serversMatching(ctx, o.GetNamespace(), func(server *v1.DatabaseServer) bool {
-			recovery := server.Status.Recovery
-			return components.ClusterName(server) == cluster ||
-				(recovery != nil && (recovery.Cluster == cluster || recovery.PreviousCluster == cluster))
-		})
+		if !r.cnpgInstalled {
+			return nil
+		}
+
+		var owner cnpgv1.Cluster
+		key := client.ObjectKey{Namespace: o.GetNamespace(), Name: cluster}
+		if err := r.Get(ctx, key, &owner); err != nil {
+			return nil
+		}
+
+		server := metav1.GetControllerOf(&owner)
+		if server == nil || server.Kind != "DatabaseServer" {
+			return nil
+		}
+
+		return []reconcile.Request{{NamespacedName: client.ObjectKey{Namespace: o.GetNamespace(), Name: server.Name}}}
 	})
 }
 
