@@ -453,7 +453,8 @@ func clockUnreadable(what string) *conditions.PreCheckFailure {
 			"%s. The database records the exporter position with the wall clock of the broker and no "+
 				"zone, so the operator can compare it with spec.timestamp only while the brokers run "+
 				"in UTC. Run the brokers in UTC, set each zone variable as a literal value, and make sure "+
-				"that each source of the broker environment exists. Then the restore continues by itself",
+				"that each source of the broker environment that is not optional exists. Then the restore "+
+				"continues by itself",
 			what,
 		),
 	}
