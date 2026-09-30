@@ -282,7 +282,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			return ctrl.Result{}, err
 		}
 		finished, err := restore.Finish(
-			ctx, r.Client, r.APIReader, &pitr, &pitr.Status.RestoreProgress, pitr.Spec.ClusterRef.Name,
+			ctx,
+			r.Client,
+			r.APIReader,
+			&pitr,
+			labels.PointInTimeRestore(pitr.Name),
+			&pitr.Status.RestoreProgress,
+			pitr.Spec.ClusterRef.Name,
 		)
 
 		return ctrl.Result{RequeueAfter: finished.Wait}, err

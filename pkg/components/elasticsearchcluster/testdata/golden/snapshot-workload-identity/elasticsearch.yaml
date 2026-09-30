@@ -13,6 +13,8 @@ metadata:
 apiVersion: elasticsearch.k8s.elastic.co/v1
 kind: Elasticsearch
 metadata:
+  annotations:
+    camunda.io/requested-storage-size: 64Gi
   labels:
     app.kubernetes.io/managed-by: camunda-operator
     camunda.io/component: elasticsearch

@@ -177,7 +177,7 @@ func assertElasticsearchClusterGoldens(
 		golden.WithScheme(scheme), golden.Update(*updateGolden),
 	)
 
-	elasticsearch, err := ElasticsearchComponent(cluster, merged, storage)
+	elasticsearch, err := ElasticsearchComponent(cluster, merged, merged.StorageSize, storage)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "elasticsearch.yaml"), elasticsearch,
@@ -325,7 +325,7 @@ func TestForeignServiceAccountIsNamedButNotRendered(t *testing.T) {
 	cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-es", Create: &no}
 	merged := MergeSpec(cluster.Spec, preset, release)
 
-	comp, err := ElasticsearchComponent(cluster, merged, nil)
+	comp, err := ElasticsearchComponent(cluster, merged, merged.StorageSize, nil)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
@@ -390,7 +390,7 @@ func TestPodIdentityRendersTheServiceAccount(t *testing.T) {
 		Type: v1.ObjectStorageAuthTypeWorkloadIdentity,
 	})}
 
-	comp, err := ElasticsearchComponent(cluster, merged, storage)
+	comp, err := ElasticsearchComponent(cluster, merged, merged.StorageSize, storage)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
@@ -518,7 +518,7 @@ func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
 		"camunda.io/component":             "not-elasticsearch",
 		"team":                             "platform",
 	}
-	comp, err := ElasticsearchComponent(cluster, cluster.Spec, nil)
+	comp, err := ElasticsearchComponent(cluster, cluster.Spec, cluster.Spec.StorageSize, nil)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
@@ -608,4 +608,37 @@ func TestElasticsearchClusterGoldenSnapshotAzureWorkloadIdentity(t *testing.T) {
 		t, "snapshot-azure-workload-identity", cluster,
 		MergeSpec(cluster.Spec, preset, release), &SnapshotStorage{Config: config},
 	)
+}
+
+// The ECK CR carries the storageSize that the merged spec asks for, also when
+// the rendered claim is larger, and no annotation when it asks for none.
+func TestElasticsearchCarriesTheRequestedStorageSize(t *testing.T) {
+	t.Parallel()
+
+	cluster, preset, release := goldenMinimalElasticsearchCluster()
+	merged := MergeSpec(cluster.Spec, preset, release)
+	merged.StorageSize = new(resource.MustParse("8Gi"))
+
+	for _, tt := range []struct {
+		requested *resource.Quantity
+		want      map[string]string
+	}{
+		{requested: new(resource.MustParse("512Mi")), want: map[string]string{RequestedStorageSizeAnnotation: "512Mi"}},
+		{requested: nil, want: nil},
+	} {
+		comp, err := ElasticsearchComponent(cluster, merged, tt.requested, nil)
+		require.NoError(t, err)
+
+		objects, err := comp.Preview()
+		require.NoError(t, err)
+
+		var es *esv1.Elasticsearch
+		for _, obj := range objects {
+			if typed, ok := obj.(*esv1.Elasticsearch); ok {
+				es = typed
+			}
+		}
+		require.NotNil(t, es)
+		assert.Equal(t, tt.want, es.Annotations)
+	}
 }

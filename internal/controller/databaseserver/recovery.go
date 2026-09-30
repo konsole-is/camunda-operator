@@ -843,7 +843,7 @@ func (r *DatabaseServerReconciler) createRecoveryCluster(
 	target string,
 ) error {
 	recovered, err := components.RecoveryCluster(
-		server, resolved.merged, resolved.archive, resolved.archiveTaken,
+		server, resolved.merged, resolved.requested, resolved.archive, resolved.archiveTaken,
 		resolved.platform, source, target,
 	)
 	if err != nil {

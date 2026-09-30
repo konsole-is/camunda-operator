@@ -423,6 +423,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Create(ctx, second)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
+		deleteAtSpecEnd(second)
 
 		expectRecovering(second)
 		Eventually(func(g Gomega) {
@@ -579,19 +580,22 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		expectRecoveryRequest(w)
 		backend := expectBackendHeld(pitr)
 
+		// A restore whose cluster still exists asks again for a request that is
+		// cleared, so the cluster goes first.
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		expectRecovering(pitr, "was deleted", w.server.Name)
 		Eventually(func(g Gomega) {
 			var contract v1.DatabaseServerConfig
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), &contract)).To(Succeed())
 			contract.Spec.Recovery = nil
 			g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
-		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
 
 		Consistently(func(g Gomega) {
 			g.Expect(readRestore(g, pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
 			g.Expect(writersSeenByAnotherCluster(backend, "")).NotTo(BeEmpty())
 		}, time.Second, interval).Should(Succeed())
-		expectFailed(pitr, v1.ReasonFailed)
+		Expect(expectFailed(pitr, v1.ReasonFailed)).To(ContainSubstring("no DatabaseServerConfig can answer"))
 	})
 
 	It("keeps its database held when its cluster is deleted, until the server answers", func() {

@@ -413,7 +413,7 @@ status:
 
 The API server rejects a smaller value. If a preset lowers the size under a running cluster, the operator ignores it and keeps the current size. It records the Warning event `StorageShrinkIgnored` once per requested size. To get a smaller volume, delete and recreate the cluster.
 
-`storageSize` of an `ElasticsearchCluster`, and `storageSize` and `walStorageSize` of a `DatabaseServer`, obey the same rules. They grow in place, and a smaller inline value is rejected. A smaller preset value is ignored, with a `StorageShrinkIgnored` event each time the operator processes the resource.
+`storageSize` of an `ElasticsearchCluster`, and `storageSize` and `walStorageSize` of a `DatabaseServer`, obey the same rules. They grow in place, and a smaller inline value is rejected. A smaller preset value is ignored, with one `StorageShrinkIgnored` event for each requested size. An `ElasticsearchCluster` records the event again after a resume.
 
 ## Rotate passwords
 
