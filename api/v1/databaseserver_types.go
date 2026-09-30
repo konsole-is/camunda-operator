@@ -24,14 +24,14 @@ import (
 
 // DatabaseServerServiceAccountSpec configures the ServiceAccount that
 // CloudNativePG creates for the instance pods. CloudNativePG owns that
-// account and names it after the server, so only its metadata is
-// configurable. The operator adds the workload-identity annotations of the
-// archive bucket on its own; an annotation set here wins over the derived one
-// on the same key.
+// account and gives it the name of the server, so you can set only its
+// metadata. The operator adds the workload-identity annotations of the
+// archive bucket itself. An annotation set here wins over the operator
+// annotation with the same key.
 type DatabaseServerServiceAccountSpec struct {
-	// Annotations to set on the ServiceAccount, typically workload-identity
-	// annotations (IRSA, GCP Workload Identity, and more) that grant the
-	// instance pods access to cloud resources.
+	// Annotations to set on the ServiceAccount. Usually these are
+	// workload-identity annotations (IRSA, GCP Workload Identity, and more)
+	// that give the instance pods access to cloud resources.
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
@@ -66,54 +66,53 @@ type DatabaseServerMonitoringSpec struct {
 	PodMonitor *PodMonitorSpec `json:"podMonitor,omitempty"`
 }
 
-// DatabaseServerArchiveSpec points a server at the bucket that holds its
-// continuous archive: the write-ahead log of every instance, plus the base
-// backups a recovery starts from. A server with an archive publishes
-// pitr.enabled true on its contract; a server without one publishes false and
-// no point-in-time restore can reach it.
+// DatabaseServerArchiveSpec points a server at the bucket of its continuous
+// archive. The archive holds the write-ahead log of every instance, and the
+// base backups that a recovery starts from. A server with an archive publishes
+// pitr.enabled true on its contract. A server without one publishes false,
+// and no point-in-time restore can reach it.
 //
 // The archive is not the backup model of the operator. BackupSchedule and
-// LogicalBackupRDBMS take logical dumps and never see these base backups.
+// LogicalBackupRDBMS take logical dumps and never use these base backups.
 type DatabaseServerArchiveSpec struct {
 	// ObjectStorageRef names an ObjectStorageConfig in the namespace of this
 	// server. The operator writes the archive under a prefix of that bucket
-	// that holds this server alone.
+	// that only this server uses.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=253
 	ObjectStorageRef string `json:"objectStorageRef"`
-	// RetentionPeriodDays is how far into the past a restore can reach. It is
-	// what the operator enforces on the bucket and what the contract of this
-	// server publishes, so the declared value and the enforced value are one.
+	// RetentionPeriodDays is how far into the past a restore can reach. The
+	// operator enforces this value on the bucket, and the contract of this
+	// server publishes the same value.
 	//
 	// The maximum is 36500 days, which is a hundred years. The operator counts
-	// the reachable window in nanoseconds, and a longer period overflows that
-	// count and puts the oldest reachable point in the future, which makes
-	// every request unreachable.
+	// the reachable window in nanoseconds, and that count overflows at about
+	// 292 years. The maximum stays well below that limit.
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=36500
 	RetentionPeriodDays int32 `json:"retentionPeriodDays"`
-	// BaseBackupSchedule is when a base backup is taken, as the six-field
-	// cron of CloudNativePG (seconds first, in UTC), or as one of the
+	// BaseBackupSchedule is when the server takes a base backup. It is the
+	// six-field cron of CloudNativePG (seconds first, in UTC), or one of the
 	// descriptors @yearly, @annually, @monthly, @weekly, @daily, @midnight,
 	// @hourly and @every. The first base backup runs as soon as the server is
-	// up, whatever the schedule says, because the archive can be recovered
-	// from only after it completes.
+	// up, whatever the schedule says. A recovery from the archive is possible
+	// only after that backup completes.
 	//
-	// The five-field cron of a Kubernetes CronJob is refused. CloudNativePG
-	// reads the first field as seconds, so a five-field value runs at a
-	// different time from the one its author meant.
+	// The API server refuses the five-field cron of a Kubernetes CronJob.
+	// CloudNativePG reads the first field as seconds, so a five-field value
+	// runs at a different time than intended.
 	//
-	// Each field is bounded to what CloudNativePG takes there: 0-59 for
-	// seconds and minutes, 0-23 for hours, 1-31 for the day of the month,
-	// 1-12 or JAN-DEC for the month, and 0-6 or SUN-SAT for the day of the
-	// week. A range whose first value is above its second, such as FRI-MON,
-	// cannot be caught by a pattern. The operator refuses it instead, and
-	// Ready reports InvalidReference before anything is applied.
+	// Each field has the bounds that CloudNativePG accepts. Seconds and
+	// minutes take 0-59, and hours take 0-23. The day of the month takes
+	// 1-31, and the month takes 1-12 or JAN-DEC. The day of the week takes
+	// 0-6 or SUN-SAT. The schema cannot find a range whose first value is
+	// above its second, such as FRI-MON. The operator refuses such a range
+	// with Ready reason InvalidReference, before it applies anything.
 	//
-	// A step takes at most three digits and an @every number at most six
-	// digits on each side of the point. Both are stricter than the parser of
-	// CloudNativePG, which reads a longer number and then overflows on it and
-	// stops taking base backups.
+	// A step has at most three digits. An @every number has at most six
+	// digits on each side of the point. These limits are stricter than the
+	// parser of CloudNativePG. That parser accepts a longer number, then
+	// overflows and stops taking base backups.
 	// +kubebuilder:validation:Pattern=`^(\s*([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d{0,2})?(,([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d{0,2})?)*\s+([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d{0,2})?(,([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d{0,2})?)*\s+([*?]|([01]?\d|2[0-3])(-([01]?\d|2[0-3]))?)(/[1-9]\d{0,2})?(,([*?]|([01]?\d|2[0-3])(-([01]?\d|2[0-3]))?)(/[1-9]\d{0,2})?)*\s+([*?]|([1-9]|[12]\d|3[01])(-([1-9]|[12]\d|3[01]))?)(/[1-9]\d{0,2})?(,([*?]|([1-9]|[12]\d|3[01])(-([1-9]|[12]\d|3[01]))?)(/[1-9]\d{0,2})?)*\s+([*?]|([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc])(-([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc]))?)(/[1-9]\d{0,2})?(,([*?]|([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc])(-([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc]))?)(/[1-9]\d{0,2})?)*\s+([*?]|([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii])(-([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii]))?)(/[1-9]\d{0,2})?(,([*?]|([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii])(-([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii]))?)(/[1-9]\d{0,2})?)*\s*|@((year|annual|month|week|dai|hour)ly|midnight|every (\d{1,6}(\.\d{1,6})?[hms])+))$`
 	// +kubebuilder:default="0 0 2 * * *"
 	// +optional
@@ -122,15 +121,14 @@ type DatabaseServerArchiveSpec struct {
 
 // DatabaseServerSpec defines the desired state of DatabaseServer.
 //
-// The type doubles as the configuration baseline of a DatabaseServerPreset,
-// so the field that is required on a DatabaseServer, databaseServerConfig, is
-// optional at the schema level here and enforced on the DatabaseServer usage
-// instead. The instance-bound fields are server-only and rejected in a preset,
-// and so is the version, which belongs to a CamundaRelease.
+// A DatabaseServerPreset uses the same type as its baseline. For this reason,
+// the schema marks databaseServerConfig as optional, and the DatabaseServer
+// requires it. A preset refuses the fields that belong to one server only.
+// A preset also refuses the version, which belongs to a CamundaRelease.
 type DatabaseServerSpec struct {
-	// PresetRef names a cluster-scoped DatabaseServerPreset used as the
-	// configuration baseline; fields set inline override the preset's value
-	// for that field wholesale.
+	// PresetRef names a cluster-scoped DatabaseServerPreset to use as the
+	// configuration baseline. A field set on the server replaces the value of
+	// the preset for that field completely.
 	// +optional
 	PresetRef string `json:"presetRef,omitempty"`
 	// ReleaseRef names a cluster-scoped CamundaRelease that provides the
@@ -138,66 +136,66 @@ type DatabaseServerSpec struct {
 	// Forbidden in a preset.
 	// +optional
 	ReleaseRef string `json:"releaseRef,omitempty"`
-	// PlatformConfigRef names a cluster-scoped CamundaPlatformConfig. Only
-	// its image settings are read: spec.images.postgres decides where the
-	// PostgreSQL image is pulled from, which is what an air-gapped cluster
-	// needs. Empty leaves the image at its default repository.
+	// PlatformConfigRef names a cluster-scoped CamundaPlatformConfig. The
+	// server reads only its image settings. spec.images.postgres sets where
+	// the server pulls the PostgreSQL image from, for example in an air-gapped
+	// cluster. When empty, the server uses the default image repository.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=253
 	// +optional
 	PlatformConfigRef string `json:"platformConfigRef,omitempty"`
-	// Version is the PostgreSQL major version to run, as a bare number such
-	// as "17". It selects the image tag. Camunda 8.9 supports PostgreSQL 14
-	// and later. The controller enforces that floor on the merged result.
-	// Required unless the resolved release provides it, and forbidden in a
-	// preset.
+	// Version is the PostgreSQL major version to run, as a number such as
+	// "17". It selects the image tag. Camunda 8.9 supports PostgreSQL 14 and
+	// later. The operator refuses a version below 14, also when it comes
+	// from the release. Required unless the resolved release provides it.
+	// Forbidden in a preset.
 	//
-	// The major of a running server cannot change. A value that names another
-	// major, higher or lower, is refused on the Ready condition with reason
-	// VersionChangeRefused, and the server keeps running the major it has. A
-	// release can raise it the same way and is refused the same way. To run
-	// another major, create a server on it and move the data over.
+	// The major version of a running server cannot change. The operator
+	// refuses another major version, higher or lower, with Ready reason
+	// VersionChangeRefused. The server then keeps the major version it has.
+	// The same applies to a new major version from a release. To run another
+	// major version, create a new server and move the data to it.
 	// +kubebuilder:validation:Pattern=`^\d+$`
 	// +optional
 	Version string `json:"version,omitempty"`
-	// Instances is the number of PostgreSQL instances. One instance has no
-	// failover: a node that goes away takes the server with it until the
-	// volume is reattached. Defaults to 1.
+	// Instances is the number of PostgreSQL instances. Defaults to 1. One
+	// instance has no failover. If its node goes away, the server is down
+	// until the volume is attached again.
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	Instances *int32 `json:"instances,omitempty"`
 	// Resources are the CPU and memory of each instance.
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
-	// StorageSize is the size of the data volume of each instance. It cannot
-	// shrink, because PostgreSQL data volumes cannot be reduced in place.
-	// Admission rejects a lower inline value on a DatabaseServer through a
-	// CEL transition rule. That rule does not bind this shared field, so a
-	// preset baseline can be lowered: a server that already applied a larger
-	// size keeps it and records a StorageShrinkIgnored event. Required unless
-	// the resolved preset provides it.
+	// StorageSize is the size of the data volume of each instance. Required
+	// unless the resolved preset provides it. It cannot shrink, because a
+	// PostgreSQL data volume cannot become smaller in place. The API server
+	// refuses a change of this field in a DatabaseServer to a smaller value.
+	// A smaller value is accepted when the field was not set before, or when
+	// a preset lowers the size. A server whose volumes are already larger
+	// then keeps that size and records a StorageShrinkIgnored event.
 	// +optional
 	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
 	// StorageClassName is the StorageClass of the data volumes. Defaults to
-	// the cluster's default StorageClass.
+	// the default StorageClass of the Kubernetes cluster.
 	// +optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
-	// WALStorageSize puts the write-ahead log on a volume of its own, of this
-	// size. Unset keeps the log on the data volume. It cannot shrink, for the
-	// same reason storageSize cannot, and a lowered preset baseline is
-	// ignored the same way.
+	// WALStorageSize puts the write-ahead log on a separate volume of this
+	// size. When unset, the log stays on the data volume. It cannot shrink,
+	// as storageSize cannot. The server ignores a smaller value from a preset
+	// in the same way.
 	//
-	// It can be added to a running server, and it cannot be taken away again:
-	// CloudNativePG refuses a cluster that gives up the volume. A cleared
-	// field, inline or from a preset, keeps the volume at the size it has and
-	// records a WALStorageKept event.
+	// You can add it to a running server, but you cannot remove it again.
+	// CloudNativePG refuses a cluster that removes the volume. If the field
+	// is cleared, on the server or in a preset, the volume keeps its size and
+	// the server records a WALStorageKept event.
 	// +optional
 	WALStorageSize *resource.Quantity `json:"walStorageSize,omitempty"`
 	// ServiceAccount configures the ServiceAccount of the instance pods.
 	// +optional
 	ServiceAccount *DatabaseServerServiceAccountSpec `json:"serviceAccount,omitempty"`
-	// Scheduling constraints for the instance pods; when set, it replaces the
-	// preset's scheduling block entirely (no merge).
+	// Scheduling holds the scheduling constraints of the instance pods. When
+	// set, it replaces the scheduling block of the preset, with no merge.
 	// +optional
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
 	// PodLabels are extra labels applied to the instance pods.
@@ -209,10 +207,10 @@ type DatabaseServerSpec struct {
 	// Monitoring configures the Prometheus scraping integration.
 	// +optional
 	Monitoring *DatabaseServerMonitoringSpec `json:"monitoring,omitempty"`
-	// DatabaseServerConfig names the DatabaseServerConfig the operator
-	// publishes in this CR's own namespace with the endpoint, the admin
-	// credentials, and the point-in-time-recovery capability of the server.
-	// Required on a DatabaseServer, forbidden in a preset.
+	// DatabaseServerConfig names the DatabaseServerConfig that the operator
+	// publishes in the namespace of this server. It holds the endpoint, the
+	// admin credentials, and the point-in-time recovery capability of the
+	// server. Required on a DatabaseServer, forbidden in a preset.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=253
 	// +optional
@@ -222,25 +220,25 @@ type DatabaseServerSpec struct {
 	// +optional
 	Archive *DatabaseServerArchiveSpec `json:"archive,omitempty"`
 	// Suspend stops the PostgreSQL instances and keeps their data volumes.
-	// The operator hibernates the CloudNativePG cluster: the instance pods
-	// are removed, the volumes stay, and setting the field back to false
-	// brings the instances back on the same volumes. Defaults to false.
+	// Defaults to false. The operator hibernates the CloudNativePG cluster:
+	// it removes the instance pods and keeps the volumes. When you set the
+	// field back to false, the instances start again on the same volumes.
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
 }
 
-// The per-component conditions of a DatabaseServer. Ready is derived from
-// ClusterReady, ContractReady, and, on a server that asks for an archive,
-// ArchiveReady. MonitoringReady always stands on its own, and so does
-// ArchiveReady on a server with no archive.
+// The per-component conditions of a DatabaseServer. Ready follows
+// ClusterReady, ContractReady, and, on a server with an archive,
+// ArchiveReady. MonitoringReady never affects Ready. ArchiveReady on a server
+// with no archive does not affect Ready either.
 const (
 	// ConditionClusterReady reports whether the CloudNativePG cluster that the
 	// published contract points at is healthy.
 	ConditionClusterReady = "ClusterReady"
-	// ConditionArchiveReady reports whether the archive the server writes now
-	// can be recovered from. Two things answer it: its first base backup
-	// completed, and the write-ahead log of the server still reaches the
-	// bucket. It reads Disabled on a server with no spec.archive.
+	// ConditionArchiveReady reports whether a recovery from the current
+	// archive of the server is possible. This is true when the first base
+	// backup completed and the write-ahead log of the server still reaches
+	// the bucket. It reads Disabled on a server with no spec.archive.
 	ConditionArchiveReady = "ArchiveReady"
 	// ConditionContractReady reports whether the DatabaseServerConfig of the
 	// server is published and the superuser Secret behind it exists.
@@ -252,8 +250,7 @@ const (
 
 // ReasonCNPGNotInstalled is the Ready reason of a DatabaseServer on a cluster
 // that did not serve the CloudNativePG Cluster kind when the operator
-// started. The operator decides at start whether it watches CloudNativePG
-// resources, so it must restart after CloudNativePG is installed.
+// started. Restart the operator after you install CloudNativePG.
 const ReasonCNPGNotInstalled = "CNPGNotInstalled"
 
 // ReasonBarmanPluginNotInstalled is the Ready reason of a DatabaseServer that
@@ -264,103 +261,105 @@ const ReasonBarmanPluginNotInstalled = "BarmanPluginNotInstalled"
 
 // ReasonContractTaken is the ContractReady reason of a DatabaseServer whose
 // merged spec.databaseServerConfig names a DatabaseServerConfig that already
-// exists and that this server did not publish. The server publishes nothing on
-// it, so the endpoint and the credentials that its consumers read stay what
-// they are. A contract with no owner is refused too: it is the
-// bring-your-own-server API, so a person wrote it for a server the operator
-// does not run. The message names the owner, or says that no owner controls
-// it. Give this server a name of its own, or remove that contract.
+// exists and that this server did not publish. The server does not write to
+// it, so its consumers keep the endpoint and the credentials that they read.
+// The server also refuses a contract with no owner. Such a contract is the
+// bring-your-own-server API: a person wrote it for a server that the
+// operator does not run.
+// The message names the owner, or says that no owner controls it. Give this
+// server a name of its own, or remove that contract.
 const ReasonContractTaken = "ContractTaken"
 
 // ReasonClusterTaken is the ClusterReady reason of a DatabaseServer that
-// derives the name of an existing CloudNativePG cluster it does not control.
-// The server writes nothing on that cluster and runs nothing itself, so the
-// database of whoever holds the name is left whole. It publishes no contract
-// and takes no base backup of that cluster; the archive it wrote before and
-// its history stay. The message names the holder, or says that no owner
-// controls it. Remove that cluster, or give this server a name of its own.
+// derives the name of an existing CloudNativePG cluster that it does not
+// control. The server does not write to that cluster and runs nothing
+// itself, so the database of the other owner stays unchanged. The server
+// publishes no contract and takes no base backup of that cluster. The
+// archive that it wrote before and its history stay. The message names the
+// holder, or says that no owner controls it. Remove that cluster, or give
+// this server a name of its own.
 const ReasonClusterTaken = "ClusterTaken"
 
 // ReasonArchiveTaken is the ArchiveReady reason of a DatabaseServer that
 // derives the name of a Barman Cloud ObjectStore that another owner controls.
 // The cluster archives its write-ahead log through the ObjectStore of that
-// name, so the server takes the archive off the cluster. It archives no
-// write-ahead log, takes no base backup, publishes no point-in-time-recovery
-// capability on its contract, and refuses a rollback. The archive it wrote
-// before and its history stay. The message names the holder. Remove that
-// ObjectStore, or give this server a name of its own.
+// name, so the server removes the archive from the cluster. The server then
+// archives no write-ahead log and takes no base backup. It publishes no
+// point-in-time recovery capability on its contract, and it refuses a
+// rollback. The archive that it wrote before and its history stay. The
+// message names the holder. Remove that ObjectStore, or give this server a
+// name of its own.
 const ReasonArchiveTaken = "ArchiveTaken"
 
 // ReasonArchiveFailing is the ArchiveReady reason of a DatabaseServer whose
 // write-ahead log stopped reaching the bucket. CloudNativePG reports the
-// failing uploads on its cluster, and the server waits a grace period before
-// it reports them, so a segment the plugin retries does not move the
+// failed uploads on its cluster. The server waits a grace period before it
+// reports them, so a segment that the plugin retries does not change the
 // condition. The archive holds every point up to the last segment that
-// arrived, and the open record of status.archive.history carries
-// unverifiedFrom from that point. The message says what CloudNativePG
-// reports. Repair the bucket or the credentials of the bucket.
+// arrived. The open record of status.archive.history sets unverifiedFrom to
+// that point. The message gives the CloudNativePG report. Repair the bucket
+// or the credentials of the bucket.
 const ReasonArchiveFailing = "ArchiveFailing"
 
 // ReasonVersionChangeRefused is the Ready reason of a DatabaseServer whose
-// merged version names a PostgreSQL major other than the one its data
-// directory runs. The server keeps running the major it has: everything the
-// operator renders takes that major, so a rollback in flight finishes and the
-// contract and the archive stay maintained. A major change needs a new server,
-// and there is no annotation that lets it through.
+// merged version names a PostgreSQL major version other than the one of its
+// data directory. The server keeps its current major version. A rollback in
+// progress finishes, and the operator keeps the contract and the archive up
+// to date. A change of the major version needs a new server. No annotation
+// permits it.
 const ReasonVersionChangeRefused = "VersionChangeRefused"
 
-// ArchiveRecord is one continuous archive that a server has written. A
-// recovery replays it from a base backup up to the requested point, so only a
-// point inside the interval of a record can be reached.
+// ArchiveRecord is one continuous archive that a server wrote. A recovery
+// replays it from a base backup up to the requested point. A restore can
+// reach only a point inside the interval of a record.
 type ArchiveRecord struct {
 	// ServerName is the archive directory in the bucket, equal to the name of
 	// the CloudNativePG cluster that wrote it.
 	ServerName string `json:"serverName"`
 	// ObjectStorageRef is the ObjectStorageConfig, in the namespace of this
-	// server, that holds this archive. A server that is pointed at another bucket closes this
-	// record and opens one of its own, so every interval names the bucket a
-	// restore of that interval has to read.
+	// server, that holds this archive. When the server moves to another
+	// bucket, it closes this record and opens a new one. Thus every interval
+	// names the bucket that a restore of that interval reads.
 	// +optional
 	ObjectStorageRef string `json:"objectStorageRef,omitempty"`
-	// Location is where in object storage this archive was written: the
-	// provider, the bucket, and the path, as one URL. It is what decides
-	// whether two intervals hold the same archive. An ObjectStorageConfig can
-	// be edited in place or removed and created again under its name, so the
-	// name alone does not say that. A record written before this field
-	// existed carries none, and takes the location of the server on first
-	// sight.
+	// Location is where in object storage the server wrote this archive: the
+	// provider, the bucket, and the path, as one URL. Two intervals hold the
+	// same archive only when their locations are equal. The name of an
+	// ObjectStorageConfig is not sufficient, because you can edit the object
+	// or create it again with the same name. A record without a location gets
+	// the current location of the server.
 	// +optional
 	Location string `json:"location,omitempty"`
-	// From is the earliest point this archive can be recovered to: when its
-	// first base backup completed.
+	// From is the earliest point that a recovery from this archive can reach:
+	// the time when its first base backup completed.
 	From metav1.Time `json:"from"`
-	// To is the latest point this archive can be recovered to. It is unset
-	// while the archive is the one the server writes to now.
+	// To is the latest point that a recovery from this archive can reach. It
+	// is unset while the server still writes to this archive.
 	// +optional
 	To *metav1.Time `json:"to,omitempty"`
-	// UnverifiedFrom is the point from which this archive can be missing
-	// write-ahead log. It is set while CloudNativePG reports that the uploads
-	// of the server are failing, and a restore to a point after it can reach
-	// nothing. The plugin uploads the segments it held back once the uploads
-	// run again, so the field is cleared then and the whole interval can be
-	// reached again. Only the record the server writes to now carries it.
+	// UnverifiedFrom is the point after which this archive can miss parts of
+	// the write-ahead log. It is set while CloudNativePG reports that the
+	// uploads of the server fail. A restore cannot reach a point after it.
+	// When the uploads work again, the plugin uploads the segments that it
+	// held back. The field is then cleared, and a restore can reach the whole
+	// interval again. Only the record that the server writes to now has it.
 	// +optional
 	UnverifiedFrom *metav1.Time `json:"unverifiedFrom,omitempty"`
 }
 
-// ArchiveBoundary is the moment a server moved its archive to another
-// location while no interval was open. Only a base backup that began after it
-// belongs to the archive the server writes now: one that began before it wrote
-// to the location the server left.
+// ArchiveBoundary is the moment when a server moved its archive to another
+// location while no interval was open. Only a base backup that began after
+// this moment belongs to the current archive. A base backup that began
+// before it wrote to the old location.
 type ArchiveBoundary struct {
 	// At is when the server moved.
 	At metav1.Time `json:"at"`
-	// Location is the location it moved to, in the form ArchiveRecord.Location
-	// takes. The boundary is spent once the archive of that location opens a
-	// record, and it moves again when the location moves again.
+	// Location is the new location, in the form of ArchiveRecord.Location.
+	// The boundary ends when the archive of that location opens a record. It
+	// moves when the location moves again.
 	Location string `json:"location"`
-	// ObjectStorageRef is the ObjectStorageConfig of that location, for the
-	// reader.
+	// ObjectStorageRef is the ObjectStorageConfig of that location. It is
+	// information for the reader only.
 	// +optional
 	ObjectStorageRef string `json:"objectStorageRef,omitempty"`
 }
@@ -368,41 +367,40 @@ type ArchiveBoundary struct {
 // DatabaseServerArchiveStatus is the observed state of the archive of a
 // server.
 type DatabaseServerArchiveStatus struct {
-	// History lists every archive the server has written, oldest first. A
-	// recovery picks the record whose interval holds the requested point.
-	// Records are never removed, so a restore can reach back across an
-	// earlier recovery for as long as the bucket keeps the objects. Removing
-	// spec.archive closes the record that is open and keeps the list, and
-	// asking for an archive again opens a record of its own. Pointing
-	// spec.archive at another bucket does the same. The window with no
-	// archive therefore lies inside no interval, and no restore can reach a
-	// point in it.
+	// History lists every archive that the server wrote, oldest first. A
+	// recovery uses the record whose interval holds the requested point. The
+	// operator never removes a record. Thus a restore can reach back across
+	// an earlier recovery for as long as the bucket keeps the objects. When
+	// you remove spec.archive, the open record closes and the list stays.
+	// When you add an archive again, a new record opens. A move of
+	// spec.archive to another bucket does the same. No restore can reach a
+	// point in a time without an archive.
 	// +optional
 	History []ArchiveRecord `json:"history,omitempty"`
-	// Boundary is the last move of the archive that no record holds yet:
-	// spec.archive was re-enabled on another location, or the location moved
-	// again before a base backup opened a record. It is what keeps a base
-	// backup of the location the server left from opening the interval of the
-	// one it moved to. It is cleared when that interval opens.
+	// Boundary is the last move of the archive that no record holds yet. The
+	// move happens when spec.archive is enabled again on another location,
+	// or when the location moves again before a base backup opens a record.
+	// It prevents a base backup of the old location from opening the
+	// interval of the new location. It is cleared when that interval opens.
 	// +optional
 	Boundary *ArchiveBoundary `json:"boundary,omitempty"`
-	// ReachableFrom is the oldest point the objects in the bucket still go
-	// back to. The retention period prunes the bucket as it runs, and a
-	// raised retention period does not bring back what a shorter one already
-	// pruned. The window grows to the new retention period only as the
-	// archive writes past this point, and a rollback to a point before it is
-	// refused. It is unset on a server that archived before this field
-	// existed, and the retention period alone bounds that one.
+	// ReachableFrom is the oldest point that the objects in the bucket still
+	// cover. The retention period removes old objects from the bucket. A
+	// longer retention period does not bring back what a shorter one already
+	// removed. The window grows to the new retention period only as the
+	// archive writes past this point. The server refuses a rollback to a
+	// point before it. When it is unset, only the retention period limits
+	// the window.
 	// +optional
 	ReachableFrom *metav1.Time `json:"reachableFrom,omitempty"`
 }
 
 // RecoveryArchiveRef names the archive that a recovery reads: the directory in
-// the bucket, where that bucket is, and the bucket contract that names it. It
-// also carries the archive settings of the server at that moment. Every edit
-// of spec.archive while the rollback is unanswered is held against them: a
-// moved bucket, a changed retention or schedule, and a removal. The archive
-// keeps being rendered as it was until the rollback is answered.
+// the bucket, the location of that bucket, and the bucket contract that
+// names it. It also holds the archive settings of the server at that moment.
+// Until the rollback has an answer, the operator keeps the archive as it
+// was. It does not apply an edit of spec.archive in that time: a moved
+// bucket, a changed retention or schedule, or a removal.
 type RecoveryArchiveRef struct {
 	// ServerName is the archive directory, equal to the name of the
 	// CloudNativePG cluster that wrote it.
@@ -410,10 +408,9 @@ type RecoveryArchiveRef struct {
 	// ObjectStorageRef is the ObjectStorageConfig, in the namespace of this
 	// server, that the archive lives in.
 	ObjectStorageRef string `json:"objectStorageRef"`
-	// Location is where in object storage the archive lives, in the form
-	// ArchiveRecord.Location takes. A running recovery keeps reading the
-	// location it recorded, so an ObjectStorageConfig edited in the middle
-	// does not move it.
+	// Location is where in object storage the archive is, in the form of
+	// ArchiveRecord.Location. A running recovery reads the location that it
+	// recorded, so an edit of the ObjectStorageConfig does not move it.
 	// +optional
 	Location string `json:"location,omitempty"`
 	// RetentionPeriodDays is spec.archive.retentionPeriodDays as it stood
@@ -425,39 +422,38 @@ type RecoveryArchiveRef struct {
 	// +optional
 	BaseBackupSchedule string `json:"baseBackupSchedule,omitempty"`
 	// Identity is the workload identity of that bucket when the rollback
-	// started. It is held with the archive, so the pods keep presenting the
-	// identity of the bucket they read. It is unset for a bucket that holds
-	// static credentials, and for one that names no identity.
+	// started. The pods keep this identity while they read the bucket. It is
+	// unset for a bucket with static credentials, and for a bucket that
+	// names no identity.
 	// +optional
 	Identity *RecoveryArchiveIdentity `json:"identity,omitempty"`
 }
 
 // RecoveryArchiveIdentity is the workload identity of a bucket: what the pods
-// of a consumer present to read the objects in it. A bucket that holds static
+// of a consumer use to read the objects in it. A bucket with static
 // credentials has none.
 type RecoveryArchiveIdentity struct {
 	// Annotations are the annotations of the ServiceAccount of the pods.
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
-	// PodLabels are the labels the pods themselves need. Only Azure has one.
+	// PodLabels are the labels that the pods need. Only Azure needs one.
 	// +optional
 	PodLabels map[string]string `json:"podLabels,omitempty"`
 }
 
 // DatabaseServerRecoveryStatus is the recovery request that the server works
-// on now, or the last one it answered. It is what makes a recovery resumable:
-// the steps read it to tell which cluster they build and whether the request
-// still needs an answer.
+// on now, or the last one that it answered. With it, a recovery can
+// continue after an interruption.
 //
-// It holds the whole answer, not a reference to it. The answer is published on
-// a contract that somebody can delete and create again, and the server has to
-// be able to publish it a second time from what it remembers.
+// It holds the whole answer, not a reference to it. The server publishes the
+// answer on a contract. If somebody deletes the contract and creates it
+// again, the server publishes the answer again from this status.
 type DatabaseServerRecoveryStatus struct {
 	// RequestID is the requestID of the request, as the contract carries it.
 	RequestID string `json:"requestID"`
 	// Contract is the DatabaseServerConfig that carried the request. The
-	// server answers on that contract, and it does not change the contract it
-	// publishes while the request is unanswered.
+	// server answers on that contract. Until it answers, it does not change
+	// the contract that it publishes.
 	Contract string `json:"contract"`
 	// RequestedBy is the requestedBy of the request, as the contract carries
 	// it.
@@ -465,26 +461,25 @@ type DatabaseServerRecoveryStatus struct {
 	// TargetTime is the targetTime of the request, as the contract carries it.
 	TargetTime string `json:"targetTime"`
 	// Cluster is the CloudNativePG cluster that the recovery builds. It is
-	// empty for a request that the server refused, whether or not it had built
-	// one by then.
+	// empty for a request that the server refused, also when the server had
+	// built a cluster before.
 	// +optional
 	Cluster string `json:"cluster,omitempty"`
 	// PreviousCluster is the cluster that the contract pointed at before the
-	// recovery moved it. A recovery that fails after the move puts the
-	// contract back on it, because that cluster still holds the data.
+	// recovery moved it. If a recovery fails after the move, the contract
+	// points at this cluster again, because it still holds the data.
 	// +optional
 	PreviousCluster string `json:"previousCluster,omitempty"`
-	// Archive is the archive that the recovery reads. It is recorded before
-	// the recovery builds anything and read on every look after that, so a
-	// spec that names another bucket in the middle does not move a recovery
-	// that is already running.
+	// Archive is the archive that the recovery reads. The server records it
+	// before the recovery builds anything. A spec change to another bucket
+	// does not move a recovery that is already running.
 	// +optional
 	Archive *RecoveryArchiveRef `json:"archive,omitempty"`
-	// Result is the result the server published for the request. It is unset
-	// while the recovery runs.
+	// Result is the result that the server published for the request. It is
+	// unset while the recovery runs.
 	// +optional
 	Result RecoveryResult `json:"result,omitempty"`
-	// Message is the message the server published with Result.
+	// Message is the message that the server published with Result.
 	// +optional
 	Message string `json:"message,omitempty"`
 	// CompletedAt is when the server answered the request. It is unset while
@@ -495,32 +490,32 @@ type DatabaseServerRecoveryStatus struct {
 
 // DatabaseServerStatus is the observed state of a DatabaseServer.
 type DatabaseServerStatus struct {
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Version is the PostgreSQL major version that the server runs, as a bare
-	// number such as "17". It is the version of the merged spec, so it names
-	// what runs whether the release, the preset, or the server supplies it,
-	// and it stays on the major of the data directory while a version change
-	// is refused. It is empty until the first reconcile resolves the
-	// references of the server.
+	// Version is the PostgreSQL major version that the server runs, as a
+	// number such as "17". It comes from the merged spec, so it is correct
+	// when the release or the server gives the version. While
+	// the operator refuses a version change, it shows the major version of the
+	// data directory. It is empty until the operator resolves the references
+	// of the server for the first time.
 	// +optional
 	Version string `json:"version,omitempty"`
 	// Cluster is the CloudNativePG cluster that the published contract points
 	// at. It is the name of the server until a recovery replaces it.
 	// +optional
 	Cluster string `json:"cluster,omitempty"`
-	// SystemIdentifier is the identity of the PostgreSQL instance that runs
-	// behind the contract, as CloudNativePG reports it. A recovery restores
-	// the pg_control of the base backup it reads, so the recovered instance
-	// reports the identity it recovered from and this value stays. The
-	// endpoint of the contract is what a recovery replaces.
+	// SystemIdentifier is the identity of the PostgreSQL instance behind the
+	// contract, as CloudNativePG reports it. A recovery restores the
+	// pg_control of its base backup, so the recovered instance keeps the
+	// identity and this value does not change. A recovery replaces the
+	// endpoint of the contract.
 	// +optional
 	SystemIdentifier string `json:"systemIdentifier,omitempty"`
 	// Archive is the observed state of the continuous archive of the server.
-	// It is unset until the server has written one. Removing spec.archive
-	// does not clear it: the bucket still holds what the server wrote, and a
-	// server that archives again can recover from it.
+	// It is unset until the server writes an archive. A removal of
+	// spec.archive does not clear it. The bucket still holds what the server
+	// wrote, and a server that archives again can recover from it.
 	// +optional
 	Archive *DatabaseServerArchiveStatus `json:"archive,omitempty"`
 	// Recovery is the recovery request that the server works on now, or the
@@ -530,22 +525,21 @@ type DatabaseServerStatus struct {
 	Recovery *DatabaseServerRecoveryStatus `json:"recovery,omitempty"`
 	// Volumes lists the bound PersistentVolumeClaims of the current cluster
 	// and the capacity that each one reports, sorted by name. A server with a
-	// write-ahead log volume reports that claim here too. A server that does
-	// not own the cluster of the name it derives reports none: those claims
-	// belong to the cluster that holds the name.
+	// write-ahead log volume also shows that claim. A server that does not own
+	// the cluster of its derived name shows no claims, because they belong
+	// to the other cluster.
 	// +listType=map
 	// +listMapKey=name
 	// +optional
 	Volumes []VolumeStatus `json:"volumes,omitempty"`
-	// Conditions represent the current state. Ready carries a pre-check
-	// reason (InvalidReference, MissingSecret, CNPGNotInstalled,
-	// BarmanPluginNotInstalled), or it is derived from the cluster, the
-	// contract, and the archive of a server that asks for one. The
+	// Conditions represent the current state. Ready holds the reason of a
+	// failed pre-check (InvalidReference, MissingSecret, CNPGNotInstalled,
+	// BarmanPluginNotInstalled). Otherwise it follows the cluster, the
+	// contract, and, when the server has an archive, the archive. The
 	// per-component conditions (ClusterReady, ArchiveReady, ContractReady,
-	// MonitoringReady) also appear here. MonitoringReady, and ArchiveReady
-	// without spec.archive, are reported on their own and never on Ready. A
-	// PodMonitor observes the server rather than runs it, so a broken one
-	// never makes the server not ready.
+	// MonitoringReady) also appear here. MonitoringReady never affects Ready,
+	// so a broken PodMonitor does not make the server not ready. ArchiveReady
+	// without spec.archive does not affect Ready either.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -562,25 +556,22 @@ type DatabaseServerStatus struct {
 // +kubebuilder:validation:XValidation:rule="oldSelf.hasValue() || (self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$') && self.metadata.name.size() <= 46)",message="metadata.name must be a DNS-1035 label of at most 46 characters, because it names the CloudNativePG cluster of the server",optionalOldSelf=true
 
 // DatabaseServer runs one PostgreSQL instance through the external
-// CloudNativePG operator, archives it continuously to an object storage
-// bucket, and publishes the connection details as a DatabaseServerConfig that
-// a Database and a PointInTimeRestore consume. One or more orchestration
-// clusters use the instance, each through a Database of its own.
+// CloudNativePG operator. It archives the instance continuously to an object
+// storage bucket. It publishes the connection details as a
+// DatabaseServerConfig, which a Database and a PointInTimeRestore use. One or
+// more orchestration clusters use the instance, each through its own
+// Database.
 //
-// A PointInTimeRestore rolls the whole instance back, so it needs a server
-// that holds the database of its cluster and nothing else.
+// A PointInTimeRestore rolls the whole instance back. It needs a server that
+// holds the database of its cluster and nothing else.
 //
-// The name of the CR names the CloudNativePG cluster, so admission holds it to
-// a DNS-1035 label of at most 46 characters: the 50 that CloudNativePG accepts
-// for a cluster name, less the four of the "-r99" that a rollback appends. A
-// name inside that bound reaches the cluster of a rollback whole while the
-// recovery index stays below 100, and is shortened to a head and a hash above
-// that. The index counts the archive records of the server, so a rollback, an
-// archive the spec re-enables, and a change of bucket each add one.
-//
-// The rule runs on create only. A name never changes on update. If the rule
-// runs there too, it rejects an edit of another field on an object that
-// predates it, and nothing more.
+// The name of the CR is also the name of the CloudNativePG cluster. On
+// create, the name must be a DNS-1035 label of at most 46 characters.
+// CloudNativePG accepts 50 characters, and a rollback appends up to four
+// ("-r99"). While the recovery index is below 100, the cluster of a rollback
+// gets the full name. Above that, the operator shortens the name to a head
+// and a hash. Each archive record adds one to the index: a rollback, an
+// archive that is enabled again, and a change of bucket.
 type DatabaseServer struct {
 	metav1.TypeMeta `json:",inline"`
 

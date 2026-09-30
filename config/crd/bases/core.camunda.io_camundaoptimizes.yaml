@@ -32,8 +32,8 @@ spec:
       openAPIV3Schema:
         description: |-
           CamundaOptimize describes one Camunda Optimize instance attached to one
-          CamundaCluster. The operator turns it into a webapp Deployment, an importer
-          Deployment, and their Services. It also turns on the Elasticsearch exporter
+          CamundaCluster. The operator creates a webapp Deployment, an importer
+          Deployment, and their Services. It also enables the Elasticsearch exporter
           of the referenced cluster, so Optimize has data to import.
         properties:
           apiVersion:
@@ -59,16 +59,16 @@ spec:
               clusterRef:
                 description: |-
                   ClusterRef names the CamundaCluster that this Optimize instance reads.
-                  The secondary storage of that cluster must be Elasticsearch, and no
-                  other CamundaOptimize may be attached to it.
+                  The secondary storage of that cluster must be Elasticsearch. No other
+                  CamundaOptimize can be attached to it.
 
-                  The reference is immutable. A repoint would apply the exporter settings
-                  to the new cluster while the old cluster keeps the settings this
-                  operator applied, and it would change the pod selectors of the
-                  Deployments, which Kubernetes does not allow.
+                  The reference is immutable. A change to another cluster changes the pod
+                  selectors of the Deployments, and Kubernetes does not permit that.
+                  Also, the old cluster keeps the exporter settings of this Optimize.
                 properties:
                   name:
-                    description: Name of the CamundaCluster, in the namespace of this
+                    description: |-
+                      Name is the name of the CamundaCluster, in the namespace of this
                       object.
                     minLength: 1
                     type: string
@@ -81,17 +81,17 @@ spec:
                   rule: self == oldSelf
               externalUrl:
                 description: |-
-                  ExternalURL is the URL that browsers reach this Optimize at.
+                  ExternalURL is the URL where browsers reach this Optimize.
 
-                  In the two Keycloak modes the management plane behind managementAuthRef
+                  In the two Keycloak modes, the management plane of managementAuthRef
                   registers <externalUrl>/api/authentication/callback on the optimize
-                  client of the realm, so a person who signs in here comes back here. An
-                  Optimize that sets no URL gets no callback from that plane, so Keycloak
-                  refuses the return, unless somebody put that callback in the realm by
-                  hand.
+                  client of the realm. Thus a person who signs in here comes back here.
+                  Without a URL, the plane registers no callback, and Keycloak refuses
+                  the return. The exception is a callback that somebody added to the
+                  realm manually.
 
-                  In the oidc mode the field has no effect. The identity provider of the
-                  platform config holds the callback URLs, so add this one there.
+                  In the oidc mode, the field has no effect. The identity provider of the
+                  platform config holds the callback URLs, so add this URL there.
                 type: string
                 x-kubernetes-validations:
                 - message: externalUrl must be a valid http or https URL
@@ -114,9 +114,9 @@ spec:
                 description: |-
                   Importer configures the Deployment that imports the exported cluster
                   data into the Optimize indices. Optimize supports one active importer,
-                  so replicas must be 0 or 1. Set 0 to stop the import, for example while
-                  a restore or an index rewrite runs; the webapp keeps serving what is
-                  already imported.
+                  so replicas must be 0 or 1. With 0, the import stops, for example
+                  during a restore or an index rewrite. The webapp continues to serve the
+                  data that it already imported.
                 properties:
                   extraEnv:
                     description: |-
@@ -125,15 +125,15 @@ spec:
                       with the same name. The entries of an embedded web application apply to
                       its host process.
 
-                      The list merges by name under server-side apply, so each field manager
-                      owns only the entries that it applies. An extension controller can add
-                      its own entry next to yours. One applied manifest cannot hold two
-                      entries with the same name.
+                      The list merges by name under server-side apply. Each field manager owns
+                      only the entries that it applies, so an extension controller can add its
+                      own entry next to yours. One applied manifest cannot hold two entries
+                      with the same name.
 
-                      Two field managers that apply the same name do not conflict: the merge
-                      is per field inside the entry, so one manager can own value while the
-                      other owns valueFrom. A container rejects an entry that carries both,
-                      so the rule below refuses to store that combination.
+                      Two field managers that apply the same name do not conflict, because the
+                      merge is per field inside the entry. One manager can own value and the
+                      other valueFrom. A container rejects an entry that has both, so the API
+                      server refuses to store such an entry.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -425,10 +425,10 @@ spec:
                     type: object
                   scheduling:
                     description: |-
-                      Scheduling constraints of the pods of this process. When set, it
-                      replaces every scheduling block that would otherwise apply to this
-                      process, with no merge. On a CamundaCluster those are the top-level
-                      block and the block of a preset.
+                      Scheduling holds the scheduling constraints of the pods of this process.
+                      When set, it replaces all other scheduling blocks for this process, with
+                      no merge. On a CamundaCluster, these are the top-level block and the
+                      block of a preset.
                     properties:
                       nodeAffinity:
                         description: NodeAffinity rules for the pods.
@@ -1035,12 +1035,14 @@ spec:
                   IndexReplicas is the replica count of each Optimize index, and of each
                   zeebe-record index that the exporter of the cluster writes for this
                   Optimize. When it is not set, the nodeCount of the storage contract of
-                  the cluster gives the count: 0 on one node, 1 on two or more nodes.
+                  the cluster gives the count. The count is 0 on one node, and 1 on two or
+                  more nodes.
                   Without a nodeCount, Optimize and the exporter keep their own defaults.
+
                   Optimize applies the count to its existing indices when it starts. The
-                  exporter applies it to the zeebe-record indices that it creates next. A
-                  count that the nodes cannot place is kept, and Optimize records an
-                  IndexReplicasExceedNodes Warning event.
+                  exporter applies it to the next zeebe-record indices that it creates.
+                  If the nodes cannot place the count, the operator keeps it and records
+                  an IndexReplicasExceedNodes Warning event on the CamundaOptimize.
                 format: int32
                 minimum: 0
                 type: integer
@@ -1058,8 +1060,9 @@ spec:
                   serviceMonitor:
                     description: |-
                       ServiceMonitor configures the Prometheus ServiceMonitors. When enabled,
-                      the operator creates one ServiceMonitor per Deployment, named like the
-                      workload, that scrapes /actuator/prometheus on the management port.
+                      the operator creates one ServiceMonitor for each Deployment, with the
+                      name of the workload. It scrapes /actuator/prometheus on the management
+                      port.
                     properties:
                       annotations:
                         additionalProperties:
@@ -1084,8 +1087,8 @@ spec:
                   Version is the Optimize version to deploy, as a full semantic version.
                   Optimize has its own patch line, so it does not follow the version of
                   the cluster. The major and the minor must match the effective version
-                  of the referenced cluster; the controller reports VersionMismatch when
-                  they differ.
+                  of the referenced cluster. If they differ, Ready reports
+                  VersionMismatch.
                 pattern: ^\d+\.\d+\.\d+$
                 type: string
               webapp:
@@ -1100,15 +1103,15 @@ spec:
                       with the same name. The entries of an embedded web application apply to
                       its host process.
 
-                      The list merges by name under server-side apply, so each field manager
-                      owns only the entries that it applies. An extension controller can add
-                      its own entry next to yours. One applied manifest cannot hold two
-                      entries with the same name.
+                      The list merges by name under server-side apply. Each field manager owns
+                      only the entries that it applies, so an extension controller can add its
+                      own entry next to yours. One applied manifest cannot hold two entries
+                      with the same name.
 
-                      Two field managers that apply the same name do not conflict: the merge
-                      is per field inside the entry, so one manager can own value while the
-                      other owns valueFrom. A container rejects an entry that carries both,
-                      so the rule below refuses to store that combination.
+                      Two field managers that apply the same name do not conflict, because the
+                      merge is per field inside the entry. One manager can own value and the
+                      other valueFrom. A container rejects an entry that has both, so the API
+                      server refuses to store such an entry.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -1400,10 +1403,10 @@ spec:
                     type: object
                   scheduling:
                     description: |-
-                      Scheduling constraints of the pods of this process. When set, it
-                      replaces every scheduling block that would otherwise apply to this
-                      process, with no merge. On a CamundaCluster those are the top-level
-                      block and the block of a preset.
+                      Scheduling holds the scheduling constraints of the pods of this process.
+                      When set, it replaces all other scheduling blocks for this process, with
+                      no merge. On a CamundaCluster, these are the top-level block and the
+                      block of a preset.
                     properties:
                       nodeAffinity:
                         description: NodeAffinity rules for the pods.
@@ -2011,10 +2014,11 @@ spec:
             properties:
               conditions:
                 description: |-
-                  Conditions represent the current state. Ready carries a pre-check
-                  reason, or it is derived from the conditions of the two workloads.
-                  The per-workload conditions (WebappReady, ImporterReady) also appear
-                  here.
+                  Conditions represent the current state. Ready holds the reason of a
+                  failed pre-check. Otherwise it follows the conditions of the two
+                  workloads, and MirroredSecretsReady when the Optimize references a
+                  Secret in another namespace. The per-workload conditions (WebappReady,
+                  ImporterReady) and MirroredSecretsReady also appear here.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -2074,15 +2078,15 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               observedGeneration:
-                description: ObservedGeneration is the last generation reconciled
-                  by the operator.
+                description: ObservedGeneration is the last generation that the operator
+                  processed.
                 format: int64
                 type: integer
               suspendedBy:
                 description: |-
-                  SuspendedBy says why the Optimize workloads follow the referenced
-                  cluster to zero. It is empty while they follow their spec. It stays set
-                  while a failed check keeps them at zero after the cluster resumed.
+                  SuspendedBy tells why the Optimize workloads are at zero with the
+                  referenced cluster. It is empty while they follow their spec. It stays
+                  set while a failed check keeps them at zero after the cluster resumed.
                 enum:
                 - Cluster
                 - StorageClaim

@@ -27,7 +27,7 @@ import (
 
 var (
 	// SchemeGroupVersion is group version used to register these objects.
-	// This name is used by applyconfiguration generators (e.g. controller-gen).
+	// Applyconfiguration generators, for example controller-gen, use this name.
 	SchemeGroupVersion = schema.GroupVersion{Group: "core.camunda.io", Version: "v1"}
 
 	// GroupVersion is an alias for SchemeGroupVersion, for backward compatibility.

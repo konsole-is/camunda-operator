@@ -21,61 +21,61 @@ import (
 )
 
 // LogicalRestoreElasticsearchSpec names the backup to restore and the cluster
-// to restore into. The whole spec is immutable: a restore is one operation,
-// retried by creating a new resource.
+// to restore into. The whole spec is immutable. A restore runs one time. To
+// try again, create a new resource.
 type LogicalRestoreElasticsearchSpec struct {
-	// backupRef references the completed LogicalBackupElasticsearch to
-	// restore from. It lives in the namespace of this restore.
+	// BackupRef references the completed LogicalBackupElasticsearch to
+	// restore from, in the namespace of this restore.
 	// +required
 	BackupRef LogicalBackupRef `json:"backupRef"`
-	// targetClusterRef references the CamundaCluster to restore into. It must
-	// name the cluster the backup was taken from. The restore application
-	// reads the primary-storage backup under the prefix of the cluster it
-	// runs as. The cluster must stay suspended for the whole restore.
+	// TargetClusterRef references the CamundaCluster to restore into. It
+	// must name the cluster of the backup, because the restore application
+	// reads the primary-storage backup under the prefix of that cluster. The
+	// cluster must stay suspended for the whole restore.
 	// +required
 	TargetClusterRef ClusterRef `json:"targetClusterRef"`
 }
 
-// LogicalRestoreElasticsearchStatus tracks the restore to a terminal phase.
+// LogicalRestoreElasticsearchStatus is the progress of the restore to a
+// final phase.
 type LogicalRestoreElasticsearchStatus struct {
-	// phase of the restore. It is the resume marker: a reconcile that
-	// re-enters after a crash continues at the recorded phase.
+	// Phase is the phase of the restore. After an interruption, the restore
+	// continues at this phase.
 	// +optional
 	Phase LogicalRestorePhase `json:"phase,omitempty"`
-	// backupId is the backup that the restore reads, pinned when the restore
-	// starts. The backup resource can be deleted afterwards without moving
-	// the restore to another set of artifacts.
+	// BackupID is the backup that the restore reads. The operator records it
+	// when the restore starts. Later phases of the restore still read the
+	// backup resource, so keep it until the restore completes.
 	// +optional
 	BackupID int64 `json:"backupId,omitempty"`
-	// Backend is the Elasticsearch that the restore writes, pinned when the
-	// restore starts, in the form of the storage claim key of the target
-	// (the scheme, the host, and the port). From the end of admission to the
-	// terminal phase, and after it while recoveryHeld is true, no other
-	// CamundaCluster starts on this backend. The
-	// restore holds while its target does not hold the backend.
+	// Backend is the Elasticsearch that the restore writes, as the scheme,
+	// the host, and the port. The operator records it when the restore
+	// starts. From then until the final phase, and after it while
+	// recoveryHeld is true, no other CamundaCluster starts on this backend.
+	// The restore waits while its target does not hold the backend.
 	// +optional
 	Backend string `json:"backend,omitempty"`
-	// recoveryHeld is true while a restore that failed, or that is being
-	// deleted, keeps the backend because Elasticsearch can still recover
-	// snapshots that the restore asked for. While it is true, no other
-	// CamundaCluster starts on the backend, the target stays suspended, and no
-	// other backup or restore of the target starts. A deleted restore stays
-	// while it is true. It is unset on a restore that was never held for a
-	// recovery, and false once the hold is over.
+	// RecoveryHeld is true while a failed or deleted restore keeps the
+	// backend, because Elasticsearch can still recover snapshots that the
+	// restore asked for. While it is true, no other CamundaCluster starts on
+	// the backend, and the target stays suspended. No other backup or restore
+	// of the target starts. A deleted restore stays while it is true. It is
+	// unset on a restore that was never held, and false when the hold ends.
 	// +optional
 	RecoveryHeld *bool `json:"recoveryHeld,omitempty"`
-	// recoveryUnknownSince is the time since which a held restore cannot read
-	// the recovery from Elasticsearch. When the recovery stays unknown for ten
-	// minutes, the restore gives the backend back.
+	// RecoveryUnknownSince is the start of the current period in which a held
+	// restore cannot read the recovery from Elasticsearch. If the recovery stays unknown for ten
+	// minutes, the restore releases the backend.
 	// +optional
 	RecoveryUnknownSince *metav1.Time `json:"recoveryUnknownSince,omitempty"`
-	// repository is the Elasticsearch snapshot repository that the restore
+	// Repository is the Elasticsearch snapshot repository that the restore
 	// reads from, on the Elasticsearch of the target.
 	// +optional
 	Repository string `json:"repository,omitempty"`
-	// restoredSnapshots names every snapshot that the restore asked
-	// Elasticsearch to restore. It is also the resume marker of the
-	// secondary-storage phase: a look that finds it deletes no index again.
+	// RestoredSnapshots names every snapshot that the restore asked
+	// Elasticsearch to restore. After the operator records the names, the
+	// restore does not delete the indices again when it continues after an
+	// interruption.
 	// +optional
 	RestoredSnapshots []string `json:"restoredSnapshots,omitempty"`
 	// RestoreProgress is the part of the status that every restore kind has.
@@ -92,25 +92,25 @@ type LogicalRestoreElasticsearchStatus struct {
 
 // LogicalRestoreElasticsearch restores one completed
 // LogicalBackupElasticsearch into one suspended CamundaCluster. It deletes
-// the Camunda indices of the target, restores every snapshot of the backup
-// into its Elasticsearch, gives the brokers empty data volumes, and runs the
-// Camunda restore application once per broker.
+// the Camunda indices of the target and restores every snapshot of the backup
+// into its Elasticsearch. Then it gives the brokers empty data volumes and
+// runs the Camunda restore application one time for each broker.
 //
 // The restore prepares the target itself. It suspends the target, waits for
-// its brokers to stop, and sets spec.version to the Camunda version that the
-// backup was taken with. It withdraws the suspension when it completes, and
-// only when it applied that suspension itself. A failed restore leaves the
-// target suspended, and so does a restore that somebody deletes while it
-// runs: broker volumes that are empty or half written are worse under running
-// brokers than under none.
+// its brokers to stop, and sets spec.version to the Camunda version of the
+// backup. When it completes, it removes the suspension, but only a
+// suspension that it applied itself. A failed restore leaves the target
+// suspended. A restore that somebody deletes while it runs also leaves the
+// target suspended. Empty or half-written broker volumes cause more damage
+// under running brokers.
 //
-// The restore keeps spec.version, and it owns the field under the manager
-// camunda-operator/restore-version. The target runs the version of the backup
-// until another manager takes that field over or removes it. A manifest that
-// leaves spec.version out takes nothing back, because server-side apply
-// removes a field only from the manager that declared it. Watch for that on a
-// target whose version came from a preset: the value the restore wrote wins
-// over the preset until somebody removes the field.
+// The restore keeps spec.version, with the field manager
+// camunda-operator/restore-version. The target runs the version of the
+// backup until another manager takes over or removes that field. A manifest
+// without spec.version does not change it, because server-side apply
+// removes a field only for the manager that set it. This applies also to a
+// target that gets its version from a release. The value of the restore wins
+// over the release until somebody removes the field.
 type LogicalRestoreElasticsearch struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -118,8 +118,9 @@ type LogicalRestoreElasticsearch struct {
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
-	// spec names the backup to restore and the cluster to restore into. It is
-	// immutable: a restore is one-shot, retried by creating a new resource.
+	// spec names the backup to restore and the cluster to restore into. It
+	// is immutable. A restore runs one time. To try again, create a new
+	// resource.
 	// +required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable: a restore is one-shot, retried by creating a new resource"
 	Spec LogicalRestoreElasticsearchSpec `json:"spec"`

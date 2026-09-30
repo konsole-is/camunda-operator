@@ -28,8 +28,8 @@ import (
 
 // The per-process conditions of a CamundaCluster. Every process reports one.
 // The condition of an embedded gateway, an embedded web application, or
-// disabled connectors reads True with reason Disabled and stays out of Ready;
-// the condition of the host process covers an embedded web application.
+// disabled connectors reads True with reason Disabled and stays out of Ready.
+// The condition of the host process covers an embedded web application.
 const (
 	// ConditionZeebeReady reports whether every broker replica is ready.
 	ConditionZeebeReady = "ZeebeReady"
@@ -55,29 +55,27 @@ const (
 )
 
 // ReasonInvalidCredentials on AdminSecretReady means that the orchestration
-// cluster refused the credentials of an update of the admin user: it does
-// not accept the password that the admin Secret publishes. The operator
-// updates that user to rotate its password and to set its email, and either
-// call reports this. The usual cause is an admin password that changed
+// cluster does not accept the password that the admin Secret publishes. The
+// operator sees this when it updates the admin user to rotate its password
+// or to set its email. The usual cause is an admin password that changed
 // outside the operator. The operator retries. To recover, set the password
 // from the admin Secret on the admin user in the Admin web application.
 const ReasonInvalidCredentials = "InvalidCredentials"
 
 // ReasonRejected on AdminSecretReady means that the orchestration cluster
-// answered an update of the admin user and refused the call itself, with
-// credentials it accepted. The operator updates that user to rotate its
-// password and to set its email, and either call reports this. The message
-// carries the response, which names the reason. The operator retries, and no
-// change of the password recovers it.
+// accepted the credentials but refused an update of the admin user. The
+// operator sends this update to rotate the password or to set the email. The
+// message holds the response, which gives the reason. The operator retries.
+// A change of the password does not recover it.
 const ReasonRejected = "Rejected"
 
 // ReasonVersionDowngradeRefused on Ready means that the effective version
-// of the cluster is below the version that its brokers run, and nothing
-// sanctions the move. Camunda does not support a downgrade of a running
-// cluster. The operator applies nothing while this stands. The message names
-// the two versions and the remedies. The annotation
-// camunda.io/allow-version-downgrade, with the target version as its value,
-// sanctions one such move.
+// of the cluster is below the version that its brokers run, and no
+// annotation permits the downgrade. Camunda does not
+// support a downgrade of a running cluster. The operator applies nothing
+// while this reason stays. The message names the two versions and the
+// remedies. The annotation camunda.io/allow-version-downgrade, with the
+// target version as its value, permits one such downgrade.
 const ReasonVersionDowngradeRefused = "VersionDowngradeRefused"
 
 // ComponentMode says where a process of the unified binary runs.
@@ -93,10 +91,9 @@ const (
 	ComponentModeEmbedded ComponentMode = "Embedded"
 )
 
-// WorkloadSpec is the override surface that a workload block shares. Every
-// component block of a CamundaCluster uses it, and so does each workload of a
-// CamundaOptimize. It tunes the size, the environment, the pod metadata, and
-// the scheduling of one process.
+// WorkloadSpec holds the settings of one process: the size, the environment,
+// the pod metadata, and the scheduling. Every component block of a
+// CamundaCluster uses it, and so does each workload of a CamundaOptimize.
 type WorkloadSpec struct {
 	// Replicas is the number of pods of this process. Defaults to 1. On a
 	// CamundaCluster it has no effect on an embedded web application.
@@ -111,15 +108,15 @@ type WorkloadSpec struct {
 	// with the same name. The entries of an embedded web application apply to
 	// its host process.
 	//
-	// The list merges by name under server-side apply, so each field manager
-	// owns only the entries that it applies. An extension controller can add
-	// its own entry next to yours. One applied manifest cannot hold two
-	// entries with the same name.
+	// The list merges by name under server-side apply. Each field manager owns
+	// only the entries that it applies, so an extension controller can add its
+	// own entry next to yours. One applied manifest cannot hold two entries
+	// with the same name.
 	//
-	// Two field managers that apply the same name do not conflict: the merge
-	// is per field inside the entry, so one manager can own value while the
-	// other owns valueFrom. A container rejects an entry that carries both,
-	// so the rule below refuses to store that combination.
+	// Two field managers that apply the same name do not conflict, because the
+	// merge is per field inside the entry. One manager can own value and the
+	// other valueFrom. A container rejects an entry that has both, so the API
+	// server refuses to store such an entry.
 	// +listType=map
 	// +listMapKey=name
 	// +kubebuilder:validation:XValidation:rule="self.all(e, !(has(e.value) && has(e.valueFrom)))",message="an extraEnv entry sets value or valueFrom, never both"
@@ -135,10 +132,10 @@ type WorkloadSpec struct {
 	// PodAnnotations are extra annotations of the pods of this process.
 	// +optional
 	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
-	// Scheduling constraints of the pods of this process. When set, it
-	// replaces every scheduling block that would otherwise apply to this
-	// process, with no merge. On a CamundaCluster those are the top-level
-	// block and the block of a preset.
+	// Scheduling holds the scheduling constraints of the pods of this process.
+	// When set, it replaces all other scheduling blocks for this process, with
+	// no merge. On a CamundaCluster, these are the top-level block and the
+	// block of a preset.
 	// +optional
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
 }
@@ -158,21 +155,19 @@ type ZeebeSpec struct {
 	// +optional
 	ReplicationFactor *int32 `json:"replicationFactor,omitempty"`
 	// StorageClassName is the StorageClass of the broker volumes. Defaults to
-	// the default StorageClass of the Kubernetes cluster. It is immutable
-	// after creation, because a StatefulSet volume claim template cannot
-	// change its storage class. The CEL transition rule that rejects a change
-	// sits on the spec field of CamundaCluster ("zeebe.storageClassName is
-	// immutable"), not here: this type is shared with CamundaClusterPreset,
-	// and a preset baseline stays free to change.
+	// the default StorageClass of the Kubernetes cluster. On a CamundaCluster
+	// it is immutable after creation, because a StatefulSet cannot change the
+	// storage class of its volume claims. A preset can change its value.
 	// +optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
 	// StorageSize is the size of the data volume of each broker. Defaults to
-	// 10Gi. It can only grow. Admission rejects a lower inline value on a
-	// CamundaCluster through a CEL transition rule. That rule does not bind
-	// this shared field, so a preset baseline can be resized freely: a
-	// cluster that applied a larger size keeps it and records a
-	// StorageShrinkIgnored event. On growth the operator expands the existing
-	// claims in place, so the storage class must support volume expansion.
+	// 10Gi. It can only grow. The API server refuses a change of this field
+	// in a CamundaCluster to a smaller value. A smaller value is accepted when
+	// the field was not set before, or when a preset lowers the size. A
+	// cluster whose volumes are already larger then keeps that size and
+	// records a StorageShrinkIgnored event.
+	// When the size grows, the operator expands the existing claims in place.
+	// The storage class must support volume expansion.
 	// +optional
 	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
 	// PersistentVolumeClaimRetentionPolicy says what happens to the broker
@@ -186,9 +181,9 @@ type ZeebeSpec struct {
 type GatewaySpec struct {
 	// Mode selects a Deployment of the unified binary (Standalone) or the
 	// embedded gateway of the brokers (Embedded). Defaults to Standalone.
-	// The workload fields have an effect only when the mode is Standalone,
-	// except extraEnv and extraEnvFrom, which apply to the brokers when the
-	// mode is Embedded.
+	// The workload fields have an effect only in Standalone mode. The
+	// exception is extraEnv and extraEnvFrom: in Embedded mode, they apply to
+	// the brokers.
 	// +optional
 	Mode         ComponentMode `json:"mode,omitempty"`
 	WorkloadSpec `              json:",inline"`
@@ -200,8 +195,8 @@ type WebAppSpec struct {
 	// Mode selects a Deployment of the unified binary that serves only this
 	// application (Standalone) or the nearest standalone host up the chain
 	// (Embedded). Defaults to Embedded. The workload fields have an effect
-	// only when the mode is Standalone, except extraEnv and extraEnvFrom,
-	// which apply to the host process when the mode is Embedded.
+	// only in Standalone mode. The exception is extraEnv and extraEnvFrom: in
+	// Embedded mode, they apply to the host process.
 	// +optional
 	Mode         ComponentMode `json:"mode,omitempty"`
 	WorkloadSpec `              json:",inline"`
@@ -261,30 +256,27 @@ type BasicAuthSpec struct {
 	// web application shows it. Set the address of the person or the team
 	// that owns the cluster.
 	//
-	// When empty the operator uses admin@example.com. The domain is the one
-	// RFC 2606 reserves for documentation, so an unset value never claims an
-	// address that somebody owns.
+	// When empty, the operator uses admin@example.com. RFC 2606 reserves this
+	// domain for documentation, so the default is not the address of a real
+	// person.
 	//
-	// A changed value is applied to the running cluster through the user
-	// API. That endpoint validates the address and refuses a domain without
-	// a dot, and an address it refuses surfaces on AdminSecretReady with the
-	// answer of the cluster.
+	// The operator applies a changed value to the running cluster. The
+	// cluster validates the address and refuses a domain without a dot. When
+	// the cluster refuses an address, AdminSecretReady shows its answer.
 	// +kubebuilder:validation:MaxLength=253
 	// +kubebuilder:validation:Pattern=`^$|^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$`
 	// +optional
 	AdminEmail string `json:"adminEmail,omitempty"`
 	// PasswordRotation requests one rotation of the admin password. Set it
 	// to a value that differs from the applied one, for example a date. The
-	// operator generates a new password, sets it on the admin user through
-	// the user API of the running cluster, and then publishes it in the
-	// admin Secret. The connectors Deployment restarts with the new
-	// password. An empty value never rotates. A suspended cluster rotates
-	// after it resumes.
+	// operator generates a new password and sets it on the admin user of the
+	// running cluster. Then it publishes the password in the admin Secret.
+	// The connectors Deployment restarts with the new password. An empty
+	// value never rotates. A suspended cluster rotates after it resumes.
 	//
-	// The applied value of a cluster is status.adminPassword.rotation on
-	// that cluster. This field takes its effective value from the preset
-	// merge, so a preset that sets it rotates every cluster that references
-	// the preset, and each of those clusters reports its own status.
+	// status.adminPassword.rotation shows the applied value. A preset can set
+	// this field. Then every cluster that references the preset rotates, and
+	// each of these clusters reports its own status.
 	// +kubebuilder:validation:MaxLength=253
 	// +optional
 	PasswordRotation string `json:"passwordRotation,omitempty"`
@@ -316,13 +308,13 @@ type ClusterAdminSpec struct {
 // cluster.
 type AdminPasswordStatus struct {
 	// Rotation is the last admin password rotation that the operator
-	// applied: the effective spec.auth.basic.passwordRotation value, after
-	// the preset merge, that produced the password in the admin Secret. A
-	// rotation is in progress while that effective value is not empty and
-	// differs from this one. A cleared value does not stop a rotation that
-	// the operator already staged. That rotation completes, and this field
-	// then records the value that staged it. A cluster that inherits the
-	// value from its preset carries none of its own in the spec.
+	// applied. It is the value of spec.auth.basic.passwordRotation, after the
+	// preset merge, that produced the password in the admin Secret. A
+	// rotation is in progress while that value is not empty and differs from
+	// this one. A cleared value does not stop a rotation that has started.
+	// That rotation completes, and this field then records the value that
+	// started it. A cluster that gets the value from its preset shows none in
+	// its own spec.
 	// +optional
 	Rotation string `json:"rotation,omitempty"`
 }
@@ -347,22 +339,20 @@ type AdminMappingRule struct {
 // ClusterMonitoringSpec groups the monitoring integrations of a
 // CamundaCluster.
 type ClusterMonitoringSpec struct {
-	// ServiceMonitor configures the Prometheus ServiceMonitors. When
-	// enabled, the operator creates one ServiceMonitor per process, named
-	// like the workload, that scrapes /actuator/prometheus on the management
-	// port 9600 of a unified process and on the HTTP port 8080 of
-	// connectors.
+	// ServiceMonitor configures the Prometheus ServiceMonitors. When enabled,
+	// the operator creates one ServiceMonitor for each process, with the name
+	// of the workload. It scrapes /actuator/prometheus on the management port
+	// 9600 of a unified process, and on the HTTP port 8080 of connectors.
 	// +optional
 	ServiceMonitor *ServiceMonitorSpec `json:"serviceMonitor,omitempty"`
 }
 
 // CamundaClusterSpec defines the desired state of CamundaCluster.
 //
-// The type doubles as the configuration baseline of a CamundaClusterPreset,
-// so fields that are required on a CamundaCluster (storageRef,
-// platformConfigRef) are optional at the schema level here and enforced on
-// the CamundaCluster usage instead. The instance-bound fields are cluster-only
-// and rejected in a preset.
+// A CamundaClusterPreset uses the same type as its baseline. For this
+// reason, the schema marks storageRef and platformConfigRef as optional, and
+// the CamundaCluster requires them. A preset refuses the fields that belong
+// to one cluster only.
 type CamundaClusterSpec struct {
 	// PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that
 	// provides auth, license, and image repositories. Required on a
@@ -381,12 +371,12 @@ type CamundaClusterSpec struct {
 	// +optional
 	ReleaseRef string `json:"releaseRef,omitempty"`
 	// Version is the Camunda version to deploy, as a full semantic version.
-	// The floor of 8.9.0 is enforced by the controller on the merged result,
-	// the schema pins only the three-segment shape. Required unless the
-	// resolved release provides it, and forbidden in a preset. A value below
-	// the version that the brokers run is refused with Ready
-	// VersionDowngradeRefused unless the annotation
-	// camunda.io/allow-version-downgrade on the CamundaCluster names it.
+	// Required unless the resolved release provides it. Forbidden in a
+	// preset. The operator refuses a version below 8.9.0, also when it comes
+	// from the release. The operator also refuses a version below the
+	// version that the brokers run, with Ready reason VersionDowngradeRefused.
+	// The annotation camunda.io/allow-version-downgrade on the CamundaCluster,
+	// set to that version, permits it.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	// +optional
 	Version string `json:"version,omitempty"`
@@ -395,14 +385,15 @@ type CamundaClusterSpec struct {
 	// Ingress.
 	// +optional
 	ExternalURL string `json:"externalUrl,omitempty"`
-	// ServiceAccount configures the ServiceAccount of every workload. Bucket
-	// access for backupStorageRef and documentStorageRef flows from this
-	// identity.
+	// ServiceAccount configures the ServiceAccount of every workload. The
+	// workloads get access to the buckets of backupStorageRef and
+	// documentStorageRef through this identity.
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 	// Auth holds the credentials of this cluster and the identities that get
-	// its admin role: the OIDC client credentials and administrators under
-	// OIDC, the operator-owned admin credential under basic authentication.
+	// its admin role. Under OIDC, it holds the client credentials and the
+	// administrators. Under basic authentication, it holds the admin
+	// credential that the operator owns.
 	// +optional
 	Auth *ClusterAuthSpec `json:"auth,omitempty"`
 	// Zeebe configures the brokers.
@@ -427,21 +418,21 @@ type CamundaClusterSpec struct {
 	// ExtraEnv are extra environment variables of every workload. A
 	// per-component entry wins over an entry here with the same name.
 	//
-	// The list merges by name under server-side apply, so each field manager
-	// owns only the entries that it applies. An extension controller can add
-	// its own entry next to yours. One applied manifest cannot hold two
-	// entries with the same name.
+	// The list merges by name under server-side apply. Each field manager owns
+	// only the entries that it applies, so an extension controller can add its
+	// own entry next to yours. One applied manifest cannot hold two entries
+	// with the same name.
 	//
 	// A CamundaManagementCluster that serves this cluster owns the four
 	// CAMUNDA_CONSOLE_PING_ entries (CAMUNDA_HUB_PING_ on Camunda 8.10 and
-	// later) and replaces what you set under those names. It removes an entry
-	// under one of those names that carries valueFrom, because one entry
-	// cannot hold a value and a reference together.
+	// later). It replaces what you set under these names. If your entry under
+	// one of these names has valueFrom, the management cluster removes it. One
+	// entry cannot hold a value and a reference together.
 	//
-	// Two field managers that apply the same name do not conflict: the merge
-	// is per field inside the entry, so one manager can own value while the
-	// other owns valueFrom. A container rejects an entry that carries both,
-	// so the rule below refuses to store that combination.
+	// Two field managers that apply the same name do not conflict, because the
+	// merge is per field inside the entry. One manager can own value and the
+	// other valueFrom. A container rejects an entry that has both, so the API
+	// server refuses to store such an entry.
 	// +listType=map
 	// +listMapKey=name
 	// +kubebuilder:validation:XValidation:rule="self.all(e, !(has(e.value) && has(e.valueFrom)))",message="an extraEnv entry sets value or valueFrom, never both"
@@ -457,30 +448,32 @@ type CamundaClusterSpec struct {
 	// PodAnnotations are extra annotations of every workload pod.
 	// +optional
 	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
-	// Scheduling constraints of every workload, unless a component sets its
-	// own. When set, it replaces the scheduling block of a preset entirely
-	// (no merge).
+	// Scheduling holds the scheduling constraints of every workload that does
+	// not set its own. When set, it replaces the scheduling block of a preset,
+	// with no merge.
 	// +optional
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
 	// StorageRef names the SecondaryStorageConfig, in the namespace of this
 	// cluster, that describes the secondary storage backend. Required on a
-	// CamundaCluster, forbidden in a preset. One CamundaCluster holds one
-	// backend, and two contracts that name one address are one backend. If
+	// CamundaCluster, forbidden in a preset. One backend serves one
+	// CamundaCluster. Two contracts that name one address are one backend. If
 	// another cluster already holds the backend, the operator suspends this
-	// cluster and reports Ready reason StorageAlreadyAttached until that
-	// cluster moves to another backend or is deleted.
+	// cluster with Ready reason StorageAlreadyAttached. The suspension stays
+	// until the other cluster moves to another backend or is deleted.
 	// +optional
 	StorageRef string `json:"storageRef,omitempty"`
 	// IndexReplicas is the replica count of each index that the cluster
 	// creates in an Elasticsearch secondary storage. When it is not set, the
 	// nodeCount of the storage contract gives the count: 0 on one node, 1 on
 	// two or more nodes. Without a nodeCount, Camunda keeps its own default.
-	// When indexReplicas is not set, a process whose extraEnv sets a legacy
-	// replica key keeps that value.
+	// When indexReplicas is not set and the extraEnv of a process sets a
+	// legacy replica key, that process keeps the value of the key.
+	//
 	// The cluster applies the count to its existing indices when it starts.
-	// A count that the nodes cannot place is kept, and the cluster records an
-	// IndexReplicasExceedNodes Warning event. A relational secondary storage
-	// ignores it.
+	// If the nodes cannot place the count, the operator keeps it and records
+	// an IndexReplicasExceedNodes Warning event on the CamundaCluster. A
+	// relational secondary
+	// storage ignores this field.
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	IndexReplicas *int32 `json:"indexReplicas,omitempty"`
@@ -492,12 +485,12 @@ type CamundaClusterSpec struct {
 	// this cluster, for document storage.
 	// +optional
 	DocumentStorageRef string `json:"documentStorageRef,omitempty"`
-	// Backup configures how backups of this cluster behave: the schedule and
+	// Backup configures the backups of this cluster. It sets the schedule and
 	// the retention of the primary-storage backups that Zeebe takes, and the
-	// pod of the database dump Job. It is allowed in a preset, because it is
-	// policy; backupStorageRef, which says where backups go, is not. The
-	// block applies to a relational cluster: continuous and scheduled
-	// primary-storage backups and the dump Job exist only there.
+	// pod of the database dump Job. A preset can set this block, but not
+	// backupStorageRef. The block applies only to a cluster with relational
+	// secondary storage. Only such a cluster has continuous and scheduled
+	// primary-storage backups and the dump Job.
 	// +optional
 	Backup *ClusterBackupSpec `json:"backup,omitempty"`
 	// Monitoring configures the monitoring integrations.
@@ -508,16 +501,19 @@ type CamundaClusterSpec struct {
 	// CamundaCluster also suspends it, whatever this field says.
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
-	// Pause halts the reconciliation of this cluster entirely and leaves the
-	// workloads as they are. Defaults to false.
+	// Pause stops the reconciliation of this cluster: the operator changes no
+	// workload and writes no status. It records a Paused event instead. Other
+	// resources that use the cluster, such as a BackupSchedule or a restore,
+	// still act on it. When you delete a paused cluster, the operator still
+	// releases its storage backends. Defaults to false.
 	// +optional
 	Pause bool `json:"pause,omitempty"`
 }
 
 // GatewayBinding is the published in-cluster address of the client APIs of a
 // cluster. A client library takes the gRPC address as a host and a port, and
-// the REST address as a base URL, so the two fields carry the forms that the
-// consumers pass on unchanged.
+// the REST address as a base URL. Each field holds the form that a client
+// takes.
 type GatewayBinding struct {
 	// GRPCEndpoint is the host and the port of the gRPC API, for example
 	// my-cluster-gateway.my-cluster-ns.svc:26500.
@@ -529,7 +525,7 @@ type GatewayBinding struct {
 
 // CamundaClusterStatus is the observed state of a CamundaCluster.
 type CamundaClusterStatus struct {
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Volumes lists the bound broker PersistentVolumeClaims and the capacity
@@ -539,17 +535,15 @@ type CamundaClusterStatus struct {
 	// +optional
 	Volumes []VolumeStatus `json:"volumes,omitempty"`
 	// Management is the published address of the management API of this
-	// cluster. Extensions read it instead of rebuilding the Service name,
-	// the port, and the authentication from the internals of this
-	// controller. It is unset while the cluster is suspended, so a consumer
-	// sees an unreachable cluster instead of a stale endpoint.
+	// cluster. Extensions read it and do not derive the Service name, the
+	// port, and the authentication themselves. It is unset while the cluster
+	// is suspended, so a consumer does not use an old endpoint.
 	// +optional
 	Management *ManagementBinding `json:"management,omitempty"`
 	// Gateway is the published address of the client APIs of this cluster.
-	// Extensions read it instead of rebuilding the Service name and the ports
-	// from the internals of this controller. It is unset while the cluster is
-	// suspended, so a consumer sees an unreachable cluster instead of a stale
-	// endpoint.
+	// Extensions read it and do not derive the Service name and the ports
+	// themselves. It is unset while the cluster is suspended, so a consumer
+	// does not use an old endpoint.
 	// +optional
 	Gateway *GatewayBinding `json:"gateway,omitempty"`
 	// AdminPassword is the state of the admin credential of a basic-auth
@@ -557,15 +551,14 @@ type CamundaClusterStatus struct {
 	// +optional
 	AdminPassword *AdminPasswordStatus `json:"adminPassword,omitempty"`
 	// ServiceAccountName is the ServiceAccount that the pods of this cluster
-	// run under, or empty when they run under the default account of the
-	// namespace. Extensions that render a pod against this cluster read it
-	// instead of rebuilding the rule from the spec and the buckets the
-	// cluster references.
+	// run under. It is empty when they run under the default account of the
+	// namespace. An extension that runs a pod for this cluster reads it and
+	// does not derive the name itself.
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
-	// Conditions represent the current state. Ready carries a pre-check
-	// reason, or it is derived from the conditions of the components that the
-	// cluster needs. The per-process conditions (ZeebeReady, GatewayReady,
+	// Conditions represent the current state. Ready holds the reason of a
+	// failed pre-check, or it follows the conditions of the components that
+	// the cluster needs. The per-process conditions (ZeebeReady, GatewayReady,
 	// OperateReady, TasklistReady, AdminReady, ConnectorsReady) also appear
 	// here.
 	// +listType=map
@@ -582,9 +575,9 @@ type CamundaClusterStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // CamundaCluster describes one Camunda orchestration cluster: the Zeebe
-// brokers, the gateway, the web applications, and optionally the connectors
-// runtime. The operator turns it into StatefulSets, Deployments, and Services
-// and keeps them converged.
+// brokers, the gateway, the web applications, and, when enabled, the
+// connectors runtime. The operator creates the StatefulSets, Deployments,
+// and Services of the cluster and keeps them in the declared state.
 type CamundaCluster struct {
 	metav1.TypeMeta `json:",inline"`
 

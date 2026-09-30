@@ -20,32 +20,33 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// DatabaseConfigSpec describes one logical database: its server, name, and
-// application credentials.
+// DatabaseConfigSpec describes one logical database: its server, its name,
+// and its application credentials.
 type DatabaseConfigSpec struct {
-	// ServerRef names the DatabaseServerConfig describing the server hosting
-	// this database.
+	// ServerRef names the DatabaseServerConfig of the server that holds this
+	// database.
 	// +kubebuilder:validation:MinLength=1
 	ServerRef string `json:"serverRef"`
 	// DatabaseName is the name of the logical database on the server.
 	// +kubebuilder:validation:MinLength=1
 	DatabaseName string `json:"databaseName"`
-	// CredentialsSecretRef names an application user with read/write access to
-	// the database.
+	// CredentialsSecretRef names an application user with read and write
+	// access to the database.
 	CredentialsSecretRef LocalCredentialsSecretRef `json:"credentialsSecretRef"`
-	// BackupCredentialsSecretRef names a separate user with dump/restore
-	// privileges, used by the backup and restore controllers.
+	// BackupCredentialsSecretRef names a separate user with the privileges
+	// to dump the database. Backups use this user. A restore uses the
+	// application user of CredentialsSecretRef.
 	// +optional
 	BackupCredentialsSecretRef *LocalCredentialsSecretRef `json:"backupCredentialsSecretRef,omitempty"`
 }
 
 // DatabaseConfigStatus is the observed validation state of the contract.
 type DatabaseConfigStatus struct {
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Conditions represent the current validation state; the Ready condition
-	// carries reasons Healthy, InvalidReference, or MissingSecret.
+	// Conditions represent the current validation state. The Ready condition
+	// has the reasons Healthy, InvalidReference, or MissingSecret.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -60,9 +61,9 @@ type DatabaseConfigStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // DatabaseConfig is the namespaced contract CRD that describes one logical
-// database — its server, name, and application credentials — for the
-// controllers and components that connect to it. Consumers resolve references
-// to it by name in their own namespace.
+// database: its server, its name, and its application credentials. The
+// components that connect to the database read it. Consumers find it by
+// name in their own namespace.
 type DatabaseConfig struct {
 	metav1.TypeMeta `json:",inline"`
 

@@ -53,7 +53,7 @@ A preset rejects `version`. A cluster that follows a fleet version leaves `spec.
 
 ## Version
 
-`spec.version` is the Elasticsearch version, as three segments. Camunda 8.9 supports Elasticsearch 8.19 and later, or 9.2 and later. A merged version below that floor gives `Ready: False` with reason `InvalidReference`.
+`spec.version` is the Elasticsearch version, as three segments. Camunda 8.9 supports Elasticsearch 8.x from 8.19, and 9.x from 9.2. A merged version below 8.19, or 9.0 or 9.1, gives `Ready: False` with reason `InvalidReference`.
 
 ```yaml
 apiVersion: core.camunda.io/v1

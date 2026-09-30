@@ -20,20 +20,21 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// CredentialsSpec names the Secret a controller writes generated credentials
-// to (keys username and password). The Secret lives in the namespace of the
-// CR.
+// CredentialsSpec names the Secret to which the operator writes generated
+// credentials, with the keys username and password. The Secret is in the
+// namespace of the CR.
 type CredentialsSpec struct {
-	// SecretName is the name of the credentials Secret. Each controller
-	// documents its kind-specific default derived from the CR name.
+	// SecretName is the name of the credentials Secret. The default comes
+	// from the CR name, as the field that uses this type states.
 	// +optional
 	SecretName string `json:"secretName,omitempty"`
 }
 
-// BackupCredentialsSpec configures the backup credentials Secret, which is
-// created unless disabled.
+// BackupCredentialsSpec configures the backup credentials Secret. The
+// operator creates it unless it is disabled.
 type BackupCredentialsSpec struct {
-	// Disabled skips creating the backup user and Secret. Defaults to false.
+	// Disabled stops the operator from creating the backup user and Secret.
+	// Defaults to false.
 	// +optional
 	Disabled bool `json:"disabled,omitempty"`
 
@@ -42,36 +43,38 @@ type BackupCredentialsSpec struct {
 
 // DatabaseSpec defines the desired state of Database.
 type DatabaseSpec struct {
-	// ServerRef names the DatabaseServerConfig of this namespace describing
-	// the server to create the database in.
+	// ServerRef names the DatabaseServerConfig, in this namespace, of the
+	// server on which the operator creates the database.
 	// +kubebuilder:validation:MinLength=1
 	ServerRef string `json:"serverRef"`
-	// DatabaseName is the name of the logical database to create, a valid
-	// PostgreSQL identifier. It must be unique per server, and the server is
-	// the PostgreSQL instance that the contract reaches, not the contract:
-	// the controller rejects a Database whose databaseName collides with a
-	// Database of any namespace on the same instance.
+	// DatabaseName is the name of the logical database to create, as a valid
+	// PostgreSQL identifier. It must be unique on each PostgreSQL instance
+	// that a contract reaches, not only on each contract. The operator
+	// refuses a Database with the same databaseName as a Database of any
+	// namespace on the same instance.
 	// +kubebuilder:validation:Pattern=`^[a-z_][a-z0-9_]{0,62}$`
 	DatabaseName string `json:"databaseName"`
-	// ApplicationCredentials configures the application credentials Secret,
-	// always created. The Secret name defaults to <CR name>-credentials.
+	// ApplicationCredentials configures the application credentials Secret.
+	// The operator always creates it. The Secret name defaults to
+	// <CR name>-credentials.
 	// +optional
 	ApplicationCredentials *CredentialsSpec `json:"applicationCredentials,omitempty"`
-	// BackupCredentials configures the backup credentials Secret, created
-	// unless disabled. The Secret name defaults to
+	// BackupCredentials configures the backup credentials Secret. The
+	// operator creates it unless it is disabled. The Secret name defaults to
 	// <CR name>-backup-credentials.
 	// +optional
 	BackupCredentials *BackupCredentialsSpec `json:"backupCredentials,omitempty"`
-	// DatabaseConfig names the DatabaseConfig the operator creates in the
-	// namespace of this Database. Defaults to the CR name.
+	// DatabaseConfig names the DatabaseConfig that the operator creates in
+	// the namespace of this Database. Defaults to the CR name.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=253
 	// +optional
 	DatabaseConfig string `json:"databaseConfig,omitempty"`
 	// SecondaryStorageConfig, when set, makes the operator also create a
 	// SecondaryStorageConfig of type rdbms with this name in the namespace of
-	// this Database, wired to the DatabaseConfig. Omit it for databases not
-	// used as Camunda secondary storage (Keycloak, Identity, Web Modeler).
+	// this Database. It references the DatabaseConfig. Omit it for a database
+	// that is not Camunda secondary storage (Keycloak, Identity, Web
+	// Modeler).
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=253
 	// +optional
@@ -80,26 +83,28 @@ type DatabaseSpec struct {
 
 // DatabaseStatus is the observed state of a Database.
 type DatabaseStatus struct {
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// CollisionKey is the logical database that this Database last resolved:
 	// the system identifier of the server and the database name. Every
-	// claimant records it, the one that loses included, so the field says
-	// what a Database asked for and not what it owns. The operator resolves
-	// it only after it reaches the server, so a spec that names a server
-	// which is missing, or one that is not probed for the spec it has now,
-	// keeps the key from before until that server answers. A Database whose
-	// Ready condition reports InvalidReference and names another Database
-	// does not own the name it shows here. The operator never clears the
-	// field, so an owner whose server or contract is gone keeps the logical
-	// database. Delete that Database to release the name.
+	// Database records it, also a Database that loses the name to another.
+	// Thus the field shows what a Database asked for, not what it owns. The
+	// operator sets it only after it reaches the server. If the spec names a
+	// missing server, the old key stays until that server answers. The same
+	// applies to a server that is not probed for the current spec.
+	//
+	// A Database whose Ready condition reports InvalidReference and names
+	// another Database does not own the name that it shows here. The
+	// operator never clears the field. Thus an owner whose server or
+	// contract is gone keeps the logical database. Delete that Database to
+	// release the name.
 	// +optional
 	CollisionKey string `json:"collisionKey,omitempty"`
-	// Conditions represent the current state. Ready carries a pre-check
-	// reason (InvalidReference, MissingSecret, ServerIdentityUnknown,
-	// ConnectionFailed), or it takes the status and the reason of the
-	// BindingsReady component condition, which also appears here.
+	// Conditions represent the current state. Ready holds the reason of a
+	// failed pre-check (InvalidReference, MissingSecret,
+	// ServerIdentityUnknown, ConnectionFailed). Otherwise it takes the status
+	// and the reason of the BindingsReady condition, which also appears here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -107,9 +112,9 @@ type DatabaseStatus struct {
 }
 
 // ReasonServerIdentityUnknown means that the DatabaseServerConfig of the
-// Database has not published status.systemIdentifier yet. Until it does, the
-// operator cannot tell which PostgreSQL instance the contract reaches, so it
-// cannot apply the uniqueness rule of the logical database name.
+// Database did not publish status.systemIdentifier yet. Until then, the
+// operator does not know which PostgreSQL instance the contract reaches. Thus
+// it cannot apply the uniqueness rule of the logical database name.
 const ReasonServerIdentityUnknown = "ServerIdentityUnknown"
 
 // +kubebuilder:object:root=true
@@ -120,12 +125,11 @@ const ReasonServerIdentityUnknown = "ServerIdentityUnknown"
 // +kubebuilder:printcolumn:name="Database",type=string,JSONPath=`.spec.databaseName`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// Database bootstraps a logical database and its users on an existing
-// PostgreSQL server over plain SQL and publishes the result as a
-// DatabaseConfig — and optionally a SecondaryStorageConfig — in its own
-// namespace. Deletion garbage-collects the published bindings and Secrets
-// through owner references but never drops the logical database or the SQL
-// users.
+// Database creates a logical database and its users on an existing
+// PostgreSQL server with SQL. It publishes the result as a DatabaseConfig in
+// its own namespace, and, when set, as a SecondaryStorageConfig. When you
+// delete a Database, Kubernetes deletes the published contracts and Secrets.
+// The logical database and the SQL users stay on the server.
 type Database struct {
 	metav1.TypeMeta `json:",inline"`
 
