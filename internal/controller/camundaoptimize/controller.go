@@ -278,10 +278,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, reconcileErr
 	}
 
+	var wait time.Duration
+
 	// No watch reports the storage claim of the backend, or the pods of
 	// another cluster on it, so the workloads they park start again on this
 	// timer.
-	var wait time.Duration
 	if res.AwaitsBackendClaim {
 		wait = r.retryInterval()
 	}

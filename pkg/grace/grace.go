@@ -48,9 +48,9 @@ const (
 )
 
 // Periods are the grace periods of the components that run a workload. A
-// component that is not ready when its grace period runs out reports Degraded
-// or Down in place of a not-ready reason, such as Creating, Failing, or
-// Blocked. Zero turns the grading off for that class.
+// component that is not ready when its grace period runs out can report
+// Degraded or Down in place of a not-ready reason, such as Creating, Failing,
+// or Blocked. Zero turns the grading off for that class.
 type Periods struct {
 	// Workload is the grace period of a component that runs a Deployment, a
 	// StatefulSet, or a Keycloak.
@@ -99,8 +99,6 @@ func (p *Periods) BindFlags(fs *flag.FlagSet, getenv func(string) string) func()
 	}
 }
 
-// durationEnv returns the duration in the environment variable name, or
-// fallback when it is unset or empty, or fallback and an error when it is bad.
 func durationEnv(getenv func(string) string, name string, fallback time.Duration) (time.Duration, error) {
 	value := getenv(name)
 	if value == "" {
@@ -128,15 +126,11 @@ func (p Periods) Validate() error {
 	return nil
 }
 
-// Remaining returns the time until the grace period of the first of comps
-// runs out on owner, or 0 when none of them waits on one. Call it after the
-// components reconciled, with the period they were built with. A controller
-// requeues after the result, because no watch event arrives when a grace
-// period runs out.
-//
-// A component waits on its grace period while its condition is False, not yet
-// Down or Degraded, and not in a reason that ocf keeps outside the grace
-// period, such as PrerequisiteNotMet or a suspension.
+// Remaining returns the time until the first grace period of comps runs out
+// on owner, or 0 when none of them waits on one. Call it after the components
+// reconciled, with the period they were built with. A controller requeues
+// after the result, because no watch event arrives when a grace period runs
+// out.
 func Remaining(
 	owner component.OperatorCRD, period time.Duration, now time.Time, comps ...*component.Component,
 ) time.Duration {
@@ -175,10 +169,9 @@ func Remaining(
 
 // Restart removes the condition of conditionType from owner when its reason
 // is one of reasons, so the component starts a new grace period when it
-// reconciles next. ocf counts the grace period from the lastTransitionTime of
-// the condition it finds. A controller calls Restart before the reconcile
-// when a reason that holds the component back, such as one that the
-// controller staged itself, no longer applies.
+// reconciles next. A controller calls Restart before the reconcile when a
+// reason that holds the component back, such as one that the controller
+// staged itself, no longer applies.
 func Restart(owner component.OperatorCRD, conditionType string, reasons ...string) {
 	cond := meta.FindStatusCondition(*owner.GetStatusConditions(), conditionType)
 	if cond != nil && slices.Contains(reasons, cond.Reason) {
