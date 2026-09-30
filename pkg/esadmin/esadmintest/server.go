@@ -38,6 +38,15 @@ import (
 // leaves every closed index behind for the restore to collide with.
 const resolveWildcards = "open,closed"
 
+// The filter_path fields that a read must name. An unfiltered answer grows
+// with the size of the cluster and can pass the 1 MiB that the client reads.
+var (
+	resolveFilter  = []string{"*.settings.index.uuid"}
+	recoveryFilter = []string{"*.shards.stage"}
+	snapshotFilter = []string{"snapshots.state", "snapshots.metadata"}
+	statsFilter    = []string{"nodes.*.fs.total.total_in_bytes", "nodes.*.fs.total.available_in_bytes"}
+)
+
 // routingFilter is the filter_path that a routing table read must carry.
 var routingFilter = []string{
 	"routing_table.indices.*.shards.*.state",
@@ -135,8 +144,9 @@ type RestoreRequest struct {
 // The fake pins the shape of both index requests: it accepts one only when it
 // tolerates a target that matches nothing, and it accepts a resolution only
 // when the request expands its wildcards to open and closed indices. It
-// accepts a routing table read only when its filter_path names the fields in
-// routingFilter.
+// accepts a read of a resolution, a recovery, a snapshot, the routing table,
+// or the node statistics only when its filter_path names the fields that the
+// client reads.
 type Server struct {
 	adminhttptest.Fake
 
@@ -402,26 +412,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"nodes": map[string]any{}})
 
 	case r.Method == http.MethodGet && route == "_nodes/stats/fs":
-		s.statsCalls++
-		if s.Dropping(w, "stats") {
-			return
-		}
-		if s.Failing("stats") {
-			errorBody(w, http.StatusInternalServerError, "injected stats failure")
-			return
-		}
-		nodes := map[string]any{}
-		for name, fs := range s.nodeFS {
-			nodes[name] = map[string]any{
-				"fs": map[string]any{
-					"total": map[string]any{
-						"total_in_bytes":     fs.total,
-						"available_in_bytes": fs.total - fs.used,
-					},
-				},
-			}
-		}
-		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"nodes": nodes})
+		s.handleStats(w, r)
 
 	case len(parts) == 4 && parts[0] == "_cluster" && parts[1] == "state" && parts[2] == "routing_table" &&
 		r.Method == http.MethodGet:
@@ -437,7 +428,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.handleRestore(w, r, parts)
 
 	case len(parts) == 2 && parts[1] == recoveryPath && r.Method == http.MethodGet:
-		s.handleRecovery(w, parts[0])
+		s.handleRecovery(w, r, parts[0])
 
 	case len(parts) == 1 && parts[0] != "":
 		s.handleIndex(w, r, parts[0])
@@ -445,6 +436,51 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	default:
 		errorBody(w, http.StatusNotFound, "unknown path "+r.URL.Path)
 	}
+}
+
+// handleStats serves GET /_nodes/stats/fs with the filesystem of each node.
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	s.statsCalls++
+	if s.Dropping(w, "stats") {
+		return
+	}
+	if s.Failing("stats") {
+		errorBody(w, http.StatusInternalServerError, "injected stats failure")
+		return
+	}
+	if !filtered(w, r.URL.Query(), statsFilter) {
+		return
+	}
+
+	nodes := map[string]any{}
+	for name, fs := range s.nodeFS {
+		nodes[name] = map[string]any{
+			"fs": map[string]any{
+				"total": map[string]any{
+					"total_in_bytes":     fs.total,
+					"available_in_bytes": fs.total - fs.used,
+				},
+			},
+		}
+	}
+	adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"nodes": nodes})
+}
+
+// filtered reports whether the filter_path of query names every field of
+// want. When it does not, it answers the request with a 400.
+func filtered(w http.ResponseWriter, query url.Values, want []string) bool {
+	fields := strings.Split(query.Get("filter_path"), ",")
+	for _, field := range want {
+		if !slices.Contains(fields, field) {
+			errorBodyTyped(
+				w, http.StatusBadRequest, "illegal_argument_exception",
+				"filter_path must name "+field+", or the answer can pass the size limit of the client",
+			)
+			return false
+		}
+	}
+
+	return true
 }
 
 func errorBody(w http.ResponseWriter, status int, message string) {
@@ -552,6 +588,9 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 			errorBody(w, http.StatusInternalServerError, "injected snapshot status failure")
 			return
 		}
+		if !filtered(w, r.URL.Query(), snapshotFilter) {
+			return
+		}
 		if _, ok := s.repos[parts[1]]; !ok {
 			errorBodyTyped(
 				w, http.StatusNotFound,
@@ -653,12 +692,15 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request, parts []s
 // handleRecovery serves GET /<target>/_recovery. It answers one shard entry
 // per named target, with the source of the last accepted restore, so a client
 // reads the shape that a restored index has.
-func (s *Server) handleRecovery(w http.ResponseWriter, target string) {
+func (s *Server) handleRecovery(w http.ResponseWriter, r *http.Request, target string) {
 	if s.Dropping(w, "recovery") {
 		return
 	}
 	if s.Failing("recovery") {
 		errorBody(w, http.StatusInternalServerError, "injected recovery failure")
+		return
+	}
+	if !filtered(w, r.URL.Query(), recoveryFilter) {
 		return
 	}
 
@@ -707,15 +749,8 @@ func (s *Server) handleRoutingTable(w http.ResponseWriter, r *http.Request, targ
 		)
 		return
 	}
-	filters := strings.Split(query.Get("filter_path"), ",")
-	for _, field := range routingFilter {
-		if !slices.Contains(filters, field) {
-			errorBodyTyped(
-				w, http.StatusBadRequest, "illegal_argument_exception",
-				"filter_path must name "+field+", or the routing table can pass the size limit of the client",
-			)
-			return
-		}
+	if !filtered(w, query, routingFilter) {
+		return
 	}
 
 	indices := map[string]any{}
@@ -791,13 +826,14 @@ func (s *Server) handleIndexResolve(w http.ResponseWriter, r *http.Request, targ
 		)
 		return
 	}
+	if !filtered(w, query, resolveFilter) {
+		return
+	}
 
 	response := map[string]any{}
 	for _, name := range s.matching(target) {
 		response[name] = map[string]any{
-			"aliases":  map[string]any{},
-			"mappings": map[string]any{},
-			"settings": map[string]any{"index": map[string]any{"provided_name": name}},
+			"settings": map[string]any{"index": map[string]any{"uuid": "uuid-" + name}},
 		}
 	}
 	adminhttptest.WriteJSON(w, http.StatusOK, response)

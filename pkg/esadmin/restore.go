@@ -47,13 +47,20 @@ const (
 // failed recovery.
 const snapshotSource = "SNAPSHOT"
 
-// routingFilter keeps the fields that routingProgress reads. The unfiltered
-// routing table of a large cluster passes the 1 MiB that the client reads.
-const routingFilter = "routing_table.indices.*.shards.*.state," +
-	"routing_table.indices.*.shards.*.primary," +
-	"routing_table.indices.*.shards.*.recovery_source.type," +
-	"routing_table.indices.*.shards.*.unassigned_info.reason," +
-	"routing_table.indices.*.shards.*.unassigned_info.allocation_status"
+// The filter_path of each read keeps the fields that it uses. The unfiltered
+// answer grows with the size of the cluster and can pass the 1 MiB that the
+// client reads.
+const (
+	// resolveFilter keeps one setting that every index has, so that each
+	// index keeps its entry.
+	resolveFilter  = "*.settings.index.uuid"
+	recoveryFilter = "*.shards.stage"
+	routingFilter  = "routing_table.indices.*.shards.*.state," +
+		"routing_table.indices.*.shards.*.primary," +
+		"routing_table.indices.*.shards.*.recovery_source.type," +
+		"routing_table.indices.*.shards.*.unassigned_info.reason," +
+		"routing_table.indices.*.shards.*.unassigned_info.allocation_status"
+)
 
 // waitingAllocations are the allocation statuses of an unassigned shard that a
 // node can still take. Elasticsearch fails the restore of a primary for good
@@ -114,14 +121,13 @@ func (c *Client) ResolveIndices(ctx context.Context, patterns []string) ([]strin
 	payload, _, err := c.api.Do(ctx, adminhttp.Request{
 		Method: http.MethodGet,
 		Path: "/" + indexTarget(patterns) +
-			"?ignore_unavailable=true&allow_no_indices=true&expand_wildcards=open,closed",
+			"?ignore_unavailable=true&allow_no_indices=true&expand_wildcards=open,closed&filter_path=" + resolveFilter,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// The answer is one entry per index, keyed by name. Only the names are
-	// read, so the settings and the mappings of the entry stay raw.
+	// The answer is one entry per index, keyed by name.
 	var response map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &response); err != nil {
 		return nil, fmt.Errorf("decoding index list: %w", err)
@@ -302,7 +308,7 @@ func (c *Client) shardRecovering(ctx context.Context, patterns []string) (bool, 
 	payload, _, err := c.api.Do(ctx, adminhttp.Request{
 		Method: http.MethodGet,
 		Path: "/" + indexTarget(patterns) +
-			"/_recovery?active_only=true&ignore_unavailable=true&allow_no_indices=true",
+			"/_recovery?active_only=true&ignore_unavailable=true&allow_no_indices=true&filter_path=" + recoveryFilter,
 	})
 	if err != nil {
 		return false, err
