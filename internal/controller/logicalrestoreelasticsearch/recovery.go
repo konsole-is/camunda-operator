@@ -161,7 +161,14 @@ func (r *Reconciler) keepWriter(ctx context.Context, lres *v1.LogicalRestoreElas
 	// A look that released the registration can crash before the cleared hold
 	// is in status, so the next look registers it again.
 	err := restore.RegisterWriter(
-		ctx, r.Client, r.APIReader, r.opts.ClaimNamespace, lres.Status.Backend, lres, lres.Status.TargetClusterUID,
+		ctx,
+		r.Client,
+		r.APIReader,
+		r.opts.ClaimNamespace,
+		lres.Status.Backend,
+		lres.Status.Contract,
+		lres,
+		lres.Status.TargetClusterUID,
 	)
 
 	return r.opts.PollInterval, err

@@ -63,8 +63,8 @@ func TestOtherWritersListsEveryRegistrationButTheOwnOne(t *testing.T) {
 	c := writerClient(t)
 	backend := "rdbms|db.apps.svc:5432/camunda"
 	earlier, next := writingRestore("earlier"), writingRestore("next")
-	require.NoError(t, RegisterWriter(ctx, c, c, writerNamespace, backend, earlier, "uid-target"))
-	require.NoError(t, RegisterWriter(ctx, c, c, writerNamespace, backend, next, "uid-target"))
+	require.NoError(t, RegisterWriter(ctx, c, c, writerNamespace, backend, "", earlier, "uid-target"))
+	require.NoError(t, RegisterWriter(ctx, c, c, writerNamespace, backend, "", next, "uid-target"))
 
 	writers, err := OtherWriters(ctx, c, writerNamespace, backend, "", next)
 
@@ -76,9 +76,9 @@ func TestReleaseWritersEndsTheRegistrationsOfTheOwnerOnEveryBackend(t *testing.T
 	ctx := context.Background()
 	c := writerClient(t)
 	owner, other := writingRestore("owner"), writingRestore("other")
-	require.NoError(t, RegisterWriter(ctx, c, c, writerNamespace, "rdbms|old.apps.svc:5432/camunda", owner, "t"))
-	require.NoError(t, RegisterWriter(ctx, c, c, writerNamespace, "rdbms|new.apps.svc:5432/camunda", owner, "t"))
-	require.NoError(t, RegisterWriter(ctx, c, c, writerNamespace, "rdbms|old.apps.svc:5432/camunda", other, "t"))
+	require.NoError(t, RegisterWriter(ctx, c, c, writerNamespace, "rdbms|old.apps.svc:5432/camunda", "", owner, "t"))
+	require.NoError(t, RegisterWriter(ctx, c, c, writerNamespace, "rdbms|new.apps.svc:5432/camunda", "", owner, "t"))
+	require.NoError(t, RegisterWriter(ctx, c, c, writerNamespace, "rdbms|old.apps.svc:5432/camunda", "", other, "t"))
 
 	require.NoError(t, ReleaseWriters(ctx, c, c, writerNamespace, owner))
 
@@ -92,7 +92,7 @@ func TestADatabaseWriterHoldsItsContractAtAMovedAddress(t *testing.T) {
 	c := writerClient(t)
 	contract := DatabaseContract(types.NamespacedName{Namespace: "apps", Name: "pg"}, "camunda")
 	earlier, next := writingRestore("earlier"), writingRestore("next")
-	require.NoError(t, RegisterDatabaseWriter(
+	require.NoError(t, RegisterWriter(
 		ctx, c, c, writerNamespace, "rdbms|old.apps.svc:5432/camunda", contract, earlier, "uid-target",
 	))
 

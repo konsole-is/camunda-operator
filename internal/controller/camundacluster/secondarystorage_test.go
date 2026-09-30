@@ -1744,3 +1744,114 @@ func expectWaitingForWriter(cluster *v1.CamundaCluster, backend string, writer s
 	)
 	expectRendersNothing(cluster)
 }
+
+var _ = Describe("CamundaCluster writer of a moved Elasticsearch contract", func() {
+	// A restore into Elasticsearch holds it through a writer that names the
+	// SecondaryStorageConfig. A move of the endpoint does not move that
+	// writer, so the next cluster on the contract must wait at the new
+	// endpoint too.
+	It("waits for a writer of the contract after the endpoint of a deleted holder moves", func() {
+		ns := newNamespace()
+		binding := createBinding(ns, true)
+		old := storageKeyOf(binding)
+		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
+		createCluster(holder)
+		expectClaimedBy(binding, holder)
+		writer := registerWriter("LogicalRestoreElasticsearch", holder, old, elasticsearchContractOf(binding))
+
+		parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
+		createCluster(parked)
+		expectParked(parked, holder)
+
+		deleteHolder(holder)
+		expectWaitingForWriter(parked, old, writer)
+
+		moved := moveEndpoint(binding, "https://moved-es."+ns+".svc:9200")
+		expectWaitingForWriter(parked, moved, writer)
+		expectUnclaimed(moved, "a cluster that waits for a writer takes no claim")
+
+		Expect(storagewriter.Release(ctx, k8sClient, testClaimNamespace, old, writer)).To(Succeed())
+		expectHolds(parked)
+		expectDatabaseClaimedBy(moved, parked)
+	})
+
+	// The holder cannot take the new endpoint while its platform config is
+	// gone, so the other cluster reaches the free claim first. That is the
+	// order in which a key match alone lets it start beside the writer.
+	It("waits for a writer of the contract when the next cluster reaches the moved endpoint first", func() {
+		ns := newNamespace()
+		binding := createBinding(ns, true)
+		old := storageKeyOf(binding)
+		cfg := createPlatformConfig()
+		holder := newNamedCluster("cc-a-", ns, cfg, binding)
+		createCluster(holder)
+		expectClaimedBy(binding, holder)
+		writer := registerWriter("LogicalRestoreElasticsearch", holder, old, elasticsearchContractOf(binding))
+
+		parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
+		createCluster(parked)
+		expectParked(parked, holder)
+
+		Expect(k8sClient.Delete(ctx, cfg)).To(Succeed())
+		expectReady(holder, metav1.ConditionFalse, Equal(v1.ReasonInvalidReference), ContainSubstring(cfg.Name))
+
+		moved := moveEndpoint(binding, "https://moved-es."+ns+".svc:9200")
+		expectWaitingForWriter(parked, moved, writer)
+		expectUnclaimed(moved, "a cluster that waits for a writer takes no claim")
+
+		Expect(storagewriter.Release(ctx, k8sClient, testClaimNamespace, old, writer)).To(Succeed())
+		expectHolds(parked)
+		expectDatabaseClaimedBy(moved, parked)
+	})
+
+	// Two contracts stay apart: a writer of one contract does not hold a
+	// cluster on another contract at another endpoint.
+	It("lets a cluster on another contract run beside a writer of the moved one", func() {
+		ns := newNamespace()
+		binding := createBinding(ns, true)
+		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
+		createCluster(holder)
+		expectClaimedBy(binding, holder)
+		registerWriter("LogicalRestoreElasticsearch", holder, storageKeyOf(binding), elasticsearchContractOf(binding))
+
+		other := createBinding(ns, true)
+		free := newNamedCluster("cc-b-", ns, createPlatformConfig(), other)
+		createCluster(free)
+		expectHolds(free)
+		expectClaimedBy(other, free)
+	})
+})
+
+// elasticsearchContractOf returns the contract of the Elasticsearch that
+// binding names.
+func elasticsearchContractOf(binding *v1.SecondaryStorageConfig) string {
+	return components.StorageContract(components.Storage{
+		Type:      binding.Spec.Type,
+		Namespace: binding.Namespace,
+		Name:      binding.Name,
+	})
+}
+
+// moveEndpoint points binding at endpoint and returns the claim key there.
+func moveEndpoint(binding *v1.SecondaryStorageConfig, endpoint string) string {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var latest v1.SecondaryStorageConfig
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(binding), &latest)).To(Succeed())
+		latest.Spec.Elasticsearch.Endpoint = endpoint
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+	binding.Spec.Elasticsearch.Endpoint = endpoint
+
+	return storageKeyOf(binding)
+}
+
+// expectUnclaimed checks that no cluster takes the storage claim of backend.
+func expectUnclaimed(backend, reason string) {
+	GinkgoHelper()
+	claim := client.ObjectKey{Namespace: testClaimNamespace, Name: components.StorageClaimSchema().LeaseName(backend)}
+	Consistently(func(g Gomega) {
+		err := k8sClient.Get(ctx, claim, &coordinationv1.Lease{})
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+	}, "2s", interval).Should(Succeed(), reason)
+}

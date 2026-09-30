@@ -55,6 +55,11 @@ type LogicalRestoreElasticsearchStatus struct {
 	// restore holds while its target does not hold the backend.
 	// +optional
 	Backend string `json:"backend,omitempty"`
+	// contract is the SecondaryStorageConfig that held the endpoint of
+	// Backend when the restore started. The hold stays on this contract when
+	// its endpoint moves.
+	// +optional
+	Contract string `json:"contract,omitempty"`
 	// recoveryHeld is true while a restore that failed, or that is being
 	// deleted, keeps the backend because Elasticsearch can still recover
 	// snapshots that the restore asked for. While it is true, no other

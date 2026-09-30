@@ -487,7 +487,7 @@ var _ = Describe("LogicalRestoreRDBMS cluster claim", func() {
 		By("standing in for a look that registered the writer and crashed before its status write")
 		crashed := "rdbms|crashed.example.svc:5432/camunda"
 		Expect(restorepkg.RegisterWriter(
-			ctx, k8sClient, k8sClient, claimNamespace, crashed, reached, reached.Status.TargetClusterUID,
+			ctx, k8sClient, k8sClient, claimNamespace, crashed, "", reached, reached.Status.TargetClusterUID,
 		)).To(Succeed())
 
 		Eventually(func(g Gomega) {
@@ -513,7 +513,7 @@ var _ = Describe("LogicalRestoreRDBMS cluster claim", func() {
 		By("standing in for a look that registered a second writer and crashed before its status write")
 		crashed := "rdbms|crashed.example.svc:5432/camunda"
 		Expect(restorepkg.RegisterWriter(
-			ctx, k8sClient, k8sClient, claimNamespace, crashed, current, current.Status.TargetClusterUID,
+			ctx, k8sClient, k8sClient, claimNamespace, crashed, "", current, current.Status.TargetClusterUID,
 		)).To(Succeed())
 		Expect(writersNaming(lrr)).To(HaveLen(2))
 
