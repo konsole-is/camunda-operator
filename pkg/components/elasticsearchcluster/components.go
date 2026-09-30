@@ -186,8 +186,6 @@ type RequestedStorage struct {
 	StorageClassName *string
 }
 
-// annotations returns the annotations that carry r on the ECK CR, or nil when
-// r asks for nothing.
 func (r RequestedStorage) annotations() map[string]string {
 	if r.Size == nil && r.StorageClassName == nil {
 		return nil
@@ -278,9 +276,8 @@ func RolesSecretName(cluster *v1.ElasticsearchCluster) string {
 // spec.serviceAccount) and the ECK Elasticsearch CR. spec.suspend suspends the
 // component, which deletes the ECK CR with its data volumes retained.
 //
-// requested is what the merged spec asked for before the controller kept the
-// data volume that is already there. The ECK CR carries it in
-// RequestedStorageSizeAnnotation and RequestedStorageClassAnnotation.
+// The ECK CR carries requested in RequestedStorageSizeAnnotation and
+// RequestedStorageClassAnnotation, and no annotation for a field that is nil.
 func ElasticsearchComponent(
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,

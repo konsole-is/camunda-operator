@@ -79,15 +79,11 @@ const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 // about the size of the data volumes.
 const eventActionResize = "Resize"
 
-// eventReasonStorageClassChangeIgnored is the Warning event that the
-// controller records once per requested class when the merged
-// storageClassName differs from the class of the data volume claim of the
-// applied ECK CR. The claim keeps its class, because the ECK validation
-// webhook refuses a change of it.
+// eventReasonStorageClassChangeIgnored is the Warning event for a requested
+// storageClassName that the data volume claim of the applied ECK CR does not
+// take.
 const eventReasonStorageClassChangeIgnored = "StorageClassChangeIgnored"
 
-// eventActionApply is the action of the events that the controller records
-// about the data volume claim that it applies.
 const eventActionApply = "Apply"
 
 // defaultRetryInterval is how long the controller waits before it looks again
@@ -409,9 +405,9 @@ func (r *ElasticsearchClusterReconciler) keepAppliedStorageSize(
 }
 
 // dataVolumes are the data volumes that the cluster has: one entry per data
-// PersistentVolumeClaim that reports a capacity, sorted by name, and the data
-// claim and the requested storage annotations of the applied ECK CR when that
-// CR exists. requestedClass is nil when the CR has no requested class
+// PersistentVolumeClaim that reports a capacity, sorted by name, and the spec
+// of the data claim and the requested storage annotations of the applied ECK
+// CR when that CR exists. requestedClass is nil when the CR has no requested class
 // annotation. foreign is true for a CR that another owner controls.
 type dataVolumes struct {
 	volumes        []v1.VolumeStatus
@@ -446,18 +442,13 @@ func (d dataVolumes) requestApplied(size resource.Quantity) bool {
 	return err == nil && requested.Cmp(size) == 0
 }
 
-// classRequestApplied reports whether the applied ECK CR already carries
-// class as its requested storage class. A nil class matches a CR without the
-// annotation.
 func (d dataVolumes) classRequestApplied(class *string) bool {
 	return ptr.Equal(d.requestedClass, class)
 }
 
 // keepAppliedStorageClass keeps in merged the class of the data volume claim
-// of the applied ECK CR, because the ECK validation webhook refuses every
-// change of a claim except its storage request. It records a Warning event
-// once per requested class. It returns the storageClassName that merged asked
-// for. Without an applied CR, merged keeps its class.
+// of the applied ECK CR. It records at most one Warning event per requested
+// class. It returns the storageClassName that merged asked for.
 func (r *ElasticsearchClusterReconciler) keepAppliedStorageClass(
 	cluster *v1.ElasticsearchCluster,
 	merged *v1.ElasticsearchClusterSpec,
@@ -467,11 +458,12 @@ func (r *ElasticsearchClusterReconciler) keepAppliedStorageClass(
 	if volumes.applied == nil || ptr.Equal(volumes.applied.StorageClassName, requested) {
 		return requested
 	}
+	// The ECK validation webhook refuses every change of a claim except its
+	// storage request.
 	merged.StorageClassName = volumes.applied.StorageClassName
 
-	// The same holds as for an ignored shrink: a suspension deletes the CR
-	// that would carry the request, and a CR that another owner controls
-	// never takes it.
+	// A suspension deletes the CR that would carry the request, and a CR that
+	// another owner controls never takes it.
 	if merged.Suspend || volumes.foreign || volumes.classRequestApplied(requested) {
 		return requested
 	}
@@ -490,8 +482,6 @@ func (r *ElasticsearchClusterReconciler) keepAppliedStorageClass(
 	return requested
 }
 
-// className returns class in quotes, or a description of no class when class
-// is nil.
 func className(class *string) string {
 	if class == nil {
 		return "(none, so the default StorageClass)"
@@ -650,8 +640,8 @@ func (r *ElasticsearchClusterReconciler) dataVolumes(
 	return volumes, nil
 }
 
-// appliedDataClaim returns the data volume claim of the applied ECK CR, or nil
-// when the CR carries no such claim.
+// appliedDataClaim returns the spec of the data volume claim of the applied
+// ECK CR, or nil when the CR has none.
 func appliedDataClaim(es *esv1.Elasticsearch) *corev1.PersistentVolumeClaimSpec {
 	for _, nodeSet := range es.Spec.NodeSets {
 		for _, claim := range nodeSet.VolumeClaimTemplates {

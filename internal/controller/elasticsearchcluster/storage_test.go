@@ -108,9 +108,8 @@ func TestKeepAppliedStorageSizeRecordsNothingUnderAForeignCR(t *testing.T) {
 	assert.Empty(t, recorder.Events)
 }
 
-// The data volume claim keeps the class of the applied ECK CR, and a new
-// requested class records one event: the applied CR carries the class that
-// its last apply asked for.
+// The data volume claim keeps the class of the applied ECK CR, and a
+// requested class records at most one event.
 func TestKeepAppliedStorageClass(t *testing.T) {
 	t.Parallel()
 

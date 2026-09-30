@@ -174,9 +174,6 @@ func expectRequestedStorageSize(cluster *v1.ElasticsearchCluster, size string) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// expectRequestedStorageClass polls until the applied ECK CR of cluster
-// carries class as its requested storage class annotation, or no such
-// annotation when class is nil.
 func expectRequestedStorageClass(cluster *v1.ElasticsearchCluster, class *string) {
 	GinkgoHelper()
 
