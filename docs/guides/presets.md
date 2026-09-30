@@ -34,7 +34,7 @@ graph LR
 | `CamundaRelease` | Every version of the platform, pinned images, the environment a version needs | The platform team | Once per rollout, for example `camunda-8-9-4` |
 | `CamundaCluster` | The references, the URL, the storage, and any override | The team that owns the cluster | Once per cluster |
 
-The platform config does not merge. Every cluster that references it gets the same values. The other three merge field by field: the preset first, then the release, then the cluster. The [merge rules](../crds/camundaclusterpreset.md#merge-rules) describe each field.
+The platform config does not merge. Every cluster that references it gets the same values. The other three merge in order: the preset first, then the release, then the cluster. The [merge rules](../crds/camundaclusterpreset.md#merge-rules) describe how each field merges.
 
 ## A cluster in a few lines
 
