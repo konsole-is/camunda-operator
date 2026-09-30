@@ -223,6 +223,8 @@ type DatabaseServerReconciler struct {
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=clusters;scheduledbackups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=backups,verbs=get;list;watch
 // +kubebuilder:rbac:groups=barmancloud.cnpg.io,resources=objectstores,verbs=get;list;watch;create;update;patch;delete
+// Writes no ObjectStore status. The Role of the Barman Cloud plugin grants it, and the
+// API server lets the operator bind that Role only while it holds every rule of it.
 // +kubebuilder:rbac:groups=barmancloud.cnpg.io,resources=objectstores/status,verbs=update
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
