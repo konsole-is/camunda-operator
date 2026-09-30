@@ -309,7 +309,7 @@ spec:
 
 The tag is the major version, so the repository must publish the same tags.
 
-If the mirror needs a pull Secret, create the ServiceAccount `my-db-postgres` with the Secret before you create the server. The operator takes over the ServiceAccount and does not change its `imagePullSecrets`.
+If the mirror needs a pull Secret, create the ServiceAccount `my-db-postgres` with the Secret before you create the server. The operator takes over the ServiceAccount and does not change its `imagePullSecrets`. When you delete the server, the ServiceAccount goes with it, also one that you created. The pull Secret stays.
 
 ```yaml
 apiVersion: v1

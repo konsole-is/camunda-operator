@@ -2818,6 +2818,43 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// CloudNativePG reads the ServiceAccount of a cluster before it hibernates
+	// it, so a server created suspended stays Suspending without the account.
+	It("applies the ServiceAccount of a server that is created suspended", func() {
+		namespace := "dbs-" + utilrand.String(8)
+		Expect(k8sClient.Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		})).To(Succeed())
+		server := &v1.DatabaseServer{
+			ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: namespace},
+			Spec: v1.DatabaseServerSpec{
+				Version:              "17",
+				Instances:            new(int32(1)),
+				StorageSize:          new(resource.MustParse("1Gi")),
+				DatabaseServerConfig: "camunda",
+				Suspend:              true,
+			},
+		}
+		createServer(server)
+
+		key := client.ObjectKey{Namespace: namespace, Name: "camunda-postgres"}
+		Eventually(func(g Gomega) {
+			var account corev1.ServiceAccount
+			g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+			g.Expect(metav1.IsControlledBy(&account, reconciledServer(server))).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		By("putting the ServiceAccount back when it is deleted during the suspension")
+		var account corev1.ServiceAccount
+		Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &account)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var restored corev1.ServiceAccount
+			g.Expect(k8sClient.Get(ctx, key, &restored)).To(Succeed())
+			g.Expect(restored.UID).NotTo(Equal(account.UID))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// The control plane of this suite serves no prometheus-operator CRDs,
 	// which is the cluster a user without Prometheus has. Enabling scraping
 	// there must leave the server running rather than fail every reconcile

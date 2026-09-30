@@ -184,7 +184,7 @@ func ClusterComponent(
 		WithConditionType(v1.ConditionClusterReady).
 		// CloudNativePG does not start a cluster whose ServiceAccount is
 		// missing, so the account goes first.
-		WithResource(account, component.BlockOnForeignController())
+		WithResource(keptServiceAccount{account}, component.BlockOnForeignController())
 
 	archiving := Archiving(merged) && archiveTaken == ""
 	for _, role := range pluginRoles {
@@ -210,6 +210,28 @@ func ClusterComponent(
 	}
 
 	return comp, systemIdentifier, nil
+}
+
+// keptServiceAccount is the ServiceAccount resource, applied while the
+// component is suspended too. ocf applies only a Suspendable resource then,
+// and CloudNativePG reads the account before it hibernates a cluster, so a
+// server created suspended would never reach Suspended without it.
+type keptServiceAccount struct {
+	*serviceaccount.Resource
+}
+
+// DeleteOnSuspend keeps the account.
+func (keptServiceAccount) DeleteOnSuspend() bool { return false }
+
+// Suspend changes nothing on the account.
+func (keptServiceAccount) Suspend() error { return nil }
+
+// SuspensionStatus reports the account suspended once it is applied.
+func (keptServiceAccount) SuspensionStatus() (concepts.SuspensionStatusWithReason, error) {
+	return concepts.SuspensionStatusWithReason{
+		Status: concepts.SuspensionStatusSuspended,
+		Reason: "The ServiceAccount stays applied.",
+	}, nil
 }
 
 // serviceAccount renders the ServiceAccount of the instance pods. Its
