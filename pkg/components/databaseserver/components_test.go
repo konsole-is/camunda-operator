@@ -247,7 +247,7 @@ func archiveSpec() *v1.DatabaseServerArchiveSpec {
 }
 
 // A server whose bucket uses workload identity gets the identity annotation on
-// the ServiceAccount that CloudNativePG creates, and an archive Secret that
+// the ServiceAccount that the operator creates, and an archive Secret that
 // carries the region alone: the plugin reads the region of an S3 bucket from a
 // Secret key whatever authenticates it.
 func TestDatabaseServerGoldenArchiveWorkloadIdentity(t *testing.T) {

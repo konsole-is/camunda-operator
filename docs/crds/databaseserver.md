@@ -378,7 +378,7 @@ status:
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Healthy` | Every part of the server is in its desired state. | Nothing. |
-| `Ready` | `Blocked` | The archive holds no base backup yet. | Wait. |
+| `Ready` | `Blocked` | The archive holds no base backup yet, or `ClusterReady` is `Blocked`. | Wait for the base backup. Otherwise read `ClusterReady`. |
 | `Ready` | `ArchiveFailing` | The write-ahead log does not reach the bucket. | Read `ArchiveReady`. |
 | `Ready` | `Suspended` | `spec.suspend` is true and the instances are stopped. | Nothing. |
 | `Ready` | `ClusterTaken`, `ContractTaken`, `ArchiveTaken` | Another owner holds a name that the server derives. | See [Name collisions](#name-collisions). |
@@ -391,6 +391,7 @@ status:
 | `ClusterReady` | `Healthy` | Every instance is ready. | Nothing. |
 | `ClusterReady` | `Failing` | CloudNativePG reports a phase that it does not leave on its own. The message names the phase. | Read the CloudNativePG cluster for the cause. |
 | `ClusterReady` | `Suspending`, `Suspended` | `spec.suspend` is true. | Nothing. |
+| `ClusterReady` | `Blocked` | The ServiceAccount `my-db-postgres` belongs to another owner, or the cluster that a rollback moved to is gone. The message says which. | See [Name collisions](#name-collisions), or [Recovery](#recovery). |
 | `ClusterReady` | `ClusterTaken` | A CloudNativePG cluster of the server name belongs to another owner. | See [Name collisions](#name-collisions). |
 | `ArchiveReady` | `Disabled` | The server has no `archive` block. | Nothing. |
 | `ArchiveReady` | `Blocked` | The archive holds no base backup yet. | Wait. If it never completes, read the CloudNativePG `Backup` for the cause. |

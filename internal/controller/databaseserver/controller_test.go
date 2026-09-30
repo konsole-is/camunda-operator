@@ -714,6 +714,26 @@ var _ = Describe("DatabaseServer controller", func() {
 		Expect(backupLists.countIn(server.Namespace)).To(BeZero())
 	})
 
+	// CloudNativePG starts no instance pod without the ServiceAccount, and a
+	// healthy server has nothing else that brings it back.
+	It("puts back the ServiceAccount of a healthy server when it is deleted", func() {
+		server := serverInNamespace(nil)
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000001")
+		expectConditionReason(server, v1.ConditionReady, metav1.ConditionTrue, v1.ReasonHealthy)
+
+		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-postgres"}
+		var account corev1.ServiceAccount
+		Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &account)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			var restored corev1.ServiceAccount
+			g.Expect(k8sClient.Get(ctx, key, &restored)).To(Succeed())
+			g.Expect(restored.UID).NotTo(Equal(account.UID))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("mirrors the system identifier and the cluster CloudNativePG reports", func() {
 		server := serverInNamespace(nil)
 		writeSuperuserSecret(server)

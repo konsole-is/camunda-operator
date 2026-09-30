@@ -107,6 +107,7 @@ func (r *DatabaseServerReconciler) watches(mgr ctrl.Manager) error {
 
 	return controller.
 		Owns(&corev1.Secret{}, builder.OnlyMetadata).
+		Owns(&corev1.ServiceAccount{}, builder.OnlyMetadata).
 		Owns(&v1.DatabaseServerConfig{}).
 		Watches(
 			&v1.DatabaseServerPreset{},
