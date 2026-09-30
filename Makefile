@@ -416,8 +416,9 @@ HELM_RELEASE ?= camunda-operator
 HELM_CHART_DIR ?= dist/chart
 ## Additional arguments to pass to helm commands
 HELM_EXTRA_ARGS ?=
-## Helm version installed by install-helm. Pinned to .tool-versions.
-HELM_VERSION ?= v4.1.4
+## Helm version installed by install-helm. Renovate moves it with .tool-versions.
+# renovate: datasource=github-releases depName=helm/helm
+HELM_VERSION ?= v4.3.0
 
 .PHONY: install-helm
 install-helm: ## Install the pinned version of Helm if it is missing.

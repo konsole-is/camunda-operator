@@ -289,12 +289,40 @@ func countEvents(g Gomega, server *v1.DatabaseServer, reason string) int32 {
 
 	var count int32
 	for _, event := range recorded.Items {
-		if event.Reason == reason && event.InvolvedObject.Name == server.Name {
-			count += max(event.Count, 1)
+		if event.Reason != reason || event.InvolvedObject.Name != server.Name {
+			continue
 		}
+		times := max(event.Count, 1)
+		if event.Series != nil {
+			times = max(times, event.Series.Count)
+		}
+		count += times
 	}
 
 	return count
+}
+
+// expectOneEventPerRequest waits until the cluster under clusterKey carries
+// requested in annotation, then runs one more reconcile and asserts that the
+// server still has one event with reason.
+func expectOneEventPerRequest(
+	server *v1.DatabaseServer,
+	clusterKey client.ObjectKey,
+	reason, annotation, requested string,
+) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var cluster cnpgv1.Cluster
+		g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+		g.Expect(cluster.Annotations).To(HaveKeyWithValue(annotation, requested))
+	}, timeout, interval).Should(Succeed())
+
+	reconcileAgain(server, 1)
+
+	Consistently(func(g Gomega) {
+		g.Expect(countEvents(g, server, reason)).To(Equal(int32(1)))
+	}, 2*time.Second, interval).Should(Succeed())
 }
 
 // reconcileAgain edits a spec field that the version refusal does not touch,
@@ -2207,6 +2235,9 @@ var _ = Describe("DatabaseServer controller", func() {
 		})
 
 		expectShrinkWarning(server, "storageSize")
+		expectOneEventPerRequest(
+			server, clusterKey, eventReasonStorageShrinkIgnored, components.RequestedStorageSizeAnnotation, "1Gi",
+		)
 
 		// CloudNativePG refuses a cluster whose storage is smaller than the
 		// one it applied, so a server that let the smaller size through stops
@@ -2243,6 +2274,9 @@ var _ = Describe("DatabaseServer controller", func() {
 		})
 
 		expectShrinkWarning(server, "walStorageSize")
+		expectOneEventPerRequest(
+			server, clusterKey, eventReasonStorageShrinkIgnored, components.RequestedWALStorageSizeAnnotation, "1Gi",
+		)
 
 		Consistently(func(g Gomega) {
 			var cluster cnpgv1.Cluster
@@ -2286,6 +2320,9 @@ var _ = Describe("DatabaseServer controller", func() {
 				HaveField("Type", corev1.EventTypeWarning),
 			)))
 		}, timeout, interval).Should(Succeed())
+		expectOneEventPerRequest(
+			server, clusterKey, eventReasonWALStorageKept, components.RequestedWALStorageSizeAnnotation, "",
+		)
 
 		Consistently(func(g Gomega) {
 			var cluster cnpgv1.Cluster

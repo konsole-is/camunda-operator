@@ -284,9 +284,9 @@ func expectEvent(
 	}, timeout, interval).Should(Succeed())
 }
 
-// countEvents returns the number of times an event with the given reason was
-// recorded for cluster. The recorder folds repeats of one event into one
-// object and counts them in its series.
+// countEvents returns how many times an event with reason was recorded for
+// cluster. The recorder folds repeats of one event into one object and
+// counts them in its series.
 func countEvents(g Gomega, cluster *v1.CamundaCluster, reason string) int32 {
 	GinkgoHelper()
 	var events corev1.EventList
