@@ -31,7 +31,6 @@ import (
 var strandedPrimary = esadmintest.Shard{
 	Primary:          true,
 	State:            "UNASSIGNED",
-	RecoverySource:   "SNAPSHOT",
 	UnassignedReason: "NEW_INDEX_RESTORED",
 	AllocationStatus: "deciders_no",
 }
