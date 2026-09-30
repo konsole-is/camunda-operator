@@ -110,7 +110,7 @@ A workload that is not ready reports `Creating`, `Updating`, `Scaling`, or `Fail
 
 A value is a Go duration, for example `20m` or `1h`. The flag wins over the environment variable. With `0`, the condition keeps its progress reason and never reports `Degraded` or `Down`. The manager does not start with a negative value or with a value that is not a duration.
 
-Set a value that is longer than your slowest rollout. A value that is too short reports `Down` for a workload that starts slowly but correctly. A rolling update of many brokers, or the first start of a large Elasticsearch cluster, can take longer than the default.
+Set a value that is longer than your slowest rollout. A value that is too short reports `Degraded` or `Down` for a workload that starts slowly but correctly. A rolling update of many brokers, or the first start of a large Elasticsearch cluster, can take longer than the default.
 
 With Helm, set the environment variables in `manager.envOverrides`:
 
