@@ -31,7 +31,7 @@ import (
 // AWSCLIImage is the pinned aws-cli image of the helper pods that read the
 // bucket. It is the image of the bucket Job of testdata/rustfs.yaml.
 // renovate: datasource=docker depName=amazon/aws-cli
-const AWSCLIImage = "amazon/aws-cli:2.37.4"
+const AWSCLIImage = "amazon/aws-cli:2.37.9"
 
 // The names that testdata/rustfs.yaml creates. The manifest is the one
 // definition. These constants mirror it, so a spec repeats no string.
