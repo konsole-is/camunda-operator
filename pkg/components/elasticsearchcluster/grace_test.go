@@ -67,7 +67,8 @@ func TestElasticsearchGracePeriod(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cluster, preset, release := goldenMinimalElasticsearchCluster()
 			merged := MergeSpec(cluster.Spec, preset, release)
-			comp, err := ElasticsearchComponent(cluster, merged, RequestedStorage{Size: merged.StorageSize}, nil, gracePeriod)
+			requested := RequestedStorage{Size: merged.StorageSize}
+			comp, err := ElasticsearchComponent(cluster, merged, requested, nil, gracePeriod)
 			require.NoError(t, err)
 
 			var existing []client.Object
