@@ -29,7 +29,7 @@ spec:
       databaseConfigRef: my-keycloak-db
   identity:
     # renovate: datasource=docker depName=camunda/identity
-    version: "8.9.9"
+    version: "8.9.10"
     externalUrl: "https://identity.camunda.example.com"
     databaseConfigRef: my-identity-db
     admin:
@@ -37,11 +37,11 @@ spec:
       email: admin@example.com
   console:
     # renovate: datasource=docker depName=camunda/console
-    version: "8.9.115"
+    version: "8.9.119"
     externalUrl: "https://console.camunda.example.com"
   webModeler:
     # renovate: datasource=docker depName=camunda/web-modeler-restapi
-    version: "8.9.9"
+    version: "8.9.10"
     externalUrl: "https://modeler.camunda.example.com"
     websocketsExternalUrl: "https://modeler.camunda.example.com/ws"
     databaseConfigRef: my-web-modeler-db
