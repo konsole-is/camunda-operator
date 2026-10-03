@@ -188,7 +188,12 @@ type ElasticsearchClusterSpec struct {
 	// +optional
 	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
 	// StorageClassName is the StorageClass for the data volumes. Defaults to
-	// the cluster's default StorageClass.
+	// the default StorageClass of the Kubernetes cluster. The class cannot
+	// change after the ECK Elasticsearch resource exists. A cluster whose ECK
+	// resource exists keeps its class and records a
+	// StorageClassChangeIgnored event. A cluster without an ECK resource
+	// takes the new class, also a suspended cluster when it resumes. Volumes
+	// that a suspension or whenDeleted Retain kept keep their class.
 	// +optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
 	// ServiceAccount configures the Elasticsearch pods' ServiceAccount,

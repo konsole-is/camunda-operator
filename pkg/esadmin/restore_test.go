@@ -52,6 +52,18 @@ func TestResolveIndicesReturnsTheSortedConcreteNames(t *testing.T) {
 	assert.Empty(t, names)
 }
 
+// An alias that a pattern matches stands for the indices that it points to,
+// as it does for the delete that uses the names.
+func TestResolveIndicesReturnsTheIndicesOfAMatchedAlias(t *testing.T) {
+	client, server := newClient(t)
+	server.SetIndices("operate-list-8.3.0_", "other-1")
+	server.SetAlias("operate-list-alias", "operate-list-8.3.0_", "other-1")
+
+	names, err := client.ResolveIndices(t.Context(), []string{"operate-*"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"operate-list-8.3.0_", "other-1"}, names)
+}
+
 func TestResolveIndicesMapsBothErrorClasses(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
@@ -236,14 +248,15 @@ func TestRestoreProgressMapsBothErrorClasses(t *testing.T) {
 // recover yet: it is initializing before its recovery is registered, it waits
 // for allocation, or it waits for the retry of a failed recovery. No recovery
 // reports it, and it still reads as in progress. An unassigned replica does
-// not keep the restore waiting, and neither does a primary that does not
-// recover from a snapshot.
+// not keep the restore waiting, and neither does a primary without a valid
+// copy: Elasticsearch gives that status only to a primary that recovers from
+// its own store, not from a snapshot.
 func TestRestoreProgressCountsAShardThatHasNotStarted(t *testing.T) {
 	patterns := []string{"camunda-record*"}
 	started := esadmintest.Shard{Primary: true, State: "STARTED"}
 	restoredPrimary := func(reason, allocation string) esadmintest.Shard {
 		return esadmintest.Shard{
-			Primary: true, State: "UNASSIGNED", RecoverySource: "SNAPSHOT",
+			Primary: true, State: "UNASSIGNED",
 			UnassignedReason: reason, AllocationStatus: allocation,
 		}
 	}
@@ -296,14 +309,14 @@ func TestRestoreProgressCountsAShardThatHasNotStarted(t *testing.T) {
 		{
 			name: "an unassigned replica beside a started primary",
 			shards: []esadmintest.Shard{
-				started, {State: "UNASSIGNED", RecoverySource: "PEER", UnassignedReason: "NEW_INDEX_RESTORED"},
+				started, {State: "UNASSIGNED", UnassignedReason: "NEW_INDEX_RESTORED"},
 			},
 			want: esadmin.RestoreDone,
 		},
 		{
 			name: "a primary that recovers from its own store and has no valid copy",
 			shards: []esadmintest.Shard{{
-				Primary: true, State: "UNASSIGNED", RecoverySource: "EXISTING_STORE",
+				Primary: true, State: "UNASSIGNED",
 				UnassignedReason: "NODE_LEFT", AllocationStatus: "no_valid_shard_copy",
 			}},
 			want: esadmin.RestoreDone,
@@ -349,7 +362,7 @@ func TestRestoreProgressReportsARestoredPrimaryThatNoNodeTakes(t *testing.T) {
 			client, server := newClient(t)
 			server.SetIndices("camunda-record-1", "camunda-record-2")
 			server.SetShards("camunda-record-2", esadmintest.Shard{
-				Primary: true, State: "UNASSIGNED", RecoverySource: "SNAPSHOT",
+				Primary: true, State: "UNASSIGNED",
 				UnassignedReason: tt.reason, AllocationStatus: "deciders_no",
 			})
 			server.SetRecoveryActive(false)
@@ -370,7 +383,7 @@ func TestRestoreProgressReportsARestoredPrimaryThatNoNodeTakes(t *testing.T) {
 func TestRestoreProgressSortsTheStrandedPrimaries(t *testing.T) {
 	stranded := func(number int) esadmintest.Shard {
 		return esadmintest.Shard{
-			Number: number, Primary: true, State: "UNASSIGNED", RecoverySource: "SNAPSHOT",
+			Number: number, Primary: true, State: "UNASSIGNED",
 			UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "deciders_no",
 		}
 	}
@@ -402,7 +415,7 @@ func TestRestoreProgressSortsTheStrandedPrimaries(t *testing.T) {
 // the answer over a primary that no node takes.
 func TestRestoreProgressReportsARecoveryBeforeAStrandedPrimary(t *testing.T) {
 	stranded := esadmintest.Shard{
-		Primary: true, State: "UNASSIGNED", RecoverySource: "SNAPSHOT",
+		Primary: true, State: "UNASSIGNED",
 		UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "deciders_no",
 	}
 	client, server := newClient(t)
@@ -426,6 +439,71 @@ func TestRestoreProgressIgnoresShardsOfOtherIndices(t *testing.T) {
 	progress, err := client.RestoreProgress(t.Context(), []string{"camunda-record*"})
 	require.NoError(t, err)
 	assert.Equal(t, esadmin.RestoreDone, progress.State)
+}
+
+// A pattern of the restore set can match no index. The other indices of the
+// set still decide the answer.
+func TestRestoreProgressReadsTheIndicesBesideAPatternThatMatchesNothing(t *testing.T) {
+	patterns := []string{"camunda-record*", "operate-list"}
+	stranded := esadmintest.Shard{
+		Primary: true, State: "UNASSIGNED",
+		UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "deciders_no",
+	}
+
+	tests := []struct {
+		name  string
+		shard esadmintest.Shard
+		want  esadmin.RestoreState
+	}{
+		{
+			name:  "an initializing primary",
+			shard: esadmintest.Shard{Primary: true, State: "INITIALIZING"},
+			want:  esadmin.RestoreInProgress,
+		},
+		{name: "a restored primary that no node takes", shard: stranded, want: esadmin.RestoreStranded},
+		{
+			name:  "a started primary",
+			shard: esadmintest.Shard{Primary: true, State: "STARTED"},
+			want:  esadmin.RestoreDone,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, server := newClient(t)
+			server.SetIndices("camunda-record-1")
+			server.SetShards("camunda-record-1", tt.shard)
+
+			progress, err := client.RestoreProgress(t.Context(), patterns)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, progress.State)
+		})
+	}
+}
+
+// The explanation of an unassigned primary is a read of its own, and it maps
+// both error classes too.
+func TestRestoreProgressMapsBothErrorClassesOfTheExplanation(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+	server.SetIndices("camunda-record-1")
+	server.SetShards("camunda-record-1", esadmintest.Shard{
+		Primary: true, State: "UNASSIGNED",
+		UnassignedReason: "NEW_INDEX_RESTORED", AllocationStatus: "deciders_no",
+	})
+	patterns := []string{"camunda-record*"}
+
+	server.FailNext("explain", 1)
+	_, err := client.RestoreProgress(ctx, patterns)
+	require.ErrorIs(t, err, esadmin.ErrRejected)
+	assert.Contains(t, err.Error(), "injected explain failure")
+
+	server.DropNext("explain", 1)
+	_, err = client.RestoreProgress(ctx, patterns)
+	require.ErrorIs(t, err, esadmin.ErrUnreachable)
+
+	progress, err := client.RestoreProgress(ctx, patterns)
+	require.NoError(t, err, "one drop, then reachable again")
+	assert.Equal(t, esadmin.RestoreStranded, progress.State)
 }
 
 func TestRestoreProgressMapsBothErrorClassesOfTheShardRead(t *testing.T) {

@@ -19,6 +19,7 @@ package esadmintest_test
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -35,13 +36,15 @@ func TestServerRefusesAReadWithoutItsFilter(t *testing.T) {
 
 	tests := []struct {
 		name     string
+		method   string
 		path     string
+		body     string
 		filtered string
 	}{
 		{
 			name:     "index resolution",
-			path:     "/camunda-*?" + tolerant + "&expand_wildcards=open,closed",
-			filtered: "&filter_path=*.settings.index.uuid",
+			path:     "/_resolve/index/camunda-*?" + tolerant + "&expand_wildcards=open,closed",
+			filtered: "&filter_path=indices.name,aliases.indices",
 		},
 		{
 			name:     "recovery",
@@ -49,13 +52,18 @@ func TestServerRefusesAReadWithoutItsFilter(t *testing.T) {
 			filtered: "&filter_path=*.shards.stage",
 		},
 		{
-			name: "routing table",
-			path: "/_cluster/state/routing_table/camunda-*?" + tolerant,
-			filtered: "&filter_path=routing_table.indices.*.shards.*.state," +
-				"routing_table.indices.*.shards.*.primary," +
-				"routing_table.indices.*.shards.*.recovery_source.type," +
-				"routing_table.indices.*.shards.*.unassigned_info.reason," +
-				"routing_table.indices.*.shards.*.unassigned_info.allocation_status",
+			name: "shard health",
+			path: "/_cluster/health/camunda-*?level=shards&timeout=0s",
+			filtered: "&filter_path=indices.*.shards.*.initializing_shards," +
+				"indices.*.shards.*.unassigned_primary_shards",
+		},
+		{
+			name:   "allocation explanation",
+			method: http.MethodPost,
+			path:   "/_cluster/allocation/explain",
+			body:   `{"index":"camunda-1","shard":0,"primary":true}`,
+			filtered: "?filter_path=current_state,unassigned_info.reason," +
+				"unassigned_info.last_allocation_status",
 		},
 		{
 			name:     "snapshot status",
@@ -74,8 +82,8 @@ func TestServerRefusesAReadWithoutItsFilter(t *testing.T) {
 			t.Cleanup(server.Close)
 			server.SetIndices("camunda-1")
 
-			assert.Equal(t, http.StatusBadRequest, get(t, server.URL()+tt.path))
-			assert.NotEqual(t, http.StatusBadRequest, get(t, server.URL()+tt.path+tt.filtered))
+			assert.Equal(t, http.StatusBadRequest, send(t, tt.method, server.URL()+tt.path, tt.body))
+			assert.NotEqual(t, http.StatusBadRequest, send(t, tt.method, server.URL()+tt.path+tt.filtered, tt.body))
 		})
 	}
 }
@@ -107,10 +115,14 @@ func TestServerAnswersOnlyTheFilteredFields(t *testing.T) {
 	assert.Equal(t, want, body)
 }
 
-func get(t *testing.T, url string) int {
+// send makes one request and returns its status. An empty method is GET.
+func send(t *testing.T, method, url, body string) int {
 	t.Helper()
 
-	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+	if method == "" {
+		method = http.MethodGet
+	}
+	request, err := http.NewRequestWithContext(t.Context(), method, url, strings.NewReader(body))
 	require.NoError(t, err)
 	response, err := http.DefaultClient.Do(request)
 	require.NoError(t, err)

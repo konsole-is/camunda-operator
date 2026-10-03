@@ -73,7 +73,7 @@ When you delete the backup, the operator deletes a Job that still runs, waits un
 | `Ready` | `ClusterSuspended` | The cluster is suspended: by `spec.suspend`, by a restore, or by the operator to keep two clusters off one backend. The backup waits. | Read the `Ready` condition of the cluster for the cause. |
 | `Ready` | `BackupInProgress` | Another backup or a restore holds the cluster, or a claim Lease that no backup or restore holds. This one waits. The message names the holder or the claim Lease. | Wait for the named holder to give the cluster back. If the message names a claim Lease to delete, delete it. |
 | `Ready` | `StorageTypeMismatch` | The cluster does not store its data in a relational database. | Use `LogicalBackupElasticsearch` for an Elasticsearch cluster. |
-| `Ready` | `InvalidReference` | The cluster, its `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` does not exist. Or the server has no current `status.serverVersion`, or the dump pod cannot pull its image. | Read the message. Create the resource, or wait for the `DatabaseServerConfig` to become `Ready`. |
+| `Ready` | `InvalidReference` | The cluster, its `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` does not exist. Or the server has no current `status.serverVersion`, the dump pod cannot pull its image, or a `spec.dump.extraEnvFrom` source has no safe prefix. | Read the message. Create the resource, or wait for the `DatabaseServerConfig` to become `Ready`. For an unsafe prefix, create a new backup with a safe one. |
 | `Ready` | `MissingSecret` | The `DatabaseConfig` has no `backupCredentialsSecretRef`, that Secret does not exist, or the dump pod cannot start for a missing Secret. | Set `backupCredentialsSecretRef` on the `DatabaseConfig` and create the Secret. |
 | `Ready` | `MissingCredentials` | The static credentials of the bucket do not resolve. | Create the Secret that the `ObjectStorageConfig` names, with all of its keys. |
 | `Ready` | `ConnectionFailed` | The management API is unreachable or rejects the call. | Make sure that the cluster answers on its management port. After 10 minutes the backup fails. |
@@ -114,7 +114,7 @@ spec:
         memory: "1Gi"
     # list. Optional. Extra environment variables of the dump container. A name must not start with PG or UPLOAD_.
     extraEnv: []
-    # list. Optional, max 8. Extra environment sources of the dump container. Each source needs a prefix that cannot spell a PG* or UPLOAD_* name.
+    # list. Optional. Extra environment sources of the dump container. A source without a prefix, or with a prefix that can spell a PG* or UPLOAD_* name, keeps the backup in Pending.
     extraEnvFrom: []
     # map. Optional. Extra labels of the dump pod.
     podLabels: {}
@@ -137,9 +137,9 @@ spec:
 - The whole `spec` is immutable. To retry, create a new resource.
 - `spec.clusterRef.name` is required and must not be empty. The cluster must live in the namespace of the backup.
 - A name in `spec.dump.extraEnv` must not start with `PG` or `UPLOAD_`.
-- Every source in `spec.dump.extraEnvFrom` needs a `prefix`. The prefix must not start a `PG*` or `UPLOAD_*` name. At most 8 sources are allowed.
 - `spec.dump.scratchVolume.storageClassName` needs `sizeLimit`.
 - `spec.dump.activeDeadlineSeconds` must be 1 or more.
+- The API server accepts a `spec.dump.extraEnvFrom` source without a safe `prefix`. A safe prefix is not empty and does not start with `PG` or `UPLOAD_`. It is also not the start of one of these names, such as `P` or `UPLOAD`. For example, the prefix `P` and the key `GHOST` spell `PGHOST`. With an unsafe prefix, the backup stays in `Pending` with reason `InvalidReference`. Create a new backup with a safe prefix, such as `MY_`.
 
 ### A production-shaped example
 

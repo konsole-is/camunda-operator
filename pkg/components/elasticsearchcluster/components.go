@@ -80,6 +80,11 @@ const (
 	// size is visible, and the controller records an ignored shrink only when
 	// it changes.
 	RequestedStorageSizeAnnotation = "camunda.io/requested-storage-size"
+	// RequestedStorageClassAnnotation is the annotation of the ECK CR that
+	// carries the storageClassName that the merged spec asks for. It is
+	// absent when the merged spec sets no class. The claim keeps the class of
+	// the applied CR, so this is where the requested class is visible.
+	RequestedStorageClassAnnotation = "camunda.io/requested-storage-class"
 	// username is the file-realm user that the operator provisions for
 	// Camunda.
 	username = "camunda"
@@ -174,6 +179,30 @@ const (
 // CACertSecretName names.
 const CACertKey = caCertKey
 
+// RequestedStorage is the data volume that the merged spec asks for, before
+// the controller keeps the size and the class of the volume that is already
+// there. A nil StorageClassName asks for the default StorageClass.
+type RequestedStorage struct {
+	Size             *resource.Quantity
+	StorageClassName *string
+}
+
+func (r RequestedStorage) annotations() map[string]string {
+	if r.Size == nil && r.StorageClassName == nil {
+		return nil
+	}
+
+	annotations := map[string]string{}
+	if r.Size != nil {
+		annotations[RequestedStorageSizeAnnotation] = r.Size.String()
+	}
+	if r.StorageClassName != nil {
+		annotations[RequestedStorageClassAnnotation] = *r.StorageClassName
+	}
+
+	return annotations
+}
+
 // CredentialsComponent builds the credentials component: the basic-auth style
 // file-realm Secret with the Camunda user, the given password, and the Camunda
 // role, plus the Secret that defines that role. ECK consumes them through
@@ -248,17 +277,15 @@ func RolesSecretName(cluster *v1.ElasticsearchCluster) string {
 // spec.serviceAccount) and the ECK Elasticsearch CR. spec.suspend suspends the
 // component, which deletes the ECK CR with its data volumes retained.
 //
-// requestedStorageSize is the storageSize that the merged spec asked for
-// before the controller raised it to a volume that is already there. The ECK
-// CR carries it in RequestedStorageSizeAnnotation, and carries no annotation
-// when it is nil.
+// The ECK CR carries requested in RequestedStorageSizeAnnotation and
+// RequestedStorageClassAnnotation, and no annotation for a field that is nil.
 //
 // gracePeriod is how long the cluster may take to become ready before
 // ElasticsearchReady reports Degraded or Down. Zero keeps the progress reason.
 func ElasticsearchComponent(
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
-	requestedStorageSize *resource.Quantity,
+	requested RequestedStorage,
 	storage *SnapshotStorage,
 	gracePeriod time.Duration,
 ) (*component.Component, error) {
@@ -268,9 +295,7 @@ func ElasticsearchComponent(
 	}
 
 	baseline := elasticsearch(cluster, merged)
-	if requestedStorageSize != nil {
-		baseline.Annotations = map[string]string{RequestedStorageSizeAnnotation: requestedStorageSize.String()}
-	}
+	baseline.Annotations = requested.annotations()
 
 	elasticsearch, err := eckelasticsearch.NewBuilder(baseline).
 		WithMutation(elasticsearchMutations(cluster, merged, storage)...).

@@ -58,6 +58,8 @@ spec:
 
 An edit of a preset reaches every `ElasticsearchCluster` that references it. A lower `storageSize` in the preset does not shrink a running cluster. That cluster keeps its current size and records a Warning event with reason `StorageShrinkIgnored`. A new cluster uses the new baseline.
 
+A change of `storageClassName` reaches only the clusters that do not have an ECK resource yet. A suspended cluster takes it for its new volumes when it resumes. A cluster with an ECK resource keeps its class and records the Warning event `StorageClassChangeIgnored`. Volumes that a suspension or `whenDeleted: Retain` kept keep their class.
+
 ## Deletion
 
 Deleting a preset removes no cluster. Each `ElasticsearchCluster` that references it reports `Ready` `False` with reason `InvalidReference`.

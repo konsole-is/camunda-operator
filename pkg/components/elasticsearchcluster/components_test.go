@@ -177,7 +177,8 @@ func assertElasticsearchClusterGoldens(
 		golden.WithScheme(scheme), golden.Update(*updateGolden),
 	)
 
-	elasticsearch, err := ElasticsearchComponent(cluster, merged, merged.StorageSize, storage, 0)
+	requested := RequestedStorage{Size: merged.StorageSize, StorageClassName: merged.StorageClassName}
+	elasticsearch, err := ElasticsearchComponent(cluster, merged, requested, storage, 0)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "elasticsearch.yaml"), elasticsearch,
@@ -325,7 +326,7 @@ func TestForeignServiceAccountIsNamedButNotRendered(t *testing.T) {
 	cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-es", Create: &no}
 	merged := MergeSpec(cluster.Spec, preset, release)
 
-	comp, err := ElasticsearchComponent(cluster, merged, merged.StorageSize, nil, 0)
+	comp, err := ElasticsearchComponent(cluster, merged, RequestedStorage{Size: merged.StorageSize}, nil, 0)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
@@ -390,7 +391,7 @@ func TestPodIdentityRendersTheServiceAccount(t *testing.T) {
 		Type: v1.ObjectStorageAuthTypeWorkloadIdentity,
 	})}
 
-	comp, err := ElasticsearchComponent(cluster, merged, merged.StorageSize, storage, 0)
+	comp, err := ElasticsearchComponent(cluster, merged, RequestedStorage{Size: merged.StorageSize}, storage, 0)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
@@ -518,7 +519,7 @@ func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
 		"camunda.io/component":             "not-elasticsearch",
 		"team":                             "platform",
 	}
-	comp, err := ElasticsearchComponent(cluster, cluster.Spec, cluster.Spec.StorageSize, nil, 0)
+	comp, err := ElasticsearchComponent(cluster, cluster.Spec, RequestedStorage{Size: cluster.Spec.StorageSize}, nil, 0)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
@@ -610,21 +611,37 @@ func TestElasticsearchClusterGoldenSnapshotAzureWorkloadIdentity(t *testing.T) {
 	)
 }
 
-// The ECK CR carries the storageSize that the merged spec asks for, also when
-// the rendered claim is larger, and no annotation when it asks for none.
-func TestElasticsearchCarriesTheRequestedStorageSize(t *testing.T) {
+// The ECK CR carries the storageSize and the storageClassName that the merged
+// spec asks for, also when the rendered claim keeps another size or class,
+// and no annotation for what it does not ask for.
+func TestElasticsearchCarriesTheRequestedStorage(t *testing.T) {
 	t.Parallel()
 
 	cluster, preset, release := goldenMinimalElasticsearchCluster()
 	merged := MergeSpec(cluster.Spec, preset, release)
 	merged.StorageSize = new(resource.MustParse("8Gi"))
+	merged.StorageClassName = new("class-a")
 
 	for _, tt := range []struct {
-		requested *resource.Quantity
+		requested RequestedStorage
 		want      map[string]string
 	}{
-		{requested: new(resource.MustParse("512Mi")), want: map[string]string{RequestedStorageSizeAnnotation: "512Mi"}},
-		{requested: nil, want: nil},
+		{
+			requested: RequestedStorage{Size: new(resource.MustParse("512Mi"))},
+			want:      map[string]string{RequestedStorageSizeAnnotation: "512Mi"},
+		},
+		{
+			requested: RequestedStorage{StorageClassName: new("class-b")},
+			want:      map[string]string{RequestedStorageClassAnnotation: "class-b"},
+		},
+		{
+			requested: RequestedStorage{Size: new(resource.MustParse("512Mi")), StorageClassName: new("class-b")},
+			want: map[string]string{
+				RequestedStorageSizeAnnotation:  "512Mi",
+				RequestedStorageClassAnnotation: "class-b",
+			},
+		},
+		{requested: RequestedStorage{}, want: nil},
 	} {
 		comp, err := ElasticsearchComponent(cluster, merged, tt.requested, nil, 0)
 		require.NoError(t, err)
@@ -640,5 +657,6 @@ func TestElasticsearchCarriesTheRequestedStorageSize(t *testing.T) {
 		}
 		require.NotNil(t, es)
 		assert.Equal(t, tt.want, es.Annotations)
+		assert.Equal(t, new("class-a"), es.Spec.NodeSets[0].VolumeClaimTemplates[0].Spec.StorageClassName)
 	}
 }
