@@ -455,8 +455,7 @@ func (r *LogicalBackupRDBMSReconciler) resolvePod(
 	settings, owned, image := dumpBlock(merged, backup)
 	// The environment bound applies to the backup's own block only. The
 	// spec.backup.dump of the cluster is the policy of its owner inside
-	// their own boundary. The CRD schema enforces both rules too, and this
-	// check is the second layer.
+	// their own boundary. The CRD schema enforces the extraEnv rule too.
 	if backup != nil && backup.Spec.Dump != nil {
 		if reserved := components.ReservedEnv(backup.Spec.Dump); len(reserved) > 0 {
 			return nil, logicalbackup.InvalidReference(

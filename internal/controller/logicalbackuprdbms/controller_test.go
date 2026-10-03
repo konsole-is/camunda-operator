@@ -1093,6 +1093,26 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(readyCondition(backup).Message).To(ContainSubstring("current spec"))
 	})
 
+	// "P" plus a key GHOST spells PGHOST, so a head of a reserved prefix is
+	// unsafe too.
+	It("rejects a backup dump block with an extraEnvFrom source without a safe prefix", func() {
+		w := createWorld()
+		backup := createBackup(w, func(backup *v1.LogicalBackupRDBMS) {
+			backup.Spec.Dump = &v1.DumpPodSpec{ExtraEnvFrom: []corev1.EnvFromSource{
+				{Prefix: "MY_", ConfigMapRef: &corev1.ConfigMapEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "extras"},
+				}},
+				{Prefix: "P", ConfigMapRef: &corev1.ConfigMapEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "extras"},
+				}},
+			}}
+		})
+
+		expectPending(backup, v1.ReasonInvalidReference)
+		Expect(readyCondition(backup).Message).To(ContainSubstring(`source 1 (prefix "P")`))
+		Expect(readyCondition(backup).Message).NotTo(ContainSubstring("source 0"))
+	})
+
 	It("reports MissingCredentials until the bucket credentials resolve", func() {
 		w := createWorld()
 		Expect(k8sClient.Delete(ctx, &corev1.Secret{
