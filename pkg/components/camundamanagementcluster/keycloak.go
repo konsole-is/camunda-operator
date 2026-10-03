@@ -106,7 +106,7 @@ func keycloakComponents(in Input) (Built, error) {
 		return Built{}, fmt.Errorf("building the %s component: %w", ComponentKeycloak, err)
 	}
 
-	built := Built{Components: []*component.Component{comp}, Graced: []*component.Component{comp}}
+	built := Built{Components: []*component.Component{comp}}
 	if managed {
 		built.Ready = built.Components
 	}

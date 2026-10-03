@@ -392,9 +392,8 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	comps = built.all()
 
-	// A cluster whose name was held gets the whole grace period once it may
-	// start. Without this, a name held longer than the period reports the new
-	// cluster Down on its first reconcile.
+	// A cluster whose name was held gets the whole grace period once its name
+	// is free. Otherwise the transition time of the held period ends it at once.
 	if resolved.clusterTaken == "" {
 		grace.Restart(&server, v1.ConditionClusterReady, v1.ReasonClusterTaken)
 	}
@@ -1046,7 +1045,7 @@ func (r *DatabaseServerReconciler) requeueAfter(
 		waits = append(waits, wait)
 	}
 
-	if wait := grace.Remaining(server, r.GracePeriods.Datastore, time.Now(), cluster); wait > 0 {
+	if wait, ok := cluster.GraceRemaining(server); ok {
 		waits = append(waits, wait)
 	}
 

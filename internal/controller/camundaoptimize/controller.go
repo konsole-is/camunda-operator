@@ -287,7 +287,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		wait = r.retryInterval()
 	}
 
-	wait = grace.Sooner(wait, grace.Remaining(&optimize, res.Input.GracePeriod, time.Now(), built.workloads...))
+	if graceWait, ok := component.EarliestGraceRemaining(&optimize, built.all...); ok {
+		wait = grace.Sooner(wait, graceWait)
+	}
 
 	return ctrl.Result{RequeueAfter: wait}, nil
 }
@@ -305,9 +307,8 @@ func (r *Reconciler) retryInterval() time.Duration {
 // optimizeComponents are the components of one CamundaOptimize: all of them
 // are reconciled in order, and the ready ones make up Ready.
 type optimizeComponents struct {
-	all       []*component.Component
-	ready     []*component.Component
-	workloads []*component.Component
+	all   []*component.Component
+	ready []*component.Component
 }
 
 // buildComponents builds every component in reconcile order: the copies of
@@ -325,10 +326,7 @@ func (r *Reconciler) buildComponents(res resolved) (optimizeComponents, error) {
 		return optimizeComponents{}, fmt.Errorf("building workload components: %w", err)
 	}
 
-	comps := optimizeComponents{
-		all:       append([]*component.Component{mirrored}, workloads...),
-		workloads: workloads,
-	}
+	comps := optimizeComponents{all: append([]*component.Component{mirrored}, workloads...)}
 	comps.ready = workloads
 	if len(res.Mirrors) > 0 {
 		comps.ready = append([]*component.Component{mirrored}, workloads...)

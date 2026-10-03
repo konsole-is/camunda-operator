@@ -348,9 +348,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	case convergesUsers(&mc, attached), len(res.Input.OptimizeURLs) > 0:
 		result.RequeueAfter = r.convergeInterval()
 	}
-	result.RequeueAfter = grace.Sooner(
-		result.RequeueAfter, grace.Remaining(&mc, res.Input.GracePeriod, time.Now(), built.Graced...),
-	)
+	if graceWait, ok := component.EarliestGraceRemaining(&mc, built.Components...); ok {
+		result.RequeueAfter = grace.Sooner(result.RequeueAfter, graceWait)
+	}
 
 	return result, errors.Join(
 		reconcileErr, claimErr, userErr, pingErr, releaseErr, contractErr, callbackErr,

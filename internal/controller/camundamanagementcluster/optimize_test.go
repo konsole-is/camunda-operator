@@ -1156,10 +1156,10 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}))
 	})
 
-	// A Deployment whose old pod is still ready satisfies IdentityReady while
-	// the new pod runs its initializer against the realm. Only a finished
-	// rollout leaves no Management Identity writing to the client.
-	It("waits through a rollout that an old ready pod would hide", func() {
+	// The old pod is still ready while the new pod runs its initializer
+	// against the realm. Only a finished rollout leaves no Management Identity
+	// writing to the client.
+	It("waits through a rollout that still has an old ready pod", func() {
 		keycloak := startFakeKeycloak(withOptimizeClient())
 		s := newScenario(withFakeKeycloak(keycloak))
 
@@ -1169,20 +1169,16 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		Eventually(func(g Gomega) {
 			stampMidRollout(g, identity)
 
-			g.Expect(conditionOf(g, s.mc, v1.ConditionIdentityReady).Status).To(
-				Equal(metav1.ConditionTrue),
-			)
+			identity := conditionOf(g, s.mc, v1.ConditionIdentityReady)
+			g.Expect(identity.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(identity.Reason).To(Equal(string(component.AliveCreating)))
 			g.Expect(conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady).Reason).To(
 				Equal(string(component.PrerequisiteNotMet)),
 			)
 
-			// No component reports the wait, because the pod of the previous
-			// revision satisfies IdentityReady. Ready therefore has to carry
-			// it, or it reads Healthy over a callback that nobody can sign in
-			// through yet.
 			ready := conditionOf(g, s.mc, v1.ConditionReady)
 			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
-			g.Expect(ready.Reason).To(Equal(string(component.PrerequisiteNotMet)))
+			g.Expect(ready.Reason).To(Equal(string(component.AliveCreating)))
 		}, timeout, interval).Should(Succeed())
 
 		Expect(keycloak.redirectURIs()).To(BeEmpty())

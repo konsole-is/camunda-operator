@@ -364,7 +364,9 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		wait = r.retryInterval()
 	}
 
-	wait = grace.Sooner(wait, grace.Remaining(&cluster, in.GracePeriod, time.Now(), built.processes...))
+	if graceWait, ok := component.EarliestGraceRemaining(&cluster, built.all...); ok {
+		wait = grace.Sooner(wait, graceWait)
+	}
 
 	return ctrl.Result{RequeueAfter: wait}, nil
 }
@@ -527,9 +529,8 @@ func (r *CamundaClusterReconciler) serviceMonitorSupported() bool {
 // clusterComponents are the components of one cluster: all of them are
 // reconciled in order, and the ready ones make up Ready.
 type clusterComponents struct {
-	all       []*component.Component
-	ready     []*component.Component
-	processes []*component.Component
+	all   []*component.Component
+	ready []*component.Component
 }
 
 // buildComponents builds every component of the cluster in reconcile order:
@@ -582,7 +583,6 @@ func (r *CamundaClusterReconciler) buildComponents(
 	}
 	for _, pc := range processes {
 		add(pc.Component, pc.Process.Enabled)
-		comps.processes = append(comps.processes, pc.Component)
 	}
 
 	return comps, nil

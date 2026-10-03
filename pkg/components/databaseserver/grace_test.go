@@ -25,6 +25,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta/testrestmapper"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
@@ -84,6 +85,33 @@ func TestClusterGracePeriod(t *testing.T) {
 			assert.Equal(t, string(tt.wantReason), cond.Reason)
 		})
 	}
+}
+
+// A ServiceAccount that another owner controls blocks the cluster. After the
+// grace period the condition reports Down, and the message still names that
+// owner, so the user can find it.
+func TestClusterGracePeriodKeepsTheOwnerOfAForeignServiceAccount(t *testing.T) {
+	server, preset, release := goldenMinimalDatabaseServer()
+	merged := MergeSpec(server.Spec, preset, release)
+	comp, _, err := ClusterComponent(server, merged, RequestedStorage{}, nil, "", nil, "", nil, 30*time.Minute)
+	require.NoError(t, err)
+
+	foreign := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{
+		Name:      ServiceAccountName(server),
+		Namespace: server.Namespace,
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: v1.GroupVersion.String(),
+			Kind:       "DatabaseServer",
+			Name:       "holder",
+			UID:        "holder-uid",
+			Controller: new(true),
+		}},
+	}}
+
+	cond := reconcileCreating(t, server, comp, time.Hour, foreign)
+
+	assert.Equal(t, string(component.Down), cond.Reason)
+	assert.Contains(t, cond.Message, "DatabaseServer holder")
 }
 
 // reconcileCreating reconciles comp once against a fake API server that

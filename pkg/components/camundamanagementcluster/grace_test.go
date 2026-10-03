@@ -52,10 +52,9 @@ func TestWorkloadGracePeriod(t *testing.T) {
 			in.GracePeriod = gracePeriod
 			built, err := Build(in)
 			require.NoError(t, err)
-			graced := []string{ComponentKeycloak, ComponentIdentity, ComponentConsole, ComponentWebModeler}
-			require.ElementsMatch(t, graced, componentNames(built.Graced))
 
-			for _, comp := range built.Graced {
+			for _, name := range []string{ComponentKeycloak, ComponentIdentity, ComponentConsole, ComponentWebModeler} {
+				comp := builtComponent(t, built, name)
 				t.Run(comp.GetName(), func(t *testing.T) {
 					cond := reconcileCreating(t, in.Cluster.DeepCopy(), comp, tt.since)
 

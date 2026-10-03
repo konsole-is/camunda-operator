@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Package grace holds the grace periods of the components that run a
-// workload, and the wait until one of them runs out.
+// workload, as the manager flags set them.
 package grace
 
 import (
@@ -26,7 +26,6 @@ import (
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -126,53 +125,6 @@ func (p Periods) Validate() error {
 	return nil
 }
 
-// Remaining returns the time until the first grace period of comps runs out
-// on owner, or 0 when none of them waits on one. Call it after the components
-// reconciled, with the period they were built with. A controller requeues
-// after the result, because no watch event arrives when a grace period runs
-// out.
-func Remaining(
-	owner component.OperatorCRD, period time.Duration, now time.Time, comps ...*component.Component,
-) time.Duration {
-	if period <= 0 {
-		return 0
-	}
-
-	var soonest time.Duration
-	for _, comp := range comps {
-		cond := comp.GetCondition(owner)
-		if cond.Status != metav1.ConditionFalse {
-			continue
-		}
-
-		// A reason that ocf does not know was staged by a controller, which
-		// writes it again after every reconcile, so a wake-up changes nothing.
-		if cond.ComponentStatus().Priority() == 0 {
-			continue
-		}
-
-		switch cond.ComponentStatus() {
-		case component.Down, component.Degraded,
-			component.PrerequisiteNotMet, component.FeatureGateError,
-			component.PendingSuspension, component.Suspending:
-			continue
-		}
-
-		// ocf grades a condition only once more than the period has passed,
-		// and lastTransitionTime keeps whole seconds on the server.
-		left := cond.LastTransitionTime.Add(period + time.Second).Sub(now)
-		if left <= 0 {
-			// The grace period ran out and ocf graded the component
-			// Healthy: it keeps its progress reason until an event comes.
-			continue
-		}
-
-		soonest = Sooner(soonest, left)
-	}
-
-	return soonest
-}
-
 // Restart removes the condition of conditionType from owner when its reason
 // is one of reasons, so the component starts a new grace period when it
 // reconciles next. A controller calls Restart before the reconcile when a
@@ -185,8 +137,8 @@ func Restart(owner component.OperatorCRD, conditionType string, reasons ...strin
 	}
 }
 
-// Sooner returns the shorter of two waits. Zero means no wait, so it returns
-// the other one.
+// Sooner returns the shorter of two requeue delays. A zero delay asks for no
+// requeue, so Sooner returns the other one.
 func Sooner(a, b time.Duration) time.Duration {
 	switch {
 	case a == 0:

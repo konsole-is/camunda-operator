@@ -110,7 +110,7 @@ func consoleComponents(in Input) (Built, error) {
 		return Built{}, fmt.Errorf("building the %s component: %w", ComponentConsole, err)
 	}
 
-	built := Built{Components: []*component.Component{comp}, Graced: []*component.Component{comp}}
+	built := Built{Components: []*component.Component{comp}}
 	if deployed {
 		built.Ready = built.Components
 	}

@@ -235,7 +235,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		StorageClassName: r.keepAppliedStorageClass(&cluster, &merged, existing),
 	}
 
-	core, elasticsearch, metrics, err := r.buildComponents(ctx, &cluster, merged, requested, storage)
+	core, metrics, err := r.buildComponents(ctx, &cluster, merged, requested, storage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -285,9 +285,9 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		wait = r.retryInterval()
 	}
 
-	now := time.Now()
-	wait = grace.Sooner(wait, grace.Remaining(&cluster, r.GracePeriods.Datastore, now, elasticsearch))
-	wait = grace.Sooner(wait, grace.Remaining(&cluster, r.GracePeriods.Workload, now, metrics))
+	if graceWait, ok := component.EarliestGraceRemaining(&cluster, comps...); ok {
+		wait = grace.Sooner(wait, graceWait)
+	}
 
 	return ctrl.Result{RequeueAfter: wait}, nil
 }
@@ -522,7 +522,7 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 	merged v1.ElasticsearchClusterSpec,
 	requested components.RequestedStorage,
 	storage *components.SnapshotStorage,
-) (core []*component.Component, elasticsearch, metrics *component.Component, err error) {
+) (core []*component.Component, metrics *component.Component, err error) {
 	// The contract publishes the repository name only once a registration has
 	// converged: a consumer that read the name earlier would snapshot against
 	// a repository that does not exist. status.snapshotRepository is the
@@ -538,41 +538,41 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 		}, components.PasswordKey,
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	credentialsComp, err := components.CredentialsComponent(cluster, password)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("building credentials component: %w", err)
+		return nil, nil, fmt.Errorf("building credentials component: %w", err)
 	}
 
 	keystoreComp, err := components.KeystoreComponent(cluster, storage)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("building keystore component: %w", err)
+		return nil, nil, fmt.Errorf("building keystore component: %w", err)
 	}
 
 	elasticsearchComp, err := components.ElasticsearchComponent(
 		cluster, merged, requested, storage, r.GracePeriods.Datastore,
 	)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("building elasticsearch component: %w", err)
+		return nil, nil, fmt.Errorf("building elasticsearch component: %w", err)
 	}
 
 	storageContractComp, err := components.StorageContractComponent(cluster, merged, storage, registeredName)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("building storage-contract component: %w", err)
+		return nil, nil, fmt.Errorf("building storage-contract component: %w", err)
 	}
 
 	metricsComp, err := components.MetricsComponent(
 		cluster, merged, r.serviceMonitorSupported(), r.GracePeriods.Workload,
 	)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("building metrics component: %w", err)
+		return nil, nil, fmt.Errorf("building metrics component: %w", err)
 	}
 
 	return []*component.Component{
 		credentialsComp, keystoreComp, elasticsearchComp, storageContractComp,
-	}, elasticsearchComp, metricsComp, nil
+	}, metricsComp, nil
 }
 
 // serviceMonitorSupported reports whether the cluster serves the

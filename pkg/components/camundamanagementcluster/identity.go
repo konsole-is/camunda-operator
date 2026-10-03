@@ -170,7 +170,7 @@ func identityComponents(in Input) (Built, error) {
 
 	comps := []*component.Component{comp}
 
-	return Built{Components: comps, Ready: comps, Graced: comps}, nil
+	return Built{Components: comps, Ready: comps}, nil
 }
 
 // identityOptimizeURLs renders the ConfigMap that carries the Optimize root
