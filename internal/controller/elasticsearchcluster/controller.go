@@ -41,6 +41,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -77,6 +78,13 @@ const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 // eventActionResize is the action of the events that the controller records
 // about the size of the data volumes.
 const eventActionResize = "Resize"
+
+// eventReasonStorageClassChangeIgnored is the Warning event for a requested
+// storageClassName that the data volume claim of the applied ECK CR does not
+// take.
+const eventReasonStorageClassChangeIgnored = "StorageClassChangeIgnored"
+
+const eventActionApply = "Apply"
 
 // defaultRetryInterval is how long the controller waits before it looks again
 // at something that no watch reports. Three things need it: a foreign
@@ -215,9 +223,12 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	requestedStorageSize := r.keepAppliedStorageSize(&cluster, &merged, existing)
+	requested := components.RequestedStorage{
+		Size:             r.keepAppliedStorageSize(&cluster, &merged, existing),
+		StorageClassName: r.keepAppliedStorageClass(&cluster, &merged, existing),
+	}
 
-	core, metrics, err := r.buildComponents(ctx, &cluster, merged, requestedStorageSize, storage)
+	core, metrics, err := r.buildComponents(ctx, &cluster, merged, requested, storage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -394,21 +405,28 @@ func (r *ElasticsearchClusterReconciler) keepAppliedStorageSize(
 }
 
 // dataVolumes are the data volumes that the cluster has: one entry per data
-// PersistentVolumeClaim that reports a capacity, sorted by name, and the
-// claim size and the requested storage size annotation of the applied ECK CR
-// when that CR exists. foreign is true for a CR that another owner controls.
+// PersistentVolumeClaim that reports a capacity, sorted by name, and the spec
+// of the data claim and the requested storage annotations of the applied ECK
+// CR when that CR exists. requestedClass is nil when the CR has no requested class
+// annotation. foreign is true for a CR that another owner controls.
 type dataVolumes struct {
-	volumes   []v1.VolumeStatus
-	applied   *resource.Quantity
-	requested string
-	foreign   bool
+	volumes        []v1.VolumeStatus
+	applied        *corev1.PersistentVolumeClaimSpec
+	requested      string
+	requestedClass *string
+	foreign        bool
 }
 
 // largest returns the largest of the claim capacities and the applied claim
 // size, or nil when neither exists. It is the size that a rendered claim must
 // not go below.
 func (d dataVolumes) largest() *resource.Quantity {
-	largest := d.applied
+	var largest *resource.Quantity
+	if d.applied != nil {
+		if size, ok := d.applied.Resources.Requests[corev1.ResourceStorage]; ok {
+			largest = &size
+		}
+	}
 	for i := range d.volumes {
 		if largest == nil || d.volumes[i].Capacity.Cmp(*largest) > 0 {
 			largest = &d.volumes[i].Capacity
@@ -424,6 +442,59 @@ func (d dataVolumes) requestApplied(size resource.Quantity) bool {
 	return err == nil && requested.Cmp(size) == 0
 }
 
+func (d dataVolumes) classRequestApplied(class *string) bool {
+	return ptr.Equal(d.requestedClass, class)
+}
+
+// keepAppliedStorageClass keeps in merged the class of the data volume claim
+// of the applied ECK CR. It records at most one Warning event per requested
+// class. It returns the class for the requested class annotation.
+func (r *ElasticsearchClusterReconciler) keepAppliedStorageClass(
+	cluster *v1.ElasticsearchCluster,
+	merged *v1.ElasticsearchClusterSpec,
+	volumes dataVolumes,
+) *string {
+	requested := merged.StorageClassName
+	if volumes.applied == nil || ptr.Equal(volumes.applied.StorageClassName, requested) {
+		return requested
+	}
+	// The ECK validation webhook refuses every change of a claim except its
+	// storage request.
+	merged.StorageClassName = volumes.applied.StorageClassName
+
+	// A CR that another owner controls never takes the request.
+	if volumes.foreign || volumes.classRequestApplied(requested) {
+		return requested
+	}
+
+	// A suspension can be cancelled before it deletes the CR. The CR then
+	// keeps its old request, so the next reconcile records the event.
+	if merged.Suspend {
+		return volumes.requestedClass
+	}
+
+	r.EventRecorder.Eventf(
+		cluster,
+		nil,
+		corev1.EventTypeWarning,
+		eventReasonStorageClassChangeIgnored,
+		eventActionApply,
+		"requested storageClassName %s is not applied: the data volume claim of the Elasticsearch resource keeps the class %s, because ECK cannot change it",
+		className(requested),
+		className(volumes.applied.StorageClassName),
+	)
+
+	return requested
+}
+
+func className(class *string) string {
+	if class == nil {
+		return "(none, so the default StorageClass)"
+	}
+
+	return fmt.Sprintf("%q", *class)
+}
+
 // buildComponents builds the components in dependency order: the three that
 // make up Ready (credentials, elasticsearch, storage-contract), and the
 // metrics component apart. It reads the password from the existing user
@@ -433,7 +504,7 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
-	requestedStorageSize *resource.Quantity,
+	requested components.RequestedStorage,
 	storage *components.SnapshotStorage,
 ) (core []*component.Component, metrics *component.Component, err error) {
 	// The contract publishes the repository name only once a registration has
@@ -464,7 +535,7 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 		return nil, nil, fmt.Errorf("building keystore component: %w", err)
 	}
 
-	elasticsearchComp, err := components.ElasticsearchComponent(cluster, merged, requestedStorageSize, storage)
+	elasticsearchComp, err := components.ElasticsearchComponent(cluster, merged, requested, storage)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building elasticsearch component: %w", err)
 	}
@@ -564,23 +635,23 @@ func (r *ElasticsearchClusterReconciler) dataVolumes(
 		}
 		return dataVolumes{}, fmt.Errorf("reading applied Elasticsearch %q: %w", cluster.Name, err)
 	}
-	volumes.applied = appliedDataClaimSize(&es)
+	volumes.applied = appliedDataClaim(&es)
 	volumes.requested = es.Annotations[components.RequestedStorageSizeAnnotation]
+	if class, ok := es.Annotations[components.RequestedStorageClassAnnotation]; ok {
+		volumes.requestedClass = &class
+	}
 	volumes.foreign = metav1.GetControllerOf(&es) != nil && !metav1.IsControlledBy(&es, cluster)
 
 	return volumes, nil
 }
 
-// appliedDataClaimSize returns the data volume claim size of the applied ECK
-// CR, or nil when the CR carries no such claim.
-func appliedDataClaimSize(es *esv1.Elasticsearch) *resource.Quantity {
+// appliedDataClaim returns the spec of the data volume claim of the applied
+// ECK CR, or nil when the CR has none.
+func appliedDataClaim(es *esv1.Elasticsearch) *corev1.PersistentVolumeClaimSpec {
 	for _, nodeSet := range es.Spec.NodeSets {
 		for _, claim := range nodeSet.VolumeClaimTemplates {
-			if claim.Name != components.DataVolumeClaimName {
-				continue
-			}
-			if size, ok := claim.Spec.Resources.Requests[corev1.ResourceStorage]; ok {
-				return &size
+			if claim.Name == components.DataVolumeClaimName {
+				return &claim.Spec
 			}
 		}
 	}
