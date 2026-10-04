@@ -198,6 +198,7 @@ func webModelerComponents(in Input) (Built, error) {
 		WithResource(restapiService, component.GatedBy(gate)).
 		WithResource(websockets, component.GatedBy(gate)).
 		WithResource(websocketsService, component.GatedBy(gate)).
+		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Suspended).
 		Build()
 	if err != nil {

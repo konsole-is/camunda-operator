@@ -152,6 +152,7 @@ func identityComponents(in Input) (Built, error) {
 		WithResource(urls, component.GatedBy(feature.NewBooleanGate(len(in.OptimizeURLs) > 0))).
 		WithResource(workload).
 		WithResource(svc).
+		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Suspended)
 	if in.Provider.Mode == ModeKeycloak {
 		// The Keycloak Operator writes the administrator Secret that

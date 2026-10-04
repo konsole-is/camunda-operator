@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"time"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -150,6 +151,9 @@ func (r RequestedStorage) annotations() map[string]string {
 // While the server archives, each pluginRoles entry with Granted set gets a
 // RoleBinding from the Role of the Barman Cloud plugin to the ServiceAccount of
 // the server: see pluginbinding.go.
+//
+// gracePeriod is how long the cluster may take to become ready before
+// ClusterReady reports Degraded or Down. Zero keeps the progress reason.
 func ClusterComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
@@ -159,6 +163,7 @@ func ClusterComponent(
 	platform *v1.CamundaPlatformConfigSpec,
 	blocked string,
 	pluginRoles []ArchivePluginRole,
+	gracePeriod time.Duration,
 ) (*component.Component, *concepts.Data[string], error) {
 	systemIdentifier := concepts.NewData[string]("postgres-system-identifier")
 
@@ -203,6 +208,7 @@ func ClusterComponent(
 
 	comp, err := compBuilder.
 		WithResource(postgres, component.BlockOnForeignController()).
+		WithGracePeriod(gracePeriod).
 		Suspend(merged.Suspend && blocked == "").
 		Build()
 	if err != nil {
