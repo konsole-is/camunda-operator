@@ -155,8 +155,8 @@ func TestRuntimeBackupFoundWithoutIntentIsNotAdopted(t *testing.T) {
 					Namespace: "ns", Name: camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
 				},
 			}
-			zeebe.Spec.Template.Annotations = map[string]string{camundacluster.ConfigHashAnnotation: "hash-1"}
-			backup.Status.WorkloadConfigHash = "hash-1"
+			zeebe.Spec.Template.Annotations = map[string]string{camundacluster.ConfigHashAnnotation: rigConfigHash}
+			backup.Status.WorkloadConfigHash = rigConfigHash
 			require.NoError(t, appsv1.AddToScheme(s))
 			r.APIReader = fake.NewClientBuilder().WithScheme(s).WithObjects(storage, zeebe).Build()
 			_ = mgmt
@@ -171,6 +171,41 @@ func TestRuntimeBackupFoundWithoutIntentIsNotAdopted(t *testing.T) {
 			assert.Nil(t, backup.Status.RuntimeAcceptedTime)
 		})
 	}
+}
+
+// A roll of Zeebe fails the step at once with both hashes, also while the
+// management API does not answer the status call.
+func TestRuntimeStepFailsOnARollAlsoWhenTheStatusCallIsUnreachable(t *testing.T) {
+	r, _, _ := runtimeRig(t)
+	backup := runtimeBackup()
+	backup.Status.WorkloadConfigHash = rigConfigHash
+	storage := &v1.SecondaryStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "storage", Namespace: "ns"},
+		Spec: v1.SecondaryStorageConfigSpec{
+			Type:          v1.SecondaryStorageTypeElasticsearch,
+			Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es:9200"},
+		},
+	}
+	cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "cc", Namespace: "ns"}}
+	cluster.Spec.StorageRef = storage.Name
+	cluster.Status.Management = &v1.ManagementBinding{
+		// A closed port: the status call is unreachable.
+		Endpoint: "http://127.0.0.1:1", Version: "8.9.9",
+		Auth: v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
+	}
+	s := runtime.NewScheme()
+	require.NoError(t, v1.AddToScheme(s))
+	require.NoError(t, appsv1.AddToScheme(s))
+	r.APIReader = fake.NewClientBuilder().WithScheme(s).
+		WithObjects(storage, zeebeWorkload("hash-2", "https://es:9200")).Build()
+
+	_, err := r.backupRuntime(t.Context(), backup, cluster)
+	require.NoError(t, err)
+
+	assert.Equal(t, v1.StepResumeExporting, backup.Status.Step)
+	assert.Equal(t, v1.BackupPartFailed, backup.Status.Runtime.State)
+	assert.Contains(t, backup.Status.FailureMessage, "hash-1")
+	assert.Contains(t, backup.Status.FailureMessage, "hash-2")
 }
 
 // A step fails at once, with both hashes, when Zeebe rolled since the
@@ -198,7 +233,7 @@ func TestWorkloadUnchangedFailsTheStepWhenZeebeLeftThePinnedHash(t *testing.T) {
 				EventRecorder: events.NewFakeRecorder(16),
 			}
 			backup := runtimeBackup()
-			backup.Status.WorkloadConfigHash = "hash-1"
+			backup.Status.WorkloadConfigHash = rigConfigHash
 
 			_, done, err := r.workloadUnchanged(t.Context(), backup, cluster, "BackupRuntime", &backup.Status.Runtime)
 			require.NoError(t, err)

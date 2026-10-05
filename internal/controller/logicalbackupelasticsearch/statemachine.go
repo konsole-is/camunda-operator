@@ -134,6 +134,11 @@ func (r *Reconciler) backupHistory(
 	}
 
 	status, err := mgmt.HistoryBackupStatus(ctx, backup.Status.BackupID)
+	if result, done, err := r.workloadUnchanged(
+		ctx, backup, cluster, "BackupHistory", &backup.Status.History,
+	); done {
+		return result, err
+	}
 	if err != nil {
 		if errors.Is(err, camundaadmin.ErrUnreachable) {
 			return r.stageUnreachable(backup, "BackupHistory", &backup.Status.History, err)
@@ -141,11 +146,6 @@ func (r *Reconciler) backupHistory(
 
 		r.failStep(backup, "BackupHistory", &backup.Status.History, err)
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
-	}
-	if result, done, err := r.workloadUnchanged(
-		ctx, backup, cluster, "BackupHistory", &backup.Status.History,
-	); done {
-		return result, err
 	}
 
 	if status.State == camundaadmin.StateDoesNotExist {
@@ -281,6 +281,9 @@ func (r *Reconciler) snapshotRecords(
 
 	name := logicalbackup.RecordsSnapshotName(backup.Status.BackupID)
 	snapshot, err := es.SnapshotStatus(ctx, backup.Status.Repository, name)
+	if result, done, err := r.workloadUnchanged(ctx, backup, cluster, "SnapshotRecords", part); done {
+		return result, err
+	}
 	if err != nil {
 		if errors.Is(err, esadmin.ErrUnreachable) {
 			return r.stageUnreachable(backup, "SnapshotRecords", part, err)
@@ -288,9 +291,6 @@ func (r *Reconciler) snapshotRecords(
 
 		r.failStep(backup, "SnapshotRecords", part, err)
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
-	}
-	if result, done, err := r.workloadUnchanged(ctx, backup, cluster, "SnapshotRecords", part); done {
-		return result, err
 	}
 
 	// The name is deterministic per backup ID, and an ID can be reused. An
@@ -410,6 +410,9 @@ func (r *Reconciler) backupRuntime(
 	}
 
 	status, err := mgmt.RuntimeBackupStatus(ctx, backup.Status.BackupID)
+	if result, done, err := r.workloadUnchanged(ctx, backup, cluster, "BackupRuntime", part); done {
+		return result, err
+	}
 	if err != nil {
 		if errors.Is(err, camundaadmin.ErrUnreachable) {
 			return r.stageUnreachable(backup, "BackupRuntime", part, err)
@@ -417,9 +420,6 @@ func (r *Reconciler) backupRuntime(
 
 		r.failStep(backup, "BackupRuntime", part, err)
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
-	}
-	if result, done, err := r.workloadUnchanged(ctx, backup, cluster, "BackupRuntime", part); done {
-		return result, err
 	}
 
 	if status.State == camundaadmin.StateDoesNotExist {
