@@ -250,7 +250,6 @@ func (r *LogicalBackupRDBMSReconciler) pollZeebeBackup(
 		// Unreachable or rejected alike. The mid-run grace bounds both.
 		return r.holdRunning(backup, managementFailure(cluster, err))
 	}
-	r.recovered(backup)
 
 	// The hash is read after the state. A rollout that started before the
 	// cluster reported the backup final is then in the template already.
@@ -261,6 +260,8 @@ func (r *LogicalBackupRDBMSReconciler) pollZeebeBackup(
 	if failure != nil {
 		return r.holdRunning(backup, failure)
 	}
+	r.recovered(backup)
+
 	if hash != backup.Status.WorkloadConfigHash {
 		// Brokers can take their part under the new configuration. No grace
 		// can make that part match the dump again.

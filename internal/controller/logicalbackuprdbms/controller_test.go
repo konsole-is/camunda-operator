@@ -1676,6 +1676,29 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	It("fails after the grace when the Zeebe workload stays gone while the management API answers", func() {
+		w := createWorld()
+		backup := createBackup(w)
+
+		markJob(backup, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		By("deleting the Zeebe workload while the cluster reports the backup in progress")
+		Expect(k8sClient.Delete(ctx, &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{
+			Namespace: w.cluster.Namespace,
+			Name:      camundacluster.WorkloadName(w.cluster, camundacluster.ComponentZeebe),
+		}})).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("stopped resolving"))
+		}, "20s", interval).Should(Succeed())
+	})
+
 	// The pinned hash proves that Zeebe did not roll since the
 	// start. It does not prove that the referents that the dump reads are the
 	// ones that Zeebe runs. Between an edit of the DatabaseConfig and the
