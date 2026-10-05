@@ -179,11 +179,11 @@ func (r *Reconciler) admitBinding(
 }
 
 // zeebeRunsDestination returns the config hash of the live Zeebe workload
-// when every broker runs it and it names the Elasticsearch endpoint that the
-// storage contract declares. A converged generation cannot prove this: an
+// when every broker runs it and it names the backup store and the
+// Elasticsearch endpoint that the contracts of the cluster declare. A converged generation cannot prove this: an
 // edit of the SecondaryStorageConfig changes the endpoint without a change
-// of the cluster generation. A workload that is not rendered, still rolls, or runs
-// another endpoint returns a failure with reason Progressing.
+// of the cluster generation. A workload that is not rendered, still rolls, or
+// runs another store or endpoint returns a failure with reason Progressing.
 func (r *Reconciler) zeebeRunsDestination(
 	ctx context.Context,
 	res *logicalbackup.PreCheckResult,
@@ -199,6 +199,10 @@ func (r *Reconciler) zeebeRunsDestination(
 
 	hash, failure := camundacluster.RunningConfigHash(workload)
 	if failure != nil {
+		return "", failure, nil
+	}
+
+	if failure := camundacluster.RunsBackupStore(&workload.Spec.Template, res.Cluster, res.Bucket); failure != nil {
 		return "", failure, nil
 	}
 

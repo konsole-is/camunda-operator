@@ -106,9 +106,10 @@ func newAdmissionRig(t *testing.T, backups ...*v1.LogicalBackupElasticsearch) *a
 			},
 			Spec: corev1.PodSpec{Containers: []corev1.Container{{
 				Name: "zeebe",
-				Env: []corev1.EnvVar{
+				Env: append(
+					camundacluster.BackupStoreEnv(cluster, bucket),
 					camundaconfig.Var(camundaconfig.KeyElasticsearchURL, storage.Spec.Elasticsearch.Endpoint),
-				},
+				),
 			}}},
 		}},
 	}

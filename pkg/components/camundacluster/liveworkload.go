@@ -103,6 +103,41 @@ func RolledOut(workload *appsv1.StatefulSet) *conditions.PreCheckFailure {
 	}
 }
 
+// BackupStoreEnv returns the environment of the backup store that the Zeebe
+// pod template of cluster carries when bucket is its backupStorageRef.
+func BackupStoreEnv(cluster *v1.CamundaCluster, bucket *v1.ObjectStorageConfig) []corev1.EnvVar {
+	return backupStoreEnv(Input{Cluster: cluster, Backup: bucket}).env
+}
+
+// RunsBackupStore returns nil when template carries the backup store that
+// bucket declares for cluster. An edit of the ObjectStorageConfig moves the
+// store without a change of the cluster generation. A template that carries
+// another store returns a failure with reason Progressing. Credentials are
+// not compared.
+func RunsBackupStore(
+	template *corev1.PodTemplateSpec,
+	cluster *v1.CamundaCluster,
+	bucket *v1.ObjectStorageConfig,
+) *conditions.PreCheckFailure {
+	for _, env := range BackupStoreEnv(cluster, bucket) {
+		if env.ValueFrom != nil {
+			continue
+		}
+		if running, _ := TemplateEnvValue(template, env.Name); running != env.Value {
+			return &conditions.PreCheckFailure{
+				Reason: v1.ReasonProgressing,
+				Message: fmt.Sprintf(
+					"Zeebe of CamundaCluster %s/%s does not run the backup store of ObjectStorageConfig %s yet: "+
+						"%s is %q, not %q",
+					cluster.Namespace, cluster.Name, bucket.Name, env.Name, running, env.Value,
+				),
+			}
+		}
+	}
+
+	return nil
+}
+
 // TemplateEnvValue returns the plain value of the environment variable name
 // on any container of template, and whether one carries it as a plain value.
 // A variable that takes its value from a reference does not count.

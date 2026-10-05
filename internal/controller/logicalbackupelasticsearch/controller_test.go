@@ -209,7 +209,7 @@ func (r *rig) startZeebeRollout(hash, endpoint string) {
 	key := r.zeebeKey()
 	container := corev1.Container{
 		Name: "zeebe", Image: "z",
-		Env: []corev1.EnvVar{camundaconfig.Var(camundaconfig.KeyElasticsearchURL, endpoint)},
+		Env: append(zeebeBackupStoreEnv(r.cluster), camundaconfig.Var(camundaconfig.KeyElasticsearchURL, endpoint)),
 	}
 	Eventually(func(g Gomega) {
 		var workload appsv1.StatefulSet
@@ -237,6 +237,20 @@ func (r *rig) startZeebeRollout(hash, endpoint string) {
 		workload.Spec.Template.Spec.Containers = []corev1.Container{container}
 		g.Expect(k8sClient.Update(ctx, &workload)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
+}
+
+// zeebeBackupStoreEnv returns the backup store environment that the
+// CamundaCluster controller renders for the current backupStorageRef of
+// cluster.
+func zeebeBackupStoreEnv(cluster *v1.CamundaCluster) []corev1.EnvVar {
+	GinkgoHelper()
+	var current v1.CamundaCluster
+	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &current)).To(Succeed())
+	var bucket v1.ObjectStorageConfig
+	key := types.NamespacedName{Namespace: current.Namespace, Name: current.Spec.BackupStorageRef}
+	Expect(k8sClient.Get(ctx, key, &bucket)).To(Succeed())
+
+	return camundacluster.BackupStoreEnv(&current, &bucket)
 }
 
 // finishZeebeRollout reports the current pod template of the Zeebe workload
@@ -686,6 +700,32 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		current := currentBackup(backup)
 		Expect(current.Status.WorkloadConfigHash).To(Equal("hash-2"))
 		Expect(current.Status.Storage.Endpoint).To(Equal(other.URL()))
+	})
+
+	It("waits while Zeebe still runs the previous backup store, then pins the new one", func() {
+		r := newRig()
+		Eventually(func(g Gomega) {
+			var bucket v1.ObjectStorageConfig
+			key := client.ObjectKey{Namespace: r.namespace, Name: r.cluster.Spec.BackupStorageRef}
+			g.Expect(k8sClient.Get(ctx, key, &bucket)).To(Succeed())
+			bucket.Spec.S3.BucketName = "backups-2"
+			g.Expect(k8sClient.Update(ctx, &bucket)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		backup := r.newBackup()
+		expectReady(backup, metav1.ConditionFalse, v1.ReasonProgressing)
+		Eventually(func(g Gomega) {
+			ready := meta.FindStatusCondition(currentBackup(backup).Status.Conditions, v1.ConditionReady)
+			g.Expect(ready.Message).To(ContainSubstring("backup store"))
+		}, timeout, interval).Should(Succeed())
+		Expect(currentBackup(backup).Status.BackupID).To(BeZero())
+
+		By("starting once Zeebe runs the new backup store")
+		r.renderZeebe("hash-2", r.search.URL())
+		backupID(backup)
+		current := currentBackup(backup)
+		Expect(current.Status.WorkloadConfigHash).To(Equal("hash-2"))
+		Expect(current.Status.Storage.BucketLocation).To(ContainSubstring("backups-2"))
 	})
 
 	It("fails, not completes, when Zeebe rolled while the runtime backup ran", func() {

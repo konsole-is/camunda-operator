@@ -52,7 +52,7 @@ If the management API or Elasticsearch is unreachable during a step, the backup 
 
 ## Changes
 
-A backup on a cluster that is still rolling out waits in `Pending` with reason `Progressing` before it starts. It also waits while Zeebe runs another Elasticsearch endpoint than the `SecondaryStorageConfig` of the cluster declares. The backup starts when Zeebe runs the declared endpoint.
+A backup on a cluster that is still rolling out waits in `Pending` with reason `Progressing` before it starts. It also waits while Zeebe runs another Elasticsearch endpoint than the `SecondaryStorageConfig` of the cluster declares, or another bucket than the `ObjectStorageConfig` declares. The backup starts when Zeebe runs the declared endpoint and bucket.
 
 Do not change the storage or the backup bucket of the cluster while a backup runs. The backup fails, and the message names the recorded and the current value.
 

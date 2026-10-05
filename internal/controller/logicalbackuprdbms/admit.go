@@ -126,7 +126,7 @@ func (r *LogicalBackupRDBMSReconciler) admit(
 		}), nil
 	}
 
-	hash, failure, err := r.rolledOutConfigHash(ctx, precheck.Cluster)
+	hash, failure, err := r.rolledOutConfigHash(ctx, precheck)
 	if err != nil {
 		return settle, err
 	}
@@ -490,19 +490,26 @@ func (r *LogicalBackupRDBMSReconciler) checkManagement(
 }
 
 // rolledOutConfigHash returns the config hash of the live Zeebe workload
-// when every broker runs its pod template. A workload that is not rendered,
-// still rolls, or carries no hash returns a failure with reason Progressing.
+// when every broker runs its pod template and that template names the
+// backup store of the precheck bucket. A workload that is not rendered,
+// still rolls, runs another store, or carries no hash returns a failure with
+// reason Progressing.
 func (r *LogicalBackupRDBMSReconciler) rolledOutConfigHash(
 	ctx context.Context,
-	cluster *v1.CamundaCluster,
+	precheck *logicalbackup.PreCheckResult,
 ) (string, *conditions.PreCheckFailure, error) {
-	workload, failure, err := camundacluster.LiveZeebeWorkload(ctx, r.APIReader, cluster)
+	workload, failure, err := camundacluster.LiveZeebeWorkload(ctx, r.APIReader, precheck.Cluster)
 	if err != nil || failure != nil {
 		return "", failure, err
 	}
 	// The template changes before the first broker restarts. A hash pinned
 	// from it during a rollout can name a configuration that no broker runs.
 	if failure := camundacluster.RolledOut(workload); failure != nil {
+		return "", failure, nil
+	}
+	if failure := camundacluster.RunsBackupStore(
+		&workload.Spec.Template, precheck.Cluster, precheck.Bucket,
+	); failure != nil {
 		return "", failure, nil
 	}
 

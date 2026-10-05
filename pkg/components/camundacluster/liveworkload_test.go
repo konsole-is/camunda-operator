@@ -110,6 +110,35 @@ func TestRolledOutRequiresEveryReplicaOnTheCurrentTemplate(t *testing.T) {
 	}
 }
 
+func TestRunsBackupStoreComparesThePlainValuesOfTheStore(t *testing.T) {
+	cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cc"}}
+	bucket := func(name, secret string) *v1.ObjectStorageConfig {
+		return &v1.ObjectStorageConfig{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "bucket"},
+			Spec: v1.ObjectStorageConfigSpec{Type: v1.ObjectStorageTypeS3, S3: &v1.S3Storage{
+				BucketName: name, Region: "eu-west-1",
+				Auth: v1.S3StorageAuth{
+					Type: v1.ObjectStorageAuthTypeCredentials,
+					Credentials: &v1.S3Credentials{SecretRef: v1.S3CredentialsSecretRef{
+						Name: secret, AccessKeyIDKey: "id", SecretAccessKeyKey: "key",
+					}},
+				},
+			}},
+		}
+	}
+	template := &corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{
+		Name: "zeebe", Env: BackupStoreEnv(cluster, bucket("backups", "creds")),
+	}}}}
+
+	assert.Nil(t, RunsBackupStore(template, cluster, bucket("backups", "creds")))
+	assert.Nil(t, RunsBackupStore(template, cluster, bucket("backups", "rotated")), "credentials are not compared")
+
+	failure := RunsBackupStore(template, cluster, bucket("moved", "creds"))
+	require.NotNil(t, failure)
+	assert.Equal(t, v1.ReasonProgressing, failure.Reason)
+	assert.Contains(t, failure.Message, "moved")
+}
+
 func TestTemplateEnvValueReadsOnlyAPlainValue(t *testing.T) {
 	template := &corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{
 		{Name: "init", Env: []corev1.EnvVar{{

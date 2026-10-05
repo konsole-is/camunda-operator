@@ -8,7 +8,7 @@ One resource is one backup. The spec is immutable, and the backup runs once. To 
 
 Before you create a backup, make sure that:
 
-- The `CamundaCluster` has `spec.backupStorageRef` and is `Ready` for its current generation. Every Zeebe pod runs the current pod template. It is not suspended.
+- The `CamundaCluster` has `spec.backupStorageRef` and is `Ready` for its current generation. Every Zeebe pod runs the current pod template, and that template uses the bucket that the `ObjectStorageConfig` declares. It is not suspended.
 - The `DatabaseConfig` of the cluster has `backupCredentialsSecretRef`.
 - The `DatabaseServerConfig` is `Ready` and has `status.serverVersion`.
 - The backup lives in the namespace of the cluster.

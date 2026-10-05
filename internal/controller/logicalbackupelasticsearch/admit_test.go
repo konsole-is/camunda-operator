@@ -90,9 +90,23 @@ func TestClusterReplacedComparesThePinnedUID(t *testing.T) {
 	assert.True(t, clusterReplaced(backup, cluster), "a same-named cluster with another UID is a replacement")
 }
 
+// testBucket is the backup bucket of cluster ns/cc in the unit tests.
+func testBucket(name string) *v1.ObjectStorageConfig {
+	return &v1.ObjectStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "bucket"},
+		Spec: v1.ObjectStorageConfigSpec{
+			Type: v1.ObjectStorageTypeS3,
+			S3: &v1.S3Storage{
+				BucketName: name, Region: "r",
+				Auth: v1.S3StorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity},
+			},
+		},
+	}
+}
+
 // zeebeWorkload builds the Zeebe workload of cluster ns/cc with the given
-// config hash and Elasticsearch endpoint on its pod template, rolled out to
-// its one replica.
+// config hash, the backup store of testBucket("b"), and the Elasticsearch
+// endpoint on its pod template, rolled out to its one replica.
 func zeebeWorkload(hash, endpoint string) *appsv1.StatefulSet {
 	cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cc"}}
 	workload := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{
@@ -104,7 +118,10 @@ func zeebeWorkload(hash, endpoint string) *appsv1.StatefulSet {
 	}
 	workload.Spec.Template.Spec.Containers = []corev1.Container{{
 		Name: "zeebe",
-		Env:  []corev1.EnvVar{camundaconfig.Var(camundaconfig.KeyElasticsearchURL, endpoint)},
+		Env: append(
+			camundacluster.BackupStoreEnv(cluster, testBucket("b")),
+			camundaconfig.Var(camundaconfig.KeyElasticsearchURL, endpoint),
+		),
 	}}
 	return workload
 }
@@ -127,6 +144,7 @@ func TestZeebeRunsDestinationPinsTheHashOnlyWhenZeebeRunsTheDeclaredEndpoint(t *
 				Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es-new:9200/"},
 			},
 		},
+		Bucket: testBucket("b"),
 	}
 	tests := []struct {
 		name     string
@@ -143,6 +161,18 @@ func TestZeebeRunsDestinationPinsTheHashOnlyWhenZeebeRunsTheDeclaredEndpoint(t *
 			name:     "Zeebe still runs the old endpoint",
 			workload: zeebeWorkload("hash-1", "https://es-old:9200"),
 			wait:     "https://es-old:9200",
+		},
+		{
+			name: "Zeebe still runs the backup store of another bucket",
+			workload: func() *appsv1.StatefulSet {
+				workload := zeebeWorkload("hash-1", "https://es-new:9200")
+				workload.Spec.Template.Spec.Containers[0].Env = append(
+					camundacluster.BackupStoreEnv(res.Cluster, testBucket("old")),
+					camundaconfig.Var(camundaconfig.KeyElasticsearchURL, "https://es-new:9200"),
+				)
+				return workload
+			}(),
+			wait: "backup store",
 		},
 		{
 			name: "the brokers still roll to the template",
