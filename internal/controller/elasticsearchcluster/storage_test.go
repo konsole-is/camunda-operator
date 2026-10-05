@@ -211,7 +211,7 @@ func TestKeepAppliedStorageSize(t *testing.T) {
 }
 
 // The data volume claim keeps the class of the applied ECK CR, and a
-// requested class records at most one event.
+// requested class records an event while that CR does not carry it.
 func TestKeepAppliedStorageClass(t *testing.T) {
 	t.Parallel()
 

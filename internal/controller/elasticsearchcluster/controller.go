@@ -478,8 +478,9 @@ func (d dataVolumes) classRequestApplied(class *string) bool {
 }
 
 // keepAppliedStorageClass keeps in merged the class of the data volume claim
-// of the applied ECK CR. It records at most one Warning event per requested
-// class. It returns the class for the requested class annotation.
+// of the applied ECK CR. It records a Warning event while that CR does not
+// carry the request, except while the cluster is suspended or the CR has
+// another owner. It returns the class for the requested class annotation.
 func (r *ElasticsearchClusterReconciler) keepAppliedStorageClass(
 	cluster *v1.ElasticsearchCluster,
 	merged *v1.ElasticsearchClusterSpec,
