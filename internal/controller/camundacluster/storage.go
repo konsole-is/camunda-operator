@@ -226,8 +226,6 @@ func (r *CamundaClusterReconciler) growBrokerClaims(
 // recordIgnoredShrink records StorageShrinkIgnored when size is below the
 // largest bound broker claim, until the StatefulSet carries size in the
 // requested size annotation, which the apply of this reconcile writes.
-// Admission rejects an inline shrink, so only a preset-driven decrease reaches
-// this point.
 func (r *CamundaClusterReconciler) recordIgnoredShrink(
 	cluster *v1.CamundaCluster,
 	storage brokerStorage,
