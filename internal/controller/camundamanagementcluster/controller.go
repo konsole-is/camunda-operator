@@ -301,10 +301,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	comps = built.Components
 
 	reconcileErr := reconcileComponents(ctx, rec, built.Components)
-	// recordInitialClaim overwrites IdentityReady, and readyCondition
-	// aggregates that condition. The refusal must therefore reach the CR
-	// before the aggregate, or Ready reads True beside it.
-	claimErr := stepRecordClaim.wrap(r.recordInitialClaim(ctx, &mc, res.Input.Provider.Mode))
+	claimRefusal, claimErr := r.recordInitialClaim(ctx, &mc, res.Input.Provider.Mode)
+	claimErr = stepRecordClaim.wrap(claimErr)
 	removalRefused, userErr := r.syncWebModelerUsers(ctx, &mc, clusters, attached, rows)
 	userErr = stepWebModelerUsers.wrap(userErr)
 	pingErr := stepPing.wrap(r.syncPing(ctx, &mc, clusters, attached))
@@ -334,6 +332,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		&mc,
 		built.Ready,
 		firstStep(claimErr, userErr, pingErr, releaseErr, contractErr, callbackErr),
+		claimRefusal,
 		callbackFailure,
 	))
 
@@ -491,7 +490,8 @@ func (r *Reconciler) leaveOldRealm(
 }
 
 // recordInitialClaim records the initial administrator claim that Management
-// Identity started with, and reports a later change to it.
+// Identity started with. It returns the ImmutableAfterStart refusal of Ready
+// while spec.identity.admin asks for another claim, and nil otherwise.
 //
 // Identity reads the claim as it boots and stores the result in its database.
 // The annotation is what keeps the rendered environment on the value that
@@ -511,44 +511,39 @@ func (r *Reconciler) recordInitialClaim(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	mode components.ProviderMode,
-) error {
+) (*conditions.PreCheckFailure, error) {
 	if mode != components.ModeOIDC {
-		return nil
+		return nil, nil
 	}
 
 	recorded := components.RecordedInitialClaim(mc)
 	if recorded == "" {
 		started, err := r.startedInitialClaim(ctx, mc)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		// A management plane whose Identity never ran holds no administrator
 		// anywhere, so a claim the user corrects before the first start
 		// leaves no record behind.
 		if started == "" {
-			return nil
+			return nil, nil
 		}
 
-		return r.recordAnnotation(ctx, mc, started)
+		return nil, r.recordAnnotation(ctx, mc, started)
 	}
-	if recorded == components.SpecInitialClaim(mc) {
-		return nil
+	requested := components.SpecInitialClaim(mc)
+	if recorded == requested {
+		return nil, nil
 	}
 
-	admin := mc.Spec.Identity.Admin
-	meta.SetStatusCondition(mc.GetStatusConditions(), metav1.Condition{
-		Type:   v1.ConditionIdentityReady,
-		Status: metav1.ConditionFalse,
+	return &conditions.PreCheckFailure{
 		Reason: v1.ReasonImmutableAfterStart,
 		Message: fmt.Sprintf(
 			"Management Identity started with the administrator claim %q and stores it in its database; "+
 				"spec.identity.admin now asks for %q, which only a change in the database can do",
-			recorded, admin.ClaimName+"="+admin.ClaimValue,
+			recorded, requested,
 		),
-		ObservedGeneration: mc.GetGeneration(),
-	})
-
-	return nil
+	}, nil
 }
 
 // startedInitialClaim returns the administrator claim that the Management
@@ -648,6 +643,10 @@ func (r *Reconciler) writeContract(
 // it reports: the contract write keeps the documented WriteFailed, every other
 // step reports StepFailed.
 //
+// A changed administrator claim decides Ready next, and Ready is the only
+// condition that reports it, so it stays in view while a component is not
+// True yet.
+//
 // A component that is not True yet decides Ready before the callbacks do. The
 // realm is bootstrapped by Management Identity against Keycloak, so a plane
 // that is still starting cannot register anything, and reporting that instead
@@ -656,10 +655,14 @@ func readyCondition(
 	mc *v1.CamundaManagementCluster,
 	comps []*component.Component,
 	failed *stepError,
+	claimRefusal *conditions.PreCheckFailure,
 	callbackFailure *conditions.PreCheckFailure,
 ) metav1.Condition {
 	if failed != nil {
 		return failed.condition(mc)
+	}
+	if claimRefusal != nil {
+		return conditions.Failed(mc, claimRefusal)
 	}
 
 	ready := conditions.Aggregate(mc, comps...)

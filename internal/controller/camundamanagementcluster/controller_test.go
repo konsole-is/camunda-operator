@@ -120,13 +120,11 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 					HaveKeyWithValue(components.InitialClaimAnnotation, "oid=admin-oid"),
 				)
 
-				identity := conditionOf(g, s.mc, v1.ConditionIdentityReady)
-				g.Expect(identity.Status).To(Equal(metav1.ConditionFalse))
-				g.Expect(identity.Reason).To(Equal(v1.ReasonImmutableAfterStart))
-
 				ready := conditionOf(g, s.mc, v1.ConditionReady)
 				g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
 				g.Expect(ready.Reason).To(Equal(v1.ReasonImmutableAfterStart))
+				g.Expect(ready.Message).To(ContainSubstring(`"oid=admin-oid"`))
+				g.Expect(ready.Message).To(ContainSubstring(`"oid=second-admin"`))
 			}, timeout, interval).Should(Succeed())
 
 			Eventually(func(g Gomega) {
@@ -165,6 +163,10 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 				ready := conditionOf(g, s.mc, v1.ConditionReady)
 				g.Expect(ready.Reason).To(Equal(v1.ReasonImmutableAfterStart))
 				g.Expect(ready.ObservedGeneration).To(Equal(readManagementCluster(g, s.mc).Generation))
+
+				identity := conditionOf(g, s.mc, v1.ConditionIdentityReady)
+				g.Expect(identity.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(identity.Reason).To(Equal(v1.ReasonHealthy))
 			}, timeout, interval).Should(Succeed())
 
 			req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(s.mc)}
