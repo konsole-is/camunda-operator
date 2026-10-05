@@ -20,8 +20,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// SecondaryStorageType identifies which secondary storage backend a contract
-// describes.
+// SecondaryStorageType identifies the secondary storage backend that a
+// contract describes.
 // +kubebuilder:validation:Enum=elasticsearch;rdbms
 type SecondaryStorageType string
 
@@ -38,32 +38,33 @@ type ElasticsearchStorage struct {
 	// Endpoint is the HTTP(S) endpoint of the Elasticsearch cluster.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="endpoint must be a valid http or https URL"
 	Endpoint string `json:"endpoint"`
-	// CredentialsSecretRef names a basic-auth user with read/write access to
-	// the Camunda indices.
+	// CredentialsSecretRef names a basic-auth user with read and write
+	// access to the Camunda indices.
 	CredentialsSecretRef LocalCredentialsSecretRef `json:"credentialsSecretRef"`
-	// CASecretRef names the CA bundle consumers use to verify the endpoint's
-	// TLS certificate. Set it when the endpoint serves a certificate not
-	// signed by a well-known CA, such as the self-signed certificate of an
-	// ECK-managed cluster. Omit it for publicly trusted endpoints; it is only
-	// valid with an https endpoint.
+	// CASecretRef names the CA bundle that consumers use to verify the TLS
+	// certificate of the endpoint. Set it when a well-known CA did not sign
+	// the certificate of the endpoint. An example is the self-signed
+	// certificate of a cluster that ECK runs. Omit it for an endpoint with a
+	// publicly trusted certificate. It is valid only with an https endpoint.
 	// +optional
 	CASecretRef *LocalSecretKeyRef `json:"caSecretRef,omitempty"`
-	// SnapshotRepository names the snapshot repository, registered in this
-	// Elasticsearch cluster, that backups write to. An ElasticsearchCluster
-	// with a snapshotStorageRef registers the repository and fills this field
-	// in the contract it produces. Set it by hand for an Elasticsearch cluster
-	// that this operator does not manage, after you register the repository
-	// yourself. A cluster that takes backups needs it: without a repository
-	// name, the backup components have nowhere to write. The name is a URL
-	// path segment of the Elasticsearch API, so it is restricted to a
-	// conservative character set.
+	// SnapshotRepository names the snapshot repository in this Elasticsearch
+	// cluster that backups write to. An ElasticsearchCluster with a
+	// snapshotStorageRef registers the repository and sets this field in the
+	// contract that it publishes. For an Elasticsearch cluster that this
+	// operator does not manage, register the repository yourself and then
+	// set this field. A cluster that takes backups needs it. Without it, the
+	// backup components have no place to write. The name is part of a URL
+	// path of the Elasticsearch API, so it permits only a small set of
+	// characters.
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`
 	// +kubebuilder:validation:MaxLength=253
 	// +optional
 	SnapshotRepository string `json:"snapshotRepository,omitempty"`
 	// NodeCount is the number of data nodes of the Elasticsearch cluster. An
-	// ElasticsearchCluster fills it in the contract it produces. Set it by
-	// hand for an Elasticsearch cluster that this operator does not manage.
+	// ElasticsearchCluster sets it in the contract that it publishes. For an
+	// Elasticsearch cluster that this operator does not manage, set it
+	// yourself.
 	// A consumer that sets no index replica count of its own gets 0 replicas
 	// on one node and 1 replica on two or more nodes. Without a node count,
 	// the consumer keeps the default of the Camunda application.
@@ -95,34 +96,36 @@ func (s *ElasticsearchStorage) ReplicasExceedNodes(replicas int32) bool {
 
 // RDBMSStorage holds relational database backend details.
 type RDBMSStorage struct {
-	// DatabaseConfigRef names the DatabaseConfig, in this contract's own
-	// namespace, describing the logical database to use.
+	// DatabaseConfigRef names the DatabaseConfig of the logical database to
+	// use, in the namespace of this contract.
 	// +kubebuilder:validation:MinLength=1
 	DatabaseConfigRef string `json:"databaseConfigRef"`
 }
 
 // SecondaryStorageConfigSpec tells an orchestration cluster where its
-// secondary storage lives and how to authenticate against it.
+// secondary storage is and how to authenticate against it.
 // +kubebuilder:validation:XValidation:rule="(self.type == 'elasticsearch') == has(self.elasticsearch) && (self.type == 'rdbms') == has(self.rdbms)",message="exactly the block matching spec.type must be set"
 type SecondaryStorageConfigSpec struct {
-	// Type selects which secondary storage backend this contract describes.
+	// Type selects the secondary storage backend that this contract
+	// describes.
 	Type SecondaryStorageType `json:"type"`
-	// Elasticsearch connection details. Required when type is elasticsearch,
-	// forbidden otherwise.
+	// Elasticsearch holds the Elasticsearch connection details. Required
+	// when type is elasticsearch. Forbidden with other types.
 	// +optional
 	Elasticsearch *ElasticsearchStorage `json:"elasticsearch,omitempty"`
-	// RDBMS backend details. Required when type is rdbms, forbidden otherwise.
+	// RDBMS holds the relational database details. Required when type is
+	// rdbms. Forbidden with other types.
 	// +optional
 	RDBMS *RDBMSStorage `json:"rdbms,omitempty"`
 }
 
 // SecondaryStorageConfigStatus is the observed validation state of the contract.
 type SecondaryStorageConfigStatus struct {
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Conditions represent the current validation state; the Ready condition
-	// carries reasons Healthy, MissingSecret, or InvalidReference.
+	// Conditions represent the current validation state. The Ready condition
+	// has the reasons Healthy, MissingSecret, or InvalidReference.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -137,9 +140,9 @@ type SecondaryStorageConfigStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // SecondaryStorageConfig is the namespaced contract CRD that tells an
-// orchestration cluster where its secondary storage lives — an Elasticsearch
-// cluster or a relational database — and how to authenticate against it.
-// Consumers resolve references to it by name in their own namespace.
+// orchestration cluster where its secondary storage is and how to
+// authenticate against it. The storage is an Elasticsearch cluster or a
+// relational database. Consumers find it by name in their own namespace.
 type SecondaryStorageConfig struct {
 	metav1.TypeMeta `json:",inline"`
 

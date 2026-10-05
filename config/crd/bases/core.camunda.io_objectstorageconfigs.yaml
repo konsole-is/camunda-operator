@@ -31,10 +31,10 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          ObjectStorageConfig is the contract CRD that describes a bucket — for
-          backups or document storage — and how consumers authenticate against it:
-          workload identity on the consumer's ServiceAccount, or static credentials
-          in a Secret.
+          ObjectStorageConfig is the contract CRD that describes a bucket for
+          backups or document storage. It also describes how consumers
+          authenticate against the bucket: with workload identity on the
+          ServiceAccount of the consumer, or with static credentials in a Secret.
         properties:
           apiVersion:
             description: |-
@@ -59,7 +59,7 @@ spec:
               azureBlob:
                 description: |-
                   AzureBlob describes an Azure Blob Storage container. Required when
-                  type is AzureBlob, forbidden otherwise.
+                  type is AzureBlob. Forbidden with other types.
                 properties:
                   accountName:
                     description: AccountName is the storage account that holds the
@@ -71,23 +71,25 @@ spec:
                       type: workloadIdentity
                     description: |-
                       Auth selects how consumers authenticate. An absent block means
-                      workload identity through the ServiceAccount chain.
+                      workload identity through the ServiceAccount.
                     properties:
                       credentials:
                         description: |-
                           Credentials is a static storage account key. Required with type
-                          credentials, forbidden otherwise.
+                          credentials. Forbidden with other types.
                         properties:
                           secretRef:
                             description: SecretRef names the Secret key that holds
                               the storage account key.
                             properties:
                               key:
-                                description: Key in the Secret holding the value.
+                                description: Key is the key in the Secret that holds
+                                  the value.
                                 minLength: 1
                                 type: string
                               name:
-                                description: Name of the Secret holding the value.
+                                description: Name is the name of the Secret that holds
+                                  the value.
                                 minLength: 1
                                 type: string
                             required:
@@ -107,15 +109,17 @@ spec:
                         type: string
                       workloadIdentity:
                         description: |-
-                          WorkloadIdentity names the trusted principal. Only valid with type
-                          workloadIdentity; an empty or absent block means "trust the
-                          ServiceAccount chain, add nothing".
+                          WorkloadIdentity names the trusted principal. It is valid only with
+                          type workloadIdentity. With an empty or absent block, the operator adds
+                          no annotation to the ServiceAccount. The operator still adds the
+                          azure.workload.identity/use label to the pods.
                         properties:
                           clientId:
                             description: |-
                               ClientID is the managed identity that consumers use. When set, the
                               operator puts it in the azure.workload.identity/client-id annotation
-                              of the consumer's ServiceAccount.
+                              of a ServiceAccount that it creates for the consumer. On an existing
+                              ServiceAccount, add the annotation yourself.
                             type: string
                         type: object
                     type: object
@@ -152,19 +156,19 @@ spec:
               gcs:
                 description: |-
                   GCS describes a Google Cloud Storage bucket. Required when type is
-                  GCS, forbidden otherwise.
+                  GCS. Forbidden with other types.
                 properties:
                   auth:
                     default:
                       type: workloadIdentity
                     description: |-
                       Auth selects how consumers authenticate. An absent block means
-                      workload identity through the ServiceAccount chain.
+                      workload identity through the ServiceAccount.
                     properties:
                       credentials:
                         description: |-
                           Credentials is a static service-account key. Required with type
-                          credentials, forbidden otherwise.
+                          credentials. Forbidden with other types.
                         properties:
                           secretRef:
                             description: |-
@@ -172,11 +176,13 @@ spec:
                               key.
                             properties:
                               key:
-                                description: Key in the Secret holding the value.
+                                description: Key is the key in the Secret that holds
+                                  the value.
                                 minLength: 1
                                 type: string
                               name:
-                                description: Name of the Secret holding the value.
+                                description: Name is the name of the Secret that holds
+                                  the value.
                                 minLength: 1
                                 type: string
                             required:
@@ -196,16 +202,18 @@ spec:
                         type: string
                       workloadIdentity:
                         description: |-
-                          WorkloadIdentity names the trusted principal. Only valid with type
-                          workloadIdentity; an empty or absent block means "trust the
-                          ServiceAccount chain, add nothing".
+                          WorkloadIdentity names the trusted principal. It is valid only with
+                          type workloadIdentity. With an empty or absent block, the operator adds
+                          no annotation. The identity must then be bound on the cloud side, for
+                          example with Workload Identity Federation for GKE.
                         properties:
                           serviceAccountEmail:
                             description: |-
                               ServiceAccountEmail is the Google service account that consumers
                               impersonate. When set, the operator puts it in the
-                              iam.gke.io/gcp-service-account annotation of the consumer's
-                              ServiceAccount.
+                              iam.gke.io/gcp-service-account annotation of a ServiceAccount that it
+                              creates for the consumer. On an existing ServiceAccount, add the
+                              annotation yourself.
                             type: string
                         type: object
                     type: object
@@ -222,8 +230,8 @@ spec:
                     pattern: ^[^/]+(/[^/]+)*$
                     type: string
                   bucketName:
-                    description: BucketName is the bucket name as used by storage
-                      client SDKs.
+                    description: BucketName is the name of the bucket, as storage
+                      client SDKs use it.
                     minLength: 1
                     type: string
                 required:
@@ -231,20 +239,20 @@ spec:
                 type: object
               s3:
                 description: |-
-                  S3 describes an S3 or S3-compatible bucket. Required when type is S3,
-                  forbidden otherwise.
+                  S3 describes an S3 or S3-compatible bucket. Required when type is S3.
+                  Forbidden with other types.
                 properties:
                   auth:
                     default:
                       type: workloadIdentity
                     description: |-
                       Auth selects how consumers authenticate. An absent block means
-                      workload identity through the ServiceAccount chain.
+                      workload identity through the ServiceAccount.
                     properties:
                       credentials:
                         description: |-
-                          Credentials are static keys. Required with type credentials, forbidden
-                          otherwise.
+                          Credentials are static keys. Required with type credentials. Forbidden
+                          with other types.
                         properties:
                           secretRef:
                             description: SecretRef names the Secret keys that hold
@@ -252,17 +260,18 @@ spec:
                             properties:
                               accessKeyIdKey:
                                 description: AccessKeyIDKey is the key in the Secret
-                                  holding the access key ID.
+                                  that holds the access key ID.
                                 minLength: 1
                                 type: string
                               name:
-                                description: Name of the Secret holding the keys.
+                                description: Name is the name of the Secret that holds
+                                  the keys.
                                 minLength: 1
                                 type: string
                               secretAccessKeyKey:
                                 description: |-
-                                  SecretAccessKeyKey is the key in the Secret holding the secret access
-                                  key.
+                                  SecretAccessKeyKey is the key in the Secret that holds the secret
+                                  access key.
                                 minLength: 1
                                 type: string
                             required:
@@ -283,15 +292,17 @@ spec:
                         type: string
                       workloadIdentity:
                         description: |-
-                          WorkloadIdentity names the trusted principal. Only valid with type
-                          workloadIdentity; an empty or absent block means "trust the
-                          ServiceAccount chain, add nothing".
+                          WorkloadIdentity names the trusted principal. It is valid only with
+                          type workloadIdentity. With an empty or absent block, the operator adds
+                          no annotation. The identity must then be bound on the cloud side, for
+                          example with EKS Pod Identity.
                         properties:
                           roleArn:
                             description: |-
                               RoleARN is the IAM role that consumers assume. When set, the operator
-                              puts it in the eks.amazonaws.com/role-arn annotation of the consumer's
-                              ServiceAccount (IRSA).
+                              puts it in the eks.amazonaws.com/role-arn annotation of a ServiceAccount
+                              that it creates for the consumer (IRSA). On an existing ServiceAccount,
+                              add the annotation yourself.
                             type: string
                         type: object
                     type: object
@@ -308,8 +319,8 @@ spec:
                     pattern: ^[^/]+(/[^/]+)*$
                     type: string
                   bucketName:
-                    description: BucketName is the bucket name as used by storage
-                      client SDKs.
+                    description: BucketName is the name of the bucket, as storage
+                      client SDKs use it.
                     minLength: 1
                     type: string
                   endpoint:
@@ -327,8 +338,8 @@ spec:
                       S3-compatible stores that do not serve virtual-hosted-style requests.
                     type: boolean
                   region:
-                    description: Region of the bucket. Required unless endpoint is
-                      set.
+                    description: Region is the region of the bucket. Required unless
+                      endpoint is set.
                     type: string
                 required:
                 - bucketName
@@ -356,8 +367,8 @@ spec:
             properties:
               conditions:
                 description: |-
-                  Conditions represent the current validation state; the Ready condition
-                  carries the reasons Healthy and MissingSecret.
+                  Conditions represent the current validation state. The Ready
+                  condition has the reasons Healthy and MissingSecret.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -417,8 +428,8 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               observedGeneration:
-                description: ObservedGeneration is the last generation reconciled
-                  by the operator.
+                description: ObservedGeneration is the last generation that the operator
+                  processed.
                 format: int64
                 type: integer
             type: object

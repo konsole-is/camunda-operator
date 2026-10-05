@@ -24,89 +24,88 @@ import (
 // The condition reasons that only a PointInTimeRestore reports.
 const (
 	// ReasonPitrUnavailable means that the database server does not declare
-	// point-in-time recovery, or that spec.timestamp lies outside its
-	// retention period.
+	// point-in-time recovery, or that spec.timestamp is outside its retention
+	// period.
 	ReasonPitrUnavailable = "PitrUnavailable"
-	// ReasonSharedServer means that more than one Database runs a logical
-	// database on the database server. Engine-level point-in-time recovery
-	// rolls back the whole server, so a shared server rolls back unrelated
-	// databases too.
+	// ReasonSharedServer means that more than one Database has a logical
+	// database on the database server. Point-in-time recovery rolls back the
+	// whole server, so on a shared server it also rolls back other databases.
 	ReasonSharedServer = "SharedServer"
 	// ReasonDatabaseNotRestored means that the database is ahead of
 	// spec.timestamp, or that it reports no exporter position for a
-	// partition. The restore holds in Pending and touches no volume.
+	// partition. The restore stays in Pending and does not change a volume.
 	ReasonDatabaseNotRestored = "DatabaseNotRestored"
 	// ReasonExporterPositionNotCovered means that the restore application
 	// found no primary-storage checkpoint that covers the exporter position
 	// of the restored database, so it restored no partition. The restore
-	// fails, and the remedy is to roll the database back further and create
-	// a new restore. The operator reads this cause from the log of the failed
-	// restore Job, because only the restore application compares the two.
+	// fails. To recover, roll the database back further and create a new
+	// restore. The operator reads this cause from the log of the failed
+	// restore Job.
 	ReasonExporterPositionNotCovered = "ExporterPositionNotCovered"
 )
 
-// PointInTimeRestorePhase tracks the one-shot restore. Completed and Failed
-// are terminal. A retry is a new resource.
+// PointInTimeRestorePhase is the phase of a restore that runs one time.
+// Completed and Failed are final. To try again, create a new resource.
 // +kubebuilder:validation:Enum=Pending;RestoringDatabase;ValidatingDatabaseState;RestoringPrimaryStorage;Completed;Failed
 type PointInTimeRestorePhase string
 
 // The phases of a point-in-time restore, in order.
 const (
-	// PointInTimeRestorePending means that the restore did not start real
-	// work. A pre-check still holds it: the cluster runs, the storage chain
-	// does not resolve, or the database is ahead of spec.timestamp.
+	// PointInTimeRestorePending means that the restore did not start its
+	// work. A pre-check stops it: the cluster runs, the storage chain does
+	// not resolve, or the database is ahead of spec.timestamp.
 	PointInTimeRestorePending PointInTimeRestorePhase = "Pending"
 	// PointInTimeRestoreRestoringDatabase means that the operator asked the
-	// database server to roll itself back to spec.timestamp and waits for the
-	// answer. The restore reaches this phase only when the
-	// DatabaseServerConfig declares pitr.recovery: operator. A server that
-	// declares external is rolled back before the restore is created, and the
-	// restore goes straight to ValidatingDatabaseState.
+	// database server to roll back to spec.timestamp and waits for the
+	// answer. The restore has this phase only when the DatabaseServerConfig
+	// declares pitr.recovery: operator. A server that declares external rolls
+	// back before you create the restore. The restore then goes directly to
+	// ValidatingDatabaseState.
 	PointInTimeRestoreRestoringDatabase PointInTimeRestorePhase = "RestoringDatabase"
 	// PointInTimeRestoreValidatingDatabaseState means that the operator reads
 	// the exporter position of every partition from the restored database.
-	// It runs before the operator touches a volume.
+	// This happens before the operator changes a volume.
 	PointInTimeRestoreValidatingDatabaseState PointInTimeRestorePhase = "ValidatingDatabaseState"
 	// PointInTimeRestoreRestoringPrimaryStorage means that the operator
-	// recreated the broker data volumes and runs the restore application on
-	// them.
+	// created the broker data volumes again and runs the restore application
+	// on them.
 	PointInTimeRestoreRestoringPrimaryStorage PointInTimeRestorePhase = "RestoringPrimaryStorage"
 	// PointInTimeRestoreCompleted means that the restore finished. The
-	// operator removes the per-broker Jobs here, so their pods release the
-	// broker data volumes, and it withdraws the suspension it applied, so the
-	// cluster runs again unless its owner suspended it.
+	// operator removes the Jobs of the brokers, so their pods release the
+	// broker data volumes. It removes the suspension that it applied, so the
+	// cluster runs again, unless its owner suspended it.
 	PointInTimeRestoreCompleted PointInTimeRestorePhase = "Completed"
 	// PointInTimeRestoreFailed means that the restore failed. The Ready
-	// condition names the failing phase. The operator keeps the per-broker
-	// Jobs, because their logs are the diagnosis, so a restore that reached
-	// RestoringPrimaryStorage holds the broker data volumes until somebody
-	// deletes it. A restore that failed in an earlier phase records no Job in
+	// condition names the failed phase. The operator keeps the Jobs of the
+	// brokers, because their logs show the cause. Thus a restore that reached
+	// RestoringPrimaryStorage holds the broker data volumes until you delete
+	// it. A restore that failed in an earlier phase records no Job in
 	// PrimaryJobNames and holds nothing.
 	PointInTimeRestoreFailed PointInTimeRestorePhase = "Failed"
 )
 
 // PointInTimeRestoreSpec names the cluster to roll back and the point in time
-// to roll the cluster back to. The whole spec is immutable.
+// to roll it back to. The whole spec is immutable.
 type PointInTimeRestoreSpec struct {
-	// ClusterRef references the CamundaCluster to align, in the namespace of
-	// this restore. Its secondary storage must be a relational database.
+	// ClusterRef references the CamundaCluster to restore, in the namespace
+	// of this restore. Its secondary storage must be a relational database.
 	// +required
 	ClusterRef ClusterRef `json:"clusterRef"`
-	// Timestamp is the point to restore to. DatabaseServerConfig.spec.pitr.recovery
-	// decides who rolls the database server back to it. With operator, the
-	// restore asks the server to roll back to this point. With external, you
-	// roll the server back to it before you create the restore.
+	// Timestamp is the point to restore to.
+	// DatabaseServerConfig.spec.pitr.recovery sets who rolls the database
+	// server back to it. With operator, the restore asks the server to roll
+	// back to this point. With external, you roll the server back to it
+	// before you create the restore.
 	//
-	// Choose that point at least one backup interval before the cluster
-	// stopped writing, and inside the window that Zeebe keeps its
-	// primary-storage backups for. Those are spec.backup.primaryStorage
-	// schedule and retention.window of the CamundaCluster, which default to
-	// one hour and seven days. A point that no backup covers fails the
-	// restore after it erased the broker volumes.
+	// Choose a point at least one backup interval before the cluster stopped
+	// writing. Also choose a point inside the window in which Zeebe keeps its
+	// primary-storage backups. The CamundaCluster sets these with
+	// spec.backup.primaryStorage.schedule and retention.window. The defaults
+	// are one hour and seven days. If no backup covers the point, the restore
+	// fails after it erased the broker volumes.
 	//
-	// It must also lie within the retention period that the database server
-	// declares, and it must not lie in the future. The operator checks both
-	// at reconcile time, because a CEL rule has no clock.
+	// The point must be inside the retention period of the database server,
+	// and it must not be in the future. The operator does these two checks.
 	// +required
 	Timestamp metav1.Time `json:"timestamp"`
 }
@@ -116,76 +115,80 @@ type PointInTimeRestoreSpec struct {
 type PartitionPosition struct {
 	// PartitionID is the Zeebe partition.
 	PartitionID int32 `json:"partitionId"`
-	// LastUpdated is the LAST_UPDATED value of the partition's row in the
+	// LastUpdated is the LAST_UPDATED value of the row of the partition in the
 	// EXPORTER_POSITION table.
 	LastUpdated metav1.Time `json:"lastUpdated"`
 }
 
 // PointInTimeRestoreStorage is the identity of the storage chain that the
-// restore validated: the contracts it resolved, the logical database it read,
-// and the server that holds it. Every link of the chain is mutable, and the
-// rules of the server and the state of the database are checked once, before
-// the restore deletes anything. A later look that disagrees with this record
-// is another database, so the restore ends instead of acting on it.
+// restore validated. It holds the contracts that the restore resolved, the
+// logical database that it read, and the server of that database. Each part
+// of the chain can change. The restore checks the server and the database
+// before it deletes anything. If a later read does not agree with this
+// record, it is another database, and the restore fails. A rollback that the
+// restore asked for replaces the record.
 type PointInTimeRestoreStorage struct {
 	// SecondaryStorageConfig is the storage contract of the cluster.
 	SecondaryStorageConfig string `json:"secondaryStorageConfig"`
-	// SecondaryStorageConfigUID pins the identity of that contract, so a
-	// contract that was deleted and created again under one name is caught.
+	// SecondaryStorageConfigUID records the identity of that contract. Thus
+	// the restore finds a contract that was deleted and created again with
+	// the same name.
 	// +optional
 	SecondaryStorageConfigUID types.UID `json:"secondaryStorageConfigUID,omitempty"`
 	// DatabaseConfig is the contract of the logical database.
 	DatabaseConfig string `json:"databaseConfig"`
-	// DatabaseConfigUID pins the identity of that contract.
+	// DatabaseConfigUID records the identity of that contract.
 	// +optional
 	DatabaseConfigUID types.UID `json:"databaseConfigUID,omitempty"`
 	// DatabaseServerConfig is the contract of the server that holds the
 	// database and declares its point-in-time recovery.
 	DatabaseServerConfig string `json:"databaseServerConfig"`
-	// DatabaseServerConfigUID pins the identity of that contract.
+	// DatabaseServerConfigUID records the identity of that contract.
 	// +optional
 	DatabaseServerConfigUID types.UID `json:"databaseServerConfigUID,omitempty"`
 	// DatabaseName is the logical database whose exporter position the
 	// pre-check read.
 	DatabaseName string `json:"databaseName"`
-	// Endpoint is the host and port of the server, as the pre-check reached
-	// it. A server that is repointed in place is another server.
+	// Endpoint is the host and port of the server, as the pre-check used it.
+	// A contract that now names another endpoint names another server.
 	Endpoint string `json:"endpoint"`
 	// SystemIdentifier is the identity of the PostgreSQL instance behind that
-	// endpoint, as the contract published it. It is what the dedicated-server
-	// rule counted, and an endpoint that starts reporting another identity
-	// holds another instance.
+	// endpoint, as the contract published it. The rule for a dedicated server
+	// counted this identity. An endpoint that later reports another identity
+	// is another instance.
 	SystemIdentifier string `json:"systemIdentifier"`
 }
 
 // PointInTimeRestoreStatus tracks the restore to a terminal phase.
 type PointInTimeRestoreStatus struct {
-	// Phase of the restore. It is the resume marker.
+	// Phase is the phase of the restore. The restore continues from it after
+	// an interruption.
 	// +optional
 	Phase PointInTimeRestorePhase `json:"phase,omitempty"`
-	// Storage pins the storage chain that the restore validated. The operator
-	// records it once, before it reads the database, and fails the restore
-	// when a later look disagrees.
+	// Storage records the storage chain that the restore validated. The
+	// operator records it before it reads the database, and again after a
+	// rollback that the restore asked for. If a later read does not agree,
+	// the restore fails.
 	// +optional
 	Storage *PointInTimeRestoreStorage `json:"storage,omitempty"`
-	// Backend names the database that the restore holds while its server rolls
-	// back: the host, the port, and the database name. The operator records it
-	// just before it asks for the rollback, and it follows each endpoint that
-	// the contract names. From then to the terminal phase, no other
-	// CamundaCluster starts on this database, whatever endpoint the contract
-	// names. A restore whose server is rolled back
-	// outside the operator records none.
+	// Backend names the database that the restore holds while its server
+	// rolls back: the host, the port, and the database name. The operator
+	// records it just before it asks for the rollback. It follows each
+	// endpoint that the contract names. From then until the final phase, no
+	// other CamundaCluster starts on this database, also when the contract
+	// names another endpoint. A restore whose server
+	// rolls back outside the operator records no backend.
 	// +optional
 	Backend string `json:"backend,omitempty"`
-	// ObservedPositions are the exporter positions the pre-check read, in
-	// partition order. They record what the operator saw when it let the
-	// restore past the database-state check, or what held it.
+	// ObservedPositions are the exporter positions that the pre-check read,
+	// in partition order. They show what the operator saw when the restore
+	// passed the database-state check, or what stopped it.
 	// +optional
 	// +listType=map
 	// +listMapKey=partitionId
 	ObservedPositions []PartitionPosition `json:"observedPositions,omitempty"`
 	// RestoreProgress is the part of the status that every restore kind has.
-	// Its Ready condition carries the reasons Progressing, Completed, Failed,
+	// Its Ready condition has the reasons Progressing, Completed, Failed,
 	// ClusterNotSuspended, ClusterClaimed, StorageAlreadyAttached,
 	// WaitingForHandover, InvalidReference, PitrUnavailable, SharedServer,
 	// DatabaseNotRestored, MissingSecret, and ConnectionFailed.
@@ -200,29 +203,29 @@ type PointInTimeRestoreStatus struct {
 // +kubebuilder:printcolumn:name="Timestamp",type=string,JSONPath=`.spec.timestamp`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// PointInTimeRestore aligns the primary storage of a suspended,
-// relational-backed CamundaCluster with a database at a point in time. It
-// reads the exporter position of every partition from that database, deletes
-// and creates the broker data volumes again, and runs the Camunda restore
-// application with the requested point once per broker.
+// PointInTimeRestore brings the primary storage of a suspended CamundaCluster
+// with relational secondary storage to the same point in time as its
+// database. It reads the exporter position of every partition from that
+// database. Then it deletes and creates the broker data volumes again. Then
+// it runs the Camunda restore application with the requested point, one
+// time for each broker.
 //
 // The database reaches that point in one of two ways. A DatabaseServerConfig
-// that declares pitr.recovery: operator is rolled back by whoever publishes
-// it: the restore writes the request on the contract and waits for the
-// answer. A contract that declares external, the default, is rolled back
-// before the restore is created, and the restore reads the database as it
-// finds it.
+// that declares pitr.recovery: operator is rolled back by its publisher. The
+// restore writes the request on the contract and waits for the answer. A
+// contract that declares external, the default, is rolled back before you
+// create the restore. The restore reads the database as it is.
 //
 // The restore prepares the cluster itself. It suspends the cluster and waits
-// for its brokers to stop. It withdraws the suspension when it completes, and
-// only when it applied that suspension itself. A failed restore leaves the
-// cluster suspended, and so does a restore that somebody deletes while it
-// runs: broker volumes that are empty or half written are worse under running
-// brokers than under none.
+// for its brokers to stop. When it completes, it removes the suspension, but
+// only a suspension that it applied itself. A failed restore leaves the
+// cluster suspended. A restore that somebody deletes while it runs also
+// leaves the cluster suspended. Empty or half-written broker volumes cause
+// more damage under running brokers.
 //
-// It writes no version. This kind restores the primary storage of the cluster
-// from the continuous backups of that same cluster, so no backup names a
-// version that the cluster is not already running.
+// It writes no version. This kind restores the primary storage of the
+// cluster from the continuous backups of the same cluster. Thus no backup
+// names a version other than the version that the cluster runs.
 type PointInTimeRestore struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -230,8 +233,9 @@ type PointInTimeRestore struct {
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
-	// spec names the cluster to align and the point its database holds. It is
-	// immutable: a restore is one-shot, retried by creating a new resource.
+	// spec names the cluster to restore and the point that its database
+	// holds. It is immutable. A restore runs one time. To try again, create
+	// a new resource.
 	// +required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable: a restore is one-shot, retried by creating a new resource"
 	Spec PointInTimeRestoreSpec `json:"spec"`

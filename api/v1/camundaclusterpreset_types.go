@@ -22,16 +22,17 @@ import (
 
 // CamundaClusterPresetSpec defines the desired state of CamundaClusterPreset.
 type CamundaClusterPresetSpec struct {
-	// Cluster is the configuration baseline that referencing clusters
-	// inherit. It reuses the CamundaCluster spec type so the two never drift
-	// apart. The instance-bound fields of that type (platformConfigRef,
+	// Cluster is the configuration baseline that the clusters that reference
+	// the preset get. It uses the CamundaCluster spec type. A preset must not
+	// set the fields that belong to one cluster only: platformConfigRef,
 	// presetRef, releaseRef, externalUrl, serviceAccount, storageRef,
-	// backupStorageRef, documentStorageRef, monitoring, suspend, pause) must
-	// be left unset inside a preset, and so must the fields that belong to a
-	// CamundaRelease (version, connectors.version). Explicit zero values (an
-	// empty presetRef, suspend: false), as templated YAML renders unset
-	// fields, count as unset. The CamundaCluster doc lists the field details,
-	// the CamundaClusterPreset doc lists the merge rules.
+	// backupStorageRef, documentStorageRef, monitoring, suspend, and pause.
+	// It must also not set the fields that belong to a CamundaRelease:
+	// version and connectors.version. An explicit zero value, such as an
+	// empty presetRef or suspend: false, counts as unset. Templated YAML
+	// often renders unset fields in this way. The CamundaCluster doc gives
+	// the details of each field. The CamundaClusterPreset doc gives the merge
+	// rules.
 	// +kubebuilder:validation:XValidation:rule="(!has(self.platformConfigRef) || self.platformConfigRef == '') && (!has(self.presetRef) || self.presetRef == '') && (!has(self.releaseRef) || self.releaseRef == '') && (!has(self.externalUrl) || self.externalUrl == '') && !has(self.serviceAccount) && (!has(self.storageRef) || self.storageRef == '') && (!has(self.backupStorageRef) || self.backupStorageRef == '') && (!has(self.documentStorageRef) || self.documentStorageRef == '') && !has(self.monitoring) && (!has(self.suspend) || !self.suspend) && (!has(self.pause) || !self.pause)",message="instance-bound fields (platformConfigRef, presetRef, releaseRef, externalUrl, serviceAccount, storageRef, backupStorageRef, documentStorageRef, monitoring, suspend, pause) must not be set in a preset"
 	// +kubebuilder:validation:XValidation:rule="(!has(self.version) || self.version == '') && (!has(self.connectors) || !has(self.connectors.version) || self.connectors.version == '')",message="version and connectors.version belong to a CamundaRelease and must not be set in a preset"
 	// +required
@@ -42,11 +43,10 @@ type CamundaClusterPresetSpec struct {
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// CamundaClusterPreset is a cluster-scoped, passive baseline configuration
-// for CamundaCluster resources: no controller reconciles it, it provisions
-// nothing and reports no status. A CamundaCluster resolves it through its
-// presetRef and merges its own fields over it under the rules of the preset
-// doc.
+// CamundaClusterPreset is a cluster-scoped baseline configuration for
+// CamundaCluster resources. It has no controller, creates nothing, and
+// reports no status. A CamundaCluster reads it through its presetRef and
+// merges its own fields over it, with the rules of the preset doc.
 type CamundaClusterPreset struct {
 	metav1.TypeMeta `json:",inline"`
 

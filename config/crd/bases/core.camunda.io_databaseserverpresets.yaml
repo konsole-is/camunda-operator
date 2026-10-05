@@ -22,10 +22,10 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          DatabaseServerPreset is a cluster-scoped, passive baseline configuration
-          for DatabaseServer resources: no controller reconciles it, it provisions
-          nothing and reports no status. Consumers resolve it via their presetRef and
-          overlay inline fields wholesale.
+          DatabaseServerPreset is a cluster-scoped baseline configuration for
+          DatabaseServer resources. It has no controller, creates nothing, and
+          reports no status. A server reads it through its presetRef. A field set on
+          the server replaces the value of the preset for that field completely.
         properties:
           apiVersion:
             description: |-
@@ -49,15 +49,15 @@ spec:
             properties:
               server:
                 description: |-
-                  Server is the full configuration baseline consumers inherit. It reuses
-                  the DatabaseServer spec type so the two never drift apart. The
-                  instance-bound fields of that type, presetRef, releaseRef,
-                  databaseServerConfig, and suspend, must be left unset inside a preset,
-                  and so must the version, which belongs to a CamundaRelease. Explicit
-                  zero values (an empty presetRef, suspend: false), as templated YAML
-                  renders unset fields, count as unset. archive is a baseline like any
-                  other field: one bucket serves a fleet, because every server writes
-                  under a prefix of its own.
+                  Server is the complete configuration baseline that the servers that
+                  reference the preset get. It uses the DatabaseServer spec type. A
+                  preset must not set the fields that belong to one server only:
+                  presetRef, releaseRef, databaseServerConfig, and suspend. It must also
+                  not set the version, which belongs to a CamundaRelease. An explicit
+                  zero value, such as an empty presetRef or suspend: false, counts as
+                  unset. Templated YAML often renders unset fields in this way. A preset
+                  can set archive like any other field. One bucket can serve many
+                  servers, because every server writes under its own prefix.
                 properties:
                   archive:
                     description: |-
@@ -67,28 +67,28 @@ spec:
                       baseBackupSchedule:
                         default: 0 0 2 * * *
                         description: |-
-                          BaseBackupSchedule is when a base backup is taken, as the six-field
-                          cron of CloudNativePG (seconds first, in UTC), or as one of the
+                          BaseBackupSchedule is when the server takes a base backup. It is the
+                          six-field cron of CloudNativePG (seconds first, in UTC), or one of the
                           descriptors @yearly, @annually, @monthly, @weekly, @daily, @midnight,
                           @hourly and @every. The first base backup runs as soon as the server is
-                          up, whatever the schedule says, because the archive can be recovered
-                          from only after it completes.
+                          up, whatever the schedule says. A recovery from the archive is possible
+                          only after that backup completes.
 
-                          The five-field cron of a Kubernetes CronJob is refused. CloudNativePG
-                          reads the first field as seconds, so a five-field value runs at a
-                          different time from the one its author meant.
+                          The API server refuses the five-field cron of a Kubernetes CronJob.
+                          CloudNativePG reads the first field as seconds, so a five-field value
+                          runs at a different time than intended.
 
-                          Each field is bounded to what CloudNativePG takes there: 0-59 for
-                          seconds and minutes, 0-23 for hours, 1-31 for the day of the month,
-                          1-12 or JAN-DEC for the month, and 0-6 or SUN-SAT for the day of the
-                          week. A range whose first value is above its second, such as FRI-MON,
-                          cannot be caught by a pattern. The operator refuses it instead, and
-                          Ready reports InvalidReference before anything is applied.
+                          Each field has the bounds that CloudNativePG accepts. Seconds and
+                          minutes take 0-59, and hours take 0-23. The day of the month takes
+                          1-31, and the month takes 1-12 or JAN-DEC. The day of the week takes
+                          0-6 or SUN-SAT. The schema cannot find a range whose first value is
+                          above its second, such as FRI-MON. The operator refuses such a range
+                          with Ready reason InvalidReference, before it applies anything.
 
-                          A step takes at most three digits and an @every number at most six
-                          digits on each side of the point. Both are stricter than the parser of
-                          CloudNativePG, which reads a longer number and then overflows on it and
-                          stops taking base backups.
+                          A step has at most three digits. An @every number has at most six
+                          digits on each side of the point. These limits are stricter than the
+                          parser of CloudNativePG. That parser accepts a longer number, then
+                          overflows and stops taking base backups.
                         pattern: ^(\s*([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d{0,2})?(,([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d{0,2})?)*\s+([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d{0,2})?(,([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d{0,2})?)*\s+([*?]|([01]?\d|2[0-3])(-([01]?\d|2[0-3]))?)(/[1-9]\d{0,2})?(,([*?]|([01]?\d|2[0-3])(-([01]?\d|2[0-3]))?)(/[1-9]\d{0,2})?)*\s+([*?]|([1-9]|[12]\d|3[01])(-([1-9]|[12]\d|3[01]))?)(/[1-9]\d{0,2})?(,([*?]|([1-9]|[12]\d|3[01])(-([1-9]|[12]\d|3[01]))?)(/[1-9]\d{0,2})?)*\s+([*?]|([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc])(-([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc]))?)(/[1-9]\d{0,2})?(,([*?]|([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc])(-([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc]))?)(/[1-9]\d{0,2})?)*\s+([*?]|([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii])(-([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii]))?)(/[1-9]\d{0,2})?(,([*?]|([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii])(-([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii]))?)(/[1-9]\d{0,2})?)*\s*|@((year|annual|month|week|dai|hour)ly|midnight|every
                           (\d{1,6}(\.\d{1,6})?[hms])+))$
                         type: string
@@ -96,20 +96,19 @@ spec:
                         description: |-
                           ObjectStorageRef names an ObjectStorageConfig in the namespace of this
                           server. The operator writes the archive under a prefix of that bucket
-                          that holds this server alone.
+                          that only this server uses.
                         maxLength: 253
                         pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
                       retentionPeriodDays:
                         description: |-
-                          RetentionPeriodDays is how far into the past a restore can reach. It is
-                          what the operator enforces on the bucket and what the contract of this
-                          server publishes, so the declared value and the enforced value are one.
+                          RetentionPeriodDays is how far into the past a restore can reach. The
+                          operator enforces this value on the bucket, and the contract of this
+                          server publishes the same value.
 
                           The maximum is 36500 days, which is a hundred years. The operator counts
-                          the reachable window in nanoseconds, and a longer period overflows that
-                          count and puts the oldest reachable point in the future, which makes
-                          every request unreachable.
+                          the reachable window in nanoseconds, and that count overflows at about
+                          292 years. The maximum stays well below that limit.
                         format: int32
                         maximum: 36500
                         minimum: 1
@@ -120,18 +119,18 @@ spec:
                     type: object
                   databaseServerConfig:
                     description: |-
-                      DatabaseServerConfig names the DatabaseServerConfig the operator
-                      publishes in this CR's own namespace with the endpoint, the admin
-                      credentials, and the point-in-time-recovery capability of the server.
-                      Required on a DatabaseServer, forbidden in a preset.
+                      DatabaseServerConfig names the DatabaseServerConfig that the operator
+                      publishes in the namespace of this server. It holds the endpoint, the
+                      admin credentials, and the point-in-time recovery capability of the
+                      server. Required on a DatabaseServer, forbidden in a preset.
                     maxLength: 253
                     pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                     type: string
                   instances:
                     description: |-
-                      Instances is the number of PostgreSQL instances. One instance has no
-                      failover: a node that goes away takes the server with it until the
-                      volume is reattached. Defaults to 1.
+                      Instances is the number of PostgreSQL instances. Defaults to 1. One
+                      instance has no failover. If its node goes away, the server is down
+                      until the volume is attached again.
                     format: int32
                     minimum: 1
                     type: integer
@@ -168,10 +167,10 @@ spec:
                     type: object
                   platformConfigRef:
                     description: |-
-                      PlatformConfigRef names a cluster-scoped CamundaPlatformConfig. Only
-                      its image settings are read: spec.images.postgres decides where the
-                      PostgreSQL image is pulled from, which is what an air-gapped cluster
-                      needs. Empty leaves the image at its default repository.
+                      PlatformConfigRef names a cluster-scoped CamundaPlatformConfig. The
+                      server reads only its image settings. spec.images.postgres sets where
+                      the server pulls the PostgreSQL image from, for example in an air-gapped
+                      cluster. When empty, the server uses the default image repository.
                     maxLength: 253
                     pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                     type: string
@@ -189,9 +188,9 @@ spec:
                     type: object
                   presetRef:
                     description: |-
-                      PresetRef names a cluster-scoped DatabaseServerPreset used as the
-                      configuration baseline; fields set inline override the preset's value
-                      for that field wholesale.
+                      PresetRef names a cluster-scoped DatabaseServerPreset to use as the
+                      configuration baseline. A field set on the server replaces the value of
+                      the preset for that field completely.
                     type: string
                   releaseRef:
                     description: |-
@@ -260,8 +259,8 @@ spec:
                     type: object
                   scheduling:
                     description: |-
-                      Scheduling constraints for the instance pods; when set, it replaces the
-                      preset's scheduling block entirely (no merge).
+                      Scheduling holds the scheduling constraints of the instance pods. When
+                      set, it replaces the scheduling block of the preset, with no merge.
                     properties:
                       nodeAffinity:
                         description: NodeAffinity rules for the pods.
@@ -866,51 +865,50 @@ spec:
                         additionalProperties:
                           type: string
                         description: |-
-                          Annotations to set on the ServiceAccount, typically workload-identity
-                          annotations (IRSA, GCP Workload Identity, and more) that grant the
-                          instance pods access to cloud resources.
+                          Annotations to set on the ServiceAccount. Usually these are
+                          workload-identity annotations (IRSA, GCP Workload Identity, and more)
+                          that give the instance pods access to cloud resources.
                         type: object
                     type: object
                   storageClassName:
                     description: |-
                       StorageClassName is the StorageClass of the data volumes. Defaults to
-                      the cluster's default StorageClass.
+                      the default StorageClass of the Kubernetes cluster.
                     type: string
                   storageSize:
                     anyOf:
                     - type: integer
                     - type: string
                     description: |-
-                      StorageSize is the size of the data volume of each instance. It cannot
-                      shrink, because PostgreSQL data volumes cannot be reduced in place.
-                      Admission rejects a lower inline value that replaces an inline value on
-                      a DatabaseServer through a CEL transition rule. That rule does not bind
-                      this shared field, and it lets a first inline value through, so a
-                      smaller size can still arrive: a server that already applied a larger
-                      size keeps it and records a StorageShrinkIgnored event. Required unless
-                      the resolved preset provides it.
+                      StorageSize is the size of the data volume of each instance. Required
+                      unless the resolved preset provides it. It cannot shrink, because a
+                      PostgreSQL data volume cannot become smaller in place. The API server
+                      refuses a change of this field in a DatabaseServer to a smaller value.
+                      A smaller value is accepted when the field was not set before, or when
+                      a preset lowers the size. A server whose volumes are already larger
+                      then keeps that size and records a StorageShrinkIgnored event.
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
                   suspend:
                     description: |-
                       Suspend stops the PostgreSQL instances and keeps their data volumes.
-                      The operator hibernates the CloudNativePG cluster: the instance pods
-                      are removed, the volumes stay, and setting the field back to false
-                      brings the instances back on the same volumes. Defaults to false.
+                      Defaults to false. The operator hibernates the CloudNativePG cluster:
+                      it removes the instance pods and keeps the volumes. When you set the
+                      field back to false, the instances start again on the same volumes.
                     type: boolean
                   version:
                     description: |-
-                      Version is the PostgreSQL major version to run, as a bare number such
-                      as "17". It selects the image tag. Camunda 8.9 supports PostgreSQL 14
-                      and later. The controller enforces that floor on the merged result.
-                      Required unless the resolved release provides it, and forbidden in a
-                      preset.
+                      Version is the PostgreSQL major version to run, as a number such as
+                      "17". It selects the image tag. Camunda 8.9 supports PostgreSQL 14 and
+                      later. The operator refuses a version below 14, also when it comes
+                      from the release. Required unless the resolved release provides it.
+                      Forbidden in a preset.
 
-                      The major of a running server cannot change. A value that names another
-                      major, higher or lower, is refused on the Ready condition with reason
-                      VersionChangeRefused, and the server keeps running the major it has. A
-                      release can raise it the same way and is refused the same way. To run
-                      another major, create a server on it and move the data over.
+                      The major version of a running server cannot change. The operator
+                      refuses another major version, higher or lower, with Ready reason
+                      VersionChangeRefused. The server then keeps the major version it has.
+                      The same applies to a new major version from a release. To run another
+                      major version, create a new server and move the data to it.
                     pattern: ^\d+$
                     type: string
                   walStorageSize:
@@ -918,15 +916,15 @@ spec:
                     - type: integer
                     - type: string
                     description: |-
-                      WALStorageSize puts the write-ahead log on a volume of its own, of this
-                      size. Unset keeps the log on the data volume. It cannot shrink, for the
-                      same reason storageSize cannot, and a lowered preset baseline is
-                      ignored the same way.
+                      WALStorageSize puts the write-ahead log on a separate volume of this
+                      size. When unset, the log stays on the data volume. It cannot shrink,
+                      as storageSize cannot. The server ignores a smaller value from a preset
+                      in the same way.
 
-                      It can be added to a running server, and it cannot be taken away again:
-                      CloudNativePG refuses a cluster that gives up the volume. A cleared
-                      field, inline or from a preset, keeps the volume at the size it has and
-                      records a WALStorageKept event.
+                      You can add it to a running server, but you cannot remove it again.
+                      CloudNativePG refuses a cluster that removes the volume. If the field
+                      is cleared, on the server or in a preset, the volume keeps its size and
+                      the server records a WALStorageKept event.
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
                 type: object

@@ -132,7 +132,7 @@ spec:
 
 The operator deletes the oldest completed backups beyond `retained.completed`, by completion time. It deletes the oldest failed backups beyond `retained.failed` the same way. A backup that is still `Pending` or `Running` is never deleted. A schedule that sets no bounds keeps 7 completed and 3 failed backups. If you lower a bound, the overflow is deleted at once.
 
-The operator deletes only the backups that carry the label `camunda.io/backup-schedule` of this schedule. A backup that you create by hand carries no such label, so no schedule ever deletes it.
+The operator deletes only the backups that carry the label `camunda.io/backup-schedule` of this schedule. A backup that you create by hand carries no such label, so no schedule deletes it, unless you add that label.
 
 A deleted backup takes its stored artifacts with it. For an Elasticsearch backup these are the snapshots and the partition backup. For a relational backup this is the database dump. If the cluster or a storage contract of the backup is gone, the artifacts stay in the bucket, and the backup records a Warning event. The Deletion section of [LogicalBackupElasticsearch](logicalbackupelasticsearch.md#deletion) and [LogicalBackupRDBMS](logicalbackuprdbms.md#deletion) names the cases. Each deletion records the Normal event `BackupPruned`.
 

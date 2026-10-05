@@ -20,12 +20,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// BackupScheduleSpec is the backup policy of one cluster: when a backup is
-// created and how many the schedule keeps.
+// BackupScheduleSpec is the backup policy of one cluster: when the schedule
+// creates a backup, and how many backups it keeps.
 type BackupScheduleSpec struct {
-	// ClusterRef references the CamundaCluster to back up. At each trigger
-	// the operator creates the backup kind that matches the storage type of
-	// the cluster: LogicalBackupElasticsearch or LogicalBackupRDBMS.
+	// ClusterRef references the CamundaCluster to back up. At each trigger,
+	// the operator creates the backup kind for the storage type of the
+	// cluster: LogicalBackupElasticsearch or LogicalBackupRDBMS.
 	// +required
 	ClusterRef ClusterRef `json:"clusterRef"`
 	// Schedule is when the backups run: a five-field cron expression
@@ -33,28 +33,28 @@ type BackupScheduleSpec struct {
 	// +kubebuilder:validation:Pattern=`^\s*([0-9A-Za-z*?,/-]+\s+){4}[0-9A-Za-z*?,/-]+\s*$`
 	// +required
 	Schedule string `json:"schedule"`
-	// Retained bounds how many backups of this schedule are kept. The
-	// schedule prunes only the backups it created, matched by the
-	// camunda.io/backup-schedule label. It never touches a backup that a
-	// human created, and it never touches a backup that has not reached a
-	// terminal phase.
+	// Retained limits how many backups of this schedule stay. The schedule
+	// counts and deletes the backups in its namespace whose
+	// camunda.io/backup-schedule label names this schedule. A backup that you
+	// create with that label counts too, and the schedule can delete it. The
+	// schedule never deletes a backup that is not in a final phase.
 	// +kubebuilder:default={}
 	// +optional
 	Retained *RetainedBackups `json:"retained,omitempty"`
 }
 
-// RetainedBackups bounds the backups that a schedule keeps, by terminal
-// phase. When the count of a phase exceeds its bound, the oldest backups
-// beyond it are deleted through the backup finalizer, which removes the
-// stored artifacts too.
+// RetainedBackups limits the backups that a schedule keeps, for each final
+// phase. When the count of a phase is more than its limit, the operator
+// deletes the oldest backups of that phase. The deletion also tries to
+// remove their stored backup data.
 type RetainedBackups struct {
 	// Completed is how many completed backups the schedule keeps.
 	// +kubebuilder:default=7
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	Completed *int32 `json:"completed,omitempty"`
-	// Failed is how many failed backups the schedule keeps. Zero deletes a
-	// failed backup at the first look after it fails.
+	// Failed is how many failed backups the schedule keeps. With zero, the
+	// operator deletes a failed backup soon after it fails.
 	// +kubebuilder:default=3
 	// +kubebuilder:validation:Minimum=0
 	// +optional
@@ -63,20 +63,20 @@ type RetainedBackups struct {
 
 // BackupScheduleStatus is the observed state of the schedule.
 type BackupScheduleStatus struct {
-	// LastScheduleTime is the most recent trigger that the schedule
-	// consumed, whether it created a backup or skipped. A skipped trigger is
-	// never retried.
+	// LastScheduleTime is the last trigger that the schedule used, also when
+	// it skipped the trigger. The schedule never tries a skipped trigger
+	// again.
 	// +optional
 	LastScheduleTime *metav1.Time `json:"lastScheduleTime,omitempty"`
 	// LastBackupName is the backup that the schedule created most recently.
 	// +optional
 	LastBackupName string `json:"lastBackupName,omitempty"`
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Conditions represent the current state. The Ready condition is Healthy
-	// while the schedule can run its backups, and InvalidReference while a
-	// reference does not resolve.
+	// Conditions represent the current state. The Ready condition has the
+	// reason Healthy when the references and the cron expression are valid,
+	// and InvalidReference when one of them is not.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -94,15 +94,20 @@ type BackupScheduleStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // BackupSchedule creates logical backups of one CamundaCluster on a cron
-// schedule and prunes the backups it created. At each trigger the operator
-// creates the backup kind that matches the storage type of the cluster,
-// named <schedule>-<unix-timestamp> and labeled camunda.io/cluster and
-// camunda.io/backup-schedule. A name that does not fit the bound of a
-// resource name or of a label value is cut, and a hash of the full name is
-// added, so two long names stay apart. The backups carry no owner reference
-// to the schedule, so deleting a schedule never deletes its backups. A
-// trigger is skipped, with an event, while the cluster is suspended or while
-// a backup of this schedule has not reached a terminal phase.
+// schedule, and deletes old backups that have its label. At each trigger, the
+// operator creates the backup kind for the storage type of the cluster. The
+// backup has the name <schedule>-<unix-timestamp> and the labels
+// camunda.io/cluster and camunda.io/backup-schedule. If a name is too long
+// for a resource name or a label value, the operator shortens it. Then it
+// adds a hash of the full name, so two long names stay different.
+//
+// The backups have no owner reference to the schedule, so a deletion of the
+// schedule never deletes its backups. The schedule skips a trigger while a
+// reference does not resolve, and the Ready condition shows the reason. It
+// also skips a trigger while the cluster is suspended or cannot start a
+// backup yet. It skips a trigger too while a backup of this schedule is not
+// in a final phase. It records an event for these three skips, and no event
+// for a reference that does not resolve.
 type BackupSchedule struct {
 	metav1.TypeMeta `json:",inline"`
 

@@ -22,11 +22,10 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          CamundaClusterPreset is a cluster-scoped, passive baseline configuration
-          for CamundaCluster resources: no controller reconciles it, it provisions
-          nothing and reports no status. A CamundaCluster resolves it through its
-          presetRef and merges its own fields over it under the rules of the preset
-          doc.
+          CamundaClusterPreset is a cluster-scoped baseline configuration for
+          CamundaCluster resources. It has no controller, creates nothing, and
+          reports no status. A CamundaCluster reads it through its presetRef and
+          merges its own fields over it, with the rules of the preset doc.
         properties:
           apiVersion:
             description: |-
@@ -50,16 +49,17 @@ spec:
             properties:
               cluster:
                 description: |-
-                  Cluster is the configuration baseline that referencing clusters
-                  inherit. It reuses the CamundaCluster spec type so the two never drift
-                  apart. The instance-bound fields of that type (platformConfigRef,
+                  Cluster is the configuration baseline that the clusters that reference
+                  the preset get. It uses the CamundaCluster spec type. A preset must not
+                  set the fields that belong to one cluster only: platformConfigRef,
                   presetRef, releaseRef, externalUrl, serviceAccount, storageRef,
-                  backupStorageRef, documentStorageRef, monitoring, suspend, pause) must
-                  be left unset inside a preset, and so must the fields that belong to a
-                  CamundaRelease (version, connectors.version). Explicit zero values (an
-                  empty presetRef, suspend: false), as templated YAML renders unset
-                  fields, count as unset. The CamundaCluster doc lists the field details,
-                  the CamundaClusterPreset doc lists the merge rules.
+                  backupStorageRef, documentStorageRef, monitoring, suspend, and pause.
+                  It must also not set the fields that belong to a CamundaRelease:
+                  version and connectors.version. An explicit zero value, such as an
+                  empty presetRef or suspend: false, counts as unset. Templated YAML
+                  often renders unset fields in this way. The CamundaCluster doc gives
+                  the details of each field. The CamundaClusterPreset doc gives the merge
+                  rules.
                 properties:
                   admin:
                     description: |-
@@ -73,15 +73,15 @@ spec:
                           with the same name. The entries of an embedded web application apply to
                           its host process.
 
-                          The list merges by name under server-side apply, so each field manager
-                          owns only the entries that it applies. An extension controller can add
-                          its own entry next to yours. One applied manifest cannot hold two
-                          entries with the same name.
+                          The list merges by name under server-side apply. Each field manager owns
+                          only the entries that it applies, so an extension controller can add its
+                          own entry next to yours. One applied manifest cannot hold two entries
+                          with the same name.
 
-                          Two field managers that apply the same name do not conflict: the merge
-                          is per field inside the entry, so one manager can own value while the
-                          other owns valueFrom. A container rejects an entry that carries both,
-                          so the rule below refuses to store that combination.
+                          Two field managers that apply the same name do not conflict, because the
+                          merge is per field inside the entry. One manager can own value and the
+                          other valueFrom. A container rejects an entry that has both, so the API
+                          server refuses to store such an entry.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -301,8 +301,8 @@ spec:
                           Mode selects a Deployment of the unified binary that serves only this
                           application (Standalone) or the nearest standalone host up the chain
                           (Embedded). Defaults to Embedded. The workload fields have an effect
-                          only when the mode is Standalone, except extraEnv and extraEnvFrom,
-                          which apply to the host process when the mode is Embedded.
+                          only in Standalone mode. The exception is extraEnv and extraEnvFrom: in
+                          Embedded mode, they apply to the host process.
                         enum:
                         - Standalone
                         - Embedded
@@ -388,10 +388,10 @@ spec:
                         type: object
                       scheduling:
                         description: |-
-                          Scheduling constraints of the pods of this process. When set, it
-                          replaces every scheduling block that would otherwise apply to this
-                          process, with no merge. On a CamundaCluster those are the top-level
-                          block and the block of a preset.
+                          Scheduling holds the scheduling constraints of the pods of this process.
+                          When set, it replaces all other scheduling blocks for this process, with
+                          no merge. On a CamundaCluster, these are the top-level block and the
+                          block of a preset.
                         properties:
                           nodeAffinity:
                             description: NodeAffinity rules for the pods.
@@ -995,8 +995,9 @@ spec:
                   auth:
                     description: |-
                       Auth holds the credentials of this cluster and the identities that get
-                      its admin role: the OIDC client credentials and administrators under
-                      OIDC, the operator-owned admin credential under basic authentication.
+                      its admin role. Under OIDC, it holds the client credentials and the
+                      administrators. Under basic authentication, it holds the admin
+                      credential that the operator owns.
                     properties:
                       admin:
                         description: |-
@@ -1072,14 +1073,13 @@ spec:
                               web application shows it. Set the address of the person or the team
                               that owns the cluster.
 
-                              When empty the operator uses admin@example.com. The domain is the one
-                              RFC 2606 reserves for documentation, so an unset value never claims an
-                              address that somebody owns.
+                              When empty, the operator uses admin@example.com. RFC 2606 reserves this
+                              domain for documentation, so the default is not the address of a real
+                              person.
 
-                              A changed value is applied to the running cluster through the user
-                              API. That endpoint validates the address and refuses a domain without
-                              a dot, and an address it refuses surfaces on AdminSecretReady with the
-                              answer of the cluster.
+                              The operator applies a changed value to the running cluster. The
+                              cluster validates the address and refuses a domain without a dot. When
+                              the cluster refuses an address, AdminSecretReady shows its answer.
                             maxLength: 253
                             pattern: ^$|^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$
                             type: string
@@ -1087,16 +1087,14 @@ spec:
                             description: |-
                               PasswordRotation requests one rotation of the admin password. Set it
                               to a value that differs from the applied one, for example a date. The
-                              operator generates a new password, sets it on the admin user through
-                              the user API of the running cluster, and then publishes it in the
-                              admin Secret. The connectors Deployment restarts with the new
-                              password. An empty value never rotates. A suspended cluster rotates
-                              after it resumes.
+                              operator generates a new password and sets it on the admin user of the
+                              running cluster. Then it publishes the password in the admin Secret.
+                              The connectors Deployment restarts with the new password. An empty
+                              value never rotates. A suspended cluster rotates after it resumes.
 
-                              The applied value of a cluster is status.adminPassword.rotation on
-                              that cluster. This field takes its effective value from the preset
-                              merge, so a preset that sets it rotates every cluster that references
-                              the preset, and each of those clusters reports its own status.
+                              status.adminPassword.rotation shows the applied value. A preset can set
+                              this field. Then every cluster that references the preset rotates, and
+                              each of these clusters reports its own status.
                             maxLength: 253
                             type: string
                         type: object
@@ -1112,11 +1110,13 @@ spec:
                           this cluster. Required when clientId is set.
                         properties:
                           key:
-                            description: Key in the Secret holding the value.
+                            description: Key is the key in the Secret that holds the
+                              value.
                             minLength: 1
                             type: string
                           name:
-                            description: Name of the Secret holding the value.
+                            description: Name is the name of the Secret that holds
+                              the value.
                             minLength: 1
                             type: string
                         required:
@@ -1129,12 +1129,12 @@ spec:
                       rule: '!has(self.clientId) || size(self.clientId) == 0 || has(self.clientSecretRef)'
                   backup:
                     description: |-
-                      Backup configures how backups of this cluster behave: the schedule and
+                      Backup configures the backups of this cluster. It sets the schedule and
                       the retention of the primary-storage backups that Zeebe takes, and the
-                      pod of the database dump Job. It is allowed in a preset, because it is
-                      policy; backupStorageRef, which says where backups go, is not. The
-                      block applies to a relational cluster: continuous and scheduled
-                      primary-storage backups and the dump Job exist only there.
+                      pod of the database dump Job. A preset can set this block, but not
+                      backupStorageRef. The block applies only to a cluster with relational
+                      secondary storage. Only such a cluster has continuous and scheduled
+                      primary-storage backups and the dump Job.
                     properties:
                       dump:
                         description: |-
@@ -1144,34 +1144,40 @@ spec:
                           activeDeadlineSeconds:
                             description: |-
                               ActiveDeadlineSeconds is the number of seconds that the dump Job can
-                              run before it fails, counted from its start. When it is unset, the
-                              operator applies 86400 (24 hours) when it renders the Job. The schema
-                              does not apply the default, so an unset value inherits the value of a
-                              preset. The default is large so that a very large dump completes. It
-                              is not unbounded because a pod that cannot start uses no retry.
-                              Without a deadline, a broken Job stays active as long as the backup
-                              lives. A lower value fails a stuck dump sooner. A higher value gives a
-                              long dump the time it needs.
+                              run before it fails, counted from its start. When the dump block that
+                              applies does not set it, the Job gets 86400 (24 hours). In the block of
+                              the cluster, an unset value takes the value of the preset. The
+                              spec.dump of a LogicalBackupRDBMS replaces the block of the cluster, so
+                              an unset value there gives 86400, not the value of the cluster.
+
+                              The default is large, so that a very large dump can complete. The Job
+                              always has a deadline. A pod that cannot start uses no retry, so
+                              without a deadline a broken Job stays active for the life of the
+                              backup. A lower value fails a stuck dump sooner. A higher value gives a
+                              long dump the time that it needs.
                             format: int64
                             minimum: 1
                             type: integer
                           extraEnv:
                             description: |-
-                              ExtraEnv are extra environment variables of the dump pod. In the
-                              spec.dump of a LogicalBackupRDBMS, every name under PG or UPLOAD_ is
-                              reserved, and admission rejects it. Any PG* name is connection policy,
-                              because libpq reads PGHOSTADDR, PGSERVICE, PGOPTIONS, and more.
-                              UPLOAD_* is the upload contract. The variables of a backup reach the
-                              dump container only, never the container that uploads. Cloud SDKs
-                              read endpoint, proxy, and configuration variables from the
-                              environment, and a backup author must not steer where the dump goes.
-                              In the spec.backup.dump of the cluster nothing is reserved, and the
-                              variables reach every container. The cluster owner sets connection
-                              policy, PGSSLMODE included, inside their own boundary.
+                              ExtraEnv are extra environment variables of the dump pod.
 
-                              This list stays atomic, unlike the extraEnv of a workload. One field
-                              manager owns the whole list, because nothing else writes it: no
-                              extension attaches to a dump pod.
+                              In the spec.dump of a LogicalBackupRDBMS, every name that starts with
+                              PG or UPLOAD_ is reserved, and the API server refuses it. A PG* name is
+                              connection policy, because libpq reads PGHOSTADDR, PGSERVICE,
+                              PGOPTIONS, and more. UPLOAD_* is the upload contract. The variables of
+                              a backup reach only the dump container, never the upload container.
+                              Cloud SDKs read endpoint, proxy, and configuration variables from the
+                              environment, and the author of a backup must not change where the dump
+                              goes.
+
+                              In the spec.backup.dump of the cluster, no name is reserved, and the
+                              variables reach every container. The cluster owner sets the connection
+                              policy, PGSSLMODE included.
+
+                              Unlike the extraEnv of a workload, this list is atomic. One field
+                              manager owns the whole list, because no extension adds entries to a
+                              dump pod.
                             items:
                               description: EnvVar represents an environment variable
                                 present in a Container.
@@ -1332,12 +1338,11 @@ spec:
                           extraEnvFrom:
                             description: |-
                               ExtraEnvFrom are extra environment sources of the dump pod. In the
-                              spec.dump of a LogicalBackupRDBMS, every source needs a prefix
-                              that cannot spell a PG* or UPLOAD_* name. The reason is that the
-                              writer of the referenced object chooses its keys. Like ExtraEnv, the
-                              sources of a backup reach the dump container only. The block of the
-                              cluster has no prefix requirement, and its sources reach every
-                              container.
+                              spec.dump of a LogicalBackupRDBMS, every source needs a prefix that
+                              cannot make a PG* or UPLOAD_* name. The writer of the referenced object
+                              chooses its keys. As with ExtraEnv, the sources of a
+                              backup reach only the dump container. The block of the cluster needs no
+                              prefix, and its sources reach every container.
                             items:
                               description: EnvFromSource represents the source of
                                 a set of ConfigMaps or Secrets
@@ -1389,9 +1394,9 @@ spec:
                             additionalProperties:
                               type: string
                             description: |-
-                              PodAnnotations are extra annotations of the dump pod. Set the
-                              injection annotation of a service mesh to false here: a sidecar that
-                              keeps running after the dump finishes stops the Job from completing.
+                              PodAnnotations are extra annotations of the dump pod. A service mesh
+                              sidecar keeps running after the dump finishes, and the Job does not
+                              complete. Set the injection annotation of the mesh to false here.
                             type: object
                           podLabels:
                             additionalProperties:
@@ -1401,9 +1406,9 @@ spec:
                           postgresImage:
                             description: |-
                               PostgresImage is the full image reference of the dump container. It
-                              replaces the default postgres:<major> of the upstream registry. An
-                              air-gapped installation sets it, because the default reference cannot
-                              be pulled there.
+                              replaces the default postgres:<major> of the upstream registry. Set it
+                              in an air-gapped installation, where the default image is not
+                              available.
                             type: string
                           resources:
                             description: Resources are the CPU and memory of the dump
@@ -1468,8 +1473,8 @@ spec:
                             type: object
                           scheduling:
                             description: |-
-                              Scheduling constraints of the dump pod. When set, it replaces the
-                              block of a preset entirely (no merge).
+                              Scheduling holds the scheduling constraints of the dump pod. When set,
+                              it replaces the block of a preset, with no merge.
                             properties:
                               nodeAffinity:
                                 description: NodeAffinity rules for the pods.
@@ -2073,10 +2078,10 @@ spec:
                             type: object
                           scratchVolume:
                             description: |-
-                              ScratchVolume is where the dump is written before it is uploaded. When
-                              set, it replaces the block of a preset entirely (no merge). The dump
-                              pod runs with fsGroup 999, the postgres group. So pg_dump can write to
-                              a volume that a storage class hands over root-owned.
+                              ScratchVolume is where the pod writes the dump before the upload. When
+                              set, it replaces the block of a preset, with no merge. The dump pod
+                              runs with fsGroup 999, the postgres group. Thus pg_dump can write to a
+                              volume that a storage class gives with the root owner.
                             properties:
                               sizeLimit:
                                 anyOf:
@@ -2090,8 +2095,8 @@ spec:
                               storageClassName:
                                 description: |-
                                   StorageClassName makes the scratch volume a PersistentVolumeClaim of
-                                  this class instead of an emptyDir. Use it when the dump is larger than
-                                  the ephemeral storage of a node.
+                                  this class, not an emptyDir. Use it when the dump is larger than the
+                                  ephemeral storage of a node.
                                 type: string
                             type: object
                             x-kubernetes-validations:
@@ -2102,7 +2107,7 @@ spec:
                       primaryStorage:
                         description: |-
                           PrimaryStorage configures the backups that Zeebe takes of its own
-                          primary storage. They are the feed of a point-in-time restore.
+                          primary storage. A point-in-time restore uses them.
                         properties:
                           checkpointInterval:
                             description: |-
@@ -2115,9 +2120,9 @@ spec:
                           continuous:
                             description: |-
                               Continuous keeps every log segment until it is backed up, so that a
-                              restore finds an unbroken range. Defaults to true on a relational
-                              cluster with a backupStorageRef. It is a pointer, so a preset can turn
-                              it on for a fleet and one cluster can still turn it off.
+                              restore finds a range without gaps. Defaults to true on a relational
+                              cluster with a backupStorageRef. A preset can turn it on for many
+                              clusters, and one cluster can still turn it off.
                             type: boolean
                           retention:
                             description: Retention bounds how long Zeebe keeps its
@@ -2134,10 +2139,10 @@ spec:
                                 description: |-
                                   Window is how far back the backups stay available for a restore, as an
                                   ISO 8601 duration of days and time (P7D, PT12H). Camunda parses no
-                                  week, month, or year units. Defaults to P7D. It bounds the restore
-                                  window, so set it at least as long as the recovery point the cluster
-                                  needs. A BackupSchedule that keeps database dumps for longer than this
-                                  window keeps dumps that can no longer be restored.
+                                  week, month, or year units. Defaults to P7D. It limits the restore
+                                  window, so set it at least as long as the recovery point that the
+                                  cluster needs. A BackupSchedule can keep database dumps for longer than
+                                  this window. A restore of such an old dump is not possible.
                                 pattern: ^P([0-9]+D(T(([0-9]+H)([0-9]+M)?([0-9]+([.][0-9]+)?S)?|([0-9]+M)([0-9]+([.][0-9]+)?S)?|[0-9]+([.][0-9]+)?S))?|T(([0-9]+H)([0-9]+M)?([0-9]+([.][0-9]+)?S)?|([0-9]+M)([0-9]+([.][0-9]+)?S)?|[0-9]+([.][0-9]+)?S))$
                                 type: string
                             type: object
@@ -2145,8 +2150,8 @@ spec:
                             description: |-
                               Schedule is the interval at which Zeebe takes a primary-storage
                               backup: an ISO 8601 duration, a CRON expression, or "none". Defaults
-                              to PT1H. Always pair a schedule with continuous, or the log grows
-                              without bound.
+                              to PT1H. Always use a schedule with continuous. Otherwise the log grows
+                              without limit.
                             minLength: 1
                             type: string
                         type: object
@@ -2170,15 +2175,15 @@ spec:
                           with the same name. The entries of an embedded web application apply to
                           its host process.
 
-                          The list merges by name under server-side apply, so each field manager
-                          owns only the entries that it applies. An extension controller can add
-                          its own entry next to yours. One applied manifest cannot hold two
-                          entries with the same name.
+                          The list merges by name under server-side apply. Each field manager owns
+                          only the entries that it applies, so an extension controller can add its
+                          own entry next to yours. One applied manifest cannot hold two entries
+                          with the same name.
 
-                          Two field managers that apply the same name do not conflict: the merge
-                          is per field inside the entry, so one manager can own value while the
-                          other owns valueFrom. A container rejects an entry that carries both,
-                          so the rule below refuses to store that combination.
+                          Two field managers that apply the same name do not conflict, because the
+                          merge is per field inside the entry. One manager can own value and the
+                          other valueFrom. A container rejects an entry that has both, so the API
+                          server refuses to store such an entry.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -2474,10 +2479,10 @@ spec:
                         type: object
                       scheduling:
                         description: |-
-                          Scheduling constraints of the pods of this process. When set, it
-                          replaces every scheduling block that would otherwise apply to this
-                          process, with no merge. On a CamundaCluster those are the top-level
-                          block and the block of a preset.
+                          Scheduling holds the scheduling constraints of the pods of this process.
+                          When set, it replaces all other scheduling blocks for this process, with
+                          no merge. On a CamundaCluster, these are the top-level block and the
+                          block of a preset.
                         properties:
                           nodeAffinity:
                             description: NodeAffinity rules for the pods.
@@ -3102,21 +3107,21 @@ spec:
                       ExtraEnv are extra environment variables of every workload. A
                       per-component entry wins over an entry here with the same name.
 
-                      The list merges by name under server-side apply, so each field manager
-                      owns only the entries that it applies. An extension controller can add
-                      its own entry next to yours. One applied manifest cannot hold two
-                      entries with the same name.
+                      The list merges by name under server-side apply. Each field manager owns
+                      only the entries that it applies, so an extension controller can add its
+                      own entry next to yours. One applied manifest cannot hold two entries
+                      with the same name.
 
                       A CamundaManagementCluster that serves this cluster owns the four
                       CAMUNDA_CONSOLE_PING_ entries (CAMUNDA_HUB_PING_ on Camunda 8.10 and
-                      later) and replaces what you set under those names. It removes an entry
-                      under one of those names that carries valueFrom, because one entry
-                      cannot hold a value and a reference together.
+                      later). It replaces what you set under these names. If your entry under
+                      one of these names has valueFrom, the management cluster removes it. One
+                      entry cannot hold a value and a reference together.
 
-                      Two field managers that apply the same name do not conflict: the merge
-                      is per field inside the entry, so one manager can own value while the
-                      other owns valueFrom. A container rejects an entry that carries both,
-                      so the rule below refuses to store that combination.
+                      Two field managers that apply the same name do not conflict, because the
+                      merge is per field inside the entry. One manager can own value and the
+                      other valueFrom. A container rejects an entry that has both, so the API
+                      server refuses to store such an entry.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -3338,15 +3343,15 @@ spec:
                           with the same name. The entries of an embedded web application apply to
                           its host process.
 
-                          The list merges by name under server-side apply, so each field manager
-                          owns only the entries that it applies. An extension controller can add
-                          its own entry next to yours. One applied manifest cannot hold two
-                          entries with the same name.
+                          The list merges by name under server-side apply. Each field manager owns
+                          only the entries that it applies, so an extension controller can add its
+                          own entry next to yours. One applied manifest cannot hold two entries
+                          with the same name.
 
-                          Two field managers that apply the same name do not conflict: the merge
-                          is per field inside the entry, so one manager can own value while the
-                          other owns valueFrom. A container rejects an entry that carries both,
-                          so the rule below refuses to store that combination.
+                          Two field managers that apply the same name do not conflict, because the
+                          merge is per field inside the entry. One manager can own value and the
+                          other valueFrom. A container rejects an entry that has both, so the API
+                          server refuses to store such an entry.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -3565,9 +3570,9 @@ spec:
                         description: |-
                           Mode selects a Deployment of the unified binary (Standalone) or the
                           embedded gateway of the brokers (Embedded). Defaults to Standalone.
-                          The workload fields have an effect only when the mode is Standalone,
-                          except extraEnv and extraEnvFrom, which apply to the brokers when the
-                          mode is Embedded.
+                          The workload fields have an effect only in Standalone mode. The
+                          exception is extraEnv and extraEnvFrom: in Embedded mode, they apply to
+                          the brokers.
                         enum:
                         - Standalone
                         - Embedded
@@ -3653,10 +3658,10 @@ spec:
                         type: object
                       scheduling:
                         description: |-
-                          Scheduling constraints of the pods of this process. When set, it
-                          replaces every scheduling block that would otherwise apply to this
-                          process, with no merge. On a CamundaCluster those are the top-level
-                          block and the block of a preset.
+                          Scheduling holds the scheduling constraints of the pods of this process.
+                          When set, it replaces all other scheduling blocks for this process, with
+                          no merge. On a CamundaCluster, these are the top-level block and the
+                          block of a preset.
                         properties:
                           nodeAffinity:
                             description: NodeAffinity rules for the pods.
@@ -4263,12 +4268,14 @@ spec:
                       creates in an Elasticsearch secondary storage. When it is not set, the
                       nodeCount of the storage contract gives the count: 0 on one node, 1 on
                       two or more nodes. Without a nodeCount, Camunda keeps its own default.
-                      When indexReplicas is not set, a process whose extraEnv sets a legacy
-                      replica key keeps that value.
+                      When indexReplicas is not set and the extraEnv of a process sets a
+                      legacy replica key, that process keeps the value of the key.
+
                       The cluster applies the count to its existing indices when it starts.
-                      A count that the nodes cannot place is kept, and the cluster records an
-                      IndexReplicasExceedNodes Warning event. A relational secondary storage
-                      ignores it.
+                      If the nodes cannot place the count, the operator keeps it and records
+                      an IndexReplicasExceedNodes Warning event on the CamundaCluster. A
+                      relational secondary
+                      storage ignores this field.
                     format: int32
                     minimum: 0
                     type: integer
@@ -4277,11 +4284,10 @@ spec:
                     properties:
                       serviceMonitor:
                         description: |-
-                          ServiceMonitor configures the Prometheus ServiceMonitors. When
-                          enabled, the operator creates one ServiceMonitor per process, named
-                          like the workload, that scrapes /actuator/prometheus on the management
-                          port 9600 of a unified process and on the HTTP port 8080 of
-                          connectors.
+                          ServiceMonitor configures the Prometheus ServiceMonitors. When enabled,
+                          the operator creates one ServiceMonitor for each process, with the name
+                          of the workload. It scrapes /actuator/prometheus on the management port
+                          9600 of a unified process, and on the HTTP port 8080 of connectors.
                         properties:
                           annotations:
                             additionalProperties:
@@ -4311,15 +4317,15 @@ spec:
                           with the same name. The entries of an embedded web application apply to
                           its host process.
 
-                          The list merges by name under server-side apply, so each field manager
-                          owns only the entries that it applies. An extension controller can add
-                          its own entry next to yours. One applied manifest cannot hold two
-                          entries with the same name.
+                          The list merges by name under server-side apply. Each field manager owns
+                          only the entries that it applies, so an extension controller can add its
+                          own entry next to yours. One applied manifest cannot hold two entries
+                          with the same name.
 
-                          Two field managers that apply the same name do not conflict: the merge
-                          is per field inside the entry, so one manager can own value while the
-                          other owns valueFrom. A container rejects an entry that carries both,
-                          so the rule below refuses to store that combination.
+                          Two field managers that apply the same name do not conflict, because the
+                          merge is per field inside the entry. One manager can own value and the
+                          other valueFrom. A container rejects an entry that has both, so the API
+                          server refuses to store such an entry.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -4539,8 +4545,8 @@ spec:
                           Mode selects a Deployment of the unified binary that serves only this
                           application (Standalone) or the nearest standalone host up the chain
                           (Embedded). Defaults to Embedded. The workload fields have an effect
-                          only when the mode is Standalone, except extraEnv and extraEnvFrom,
-                          which apply to the host process when the mode is Embedded.
+                          only in Standalone mode. The exception is extraEnv and extraEnvFrom: in
+                          Embedded mode, they apply to the host process.
                         enum:
                         - Standalone
                         - Embedded
@@ -4626,10 +4632,10 @@ spec:
                         type: object
                       scheduling:
                         description: |-
-                          Scheduling constraints of the pods of this process. When set, it
-                          replaces every scheduling block that would otherwise apply to this
-                          process, with no merge. On a CamundaCluster those are the top-level
-                          block and the block of a preset.
+                          Scheduling holds the scheduling constraints of the pods of this process.
+                          When set, it replaces all other scheduling blocks for this process, with
+                          no merge. On a CamundaCluster, these are the top-level block and the
+                          block of a preset.
                         properties:
                           nodeAffinity:
                             description: NodeAffinity rules for the pods.
@@ -5232,8 +5238,11 @@ spec:
                     type: object
                   pause:
                     description: |-
-                      Pause halts the reconciliation of this cluster entirely and leaves the
-                      workloads as they are. Defaults to false.
+                      Pause stops the reconciliation of this cluster: the operator changes no
+                      workload and writes no status. It records a Paused event instead. Other
+                      resources that use the cluster, such as a BackupSchedule or a restore,
+                      still act on it. When you delete a paused cluster, the operator still
+                      releases its storage backends. Defaults to false.
                     type: boolean
                   platformConfigRef:
                     description: |-
@@ -5267,9 +5276,9 @@ spec:
                     type: string
                   scheduling:
                     description: |-
-                      Scheduling constraints of every workload, unless a component sets its
-                      own. When set, it replaces the scheduling block of a preset entirely
-                      (no merge).
+                      Scheduling holds the scheduling constraints of every workload that does
+                      not set its own. When set, it replaces the scheduling block of a preset,
+                      with no merge.
                     properties:
                       nodeAffinity:
                         description: NodeAffinity rules for the pods.
@@ -5868,37 +5877,39 @@ spec:
                     type: object
                   serviceAccount:
                     description: |-
-                      ServiceAccount configures the ServiceAccount of every workload. Bucket
-                      access for backupStorageRef and documentStorageRef flows from this
-                      identity.
+                      ServiceAccount configures the ServiceAccount of every workload. The
+                      workloads get access to the buckets of backupStorageRef and
+                      documentStorageRef through this identity.
                     properties:
                       annotations:
                         additionalProperties:
                           type: string
                         description: |-
-                          Annotations to set on the ServiceAccount, typically workload-identity
-                          annotations (IRSA, GCP Workload Identity, ...) granting the pods access
-                          to cloud resources such as the snapshot bucket used for backups. A
-                          controller that resolves a bucket contract derives the annotation of
-                          that contract's identity as well; an annotation set here wins over the
-                          derived one on the same key.
+                          Annotations to set on the ServiceAccount that the operator creates.
+                          Usually these are workload-identity annotations (IRSA, GCP Workload
+                          Identity, and more) that give the pods access to cloud resources, such
+                          as the snapshot bucket for backups. The operator also adds the identity
+                          annotation of each bucket contract that names an identity. An annotation
+                          set here wins over the operator annotation with the same key. With
+                          create false, the operator sets no annotation. Add them to the existing
+                          ServiceAccount yourself.
                         type: object
                       create:
                         description: |-
-                          Create renders and owns the ServiceAccount. Defaults to true. False
-                          names one that already exists: the operator neither creates, annotates,
-                          nor owns it, and a ServiceAccount that is absent then fails the
-                          pre-check instead of leaving the pods unschedulable. The operator never
-                          adopts a foreign ServiceAccount, because an owned one is deleted with
-                          the resource.
+                          Create makes the operator create and own the ServiceAccount. Defaults
+                          to true. False names a ServiceAccount that already exists. The operator
+                          then does not create, annotate, or own it. If it does not exist, Ready
+                          reports InvalidReference, except on a suspended ElasticsearchCluster. The operator never takes ownership of a
+                          ServiceAccount that it did not create, because it deletes an owned one
+                          with the resource.
                         type: boolean
                       name:
                         description: |-
-                          Name of the ServiceAccount. Empty means the name that the controller
-                          derives from the name of the resource, which each CRD doc states. The
-                          name is part of the contract with the cloud provider: a workload
-                          identity that needs no annotation, such as EKS Pod Identity, binds the
-                          principal system:serviceaccount:<namespace>:<name>.
+                          Name is the name of the ServiceAccount. When empty, the operator
+                          derives the name from the name of the resource, as the doc of each kind
+                          states. The cloud provider uses this name. A workload identity that
+                          needs no annotation, such as EKS Pod Identity, binds the principal
+                          system:serviceaccount:<namespace>:<name>.
                         maxLength: 253
                         pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
@@ -5907,11 +5918,11 @@ spec:
                     description: |-
                       StorageRef names the SecondaryStorageConfig, in the namespace of this
                       cluster, that describes the secondary storage backend. Required on a
-                      CamundaCluster, forbidden in a preset. One CamundaCluster holds one
-                      backend, and two contracts that name one address are one backend. If
+                      CamundaCluster, forbidden in a preset. One backend serves one
+                      CamundaCluster. Two contracts that name one address are one backend. If
                       another cluster already holds the backend, the operator suspends this
-                      cluster and reports Ready reason StorageAlreadyAttached until that
-                      cluster moves to another backend or is deleted.
+                      cluster with Ready reason StorageAlreadyAttached. The suspension stays
+                      until the other cluster moves to another backend or is deleted.
                     type: string
                   suspend:
                     description: |-
@@ -5929,15 +5940,15 @@ spec:
                           with the same name. The entries of an embedded web application apply to
                           its host process.
 
-                          The list merges by name under server-side apply, so each field manager
-                          owns only the entries that it applies. An extension controller can add
-                          its own entry next to yours. One applied manifest cannot hold two
-                          entries with the same name.
+                          The list merges by name under server-side apply. Each field manager owns
+                          only the entries that it applies, so an extension controller can add its
+                          own entry next to yours. One applied manifest cannot hold two entries
+                          with the same name.
 
-                          Two field managers that apply the same name do not conflict: the merge
-                          is per field inside the entry, so one manager can own value while the
-                          other owns valueFrom. A container rejects an entry that carries both,
-                          so the rule below refuses to store that combination.
+                          Two field managers that apply the same name do not conflict, because the
+                          merge is per field inside the entry. One manager can own value and the
+                          other valueFrom. A container rejects an entry that has both, so the API
+                          server refuses to store such an entry.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -6157,8 +6168,8 @@ spec:
                           Mode selects a Deployment of the unified binary that serves only this
                           application (Standalone) or the nearest standalone host up the chain
                           (Embedded). Defaults to Embedded. The workload fields have an effect
-                          only when the mode is Standalone, except extraEnv and extraEnvFrom,
-                          which apply to the host process when the mode is Embedded.
+                          only in Standalone mode. The exception is extraEnv and extraEnvFrom: in
+                          Embedded mode, they apply to the host process.
                         enum:
                         - Standalone
                         - Embedded
@@ -6244,10 +6255,10 @@ spec:
                         type: object
                       scheduling:
                         description: |-
-                          Scheduling constraints of the pods of this process. When set, it
-                          replaces every scheduling block that would otherwise apply to this
-                          process, with no merge. On a CamundaCluster those are the top-level
-                          block and the block of a preset.
+                          Scheduling holds the scheduling constraints of the pods of this process.
+                          When set, it replaces all other scheduling blocks for this process, with
+                          no merge. On a CamundaCluster, these are the top-level block and the
+                          block of a preset.
                         properties:
                           nodeAffinity:
                             description: NodeAffinity rules for the pods.
@@ -6851,12 +6862,12 @@ spec:
                   version:
                     description: |-
                       Version is the Camunda version to deploy, as a full semantic version.
-                      The floor of 8.9.0 is enforced by the controller on the merged result,
-                      the schema pins only the three-segment shape. Required unless the
-                      resolved release provides it, and forbidden in a preset. A value below
-                      the version that the brokers run is refused with Ready
-                      VersionDowngradeRefused unless the annotation
-                      camunda.io/allow-version-downgrade on the CamundaCluster names it.
+                      Required unless the resolved release provides it. Forbidden in a
+                      preset. The operator refuses a version below 8.9.0, also when it comes
+                      from the release. The operator also refuses a version below the
+                      version that the brokers run, with Ready reason VersionDowngradeRefused.
+                      The annotation camunda.io/allow-version-downgrade on the CamundaCluster,
+                      set to that version, permits it.
                     pattern: ^\d+\.\d+\.\d+$
                     type: string
                   zeebe:
@@ -6869,15 +6880,15 @@ spec:
                           with the same name. The entries of an embedded web application apply to
                           its host process.
 
-                          The list merges by name under server-side apply, so each field manager
-                          owns only the entries that it applies. An extension controller can add
-                          its own entry next to yours. One applied manifest cannot hold two
-                          entries with the same name.
+                          The list merges by name under server-side apply. Each field manager owns
+                          only the entries that it applies, so an extension controller can add its
+                          own entry next to yours. One applied manifest cannot hold two entries
+                          with the same name.
 
-                          Two field managers that apply the same name do not conflict: the merge
-                          is per field inside the entry, so one manager can own value while the
-                          other owns valueFrom. A container rejects an entry that carries both,
-                          so the rule below refuses to store that combination.
+                          Two field managers that apply the same name do not conflict, because the
+                          merge is per field inside the entry. One manager can own value and the
+                          other valueFrom. A container rejects an entry that has both, so the API
+                          server refuses to store such an entry.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -7109,9 +7120,9 @@ spec:
                             default: Delete
                             description: |-
                               WhenDeleted is what happens to the data volumes when the resource is
-                              deleted. Delete removes them with the resource. Retain keeps them, and
-                              a later resource with the same name reattaches them. Defaults to
-                              Delete.
+                              deleted. Defaults to Delete. Delete removes them with the resource.
+                              Retain keeps them, and a later resource with the same name attaches
+                              them again.
                             enum:
                             - Retain
                             - Delete
@@ -7205,10 +7216,10 @@ spec:
                         type: object
                       scheduling:
                         description: |-
-                          Scheduling constraints of the pods of this process. When set, it
-                          replaces every scheduling block that would otherwise apply to this
-                          process, with no merge. On a CamundaCluster those are the top-level
-                          block and the block of a preset.
+                          Scheduling holds the scheduling constraints of the pods of this process.
+                          When set, it replaces all other scheduling blocks for this process, with
+                          no merge. On a CamundaCluster, these are the top-level block and the
+                          block of a preset.
                         properties:
                           nodeAffinity:
                             description: NodeAffinity rules for the pods.
@@ -7812,15 +7823,14 @@ spec:
                         description: |-
                           StorageClassName is the StorageClass of the broker volumes. Defaults to
                           the default StorageClass of the Kubernetes cluster. The class cannot
-                          change after the broker StatefulSet exists. Admission rejects a change
-                          of a set inline value on a CamundaCluster through a CEL transition
-                          rule. That rule does not bind this shared field, so a preset can change
-                          the class, and a cluster that inherited a class can set another one. A
-                          cluster whose broker StatefulSet exists, also a suspended one, keeps
-                          its class and records a StorageClassChangeIgnored event. A cluster
-                          without a broker StatefulSet takes the new class. Volumes that
-                          whenDeleted Retain kept from a deleted cluster of the same name keep
-                          their class.
+                          change after the broker StatefulSet exists. The API server refuses a
+                          change of a value that the CamundaCluster sets itself. A preset can
+                          change the class, and a cluster that got its class from a preset can
+                          set another one. A cluster whose broker StatefulSet exists, also a
+                          suspended one, then keeps its class and records a
+                          StorageClassChangeIgnored event. A cluster without a broker StatefulSet
+                          takes the new class. Volumes that whenDeleted Retain kept from a
+                          deleted cluster of the same name keep their class.
                         type: string
                       storageSize:
                         anyOf:
@@ -7828,13 +7838,13 @@ spec:
                         - type: string
                         description: |-
                           StorageSize is the size of the data volume of each broker. Defaults to
-                          10Gi. It can only grow. Admission rejects a lower inline value that
-                          replaces an inline value on a CamundaCluster through a CEL transition
-                          rule. That rule does not bind this shared field, and it lets a first
-                          inline value through, so a smaller size can still arrive: a cluster
-                          that applied a larger size keeps it and records a StorageShrinkIgnored
-                          event. On growth the operator expands the existing
-                          claims in place, so the storage class must support volume expansion.
+                          10Gi. It can only grow. The API server refuses a change of this field
+                          in a CamundaCluster to a smaller value. A smaller value is accepted when
+                          the field was not set before, or when a preset lowers the size. A
+                          cluster whose volumes are already larger then keeps that size and
+                          records a StorageShrinkIgnored event.
+                          When the size grows, the operator expands the existing claims in place.
+                          The storage class must support volume expansion.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                     type: object

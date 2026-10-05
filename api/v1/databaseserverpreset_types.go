@@ -22,15 +22,15 @@ import (
 
 // DatabaseServerPresetSpec defines the desired state of DatabaseServerPreset.
 type DatabaseServerPresetSpec struct {
-	// Server is the full configuration baseline consumers inherit. It reuses
-	// the DatabaseServer spec type so the two never drift apart. The
-	// instance-bound fields of that type, presetRef, releaseRef,
-	// databaseServerConfig, and suspend, must be left unset inside a preset,
-	// and so must the version, which belongs to a CamundaRelease. Explicit
-	// zero values (an empty presetRef, suspend: false), as templated YAML
-	// renders unset fields, count as unset. archive is a baseline like any
-	// other field: one bucket serves a fleet, because every server writes
-	// under a prefix of its own.
+	// Server is the complete configuration baseline that the servers that
+	// reference the preset get. It uses the DatabaseServer spec type. A
+	// preset must not set the fields that belong to one server only:
+	// presetRef, releaseRef, databaseServerConfig, and suspend. It must also
+	// not set the version, which belongs to a CamundaRelease. An explicit
+	// zero value, such as an empty presetRef or suspend: false, counts as
+	// unset. Templated YAML often renders unset fields in this way. A preset
+	// can set archive like any other field. One bucket can serve many
+	// servers, because every server writes under its own prefix.
 	// +kubebuilder:validation:XValidation:rule="(!has(self.presetRef) || self.presetRef == '') && (!has(self.releaseRef) || self.releaseRef == '') && (!has(self.databaseServerConfig) || self.databaseServerConfig == '') && (!has(self.suspend) || !self.suspend)",message="instance-bound fields (presetRef, releaseRef, databaseServerConfig, suspend) must not be set in a preset"
 	// +kubebuilder:validation:XValidation:rule="!has(self.version) || self.version == ''",message="version belongs to a CamundaRelease and must not be set in a preset"
 	// +required
@@ -41,10 +41,10 @@ type DatabaseServerPresetSpec struct {
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// DatabaseServerPreset is a cluster-scoped, passive baseline configuration
-// for DatabaseServer resources: no controller reconciles it, it provisions
-// nothing and reports no status. Consumers resolve it via their presetRef and
-// overlay inline fields wholesale.
+// DatabaseServerPreset is a cluster-scoped baseline configuration for
+// DatabaseServer resources. It has no controller, creates nothing, and
+// reports no status. A server reads it through its presetRef. A field set on
+// the server replaces the value of the preset for that field completely.
 type DatabaseServerPreset struct {
 	metav1.TypeMeta `json:",inline"`
 
