@@ -167,7 +167,8 @@ func backupEnv(in Input, p Process) rendered {
 
 	store := backupStoreEnv(in)
 	r.env = append(r.env, store.env...)
-	r.volumes, r.mounts = store.volumes, store.mounts
+	r.volumes = append(r.volumes, store.volumes...)
+	r.mounts = append(r.mounts, store.mounts...)
 
 	if relational {
 		r.env = append(r.env, primaryStorageScheduleEnv(in)...)

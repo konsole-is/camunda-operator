@@ -175,6 +175,17 @@ func TestZeebeRunsDestinationPinsTheHashOnlyWhenZeebeRunsTheDeclaredEndpoint(t *
 			wait: "backup store",
 		},
 		{
+			name: "the template carries no Elasticsearch endpoint yet",
+			workload: func() *appsv1.StatefulSet {
+				workload := zeebeWorkload("hash-1", "")
+				workload.Spec.Template.Spec.Containers[0].Env = camundacluster.BackupStoreEnv(
+					res.Cluster, testBucket("b"),
+				)
+				return workload
+			}(),
+			wait: "no Elasticsearch endpoint",
+		},
+		{
 			name: "the brokers still roll to the template",
 			workload: func() *appsv1.StatefulSet {
 				workload := zeebeWorkload("hash-2", "https://es-new:9200")

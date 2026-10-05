@@ -207,9 +207,17 @@ func (r *Reconciler) zeebeRunsDestination(
 	}
 
 	declared := strings.TrimRight(res.Storage.Spec.Elasticsearch.Endpoint, "/")
-	running, _ := camundacluster.TemplateEnvValue(
+	running, ok := camundacluster.TemplateEnvValue(
 		&workload.Spec.Template, camundaconfig.KeyElasticsearchURL.Env(),
 	)
+	if !ok {
+		return "", &conditions.PreCheckFailure{
+			Reason: v1.ReasonProgressing,
+			Message: fmt.Sprintf(
+				"the Zeebe workload %s/%s carries no Elasticsearch endpoint yet", workload.Namespace, workload.Name,
+			),
+		}, nil
+	}
 	if strings.TrimRight(running, "/") != declared {
 		return "", &conditions.PreCheckFailure{
 			Reason: v1.ReasonProgressing,
