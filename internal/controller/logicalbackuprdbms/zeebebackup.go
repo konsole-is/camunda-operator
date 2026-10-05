@@ -236,7 +236,9 @@ func (r *LogicalBackupRDBMSReconciler) startZeebeBackup(
 // pollZeebeBackup reads the state of the recorded backup and terminalizes on
 // a final answer. Right after the request, the partitions register their
 // parts asynchronously. So a backup that the cluster does not report yet is
-// normal within the registration grace, and fatal past it.
+// normal within the registration grace, and fatal past it. A Zeebe workload
+// that no longer carries the pinned config hash fails the backup at once,
+// whatever the state of the Zeebe backup.
 func (r *LogicalBackupRDBMSReconciler) pollZeebeBackup(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -249,6 +251,29 @@ func (r *LogicalBackupRDBMSReconciler) pollZeebeBackup(
 		return r.holdRunning(backup, managementFailure(cluster, err))
 	}
 	r.recovered(backup)
+
+	// The hash is read after the state. A rollout that started before the
+	// cluster reported the backup final is then in the template already.
+	hash, failure, err := r.zeebeConfigHash(ctx, cluster)
+	if err != nil {
+		return settle, err
+	}
+	if failure != nil {
+		return r.holdRunning(backup, failure)
+	}
+	if hash != backup.Status.WorkloadConfigHash {
+		// Brokers can take their part under the new configuration. No grace
+		// can make that part match the dump again.
+		r.fail(backup, fmt.Sprintf(
+			"the Zeebe workload of CamundaCluster %s/%s now runs config hash %s, but the backup pinned "+
+				"%s at start. Zeebe rolled while Zeebe backup %d ran, so a part of it can come from the "+
+				"new configuration. The dump and the Zeebe backup are not one restore point",
+			cluster.Namespace, cluster.Name, hash, backup.Status.WorkloadConfigHash,
+			*backup.Status.ZeebeBackupID,
+		))
+
+		return settle, nil
+	}
 
 	switch status.State {
 	case camundaadmin.StateCompleted:

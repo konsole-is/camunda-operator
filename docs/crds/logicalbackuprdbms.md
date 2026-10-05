@@ -57,7 +57,7 @@ The dump Job fails after `activeDeadlineSeconds`, 24 hours by default. A depende
 
 ## Changes
 
-Do not change the backup storage of the cluster, or roll the cluster, while a backup runs. The backup waits 10 minutes for the change to be reverted, then fails. A dump and a Zeebe backup taken under different configurations do not form one restore point. A backup on a cluster that is still rolling out waits with reason `Progressing` before it starts. If you delete and recreate the cluster under the same name during the run, the backup fails at once.
+Do not change the backup storage of the cluster, or roll the cluster, while a backup runs. Before the Zeebe backup starts, the backup waits 10 minutes for the change to be reverted, then fails. After `status.zeebeBackupId` is set, a roll of Zeebe to another configuration fails the backup at once, also when the Zeebe backup completes. A dump and a Zeebe backup taken under different configurations do not form one restore point. A backup on a cluster that is still rolling out waits with reason `Progressing` before it starts. If you delete and recreate the cluster under the same name during the run, the backup fails at once.
 
 ## Deletion
 

@@ -1629,6 +1629,53 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, "20s", interval).Should(Succeed())
 	})
 
+	// The brokers can take their part of the Zeebe backup under the new
+	// configuration, so the pair is lost for good. No grace can recover it.
+	It("fails, not completes, when Zeebe rolled to another configuration while the Zeebe backup ran", func() {
+		w := createWorld()
+		backup := createBackup(w)
+
+		markJob(backup, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		By("rolling the Zeebe workload while the Zeebe backup runs, then reporting it done")
+		renderZeebe(w.cluster, "hash-2", worldRDBMSURL)
+		managementAPI.SetRuntimeState(*backup.Status.ZeebeBackupID, string(camundaadmin.StateCompleted), "")
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("hash-1"))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("hash-2"))
+			g.Expect(backup.Status.FailureMessage).NotTo(
+				ContainSubstring("stopped resolving"), "a changed hash fails at once, not after the grace",
+			)
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("fails a running Zeebe backup as soon as Zeebe rolled, without waiting for its final state", func() {
+		w := createWorld()
+		backup := createBackup(w)
+
+		markJob(backup, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		By("rolling the Zeebe workload while the cluster still reports the backup in progress")
+		renderZeebe(w.cluster, "hash-2", worldRDBMSURL)
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("hash-2"))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// The pinned hash proves that Zeebe did not roll since the
 	// start. It does not prove that the referents that the dump reads are the
 	// ones that Zeebe runs. Between an edit of the DatabaseConfig and the

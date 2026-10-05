@@ -644,8 +644,8 @@ func (r *LogicalBackupRDBMSReconciler) workloadUnchanged(
 // DatabaseConfig and the DatabaseServerConfig, enter that hash without a
 // bump of the cluster generation. So the converged generation alone cannot
 // prove that Zeebe still runs the database that a dump captures. The backup
-// pins the hash at start and requires it unchanged before the Job and before
-// the Zeebe request.
+// pins the hash at start and requires it unchanged before the Job, before
+// the Zeebe request, and on each poll of the Zeebe backup.
 func (r *LogicalBackupRDBMSReconciler) zeebeConfigHash(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
