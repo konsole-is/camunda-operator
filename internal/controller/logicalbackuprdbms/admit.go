@@ -126,7 +126,7 @@ func (r *LogicalBackupRDBMSReconciler) admit(
 		}), nil
 	}
 
-	hash, failure, err := r.zeebeConfigHash(ctx, precheck.Cluster)
+	hash, failure, err := r.rolledOutConfigHash(ctx, precheck.Cluster)
 	if err != nil {
 		return settle, err
 	}
@@ -487,6 +487,28 @@ func (r *LogicalBackupRDBMSReconciler) checkManagement(
 	}
 
 	return failure
+}
+
+// rolledOutConfigHash returns the config hash of the live Zeebe workload
+// when every broker runs its pod template. A workload that is not rendered,
+// still rolls, or carries no hash returns a failure with reason Progressing.
+func (r *LogicalBackupRDBMSReconciler) rolledOutConfigHash(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+) (string, *conditions.PreCheckFailure, error) {
+	workload, failure, err := camundacluster.LiveZeebeWorkload(ctx, r.APIReader, cluster)
+	if err != nil || failure != nil {
+		return "", failure, err
+	}
+	// The template changes before the first broker restarts. A hash pinned
+	// from it during a rollout can name a configuration that no broker runs.
+	if failure := camundacluster.RolledOut(workload); failure != nil {
+		return "", failure, nil
+	}
+
+	hash, failure := camundacluster.RunningConfigHash(workload)
+
+	return hash, failure, nil
 }
 
 // highestSiblingBackupID returns the highest backup ID among the other
