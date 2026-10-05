@@ -67,8 +67,7 @@ const (
 	// are the annotations of the CloudNativePG cluster that carry the volume
 	// sizes that the merged spec asks for. The cluster keeps a larger volume
 	// that is already there, so this is where the requested sizes are
-	// visible, and the controller records a kept volume only when they
-	// change. The empty value asks for no write-ahead log volume.
+	// visible. The empty value asks for no write-ahead log volume.
 	RequestedStorageSizeAnnotation    = "camunda.io/requested-storage-size"
 	RequestedWALStorageSizeAnnotation = "camunda.io/requested-wal-storage-size"
 )

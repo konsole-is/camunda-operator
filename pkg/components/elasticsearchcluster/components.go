@@ -77,8 +77,7 @@ const (
 	// RequestedStorageSizeAnnotation is the annotation of the ECK CR that
 	// carries the storageSize that the merged spec asks for. The claim keeps
 	// a larger size that is already there, so this is where the requested
-	// size is visible, and the controller records an ignored shrink only when
-	// it changes.
+	// size is visible.
 	RequestedStorageSizeAnnotation = "camunda.io/requested-storage-size"
 	// RequestedStorageClassAnnotation is the annotation of the ECK CR that
 	// carries the storageClassName that the merged spec asks for. It is
