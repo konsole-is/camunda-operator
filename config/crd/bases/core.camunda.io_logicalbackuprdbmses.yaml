@@ -1250,9 +1250,11 @@ spec:
               workloadConfigHash:
                 description: |-
                   WorkloadConfigHash records the configuration of Zeebe when the backup
-                  started. It is the config hash of the Zeebe pod template. The operator
-                  compares it with the current hash before it renders the dump Job and
-                  before it requests the Zeebe backup. It compares again until the Zeebe
+                  started. It is the config hash of the Zeebe pod template. The backup
+                  starts only after every Zeebe pod runs this template, and the template
+                  uses the bucket of the backup storage contract. The operator compares
+                  it with the current hash before it renders the dump Job and before it
+                  requests the Zeebe backup. It compares again until the Zeebe
                   backup is final. Before the request, a different hash fails the backup
                   after the grace period. After the request, a different hash fails the
                   backup at once, also when the Zeebe backup completed. The generation
