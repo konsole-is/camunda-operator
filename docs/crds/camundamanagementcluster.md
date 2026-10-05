@@ -261,17 +261,24 @@ status:
       message: 'Management Identity started with the administrator claim "oid=8f1c...e2" and stores it in its database; spec.identity.admin now asks for "oid=41ab...77", which only a change in the database can do'
 ```
 
+The operator records the claim that Management Identity started with in the annotation `camunda.io/identity-initial-claim`, as `<claimName>=<claimValue>`. The Management Identity pods keep the recorded claim, so a change to `spec.identity.admin` does not restart them. Read the recorded claim with this command:
+
+```bash
+kubectl get camundamanagementcluster my-management -n my-management-ns \
+  -o jsonpath='{.metadata.annotations.camunda\.io/identity-initial-claim}'
+```
+
 The operator cannot correct this for you. You have three ways out:
 
 - If the recorded claim belongs to a real person, put the recorded value back on `spec.identity.admin`. Sign in as that person, and grant access to the rest in Management Identity.
-- If nobody holds the recorded claim, change the administrator in the database of Management Identity. Camunda names the values in [OIDC configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/#oidc-configuration). Then set the annotation `camunda.io/identity-initial-claim` to the pair that `spec.identity.admin` names, and `Ready` no longer reports `ImmutableAfterStart`:
+- If nobody holds the recorded claim, change the administrator in the database of Management Identity. Camunda gives no steps for this change. It says only that the database holds the claim, in [OIDC configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/#oidc-configuration), and that the claim becomes the mapping rule `Default`, in [Mapping rules](https://docs.camunda.io/docs/self-managed/components/management-identity/mapping-rules/). Then set the annotation `camunda.io/identity-initial-claim` to the pair that `spec.identity.admin` names, and `Ready` no longer reports `ImmutableAfterStart`. The Management Identity pods restart one time with the new value. This restart does not change the database:
 
     ```bash
     kubectl annotate --overwrite camundamanagementcluster my-management -n my-management-ns \
       camunda.io/identity-initial-claim=oid=41ab...77
     ```
 
-- Point `spec.identity.databaseConfigRef` at an empty database. Management Identity starts again from nothing and loses the roles and the tenants it held. Your identity provider keeps every user and client.
+- First set the annotation to the pair that `spec.identity.admin` names, with the command above. Then point `spec.identity.databaseConfigRef` at an empty database. Management Identity starts again from nothing with the claim that the annotation names. It loses the roles and the tenants it held. Your identity provider keeps every user and client.
 
 ## Console
 
