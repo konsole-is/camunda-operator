@@ -109,6 +109,10 @@ func TestCheckPage(t *testing.T) {
 			want: []finding{{line: 3, words: 26, limit: 25}},
 		},
 		{
+			name: "a line break in a table cell is a space, not a word",
+			page: "| a |\n| --- |\n| " + words(20) + "<br />" + words(20) + "<br>" + words(25) + " |",
+		},
+		{
 			name: "a blank line ends a text",
 			page: "The " + strings.Repeat("word ", 15) + "\n\n" + strings.Repeat("word ", 15) + "end.",
 		},
@@ -189,7 +193,7 @@ func TestCheckPageNamesTheSentence(t *testing.T) {
 	assert.Equal(t, "The word word word word word", got[0].start)
 }
 
-func TestCheckDirSkipsUnpublishedAndGeneratedPages(t *testing.T) {
+func TestCheckDirSkipsUnpublishedPages(t *testing.T) {
 	root := t.TempDir()
 	long := words(30)
 
@@ -214,5 +218,10 @@ func TestCheckDirSkipsUnpublishedAndGeneratedPages(t *testing.T) {
 	for _, f := range findings {
 		files = append(files, f.file)
 	}
-	assert.ElementsMatch(t, []string{filepath.Join(root, "crds/kind.md"), filepath.Join(root, "index.md")}, files)
+	want := []string{
+		filepath.Join(root, "crds/api-reference.md"),
+		filepath.Join(root, "crds/kind.md"),
+		filepath.Join(root, "index.md"),
+	}
+	assert.ElementsMatch(t, want, files)
 }

@@ -28,9 +28,10 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          ManagementAuthConfig is the contract CRD that carries the Management
-          Identity OIDC configuration — endpoints, client credentials, and audience —
-          for components that live outside the orchestration cluster.
+          ManagementAuthConfig is the contract CRD that holds the Management Identity
+          OIDC configuration: the endpoints, the client credentials, and the
+          audience. Components outside the orchestration cluster, such as Optimize,
+          read it.
         properties:
           apiVersion:
             description: |-
@@ -53,13 +54,14 @@ spec:
             description: spec defines the desired state of ManagementAuthConfig
             properties:
               audience:
-                description: Audience expected in access tokens issued for this client.
+                description: Audience is the audience that access tokens for this
+                  client must have.
                 minLength: 1
                 type: string
               authUrl:
                 description: |-
-                  AuthURL is the OIDC authorization endpoint used for browser login
-                  redirects.
+                  AuthURL is the OIDC authorization endpoint for the login redirects of
+                  the browser.
                 type: string
                 x-kubernetes-validations:
                 - message: authUrl must be a valid http or https URL
@@ -83,15 +85,15 @@ spec:
                   client.
                 properties:
                   key:
-                    description: Key in the Secret holding the value.
+                    description: Key is the key in the Secret that holds the value.
                     minLength: 1
                     type: string
                   name:
-                    description: Name of the Secret holding the value.
+                    description: Name is the name of the Secret that holds the value.
                     minLength: 1
                     type: string
                   namespace:
-                    description: Namespace of the Secret.
+                    description: Namespace is the namespace of the Secret.
                     minLength: 1
                     type: string
                 required:
@@ -101,22 +103,23 @@ spec:
                 type: object
               issuerBackendUrl:
                 description: |-
-                  IssuerBackendURL is the issuer URL for in-cluster container-to-container
-                  communication. Consumers default it to IssuerURL when empty.
+                  IssuerBackendURL is the issuer URL for calls between containers inside
+                  the Kubernetes cluster. When empty, consumers use IssuerURL.
                 type: string
                 x-kubernetes-validations:
                 - message: issuerBackendUrl must be a valid http or https URL
                   rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
                     == 'https')
               issuerUrl:
-                description: IssuerURL is the OIDC issuer URL used to validate tokens.
+                description: IssuerURL is the OIDC issuer URL for the validation of
+                  tokens.
                 type: string
                 x-kubernetes-validations:
                 - message: issuerUrl must be a valid http or https URL
                   rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
                     == 'https')
               jwksUrl:
-                description: JwksURL is the JWKS endpoint used to fetch token signing
+                description: JwksURL is the JWKS endpoint that gives the token signing
                   keys.
                 type: string
                 x-kubernetes-validations:
@@ -124,8 +127,7 @@ spec:
                   rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
                     == 'https')
               tokenUrl:
-                description: |-
-                  TokenURL is the OIDC token endpoint used to acquire machine-to-machine
+                description: TokenURL is the OIDC token endpoint for machine-to-machine
                   tokens.
                 type: string
                 x-kubernetes-validations:
@@ -147,8 +149,8 @@ spec:
             properties:
               conditions:
                 description: |-
-                  Conditions represent the current validation state; the Ready condition
-                  carries reasons Healthy or MissingSecret.
+                  Conditions represent the current validation state. The Ready condition
+                  has the reasons Healthy or MissingSecret.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -208,8 +210,8 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               observedGeneration:
-                description: ObservedGeneration is the last generation reconciled
-                  by the operator.
+                description: ObservedGeneration is the last generation that the operator
+                  processed.
                 format: int64
                 type: integer
             type: object

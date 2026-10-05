@@ -22,10 +22,9 @@ limitations under the License.
 // Usage: sentencelength [dir]
 //
 // The directory defaults to docs. The command reads every .md file below it,
-// except docs/superpowers/, docs/crds/TEMPLATE.md, and the generated
-// docs/crds/api-reference.md. It prints one line per finding, then the count
-// for each page and the total. It exits with status 1 when it reports a
-// finding.
+// except docs/superpowers/ and docs/crds/TEMPLATE.md. It prints one line per
+// finding, then the count for each page and the total. It exits with status 1
+// when it reports a finding.
 //
 // What it reads:
 //   - Paragraphs, list items, admonition bodies, blockquotes, and each table
@@ -41,7 +40,8 @@ limitations under the License.
 //   - Inline code, URLs, text in parentheses, and text in double quotes count
 //     as one word and are not checked for semicolons or modals. A link counts
 //     as the words of its text. A hyphenated word counts as one word. A token
-//     without a letter or a digit is no word.
+//     without a letter or a digit is no word. An HTML line break counts as a
+//     space.
 //
 // How it classifies a sentence:
 //   - A sentence in an ordered list item is procedural.
@@ -107,6 +107,7 @@ var (
 	bareURL       = regexp.MustCompile(`https?://[^\s<>]*[^\s<>.,:;!?)]`)
 	quoted        = regexp.MustCompile(`"[^"]*"|“[^”]*”`)
 	parens        = regexp.MustCompile(`\([^()]*\)`)
+	lineBreak     = regexp.MustCompile(`(?i)<br\s*/?>`)
 	banned        = regexp.MustCompile(`;|(?i:\b(?:would|could|may)(?:n['’]t)?\b)`)
 )
 
@@ -170,11 +171,8 @@ func main() {
 	}
 }
 
-// make api-docs renders api-reference.md from the GoDoc in api/v1, so a
-// finding on that page is fixed in the GoDoc, not on the page.
 var skippedPages = map[string]bool{
-	filepath.Join("crds", "TEMPLATE.md"):      true,
-	filepath.Join("crds", "api-reference.md"): true,
+	filepath.Join("crds", "TEMPLATE.md"): true,
 }
 
 func checkDir(root string) ([]finding, error) {
@@ -389,9 +387,11 @@ func firstWords(s string, n int) string {
 }
 
 // mask rewrites the spans that count as one word into runs of "x" of the same
-// byte length, and blanks link targets, so offsets stay valid.
+// byte length, and blanks link targets and line breaks, so offsets stay valid.
 func mask(s string) string {
-	b := []byte(s)
+	b := lineBreak.ReplaceAllFunc([]byte(s), func(m []byte) []byte {
+		return []byte(strings.Repeat(" ", len(m)))
+	})
 	fill := func(re *regexp.Regexp, keepGroup bool) {
 		for _, m := range re.FindAllSubmatchIndex(b, -1) {
 			for i := m[0]; i < m[1]; i++ {

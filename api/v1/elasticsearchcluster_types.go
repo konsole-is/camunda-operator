@@ -22,32 +22,33 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ServiceAccountSpec configures the ServiceAccount of the pods a controller
-// manages.
+// ServiceAccountSpec configures the ServiceAccount of the pods of a resource.
 type ServiceAccountSpec struct {
-	// Name of the ServiceAccount. Empty means the name that the controller
-	// derives from the name of the resource, which each CRD doc states. The
-	// name is part of the contract with the cloud provider: a workload
-	// identity that needs no annotation, such as EKS Pod Identity, binds the
-	// principal system:serviceaccount:<namespace>:<name>.
+	// Name is the name of the ServiceAccount. When empty, the operator
+	// derives the name from the name of the resource, as the doc of each kind
+	// states. The cloud provider uses this name. A workload identity that
+	// needs no annotation, such as EKS Pod Identity, binds the principal
+	// system:serviceaccount:<namespace>:<name>.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=253
 	// +optional
 	Name string `json:"name,omitempty"`
-	// Create renders and owns the ServiceAccount. Defaults to true. False
-	// names one that already exists: the operator neither creates, annotates,
-	// nor owns it, and a ServiceAccount that is absent then fails the
-	// pre-check instead of leaving the pods unschedulable. The operator never
-	// adopts a foreign ServiceAccount, because an owned one is deleted with
-	// the resource.
+	// Create makes the operator create and own the ServiceAccount. Defaults
+	// to true. False names a ServiceAccount that already exists. The operator
+	// then does not create, annotate, or own it. If it does not exist, Ready
+	// reports InvalidReference, except on a suspended ElasticsearchCluster. The operator never takes ownership of a
+	// ServiceAccount that it did not create, because it deletes an owned one
+	// with the resource.
 	// +optional
 	Create *bool `json:"create,omitempty"`
-	// Annotations to set on the ServiceAccount, typically workload-identity
-	// annotations (IRSA, GCP Workload Identity, ...) granting the pods access
-	// to cloud resources such as the snapshot bucket used for backups. A
-	// controller that resolves a bucket contract derives the annotation of
-	// that contract's identity as well; an annotation set here wins over the
-	// derived one on the same key.
+	// Annotations to set on the ServiceAccount that the operator creates.
+	// Usually these are workload-identity annotations (IRSA, GCP Workload
+	// Identity, and more) that give the pods access to cloud resources, such
+	// as the snapshot bucket for backups. The operator also adds the identity
+	// annotation of each bucket contract that names an identity. An annotation
+	// set here wins over the operator annotation with the same key. With
+	// create false, the operator sets no annotation. Add them to the existing
+	// ServiceAccount yourself.
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
@@ -70,23 +71,22 @@ type SecureSettingEntry struct {
 	Path string `json:"path"`
 }
 
-// SecureSettingsSource references a Secret whose contents ECK loads into the
-// keystore of every Elasticsearch node. Elasticsearch reads credentials from
-// the keystore only, never from the settings of a snapshot repository.
+// SecureSettingsSource references a Secret that ECK loads into the keystore
+// of every Elasticsearch node. Elasticsearch reads credentials only from the
+// keystore, never from the settings of a snapshot repository.
 type SecureSettingsSource struct {
 	// SecretName is the Secret, in the namespace of the ElasticsearchCluster.
 	// +kubebuilder:validation:MinLength=1
 	SecretName string `json:"secretName"`
-	// Entries projects single keys to keystore entries. An empty list loads
+	// Entries maps single keys to keystore entries. An empty list loads
 	// every key of the Secret under its own name.
 	// +optional
 	Entries []SecureSettingEntry `json:"entries,omitempty"`
 }
 
-// SchedulingSpec groups the scheduling constraints applied to the pods a
-// controller manages. A consumer resolving a preset replaces the preset's
-// entire scheduling block when it sets its own; the blocks are never merged
-// field by field.
+// SchedulingSpec holds the scheduling constraints of the pods of a resource.
+// When a resource sets its own block, it replaces the complete scheduling
+// block of its preset. The two blocks never merge field by field.
 type SchedulingSpec struct {
 	// NodeAffinity rules for the pods.
 	// +optional
@@ -100,11 +100,11 @@ type SchedulingSpec struct {
 }
 
 // ServiceMonitorSpec configures the Prometheus ServiceMonitors of a resource
-// that runs workloads. The owning kind says what is scraped: an
-// ElasticsearchCluster deploys the prometheus-community elasticsearch_exporter
-// (Elasticsearch serves no Prometheus endpoint itself) and scrapes it; a
-// CamundaCluster scrapes /actuator/prometheus of every process. The
-// ServiceMonitor is created only when the Kubernetes cluster serves the kind.
+// that runs workloads. The kind of the resource sets what Prometheus scrapes.
+// Elasticsearch serves no Prometheus endpoint, so an ElasticsearchCluster
+// deploys the prometheus-community elasticsearch_exporter and scrapes it. A
+// CamundaCluster scrapes /actuator/prometheus of every process. The operator
+// creates the ServiceMonitor only when the Kubernetes cluster serves the kind.
 type ServiceMonitorSpec struct {
 	// Enabled creates the ServiceMonitors (and, for an ElasticsearchCluster,
 	// the exporter) when true. Defaults to false.
@@ -145,16 +145,15 @@ type MonitoringSpec struct {
 
 // ElasticsearchClusterSpec defines the desired state of ElasticsearchCluster.
 //
-// The type doubles as the configuration baseline of an
-// ElasticsearchClusterPreset, so the field that is required on an
-// ElasticsearchCluster, secondaryStorageConfig, is optional at the schema
-// level here and enforced on the ElasticsearchCluster usage instead. The
-// instance-bound fields are cluster-only and rejected in a preset, and so is
-// the version, which belongs to a CamundaRelease.
+// An ElasticsearchClusterPreset uses the same type as its baseline. For this
+// reason, the schema marks secondaryStorageConfig as optional, and the
+// ElasticsearchCluster requires it. A preset refuses the fields that belong
+// to one cluster only. A preset also refuses the version, which belongs to a
+// CamundaRelease.
 type ElasticsearchClusterSpec struct {
-	// PresetRef names a cluster-scoped ElasticsearchClusterPreset used as the
-	// configuration baseline; fields set inline override the preset's value
-	// for that field wholesale.
+	// PresetRef names a cluster-scoped ElasticsearchClusterPreset to use as
+	// the configuration baseline. A field set on the cluster replaces the
+	// value of the preset for that field completely.
 	// +optional
 	PresetRef string `json:"presetRef,omitempty"`
 	// ReleaseRef names a cluster-scoped CamundaRelease that provides the
@@ -163,10 +162,10 @@ type ElasticsearchClusterSpec struct {
 	// +optional
 	ReleaseRef string `json:"releaseRef,omitempty"`
 	// Version is the Elasticsearch version to deploy, as a full semantic
-	// version. Camunda 8.9 supports Elasticsearch 8.19+ and 9.2+. The
-	// controller enforces that floor on the merged result, and the schema
-	// pins only the three-segment shape. Required unless the resolved release
-	// provides it, and forbidden in a preset.
+	// version. Camunda 8.9 supports Elasticsearch 8.x from 8.19, and 9.x from
+	// 9.2. The operator refuses a version below 8.19, and 9.0 and 9.1, also
+	// when it comes from the release, with Ready reason InvalidReference. Required unless the
+	// resolved release provides it. Forbidden in a preset.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	// +optional
 	Version string `json:"version,omitempty"`
@@ -178,16 +177,17 @@ type ElasticsearchClusterSpec struct {
 	// Resources are the CPU and memory for each Elasticsearch node.
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
-	// StorageSize is the size of the data volume of each node. It cannot
-	// shrink, because Elasticsearch data volumes cannot be reduced in place.
-	// Admission rejects a lower inline value on an ElasticsearchCluster
-	// through a CEL transition rule. That rule does not bind this shared
-	// field, so a preset baseline can be resized freely: a cluster that
-	// applied a larger size keeps it and records a StorageShrinkIgnored
-	// event. Required unless the resolved preset provides it.
+	// StorageSize is the size of the data volume of each node. Required
+	// unless the resolved preset provides it. It cannot shrink, because an
+	// Elasticsearch data volume cannot become smaller in place. The API
+	// server refuses a change of this field in an ElasticsearchCluster to a
+	// smaller value. A smaller value is accepted when the field was not set
+	// before, or when a preset lowers the size. A cluster whose volumes are
+	// already larger then keeps that size and records a StorageShrinkIgnored
+	// event.
 	// +optional
 	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
-	// StorageClassName is the StorageClass for the data volumes. Defaults to
+	// StorageClassName is the StorageClass of the data volumes. Defaults to
 	// the default StorageClass of the Kubernetes cluster. The class cannot
 	// change after the ECK Elasticsearch resource exists. A cluster whose ECK
 	// resource exists keeps its class and records a
@@ -196,8 +196,7 @@ type ElasticsearchClusterSpec struct {
 	// that a suspension or whenDeleted Retain kept keep their class.
 	// +optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
-	// ServiceAccount configures the Elasticsearch pods' ServiceAccount,
-	// applied through the ECK podTemplate.
+	// ServiceAccount configures the ServiceAccount of the Elasticsearch pods.
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 	// ExtraEnv are extra environment variables for every Elasticsearch node.
@@ -213,32 +212,30 @@ type ElasticsearchClusterSpec struct {
 	// PodAnnotations are extra annotations applied to the Elasticsearch pods.
 	// +optional
 	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
-	// Scheduling constraints for the Elasticsearch pods; when set, it replaces
-	// the preset's scheduling block entirely (no merge).
+	// Scheduling holds the scheduling constraints of the Elasticsearch pods.
+	// When set, it replaces the scheduling block of the preset, with no merge.
 	// +optional
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
 	// SnapshotStorageRef names an ObjectStorageConfig, in the namespace of
-	// this cluster, that holds the bucket of the snapshot repository of this
-	// cluster. When it is set,
-	// the operator owns the whole Elasticsearch side of that bucket: it gives
-	// the nodes their credentials, registers the repository, and publishes the
-	// repository name in the SecondaryStorageConfig it produces. Backups of a
-	// CamundaCluster on this storage need it. The bucket must be the one that
-	// the CamundaCluster references as well.
+	// this cluster, for the bucket of the snapshot repository of this
+	// cluster. When it is set, the operator does all the Elasticsearch work
+	// for that bucket. It gives the nodes their credentials, registers the
+	// repository, and publishes the repository name in the
+	// SecondaryStorageConfig. A CamundaCluster on this storage needs it for
+	// backups. The CamundaCluster must reference the same bucket.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=253
 	// +optional
 	SnapshotStorageRef string `json:"snapshotStorageRef,omitempty"`
 	// SecureSettings are Secrets that ECK loads into the keystore of every
 	// node. The operator adds the credentials of snapshotStorageRef to the
-	// keystore on its own, so this field is for everything else a keystore
-	// holds.
+	// keystore itself. Use this field for all other keystore entries.
 	// +optional
 	SecureSettings []SecureSettingsSource `json:"secureSettings,omitempty"`
-	// SecondaryStorageConfig names the SecondaryStorageConfig the operator
-	// creates in this CR's own namespace with the connection details and
-	// generated credentials. Required on an ElasticsearchCluster, forbidden in
-	// a preset.
+	// SecondaryStorageConfig names the SecondaryStorageConfig that the
+	// operator creates in the namespace of this cluster. It holds the
+	// connection details and the generated credentials. Required on an
+	// ElasticsearchCluster, forbidden in a preset.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=253
 	// +optional
@@ -252,19 +249,17 @@ type ElasticsearchClusterSpec struct {
 	// +optional
 	PersistentVolumeClaimRetentionPolicy *PersistentVolumeClaimRetentionPolicy `json:"persistentVolumeClaimRetentionPolicy,omitempty"`
 	// Suspend stops the Elasticsearch cluster and keeps its data volumes.
-	// The operator sets the volume claim delete policy of the ECK
-	// Elasticsearch resource to DeleteOnScaledownOnly, waits until ECK has
-	// observed it, and deletes the resource. Setting the field back to
-	// false recreates the resource, and ECK reattaches the volumes.
-	// Defaults to false.
+	// Defaults to false. The operator deletes the ECK Elasticsearch resource
+	// and keeps the volumes. When you set the field back to false, the
+	// operator creates the resource again, and ECK attaches the volumes
+	// again.
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
 }
 
 // ReasonECKNotInstalled is the Ready reason of an ElasticsearchCluster on a
 // cluster that did not serve the ECK Elasticsearch kind when the operator
-// started. The operator decides at start whether it watches ECK resources,
-// so it must restart after ECK is installed.
+// started. Restart the operator after you install ECK.
 const ReasonECKNotInstalled = "ECKNotInstalled"
 
 // PersistentVolumeClaimRetentionPolicyType is what happens to the data
@@ -275,27 +270,28 @@ type PersistentVolumeClaimRetentionPolicyType string
 
 const (
 	// RetainPersistentVolumeClaimRetentionPolicyType keeps the data volumes.
-	// Removing the data is a manual act. For an ElasticsearchCluster the ECK
-	// resource carries the volume claim delete policy DeleteOnScaledownOnly;
-	// for a CamundaCluster the broker StatefulSet carries whenDeleted Retain.
+	// You remove the data manually. For an ElasticsearchCluster, the ECK
+	// resource has the volume claim delete policy DeleteOnScaledownOnly. For
+	// a CamundaCluster, the broker StatefulSet has whenDeleted Retain.
 	RetainPersistentVolumeClaimRetentionPolicyType PersistentVolumeClaimRetentionPolicyType = "Retain"
 	// DeletePersistentVolumeClaimRetentionPolicyType deletes the data volumes
-	// with the resource. For an ElasticsearchCluster the ECK resource carries
+	// with the resource. For an ElasticsearchCluster, the ECK resource has
 	// the volume claim delete policy DeleteOnScaledownAndClusterDeletion, the
-	// ECK default; for a CamundaCluster the broker StatefulSet carries
+	// ECK default. For a CamundaCluster, the broker StatefulSet has
 	// whenDeleted Delete.
 	DeletePersistentVolumeClaimRetentionPolicyType PersistentVolumeClaimRetentionPolicyType = "Delete"
 )
 
-// PersistentVolumeClaimRetentionPolicy mirrors the StatefulSet field of the
-// same name. Only whenDeleted exists: ECK deletes the volume of every
-// Elasticsearch node that it scales away, and the operator always keeps the
-// volume of a broker that is scaled away, so there is no whenScaled choice.
+// PersistentVolumeClaimRetentionPolicy is like the StatefulSet field of the
+// same name, with only whenDeleted. There is no whenScaled choice. ECK
+// deletes the volume of each Elasticsearch node that it removes in a scale
+// down. The operator always keeps the volume of a broker that it removes in
+// a scale down.
 type PersistentVolumeClaimRetentionPolicy struct {
 	// WhenDeleted is what happens to the data volumes when the resource is
-	// deleted. Delete removes them with the resource. Retain keeps them, and
-	// a later resource with the same name reattaches them. Defaults to
-	// Delete.
+	// deleted. Defaults to Delete. Delete removes them with the resource.
+	// Retain keeps them, and a later resource with the same name attaches
+	// them again.
 	// +kubebuilder:default=Delete
 	// +optional
 	WhenDeleted PersistentVolumeClaimRetentionPolicyType `json:"whenDeleted,omitempty"`
@@ -303,13 +299,16 @@ type PersistentVolumeClaimRetentionPolicy struct {
 
 // ElasticsearchClusterStatus is the observed state of an ElasticsearchCluster.
 type ElasticsearchClusterStatus struct {
-	// ObservedGeneration is the last generation reconciled by the operator.
+	// ObservedGeneration is the last generation that the operator processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Version is the Elasticsearch version that the cluster runs, as a full
-	// semantic version. It is the version of the merged spec, so it names what
-	// runs whether the release, the preset, or the cluster supplies it. It is
-	// empty until the first reconcile resolves the references of the cluster.
+	// Version is the effective Elasticsearch version of the cluster, as a
+	// full semantic version. It comes from the merged spec, so it is correct
+	// when the release or the cluster gives the version. During
+	// an upgrade, or when the operator cannot apply the change, the old
+	// version can still run. It is empty
+	// until the operator resolves the references of the cluster for the first
+	// time.
 	// +optional
 	Version string `json:"version,omitempty"`
 	// Volumes lists the bound data PersistentVolumeClaims of the cluster and
@@ -318,19 +317,21 @@ type ElasticsearchClusterStatus struct {
 	// +listMapKey=name
 	// +optional
 	Volumes []VolumeStatus `json:"volumes,omitempty"`
-	// SnapshotRepository is the snapshot repository that the operator has
-	// registered in Elasticsearch for this cluster. It is the name that the
-	// published SecondaryStorageConfig carries, and it is empty until the
-	// first registration converges. A cluster whose name a later operator
-	// version derives differently therefore publishes nothing until the new
-	// repository exists, rather than a name that Elasticsearch does not hold.
+	// SnapshotRepository is the snapshot repository that the operator
+	// registered in Elasticsearch for this cluster. The published
+	// SecondaryStorageConfig holds the same name. It is empty until the first
+	// registration succeeds. It shows the last registration that succeeded,
+	// not a new check that the repository still exists.
 	// +optional
 	SnapshotRepository string `json:"snapshotRepository,omitempty"`
-	// Conditions represent the current state. Ready carries a pre-check
-	// reason (InvalidReference, MissingSecret, ECKNotInstalled), or it is
-	// derived from the component conditions. The per-component conditions
-	// (CredentialsReady, ElasticsearchReady, StorageContractReady) also
-	// appear here.
+	// Conditions represent the current state. Ready holds the reason of a
+	// failed pre-check (InvalidReference, MissingSecret, ECKNotInstalled).
+	// Otherwise it follows the component conditions and, when the cluster or
+	// its preset sets snapshotStorageRef and the cluster is not suspended,
+	// SnapshotRepositoryReady. The per-component conditions (CredentialsReady,
+	// KeystoreReady, ElasticsearchReady, StorageContractReady) also appear
+	// here.
+	// MetricsReady reports the exporter and never affects Ready.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -344,10 +345,9 @@ type ElasticsearchClusterStatus struct {
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.version`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// ElasticsearchCluster provisions and operates an Elasticsearch cluster for
-// use as secondary storage, deployed through the external ECK operator, and
-// publishes the connection details as a SecondaryStorageConfig with generated
-// credentials.
+// ElasticsearchCluster runs an Elasticsearch cluster for secondary storage,
+// through the external ECK operator. It publishes the connection details and
+// generated credentials as a SecondaryStorageConfig.
 type ElasticsearchCluster struct {
 	metav1.TypeMeta `json:",inline"`
 
