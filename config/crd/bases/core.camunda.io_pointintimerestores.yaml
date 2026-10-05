@@ -292,8 +292,9 @@ spec:
               storage:
                 description: |-
                   Storage records the storage chain that the restore validated. The
-                  operator records it one time, before it reads the database. If a later
-                  read does not agree, the restore fails.
+                  operator records it before it reads the database, and again after a
+                  rollback that the restore asked for. If a later read does not agree,
+                  the restore fails.
                 properties:
                   databaseConfig:
                     description: DatabaseConfig is the contract of the logical database.

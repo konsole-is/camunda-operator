@@ -3113,7 +3113,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `phase` _[PointInTimeRestorePhase](#pointintimerestorephase)_ | Phase is the phase of the restore. The restore continues from it after<br />an interruption. |  | Enum: [Pending RestoringDatabase ValidatingDatabaseState RestoringPrimaryStorage Completed Failed] <br />Optional: \{\} <br /> |
-| `storage` _[PointInTimeRestoreStorage](#pointintimerestorestorage)_ | Storage records the storage chain that the restore validated. The<br />operator records it one time, before it reads the database. If a later<br />read does not agree, the restore fails. |  | Optional: \{\} <br /> |
+| `storage` _[PointInTimeRestoreStorage](#pointintimerestorestorage)_ | Storage records the storage chain that the restore validated. The<br />operator records it before it reads the database, and again after a<br />rollback that the restore asked for. If a later read does not agree,<br />the restore fails. |  | Optional: \{\} <br /> |
 | `backend` _string_ | Backend names the database that the restore holds while its server<br />rolls back: the host, the port, and the database name. The operator<br />records it just before it asks for the rollback. It follows each<br />endpoint that the contract names. From then until the final phase, no<br />other CamundaCluster starts on this database, also when the contract<br />names another endpoint. A restore whose server<br />rolls back outside the operator records no backend. |  | Optional: \{\} <br /> |
 | `observedPositions` _[PartitionPosition](#partitionposition) array_ | ObservedPositions are the exporter positions that the pre-check read,<br />in partition order. They show what the operator saw when the restore<br />passed the database-state check, or what stopped it. |  | Optional: \{\} <br /> |
 | `targetClusterUID` _[UID](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#uid-types-pkg)_ | TargetClusterUID records the identity of the target cluster. A cluster<br />that is deleted and created again with the same name is another<br />cluster, and this restore does not apply to it. |  | Optional: \{\} <br /> |
@@ -3137,8 +3137,9 @@ PointInTimeRestoreStorage is the identity of the storage chain that the
 restore validated. It holds the contracts that the restore resolved, the
 logical database that it read, and the server of that database. Each part
 of the chain can change. The restore checks the server and the database
-one time, before it deletes anything. If a later read does not agree with
-this record, it is another database, and the restore fails.
+before it deletes anything. If a later read does not agree with this
+record, it is another database, and the restore fails. A rollback that the
+restore asked for replaces the record.
 
 
 

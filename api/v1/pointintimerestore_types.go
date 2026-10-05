@@ -124,8 +124,9 @@ type PartitionPosition struct {
 // restore validated. It holds the contracts that the restore resolved, the
 // logical database that it read, and the server of that database. Each part
 // of the chain can change. The restore checks the server and the database
-// one time, before it deletes anything. If a later read does not agree with
-// this record, it is another database, and the restore fails.
+// before it deletes anything. If a later read does not agree with this
+// record, it is another database, and the restore fails. A rollback that the
+// restore asked for replaces the record.
 type PointInTimeRestoreStorage struct {
 	// SecondaryStorageConfig is the storage contract of the cluster.
 	SecondaryStorageConfig string `json:"secondaryStorageConfig"`
@@ -165,8 +166,9 @@ type PointInTimeRestoreStatus struct {
 	// +optional
 	Phase PointInTimeRestorePhase `json:"phase,omitempty"`
 	// Storage records the storage chain that the restore validated. The
-	// operator records it one time, before it reads the database. If a later
-	// read does not agree, the restore fails.
+	// operator records it before it reads the database, and again after a
+	// rollback that the restore asked for. If a later read does not agree,
+	// the restore fails.
 	// +optional
 	Storage *PointInTimeRestoreStorage `json:"storage,omitempty"`
 	// Backend names the database that the restore holds while its server
