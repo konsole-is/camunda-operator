@@ -71,9 +71,9 @@ const elasticsearchClusterPresetRefField = "elasticsearchcluster.spec.presetRef"
 const elasticsearchClusterReleaseRefField = "elasticsearchcluster.spec.releaseRef"
 
 // eventReasonStorageShrinkIgnored is the Warning event that the controller
-// records once per requested size when the merged storageSize is below the
-// applied data volume size. It keeps the applied size, because Elasticsearch
-// data volumes cannot be reduced in place.
+// records when the merged storageSize is below the data volume size and the
+// ECK CR that it applies does not carry that request yet. It keeps the
+// volume size, because Elasticsearch data volumes cannot be reduced in place.
 const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 
 // eventActionResize is the action of the events that the controller records
@@ -384,8 +384,9 @@ func (r *ElasticsearchClusterReconciler) retryInterval() time.Duration {
 // below a size that a preset provided before. It compares the merged size
 // against the largest data volume in volumes. If the merged size is smaller,
 // it keeps the existing size in merged, because Elasticsearch data volumes
-// cannot be reduced in place, and records a Warning event once per requested
-// size. It returns the storageSize that merged asked for.
+// cannot be reduced in place. It records a Warning event while the applied ECK
+// CR does not carry the request, except while the cluster is suspended or the
+// CR has another owner. It returns the size for the requested size annotation.
 func (r *ElasticsearchClusterReconciler) keepAppliedStorageSize(
 	cluster *v1.ElasticsearchCluster,
 	merged *v1.ElasticsearchClusterSpec,
@@ -398,11 +399,15 @@ func (r *ElasticsearchClusterReconciler) keepAppliedStorageSize(
 	}
 	merged.StorageSize = largest
 
-	// A suspended cluster has no ECK CR to carry the request, so the event
-	// waits for the CR that the resume applies. A CR that another owner
-	// controls never takes the request.
-	if merged.Suspend || volumes.foreign || volumes.requestApplied(*requested) {
+	// A CR that another owner controls never takes the request.
+	if volumes.foreign || volumes.requestApplied(*requested) {
 		return requested
+	}
+
+	// A suspension can be cancelled before it deletes the CR. The CR then
+	// keeps its old request, so the next reconcile records the event.
+	if merged.Suspend {
+		return volumes.requestedSize()
 	}
 
 	r.EventRecorder.Eventf(
@@ -451,11 +456,21 @@ func (d dataVolumes) largest() *resource.Quantity {
 	return largest
 }
 
+// requestedSize returns the requested storage size that the applied ECK CR
+// carries, or nil when there is no CR or it carries none.
+func (d dataVolumes) requestedSize() *resource.Quantity {
+	requested, err := resource.ParseQuantity(d.requested)
+	if err != nil {
+		return nil
+	}
+	return &requested
+}
+
 // requestApplied reports whether the applied ECK CR already carries size as
 // its requested storage size.
 func (d dataVolumes) requestApplied(size resource.Quantity) bool {
-	requested, err := resource.ParseQuantity(d.requested)
-	return err == nil && requested.Cmp(size) == 0
+	requested := d.requestedSize()
+	return requested != nil && requested.Cmp(size) == 0
 }
 
 func (d dataVolumes) classRequestApplied(class *string) bool {

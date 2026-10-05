@@ -108,6 +108,105 @@ func TestKeepAppliedStorageSizeRecordsNothingUnderAForeignCR(t *testing.T) {
 	assert.Empty(t, recorder.Events)
 }
 
+// The data volume claim keeps the largest size, and a requested shrink records
+// an event while the applied ECK CR does not carry that request.
+func TestKeepAppliedStorageSize(t *testing.T) {
+	t.Parallel()
+
+	applied := func(size, requested string) dataVolumes {
+		return dataVolumes{
+			applied: &corev1.PersistentVolumeClaimSpec{Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(size)},
+			}},
+			requested: requested,
+		}
+	}
+	retained := dataVolumes{volumes: []v1.VolumeStatus{{Name: "data-0", Capacity: resource.MustParse("1Gi")}}}
+
+	tests := []struct {
+		name          string
+		volumes       dataVolumes
+		suspend       bool
+		requested     string
+		wantSize      string
+		wantRequested string
+		wantEvent     bool
+	}{
+		{
+			name:          "a size above the applied one",
+			volumes:       applied("1Gi", "1Gi"),
+			requested:     "2Gi",
+			wantSize:      "2Gi",
+			wantRequested: "2Gi",
+		},
+		{
+			name:          "a shrink, first asked for",
+			volumes:       applied("1Gi", "1Gi"),
+			requested:     "512Mi",
+			wantSize:      "1Gi",
+			wantRequested: "512Mi",
+			wantEvent:     true,
+		},
+		{
+			name:          "a shrink, already asked for",
+			volumes:       applied("1Gi", "512Mi"),
+			requested:     "512Mi",
+			wantSize:      "1Gi",
+			wantRequested: "512Mi",
+		},
+		{
+			name:          "suspended with the ECK CR still there",
+			volumes:       applied("1Gi", "1Gi"),
+			suspend:       true,
+			requested:     "512Mi",
+			wantSize:      "1Gi",
+			wantRequested: "1Gi",
+		},
+		{
+			name:      "suspended with only the retained volumes",
+			volumes:   retained,
+			suspend:   true,
+			requested: "512Mi",
+			wantSize:  "1Gi",
+		},
+		{
+			name:          "the retained volumes after a resume",
+			volumes:       retained,
+			requested:     "512Mi",
+			wantSize:      "1Gi",
+			wantRequested: "512Mi",
+			wantEvent:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := events.NewFakeRecorder(1)
+			r := &ElasticsearchClusterReconciler{EventRecorder: recorder}
+			cluster := &v1.ElasticsearchCluster{ObjectMeta: metav1.ObjectMeta{Name: "es", Namespace: "ns"}}
+			merged := v1.ElasticsearchClusterSpec{StorageSize: new(resource.MustParse(tt.requested)), Suspend: tt.suspend}
+
+			requested := r.keepAppliedStorageSize(cluster, &merged, tt.volumes)
+
+			if tt.wantRequested == "" {
+				assert.Nil(t, requested)
+			} else {
+				require.NotNil(t, requested)
+				assert.Equal(t, tt.wantRequested, requested.String())
+			}
+			assert.Equal(t, tt.wantSize, merged.StorageSize.String())
+			if !tt.wantEvent {
+				assert.Empty(t, recorder.Events)
+				return
+			}
+			require.Len(t, recorder.Events, 1)
+			assert.Contains(t, <-recorder.Events, eventReasonStorageShrinkIgnored)
+		})
+	}
+}
+
 // The data volume claim keeps the class of the applied ECK CR, and a
 // requested class records at most one event.
 func TestKeepAppliedStorageClass(t *testing.T) {

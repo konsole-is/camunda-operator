@@ -1628,6 +1628,51 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		expectStorageShrinkIgnored(cluster, "1Gi")
 	})
 
+	It("records a preset shrink made during a suspension that is cancelled before the delete", func() {
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		createElasticsearchCluster(cluster)
+		fetchOwnedElasticsearch(cluster)
+		expectRequestedStorageSize(cluster, "1Gi")
+
+		setSuspend := func(suspend bool) {
+			GinkgoHelper()
+			Eventually(func(g Gomega) {
+				var latest v1.ElasticsearchCluster
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+				latest.Spec.Suspend = suspend
+				g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+		}
+
+		// The spec stamps no ECK status, so the suspension never reaches the
+		// delete and the ECK CR stays.
+		setSuspend(true)
+		expectRetainingPolicy(cluster)
+		Eventually(func(g Gomega) {
+			var latest v1.ElasticsearchClusterPreset
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preset), &latest)).To(Succeed())
+			latest.Spec.Cluster.StorageSize = new(resource.MustParse("512Mi"))
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		reconcileClusterAgain(cluster)
+		Consistently(func(g Gomega) {
+			var es esv1.Elasticsearch
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())
+			g.Expect(es.Annotations).To(HaveKeyWithValue(components.RequestedStorageSizeAnnotation, "1Gi"))
+			g.Expect(countEvents(g, cluster, "StorageShrinkIgnored")).To(BeZero())
+		}, 2*time.Second, interval).Should(Succeed())
+
+		setSuspend(false)
+		expectStorageShrinkIgnored(cluster, "1Gi")
+		expectRequestedStorageSize(cluster, "512Mi")
+		reconcileClusterAgain(cluster)
+		Consistently(func(g Gomega) {
+			g.Expect(countEvents(g, cluster, "StorageShrinkIgnored")).To(Equal(int32(1)))
+		}, 2*time.Second, interval).Should(Succeed())
+	})
+
 	It("keeps the storage class of the data volume claim when a preset or an inline value changes it", func() {
 		spec := smallClusterSpec()
 		spec.StorageClassName = new("class-a")
