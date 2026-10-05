@@ -104,9 +104,9 @@ func testBucket(name string) *v1.ObjectStorageConfig {
 	}
 }
 
-// zeebeWorkload builds the Zeebe workload of cluster ns/cc with the given
-// config hash, the backup store of testBucket("b"), and the Elasticsearch
-// endpoint on its pod template, rolled out to its one replica.
+// zeebeWorkload builds the Zeebe workload of cluster ns/cc, reported as
+// rolled out, with the given config hash, the backup store of
+// testBucket("b"), and the Elasticsearch endpoint on its pod template.
 func zeebeWorkload(hash, endpoint string) *appsv1.StatefulSet {
 	cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cc"}}
 	workload := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{
