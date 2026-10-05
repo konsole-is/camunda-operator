@@ -17,6 +17,8 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
@@ -25,7 +27,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
@@ -132,6 +136,55 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 					corev1.EnvVar{Name: "IDENTITY_INITIAL_CLAIM_VALUE", Value: "admin-oid"},
 				))
 			}, timeout, interval).Should(Succeed())
+		})
+
+		It("writes no status while a changed administrator claim stands", func() {
+			s := newScenario()
+
+			key := client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
+			Eventually(func(g Gomega) {
+				var workload appsv1.Deployment
+				g.Expect(k8sClient.Get(ctx, key, &workload)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+			startIdentityPod(key)
+			expectReadyWhileStamping(s.mc, key)
+			Eventually(func(g Gomega) {
+				g.Expect(readManagementCluster(g, s.mc).Annotations).To(
+					HaveKeyWithValue(components.InitialClaimAnnotation, "oid=admin-oid"),
+				)
+			}, timeout, interval).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				latest := readManagementCluster(g, s.mc)
+				latest.Spec.Identity.Admin.ClaimValue = "second-admin"
+				g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+			Eventually(func(g Gomega) {
+				stampDeploymentReady(g, key)
+
+				ready := conditionOf(g, s.mc, v1.ConditionReady)
+				g.Expect(ready.Reason).To(Equal(v1.ReasonImmutableAfterStart))
+				g.Expect(ready.ObservedGeneration).To(Equal(readManagementCluster(g, s.mc).Generation))
+			}, timeout, interval).Should(Succeed())
+
+			req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(s.mc)}
+			_, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			settled := readManagementCluster(Default, s.mc)
+			reconciles := reconcileTotal()
+
+			// The API server stores lastTransitionTime in whole seconds, so a
+			// moved condition shows only on a reconcile in a later second.
+			time.Sleep(1500 * time.Millisecond)
+			_, err = reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			latest := readManagementCluster(Default, s.mc)
+			Expect(latest.ResourceVersion).To(Equal(settled.ResourceVersion))
+			Expect(meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionIdentityReady)).To(Equal(
+				meta.FindStatusCondition(settled.Status.Conditions, v1.ConditionIdentityReady),
+			))
+			Consistently(reconcileTotal, "2s", interval).Should(Equal(reconciles))
 		})
 
 		It("refuses a platform config that authenticates with basic", func() {
@@ -601,6 +654,32 @@ func nudge(mc *v1.CamundaManagementCluster) {
 		latest.Annotations["test.camunda.io/reconcile"] = utilrand.String(5)
 		g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
+}
+
+// reconcileTotal returns controller_runtime_reconcile_total of the controller
+// under test, summed over every result. A direct call of the reconciler does
+// not count.
+func reconcileTotal() float64 {
+	GinkgoHelper()
+
+	families, err := crmetrics.Registry.Gather()
+	Expect(err).NotTo(HaveOccurred())
+
+	var total float64
+	for _, family := range families {
+		if family.GetName() != "controller_runtime_reconcile_total" {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			for _, label := range metric.GetLabel() {
+				if label.GetName() == "controller" && label.GetValue() == controllerName {
+					total += metric.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+
+	return total
 }
 
 // conditionOf reads one condition of the management cluster and asserts that
