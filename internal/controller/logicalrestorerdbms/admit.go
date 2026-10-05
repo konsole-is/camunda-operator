@@ -200,7 +200,7 @@ func (r *Reconciler) admit(
 	// reads the claim after this registration exists, so a cluster that takes
 	// the claim before that check is what the check finds, and one that takes
 	// it after lists this restore as a writer.
-	err = restore.RegisterDatabaseWriter(
+	err = restore.RegisterWriter(
 		ctx,
 		r.Client,
 		r.APIReader,

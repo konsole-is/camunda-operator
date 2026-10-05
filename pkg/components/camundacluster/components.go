@@ -182,6 +182,7 @@ func zeebeComponent(in Input, p Process) (*component.Component, error) {
 		WithResource(sts).
 		WithResource(svc).
 		IncludeWhen(in.ServiceMonitorSupported, func() component.Resource { return monitor }, monitoringGate(in)).
+		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Effective.Suspend).
 		Build()
 }
@@ -217,22 +218,30 @@ func managedLabels(cluster *v1.CamundaCluster, comp string) map[string]string {
 }
 
 // zeebeStatefulSet renders the base broker StatefulSet: parallel pod
-// management, a rolling update, the data volume claim template with
-// in.VolumeClaimSize (the effective size when unset), the requested storage
-// size annotation, and the default retention policy (the volumes go with the
-// cluster; a scale-down always retains). statefulSetMutations layer the
-// overrides on top.
+// management, a rolling update, the data volume claim template with the size
+// and class of in.AppliedVolumeClaim (the effective ones when unset), the
+// requested storage size annotation, and the default retention
+// policy (the volumes go with the cluster; a scale-down always retains).
+// statefulSetMutations layer the overrides on top.
 func zeebeStatefulSet(in Input, p Process) *appsv1.StatefulSet {
 	e := in.Effective
 	storageSize := e.StorageSize()
-	claimSize := storageSize
-	if in.VolumeClaimSize != nil {
-		claimSize = *in.VolumeClaimSize
+	storageClassName := e.StorageClassName()
+
+	claimSize, claimClass := storageSize, storageClassName
+	if applied := in.AppliedVolumeClaim; applied != nil {
+		claimClass = applied.StorageClassName
+		if size, ok := applied.Resources.Requests[corev1.ResourceStorage]; ok {
+			claimSize = size
+		}
 	}
 
-	var storageClassName *string
-	if e.Zeebe != nil {
-		storageClassName = e.Zeebe.StorageClassName
+	annotations := map[string]string{
+		RequestedStorageSizeAnnotation: storageSize.String(),
+		BrokerVersionAnnotation:        e.Version,
+	}
+	if storageClassName != nil {
+		annotations[RequestedStorageClassAnnotation] = *storageClassName
 	}
 
 	template := podTemplate(in, p)
@@ -243,13 +252,10 @@ func zeebeStatefulSet(in Input, p Process) *appsv1.StatefulSet {
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      WorkloadName(in.Cluster, p.Component),
-			Namespace: in.Cluster.Namespace,
-			Labels:    managedLabels(in.Cluster, p.Component),
-			Annotations: map[string]string{
-				RequestedStorageSizeAnnotation: storageSize.String(),
-				BrokerVersionAnnotation:        e.Version,
-			},
+			Name:        WorkloadName(in.Cluster, p.Component),
+			Namespace:   in.Cluster.Namespace,
+			Labels:      managedLabels(in.Cluster, p.Component),
+			Annotations: annotations,
 		},
 		Spec: appsv1.StatefulSetSpec{
 			Replicas:            new(p.Replicas),
@@ -271,7 +277,7 @@ func zeebeStatefulSet(in Input, p Process) *appsv1.StatefulSet {
 				},
 				Spec: corev1.PersistentVolumeClaimSpec{
 					AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-					StorageClassName: storageClassName,
+					StorageClassName: claimClass,
 					Resources: corev1.VolumeResourceRequirements{
 						Requests: corev1.ResourceList{corev1.ResourceStorage: claimSize},
 					},
@@ -543,6 +549,7 @@ func deploymentComponent(in Input, p Process) (*component.Component, error) {
 		WithResource(workload).
 		WithResource(svc).
 		IncludeWhen(in.ServiceMonitorSupported, func() component.Resource { return monitor }, monitoringGate(in)).
+		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Effective.Suspend).
 		Build()
 }

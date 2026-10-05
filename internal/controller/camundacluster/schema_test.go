@@ -17,6 +17,8 @@ limitations under the License.
 package camundacluster
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -197,6 +199,18 @@ func realisticPreset() *v1.CamundaClusterPreset {
 	return preset
 }
 
+func nineEnvFromSources() v1.DumpPodSpec {
+	var spec v1.DumpPodSpec
+	for i := range 9 {
+		spec.ExtraEnvFrom = append(spec.ExtraEnvFrom, corev1.EnvFromSource{
+			ConfigMapRef: &corev1.ConfigMapEnvSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: fmt.Sprintf("extras-%d", i)},
+			},
+		})
+	}
+	return spec
+}
+
 var _ = Describe("CamundaCluster schema", func() {
 	DescribeTable(
 		"admission",
@@ -213,6 +227,15 @@ var _ = Describe("CamundaCluster schema", func() {
 		},
 		Entry("accepts the minimal doc example", minimalCamundaCluster, func(*v1.CamundaCluster) {}, ""),
 		Entry("accepts the realistic doc example", realisticCamundaCluster, func(*v1.CamundaCluster) {}, ""),
+		Entry(
+			"accepts a PG* name in the cluster's own backup dump extraEnv",
+			minimalCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.Backup = &v1.ClusterBackupSpec{Dump: &v1.BackupDumpSpec{DumpPodSpec: v1.DumpPodSpec{
+					ExtraEnv: []corev1.EnvVar{{Name: "PGOPTIONS", Value: "-c statement_timeout=0"}},
+				}}}
+			},
+			"",
+		),
 		Entry(
 			"rejects a missing storageRef",
 			minimalCamundaCluster, func(o *v1.CamundaCluster) { o.Spec.StorageRef = "" },
@@ -267,6 +290,23 @@ var _ = Describe("CamundaCluster schema", func() {
 				}}
 			},
 			"",
+		),
+		Entry(
+			"accepts a client id with a client secret",
+			minimalCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.Auth = &v1.ClusterAuthSpec{
+					ClientID:        "my-cluster-client",
+					ClientSecretRef: &v1.LocalSecretKeyRef{Name: "my-cluster-oidc", Key: "client-secret"},
+				}
+			},
+			"",
+		),
+		Entry(
+			"rejects a client id without a client secret",
+			minimalCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.Auth = &v1.ClusterAuthSpec{ClientID: "my-cluster-client"}
+			},
+			"clientSecretRef is required when clientId is set",
 		),
 		Entry(
 			"rejects an empty admin user",
@@ -332,6 +372,13 @@ var _ = Describe("CamundaCluster schema", func() {
 				}
 			},
 			"whenDeleted",
+		),
+		Entry(
+			"accepts more than 8 backup.dump extraEnvFrom sources",
+			minimalCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.Backup = &v1.ClusterBackupSpec{Dump: &v1.BackupDumpSpec{DumpPodSpec: nineEnvFromSources()}}
+			},
+			"",
 		),
 	)
 
@@ -595,6 +642,13 @@ var _ = Describe("CamundaClusterPreset schema", func() {
 			instanceBound,
 		),
 		Entry(
+			"rejects a client id without a client secret",
+			minimalPreset, func(o *v1.CamundaClusterPreset) {
+				o.Spec.Cluster.Auth = &v1.ClusterAuthSpec{ClientID: "medium-clusters"}
+			},
+			"clientSecretRef is required when clientId is set",
+		),
+		Entry(
 			"rejects a version",
 			minimalPreset, func(o *v1.CamundaClusterPreset) { o.Spec.Cluster.Version = "8.9.0" },
 			"belong to a CamundaRelease",
@@ -605,6 +659,15 @@ var _ = Describe("CamundaClusterPreset schema", func() {
 				o.Spec.Cluster.Connectors = &v1.ConnectorsSpec{Version: "8.9.7"}
 			},
 			"belong to a CamundaRelease",
+		),
+		Entry(
+			"accepts more than 8 backup.dump extraEnvFrom sources",
+			minimalPreset, func(o *v1.CamundaClusterPreset) {
+				o.Spec.Cluster.Backup = &v1.ClusterBackupSpec{
+					Dump: &v1.BackupDumpSpec{DumpPodSpec: nineEnvFromSources()},
+				}
+			},
+			"",
 		),
 	)
 

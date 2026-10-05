@@ -59,16 +59,20 @@ type LogicalBackupRDBMSSpec struct {
 	// image always comes from the block of the cluster.
 	//
 	// The environment has limits too. The extraEnv of a backup cannot set a
-	// name that starts with PG or UPLOAD_. Every extraEnvFrom source needs a
-	// prefix that cannot make such a name. libpq prefers PGHOSTADDR over the
-	// PGHOST of the Job. Without the limit, a source can send the dump, with
-	// the credentials of the Job, to another host. The environment of this
-	// block reaches only the dump container, never the upload container.
-	// Cloud SDKs read endpoint, proxy, and configuration variables from the
-	// environment, and a backup must not change where its dump goes. The
-	// block of the cluster has no prefix limit, and its environment reaches
-	// every container.
-	// +kubebuilder:validation:XValidation:rule="!has(self.extraEnvFrom) || self.extraEnvFrom.all(s, has(s.prefix) && s.prefix != '' && !s.prefix.startsWith('PG') && !'PG'.startsWith(s.prefix) && !s.prefix.startsWith('UPLOAD_') && !'UPLOAD_'.startsWith(s.prefix))",message="every extraEnvFrom source of a backup needs a prefix, and one that cannot spell a PG* or UPLOAD_* name"
+	// name that starts with PG or UPLOAD_, and the API server refuses such a
+	// name. Every extraEnvFrom source needs a prefix that cannot make such a
+	// name. libpq prefers PGHOSTADDR over the PGHOST of the Job. Without the
+	// limit, a source can send the dump, with the credentials of the Job, to
+	// another host. The API server accepts a source without a safe prefix.
+	// The backup then stays Pending with reason InvalidReference, and its Job
+	// never starts.
+	//
+	// The environment of this block reaches only the dump container, never
+	// the upload container. Cloud SDKs read endpoint, proxy, and
+	// configuration variables from the environment, and a backup must not
+	// change where its dump goes. The block of the cluster has no prefix
+	// limit, and its environment reaches every container.
+	// +kubebuilder:validation:XValidation:rule="!has(self.extraEnv) || self.extraEnv.all(e, !e.name.startsWith('PG') && !e.name.startsWith('UPLOAD_'))",message="the extraEnv of a backup cannot name a PG* or UPLOAD_* variable"
 	// +optional
 	Dump *DumpPodSpec `json:"dump,omitempty"`
 }

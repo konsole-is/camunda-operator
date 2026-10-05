@@ -105,21 +105,7 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		keycloak := startFakeKeycloak(withOptimizeClient())
 		s := newScenario(withFakeKeycloak(keycloak))
 
-		// The pass that generates these Secrets renders Identity with no trace
-		// of them in its config hash, so the pass after it rolls the pods once
-		// more. The first Optimize comes after the Secrets exist, so every
-		// template that carries it is the one that stays.
-		generated := []client.ObjectKey{
-			{Namespace: s.namespace, Name: components.OptimizeClientSecretName(s.mc)},
-			{Namespace: s.namespace, Name: components.IdentityAdminSecretName(s.mc)},
-		}
-		Eventually(func(g Gomega) {
-			for _, key := range generated {
-				var published corev1.Secret
-				g.Expect(k8sClient.Get(ctx, key, &published)).To(Succeed())
-			}
-		}, timeout, interval).Should(Succeed())
-
+		awaitGeneratedSecrets(s)
 		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
 
 		identity := client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
@@ -1170,10 +1156,10 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}))
 	})
 
-	// A Deployment whose old pod is still ready satisfies IdentityReady while
-	// the new pod runs its initializer against the realm. Only a finished
-	// rollout leaves no Management Identity writing to the client.
-	It("waits through a rollout that an old ready pod would hide", func() {
+	// The old pod is still ready while the new pod runs its initializer
+	// against the realm. Only a finished rollout leaves no Management Identity
+	// writing to the client.
+	It("waits through a rollout that still has an old ready pod", func() {
 		keycloak := startFakeKeycloak(withOptimizeClient())
 		s := newScenario(withFakeKeycloak(keycloak))
 
@@ -1183,20 +1169,16 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		Eventually(func(g Gomega) {
 			stampMidRollout(g, identity)
 
-			g.Expect(conditionOf(g, s.mc, v1.ConditionIdentityReady).Status).To(
-				Equal(metav1.ConditionTrue),
-			)
+			identity := conditionOf(g, s.mc, v1.ConditionIdentityReady)
+			g.Expect(identity.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(identity.Reason).To(Equal(string(component.AliveCreating)))
 			g.Expect(conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady).Reason).To(
 				Equal(string(component.PrerequisiteNotMet)),
 			)
 
-			// No component reports the wait, because the pod of the previous
-			// revision satisfies IdentityReady. Ready therefore has to carry
-			// it, or it reads Healthy over a callback that nobody can sign in
-			// through yet.
 			ready := conditionOf(g, s.mc, v1.ConditionReady)
 			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
-			g.Expect(ready.Reason).To(Equal(string(component.PrerequisiteNotMet)))
+			g.Expect(ready.Reason).To(Equal(string(component.AliveCreating)))
 		}, timeout, interval).Should(Succeed())
 
 		Expect(keycloak.redirectURIs()).To(BeEmpty())
@@ -1262,6 +1244,9 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		keycloak := startFakeKeycloak(withOptimizeClient())
 		s := newScenario(withFakeKeycloak(keycloak))
 
+		// The repair below stamps nothing, so the rollout it waits for has to
+		// be the last one.
+		awaitGeneratedSecrets(s)
 		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
 
 		Eventually(func(g Gomega) {
@@ -1447,6 +1432,26 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}, timeout, interval).Should(Succeed())
 	})
 })
+
+// awaitGeneratedSecrets waits until the plane has created the Secrets that it
+// generates. The pass that creates them renders Identity with no trace of them
+// in its config hash, so the pass after it rolls the pods once more. An
+// Optimize created after this wait is first seen by a pass that reads the
+// Secrets back, so every Identity template that carries it is the last one.
+func awaitGeneratedSecrets(s scenario) {
+	GinkgoHelper()
+
+	generated := []client.ObjectKey{
+		{Namespace: s.namespace, Name: components.OptimizeClientSecretName(s.mc)},
+		{Namespace: s.namespace, Name: components.IdentityAdminSecretName(s.mc)},
+	}
+	Eventually(func(g Gomega) {
+		for _, key := range generated {
+			var published corev1.Secret
+			g.Expect(k8sClient.Get(ctx, key, &published)).To(Succeed())
+		}
+	}, timeout, interval).Should(Succeed())
+}
 
 // createOptimize creates a CamundaOptimize at externalURL that names contract,
 // and registers its deletion.

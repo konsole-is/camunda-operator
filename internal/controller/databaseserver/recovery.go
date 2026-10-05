@@ -525,6 +525,16 @@ func recoverySource(
 				"the archive of this server, so the server reads no archive of its own. " +
 				"ArchiveReady names the holder",
 		}
+
+	// The recovered cluster runs under this account, and so under the
+	// identity of whoever controls it.
+	case resolved.serviceAccountTaken != "":
+		return v1.ArchiveRecord{}, &recoveryRefusal{
+			result: v1.RecoveryResultFailed,
+			message: resolved.serviceAccountTaken + ". The instance pods of this server run " +
+				"under it, so the server does not roll back. Remove that ServiceAccount, then " +
+				"create a new restore",
+		}
 	}
 
 	target, err := time.Parse(time.RFC3339Nano, request.TargetTime)
@@ -835,6 +845,9 @@ func (r *DatabaseServerReconciler) abandonRecovery(
 // A name that another object already holds is not an error of this look. The
 // next look reads that object, and the ownership test in advanceRecovery
 // decides what it is.
+//
+// It creates nothing, and returns no error, until the server controls its
+// ServiceAccount and the account carries the annotations the cluster needs.
 func (r *DatabaseServerReconciler) createRecoveryCluster(
 	ctx context.Context,
 	server *v1.DatabaseServer,
@@ -842,8 +855,25 @@ func (r *DatabaseServerReconciler) createRecoveryCluster(
 	source v1.ArchiveRecord,
 	target string,
 ) error {
+	// The pods take the identity that the account carries when they start,
+	// and the cluster component applies the account after this step. The
+	// watch on the account brings the create back once it is there.
+	var account corev1.ServiceAccount
+	key := types.NamespacedName{Namespace: server.Namespace, Name: components.ServiceAccountName(server)}
+	if err := r.APIReader.Get(ctx, key, &account); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("reading the ServiceAccount %s: %w", key, err)
+	}
+	if !metav1.IsControlledBy(&account, server) ||
+		!components.ServiceAccountCarries(&account, server, resolved.merged, resolved.archive) {
+		return nil
+	}
+
 	recovered, err := components.RecoveryCluster(
-		server, resolved.merged, resolved.archive, resolved.archiveTaken,
+		server, resolved.merged, resolved.requested, resolved.archive, resolved.archiveTaken,
 		resolved.platform, source, target,
 	)
 	if err != nil {

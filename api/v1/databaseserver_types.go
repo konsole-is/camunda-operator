@@ -22,12 +22,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// DatabaseServerServiceAccountSpec configures the ServiceAccount that
-// CloudNativePG creates for the instance pods. CloudNativePG owns that
-// account and gives it the name of the server, so you can set only its
-// metadata. The operator adds the workload-identity annotations of the
-// archive bucket itself. An annotation set here wins over the operator
-// annotation with the same key.
+// DatabaseServerServiceAccountSpec configures the ServiceAccount of the
+// instance pods. The operator creates it with the name <server name>-postgres.
+// Every CloudNativePG cluster of the server runs under it, also the cluster
+// that a rollback builds. The operator adds the workload-identity
+// annotations of the archive bucket. An annotation set here wins over the
+// operator annotation with the same key.
 type DatabaseServerServiceAccountSpec struct {
 	// Annotations to set on the ServiceAccount. Usually these are
 	// workload-identity annotations (IRSA, GCP Workload Identity, and more)

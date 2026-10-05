@@ -99,6 +99,7 @@ func keycloakComponents(in Input) (Built, error) {
 		WithConditionType(component.ConditionType(v1.ConditionKeycloakReady)).
 		WithFeatureGate(gate).
 		WithResource(resource, component.GatedBy(gate)).
+		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Suspended).
 		Build()
 	if err != nil {

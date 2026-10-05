@@ -192,7 +192,7 @@ The operator builds a new CloudNativePG cluster from the archive. Its name is th
 
 When the new cluster is healthy, the contract points at it, and the operator removes the old cluster and its volumes. The contract then carries a new `host` and a new superuser Secret. A `CamundaCluster` restarts its pods to use them. `status.cluster` names the cluster that the contract points at.
 
-The new cluster writes an archive of its own in the same bucket. The old archive stays, so a later restore can reach a point before the rollback.
+The new cluster writes an archive of its own in the same bucket. The old archive stays, so a later restore can reach a point before the rollback. The new cluster runs under the same ServiceAccount, `my-db-postgres`, so the bucket keeps its trust in the pods. See [Authentication to the bucket](#authentication-to-the-bucket).
 
 If another owner already has a CloudNativePG cluster of that name, the rollback ends with `result: Failed`. The message names the cluster.
 
@@ -203,6 +203,7 @@ While a rollback runs, an edit of `spec.databaseServerConfig`, of `spec.archive`
 | `result` | Cause |
 | --- | --- |
 | `Failed` | The server is suspended. Unsuspend it, then ask again. |
+| `Failed` | Another owner controls the ServiceAccount `my-db-postgres`. Remove that ServiceAccount, then ask again. |
 | `Unavailable` | The server has no archive, or another owner controls its `ObjectStore`. |
 | `Unavailable` | `targetTime` is in the future, or older than `retentionPeriodDays`. |
 | `Unavailable` | `targetTime` is older than `status.archive.reachableFrom`. |
@@ -212,7 +213,22 @@ While a rollback runs, an edit of `spec.databaseServerConfig`, of `spec.archive`
 
 If the `ObjectStorageConfig` holds static credentials, the operator copies them into the Secret `my-db-archive` next to the server. Anyone who can read Secrets in that namespace can then read the bucket credentials. Use workload identity to keep them out of the namespace.
 
-If the `ObjectStorageConfig` uses workload identity, the operator puts its annotation on the ServiceAccount of the instance pods. Add your own annotations with `spec.serviceAccount.annotations`. A value that you set wins over the derived value of the same key.
+The instance pods run under the ServiceAccount `my-db-postgres`, the server name and `-postgres`. The operator creates it. A rollback does not change it, so a cloud binding that names it stays valid. The principal to bind is `system:serviceaccount:my-cluster-ns:my-db-postgres`. While the server archives, the operator also binds the Role of the Barman Cloud plugin to this ServiceAccount. The pods can then read the archive settings.
+
+If the `ObjectStorageConfig` uses workload identity, the operator puts its annotation on that ServiceAccount. Add your own annotations with `spec.serviceAccount.annotations`. A value that you set wins over the derived value of the same key.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: DatabaseServer
+metadata:
+  name: my-db
+  namespace: my-cluster-ns
+spec:
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-db-archive"
+  # ... the rest of your server
+```
 
 ## Monitoring
 
@@ -293,6 +309,20 @@ spec:
 
 The tag is the major version, so the repository must publish the same tags.
 
+If the mirror needs a pull Secret, create the ServiceAccount `my-db-postgres` with the Secret before you create the server. The operator takes over the ServiceAccount and does not change its `imagePullSecrets`. When you delete the server, the ServiceAccount goes with it, also one that you created. The pull Secret stays.
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: my-db-postgres
+  namespace: my-cluster-ns
+imagePullSecrets:
+  - name: my-mirror-pull
+```
+
+Kubernetes gives a pod the pull Secrets of its ServiceAccount only when it creates the pod. If you add the Secret to a server that runs, delete the instance pods that cannot pull the image. CloudNativePG then creates them again with the Secret.
+
 ## Name collisions
 
 The server never writes on an object that another owner holds under a name that the server derives. Each case shows on a condition, and the message names the owner:
@@ -300,13 +330,17 @@ The server never writes on an object that another owner holds under a name that 
 - A CloudNativePG cluster of the server name that this server does not own: `ClusterReady` reports `ClusterTaken`. The server runs nothing, and it removes its contract, its base backup schedule, and its `PodMonitor`.
 - A `DatabaseServerConfig` of the name in `spec.databaseServerConfig` that this server did not publish: `ContractReady` reports `ContractTaken`. The server publishes nothing, and the contract keeps its endpoint and credentials.
 - A Barman Cloud `ObjectStore` of the server name that another owner controls: `ArchiveReady` reports `ArchiveTaken`. The server writes no archive, its contract declares `pitr.enabled: false`, and it refuses rollbacks.
+- A ServiceAccount of the name `my-db-postgres` that another owner controls: `ClusterReady` reports `Blocked`. The server does not write its CloudNativePG cluster, removes its bindings to the Role of the Barman Cloud plugin, and refuses rollbacks.
+- A RoleBinding of the name `<cluster>-barman-cloud-postgres` that another owner controls: `ClusterReady` reports `Blocked`, and the server does not write its CloudNativePG cluster. The name is `my-db-barman-cloud-postgres`, or `my-db-r1-barman-cloud-postgres` after the first rollback.
 - The archive Secret, the base backup schedule, or the `PodMonitor` under another owner: `ArchiveReady` or `MonitoringReady` reports `False`.
+
+While the server is suspended, a ServiceAccount or a RoleBinding under another owner does not change `ClusterReady`, which reports `Suspended`. The collision shows when you resume the server.
 
 Remove the other object, or give this server a name of its own. The server then continues with the archive history that it had. While the `ObjectStore` name was held, the server wrote no archive, so no restore can reach a point in that time.
 
 ## Deletion
 
-Deleting a `DatabaseServer` removes the CloudNativePG cluster, its data volumes, and the published contract. The objects in the bucket stay. If you no longer need them, remove them yourself.
+Deleting a `DatabaseServer` removes the CloudNativePG cluster, its data volumes, the ServiceAccount of the instance pods, and the published contract. The objects in the bucket stay. If you no longer need them, remove them yourself.
 
 ## Status
 
@@ -355,7 +389,8 @@ status:
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Healthy` | Every part of the server is in its desired state. | Nothing. |
-| `Ready` | `Blocked` | The archive holds no base backup yet. | Wait. |
+| `Ready` | `Blocked` | The archive holds no base backup yet, or `ClusterReady` is `Blocked`. | Wait for the base backup. Otherwise read `ClusterReady`. |
+| `Ready` | `Creating`, `Updating`, `Failing`, `Degraded`, `Down` | `ClusterReady` holds `Ready` back. | Read the row of `ClusterReady` with the same reason. |
 | `Ready` | `ArchiveFailing` | The write-ahead log does not reach the bucket. | Read `ArchiveReady`. |
 | `Ready` | `Suspended` | `spec.suspend` is true and the instances are stopped. | Nothing. |
 | `Ready` | `ClusterTaken`, `ContractTaken`, `ArchiveTaken` | Another owner holds a name that the server derives. | See [Name collisions](#name-collisions). |
@@ -367,7 +402,10 @@ status:
 | `ClusterReady` | `Creating`, `Updating` | CloudNativePG is starting or changing the instances. | Wait. |
 | `ClusterReady` | `Healthy` | Every instance is ready. | Nothing. |
 | `ClusterReady` | `Failing` | CloudNativePG reports a phase that it does not leave on its own. The message names the phase. | Read the CloudNativePG cluster for the cause. |
+| `ClusterReady` | `Degraded` | At the end of the [grace period](../architecture.md#status-conventions), 30 minutes by default, the cluster is not in its desired state. At least one instance is ready. Not every instance is ready, or CloudNativePG reports a phase other than healthy. The message names the ready count and the phase. | Read the phase and the instances in the status of the CloudNativePG cluster. |
+| `ClusterReady` | `Down` | At the end of the grace period, no instance is ready, or a wait that `Blocked` reported still holds. The message says which. A blocked wait can stand while the existing instances still serve. | Read the message. For no ready instance, read the CloudNativePG cluster and the pods of its instances. For a wait, read the `Blocked` row. |
 | `ClusterReady` | `Suspending`, `Suspended` | `spec.suspend` is true. | Nothing. |
+| `ClusterReady` | `Blocked` | The ServiceAccount `my-db-postgres` or a RoleBinding `<cluster>-barman-cloud-postgres` belongs to another owner, or the cluster that a rollback moved to is gone. The message says which. At the end of the grace period, the reason changes to `Down`, and the message still names the owner. | See [Name collisions](#name-collisions), or [Recovery](#recovery). |
 | `ClusterReady` | `ClusterTaken` | A CloudNativePG cluster of the server name belongs to another owner. | See [Name collisions](#name-collisions). |
 | `ArchiveReady` | `Disabled` | The server has no `archive` block. | Nothing. |
 | `ArchiveReady` | `Blocked` | The archive holds no base backup yet. | Wait. If it never completes, read the CloudNativePG `Backup` for the cause. |
@@ -420,7 +458,7 @@ spec:
   storageClassName: "ssd"
   # string (resource quantity). Optional. Size of a separate volume for the write-ahead log. It cannot be cleared.
   walStorageSize: "32Gi"
-  # object. Optional. The ServiceAccount that CloudNativePG creates for the instance pods.
+  # object. Optional. The ServiceAccount <name>-postgres of the instance pods, which the operator creates.
   serviceAccount:
     # map[string]string. Optional. Annotations for workload identity. A value here wins over the one derived from the bucket.
     annotations: {}

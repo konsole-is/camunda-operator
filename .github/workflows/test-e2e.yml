@@ -69,9 +69,11 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install the latest version of kind
+      - name: Install kind
         run: |
-          curl -fsSLo ./kind --retry 5 --retry-delay 10 --retry-all-errors https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
+          VERSION=$(awk '$1 == "kind" { print $2 }' .tool-versions)
+          curl -fsSLo ./kind --retry 5 --retry-delay 10 --retry-all-errors \
+            "https://kind.sigs.k8s.io/dl/v${VERSION}/kind-linux-$(go env GOARCH)"
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
@@ -82,6 +84,12 @@ jobs:
       # kernel limit on the kind host.
       - name: Raise vm.max_map_count for Elasticsearch
         run: sudo sysctl -w vm.max_map_count=262144
+
+      # The Go module proxy sometimes drops a connection, so tidy is retried.
+      # Tidy downloads the modules that the e2e run needs. A plain
+      # "go mod download" does not get all the modules that tidy reads.
+      - name: Tidy the Go modules
+        run: hack/ci-retry.sh make tidy
 
       # The management job has twice lost its runner in the middle of the
       # suite, with no Ginkgo failure and no dump of the cluster. The sampler
@@ -142,7 +150,6 @@ jobs:
           sampler=$!
           trap 'kill -- -"${sampler}" 2>/dev/null || true' EXIT
 
-          make tidy
           make test-e2e E2E_CAMUNDA_MINOR=${{ matrix.minor }} E2E_LABEL_FILTER='${{ matrix.labels }}'
 
       # Both reads fail when the API server is gone, which is one of the

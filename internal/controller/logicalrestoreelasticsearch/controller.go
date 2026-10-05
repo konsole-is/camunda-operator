@@ -66,6 +66,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/podstate"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
@@ -242,7 +243,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			return ctrl.Result{}, err
 		}
 		finished, err := restore.Finish(
-			ctx, r.Client, r.APIReader, &lres, &lres.Status.RestoreProgress, lres.Spec.TargetClusterRef.Name,
+			ctx,
+			r.Client,
+			r.APIReader,
+			&lres,
+			labels.LogicalRestoreElasticsearch(lres.Name),
+			&lres.Status.RestoreProgress,
+			lres.Spec.TargetClusterRef.Name,
 		)
 
 		return ctrl.Result{RequeueAfter: finished.Wait}, err
@@ -250,7 +257,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	if lres.Status.Backend != "" {
 		err := restore.RegisterWriter(
-			ctx, r.Client, r.APIReader, r.opts.ClaimNamespace, lres.Status.Backend, &lres, lres.Status.TargetClusterUID,
+			ctx,
+			r.Client,
+			r.APIReader,
+			r.opts.ClaimNamespace,
+			lres.Status.Backend,
+			lres.Status.Contract,
+			&lres,
+			lres.Status.TargetClusterUID,
 		)
 		if err != nil {
 			return ctrl.Result{}, err

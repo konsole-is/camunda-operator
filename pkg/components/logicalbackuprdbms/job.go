@@ -476,11 +476,10 @@ func JobBelongsTo(job *batchv1.Job, backup *v1.LogicalBackupRDBMS) bool {
 }
 
 // ReservedEnv returns the names in the extraEnv of a per-backup dump block
-// that the Job reserves for itself, in the order they appear. A reserved
-// name is any name under a reserved prefix. It returns nothing when the
-// block is clean. The controller rejects a per-backup block that names one
-// at admission, with the names in the message. Callers run it on the
-// backup's own spec.dump, never on the cluster's block.
+// that the Job reserves for itself, each name once, in the order of its
+// first entry. A reserved name is any name under a reserved prefix. It
+// returns nothing when the block is clean. Callers run it on the backup's
+// own spec.dump, never on the cluster's block.
 func ReservedEnv(dump *v1.DumpPodSpec) []string {
 	if dump == nil {
 		return nil
@@ -510,8 +509,7 @@ func isReservedEnv(name string) bool {
 // ConfigMap. It describes each source as "source <i>". The writer of the
 // referenced object chooses the envFrom keys. Without a safe prefix, a
 // source can therefore supply PGHOSTADDR, which libpq prefers over the Job's
-// own PGHOST, and redirect the dump with the injected credentials. The CRD
-// schema enforces the same rule. This function is the second layer. Callers
+// own PGHOST, and redirect the dump with the injected credentials. Callers
 // run it on the backup's own spec.dump, never on the cluster's block.
 func UnsafeEnvFrom(dump *v1.DumpPodSpec) []string {
 	if dump == nil {

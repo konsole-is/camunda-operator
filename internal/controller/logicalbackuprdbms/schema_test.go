@@ -17,6 +17,8 @@ limitations under the License.
 package logicalbackuprdbms
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -80,37 +82,48 @@ var _ = Describe("LogicalBackupRDBMS schema", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	// The schema itself bounds the extraEnvFrom of a backup. Without a safe
-	// prefix, a source can supply PGHOSTADDR and redirect the dump.
-	It("rejects a backup extraEnvFrom source without a safe prefix", func() {
+	// The prefix bound of extraEnvFrom does not fit the CEL cost budget of
+	// the API server without a cap on the list, so the controller enforces
+	// it.
+	It("accepts more than 8 extraEnvFrom sources, whatever their prefixes", func() {
 		backup := valid()
-		backup.Spec.Dump = &v1.DumpPodSpec{ExtraEnvFrom: []corev1.EnvFromSource{{
-			ConfigMapRef: &corev1.ConfigMapEnvSource{
-				LocalObjectReference: corev1.LocalObjectReference{Name: "extras"},
-			},
-		}}}
-		err := k8sClient.Create(ctx, backup)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("prefix"))
-
-		backup = valid()
-		backup.Spec.Dump = &v1.DumpPodSpec{ExtraEnvFrom: []corev1.EnvFromSource{{
-			Prefix: "P",
-			ConfigMapRef: &corev1.ConfigMapEnvSource{
-				LocalObjectReference: corev1.LocalObjectReference{Name: "extras"},
-			},
-		}}}
-		Expect(k8sClient.Create(ctx, backup)).To(HaveOccurred(), "P plus GHOST would spell PGHOST")
+		backup.Spec.Dump = &v1.DumpPodSpec{}
+		for i, prefix := range []string{"", "P", "PG", "U", "UPLOAD", "UPLOAD_", "MY_", "A_", "B_", "C_"} {
+			backup.Spec.Dump.ExtraEnvFrom = append(backup.Spec.Dump.ExtraEnvFrom, corev1.EnvFromSource{
+				Prefix: prefix,
+				ConfigMapRef: &corev1.ConfigMapEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: fmt.Sprintf("extras-%d", i)},
+				},
+			})
+		}
+		Expect(k8sClient.Create(ctx, backup)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, backup) })
 	})
 
-	It("accepts a backup extraEnvFrom source with a safe prefix", func() {
+	// The rule is prefix-based, so names that the Job never sets, such as
+	// PGHOSTADDR, are refused too.
+	DescribeTable(
+		"rejects a backup extraEnv name under PG or UPLOAD_",
+		func(name string) {
+			backup := valid()
+			backup.Spec.Dump = &v1.DumpPodSpec{ExtraEnv: []corev1.EnvVar{
+				{Name: "TZ", Value: "UTC"},
+				{Name: name, Value: "x"},
+			}}
+			err := k8sClient.Create(ctx, backup)
+			Expect(err).To(MatchError(ContainSubstring("PG* or UPLOAD_*")))
+		},
+		Entry("PGHOSTADDR", "PGHOSTADDR"),
+		Entry("PGOPTIONS", "PGOPTIONS"),
+		Entry("UPLOAD_BUCKET", "UPLOAD_BUCKET"),
+	)
+
+	It("accepts a backup extraEnv name outside the reserved prefixes", func() {
 		backup := valid()
-		backup.Spec.Dump = &v1.DumpPodSpec{ExtraEnvFrom: []corev1.EnvFromSource{{
-			Prefix: "X_",
-			ConfigMapRef: &corev1.ConfigMapEnvSource{
-				LocalObjectReference: corev1.LocalObjectReference{Name: "extras"},
-			},
-		}}}
+		backup.Spec.Dump = &v1.DumpPodSpec{ExtraEnv: []corev1.EnvVar{
+			{Name: "MY_VAR", Value: "x"},
+			{Name: "XPG", Value: "x"},
+		}}
 		Expect(k8sClient.Create(ctx, backup)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, backup) })
 	})

@@ -212,6 +212,12 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              contract:
+                description: |-
+                  Contract is the SecondaryStorageConfig that held the endpoint of
+                  Backend when the restore started. When the endpoint of that contract
+                  moves, the restore still holds this contract.
+                type: string
               failureMessage:
                 description: |-
                   FailureMessage names the failed phase and its error. The Ready

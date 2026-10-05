@@ -70,6 +70,8 @@ spec:
 
 You can increase `spec.storageSize` at any time. You cannot decrease it. The API server rejects a lower inline value. If a preset lowers the size under a running cluster, the operator keeps the current size and records a Warning event with reason `StorageShrinkIgnored`. To get a smaller volume, delete and recreate the cluster.
 
+The storage class of the data volumes cannot change while the ECK resource of the cluster exists. A new class can still come from the preset or from `spec.storageClassName`. The operator then keeps the class of the ECK resource, or no class when the ECK resource has none. It records the Warning event `StorageClassChangeIgnored` one time for each requested class, also when the preset removes its class. A suspended cluster has no ECK resource, so it takes the new class when it resumes. New volumes get the new class, and the volumes that the suspension kept keep their old class. Volumes that `whenDeleted: Retain` kept from a deleted cluster of the same name keep their class.
+
 ## Snapshot repository
 
 Set `spec.snapshotStorageRef` to an `ObjectStorageConfig` to take part in backups. Use the bucket that the `CamundaCluster` references in its `backupStorageRef`.
@@ -133,12 +135,12 @@ Deletion removes everything the operator created: the ECK resource, the Secrets,
 | `Ready` | `MissingSecret` | A Secret or a key does not exist. The message names it. It is a Secret that the bucket of `spec.snapshotStorageRef` names, or a Secret that ECK creates with the cluster: `<name>-es-elastic-user` or `<name>-es-http-certs-public`. | For a Secret of the bucket, create it with the keys that the `ObjectStorageConfig` names. For a Secret of ECK, wait. ECK creates it when the cluster starts. |
 | `Ready` | `Suspended` | `Ready` is `True`. The cluster is suspended by `spec.suspend: true`. The data volumes stay. | Nothing. To serve again, set `spec.suspend: false`. To wait for a serving cluster, require `Ready=True` and a reason other than `Suspended`. |
 | `Ready` | `ConnectionFailed` | The components are healthy, but the snapshot repository is not registered. See `SnapshotRepositoryReady`. | Read the message of `SnapshotRepositoryReady`. Make sure that the bucket and its credentials are correct. The operator retries on its own. |
-| `Ready` | component status | `Ready` is `True` only when every component is `True`. The reason comes from the component that is not ready, for example `Creating` or `Updating` (also yellow health), `Failing` (also red health), or `Error`. The message names the component. | Wait while the reason is `Creating` or `Updating`. For other reasons, read the component condition and the ECK resource `<name>`. If yellow health stays, find the Warning event `IndexReplicasExceedNodes` on the `CamundaCluster` or `CamundaOptimize` that writes here. That consumer asks for more index replicas than the nodes can hold. |
+| `Ready` | component status | `Ready` is `True` only when every component is `True`. The reason comes from the component that is not ready, for example `Creating` or `Updating` (also yellow health), `Failing` (also red health), or `Error`. The [grace period](../architecture.md#status-conventions) of the cluster is 30 minutes by default. After it, a cluster that is not ready reports `Degraded` on yellow health, and `Down` on red or no health. The message names the component. | Wait while the reason is `Creating` or `Updating`. For other reasons, read the component condition and the ECK resource `<name>`. If yellow health stays, find the Warning event `IndexReplicasExceedNodes` on the `CamundaCluster` or `CamundaOptimize` that writes here. That consumer asks for more index replicas than the nodes can hold. |
 | `CredentialsReady`, `KeystoreReady`, `ElasticsearchReady`, `StorageContractReady` | component status | The detail of each component that makes up `Ready`. `KeystoreReady` is `Disabled` unless the bucket needs keystore entries. | Read the message of the component that is not `True`. |
 | `SnapshotRepositoryReady` | `Healthy` | The snapshot repository `<namespace>.<name>` is registered. The condition is absent when `spec.snapshotStorageRef` is unset. | Nothing. |
 | `SnapshotRepositoryReady` | `ConnectionFailed` | Elasticsearch did not answer, or it rejected the registration. `Ready` is `False` while this holds. | Make sure that the bucket, its credentials, and the identity of the pods are correct. |
 | `SnapshotRepositoryReady` | `MissingSecret` | The `elastic` user Secret or the CA Secret of ECK does not exist yet. | Wait. ECK creates them with the cluster. |
-| `MetricsReady` | component status | The exporter. It is not part of `Ready`. It is `Disabled` while monitoring is off and `Suspended` while the cluster is suspended. | Read the exporter Deployment `<name>-es-exporter` when it is `Failing`. |
+| `MetricsReady` | component status | The exporter. It is not part of `Ready`. It is `Disabled` while monitoring is off and `Suspended` while the cluster is suspended. When the exporter is still not ready at the end of its grace period, 30 minutes by default, the reason is `Degraded` or `Down`. | Read the exporter Deployment `<name>-es-exporter` when it is `Failing`, `Degraded`, or `Down`. |
 
 ```yaml
 status:
@@ -190,7 +192,7 @@ spec:
     limits: { memory: "2Gi" }
   # string (resource quantity). Required unless the preset provides it. Size of the data volume of each node. It can grow but not shrink.
   storageSize: "64Gi"
-  # string. Optional, default: the default StorageClass of the Kubernetes cluster. StorageClass of the data volumes.
+  # string. Optional, default: the default StorageClass of the Kubernetes cluster. StorageClass of the data volumes. A change after the ECK resource exists is ignored.
   storageClassName: "ssd"
   # string. Optional. Name of an ObjectStorageConfig in this namespace that holds the snapshot bucket. Set it to take part in backups. It must be the bucket that the CamundaCluster references.
   snapshotStorageRef: "my-backup-bucket"

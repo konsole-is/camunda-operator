@@ -1058,7 +1058,7 @@ spec:
                       audience:
                         description: |-
                           Audience is the audience that access tokens must carry. Defaults to
-                          the clientId.
+                          the client ID that the cluster uses.
                         type: string
                       basic:
                         description: |-
@@ -1099,12 +1099,15 @@ spec:
                             type: string
                         type: object
                       clientId:
-                        description: ClientID is the OIDC client ID of this cluster.
+                        description: |-
+                          ClientID is the OIDC client ID of this cluster. A client ID replaces
+                          the whole client: the audience and the client secret then come from
+                          this block only. Requires clientSecretRef.
                         type: string
                       clientSecretRef:
                         description: |-
                           ClientSecretRef names the Secret that holds the OIDC client secret of
-                          this cluster.
+                          this cluster. Required when clientId is set.
                         properties:
                           key:
                             description: Key is the key in the Secret that holds the
@@ -1121,6 +1124,9 @@ spec:
                         - name
                         type: object
                     type: object
+                    x-kubernetes-validations:
+                    - message: clientSecretRef is required when clientId is set
+                      rule: '!has(self.clientId) || size(self.clientId) == 0 || has(self.clientSecretRef)'
                   backup:
                     description: |-
                       Backup configures the backups of this cluster. It sets the schedule and
@@ -1331,14 +1337,10 @@ spec:
                             type: array
                           extraEnvFrom:
                             description: |-
-                              ExtraEnvFrom are extra environment sources of the dump pod, at most
-                              8. The limit applies to every block of this type, also in the cluster
-                              and the preset. It keeps the validation rule of a LogicalBackupRDBMS
-                              inside the cost limit of the API server.
-
-                              In the spec.dump of a LogicalBackupRDBMS, every source also needs a
-                              prefix that cannot make a PG* or UPLOAD_* name. The writer of the
-                              referenced object chooses its keys. As with ExtraEnv, the sources of a
+                              ExtraEnvFrom are extra environment sources of the dump pod. In the
+                              spec.dump of a LogicalBackupRDBMS, every source needs a prefix that
+                              cannot make a PG* or UPLOAD_* name. The writer of the referenced object
+                              chooses its keys. As with ExtraEnv, the sources of a
                               backup reach only the dump container. The block of the cluster needs no
                               prefix, and its sources reach every container.
                             items:
@@ -1387,7 +1389,6 @@ spec:
                                   type: object
                                   x-kubernetes-map-type: atomic
                               type: object
-                            maxItems: 8
                             type: array
                           podAnnotations:
                             additionalProperties:
@@ -7819,9 +7820,15 @@ spec:
                       storageClassName:
                         description: |-
                           StorageClassName is the StorageClass of the broker volumes. Defaults to
-                          the default StorageClass of the Kubernetes cluster. On a CamundaCluster
-                          it is immutable after creation, because a StatefulSet cannot change the
-                          storage class of its volume claims. A preset can change its value.
+                          the default StorageClass of the Kubernetes cluster. The class cannot
+                          change after the broker StatefulSet exists. The API server refuses a
+                          change of a value that the CamundaCluster sets itself. A preset can
+                          change the class, and a cluster that got its class from a preset can
+                          set another one. A cluster whose broker StatefulSet exists, also a
+                          suspended one, then keeps its class and records a
+                          StorageClassChangeIgnored event. A cluster without a broker StatefulSet
+                          takes the new class. Volumes that whenDeleted Retain kept from a
+                          deleted cluster of the same name keep their class.
                         type: string
                       storageSize:
                         anyOf:

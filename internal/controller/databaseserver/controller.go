@@ -34,6 +34,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -49,6 +50,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/grace"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
@@ -66,15 +68,15 @@ const controllerName = "databaseserver"
 const defaultRetryInterval = 30 * time.Second
 
 // eventReasonStorageShrinkIgnored is the Warning event that the controller
-// records when a merged volume size is below the size that is already there.
-// It keeps the size that is there, because PostgreSQL volumes cannot be
-// reduced in place.
+// records once per requested size when a merged volume size is below the size
+// that is already there. It keeps the size that is there, because PostgreSQL
+// volumes cannot be reduced in place.
 const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 
 // eventReasonWALStorageKept is the Warning event that the controller records
-// when a merged spec asks for no write-ahead log volume under a server that
-// has one. It keeps the volume, because CloudNativePG refuses a cluster that
-// gives one up.
+// once, when a merged spec starts to ask for no write-ahead log volume under a
+// server that has one. It keeps the volume, because CloudNativePG refuses a
+// cluster that gives one up.
 const eventReasonWALStorageKept = "WALStorageKept"
 
 // eventActionResize is the action of the events that the controller records
@@ -121,6 +123,14 @@ type resolvedSpec struct {
 	// publishes no point-in-time-recovery capability, a rollback is refused,
 	// and ArchiveReady reports ArchiveTaken: see archiveTaken.
 	archiveTaken string
+	// serviceAccountTaken says why the ServiceAccount of the instance pods is
+	// not this server's, and it is empty when the name is free or the account
+	// is the server's own. A rollback is refused while it is set: see
+	// serviceAccountTaken.
+	serviceAccountTaken string
+	// archivePluginRoles are the clusters of the server that the Role of the
+	// Barman Cloud plugin is bound for: see archivePluginRoles.
+	archivePluginRoles []components.ArchivePluginRole
 	// clusterTaken says why a CloudNativePG cluster of the name the server
 	// derives is not this server's to write, and it is empty when the name is
 	// free or the cluster is the server's own. Every component reads it and
@@ -138,6 +148,9 @@ type resolvedSpec struct {
 	// component, it reports ArchiveFailing, and it marks the open archive
 	// record: see reportedArchiveOutage.
 	archiveOutage *components.ArchiveOutage
+	// requested is what the merged spec asked for before keepAppliedStorageSize
+	// raised it to the volumes that are there.
+	requested components.RequestedStorage
 }
 
 // serverComponents are the components of one reconcile, in the order they
@@ -187,6 +200,10 @@ type DatabaseServerReconciler struct {
 	// RetryInterval overrides how long the controller waits on the superuser
 	// Secret. Zero means defaultRetryInterval; tests shorten it.
 	RetryInterval time.Duration
+	// GracePeriods are the grace periods of the cluster component, which uses
+	// the datastore period. The zero value keeps ClusterReady on its progress
+	// reason.
+	GracePeriods grace.Periods
 
 	// componentClient is the uncached client that the ocf components reconcile
 	// through. SetupWithManager builds it. The cached client of the manager
@@ -214,9 +231,15 @@ type DatabaseServerReconciler struct {
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=clusters;scheduledbackups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=backups,verbs=get;list;watch
 // +kubebuilder:rbac:groups=barmancloud.cnpg.io,resources=objectstores,verbs=get;list;watch;create;update;patch;delete
+// Writes no ObjectStore status. The Role of the Barman Cloud plugin grants it, and the
+// API server lets the operator bind that Role only while it holds every rule of it.
+// +kubebuilder:rbac:groups=barmancloud.cnpg.io,resources=objectstores/status,verbs=update
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=podmonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile converges a DatabaseServer. It resolves the preset and the
@@ -303,7 +326,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Before the recovery below: the cluster a rollback builds carries the
 	// volume sizes of the merged spec, and it must not come back smaller than
 	// the server it replaces.
-	r.keepAppliedStorageSize(&server, &resolved.merged, volumes)
+	r.keepAppliedStorageSize(&server, &resolved, volumes)
 
 	// Before the hold below: a suspended server refuses a recovery request,
 	// and a request nobody answers holds whoever asked for good.
@@ -339,6 +362,12 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
+	// After the recovery, which records the cluster that a rollback builds.
+	resolved.archivePluginRoles, err = r.archivePluginRoles(ctx, &server, resolved.serviceAccountTaken)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// After the recovery, because the recovery is what moves status.cluster:
 	// it moves onto the cluster it built at the cutover, and back onto the
 	// previous one when it abandons that cluster. The name every component
@@ -362,6 +391,12 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 	comps = built.all()
+
+	// A cluster whose name was held gets the whole grace period once its name
+	// is free. Otherwise the transition time of the held period ends it at once.
+	if resolved.clusterTaken == "" {
+		grace.Restart(&server, v1.ConditionClusterReady, v1.ReasonClusterTaken)
+	}
 
 	reconcileErr := reconcileComponents(ctx, recCtx, built.applying(resolved.holdArchive))
 
@@ -425,7 +460,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, reconcileErr
 	}
 
-	return ctrl.Result{RequeueAfter: r.requeueAfter(&server, resolved, derived, recovering)}, nil
+	return ctrl.Result{RequeueAfter: r.requeueAfter(&server, resolved, derived, recovering, built.cluster)}, nil
 }
 
 // all returns the components in reconcile order. FlushStatus owns every one of
@@ -605,6 +640,14 @@ func (r *DatabaseServerReconciler) preCheck(
 		return resolved, err
 	}
 	resolved.archiveTaken = archiveTaken
+
+	// The cluster component blocks on this account, but a rollback builds its
+	// cluster outside the component, so the recovery reads it here.
+	serviceAccountTaken, err := r.serviceAccountTaken(ctx, server)
+	if err != nil {
+		return resolved, err
+	}
+	resolved.serviceAccountTaken = serviceAccountTaken
 
 	return resolved, nil
 }
@@ -968,6 +1011,7 @@ func (r *DatabaseServerReconciler) requeueAfter(
 	resolved resolvedSpec,
 	derived derivedCluster,
 	recovering bool,
+	cluster *component.Component,
 ) time.Duration {
 	var waits []time.Duration
 
@@ -998,6 +1042,10 @@ func (r *DatabaseServerReconciler) requeueAfter(
 	// it comes rewrite the condition on the cluster, which this controller
 	// owns, so that arrives on a watch and needs no look of its own.
 	if wait := pendingArchiveOutageWait(derived.outage, resolved.merged, time.Now()); wait > 0 {
+		waits = append(waits, wait)
+	}
+
+	if wait, ok := grace.Remaining(server, cluster); ok {
 		waits = append(waits, wait)
 	}
 
@@ -1040,12 +1088,14 @@ func pendingArchiveOutageWait(
 // PersistentVolumeClaim that reports a capacity, split by what the claim
 // holds, and the sizes the applied CloudNativePG cluster asks for. The applied
 // sizes matter on their own while the server is suspended, when the claims are
-// there and report their capacity before any instance comes back.
+// there and report their capacity before any instance comes back. requested
+// holds the annotations of the applied cluster.
 type serverVolumes struct {
 	data        []v1.VolumeStatus
 	wal         []v1.VolumeStatus
 	appliedData *resource.Quantity
 	appliedWAL  *resource.Quantity
+	requested   map[string]string
 }
 
 // all returns every claim of the cluster, sorted by name.
@@ -1054,6 +1104,21 @@ func (v serverVolumes) all() []v1.VolumeStatus {
 	slices.SortFunc(volumes, func(a, b v1.VolumeStatus) int { return strings.Compare(a.Name, b.Name) })
 
 	return volumes
+}
+
+// requestApplied reports whether the applied cluster carries size in the
+// annotation key. The empty value stands for no size.
+func (v serverVolumes) requestApplied(key string, size *resource.Quantity) bool {
+	value, ok := v.requested[key]
+	if !ok {
+		return false
+	}
+	if size == nil {
+		return value == ""
+	}
+
+	applied, err := resource.ParseQuantity(value)
+	return err == nil && applied.Cmp(*size) == 0
 }
 
 // volumeClaims reads the volumes of the current cluster. CloudNativePG labels
@@ -1071,9 +1136,11 @@ func (r *DatabaseServerReconciler) volumeClaims(
 ) (serverVolumes, error) {
 	key := types.NamespacedName{Namespace: server.Namespace, Name: components.ClusterName(server)}
 
+	// Read live: a cache that missed the last apply holds an old request,
+	// and the clamp reports the same kept volume again.
 	var cluster cnpgv1.Cluster
 	applied := true
-	if err := r.Get(ctx, key, &cluster); err != nil {
+	if err := r.APIReader.Get(ctx, key, &cluster); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return serverVolumes{}, fmt.Errorf("reading the applied cluster %s: %w", key, err)
 		}
@@ -1122,6 +1189,7 @@ func (r *DatabaseServerReconciler) volumeClaims(
 	}
 
 	volumes.appliedData = parsedSize(cluster.Spec.StorageConfiguration.Size)
+	volumes.requested = cluster.Annotations
 	if cluster.Spec.WalStorage != nil {
 		volumes.appliedWAL = parsedSize(cluster.Spec.WalStorage.Size)
 	}
@@ -1153,22 +1221,39 @@ func parsedSize(size string) *resource.Quantity {
 // touches it.
 // CloudNativePG refuses a cluster whose storage is smaller than the one it
 // applied, so a size that reaches it stops the server from converging.
+//
+// It sets resolved.requested to the sizes that the merged spec asked for. It
+// records a Warning event only for a request that the applied cluster does not
+// carry yet.
 func (r *DatabaseServerReconciler) keepAppliedStorageSize(
 	server *v1.DatabaseServer,
-	merged *v1.DatabaseServerSpec,
+	resolved *resolvedSpec,
 	volumes serverVolumes,
 ) {
+	merged := &resolved.merged
+	requested := components.RequestedStorage{Data: merged.StorageSize, WAL: merged.WALStorageSize}
+	resolved.requested = requested
+
+	// A held server applies no cluster to carry the request, so the event
+	// waits for the apply after the hold ends.
+	reported := func(key string, size *resource.Quantity) bool {
+		return resolved.holdForSuspension || volumes.requestApplied(key, size)
+	}
+
 	merged.StorageSize = r.keepAppliedSize(
-		server, "storageSize", merged.StorageSize, largestVolume(volumes.data, volumes.appliedData),
+		server, "storageSize", requested.Data, largestVolume(volumes.data, volumes.appliedData),
+		reported(components.RequestedStorageSizeAnnotation, requested.Data),
 	)
 	merged.WALStorageSize = r.keepAppliedWALSize(
-		server, merged.WALStorageSize, largestVolume(volumes.wal, volumes.appliedWAL),
+		server, requested.WAL, largestVolume(volumes.wal, volumes.appliedWAL),
+		reported(components.RequestedWALStorageSizeAnnotation, requested.WAL),
 	)
 }
 
 // keepAppliedWALSize returns the size to render for the write-ahead log volume
 // of the server: the clamp of keepAppliedSize, and the size that is there when
-// the merged spec asks for no such volume at all.
+// the merged spec asks for no such volume at all. reported applies to both
+// events as it does in keepAppliedSize.
 //
 // CloudNativePG refuses a cluster that gives up the write-ahead log volume it
 // applied, with "walStorage cannot be disabled once configured". It accepts
@@ -1176,9 +1261,13 @@ func (r *DatabaseServerReconciler) keepAppliedStorageSize(
 func (r *DatabaseServerReconciler) keepAppliedWALSize(
 	server *v1.DatabaseServer,
 	requested, existing *resource.Quantity,
+	reported bool,
 ) *resource.Quantity {
 	if requested != nil || existing == nil {
-		return r.keepAppliedSize(server, "walStorageSize", requested, existing)
+		return r.keepAppliedSize(server, "walStorageSize", requested, existing, reported)
+	}
+	if reported {
+		return existing
 	}
 
 	r.EventRecorder.Eventf(
@@ -1198,14 +1287,18 @@ func (r *DatabaseServerReconciler) keepAppliedWALSize(
 
 // keepAppliedSize returns the size to render for one volume of the server:
 // requested, or existing when requested is below it. It records the Warning
-// event whenever it keeps existing.
+// event when it keeps existing, unless reported is true.
 func (r *DatabaseServerReconciler) keepAppliedSize(
 	server *v1.DatabaseServer,
 	field string,
 	requested, existing *resource.Quantity,
+	reported bool,
 ) *resource.Quantity {
 	if requested == nil || existing == nil || requested.Cmp(*existing) >= 0 {
 		return requested
+	}
+	if reported {
+		return existing
 	}
 
 	r.EventRecorder.Eventf(
@@ -1431,8 +1524,8 @@ func (r *DatabaseServerReconciler) buildComponents(
 	var built serverComponents
 
 	cluster, systemIdentifier, err := components.ClusterComponent(
-		server, merged, resolved.archive, resolved.archiveTaken,
-		resolved.platform, resolved.clusterBlocked,
+		server, merged, resolved.requested, resolved.archive, resolved.archiveTaken,
+		resolved.platform, resolved.clusterBlocked, resolved.archivePluginRoles, r.GracePeriods.Datastore,
 	)
 	if err != nil {
 		return built, fmt.Errorf("building cluster component: %w", err)
@@ -1632,6 +1725,86 @@ func (r *DatabaseServerReconciler) archiveTaken(
 	}
 
 	return components.ArchiveTakenMessage(name, *holder), nil
+}
+
+// serviceAccountTaken says why the ServiceAccount of the instance pods is not
+// this server's, and returns the empty string when no object of that name
+// exists, nothing controls it, or this server controls it.
+func (r *DatabaseServerReconciler) serviceAccountTaken(
+	ctx context.Context,
+	server *v1.DatabaseServer,
+) (string, error) {
+	key := types.NamespacedName{Namespace: server.Namespace, Name: components.ServiceAccountName(server)}
+
+	var account corev1.ServiceAccount
+	if err := r.APIReader.Get(ctx, key, &account); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("reading the ServiceAccount %s: %w", key, err)
+	}
+
+	holder := metav1.GetControllerOf(&account)
+	if holder == nil || holder.UID == server.UID {
+		return "", nil
+	}
+
+	return fmt.Sprintf("ServiceAccount %q is controlled by %s %q", key.Name, holder.Kind, holder.Name), nil
+}
+
+// archivePluginRoles returns every CloudNativePG cluster that the server
+// controls, and whether each is granted the Role that the Barman Cloud plugin
+// creates for it.
+//
+// A cluster is not granted until its Role exists: the API server refuses a
+// RoleBinding to a missing Role unless the writer may bind any Role. It is not
+// granted while the Role is not the cluster's or the ServiceAccount is not the
+// server's either: the binding would hand the objects of one owner to another.
+func (r *DatabaseServerReconciler) archivePluginRoles(
+	ctx context.Context,
+	server *v1.DatabaseServer,
+	serviceAccountTaken string,
+) ([]components.ArchivePluginRole, error) {
+	// Every cluster, because one that a rollback left can outlive its record.
+	// Live, because a stale answer keeps a binding on a Role of the same name
+	// that another owner made again.
+	var clusters cnpgv1.ClusterList
+	if err := r.APIReader.List(
+		ctx, &clusters,
+		client.InNamespace(server.Namespace),
+		client.MatchingLabels{labels.DatabaseServerKey: labels.OwnerName(server.Name)},
+	); err != nil {
+		return nil, fmt.Errorf("listing the CloudNativePG clusters of the server: %w", err)
+	}
+
+	var roles []components.ArchivePluginRole
+	for i := range clusters.Items {
+		cluster := &clusters.Items[i]
+		if !ownedByServer(server, cluster) {
+			continue
+		}
+		name := cluster.Name
+
+		role := &metav1.PartialObjectMetadata{}
+		role.SetGroupVersionKind(rbacv1.SchemeGroupVersion.WithKind("Role"))
+		key := types.NamespacedName{Namespace: server.Namespace, Name: components.ArchivePluginRoleName(name)}
+		granted := serviceAccountTaken == ""
+		if err := r.APIReader.Get(ctx, key, role); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return nil, fmt.Errorf("reading the Role %s: %w", key, err)
+			}
+			granted = false
+		} else if !metav1.IsControlledBy(role, cluster) {
+			granted = false
+		}
+
+		roles = append(roles, components.ArchivePluginRole{
+			Cluster: name, ClusterUID: cluster.UID, Granted: granted,
+		})
+	}
+
+	return roles, nil
 }
 
 // contractTaken says why the DatabaseServerConfig the merged spec names is not
@@ -1934,12 +2107,7 @@ func (r *DatabaseServerReconciler) podMonitorSupported() bool {
 	return r.served("monitoring.coreos.com", "PodMonitor", "v1")
 }
 
-// SetupWithManager registers the controller, ownership watches on the
-// CloudNativePG cluster, the ObjectStore, the ScheduledBackup, the PodMonitor,
-// and the published contract, a preset watch through a field index on
-// spec.presetRef, watches on the archive bucket and its credentials Secret, and
-// watches on the base backups and data volume claims that CloudNativePG
-// creates.
+// SetupWithManager registers the controller and its watches with mgr.
 //
 // The CloudNativePG and Barman Cloud watches are registered only when the
 // cluster serves those kinds. An informer on a kind that the API server does

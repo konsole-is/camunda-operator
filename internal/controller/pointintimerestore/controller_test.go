@@ -37,6 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
@@ -503,14 +504,41 @@ func createRestore(w *world, mutate ...func(*v1.PointInTimeRestore)) *v1.PointIn
 		m(pitr)
 	}
 	Expect(k8sClient.Create(ctx, pitr)).To(Succeed())
-	// A restore that outlives its spec keeps polling on its timers. The
-	// controller runs one reconcile at a time, so every later spec waits
-	// behind those polls.
-	DeferCleanup(func() {
-		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, pitr))).To(Succeed())
-	})
+	deleteAtSpecEnd(pitr)
 
 	return pitr
+}
+
+// deleteAtSpecEnd removes pitr past its finalizer when the spec ends. A restore
+// of the same name that the spec created again stays.
+func deleteAtSpecEnd(pitr *v1.PointInTimeRestore) {
+	// A restore that outlives its spec keeps polling on its timers. The
+	// controller runs one reconcile at a time, so every later spec waits
+	// behind those polls. envtest runs no garbage collector, so a deleted
+	// restore whose Jobs never go keeps its finalizer and polls too.
+	DeferCleanup(func() {
+		uid := pitr.UID
+		err := k8sClient.Delete(ctx, pitr, client.Preconditions{UID: &uid})
+		// A conflict is a restore of the same name that the spec created again.
+		Expect(apierrors.IsConflict(err) || client.IgnoreNotFound(err) == nil).To(BeTrue(), "%v", err)
+		key := client.ObjectKeyFromObject(pitr)
+		Eventually(func(g Gomega) {
+			var current v1.PointInTimeRestore
+			err := k8sClient.Get(ctx, key, &current)
+			if err == nil && current.UID == uid && controllerutil.RemoveFinalizer(&current, restore.HoldFinalizer) {
+				g.Expect(client.IgnoreNotFound(k8sClient.Update(ctx, &current))).To(Succeed())
+				err = k8sClient.Get(ctx, key, &current)
+			}
+			g.Expect(apierrors.IsNotFound(err) || err == nil && current.UID != uid).To(BeTrue(), "%v", err)
+		}, timeout, interval).Should(Succeed())
+		// The finalizer that this cleanup removes is what releases these Leases.
+		Expect(k8sClient.DeleteAllOf(
+			ctx,
+			&coordinationv1.Lease{},
+			client.InNamespace(testClaimNamespace),
+			client.MatchingLabels{labels.WriterUIDKey: string(uid)},
+		)).To(Succeed())
+	})
 }
 
 // readRestore returns the live restore. A caller inside an Eventually or a
@@ -993,7 +1021,9 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		})
 		pitr := createRestore(w)
 
-		Expect(expectHeld(pitr, v1.ReasonPitrUnavailable)).To(ContainSubstring("no-such-configmap"))
+		message := expectHeld(pitr, v1.ReasonPitrUnavailable)
+		Expect(message).To(ContainSubstring("no-such-configmap"))
+		Expect(message).To(ContainSubstring("no-such-configmap or mark it optional. The restore then continues"))
 		expectClaimsUntouched(w)
 	})
 

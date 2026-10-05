@@ -155,9 +155,15 @@ type ZeebeSpec struct {
 	// +optional
 	ReplicationFactor *int32 `json:"replicationFactor,omitempty"`
 	// StorageClassName is the StorageClass of the broker volumes. Defaults to
-	// the default StorageClass of the Kubernetes cluster. On a CamundaCluster
-	// it is immutable after creation, because a StatefulSet cannot change the
-	// storage class of its volume claims. A preset can change its value.
+	// the default StorageClass of the Kubernetes cluster. The class cannot
+	// change after the broker StatefulSet exists. The API server refuses a
+	// change of a value that the CamundaCluster sets itself. A preset can
+	// change the class, and a cluster that got its class from a preset can
+	// set another one. A cluster whose broker StatefulSet exists, also a
+	// suspended one, then keeps its class and records a
+	// StorageClassChangeIgnored event. A cluster without a broker StatefulSet
+	// takes the new class. Volumes that whenDeleted Retain kept from a
+	// deleted cluster of the same name keep their class.
 	// +optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
 	// StorageSize is the size of the data volume of each broker. Defaults to
@@ -222,19 +228,24 @@ type ConnectorsSpec struct {
 // ClusterAuthSpec holds the credentials of one cluster and the identities
 // that get its admin role. Under OIDC it carries the client credentials,
 // which override the defaults of the platform config and of the preset, and
-// the identities of the administrators. Under basic authentication it
-// carries the basic block, which configures the admin credential that the
-// operator owns.
+// the identities of the administrators. A block that sets clientId replaces
+// the whole client: the audience and the client secret then come from this
+// block only. A block without clientId overrides the audience and the client
+// secret one by one. Under basic authentication it carries the basic block,
+// which configures the admin credential that the operator owns.
+// +kubebuilder:validation:XValidation:rule="!has(self.clientId) || size(self.clientId) == 0 || has(self.clientSecretRef)",message="clientSecretRef is required when clientId is set"
 type ClusterAuthSpec struct {
-	// ClientID is the OIDC client ID of this cluster.
+	// ClientID is the OIDC client ID of this cluster. A client ID replaces
+	// the whole client: the audience and the client secret then come from
+	// this block only. Requires clientSecretRef.
 	// +optional
 	ClientID string `json:"clientId,omitempty"`
 	// Audience is the audience that access tokens must carry. Defaults to
-	// the clientId.
+	// the client ID that the cluster uses.
 	// +optional
 	Audience string `json:"audience,omitempty"`
 	// ClientSecretRef names the Secret that holds the OIDC client secret of
-	// this cluster.
+	// this cluster. Required when clientId is set.
 	// +optional
 	ClientSecretRef *LocalSecretKeyRef `json:"clientSecretRef,omitempty"`
 	// Admin holds the identities that get the admin role of this cluster. It

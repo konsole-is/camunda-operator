@@ -113,6 +113,8 @@ The reasons that you see most often:
 | `Creating` | The operator created the workload and waits for the first replicas. | Wait. |
 | `Updating`, `Scaling` | The workload rolls out a new configuration or image, or changes its replica count. | Wait. If the reason stays, read the pods and their events. Make sure that secondary storage is reachable. |
 | `Failing` | A replica does not become ready. | Read the pods of the workload. Look for restarts, failed probes, and resource limits. |
+| `Degraded` | The workload is still not ready at the end of its [grace period](../architecture.md#status-conventions), but some replicas are ready. | Read the pods of the workload and their events. |
+| `Down` | The workload is still not ready at the end of its grace period, and no replica is ready. | Read the pods of the workload and their events. Make sure that secondary storage is reachable. |
 | `Suspended` | The workload is at zero replicas, because of `spec.suspend: true`, a suspension hold, or a wait for the backend. | Find out what suspended the cluster before you start it again. See [Suspend and resume](#suspend-and-resume). |
 | `Disabled` | The cluster does not need this component. | Nothing. This reason is not an error, and the condition stays out of `Ready`. |
 | `InvalidReference` | A referenced resource does not exist, or the merged spec is not valid. The message names it. | Create the resource, or fix the field that the message names. |
@@ -315,10 +317,10 @@ status:
         LogicalBackupRDBMS/my-cluster-1748937221000 holds
         CamundaCluster my-cluster-ns/my-cluster. Only one backup or restore of
         a cluster runs at a time, so this restore starts when that operation
-        reaches a terminal phase
+        no longer holds the cluster
 ```
 
-Nothing limits this wait, and you do not act. A failed `LogicalRestoreElasticsearch` also keeps the cluster while its `status.recoveryHeld` is `true`.
+Nothing limits this wait, and usually you do not act. If the message names a claim Lease to delete, no backup or restore of the operator holds it. Delete that Lease, and the restore starts. A failed `LogicalRestoreElasticsearch` also keeps the cluster while its `status.recoveryHeld` is `true`.
 
 ### A failed restore holds the broker volumes
 
@@ -413,7 +415,7 @@ status:
 
 The API server rejects a smaller value. If a preset lowers the size under a running cluster, the operator ignores it and keeps the current size. It records the Warning event `StorageShrinkIgnored` once per requested size. To get a smaller volume, delete and recreate the cluster.
 
-`storageSize` of an `ElasticsearchCluster`, and `storageSize` and `walStorageSize` of a `DatabaseServer`, obey the same rules. They grow in place, and a smaller inline value is rejected. A smaller preset value is ignored, with a `StorageShrinkIgnored` event each time the operator processes the resource.
+`storageSize` of an `ElasticsearchCluster`, and `storageSize` and `walStorageSize` of a `DatabaseServer`, obey the same rules. They grow in place, and a smaller inline value is rejected. A smaller preset value is ignored, with one `StorageShrinkIgnored` event for each requested size. An `ElasticsearchCluster` records the event again after a resume.
 
 ## Rotate passwords
 

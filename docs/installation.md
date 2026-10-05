@@ -9,7 +9,7 @@ The manager never runs the CLI itself. The Jobs that the operator creates run it
 - Kubernetes 1.30 or later.
 - Helm 3.8 or later, for the OCI registry.
 - The [ECK operator](https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html), version 3.5 or later, if you use `ElasticsearchCluster`. The manager looks for the ECK CRDs when it starts. If it does not find them, every `ElasticsearchCluster` reports `Ready=False` with reason `ECKNotInstalled`. If you install ECK after the manager, restart the manager.
-- The [CloudNativePG operator](https://cloudnative-pg.io/documentation/current/installation_upgrade/), version 1.26 or later, if you use `DatabaseServer`. Use 1.27 or later with the Barman Cloud plugin. The manager looks for the CloudNativePG CRDs when it starts. If it does not find them, every `DatabaseServer` reports `Ready=False` with reason `CNPGNotInstalled`. If you install CloudNativePG after the manager, restart the manager.
+- The [CloudNativePG operator](https://cloudnative-pg.io/documentation/current/installation_upgrade/), version 1.29 or later, if you use `DatabaseServer`. With an earlier version, the API server rejects the CloudNativePG cluster of a `DatabaseServer`, and `ClusterReady` reports `False`. The manager looks for the CloudNativePG CRDs when it starts. If it does not find them, every `DatabaseServer` reports `Ready=False` with reason `CNPGNotInstalled`. If you install CloudNativePG after the manager, restart the manager.
 - The [Barman Cloud plugin](https://cloudnative-pg.io/plugin-barman-cloud/docs/installation/), version 0.14 or later, and [cert-manager](https://cert-manager.io/docs/installation/), if you use `DatabaseServer` with `spec.archive`. Both install into the namespace of the CloudNativePG operator. Without the plugin, a `DatabaseServer` with an archive reports `Ready=False` with reason `BarmanPluginNotInstalled`. If you install the plugin after the manager, restart the manager.
 - A PostgreSQL server that a `DatabaseServerConfig` describes, if you use `Database` without a `DatabaseServer`. The operator runs PostgreSQL only through `DatabaseServer`.
 - The [Keycloak Operator](https://www.keycloak.org/operator/installation), if you use `CamundaManagementCluster` with `spec.identityProvider.keycloak`. The other two identity provider modes do not need it. The manager looks for the Keycloak CRDs when it starts. If it does not find them, every `CamundaManagementCluster` in that mode reports `Ready=False` with reason `KeycloakOperatorNotInstalled`. If you install the Keycloak Operator after the manager, restart the manager. Install the Keycloak Operator release that matches `spec.identityProvider.keycloak.version`. With Camunda 8.9, keep that version below 26.7.0. [The operator runs Keycloak](crds/camundamanagementcluster.md#the-operator-runs-keycloak) gives the reason. Camunda documents the same prerequisite in [Keycloak deployment](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/#keycloak-deployment).
@@ -98,6 +98,40 @@ helm install camunda-operator \
 ```
 
 With `crd.enable=false` you own the CRD lifecycle. Apply the new `crds.yaml` before you upgrade the chart.
+
+## Grace periods
+
+A workload that is not ready reports `Creating`, `Updating`, `Scaling`, `Failing`, or `Blocked` until its grace period ends. After that, its condition reports `Degraded` or `Down`. The grace period starts when the condition first reports a not-ready reason, such as `Creating` or `Blocked`, or when it changes from `True` to `False`. [Status conventions](architecture.md#status-conventions) describes the reasons and the start of the grace period.
+
+| Flag | Environment variable | Default | Applies to |
+| --- | --- | --- | --- |
+| `--workload-grace-period` | `CAMUNDA_OPERATOR_WORKLOAD_GRACE_PERIOD` | `30m` | The processes of a `CamundaCluster`. The webapp and importer of a `CamundaOptimize`. The Keycloak and the workloads of a `CamundaManagementCluster`. The exporter of an `ElasticsearchCluster`. |
+| `--datastore-grace-period` | `CAMUNDA_OPERATOR_DATASTORE_GRACE_PERIOD` | `30m` | The Elasticsearch cluster of an `ElasticsearchCluster` and the PostgreSQL cluster of a `DatabaseServer`. |
+
+A value is a Go duration, for example `20m` or `1h`. The flag wins over the environment variable. With `0`, the condition keeps its progress reason and never reports `Degraded` or `Down`. The manager does not start with a negative value. It also does not start with a value that is not a duration, unless a flag overrides that environment variable.
+
+Set a value that is longer than your slowest rollout. Keep the workload grace period at or above the datastore grace period. A cluster on Elasticsearch and its Optimize are not ready until that Elasticsearch is. A shorter workload period reports them `Down` while Elasticsearch still starts. A value that is too short reports `Degraded` or `Down` for a workload that starts slowly but correctly. A rolling update of many brokers, or the first start of a large Elasticsearch cluster, can take longer than the default.
+
+With Helm, set the environment variables in `manager.envOverrides`:
+
+```bash
+helm install camunda-operator \
+  oci://ghcr.io/konsole-is/charts/camunda-operator \
+  --version <version> \
+  --namespace camunda-operator-system --create-namespace \
+  --set manager.envOverrides.CAMUNDA_OPERATOR_WORKLOAD_GRACE_PERIOD=60m \
+  --set manager.envOverrides.CAMUNDA_OPERATOR_DATASTORE_GRACE_PERIOD=45m
+```
+
+Without Helm, add the environment variables to the `manager` container of the Deployment `camunda-operator-controller-manager` in `install.yaml`, next to `CAMUNDA_OPERATOR_CLI_IMAGE`:
+
+```yaml
+env:
+  - name: CAMUNDA_OPERATOR_WORKLOAD_GRACE_PERIOD
+    value: 60m
+  - name: CAMUNDA_OPERATOR_DATASTORE_GRACE_PERIOD
+    value: 45m
+```
 
 ## Verify the signatures
 

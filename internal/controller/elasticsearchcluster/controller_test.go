@@ -162,6 +162,95 @@ func expectRetainingPolicy(cluster *v1.ElasticsearchCluster) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// expectRequestedStorageSize polls until the applied ECK CR of cluster
+// carries size as its requested storage size annotation.
+func expectRequestedStorageSize(cluster *v1.ElasticsearchCluster, size string) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var es esv1.Elasticsearch
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())
+		g.Expect(es.Annotations).To(HaveKeyWithValue(components.RequestedStorageSizeAnnotation, size))
+	}, timeout, interval).Should(Succeed())
+}
+
+func expectRequestedStorageClass(cluster *v1.ElasticsearchCluster, class *string) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var es esv1.Elasticsearch
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())
+		if class == nil {
+			g.Expect(es.Annotations).NotTo(HaveKey(components.RequestedStorageClassAnnotation))
+			return
+		}
+		g.Expect(es.Annotations).To(HaveKeyWithValue(components.RequestedStorageClassAnnotation, *class))
+	}, timeout, interval).Should(Succeed())
+}
+
+// expectClaimsAcceptedByECK asserts that the ECK validation webhook accepts
+// the claim templates of es as an update of those of before. envtest runs no
+// ECK webhook, so this is its rule: validPVCModification in cloud-on-k8s
+// v3.5.0 (pkg/controller/elasticsearch/validation/volume_validation.go)
+// refuses every change of a claim template except its storage request.
+func expectClaimsAcceptedByECK(g Gomega, before, es *esv1.Elasticsearch) {
+	GinkgoHelper()
+
+	withoutRequests := func(es *esv1.Elasticsearch) []corev1.PersistentVolumeClaim {
+		claims := es.DeepCopy().Spec.NodeSets[0].VolumeClaimTemplates
+		for i := range claims {
+			delete(claims[i].Spec.Resources.Requests, corev1.ResourceStorage)
+		}
+		return claims
+	}
+	g.Expect(withoutRequests(es)).To(Equal(withoutRequests(before)))
+}
+
+// reconcileClusterAgain edits the pod labels of cluster and waits until status
+// reports that generation, so one more reconcile has run.
+func reconcileClusterAgain(cluster *v1.ElasticsearchCluster) {
+	GinkgoHelper()
+
+	var generation int64
+	Eventually(func(g Gomega) {
+		var latest v1.ElasticsearchCluster
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+		latest.Spec.PodLabels = map[string]string{"round": utilrand.String(4)}
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		generation = latest.Generation
+	}, timeout, interval).Should(Succeed())
+
+	Eventually(func(g Gomega) {
+		var latest v1.ElasticsearchCluster
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+		g.Expect(latest.Status.ObservedGeneration).To(BeNumerically(">=", generation))
+	}, timeout, interval).Should(Succeed())
+}
+
+// countEvents returns how many times an event with reason was recorded for
+// cluster. The recorder folds repeats of one event into one object and
+// counts them in its series.
+func countEvents(g Gomega, cluster *v1.ElasticsearchCluster, reason string) int32 {
+	GinkgoHelper()
+
+	var recorded corev1.EventList
+	g.Expect(k8sClient.List(ctx, &recorded, client.InNamespace(cluster.Namespace))).To(Succeed())
+
+	var count int32
+	for _, event := range recorded.Items {
+		if event.Reason != reason || event.InvolvedObject.Name != cluster.Name {
+			continue
+		}
+		times := max(event.Count, 1)
+		if event.Series != nil {
+			times = max(times, event.Series.Count)
+		}
+		count += times
+	}
+
+	return count
+}
+
 // expectStorageShrinkIgnored polls until the controller has recorded the
 // StorageShrinkIgnored event for cluster, then asserts that the applied ECK
 // data volume claim still requests applied and that Ready does not report
@@ -1440,6 +1529,24 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		expectStorageShrinkIgnored(cluster, "1Gi")
+
+		By("recording nothing more for the same size")
+		expectRequestedStorageSize(cluster, "512Mi")
+		reconcileClusterAgain(cluster)
+		Consistently(func(g Gomega) {
+			g.Expect(countEvents(g, cluster, "StorageShrinkIgnored")).To(Equal(int32(1)))
+		}, 2*time.Second, interval).Should(Succeed())
+
+		By("recording a new event for a different size")
+		Eventually(func(g Gomega) {
+			var latest v1.ElasticsearchClusterPreset
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preset), &latest)).To(Succeed())
+			latest.Spec.Cluster.StorageSize = new(resource.MustParse("256Mi"))
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(countEvents(g, cluster, "StorageShrinkIgnored")).To(Equal(int32(2)))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("ignores an inline storageSize below the applied preset baseline", func() {
@@ -1519,6 +1626,73 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 
 		// The recreated ECK CR requests the retained size, not the shrunk one.
 		expectStorageShrinkIgnored(cluster, "1Gi")
+	})
+
+	It("keeps the storage class of the data volume claim when a preset or an inline value changes it", func() {
+		spec := smallClusterSpec()
+		spec.StorageClassName = new("class-a")
+		preset := createElasticsearchClusterPreset(spec)
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		createElasticsearchCluster(cluster)
+		applied := fetchOwnedElasticsearch(cluster)
+		Expect(applied.Spec.NodeSets[0].VolumeClaimTemplates[0].Spec.StorageClassName).To(Equal(new("class-a")))
+
+		updatePreset := func(mutate func(*v1.ElasticsearchClusterSpec)) {
+			GinkgoHelper()
+			Eventually(func(g Gomega) {
+				var latest v1.ElasticsearchClusterPreset
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preset), &latest)).To(Succeed())
+				mutate(&latest.Spec.Cluster)
+				g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+		}
+		expectKeptClass := func(events int32) {
+			GinkgoHelper()
+			Consistently(func(g Gomega) {
+				var es esv1.Elasticsearch
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())
+				expectClaimsAcceptedByECK(g, applied, &es)
+			}, 2*time.Second, interval).Should(Succeed())
+			Eventually(func(g Gomega) {
+				g.Expect(countEvents(g, cluster, "StorageClassChangeIgnored")).To(Equal(events))
+			}, timeout, interval).Should(Succeed())
+			Consistently(func(g Gomega) {
+				g.Expect(countEvents(g, cluster, "StorageClassChangeIgnored")).To(Equal(events))
+			}, 2*time.Second, interval).Should(Succeed())
+		}
+
+		By("changing the class in the preset: the claim keeps its class, with one event")
+		updatePreset(func(c *v1.ElasticsearchClusterSpec) { c.StorageClassName = new("class-b") })
+		reconcileClusterAgain(cluster)
+		expectKeptClass(1)
+		expectRequestedStorageClass(cluster, new("class-b"))
+
+		By("applying a later preset change to the ECK CR")
+		updatePreset(func(c *v1.ElasticsearchClusterSpec) { c.Replicas = new(int32(2)) })
+		Eventually(func(g Gomega) {
+			var es esv1.Elasticsearch
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())
+			g.Expect(es.Spec.NodeSets[0].Count).To(Equal(int32(2)))
+		}, timeout, interval).Should(Succeed())
+		expectKeptClass(1)
+
+		By("removing the class from the preset: the annotation goes, with one more event")
+		updatePreset(func(c *v1.ElasticsearchClusterSpec) { c.StorageClassName = nil })
+		expectRequestedStorageClass(cluster, nil)
+		reconcileClusterAgain(cluster)
+		expectKeptClass(2)
+
+		By("setting an inline class: the claim keeps its class, with one more event")
+		Eventually(func(g Gomega) {
+			var latest v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			latest.Spec.StorageClassName = new("class-c")
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		expectRequestedStorageClass(cluster, new("class-c"))
+		reconcileClusterAgain(cluster)
+		expectKeptClass(3)
 	})
 
 	It("reports every bound data volume with its capacity in status.volumes", func() {

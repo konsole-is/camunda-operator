@@ -82,6 +82,8 @@ The reasons that you see most:
 | `Healthy` | Everything the resource needs is in place. |
 | `Creating`, `Updating`, `Scaling` | The workloads roll out. |
 | `Failing` | A workload does not reach the desired state. |
+| `Degraded` | A workload is still not ready at the end of its grace period. It reports a partial state, for example some ready replicas or yellow Elasticsearch health. |
+| `Down` | A workload is still not ready at the end of its grace period. It reports a critical state, for example no ready replica or red Elasticsearch health. |
 | `Suspended` | `spec.suspend` is true. `Ready` is `True`, because the resource is in its desired state. |
 | `SuspensionHeld` | A `CamundaCluster` carries a suspension hold. `Ready` is `False`, because another resource keeps the cluster stopped, not your spec. The message names each hold. |
 | `Disabled` | The component is not part of the current topology. This is not an error. |
@@ -91,6 +93,8 @@ The reasons that you see most:
 | `Error` | The operator hit an error. The message carries it. |
 
 The page of each kind in the [CRD reference](crds/index.md) lists all its reasons and the step for each.
+
+A workload gets a grace period to become ready. The grace period starts when the condition first reports a not-ready reason, such as `Creating` or `Blocked`, or when it changes from `True` to `False`. It starts again when the workload leaves `PrerequisiteNotMet`, `Disabled`, a suspension, or the `ClusterTaken` reason of a `DatabaseServer`. A change from `Creating` to `Updating` does not start it again. Until the grace period ends, the condition reports its progress or its wait: `Creating`, `Updating`, `Scaling`, `Failing`, or `Blocked`. After it ends, the condition reports `Degraded` or `Down` until the workload is ready again. By default, every grace period is 30 minutes. To change the values, see [Grace periods](installation.md#grace-periods).
 
 The API server accepts a resource that names something you did not create yet, so you can create resources in any order. A resource waits with `InvalidReference` or `MissingSecret` until its references exist.
 

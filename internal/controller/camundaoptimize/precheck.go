@@ -184,11 +184,13 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	}
 	// The type comes from the contract, never from a literal here: the key of
 	// this instance must be the one the cluster computes from the same chain.
-	key, err := clustercomponents.StorageClaimKey(clustercomponents.Storage{
+	storage := clustercomponents.Storage{
 		Type:          binding.Spec.Type,
 		Namespace:     binding.Namespace,
+		Name:          binding.Name,
 		Elasticsearch: binding.Spec.Elasticsearch,
-	})
+	}
+	key, err := clustercomponents.StorageClaimKey(storage)
 	if err != nil {
 		return out, clustercomponents.StorageClaimKeyFailure(client.ObjectKeyFromObject(binding), err)
 	}
@@ -199,7 +201,7 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	// zero whatever the claim says, so the reads below cannot change the
 	// answer.
 	if !out.Input.Suspended {
-		if err := r.gateOnStorageClaim(ctx, key, &cluster, &out); err != nil {
+		if err := r.gateOnStorageClaim(ctx, storage, key, &cluster, &out); err != nil {
 			return out, err
 		}
 	}
@@ -268,8 +270,10 @@ func (res *resolver) resolveStorage(
 // gateOnStorageClaim parks the workloads of out and sets out.AwaitsBackendClaim,
 // which no watch clears, unless cluster holds the storage claim of the backend
 // that key names and nothing but cluster and this instance still writes it.
+// key is the claim key of storage.
 func (r *Reconciler) gateOnStorageClaim(
 	ctx context.Context,
+	storage clustercomponents.Storage,
 	key string,
 	cluster *v1.CamundaCluster,
 	out *resolved,
@@ -335,9 +339,14 @@ func (r *Reconciler) gateOnStorageClaim(
 	}
 	// A writer for another cluster, such as a restore, writes the backend with
 	// no pod of that cluster, so the pods alone do not show it.
-	// Optimize runs on Elasticsearch only, whose writers name no contract.
 	writers, err := storagewriter.Live(
-		ctx, r.APIReader, r.ClaimNamespace, key, out.Input.StorageClaim, "", cluster.UID,
+		ctx,
+		r.APIReader,
+		r.ClaimNamespace,
+		key,
+		out.Input.StorageClaim,
+		clustercomponents.StorageContract(storage),
+		cluster.UID,
 	)
 	if err != nil {
 		return err

@@ -115,17 +115,12 @@ type DumpPodSpec struct {
 	// dump pod.
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
-	// ExtraEnvFrom are extra environment sources of the dump pod, at most
-	// 8. The limit applies to every block of this type, also in the cluster
-	// and the preset. It keeps the validation rule of a LogicalBackupRDBMS
-	// inside the cost limit of the API server.
-	//
-	// In the spec.dump of a LogicalBackupRDBMS, every source also needs a
-	// prefix that cannot make a PG* or UPLOAD_* name. The writer of the
-	// referenced object chooses its keys. As with ExtraEnv, the sources of a
+	// ExtraEnvFrom are extra environment sources of the dump pod. In the
+	// spec.dump of a LogicalBackupRDBMS, every source needs a prefix that
+	// cannot make a PG* or UPLOAD_* name. The writer of the referenced object
+	// chooses its keys. As with ExtraEnv, the sources of a
 	// backup reach only the dump container. The block of the cluster needs no
 	// prefix, and its sources reach every container.
-	// +kubebuilder:validation:MaxItems=8
 	// +optional
 	ExtraEnvFrom []corev1.EnvFromSource `json:"extraEnvFrom,omitempty"`
 	// PodLabels are extra labels of the dump pod.

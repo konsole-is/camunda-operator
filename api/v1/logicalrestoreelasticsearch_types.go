@@ -55,6 +55,11 @@ type LogicalRestoreElasticsearchStatus struct {
 	// The restore waits while its target does not hold the backend.
 	// +optional
 	Backend string `json:"backend,omitempty"`
+	// Contract is the SecondaryStorageConfig that held the endpoint of
+	// Backend when the restore started. When the endpoint of that contract
+	// moves, the restore still holds this contract.
+	// +optional
+	Contract string `json:"contract,omitempty"`
 	// RecoveryHeld is true while a failed or deleted restore keeps the
 	// backend, because Elasticsearch can still recover snapshots that the
 	// restore asked for. While it is true, no other CamundaCluster starts on

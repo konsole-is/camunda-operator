@@ -17,6 +17,7 @@ limitations under the License.
 package esadmin
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/konsole-is/camunda-operator/pkg/adminhttp"
@@ -34,31 +36,48 @@ import (
 // TRANSLOG, FINALIZE) is a recovery that still runs.
 const recoveryStageDone = "DONE"
 
-// The shard states of the routing table that RestoreProgress reads.
+// The filter_path of each read keeps the fields that it uses. The unfiltered
+// answer grows with the size of the cluster and can pass the 1 MiB that the
+// client reads.
 const (
-	shardInitializing = "INITIALIZING"
-	shardUnassigned   = "UNASSIGNED"
+	resolveFilter  = "indices.name,aliases.indices"
+	recoveryFilter = "*.shards.stage"
+	healthFilter   = "indices.*.shards.*.initializing_shards,indices.*.shards.*.unassigned_primary_shards"
+	explainFilter  = "current_state,unassigned_info.reason,unassigned_info.last_allocation_status"
 )
 
-var restoredReasons = map[string]bool{
-	"NEW_INDEX_RESTORED":      true,
-	"EXISTING_INDEX_RESTORED": true,
+// The current states of a shard in the allocation explain API.
+const (
+	shardInitializing = "initializing"
+	shardUnassigned   = "unassigned"
+)
+
+// noValidShardCopy is the last allocation status of a primary that has no
+// valid copy on any node. Elasticsearch gives it only to a primary that
+// recovers from its own store (PrimaryShardAllocator), never to one that a
+// restore brings back from a snapshot.
+const noValidShardCopy = "no_valid_shard_copy"
+
+// waitingAllocations are the last allocation statuses of an unassigned primary
+// that a node can still take, in the words of the allocation explain API.
+var waitingAllocations = map[string]bool{
+	// no is not here: Elasticsearch fails the restore of a primary for good
+	// once the allocation deciders refuse it.
+	"throttled":          true,
+	"awaiting_info":      true,
+	"allocation_delayed": true,
+	"no_attempt":         true,
 }
 
-// routingFilter keeps the fields that shardPending reads. The unfiltered
-// routing table of a large cluster passes the 1 MiB that the client reads.
-const routingFilter = "routing_table.indices.*.shards.*.state," +
-	"routing_table.indices.*.shards.*.primary," +
-	"routing_table.indices.*.shards.*.unassigned_info.reason," +
-	"routing_table.indices.*.shards.*.unassigned_info.allocation_status"
-
-// waitingAllocations are the allocation statuses of an unassigned shard that a
-// node can still take.
-var waitingAllocations = map[string]bool{
-	"deciders_throttled":  true,
-	"fetching_shard_data": true,
-	"delayed_allocation":  true,
-	"no_attempt":          true,
+// allocationStatusNames maps a last allocation status of the allocation
+// explain API back to the name that the shard's own allocation status has.
+// Elasticsearch derives the first from the second in
+// AllocationDecision.fromAllocationStatus.
+var allocationStatusNames = map[string]string{
+	"no":                 "deciders_no",
+	"throttled":          "deciders_throttled",
+	"awaiting_info":      "fetching_shard_data",
+	"allocation_delayed": "delayed_allocation",
 }
 
 // RestoreState is how far the restore of a set of indices has come.
@@ -68,13 +87,40 @@ type RestoreState string
 const (
 	RestoreInProgress RestoreState = "IN_PROGRESS"
 	RestoreDone       RestoreState = "DONE"
+	// RestoreStranded is a restore that nothing recovers any more, with a
+	// restored primary that no node takes. The index of that primary stays
+	// red until someone changes the cluster.
+	RestoreStranded RestoreState = "STRANDED"
 )
 
+// Progress is the answer of RestoreProgress.
+type Progress struct {
+	// State is RestoreInProgress, RestoreStranded, or RestoreDone.
+	State RestoreState
+	// Stranded names each restored primary that no node takes, sorted by index
+	// and shard. It is empty unless State is RestoreStranded.
+	Stranded []StrandedShard
+}
+
+// StrandedShard is a restored primary that no node takes.
+type StrandedShard struct {
+	// Index is the name of the restored index that holds the primary.
+	Index string
+	// Shard is the shard number.
+	Shard int
+	// Reason is why the shard is unassigned, for example NEW_INDEX_RESTORED or
+	// ALLOCATION_FAILED.
+	Reason string
+	// AllocationStatus is the last allocation status, for example deciders_no.
+	AllocationStatus string
+}
+
 // ResolveIndices returns the concrete index names that patterns match,
-// sorted, or nothing when they match no index. An empty pattern list is
-// nothing too, and sends no request: an empty target names every index.
+// sorted, or nothing when they match no index. An alias that they match
+// stands for the indices that it points to. An empty pattern list is nothing
+// too, and sends no request: an empty target names every index.
 //
-// The query expands its wildcards to open and closed indices. The get-index
+// The query expands its wildcards to open and closed indices. The resolve
 // API expands to open ones by default, while the delete expands to open and
 // closed ones, so the default would leave every closed index out of a set
 // that the delete is meant to clear.
@@ -85,21 +131,36 @@ func (c *Client) ResolveIndices(ctx context.Context, patterns []string) ([]strin
 
 	payload, _, err := c.api.Do(ctx, adminhttp.Request{
 		Method: http.MethodGet,
-		Path: "/" + indexTarget(patterns) +
-			"?ignore_unavailable=true&allow_no_indices=true&expand_wildcards=open,closed",
+		Path: "/_resolve/index/" + indexTarget(patterns) +
+			"?ignore_unavailable=true&allow_no_indices=true&expand_wildcards=open,closed&filter_path=" + resolveFilter,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// The answer is one entry per index, keyed by name. Only the names are
-	// read, so the settings and the mappings of the entry stay raw.
-	var response map[string]json.RawMessage
+	var response struct {
+		Indices []struct {
+			Name string `json:"name"`
+		} `json:"indices"`
+		Aliases []struct {
+			Indices []string `json:"indices"`
+		} `json:"aliases"`
+	}
 	if err := json.Unmarshal(payload, &response); err != nil {
 		return nil, fmt.Errorf("decoding index list: %w", err)
 	}
 
-	return slices.Sorted(maps.Keys(response)), nil
+	names := map[string]struct{}{}
+	for _, index := range response.Indices {
+		names[index.Name] = struct{}{}
+	}
+	for _, alias := range response.Aliases {
+		for _, index := range alias.Indices {
+			names[index] = struct{}{}
+		}
+	}
+
+	return slices.Sorted(maps.Keys(names)), nil
 }
 
 // MaxDeletePathBytes bounds the path of one delete request. Elasticsearch
@@ -231,44 +292,38 @@ func (c *Client) RestoreSnapshot(ctx context.Context, repo, name string, indices
 	return err
 }
 
-// RestoreProgress reports whether a shard of the indices that patterns match
-// still recovers or has yet to start. It is RestoreInProgress while one does,
-// and RestoreDone when none does.
+// RestoreProgress reports how far the restore of the indices that patterns
+// match has come. It is RestoreInProgress while a shard of them recovers or
+// has yet to start, RestoreStranded when none does and a restored primary
+// gets no node, and RestoreDone otherwise.
 //
-// A shard counts when it has a recovery that is not DONE, whatever the
-// recovery type, or when it is INITIALIZING. A primary counts while it is
-// UNASSIGNED and waits for the allocation of its restore. An unassigned
-// replica does not count, and neither does a primary that Elasticsearch
-// failed to allocate or that no node will take: no recovery comes for them
-// without a change to the cluster.
+// A shard counts as in progress when it has a recovery that is not DONE,
+// whatever the recovery type, or when it is INITIALIZING. An unassigned
+// primary counts while a node can still take it, also while it waits for the
+// retry of a failed recovery. A primary without a valid copy never counts,
+// because it is not one that the restore brings back. An unassigned replica
+// never counts: the restore does not wait for it, and it does not strand the
+// restore.
 //
 // An empty pattern list is RestoreDone and sends no request, because an empty
 // target asks about every index in the cluster.
-func (c *Client) RestoreProgress(ctx context.Context, patterns []string) (RestoreState, error) {
+func (c *Client) RestoreProgress(ctx context.Context, patterns []string) (Progress, error) {
 	if len(patterns) == 0 {
-		return RestoreDone, nil
+		return Progress{State: RestoreDone}, nil
 	}
 
 	recovering, err := c.shardRecovering(ctx, patterns)
 	if err != nil {
-		return "", err
+		return Progress{}, err
 	}
 	if recovering {
-		return RestoreInProgress, nil
+		return Progress{State: RestoreInProgress}, nil
 	}
 
 	// A shard of a restored index can be initializing before its recovery is
 	// registered, and a primary can wait for allocation behind the
 	// concurrent recoveries limit. Neither has a recovery entry yet.
-	pending, err := c.shardPending(ctx, patterns)
-	if err != nil {
-		return "", err
-	}
-	if pending {
-		return RestoreInProgress, nil
-	}
-
-	return RestoreDone, nil
+	return c.shardProgress(ctx, patterns)
 }
 
 // shardRecovering reports whether a shard of the target has a recovery that
@@ -281,7 +336,7 @@ func (c *Client) shardRecovering(ctx context.Context, patterns []string) (bool, 
 	payload, _, err := c.api.Do(ctx, adminhttp.Request{
 		Method: http.MethodGet,
 		Path: "/" + indexTarget(patterns) +
-			"/_recovery?active_only=true&ignore_unavailable=true&allow_no_indices=true",
+			"/_recovery?active_only=true&ignore_unavailable=true&allow_no_indices=true&filter_path=" + recoveryFilter,
 	})
 	if err != nil {
 		return false, err
@@ -307,53 +362,117 @@ func (c *Client) shardRecovering(ctx context.Context, patterns []string) (bool, 
 	return false, nil
 }
 
-// shardPending reports whether the routing table holds a shard of the target
-// that is INITIALIZING, or a primary that is UNASSIGNED since its restore and
-// that a node can still take.
-func (c *Client) shardPending(ctx context.Context, patterns []string) (bool, error) {
+// shardProgress reads the progress of the target from the shard health, and
+// asks the allocation explain API about each unassigned primary.
+func (c *Client) shardProgress(ctx context.Context, patterns []string) (Progress, error) {
+	// With a target, the health API waits until every part of it names an
+	// index, and answers 408 when its timeout ends. A timeout of 0s answers
+	// at once, and the 408 still holds the health of the indices that exist.
 	payload, _, err := c.api.Do(ctx, adminhttp.Request{
 		Method: http.MethodGet,
-		Path: "/_cluster/state/routing_table/" + indexTarget(patterns) +
-			"?ignore_unavailable=true&allow_no_indices=true&filter_path=" + routingFilter,
+		Path: "/_cluster/health/" + indexTarget(patterns) +
+			"?level=shards&timeout=0s&filter_path=" + healthFilter,
+		Accept: func(status int) bool {
+			return status == http.StatusOK || status == http.StatusRequestTimeout
+		},
 	})
 	if err != nil {
-		return false, err
+		return Progress{}, err
 	}
 
 	var response struct {
-		RoutingTable struct {
-			Indices map[string]struct {
-				Shards map[string][]struct {
-					State          string `json:"state"`
-					Primary        bool   `json:"primary"`
-					UnassignedInfo struct {
-						Reason           string `json:"reason"`
-						AllocationStatus string `json:"allocation_status"`
-					} `json:"unassigned_info"`
-				} `json:"shards"`
-			} `json:"indices"`
-		} `json:"routing_table"`
+		Indices map[string]struct {
+			Shards map[string]struct {
+				InitializingShards      int `json:"initializing_shards"`
+				UnassignedPrimaryShards int `json:"unassigned_primary_shards"`
+			} `json:"shards"`
+		} `json:"indices"`
 	}
 	if err := json.Unmarshal(payload, &response); err != nil {
-		return false, fmt.Errorf("decoding routing table: %w", err)
+		return Progress{}, fmt.Errorf("decoding shard health: %w", err)
 	}
 
-	for _, index := range response.RoutingTable.Indices {
-		for _, copies := range index.Shards {
-			for _, shard := range copies {
-				if shard.State == shardInitializing {
-					return true, nil
-				}
-				if shard.Primary && shard.State == shardUnassigned &&
-					restoredReasons[shard.UnassignedInfo.Reason] &&
-					waitingAllocations[shard.UnassignedInfo.AllocationStatus] {
-					return true, nil
-				}
+	var unassigned []StrandedShard
+	for name, index := range response.Indices {
+		for id, shard := range index.Shards {
+			if shard.InitializingShards > 0 {
+				return Progress{State: RestoreInProgress}, nil
 			}
+			if shard.UnassignedPrimaryShards == 0 {
+				continue
+			}
+			number, err := strconv.Atoi(id)
+			if err != nil {
+				return Progress{}, fmt.Errorf("decoding shard health: shard number %q of index %s: %w", id, name, err)
+			}
+			unassigned = append(unassigned, StrandedShard{Index: name, Shard: number})
 		}
 	}
+	slices.SortFunc(unassigned, func(a, b StrandedShard) int {
+		return cmp.Or(strings.Compare(a.Index, b.Index), cmp.Compare(a.Shard, b.Shard))
+	})
 
-	return false, nil
+	var stranded []StrandedShard
+	for _, primary := range unassigned {
+		explanation, err := c.explainPrimary(ctx, primary.Index, primary.Shard)
+		if err != nil {
+			return Progress{}, err
+		}
+
+		status := explanation.UnassignedInfo.LastAllocationStatus
+		switch {
+		case explanation.CurrentState == shardInitializing || waitingAllocations[status]:
+			return Progress{State: RestoreInProgress}, nil
+		case explanation.CurrentState != shardUnassigned || status == noValidShardCopy:
+			continue
+		}
+
+		primary.Reason = explanation.UnassignedInfo.Reason
+		primary.AllocationStatus = cmp.Or(allocationStatusNames[status], status)
+		stranded = append(stranded, primary)
+	}
+	if len(stranded) == 0 {
+		return Progress{State: RestoreDone}, nil
+	}
+
+	return Progress{State: RestoreStranded, Stranded: stranded}, nil
+}
+
+// explanation is the part of an allocation explain answer that
+// shardProgress reads.
+type explanation struct {
+	CurrentState   string `json:"current_state"`
+	UnassignedInfo struct {
+		Reason               string `json:"reason"`
+		LastAllocationStatus string `json:"last_allocation_status"`
+	} `json:"unassigned_info"`
+}
+
+// explainPrimary asks the allocation explain API about the primary of shard
+// number of index.
+func (c *Client) explainPrimary(ctx context.Context, index string, number int) (explanation, error) {
+	body, err := json.Marshal(map[string]any{"index": index, "shard": number, "primary": true})
+	if err != nil {
+		return explanation{}, fmt.Errorf("encoding allocation explain request: %w", err)
+	}
+
+	payload, _, err := c.api.Do(ctx, adminhttp.Request{
+		Method: http.MethodPost,
+		Path:   "/_cluster/allocation/explain?filter_path=" + explainFilter,
+		Body:   body,
+	})
+	if err != nil {
+		return explanation{}, err
+	}
+
+	var answer explanation
+	if err := json.Unmarshal(payload, &answer); err != nil {
+		return explanation{}, fmt.Errorf(
+			"decoding allocation explanation of shard %d of index %s: %w", number, index, err,
+		)
+	}
+
+	return answer, nil
 }
 
 // indexTarget joins patterns into the multi-target path segment of an index

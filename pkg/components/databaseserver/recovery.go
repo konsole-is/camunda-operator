@@ -210,9 +210,11 @@ func describeArchives(history []v1.ArchiveRecord) string {
 //
 // The name comes from status.recovery.cluster, which the server records
 // before it builds anything. Rendering it is an error while that is empty.
+// requested is the same as for ClusterComponent.
 func RecoveryCluster(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
+	requested RequestedStorage,
 	archive *ArchiveStorage,
 	archiveTaken string,
 	platform *v1.CamundaPlatformConfigSpec,
@@ -224,7 +226,7 @@ func RecoveryCluster(
 	}
 	name := server.Status.Recovery.Cluster
 
-	baseline := cluster(server, merged, platform)
+	baseline := cluster(server, merged, requested, platform)
 	baseline.Name = name
 
 	resource, err := cnpgcluster.NewBuilder(baseline).

@@ -35,6 +35,13 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # The Go module proxy sometimes drops a connection. The retry keeps
+      # one dropped download from failing the job.
+      - name: Download the Go modules
+        run: |
+          hack/ci-retry.sh go mod download
+          hack/ci-retry.sh go -C api mod download
+
       - name: Reject a v-prefixed tag
         run: |
           if [[ "${TAG}" == v* ]]; then
@@ -72,10 +79,10 @@ jobs:
             fi
           done
 
-      # Versions below are pinned to .tool-versions. Keep them in sync.
+      # kubebuilder installs the version of .tool-versions.
       - name: Install kubebuilder
         run: |
-          VERSION=4.13.1
+          VERSION=$(awk '$1 == "kubebuilder" { print $2 }' .tool-versions)
           OS=$(go env GOOS)
           ARCH=$(go env GOARCH)
           curl -fsSL -o kubebuilder \

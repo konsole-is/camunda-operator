@@ -116,6 +116,7 @@ var _ = Describe("LogicalRestoreRDBMS admission", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, lrr)).To(Succeed())
+		deleteAtSpecEnd(lrr)
 
 		expectReason(lrr, v1.LogicalRestorePending, v1.ReasonInvalidReference)
 	})
@@ -487,7 +488,7 @@ var _ = Describe("LogicalRestoreRDBMS cluster claim", func() {
 		By("standing in for a look that registered the writer and crashed before its status write")
 		crashed := "rdbms|crashed.example.svc:5432/camunda"
 		Expect(restorepkg.RegisterWriter(
-			ctx, k8sClient, k8sClient, claimNamespace, crashed, reached, reached.Status.TargetClusterUID,
+			ctx, k8sClient, k8sClient, claimNamespace, crashed, "", reached, reached.Status.TargetClusterUID,
 		)).To(Succeed())
 
 		Eventually(func(g Gomega) {
@@ -513,7 +514,7 @@ var _ = Describe("LogicalRestoreRDBMS cluster claim", func() {
 		By("standing in for a look that registered a second writer and crashed before its status write")
 		crashed := "rdbms|crashed.example.svc:5432/camunda"
 		Expect(restorepkg.RegisterWriter(
-			ctx, k8sClient, k8sClient, claimNamespace, crashed, current, current.Status.TargetClusterUID,
+			ctx, k8sClient, k8sClient, claimNamespace, crashed, "", current, current.Status.TargetClusterUID,
 		)).To(Succeed())
 		Expect(writersNaming(lrr)).To(HaveLen(2))
 
@@ -724,9 +725,7 @@ var _ = Describe("LogicalRestoreRDBMS compatibility", func() {
 
 		By("continuing once the CamundaCluster controller rolled it out")
 		w.rollBrokerImage("8.10.0")
-		Eventually(func(g Gomega) {
-			g.Expect(latest(g, lrr).Status.BackupID).To(Equal(backupID))
-		}, timeout, interval).Should(Succeed())
+		expectPhase(lrr, v1.LogicalRestoreRestoringSecondaryStorage)
 	})
 
 	// The version rule would accept this target as it is. The restore still
@@ -746,9 +745,7 @@ var _ = Describe("LogicalRestoreRDBMS compatibility", func() {
 		}, timeout, interval).Should(Succeed())
 
 		w.rollBrokerImage(worldVersion)
-		Eventually(func(g Gomega) {
-			g.Expect(latest(g, lrr).Status.BackupID).To(Equal(backupID))
-		}, timeout, interval).Should(Succeed())
+		expectPhase(lrr, v1.LogicalRestoreRestoringSecondaryStorage)
 	})
 
 	// A version that the restore cannot write is not a wait. Such a backup
@@ -820,6 +817,7 @@ var _ = Describe("LogicalRestoreRDBMS of the logical database", func() {
 		createForeignJob(w, components.JobName(lrr))
 
 		Expect(k8sClient.Create(ctx, lrr)).To(Succeed())
+		deleteAtSpecEnd(lrr)
 
 		reached := expectReason(lrr, v1.LogicalRestoreFailed, v1.ReasonFailed)
 		Expect(reached.Status.FailureMessage).To(ContainSubstring(components.JobName(lrr)))

@@ -147,7 +147,9 @@ After a restore, you can give the release control of the version again. Set the 
 
 ## Storage
 
-The brokers keep their data on one PersistentVolumeClaim per pod. `spec.zeebe.storageClassName` is fixed at creation. When `spec.zeebe.storageSize` grows, the operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. The operator never shrinks a volume. A smaller size from a preset is ignored, and the cluster records the Warning event `StorageShrinkIgnored`.
+The brokers keep their data on one PersistentVolumeClaim per pod. When `spec.zeebe.storageSize` grows, the operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. The operator never shrinks a volume. A smaller size from a preset is ignored, and the cluster records the Warning event `StorageShrinkIgnored`.
+
+The storage class of the broker volumes cannot change after the operator created the broker StatefulSet `<name>-zeebe`. The API server rejects a change of `spec.zeebe.storageClassName` after you set it. A new class can still come from the preset, or from a class that you add to a cluster that inherited one. The operator then keeps the class of the StatefulSet, also while the cluster is suspended. It records the Warning event `StorageClassChangeIgnored` one time for each requested class, also when the preset removes its class. A cluster without a broker StatefulSet takes the new class. Volumes that `whenDeleted: Retain` kept from a deleted cluster of the same name keep their class.
 
 `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` decides what happens to the volumes when you delete the cluster. `Delete` (the default) removes them. `Retain` keeps them for a later cluster with the same name. A scale-down and a suspension always keep them.
 
@@ -224,7 +226,7 @@ kubectl get pods -A -l camunda.io/storage-claim=camunda-storage-8bd62d6c1f48cf98
 
 A restore into another cluster holds the backend while it runs. The next cluster on the backend waits with `WaitingForHandover`, and the message names the restore, for example `LogicalRestoreElasticsearch my-cluster-ns/my-other-cluster-restore`.
 
-The hold lasts until the restore reaches `Completed` or `Failed`, even when the restore stops making progress. It also lasts when you delete the target of the restore, or point it at another backend. A `LogicalRestoreRDBMS` or a `PointInTimeRestore` holds the database by its `DatabaseServerConfig` and database name. The hold stays when that contract moves to another host or port. A restore into this cluster itself is no reason to wait. To free the backend from a restore that does not move, delete the restore. A deleted restore keeps the backend until its work stops. Each restore page says when its work stops:
+The hold lasts until the restore reaches `Completed` or `Failed`, even when the restore stops making progress. It also lasts when you delete the target of the restore, or point it at another backend. A `LogicalRestoreRDBMS` or a `PointInTimeRestore` holds the database by its `DatabaseServerConfig` and database name. The hold stays when that contract moves to another host or port. A `LogicalRestoreElasticsearch` holds Elasticsearch by the `SecondaryStorageConfig` of its target. That hold stays when you move the endpoint of that `SecondaryStorageConfig`. A restore into this cluster itself is no reason to wait. To free the backend from a restore that does not move, delete the restore. A deleted restore keeps the backend until its work stops. Each restore page says when its work stops:
 
 - [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md#the-backend), and [After a failure or a delete](logicalrestoreelasticsearch.md#after-a-failure-or-a-delete).
 - [LogicalRestoreRDBMS](logicalrestorerdbms.md#the-backend).
@@ -474,8 +476,10 @@ Deleting the cluster removes every resource that the operator created for it, an
 | `AdminSecretReady` | `Rejected` | A change of the `admin` user is not applied yet, because the cluster refused the call itself. | Read the message, which names the reason. |
 | `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a Secret that the [CamundaPlatformConfig](camundaplatformconfig.md) names is applied, or no such Secret exists. | Nothing. |
 | `Ready` | `Healthy` | Every process that the cluster needs is healthy. | Nothing. |
-| `Ready` | `Creating` / `Updating` / `Scaling` | A process rolls out or scales. The reason stays while a replica does not become ready. | Wait. If the reason stays, read the pods and events of the process that the message names. |
+| `Ready` | `Creating` / `Updating` / `Scaling` | A process rolls out or scales. The reason stays while a replica does not become ready, until the [grace period](../architecture.md#status-conventions) ends, 30 minutes by default. | Wait. If the reason stays, read the pods and events of the process that the message names. |
 | `Ready` | `Failing` | A process has replicas that do not become ready. | Read the pods of the named process. |
+| `Ready` | `Degraded` | A process is still not ready at the end of its grace period, but some of its replicas are ready. | Read the pods and events of the process that the message names. |
+| `Ready` | `Down` | A process is still not ready at the end of its grace period, and none of its replicas is ready. | Read the pods and events of the process that the message names. |
 | `Ready` | `Suspended` / `SuspensionHeld` / `StorageAlreadyAttached` / `WaitingForHandover` | Every workload is at zero. Only `Suspended` has `Ready: True`. | See [Why the cluster is at zero replicas](#why-the-cluster-is-at-zero-replicas). |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, or the merged spec is invalid. Other causes are an absent ServiceAccount with `create: false`, two conflicting buckets, a shared Azure container, or a missing snapshot repository. A running cluster keeps its workloads. | Read the message. Create the missing resource or correct the named field. |
 | `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. A running cluster keeps its workloads. | Create the Secret with the named key. |
@@ -548,11 +552,11 @@ spec:
       eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-cluster-role"
   # object. Optional. OIDC client of this cluster and its administrators. Overrides the platform config and the preset.
   auth:
-    # string. Optional. OIDC client ID of this cluster.
+    # string. Optional. OIDC client ID of this cluster. The audience and the secret then come from this block only, never from the preset or the platform config.
     clientId: "my-cluster-client"
     # string. Optional, default: the clientId. Audience that access tokens must carry.
     audience: "my-cluster-client"
-    # object. Optional. Secret key that holds the OIDC client secret of this cluster.
+    # object. Optional, required when clientId is set. Secret key that holds the OIDC client secret of this cluster.
     clientSecretRef:
       # string. Required. Name of the Secret.
       name: "my-cluster-oidc-secret"
@@ -591,7 +595,7 @@ spec:
     # object. Optional. CPU and memory of the broker container.
     resources:
       requests: { cpu: "1", memory: "2Gi" }
-    # string. Optional, default: the default StorageClass. StorageClass of the broker volumes. Immutable.
+    # string. Optional, default: the default StorageClass. StorageClass of the broker volumes. Immutable once set.
     storageClassName: "ssd"
     # quantity. Optional, default: 10Gi. Size of the data volume of each broker. Can only grow.
     storageSize: "32Gi"
@@ -743,7 +747,8 @@ The API server enforces these rules at admission:
 - `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` is `Delete` or `Retain`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both.
 - `spec.auth.basic.adminEmail` is empty or an address with a dot in its domain.
-- `spec.backup.dump.extraEnvFrom` holds at most 8 sources. `spec.backup.dump.scratchVolume.storageClassName` requires `sizeLimit`.
+- `spec.auth.clientId` requires `spec.auth.clientSecretRef`.
+- `spec.backup.dump.scratchVolume.storageClassName` requires `sizeLimit`.
 - `spec.backup.primaryStorage.checkpointInterval` and `retention.window` are ISO 8601 durations of days and time. Weeks, months, and years are rejected.
 
 The operator checks these rules on the merged spec after the preset and the release are applied. When one fails, it reports `Ready: InvalidReference` with a message that starts with `invalid effective spec:`.
@@ -752,6 +757,7 @@ The operator checks these rules on the merged spec after the preset and the rele
 - The effective `replicationFactor` does not exceed the effective `replicas`, and the effective `partitions` is at least 1.
 - `connectors.version` is present when connectors are enabled.
 - `backup.primaryStorage.continuous` is not true with a `schedule` of `none`.
+- An `extraEnv` entry under `CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_` reads as `<role>_<type>_<n>` or `<role>_<type>`, with `USERS`, `CLIENTS`, `GROUPS`, `ROLES`, or `MAPPINGRULES` as the type. `MAPPING_RULES` and `MAPPING-RULES` also work. Camunda stops the identity initialization on any other form. The brokers alone run the identity initialization. So the rule covers the top level, `zeebe`, and each block that runs embedded on the brokers. [Authentication](../guides/authentication.md) shows the form that works.
 
 A separate rule refuses an effective version below the one that the brokers run, with reason `VersionDowngradeRefused`. [A lower version is refused](#a-lower-version-is-refused) states it.
 

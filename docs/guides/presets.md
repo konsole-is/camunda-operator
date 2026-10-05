@@ -34,7 +34,7 @@ graph LR
 | `CamundaRelease` | Every version of the platform, pinned images, the environment a version needs | The platform team | Once per rollout, for example `camunda-8-9-4` |
 | `CamundaCluster` | The references, the URL, the storage, and any override | The team that owns the cluster | Once per cluster |
 
-The platform config does not merge. Every cluster that references it gets the same values. The other three merge field by field: the preset first, then the release, then the cluster. The [merge rules](../crds/camundaclusterpreset.md#merge-rules) describe each field.
+The platform config does not merge. Every cluster that references it gets the same values. The other three merge in order: the preset first, then the release, then the cluster. The [merge rules](../crds/camundaclusterpreset.md#merge-rules) describe how each field merges.
 
 ## A cluster in a few lines
 
@@ -161,7 +161,7 @@ Three ready-to-apply presets are in [`config/example/presets`](https://github.co
 
 ## Override one field
 
-A cluster overrides a field of the preset by setting it. The other fields of the preset stay. A cluster that needs more brokers than `medium` gives, and nothing else:
+A cluster overrides a field of the preset by setting it. The other fields of the preset stay, except where the [merge rules](../crds/camundaclusterpreset.md#merge-rules) say otherwise, for example for `auth.clientId`. A cluster that needs more brokers than `medium` gives, and nothing else:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -183,7 +183,7 @@ Most fields merge like this, value by value. A few blocks replace as a whole: `s
 
 ## Change a fleet
 
-When you edit a preset, every cluster that references it takes the new baseline and rolls its pods. A change under `auth.basic` rolls no pods. A larger `storageSize` grows the volumes of every cluster in place. A lower `storageSize` is ignored for a cluster that applied a larger size. That cluster keeps its volumes and records the event `StorageShrinkIgnored`.
+When you edit a preset, every cluster that references it takes the new baseline and rolls its pods. A change under `auth.basic` rolls no pods. A larger `storageSize` grows the volumes of every cluster in place. A lower `storageSize` is ignored for a cluster that applied a larger size. That cluster keeps its volumes and records the event `StorageShrinkIgnored`. A new `storageClassName` reaches only the clusters that do not have a broker StatefulSet yet. A cluster that inherits the class and has a broker StatefulSet, also a suspended one, keeps its class and records the event `StorageClassChangeIgnored`. Volumes that `whenDeleted: Retain` kept from a deleted cluster of the same name keep their class.
 
 You can roll versions in two ways. Name the release for the way you pick:
 

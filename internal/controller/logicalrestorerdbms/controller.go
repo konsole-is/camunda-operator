@@ -243,14 +243,20 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			return ctrl.Result{}, err
 		}
 		finished, err := restore.Finish(
-			ctx, r.Client, r.APIReader, &lrr, &lrr.Status.RestoreProgress, lrr.Spec.TargetClusterRef.Name,
+			ctx,
+			r.Client,
+			r.APIReader,
+			&lrr,
+			labels.LogicalRestoreRDBMS(lrr.Name),
+			&lrr.Status.RestoreProgress,
+			lrr.Spec.TargetClusterRef.Name,
 		)
 
 		return ctrl.Result{RequeueAfter: finished.Wait}, err
 	}
 
 	if lrr.Status.Backend != "" {
-		err := restore.RegisterDatabaseWriter(
+		err := restore.RegisterWriter(
 			ctx,
 			r.Client,
 			r.APIReader,

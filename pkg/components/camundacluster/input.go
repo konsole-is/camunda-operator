@@ -17,7 +17,9 @@ limitations under the License.
 package camundacluster
 
 import (
-	"k8s.io/apimachinery/pkg/api/resource"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -34,6 +36,8 @@ type Storage struct {
 	// endpoint resolves there, so the claim key qualifies it with this
 	// namespace, see StorageClaimKey.
 	Namespace string
+	// Name is the name of the SecondaryStorageConfig. See StorageContract.
+	Name string
 	// Elasticsearch is set when Type is elasticsearch.
 	Elasticsearch *v1.ElasticsearchStorage
 	// RDBMS is set when Type is rdbms.
@@ -125,11 +129,12 @@ type Input struct {
 	// controller. The annotations of spec.serviceAccount merge over them, so
 	// an explicit user value on the same key wins.
 	ServiceAccountAnnotations map[string]string
-	// VolumeClaimSize is the storage request of the broker volume claim
-	// template. A StatefulSet cannot change its claim template, so the
-	// controller sets it to the size of the applied template. When nil, the
-	// template requests the effective storage size.
-	VolumeClaimSize *resource.Quantity
+	// AppliedVolumeClaim is the data claim template of the applied broker
+	// StatefulSet, or nil before the first apply. A StatefulSet cannot change
+	// its claim template, so the rendered template keeps the size and the
+	// storage class of this one. When nil, the template takes the effective
+	// storage size and class.
+	AppliedVolumeClaim *corev1.PersistentVolumeClaimSpec
 	// HashInputs are the data digests of the referenced Secrets and the
 	// generations of the referenced custom resources, as
 	// "kind/namespace/name=value" strings. ConfigHash sorts them, so the order
@@ -149,6 +154,9 @@ type Input struct {
 	// ServiceMonitorSupported reports whether the Kubernetes cluster serves
 	// the ServiceMonitor kind. When false, no ServiceMonitor is rendered.
 	ServiceMonitorSupported bool
+	// GracePeriod is how long a process may take to become ready before
+	// its condition reports Degraded or Down. Zero keeps the progress reason.
+	GracePeriod time.Duration
 }
 
 // EffectiveAuth is the authentication source after the layering of the
@@ -157,10 +165,11 @@ type EffectiveAuth struct {
 	// Method is basic or oidc.
 	Method v1.AuthenticationMethod
 	// OIDC is set when Method is oidc. The issuer and endpoint fields come
-	// from the platform config. The client id, the audience, and the client
-	// secret reference come from the cluster auth (already merged with the
-	// preset auth) when set, otherwise from the platform config. The
-	// audience defaults to the client id.
+	// from the platform config. When the effective cluster auth sets a client
+	// id, the client id, the audience, and the client secret reference come
+	// from it only. Otherwise each of the three comes from the effective
+	// cluster auth when set, else from the platform config. The audience
+	// defaults to the client id.
 	OIDC *v1.OIDCSpec
 	// Admin holds the members of the admin role. It comes from the effective
 	// cluster auth and is set only when Method is oidc, because basic
@@ -185,7 +194,8 @@ func ResolveAdminEmail(auth EffectiveAuth) string {
 // ResolveAuth layers the authentication settings: the platform config gives
 // the method and the identity provider connection, the effective cluster
 // auth (preset then cluster) overrides the client id, the audience, and the
-// client secret reference, and provides the members of the admin role.
+// client secret reference as EffectiveAuth.OIDC states, and provides the
+// members of the admin role.
 // Under basic authentication the effective cluster auth provides the basic
 // block instead. The platform spec is not mutated.
 func ResolveAuth(in Input) EffectiveAuth {
@@ -203,9 +213,10 @@ func ResolveAuth(in Input) EffectiveAuth {
 	oidc := in.Platform.Auth.OIDC.DeepCopy()
 	if override := in.Effective.Auth; override != nil {
 		if override.ClientID != "" {
+			// The platform audience and secret belong to the platform client.
 			oidc.ClientID = override.ClientID
-			// The platform audience belongs to the platform client id.
 			oidc.Audience = ""
+			oidc.ClientSecretRef = v1.SecretKeyRef{}
 		}
 		if override.Audience != "" {
 			oidc.Audience = override.Audience

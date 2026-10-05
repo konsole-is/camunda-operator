@@ -35,12 +35,13 @@ The cluster starts from `spec.cluster` of the preset. The [CamundaRelease](camun
 
 | Field | Merge behavior |
 | --- | --- |
-| `auth.clientId`, `auth.audience`, `auth.clientSecretRef`, per-component `mode`, `replicas`, `zeebe.partitions`, `zeebe.replicationFactor`, `zeebe.storageClassName`, `zeebe.storageSize`, `zeebe.persistentVolumeClaimRetentionPolicy`, `indexReplicas`, `connectors.enabled` | The cluster value replaces the preset value. An unset cluster field inherits the preset value. |
+| per-component `mode`, `replicas`, `zeebe.partitions`, `zeebe.replicationFactor`, `zeebe.storageClassName`, `zeebe.storageSize`, `zeebe.persistentVolumeClaimRetentionPolicy`, `indexReplicas`, `connectors.enabled` | The cluster value replaces the preset value. An unset cluster field inherits the preset value. |
 | `resources` | Merged per request and limit entry. A cluster entry replaces the matching preset entry. Unset entries inherit. |
 | `extraEnv` | Merged by variable name. Preset entries come first, then release entries, then cluster entries. A later layer replaces an entry with the same name. See [Environment and JVM](camundacluster.md#environment-and-jvm) for the order inside a cluster. |
 | `extraEnvFrom` | Concatenated: preset entries first, then release entries, then cluster entries. |
 | `podLabels`, `podAnnotations` | Merged by key. The cluster wins on a conflict. |
 | `scheduling` (top-level, per component, and `backup.dump.scheduling`) | Never merged. A block set on the cluster replaces the preset block at that level entirely. |
+| `auth.clientId`, `auth.audience`, `auth.clientSecretRef` | A cluster that sets `clientId` replaces the whole client. Its audience and its secret come from the cluster only, and the audience defaults to its client id. A cluster without `clientId` keeps the client id of the preset. Its `audience` and `clientSecretRef` each replace the preset value. When the preset sets `clientId` and neither layer sets `audience`, the audience is that client id. |
 | `auth.admin` | Never merged. A block set on the cluster replaces the whole preset block, so one manifest names every administrator. |
 | `auth.basic` | Never merged. A block set on the cluster replaces the whole preset block. A `passwordRotation` on the preset rotates the admin password of every cluster that inherits it, and each cluster reports its own `status.adminPassword.rotation`. |
 | `backup.primaryStorage` | Merged per field. A cluster can change the schedule and keep the retention of the preset. `continuous` is a pointer, so a cluster can set it to `false` while the preset sets it to `true`. |
@@ -53,6 +54,8 @@ The cluster starts from `spec.cluster` of the preset. The [CamundaRelease](camun
 When you edit a preset, every cluster that references it takes the new baseline and rolls its pods. A change under `auth.basic` is the exception: it rolls no pods. A `passwordRotation` there rotates the admin password of each cluster, see [Authentication](camundacluster.md#authentication).
 
 A preset can lower `zeebe.storageSize`. A cluster that already applied a larger size keeps its volumes and records the Warning event `StorageShrinkIgnored`. A larger size grows the volumes of every cluster in place, if the storage class allows volume expansion. See [Operations: Grow storage](../guides/operations.md#grow-storage).
+
+A change of `zeebe.storageClassName` reaches only the clusters that do not have a broker StatefulSet yet. A cluster that inherits the class and has a broker StatefulSet, also a suspended one, keeps its class and records the Warning event `StorageClassChangeIgnored`. Volumes that `whenDeleted: Retain` kept from a deleted cluster of the same name keep their class.
 
 ## Deletion
 
@@ -82,11 +85,11 @@ spec:
   cluster:
     # object. Optional. OIDC client credential defaults and administrators of referencing clusters. Sits between the platform config and the cluster.
     auth:
-      # string. Optional. Default OIDC client ID.
+      # string. Optional. Default OIDC client ID. Requires clientSecretRef.
       clientId: "medium-clusters"
       # string. Optional, default: the clientId. Audience that access tokens must carry.
       audience: "medium-clusters"
-      # object. Optional. Secret key that holds the default client secret. Each cluster reads the Secret in its own namespace.
+      # object. Optional, required when clientId is set. Secret key that holds the default client secret. Each cluster reads the Secret in its own namespace.
       clientSecretRef:
         name: "medium-clusters-oidc-secret"
         key: "client-secret"
@@ -177,7 +180,7 @@ spec:
 - `spec.cluster` is required.
 - The instance-bound fields are rejected in `spec.cluster`: `platformConfigRef`, `presetRef`, `releaseRef`, `externalUrl`, `serviceAccount`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, and `pause`. An explicit zero value, for example `suspend: false` or an empty `presetRef`, counts as unset.
 - `version` and `connectors.version` are rejected in `spec.cluster`. They belong to a [CamundaRelease](camundarelease.md) or to the cluster.
-- The fields of `spec.cluster` obey the same schema rules as on a `CamundaCluster`. `whenDeleted` is `Delete` or `Retain`, and the backup durations are ISO 8601 days and time.
+- The fields of `spec.cluster` obey the same schema rules as on a `CamundaCluster`. `whenDeleted` is `Delete` or `Retain`, and the backup durations are ISO 8601 days and time. `auth.clientId` requires `auth.clientSecretRef`.
 - The transition rules of a `CamundaCluster` do not bind a preset: a preset can lower `zeebe.storageSize`. A referencing cluster keeps its applied volumes.
 - The API server checks a preset alone. The referencing cluster checks the merged spec, see [Validation rules](camundacluster.md#validation-rules).
 

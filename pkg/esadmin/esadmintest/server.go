@@ -16,12 +16,14 @@ limitations under the License.
 
 // Package esadmintest fakes the Elasticsearch administration APIs that
 // pkg/esadmin calls: snapshot repositories, snapshots, snapshot restores,
-// index resolution and deletion, index recovery, the shard routing table,
-// secure-settings reload, and node filesystem statistics.
+// index resolution and deletion, index recovery, shard health, shard
+// allocation explanations, secure-settings reload, and node filesystem
+// statistics.
 package esadmintest
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/url"
 	"path"
@@ -33,17 +35,39 @@ import (
 )
 
 // resolveWildcards is the expand_wildcards that a resolution must carry. The
-// get-index API expands to open indices alone by default, while the delete
+// resolve API expands to open indices alone by default, while the delete
 // expands to open and closed ones, so a resolution that takes the default
 // leaves every closed index behind for the restore to collide with.
 const resolveWildcards = "open,closed"
 
-// routingFilter is the filter_path that a routing table read must carry.
-var routingFilter = []string{
-	"routing_table.indices.*.shards.*.state",
-	"routing_table.indices.*.shards.*.primary",
-	"routing_table.indices.*.shards.*.unassigned_info.reason",
-	"routing_table.indices.*.shards.*.unassigned_info.allocation_status",
+// The filter_path fields that a read must name. An unfiltered answer grows
+// with the size of the cluster and can pass the 1 MiB that the client reads.
+var (
+	resolveFilter  = []string{"indices.name", "aliases.indices"}
+	recoveryFilter = []string{"*.shards.stage"}
+	healthFilter   = []string{
+		"indices.*.shards.*.initializing_shards",
+		"indices.*.shards.*.unassigned_primary_shards",
+	}
+	explainFilter = []string{
+		"current_state",
+		"unassigned_info.reason",
+		"unassigned_info.last_allocation_status",
+	}
+	snapshotFilter = []string{"snapshots.state", "snapshots.metadata"}
+	statsFilter    = []string{"nodes.*.fs.total.total_in_bytes", "nodes.*.fs.total.available_in_bytes"}
+)
+
+// explainStatuses maps an allocation status of the routing table to the
+// last_allocation_status that the allocation explain API reports for it, as
+// AllocationDecision.fromAllocationStatus of Elasticsearch does.
+var explainStatuses = map[string]string{
+	"deciders_no":         "no",
+	"deciders_throttled":  "throttled",
+	"fetching_shard_data": "awaiting_info",
+	"delayed_allocation":  "allocation_delayed",
+	"no_valid_shard_copy": "no_valid_shard_copy",
+	"no_attempt":          "no_attempt",
 }
 
 // The path segments that name an API of the fake.
@@ -87,13 +111,17 @@ type Snapshot struct {
 
 // Shard is the fake's routing entry of one shard copy.
 type Shard struct {
+	// Number is the shard number that the copy belongs to.
+	Number int
 	// Primary is true for the primary copy and false for a replica.
 	Primary bool
 	// State in the Elasticsearch vocabulary, for example INITIALIZING.
 	State string
 	// UnassignedReason of an UNASSIGNED copy, for example NEW_INDEX_RESTORED.
 	UnassignedReason string
-	// AllocationStatus of an UNASSIGNED copy, for example deciders_no.
+	// AllocationStatus of an UNASSIGNED copy, as the routing table names it,
+	// for example deciders_no. The allocation explain API reports it in its
+	// own words, for example no.
 	AllocationStatus string
 }
 
@@ -120,19 +148,23 @@ type RestoreRequest struct {
 // The operations that the inherited FailNext and DropNext name are
 // "repository", "snapshotCreate", "snapshotStatus", "snapshotDelete",
 // "repositoryGet", "snapshotRestore", "indexResolve", "indexDelete",
-// "recovery", "shards", "reload", and
-// "stats". A failing operation answers 500; a dropped one closes the
+// "recovery", "shards", "explain", "reload", and "stats". "shards" is the
+// shard health read. A failing operation answers 500; a dropped one closes the
 // connection.
 //
-// SetIndices seeds the indices that the fake holds. A resolution and a delete
-// both match their target against that set with the multi-target syntax of
-// Elasticsearch, and a delete removes what it matched.
+// SetIndices seeds the indices that the fake holds. A resolution, a delete,
+// a recovery, and a shard health read match their target against that set
+// with the multi-target syntax of Elasticsearch, and a delete removes what it
+// matched.
 //
 // The fake pins the shape of both index requests: it accepts one only when it
 // tolerates a target that matches nothing, and it accepts a resolution only
 // when the request expands its wildcards to open and closed indices. It
-// accepts a routing table read only when its filter_path names the fields in
-// routingFilter.
+// accepts a shard health read only with a timeout of 0s, and it answers 408
+// when a part of the target matches no index, as Elasticsearch does. It
+// accepts a read of a resolution, a recovery, a shard health, an allocation
+// explanation, a snapshot status, or the node statistics only when its
+// filter_path names the fields that the client reads.
 type Server struct {
 	adminhttptest.Fake
 
@@ -150,6 +182,9 @@ type Server struct {
 	// indices is the set of indices that the fake holds.
 	indices map[string]struct{}
 
+	// aliases maps an alias name to the indices that it points to.
+	aliases map[string][]string
+
 	deletedIndices   []string
 	indexDeletePaths []string
 	indexDeleteCalls int
@@ -158,7 +193,7 @@ type Server struct {
 	// queried index.
 	recoveryActive bool
 
-	// shards drives the routing table of a seeded index, keyed by index name.
+	// shards drives the shard copies of a seeded index, keyed by index name.
 	shards map[string][]Shard
 
 	// nodeFS drives _nodes/stats/fs, keyed by node name.
@@ -197,6 +232,7 @@ func newServer() *Server {
 		snapshots:       map[string]*Snapshot{},
 		snapshotCreates: map[string]int{},
 		indices:         map[string]struct{}{},
+		aliases:         map[string][]string{},
 		shards:          map[string][]Shard{},
 		nodeFS:          map[string]nodeFS{"node-0": {total: 100 << 30, used: 10 << 30}},
 	}
@@ -290,6 +326,14 @@ func (s *Server) SetIndices(names ...string) {
 	}
 }
 
+// SetAlias points the alias name at indices. A resolution whose target
+// matches the alias reports it with those indices.
+func (s *Server) SetAlias(name string, indices ...string) {
+	s.Lock()
+	defer s.Unlock()
+	s.aliases[name] = slices.Clone(indices)
+}
+
 // Indices returns the indices that the fake holds, sorted. A test reads it
 // after a delete to see what survived.
 func (s *Server) Indices() []string {
@@ -339,8 +383,9 @@ func (s *Server) SetRecoveryActive(active bool) {
 	s.recoveryActive = active
 }
 
-// SetShards sets the routing table entry of the seeded index name. A seeded
-// index without one reports a single STARTED primary.
+// SetShards sets the shard copies of the seeded index name. The shard health
+// read and the allocation explanation both answer from them. A seeded index
+// without any reports a single STARTED primary.
 func (s *Server) SetShards(index string, shards ...Shard) {
 	s.Lock()
 	defer s.Unlock()
@@ -398,30 +443,13 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"nodes": map[string]any{}})
 
 	case r.Method == http.MethodGet && route == "_nodes/stats/fs":
-		s.statsCalls++
-		if s.Dropping(w, "stats") {
-			return
-		}
-		if s.Failing("stats") {
-			errorBody(w, http.StatusInternalServerError, "injected stats failure")
-			return
-		}
-		nodes := map[string]any{}
-		for name, fs := range s.nodeFS {
-			nodes[name] = map[string]any{
-				"fs": map[string]any{
-					"total": map[string]any{
-						"total_in_bytes":     fs.total,
-						"available_in_bytes": fs.total - fs.used,
-					},
-				},
-			}
-		}
-		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"nodes": nodes})
+		s.handleStats(w, r)
 
-	case len(parts) == 4 && parts[0] == "_cluster" && parts[1] == "state" && parts[2] == "routing_table" &&
-		r.Method == http.MethodGet:
-		s.handleRoutingTable(w, r, parts[3])
+	case len(parts) == 3 && parts[0] == "_resolve" && parts[1] == "index" && r.Method == http.MethodGet:
+		s.handleIndexResolve(w, r, parts[2])
+
+	case len(parts) == 3 && parts[0] == "_cluster":
+		s.handleCluster(w, r, parts)
 
 	case len(parts) == 2 && parts[0] == snapshotPath:
 		s.handleRepository(w, r, parts[1])
@@ -433,13 +461,122 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.handleRestore(w, r, parts)
 
 	case len(parts) == 2 && parts[1] == recoveryPath && r.Method == http.MethodGet:
-		s.handleRecovery(w, parts[0])
+		s.handleRecovery(w, r, parts[0])
 
-	case len(parts) == 1 && parts[0] != "":
-		s.handleIndex(w, r, parts[0])
+	case len(parts) == 1 && parts[0] != "" && r.Method == http.MethodDelete:
+		s.handleIndexDelete(w, r, parts[0])
 
 	default:
 		errorBody(w, http.StatusNotFound, "unknown path "+r.URL.Path)
+	}
+}
+
+// handleStats serves GET /_nodes/stats/fs with the filesystem of each node.
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	s.statsCalls++
+	if s.Dropping(w, "stats") {
+		return
+	}
+	if s.Failing("stats") {
+		errorBody(w, http.StatusInternalServerError, "injected stats failure")
+		return
+	}
+	if !filtered(w, r.URL.Query(), statsFilter) {
+		return
+	}
+
+	nodes := map[string]any{}
+	for name, fs := range s.nodeFS {
+		nodes[name] = map[string]any{
+			"fs": map[string]any{
+				"total": map[string]any{
+					"total_in_bytes":     fs.total,
+					"available_in_bytes": fs.total - fs.used,
+				},
+			},
+		}
+	}
+	writeFiltered(w, http.StatusOK, r.URL.Query(), map[string]any{"nodes": nodes})
+}
+
+// filtered reports whether the filter_path of query names every field of
+// want. When it does not, it answers the request with a 400.
+func filtered(w http.ResponseWriter, query url.Values, want []string) bool {
+	fields := strings.Split(query.Get("filter_path"), ",")
+	for _, field := range want {
+		if !slices.Contains(fields, field) {
+			errorBodyTyped(
+				w, http.StatusBadRequest, "illegal_argument_exception",
+				"filter_path must name "+field+", or the answer can pass the size limit of the client",
+			)
+			return false
+		}
+	}
+
+	return true
+}
+
+// writeFiltered answers status with body, pruned to the filter_path of query the
+// way Elasticsearch prunes it. A client that decodes a field that its filter
+// does not name reads nothing, as it would from a real server.
+func writeFiltered(w http.ResponseWriter, status int, query url.Values, body any) {
+	// A round trip through JSON gives the body the shape that prune reads.
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		errorBody(w, http.StatusInternalServerError, "encoding answer: "+err.Error())
+		return
+	}
+	var decoded any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		errorBody(w, http.StatusInternalServerError, "decoding answer: "+err.Error())
+		return
+	}
+
+	var paths [][]string
+	for filter := range strings.SplitSeq(query.Get("filter_path"), ",") {
+		paths = append(paths, strings.Split(filter, "."))
+	}
+	kept, ok := prune(decoded, paths)
+	if !ok {
+		kept = map[string]any{}
+	}
+	adminhttptest.WriteJSON(w, status, kept)
+}
+
+// prune keeps the parts of value that paths reach, as filter_path does, and
+// reports false when it keeps nothing.
+func prune(value any, paths [][]string) (any, bool) {
+	for _, segments := range paths {
+		if len(segments) == 0 {
+			return value, true
+		}
+	}
+
+	switch value := value.(type) {
+	case map[string]any:
+		kept := map[string]any{}
+		for key, child := range value {
+			var rest [][]string
+			for _, segments := range paths {
+				if ok, _ := path.Match(segments[0], key); ok {
+					rest = append(rest, segments[1:])
+				}
+			}
+			if pruned, ok := prune(child, rest); len(rest) > 0 && ok {
+				kept[key] = pruned
+			}
+		}
+		return kept, len(kept) > 0
+	case []any:
+		kept := []any{}
+		for _, element := range value {
+			if pruned, ok := prune(element, paths); ok {
+				kept = append(kept, pruned)
+			}
+		}
+		return kept, len(kept) > 0
+	default:
+		return nil, false
 	}
 }
 
@@ -548,6 +685,9 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 			errorBody(w, http.StatusInternalServerError, "injected snapshot status failure")
 			return
 		}
+		if !filtered(w, r.URL.Query(), snapshotFilter) {
+			return
+		}
 		if _, ok := s.repos[parts[1]]; !ok {
 			errorBodyTyped(
 				w, http.StatusNotFound,
@@ -567,7 +707,7 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 		if len(snapshot.Metadata) > 0 {
 			info["metadata"] = snapshot.Metadata
 		}
-		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"snapshots": []map[string]any{info}})
+		writeFiltered(w, http.StatusOK, r.URL.Query(), map[string]any{"snapshots": []map[string]any{info}})
 
 	case http.MethodDelete:
 		if s.Dropping(w, "snapshotDelete") {
@@ -649,12 +789,15 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request, parts []s
 // handleRecovery serves GET /<target>/_recovery. It answers one shard entry
 // per named target, with the source of the last accepted restore, so a client
 // reads the shape that a restored index has.
-func (s *Server) handleRecovery(w http.ResponseWriter, target string) {
+func (s *Server) handleRecovery(w http.ResponseWriter, r *http.Request, target string) {
 	if s.Dropping(w, "recovery") {
 		return
 	}
 	if s.Failing("recovery") {
 		errorBody(w, http.StatusInternalServerError, "injected recovery failure")
+		return
+	}
+	if !filtered(w, r.URL.Query(), recoveryFilter) {
 		return
 	}
 
@@ -682,12 +825,26 @@ func (s *Server) handleRecovery(w http.ResponseWriter, target string) {
 			},
 		}}}
 	}
-	adminhttptest.WriteJSON(w, http.StatusOK, indices)
+	writeFiltered(w, http.StatusOK, r.URL.Query(), indices)
 }
 
-// handleRoutingTable serves GET /_cluster/state/routing_table/<target>. It
-// answers the routing table of the seeded indices that the target matches.
-func (s *Server) handleRoutingTable(w http.ResponseWriter, r *http.Request, target string) {
+// handleCluster routes the cluster reads: the shard health and the
+// allocation explanation.
+func (s *Server) handleCluster(w http.ResponseWriter, r *http.Request, parts []string) {
+	switch {
+	case parts[1] == "health" && r.Method == http.MethodGet:
+		s.handleHealth(w, r, parts[2])
+	case parts[1] == "allocation" && parts[2] == "explain" &&
+		(r.Method == http.MethodPost || r.Method == http.MethodGet):
+		s.handleExplain(w, r)
+	default:
+		errorBody(w, http.StatusNotFound, "unknown path "+r.URL.Path)
+	}
+}
+
+// handleHealth serves GET /_cluster/health/<target>?level=shards. It answers
+// the shard health of the seeded indices that the target matches.
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request, target string) {
 	if s.Dropping(w, "shards") {
 		return
 	}
@@ -696,70 +853,145 @@ func (s *Server) handleRoutingTable(w http.ResponseWriter, r *http.Request, targ
 		return
 	}
 	query := r.URL.Query()
-	if !tolerates(query) {
+	if query.Get("level") != "shards" || query.Get("timeout") != "0s" {
 		errorBodyTyped(
-			w, http.StatusNotFound,
-			"index_not_found_exception", "no such index ["+target+"]",
+			w, http.StatusBadRequest, "illegal_argument_exception",
+			"a shard health read must carry level=shards and timeout=0s, "+
+				"or Elasticsearch waits for a missing index until the timeout",
 		)
 		return
 	}
-	filters := strings.Split(query.Get("filter_path"), ",")
-	for _, field := range routingFilter {
-		if !slices.Contains(filters, field) {
-			errorBodyTyped(
-				w, http.StatusBadRequest, "illegal_argument_exception",
-				"filter_path must name "+field+", or the routing table can pass the size limit of the client",
-			)
-			return
-		}
+	if !filtered(w, query, healthFilter) {
+		return
 	}
 
 	indices := map[string]any{}
 	for _, name := range s.matching(target) {
-		shards, ok := s.shards[name]
-		if !ok {
-			shards = []Shard{{Primary: true, State: "STARTED"}}
-		}
-
-		copies := make([]map[string]any, 0, len(shards))
-		for _, shard := range shards {
-			entry := map[string]any{
-				"state":   shard.State,
-				"primary": shard.Primary,
-				"shard":   0,
-				"index":   name,
+		health := map[string]map[string]any{}
+		for _, shard := range s.shardsOf(name) {
+			number := strconv.Itoa(shard.Number)
+			entry, ok := health[number]
+			if !ok {
+				entry = map[string]any{
+					"status":                    "green",
+					"primary_active":            false,
+					"active_shards":             0,
+					"initializing_shards":       0,
+					"unassigned_shards":         0,
+					"unassigned_primary_shards": 0,
+				}
+				health[number] = entry
 			}
-			if shard.UnassignedReason != "" {
-				entry["unassigned_info"] = map[string]any{
-					"reason":            shard.UnassignedReason,
-					"allocation_status": shard.AllocationStatus,
+			switch shard.State {
+			case "INITIALIZING":
+				entry["initializing_shards"] = entry["initializing_shards"].(int) + 1
+			case "UNASSIGNED":
+				entry["unassigned_shards"] = entry["unassigned_shards"].(int) + 1
+				if shard.Primary {
+					entry["unassigned_primary_shards"] = 1
+				}
+			default:
+				entry["active_shards"] = entry["active_shards"].(int) + 1
+				if shard.Primary {
+					entry["primary_active"] = true
 				}
 			}
-			copies = append(copies, entry)
 		}
-		indices[name] = map[string]any{"shards": map[string]any{"0": copies}}
+		indices[name] = map[string]any{"status": "green", "shards": health}
 	}
-	adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{
-		"cluster_name":  "fake",
-		"routing_table": map[string]any{"indices": indices},
+
+	// Elasticsearch checks that every part of the target names an index. When
+	// one does not, a timeout of 0s answers 408 at once, with the health of
+	// the indices that do exist.
+	status := http.StatusOK
+	for pattern := range strings.SplitSeq(target, ",") {
+		if len(s.matching(pattern)) == 0 {
+			status = http.StatusRequestTimeout
+		}
+	}
+	writeFiltered(w, status, query, map[string]any{
+		"cluster_name": "fake",
+		"status":       "green",
+		"timed_out":    status == http.StatusRequestTimeout,
+		"indices":      indices,
 	})
 }
 
-// handleIndex routes the requests that name indices: the resolution and the
-// deletion.
-func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request, target string) {
-	switch r.Method {
-	case http.MethodGet:
-		s.handleIndexResolve(w, r, target)
-	case http.MethodDelete:
-		s.handleIndexDelete(w, r, target)
-	default:
-		errorBody(w, http.StatusMethodNotAllowed, "unsupported method "+r.Method)
+// handleExplain serves the allocation explain API for the primary that the
+// body names.
+func (s *Server) handleExplain(w http.ResponseWriter, r *http.Request) {
+	if s.Dropping(w, "explain") {
+		return
 	}
+	if s.Failing("explain") {
+		errorBody(w, http.StatusInternalServerError, "injected explain failure")
+		return
+	}
+	if !filtered(w, r.URL.Query(), explainFilter) {
+		return
+	}
+
+	var body struct {
+		Index   string `json:"index"`
+		Shard   *int   `json:"shard"`
+		Primary bool   `json:"primary"`
+	}
+	err := json.NewDecoder(r.Body).Decode(&body)
+	if err != nil || body.Index == "" || body.Shard == nil || !body.Primary {
+		errorBodyTyped(
+			w, http.StatusBadRequest, "illegal_argument_exception",
+			"the fake explains a primary named by index, shard, and primary true",
+		)
+		return
+	}
+	if _, ok := s.indices[body.Index]; !ok {
+		errorBodyTyped(w, http.StatusNotFound, "index_not_found_exception", "no such index ["+body.Index+"]")
+		return
+	}
+
+	for _, shard := range s.shardsOf(body.Index) {
+		if !shard.Primary || shard.Number != *body.Shard {
+			continue
+		}
+		answer := map[string]any{
+			"index":                body.Index,
+			"shard":                shard.Number,
+			"primary":              true,
+			"current_state":        strings.ToLower(shard.State),
+			"can_allocate":         "no",
+			"allocate_explanation": "the fake explains nothing",
+		}
+		if shard.UnassignedReason != "" {
+			status, ok := explainStatuses[shard.AllocationStatus]
+			if !ok {
+				status = shard.AllocationStatus
+			}
+			answer["unassigned_info"] = map[string]any{
+				"reason":                 shard.UnassignedReason,
+				"at":                     "2026-01-01T00:00:00.000Z",
+				"last_allocation_status": status,
+			}
+		}
+		writeFiltered(w, http.StatusOK, r.URL.Query(), answer)
+		return
+	}
+	errorBodyTyped(
+		w, http.StatusNotFound, "shard_not_found_exception",
+		"no shard "+strconv.Itoa(*body.Shard)+" of index ["+body.Index+"]",
+	)
 }
 
-// handleIndexResolve serves GET /<target>, the get-index API. It answers the
-// object of the seeded indices that the target matches, keyed by index name.
+// shardsOf returns the shard copies of the seeded index name.
+func (s *Server) shardsOf(name string) []Shard {
+	if shards, ok := s.shards[name]; ok {
+		return shards
+	}
+
+	return []Shard{{Primary: true, State: "STARTED"}}
+}
+
+// handleIndexResolve serves GET /_resolve/index/<target>. It answers the
+// seeded indices and aliases that the target matches.
 func (s *Server) handleIndexResolve(w http.ResponseWriter, r *http.Request, target string) {
 	if s.Dropping(w, "indexResolve") {
 		return
@@ -784,16 +1016,28 @@ func (s *Server) handleIndexResolve(w http.ResponseWriter, r *http.Request, targ
 		)
 		return
 	}
+	if !filtered(w, query, resolveFilter) {
+		return
+	}
 
-	response := map[string]any{}
+	indices := []map[string]any{}
 	for _, name := range s.matching(target) {
-		response[name] = map[string]any{
-			"aliases":  map[string]any{},
-			"mappings": map[string]any{},
-			"settings": map[string]any{"index": map[string]any{"provided_name": name}},
+		indices = append(indices, map[string]any{"name": name, "attributes": []string{"open"}})
+	}
+	aliases := []map[string]any{}
+	for _, name := range slices.Sorted(maps.Keys(s.aliases)) {
+		for pattern := range strings.SplitSeq(target, ",") {
+			if ok, err := path.Match(pattern, name); err == nil && ok {
+				aliases = append(aliases, map[string]any{"name": name, "indices": s.aliases[name]})
+				break
+			}
 		}
 	}
-	adminhttptest.WriteJSON(w, http.StatusOK, response)
+	writeFiltered(w, http.StatusOK, query, map[string]any{
+		"indices":      indices,
+		"aliases":      aliases,
+		"data_streams": []any{},
+	})
 }
 
 // handleIndexDelete serves DELETE /<target>. It removes every seeded index

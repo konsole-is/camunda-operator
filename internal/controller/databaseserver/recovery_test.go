@@ -17,6 +17,7 @@ limitations under the License.
 package databaseserver
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -30,10 +31,14 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -53,6 +58,33 @@ const recoveredSystemIdentifier = "7000000000000000002"
 // show what the operator does while one is on its way out. envtest runs no
 // CloudNativePG, so nothing else holds a deleted cluster.
 const testHoldFinalizer = "camunda.io/test-hold"
+
+// statusWriteTimeout bounds loseRecord and settleStatus. Each write waits
+// for the server to go quiet first, so one attempt takes a second or more.
+const statusWriteTimeout = 3 * timeout
+
+// quietServer measures how long the server has stayed at one
+// resourceVersion.
+//
+// Every change of the server starts a reconcile, and a write that lands while
+// that reconcile runs comes back as its older copy. The older copy is a change
+// too, so a write made at once after it lands in the next reconcile, and so on
+// for as long as the spec keeps writing. A write waits until the server has
+// not changed for longer than a reconcile takes.
+type quietServer struct {
+	version string
+	at      time.Time
+}
+
+// since returns how long server has been at its current resourceVersion, as
+// far as the earlier calls saw it.
+func (q *quietServer) since(server *v1.DatabaseServer) time.Duration {
+	if server.ResourceVersion != q.version {
+		q.version, q.at = server.ResourceVersion, time.Now()
+	}
+
+	return time.Since(q.at)
+}
 
 // archivingServer creates a server that archives to a bucket of its own,
 // brings its cluster up, and takes one base backup, so its archive is open and
@@ -239,17 +271,75 @@ func setBucketRole(bucket *v1.ObjectStorageConfig, roleARN string) {
 }
 
 // clusterRole reads the IAM role that the named CloudNativePG cluster gives
-// its instance pods, or the empty string when it gives them none.
+// its instance pods through their ServiceAccount, or the empty string when it
+// gives them none.
 func clusterRole(g Gomega, server *v1.DatabaseServer, name string) string {
 	var cluster cnpgv1.Cluster
 	g.Expect(k8sClient.Get(
 		ctx, client.ObjectKey{Namespace: server.Namespace, Name: name}, &cluster,
 	)).To(Succeed())
-	if cluster.Spec.ServiceAccountTemplate == nil {
-		return ""
-	}
 
-	return cluster.Spec.ServiceAccountTemplate.Metadata.Annotations[v1.IRSARoleARNAnnotation]
+	var account corev1.ServiceAccount
+	g.Expect(k8sClient.Get(
+		ctx, client.ObjectKey{Namespace: server.Namespace, Name: cluster.Spec.ServiceAccountName}, &account,
+	)).To(Succeed())
+
+	return account.Annotations[v1.IRSARoleARNAnnotation]
+}
+
+// grantArchivePlugin creates the Role that the Barman Cloud plugin creates for
+// the named cluster, controlled by that cluster. The plugin does not run in
+// this suite.
+func grantArchivePlugin(server *v1.DatabaseServer, name string) {
+	GinkgoHelper()
+
+	var cluster cnpgv1.Cluster
+	Eventually(func() error {
+		return k8sClient.Get(ctx, client.ObjectKey{Namespace: server.Namespace, Name: name}, &cluster)
+	}, timeout, interval).Should(Succeed())
+
+	Expect(k8sClient.Create(ctx, &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name + "-barman-cloud",
+			Namespace: server.Namespace,
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: cnpgv1.SchemeGroupVersion.String(),
+				Kind:       "Cluster",
+				Name:       cluster.Name,
+				UID:        cluster.UID,
+				Controller: new(true),
+			}},
+		},
+		Rules: []rbacv1.PolicyRule{{
+			APIGroups:     []string{"barmancloud.cnpg.io"},
+			Resources:     []string{"objectstores"},
+			ResourceNames: []string{server.Name},
+			Verbs:         []string{"get", "list", "watch"},
+		}},
+	})).To(Succeed())
+}
+
+// expectArchivePluginBound waits for the RoleBinding that gives the Role of
+// the plugin for the named cluster to the ServiceAccount of the server.
+func expectArchivePluginBound(server *v1.DatabaseServer, name string) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var binding rbacv1.RoleBinding
+		g.Expect(k8sClient.Get(
+			ctx, client.ObjectKey{
+				Namespace: server.Namespace, Name: name + "-barman-cloud-postgres",
+			}, &binding,
+		)).To(Succeed())
+		g.Expect(binding.RoleRef.Kind).To(Equal("Role"))
+		g.Expect(binding.RoleRef.Name).To(Equal(name + "-barman-cloud"))
+		g.Expect(binding.Subjects).To(ConsistOf(rbacv1.Subject{
+			Kind: "ServiceAccount", Name: server.Name + "-postgres", Namespace: server.Namespace,
+		}))
+		// It goes with the cluster whose Role it binds.
+		g.Expect(binding.OwnerReferences).To(ConsistOf(HaveField("Name", name)))
+		g.Expect(binding.OwnerReferences[0].Kind).To(Equal("Cluster"))
+	}, timeout, interval).Should(Succeed())
 }
 
 // probeContract records the probe that the DatabaseServerConfig controller
@@ -313,6 +403,113 @@ func reconciledServer(server *v1.DatabaseServer) *v1.DatabaseServer {
 	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
 
 	return &latest
+}
+
+// loseRecord writes lose into the status of server and returns once a
+// reconcile repaired the loss. repaired must hold only for a status that a
+// reconcile wrote after it read the loss, and lose must give the same result
+// each time it runs.
+func loseRecord(
+	server *v1.DatabaseServer,
+	lose func(*v1.DatabaseServerStatus),
+	repaired func(v1.DatabaseServerStatus) bool,
+) {
+	GinkgoHelper()
+
+	var quiet quietServer
+	Eventually(func(g Gomega) {
+		loseUntilRepaired(g, &quiet, server, lose, repaired)
+	}, statusWriteTimeout, interval).Should(Succeed())
+}
+
+// loseUntilRepaired is one poll of loseRecord, for a spec that checks more
+// on each poll. quiet carries over from one poll to the next.
+func loseUntilRepaired(
+	g Gomega,
+	quiet *quietServer,
+	server *v1.DatabaseServer,
+	lose func(*v1.DatabaseServerStatus),
+	repaired func(v1.DatabaseServerStatus) bool,
+) {
+	var current v1.DatabaseServer
+	g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &current)).To(Succeed())
+
+	// A reconcile that read the server before the write flushes its older
+	// copy over the write on a conflict. No reconcile then reads the loss,
+	// and the old record passes every check of the repair. So the loss is
+	// written again whenever the old record is back.
+	done := repaired(current.Status)
+	if !done && quiet.since(&current) >= time.Second {
+		lost := current.DeepCopy()
+		lose(&lost.Status)
+		if !equality.Semantic.DeepEqual(lost.Status, current.Status) {
+			g.Expect(k8sClient.Status().Update(ctx, lost)).To(Succeed())
+		}
+	}
+	g.Expect(done).To(BeTrue(), "no reconcile has repaired the loss yet: %+v", current.Status.Recovery)
+}
+
+// settleStatus applies mutate to the status of server and returns once no
+// reconcile can write an older copy over it. mutate must give the same result
+// each time it runs.
+func settleStatus(server *v1.DatabaseServer, mutate func(*v1.DatabaseServerStatus)) {
+	GinkgoHelper()
+
+	// The write drops Ready. An older copy cannot bring Ready back, because a
+	// flush that conflicts takes Ready from the server. Only a reconcile that
+	// read the write stages Ready again, and the reconciles of one server run
+	// one at a time. So the next write waits for Ready, and a write that holds
+	// once Ready is back is final.
+	var quiet quietServer
+	Eventually(func(g Gomega) {
+		var current v1.DatabaseServer
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &current)).To(Succeed())
+		g.Expect(meta.FindStatusCondition(current.Status.Conditions, v1.ConditionReady)).
+			NotTo(BeNil(), "no reconcile has read the last write yet")
+
+		written := current.DeepCopy()
+		mutate(&written.Status)
+		held := equality.Semantic.DeepEqual(written.Status, current.Status)
+		if !held && quiet.since(&current) >= time.Second {
+			meta.RemoveStatusCondition(&written.Status.Conditions, v1.ConditionReady)
+			g.Expect(k8sClient.Status().Update(ctx, written)).To(Succeed())
+		}
+		g.Expect(held).To(BeTrue(), "the write does not hold yet")
+	}, statusWriteTimeout, interval).Should(Succeed())
+}
+
+// moveLastRecovery moves the time of the answer that the contract of server
+// publishes a minute back, and returns the new time. The record of a
+// reconcile that read the answer back then differs from an older copy of the
+// record.
+func moveLastRecovery(server *v1.DatabaseServer) metav1.Time {
+	GinkgoHelper()
+
+	var moved metav1.Time
+	Eventually(func(g Gomega) {
+		contract := publishedContract(g, server)
+		g.Expect(contract.Spec.PITR).NotTo(BeNil())
+		g.Expect(contract.Spec.PITR.LastRecovery).NotTo(BeNil())
+		moved = metav1.NewTime(contract.Spec.PITR.LastRecovery.CompletedAt.Add(-time.Minute))
+		contract.Spec.PITR.LastRecovery.CompletedAt = moved
+		g.Expect(k8sClient.Update(ctx, contract)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+
+	return moved
+}
+
+// loseWholeRecord takes away the record of a recovery that completed, and
+// the name of the cluster it moved the server to.
+func loseWholeRecord(status *v1.DatabaseServerStatus) {
+	status.Recovery = nil
+	status.Cluster = "camunda"
+}
+
+// readBackOffContract reports whether a reconcile read the record back off
+// the contract after loseWholeRecord. Only the record that the recovery
+// wrote names the cluster it came from, and the contract does not carry it.
+func readBackOffContract(status v1.DatabaseServerStatus) bool {
+	return status.Recovery != nil && status.Recovery.PreviousCluster == ""
 }
 
 // expectLastRecovery waits until the contract publishes an outcome with the
@@ -537,6 +734,15 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Eventually(func() error {
 			return k8sClient.Get(ctx, key, &recovered)
 		}, timeout, interval).Should(Succeed())
+
+		// A cloud binding names the ServiceAccount, so a rollback that moved
+		// the pods to another one would cut them off from the bucket.
+		var replaced cnpgv1.Cluster
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &replaced,
+		)).To(Succeed())
+		Expect(replaced.Spec.ServiceAccountName).To(Equal("camunda-postgres"))
+		Expect(recovered.Spec.ServiceAccountName).To(Equal("camunda-postgres"))
 		Expect(recovered.Spec.Bootstrap.Recovery.Source).To(Equal("camunda"))
 		Expect(recovered.Spec.Bootstrap.Recovery.RecoveryTarget.TargetTime).
 			To(Equal(target.UTC().Format(time.RFC3339)))
@@ -578,6 +784,9 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		By("removing the cluster and the base backup schedule it replaced")
 		expectGone(client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &cnpgv1.Cluster{})
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-postgres"}, &corev1.ServiceAccount{},
+		)).To(Succeed(), "the ServiceAccount of the server outlives the cluster it replaced")
 		expectGone(
 			client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &cnpgv1.ScheduledBackup{},
 		)
@@ -645,6 +854,144 @@ var _ = Describe("DatabaseServer recovery", func() {
 			g.Expect(outcome.Message).To(ContainSubstring("lies in none of those windows"))
 		}, timeout, interval).Should(Succeed())
 
+	})
+
+	It("binds the Role of the archive plugin to its ServiceAccount on every cluster", func() {
+		server, from := archivingServer()
+
+		grantArchivePlugin(server, "camunda")
+		expectArchivePluginBound(server, "camunda")
+
+		By("putting the binding back when it is deleted")
+		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-barman-cloud-postgres"}
+		var binding rbacv1.RoleBinding
+		Expect(k8sClient.Get(ctx, key, &binding)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &binding)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var restored rbacv1.RoleBinding
+			g.Expect(k8sClient.Get(ctx, key, &restored)).To(Succeed())
+			g.Expect(restored.UID).NotTo(Equal(binding.UID))
+		}, timeout, interval).Should(Succeed())
+
+		askForRecovery(server, from.Add(time.Hour))
+		expectRecoveryCluster(server)
+		grantArchivePlugin(server, "camunda-r1")
+		expectArchivePluginBound(server, "camunda-r1")
+	})
+
+	It("withdraws the binding when the Role of the archive plugin goes", func() {
+		server, _ := archivingServer()
+		grantArchivePlugin(server, "camunda")
+		expectArchivePluginBound(server, "camunda")
+
+		role := &rbacv1.Role{}
+		roleKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-barman-cloud"}
+		Expect(k8sClient.Get(ctx, roleKey, role)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, role)).To(Succeed())
+
+		bindingKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-barman-cloud-postgres"}
+		expectGone(bindingKey, &rbacv1.RoleBinding{})
+
+		By("binding no Role of that name that another owner creates")
+		other := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: server.Namespace}}
+		Expect(k8sClient.Create(ctx, other)).To(Succeed())
+		Expect(k8sClient.Create(ctx, &rbacv1.Role{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "camunda-barman-cloud",
+				Namespace: server.Namespace,
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: "v1",
+					Kind:       "ConfigMap",
+					Name:       other.Name,
+					UID:        other.UID,
+					Controller: new(true),
+				}},
+			},
+		})).To(Succeed())
+		Consistently(func() bool {
+			return apierrors.IsNotFound(k8sClient.Get(ctx, bindingKey, &rbacv1.RoleBinding{}))
+		}, 3*time.Second, interval).Should(BeTrue())
+	})
+
+	// A suspended component still deletes what its gates turn off.
+	It("withdraws the binding while the server is suspended and archives no more", func() {
+		server, _ := archivingServer()
+		grantArchivePlugin(server, "camunda")
+		expectArchivePluginBound(server, "camunda")
+
+		suspend(server)
+		Eventually(func(g Gomega) {
+			condition := conditionOf(server, v1.ConditionClusterReady)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Reason).To(Equal("Suspending"))
+		}, timeout, interval).Should(Succeed())
+		setArchive(server, nil)
+
+		expectGone(client.ObjectKey{
+			Namespace: server.Namespace, Name: "camunda-barman-cloud-postgres",
+		}, &rbacv1.RoleBinding{})
+	})
+
+	It("leaves a binding of its name that another owner controls alone", func() {
+		server, _ := archivingServer()
+		grantArchivePlugin(server, "camunda")
+		expectArchivePluginBound(server, "camunda")
+
+		other := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: server.Namespace}}
+		Expect(k8sClient.Create(ctx, other)).To(Succeed())
+		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-barman-cloud-postgres"}
+		Eventually(func(g Gomega) {
+			var binding rbacv1.RoleBinding
+			g.Expect(k8sClient.Get(ctx, key, &binding)).To(Succeed())
+			binding.OwnerReferences = []metav1.OwnerReference{{
+				APIVersion: "v1",
+				Kind:       "ConfigMap",
+				Name:       other.Name,
+				UID:        other.UID,
+				Controller: new(true),
+			}}
+			binding.Subjects = []rbacv1.Subject{{
+				Kind: rbacv1.ServiceAccountKind, Name: "someone", Namespace: server.Namespace,
+			}}
+			g.Expect(k8sClient.Update(ctx, &binding)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		blocked := expectConditionReason(
+			server, v1.ConditionClusterReady, metav1.ConditionFalse, string(component.GuardBlocked),
+		)
+		Expect(blocked.Message).To(ContainSubstring("controlled by ConfigMap holder"))
+
+		Consistently(func(g Gomega) {
+			var binding rbacv1.RoleBinding
+			g.Expect(k8sClient.Get(ctx, key, &binding)).To(Succeed())
+			g.Expect(binding.Subjects).To(ConsistOf(HaveField("Name", "someone")))
+		}, 3*time.Second, interval).Should(Succeed())
+	})
+
+	It("withdraws the binding while another owner controls its ServiceAccount", func() {
+		server, _ := archivingServer()
+		grantArchivePlugin(server, "camunda")
+		expectArchivePluginBound(server, "camunda")
+
+		other := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: server.Namespace}}
+		Expect(k8sClient.Create(ctx, other)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var account corev1.ServiceAccount
+			key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-postgres"}
+			g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+			account.OwnerReferences = []metav1.OwnerReference{{
+				APIVersion: "v1",
+				Kind:       "ConfigMap",
+				Name:       other.Name,
+				UID:        other.UID,
+				Controller: new(true),
+			}}
+			g.Expect(k8sClient.Update(ctx, &account)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		expectGone(client.ObjectKey{
+			Namespace: server.Namespace, Name: "camunda-barman-cloud-postgres",
+		}, &rbacv1.RoleBinding{})
 	})
 
 	It("refuses a point that no archive of the server holds", func() {
@@ -957,16 +1304,16 @@ var _ = Describe("DatabaseServer recovery", func() {
 		// The name of the recovery cluster is derived from the number of
 		// archives. A recovery that read it again after the history grew would
 		// build a second cluster and abandon the first.
-		Eventually(func(g Gomega) {
-			var latest v1.DatabaseServer
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
-			latest.Status.Archive.History = append(latest.Status.Archive.History, v1.ArchiveRecord{
-				ServerName: "camunda-x",
-				From:       from,
-				To:         &from,
-			})
-			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		settleStatus(server, func(status *v1.DatabaseServerStatus) {
+			grown := func(record v1.ArchiveRecord) bool { return record.ServerName == "camunda-x" }
+			if !slices.ContainsFunc(status.Archive.History, grown) {
+				status.Archive.History = append(status.Archive.History, v1.ArchiveRecord{
+					ServerName: "camunda-x",
+					From:       from,
+					To:         &from,
+				})
+			}
+		})
 
 		recoverySucceeds(server)
 		expectLastRecovery(server, v1.RecoveryResultCompleted)
@@ -981,22 +1328,22 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		setRecoveryClusterPhase(server, "camunda-r1", cnpgv1.PhaseUnrecoverable, "")
 		expectLastRecovery(server, v1.RecoveryResultFailed)
+		published := moveLastRecovery(server)
 
+		// The look that finds the record incomplete reads the answer back off
+		// the contract. It neither answers again nor builds a second cluster.
 		By("losing the record of the answer")
-		Eventually(func(g Gomega) {
-			var latest v1.DatabaseServer
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
-			latest.Status.Recovery.CompletedAt = nil
-			latest.Status.Recovery.Result = ""
-			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
-
-		// The answer is published before the cluster it abandons goes, so the
-		// look that finds the record incomplete finds the cluster too. It
-		// answers again rather than building a second one.
-		Eventually(func(g Gomega) {
-			g.Expect(reconciledServer(server).Status.Recovery.CompletedAt).NotTo(BeNil())
-		}, timeout, interval).Should(Succeed())
+		loseRecord(
+			server,
+			func(status *v1.DatabaseServerStatus) {
+				status.Recovery.CompletedAt = nil
+				status.Recovery.Result = ""
+			},
+			func(status v1.DatabaseServerStatus) bool {
+				return status.Recovery.CompletedAt != nil && status.Recovery.CompletedAt.Equal(&published)
+			},
+		)
+		Expect(reconciledServer(server).Status.Recovery.Result).To(Equal(v1.RecoveryResultFailed))
 		Expect(expectLastRecovery(server, v1.RecoveryResultFailed).Message).
 			To(ContainSubstring(cnpgv1.PhaseUnrecoverable))
 
@@ -1090,6 +1437,34 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(k8sClient.Get(
 			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
 		)).To(Succeed())
+	})
+
+	It("refuses a recovery while another owner controls its ServiceAccount", func() {
+		server, from := archivingServer()
+
+		other := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: server.Namespace}}
+		Expect(k8sClient.Create(ctx, other)).To(Succeed())
+		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-postgres"}
+		Eventually(func(g Gomega) {
+			var account corev1.ServiceAccount
+			g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+			account.OwnerReferences = []metav1.OwnerReference{{
+				APIVersion: "v1",
+				Kind:       "ConfigMap",
+				Name:       other.Name,
+				UID:        other.UID,
+				Controller: new(true),
+			}}
+			g.Expect(k8sClient.Update(ctx, &account)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		askForRecovery(server, from.Add(time.Hour))
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultFailed)
+		Expect(outcome.Message).To(ContainSubstring(`ServiceAccount "camunda-postgres"`))
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
+		)).To(MatchError(apierrors.IsNotFound, "not found"))
 	})
 
 	It("abandons a rollback whose cluster another owner took after the cutover", func() {
@@ -1484,32 +1859,34 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		bringRecoveryClusterUp(server, "camunda-r1")
 		probeContract(server)
-		outcome := expectLastRecovery(server, v1.RecoveryResultCompleted)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
 
 		Eventually(func(g Gomega) {
 			history := archiveHistory(server)
 			g.Expect(history).To(HaveLen(1))
 			g.Expect(history[0].To).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
+		published := moveLastRecovery(server)
 
 		By("losing the status write of the pass that answered")
-		Eventually(func(g Gomega) {
-			var latest v1.DatabaseServer
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
-			latest.Status.Recovery.CompletedAt = nil
-			latest.Status.Recovery.Result = ""
-			latest.Status.Archive.History[0].To = nil
-			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		loseRecord(
+			server,
+			func(status *v1.DatabaseServerStatus) {
+				status.Recovery.CompletedAt = nil
+				status.Recovery.Result = ""
+				status.Archive.History[0].To = nil
+			},
+			func(status v1.DatabaseServerStatus) bool {
+				return status.Recovery.CompletedAt != nil && status.Recovery.CompletedAt.Equal(&published)
+			},
+		)
 
 		// The record closes at the moment the outcome carries, which is when
 		// the contract moved off that cluster.
-		Eventually(func(g Gomega) {
-			history := archiveHistory(server)
-			g.Expect(history).To(HaveLen(1))
-			g.Expect(history[0].ServerName).To(Equal("camunda"))
-			g.Expect(history[0].To).To(Equal(&outcome.CompletedAt))
-		}, timeout, interval).Should(Succeed())
+		history := archiveHistory(server)
+		Expect(history).To(HaveLen(1))
+		Expect(history[0].ServerName).To(Equal("camunda"))
+		Expect(history[0].To).To(Equal(&published))
 	})
 
 	It("keeps the archive of the cluster it built open when the base backup lands first", func() {
@@ -1837,21 +2214,11 @@ var _ = Describe("DatabaseServer recovery", func() {
 		expectLastRecovery(server, v1.RecoveryResultCompleted)
 
 		By("losing the whole record of the recovery")
-		Eventually(func(g Gomega) {
-			var latest v1.DatabaseServer
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
-			latest.Status.Recovery = nil
-			latest.Status.Cluster = "camunda"
-			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		loseRecord(server, loseWholeRecord, readBackOffContract)
 
 		// The contract names the recovered server. Reading status back from
 		// the record alone calls the recovered cluster the one to remove.
-		Eventually(func(g Gomega) {
-			latest := reconciledServer(server)
-			g.Expect(latest.Status.Cluster).To(Equal("camunda-r1"))
-			g.Expect(latest.Status.Recovery).NotTo(BeNil())
-		}, timeout, interval).Should(Succeed())
+		Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda-r1"))
 
 		Consistently(func() error {
 			return k8sClient.Get(
@@ -2272,19 +2639,49 @@ func recoveryWrite() (*v1.DatabaseServer, resolvedSpec, v1.ArchiveRecord) {
 // recoveryWriteTarget is the point the recovery of recoveryWrite asks for.
 const recoveryWriteTarget = "2026-08-20T14:30:00Z"
 
+// recoveryWriteAccount is the ServiceAccount of recoveryWrite, carrying the
+// identity of its bucket, under the controller with controllerUID.
+func recoveryWriteAccount(roleARN string, controllerUID types.UID) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{
+		Name:        "camunda-postgres",
+		Namespace:   "camunda-ns",
+		Annotations: map[string]string{v1.IRSARoleARNAnnotation: roleARN},
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: v1.GroupVersion.String(),
+			Kind:       "DatabaseServer",
+			Name:       "camunda",
+			UID:        controllerUID,
+			Controller: new(true),
+		}},
+	}}
+}
+
 // recoveryWriter is the reconciler that the write cases run, holding the
-// objects the write meets.
+// objects the write meets and the ServiceAccount of recoveryWrite.
 func recoveryWriter(t *testing.T, objects ...client.Object) *DatabaseServerReconciler {
 	t.Helper()
 
+	account := recoveryWriteAccount("arn:aws:iam::123456789012:role/camunda", "server-uid")
+
+	return recoveryWriterWith(t, account, objects...)
+}
+
+// recoveryWriterWith is recoveryWriter with the given ServiceAccount.
+func recoveryWriterWith(
+	t *testing.T,
+	account *corev1.ServiceAccount,
+	objects ...client.Object,
+) *DatabaseServerReconciler {
+	t.Helper()
+
 	s := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(s))
 	require.NoError(t, v1.AddToScheme(s))
 	require.NoError(t, cnpgv1.AddToScheme(s))
 
-	return &DatabaseServerReconciler{
-		Client: fake.NewClientBuilder().WithScheme(s).WithObjects(objects...).Build(),
-		Scheme: s,
-	}
+	c := fake.NewClientBuilder().WithScheme(s).WithObjects(append(objects, account)...).Build()
+
+	return &DatabaseServerReconciler{Client: c, APIReader: c, Scheme: s}
 }
 
 // The name of the recovery cluster is derived, so it is a name anybody can
@@ -2338,4 +2735,60 @@ func TestCreateRecoveryClusterBuildsUnderAFreeName(t *testing.T) {
 	require.NotNil(t, read.Spec.Bootstrap)
 	require.NotNil(t, read.Spec.Bootstrap.Recovery)
 	assert.Equal(t, recoveryWriteTarget, read.Spec.Bootstrap.Recovery.RecoveryTarget.TargetTime)
+}
+
+// The recovered cluster carries the request of the server, so the cutover to
+// it does not report a kept volume a second time.
+func TestCreateRecoveryClusterCarriesTheRequestedSizes(t *testing.T) {
+	t.Parallel()
+
+	server, resolved, source := recoveryWrite()
+	resolved.requested = components.RequestedStorage{Data: new(resource.MustParse("512Mi"))}
+	reconciler := recoveryWriter(t)
+
+	require.NoError(t, reconciler.createRecoveryCluster(
+		t.Context(), server, resolved, source, recoveryWriteTarget,
+	))
+
+	var read cnpgv1.Cluster
+	key := client.ObjectKey{Namespace: server.Namespace, Name: server.Status.Recovery.Cluster}
+	require.NoError(t, reconciler.Get(t.Context(), key, &read))
+
+	assert.Equal(t, "512Mi", read.Annotations[components.RequestedStorageSizeAnnotation])
+	assert.Contains(t, read.Annotations, components.RequestedWALStorageSizeAnnotation)
+}
+
+// The pods of the recovery cluster take the identity that the ServiceAccount
+// carries when they start. An account that still carries an older identity
+// would put them on it.
+func TestCreateRecoveryClusterWaitsForTheIdentityOfTheServiceAccount(t *testing.T) {
+	t.Parallel()
+
+	server, resolved, source := recoveryWrite()
+	reconciler := recoveryWriterWith(t, recoveryWriteAccount("arn:aws:iam::123456789012:role/old", "server-uid"))
+
+	require.NoError(t, reconciler.createRecoveryCluster(
+		t.Context(), server, resolved, source, recoveryWriteTarget,
+	))
+
+	key := client.ObjectKey{Namespace: server.Namespace, Name: server.Status.Recovery.Cluster}
+	err := reconciler.Get(t.Context(), key, &cnpgv1.Cluster{})
+	assert.True(t, apierrors.IsNotFound(err), "no cluster before the account carries the identity")
+}
+
+// Another owner can take the ServiceAccount after the pre-check read it. The
+// pods would then run under an account that is not the server's.
+func TestCreateRecoveryClusterWaitsWhileAnotherOwnerHoldsTheServiceAccount(t *testing.T) {
+	t.Parallel()
+
+	server, resolved, source := recoveryWrite()
+	reconciler := recoveryWriterWith(t, recoveryWriteAccount("arn:aws:iam::123456789012:role/camunda", "other-uid"))
+
+	require.NoError(t, reconciler.createRecoveryCluster(
+		t.Context(), server, resolved, source, recoveryWriteTarget,
+	))
+
+	key := client.ObjectKey{Namespace: server.Namespace, Name: server.Status.Recovery.Cluster}
+	err := reconciler.Get(t.Context(), key, &cnpgv1.Cluster{})
+	assert.True(t, apierrors.IsNotFound(err), "no cluster under an account of another owner")
 }

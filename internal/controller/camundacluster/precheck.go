@@ -223,6 +223,7 @@ func (res *resolver) resolveStorage(ctx context.Context, in *components.Input) e
 	}
 	in.Storage.Type = binding.Spec.Type
 	in.Storage.Namespace = binding.Namespace
+	in.Storage.Name = binding.Name
 	res.storage = &binding
 
 	switch binding.Spec.Type {

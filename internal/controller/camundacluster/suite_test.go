@@ -37,6 +37,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	"github.com/konsole-is/camunda-operator/pkg/grace"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/test/envtest"
 )
@@ -56,7 +57,15 @@ var (
 	env       *envtest.Env
 	ctx       context.Context
 	k8sClient client.Client
+
+	// reconciler is the reconciler that the manager runs. A spec calls it
+	// directly to read the result of one reconcile.
+	reconciler *CamundaClusterReconciler
 )
+
+// suiteGracePeriods are longer than any spec, so no condition of the suite
+// reaches Degraded or Down.
+var suiteGracePeriods = grace.Periods{Workload: time.Hour, Datastore: 2 * time.Hour}
 
 // userAPIEndpoints maps the namespace of a cluster to the user API that
 // serves it. The reconciler is process wide, so one fake for the whole suite
@@ -111,7 +120,7 @@ var _ = BeforeSuite(func() {
 			return err
 		}
 
-		return (&CamundaClusterReconciler{
+		reconciler = &CamundaClusterReconciler{
 			Client:         mgr.GetClient(),
 			APIReader:      mgr.GetAPIReader(),
 			Scheme:         mgr.GetScheme(),
@@ -122,7 +131,9 @@ var _ = BeforeSuite(func() {
 			RESTEndpoint: func(cluster *v1.CamundaCluster, _ components.Effective) string {
 				return clusterUserAPI(cluster)
 			},
-		}).SetupWithManager(mgr)
+			GracePeriods: suiteGracePeriods,
+		}
+		return reconciler.SetupWithManager(mgr)
 	})
 
 	ctx, k8sClient = env.Ctx, env.Client

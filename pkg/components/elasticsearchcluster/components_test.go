@@ -177,7 +177,8 @@ func assertElasticsearchClusterGoldens(
 		golden.WithScheme(scheme), golden.Update(*updateGolden),
 	)
 
-	elasticsearch, err := ElasticsearchComponent(cluster, merged, storage)
+	requested := RequestedStorage{Size: merged.StorageSize, StorageClassName: merged.StorageClassName}
+	elasticsearch, err := ElasticsearchComponent(cluster, merged, requested, storage, 0)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "elasticsearch.yaml"), elasticsearch,
@@ -192,7 +193,7 @@ func assertElasticsearchClusterGoldens(
 	)
 
 	if MonitoringEnabled(merged) {
-		metrics, err := MetricsComponent(cluster, merged, true)
+		metrics, err := MetricsComponent(cluster, merged, true, 0)
 		require.NoError(t, err)
 		golden.AssertComponentYAML(
 			t, filepath.Join(base, "metrics.yaml"), metrics,
@@ -325,7 +326,7 @@ func TestForeignServiceAccountIsNamedButNotRendered(t *testing.T) {
 	cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-es", Create: &no}
 	merged := MergeSpec(cluster.Spec, preset, release)
 
-	comp, err := ElasticsearchComponent(cluster, merged, nil)
+	comp, err := ElasticsearchComponent(cluster, merged, RequestedStorage{Size: merged.StorageSize}, nil, 0)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
@@ -390,7 +391,7 @@ func TestPodIdentityRendersTheServiceAccount(t *testing.T) {
 		Type: v1.ObjectStorageAuthTypeWorkloadIdentity,
 	})}
 
-	comp, err := ElasticsearchComponent(cluster, merged, storage)
+	comp, err := ElasticsearchComponent(cluster, merged, RequestedStorage{Size: merged.StorageSize}, storage, 0)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
@@ -419,7 +420,7 @@ func TestMetricsComponentOmitsUnsupportedServiceMonitor(t *testing.T) {
 	t.Parallel()
 
 	cluster := goldenRealisticElasticsearchCluster()
-	comp, err := MetricsComponent(cluster, cluster.Spec, false)
+	comp, err := MetricsComponent(cluster, cluster.Spec, false, 0)
 	require.NoError(t, err)
 
 	// Typed objects carry no TypeMeta until serialized, so compare Go types.
@@ -518,7 +519,7 @@ func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
 		"camunda.io/component":             "not-elasticsearch",
 		"team":                             "platform",
 	}
-	comp, err := ElasticsearchComponent(cluster, cluster.Spec, nil)
+	comp, err := ElasticsearchComponent(cluster, cluster.Spec, RequestedStorage{Size: cluster.Spec.StorageSize}, nil, 0)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
@@ -608,4 +609,54 @@ func TestElasticsearchClusterGoldenSnapshotAzureWorkloadIdentity(t *testing.T) {
 		t, "snapshot-azure-workload-identity", cluster,
 		MergeSpec(cluster.Spec, preset, release), &SnapshotStorage{Config: config},
 	)
+}
+
+// The ECK CR carries the storageSize and the storageClassName that the merged
+// spec asks for, also when the rendered claim keeps another size or class,
+// and no annotation for what it does not ask for.
+func TestElasticsearchCarriesTheRequestedStorage(t *testing.T) {
+	t.Parallel()
+
+	cluster, preset, release := goldenMinimalElasticsearchCluster()
+	merged := MergeSpec(cluster.Spec, preset, release)
+	merged.StorageSize = new(resource.MustParse("8Gi"))
+	merged.StorageClassName = new("class-a")
+
+	for _, tt := range []struct {
+		requested RequestedStorage
+		want      map[string]string
+	}{
+		{
+			requested: RequestedStorage{Size: new(resource.MustParse("512Mi"))},
+			want:      map[string]string{RequestedStorageSizeAnnotation: "512Mi"},
+		},
+		{
+			requested: RequestedStorage{StorageClassName: new("class-b")},
+			want:      map[string]string{RequestedStorageClassAnnotation: "class-b"},
+		},
+		{
+			requested: RequestedStorage{Size: new(resource.MustParse("512Mi")), StorageClassName: new("class-b")},
+			want: map[string]string{
+				RequestedStorageSizeAnnotation:  "512Mi",
+				RequestedStorageClassAnnotation: "class-b",
+			},
+		},
+		{requested: RequestedStorage{}, want: nil},
+	} {
+		comp, err := ElasticsearchComponent(cluster, merged, tt.requested, nil, 0)
+		require.NoError(t, err)
+
+		objects, err := comp.Preview()
+		require.NoError(t, err)
+
+		var es *esv1.Elasticsearch
+		for _, obj := range objects {
+			if typed, ok := obj.(*esv1.Elasticsearch); ok {
+				es = typed
+			}
+		}
+		require.NotNil(t, es)
+		assert.Equal(t, tt.want, es.Annotations)
+		assert.Equal(t, new("class-a"), es.Spec.NodeSets[0].VolumeClaimTemplates[0].Spec.StorageClassName)
+	}
 }

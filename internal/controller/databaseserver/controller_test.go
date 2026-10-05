@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -289,12 +290,40 @@ func countEvents(g Gomega, server *v1.DatabaseServer, reason string) int32 {
 
 	var count int32
 	for _, event := range recorded.Items {
-		if event.Reason == reason && event.InvolvedObject.Name == server.Name {
-			count += max(event.Count, 1)
+		if event.Reason != reason || event.InvolvedObject.Name != server.Name {
+			continue
 		}
+		times := max(event.Count, 1)
+		if event.Series != nil {
+			times = max(times, event.Series.Count)
+		}
+		count += times
 	}
 
 	return count
+}
+
+// expectOneEventPerRequest waits until the cluster under clusterKey carries
+// requested in annotation, then runs one more reconcile and asserts that the
+// server still has one event with reason.
+func expectOneEventPerRequest(
+	server *v1.DatabaseServer,
+	clusterKey client.ObjectKey,
+	reason, annotation, requested string,
+) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var cluster cnpgv1.Cluster
+		g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+		g.Expect(cluster.Annotations).To(HaveKeyWithValue(annotation, requested))
+	}, timeout, interval).Should(Succeed())
+
+	reconcileAgain(server, 1)
+
+	Consistently(func(g Gomega) {
+		g.Expect(countEvents(g, server, reason)).To(Equal(int32(1)))
+	}, 2*time.Second, interval).Should(Succeed())
 }
 
 // reconcileAgain edits a spec field that the version refusal does not touch,
@@ -712,6 +741,63 @@ var _ = Describe("DatabaseServer controller", func() {
 		// A server with no archive takes no base backups, so reading them
 		// every reconcile would be a cluster-wide read for nothing.
 		Expect(backupLists.countIn(server.Namespace)).To(BeZero())
+	})
+
+	// CloudNativePG starts no instance pod without the ServiceAccount, and a
+	// healthy server has nothing else that brings it back.
+	It("puts back the ServiceAccount of a healthy server when it is deleted", func() {
+		server := serverInNamespace(nil)
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000001")
+		expectConditionReason(server, v1.ConditionReady, metav1.ConditionTrue, v1.ReasonHealthy)
+
+		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-postgres"}
+		var account corev1.ServiceAccount
+		Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &account)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			var restored corev1.ServiceAccount
+			g.Expect(k8sClient.Get(ctx, key, &restored)).To(Succeed())
+			g.Expect(restored.UID).NotTo(Equal(account.UID))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("takes over a ServiceAccount made beforehand and keeps its pull Secrets", func() {
+		namespace := "dbs-" + utilrand.String(8)
+		Expect(k8sClient.Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		})).To(Succeed())
+		Expect(k8sClient.Create(ctx, &corev1.ServiceAccount{
+			ObjectMeta:       metav1.ObjectMeta{Name: "camunda-postgres", Namespace: namespace},
+			ImagePullSecrets: []corev1.LocalObjectReference{{Name: "my-mirror-pull"}},
+		})).To(Succeed())
+
+		server := serverNamed(namespace, "camunda", "camunda", nil)
+
+		Eventually(func(g Gomega) {
+			var account corev1.ServiceAccount
+			key := client.ObjectKey{Namespace: namespace, Name: "camunda-postgres"}
+			g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+			g.Expect(metav1.IsControlledBy(&account, reconciledServer(server))).To(BeTrue())
+			g.Expect(account.ImagePullSecrets).To(ConsistOf(corev1.LocalObjectReference{Name: "my-mirror-pull"}))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("binds no Role of the archive plugin on a server that does not archive", func() {
+		server := serverInNamespace(nil)
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000001")
+		grantArchivePlugin(server, "camunda")
+		expectConditionReason(server, v1.ConditionReady, metav1.ConditionTrue, v1.ReasonHealthy)
+
+		Consistently(func() bool {
+			return apierrors.IsNotFound(k8sClient.Get(
+				ctx, client.ObjectKey{
+					Namespace: server.Namespace, Name: "camunda-barman-cloud-postgres",
+				}, &rbacv1.RoleBinding{},
+			))
+		}, 3*time.Second, interval).Should(BeTrue())
 	})
 
 	It("mirrors the system identifier and the cluster CloudNativePG reports", func() {
@@ -1596,6 +1682,86 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, 3*time.Second, interval).Should(Succeed())
 	})
 
+	// A cloud binding names the ServiceAccount, so pods that ran under the
+	// account of another owner would present an identity that is not theirs.
+	It("writes no cluster under a ServiceAccount that another owner controls", func() {
+		namespace := "dbs-" + utilrand.String(8)
+		Expect(k8sClient.Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		})).To(Succeed())
+
+		holder := serverNamed(namespace, "holder", "holder", nil)
+		occupant := &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "camunda-postgres",
+				Namespace: namespace,
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: v1.GroupVersion.String(),
+					Kind:       "DatabaseServer",
+					Name:       holder.Name,
+					UID:        reconciledServer(holder).UID,
+					Controller: new(true),
+				}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, occupant)).To(Succeed())
+
+		server := serverNamed(namespace, "camunda", "camunda", nil)
+
+		blocked := expectConditionReason(
+			server,
+			v1.ConditionClusterReady,
+			metav1.ConditionFalse,
+			string(component.GuardBlocked),
+		)
+		Expect(blocked.Message).To(ContainSubstring("controlled by DatabaseServer holder"))
+
+		Consistently(func() bool {
+			return apierrors.IsNotFound(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: namespace, Name: "camunda"}, &cnpgv1.Cluster{},
+			))
+		}, 3*time.Second, interval).Should(BeTrue())
+	})
+
+	// A healthy server has no retry timer, so only the removal of the account
+	// can bring it back.
+	It("takes its ServiceAccount back once another owner lets it go", func() {
+		server := serverInNamespace(nil)
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000001")
+		expectConditionReason(server, v1.ConditionReady, metav1.ConditionTrue, v1.ReasonHealthy)
+
+		holder := serverNamed(server.Namespace, "holder", "holder", nil)
+		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-postgres"}
+		Eventually(func(g Gomega) {
+			var account corev1.ServiceAccount
+			g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+			account.OwnerReferences = []metav1.OwnerReference{{
+				APIVersion: v1.GroupVersion.String(),
+				Kind:       "DatabaseServer",
+				Name:       holder.Name,
+				UID:        reconciledServer(holder).UID,
+				Controller: new(true),
+			}}
+			g.Expect(k8sClient.Update(ctx, &account)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		expectConditionReason(
+			server, v1.ConditionClusterReady, metav1.ConditionFalse, string(component.GuardBlocked),
+		)
+
+		var taken corev1.ServiceAccount
+		Expect(k8sClient.Get(ctx, key, &taken)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &taken)).To(Succeed())
+
+		expectCondition(server, v1.ConditionClusterReady, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			var account corev1.ServiceAccount
+			g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+			g.Expect(metav1.IsControlledBy(&account, reconciledServer(server))).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("keeps the cluster off an archive store that another owner controls", func() {
 		namespace := "dbs-" + utilrand.String(8)
 		Expect(k8sClient.Create(ctx, &corev1.Namespace{
@@ -2207,6 +2373,9 @@ var _ = Describe("DatabaseServer controller", func() {
 		})
 
 		expectShrinkWarning(server, "storageSize")
+		expectOneEventPerRequest(
+			server, clusterKey, eventReasonStorageShrinkIgnored, components.RequestedStorageSizeAnnotation, "1Gi",
+		)
 
 		// CloudNativePG refuses a cluster whose storage is smaller than the
 		// one it applied, so a server that let the smaller size through stops
@@ -2243,6 +2412,9 @@ var _ = Describe("DatabaseServer controller", func() {
 		})
 
 		expectShrinkWarning(server, "walStorageSize")
+		expectOneEventPerRequest(
+			server, clusterKey, eventReasonStorageShrinkIgnored, components.RequestedWALStorageSizeAnnotation, "1Gi",
+		)
 
 		Consistently(func(g Gomega) {
 			var cluster cnpgv1.Cluster
@@ -2286,6 +2458,9 @@ var _ = Describe("DatabaseServer controller", func() {
 				HaveField("Type", corev1.EventTypeWarning),
 			)))
 		}, timeout, interval).Should(Succeed())
+		expectOneEventPerRequest(
+			server, clusterKey, eventReasonWALStorageKept, components.RequestedWALStorageSizeAnnotation, "",
+		)
 
 		Consistently(func(g Gomega) {
 			var cluster cnpgv1.Cluster
@@ -2438,15 +2613,6 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(ready.Reason).To(Equal(v1.ReasonVersionChangeRefused))
 		}, timeout, interval).Should(Succeed())
 
-		By("losing the record of the cluster the rollback moved to")
-		Eventually(func(g Gomega) {
-			var latest v1.DatabaseServer
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
-			latest.Status.Recovery = nil
-			latest.Status.Cluster = "camunda"
-			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
-
 		// The contract still names the recovered server, so the refusal reads
 		// the major off that cluster and it keeps the image it runs.
 		//
@@ -2456,7 +2622,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		// image back. Once is all CloudNativePG needs.
 		key := client.ObjectKey{Namespace: server.Namespace, Name: recovered}
 		replacedKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
-		Consistently(func(g Gomega) {
+		keepsMajor := func(g Gomega) {
 			var cluster cnpgv1.Cluster
 			g.Expect(k8sClient.Get(ctx, key, &cluster)).To(Succeed())
 			g.Expect(cluster.Spec.ImageName).To(HaveSuffix(":17"))
@@ -2470,7 +2636,20 @@ var _ = Describe("DatabaseServer controller", func() {
 			} else {
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), err.Error())
 			}
-		}, 3*time.Second, "5ms").Should(Succeed())
+		}
+
+		By("losing the record of the cluster the rollback moved to")
+		// The major is read every 5ms between the steps of the loss.
+		var quiet quietServer
+		Eventually(func(g Gomega) {
+			if err := InterceptGomegaFailure(func() {
+				Consistently(keepsMajor, interval, "5ms").Should(Succeed())
+			}); err != nil {
+				StopTrying("the guard let the refused major through").Wrap(err).Now()
+			}
+			loseUntilRepaired(g, &quiet, server, loseWholeRecord, readBackOffContract)
+		}, statusWriteTimeout, time.Millisecond).Should(Succeed())
+		Consistently(keepsMajor, 3*time.Second, "5ms").Should(Succeed())
 
 		ready := conditionOf(server, v1.ConditionReady)
 		Expect(ready).NotTo(BeNil())
@@ -2640,6 +2819,43 @@ var _ = Describe("DatabaseServer controller", func() {
 			condition := conditionOf(server, v1.ConditionClusterReady)
 			g.Expect(condition).NotTo(BeNil())
 			g.Expect(condition.Reason).To(Equal("Suspended"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// CloudNativePG reads the ServiceAccount of a cluster before it hibernates
+	// it, so a server created suspended stays Suspending without the account.
+	It("applies the ServiceAccount of a server that is created suspended", func() {
+		namespace := "dbs-" + utilrand.String(8)
+		Expect(k8sClient.Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		})).To(Succeed())
+		server := &v1.DatabaseServer{
+			ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: namespace},
+			Spec: v1.DatabaseServerSpec{
+				Version:              "17",
+				Instances:            new(int32(1)),
+				StorageSize:          new(resource.MustParse("1Gi")),
+				DatabaseServerConfig: "camunda",
+				Suspend:              true,
+			},
+		}
+		createServer(server)
+
+		key := client.ObjectKey{Namespace: namespace, Name: "camunda-postgres"}
+		Eventually(func(g Gomega) {
+			var account corev1.ServiceAccount
+			g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+			g.Expect(metav1.IsControlledBy(&account, reconciledServer(server))).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		By("putting the ServiceAccount back when it is deleted during the suspension")
+		var account corev1.ServiceAccount
+		Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &account)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var restored corev1.ServiceAccount
+			g.Expect(k8sClient.Get(ctx, key, &restored)).To(Succeed())
+			g.Expect(restored.UID).NotTo(Equal(account.UID))
 		}, timeout, interval).Should(Succeed())
 	})
 

@@ -169,12 +169,27 @@
     {
       // The Renovate release behind `make lint-renovate` is a tool, not an
       // image: it moves with the tools, and it takes a major, because a new
-      // major is when the schema it checks against can change.
+      // major is when the schema it checks against can change. One update
+      // per release, not a patch and a minor on two branches.
       matchDepNames: ["renovate"],
+      separateMinorPatch: false,
       groupName: "tool-versions",
     },
     {
       matchDepNames: ["renovate"],
+      matchUpdateTypes: ["major", "minor"],
+      enabled: true,
+    },
+    {
+      // Helm is pinned in .tool-versions, in the Makefile for install-helm,
+      // and in the setup-helm steps of the workflows. One pull request moves
+      // all of them, so a contributor and CI run the same Helm.
+      matchPackageNames: ["helm/helm"],
+      separateMinorPatch: false,
+      groupName: "tool-versions",
+    },
+    {
+      matchPackageNames: ["helm/helm"],
       matchUpdateTypes: ["major", "minor"],
       enabled: true,
     },

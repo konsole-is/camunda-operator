@@ -93,6 +93,15 @@ func (e Effective) StorageSize() resource.Quantity {
 	return *e.Zeebe.StorageSize
 }
 
+// StorageClassName returns the StorageClass that the spec requests for the
+// broker volumes, or nil for the default StorageClass.
+func (e Effective) StorageClassName() *string {
+	if e.Zeebe == nil {
+		return nil
+	}
+	return e.Zeebe.StorageClassName
+}
+
 // VolumeRetention returns what happens to the broker volumes when the
 // cluster is deleted. Defaults to Delete.
 func (e Effective) VolumeRetention() v1.PersistentVolumeClaimRetentionPolicyType {

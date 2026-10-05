@@ -32,10 +32,10 @@ const (
 	// that suspension when it completes. Thus this reason does not appear
 	// before the restore starts.
 	ReasonClusterNotSuspended = "ClusterNotSuspended"
-	// ReasonClusterClaimed means that another backup or another restore holds
-	// the cluster. The restore waits in Pending until that holder reaches a
-	// final phase. The wait has no time limit. The reason does not name the
-	// kind of the holder, because it can be a backup or a restore.
+	// ReasonClusterClaimed means that another holder claims the cluster,
+	// usually a backup or another restore. The restore waits in Pending until
+	// the claim is free. The wait has no time limit. The message names the
+	// holder, or a claim Lease that you must delete.
 	ReasonClusterClaimed = "ClusterClaimed"
 	// ReasonIncompatibleTarget means that the target cluster cannot hold the
 	// backup. The target is not the cluster of the backup, the secondary
