@@ -343,7 +343,7 @@ On a bucket with workload identity, the PostgreSQL path runs a cleanup Job named
 
 ## When a backup fails
 
-The `Ready` condition of the backup carries the reason, and its message names the cause. Before the backup starts, it waits in `Pending`, and the reason names what it waits for. It starts when the cause is gone. During a run, a dependency that goes away holds a PostgreSQL backup for 10 minutes, then fails it. An Elasticsearch backup retries an unreachable endpoint for 10 minutes. A dependency that changes or goes away fails an Elasticsearch backup at once, and so does a roll of Zeebe.
+The `Ready` condition of the backup carries the reason, and its message names the cause. Before the backup starts, it waits in `Pending`, and the reason names what it waits for. It starts when the cause is gone. During a run, a dependency that goes away holds a PostgreSQL backup for 10 minutes, then fails it. An Elasticsearch backup retries an unreachable endpoint for 10 minutes. A change or loss of the storage contract, the backup bucket, or a credentials Secret fails an Elasticsearch backup at once. A roll of Zeebe also fails it at once. If the cluster is suspended, an Elasticsearch backup waits in its step.
 
 A `Failed` backup does not run again. Read `status.failureMessage` and the events on the resource. On the PostgreSQL path, also read the logs of the dump Job. Correct the cause, then create a new backup with a new name. A `Failed` backup holds nothing that a restore can use. Delete it to remove what it wrote.
 
