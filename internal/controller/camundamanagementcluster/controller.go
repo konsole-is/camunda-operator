@@ -301,10 +301,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	comps = built.Components
 
 	reconcileErr := reconcileComponents(ctx, rec, built.Components)
-	// recordInitialClaim overwrites IdentityReady, and readyCondition
-	// aggregates that condition. The refusal must therefore reach the CR
-	// before the aggregate, or Ready reads True beside it.
-	claimErr := stepRecordClaim.wrap(r.recordInitialClaim(ctx, &mc, res.Input.Provider.Mode))
+	claimRefusal, claimErr := r.recordInitialClaim(ctx, &mc, res.Input.Provider.Mode)
+	claimErr = stepRecordClaim.wrap(claimErr)
 	removalRefused, userErr := r.syncWebModelerUsers(ctx, &mc, clusters, attached, rows)
 	userErr = stepWebModelerUsers.wrap(userErr)
 	pingErr := stepPing.wrap(r.syncPing(ctx, &mc, clusters, attached))
@@ -334,6 +332,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		&mc,
 		built.Ready,
 		firstStep(claimErr, userErr, pingErr, releaseErr, contractErr, callbackErr),
+		claimRefusal,
 		callbackFailure,
 	))
 
@@ -490,8 +489,9 @@ func (r *Reconciler) leaveOldRealm(
 	return withdrawal, false, nil
 }
 
-// recordInitialClaim records the initial administrator claim that Management
-// Identity started with, and reports a later change to it.
+// recordInitialClaim returns an ImmutableAfterStart refusal for Ready when the
+// recorded claim differs from the one spec.identity.admin asks for, and nil
+// otherwise.
 //
 // Identity reads the claim as it boots and stores the result in its database.
 // The annotation is what keeps the rendered environment on the value that
@@ -511,44 +511,39 @@ func (r *Reconciler) recordInitialClaim(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	mode components.ProviderMode,
-) error {
+) (*conditions.PreCheckFailure, error) {
 	if mode != components.ModeOIDC {
-		return nil
+		return nil, nil
 	}
 
 	recorded := components.RecordedInitialClaim(mc)
 	if recorded == "" {
 		started, err := r.startedInitialClaim(ctx, mc)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		// A management plane whose Identity never ran holds no administrator
 		// anywhere, so a claim the user corrects before the first start
 		// leaves no record behind.
 		if started == "" {
-			return nil
+			return nil, nil
 		}
 
-		return r.recordAnnotation(ctx, mc, started)
+		return nil, r.recordAnnotation(ctx, mc, started)
 	}
-	if recorded == components.SpecInitialClaim(mc) {
-		return nil
+	requested := components.SpecInitialClaim(mc)
+	if recorded == requested {
+		return nil, nil
 	}
 
-	admin := mc.Spec.Identity.Admin
-	meta.SetStatusCondition(mc.GetStatusConditions(), metav1.Condition{
-		Type:   v1.ConditionIdentityReady,
-		Status: metav1.ConditionFalse,
+	return &conditions.PreCheckFailure{
 		Reason: v1.ReasonImmutableAfterStart,
 		Message: fmt.Sprintf(
 			"Management Identity started with the administrator claim %q and stores it in its database; "+
 				"spec.identity.admin now asks for %q, which only a change in the database can do",
-			recorded, admin.ClaimName+"="+admin.ClaimValue,
+			recorded, requested,
 		),
-		ObservedGeneration: mc.GetGeneration(),
-	})
-
-	return nil
+	}, nil
 }
 
 // startedInitialClaim returns the administrator claim that the Management
@@ -636,12 +631,12 @@ func (r *Reconciler) writeContract(
 	return err
 }
 
-// readyCondition derives Ready from the steps of the reconcile, the
-// components, and the registration of the Optimize callbacks. Neither a step
-// nor the callbacks are a component, and neither is a ready management plane
-// when it fails: a step that did not run left a claim, a user, a ping, or the
-// contract behind, and an Optimize whose callback is missing from the realm
-// cannot complete a login.
+// readyCondition derives Ready from the steps of the reconcile, a changed
+// administrator claim, the components, and the registration of the Optimize
+// callbacks. Neither a step nor the callbacks are a component, and neither is
+// a ready management plane when it fails: a step that did not run left a
+// claim, a user, a ping, or the contract behind, and an Optimize whose
+// callback is missing from the realm cannot complete a login.
 //
 // A failed step decides Ready first, because it reports nowhere else. failed
 // is the first step that failed in reconcile order, and it carries the reason
@@ -656,10 +651,17 @@ func readyCondition(
 	mc *v1.CamundaManagementCluster,
 	comps []*component.Component,
 	failed *stepError,
+	claimRefusal *conditions.PreCheckFailure,
 	callbackFailure *conditions.PreCheckFailure,
 ) metav1.Condition {
 	if failed != nil {
 		return failed.condition(mc)
+	}
+	// Ready is the only condition that reports a changed administrator claim,
+	// so the refusal goes before the components and stays in view while one is
+	// not True yet.
+	if claimRefusal != nil {
+		return conditions.Failed(mc, claimRefusal)
 	}
 
 	ready := conditions.Aggregate(mc, comps...)

@@ -250,28 +250,35 @@ Management Identity needs a PostgreSQL database of its own. Management Identity,
 
 In the two Keycloak modes, set `username`. Management Identity creates that Keycloak user. If you also set `spec.webModeler`, `email` is required, because Web Modeler needs an address for every person who signs in. `passwordSecretRef` names a password of your own. Without it, the operator generates one into `my-management-identity-admin`. A later change to `username` does not rename the first user. Management Identity creates a second user, and the first one keeps its access.
 
-In the `oidc` mode, set `claimName` and `claimValue` instead. They name the token claim that identifies the administrator, for example `oid` or `sub`. `claimName` holds no equals sign. After Management Identity started, a change to this pair has no effect. The operator reports it on `IdentityReady` and `Ready`, and the message names the recorded value and the value you asked for:
+In the `oidc` mode, set `claimName` and `claimValue` instead. They name the token claim that identifies the administrator, for example `oid` or `sub`. `claimName` holds no equals sign. After Management Identity started, a change to this pair has no effect. The operator reports it on `Ready`, and the message names the recorded value and the value you asked for. `IdentityReady` keeps the state of the Management Identity pods:
 
 ```yaml
 status:
   conditions:
-    - type: IdentityReady
+    - type: Ready
       status: "False"
       reason: ImmutableAfterStart
       message: 'Management Identity started with the administrator claim "oid=8f1c...e2" and stores it in its database; spec.identity.admin now asks for "oid=41ab...77", which only a change in the database can do'
 ```
 
+The operator records the claim that Management Identity started with in the annotation `camunda.io/identity-initial-claim`, as `<claimName>=<claimValue>`. The Management Identity pods keep the recorded claim, so a change to `spec.identity.admin` does not restart them. Read the recorded claim with this command:
+
+```bash
+kubectl get camundamanagementcluster my-management -n my-management-ns \
+  -o jsonpath='{.metadata.annotations.camunda\.io/identity-initial-claim}'
+```
+
 The operator cannot correct this for you. You have three ways out:
 
 - If the recorded claim belongs to a real person, put the recorded value back on `spec.identity.admin`. Sign in as that person, and grant access to the rest in Management Identity.
-- If nobody holds the recorded claim, change the administrator in the database of Management Identity. Camunda names the values in [OIDC configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/#oidc-configuration). Then set the annotation `camunda.io/identity-initial-claim` to the pair that `spec.identity.admin` names, and both conditions clear:
+- If nobody holds the recorded claim, change the administrator in the database of Management Identity. Camunda gives no steps for this change. It says only that the database holds the claim, in [OIDC configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/#oidc-configuration), and that the claim becomes the mapping rule `Default`, in [Mapping rules](https://docs.camunda.io/docs/self-managed/components/management-identity/mapping-rules/). Then set the annotation `camunda.io/identity-initial-claim` to the pair that `spec.identity.admin` names, and `Ready` no longer reports `ImmutableAfterStart`. The Management Identity pods restart one time with the new value. This restart does not change the database:
 
     ```bash
     kubectl annotate --overwrite camundamanagementcluster my-management -n my-management-ns \
       camunda.io/identity-initial-claim=oid=41ab...77
     ```
 
-- Point `spec.identity.databaseConfigRef` at an empty database. Management Identity starts again from nothing and loses the roles and the tenants it held. Your identity provider keeps every user and client.
+- First set the annotation to the pair that `spec.identity.admin` names, with the command above. Then point `spec.identity.databaseConfigRef` at an empty database. Management Identity starts again from nothing with the claim that the annotation names. It loses the roles and the tenants it held. Your identity provider keeps every user and client.
 
 ## Console
 
@@ -621,7 +628,6 @@ status:
 | `KeycloakReady` | `PendingSuspension` | `spec.suspend` is `true` and the `Keycloak` resource does not ask for zero instances yet. | Wait. |
 | `IdentityReady` | `Healthy` | Every Management Identity replica is ready. | Nothing. |
 | `IdentityReady` | `PrerequisiteNotMet` | In the `keycloak` mode, Management Identity waits for Keycloak. | Read the `KeycloakReady` row. |
-| `IdentityReady` | `ImmutableAfterStart` | `spec.identity.admin` asks for an administrator claim that Management Identity did not start with. | See [The first administrator](#the-first-administrator). |
 | `ConsoleReady`, `WebModelerReady` | `Healthy` / `Disabled` | Every replica is ready, or the block is unset. | Nothing. |
 | `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Creating` / `Updating` / `Scaling` | The workload rolls out or scales. | Wait. If the reason does not change, read the pods of the Deployment. |
 | `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Degraded` / `Down` | The workload is still not ready at the end of the [grace period](../architecture.md#status-conventions), 30 minutes by default. `Degraded` means that every Deployment of the condition has a ready replica, but not all replicas are ready or a rollout is not finished. `Down` means that a Deployment of the condition has no ready replica. | Read the pods and events of the Deployment that the message names. |
@@ -643,7 +649,8 @@ status:
 | `OptimizeCallbacksReady` | `RealmClaimedElsewhere` | Another management plane holds the realm. | Read the `Ready` row. |
 | `Ready` | `Healthy` | Every workload is ready, the contract is written, and the callbacks are registered. | Nothing. |
 | `Ready` | `Suspended` | `spec.suspend` is `true` and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to bring the management plane back. |
-| `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Degraded` / `Down` / `Suspending` / `PendingSuspension` / `PrerequisiteNotMet` / `ImmutableAfterStart` | The reason of the condition that holds `Ready` back. The message names it. | Read the row of that condition. |
+| `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Degraded` / `Down` / `Suspending` / `PendingSuspension` / `PrerequisiteNotMet` | The reason of the condition that holds `Ready` back. The message names it. | Read the row of that condition. |
+| `Ready` | `ImmutableAfterStart` | `spec.identity.admin` asks for an administrator claim that Management Identity did not start with. The message names both claims. | See [The first administrator](#the-first-administrator). |
 | `Ready` | `OptimizeClientMissing` / `ConnectionFailed` / `AdminRoleGrantFailed` / `InvalidCABundle` | The realm is not in the state the management plane needs. | Read the `OptimizeCallbacksReady` row. |
 | `Ready` | `KeycloakOperatorNotInstalled` | `spec.identityProvider.keycloak` is set and the Kubernetes cluster does not serve the `Keycloak` kind. | Install the Keycloak Operator and restart the operator, or select another mode. See [Installation](../installation.md#requirements). |
 | `Ready` | `UnsupportedVersion` | A version field is outside the supported range. The message names the field and the limit. | Set a supported version. |

@@ -149,7 +149,7 @@ func TestRemaining(t *testing.T) {
 		wantOK bool
 	}{
 		{name: "waits on a component that converges", reason: string(component.AliveCreating), wantOK: true},
-		{name: "skips a reason that a controller staged", reason: "ImmutableAfterStart"},
+		{name: "skips a reason that a controller staged", reason: v1.ReasonClusterTaken},
 	}
 
 	for _, tt := range tests {
