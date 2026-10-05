@@ -78,7 +78,7 @@ func RunningConfigHash(workload *appsv1.StatefulSet) (string, *conditions.PreChe
 }
 
 // RolledOut returns nil when every replica of workload runs its current pod
-// template. A workload that still rolls returns a failure with reason
+// template and is ready. A workload that still rolls returns a failure with reason
 // Progressing. The pod template changes before the first pod restarts, so
 // only this check shows that the pods run what the template says.
 func RolledOut(workload *appsv1.StatefulSet) *conditions.PreCheckFailure {
@@ -89,7 +89,7 @@ func RolledOut(workload *appsv1.StatefulSet) *conditions.PreCheckFailure {
 
 	status := workload.Status
 	if status.ObservedGeneration == workload.Generation && status.UpdatedReplicas == replicas &&
-		status.CurrentRevision == status.UpdateRevision {
+		status.ReadyReplicas == replicas && status.CurrentRevision == status.UpdateRevision {
 		return nil
 	}
 
@@ -97,9 +97,9 @@ func RolledOut(workload *appsv1.StatefulSet) *conditions.PreCheckFailure {
 		Reason: v1.ReasonProgressing,
 		Message: fmt.Sprintf(
 			"the Zeebe workload %s/%s has not rolled out its current pod template yet (generation %d, "+
-				"observed %d, %d of %d replicas updated)",
+				"observed %d, %d of %d replicas updated, %d ready)",
 			workload.Namespace, workload.Name, workload.Generation, status.ObservedGeneration,
-			status.UpdatedReplicas, replicas,
+			status.UpdatedReplicas, replicas, status.ReadyReplicas,
 		),
 	}
 }

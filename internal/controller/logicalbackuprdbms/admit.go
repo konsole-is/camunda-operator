@@ -491,9 +491,8 @@ func (r *LogicalBackupRDBMSReconciler) checkManagement(
 
 // rolledOutConfigHash returns the config hash of the live Zeebe workload
 // when every broker runs its pod template and that template names the
-// backup store of the precheck bucket. A workload that is not rendered,
-// still rolls, runs another store, or carries no hash returns a failure with
-// reason Progressing.
+// backup store of the precheck bucket. Zeebe not yet running them returns a
+// failure with reason Progressing. A read error returns an error.
 func (r *LogicalBackupRDBMSReconciler) rolledOutConfigHash(
 	ctx context.Context,
 	precheck *logicalbackup.PreCheckResult,
@@ -502,8 +501,8 @@ func (r *LogicalBackupRDBMSReconciler) rolledOutConfigHash(
 	if err != nil || failure != nil {
 		return "", failure, err
 	}
-	// The template changes before the first broker restarts. A hash pinned
-	// from it during a rollout can name a configuration that no broker runs.
+	// The template changes before the first broker restarts. A hash read
+	// during a rollout can name a configuration that no broker runs.
 	if failure := camundacluster.RolledOut(workload); failure != nil {
 		return "", failure, nil
 	}

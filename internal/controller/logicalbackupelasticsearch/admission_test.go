@@ -77,7 +77,8 @@ func newAdmissionRig(t *testing.T, backups ...*v1.LogicalBackupElasticsearch) *a
 		Spec: v1.SecondaryStorageConfigSpec{
 			Type: v1.SecondaryStorageTypeElasticsearch,
 			Elasticsearch: &v1.ElasticsearchStorage{
-				Endpoint: "http://127.0.0.1:1",
+				Endpoint:           "http://127.0.0.1:1",
+				SnapshotRepository: "cc",
 				CredentialsSecretRef: v1.LocalCredentialsSecretRef{
 					Name: "missing", UsernameKey: "u", PasswordKey: "p",
 				},
@@ -99,7 +100,7 @@ func newAdmissionRig(t *testing.T, backups ...*v1.LogicalBackupElasticsearch) *a
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "ns", Name: camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
 		},
-		Status: appsv1.StatefulSetStatus{UpdatedReplicas: 1},
+		Status: appsv1.StatefulSetStatus{UpdatedReplicas: 1, ReadyReplicas: 1},
 		Spec: appsv1.StatefulSetSpec{Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{camundacluster.ConfigHashAnnotation: rigConfigHash},
@@ -108,6 +109,7 @@ func newAdmissionRig(t *testing.T, backups ...*v1.LogicalBackupElasticsearch) *a
 				Name: "zeebe",
 				Env: append(
 					camundacluster.BackupStoreEnv(cluster, bucket),
+					camundaconfig.Var(camundaconfig.KeyBackupRepositoryName, "cc"),
 					camundaconfig.Var(camundaconfig.KeyElasticsearchURL, storage.Spec.Elasticsearch.Endpoint),
 				),
 			}}},

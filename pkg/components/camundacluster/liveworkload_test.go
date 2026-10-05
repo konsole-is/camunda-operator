@@ -72,7 +72,8 @@ func TestRolledOutRequiresEveryReplicaOnTheCurrentTemplate(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Generation: 2},
 			Spec:       appsv1.StatefulSetSpec{Replicas: &replicas},
 			Status: appsv1.StatefulSetStatus{
-				ObservedGeneration: 2, UpdatedReplicas: 3, CurrentRevision: "rev-2", UpdateRevision: "rev-2",
+				ObservedGeneration: 2, UpdatedReplicas: 3, ReadyReplicas: 3,
+				CurrentRevision: "rev-2", UpdateRevision: "rev-2",
 			},
 		}
 	}
@@ -89,6 +90,10 @@ func TestRolledOutRequiresEveryReplicaOnTheCurrentTemplate(t *testing.T) {
 		{
 			name:   "a replica runs the previous template",
 			mutate: func(w *appsv1.StatefulSet) { w.Status.UpdatedReplicas = 2 },
+		},
+		{
+			name:   "a replica on the current template is not ready",
+			mutate: func(w *appsv1.StatefulSet) { w.Status.ReadyReplicas = 2 },
 		},
 		{
 			name:   "the update revision is not current yet",

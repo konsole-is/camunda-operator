@@ -159,8 +159,8 @@ type LogicalBackupElasticsearchStatus struct {
 	// WorkloadConfigHash records the configuration of Zeebe when the backup
 	// started. It is the config hash of the Zeebe pod template. The backup
 	// starts only after the cluster runs its current spec. Zeebe must also
-	// run the Elasticsearch endpoint and the bucket that the contracts of the
-	// cluster declare. Until the runtime backup is final, each step compares
+	// run the Elasticsearch endpoint, the snapshot repository, and the bucket
+	// that the contracts of the cluster declare. Until the runtime backup is final, each step compares
 	// the current hash with this value, after it reads the state of its part.
 	// If the hash differs, the step fails at once. The generation of the cluster is not sufficient, because
 	// a change of a referenced object changes the hash but not the generation.

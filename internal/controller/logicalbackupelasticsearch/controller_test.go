@@ -95,12 +95,15 @@ func newRig() *rig {
 	}
 	Expect(k8sClient.Create(ctx, ca)).To(Succeed())
 
+	// The snapshot repository is named after the cluster.
+	clusterName := "cc-" + utilrand.String(8)
 	storage := &v1.SecondaryStorageConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "storage", Namespace: r.namespace},
 		Spec: v1.SecondaryStorageConfigSpec{
 			Type: v1.SecondaryStorageTypeElasticsearch,
 			Elasticsearch: &v1.ElasticsearchStorage{
-				Endpoint: r.search.URL(),
+				Endpoint:           r.search.URL(),
+				SnapshotRepository: clusterName,
 				CredentialsSecretRef: v1.LocalCredentialsSecretRef{
 					Name:        credentials.Name,
 					UsernameKey: "username",
@@ -133,7 +136,7 @@ func newRig() *rig {
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, bucket) })
 
 	r.cluster = &v1.CamundaCluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "cc-" + utilrand.String(8), Namespace: r.namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: clusterName, Namespace: r.namespace},
 		Spec: v1.CamundaClusterSpec{
 			PlatformConfigRef: platform.Name,
 			Version:           "8.9.9",
@@ -209,7 +212,11 @@ func (r *rig) startZeebeRollout(hash, endpoint string) {
 	key := r.zeebeKey()
 	container := corev1.Container{
 		Name: "zeebe", Image: "z",
-		Env: append(zeebeBackupStoreEnv(r.cluster), camundaconfig.Var(camundaconfig.KeyElasticsearchURL, endpoint)),
+		Env: append(
+			zeebeBackupStoreEnv(r.cluster),
+			camundaconfig.Var(camundaconfig.KeyBackupRepositoryName, r.repository),
+			camundaconfig.Var(camundaconfig.KeyElasticsearchURL, endpoint),
+		),
 	}
 	Eventually(func(g Gomega) {
 		var workload appsv1.StatefulSet
@@ -284,7 +291,8 @@ func (r *rig) rollTo(endpoint string) {
 		Spec: v1.SecondaryStorageConfigSpec{
 			Type: v1.SecondaryStorageTypeElasticsearch,
 			Elasticsearch: &v1.ElasticsearchStorage{
-				Endpoint: endpoint,
+				Endpoint:           endpoint,
+				SnapshotRepository: r.repository,
 				CredentialsSecretRef: v1.LocalCredentialsSecretRef{
 					Name: "es-credentials", UsernameKey: "username", PasswordKey: "password",
 				},

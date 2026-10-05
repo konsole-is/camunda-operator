@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"strings"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -179,11 +180,10 @@ func (r *Reconciler) admitBinding(
 }
 
 // zeebeRunsDestination returns the config hash of the live Zeebe workload
-// when every broker runs it and it names the backup store and the
-// Elasticsearch endpoint that the contracts of the cluster declare. A converged generation cannot prove this: an
-// edit of the SecondaryStorageConfig changes the endpoint without a change
-// of the cluster generation. A workload that is not rendered, still rolls, or
-// runs another store or endpoint returns a failure with reason Progressing.
+// when every broker runs its pod template and that template names the
+// backup store, the snapshot repository, and the Elasticsearch endpoint
+// that the contracts of the cluster declare. Zeebe not yet running them
+// returns a failure with reason Progressing. A read error returns an error.
 func (r *Reconciler) zeebeRunsDestination(
 	ctx context.Context,
 	res *logicalbackup.PreCheckResult,
@@ -202,7 +202,13 @@ func (r *Reconciler) zeebeRunsDestination(
 		return "", failure, nil
 	}
 
+	// An edit of a contract moves these without a change of the cluster
+	// generation.
 	if failure := camundacluster.RunsBackupStore(&workload.Spec.Template, res.Cluster, res.Bucket); failure != nil {
+		return "", failure, nil
+	}
+
+	if failure := runsSnapshotRepository(workload, res); failure != nil {
 		return "", failure, nil
 	}
 
@@ -230,6 +236,34 @@ func (r *Reconciler) zeebeRunsDestination(
 	}
 
 	return hash, nil, nil
+}
+
+// runsSnapshotRepository requires the published binding and the Zeebe
+// template to name the snapshot repository that the storage contract
+// declares. start pins the repository of the binding. The web applications
+// write to the one of the template. A mismatch is a wait with reason
+// Progressing.
+func runsSnapshotRepository(
+	workload *appsv1.StatefulSet,
+	res *logicalbackup.PreCheckResult,
+) *conditions.PreCheckFailure {
+	declared := res.Storage.Spec.Elasticsearch.SnapshotRepository
+	published := res.Cluster.Status.Management.BackupRepository
+	running, _ := camundacluster.TemplateEnvValue(
+		&workload.Spec.Template, camundaconfig.KeyBackupRepositoryName.Env(),
+	)
+	if published == declared && running == declared {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonProgressing,
+		Message: fmt.Sprintf(
+			"SecondaryStorageConfig %s declares the snapshot repository %q, but CamundaCluster %s/%s "+
+				"publishes %q and Zeebe runs %q; the backup waits until both use the declared repository",
+			res.Storage.Name, declared, res.Cluster.Namespace, res.Cluster.Name, published, running,
+		),
+	}
 }
 
 // highestSiblingBackupID returns the highest backup ID among the other
