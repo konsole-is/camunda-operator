@@ -215,6 +215,39 @@ func (r *DatabaseServerReconciler) keepAppliedStorageSize(
 	)
 }
 
+// keepAppliedSize returns the size to render for one volume of the server:
+// requested, or existing when requested is below it. It records the Warning
+// event when it keeps existing, unless reported is true.
+func (r *DatabaseServerReconciler) keepAppliedSize(
+	server *v1.DatabaseServer,
+	field string,
+	requested, existing *resource.Quantity,
+	reported bool,
+) *resource.Quantity {
+	if requested == nil || existing == nil || requested.Cmp(*existing) >= 0 {
+		return requested
+	}
+	if reported {
+		return existing
+	}
+
+	r.EventRecorder.Eventf(
+		server,
+		nil,
+		corev1.EventTypeWarning,
+		eventReasonStorageShrinkIgnored,
+		eventActionResize,
+		"%s %s is below the existing volume size %s. Keeping %s, because PostgreSQL volumes "+
+			"cannot be reduced in place",
+		field,
+		requested,
+		existing,
+		existing,
+	)
+
+	return existing
+}
+
 // keepAppliedWALSize returns the size to render for the write-ahead log volume
 // of the server: the clamp of keepAppliedSize, and the size that is there when
 // the merged spec asks for no such volume at all. reported applies to both
@@ -244,39 +277,6 @@ func (r *DatabaseServerReconciler) keepAppliedWALSize(
 		"walStorageSize is no longer set, and the write-ahead log volume of %s is already there. "+
 			"Keeping it, because CloudNativePG does not take a write-ahead log volume away from "+
 			"a server that has one",
-		existing,
-	)
-
-	return existing
-}
-
-// keepAppliedSize returns the size to render for one volume of the server:
-// requested, or existing when requested is below it. It records the Warning
-// event when it keeps existing, unless reported is true.
-func (r *DatabaseServerReconciler) keepAppliedSize(
-	server *v1.DatabaseServer,
-	field string,
-	requested, existing *resource.Quantity,
-	reported bool,
-) *resource.Quantity {
-	if requested == nil || existing == nil || requested.Cmp(*existing) >= 0 {
-		return requested
-	}
-	if reported {
-		return existing
-	}
-
-	r.EventRecorder.Eventf(
-		server,
-		nil,
-		corev1.EventTypeWarning,
-		eventReasonStorageShrinkIgnored,
-		eventActionResize,
-		"%s %s is below the existing volume size %s. Keeping %s, because PostgreSQL volumes "+
-			"cannot be reduced in place",
-		field,
-		requested,
-		existing,
 		existing,
 	)
 
