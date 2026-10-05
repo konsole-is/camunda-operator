@@ -742,7 +742,7 @@ The API server enforces these rules at admission:
 - `spec.version` and `spec.connectors.version` must be of the form `x.y.z`.
 - `spec.zeebe.partitions` cannot be decreased, and once set it cannot be removed.
 - `spec.zeebe.storageClassName` is immutable.
-- `spec.zeebe.storageSize` cannot be decreased once set.
+- A new inline `spec.zeebe.storageSize` cannot be smaller than the inline value it replaces.
 - `spec.zeebe.replicationFactor` must not exceed `spec.zeebe.replicas`.
 - `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` is `Delete` or `Retain`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both.
