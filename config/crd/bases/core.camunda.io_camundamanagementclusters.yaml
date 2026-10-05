@@ -5045,12 +5045,16 @@ spec:
               conditions:
                 description: |-
                   Conditions represent the current state. Ready holds the reason of a
-                  failed pre-check, or StepFailed for a failed step. Otherwise it follows
-                  the conditions of the deployed components. When all of them are True, a
-                  failed OptimizeCallbacksReady makes Ready False with its reason. The
-                  per-component conditions (KeycloakReady, IdentityReady,
-                  ConsoleReady, WebModelerReady, ManagementAuthReady, SecretsReady,
-                  MirroredSecretsReady) and OptimizeCallbacksReady also appear here.
+                  failed pre-check, or StepFailed for a failed step. When the write of
+                  the ManagementAuthConfig is the first failed step, Ready holds
+                  WriteFailed instead. In the oidc mode it holds ImmutableAfterStart when
+                  spec.identity.admin changed after Management Identity first started.
+                  Otherwise it follows the conditions of the deployed components. When
+                  all of them are True, a failed OptimizeCallbacksReady makes Ready False
+                  with its reason. The per-component conditions (KeycloakReady,
+                  IdentityReady, ConsoleReady, WebModelerReady, ManagementAuthReady,
+                  SecretsReady, MirroredSecretsReady) and OptimizeCallbacksReady also
+                  appear here.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

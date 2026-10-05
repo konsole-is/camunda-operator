@@ -43,8 +43,7 @@ const (
 	// RequestedStorageSizeAnnotation is the annotation of the broker
 	// StatefulSet that carries the effective storageSize. The claim template
 	// keeps the size it was created with, so this is where the requested
-	// size is visible, and the controller records an ignored shrink only when
-	// it changes.
+	// size is visible.
 	RequestedStorageSizeAnnotation = "camunda.io/requested-storage-size"
 	// RequestedStorageClassAnnotation is the annotation of the broker
 	// StatefulSet that carries the effective zeebe.storageClassName. It is

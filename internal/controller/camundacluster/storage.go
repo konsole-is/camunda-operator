@@ -34,9 +34,9 @@ import (
 )
 
 // eventReasonStorageShrinkIgnored is the Warning event that the controller
-// records once per requested size when the effective storageSize is below a
-// bound broker claim. The claims keep their size, because volumes cannot be
-// reduced in place.
+// records when the effective storageSize is below a bound broker claim and the
+// applied StatefulSet does not carry that request yet. The claims keep their
+// size, because volumes cannot be reduced in place.
 const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 
 // eventReasonStorageClassChangeIgnored is the Warning event that the
@@ -224,10 +224,8 @@ func (r *CamundaClusterReconciler) growBrokerClaims(
 }
 
 // recordIgnoredShrink records StorageShrinkIgnored when size is below the
-// largest bound broker claim, once per requested size: the event fires until
-// the StatefulSet carries the requested size annotation, which the apply of
-// this reconcile writes. Admission rejects an inline shrink, so only a
-// preset-driven decrease reaches this point.
+// largest bound broker claim, until the StatefulSet carries size in the
+// requested size annotation, which the apply of this reconcile writes.
 func (r *CamundaClusterReconciler) recordIgnoredShrink(
 	cluster *v1.CamundaCluster,
 	storage brokerStorage,
@@ -253,8 +251,7 @@ func (r *CamundaClusterReconciler) recordIgnoredShrink(
 
 // requestedSizeApplied reports whether the applied StatefulSet already
 // carries the requested storage size annotation for size. It is false before
-// the first apply and after every change of the effective size, so an event
-// that depends on it fires once per requested size.
+// the first apply and after every change of the effective size.
 func (s brokerStorage) requestedSizeApplied(size resource.Quantity) bool {
 	if s.statefulSet == nil {
 		return false

@@ -1251,11 +1251,13 @@ spec:
                 description: |-
                   WorkloadConfigHash records the configuration of Zeebe when the backup
                   started. It is the config hash of the Zeebe pod template. The operator
-                  compares it with the current hash before it renders the dump Job, and
-                  again before it requests the Zeebe backup. After the request, it does
-                  not compare again. If the hash differs, the backup fails after the
-                  grace period. The generation of the cluster is not sufficient, because a
-                  change of a referenced object changes the hash but not the generation.
+                  compares it with the current hash before it renders the dump Job and
+                  before it requests the Zeebe backup. It compares again until the Zeebe
+                  backup is final. Before the request, a different hash fails the backup
+                  after the grace period. After the request, a different hash fails the
+                  backup at once, also when the Zeebe backup completed. The generation
+                  of the cluster is not sufficient, because a change of a referenced
+                  object changes the hash but not the generation.
                 type: string
               zeebeBackupId:
                 description: |-
