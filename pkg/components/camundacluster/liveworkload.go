@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
@@ -119,23 +120,59 @@ func RunsBackupStore(
 	cluster *v1.CamundaCluster,
 	bucket *v1.ObjectStorageConfig,
 ) *conditions.PreCheckFailure {
+	declared := map[string]string{}
 	for _, env := range BackupStoreEnv(cluster, bucket) {
-		if env.ValueFrom != nil {
+		if env.ValueFrom == nil {
+			declared[env.Name] = env.Value
+		}
+	}
+
+	// A key that the declared store does not render must be gone from the
+	// template too. A stale endpoint alone sends the brokers elsewhere.
+	for _, key := range backupDestinationKeys {
+		want, wanted := declared[key.Env()]
+		running, present := TemplateEnvValue(template, key.Env())
+		if wanted == present && running == want {
 			continue
 		}
-		if running, _ := TemplateEnvValue(template, env.Name); running != env.Value {
-			return &conditions.PreCheckFailure{
-				Reason: v1.ReasonProgressing,
-				Message: fmt.Sprintf(
-					"Zeebe of CamundaCluster %s/%s does not run the backup store of ObjectStorageConfig %s yet: "+
-						"%s is %q, not %q",
-					cluster.Namespace, cluster.Name, bucket.Name, env.Name, running, env.Value,
-				),
-			}
+
+		return &conditions.PreCheckFailure{
+			Reason: v1.ReasonProgressing,
+			Message: fmt.Sprintf(
+				"Zeebe of CamundaCluster %s/%s does not run the backup store of ObjectStorageConfig %s yet: "+
+					"%s is %s, not %s",
+				cluster.Namespace, cluster.Name, bucket.Name, key.Env(),
+				envState(running, present), envState(want, wanted),
+			),
 		}
 	}
 
 	return nil
+}
+
+// backupDestinationKeys are the keys of the backup store that decide where
+// the brokers write. Credentials and client settings are not among them.
+var backupDestinationKeys = []camundaconfig.Key{
+	camundaconfig.KeyPrimaryBackupStore,
+	camundaconfig.KeyPrimaryBackupS3BucketName,
+	camundaconfig.KeyPrimaryBackupS3BasePath,
+	camundaconfig.KeyPrimaryBackupS3Region,
+	camundaconfig.KeyPrimaryBackupS3Endpoint,
+	camundaconfig.KeyPrimaryBackupS3ForcePathStyleAccess,
+	camundaconfig.KeyPrimaryBackupGCSBucketName,
+	camundaconfig.KeyPrimaryBackupGCSBasePath,
+	camundaconfig.KeyPrimaryBackupAzureEndpoint,
+	camundaconfig.KeyPrimaryBackupAzureAccountName,
+	camundaconfig.KeyPrimaryBackupAzureBasePath,
+}
+
+// envState renders an environment value for a message, or "absent".
+func envState(value string, set bool) string {
+	if !set {
+		return "absent"
+	}
+
+	return fmt.Sprintf("%q", value)
 }
 
 // TemplateEnvValue returns the plain value of the environment variable name

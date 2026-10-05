@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 )
 
 func TestLiveZeebeWorkloadWaitsForAWorkloadThatIsNotRendered(t *testing.T) {
@@ -137,6 +138,13 @@ func TestRunsBackupStoreComparesThePlainValuesOfTheStore(t *testing.T) {
 	require.NotNil(t, failure)
 	assert.Equal(t, v1.ReasonProgressing, failure.Reason)
 	assert.Contains(t, failure.Message, "moved")
+
+	withEndpoint := bucket("backups", "creds")
+	withEndpoint.Spec.S3.Endpoint = "https://minio.example:9000"
+	template.Spec.Containers[0].Env = BackupStoreEnv(cluster, withEndpoint)
+	failure = RunsBackupStore(template, cluster, bucket("backups", "creds"))
+	require.NotNil(t, failure, "a store key that the declared bucket drops must be gone from the template")
+	assert.Contains(t, failure.Message, camundaconfig.KeyPrimaryBackupS3Endpoint.Env())
 }
 
 func TestTemplateEnvValueReadsOnlyAPlainValue(t *testing.T) {
