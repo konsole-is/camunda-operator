@@ -489,9 +489,9 @@ func (r *Reconciler) leaveOldRealm(
 	return withdrawal, false, nil
 }
 
-// recordInitialClaim returns an ImmutableAfterStart refusal for Ready when an
-// earlier reconcile recorded a claim that differs from the one
-// spec.identity.admin asks for, and nil otherwise.
+// recordInitialClaim returns an ImmutableAfterStart refusal for Ready when the
+// recorded claim differs from the one spec.identity.admin asks for, and nil
+// otherwise.
 //
 // Identity reads the claim as it boots and stores the result in its database.
 // The annotation is what keeps the rendered environment on the value that
