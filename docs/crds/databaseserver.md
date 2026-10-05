@@ -75,7 +75,7 @@ spec:
   # ... the rest of your server
 ```
 
-A volume cannot shrink. The API server rejects a lower value on the server. If a preset lowers a size under a running server, the server keeps its current size and records a Warning event with reason `StorageShrinkIgnored`. If you raise a size, CloudNativePG grows the volumes in place when the StorageClass allows volume expansion.
+A volume cannot shrink. The API server rejects a smaller value on the server that replaces a value set there. A preset can still lower a size under a running server, and a first value on the server can be smaller than the current size. The server then keeps its current size and records a Warning event with reason `StorageShrinkIgnored`. If you raise a size, CloudNativePG grows the volumes in place when the StorageClass allows volume expansion.
 
 You can add `walStorageSize` to a running server, but you cannot remove the volume again. If you or a preset clear the field, the server keeps the volume and records a Warning event with reason `WALStorageKept`. To get a smaller volume or no write-ahead log volume, create a new server.
 

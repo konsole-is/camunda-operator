@@ -147,7 +147,7 @@ After a restore, you can give the release control of the version again. Set the 
 
 ## Storage
 
-The brokers keep their data on one PersistentVolumeClaim per pod. When `spec.zeebe.storageSize` grows, the operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. The operator never shrinks a volume. A smaller size from a preset is ignored, and the cluster records the Warning event `StorageShrinkIgnored`.
+The brokers keep their data on one PersistentVolumeClaim per pod. When `spec.zeebe.storageSize` grows, the operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. The operator never shrinks a volume. The API server rejects a smaller inline value that replaces an inline value. A smaller size from a preset, or a first inline value below the current size, is ignored, and the cluster records the Warning event `StorageShrinkIgnored`.
 
 The storage class of the broker volumes cannot change after the operator created the broker StatefulSet `<name>-zeebe`. The API server rejects a change of `spec.zeebe.storageClassName` after you set it. A new class can still come from the preset, or from a class that you add to a cluster that inherited one. The operator then keeps the class of the StatefulSet, also while the cluster is suspended. It records the Warning event `StorageClassChangeIgnored` one time for each requested class, also when the preset removes its class. A cluster without a broker StatefulSet takes the new class. Volumes that `whenDeleted: Retain` kept from a deleted cluster of the same name keep their class.
 
@@ -742,7 +742,7 @@ The API server enforces these rules at admission:
 - `spec.version` and `spec.connectors.version` must be of the form `x.y.z`.
 - `spec.zeebe.partitions` cannot be decreased, and once set it cannot be removed.
 - `spec.zeebe.storageClassName` is immutable.
-- `spec.zeebe.storageSize` cannot be decreased.
+- `spec.zeebe.storageSize` cannot be decreased once set.
 - `spec.zeebe.replicationFactor` must not exceed `spec.zeebe.replicas`.
 - `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` is `Delete` or `Retain`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both.
