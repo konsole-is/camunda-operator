@@ -18,57 +18,57 @@ package v1
 
 import "k8s.io/apimachinery/pkg/api/resource"
 
-// LocalCredentialsSecretRef references a username/password pair stored in a
-// Secret of the namespace of the object that holds the reference. Every
-// namespaced kind uses it, so a reference can never reach the credentials of
+// LocalCredentialsSecretRef references a username and password pair in a
+// Secret in the namespace of the object that holds the reference. Every
+// namespaced kind uses it, so a reference never reaches the credentials of
 // another namespace.
 type LocalCredentialsSecretRef struct {
-	// Name of the Secret holding the credentials.
+	// Name is the name of the Secret that holds the credentials.
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
-	// UsernameKey is the key in the Secret holding the plaintext username.
+	// UsernameKey is the key in the Secret that holds the plaintext username.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:default=username
 	// +optional
 	UsernameKey string `json:"usernameKey,omitempty"`
-	// PasswordKey is the key in the Secret holding the plaintext password.
+	// PasswordKey is the key in the Secret that holds the plaintext password.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:default=password
 	// +optional
 	PasswordKey string `json:"passwordKey,omitempty"`
 }
 
-// LocalSecretKeyRef references a single value inside a Secret of the namespace
-// of the object that holds the reference. Every namespaced kind uses it, so a
-// reference can never reach the Secrets of another namespace.
+// LocalSecretKeyRef references one value in a Secret in the namespace of the
+// object that holds the reference. Every namespaced kind uses it, so a
+// reference never reaches the Secrets of another namespace.
 type LocalSecretKeyRef struct {
-	// Name of the Secret holding the value.
+	// Name is the name of the Secret that holds the value.
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
-	// Key in the Secret holding the value.
+	// Key is the key in the Secret that holds the value.
 	// +kubebuilder:validation:MinLength=1
 	Key string `json:"key"`
 }
 
-// SecretKeyRef references a single value inside a Secret of a named namespace.
-// A cluster-scoped kind uses it, because it has no namespace of its own to
-// resolve a reference in. A namespaced kind uses LocalSecretKeyRef instead.
+// SecretKeyRef references one value in a Secret in a named namespace. A
+// cluster-scoped kind uses it, because it has no namespace of its own. A
+// namespaced kind uses LocalSecretKeyRef.
 type SecretKeyRef struct {
-	// Name of the Secret holding the value.
+	// Name is the name of the Secret that holds the value.
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
-	// Namespace of the Secret.
+	// Namespace is the namespace of the Secret.
 	// +kubebuilder:validation:MinLength=1
 	Namespace string `json:"namespace"`
-	// Key in the Secret holding the value.
+	// Key is the key in the Secret that holds the value.
 	// +kubebuilder:validation:MinLength=1
 	Key string `json:"key"`
 }
 
 // VolumeStatus is the observed size of one data PersistentVolumeClaim of a
-// cluster. A status lists one entry per bound claim, sorted by name, so a
-// resize of a single claim outside the spec, for example by an auto-resize
-// controller, shows here.
+// cluster. A status lists one entry for each bound claim, sorted by name.
+// Thus it also shows a resize of one claim outside the spec, for example by
+// an auto-resize controller.
 type VolumeStatus struct {
 	// Name is the name of the PersistentVolumeClaim.
 	Name string `json:"name"`

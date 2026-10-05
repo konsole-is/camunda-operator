@@ -21,53 +21,57 @@ package v1
 // under docs/crds is the contract for both.
 //
 // A CRD that runs ocf components derives Ready from its component conditions
-// once its pre-checks pass. Ready is True only when every one of those
-// conditions is True. Its reason is then the ocf status (Healthy, Creating,
-// Updating, Failing, Degraded, Down, Suspended, Error, and more) of the
-// governing component, not a constant from this file.
+// when its pre-checks pass. Ready is True only when every one of those
+// conditions is True. Its reason is then the ocf status of the governing
+// component, not a constant from this file. Examples are Healthy, Creating,
+// Updating, Failing, Degraded, Down, Suspended, and Error.
 const (
 	// ConditionReady is the aggregate condition that every CRD reports.
 	ConditionReady = "Ready"
-	// ConditionMirroredSecretsReady reports whether every referenced Secret
-	// that lives outside the namespace of the workloads is copied into it. A
-	// pod reads a Secret of its own namespace only, so a CRD that renders
-	// workloads copies what it references from elsewhere. The condition takes
-	// part in Ready only when such a Secret is referenced and reads Disabled
-	// when none is.
+	// ConditionMirroredSecretsReady reports whether the operator copied every
+	// referenced Secret from another namespace into the namespace of the
+	// workloads. A pod reads only the Secrets of its own namespace. The
+	// condition affects Ready only when such a Secret is referenced. It reads
+	// Disabled when no such Secret is referenced.
 	ConditionMirroredSecretsReady = "MirroredSecretsReady"
 
 	// ReasonHealthy means that all checks passed. It is also the ocf status
-	// of a healthy component, so a derived Ready reports the same reason.
+	// of a healthy component, so a derived Ready has the same reason.
 	ReasonHealthy = "Healthy"
 	// ReasonInvalidReference means that a referenced custom resource does not
 	// exist, or that a reference is otherwise not usable.
 	ReasonInvalidReference = "InvalidReference"
-	// ReasonMissingSecret means that a referenced Secret is missing or lacks a
-	// configured key.
+	// ReasonMissingSecret means that a referenced Secret is missing, or that
+	// it does not have a configured key.
 	ReasonMissingSecret = "MissingSecret"
-	// ReasonConnectionFailed means that a backing server is unreachable or
-	// rejects the configured credentials.
+	// ReasonConnectionFailed means that the operator cannot reach a server
+	// that the resource uses, or that the server refuses the configured
+	// credentials.
 	ReasonConnectionFailed = "ConnectionFailed"
 	// ReasonStorageTypeMismatch means that the secondary storage type of the
 	// referenced cluster does not fit this resource.
 	ReasonStorageTypeMismatch = "StorageTypeMismatch"
 	// ReasonWaitingForHandover means that workloads of another holder of the
-	// thing this resource claims still exist, whether this resource holds the
-	// claim already or waits to take it. It keeps its own workloads down, or
-	// its own work on hold, until they are gone. The message names what it
-	// waits for. The CRD doc of each resource that reports it names the
-	// workloads it waits for.
+	// claim of this resource still exist. This resource can already hold the
+	// claim, or it can wait to take it. Until these workloads are gone, it
+	// keeps its own workloads stopped, or its own work on hold. The message
+	// names what it waits for. The CRD doc of each resource that reports it
+	// names the workloads that it waits for. A restore also reports it while
+	// its target cluster does not hold a free backend yet, or while another
+	// backup or restore still writes the database.
 	ReasonWaitingForHandover = "WaitingForHandover"
 	// ReasonStorageAlreadyAttached means that a CamundaCluster other than the
-	// one this resource names holds the storage claim of the backend. One
-	// CamundaCluster holds one backend. The index names and the tables are
-	// fixed, so two clusters on one backend write each other's data. A
-	// CamundaCluster stays suspended, with its volumes, until the holder moves
-	// to another backend or is deleted, and then it resumes on its own. A
-	// restore holds, and writes nothing into the backend. The message names
-	// the holder and the backend.
+	// one that this resource names holds the storage claim of the backend.
+	// One backend serves one CamundaCluster. The index names and the tables
+	// are fixed, so two clusters on one backend write to the data of each
+	// other. A CamundaCluster stays suspended, with its volumes, until the
+	// holder moves to another backend or is deleted. Then it takes the
+	// backend. It can still wait for old writers with WaitingForHandover, or
+	// stay suspended by spec.suspend or a suspension hold. A restore waits
+	// and writes nothing to the backend. The
+	// message names the holder and the backend.
 	ReasonStorageAlreadyAttached = "StorageAlreadyAttached"
-	// ReasonSuspensionHeld means that a CamundaCluster carries at least one
+	// ReasonSuspensionHeld means that a CamundaCluster has at least one
 	// suspension hold annotation, so it stays suspended whatever spec.suspend
 	// says. The message names each hold and its reason.
 	ReasonSuspensionHeld = "SuspensionHeld"
