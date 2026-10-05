@@ -208,6 +208,74 @@ func TestRuntimeStepFailsOnARollAlsoWhenTheStatusCallIsUnreachable(t *testing.T)
 	assert.Contains(t, backup.Status.FailureMessage, "hash-2")
 }
 
+// stepWorld returns cluster ns/cc with its management binding at endpoint,
+// and a reader that holds its storage contract and a Zeebe workload that
+// runs config hash.
+func stepWorld(t *testing.T, endpoint, hash string) (*v1.CamundaCluster, client.Reader) {
+	t.Helper()
+	storage := &v1.SecondaryStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "storage", Namespace: "ns"},
+		Spec: v1.SecondaryStorageConfigSpec{
+			Type:          v1.SecondaryStorageTypeElasticsearch,
+			Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es:9200"},
+		},
+	}
+	cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "cc", Namespace: "ns"}}
+	cluster.Spec.StorageRef = storage.Name
+	cluster.Status.Management = &v1.ManagementBinding{
+		Endpoint: endpoint, Version: "8.9.9",
+		Auth: v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
+	}
+	s := runtime.NewScheme()
+	require.NoError(t, v1.AddToScheme(s))
+	require.NoError(t, appsv1.AddToScheme(s))
+	reader := fake.NewClientBuilder().WithScheme(s).
+		WithObjects(storage, zeebeWorkload(hash, "https://es:9200")).Build()
+
+	return cluster, reader
+}
+
+// The history backup names its snapshots in the status answer. A roll that
+// fails the step on that answer must not lose the names: the deletion of the
+// backup needs them after the cluster is gone.
+func TestHistoryStepRecordsTheSnapshotNamesAlsoWhenZeebeRolled(t *testing.T) {
+	r, _, server := runtimeRig(t)
+	server.SetHistoryState(testBackupID, "IN_PROGRESS", "")
+	cluster, reader := stepWorld(t, server.URL(), "hash-2")
+	r.APIReader = reader
+	backup := runtimeBackup()
+	backup.Status.Step = v1.StepBackupHistory
+	backup.Status.WorkloadConfigHash = rigConfigHash
+	accepted := metav1.Now()
+	backup.Status.HistoryRequestedTime = &accepted
+	backup.Status.HistoryAcceptedTime = &accepted
+
+	_, err := r.backupHistory(t.Context(), backup, cluster)
+	require.NoError(t, err)
+
+	assert.Equal(t, v1.StepResumeExporting, backup.Status.Step)
+	assert.Contains(t, backup.Status.FailureMessage, "hash-2")
+	assert.Contains(t, backup.Status.HistorySnapshots, camundaadmintest.HistorySnapshotName(testBackupID))
+}
+
+// A roll fails the pause step at once with both hashes, also while the
+// management API does not answer the pause call.
+func TestPauseStepFailsOnARollAlsoWhenThePauseCallIsUnreachable(t *testing.T) {
+	r, _, _ := runtimeRig(t)
+	cluster, reader := stepWorld(t, "http://127.0.0.1:1", "hash-2")
+	r.APIReader = reader
+	backup := runtimeBackup()
+	backup.Status.Step = v1.StepPauseExporting
+	backup.Status.WorkloadConfigHash = rigConfigHash
+
+	_, err := r.pauseExporting(t.Context(), backup, cluster)
+	require.NoError(t, err)
+
+	assert.Equal(t, v1.StepResumeExporting, backup.Status.Step)
+	assert.Contains(t, backup.Status.FailureMessage, rigConfigHash)
+	assert.Contains(t, backup.Status.FailureMessage, "hash-2")
+}
+
 // A step fails at once, with both hashes, when Zeebe rolled since the
 // start, and also when the workload cannot be read: no wait can make a part
 // taken under another configuration match the set again.

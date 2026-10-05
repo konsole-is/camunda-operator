@@ -81,7 +81,11 @@ func (r *Reconciler) pauseExporting(
 		return result, err
 	}
 
-	if err := mgmt.PauseExporting(ctx, true); err != nil {
+	err = mgmt.PauseExporting(ctx, true)
+	if result, done, err := r.workloadUnchanged(ctx, backup, cluster, "PauseExporting", nil); done {
+		return result, err
+	}
+	if err != nil {
 		if errors.Is(err, camundaadmin.ErrUnreachable) {
 			// A lost answer can be a partial pause, so the retry is bounded
 			// here too.
@@ -134,6 +138,12 @@ func (r *Reconciler) backupHistory(
 	}
 
 	status, err := mgmt.HistoryBackupStatus(ctx, backup.Status.BackupID)
+	if err == nil && backup.Status.HistoryAcceptedTime != nil {
+		// The names must reach status before a failure below ends the step.
+		// After the cluster is gone, the deletion finds the snapshots only
+		// by these names.
+		recordHistorySnapshots(backup, status)
+	}
 	if result, done, err := r.workloadUnchanged(
 		ctx, backup, cluster, "BackupHistory", &backup.Status.History,
 	); done {
@@ -161,8 +171,6 @@ func (r *Reconciler) backupHistory(
 		r.failStep(backup, "BackupHistory", &backup.Status.History, unownedHistoryBackup(backup))
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
-
-	recordHistorySnapshots(backup, status)
 
 	switch status.State {
 	case camundaadmin.StateInProgress:
