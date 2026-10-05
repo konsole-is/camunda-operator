@@ -1045,7 +1045,7 @@ func (r *DatabaseServerReconciler) requeueAfter(
 		waits = append(waits, wait)
 	}
 
-	if wait, ok := cluster.GraceRemaining(server); ok {
+	if wait, ok := grace.Remaining(server, cluster); ok {
 		waits = append(waits, wait)
 	}
 

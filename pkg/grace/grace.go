@@ -125,6 +125,22 @@ func (p Periods) Validate() error {
 	return nil
 }
 
+// Remaining returns the delay until the earliest grace period of comps on
+// owner ends, as component.EarliestGraceRemaining does, or false when none is
+// pending. It skips a component whose condition carries a reason that ocf does
+// not rank: a controller staged that reason over the condition and writes it
+// again on every reconcile, so a requeue for it changes nothing.
+func Remaining(owner component.OperatorCRD, comps ...*component.Component) (time.Duration, bool) {
+	graded := make([]*component.Component, 0, len(comps))
+	for _, comp := range comps {
+		if comp.GetCondition(owner).ComponentStatus().Priority() != 0 {
+			graded = append(graded, comp)
+		}
+	}
+
+	return component.EarliestGraceRemaining(owner, graded...)
+}
+
 // Restart removes the condition of conditionType from owner when its reason
 // is one of reasons, so the component starts a new grace period when it
 // reconciles next. A controller calls Restart before the reconcile when a

@@ -285,7 +285,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		wait = r.retryInterval()
 	}
 
-	if graceWait, ok := component.EarliestGraceRemaining(&cluster, comps...); ok {
+	if graceWait, ok := grace.Remaining(&cluster, comps...); ok {
 		wait = grace.Sooner(wait, graceWait)
 	}
 

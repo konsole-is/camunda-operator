@@ -364,7 +364,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		wait = r.retryInterval()
 	}
 
-	if graceWait, ok := component.EarliestGraceRemaining(&cluster, built.all...); ok {
+	if graceWait, ok := grace.Remaining(&cluster, built.all...); ok {
 		wait = grace.Sooner(wait, graceWait)
 	}
 

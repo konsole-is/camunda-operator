@@ -142,6 +142,42 @@ func TestWorkloadDefaultCoversTheDatastoreDefault(t *testing.T) {
 	assert.GreaterOrEqual(t, DefaultWorkload, DefaultDatastore)
 }
 
+func TestRemaining(t *testing.T) {
+	tests := []struct {
+		name   string
+		reason string
+		wantOK bool
+	}{
+		{name: "waits on a component that converges", reason: string(component.AliveCreating), wantOK: true},
+		{name: "skips a reason that a controller staged", reason: "ImmutableAfterStart"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			comp, err := component.NewComponentBuilder().
+				WithName("workload").
+				WithConditionType("WorkloadReady").
+				WithGracePeriod(time.Hour).
+				Build()
+			require.NoError(t, err)
+			owner := &v1.Database{}
+			owner.Status.Conditions = []metav1.Condition{{
+				Type:               "WorkloadReady",
+				Status:             metav1.ConditionFalse,
+				Reason:             tt.reason,
+				LastTransitionTime: metav1.NewTime(time.Now()),
+			}}
+
+			wait, ok := Remaining(owner, comp)
+
+			assert.Equal(t, tt.wantOK, ok)
+			if tt.wantOK {
+				assert.Greater(t, wait, 59*time.Minute)
+			}
+		})
+	}
+}
+
 func TestRestart(t *testing.T) {
 	tests := []struct {
 		name     string

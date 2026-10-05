@@ -287,7 +287,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		wait = r.retryInterval()
 	}
 
-	if graceWait, ok := component.EarliestGraceRemaining(&optimize, built.all...); ok {
+	if graceWait, ok := grace.Remaining(&optimize, built.all...); ok {
 		wait = grace.Sooner(wait, graceWait)
 	}
 
