@@ -236,9 +236,7 @@ func (r *LogicalBackupRDBMSReconciler) startZeebeBackup(
 // pollZeebeBackup reads the state of the recorded backup and terminalizes on
 // a final answer. Right after the request, the partitions register their
 // parts asynchronously. So a backup that the cluster does not report yet is
-// normal within the registration grace, and fatal past it. A Zeebe workload
-// that no longer carries the pinned config hash fails the backup at once,
-// whatever the state of the Zeebe backup.
+// normal within the registration grace, and fatal past it.
 func (r *LogicalBackupRDBMSReconciler) pollZeebeBackup(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
