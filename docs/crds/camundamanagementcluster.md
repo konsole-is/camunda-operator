@@ -264,7 +264,7 @@ status:
 The operator cannot correct this for you. You have three ways out:
 
 - If the recorded claim belongs to a real person, put the recorded value back on `spec.identity.admin`. Sign in as that person, and grant access to the rest in Management Identity.
-- If nobody holds the recorded claim, change the administrator in the database of Management Identity. Camunda names the values in [OIDC configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/#oidc-configuration). Then set the annotation `camunda.io/identity-initial-claim` to the pair that `spec.identity.admin` names, and `Ready` clears:
+- If nobody holds the recorded claim, change the administrator in the database of Management Identity. Camunda names the values in [OIDC configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/#oidc-configuration). Then set the annotation `camunda.io/identity-initial-claim` to the pair that `spec.identity.admin` names, and `Ready` no longer reports `ImmutableAfterStart`:
 
     ```bash
     kubectl annotate --overwrite camundamanagementcluster my-management -n my-management-ns \

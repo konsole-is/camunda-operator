@@ -495,8 +495,14 @@ type CamundaManagementClusterStatus struct {
 	// callbacks still in it.
 	// +optional
 	CallbackRealm *KeycloakRealmTarget `json:"callbackRealm,omitempty"`
-	// Conditions represent the current state. Ready carries a pre-check
-	// reason, or it is derived from the conditions of the deployed components.
+	// Conditions represent the current state. Ready carries the reason of a
+	// failed pre-check, of a realm that another plane holds, or of a failed
+	// step. In the oidc mode it carries ImmutableAfterStart when
+	// spec.identity.admin changed after Management Identity first started.
+	// Otherwise it is derived from the conditions of the deployed components.
+	// When the plane serves an Optimize and OptimizeCallbacksReady is False,
+	// Ready carries its reason once every component is True, or at once while
+	// the plane waits to leave the old realm.
 	// The per-component conditions (KeycloakReady, IdentityReady,
 	// ConsoleReady, WebModelerReady, ManagementAuthReady, SecretsReady,
 	// MirroredSecretsReady) and OptimizeCallbacksReady also appear here.
