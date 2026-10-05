@@ -489,9 +489,9 @@ func (r *Reconciler) leaveOldRealm(
 	return withdrawal, false, nil
 }
 
-// recordInitialClaim records the initial administrator claim that Management
-// Identity started with. It returns the ImmutableAfterStart refusal of Ready
-// while spec.identity.admin asks for another claim, and nil otherwise.
+// recordInitialClaim returns an ImmutableAfterStart refusal for Ready when an
+// earlier reconcile recorded a claim that differs from the one
+// spec.identity.admin asks for, and nil otherwise.
 //
 // Identity reads the claim as it boots and stores the result in its database.
 // The annotation is what keeps the rendered environment on the value that
@@ -643,10 +643,6 @@ func (r *Reconciler) writeContract(
 // it reports: the contract write keeps the documented WriteFailed, every other
 // step reports StepFailed.
 //
-// A changed administrator claim decides Ready next, and Ready is the only
-// condition that reports it, so it stays in view while a component is not
-// True yet.
-//
 // A component that is not True yet decides Ready before the callbacks do. The
 // realm is bootstrapped by Management Identity against Keycloak, so a plane
 // that is still starting cannot register anything, and reporting that instead
@@ -661,6 +657,9 @@ func readyCondition(
 	if failed != nil {
 		return failed.condition(mc)
 	}
+	// Ready is the only condition that reports a changed administrator claim,
+	// so the refusal goes before the components and stays in view while one is
+	// not True yet.
 	if claimRefusal != nil {
 		return conditions.Failed(mc, claimRefusal)
 	}
