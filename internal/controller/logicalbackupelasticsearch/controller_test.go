@@ -25,6 +25,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -38,12 +39,17 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin/camundaadmintest"
+	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
+	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin/esadmintest"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 )
+
+// rigConfigHash is the config hash of the Zeebe workload that newRig renders.
+const rigConfigHash = "hash-1"
 
 // rig is everything one test needs: the fakes and the referenced resources of
 // one Elasticsearch-backed cluster, wired the way production wires them.
@@ -148,14 +154,16 @@ func newRig() *rig {
 		BasePath: r.namespace + "/" + r.cluster.Name,
 	})).To(Succeed())
 
+	r.renderZeebe(rigConfigHash, r.search.URL())
 	r.publishBinding(3)
 
 	return r
 }
 
 // publishBinding writes the management binding the way the CamundaCluster
-// controller publishes it. The suite runs no CamundaCluster controller, so
-// the tests own the status.
+// controller publishes it, and reports the cluster Ready for its current
+// generation. The suite runs no CamundaCluster controller, so the tests own
+// the status.
 func (r *rig) publishBinding(partitions int32) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
@@ -168,7 +176,79 @@ func (r *rig) publishBinding(partitions int32) {
 			Partitions:       partitions,
 			BackupRepository: r.repository,
 		}
+		cluster.Status.ObservedGeneration = cluster.Generation
+		meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+			Type: v1.ConditionReady, Status: metav1.ConditionTrue, Reason: v1.ReasonHealthy,
+			Message: "stand-in", ObservedGeneration: cluster.Generation,
+		})
 		g.Expect(k8sClient.Status().Update(ctx, &cluster)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// renderZeebe writes the Zeebe workload of the cluster the way the
+// CamundaCluster controller renders it: a pod template with the config hash
+// and the Elasticsearch endpoint that Zeebe runs.
+func (r *rig) renderZeebe(hash, endpoint string) {
+	GinkgoHelper()
+	key := types.NamespacedName{
+		Namespace: r.namespace,
+		Name:      camundacluster.WorkloadName(r.cluster, camundacluster.ComponentZeebe),
+	}
+	container := corev1.Container{
+		Name: "zeebe", Image: "z",
+		Env: []corev1.EnvVar{camundaconfig.Var(camundaconfig.KeyElasticsearchURL, endpoint)},
+	}
+	Eventually(func(g Gomega) {
+		var workload appsv1.StatefulSet
+		err := k8sClient.Get(ctx, key, &workload)
+		if apierrors.IsNotFound(err) {
+			workload = appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace},
+				Spec: appsv1.StatefulSetSpec{
+					Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": key.Name}},
+					Template: corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels:      map[string]string{"app": key.Name},
+							Annotations: map[string]string{camundacluster.ConfigHashAnnotation: hash},
+						},
+						Spec: corev1.PodSpec{Containers: []corev1.Container{container}},
+					},
+				},
+			}
+			g.Expect(k8sClient.Create(ctx, &workload)).To(Succeed())
+
+			return
+		}
+		g.Expect(err).NotTo(HaveOccurred())
+		workload.Spec.Template.Annotations[camundacluster.ConfigHashAnnotation] = hash
+		workload.Spec.Template.Spec.Containers = []corev1.Container{container}
+		g.Expect(k8sClient.Update(ctx, &workload)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// rollTo moves the cluster to a new storage contract at endpoint, the way a
+// user edit starts a rollout. The cluster has not converged on it until the
+// test calls renderZeebe and publishBinding.
+func (r *rig) rollTo(endpoint string) {
+	GinkgoHelper()
+	storage := &v1.SecondaryStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "storage-" + utilrand.String(6), Namespace: r.namespace},
+		Spec: v1.SecondaryStorageConfigSpec{
+			Type: v1.SecondaryStorageTypeElasticsearch,
+			Elasticsearch: &v1.ElasticsearchStorage{
+				Endpoint: endpoint,
+				CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+					Name: "es-credentials", UsernameKey: "username", PasswordKey: "password",
+				},
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, storage)).To(Succeed())
+	Eventually(func(g Gomega) {
+		var cluster v1.CamundaCluster
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(r.cluster), &cluster)).To(Succeed())
+		cluster.Spec.StorageRef = storage.Name
+		g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }
 
@@ -527,6 +607,76 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(final.Status.Runtime.State).To(Equal(v1.BackupPartFailed))
 		Expect(final.Status.Runtime.FailureReason).To(ContainSubstring("partition 2"))
 		Expect(final.Status.FailureMessage).To(ContainSubstring("BackupRuntime"))
+		Expect(r.management.Exporting()).To(Equal("running"))
+	})
+
+	It("waits while the cluster rolls to a new storage contract, then starts on what Zeebe runs", func() {
+		r := newRig()
+		other := esadmintest.NewTLS()
+		DeferCleanup(other.Close)
+		r.rollTo(other.URL())
+		backup := r.newBackup()
+
+		pending := func(substrings ...string) {
+			GinkgoHelper()
+			Eventually(func(g Gomega) {
+				ready := meta.FindStatusCondition(currentBackup(backup).Status.Conditions, v1.ConditionReady)
+				g.Expect(ready).NotTo(BeNil())
+				g.Expect(ready.Reason).To(Equal(v1.ReasonProgressing))
+				for _, substring := range substrings {
+					g.Expect(ready.Message).To(ContainSubstring(substring))
+				}
+			}, timeout, interval).Should(Succeed())
+			Consistently(func(g Gomega) {
+				current := currentBackup(backup)
+				g.Expect(current.Status.Phase).To(Equal(v1.LogicalBackupPending))
+				g.Expect(current.Status.BackupID).To(BeZero())
+			}, "1s", interval).Should(Succeed())
+			Expect(r.management.PauseCalls()).To(BeZero())
+		}
+
+		By("waiting while the cluster has not converged on its new spec")
+		pending("has not converged")
+
+		By("waiting while the cluster reports Ready, but Zeebe still runs the old endpoint")
+		r.publishBinding(3)
+		pending(r.search.URL(), other.URL())
+
+		By("starting once Zeebe runs the new storage contract, and pinning what it runs")
+		r.renderZeebe("hash-2", other.URL())
+		backupID(backup)
+		current := currentBackup(backup)
+		Expect(current.Status.WorkloadConfigHash).To(Equal("hash-2"))
+		Expect(current.Status.Storage.Endpoint).To(Equal(other.URL()))
+	})
+
+	It("fails, not completes, when Zeebe rolled while the runtime backup ran", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+		Expect(currentBackup(backup).Status.WorkloadConfigHash).To(Equal(rigConfigHash))
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetHistoryState(id, "COMPLETED", "")
+		name := logicalbackup.RecordsSnapshotName(id)
+		Eventually(func() int {
+			return r.search.SnapshotCreates(r.repository, name)
+		}, timeout, interval).Should(Equal(1))
+		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
+		Eventually(func() int { return r.management.RuntimeStarts(id) }, timeout, interval).Should(Equal(1))
+
+		By("rolling the Zeebe workload while the runtime backup runs, then reporting it done")
+		r.renderZeebe("hash-2", r.search.URL())
+		r.management.SetRuntimeState(id, "COMPLETED", "")
+
+		expectPhase(backup, v1.LogicalBackupFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.FailureMessage).To(SatisfyAll(
+			ContainSubstring("BackupRuntime"),
+			ContainSubstring(rigConfigHash),
+			ContainSubstring("hash-2"),
+		))
+		Expect(final.Status.Runtime.State).To(Equal(v1.BackupPartFailed))
 		Expect(r.management.Exporting()).To(Equal("running"))
 	})
 

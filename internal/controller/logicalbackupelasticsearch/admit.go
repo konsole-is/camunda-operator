@@ -31,6 +31,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
+	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/management"
@@ -91,6 +93,12 @@ func (r *Reconciler) admit(
 		return ctrl.Result{RequeueAfter: retryInterval}, nil
 	}
 
+	if failure := logicalbackup.ClusterConverged(res.Cluster); failure != nil {
+		backup.Status.Phase = v1.LogicalBackupPending
+		conditions.Stage(backup, conditions.Failed(backup, failure))
+		return ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+
 	if result, done, err := r.admitBinding(ctx, backup, res.Cluster); done {
 		return result, err
 	}
@@ -111,12 +119,22 @@ func (r *Reconciler) admit(
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
 
+	hash, failure, err := r.zeebeRunsDestination(ctx, res)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if failure != nil {
+		backup.Status.Phase = v1.LogicalBackupPending
+		conditions.Stage(backup, conditions.Failed(backup, failure))
+		return ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+
 	highest, err := r.highestSiblingBackupID(ctx, backup)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	r.start(ctx, backup, res, highest)
+	r.start(ctx, backup, res, highest, hash)
 	started = true
 
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
@@ -160,6 +178,44 @@ func (r *Reconciler) admitBinding(
 	return ctrl.Result{}, false, nil
 }
 
+// zeebeRunsDestination returns the config hash of the live Zeebe workload
+// when that workload runs the Elasticsearch endpoint that the storage
+// contract declares. A converged generation cannot prove this: an edit of the
+// SecondaryStorageConfig changes the endpoint without a change of the
+// cluster generation. A workload that is not rendered, or that runs another
+// endpoint, returns a failure with reason Progressing.
+func (r *Reconciler) zeebeRunsDestination(
+	ctx context.Context,
+	res *logicalbackup.PreCheckResult,
+) (string, *conditions.PreCheckFailure, error) {
+	workload, failure, err := camundacluster.LiveZeebeWorkload(ctx, r.APIReader, res.Cluster)
+	if err != nil || failure != nil {
+		return "", failure, err
+	}
+
+	hash, failure := camundacluster.RunningConfigHash(workload)
+	if failure != nil {
+		return "", failure, nil
+	}
+
+	declared := strings.TrimRight(res.Storage.Spec.Elasticsearch.Endpoint, "/")
+	running, _ := camundacluster.TemplateEnvValue(
+		&workload.Spec.Template, camundaconfig.KeyElasticsearchURL.Env(),
+	)
+	if strings.TrimRight(running, "/") != declared {
+		return "", &conditions.PreCheckFailure{
+			Reason: v1.ReasonProgressing,
+			Message: fmt.Sprintf(
+				"Zeebe of CamundaCluster %s/%s runs the Elasticsearch endpoint %q, but SecondaryStorageConfig "+
+					"%s declares %q; the backup waits until Zeebe runs the endpoint that it backs up",
+				res.Cluster.Namespace, res.Cluster.Name, running, res.Storage.Name, declared,
+			),
+		}, nil
+	}
+
+	return hash, nil, nil
+}
+
 // highestSiblingBackupID returns the highest backup ID among the other
 // backups of this kind that name the same cluster, or zero. It arbitrates
 // the ID allocation against the siblings that this controller can see. A
@@ -190,14 +246,15 @@ func (r *Reconciler) highestSiblingBackupID(
 }
 
 // start records the identity of the procedure before the first management
-// call: the backup ID, the pinned repository, the partition count, and the
-// restore sizes. A crash after this point never loses the identity of work
+// call: the backup ID, the pinned repository and workload config hash, the
+// partition count, and the restore sizes. A crash after this point never loses the identity of work
 // that already started.
 func (r *Reconciler) start(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
 	res *logicalbackup.PreCheckResult,
 	highestSiblingID int64,
+	workloadConfigHash string,
 ) {
 	binding := res.Cluster.Status.Management
 
@@ -213,6 +270,7 @@ func (r *Reconciler) start(
 		BucketRef:              res.Bucket.Name,
 		BucketLocation:         res.Bucket.Location(),
 	}
+	backup.Status.WorkloadConfigHash = workloadConfigHash
 	backup.Status.Phase = v1.LogicalBackupRunning
 	backup.Status.Step = v1.StepPauseExporting
 	backup.Status.PartitionsCount = binding.Partitions

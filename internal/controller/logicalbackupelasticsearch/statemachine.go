@@ -29,6 +29,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
+	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
@@ -140,6 +141,11 @@ func (r *Reconciler) backupHistory(
 
 		r.failStep(backup, "BackupHistory", &backup.Status.History, err)
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+	if result, done, err := r.workloadUnchanged(
+		ctx, backup, cluster, "BackupHistory", &backup.Status.History,
+	); done {
+		return result, err
 	}
 
 	if status.State == camundaadmin.StateDoesNotExist {
@@ -283,6 +289,9 @@ func (r *Reconciler) snapshotRecords(
 		r.failStep(backup, "SnapshotRecords", part, err)
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
+	if result, done, err := r.workloadUnchanged(ctx, backup, cluster, "SnapshotRecords", part); done {
+		return result, err
+	}
 
 	// The name is deterministic per backup ID, and an ID can be reused. An
 	// existing snapshot is this backup's only when it carries the UID that
@@ -408,6 +417,9 @@ func (r *Reconciler) backupRuntime(
 
 		r.failStep(backup, "BackupRuntime", part, err)
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+	if result, done, err := r.workloadUnchanged(ctx, backup, cluster, "BackupRuntime", part); done {
+		return result, err
 	}
 
 	if status.State == camundaadmin.StateDoesNotExist {
@@ -634,6 +646,47 @@ func pinnedStorageMatches(backup *v1.LogicalBackupElasticsearch, storage *v1.Sec
 		)
 	}
 	return nil
+}
+
+// workloadUnchanged fails the step when the live Zeebe workload no longer
+// carries the config hash that the backup pinned at its start, or is gone.
+// done reports that the caller must return result and err. A step
+// calls it after it reads the state of its part. A rollout writes the new
+// hash to the pod template before a broker restarts, so a rollout that
+// started before that answer is visible to the check.
+func (r *Reconciler) workloadUnchanged(
+	ctx context.Context,
+	backup *v1.LogicalBackupElasticsearch,
+	cluster *v1.CamundaCluster,
+	step string,
+	part *v1.BackupPart,
+) (result ctrl.Result, done bool, err error) {
+	workload, failure, err := camundacluster.LiveZeebeWorkload(ctx, r.APIReader, cluster)
+	if err != nil {
+		return ctrl.Result{}, true, err
+	}
+
+	var hash string
+	if failure == nil {
+		hash, failure = camundacluster.RunningConfigHash(workload)
+	}
+	if failure != nil {
+		r.failStep(backup, step, part, errors.New(failure.Message))
+		return ctrl.Result{RequeueAfter: r.poll()}, true, nil
+	}
+
+	if hash != backup.Status.WorkloadConfigHash {
+		// Brokers and exporters can do their part under the new
+		// configuration. No wait can make that part match the set again.
+		r.failStep(backup, step, part, fmt.Errorf(
+			"the Zeebe workload of CamundaCluster %s/%s now runs config hash %s, but the backup pinned %s "+
+				"at start; Zeebe rolled during the backup, so the set can hold parts of two configurations",
+			cluster.Namespace, cluster.Name, hash, backup.Status.WorkloadConfigHash,
+		))
+		return ctrl.Result{RequeueAfter: r.poll()}, true, nil
+	}
+
+	return ctrl.Result{}, false, nil
 }
 
 // unownedRuntimeBackup is the failure of a runtime backup that exists under

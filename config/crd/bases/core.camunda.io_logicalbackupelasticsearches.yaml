@@ -429,6 +429,17 @@ spec:
                   same version. A restore can read the version only here, because a
                   suspended cluster has no management binding.
                 type: string
+              workloadConfigHash:
+                description: |-
+                  WorkloadConfigHash records the configuration of Zeebe when the backup
+                  started. It is the config hash of the Zeebe pod template. The backup
+                  starts only after the cluster runs its current spec and Zeebe runs the
+                  Elasticsearch endpoint of the storage contract. Until the runtime
+                  backup is final, each step compares the current hash with this value,
+                  after it reads the state of its part. If the hash differs, the step
+                  fails at once. The generation of the cluster is not sufficient, because
+                  a change of a referenced object changes the hash but not the generation.
+                type: string
             type: object
         required:
         - spec

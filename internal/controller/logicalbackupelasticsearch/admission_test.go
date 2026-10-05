@@ -22,6 +22,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -32,6 +34,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
+	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 )
 
 // admissionRig is a reconciler over the fake client with every reference
@@ -56,7 +60,9 @@ func newAdmissionRig(t *testing.T, backups ...*v1.LogicalBackupElasticsearch) *a
 			StorageRef:        "storage",
 			BackupStorageRef:  "bucket",
 		},
-		Status: v1.CamundaClusterStatus{Management: &v1.ManagementBinding{
+		Status: v1.CamundaClusterStatus{Conditions: []metav1.Condition{{
+			Type: v1.ConditionReady, Status: metav1.ConditionTrue, Reason: v1.ReasonHealthy,
+		}}, Management: &v1.ManagementBinding{
 			// A closed port: nothing at admission calls it, and the size
 			// probe of start fails fast and is best effort.
 			Endpoint:         "http://127.0.0.1:1",
@@ -88,8 +94,25 @@ func newAdmissionRig(t *testing.T, backups ...*v1.LogicalBackupElasticsearch) *a
 			},
 		},
 	}
-	objects := make([]client.Object, 0, 3+len(backups))
-	objects = append(objects, cluster, storage, bucket)
+	// The cluster runs the endpoint that its storage contract declares.
+	zeebe := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "ns", Name: camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
+		},
+		Spec: appsv1.StatefulSetSpec{Template: corev1.PodTemplateSpec{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{camundacluster.ConfigHashAnnotation: "hash-1"},
+			},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{
+				Name: "zeebe",
+				Env: []corev1.EnvVar{
+					camundaconfig.Var(camundaconfig.KeyElasticsearchURL, storage.Spec.Elasticsearch.Endpoint),
+				},
+			}}},
+		}},
+	}
+	objects := make([]client.Object, 0, 4+len(backups))
+	objects = append(objects, cluster, storage, bucket, zeebe)
 	for _, backup := range backups {
 		objects = append(objects, backup)
 	}

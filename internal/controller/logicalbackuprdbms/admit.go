@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"strings"
 
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -99,7 +98,7 @@ func (r *LogicalBackupRDBMSReconciler) admit(
 		return settle, err
 	}
 
-	if failure := clusterConverged(precheck.Cluster); failure != nil {
+	if failure := logicalbackup.ClusterConverged(precheck.Cluster); failure != nil {
 		return r.parkPending(backup, failure), nil
 	}
 	if _, failure, err := r.resolveDump(ctx, backup, precheck); err != nil || failure != nil {
@@ -160,37 +159,6 @@ func (r *LogicalBackupRDBMSReconciler) parkPending(
 	conditions.Stage(backup, conditions.Failed(backup, failure))
 
 	return hold{after: r.opts.RetryInterval}
-}
-
-// clusterConverged requires the cluster to run the spec that it declares. The
-// operator reconciled the current generation and reports Ready for it. If the
-// controller admits a backup against a desired spec that Zeebe does not run
-// yet, the dump goes to the new backup store. The Zeebe backup, requested
-// before the rollout finishes, lands in the old one. A completed status then
-// describes a split restore point. This is a wait, not a user error, so it
-// reports Progressing.
-func clusterConverged(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
-	ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
-	observed := cluster.Status.ObservedGeneration
-	if observed == cluster.Generation && ready != nil &&
-		ready.Status == metav1.ConditionTrue && ready.ObservedGeneration == cluster.Generation {
-		return nil
-	}
-
-	readyState := "absent"
-	if ready != nil {
-		readyState = fmt.Sprintf("%s/%s at generation %d", ready.Status, ready.Reason, ready.ObservedGeneration)
-	}
-
-	return &conditions.PreCheckFailure{
-		Reason: v1.ReasonProgressing,
-		Message: fmt.Sprintf(
-			"CamundaCluster %s/%s has not converged on its current spec (generation %d, observed %d, "+
-				"Ready %s); a backup taken now could pair a dump with a Zeebe backup of the previous "+
-				"configuration",
-			cluster.Namespace, cluster.Name, cluster.Generation, observed, readyState,
-		),
-	}
 }
 
 // resolveDump resolves everything that the dump Job renders from, one concern
@@ -339,12 +307,12 @@ func (r *LogicalBackupRDBMSReconciler) zeebeRunsDatabase(
 	server *v1.DatabaseServerConfig,
 	dbConfig *v1.DatabaseConfig,
 ) (*conditions.PreCheckFailure, error) {
-	workload, failure, err := r.zeebeWorkload(ctx, cluster)
+	workload, failure, err := camundacluster.LiveZeebeWorkload(ctx, r.APIReader, cluster)
 	if err != nil || failure != nil {
 		return failure, err
 	}
 
-	running, ok := templateEnvValue(&workload.Spec.Template, camundaconfig.KeyRDBMSURL.Env())
+	running, ok := camundacluster.TemplateEnvValue(&workload.Spec.Template, camundaconfig.KeyRDBMSURL.Env())
 	if !ok {
 		return &conditions.PreCheckFailure{
 			Reason: v1.ReasonProgressing,
@@ -598,20 +566,6 @@ func (r *LogicalBackupRDBMSReconciler) start(
 	)
 }
 
-// templateEnvValue returns the plain value of the environment variable name
-// on any container of the template, and whether one carries it as a value.
-func templateEnvValue(template *corev1.PodTemplateSpec, name string) (string, bool) {
-	for i := range template.Spec.Containers {
-		for _, env := range template.Spec.Containers[i].Env {
-			if env.Name == name && env.ValueFrom == nil {
-				return env.Value, true
-			}
-		}
-	}
-
-	return "", false
-}
-
 // workloadUnchanged requires the live Zeebe workload to still carry the
 // config hash pinned at start. A changed hash means that Zeebe rolled to
 // another configuration, for example a swapped database. A dump paired with
@@ -650,50 +604,12 @@ func (r *LogicalBackupRDBMSReconciler) zeebeConfigHash(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 ) (string, *conditions.PreCheckFailure, error) {
-	workload, failure, err := r.zeebeWorkload(ctx, cluster)
+	workload, failure, err := camundacluster.LiveZeebeWorkload(ctx, r.APIReader, cluster)
 	if err != nil || failure != nil {
 		return "", failure, err
 	}
 
-	hash := workload.Spec.Template.Annotations[camundacluster.ConfigHashAnnotation]
-	if hash == "" {
-		return "", &conditions.PreCheckFailure{
-			Reason: v1.ReasonProgressing,
-			Message: fmt.Sprintf(
-				"the Zeebe workload %s/%s carries no config hash yet; the backup needs the "+
-					"configuration it runs to pin", workload.Namespace, workload.Name,
-			),
-		}, nil
-	}
+	hash, failure := camundacluster.RunningConfigHash(workload)
 
-	return hash, nil, nil
-}
-
-// zeebeWorkload reads the live Zeebe StatefulSet of the cluster. Its pod
-// template says what Zeebe runs. A workload that is not rendered yet is a
-// wait, reported as Progressing.
-func (r *LogicalBackupRDBMSReconciler) zeebeWorkload(
-	ctx context.Context,
-	cluster *v1.CamundaCluster,
-) (*appsv1.StatefulSet, *conditions.PreCheckFailure, error) {
-	var workload appsv1.StatefulSet
-	key := types.NamespacedName{
-		Namespace: cluster.Namespace,
-		Name:      camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
-	}
-	if err := r.APIReader.Get(ctx, key, &workload); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, &conditions.PreCheckFailure{
-				Reason: v1.ReasonProgressing,
-				Message: fmt.Sprintf(
-					"the Zeebe workload %s is not rendered yet; the backup needs the configuration "+
-						"it runs to pin", key,
-				),
-			}, nil
-		}
-
-		return nil, nil, fmt.Errorf("reading the Zeebe workload %s: %w", key, err)
-	}
-
-	return &workload, nil, nil
+	return hash, failure, nil
 }
