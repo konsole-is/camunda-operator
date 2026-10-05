@@ -64,6 +64,52 @@ func TestRunningConfigHashWaitsForATemplateWithoutAHash(t *testing.T) {
 	assert.Equal(t, "hash-1", hash)
 }
 
+func TestRolledOutRequiresEveryReplicaOnTheCurrentTemplate(t *testing.T) {
+	rolledOut := func() *appsv1.StatefulSet {
+		replicas := int32(3)
+		return &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Generation: 2},
+			Spec:       appsv1.StatefulSetSpec{Replicas: &replicas},
+			Status: appsv1.StatefulSetStatus{
+				ObservedGeneration: 2, UpdatedReplicas: 3, CurrentRevision: "rev-2", UpdateRevision: "rev-2",
+			},
+		}
+	}
+	tests := []struct {
+		name   string
+		mutate func(*appsv1.StatefulSet)
+		rolled bool
+	}{
+		{name: "every replica runs the current template", mutate: func(*appsv1.StatefulSet) {}, rolled: true},
+		{
+			name:   "the template is not observed yet",
+			mutate: func(w *appsv1.StatefulSet) { w.Status.ObservedGeneration = 1 },
+		},
+		{
+			name:   "a replica runs the previous template",
+			mutate: func(w *appsv1.StatefulSet) { w.Status.UpdatedReplicas = 2 },
+		},
+		{
+			name:   "the update revision is not current yet",
+			mutate: func(w *appsv1.StatefulSet) { w.Status.CurrentRevision = "rev-1" },
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := rolledOut()
+			tt.mutate(workload)
+
+			failure := RolledOut(workload)
+			if tt.rolled {
+				assert.Nil(t, failure)
+				return
+			}
+			require.NotNil(t, failure)
+			assert.Equal(t, v1.ReasonProgressing, failure.Reason)
+		})
+	}
+}
+
 func TestTemplateEnvValueReadsOnlyAPlainValue(t *testing.T) {
 	template := &corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{
 		{Name: "init", Env: []corev1.EnvVar{{

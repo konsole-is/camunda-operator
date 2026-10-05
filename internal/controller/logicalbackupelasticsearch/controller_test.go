@@ -186,14 +186,27 @@ func (r *rig) publishBinding(partitions int32) {
 }
 
 // renderZeebe writes the Zeebe workload of the cluster the way the
-// CamundaCluster controller renders it: a pod template with the config hash
-// and the Elasticsearch endpoint that Zeebe runs.
+// CamundaCluster controller renders it, with the config hash and the
+// Elasticsearch endpoint on its pod template, and reports the rollout of the
+// template as complete.
 func (r *rig) renderZeebe(hash, endpoint string) {
 	GinkgoHelper()
-	key := types.NamespacedName{
+	r.startZeebeRollout(hash, endpoint)
+	r.finishZeebeRollout()
+}
+
+func (r *rig) zeebeKey() types.NamespacedName {
+	return types.NamespacedName{
 		Namespace: r.namespace,
 		Name:      camundacluster.WorkloadName(r.cluster, camundacluster.ComponentZeebe),
 	}
+}
+
+// startZeebeRollout writes the pod template of the Zeebe workload. The
+// brokers still run the previous template until finishZeebeRollout.
+func (r *rig) startZeebeRollout(hash, endpoint string) {
+	GinkgoHelper()
+	key := r.zeebeKey()
 	container := corev1.Container{
 		Name: "zeebe", Image: "z",
 		Env: []corev1.EnvVar{camundaconfig.Var(camundaconfig.KeyElasticsearchURL, endpoint)},
@@ -223,6 +236,27 @@ func (r *rig) renderZeebe(hash, endpoint string) {
 		workload.Spec.Template.Annotations[camundacluster.ConfigHashAnnotation] = hash
 		workload.Spec.Template.Spec.Containers = []corev1.Container{container}
 		g.Expect(k8sClient.Update(ctx, &workload)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// finishZeebeRollout reports the current pod template of the Zeebe workload
+// as rolled out to every broker, the way the StatefulSet controller does.
+// The suite runs no StatefulSet controller.
+func (r *rig) finishZeebeRollout() {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var workload appsv1.StatefulSet
+		g.Expect(k8sClient.Get(ctx, r.zeebeKey(), &workload)).To(Succeed())
+		revision := fmt.Sprintf("rev-%d", workload.Generation)
+		workload.Status = appsv1.StatefulSetStatus{
+			ObservedGeneration: workload.Generation,
+			Replicas:           *workload.Spec.Replicas,
+			ReadyReplicas:      *workload.Spec.Replicas,
+			UpdatedReplicas:    *workload.Spec.Replicas,
+			CurrentRevision:    revision,
+			UpdateRevision:     revision,
+		}
+		g.Expect(k8sClient.Status().Update(ctx, &workload)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }
 
@@ -642,8 +676,12 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		r.publishBinding(3)
 		pending(r.search.URL(), other.URL())
 
+		By("waiting while the brokers still roll to the new template")
+		r.startZeebeRollout("hash-2", other.URL())
+		pending("has not rolled out")
+
 		By("starting once Zeebe runs the new storage contract, and pinning what it runs")
-		r.renderZeebe("hash-2", other.URL())
+		r.finishZeebeRollout()
 		backupID(backup)
 		current := currentBackup(backup)
 		Expect(current.Status.WorkloadConfigHash).To(Equal("hash-2"))

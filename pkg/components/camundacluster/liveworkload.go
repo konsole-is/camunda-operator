@@ -76,6 +76,33 @@ func RunningConfigHash(workload *appsv1.StatefulSet) (string, *conditions.PreChe
 	return hash, nil
 }
 
+// RolledOut returns nil when every replica of workload runs its current pod
+// template. A workload that still rolls returns a failure with reason
+// Progressing. The pod template changes before the first pod restarts, so
+// only this check shows that the pods run what the template says.
+func RolledOut(workload *appsv1.StatefulSet) *conditions.PreCheckFailure {
+	replicas := int32(1)
+	if workload.Spec.Replicas != nil {
+		replicas = *workload.Spec.Replicas
+	}
+
+	status := workload.Status
+	if status.ObservedGeneration == workload.Generation && status.UpdatedReplicas == replicas &&
+		status.CurrentRevision == status.UpdateRevision {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonProgressing,
+		Message: fmt.Sprintf(
+			"the Zeebe workload %s/%s has not rolled out its current pod template yet (generation %d, "+
+				"observed %d, %d of %d replicas updated)",
+			workload.Namespace, workload.Name, workload.Generation, status.ObservedGeneration,
+			status.UpdatedReplicas, replicas,
+		),
+	}
+}
+
 // TemplateEnvValue returns the plain value of the environment variable name
 // on any container of template, and whether one carries it as a plain value.
 // A variable that takes its value from a reference does not count.

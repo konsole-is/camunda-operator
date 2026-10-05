@@ -91,12 +91,14 @@ func TestClusterReplacedComparesThePinnedUID(t *testing.T) {
 }
 
 // zeebeWorkload builds the Zeebe workload of cluster ns/cc with the given
-// config hash and Elasticsearch endpoint on its pod template.
+// config hash and Elasticsearch endpoint on its pod template, rolled out to
+// its one replica.
 func zeebeWorkload(hash, endpoint string) *appsv1.StatefulSet {
 	cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cc"}}
 	workload := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{
 		Namespace: "ns", Name: camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
 	}}
+	workload.Status.UpdatedReplicas = 1
 	if hash != "" {
 		workload.Spec.Template.Annotations = map[string]string{camundacluster.ConfigHashAnnotation: hash}
 	}
@@ -141,6 +143,15 @@ func TestZeebeRunsDestinationPinsTheHashOnlyWhenZeebeRunsTheDeclaredEndpoint(t *
 			name:     "Zeebe still runs the old endpoint",
 			workload: zeebeWorkload("hash-1", "https://es-old:9200"),
 			wait:     "https://es-old:9200",
+		},
+		{
+			name: "the brokers still roll to the template",
+			workload: func() *appsv1.StatefulSet {
+				workload := zeebeWorkload("hash-2", "https://es-new:9200")
+				workload.Status.UpdateRevision = "rev-2"
+				return workload
+			}(),
+			wait: "has not rolled out",
 		},
 		{
 			name:     "the template carries no hash yet",
