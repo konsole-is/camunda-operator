@@ -169,11 +169,16 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 				g.Expect(identity.Reason).To(Equal(v1.ReasonHealthy))
 			}, timeout, interval).Should(Succeed())
 
+			var reconciles float64
+			Eventually(func(g Gomega) {
+				reconciles = reconcileTotal()
+				g.Consistently(reconcileTotal, "1s", interval).Should(Equal(reconciles))
+			}, timeout, interval).Should(Succeed())
+
 			req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(s.mc)}
 			_, err := reconciler.Reconcile(ctx, req)
 			Expect(err).NotTo(HaveOccurred())
 			settled := readManagementCluster(Default, s.mc)
-			reconciles := reconcileTotal()
 
 			// The API server stores lastTransitionTime in whole seconds, so a
 			// moved condition shows only on a reconcile in a later second.

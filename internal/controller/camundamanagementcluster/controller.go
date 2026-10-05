@@ -631,12 +631,12 @@ func (r *Reconciler) writeContract(
 	return err
 }
 
-// readyCondition derives Ready from the steps of the reconcile, the
-// components, and the registration of the Optimize callbacks. Neither a step
-// nor the callbacks are a component, and neither is a ready management plane
-// when it fails: a step that did not run left a claim, a user, a ping, or the
-// contract behind, and an Optimize whose callback is missing from the realm
-// cannot complete a login.
+// readyCondition derives Ready from the steps of the reconcile, a changed
+// administrator claim, the components, and the registration of the Optimize
+// callbacks. Neither a step nor the callbacks are a component, and neither is
+// a ready management plane when it fails: a step that did not run left a
+// claim, a user, a ping, or the contract behind, and an Optimize whose
+// callback is missing from the realm cannot complete a login.
 //
 // A failed step decides Ready first, because it reports nowhere else. failed
 // is the first step that failed in reconcile order, and it carries the reason
