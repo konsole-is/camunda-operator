@@ -1665,9 +1665,15 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		}, 2*time.Second, interval).Should(Succeed())
 
 		setSuspend(false)
-		expectStorageShrinkIgnored(cluster, "1Gi")
 		expectRequestedStorageSize(cluster, "512Mi")
 		reconcileClusterAgain(cluster)
+		var es esv1.Elasticsearch
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())
+		claimSize := es.Spec.NodeSets[0].VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage]
+		Expect(claimSize.String()).To(Equal("1Gi"))
+		Eventually(func(g Gomega) {
+			g.Expect(countEvents(g, cluster, "StorageShrinkIgnored")).To(Equal(int32(1)))
+		}, timeout, interval).Should(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(countEvents(g, cluster, "StorageShrinkIgnored")).To(Equal(int32(1)))
 		}, 2*time.Second, interval).Should(Succeed())

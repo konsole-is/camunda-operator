@@ -186,7 +186,10 @@ func TestKeepAppliedStorageSize(t *testing.T) {
 			recorder := events.NewFakeRecorder(1)
 			r := &ElasticsearchClusterReconciler{EventRecorder: recorder}
 			cluster := &v1.ElasticsearchCluster{ObjectMeta: metav1.ObjectMeta{Name: "es", Namespace: "ns"}}
-			merged := v1.ElasticsearchClusterSpec{StorageSize: new(resource.MustParse(tt.requested)), Suspend: tt.suspend}
+			merged := v1.ElasticsearchClusterSpec{
+				StorageSize: new(resource.MustParse(tt.requested)),
+				Suspend:     tt.suspend,
+			}
 
 			requested := r.keepAppliedStorageSize(cluster, &merged, tt.volumes)
 
