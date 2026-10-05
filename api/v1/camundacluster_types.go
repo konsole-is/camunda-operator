@@ -171,11 +171,12 @@ type ZeebeSpec struct {
 	// +optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
 	// StorageSize is the size of the data volume of each broker. Defaults to
-	// 10Gi. It can only grow. Admission rejects a lower inline value on a
-	// CamundaCluster through a CEL transition rule. That rule does not bind
-	// this shared field, so a preset baseline can be resized freely: a
-	// cluster that applied a larger size keeps it and records a
-	// StorageShrinkIgnored event. On growth the operator expands the existing
+	// 10Gi. It can only grow. Admission rejects a lower inline value that
+	// replaces an inline value on a CamundaCluster through a CEL transition
+	// rule. That rule does not bind this shared field, and it lets a first
+	// inline value through, so a smaller size can still arrive: a cluster
+	// that applied a larger size keeps it and records a StorageShrinkIgnored
+	// event. On growth the operator expands the existing
 	// claims in place, so the storage class must support volume expansion.
 	// +optional
 	StorageSize *resource.Quantity `json:"storageSize,omitempty"`

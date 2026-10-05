@@ -108,9 +108,9 @@ func TestKeepAppliedWALSize(t *testing.T) {
 	}
 }
 
-// A kept volume is reported once per requested size: the cluster carries the
-// request it applied, and a request that matches it was reported before.
-func TestKeepAppliedStorageSizeReportsOncePerRequest(t *testing.T) {
+// A kept volume is reported while the cluster does not carry the request. A
+// request that matches the applied one was reported before.
+func TestKeepAppliedStorageSizeReportsARequestTheClusterDoesNotCarry(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {

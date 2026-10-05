@@ -180,11 +180,11 @@ type ElasticsearchClusterSpec struct {
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 	// StorageSize is the size of the data volume of each node. It cannot
 	// shrink, because Elasticsearch data volumes cannot be reduced in place.
-	// Admission rejects a lower inline value on an ElasticsearchCluster
-	// through a CEL transition rule. That rule does not bind this shared
-	// field, so a preset baseline can be resized freely: a cluster that
-	// applied a larger size keeps it and records a StorageShrinkIgnored
-	// event. Required unless the resolved preset provides it.
+	// Admission rejects a lower inline value that replaces an inline value
+	// on an ElasticsearchCluster through a CEL transition rule. That rule
+	// does not bind this shared field, and it lets a first inline value
+	// through, so a smaller size can still arrive: a cluster that applied a
+	// larger size keeps it and records a StorageShrinkIgnored event. Required unless the resolved preset provides it.
 	// +optional
 	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
 	// StorageClassName is the StorageClass for the data volumes. Defaults to

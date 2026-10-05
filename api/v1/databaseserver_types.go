@@ -171,9 +171,10 @@ type DatabaseServerSpec struct {
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 	// StorageSize is the size of the data volume of each instance. It cannot
 	// shrink, because PostgreSQL data volumes cannot be reduced in place.
-	// Admission rejects a lower inline value on a DatabaseServer through a
-	// CEL transition rule. That rule does not bind this shared field, so a
-	// preset baseline can be lowered: a server that already applied a larger
+	// Admission rejects a lower inline value that replaces an inline value on
+	// a DatabaseServer through a CEL transition rule. That rule does not bind
+	// this shared field, and it lets a first inline value through, so a
+	// smaller size can still arrive: a server that already applied a larger
 	// size keeps it and records a StorageShrinkIgnored event. Required unless
 	// the resolved preset provides it.
 	// +optional

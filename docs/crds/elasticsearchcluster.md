@@ -68,7 +68,7 @@ spec:
 
 ## Storage
 
-You can increase `spec.storageSize` at any time. You cannot decrease it. The API server rejects a smaller inline value that replaces an inline value. A preset can still lower the size under a running cluster, and a first inline value can be smaller than the current size. The operator then keeps the current size and records a Warning event with reason `StorageShrinkIgnored`. To get a smaller volume, delete and recreate the cluster.
+You can increase `spec.storageSize` at any time. The data volume never shrinks. The API server rejects a smaller inline value that replaces an inline value. A preset can still lower the size under a running cluster, and a first inline value can be smaller than the current size. The operator then keeps the current size and records a Warning event with reason `StorageShrinkIgnored`. To get a smaller volume, delete and recreate the cluster. With `whenDeleted: Retain`, also delete the kept volumes before you recreate it, because a cluster with the same name reattaches them.
 
 The storage class of the data volumes cannot change while the ECK resource of the cluster exists. A new class can still come from the preset or from `spec.storageClassName`. The operator then keeps the class of the ECK resource, or no class when the ECK resource has none. It records the Warning event `StorageClassChangeIgnored` one time for each requested class, also when the preset removes its class. A suspended cluster has no ECK resource, so it takes the new class when it resumes. New volumes get the new class, and the volumes that the suspension kept keep their old class. Volumes that `whenDeleted: Retain` kept from a deleted cluster of the same name keep their class.
 
