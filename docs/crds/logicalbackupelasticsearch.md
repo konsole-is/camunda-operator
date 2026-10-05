@@ -56,7 +56,7 @@ A backup on a cluster that is still rolling out waits in `Pending` with reason `
 
 Do not change the storage or the backup bucket of the cluster while a backup runs. The backup fails, and the message names the recorded and the current value.
 
-Do not roll the cluster after the backup started. If Zeebe rolls to another configuration before the operator sees the backup of the Zeebe partitions complete, the step fails at once. The backup then ends as `Failed`, even if Camunda later reports that part as complete. The message names the recorded and the current config hash.
+Do not change the configuration of Zeebe after the backup started. If Zeebe rolls to another configuration before the operator sees the backup of the Zeebe partitions complete, the step fails at once. The backup then ends as `Failed`, even if Camunda later reports that part as complete. The message names the recorded and the current config hash.
 
 If you delete the cluster during the run, the backup ends as `Failed`. This is also the case when you create a new cluster under the same name. The backup does not touch the new cluster.
 
