@@ -42,6 +42,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/grace"
 )
 
 // controllerName is the name the controller registers with controller-runtime.
@@ -101,6 +102,10 @@ type CamundaClusterReconciler struct {
 	// during a password rotation. Nil means components.RESTEndpoint; tests
 	// point it at a fake.
 	RESTEndpoint func(cluster *v1.CamundaCluster, e components.Effective) string
+	// GracePeriods are the grace periods of the process components. The
+	// processes use the workload period. The zero value keeps every process
+	// on its progress reason.
+	GracePeriods grace.Periods
 
 	// refusals remembers the downgrade refusal that the controller recorded
 	// for each cluster, so it records the Warning once and not once per
@@ -300,6 +305,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 	in.AdminPasswordHash = components.PasswordHash(cred.published)
+	in.GracePeriod = r.GracePeriods.Workload
 
 	built, err := r.buildComponents(&cluster, in, mirrors, cred)
 	if err != nil {
@@ -356,6 +362,10 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Lease wakes it through enqueueWaitingForHandover.
 	if cred.failure != nil || claimSuspends(in.Storage) {
 		wait = r.retryInterval()
+	}
+
+	if graceWait, ok := grace.Remaining(&cluster, built.all...); ok {
+		wait = grace.Sooner(wait, graceWait)
 	}
 
 	return ctrl.Result{RequeueAfter: wait}, nil

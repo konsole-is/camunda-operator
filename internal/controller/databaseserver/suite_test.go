@@ -32,6 +32,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/konsole-is/camunda-operator/pkg/grace"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
 	"github.com/konsole-is/camunda-operator/test/envtest"
 )
@@ -54,7 +55,15 @@ var (
 	// objectStoreApplies is the client the components apply through, with a
 	// switch that refuses the ObjectStore of one namespace.
 	objectStoreApplies *objectStoreApplyBlocker
+
+	// reconciler is the reconciler that the manager runs. A spec calls it
+	// directly to read the result of one reconcile.
+	reconciler *DatabaseServerReconciler
 )
+
+// suiteGracePeriods are longer than any spec, so no condition of the suite
+// reaches Degraded or Down.
+var suiteGracePeriods = grace.Periods{Workload: time.Hour, Datastore: 2 * time.Hour}
 
 // objectStoreApplyBlocker refuses the apply of a Barman Cloud ObjectStore in
 // the namespaces a spec named, and passes every other write on. It is how a
@@ -162,7 +171,7 @@ var _ = BeforeSuite(func() {
 		}
 		objectStoreApplies = &objectStoreApplyBlocker{Client: applies, refusing: map[string]bool{}}
 
-		return (&DatabaseServerReconciler{
+		reconciler = &DatabaseServerReconciler{
 			Client:          backupLists,
 			APIReader:       mgr.GetAPIReader(),
 			Scheme:          mgr.GetScheme(),
@@ -170,7 +179,9 @@ var _ = BeforeSuite(func() {
 			// Short, so the specs exercise the requeue that waits on the
 			// superuser Secret inside their timeout.
 			RetryInterval: 500 * time.Millisecond,
-		}).SetupWithManager(mgr)
+			GracePeriods:  suiteGracePeriods,
+		}
+		return reconciler.SetupWithManager(mgr)
 	})
 
 	ctx, k8sClient = env.Ctx, env.Client

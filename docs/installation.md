@@ -99,6 +99,40 @@ helm install camunda-operator \
 
 With `crd.enable=false` you own the CRD lifecycle. Apply the new `crds.yaml` before you upgrade the chart.
 
+## Grace periods
+
+A workload that is not ready reports `Creating`, `Updating`, `Scaling`, `Failing`, or `Blocked` until its grace period ends. After that, its condition reports `Degraded` or `Down`. The grace period starts when the condition first reports a not-ready reason, such as `Creating` or `Blocked`, or when it changes from `True` to `False`. [Status conventions](architecture.md#status-conventions) describes the reasons and the start of the grace period.
+
+| Flag | Environment variable | Default | Applies to |
+| --- | --- | --- | --- |
+| `--workload-grace-period` | `CAMUNDA_OPERATOR_WORKLOAD_GRACE_PERIOD` | `30m` | The processes of a `CamundaCluster`. The webapp and importer of a `CamundaOptimize`. The Keycloak and the workloads of a `CamundaManagementCluster`. The exporter of an `ElasticsearchCluster`. |
+| `--datastore-grace-period` | `CAMUNDA_OPERATOR_DATASTORE_GRACE_PERIOD` | `30m` | The Elasticsearch cluster of an `ElasticsearchCluster` and the PostgreSQL cluster of a `DatabaseServer`. |
+
+A value is a Go duration, for example `20m` or `1h`. The flag wins over the environment variable. With `0`, the condition keeps its progress reason and never reports `Degraded` or `Down`. The manager does not start with a negative value. It also does not start with a value that is not a duration, unless a flag overrides that environment variable.
+
+Set a value that is longer than your slowest rollout. Keep the workload grace period at or above the datastore grace period. A cluster on Elasticsearch and its Optimize are not ready until that Elasticsearch is. A shorter workload period reports them `Down` while Elasticsearch still starts. A value that is too short reports `Degraded` or `Down` for a workload that starts slowly but correctly. A rolling update of many brokers, or the first start of a large Elasticsearch cluster, can take longer than the default.
+
+With Helm, set the environment variables in `manager.envOverrides`:
+
+```bash
+helm install camunda-operator \
+  oci://ghcr.io/konsole-is/charts/camunda-operator \
+  --version <version> \
+  --namespace camunda-operator-system --create-namespace \
+  --set manager.envOverrides.CAMUNDA_OPERATOR_WORKLOAD_GRACE_PERIOD=60m \
+  --set manager.envOverrides.CAMUNDA_OPERATOR_DATASTORE_GRACE_PERIOD=45m
+```
+
+Without Helm, add the environment variables to the `manager` container of the Deployment `camunda-operator-controller-manager` in `install.yaml`, next to `CAMUNDA_OPERATOR_CLI_IMAGE`:
+
+```yaml
+env:
+  - name: CAMUNDA_OPERATOR_WORKLOAD_GRACE_PERIOD
+    value: 60m
+  - name: CAMUNDA_OPERATOR_DATASTORE_GRACE_PERIOD
+    value: 45m
+```
+
 ## Verify the signatures
 
 The chart and both images are signed with cosign keyless signatures. There is no public key. Verification checks the identity of the release workflow:

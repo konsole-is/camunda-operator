@@ -53,6 +53,7 @@ import (
 	components "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
+	"github.com/konsole-is/camunda-operator/pkg/grace"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/eckelasticsearch"
 )
@@ -136,6 +137,12 @@ type ElasticsearchClusterReconciler struct {
 	// RetryInterval overrides how long the controller waits on something no
 	// watch reports. Zero means defaultRetryInterval; tests shorten it.
 	RetryInterval time.Duration
+
+	// GracePeriods are the grace periods of the elasticsearch component,
+	// which uses the datastore period, and of the metrics exporter, which
+	// uses the workload period. The zero value keeps both on their progress
+	// reason.
+	GracePeriods grace.Periods
 
 	// registeredRepositories remembers, per cluster, a fingerprint of the
 	// last repository registration that converged, so an unchanged repository
@@ -269,11 +276,20 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 	cluster.Status.Volumes = volumes.volumes
 
-	if retryRepository && reconcileErr == nil {
-		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+	if reconcileErr != nil {
+		return ctrl.Result{}, reconcileErr
 	}
 
-	return ctrl.Result{}, reconcileErr
+	var wait time.Duration
+	if retryRepository {
+		wait = r.retryInterval()
+	}
+
+	if graceWait, ok := grace.Remaining(&cluster, comps...); ok {
+		wait = grace.Sooner(wait, graceWait)
+	}
+
+	return ctrl.Result{RequeueAfter: wait}, nil
 }
 
 // preCheck resolves the preset and the release and validates the merged spec.
@@ -495,9 +511,9 @@ func className(class *string) string {
 	return fmt.Sprintf("%q", *class)
 }
 
-// buildComponents builds the components in dependency order: the three that
-// make up Ready (credentials, elasticsearch, storage-contract), and the
-// metrics component apart. It reads the password from the existing user
+// buildComponents builds the components in dependency order: the ones that
+// make up Ready (credentials, keystore, elasticsearch, storage-contract), and
+// the metrics component apart. It reads the password from the existing user
 // Secret without the cache, so the password stays stable after creation. To
 // rotate it, delete the Secret.
 func (r *ElasticsearchClusterReconciler) buildComponents(
@@ -535,7 +551,9 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 		return nil, nil, fmt.Errorf("building keystore component: %w", err)
 	}
 
-	elasticsearchComp, err := components.ElasticsearchComponent(cluster, merged, requested, storage)
+	elasticsearchComp, err := components.ElasticsearchComponent(
+		cluster, merged, requested, storage, r.GracePeriods.Datastore,
+	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building elasticsearch component: %w", err)
 	}
@@ -545,7 +563,9 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 		return nil, nil, fmt.Errorf("building storage-contract component: %w", err)
 	}
 
-	metricsComp, err := components.MetricsComponent(cluster, merged, r.serviceMonitorSupported())
+	metricsComp, err := components.MetricsComponent(
+		cluster, merged, r.serviceMonitorSupported(), r.GracePeriods.Workload,
+	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building metrics component: %w", err)
 	}

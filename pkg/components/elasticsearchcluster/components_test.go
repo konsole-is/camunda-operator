@@ -178,7 +178,7 @@ func assertElasticsearchClusterGoldens(
 	)
 
 	requested := RequestedStorage{Size: merged.StorageSize, StorageClassName: merged.StorageClassName}
-	elasticsearch, err := ElasticsearchComponent(cluster, merged, requested, storage)
+	elasticsearch, err := ElasticsearchComponent(cluster, merged, requested, storage, 0)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "elasticsearch.yaml"), elasticsearch,
@@ -193,7 +193,7 @@ func assertElasticsearchClusterGoldens(
 	)
 
 	if MonitoringEnabled(merged) {
-		metrics, err := MetricsComponent(cluster, merged, true)
+		metrics, err := MetricsComponent(cluster, merged, true, 0)
 		require.NoError(t, err)
 		golden.AssertComponentYAML(
 			t, filepath.Join(base, "metrics.yaml"), metrics,
@@ -326,7 +326,7 @@ func TestForeignServiceAccountIsNamedButNotRendered(t *testing.T) {
 	cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-es", Create: &no}
 	merged := MergeSpec(cluster.Spec, preset, release)
 
-	comp, err := ElasticsearchComponent(cluster, merged, RequestedStorage{Size: merged.StorageSize}, nil)
+	comp, err := ElasticsearchComponent(cluster, merged, RequestedStorage{Size: merged.StorageSize}, nil, 0)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
@@ -391,7 +391,7 @@ func TestPodIdentityRendersTheServiceAccount(t *testing.T) {
 		Type: v1.ObjectStorageAuthTypeWorkloadIdentity,
 	})}
 
-	comp, err := ElasticsearchComponent(cluster, merged, RequestedStorage{Size: merged.StorageSize}, storage)
+	comp, err := ElasticsearchComponent(cluster, merged, RequestedStorage{Size: merged.StorageSize}, storage, 0)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
@@ -420,7 +420,7 @@ func TestMetricsComponentOmitsUnsupportedServiceMonitor(t *testing.T) {
 	t.Parallel()
 
 	cluster := goldenRealisticElasticsearchCluster()
-	comp, err := MetricsComponent(cluster, cluster.Spec, false)
+	comp, err := MetricsComponent(cluster, cluster.Spec, false, 0)
 	require.NoError(t, err)
 
 	// Typed objects carry no TypeMeta until serialized, so compare Go types.
@@ -519,7 +519,7 @@ func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
 		"camunda.io/component":             "not-elasticsearch",
 		"team":                             "platform",
 	}
-	comp, err := ElasticsearchComponent(cluster, cluster.Spec, RequestedStorage{Size: cluster.Spec.StorageSize}, nil)
+	comp, err := ElasticsearchComponent(cluster, cluster.Spec, RequestedStorage{Size: cluster.Spec.StorageSize}, nil, 0)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
@@ -643,7 +643,7 @@ func TestElasticsearchCarriesTheRequestedStorage(t *testing.T) {
 		},
 		{requested: RequestedStorage{}, want: nil},
 	} {
-		comp, err := ElasticsearchComponent(cluster, merged, tt.requested, nil)
+		comp, err := ElasticsearchComponent(cluster, merged, tt.requested, nil, 0)
 		require.NoError(t, err)
 
 		objects, err := comp.Preview()

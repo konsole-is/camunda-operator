@@ -33,6 +33,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
+	"github.com/konsole-is/camunda-operator/pkg/grace"
 	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
@@ -51,7 +52,15 @@ var (
 	env       *envtest.Env
 	ctx       context.Context
 	k8sClient client.Client
+
+	// reconciler is the reconciler that the manager runs. A spec calls it
+	// directly to read the result of one reconcile.
+	reconciler *Reconciler
 )
+
+// suiteGracePeriods are longer than any spec, so no condition of the suite
+// reaches Degraded or Down.
+var suiteGracePeriods = grace.Periods{Workload: time.Hour, Datastore: 2 * time.Hour}
 
 func TestCamundaOptimizeController(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -100,7 +109,7 @@ var _ = BeforeSuite(func() {
 			return err
 		}
 
-		return (&Reconciler{
+		reconciler = &Reconciler{
 			Client:         mgr.GetClient(),
 			APIReader:      mgr.GetAPIReader(),
 			Scheme:         mgr.GetScheme(),
@@ -108,7 +117,9 @@ var _ = BeforeSuite(func() {
 			// The handover spec waits for this instance to look at the pods on
 			// the backend again, which happens on this timer.
 			RetryInterval: time.Second,
-		}).SetupWithManager(mgr)
+			GracePeriods:  suiteGracePeriods,
+		}
+		return reconciler.SetupWithManager(mgr)
 	})
 
 	ctx, k8sClient = env.Ctx, env.Client

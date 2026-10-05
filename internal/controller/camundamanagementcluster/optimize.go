@@ -231,11 +231,8 @@ func (r *Reconciler) syncOptimizeCallbacks(
 	}
 	if !rolledOut {
 		stageCallbacks(mc, metav1.ConditionFalse, string(component.PrerequisiteNotMet), rollingOut)
-		// A rollout that surges keeps IdentityReady True from the pod of the
-		// previous revision, so no component reports that the realm is behind.
-		// Ready would otherwise read Healthy over a callback that nobody can
-		// sign in through yet. A withdrawal is not held back the same way: the
-		// plane already serves every Optimize it has to serve.
+		// A withdrawal is not held back: the plane already serves every
+		// Optimize it has to serve.
 		if len(desired) == 0 {
 			return nil, true, nil
 		}
@@ -362,11 +359,8 @@ func stageNoCallbacks(mc *v1.CamundaManagementCluster) {
 // this management cluster owns is the current one and ready. A Deployment of
 // another owner at the same name answers no.
 //
-// A ready condition is not enough. It is satisfied while one pod of the
-// previous revision is still ready, and the pod of the new revision is running
-// its initializer against the realm at exactly that moment. Only a rollout
-// with every replica updated, present and available leaves no Identity writing
-// to the client.
+// Only a rollout with every replica updated, present and available leaves no
+// Identity writing to the client.
 func (r *Reconciler) identityRolledOut(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,

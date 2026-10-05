@@ -182,6 +182,7 @@ func zeebeComponent(in Input, p Process) (*component.Component, error) {
 		WithResource(sts).
 		WithResource(svc).
 		IncludeWhen(in.ServiceMonitorSupported, func() component.Resource { return monitor }, monitoringGate(in)).
+		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Effective.Suspend).
 		Build()
 }
@@ -548,6 +549,7 @@ func deploymentComponent(in Input, p Process) (*component.Component, error) {
 		WithResource(workload).
 		WithResource(svc).
 		IncludeWhen(in.ServiceMonitorSupported, func() component.Resource { return monitor }, monitoringGate(in)).
+		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Effective.Suspend).
 		Build()
 }

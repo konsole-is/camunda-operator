@@ -35,6 +35,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
+	"github.com/konsole-is/camunda-operator/pkg/grace"
 	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
@@ -99,6 +100,14 @@ func TestCamundaManagementClusterController(t *testing.T) {
 	RunSpecs(t, "CamundaManagementCluster Controller Suite")
 }
 
+// reconciler is the reconciler that the manager runs. A spec calls it
+// directly to read the result of one reconcile.
+var reconciler *Reconciler
+
+// suiteGracePeriods are longer than any spec, so no condition of the suite
+// reaches Degraded or Down.
+var suiteGracePeriods = grace.Periods{Workload: time.Hour, Datastore: 2 * time.Hour}
+
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
@@ -135,6 +144,8 @@ var _ = BeforeSuite(func() {
 		r.RetryInterval = time.Second
 		r.ConvergeInterval = time.Second
 		r.ClaimNamespace = testClaimNamespace
+		r.GracePeriods = suiteGracePeriods
+		reconciler = r
 
 		return r.SetupWithManager(mgr)
 	})

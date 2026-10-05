@@ -390,6 +390,7 @@ status:
 | --- | --- | --- | --- |
 | `Ready` | `Healthy` | Every part of the server is in its desired state. | Nothing. |
 | `Ready` | `Blocked` | The archive holds no base backup yet, or `ClusterReady` is `Blocked`. | Wait for the base backup. Otherwise read `ClusterReady`. |
+| `Ready` | `Creating`, `Updating`, `Failing`, `Degraded`, `Down` | `ClusterReady` holds `Ready` back. | Read the row of `ClusterReady` with the same reason. |
 | `Ready` | `ArchiveFailing` | The write-ahead log does not reach the bucket. | Read `ArchiveReady`. |
 | `Ready` | `Suspended` | `spec.suspend` is true and the instances are stopped. | Nothing. |
 | `Ready` | `ClusterTaken`, `ContractTaken`, `ArchiveTaken` | Another owner holds a name that the server derives. | See [Name collisions](#name-collisions). |
@@ -401,8 +402,10 @@ status:
 | `ClusterReady` | `Creating`, `Updating` | CloudNativePG is starting or changing the instances. | Wait. |
 | `ClusterReady` | `Healthy` | Every instance is ready. | Nothing. |
 | `ClusterReady` | `Failing` | CloudNativePG reports a phase that it does not leave on its own. The message names the phase. | Read the CloudNativePG cluster for the cause. |
+| `ClusterReady` | `Degraded` | At the end of the [grace period](../architecture.md#status-conventions), 30 minutes by default, the cluster is not in its desired state. At least one instance is ready. Not every instance is ready, or CloudNativePG reports a phase other than healthy. The message names the ready count and the phase. | Read the phase and the instances in the status of the CloudNativePG cluster. |
+| `ClusterReady` | `Down` | At the end of the grace period, no instance is ready, or a wait that `Blocked` reported still holds. The message says which. A blocked wait can stand while the existing instances still serve. | Read the message. For no ready instance, read the CloudNativePG cluster and the pods of its instances. For a wait, read the `Blocked` row. |
 | `ClusterReady` | `Suspending`, `Suspended` | `spec.suspend` is true. | Nothing. |
-| `ClusterReady` | `Blocked` | The ServiceAccount `my-db-postgres` or a RoleBinding `<cluster>-barman-cloud-postgres` belongs to another owner, or the cluster that a rollback moved to is gone. The message says which. | See [Name collisions](#name-collisions), or [Recovery](#recovery). |
+| `ClusterReady` | `Blocked` | The ServiceAccount `my-db-postgres` or a RoleBinding `<cluster>-barman-cloud-postgres` belongs to another owner, or the cluster that a rollback moved to is gone. The message says which. At the end of the grace period, the reason changes to `Down`, and the message still names the owner. | See [Name collisions](#name-collisions), or [Recovery](#recovery). |
 | `ClusterReady` | `ClusterTaken` | A CloudNativePG cluster of the server name belongs to another owner. | See [Name collisions](#name-collisions). |
 | `ArchiveReady` | `Disabled` | The server has no `archive` block. | Nothing. |
 | `ArchiveReady` | `Blocked` | The archive holds no base backup yet. | Wait. If it never completes, read the CloudNativePG `Backup` for the cause. |

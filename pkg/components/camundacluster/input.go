@@ -17,6 +17,8 @@ limitations under the License.
 package camundacluster
 
 import (
+	"time"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -152,6 +154,9 @@ type Input struct {
 	// ServiceMonitorSupported reports whether the Kubernetes cluster serves
 	// the ServiceMonitor kind. When false, no ServiceMonitor is rendered.
 	ServiceMonitorSupported bool
+	// GracePeriod is how long a process may take to become ready before
+	// its condition reports Degraded or Down. Zero keeps the progress reason.
+	GracePeriod time.Duration
 }
 
 // EffectiveAuth is the authentication source after the layering of the

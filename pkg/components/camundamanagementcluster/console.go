@@ -103,6 +103,7 @@ func consoleComponents(in Input) (Built, error) {
 		WithFeatureGate(gate).
 		WithResource(workload, component.GatedBy(gate)).
 		WithResource(svc, component.GatedBy(gate)).
+		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Suspended).
 		Build()
 	if err != nil {

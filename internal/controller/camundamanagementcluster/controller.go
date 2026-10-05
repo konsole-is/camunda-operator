@@ -52,6 +52,7 @@ import (
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
+	"github.com/konsole-is/camunda-operator/pkg/grace"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 )
 
@@ -108,6 +109,10 @@ type Reconciler struct {
 	// Lease of this one namespace. It is the namespace of the operator, and
 	// SetupWithManager refuses an empty one.
 	ClaimNamespace string
+	// GracePeriods are the grace periods of the workloads and the Keycloak,
+	// which use the workload period. The zero value keeps them on their
+	// progress reason.
+	GracePeriods grace.Periods
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used
@@ -288,6 +293,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	previousContract := mc.Status.ManagementAuthConfig
 	mc.Status.ManagementAuthConfig = res.ContractName
 
+	res.Input.GracePeriod = r.GracePeriods.Workload
 	built, err := components.Build(res.Input)
 	if err != nil {
 		return ctrl.Result{}, stepBuildComponents.stop(&mc, err)
@@ -341,6 +347,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		result.RequeueAfter = r.retryInterval()
 	case convergesUsers(&mc, attached), len(res.Input.OptimizeURLs) > 0:
 		result.RequeueAfter = r.convergeInterval()
+	}
+	if graceWait, ok := grace.Remaining(&mc, built.Components...); ok {
+		result.RequeueAfter = grace.Sooner(result.RequeueAfter, graceWait)
 	}
 
 	return result, errors.Join(
