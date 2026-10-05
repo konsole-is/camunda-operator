@@ -243,7 +243,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `clientId` _string_ | ClientID is the managed identity that consumers use. When set, the<br />operator puts it in the azure.workload.identity/client-id annotation<br />of the ServiceAccount of the consumer. |  | Optional: \{\} <br /> |
+| `clientId` _string_ | ClientID is the managed identity that consumers use. When set, the<br />operator puts it in the azure.workload.identity/client-id annotation<br />of a ServiceAccount that it creates for the consumer. On an existing<br />ServiceAccount, add the annotation yourself. |  | Optional: \{\} <br /> |
 
 
 #### BackupCredentialsSpec
@@ -669,7 +669,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `version` _string_ | Version is the Optimize version to deploy, as a full semantic version.<br />Optimize has its own patch line, so it does not follow the version of<br />the cluster. The major and the minor must match the effective version<br />of the referenced cluster. If they differ, Ready reports<br />VersionMismatch. |  | Pattern: `^\d+\.\d+\.\d+$` <br /> |
 | `managementAuthRef` _string_ | ManagementAuthRef names the cluster-scoped ManagementAuthConfig that<br />provides the Management Identity OIDC configuration. Optimize<br />authenticates against Management Identity, not against the built-in<br />auth of the orchestration cluster. |  | MinLength: 1 <br /> |
-| `externalUrl` _string_ | ExternalURL is the URL where browsers reach this Optimize.<br />In the two Keycloak modes, the management plane of managementAuthRef<br />registers <externalUrl>/api/authentication/callback on the optimize<br />client of the realm. Thus a person who signs in here comes back here.<br />Without a URL, the plane registers no callback, and Keycloak refuses<br />the return. The exception is a callback that somebody added to the<br />realm manually.<br />In the oidc mode, the field has no effect. The identity provider of the<br />platform config holds the callback URLs, so add this URL there. |  | Optional: \{\} <br /> |
+| `externalUrl` _string_ | ExternalURL is the URL where browsers reach this Optimize.<br />In the two Keycloak modes, the management plane of managementAuthRef<br />registers <externalUrl>/api/authentication/callback on the optimize<br />client of the realm. Thus a person who signs in here comes back here.<br />Without a URL, the plane registers no callback, and Keycloak refuses<br />the return. The exception is a callback that somebody added to the<br />realm manually.<br />In the oidc mode, the field has no effect. The identity provider of the<br />platform config holds the callback URLs, so add<br /><externalUrl>/api/authentication/callback there. |  | Optional: \{\} <br /> |
 | `clusterRef` _[ClusterRef](#clusterref)_ | ClusterRef names the CamundaCluster that this Optimize instance reads.<br />The secondary storage of that cluster must be Elasticsearch. No other<br />CamundaOptimize can be attached to it.<br />The reference is immutable. A change to another cluster changes the pod<br />selectors of the Deployments, and Kubernetes does not permit that.<br />Also, the old cluster keeps the exporter settings of this Optimize. |  |  |
 | `webapp` _[WorkloadSpec](#workloadspec)_ | Webapp configures the Deployment that serves the Optimize user<br />interface. It runs with data import off. |  | Optional: \{\} <br /> |
 | `importer` _[WorkloadSpec](#workloadspec)_ | Importer configures the Deployment that imports the exported cluster<br />data into the Optimize indices. Optimize supports one active importer,<br />so replicas must be 0 or 1. With 0, the import stops, for example<br />during a restore or an index rewrite. The webapp continues to serve the<br />data that it already imported. |  | Optional: \{\} <br /> |
@@ -1758,7 +1758,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `serviceAccountEmail` _string_ | ServiceAccountEmail is the Google service account that consumers<br />impersonate. When set, the operator puts it in the<br />iam.gke.io/gcp-service-account annotation of the ServiceAccount of the<br />consumer. |  | Optional: \{\} <br /> |
+| `serviceAccountEmail` _string_ | ServiceAccountEmail is the Google service account that consumers<br />impersonate. When set, the operator puts it in the<br />iam.gke.io/gcp-service-account annotation of a ServiceAccount that it<br />creates for the consumer. On an existing ServiceAccount, add the<br />annotation yourself. |  | Optional: \{\} <br /> |
 
 
 #### GatewayBinding
@@ -2189,7 +2189,7 @@ _Appears in:_
 | `objectKey` _string_ | ObjectKey is the full key of the dump in the backup bucket:<br /><basePath>/<namespace>/<cluster>/<backupId>/<uid>/camunda.dump. The<br />uid is the UID of this resource. Thus a backup id that is used again<br />never names the dump of another backup. |  | Optional: \{\} <br /> |
 | `zeebeBackupId` _integer_ | ZeebeBackupID is the id of the Zeebe backup that the cluster generated<br />after the dump. It is unset until the operator requests that backup. |  | Optional: \{\} <br /> |
 | `zeebeBackupRequestedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | ZeebeBackupRequestedAt is when the operator requested the Zeebe<br />backup. It limits how long the operator waits for the cluster to report<br />the backup. |  | Optional: \{\} <br /> |
-| `workloadConfigHash` _string_ | WorkloadConfigHash records the configuration of Zeebe when the backup<br />started. It is the config hash of the Zeebe pod template. The operator<br />requests the Zeebe backup only while the hash is unchanged. Thus the<br />dump never pairs with a Zeebe backup of another configuration, for<br />example after a change of the database. If the hash changes before the<br />operator requests the Zeebe backup, the backup fails after the grace<br />period. The generation of the cluster is not sufficient, because a<br />change of a referenced object changes the hash but not the generation. |  | Optional: \{\} <br /> |
+| `workloadConfigHash` _string_ | WorkloadConfigHash records the configuration of Zeebe when the backup<br />started. It is the config hash of the Zeebe pod template. The operator<br />compares it with the current hash before it renders the dump Job, and<br />again before it requests the Zeebe backup. After the request, it does<br />not compare again. If the hash differs, the backup fails after the<br />grace period. The generation of the cluster is not sufficient, because a<br />change of a referenced object changes the hash but not the generation. |  | Optional: \{\} <br /> |
 | `clusterUID` _[UID](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#uid-types-pkg)_ | ClusterUID records the CamundaCluster of the backup. A cluster that is<br />deleted and created again with the same name is another cluster, with<br />other primary storage. If the UID of the cluster changes, the backup<br />fails. Thus a dump never pairs with the Zeebe backup of another<br />cluster. |  | Optional: \{\} <br /> |
 | `version` _string_ | Version is the Camunda version of the cluster when the backup started,<br />as the management binding reported it. A restore compares it with the<br />version of its target. A relational backup restores to the same Camunda<br />minor or to one minor newer. A restore can read the version only here,<br />because a suspended cluster has no management binding. |  | Optional: \{\} <br /> |
 | `firstFailedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | FirstFailedAt is when a dependency of the running backup first stopped<br />resolving, or the management API first stopped answering. The grace<br />period starts at this time. It clears when the backup recovers. |  | Optional: \{\} <br /> |
@@ -3587,7 +3587,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `roleArn` _string_ | RoleARN is the IAM role that consumers assume. When set, the operator<br />puts it in the eks.amazonaws.com/role-arn annotation of the<br />ServiceAccount of the consumer (IRSA). |  | Optional: \{\} <br /> |
+| `roleArn` _string_ | RoleARN is the IAM role that consumers assume. When set, the operator<br />puts it in the eks.amazonaws.com/role-arn annotation of a ServiceAccount<br />that it creates for the consumer (IRSA). On an existing ServiceAccount,<br />add the annotation yourself. |  | Optional: \{\} <br /> |
 
 
 #### SchedulingSpec
@@ -3796,7 +3796,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `name` _string_ | Name is the name of the ServiceAccount. When empty, the operator<br />derives the name from the name of the resource, as the doc of each kind<br />states. The cloud provider uses this name. A workload identity that<br />needs no annotation, such as EKS Pod Identity, binds the principal<br />system:serviceaccount:<namespace>:<name>. |  | MaxLength: 253 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
 | `create` _boolean_ | Create makes the operator create and own the ServiceAccount. Defaults<br />to true. False names a ServiceAccount that already exists. The operator<br />then does not create, annotate, or own it. If it does not exist, Ready<br />reports InvalidReference, except on a suspended ElasticsearchCluster. The operator never takes ownership of a<br />ServiceAccount that it did not create, because it deletes an owned one<br />with the resource. |  | Optional: \{\} <br /> |
-| `annotations` _object (keys:string, values:string)_ | Annotations to set on the ServiceAccount. Usually these are<br />workload-identity annotations (IRSA, GCP Workload Identity, and more)<br />that give the pods access to cloud resources, such as the snapshot<br />bucket for backups. The operator also adds the identity annotation of<br />each bucket contract that names an identity. An annotation set here<br />wins over the operator annotation with the same key. |  | Optional: \{\} <br /> |
+| `annotations` _object (keys:string, values:string)_ | Annotations to set on the ServiceAccount that the operator creates.<br />Usually these are workload-identity annotations (IRSA, GCP Workload<br />Identity, and more) that give the pods access to cloud resources, such<br />as the snapshot bucket for backups. The operator also adds the identity<br />annotation of each bucket contract that names an identity. An annotation<br />set here wins over the operator annotation with the same key. With<br />create false, the operator sets no annotation. Add them to the existing<br />ServiceAccount yourself. |  | Optional: \{\} <br /> |
 
 
 #### ServiceMonitorSpec

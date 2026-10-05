@@ -53,8 +53,9 @@ const (
 // with EKS Pod Identity.
 type S3WorkloadIdentity struct {
 	// RoleARN is the IAM role that consumers assume. When set, the operator
-	// puts it in the eks.amazonaws.com/role-arn annotation of the
-	// ServiceAccount of the consumer (IRSA).
+	// puts it in the eks.amazonaws.com/role-arn annotation of a ServiceAccount
+	// that it creates for the consumer (IRSA). On an existing ServiceAccount,
+	// add the annotation yourself.
 	// +optional
 	RoleARN string `json:"roleArn,omitempty"`
 }
@@ -179,8 +180,9 @@ func (in *S3Storage) SigningRegion() string {
 type GCSWorkloadIdentity struct {
 	// ServiceAccountEmail is the Google service account that consumers
 	// impersonate. When set, the operator puts it in the
-	// iam.gke.io/gcp-service-account annotation of the ServiceAccount of the
-	// consumer.
+	// iam.gke.io/gcp-service-account annotation of a ServiceAccount that it
+	// creates for the consumer. On an existing ServiceAccount, add the
+	// annotation yourself.
 	// +optional
 	ServiceAccountEmail string `json:"serviceAccountEmail,omitempty"`
 }
@@ -236,7 +238,8 @@ type GCSStorage struct {
 type AzureBlobWorkloadIdentity struct {
 	// ClientID is the managed identity that consumers use. When set, the
 	// operator puts it in the azure.workload.identity/client-id annotation
-	// of the ServiceAccount of the consumer.
+	// of a ServiceAccount that it creates for the consumer. On an existing
+	// ServiceAccount, add the annotation yourself.
 	// +optional
 	ClientID string `json:"clientId,omitempty"`
 }

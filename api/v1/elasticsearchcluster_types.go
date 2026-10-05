@@ -41,12 +41,14 @@ type ServiceAccountSpec struct {
 	// with the resource.
 	// +optional
 	Create *bool `json:"create,omitempty"`
-	// Annotations to set on the ServiceAccount. Usually these are
-	// workload-identity annotations (IRSA, GCP Workload Identity, and more)
-	// that give the pods access to cloud resources, such as the snapshot
-	// bucket for backups. The operator also adds the identity annotation of
-	// each bucket contract that names an identity. An annotation set here
-	// wins over the operator annotation with the same key.
+	// Annotations to set on the ServiceAccount that the operator creates.
+	// Usually these are workload-identity annotations (IRSA, GCP Workload
+	// Identity, and more) that give the pods access to cloud resources, such
+	// as the snapshot bucket for backups. The operator also adds the identity
+	// annotation of each bucket contract that names an identity. An annotation
+	// set here wins over the operator annotation with the same key. With
+	// create false, the operator sets no annotation. Add them to the existing
+	// ServiceAccount yourself.
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 }

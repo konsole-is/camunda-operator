@@ -79,7 +79,8 @@ type CamundaOptimizeSpec struct {
 	// realm manually.
 	//
 	// In the oidc mode, the field has no effect. The identity provider of the
-	// platform config holds the callback URLs, so add this URL there.
+	// platform config holds the callback URLs, so add
+	// <externalUrl>/api/authentication/callback there.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	// +kubebuilder:validation:XValidation:rule="!self.contains(',')",message="externalUrl must carry no comma: Management Identity reads the callback list as comma-separated"
 	// +kubebuilder:validation:XValidation:rule="!self.endsWith('/')",message="externalUrl must not end with a slash: the login callback is appended to it"

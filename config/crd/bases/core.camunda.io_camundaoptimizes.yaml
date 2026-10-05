@@ -91,7 +91,8 @@ spec:
                   realm manually.
 
                   In the oidc mode, the field has no effect. The identity provider of the
-                  platform config holds the callback URLs, so add this URL there.
+                  platform config holds the callback URLs, so add
+                  <externalUrl>/api/authentication/callback there.
                 type: string
                 x-kubernetes-validations:
                 - message: externalUrl must be a valid http or https URL

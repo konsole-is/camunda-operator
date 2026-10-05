@@ -53,6 +53,8 @@ graph LR
 | `GCS` | `serviceAccountEmail` | `iam.gke.io/gcp-service-account` |
 | `AzureBlob` | `clientId` | `azure.workload.identity/client-id` |
 
+The operator writes the annotation only on a ServiceAccount that it creates. With `serviceAccount.create: false`, add the annotation to your ServiceAccount yourself.
+
 On `AzureBlob` with `workloadIdentity`, the consumer also puts the label `azure.workload.identity/use: "true"` on its pods. The Azure webhook injects nothing into a pod without that label.
 
 An empty or absent `workloadIdentity` block means that the consumer adds no annotation. The cloud then trusts the ServiceAccount of the pods as it is. Use it for mechanisms that need no annotation, for example EKS Pod Identity and GKE Workload Identity Federation. There the binding lives on the cloud side and names the ServiceAccount. The principal to bind is `system:serviceaccount:<namespace>:<serviceAccount name>` of the consuming resource. By default, that ServiceAccount is `<name>-camunda` for a `CamundaCluster` and `<name>-es` for an `ElasticsearchCluster`. For a `DatabaseServer`, it is `<name>-postgres`, and a rollback does not change it. See [DatabaseServer](databaseserver.md#authentication-to-the-bucket).
