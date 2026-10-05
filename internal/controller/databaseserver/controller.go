@@ -68,15 +68,16 @@ const controllerName = "databaseserver"
 const defaultRetryInterval = 30 * time.Second
 
 // eventReasonStorageShrinkIgnored is the Warning event that the controller
-// records once per requested size when a merged volume size is below the size
-// that is already there. It keeps the size that is there, because PostgreSQL
-// volumes cannot be reduced in place.
+// records when a merged volume size is below the size that is already there
+// and the applied cluster does not carry that request yet, except while the
+// server is held for suspension. It keeps the size that is there, because
+// PostgreSQL volumes cannot be reduced in place.
 const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 
 // eventReasonWALStorageKept is the Warning event that the controller records
-// once, when a merged spec starts to ask for no write-ahead log volume under a
-// server that has one. It keeps the volume, because CloudNativePG refuses a
-// cluster that gives one up.
+// when a merged spec asks for no write-ahead log volume under a server that
+// has one, on the same terms as eventReasonStorageShrinkIgnored. It keeps the
+// volume, because CloudNativePG refuses a cluster that gives one up.
 const eventReasonWALStorageKept = "WALStorageKept"
 
 // eventActionResize is the action of the events that the controller records
