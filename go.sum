@@ -375,8 +375,6 @@ github.com/sourcehawk/go-crd-condition-metrics v1.1.0 h1:wV+vSyCCxjIdhBjZENzzoGe
 github.com/sourcehawk/go-crd-condition-metrics v1.1.0/go.mod h1:hzmkaQhFMu4Mqylzu4HGO/dN8rsSEmI6/ivwlchTVrw=
 github.com/sourcehawk/go-prometheus-gaugevecset v1.1.0 h1:M0R2IZrKYT9dvJ+2bnPb69UVfFzHmS1pkBNbRTbXkM4=
 github.com/sourcehawk/go-prometheus-gaugevecset v1.1.0/go.mod h1:lNJLSekPoA5pzxuyNMNf5XrE5Kvbaqe3kZ4Fe06R1rg=
-github.com/sourcehawk/operator-component-framework v0.22.0 h1:KgfM03toW0+H0dQb3naAGfKCv4yshdM3AmXcqz7Wm54=
-github.com/sourcehawk/operator-component-framework v0.22.0/go.mod h1:h3IEjRr/prNHes/sY8/nru2xYJ4eYCTX7aMcj5R5Kxk=
 github.com/sourcehawk/operator-component-framework v0.22.1 h1:PFi4Hqk9HMZFMYK4zrFsUZhKPMRFZ7bcXwmd3Kzj+Yg=
 github.com/sourcehawk/operator-component-framework v0.22.1/go.mod h1:h3IEjRr/prNHes/sY8/nru2xYJ4eYCTX7aMcj5R5Kxk=
 github.com/spf13/cobra v1.10.2 h1:DMTTonx5m65Ic0GOoRY2c16WCbHxOOw6xxezuLaBpcU=
