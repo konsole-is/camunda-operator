@@ -257,7 +257,7 @@ if err := ensureDeployment(ctx, resource); errors.Is(err, ErrNotReady) {
 }
 ```
 
-**Each layer is correct on its own inputs.** A function must not depend on a check or a branch in its caller, or on a side effect of a layer below it. When logic belongs to one branch of a decision, put it in the layer that makes the decision. As an alternative, give the decision to the lower layer as an explicit input, such as a parameter or a resolved field.
+**Each layer is correct on its own inputs.** A function must not depend on a check or a branch in its caller. It also must not depend on a side effect of a lower layer that the name and the signature of that layer do not show. When logic belongs to one branch of a decision, put it in the layer that makes the decision. As an alternative, give the decision to the lower layer as an explicit input, such as a parameter or a resolved field.
 
 Two shapes break this rule:
 
@@ -271,7 +271,8 @@ Two shapes break this rule:
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     // ...
     if obj.Spec.Suspended {
-        return ctrl.Result{}, r.suspend(ctx, obj)
+        // stopBrokers applies the broker StatefulSet with zero replicas
+        return ctrl.Result{}, r.stopBrokers(ctx, obj)
     }
     return ctrl.Result{}, r.reconcileBrokers(ctx, obj)
 }
@@ -309,7 +310,7 @@ The test: can a different caller use this function and get the correct result? C
 - A comment says what the caller already checked, or when the function runs: "the caller already checked X", "this only runs when suspended".
 - A sub-reconciler reads a spec or status field again to find which branch its parent took.
 - A lower layer returns early for a case that an upper layer owns.
-- An upper layer is correct only because of a side effect in a layer below it.
+- An upper layer relies on a side effect of a lower layer that its name and signature do not show.
 - You put the logic in a function because the code fit there, not because that layer owns the decision.
 
 ## Labels
