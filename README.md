@@ -6,6 +6,7 @@ One operator runs the orchestration clusters, their Elasticsearch or PostgreSQL 
 
 The operator runs on any Kubernetes cluster, including bare metal. It never creates cloud resources such as buckets or IAM roles, so you bring those yourself.
 
+> [!WARNING]
 > The operator is in early development. The API group is `core.camunda.io/v1`, but the API can still change before the first stable release.
 
 ## Features
