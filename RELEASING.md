@@ -46,6 +46,8 @@ Users verify the signatures as [Verify the signatures](docs/installation.md#veri
 
 ## If the Release workflow fails
 
+If the workflow stops because `go.mod` does not pin the api module at the release version, no Go module tag exists yet. Delete the release and its tag `X.Y.Z`, because the Prepare release workflow rejects a version whose tag exists. Then do the steps of [Publish a release](#publish-a-release) again from step 2.
+
 If the cause is outside the code, for example a registry outage, run the failed jobs again from the workflow run. A run again uses the same release commit. A Go module tag that already points at that commit stays as it is. A push of an image or a chart replaces the earlier push.
 
 If the cause is in the code, correct it on main. Then look for the Go module tags `vX.Y.Z` and `api/vX.Y.Z` on GitHub:

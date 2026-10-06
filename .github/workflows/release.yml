@@ -60,7 +60,7 @@ jobs:
           have=$(go list -m -f '{{.Version}}' github.com/konsole-is/camunda-operator/api)
           if [[ "${have}" != "${want}" ]]; then
             echo "go.mod requires api module ${have}, release needs ${want}." >&2
-            echo "Run the Prepare release workflow with ${TAG}, merge its pull request, then publish the release again." >&2
+            echo "Delete this release and its tag ${TAG}, run the Prepare release workflow with ${TAG}, merge its pull request, then publish the release again." >&2
             exit 1
           fi
 
