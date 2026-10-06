@@ -318,16 +318,9 @@ the `MODULES` variable (`vet`, `test`, `lint`, `fmt`, `tidy`, `generate`,
 `manifests`). The root `go.mod` requires the api module and replaces it with
 `./api`, so local builds always use the on-disk copy.
 
-**Releasing:** before the release, run `make api-version VERSION=<version>`
-and merge the `go.mod` change. This pins the api module version that consumers
-of the root module get. The release workflow fails if the pin does not match
-the tag. Then publishing a GitHub Release on an unprefixed SemVer tag (`0.1.0`)
-triggers `.github/workflows/release.yml`, which pushes the Go tags
-`api/v0.1.0` and `v0.1.0` at the release commit, pushes the chart to
-`oci://ghcr.io/konsole-is/charts`, pushes the amd64/arm64 manager image to
-`ghcr.io/konsole-is/camunda-operator` and the CLI image to
-`ghcr.io/konsole-is/camunda-operator-cli`, signs all three with cosign keyless,
-and attaches `install.yaml`, `crds.yaml`, and the packaged chart to the release.
+**Releasing:** follow [`RELEASING.md`](RELEASING.md). Run the **Prepare release**
+workflow first. It pins the api module version in the root `go.mod`, and the
+release workflow fails if that pin does not match the tag.
 
 ### Publish Container Images
 
