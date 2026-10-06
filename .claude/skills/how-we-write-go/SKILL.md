@@ -166,20 +166,20 @@ When arguments are many or individually long, put each on its own line with a tr
 
 ```go
 // BAD — crammed onto one line
-recorder.Eventf(obj, nil, corev1.EventTypeNormal, EventReasonReconciled, EventActionReconcile, "deployment %q reconciled", name)
+recorder.Eventf(obj, nil, corev1.EventTypeWarning, EventReasonBackupFailed, EventActionBackup, "backup %q failed", name)
 
 // BAD — inconsistent split (some args together, some not)
-recorder.Eventf(obj, nil, corev1.EventTypeNormal,
-    EventReasonReconciled, EventActionReconcile, "deployment %q reconciled", name)
+recorder.Eventf(obj, nil, corev1.EventTypeWarning,
+    EventReasonBackupFailed, EventActionBackup, "backup %q failed", name)
 
 // GOOD — one argument per line
 recorder.Eventf(
     obj,
     nil,
-    corev1.EventTypeNormal,
-    EventReasonReconciled,
-    EventActionReconcile,
-    "deployment %q reconciled",
+    corev1.EventTypeWarning,
+    EventReasonBackupFailed,
+    EventActionBackup,
+    "backup %q failed",
     name,
 )
 ```
@@ -364,10 +364,10 @@ Events go through the client-go `events.EventRecorder` that `mgr.GetEventRecorde
 recorder.Eventf(obj, nil, "Normal", "SuccessfulReconcile", "Reconcile", "...")
 
 // GOOD
-const eventReasonReconciled = "Reconciled"
-const eventActionReconcile = "Reconcile"
+const eventReasonBackupFailed = "BackupFailed"
+const eventActionBackup = "Backup"
 
-recorder.Eventf(obj, nil, corev1.EventTypeNormal, eventReasonReconciled, eventActionReconcile, "deployment reconciled")
+recorder.Eventf(obj, nil, corev1.EventTypeWarning, eventReasonBackupFailed, eventActionBackup, "backup failed")
 ```
 
 Prefer a custom `type Reason string` in packages that own many event reasons, so the compiler catches misuse.
@@ -383,7 +383,7 @@ Prefer a custom `type Reason string` in packages that own many event reasons, so
 Rules:
 - An event marks a transition, never a reconcile. A steady-state reconcile records no event. Record one only when something changed, for example when `meta.SetStatusCondition` returns `true`, or when a value that the controller records in status changes. The events/v1 recorder merges events with the same type, reason, and action on one object into a series. The series keeps the note of the first event. So an event on each reconcile hides a later event with the same reason, and the note of that event is lost.
 - Do not record an event for an apply. ocf records a `Created<Kind>` or `Updated<Kind>` event on the owner for each apply that changes the object, and none for an apply that changes nothing.
-- A hot loop shows in the apply metrics, not in events. Do not add an event or a log line to find one.
+- A resource that is rewritten on each reconcile shows in the apply metrics, not in events. Do not add an event or a log line to find one.
 - Prefer events for anything a cluster operator would want to `kubectl describe` and understand without reading operator logs.
 - Keep `logger.Info` calls sparse in the reconcile hot path — every reconcile of every object emits them; they bloat the log stream.
 - Do not log and record an event for the same fact. Pick the right signal.
