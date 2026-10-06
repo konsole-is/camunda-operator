@@ -17,7 +17,7 @@ the detail. Do not work from memory when a skill covers the task.
 | Before you ... | Load this skill |
 | --- | --- |
 | Write, change, or review any Go code | `how-we-write-go` |
-| Write, edit, or delete a comment in code. In Go, the comment rules of `how-we-write-go` come first | `feature-dev-workflow:writing-code-comments` |
+| Write, edit, or delete a comment in code. In Go, `how-we-write-go` adds rules to it | `feature-dev-workflow:writing-code-comments` |
 | Write or edit the user docs: `docs/`, `README.md`, `dist/chart/README.md`, CRD field descriptions | `writing-operator-docs` |
 | Write or edit other prose: error and condition messages, commit bodies | `simple-english:simple-english` |
 | Write or change Camunda application config (env vars, Spring properties) | `verifying-camunda-app-config` |
