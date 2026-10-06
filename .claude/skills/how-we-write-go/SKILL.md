@@ -378,8 +378,12 @@ Prefer a custom `type Reason string` in packages that own many event reasons, so
 |--------|---------|------|
 | **Event** | User-visible state transitions on a specific object (provisioning started, health check failed, config applied) | `recorder.Eventf(obj, related, type, reason, action, note)` |
 | **Log** | Operator-internal tracing, debugging, diagnostic detail | `logger.Info(...)` / `logger.Error(...)` |
+| **Metric** | Rates and loops across many objects, such as a resource that is rewritten on each reconcile | The ocf `ocf_resource_apply_total` counter and the `ManagedResourceNotConverging` alert |
 
 Rules:
+- An event marks a transition, never a reconcile. A steady-state reconcile records no event. Record one only when something changed, for example when `meta.SetStatusCondition` returns `true`, or when a value that the controller records in status changes. client-go's spam filter truncates repeated events within seconds, so an event on each reconcile also drops the events that report a real change.
+- Do not record an event for an apply. ocf records a `Created` or `Updated` event on the owner for each apply that changes the object, and none for an apply that changes nothing.
+- A hot loop shows in the apply metrics, not in events. Do not add an event or a log line to find one.
 - Prefer events for anything a cluster operator would want to `kubectl describe` and understand without reading operator logs.
 - Keep `logger.Info` calls sparse in the reconcile hot path — every reconcile of every object emits them; they bloat the log stream.
 - Do not log and record an event for the same fact. Pick the right signal.
@@ -388,11 +392,15 @@ Rules:
 - Use `logger.V(1)` or higher for debug-level detail; leave `V(0)` (the default) for genuinely important state changes.
 
 ```go
-// BAD — log masquerading as an event, event reason is freeform
-logger.V(1).Info("recording event", "reason", "SuccessfulReconcile")
+// BAD — an event on each reconcile, with a freeform reason. The spam filter
+// drops it, together with the events that report a real change
+recorder.Eventf(obj, nil, corev1.EventTypeNormal, "SuccessfulReconcile", "Reconcile", "reconciled")
 
-// GOOD — real event, named constant reason and action
-recorder.Eventf(obj, nil, corev1.EventTypeNormal, eventReasonReconciled, eventActionReconcile, "deployment reconciled")
+// GOOD — an event only when the condition changes, with named constants
+cond := backupFailedCondition(obj.Generation)
+if meta.SetStatusCondition(&obj.Status.Conditions, cond) {
+    recorder.Eventf(obj, nil, corev1.EventTypeWarning, cond.Reason, eventActionBackup, "%s", cond.Message)
+}
 ```
 
 ## Error wrapping
@@ -790,6 +798,7 @@ When no order makes the file read straight through, the file holds more than one
 | `// In production code this would...` | Delete; write the real code or a `// TODO(#NNN)` |
 | Inline `const reason = "..."` in a function | Promote to package-level typed constant |
 | `logger.Info` for every reconcile step | Trim to the one line that matters; use events for state changes |
+| Event recorded on every reconcile | Record it only when something changed, such as when `meta.SetStatusCondition` returns `true` |
 | `fmt.Sprintf("%s-%s", a, b)` | `a + "-" + b` |
 | Comment restates the line under it | Delete it; if the line needs prose, rename or split instead |
 | Godoc explains how the body computes the answer | Cut to the contract: preconditions, result, what the caller must not assume |
