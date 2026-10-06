@@ -103,13 +103,6 @@ change the doc in the same change.
 | Operator setup, deployment, quick start | `README.md` |
 | Behavior described in a comment | The comment, wherever it is |
 
-### Hard boundaries
-
-- This is a clean-slate project. There is no migration, no legacy compatibility layer, and no
-  ZeebeCluster. Do not add any of these.
-- Never create cloud infrastructure resources (IAM, KMS, buckets). That work belongs to
-  `camunda-cloud-operator`.
-
 ### Commits and pull requests
 
 - Commit subjects and PR titles use `<type>(<area>): <imperative summary>`. The types are `feat`,
