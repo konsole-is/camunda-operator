@@ -193,7 +193,7 @@ func (r *LogicalBackupRDBMSReconciler) resolveRunning(
 	// Zeebe step finds out only afterwards. The object key was written for
 	// the pinned bucket, not for the current backupStorageRef of the
 	// cluster.
-	if failure := clusterConverged(cluster); failure != nil {
+	if failure := logicalbackup.ClusterConverged(cluster); failure != nil {
 		return nil, failure, nil
 	}
 	if failure, err := r.workloadUnchanged(ctx, backup, cluster); err != nil || failure != nil {

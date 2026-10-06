@@ -52,7 +52,13 @@ If the management API or Elasticsearch is unreachable during a step, the backup 
 
 ## Changes
 
-Do not change the storage or the backup bucket of the cluster while a backup runs. The backup fails, and the message names the recorded and the current value. If you delete the cluster during the run, the backup ends as `Failed`. This is also the case when you create a new cluster under the same name. The backup does not touch the new cluster.
+A backup on a cluster that is still rolling out waits in `Pending` with reason `Progressing` before it starts. It also waits while Zeebe runs another Elasticsearch endpoint or snapshot repository than the `SecondaryStorageConfig` of the cluster declares. The same applies to another bucket than the `ObjectStorageConfig` declares. The backup starts when Zeebe runs what the contracts declare.
+
+Do not change the storage or the backup bucket of the cluster while a backup runs. The backup fails, and the message names the recorded and the current value.
+
+Do not change the configuration of Zeebe after the backup started. If Zeebe rolls to another configuration before the operator sees the backup of the Zeebe partitions complete, the step fails at once. The backup then ends as `Failed`, even if Camunda later reports that part as complete. The message names the recorded and the current config hash.
+
+If you delete the cluster during the run, the backup ends as `Failed`. This is also the case when you create a new cluster under the same name. The backup does not touch the new cluster.
 
 ## Deletion
 
@@ -62,7 +68,7 @@ When you delete the backup, the operator deletes the snapshots and the partition
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
-| `Ready` | `Progressing` | The backup runs, or it waits for the cluster to publish its management API in `status.management`. | Wait. The message names the current step. |
+| `Ready` | `Progressing` | The backup runs, or it waits for the cluster to finish a rollout or to publish its management API in `status.management`. | Wait. The message names the current step or the cause of the wait. |
 | `Ready` | `Completed` | The backup finished. `Ready` is `True`. | Nothing. Record `status.backupId` for a restore. |
 | `Ready` | `Failed` | A step failed. Exporting runs again. | Read `status.failureMessage`. Correct the cause and create a new backup. |
 | `Ready` | `ResumeFailed` | A step failed or finished, and exporting did not resume within 30 minutes. Exporting stays paused. | Repair the management API, then delete this backup. The deletion resumes exporting. No other backup of the cluster starts before that. |
@@ -84,7 +90,7 @@ A restore needs these fields:
 - `status.version` is the Camunda version of the cluster when the backup started. A restore of this backup runs only with the exact same version.
 - `status.storageSizes` holds the recorded volume sizes of Elasticsearch and Zeebe, when the operator can compute them.
 
-`status.history`, `status.records`, and `status.runtime` report the state of each part: `Pending`, `InProgress`, `Completed`, or `Failed`. `status.failureMessage` names the step that failed. `status.resumeFailureMessage` says why exporting did not resume. `status.completionTime` is when the backup ended. `status.observedGeneration` is the last generation that the operator reconciled.
+`status.history`, `status.records`, and `status.runtime` report the state of each part: `Pending`, `InProgress`, `Completed`, or `Failed`. `status.workloadConfigHash` is the config hash of Zeebe when the backup started. `status.failureMessage` names the step that failed. `status.resumeFailureMessage` says why exporting did not resume. `status.completionTime` is when the backup ended. `status.observedGeneration` is the last generation that the operator reconciled.
 
 ## Spec reference
 

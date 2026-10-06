@@ -22,10 +22,20 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
+	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 )
 
 func TestStorageMissingSeparatesAGoneContractFromATransientRead(t *testing.T) {
@@ -78,4 +88,189 @@ func TestClusterReplacedComparesThePinnedUID(t *testing.T) {
 	assert.False(t, clusterReplaced(backup, cluster))
 	cluster.UID = "uid-2"
 	assert.True(t, clusterReplaced(backup, cluster), "a same-named cluster with another UID is a replacement")
+}
+
+// testBucket is the backup bucket of cluster ns/cc in the unit tests.
+func testBucket(name string) *v1.ObjectStorageConfig {
+	return &v1.ObjectStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "bucket"},
+		Spec: v1.ObjectStorageConfigSpec{
+			Type: v1.ObjectStorageTypeS3,
+			S3: &v1.S3Storage{
+				BucketName: name, Region: "r",
+				Auth: v1.S3StorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity},
+			},
+		},
+	}
+}
+
+// zeebeWorkload builds the Zeebe workload of cluster ns/cc, reported as
+// rolled out, with the given config hash (an empty hash sets none), the
+// backup store of testBucket("b"), the snapshot repository "repo", and the
+// Elasticsearch endpoint on its pod template.
+func zeebeWorkload(hash, endpoint string) *appsv1.StatefulSet {
+	cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cc"}}
+	workload := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{
+		Namespace: "ns", Name: camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
+	}}
+	workload.Status.UpdatedReplicas = 1
+	workload.Status.ReadyReplicas = 1
+	if hash != "" {
+		workload.Spec.Template.Annotations = map[string]string{camundacluster.ConfigHashAnnotation: hash}
+	}
+	workload.Spec.Template.Spec.Containers = []corev1.Container{{
+		Name: "zeebe",
+		Env: append(
+			camundacluster.BackupStoreEnv(cluster, testBucket("b")),
+			camundaconfig.Var(camundaconfig.KeyBackupRepositoryName, "repo"),
+			camundaconfig.Var(camundaconfig.KeyElasticsearchURL, endpoint),
+		),
+	}}
+	return workload
+}
+
+// workloadReader is a fake API reader that holds objects.
+func workloadReader(t *testing.T, objects ...client.Object) client.Reader {
+	t.Helper()
+	s := runtime.NewScheme()
+	require.NoError(t, appsv1.AddToScheme(s))
+	return fake.NewClientBuilder().WithScheme(s).WithObjects(objects...).Build()
+}
+
+func TestZeebeRunsDestinationPinsTheHashOnlyWhenZeebeRunsTheDeclaredEndpoint(t *testing.T) {
+	res := &logicalbackup.PreCheckResult{
+		Cluster: &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cc"},
+			Status: v1.CamundaClusterStatus{
+				Management: &v1.ManagementBinding{BackupRepository: "repo"},
+			},
+		},
+		Storage: &v1.SecondaryStorageConfig{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "storage"},
+			Spec: v1.SecondaryStorageConfigSpec{
+				Type: v1.SecondaryStorageTypeElasticsearch,
+				Elasticsearch: &v1.ElasticsearchStorage{
+					Endpoint: "https://es-new:9200/", SnapshotRepository: "repo",
+				},
+			},
+		},
+		Bucket: testBucket("b"),
+	}
+	tests := []struct {
+		name     string
+		workload *appsv1.StatefulSet
+		hash     string
+		wait     string
+	}{
+		{
+			name:     "Zeebe runs the declared endpoint, with a trailing slash of difference",
+			workload: zeebeWorkload("hash-2", "https://es-new:9200"),
+			hash:     "hash-2",
+		},
+		{
+			name:     "Zeebe still runs the old endpoint",
+			workload: zeebeWorkload("hash-1", "https://es-old:9200"),
+			wait:     "https://es-old:9200",
+		},
+		{
+			name: "Zeebe still runs the backup store of another bucket",
+			workload: func() *appsv1.StatefulSet {
+				workload := zeebeWorkload("hash-1", "https://es-new:9200")
+				workload.Spec.Template.Spec.Containers[0].Env = append(
+					camundacluster.BackupStoreEnv(res.Cluster, testBucket("old")),
+					camundaconfig.Var(camundaconfig.KeyElasticsearchURL, "https://es-new:9200"),
+				)
+				return workload
+			}(),
+			wait: "backup store",
+		},
+		{
+			name: "the template carries no Elasticsearch endpoint yet",
+			workload: func() *appsv1.StatefulSet {
+				workload := zeebeWorkload("hash-1", "")
+				workload.Spec.Template.Spec.Containers[0].Env = append(
+					camundacluster.BackupStoreEnv(res.Cluster, testBucket("b")),
+					camundaconfig.Var(camundaconfig.KeyBackupRepositoryName, "repo"),
+				)
+				return workload
+			}(),
+			wait: "no Elasticsearch endpoint",
+		},
+		{
+			name: "Zeebe still runs the previous snapshot repository",
+			workload: func() *appsv1.StatefulSet {
+				workload := zeebeWorkload("hash-1", "https://es-new:9200")
+				env := workload.Spec.Template.Spec.Containers[0].Env
+				for i := range env {
+					if env[i].Name == camundaconfig.KeyBackupRepositoryName.Env() {
+						env[i].Value = "old-repo"
+					}
+				}
+				return workload
+			}(),
+			wait: "old-repo",
+		},
+		{
+			name: "the brokers still roll to the template",
+			workload: func() *appsv1.StatefulSet {
+				workload := zeebeWorkload("hash-2", "https://es-new:9200")
+				workload.Status.UpdateRevision = "rev-2"
+				return workload
+			}(),
+			wait: "has not rolled out",
+		},
+		{
+			name:     "the template carries no hash yet",
+			workload: zeebeWorkload("", "https://es-new:9200"),
+			wait:     "no config hash",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &Reconciler{APIReader: workloadReader(t, tt.workload)}
+
+			hash, failure, err := r.zeebeRunsDestination(t.Context(), res)
+			require.NoError(t, err)
+			if tt.wait == "" {
+				assert.Nil(t, failure)
+				assert.Equal(t, tt.hash, hash)
+				return
+			}
+			require.NotNil(t, failure)
+			assert.Equal(t, v1.ReasonProgressing, failure.Reason)
+			assert.Contains(t, failure.Message, tt.wait)
+			assert.Empty(t, hash, "nothing to pin while the backup waits")
+		})
+	}
+}
+
+// An in-place edit of snapshotRepository reaches the published binding later
+// than the contract. Until then the backup would pin the old repository.
+func TestZeebeRunsDestinationWaitsForTheBindingOfTheDeclaredRepository(t *testing.T) {
+	res := &logicalbackup.PreCheckResult{
+		Cluster: &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cc"},
+			Status: v1.CamundaClusterStatus{
+				Management: &v1.ManagementBinding{BackupRepository: "old-repo"},
+			},
+		},
+		Storage: &v1.SecondaryStorageConfig{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "storage"},
+			Spec: v1.SecondaryStorageConfigSpec{
+				Type: v1.SecondaryStorageTypeElasticsearch,
+				Elasticsearch: &v1.ElasticsearchStorage{
+					Endpoint: "https://es:9200", SnapshotRepository: "repo",
+				},
+			},
+		},
+		Bucket: testBucket("b"),
+	}
+	r := &Reconciler{APIReader: workloadReader(t, zeebeWorkload("hash-1", "https://es:9200"))}
+
+	hash, failure, err := r.zeebeRunsDestination(t.Context(), res)
+	require.NoError(t, err)
+	require.NotNil(t, failure)
+	assert.Equal(t, v1.ReasonProgressing, failure.Reason)
+	assert.Contains(t, failure.Message, "old-repo")
+	assert.Empty(t, hash)
 }

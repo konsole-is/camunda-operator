@@ -211,8 +211,17 @@ var worldRDBMSURL = camundacluster.RDBMSURL("postgres.databases.svc", 5432, "cam
 // of the configuration that Zeebe runs and the relational storage URL that
 // Zeebe runs against. A change of the hash stands in for a rollout to another
 // configuration, for example a swapped database. The URL says which database
-// that is.
+// that is. It reports the rollout of the template as complete.
 func renderZeebe(cluster *v1.CamundaCluster, hash, rdbmsURL string) {
+	GinkgoHelper()
+	startZeebeRollout(cluster, hash, rdbmsURL)
+	finishZeebeRollout(cluster)
+}
+
+// startZeebeRollout writes the pod template of the Zeebe workload as
+// renderZeebe does. The brokers still run the previous template until
+// finishZeebeRollout.
+func startZeebeRollout(cluster *v1.CamundaCluster, hash, rdbmsURL string) {
 	GinkgoHelper()
 	key := types.NamespacedName{
 		Namespace: cluster.Namespace,
@@ -220,7 +229,7 @@ func renderZeebe(cluster *v1.CamundaCluster, hash, rdbmsURL string) {
 	}
 	container := corev1.Container{
 		Name: "zeebe", Image: "z",
-		Env: []corev1.EnvVar{camundaconfig.Var(camundaconfig.KeyRDBMSURL, rdbmsURL)},
+		Env: append(zeebeBackupStoreEnv(cluster), camundaconfig.Var(camundaconfig.KeyRDBMSURL, rdbmsURL)),
 	}
 	Eventually(func(g Gomega) {
 		var workload appsv1.StatefulSet
@@ -247,6 +256,45 @@ func renderZeebe(cluster *v1.CamundaCluster, hash, rdbmsURL string) {
 		workload.Spec.Template.Annotations[camundacluster.ConfigHashAnnotation] = hash
 		workload.Spec.Template.Spec.Containers = []corev1.Container{container}
 		g.Expect(k8sClient.Update(ctx, &workload)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// zeebeBackupStoreEnv returns the backup store environment that the
+// CamundaCluster controller renders for the current backupStorageRef of
+// cluster.
+func zeebeBackupStoreEnv(cluster *v1.CamundaCluster) []corev1.EnvVar {
+	GinkgoHelper()
+	var current v1.CamundaCluster
+	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &current)).To(Succeed())
+	var bucket v1.ObjectStorageConfig
+	key := types.NamespacedName{Namespace: current.Namespace, Name: current.Spec.BackupStorageRef}
+	Expect(k8sClient.Get(ctx, key, &bucket)).To(Succeed())
+
+	return camundacluster.BackupStoreEnv(&current, &bucket)
+}
+
+// finishZeebeRollout reports the current pod template of the Zeebe workload
+// as rolled out to every broker, the way the StatefulSet controller does.
+// The suite runs no StatefulSet controller.
+func finishZeebeRollout(cluster *v1.CamundaCluster) {
+	GinkgoHelper()
+	key := types.NamespacedName{
+		Namespace: cluster.Namespace,
+		Name:      camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
+	}
+	Eventually(func(g Gomega) {
+		var workload appsv1.StatefulSet
+		g.Expect(k8sClient.Get(ctx, key, &workload)).To(Succeed())
+		revision := fmt.Sprintf("rev-%d", workload.Generation)
+		workload.Status = appsv1.StatefulSetStatus{
+			ObservedGeneration: workload.Generation,
+			Replicas:           *workload.Spec.Replicas,
+			ReadyReplicas:      *workload.Spec.Replicas,
+			UpdatedReplicas:    *workload.Spec.Replicas,
+			CurrentRevision:    revision,
+			UpdateRevision:     revision,
+		}
+		g.Expect(k8sClient.Status().Update(ctx, &workload)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }
 
@@ -870,6 +918,50 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, leaseKey, &coordinationv1.Lease{})).NotTo(Succeed())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// The pod template changes before the first broker restarts. A hash read
+	// from the template alone can name a configuration that no broker runs.
+	It("waits for the brokers to roll out the Zeebe template before it pins its hash", func() {
+		w := createWorld()
+		startZeebeRollout(w.cluster, "hash-2", worldRDBMSURL)
+
+		backup := createBackup(w)
+		expectPending(backup, v1.ReasonProgressing)
+		Expect(readyCondition(backup).Message).To(ContainSubstring("has not rolled out"))
+
+		By("starting once every broker runs the template, and pinning its hash")
+		finishZeebeRollout(w.cluster)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupRunning))
+			g.Expect(backup.Status.WorkloadConfigHash).To(Equal("hash-2"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// A retarget of the ObjectStorageConfig moves the bucket without a change
+	// of the cluster generation. Until the cluster renders it, Zeebe still
+	// writes its backups to the old bucket.
+	It("waits while Zeebe still runs the previous backup store, then pins the new one", func() {
+		w := createWorld()
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.bucket), w.bucket)).To(Succeed())
+			w.bucket.Spec.S3.BucketName = "camunda-backups-2"
+			g.Expect(k8sClient.Update(ctx, w.bucket)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		backup := createBackup(w)
+		expectPending(backup, v1.ReasonProgressing)
+		Expect(readyCondition(backup).Message).To(ContainSubstring("backup store"))
+
+		By("starting once Zeebe runs the new backup store")
+		renderZeebe(w.cluster, "hash-2", worldRDBMSURL)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupRunning))
+			g.Expect(backup.Status.WorkloadConfigHash).To(Equal("hash-2"))
+			g.Expect(backup.Status.BucketLocation).To(ContainSubstring("camunda-backups-2"))
 		}, timeout, interval).Should(Succeed())
 	})
 

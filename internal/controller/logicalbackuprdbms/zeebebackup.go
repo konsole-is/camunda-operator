@@ -77,7 +77,7 @@ func (r *LogicalBackupRDBMSReconciler) requestZeebeBackup(
 			return settle, err
 		}
 		if failure == nil {
-			failure = clusterConverged(cluster)
+			failure = logicalbackup.ClusterConverged(cluster)
 		}
 		if failure == nil {
 			// The generation alone cannot tell a database swap. Mutable

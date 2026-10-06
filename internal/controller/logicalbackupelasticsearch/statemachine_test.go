@@ -24,14 +24,17 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin/camundaadmintest"
+	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 )
 
 // testBackupID is the backup ID of every unit-tested runtime request.
@@ -128,9 +131,10 @@ func TestRuntimeBackupFoundWithoutIntentIsNotAdopted(t *testing.T) {
 			server.SetRuntimeState(1_000, state, "")
 			backup := runtimeBackup()
 			// The step verifies the pinned destination before it trusts the
-			// runtime status, so the world holds the storage contract that
-			// the cluster names. The backup pins nothing, so nothing
-			// mismatches.
+			// runtime status, and the pinned workload after it. So the world
+			// holds the storage contract that the cluster names and the Zeebe
+			// workload that the backup pinned. The backup pins no
+			// destination, so nothing mismatches.
 			storage := &v1.SecondaryStorageConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "storage", Namespace: "ns"},
 				Spec: v1.SecondaryStorageConfigSpec{
@@ -146,7 +150,15 @@ func TestRuntimeBackupFoundWithoutIntentIsNotAdopted(t *testing.T) {
 			}
 			s := runtime.NewScheme()
 			require.NoError(t, v1.AddToScheme(s))
-			r.APIReader = fake.NewClientBuilder().WithScheme(s).WithObjects(storage).Build()
+			zeebe := &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "ns", Name: camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
+				},
+			}
+			zeebe.Spec.Template.Annotations = map[string]string{camundacluster.ConfigHashAnnotation: rigConfigHash}
+			backup.Status.WorkloadConfigHash = rigConfigHash
+			require.NoError(t, appsv1.AddToScheme(s))
+			r.APIReader = fake.NewClientBuilder().WithScheme(s).WithObjects(storage, zeebe).Build()
 			_ = mgmt
 
 			_, err := r.backupRuntime(t.Context(), backup, cluster)
@@ -157,6 +169,153 @@ func TestRuntimeBackupFoundWithoutIntentIsNotAdopted(t *testing.T) {
 			assert.Contains(t, backup.Status.FailureMessage, "belongs to another actor")
 			assert.Contains(t, backup.Status.FailureMessage, "not adopted")
 			assert.Nil(t, backup.Status.RuntimeAcceptedTime)
+		})
+	}
+}
+
+// A roll of Zeebe fails the step at once with both hashes, also while the
+// management API does not answer the status call.
+func TestRuntimeStepFailsOnARollAlsoWhenTheStatusCallIsUnreachable(t *testing.T) {
+	r, _, _ := runtimeRig(t)
+	backup := runtimeBackup()
+	backup.Status.WorkloadConfigHash = rigConfigHash
+	storage := &v1.SecondaryStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "storage", Namespace: "ns"},
+		Spec: v1.SecondaryStorageConfigSpec{
+			Type:          v1.SecondaryStorageTypeElasticsearch,
+			Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es:9200"},
+		},
+	}
+	cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "cc", Namespace: "ns"}}
+	cluster.Spec.StorageRef = storage.Name
+	cluster.Status.Management = &v1.ManagementBinding{
+		// A closed port: the status call is unreachable.
+		Endpoint: "http://127.0.0.1:1", Version: "8.9.9",
+		Auth: v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
+	}
+	s := runtime.NewScheme()
+	require.NoError(t, v1.AddToScheme(s))
+	require.NoError(t, appsv1.AddToScheme(s))
+	r.APIReader = fake.NewClientBuilder().WithScheme(s).
+		WithObjects(storage, zeebeWorkload("hash-2", "https://es:9200")).Build()
+
+	_, err := r.backupRuntime(t.Context(), backup, cluster)
+	require.NoError(t, err)
+
+	assert.Equal(t, v1.StepResumeExporting, backup.Status.Step)
+	assert.Equal(t, v1.BackupPartFailed, backup.Status.Runtime.State)
+	assert.Contains(t, backup.Status.FailureMessage, "hash-1")
+	assert.Contains(t, backup.Status.FailureMessage, "hash-2")
+}
+
+// stepWorld returns cluster ns/cc with its management binding at endpoint,
+// and a reader that holds its storage contract and a Zeebe workload that
+// runs config hash.
+func stepWorld(t *testing.T, endpoint, hash string) (*v1.CamundaCluster, client.Reader) {
+	t.Helper()
+	storage := &v1.SecondaryStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "storage", Namespace: "ns"},
+		Spec: v1.SecondaryStorageConfigSpec{
+			Type:          v1.SecondaryStorageTypeElasticsearch,
+			Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es:9200"},
+		},
+	}
+	cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "cc", Namespace: "ns"}}
+	cluster.Spec.StorageRef = storage.Name
+	cluster.Status.Management = &v1.ManagementBinding{
+		Endpoint: endpoint, Version: "8.9.9",
+		Auth: v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
+	}
+	s := runtime.NewScheme()
+	require.NoError(t, v1.AddToScheme(s))
+	require.NoError(t, appsv1.AddToScheme(s))
+	reader := fake.NewClientBuilder().WithScheme(s).
+		WithObjects(storage, zeebeWorkload(hash, "https://es:9200")).Build()
+
+	return cluster, reader
+}
+
+// The history backup names its snapshots in the status answer. A roll that
+// fails the step on that answer must not lose the names: the deletion of the
+// backup needs them after the cluster is gone.
+func TestHistoryStepRecordsTheSnapshotNamesAlsoWhenZeebeRolled(t *testing.T) {
+	r, _, server := runtimeRig(t)
+	server.SetHistoryState(testBackupID, "IN_PROGRESS", "")
+	cluster, reader := stepWorld(t, server.URL(), "hash-2")
+	r.APIReader = reader
+	backup := runtimeBackup()
+	backup.Status.Step = v1.StepBackupHistory
+	backup.Status.WorkloadConfigHash = rigConfigHash
+	accepted := metav1.Now()
+	backup.Status.HistoryRequestedTime = &accepted
+	backup.Status.HistoryAcceptedTime = &accepted
+
+	_, err := r.backupHistory(t.Context(), backup, cluster)
+	require.NoError(t, err)
+
+	assert.Equal(t, v1.StepResumeExporting, backup.Status.Step)
+	assert.Contains(t, backup.Status.FailureMessage, "hash-2")
+	assert.Contains(t, backup.Status.HistorySnapshots, camundaadmintest.HistorySnapshotName(testBackupID))
+}
+
+// A roll fails the pause step at once with both hashes, also while the
+// management API does not answer the pause call.
+func TestPauseStepFailsOnARollAlsoWhenThePauseCallIsUnreachable(t *testing.T) {
+	r, _, _ := runtimeRig(t)
+	cluster, reader := stepWorld(t, "http://127.0.0.1:1", "hash-2")
+	r.APIReader = reader
+	backup := runtimeBackup()
+	backup.Status.Step = v1.StepPauseExporting
+	backup.Status.WorkloadConfigHash = rigConfigHash
+
+	_, err := r.pauseExporting(t.Context(), backup, cluster)
+	require.NoError(t, err)
+
+	assert.Equal(t, v1.StepResumeExporting, backup.Status.Step)
+	assert.Contains(t, backup.Status.FailureMessage, rigConfigHash)
+	assert.Contains(t, backup.Status.FailureMessage, "hash-2")
+}
+
+// A step fails at once, with both hashes, when Zeebe rolled since the
+// start, and also when the workload cannot be read: no wait can make a part
+// taken under another configuration match the set again.
+func TestWorkloadUnchangedFailsTheStepWhenZeebeLeftThePinnedHash(t *testing.T) {
+	cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cc"}}
+	tests := []struct {
+		name    string
+		reader  []client.Object
+		failure []string
+	}{
+		{name: "Zeebe runs the pinned hash", reader: []client.Object{zeebeWorkload("hash-1", "https://es:9200")}},
+		{
+			name:    "Zeebe rolled to another hash",
+			reader:  []client.Object{zeebeWorkload("hash-2", "https://es:9200")},
+			failure: []string{"BackupRuntime", "hash-1", "hash-2"},
+		},
+		{name: "the workload is gone", failure: []string{"BackupRuntime", "not rendered"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &Reconciler{
+				APIReader:     workloadReader(t, tt.reader...),
+				EventRecorder: events.NewFakeRecorder(16),
+			}
+			backup := runtimeBackup()
+			backup.Status.WorkloadConfigHash = rigConfigHash
+
+			_, done, err := r.workloadUnchanged(t.Context(), backup, cluster, "BackupRuntime", &backup.Status.Runtime)
+			require.NoError(t, err)
+			if tt.failure == nil {
+				assert.False(t, done)
+				assert.Equal(t, v1.StepBackupRuntime, backup.Status.Step)
+				return
+			}
+			assert.True(t, done)
+			assert.Equal(t, v1.StepResumeExporting, backup.Status.Step, "the failure goes through resume")
+			assert.Equal(t, v1.BackupPartFailed, backup.Status.Runtime.State)
+			for _, substring := range tt.failure {
+				assert.Contains(t, backup.Status.FailureMessage, substring)
+			}
 		})
 	}
 }

@@ -165,19 +165,28 @@ func backupEnv(in Input, p Process) rendered {
 		return r
 	}
 
-	switch spec := in.Backup.Spec; {
-	case spec.S3 != nil:
-		r.env = append(r.env, s3Env(in, spec.S3)...)
-	case spec.GCS != nil:
-		gcs := gcsEnv(in, spec.GCS)
-		r.env = append(r.env, gcs.env...)
-		r.volumes, r.mounts = gcs.volumes, gcs.mounts
-	case spec.AzureBlob != nil:
-		r.env = append(r.env, azureEnv(spec.AzureBlob)...)
-	}
+	store := backupStoreEnv(in)
+	r.env = append(r.env, store.env...)
+	r.volumes = append(r.volumes, store.volumes...)
+	r.mounts = append(r.mounts, store.mounts...)
 
 	if relational {
 		r.env = append(r.env, primaryStorageScheduleEnv(in)...)
+	}
+
+	return r
+}
+
+// backupStoreEnv renders the store of the referenced bucket for the brokers.
+func backupStoreEnv(in Input) rendered {
+	var r rendered
+	switch spec := in.Backup.Spec; {
+	case spec.S3 != nil:
+		r.env = s3Env(in, spec.S3)
+	case spec.GCS != nil:
+		r = gcsEnv(in, spec.GCS)
+	case spec.AzureBlob != nil:
+		r.env = azureEnv(spec.AzureBlob)
 	}
 
 	return r
