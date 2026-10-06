@@ -15,7 +15,7 @@ description: Use when about to write, review, or modify any Go code in this repo
 
 **Unfinished code gets `// TODO(#NNN)` with an issue number.** Do not write `// In production this would...`. Write the real code, or file the issue and reference it.
 
-**When you touch code that has a false or unclear doc comment, correct it in the same change.** This applies also when your change did not make it false. First decide which one is wrong, the comment or the code, and correct that one.
+**When you touch code that has a false or unclear comment, correct it in the same change.** This applies also when your change did not make it false. First decide which one is wrong, the comment or the code, and correct that one.
 
 **A statement about the code lives in more places than the godoc.** When your change makes a statement false, search for it in these places:
 
@@ -257,7 +257,12 @@ if err := ensureDeployment(ctx, resource); errors.Is(err, ErrNotReady) {
 }
 ```
 
-**Each layer is correct on its own inputs.** A function must not depend on a check or a branch in its caller, or on a side effect of a layer below it. When logic belongs to one branch of a decision, put it in the layer that makes the decision. As an alternative, give the decision to the lower layer as an explicit input, such as a parameter or a resolved field. Sometimes a lower layer works out the decision again, or is correct only because its caller filtered the input. Then it has a dependency that no signature and no test shows. A change to the guard in the upper layer then breaks the lower layer without a sign.
+**Each layer is correct on its own inputs.** A function must not depend on a check or a branch in its caller, or on a side effect of a layer below it. When logic belongs to one branch of a decision, put it in the layer that makes the decision. As an alternative, give the decision to the lower layer as an explicit input, such as a parameter or a resolved field.
+
+Two shapes break this rule:
+
+- **A hidden dependency.** The lower layer is correct only because its caller filtered the input. A change to the guard in the upper layer breaks it, and no signature and no test shows the link. The example below shows this shape.
+- **A duplicated decision.** The lower layer works out the decision of its caller again from the same fields. It is correct on its own, but the decision now has two copies. When one copy changes, the two layers disagree.
 
 ```go
 // BAD — reconcileBrokers is correct only because Reconcile returns early on a
