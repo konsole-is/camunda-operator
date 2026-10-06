@@ -2,15 +2,9 @@
 
 A Kubernetes operator for Camunda 8 Self-Managed as a platform. Use it to offer [Camunda 8.9+](https://docs.camunda.io/) as a service to the teams in your organization, on infrastructure that you run.
 
-Each team gets a cluster from one short resource. A platform team writes the sizing once in a preset and the versions once in a release. A new cluster names both, and a change to either rolls out to every cluster that names it.
+One operator runs the orchestration clusters, their Elasticsearch or PostgreSQL storage, the management plane, and Optimize, and connects them for you. A platform team writes the sizing and the versions once, in presets and releases. Each new cluster is then a few lines.
 
-One operator runs the whole platform. That includes the orchestration clusters, their Elasticsearch or PostgreSQL storage, the logical databases, the management plane with Console, Web Modeler, and optionally Keycloak, and Optimize. The operator also connects these parts. It creates the database users and their passwords, and gives each component the addresses and credentials that it needs. A cluster that the management plane selects shows up in Console without a change on your side.
-
-After the install, the operator handles version upgrades, suspend and resume, storage growth, password rotation, and restores, including a point-in-time restore of PostgreSQL.
-
-The operator runs on any Kubernetes cluster, on bare metal, on premises, or in a managed cloud. Elasticsearch, PostgreSQL, and Keycloak run inside the cluster through their own operators. Backups go to a bucket that you provide, for example in MinIO, Ceph, S3, GCS, or Azure Blob Storage.
-
-The operator stops at the cloud account. It never creates buckets, IAM roles, or keys. You bring those yourself, or a tool on top of the operator does. That tool can use the API types from Go through a module that does not pull in the dependencies of the operator.
+The operator runs on any Kubernetes cluster, including bare metal. It never creates cloud resources such as buckets or IAM roles, so you bring those yourself.
 
 > The operator is in early development. The API group is `core.camunda.io/v1`, but the API can still change before the first stable release.
 
