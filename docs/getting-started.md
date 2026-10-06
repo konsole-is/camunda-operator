@@ -12,7 +12,7 @@ The same manifests are ready to apply in [`config/example/camunda-cluster/elasti
 You need:
 
 - `kubectl` and `helm` 3.8 or later
-- a Kubernetes 1.30+ cluster with a default StorageClass that can bind at least 2Gi
+- a Kubernetes cluster that meets the [requirements](installation.md#requirements), with a default StorageClass that can bind at least 2Gi
 - about 4 GB of free memory on the nodes
 - nodes that can pull images from Docker Hub, `docker.elastic.co`, and `ghcr.io`
 
