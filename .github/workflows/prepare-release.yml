@@ -1,0 +1,74 @@
+name: Prepare release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version as unprefixed SemVer, for example 0.2.0
+        required: true
+        type: string
+
+jobs:
+  prepare:
+    name: Pin the api module
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # push the release branch
+
+    env:
+      VERSION: ${{ inputs.version }}
+      BRANCH: chore/release-${{ inputs.version }}
+
+    steps:
+      - name: Reject a run from a branch other than main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Run this workflow from main, not from ${GITHUB_REF}." >&2
+          exit 1
+
+      - name: Clone the code
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Check the version
+        run: |
+          if [[ ! "${VERSION}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Version '${VERSION}' is not unprefixed SemVer such as 0.2.0." >&2
+            exit 1
+          fi
+          for tag in "${VERSION}" "v${VERSION}" "api/v${VERSION}"; do
+            if git ls-remote --exit-code --tags origin "refs/tags/${tag}" > /dev/null; then
+              echo "Tag '${tag}' exists. Version ${VERSION} is already released." >&2
+              exit 1
+            fi
+          done
+
+      - name: Pin the api module
+        run: make api-version VERSION="${VERSION}"
+
+      # The workflow does not open the pull request itself. The repository does
+      # not let GitHub Actions create pull requests, and a pull request opened
+      # with GITHUB_TOKEN starts no CI runs.
+      - name: Push the release branch
+        run: |
+          if git diff --quiet go.mod; then
+            echo "go.mod already pins the api module at v${VERSION}. Publish the release from main." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "${BRANCH}"
+          git commit -am "chore(release): pin the api module at v${VERSION}"
+          git push origin "${BRANCH}"
+          title=$(jq -rn --arg v "${VERSION}" '"chore(release): pin the api module at v\($v)" | @uri')
+          {
+            echo "Pushed \`${BRANCH}\`."
+            echo
+            echo "1. [Open the pull request](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...${BRANCH}?quick_pull=1&title=${title}) and merge it."
+            echo "2. Publish a GitHub Release with the tag \`${VERSION}\` on the merge commit."
+          } >> "${GITHUB_STEP_SUMMARY}"

@@ -318,10 +318,12 @@ the `MODULES` variable (`vet`, `test`, `lint`, `fmt`, `tidy`, `generate`,
 `manifests`). The root `go.mod` requires the api module and replaces it with
 `./api`, so local builds always use the on-disk copy.
 
-**Releasing:** before the release, run `make api-version VERSION=<version>`
-and merge the `go.mod` change. This pins the api module version that consumers
-of the root module get. The release workflow fails if the pin does not match
-the tag. Then publishing a GitHub Release on an unprefixed SemVer tag (`0.1.0`)
+**Releasing:** before the release, run the **Prepare release** workflow
+(`.github/workflows/prepare-release.yml`) from main with the version. It runs
+`make api-version VERSION=<version>` and pushes the `go.mod` change to
+`chore/release-<version>`. Its job summary links the pull request to open and
+merge. This pins the api module version that consumers of the root module get.
+The release workflow fails if the pin does not match the tag. Then publishing a GitHub Release on an unprefixed SemVer tag (`0.1.0`)
 triggers `.github/workflows/release.yml`, which pushes the Go tags
 `api/v0.1.0` and `v0.1.0` at the release commit, pushes the chart to
 `oci://ghcr.io/konsole-is/charts`, pushes the amd64/arm64 manager image to
