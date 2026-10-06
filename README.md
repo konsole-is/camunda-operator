@@ -3,7 +3,7 @@
 A Kubernetes operator that runs [Camunda 8.9+](https://docs.camunda.io/) orchestration clusters, and the storage, backups, and management plane around them.
 You describe a cluster in one resource. The operator creates the workloads, connects the storage, and keeps the cluster in the state that you described.
 
-The operator runs on any Kubernetes cluster: bare metal, on premises, or a managed cloud. Elasticsearch, PostgreSQL, and Keycloak run inside the cluster through their own operators. Backups go to a bucket that you provide, for example in MinIO, Ceph, S3, GCS, or Azure Blob Storage.
+The operator runs on any Kubernetes cluster, on bare metal, on premises, or in a managed cloud. Elasticsearch, PostgreSQL, and Keycloak run inside the cluster through their own operators. Backups go to a bucket that you provide, for example in MinIO, Ceph, S3, GCS, or Azure Blob Storage.
 
 It is a base layer. It runs Camunda and the services around it, but it never creates cloud resources such as buckets, IAM roles, or keys. You bring those yourself, or a tool on top of the operator does. That tool can use the API types from Go through a module that does not pull in the dependencies of the operator.
 
@@ -24,9 +24,9 @@ The [CRD reference](docs/crds/index.md) lists every kind with every field.
 
 ## Examples
 
-[`config/example`](config/example) holds complete setups that you can apply: a cluster on Elasticsearch, a cluster on PostgreSQL, and a management plane with Keycloak or with your own identity provider. Each directory has a README with the apply order.
+[`config/example`](config/example) holds complete setups that you can apply. There is a cluster on Elasticsearch, a cluster on PostgreSQL, and a management plane with Keycloak or with your own identity provider. Each directory has a README with the apply order.
 
-With the shared presets and release of those examples in place, this is a complete cluster:
+With the shared presets and release of those examples in place, the manifest below is a complete cluster.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -45,7 +45,7 @@ The broker count, the volumes, and the resources come from the preset `small`. T
 
 ## Install
 
-Check the [requirements](docs/installation.md#requirements) first. A few optional features need another operator, and only when you use them: ECK for an `ElasticsearchCluster`, CloudNativePG for a `DatabaseServer`, and the Keycloak Operator for a Keycloak that the operator runs. This operator does not install them.
+Check the [requirements](docs/installation.md#requirements) first. A few optional features need another operator, and only when you use them. An `ElasticsearchCluster` needs ECK, a `DatabaseServer` needs CloudNativePG, and a Keycloak that the operator runs needs the Keycloak Operator. This operator does not install them.
 
 ```bash
 helm install camunda-operator \
