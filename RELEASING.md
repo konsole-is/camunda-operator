@@ -48,7 +48,10 @@ Users verify the signatures as [Verify the signatures](docs/installation.md#veri
 
 If the cause is outside the code, for example a registry outage, run the failed jobs again from the workflow run. A run again uses the same release commit. A Go module tag that already points at that commit stays as it is. A push of an image or a chart replaces the earlier push.
 
-If the cause is in the code, correct it on main. Then delete the release and its tag, and publish the release again at the new commit. A Go module tag that points at a different commit stops the workflow. If the Go tags exist, delete them too. Do this only if nobody fetched the module. The Go module proxy keeps a copy of each version that it receives.
+If the cause is in the code, correct it on main. Then look for the Go module tags `vX.Y.Z` and `api/vX.Y.Z` on GitHub:
+
+- If the Go module tags exist, do not move or delete them. The Go checksum database can already hold the checksum of that version, and a moved tag then breaks `go get` for each user. Delete the failed GitHub release, and release a new version, for example `0.2.1`.
+- If the Go module tags do not exist, delete the release and its tag. Then publish the release again at the new commit.
 
 ## One-time setup
 
