@@ -196,6 +196,8 @@ The new cluster writes an archive of its own in the same bucket. The old archive
 
 If another owner already has a CloudNativePG cluster of that name, the rollback ends with `result: Failed`. The message names the cluster.
 
+If another owner takes the new cluster after the contract points at it, the rollback also ends with `result: Failed`. The server keeps the contract until it gives this answer. Then the contract points at the old cluster again, and the server runs from it.
+
 While a rollback runs, an edit of `spec.databaseServerConfig`, of `spec.archive`, or of the bucket waits until the rollback is answered. Until then, `Ready` reports `InvalidReference`, and the message says what to put back.
 
 ### Refused requests

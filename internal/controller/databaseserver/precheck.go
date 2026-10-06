@@ -307,11 +307,9 @@ func (r *DatabaseServerReconciler) resolveArchiveStorage(
 }
 
 // readDerivedCluster reads the CloudNativePG cluster of the name the server
-// derives. Its taken message drives two things: the cluster component blocks
-// the apply on it, and the other three withdraw every object of theirs that
-// names that cluster. That withdrawal is a decision above one resource, and it
-// is made before anything renders, so this read stays even though ocf reads
-// the cluster again before each apply.
+// derives. Withdrawing what names a taken cluster is a decision above one
+// resource, made before anything renders, so this read stays even though ocf
+// reads the cluster again before each apply.
 //
 // The caller reads it once the recovery has settled status.cluster. A name
 // read before that is the name of the cluster the server is leaving, and the
@@ -363,4 +361,18 @@ func clusterGuardReason(server *v1.DatabaseServer, derived derivedCluster) strin
 	}
 
 	return components.RecoveryHoldsClusterMessage(components.ClusterName(server))
+}
+
+// contractWithdrawalReason returns why the contract component withdraws the
+// contract, or the empty string when the contract stays. A rollback that cut
+// over keeps it until the rollback is answered.
+func contractWithdrawalReason(server *v1.DatabaseServer, derived derivedCluster) string {
+	// The answer goes on the contract. An owner can take the cluster after the
+	// recovery read it, and a withdrawn contract then leaves the rollback with
+	// nothing to answer on, so it is never abandoned.
+	if cutOver(server) {
+		return ""
+	}
+
+	return derived.taken
 }
