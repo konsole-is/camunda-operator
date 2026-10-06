@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Release version as unprefixed SemVer, for example 0.2.0
+        description: Release version as unprefixed SemVer without build metadata, for example 0.2.0
         required: true
         type: string
 
@@ -40,7 +40,8 @@ jobs:
           num='(0|[1-9][0-9]*)'
           pre="(${num}|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
           if [[ ! "${VERSION}" =~ ^${num}\.${num}\.${num}(-${pre}(\.${pre})*)?$ ]]; then
-            echo "Version '${VERSION}' is not unprefixed SemVer such as 0.2.0." >&2
+            echo "Version '${VERSION}' is not a release version. Use unprefixed SemVer such as 0.2.0 or 0.2.0-rc.1." >&2
+            echo "Build metadata such as +build is not allowed, because an image tag cannot contain '+'." >&2
             exit 1
           fi
           for tag in "${VERSION}" "v${VERSION}" "api/v${VERSION}"; do
