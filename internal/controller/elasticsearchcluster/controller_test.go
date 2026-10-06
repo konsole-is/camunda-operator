@@ -813,33 +813,33 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		Expect(repo.Settings).NotTo(HaveKey("path_style_access"))
 
 		// A converged, unchanged repository is not re-verified: Elasticsearch
-		// makes every data node write a test blob per registration. A reconcile
-		// that changes nothing must keep the condition without a new PUT.
-		// The baseline is taken once the registration has quiesced. The
-		// condition goes True on the reconcile that registered, and a reconcile
-		// that started before it can still land a later PUT. A baseline taken
-		// while one is in flight makes the check below fail on the reconcile
-		// that was already on its way.
-		var puts int
-		Eventually(func(g Gomega) {
-			before := elasticsearch.RepositoryPuts(components.RepositoryName(cluster))
-			g.Expect(before).NotTo(BeZero())
-			time.Sleep(interval)
-			puts = elasticsearch.RepositoryPuts(components.RepositoryName(cluster))
-			g.Expect(puts).To(Equal(before), "a registration is still in flight")
-		}, timeout, interval).Should(Succeed())
+		// makes every data node write a test blob per registration. The look
+		// after the registration can read the cluster from before its status
+		// write, and it must not register again either.
+		Expect(elasticsearch.RepositoryPuts(components.RepositoryName(cluster))).To(Equal(1))
+
+		By("keeping the repository through a change that does not touch it")
+		var generation int64
 		// The reconciler writes the cluster too, so the update re-reads on a
 		// conflict.
 		Eventually(func(g Gomega) {
 			var fetched v1.ElasticsearchCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
-			fetched.Labels = map[string]string{"touched": "true"}
+			fetched.Spec.PodLabels = map[string]string{"touched": "true"}
 			g.Expect(k8sClient.Update(ctx, &fetched)).To(Succeed())
+			generation = fetched.Generation
 		}, timeout, interval).Should(Succeed())
-
-		Consistently(func(g Gomega) {
-			g.Expect(elasticsearch.RepositoryPuts(components.RepositoryName(cluster))).To(Equal(puts))
-		}, "2s", interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			var fetched v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
+			condition := meta.FindStatusCondition(
+				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+			)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.ObservedGeneration).To(Equal(generation))
+			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+		}, timeout, interval).Should(Succeed())
+		Expect(elasticsearch.RepositoryPuts(components.RepositoryName(cluster))).To(Equal(1))
 
 		// A changed bucket re-registers: the fingerprint no longer matches.
 		Eventually(func(g Gomega) {
@@ -851,11 +851,52 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		Eventually(func(g Gomega) {
-			g.Expect(elasticsearch.RepositoryPuts(components.RepositoryName(cluster))).To(BeNumerically(">", puts))
+			g.Expect(elasticsearch.RepositoryPuts(components.RepositoryName(cluster))).To(BeNumerically(">", 1))
 			refreshed := elasticsearch.Repository(components.RepositoryName(cluster))
 			g.Expect(refreshed).NotTo(BeNil())
 			g.Expect(refreshed.Settings).To(HaveKeyWithValue("endpoint", "http://minio.minio.svc:9000"))
 		}, timeout, interval).Should(Succeed())
+	})
+
+	// A failed pre-check says nothing about what Elasticsearch held meanwhile,
+	// so the registration is verified again once the pre-check passes.
+	It("registers the snapshot repository again after a failed pre-check", func() {
+		namespace := newElasticsearchClusterNamespace()
+		bucket := createObjectStorageConfig(namespace, s3BucketSpec(nil))
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.SnapshotStorageRef = bucket.Name
+		cluster.Namespace = namespace
+		createECKSecrets(cluster)
+		createElasticsearchCluster(cluster)
+		name := components.RepositoryName(cluster)
+
+		Eventually(func() int { return elasticsearch.RepositoryPuts(name) }, timeout, interval).Should(Equal(1))
+
+		setPresetRef := func(ref string) {
+			GinkgoHelper()
+			Eventually(func(g Gomega) {
+				var fetched v1.ElasticsearchCluster
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
+				fetched.Spec.PresetRef = ref
+				g.Expect(k8sClient.Update(ctx, &fetched)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+		}
+
+		By("failing the pre-check on a dangling presetRef")
+		setPresetRef("missing-" + preset.Name)
+		Eventually(func(g Gomega) {
+			var fetched v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
+			ready := meta.FindStatusCondition(fetched.Status.Conditions, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+		}, timeout, interval).Should(Succeed())
+
+		By("registering again once the pre-check passes")
+		setPresetRef(preset.Name)
+		Eventually(func() int { return elasticsearch.RepositoryPuts(name) }, timeout, interval).Should(Equal(2))
 	})
 
 	// The suite runs one Elasticsearch behind every cluster, which is what a

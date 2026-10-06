@@ -25,7 +25,6 @@ import (
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -172,10 +171,10 @@ func (r *ElasticsearchClusterReconciler) checkServiceAccount(
 // that Elasticsearch already holds is still there, and a consumer of the
 // contract keeps a name it can use.
 //
-// A repository that already converged is not re-registered while its settings
-// are unchanged: Elasticsearch verifies a repository on every registration,
-// with every data node writing a test blob. The fingerprints live in memory,
-// so an operator restart re-verifies each repository once.
+// A repository that already converged is not re-registered while the cluster
+// and its settings are unchanged: Elasticsearch verifies a repository on every
+// registration, with every data node writing a test blob. The fingerprints
+// live in memory, so an operator restart re-verifies each repository once.
 //
 // The operator registers the repository itself, with the elastic user of ECK,
 // because registering one needs cluster:admin/repository. Giving that to the
@@ -186,7 +185,7 @@ func (r *ElasticsearchClusterReconciler) registerSnapshotRepository(
 	storage *components.SnapshotStorage,
 ) metav1.Condition {
 	if storage == nil || storage.Config == nil {
-		r.registeredRepositories.Delete(client.ObjectKeyFromObject(cluster))
+		r.forgetSnapshotRepository(cluster)
 		cluster.Status.SnapshotRepository = ""
 
 		return metav1.Condition{}
@@ -195,11 +194,13 @@ func (r *ElasticsearchClusterReconciler) registerSnapshotRepository(
 	name := components.RepositoryName(cluster)
 	config := components.RepositoryConfig(cluster, storage)
 
-	fingerprint := fmt.Sprintf("%s|%+v", name, config)
+	// The cache can hold the cluster from before the status write of the last
+	// registration, so the condition of this read does not tell whether it
+	// converged. The UID tells apart a cluster that was created again under the
+	// same name.
+	fingerprint := fmt.Sprintf("%s|%s|%+v", cluster.UID, name, config)
 	key := client.ObjectKeyFromObject(cluster)
-	if previous, ok := r.registeredRepositories.Load(key); ok &&
-		previous == fingerprint &&
-		meta.IsStatusConditionTrue(cluster.Status.Conditions, components.ConditionSnapshotRepository) {
+	if previous, ok := r.registeredRepositories.Load(key); ok && previous == fingerprint {
 		cluster.Status.SnapshotRepository = name
 
 		return r.repositoryCondition(
@@ -236,6 +237,12 @@ func (r *ElasticsearchClusterReconciler) registerSnapshotRepository(
 		cluster, metav1.ConditionTrue, v1.ReasonHealthy,
 		fmt.Sprintf("snapshot repository %q is registered", name),
 	)
+}
+
+// forgetSnapshotRepository drops the fingerprint of the last registration of
+// cluster, so the next registerSnapshotRepository registers again.
+func (r *ElasticsearchClusterReconciler) forgetSnapshotRepository(cluster *v1.ElasticsearchCluster) {
+	r.registeredRepositories.Delete(client.ObjectKeyFromObject(cluster))
 }
 
 // repositoryCondition builds the SnapshotRepositoryReady condition of cluster.
