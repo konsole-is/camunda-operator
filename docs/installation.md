@@ -6,7 +6,7 @@ The manager never runs the CLI itself. The Jobs that the operator creates run it
 
 ## Requirements
 
-- Kubernetes 1.30 or later.
+- Kubernetes 1.34 or later. The Helm chart refuses to install on an earlier version.
 - Helm 3.8 or later, for the OCI registry.
 - The [ECK operator](https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html), version 3.5 or later, if you use `ElasticsearchCluster`. The manager looks for the ECK CRDs when it starts. If it does not find them, every `ElasticsearchCluster` reports `Ready=False` with reason `ECKNotInstalled`. If you install ECK after the manager, restart the manager.
 - The [CloudNativePG operator](https://cloudnative-pg.io/documentation/current/installation_upgrade/), version 1.29 or later, if you use `DatabaseServer`. With an earlier version, the API server rejects the CloudNativePG cluster of a `DatabaseServer`, and `ClusterReady` reports `False`. The manager looks for the CloudNativePG CRDs when it starts. If it does not find them, every `DatabaseServer` reports `Ready=False` with reason `CNPGNotInstalled`. If you install CloudNativePG after the manager, restart the manager.

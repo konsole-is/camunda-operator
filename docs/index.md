@@ -29,6 +29,6 @@ It runs the management plane too: Management Identity, Console, and Web Modeler,
 
 ## Requirements
 
-Kubernetes 1.30 or later. A storage backend that the operator runs for you needs another operator, which this operator does not install. [Installation](installation.md#requirements) lists them.
+[Installation](installation.md#requirements) lists the supported Kubernetes versions. It also lists the operator that each storage backend needs. This operator does not install them.
 
 The source is at [github.com/konsole-is/camunda-operator](https://github.com/konsole-is/camunda-operator).

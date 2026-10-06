@@ -1,9 +1,18 @@
 # Camunda Operator
 
-A Kubernetes operator that runs [Camunda 8.9+](https://docs.camunda.io/) orchestration clusters.
-You describe a cluster in one resource. The operator creates the workloads, wires the storage, and keeps the cluster healthy.
+A Kubernetes operator that runs [Camunda 8.9+](https://docs.camunda.io/) orchestration clusters, and the storage, backups, and management plane around them.
+You describe a cluster in one resource. The operator creates the workloads, connects the storage, and keeps the cluster in the state that you described.
 
 > The operator is in early development. The API group is `core.camunda.io/v1`, but the API can still change before the first stable release.
+
+## At a glance
+
+- **It runs on any Kubernetes.** Bare metal, on premises, or a managed cloud cluster. Elasticsearch, PostgreSQL, and Keycloak run inside your cluster through their own operators. Backups go to a bucket that you provide: S3, an S3-compatible store such as MinIO or Ceph, GCS, or Azure Blob Storage.
+- **It is a base layer, not a full platform.** The operator never creates cloud resources such as buckets, IAM roles, or keys. You bring those, or a tool above it does. That tool can use the API types from Go through a separate module that has no operator dependencies.
+- **Features attach to a cluster.** A backup (`LogicalBackupElasticsearch`), a schedule (`BackupSchedule`), or Optimize (`CamundaOptimize`) is its own resource that names the cluster. You add or remove one without an edit to the cluster spec. [Architecture](docs/architecture.md) explains the rule.
+- **It handles operations after the install.** Version upgrades that refuse a downgrade, suspend and resume, storage growth, password rotation, and restores, including a point-in-time restore of PostgreSQL.
+- **Many clusters share one definition.** A preset holds the sizing and the defaults. A release pins the versions and the images. Each cluster then sets only its own references.
+- **It is observable and signed.** The operator exports metrics and ships Grafana dashboards and Prometheus alert rules. Each release signs its images and its chart with cosign.
 
 ## What it runs
 
@@ -16,14 +25,30 @@ You describe a cluster in one resource. The operator creates the workloads, wire
 
 The [CRD reference](docs/crds/index.md) lists every kind with every field.
 
-## Requirements
+## Examples
 
-- Kubernetes 1.30 or later.
-- For each backend you use, the operator that runs it: ECK for `ElasticsearchCluster`, CloudNativePG for `DatabaseServer`. The operator does not install them.
+[`config/example`](config/example) holds complete setups that you can apply: a cluster on Elasticsearch, a cluster on PostgreSQL, and a management plane with Keycloak or with your own identity provider. Each directory has a README with the apply order.
 
-[Installation](docs/installation.md#requirements) lists the supported versions and the other requirements.
+With the shared presets and release of those examples in place, this is a complete cluster:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  presetRef: small
+  releaseRef: camunda-8-9
+  platformConfigRef: my-platform-config
+  storageRef: my-storage-config
+```
+
+The broker count, the volumes, and the resources come from the preset `small`. The Camunda version comes from the release `camunda-8-9`. The [presets guide](docs/guides/presets.md) explains both kinds.
 
 ## Install
+
+Check the [requirements](docs/installation.md#requirements) first. Some features need another operator: ECK for Elasticsearch, CloudNativePG for PostgreSQL, and the Keycloak Operator for a Keycloak that the operator runs. This operator does not install them.
 
 ```bash
 helm install camunda-operator \
