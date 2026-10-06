@@ -5,7 +5,9 @@ You describe a cluster in one resource. The operator creates the workloads, conn
 
 The operator runs on any Kubernetes cluster, on bare metal, on premises, or in a managed cloud. Elasticsearch, PostgreSQL, and Keycloak run inside the cluster through their own operators. Backups go to a bucket that you provide, for example in MinIO, Ceph, S3, GCS, or Azure Blob Storage.
 
-It is a base layer. It runs Camunda and the services around it, but it never creates cloud resources such as buckets, IAM roles, or keys. You bring those yourself, or a tool on top of the operator does. That tool can use the API types from Go through a module that does not pull in the dependencies of the operator.
+One operator runs the whole Camunda platform. That includes the orchestration clusters, their Elasticsearch or PostgreSQL storage, the logical databases, the management plane with Console, Web Modeler, and optionally Keycloak, and Optimize. The operator also connects these parts. It creates the database users and their passwords, and gives each component the addresses and credentials that it needs. A cluster that the management plane selects shows up in Console without a change on your side.
+
+The operator stops at the cloud account. It never creates buckets, IAM roles, or keys. You bring those yourself, or a tool on top of the operator does. That tool can use the API types from Go through a module that does not pull in the dependencies of the operator.
 
 After the install, the operator handles version upgrades, suspend and resume, storage growth, password rotation, and restores, including a point-in-time restore of PostgreSQL.
 
