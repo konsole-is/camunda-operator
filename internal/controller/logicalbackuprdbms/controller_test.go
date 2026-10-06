@@ -1813,6 +1813,31 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	It("fails at once when Zeebe moved to another Camunda version while the status call does not answer", func() {
+		w := createWorld()
+		backup := createBackup(w)
+
+		markJob(backup, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		By("failing every status call, then moving Zeebe to another version")
+		managementAPI.FailNext("runtimeStatus", 1000)
+		DeferCleanup(func() { managementAPI.FailNext("runtimeStatus", 0) })
+		moveZeebeTo(w.cluster, "8.9.10")
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("8.9.10"))
+			g.Expect(backup.Status.FailureMessage).NotTo(
+				ContainSubstring("stopped resolving"), "a version change fails at once, not after the grace",
+			)
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("waits to start while Zeebe runs another Camunda version than the cluster publishes", func() {
 		w := createWorld()
 		moveZeebeTo(w.cluster, "8.9.8")
