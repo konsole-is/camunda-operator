@@ -29,6 +29,6 @@ It runs the management plane too: Management Identity, Console, and Web Modeler,
 
 ## Requirements
 
-[Installation](installation.md#requirements) lists the supported Kubernetes versions. It also lists the operator that each storage backend needs. This operator does not install them.
+[Installation](installation.md#requirements) lists the supported Kubernetes versions. Some features are optional and need another operator, for example ECK for an `ElasticsearchCluster`. The requirements list these operators too.
 
 The source is at [github.com/konsole-is/camunda-operator](https://github.com/konsole-is/camunda-operator).

@@ -48,7 +48,7 @@ The broker count, the volumes, and the resources come from the preset `small`. T
 
 ## Install
 
-Check the [requirements](docs/installation.md#requirements) first. Some features need another operator: ECK for Elasticsearch, CloudNativePG for PostgreSQL, and the Keycloak Operator for a Keycloak that the operator runs. This operator does not install them.
+Check the [requirements](docs/installation.md#requirements) first. A few optional features need another operator, and only when you use them: ECK for an `ElasticsearchCluster`, CloudNativePG for a `DatabaseServer`, and the Keycloak Operator for a Keycloak that the operator runs. This operator does not install them.
 
 ```bash
 helm install camunda-operator \
