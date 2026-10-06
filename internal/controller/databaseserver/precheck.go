@@ -307,12 +307,9 @@ func (r *DatabaseServerReconciler) resolveArchiveStorage(
 }
 
 // readDerivedCluster reads the CloudNativePG cluster of the name the server
-// derives. Its taken message drives two things: the cluster component blocks
-// the apply on it, and the other three withdraw every object of theirs that
-// names that cluster, except as contractWithdrawalReason says. That
-// withdrawal is a decision above one resource, and it is made before anything
-// renders, so this read stays even though ocf reads the cluster again before
-// each apply.
+// derives. Withdrawing what names a taken cluster is a decision above one
+// resource, made before anything renders, so this read stays even though ocf
+// reads the cluster again before each apply.
 //
 // The caller reads it once the recovery has settled status.cluster. A name
 // read before that is the name of the cluster the server is leaving, and the

@@ -109,10 +109,8 @@ type resolvedSpec struct {
 	archivePluginRoles []components.ArchivePluginRole
 	// clusterTaken says why a CloudNativePG cluster of the name the server
 	// derives is not this server's to write, and it is empty when the name is
-	// free or the cluster is the server's own. Every component withdraws what
-	// names that cluster, the contract through contractWithdrawn, and
-	// ClusterReady reports ClusterTaken. The recovery decides the name, so
-	// this is filled in after the recovery and not by preCheck: see
+	// free or the cluster is the server's own. The recovery decides the name,
+	// so this is filled in after the recovery and not by preCheck: see
 	// clusterTaken.
 	clusterTaken string
 	// clusterBlocked is why the cluster component must not apply the cluster of
@@ -459,8 +457,8 @@ func (c serverComponents) all() []*component.Component {
 // A cluster that another owner holds is not a reason to leave a component out.
 // The contract, the base backup schedule, and the PodMonitor all name the
 // cluster of that name, and the ones the server applied before it lost the
-// cluster are still there. Each of those components withdraws its own objects
-// while the name is held, and withdrawing takes a reconcile.
+// cluster are still there. They withdraw them while the name is held, the
+// contract outside a cut-over rollback, and withdrawing takes a reconcile.
 func (c serverComponents) applying(holdArchive bool) []*component.Component {
 	if !holdArchive {
 		return c.all()
