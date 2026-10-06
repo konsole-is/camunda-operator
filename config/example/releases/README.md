@@ -75,7 +75,7 @@ differ.
 
 The release sets no `images` and no `extraEnv`. A release also pins an exact
 image reference per process, and carries the environment that a version needs,
-which the [CamundaRelease](https://konsole-is.github.io/camunda-operator/crds/camundarelease/)
+which the [CamundaRelease](https://konsole-is.github.io/camunda-operator/dev/crds/camundarelease/)
 page shows.
 
 ## Roll the fleet
@@ -94,9 +94,9 @@ brokers run a higher version refuses a lower one and reports `Ready: False`
 with the reason `VersionDowngradeRefused`. A server whose data directory runs
 another PostgreSQL major refuses the change and reports `Ready: False` with the
 reason `VersionChangeRefused`. The
-[CamundaCluster](https://konsole-is.github.io/camunda-operator/crds/camundacluster/#version)
+[CamundaCluster](https://konsole-is.github.io/camunda-operator/dev/crds/camundacluster/#version)
 and
-[DatabaseServer](https://konsole-is.github.io/camunda-operator/crds/databaseserver/)
+[DatabaseServer](https://konsole-is.github.io/camunda-operator/dev/crds/databaseserver/)
 pages state each rule.
 
 ## What the release does not hold
@@ -114,8 +114,8 @@ pages state each rule.
 
 ## Related
 
-- [CamundaRelease](https://konsole-is.github.io/camunda-operator/crds/camundarelease/)
-- [Presets](https://konsole-is.github.io/camunda-operator/guides/presets/)
-- [CamundaCluster](https://konsole-is.github.io/camunda-operator/crds/camundacluster/)
-- [ElasticsearchCluster](https://konsole-is.github.io/camunda-operator/crds/elasticsearchcluster/)
-- [DatabaseServer](https://konsole-is.github.io/camunda-operator/crds/databaseserver/)
+- [CamundaRelease](https://konsole-is.github.io/camunda-operator/dev/crds/camundarelease/)
+- [Presets](https://konsole-is.github.io/camunda-operator/dev/guides/presets/)
+- [CamundaCluster](https://konsole-is.github.io/camunda-operator/dev/crds/camundacluster/)
+- [ElasticsearchCluster](https://konsole-is.github.io/camunda-operator/dev/crds/elasticsearchcluster/)
+- [DatabaseServer](https://konsole-is.github.io/camunda-operator/dev/crds/databaseserver/)

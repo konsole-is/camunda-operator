@@ -80,7 +80,7 @@ so a reader sees both and can compare its `CamundaCluster` with the one in
 
 - Install the operator, and the third-party operators the inventory needs.
   Each README names them. See
-  [Installation](https://konsole-is.github.io/camunda-operator/installation/).
+  [Installation](https://konsole-is.github.io/camunda-operator/dev/installation/).
 - Replace every placeholder value. A value in angle brackets, such as
   `<your Camunda license key>`, is not valid.
 - The four scenarios are alternatives. Each one creates the cluster-scoped

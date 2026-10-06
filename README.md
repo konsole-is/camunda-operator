@@ -6,7 +6,9 @@ A Kubernetes operator for Camunda 8 Self-Managed as a platform. Use it to offer 
 
 One operator runs the orchestration clusters, their Elasticsearch or PostgreSQL storage, the management plane, and Optimize, and connects them for you. A PostgreSQL server that you run yourself works too. A platform team writes the sizing and the versions once, in presets and releases. Each new cluster is then a few lines.
 
-The operator runs on any Kubernetes cluster that meets the [requirements](docs/installation.md#requirements), including bare metal. It never creates cloud resources such as buckets or IAM roles, so you bring those yourself.
+The operator runs on any Kubernetes cluster that meets the [requirements](https://konsole-is.github.io/camunda-operator/dev/installation/#requirements), including bare metal. It never creates cloud resources such as buckets or IAM roles, so you bring those yourself.
+
+The documentation is at **[konsole-is.github.io/camunda-operator](https://konsole-is.github.io/camunda-operator/)**. It opens at the latest release. The version selector in its header also has the docs of each release and the `dev` docs of main.
 
 > [!WARNING]
 > The operator is in early development. The API group is `core.camunda.io/v1`, but the API can still change before the first stable release.
@@ -15,16 +17,16 @@ The operator runs on any Kubernetes cluster that meets the [requirements](docs/i
 
 | Area | What you get | Kinds |
 | --- | --- | --- |
-| Orchestration | Zeebe, the gateway, Operate, Tasklist, Admin, and optionally Connectors, in any [topology configuration](docs/crds/camundacluster.md#topology) | `CamundaCluster` |
+| Orchestration | Zeebe, the gateway, Operate, Tasklist, Admin, and optionally Connectors, in any [topology configuration](https://konsole-is.github.io/camunda-operator/dev/crds/camundacluster/#topology) | `CamundaCluster` |
 | Management plane | Management Identity, Console, Web Modeler, and optionally Keycloak | `CamundaManagementCluster` |
 | Optimize | One Optimize for each cluster that needs it | `CamundaOptimize` |
 | Storage | Elasticsearch through ECK, PostgreSQL through CloudNativePG, and logical databases on any PostgreSQL server | `ElasticsearchCluster`, `DatabaseServer`, `Database` |
 | Backup and restore | Backups to a bucket, on demand or on a schedule, restores into a suspended cluster, and point-in-time restore of PostgreSQL | `LogicalBackup*`, `BackupSchedule`, `LogicalRestore*`, `PointInTimeRestore` |
-| Operations | Version upgrades that refuse a downgrade, suspend and resume, storage growth, and password rotation | The [operations guide](docs/guides/operations.md) |
+| Operations | Version upgrades that refuse a downgrade, suspend and resume, storage growth, and password rotation | The [operations guide](https://konsole-is.github.io/camunda-operator/dev/guides/operations/) |
 | Authentication and license | Basic authentication or OIDC, and the license key, shared by many clusters | `CamundaPlatformConfig` |
 | Fleet management | Presets for the sizing, and releases for the versions and the images | `*Preset`, `CamundaRelease` |
 
-The [CRD reference](docs/crds/index.md) lists every kind with every field.
+The [CRD reference](https://konsole-is.github.io/camunda-operator/dev/crds/) lists every kind with every field.
 
 ## Examples
 
@@ -45,11 +47,11 @@ spec:
   storageRef: my-storage-config
 ```
 
-The broker count, the volumes, and the resources come from the preset `small`. The Camunda version comes from the release `camunda-8-9`. The [presets guide](docs/guides/presets.md) explains both kinds.
+The broker count, the volumes, and the resources come from the preset `small`. The Camunda version comes from the release `camunda-8-9`. The [presets guide](https://konsole-is.github.io/camunda-operator/dev/guides/presets/) explains both kinds.
 
 ## Install
 
-Check the [requirements](docs/installation.md#requirements) first. A few optional features need another operator, and only when you use them. An `ElasticsearchCluster` needs ECK, a `DatabaseServer` needs CloudNativePG, and a Keycloak that the operator runs needs the Keycloak Operator. This operator does not install them.
+Check the [requirements](https://konsole-is.github.io/camunda-operator/dev/installation/#requirements) first. A few optional features need another operator, and only when you use them. An `ElasticsearchCluster` needs ECK, a `DatabaseServer` needs CloudNativePG, and a Keycloak that the operator runs needs the Keycloak Operator. This operator does not install them.
 
 ```bash
 helm install camunda-operator \
@@ -59,21 +61,23 @@ helm install camunda-operator \
   --create-namespace
 ```
 
-The [installation guide](docs/installation.md) covers plain manifests, signature verification, CRDs installed separately, upgrades, and removal.
+The [installation guide](https://konsole-is.github.io/camunda-operator/dev/installation/) covers plain manifests, signature verification, CRDs installed separately, upgrades, and removal.
 
 ## Run your first cluster
 
-[Getting started](docs/getting-started.md) takes you from an empty Kubernetes cluster to a running Camunda cluster that you can log in to.
+[Getting started](https://konsole-is.github.io/camunda-operator/dev/getting-started/) takes you from an empty Kubernetes cluster to a running Camunda cluster that you can log in to.
 
 ## Documentation
 
-- [Getting started](docs/getting-started.md)
-- [Installation](docs/installation.md)
-- [Architecture](docs/architecture.md): how the resources relate and the rules the operator follows
-- [Observability](docs/observability.md): the metrics of the operator, and the dashboards and alerts that ship with it
-- [Use the API types from Go](docs/go-api.md): the api module for programs that create or read the CRs
-- Guides: [presets](docs/guides/presets.md), [secondary storage](docs/guides/secondary-storage.md), [authentication](docs/guides/authentication.md), [management plane](docs/guides/management-plane.md), [backup](docs/guides/backup.md), [operations](docs/guides/operations.md)
-- [CRD reference](docs/crds/index.md)
+The [documentation site](https://konsole-is.github.io/camunda-operator/) has a version for each minor release and a `dev` version for main. The site opens at `latest`, the newest release. The links in this README go to `dev`, which matches the code on main.
+
+- [Getting started](https://konsole-is.github.io/camunda-operator/dev/getting-started/)
+- [Installation](https://konsole-is.github.io/camunda-operator/dev/installation/)
+- [Architecture](https://konsole-is.github.io/camunda-operator/dev/architecture/): how the resources relate and the rules the operator follows
+- [Observability](https://konsole-is.github.io/camunda-operator/dev/observability/): the metrics of the operator, and the dashboards and alerts that ship with it
+- [Use the API types from Go](https://konsole-is.github.io/camunda-operator/dev/go-api/): the api module for programs that create or read the CRs
+- Guides: [presets](https://konsole-is.github.io/camunda-operator/dev/guides/presets/), [secondary storage](https://konsole-is.github.io/camunda-operator/dev/guides/secondary-storage/), [authentication](https://konsole-is.github.io/camunda-operator/dev/guides/authentication/), [management plane](https://konsole-is.github.io/camunda-operator/dev/guides/management-plane/), [backup](https://konsole-is.github.io/camunda-operator/dev/guides/backup/), [operations](https://konsole-is.github.io/camunda-operator/dev/guides/operations/)
+- [CRD reference](https://konsole-is.github.io/camunda-operator/dev/crds/)
 
 ## Development
 
