@@ -12,7 +12,7 @@ The operator runs on any Kubernetes cluster, including bare metal. It never crea
 
 | Area | What you get | Kinds |
 | --- | --- | --- |
-| Orchestration | Zeebe, the gateway, Operate, Tasklist, Admin, and optionally Connectors | `CamundaCluster` |
+| Orchestration | Zeebe, the gateway, Operate, Tasklist, Admin, and optionally Connectors, in any [topology configuration](docs/crds/camundacluster.md#topology) | `CamundaCluster` |
 | Management plane | Management Identity, Console, Web Modeler, and optionally Keycloak | `CamundaManagementCluster` |
 | Optimize | One Optimize for each cluster that needs it | `CamundaOptimize` |
 | Storage | Elasticsearch through ECK, PostgreSQL through CloudNativePG, and logical databases on any PostgreSQL server | `ElasticsearchCluster`, `DatabaseServer`, `Database` |
