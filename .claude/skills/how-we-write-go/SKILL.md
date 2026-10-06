@@ -5,115 +5,25 @@ description: Use when about to write, review, or modify any Go code in this repo
 
 # How We Write Go
 
-## Doc comments
+## Comments
 
-A godoc comment is a contract. A caller must be able to understand the behavior, preconditions, and outcome of using a function, type, or constant without reading its implementation. An inaccurate or misleading godoc is worse than none — it produces incorrect mental models and silent bugs. Accuracy is non-negotiable for maintainability.
+`feature-dev-workflow:writing-code-comments` is the comment standard for this repository. Load it before you write, edit, or delete a comment, and before you review a diff that changes comments. Follow it. The rules below add to it for Go and for this repository. They do not replace it.
 
-**When you touch code that has an inaccurate or unclear doc comment, fix it.** Do not leave it as-is just because it was there before. First ask: is the comment wrong, or is the code wrong? Reconcile accordingly — correct the comment to match the code, or correct the code to match the stated contract, whichever is right.
+**Each exported identifier has a doc comment, and the comment starts with the identifier name.** The table in [Exported vs internal](#exported-vs-internal-how-much-context-to-give) gives the detail level for each kind of identifier. If the contract has no fact beyond the name, write the shortest comment that starts with the name.
 
-**Exported identifiers** must have a doc comment. Start with the identifier name. Write as much as clearly and unambiguously describes the contract — no more, no less. For a simple function or constant, one sentence usually suffices; for a type or interface with non-obvious semantics or subtle constraints, a short paragraph is appropriate.
+**An interface doc comment states what the implementor promises.** Do not name the types that typically implement it, as in `// Typically this will be a *v1.CamundaCluster`. That text is false the first time a new type implements the interface. If the interface must accept only some types, use a constraint type.
 
-```go
-// ComponentName is the label value for this component's app.kubernetes.io/component label.
-const ComponentName = "zeebe-analytics"
+**Unfinished code gets `// TODO(#NNN)` with an issue number.** Do not write `// In production this would...`. Write the real code, or file the issue and reference it.
 
-// Validate reports whether the receiver is in a usable state.
-func (a *Analytics) Validate() error { ... }
+**When you touch code that has a false or unclear comment, correct it in the same change.** This applies also when your change did not make it false. First decide which one is wrong, the comment or the code, and correct that one.
 
-// Owner is implemented by any resource whose name can be used as the namespace base.
-// The returned name must be stable across reconcile loops; it is used to derive
-// the managed namespace and all label selectors for the component.
-type Owner interface { ... }
-```
+**A statement about the code lives in more places than the godoc.** When your change makes a statement false, search for it in these places:
 
-**Internal identifiers** get no comment unless the behavior would genuinely surprise a reader. Keep it to what a reader actually needs — not a summary of the code below it.
+- The godoc and the inline comments.
+- The CRD field descriptions in `api/v1/`.
+- The pages under `docs/` and the design docs under `docs/crds/`.
 
-```go
-// returns suffix unchanged when base is empty to avoid a leading hyphen
-func formatResourceName(base, suffix string) string { ... }
-```
-
-**A godoc gives the contract, not the algorithm.** Preconditions, the meaning of the result, what the caller must not assume. When you start a sentence about how the function computes its answer, stop: the caller does not need it, and it goes stale the first time the body changes.
-
-**A godoc is sized by the caller's decision.** It holds what someone needs to call the function correctly and to use what it gives back: the preconditions, the meaning of the result, and the trap that will bite them. A fact that does not change what the caller writes is not part of the contract, however true it is and however hard it was to learn.
-
-**Moving a fact out of a godoc is not deleting it.** Why a piece of code exists — the case it handles, what breaks without it — earns a short comment beside that code, where a reader meets it with the code in view, and it earns one even when a caller never needs to know. A constraint that bites at one call site goes at that call site for the same reason. The godoc keeps what a caller cannot see from outside at all; the pull request keeps the comparison, the options weighed and why this one won. The same fact in the godoc and again at the line it constrains is one copy too many, and the godoc copy is the one that rots, because it sits furthest from the code that would contradict it.
-
-**When the godoc is longer than the function body, name the caller decision each paragraph serves.** Move the paragraphs that serve none to the code they explain, and delete the ones that explain nothing. Twenty lines of prose over a one-line body is the clearest case: nobody needed that much to call it.
-
-Rationale in a godoc costs more than the space it takes. It reads as contract, so the next reader treats it as a promise the code has to keep, and the next change argues with the paragraph instead of the code.
-
-**A review finding is not a reason to write a paragraph.** When a review turns up a case the code missed, the fix is the code. Write the comment only if the next reader would be caught by the same thing and could not deduce it from what is in front of them — not to show the case was considered, and not to record that the round happened.
-
-**The test for a bad comment:** could a code generator produce it by prepending a verb to the identifier name? If yes, it carries no information beyond the name itself — delete or rewrite it.
-
-- `// ComponentName returns the component name` → generated noise; delete
-- `// ComponentName returns the value used in app.kubernetes.io/component labels` → adds information; keep
-
-**Never:**
-- Restate what the name already says (apply the code-generator test above)
-- Leak implementation context that will rot (`// Typically this will be a *cloudv1alpha1.ZeebeCluster`)
-- Add temporal or task context (`// In production this would...`, `// Added for the X flow`)
-- Pad a comment to look thorough — every sentence must earn its place
-
-## Inline comments
-
-**What a comment holds.** A comment carries what the code cannot: a constraint from outside this file, an invariant a reader cannot see from here, the reason a plainer version does not work. Write that fact first, then why it forces this code.
-
-```go
-// logr.Logger is nil-safe, but controller-runtime's FromContext returns a discard logger
-// when no logger is in context — so this is always safe to call without a nil guard.
-logger := log.FromContext(ctx)
-```
-
-If you cannot write that first fact without paraphrasing the lines below it, there is no comment to write.
-
-**A comment that restates the code becomes a second spec, and it drifts.** The next reader has two accounts of one behavior and no way to tell which is current. Nothing marks the prose as the weaker source: to a reader skimming, and to a model that reads comment and code as one stream, a stale sentence looks exactly like a statement of intent. What follows is the argument moving off the code and onto the prose — the review debates the sentence, the fix edits the sentence, and the behavior stays wrong. Every comment is a claim you have to keep true for as long as the code lives. Write only the claims worth maintaining.
-
-**Density is a signal.** When most blocks carry a comment, the comments say nothing and the one that matters is buried among them. If a block needs prose to be followed, a better name or a smaller function comes first. The comment is the fallback, not the fix.
-
-**Never narrate what the code does:**
-
-```go
-// BAD — narrates WHAT
-// Build the label set that will be applied to the Deployment.
-labels := map[string]string{ ... }
-
-// BAD — AI slop
-// In production code this would go through the event recorder.
-```
-
-If removing the comment would not confuse a reader six months from now, delete it.
-
-**Red flags in your own diff:**
-
-- A comment and the line under it say the same thing in two languages.
-- You wrote a comment to explain a name you could have fixed.
-- The comment describes the change you are making rather than the code that is there.
-- You are editing a comment to answer a review point instead of editing the code.
-- A godoc grew a paragraph about how the body works.
-- The godoc is longer than the function body.
-- The same fact appears twice: once in the godoc, once at the line it constrains.
-- You deleted a hard-won fact instead of moving it beside the code it explains.
-- The comment exists because a review asked for the change, not because the next reader will need it.
-
-## A stated behavior is a claim, not evidence
-
-A godoc, an inline comment, a CRD field description and a page under `docs/` are claims someone made about the code at the time they wrote it. A failing test, a stuck reconcile or a bug report is a measurement. When the two disagree, the measurement settles what the code does — and the design question is still open: which behavior should the system have? A statement can be an accurate description of a wrong decision.
-
-1. Read the code to find what it does now. Do not take the statement as the answer.
-2. Ask whether the stated behavior is the one the user wants. The observed problem is evidence about that, and a documented contract is not a reason to keep a behavior that produces it.
-3. Change whichever is wrong — the code, the statement, or both.
-
-**A statement your change falsified is part of your change.** When your fix makes a godoc, a comment, a field description or a docs page wrong, correct it in the same change and name the change in the pull request body. A contradiction between code and prose is never shipped and never deferred.
-
-| Rationalization | Reality |
-|---|---|
-| "The doc update is out of scope, this task was the code fix" | The doc became wrong when your code changed. Correcting it is the same task. |
-| "I will note it as a follow-up" | A follow-up leaves a false statement in `main` for everyone who reads it first. File follow-ups for work you did not do, not for damage you did. |
-| "The godoc states the contract, so the fix must preserve it" | A contract is a decision, and a decision is revisable. If the reported problem shows it is the wrong one, change it and reconcile the prose. |
-| "I only touched one package" | Find the statement wherever it lives: godoc, `docs/`, the CRD field description, the CRD design doc. |
-| "The doc is still true for the common case" | Partly true reads as fully true. State the behavior the code now has. |
+A CRD field description is text that users read, so the rules of `writing-code-comments` that shorten text do not apply to it. Load `writing-operator-docs` before you edit one.
 
 ## Whitespace rhythm
 
@@ -346,6 +256,62 @@ if err := ensureDeployment(ctx, resource); errors.Is(err, ErrNotReady) {
     return ctrl.Result{}, err
 }
 ```
+
+**Each layer is correct on its own inputs.** A function must not depend on a check or a branch in its caller. It also must not depend on a side effect of a lower layer that the name and the signature of that layer do not show. When logic belongs to one branch of a decision, put it in the layer that makes the decision. As an alternative, give the decision to the lower layer as an explicit input, such as a parameter or a resolved field.
+
+Two shapes break this rule:
+
+- **A hidden dependency.** The lower layer is correct only because its caller filtered the input. A change to the guard in the upper layer breaks it, and no signature and no test shows the link. The example below shows this shape.
+- **A duplicated decision.** The lower layer works out the decision of its caller again from the same fields. It is correct on its own, but the decision now has two copies. When one copy changes, the two layers disagree.
+
+```go
+// BAD — reconcileBrokers is correct only because Reconcile returns early on a
+// suspended object. Call it from another path, or move the suspension check
+// below it, and it starts the brokers of a suspended object
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+    // ...
+    if obj.Spec.Suspended {
+        // stopBrokers applies the broker StatefulSet with zero replicas
+        return ctrl.Result{}, r.stopBrokers(ctx, obj)
+    }
+    return ctrl.Result{}, r.reconcileBrokers(ctx, obj)
+}
+
+func (r *Reconciler) reconcileBrokers(ctx context.Context, obj *myv1.MyResource) error {
+    sts := buildBrokerStatefulSet(obj)
+    // the caller already handled a suspended object, so the spec count is safe
+    sts.Spec.Replicas = ptr.To(obj.Spec.Replicas)
+    return r.apply(ctx, sts)
+}
+
+// GOOD — Reconcile owns the suspension decision and gives its result to the
+// layer below, which is correct for each count it gets
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+    // ...
+    replicas := obj.Spec.Replicas
+    if obj.Spec.Suspended {
+        replicas = 0
+    }
+    return ctrl.Result{}, r.reconcileBrokers(ctx, obj, replicas)
+}
+
+// reconcileBrokers applies the broker StatefulSet with the given replica count.
+func (r *Reconciler) reconcileBrokers(ctx context.Context, obj *myv1.MyResource, replicas int32) error {
+    sts := buildBrokerStatefulSet(obj)
+    sts.Spec.Replicas = ptr.To(replicas)
+    return r.apply(ctx, sts)
+}
+```
+
+The test: can a different caller use this function and get the correct result? Can a reader follow it without opening its caller? If one answer is no, the logic is in the wrong layer.
+
+**Red flags in your own diff:**
+
+- A comment says what the caller already checked, or when the function runs: "the caller already checked X", "this only runs when suspended".
+- A sub-reconciler reads a spec or status field again to find which branch its parent took.
+- A lower layer returns early for a case that an upper layer owns.
+- An upper layer relies on a side effect of a lower layer that its name and signature do not show.
+- You put the logic in a function because the code fit there, not because that layer owns the decision.
 
 ## Labels
 
@@ -784,19 +750,10 @@ When no order makes the file read straight through, the file holds more than one
 
 | Mistake | Fix |
 |---------|-----|
-| Comment restates the name | Delete the comment |
-| "Typically this will be a X" in an interface doc | Delete; if you must constrain, use a constraint type |
-| Multi-sentence doc where one sentence would be complete | Trim to what the contract actually requires |
-| `// In production code this would...` | Delete; write the real code or a `// TODO(#NNN)` |
 | Inline `const reason = "..."` in a function | Promote to package-level typed constant |
 | `logger.Info` for every reconcile step | Trim to the one line that matters; use events for state changes |
 | `fmt.Sprintf("%s-%s", a, b)` | `a + "-" + b` |
-| Comment restates the line under it | Delete it; if the line needs prose, rename or split instead |
-| Godoc explains how the body computes the answer | Cut to the contract: preconditions, result, what the caller must not assume |
-| Godoc repeats a fact already commented at the line it constrains | Delete the copy in the godoc; the one next to the code is the one that stays true |
-| Paragraph added because a review found a missing case | Ship the fix; write the comment only if the next reader would be caught the same way |
-| Godoc is longer than the function body | Name the caller decision each paragraph serves; delete the rest |
+| Sub-reconciler handles a branch that its caller decides | Move the logic to the layer that decides, or pass the decision down as a parameter |
 | Resolver or helper placed above the entry point of the file | Move it below its caller |
 | Shared type declared where the author first needed it | Move it to the top of the file with a doc comment |
 | New code appended to the bottom of the file | Place it by the file's order, under its caller |
-| Fix ships with a godoc or doc page it just made wrong | Correct the statement in the same change |
