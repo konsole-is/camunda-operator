@@ -1743,6 +1743,35 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, "20s", interval).Should(Succeed())
 	})
 
+	It("holds, then fails, when Zeebe moved to another Camunda version between the dump and the Zeebe backup", func() {
+		w := createWorld()
+		backup := createBackup(w)
+		jobOf(backup, w)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Version).To(Equal("8.9.9"), "the version is recorded at start")
+		}, timeout, interval).Should(Succeed())
+
+		By("moving Zeebe to another version with the same config hash, then completing the dump")
+		moveZeebeTo(w.cluster, "8.9.10")
+		markJob(backup, w, batchv1.JobComplete)
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupRunning))
+			g.Expect(backup.Status.FirstFailedAt).NotTo(BeNil(), "the mismatch holds the backup in the grace")
+			g.Expect(backup.Status.ZeebeBackupID).To(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("8.9.9"))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("8.9.10"))
+			g.Expect(backup.Status.ZeebeBackupID).To(BeNil())
+		}, "20s", interval).Should(Succeed())
+	})
+
 	// The brokers can take their part of the Zeebe backup under the new
 	// configuration, so the pair is lost for good. No grace can recover it.
 	It("fails, not completes, when Zeebe rolled to another configuration while the Zeebe backup ran", func() {
