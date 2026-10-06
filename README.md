@@ -2,9 +2,9 @@
 
 A Kubernetes operator for Camunda 8 Self-Managed as a platform. Use it to offer [Camunda 8.9+](https://docs.camunda.io/) as a service to the teams in your organization, on infrastructure that you run.
 
-One operator runs the orchestration clusters, their Elasticsearch or PostgreSQL storage, the management plane, and Optimize, and connects them for you. A platform team writes the sizing and the versions once, in presets and releases. Each new cluster is then a few lines.
+One operator runs the orchestration clusters, their Elasticsearch or PostgreSQL storage, the management plane, and Optimize, and connects them for you. A PostgreSQL server that you run yourself works too. A platform team writes the sizing and the versions once, in presets and releases. Each new cluster is then a few lines.
 
-The operator runs on any Kubernetes cluster, including bare metal. It never creates cloud resources such as buckets or IAM roles, so you bring those yourself.
+The operator runs on any Kubernetes cluster that meets the [requirements](docs/installation.md#requirements), including bare metal. It never creates cloud resources such as buckets or IAM roles, so you bring those yourself.
 
 > [!WARNING]
 > The operator is in early development. The API group is `core.camunda.io/v1`, but the API can still change before the first stable release.
@@ -28,7 +28,7 @@ The [CRD reference](docs/crds/index.md) lists every kind with every field.
 
 [`config/example`](config/example) holds complete setups that you can apply. There is a cluster on Elasticsearch, a cluster on PostgreSQL, and a management plane with Keycloak or with your own identity provider. Each directory has a README with the apply order.
 
-With the shared presets and release of those examples in place, the manifest below is a complete cluster.
+The cluster of the PostgreSQL example is below. It names a preset and a release, and the platform config and the storage that the same example creates before it.
 
 ```yaml
 apiVersion: core.camunda.io/v1
