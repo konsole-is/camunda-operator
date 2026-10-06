@@ -41,7 +41,7 @@ the detail. Do not work from memory when a skill covers the task.
 | Open or edit a pull request | `feature-dev-workflow:opening-a-pull-request` |
 | Act on review feedback: Copilot, a person, or a local review | `feature-dev-workflow:addressing-review-feedback` |
 | Run a review loop on a PR until it is clean | `feature-dev-workflow:copilot-review-loop` |
-| Draft or publish a release | `feature-dev-workflow:drafting-a-release`, then the release steps in `AGENTS.md` |
+| Draft or publish a release | `feature-dev-workflow:drafting-a-release`, then the steps in `RELEASING.md` |
 | Say that work is complete | `superpowers:verification-before-completion` |
 
 The operator uses the operator component framework (ocf):
