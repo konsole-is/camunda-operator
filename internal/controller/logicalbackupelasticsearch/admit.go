@@ -180,9 +180,10 @@ func (r *Reconciler) admitBinding(
 }
 
 // zeebeRunsDestination returns the config hash of the live Zeebe workload
-// when every broker runs its pod template and that template names the
-// backup store, the snapshot repository, and the Elasticsearch endpoint
-// that the contracts of the cluster declare. Zeebe not yet running them
+// when every broker runs its pod template, the workload runs the Camunda
+// version that the cluster publishes, and the template names the backup
+// store, the snapshot repository, and the Elasticsearch endpoint that the
+// contracts of the cluster declare. Zeebe not yet running them
 // returns a failure with reason Progressing. A read error returns an error.
 func (r *Reconciler) zeebeRunsDestination(
 	ctx context.Context,
@@ -194,6 +195,12 @@ func (r *Reconciler) zeebeRunsDestination(
 	}
 
 	if failure := camundacluster.RolledOut(workload); failure != nil {
+		return "", failure, nil
+	}
+
+	// start records the version of the binding, and the later checks compare
+	// the workload with it.
+	if failure := camundacluster.RunsPublishedVersion(workload, res.Cluster); failure != nil {
 		return "", failure, nil
 	}
 

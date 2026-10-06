@@ -59,6 +59,7 @@ func runtimeRig(t *testing.T) (*Reconciler, *camundaadmin.Client, *camundaadmint
 func runtimeBackup() *v1.LogicalBackupElasticsearch {
 	backup := &v1.LogicalBackupElasticsearch{}
 	backup.Status.BackupID = testBackupID
+	backup.Status.Version = "8.9.9"
 	backup.Status.Phase = v1.LogicalBackupRunning
 	backup.Status.Step = v1.StepBackupRuntime
 	backup.Status.Runtime = v1.BackupPart{State: v1.BackupPartPending}
@@ -153,6 +154,7 @@ func TestRuntimeBackupFoundWithoutIntentIsNotAdopted(t *testing.T) {
 			zeebe := &appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "ns", Name: camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
+					Annotations: map[string]string{camundacluster.BrokerVersionAnnotation: "8.9.9"},
 				},
 			}
 			zeebe.Spec.Template.Annotations = map[string]string{camundacluster.ConfigHashAnnotation: rigConfigHash}
@@ -276,9 +278,10 @@ func TestPauseStepFailsOnARollAlsoWhenThePauseCallIsUnreachable(t *testing.T) {
 	assert.Contains(t, backup.Status.FailureMessage, "hash-2")
 }
 
-// A step fails at once, with both hashes, when Zeebe rolled since the
-// start, and also when the workload cannot be read: no wait can make a part
-// taken under another configuration match the set again.
+// A step fails at once, with both hashes or both versions, when Zeebe rolled
+// since the start, and also when the workload cannot be read: no wait can
+// make a part taken under another configuration or version match the set
+// again.
 func TestWorkloadUnchangedFailsTheStepWhenZeebeLeftThePinnedHash(t *testing.T) {
 	cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cc"}}
 	tests := []struct {
@@ -291,6 +294,15 @@ func TestWorkloadUnchangedFailsTheStepWhenZeebeLeftThePinnedHash(t *testing.T) {
 			name:    "Zeebe rolled to another hash",
 			reader:  []client.Object{zeebeWorkload("hash-2", "https://es:9200")},
 			failure: []string{"BackupRuntime", "hash-1", "hash-2"},
+		},
+		{
+			name: "Zeebe moved to another Camunda version with the same hash",
+			reader: []client.Object{func() client.Object {
+				workload := zeebeWorkload("hash-1", "https://es:9200")
+				workload.Annotations[camundacluster.BrokerVersionAnnotation] = "8.9.10"
+				return workload
+			}()},
+			failure: []string{"BackupRuntime", "8.9.9", "8.9.10"},
 		},
 		{name: "the workload is gone", failure: []string{"BackupRuntime", "not rendered"}},
 	}

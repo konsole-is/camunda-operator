@@ -99,6 +99,7 @@ func newAdmissionRig(t *testing.T, backups ...*v1.LogicalBackupElasticsearch) *a
 	zeebe := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "ns", Name: camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
+			Annotations: map[string]string{camundacluster.BrokerVersionAnnotation: "8.9.9"},
 		},
 		Status: appsv1.StatefulSetStatus{UpdatedReplicas: 1, ReadyReplicas: 1},
 		Spec: appsv1.StatefulSetSpec{Template: corev1.PodTemplateSpec{

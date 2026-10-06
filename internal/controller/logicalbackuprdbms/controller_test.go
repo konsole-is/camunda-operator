@@ -236,7 +236,11 @@ func startZeebeRollout(cluster *v1.CamundaCluster, hash, rdbmsURL string) {
 		err := k8sClient.Get(ctx, key, &workload)
 		if apierrors.IsNotFound(err) {
 			workload = appsv1.StatefulSet{
-				ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        key.Name,
+					Namespace:   key.Namespace,
+					Annotations: map[string]string{camundacluster.BrokerVersionAnnotation: "8.9.9"},
+				},
 				Spec: appsv1.StatefulSetSpec{
 					Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": key.Name}},
 					Template: corev1.PodTemplateSpec{
@@ -255,6 +259,23 @@ func startZeebeRollout(cluster *v1.CamundaCluster, hash, rdbmsURL string) {
 		g.Expect(err).NotTo(HaveOccurred())
 		workload.Spec.Template.Annotations[camundacluster.ConfigHashAnnotation] = hash
 		workload.Spec.Template.Spec.Containers = []corev1.Container{container}
+		g.Expect(k8sClient.Update(ctx, &workload)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// moveZeebeTo stamps version on the Zeebe workload of cluster and keeps
+// its config hash, the way the CamundaCluster controller applies a version
+// change.
+func moveZeebeTo(cluster *v1.CamundaCluster, version string) {
+	GinkgoHelper()
+	key := types.NamespacedName{
+		Namespace: cluster.Namespace,
+		Name:      camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
+	}
+	Eventually(func(g Gomega) {
+		var workload appsv1.StatefulSet
+		g.Expect(k8sClient.Get(ctx, key, &workload)).To(Succeed())
+		workload.Annotations[camundacluster.BrokerVersionAnnotation] = version
 		g.Expect(k8sClient.Update(ctx, &workload)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }
@@ -468,6 +489,7 @@ func stageAdmitted(w *world, backup *v1.LogicalBackupRDBMS) {
 			b.Status.BucketGeneration = w.bucket.Generation
 			b.Status.BucketLocation = w.bucket.Location()
 			b.Status.WorkloadConfigHash = "hash-1"
+			b.Status.Version = "8.9.9"
 			b.Status.ClusterUID = w.cluster.UID
 			b.Status.ObjectKey = components.DumpObjectKey(
 				w.bucket.BasePath(), w.namespace, w.cluster.Name, id, b.UID,
@@ -1765,6 +1787,51 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
 			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
 			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("hash-2"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("fails, not completes, when Zeebe moved to another Camunda version while the Zeebe backup ran", func() {
+		w := createWorld()
+		backup := createBackup(w)
+
+		markJob(backup, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		Expect(backup.Status.Version).To(Equal("8.9.9"))
+
+		By("moving Zeebe to another version with the same config hash, then reporting the Zeebe backup done")
+		moveZeebeTo(w.cluster, "8.9.10")
+		managementAPI.SetRuntimeState(*backup.Status.ZeebeBackupID, string(camundaadmin.StateCompleted), "")
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("8.9.9"))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("8.9.10"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("waits to start while Zeebe runs another Camunda version than the cluster publishes", func() {
+		w := createWorld()
+		moveZeebeTo(w.cluster, "8.9.8")
+		backup := createBackup(w)
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupPending))
+			ready := meta.FindStatusCondition(backup.Status.Conditions, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(v1.ReasonProgressing))
+			g.Expect(ready.Message).To(ContainSubstring("8.9.8"))
+		}, timeout, interval).Should(Succeed())
+
+		By("starting once Zeebe runs the published version")
+		moveZeebeTo(w.cluster, "8.9.9")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupRunning))
 		}, timeout, interval).Should(Succeed())
 	})
 

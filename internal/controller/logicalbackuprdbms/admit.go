@@ -490,8 +490,9 @@ func (r *LogicalBackupRDBMSReconciler) checkManagement(
 }
 
 // rolledOutConfigHash returns the config hash of the live Zeebe workload
-// when every broker runs its pod template and that template names the
-// backup store of the precheck bucket. Zeebe not yet running them returns a
+// when every broker runs its pod template, the workload runs the Camunda
+// version that the cluster publishes, and the template names the backup
+// store of the precheck bucket. Zeebe not yet running them returns a
 // failure with reason Progressing. A read error returns an error.
 func (r *LogicalBackupRDBMSReconciler) rolledOutConfigHash(
 	ctx context.Context,
@@ -504,6 +505,11 @@ func (r *LogicalBackupRDBMSReconciler) rolledOutConfigHash(
 	// The template changes before the first broker restarts. A hash read
 	// during a rollout can name a configuration that no broker runs.
 	if failure := camundacluster.RolledOut(workload); failure != nil {
+		return "", failure, nil
+	}
+	// start records the version of the binding, and the later checks compare
+	// the workload with it.
+	if failure := camundacluster.RunsPublishedVersion(workload, precheck.Cluster); failure != nil {
 		return "", failure, nil
 	}
 	if failure := camundacluster.RunsBackupStore(
@@ -595,18 +601,25 @@ func (r *LogicalBackupRDBMSReconciler) start(
 }
 
 // workloadUnchanged requires the live Zeebe workload to still carry the
-// config hash pinned at start. A changed hash means that Zeebe rolled to
-// another configuration, for example a swapped database. A dump paired with
-// a Zeebe backup taken now then reports an unusable restore point as
-// complete.
+// config hash and the Camunda version pinned at start. A change means that
+// Zeebe rolled to another configuration, for example a swapped database, or
+// to another version. A dump paired with a Zeebe backup taken now then
+// reports an unusable restore point as complete.
 func (r *LogicalBackupRDBMSReconciler) workloadUnchanged(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
 	cluster *v1.CamundaCluster,
 ) (*conditions.PreCheckFailure, error) {
-	hash, failure, err := r.zeebeConfigHash(ctx, cluster)
+	hash, version, failure, err := r.runningZeebe(ctx, cluster)
 	if err != nil || failure != nil {
 		return failure, err
+	}
+	if version != backup.Status.Version {
+		return logicalbackup.InvalidReference(
+			"the Zeebe workload of CamundaCluster %s/%s now runs Camunda %s, but the backup recorded %s "+
+				"at start, so the dump and a Zeebe backup taken now are not one restore point",
+			cluster.Namespace, cluster.Name, version, backup.Status.Version,
+		), nil
 	}
 	if hash != backup.Status.WorkloadConfigHash {
 		return logicalbackup.InvalidReference(
@@ -620,24 +633,27 @@ func (r *LogicalBackupRDBMSReconciler) workloadUnchanged(
 	return nil, nil
 }
 
-// zeebeConfigHash reads the config hash that the live Zeebe pod template
-// carries. The hash is the strongest observable identity of the
-// configuration that Zeebe runs. Mutable referents, for example the
-// DatabaseConfig and the DatabaseServerConfig, enter that hash without a
-// bump of the cluster generation. So the converged generation alone cannot
-// prove that Zeebe still runs the database that a dump captures. The backup
-// pins the hash at start and requires it unchanged before the Job, before
-// the Zeebe request, and on each poll of the Zeebe backup.
-func (r *LogicalBackupRDBMSReconciler) zeebeConfigHash(
+// runningZeebe reads the config hash that the live Zeebe pod template
+// carries, and the Camunda version of the workload. Mutable referents, for
+// example the DatabaseConfig and the DatabaseServerConfig, enter that hash
+// without a bump of the cluster generation. So the converged generation
+// alone cannot prove that Zeebe still runs the database that a dump
+// captures. The backup pins both at start and requires them unchanged
+// before the Job, before the Zeebe request, and on each poll of the Zeebe
+// backup.
+func (r *LogicalBackupRDBMSReconciler) runningZeebe(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
-) (string, *conditions.PreCheckFailure, error) {
+) (hash, version string, failure *conditions.PreCheckFailure, err error) {
 	workload, failure, err := camundacluster.LiveZeebeWorkload(ctx, r.APIReader, cluster)
 	if err != nil || failure != nil {
-		return "", failure, err
+		return "", "", failure, err
 	}
 
-	hash, failure := camundacluster.RunningConfigHash(workload)
+	if hash, failure = camundacluster.RunningConfigHash(workload); failure != nil {
+		return "", "", failure, nil
+	}
+	version, failure = camundacluster.RunningVersion(workload)
 
-	return hash, failure, nil
+	return hash, version, failure, nil
 }

@@ -249,9 +249,10 @@ func (r *LogicalBackupRDBMSReconciler) pollZeebeBackup(
 		return r.holdRunning(backup, managementFailure(cluster, err))
 	}
 
-	// The hash is read after the state. A rollout that started before the
-	// cluster reported the backup final is then in the template already.
-	hash, failure, err := r.zeebeConfigHash(ctx, cluster)
+	// The hash and the version are read after the state. A rollout that
+	// started before the cluster reported the backup final is then in the
+	// workload already.
+	hash, version, failure, err := r.runningZeebe(ctx, cluster)
 	if err != nil {
 		return settle, err
 	}
@@ -259,6 +260,17 @@ func (r *LogicalBackupRDBMSReconciler) pollZeebeBackup(
 		return r.holdRunning(backup, failure)
 	}
 	r.recovered(backup)
+
+	if version != backup.Status.Version {
+		r.fail(backup, fmt.Sprintf(
+			"the Zeebe workload of CamundaCluster %s/%s now runs Camunda %s, but the backup recorded %s "+
+				"at start. Zeebe moved while Zeebe backup %d ran, so a part of it can come from the new "+
+				"version. A restore needs the one version that took the dump and every part",
+			cluster.Namespace, cluster.Name, version, backup.Status.Version, *backup.Status.ZeebeBackupID,
+		))
+
+		return settle, nil
+	}
 
 	if hash != backup.Status.WorkloadConfigHash {
 		// Brokers can take their part under the new configuration. No grace
