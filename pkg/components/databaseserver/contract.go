@@ -55,14 +55,14 @@ import (
 // person writes that one for a PostgreSQL server the operator does not run,
 // and the apply would rewrite its endpoint and its credentials.
 //
-// The clusterTaken message is the ClusterTaken message while a CloudNativePG
-// cluster of the name the server derives is not this server's, and empty
-// otherwise. When it is set, the feature gate is off and the framework removes
-// the published contract, because the contract names the endpoint and the
-// superuser Secret of a database this server does not own. A consumer then
-// reads InvalidReference instead of the endpoint of another database. A
-// contract the server never published is not removed by that gate, because
-// the object under the name is not the one the server published.
+// The withdrawn message is the ClusterTaken message when the contract must go
+// because a CloudNativePG cluster of the name the server derives is not this
+// server's, and empty otherwise. When it is set, the feature gate is off and
+// the framework removes the published contract, because the contract names the
+// endpoint and the superuser Secret of a database this server does not own. A
+// consumer then reads InvalidReference instead of the endpoint of another
+// database. A contract the server never published is not removed by that gate,
+// because the object under the name is not the one the server published.
 //
 // The archiveTaken message is the ArchiveTaken message while the ObjectStore
 // of the name the server derives belongs to somebody else, and empty
@@ -71,7 +71,7 @@ import (
 func ContractComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
-	clusterTaken string,
+	withdrawn string,
 	contractTaken string,
 	archiveTaken string,
 ) (*component.Component, error) {
@@ -105,7 +105,7 @@ func ContractComponent(
 	return component.NewComponentBuilder().
 		WithName("contract").
 		WithConditionType(v1.ConditionContractReady).
-		WithFeatureGate(feature.NewBooleanGate(clusterTaken == "" || contractTaken != "")).
+		WithFeatureGate(feature.NewBooleanGate(withdrawn == "" || contractTaken != "")).
 		WithResource(superuser, component.ReadOnly(), component.BlockOnAbsence(), component.Auxiliary()).
 		WithResource(contract, component.BlockOnForeignController()).
 		Build()
