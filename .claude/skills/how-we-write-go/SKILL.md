@@ -76,20 +76,20 @@ When arguments are many or individually long, put each on its own line with a tr
 
 ```go
 // BAD — crammed onto one line
-recorder.Eventf(obj, nil, corev1.EventTypeNormal, EventReasonReconciled, EventActionReconcile, "deployment %q reconciled", name)
+recorder.Eventf(obj, nil, corev1.EventTypeWarning, EventReasonBackupFailed, EventActionBackup, "backup %q failed", name)
 
 // BAD — inconsistent split (some args together, some not)
-recorder.Eventf(obj, nil, corev1.EventTypeNormal,
-    EventReasonReconciled, EventActionReconcile, "deployment %q reconciled", name)
+recorder.Eventf(obj, nil, corev1.EventTypeWarning,
+    EventReasonBackupFailed, EventActionBackup, "backup %q failed", name)
 
 // GOOD — one argument per line
 recorder.Eventf(
     obj,
     nil,
-    corev1.EventTypeNormal,
-    EventReasonReconciled,
-    EventActionReconcile,
-    "deployment %q reconciled",
+    corev1.EventTypeWarning,
+    EventReasonBackupFailed,
+    EventActionBackup,
+    "backup %q failed",
     name,
 )
 ```
@@ -188,6 +188,8 @@ applyLabels(obj, labels)
 
 
 ## Function roles in a controller
+
+Before you add, move, or remove logic in `Reconcile`, a sub-reconciler, or a helper that a controller calls, load `ocf:structuring-operators` and read its guideline "Give Each Controller Layer One Visible Responsibility". It says which layer owns a write, a requeue, and a branch of a decision, and that each layer is correct on its own inputs. The rules below add to it.
 
 A controller reconciler is a layered system. Each layer has a defined responsibility; mixing them creates invisible coupling and makes bugs hard to trace. The rules are not rigid constraints but a structure to reason about — the key is that every function's role is clear and consistent.
 
@@ -330,36 +332,17 @@ Events go through the client-go `events.EventRecorder` that `mgr.GetEventRecorde
 recorder.Eventf(obj, nil, "Normal", "SuccessfulReconcile", "Reconcile", "...")
 
 // GOOD
-const eventReasonReconciled = "Reconciled"
-const eventActionReconcile = "Reconcile"
+const eventReasonBackupFailed = "BackupFailed"
+const eventActionBackup = "Backup"
 
-recorder.Eventf(obj, nil, corev1.EventTypeNormal, eventReasonReconciled, eventActionReconcile, "deployment reconciled")
+recorder.Eventf(obj, nil, corev1.EventTypeWarning, eventReasonBackupFailed, eventActionBackup, "backup failed")
 ```
 
 Prefer a custom `type Reason string` in packages that own many event reasons, so the compiler catches misuse.
 
 ## Controller: events vs logs
 
-| Signal | Use for | Tool |
-|--------|---------|------|
-| **Event** | User-visible state transitions on a specific object (provisioning started, health check failed, config applied) | `recorder.Eventf(obj, related, type, reason, action, note)` |
-| **Log** | Operator-internal tracing, debugging, diagnostic detail | `logger.Info(...)` / `logger.Error(...)` |
-
-Rules:
-- Prefer events for anything a cluster operator would want to `kubectl describe` and understand without reading operator logs.
-- Keep `logger.Info` calls sparse in the reconcile hot path — every reconcile of every object emits them; they bloat the log stream.
-- Do not log and record an event for the same fact. Pick the right signal.
-- Do not log errors that are returned from the reconciler. Controller-runtime logs them automatically; logging again produces duplicate entries and inflates the noise. If you return `ctrl.Result{}, err`, do not also call `logger.Error(err, ...)`.
-- Use `logger.Error` only for errors that are explicitly swallowed — i.e., errors you handle and do not return. If you return the error, let the framework log it.
-- Use `logger.V(1)` or higher for debug-level detail; leave `V(0)` (the default) for genuinely important state changes.
-
-```go
-// BAD — log masquerading as an event, event reason is freeform
-logger.V(1).Info("recording event", "reason", "SuccessfulReconcile")
-
-// GOOD — real event, named constant reason and action
-recorder.Eventf(obj, nil, corev1.EventTypeNormal, eventReasonReconciled, eventActionReconcile, "deployment reconciled")
-```
+Before a controller records an event or writes a log line, load `ocf:building-components` and read its section "Signals from your own controller" in `references/observability.md`. That section is the rule for this repository. It says which of a condition, an event, a log, and a metric reports a fact, and that an event marks a transition, never a reconcile. It also lists the events that ocf records itself, and says when to log an error.
 
 ## Error wrapping
 
@@ -752,6 +735,7 @@ When no order makes the file read straight through, the file holds more than one
 |---------|-----|
 | Inline `const reason = "..."` in a function | Promote to package-level typed constant |
 | `logger.Info` for every reconcile step | Trim to the one line that matters; use events for state changes |
+| Event recorded on every reconcile | Record it only when something changed, such as when `meta.SetStatusCondition` returns `true` |
 | `fmt.Sprintf("%s-%s", a, b)` | `a + "-" + b` |
 | Sub-reconciler handles a branch that its caller decides | Move the logic to the layer that decides, or pass the decision down as a parameter |
 | Resolver or helper placed above the entry point of the file | Move it below its caller |
