@@ -7,7 +7,7 @@ description: Use when about to write, review, or modify any Go code in this repo
 
 ## Comments
 
-`feature-dev-workflow:writing-code-comments` is the comment standard for this repository. Load it before you write, edit, or delete a comment, and follow it. The rules below add to it for Go and for this repository. They do not replace it.
+`feature-dev-workflow:writing-code-comments` is the comment standard for this repository. Load it before you write, edit, or delete a comment, and before you review a diff that changes comments. Follow it. The rules below add to it for Go and for this repository. They do not replace it.
 
 **Each exported identifier has a doc comment, and the comment starts with the identifier name.** The table in [Exported vs internal](#exported-vs-internal-how-much-context-to-give) gives the detail level for each kind of identifier. If the contract has no fact beyond the name, write the shortest comment that starts with the name.
 
