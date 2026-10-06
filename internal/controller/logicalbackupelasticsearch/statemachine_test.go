@@ -278,10 +278,6 @@ func TestPauseStepFailsOnARollAlsoWhenThePauseCallIsUnreachable(t *testing.T) {
 	assert.Contains(t, backup.Status.FailureMessage, "hash-2")
 }
 
-// A step fails at once, with both hashes or both versions, when Zeebe rolled
-// since the start, and also when the workload cannot be read: no wait can
-// make a part taken under another configuration or version match the set
-// again.
 func TestWorkloadUnchangedFailsTheStepWhenZeebeLeftThePinnedHash(t *testing.T) {
 	cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cc"}}
 	tests := []struct {

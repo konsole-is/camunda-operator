@@ -136,9 +136,9 @@ type LogicalBackupRDBMSStatus struct {
 	// version of its target. A relational backup restores to the same Camunda
 	// minor or to one minor newer. A restore can read the version only here,
 	// because a suspended cluster has no management binding. The backup
-	// starts only when Zeebe runs this version. If Zeebe moves to another
-	// version before the Zeebe backup is final, the backup fails with both
-	// versions in the message.
+	// starts only when Zeebe runs this version. After the Zeebe backup
+	// request, a poll that finds Zeebe on another version fails the backup
+	// at once with both versions in the message.
 	// +optional
 	Version string `json:"version,omitempty"`
 	// FirstFailedAt is when a dependency of the running backup first stopped

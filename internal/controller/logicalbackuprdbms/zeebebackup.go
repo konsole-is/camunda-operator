@@ -245,9 +245,8 @@ func (r *LogicalBackupRDBMSReconciler) pollZeebeBackup(
 ) (hold, error) {
 	status, statusErr := admin.RuntimeBackupStatus(ctx, *backup.Status.ZeebeBackupID)
 
-	// The hash and the version are read after the state, also when the call
-	// did not answer. A rollout that started before the answer is then in the
-	// workload already.
+	// A rollout that started before the answer is then in the workload
+	// already.
 	hash, version, failure, err := r.runningZeebe(ctx, cluster)
 	if err != nil {
 		return settle, err
