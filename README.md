@@ -8,14 +8,18 @@ The operator runs on any Kubernetes cluster, including bare metal. It never crea
 
 > The operator is in early development. The API group is `core.camunda.io/v1`, but the API can still change before the first stable release.
 
-## What it runs
+## Features
 
-- Orchestration clusters (`CamundaCluster`): Zeebe brokers, the gateway, Operate, Tasklist, Admin, and optionally Connectors.
-- The management plane (`CamundaManagementCluster`): Management Identity, Console, and Web Modeler.
-- Optimize (`CamundaOptimize`), one for each cluster that needs it.
-- Storage backends: Elasticsearch through ECK (`ElasticsearchCluster`), PostgreSQL through CloudNativePG (`DatabaseServer`), and logical databases on a PostgreSQL server (`Database`).
-- Backup and restore: logical backups to a bucket, on demand or on a schedule, and restores into a suspended cluster.
-- Shared settings: authentication and license (`CamundaPlatformConfig`), presets for sizing, and releases that pin versions and images.
+| Area | What you get | Kinds |
+| --- | --- | --- |
+| Orchestration | Zeebe, the gateway, Operate, Tasklist, Admin, and optionally Connectors | `CamundaCluster` |
+| Management plane | Management Identity, Console, Web Modeler, and optionally Keycloak | `CamundaManagementCluster` |
+| Optimize | One Optimize for each cluster that needs it | `CamundaOptimize` |
+| Storage | Elasticsearch through ECK, PostgreSQL through CloudNativePG, and logical databases on any PostgreSQL server | `ElasticsearchCluster`, `DatabaseServer`, `Database` |
+| Backup and restore | Backups to a bucket, on demand or on a schedule, restores into a suspended cluster, and point-in-time restore of PostgreSQL | `LogicalBackup*`, `BackupSchedule`, `LogicalRestore*`, `PointInTimeRestore` |
+| Operations | Version upgrades that refuse a downgrade, suspend and resume, storage growth, and password rotation | The [operations guide](docs/guides/operations.md) |
+| Authentication and license | Basic authentication or OIDC, and the license key, shared by many clusters | `CamundaPlatformConfig` |
+| Fleet management | Presets for the sizing, and releases for the versions and the images | `*Preset`, `CamundaRelease` |
 
 The [CRD reference](docs/crds/index.md) lists every kind with every field.
 
