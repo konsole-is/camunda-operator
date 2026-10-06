@@ -17,9 +17,10 @@ requires.
 go get github.com/konsole-is/camunda-operator/api@v<version>
 ```
 
-Replace `<version>` with an operator release, for example `0.1.0`. The api
-module and the operator share one version number: the release `0.1.0` of the
-operator publishes the Go tag `api/v0.1.0`.
+Replace `<version>` with the version of an operator release, for example
+`0.1.0` for the release `v0.1.0`. The api module and the operator share one
+version number: the release `v0.1.0` of the operator publishes the Go tag
+`api/v0.1.0`.
 
 ## Import the types
 
@@ -47,9 +48,9 @@ the resources.
 ## The operator module
 
 The root module `github.com/konsole-is/camunda-operator` holds the controllers
-and the shared packages under `pkg/`. A release publishes the Go tag
-`v<version>` for it too, and the root module requires the api module at the
-same version. A program that needs a package from `pkg/` imports the root
+and the shared packages under `pkg/`. The release tag `v<version>` is also
+its Go tag, and the root module requires the api module at the same
+version. A program that needs a package from `pkg/` imports the root
 module at a release tag. That program gets every dependency of the operator.
 
 Commits between two releases require the api version of the last release. A

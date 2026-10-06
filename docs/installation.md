@@ -41,7 +41,7 @@ helm install camunda-operator \
   --create-namespace
 ```
 
-This installs the manager and every custom resource definition. Replace `<version>` with a released version, for example `0.1.0`. Release tags are plain SemVer. The chart version, the chart `appVersion`, and the image tag are always the same string.
+This installs the manager and every custom resource definition. Replace `<version>` with a released version without the `v`, for example `0.1.0` for the release `v0.1.0`. The chart version, the chart `appVersion`, and the image tag are always this version.
 
 ### Values
 
@@ -74,7 +74,7 @@ helm install camunda-operator \
 Every release attaches a rendered manifest:
 
 ```bash
-kubectl apply --server-side -f https://github.com/konsole-is/camunda-operator/releases/download/<version>/install.yaml
+kubectl apply --server-side -f https://github.com/konsole-is/camunda-operator/releases/download/v<version>/install.yaml
 ```
 
 Use `--server-side`: the `CamundaCluster` CRD is larger than the annotation that client-side apply writes.
@@ -88,7 +88,7 @@ The manifest pins the CLI image in the manager's `CAMUNDA_OPERATOR_CLI_IMAGE` en
 Install the CRDs yourself when you manage them outside Helm, for example with a GitOps tool. This also keeps them out of the Helm release Secret, which etcd limits to about 1 MB:
 
 ```bash
-kubectl apply --server-side -f https://github.com/konsole-is/camunda-operator/releases/download/<version>/crds.yaml
+kubectl apply --server-side -f https://github.com/konsole-is/camunda-operator/releases/download/v<version>/crds.yaml
 
 helm install camunda-operator \
   oci://ghcr.io/konsole-is/charts/camunda-operator \
@@ -184,7 +184,7 @@ To remove everything, do these steps in this order:
 Delete the CRDs by name. The CRD manifests carry no labels, so a label selector does not match them:
 
 ```bash
-kubectl delete -f https://github.com/konsole-is/camunda-operator/releases/download/<version>/crds.yaml
+kubectl delete -f https://github.com/konsole-is/camunda-operator/releases/download/v<version>/crds.yaml
 ```
 
 Without the release file, delete every CRD in the `core.camunda.io` group:

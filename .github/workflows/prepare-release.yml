@@ -3,8 +3,8 @@ name: Prepare release
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: Release version as unprefixed SemVer without build metadata, for example 0.2.0
+      tag:
+        description: Release tag as v and SemVer without build metadata, for example v0.2.0
         required: true
         type: string
 
@@ -17,8 +17,8 @@ jobs:
       contents: write   # push the release branch
 
     env:
-      VERSION: ${{ inputs.version }}
-      BRANCH: chore/release-${{ inputs.version }}
+      TAG: ${{ inputs.tag }}
+      BRANCH: chore/release-${{ inputs.tag }}
 
     steps:
       - name: Reject a run from a branch other than main
@@ -39,16 +39,16 @@ jobs:
         run: |
           num='(0|[1-9][0-9]*)'
           pre="(${num}|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
-          if [[ ! "${VERSION}" =~ ^${num}\.${num}\.${num}(-${pre}(\.${pre})*)?$ ]]; then
-            echo "Version '${VERSION}' is not a release version. Use unprefixed SemVer such as 0.2.0 or 0.2.0-rc.1." >&2
+          if [[ ! "${TAG}" =~ ^v${num}\.${num}\.${num}(-${pre}(\.${pre})*)?$ ]]; then
+            echo "Tag '${TAG}' is not a release tag. Use v and SemVer, such as v0.2.0 or v0.2.0-rc.1." >&2
             echo "Build metadata such as +build is not allowed, because an image tag cannot contain '+'." >&2
             exit 1
           fi
-          for tag in "${VERSION}" "v${VERSION}" "api/v${VERSION}"; do
+          for tag in "${TAG}" "api/${TAG}"; do
             status=0
             git ls-remote --exit-code --tags origin "refs/tags/${tag}" > /dev/null || status=$?
             if [[ "${status}" -eq 0 ]]; then
-              echo "Tag '${tag}' exists. Version ${VERSION} is already released." >&2
+              echo "Tag '${tag}' exists. ${TAG} is already released." >&2
               exit 1
             fi
             # 2 means that the tag does not exist. Any other status is a failed lookup.
@@ -59,7 +59,7 @@ jobs:
           done
 
       - name: Pin the api module
-        run: make api-version VERSION="${VERSION}"
+        run: make api-version VERSION="${TAG#v}"
 
       # The workflow does not open the pull request itself. The repository does
       # not let GitHub Actions create pull requests, and a pull request opened
@@ -67,18 +67,18 @@ jobs:
       - name: Push the release branch
         run: |
           if git diff --quiet go.mod; then
-            echo "go.mod already pins the api module at v${VERSION}. Publish the release from main." >> "${GITHUB_STEP_SUMMARY}"
+            echo "go.mod already pins the api module at ${TAG}. Publish the release from main." >> "${GITHUB_STEP_SUMMARY}"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "${BRANCH}"
-          git commit -am "chore(release): pin the api module at v${VERSION}"
+          git commit -am "chore(release): pin the api module at ${TAG}"
           git push origin "${BRANCH}"
-          title=$(jq -rn --arg v "${VERSION}" '"chore(release): pin the api module at v\($v)" | @uri')
+          title=$(jq -rn --arg t "${TAG}" '"chore(release): pin the api module at \($t)" | @uri')
           {
             echo "Pushed \`${BRANCH}\`."
             echo
             echo "1. [Open the pull request](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...${BRANCH}?quick_pull=1&title=${title}) and merge it."
-            echo "2. Publish a GitHub Release with the tag \`${VERSION}\` on the merge commit."
+            echo "2. Publish a GitHub Release with the tag \`${TAG}\` on the merge commit."
           } >> "${GITHUB_STEP_SUMMARY}"
