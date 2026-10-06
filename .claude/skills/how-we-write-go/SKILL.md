@@ -260,46 +260,39 @@ if err := ensureDeployment(ctx, resource); errors.Is(err, ErrNotReady) {
 **Each layer is correct on its own inputs.** A function must not depend on a check or a branch in its caller, or on a side effect of a layer below it. When logic belongs to one branch of a decision, put it in the layer that makes the decision. As an alternative, give the decision to the lower layer as an explicit input, such as a parameter or a resolved field. Sometimes a lower layer works out the decision again, or is correct only because its caller filtered the input. Then it has a dependency that no signature and no test shows. A change to the guard in the upper layer then breaks the lower layer without a sign.
 
 ```go
-// BAD — the sub-reconciler works out again the branch that Reconcile took,
-// and it is correct only because Reconcile already stopped the brokers
+// BAD — reconcileBrokers is correct only because Reconcile returns early on a
+// suspended object. Call it from another path, or move the suspension check
+// below it, and it starts the brokers of a suspended object
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     // ...
-    if restore := pendingRestore(obj); restore != nil {
-        if err := r.startRestore(ctx, obj, restore); err != nil {
-            return ctrl.Result{}, err
-        }
+    if obj.Spec.Suspended {
+        return ctrl.Result{}, r.suspend(ctx, obj)
     }
     return ctrl.Result{}, r.reconcileBrokers(ctx, obj)
 }
 
 func (r *Reconciler) reconcileBrokers(ctx context.Context, obj *myv1.MyResource) error {
     sts := buildBrokerStatefulSet(obj)
-    // startRestore already stopped the brokers, so keep them at zero
-    if pendingRestore(obj) != nil {
-        sts.Spec.Replicas = ptr.To[int32](0)
-    }
+    // the caller already handled a suspended object, so the spec count is safe
+    sts.Spec.Replicas = ptr.To(obj.Spec.Replicas)
     return r.apply(ctx, sts)
 }
 
-// GOOD — Reconcile makes the decision once and gives it to the layer below
+// GOOD — Reconcile owns the suspension decision and gives its result to the
+// layer below, which is correct for each count it gets
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     // ...
-    restore := pendingRestore(obj)
-    if restore != nil {
-        if err := r.startRestore(ctx, obj, restore); err != nil {
-            return ctrl.Result{}, err
-        }
+    replicas := obj.Spec.Replicas
+    if obj.Spec.Suspended {
+        replicas = 0
     }
-    return ctrl.Result{}, r.reconcileBrokers(ctx, obj, restore != nil)
+    return ctrl.Result{}, r.reconcileBrokers(ctx, obj, replicas)
 }
 
-// reconcileBrokers applies the broker StatefulSet. When stopped is true,
-// the StatefulSet has zero replicas.
-func (r *Reconciler) reconcileBrokers(ctx context.Context, obj *myv1.MyResource, stopped bool) error {
+// reconcileBrokers applies the broker StatefulSet with the given replica count.
+func (r *Reconciler) reconcileBrokers(ctx context.Context, obj *myv1.MyResource, replicas int32) error {
     sts := buildBrokerStatefulSet(obj)
-    if stopped {
-        sts.Spec.Replicas = ptr.To[int32](0)
-    }
+    sts.Spec.Replicas = ptr.To(replicas)
     return r.apply(ctx, sts)
 }
 ```
