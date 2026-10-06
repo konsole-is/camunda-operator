@@ -279,6 +279,8 @@ applyLabels(obj, labels)
 
 ## Function roles in a controller
 
+Before you add, move, or remove logic in `Reconcile`, a sub-reconciler, or a helper that a controller calls, load `ocf:structuring-operators` and read its guideline "Give Each Controller Layer One Visible Responsibility". It says which layer owns a write, a requeue, and a branch of a decision, and that each layer is correct on its own inputs. The rules below add to it.
+
 A controller reconciler is a layered system. Each layer has a defined responsibility; mixing them creates invisible coupling and makes bugs hard to trace. The rules are not rigid constraints but a structure to reason about — the key is that every function's role is clear and consistent.
 
 **Layer responsibilities; do not conflate them.** A large controller will have sub-reconcilers, each owning a specific resource or concern — and each of those may write to the API server. That is fine. The convention is not "only one function ever writes" but "each layer has a clear, defined responsibility and does not silently do the work of another layer." A helper that mutates an in-memory object should not also persist it. A sub-reconciler that owns a Deployment writes that Deployment; it does not also patch the parent resource.
@@ -374,34 +376,7 @@ Prefer a custom `type Reason string` in packages that own many event reasons, so
 
 ## Controller: events vs logs
 
-| Signal | Use for | Tool |
-|--------|---------|------|
-| **Event** | User-visible state transitions on a specific object (provisioning started, health check failed, config applied) | `recorder.Eventf(obj, related, type, reason, action, note)` |
-| **Log** | Operator-internal tracing, debugging, diagnostic detail | `logger.Info(...)` / `logger.Error(...)` |
-| **Metric** | Rates and loops across many objects, such as a resource that is rewritten on each reconcile | The ocf `ocf_resource_apply_total` counter and the `ManagedResourceNotConverging` alert |
-
-Rules:
-- An event marks a transition, never a reconcile. A steady-state reconcile records no event. Record one only when something changed, for example when `meta.SetStatusCondition` returns `true`, or when a value that the controller records in status changes. The events/v1 recorder merges events with the same type, reason, and action on one object into a series. The series keeps the note of the first event. So an event on each reconcile hides a later event with the same reason, and the note of that event is lost.
-- Do not record an event for an apply. ocf records a `Created<Kind>` or `Updated<Kind>` event on the owner for each apply that changes the object, and none for an apply that changes nothing.
-- A resource that is rewritten on each reconcile shows in the apply metrics, not in events. Do not add an event or a log line to find one.
-- Prefer events for anything a cluster operator would want to `kubectl describe` and understand without reading operator logs.
-- Keep `logger.Info` calls sparse in the reconcile hot path — every reconcile of every object emits them; they bloat the log stream.
-- Do not log and record an event for the same fact. Pick the right signal.
-- Do not log errors that are returned from the reconciler. Controller-runtime logs them automatically; logging again produces duplicate entries and inflates the noise. If you return `ctrl.Result{}, err`, do not also call `logger.Error(err, ...)`.
-- Use `logger.Error` only for errors that are explicitly swallowed — i.e., errors you handle and do not return. If you return the error, let the framework log it.
-- Use `logger.V(1)` or higher for debug-level detail; leave `V(0)` (the default) for genuinely important state changes.
-
-```go
-// BAD — an event on each reconcile, with a freeform reason. The recorder merges
-// each pass into one series, which also hides a later event with this reason
-recorder.Eventf(obj, nil, corev1.EventTypeNormal, "SuccessfulReconcile", "Reconcile", "reconciled")
-
-// GOOD — an event only when the condition changes, with named constants
-cond := backupFailedCondition(obj.Generation)
-if meta.SetStatusCondition(&obj.Status.Conditions, cond) {
-    recorder.Eventf(obj, nil, corev1.EventTypeWarning, cond.Reason, eventActionBackup, "%s", cond.Message)
-}
-```
+Before a controller records an event or writes a log line, load `ocf:building-components` and read its section "Signals from your own controller" in `references/observability.md`. That section is the rule for this repository. It says which of a condition, an event, a log, and a metric reports a fact, and that an event marks a transition, never a reconcile. It also lists the events that ocf records itself, and says when to log an error.
 
 ## Error wrapping
 

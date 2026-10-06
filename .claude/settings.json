@@ -1,12 +1,21 @@
 {
-  "extraKnownMarketplaces": {
-    "operator-component-framework": {
-      "source": {
-        "source": "github",
-        "repo": "sourcehawk/operator-component-framework",
-        "ref": "v0.22.0"
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/verify-plugins.sh"
+          }
+        ]
       }
-    },
+    ]
+  },
+  "enabledPlugins": {
+    "simple-english@simple-english": true,
+    "feature-dev-workflow@feature-dev-workflow": true
+  },
+  "extraKnownMarketplaces": {
     "simple-english": {
       "source": {
         "source": "github",
@@ -19,22 +28,5 @@
         "repo": "sourcehawk/feature-dev-workflow"
       }
     }
-  },
-  "enabledPlugins": {
-    "ocf@operator-component-framework": true,
-    "simple-english@simple-english": true,
-    "feature-dev-workflow@feature-dev-workflow": true
-  },
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/verify-plugins.sh"
-          }
-        ]
-      }
-    ]
   }
 }

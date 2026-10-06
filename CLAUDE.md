@@ -22,7 +22,9 @@ the detail. Do not work from memory when a skill covers the task.
 | Write or edit other prose: error and condition messages, commit bodies | `simple-english:simple-english` |
 | Write or change Camunda application config (env vars, Spring properties) | `verifying-camunda-app-config` |
 | Design or review how a controller or component is structured | `ocf:structuring-operators` |
+| Add, move, or remove logic in `Reconcile`, a sub-reconciler, or a helper that a controller calls, including a check, a status write, or a requeue | `ocf:structuring-operators`, guideline "Give Each Controller Layer One Visible Responsibility" |
 | Create or change an ocf component: builder, lifecycle, conditions, status, `FlushStatus` | `ocf:building-components` |
+| Record an event or write a log line in a controller, or choose between a condition, an event, a log, and a metric | `ocf:building-components`, section "Signals from your own controller" |
 | Create or edit resource primitives, mutations, feature gates | `ocf:using-primitives` |
 | Wrap a custom resource as an ocf primitive with `pkg/generic` | `ocf:custom-resource-wrappers` |
 | Write or change a test and decide what it asserts | `feature-dev-workflow:testing-a-feature` |
