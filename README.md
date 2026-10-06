@@ -3,16 +3,13 @@
 A Kubernetes operator that runs [Camunda 8.9+](https://docs.camunda.io/) orchestration clusters, and the storage, backups, and management plane around them.
 You describe a cluster in one resource. The operator creates the workloads, connects the storage, and keeps the cluster in the state that you described.
 
+The operator runs on any Kubernetes cluster: bare metal, on premises, or a managed cloud. Elasticsearch, PostgreSQL, and Keycloak run inside the cluster through their own operators. Backups go to a bucket that you provide, for example in MinIO, Ceph, S3, GCS, or Azure Blob Storage.
+
+It is a base layer. It runs Camunda and the services around it, but it never creates cloud resources such as buckets, IAM roles, or keys. You bring those yourself, or a tool on top of the operator does. That tool can use the API types from Go through a module that does not pull in the dependencies of the operator.
+
+After the install, the operator handles version upgrades, suspend and resume, storage growth, password rotation, and restores, including a point-in-time restore of PostgreSQL.
+
 > The operator is in early development. The API group is `core.camunda.io/v1`, but the API can still change before the first stable release.
-
-## At a glance
-
-- **It runs on any Kubernetes.** Bare metal, on premises, or a managed cloud cluster. Elasticsearch, PostgreSQL, and Keycloak run inside your cluster through their own operators. Backups go to a bucket that you provide: S3, an S3-compatible store such as MinIO or Ceph, GCS, or Azure Blob Storage.
-- **It is a base layer, not a full platform.** The operator never creates cloud resources such as buckets, IAM roles, or keys. You bring those, or a tool above it does. That tool can use the API types from Go through a separate module that has no operator dependencies.
-- **Features attach to a cluster.** A backup (`LogicalBackupElasticsearch`), a schedule (`BackupSchedule`), or Optimize (`CamundaOptimize`) is its own resource that names the cluster. You add or remove one without an edit to the cluster spec. [Architecture](docs/architecture.md) explains the rule.
-- **It handles operations after the install.** Version upgrades that refuse a downgrade, suspend and resume, storage growth, password rotation, and restores, including a point-in-time restore of PostgreSQL.
-- **Many clusters share one definition.** A preset holds the sizing and the defaults. A release pins the versions and the images. Each cluster then sets only its own references.
-- **It is observable and signed.** The operator exports metrics and ships Grafana dashboards and Prometheus alert rules. Each release signs its images and its chart with cosign.
 
 ## What it runs
 
