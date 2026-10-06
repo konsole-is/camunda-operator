@@ -381,8 +381,8 @@ Prefer a custom `type Reason string` in packages that own many event reasons, so
 | **Metric** | Rates and loops across many objects, such as a resource that is rewritten on each reconcile | The ocf `ocf_resource_apply_total` counter and the `ManagedResourceNotConverging` alert |
 
 Rules:
-- An event marks a transition, never a reconcile. A steady-state reconcile records no event. Record one only when something changed, for example when `meta.SetStatusCondition` returns `true`, or when a value that the controller records in status changes. client-go's spam filter truncates repeated events within seconds, so an event on each reconcile also drops the events that report a real change.
-- Do not record an event for an apply. ocf records a `Created` or `Updated` event on the owner for each apply that changes the object, and none for an apply that changes nothing.
+- An event marks a transition, never a reconcile. A steady-state reconcile records no event. Record one only when something changed, for example when `meta.SetStatusCondition` returns `true`, or when a value that the controller records in status changes. The events/v1 recorder merges events with the same type, reason, and action on one object into a series. The series keeps the note of the first event. So an event on each reconcile hides a later event with the same reason, and the note of that event is lost.
+- Do not record an event for an apply. ocf records a `Created<Kind>` or `Updated<Kind>` event on the owner for each apply that changes the object, and none for an apply that changes nothing.
 - A hot loop shows in the apply metrics, not in events. Do not add an event or a log line to find one.
 - Prefer events for anything a cluster operator would want to `kubectl describe` and understand without reading operator logs.
 - Keep `logger.Info` calls sparse in the reconcile hot path — every reconcile of every object emits them; they bloat the log stream.
@@ -392,8 +392,8 @@ Rules:
 - Use `logger.V(1)` or higher for debug-level detail; leave `V(0)` (the default) for genuinely important state changes.
 
 ```go
-// BAD — an event on each reconcile, with a freeform reason. The spam filter
-// drops it, together with the events that report a real change
+// BAD — an event on each reconcile, with a freeform reason. The recorder merges
+// each pass into one series, which also hides a later event with this reason
 recorder.Eventf(obj, nil, corev1.EventTypeNormal, "SuccessfulReconcile", "Reconcile", "reconciled")
 
 // GOOD — an event only when the condition changes, with named constants
