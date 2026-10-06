@@ -51,8 +51,8 @@ its next reconcile. To roll out in steps, create a second preset, for example
 
 ## Related
 
-- [Presets](https://konsole-is.github.io/camunda-operator/guides/presets/)
+- [Presets](https://konsole-is.github.io/camunda-operator/dev/guides/presets/)
 - [Shared release](../releases): the versions the resources of these inventories run.
-- [CamundaClusterPreset](https://konsole-is.github.io/camunda-operator/crds/camundaclusterpreset/)
-- [ElasticsearchClusterPreset](https://konsole-is.github.io/camunda-operator/crds/elasticsearchclusterpreset/)
-- [DatabaseServerPreset](https://konsole-is.github.io/camunda-operator/crds/databaseserverpreset/)
+- [CamundaClusterPreset](https://konsole-is.github.io/camunda-operator/dev/crds/camundaclusterpreset/)
+- [ElasticsearchClusterPreset](https://konsole-is.github.io/camunda-operator/dev/crds/elasticsearchclusterpreset/)
+- [DatabaseServerPreset](https://konsole-is.github.io/camunda-operator/dev/crds/databaseserverpreset/)

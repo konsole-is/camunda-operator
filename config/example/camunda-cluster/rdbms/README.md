@@ -5,7 +5,7 @@ PostgreSQL database. The operator runs the server through CloudNativePG. The
 cluster is `my-cluster` in the namespace `my-cluster-ns`.
 
 The manifests use the names of
-[Secondary storage](https://konsole-is.github.io/camunda-operator/guides/secondary-storage/#postgresql).
+[Secondary storage](https://konsole-is.github.io/camunda-operator/dev/guides/secondary-storage/#postgresql).
 The sizes suit one small test cluster, such as kind.
 
 The sizing lives in [`config/example/presets`](../../presets). The
@@ -20,7 +20,7 @@ resource that names the release follows.
 ## Before you start
 
 - Install the CloudNativePG operator and the Camunda operator. See
-  [Installation](https://konsole-is.github.io/camunda-operator/installation/).
+  [Installation](https://konsole-is.github.io/camunda-operator/dev/installation/).
 - Give the cluster a default StorageClass.
 
 The `DatabaseServer` here has no `spec.archive`, so it needs neither the
@@ -114,9 +114,9 @@ them any more.
 
 ## Related
 
-- [Presets](https://konsole-is.github.io/camunda-operator/guides/presets/)
-- [CamundaRelease](https://konsole-is.github.io/camunda-operator/crds/camundarelease/)
-- [Secondary storage](https://konsole-is.github.io/camunda-operator/guides/secondary-storage/#postgresql)
-- [DatabaseServer](https://konsole-is.github.io/camunda-operator/crds/databaseserver/)
-- [Database](https://konsole-is.github.io/camunda-operator/crds/database/)
-- [CamundaCluster](https://konsole-is.github.io/camunda-operator/crds/camundacluster/)
+- [Presets](https://konsole-is.github.io/camunda-operator/dev/guides/presets/)
+- [CamundaRelease](https://konsole-is.github.io/camunda-operator/dev/crds/camundarelease/)
+- [Secondary storage](https://konsole-is.github.io/camunda-operator/dev/guides/secondary-storage/#postgresql)
+- [DatabaseServer](https://konsole-is.github.io/camunda-operator/dev/crds/databaseserver/)
+- [Database](https://konsole-is.github.io/camunda-operator/dev/crds/database/)
+- [CamundaCluster](https://konsole-is.github.io/camunda-operator/dev/crds/camundacluster/)

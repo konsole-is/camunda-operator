@@ -9,7 +9,7 @@ A release has one version for everything it publishes. The release tag is `v` an
 - The CLI image `ghcr.io/konsole-is/camunda-operator-cli:0.2.0`.
 - The chart `oci://ghcr.io/konsole-is/charts/camunda-operator` at version `0.2.0`.
 - The release assets `install.yaml`, `crds.yaml`, and `camunda-operator-0.2.0.tgz`.
-- The docs site at <https://konsole-is.github.io/camunda-operator/>, for a release that is not a prerelease.
+- The docs version `0.2` at <https://konsole-is.github.io/camunda-operator/>, with the alias `latest`, for a release that is not a prerelease.
 
 The chart, the images, and the chart file use the version without the `v`, because a Helm chart version must be bare SemVer. The release workflow stops on a tag without the `v`, such as `0.2.0`.
 
@@ -40,7 +40,9 @@ When you publish the release, `.github/workflows/release.yml` starts. It does th
 5. It signs the two images and the chart by digest with cosign.
 6. It attaches `install.yaml`, `crds.yaml`, and the packaged chart to the release.
 
-When these steps pass, a second job builds the docs site and deploys it to GitHub Pages. A prerelease does not change the docs site. The site therefore always shows the latest stable release.
+When these steps pass, a second job deploys the docs version of the minor release, such as `0.2`, to the `gh-pages` branch. It moves the alias `latest` to that version, and the site root opens `latest`. A patch release replaces the docs of its minor. A prerelease does not change the docs site.
+
+Separately, the **Docs** workflow deploys the version `dev` on each push to main that changes the docs. The README links to `dev`.
 
 Users verify the signatures as [Verify the signatures](docs/installation.md#verify-the-signatures) shows.
 
@@ -59,8 +61,8 @@ If the cause is in the code, correct it on main. Then look for the api module ta
 
 Do these steps one time. Do steps 1 and 2 before the first release, and the other steps after it publishes:
 
-1. In the repository settings, under **Pages**, set the source to **GitHub Actions**.
-2. In the repository settings, under **Environments**, open `github-pages`. Add a deployment rule for tags with the pattern `*`. Without this rule, the docs job cannot deploy, because the release runs on a tag.
+1. In the repository settings, under **Pages**, set the source to **Deploy from a branch**, with the branch `gh-pages` and the folder `/ (root)`. The branch exists after the first run of the Docs workflow.
+2. In the repository settings, under **Environments**, open `github-pages`. Add a deployment rule for the branch `gh-pages`. Without this rule, GitHub Pages cannot publish the branch.
 3. In the GHCR package settings of the organization, make these packages public:
     - `camunda-operator`
     - `camunda-operator-cli`

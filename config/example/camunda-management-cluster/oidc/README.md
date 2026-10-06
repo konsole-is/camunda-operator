@@ -6,7 +6,7 @@ clients, and the platform configuration names them.
 
 The management plane is `my-management` in the namespace `my-management-ns`.
 The manifests use the names of
-[Management plane](https://konsole-is.github.io/camunda-operator/guides/management-plane/#step-3c-your-own-oidc-provider).
+[Management plane](https://konsole-is.github.io/camunda-operator/dev/guides/management-plane/#step-3c-your-own-oidc-provider).
 
 The `DatabaseServer` inherits its sizing from the preset `standard` in
 [`config/example/presets`](../../presets) and its PostgreSQL version from the
@@ -17,7 +17,7 @@ own.
 ## Before you start
 
 - Install the CloudNativePG operator and the Camunda operator. See
-  [Installation](https://konsole-is.github.io/camunda-operator/installation/).
+  [Installation](https://konsole-is.github.io/camunda-operator/dev/installation/).
   This mode needs no Keycloak Operator.
 - Register six clients in your identity provider:
 
@@ -145,7 +145,7 @@ spec:
 That `CamundaCluster` names `my-platform-config`, so it reads the OIDC
 configuration of this inventory.
 
-[Authentication](https://konsole-is.github.io/camunda-operator/guides/authentication/#oidc)
+[Authentication](https://konsole-is.github.io/camunda-operator/dev/guides/authentication/#oidc)
 explains both fields in full.
 
 ## Remove
@@ -163,8 +163,8 @@ them any more.
 
 ## Related
 
-- [Presets](https://konsole-is.github.io/camunda-operator/guides/presets/)
-- [CamundaRelease](https://konsole-is.github.io/camunda-operator/crds/camundarelease/)
-- [Management plane](https://konsole-is.github.io/camunda-operator/guides/management-plane/#step-3c-your-own-oidc-provider)
-- [The clients of the management plane](https://konsole-is.github.io/camunda-operator/crds/camundaplatformconfig/#the-clients-of-the-management-plane)
-- [CamundaManagementCluster](https://konsole-is.github.io/camunda-operator/crds/camundamanagementcluster/)
+- [Presets](https://konsole-is.github.io/camunda-operator/dev/guides/presets/)
+- [CamundaRelease](https://konsole-is.github.io/camunda-operator/dev/crds/camundarelease/)
+- [Management plane](https://konsole-is.github.io/camunda-operator/dev/guides/management-plane/#step-3c-your-own-oidc-provider)
+- [The clients of the management plane](https://konsole-is.github.io/camunda-operator/dev/crds/camundaplatformconfig/#the-clients-of-the-management-plane)
+- [CamundaManagementCluster](https://konsole-is.github.io/camunda-operator/dev/crds/camundamanagementcluster/)

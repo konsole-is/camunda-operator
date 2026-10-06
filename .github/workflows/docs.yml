@@ -1,0 +1,44 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - mkdocs.yml
+      - requirements-docs.txt
+      - .github/workflows/docs.yml
+
+# mike commits each version to the gh-pages branch. The release workflow
+# deploys there too, in the same group, so two pushes never race.
+concurrency:
+  group: gh-pages
+  cancel-in-progress: false
+
+jobs:
+  dev:
+    name: Publish the dev docs
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # push to gh-pages
+
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install MkDocs
+        run: pip install -r requirements-docs.txt
+
+      - name: Deploy the dev version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mike deploy --push --title "dev (unreleased)" dev

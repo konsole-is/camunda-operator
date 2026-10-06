@@ -6,7 +6,7 @@ orchestration cluster it serves and the Optimize that reads its contract.
 The management plane is `my-management` in the namespace `my-management-ns`.
 The orchestration cluster is `my-cluster` in the namespace `my-cluster-ns`.
 The manifests use the names of
-[Management plane](https://konsole-is.github.io/camunda-operator/guides/management-plane/).
+[Management plane](https://konsole-is.github.io/camunda-operator/dev/guides/management-plane/).
 
 The sizing lives in [`config/example/presets`](../../presets). The
 `DatabaseServer` and the `ElasticsearchCluster` name the preset `standard`,
@@ -24,7 +24,7 @@ Console, and Web Modeler each carry a patch line of their own.
 
 - Install the Keycloak Operator, the CloudNativePG operator, the ECK
   operator, and the Camunda operator. See
-  [Installation](https://konsole-is.github.io/camunda-operator/installation/).
+  [Installation](https://konsole-is.github.io/camunda-operator/dev/installation/).
   Install the Keycloak Operator release that matches
   `spec.identityProvider.keycloak.version`.
 - Give the Kubernetes cluster a default StorageClass. The
@@ -136,8 +136,8 @@ them any more.
 
 ## Related
 
-- [Presets](https://konsole-is.github.io/camunda-operator/guides/presets/)
-- [CamundaRelease](https://konsole-is.github.io/camunda-operator/crds/camundarelease/)
-- [Management plane](https://konsole-is.github.io/camunda-operator/guides/management-plane/#step-3a-the-operator-runs-keycloak)
-- [CamundaManagementCluster](https://konsole-is.github.io/camunda-operator/crds/camundamanagementcluster/)
-- [CamundaOptimize](https://konsole-is.github.io/camunda-operator/crds/camundaoptimize/)
+- [Presets](https://konsole-is.github.io/camunda-operator/dev/guides/presets/)
+- [CamundaRelease](https://konsole-is.github.io/camunda-operator/dev/crds/camundarelease/)
+- [Management plane](https://konsole-is.github.io/camunda-operator/dev/guides/management-plane/#step-3a-the-operator-runs-keycloak)
+- [CamundaManagementCluster](https://konsole-is.github.io/camunda-operator/dev/crds/camundamanagementcluster/)
+- [CamundaOptimize](https://konsole-is.github.io/camunda-operator/dev/crds/camundaoptimize/)

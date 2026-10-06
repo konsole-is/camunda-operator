@@ -210,22 +210,25 @@ jobs:
   docs:
     name: Publish the docs site
     needs: release
-    # The site documents the latest stable release, so a prerelease leaves it as it is.
+    # latest documents the newest stable release, so a prerelease leaves the
+    # site as it is.
     if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: read
-      pages: write      # deploy to GitHub Pages
-      id-token: write   # prove the deployment comes from this workflow
+    # The Docs workflow deploys dev in the same group, so two pushes to
+    # gh-pages never race.
+    concurrency:
+      group: gh-pages
+      cancel-in-progress: false
 
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+    permissions:
+      contents: write   # push to gh-pages
 
     steps:
       - name: Clone the code
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v7
@@ -235,14 +238,14 @@ jobs:
       - name: Install MkDocs
         run: pip install -r requirements-docs.txt
 
-      - name: Build the docs site
-        run: make docs-build
-
-      - name: Upload the site
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: site
-
-      - name: Deploy to GitHub Pages
-        id: deploy
-        uses: actions/deploy-pages@v5
+      # One docs version per minor release, such as 0.1, with the alias latest.
+      # A patch release replaces the docs of its minor.
+      - name: Deploy the release version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          minor=$(echo "${TAG#v}" | cut -d. -f1,2)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mike deploy --push --update-aliases --title "${minor}" "${minor}" latest
+          mike set-default --push latest

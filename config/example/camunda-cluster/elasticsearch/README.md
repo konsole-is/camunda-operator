@@ -4,7 +4,7 @@ A complete orchestration cluster that keeps its secondary storage in
 Elasticsearch. The cluster is `my-cluster` in the namespace `my-cluster-ns`.
 
 The manifests use the names of
-[Getting started](https://konsole-is.github.io/camunda-operator/getting-started/).
+[Getting started](https://konsole-is.github.io/camunda-operator/dev/getting-started/).
 The sizes suit one small test cluster, such as kind.
 
 This inventory sets every field inline and names neither a preset nor a
@@ -17,7 +17,7 @@ the one in [`camunda-cluster/rdbms`](../rdbms) to see the difference.
 ## Before you start
 
 - Install the ECK operator and the Camunda operator. See
-  [Installation](https://konsole-is.github.io/camunda-operator/installation/).
+  [Installation](https://konsole-is.github.io/camunda-operator/dev/installation/).
 - Give the cluster about 4 GB of free memory and a default StorageClass.
 - On kind, raise the map count that Elasticsearch needs:
   `sudo sysctl -w vm.max_map_count=262144`.
@@ -74,7 +74,7 @@ kubectl delete namespace my-cluster-ns
 
 ## Related
 
-- [Getting started](https://konsole-is.github.io/camunda-operator/getting-started/)
-- [Secondary storage](https://konsole-is.github.io/camunda-operator/guides/secondary-storage/#elasticsearch)
-- [CamundaCluster](https://konsole-is.github.io/camunda-operator/crds/camundacluster/)
-- [ElasticsearchCluster](https://konsole-is.github.io/camunda-operator/crds/elasticsearchcluster/)
+- [Getting started](https://konsole-is.github.io/camunda-operator/dev/getting-started/)
+- [Secondary storage](https://konsole-is.github.io/camunda-operator/dev/guides/secondary-storage/#elasticsearch)
+- [CamundaCluster](https://konsole-is.github.io/camunda-operator/dev/crds/camundacluster/)
+- [ElasticsearchCluster](https://konsole-is.github.io/camunda-operator/dev/crds/elasticsearchcluster/)

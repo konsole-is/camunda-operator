@@ -66,6 +66,15 @@ markdown_extensions:
   - toc:
       permalink: true
 
+# mike publishes each docs version under its own path: dev for main, and
+# one per minor release with the alias latest. Material shows the version
+# selector.
+extra:
+  version:
+    provider: mike
+    default: latest
+    alias: true
+
 plugins:
   - search
   # Pan and zoom on every mermaid diagram: hold Alt and scroll, or use the
