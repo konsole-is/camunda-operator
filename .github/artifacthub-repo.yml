@@ -1,0 +1,10 @@
+# Artifact Hub repository metadata. The release workflow pushes this file to
+# oci://ghcr.io/konsole-is/charts/camunda-operator under the tag artifacthub.io.
+# Artifact Hub reads it again only when the chart repository changes, so an
+# edit here takes effect at the next release.
+#
+# Add repositoryID from the Artifact Hub control panel to get the verified
+# publisher badge.
+owners:
+  - name: agir96
+    email: agir96@gmail.com
