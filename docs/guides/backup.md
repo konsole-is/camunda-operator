@@ -323,7 +323,7 @@ On a PostgreSQL cluster, keep the retained dumps inside the primary-storage rete
 
 ## What an upgrade does to the backups you hold
 
-A backup records the Camunda version of the cluster in `status.version`. Do not change the version of the cluster while a backup runs. The backup fails when Zeebe moves to another version before the Zeebe part of the backup is final. A restore compares `status.version` against the version the cluster runs:
+A backup records the Camunda version of the cluster in `status.version`. Do not change the version of the cluster while a backup runs. The backup fails when Zeebe moves to another version before the Zeebe part of the backup is final. A PostgreSQL backup whose Zeebe backup has not started yet first waits 10 minutes for the recorded version to return. A restore compares `status.version` against the version the cluster runs:
 
 - A `LogicalRestoreElasticsearch` needs the exact version of the backup.
 - A `LogicalRestoreRDBMS` needs the same Camunda minor as the backup, or one minor newer. Camunda migrates its own schema one minor at a time, as [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/) states.
