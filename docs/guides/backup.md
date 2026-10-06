@@ -323,7 +323,7 @@ On a PostgreSQL cluster, keep the retained dumps inside the primary-storage rete
 
 ## What an upgrade does to the backups you hold
 
-A backup records the Camunda version of the cluster in `status.version`. A restore compares it against the version the cluster runs:
+A backup records the Camunda version of the cluster in `status.version`. Do not change the version of the cluster while a backup runs. The backup fails when Zeebe moves to another version before the Zeebe part of the backup is final. A PostgreSQL backup whose Zeebe backup has not started yet first waits 10 minutes for the recorded version to return. A restore compares `status.version` against the version the cluster runs:
 
 - A `LogicalRestoreElasticsearch` needs the exact version of the backup.
 - A `LogicalRestoreRDBMS` needs the same Camunda minor as the backup, or one minor newer. Camunda migrates its own schema one minor at a time, as [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/) states.
@@ -343,7 +343,7 @@ On a bucket with workload identity, the PostgreSQL path runs a cleanup Job named
 
 ## When a backup fails
 
-The `Ready` condition of the backup carries the reason, and its message names the cause. Before the backup starts, it waits in `Pending`, and the reason names what it waits for. It starts when the cause is gone. During a run, a dependency that goes away holds a PostgreSQL backup for 10 minutes, then fails it. An Elasticsearch backup retries an unreachable endpoint for 10 minutes. A change or loss of the storage contract, the backup bucket, or a credentials Secret fails an Elasticsearch backup at once. A roll of Zeebe to another configuration also fails it at once. If the cluster is suspended, an Elasticsearch backup waits in its step.
+The `Ready` condition of the backup carries the reason, and its message names the cause. Before the backup starts, it waits in `Pending`, and the reason names what it waits for. It starts when the cause is gone. During a run, a dependency that goes away holds a PostgreSQL backup for 10 minutes, then fails it. An Elasticsearch backup retries an unreachable endpoint for 10 minutes. A change or loss of the storage contract, the backup bucket, or a credentials Secret fails an Elasticsearch backup at once. A roll of Zeebe to another configuration or to another Camunda version also fails it at once. If the cluster is suspended, an Elasticsearch backup waits in its step.
 
 A `Failed` backup does not run again. Read `status.failureMessage` and the events on the resource. On the PostgreSQL path, also read the logs of the dump Job. Correct the cause, then create a new backup with a new name. A `Failed` backup holds nothing that a restore can use. Delete it to remove what it wrote.
 

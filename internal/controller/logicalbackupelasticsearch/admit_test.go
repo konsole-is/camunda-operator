@@ -105,13 +105,15 @@ func testBucket(name string) *v1.ObjectStorageConfig {
 }
 
 // zeebeWorkload builds the Zeebe workload of cluster ns/cc, reported as
-// rolled out, with the given config hash (an empty hash sets none), the
-// backup store of testBucket("b"), the snapshot repository "repo", and the
-// Elasticsearch endpoint on its pod template.
+// rolled out on Camunda 8.9.9, with the given config hash (an empty hash sets
+// none), the backup store of testBucket("b"), the snapshot repository "repo",
+// and the Elasticsearch endpoint on its pod template.
 func zeebeWorkload(hash, endpoint string) *appsv1.StatefulSet {
 	cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cc"}}
 	workload := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{
-		Namespace: "ns", Name: camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
+		Namespace:   "ns",
+		Name:        camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
+		Annotations: map[string]string{camundacluster.BrokerVersionAnnotation: "8.9.9"},
 	}}
 	workload.Status.UpdatedReplicas = 1
 	workload.Status.ReadyReplicas = 1
@@ -142,7 +144,7 @@ func TestZeebeRunsDestinationPinsTheHashOnlyWhenZeebeRunsTheDeclaredEndpoint(t *
 		Cluster: &v1.CamundaCluster{
 			ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cc"},
 			Status: v1.CamundaClusterStatus{
-				Management: &v1.ManagementBinding{BackupRepository: "repo"},
+				Management: &v1.ManagementBinding{BackupRepository: "repo", Version: "8.9.9"},
 			},
 		},
 		Storage: &v1.SecondaryStorageConfig{
@@ -224,6 +226,24 @@ func TestZeebeRunsDestinationPinsTheHashOnlyWhenZeebeRunsTheDeclaredEndpoint(t *
 			workload: zeebeWorkload("", "https://es-new:9200"),
 			wait:     "no config hash",
 		},
+		{
+			name: "Zeebe runs another Camunda version than the binding publishes",
+			workload: func() *appsv1.StatefulSet {
+				workload := zeebeWorkload("hash-1", "https://es-new:9200")
+				workload.Annotations[camundacluster.BrokerVersionAnnotation] = "8.9.8"
+				return workload
+			}(),
+			wait: "8.9.8",
+		},
+		{
+			name: "the workload carries no Camunda version yet",
+			workload: func() *appsv1.StatefulSet {
+				workload := zeebeWorkload("hash-1", "https://es-new:9200")
+				workload.Annotations = nil
+				return workload
+			}(),
+			wait: "no Camunda version",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -251,7 +271,7 @@ func TestZeebeRunsDestinationWaitsForTheBindingOfTheDeclaredRepository(t *testin
 		Cluster: &v1.CamundaCluster{
 			ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cc"},
 			Status: v1.CamundaClusterStatus{
-				Management: &v1.ManagementBinding{BackupRepository: "old-repo"},
+				Management: &v1.ManagementBinding{BackupRepository: "old-repo", Version: "8.9.9"},
 			},
 		},
 		Storage: &v1.SecondaryStorageConfig{

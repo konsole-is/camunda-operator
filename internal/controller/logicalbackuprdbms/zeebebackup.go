@@ -243,36 +243,29 @@ func (r *LogicalBackupRDBMSReconciler) pollZeebeBackup(
 	cluster *v1.CamundaCluster,
 	admin *camundaadmin.Client,
 ) (hold, error) {
-	status, err := admin.RuntimeBackupStatus(ctx, *backup.Status.ZeebeBackupID)
-	if err != nil {
-		// Unreachable or rejected alike. The mid-run grace bounds both.
-		return r.holdRunning(backup, managementFailure(cluster, err))
-	}
+	status, statusErr := admin.RuntimeBackupStatus(ctx, *backup.Status.ZeebeBackupID)
 
-	// The hash is read after the state. A rollout that started before the
-	// cluster reported the backup final is then in the template already.
-	hash, failure, err := r.zeebeConfigHash(ctx, cluster)
+	// A rollout that started before the answer is then in the workload
+	// already.
+	hash, version, failure, err := r.runningZeebe(ctx, cluster)
 	if err != nil {
 		return settle, err
+	}
+	if failure == nil {
+		if moved := zeebeMoved(backup, cluster, hash, version); moved != "" {
+			r.fail(backup, moved)
+
+			return settle, nil
+		}
+	}
+	if statusErr != nil {
+		// Unreachable or rejected alike. The mid-run grace bounds both.
+		return r.holdRunning(backup, managementFailure(cluster, statusErr))
 	}
 	if failure != nil {
 		return r.holdRunning(backup, failure)
 	}
 	r.recovered(backup)
-
-	if hash != backup.Status.WorkloadConfigHash {
-		// Brokers can take their part under the new configuration. No grace
-		// can make that part match the dump again.
-		r.fail(backup, fmt.Sprintf(
-			"the Zeebe workload of CamundaCluster %s/%s now runs config hash %s, but the backup pinned "+
-				"%s at start. Zeebe rolled while Zeebe backup %d ran, so a part of it can come from the "+
-				"new configuration. The dump and the Zeebe backup are not one restore point",
-			cluster.Namespace, cluster.Name, hash, backup.Status.WorkloadConfigHash,
-			*backup.Status.ZeebeBackupID,
-		))
-
-		return settle, nil
-	}
 
 	switch status.State {
 	case camundaadmin.StateCompleted:
@@ -300,6 +293,36 @@ func (r *LogicalBackupRDBMSReconciler) pollZeebeBackup(
 	))
 
 	return settle, nil
+}
+
+// zeebeMoved returns the failure message when the Zeebe workload runs
+// another Camunda version or config hash than the backup pinned, or "".
+// Brokers can take their part of the Zeebe backup under the new version or
+// configuration, and no grace can make that part match the dump again.
+func zeebeMoved(
+	backup *v1.LogicalBackupRDBMS,
+	cluster *v1.CamundaCluster,
+	hash, version string,
+) string {
+	if version != backup.Status.Version {
+		return fmt.Sprintf(
+			"the Zeebe workload of CamundaCluster %s/%s now runs Camunda %s, but the backup recorded %s "+
+				"at start. Zeebe moved while Zeebe backup %d ran, so a part of it can come from the new "+
+				"version. A restore needs the one version that took the dump and every part",
+			cluster.Namespace, cluster.Name, version, backup.Status.Version, *backup.Status.ZeebeBackupID,
+		)
+	}
+	if hash != backup.Status.WorkloadConfigHash {
+		return fmt.Sprintf(
+			"the Zeebe workload of CamundaCluster %s/%s now runs config hash %s, but the backup pinned "+
+				"%s at start. Zeebe rolled while Zeebe backup %d ran, so a part of it can come from the "+
+				"new configuration. The dump and the Zeebe backup are not one restore point",
+			cluster.Namespace, cluster.Name, hash, backup.Status.WorkloadConfigHash,
+			*backup.Status.ZeebeBackupID,
+		)
+	}
+
+	return ""
 }
 
 // managementFailure is the mid-run failure of a management API that does

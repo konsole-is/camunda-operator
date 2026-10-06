@@ -77,6 +77,51 @@ func RunningConfigHash(workload *appsv1.StatefulSet) (string, *conditions.PreChe
 	return hash, nil
 }
 
+// RunningVersion returns the Camunda version that workload carries in
+// BrokerVersionAnnotation. The config hash does not cover the version, so a
+// version change can keep the hash. A workload without the annotation
+// returns a failure with reason Progressing.
+func RunningVersion(workload *appsv1.StatefulSet) (string, *conditions.PreCheckFailure) {
+	version := workload.Annotations[BrokerVersionAnnotation]
+	if version == "" {
+		return "", &conditions.PreCheckFailure{
+			Reason: v1.ReasonProgressing,
+			Message: fmt.Sprintf(
+				"the Zeebe workload %s/%s carries no Camunda version yet", workload.Namespace, workload.Name,
+			),
+		}
+	}
+
+	return version, nil
+}
+
+// RunsPublishedVersion returns nil when workload carries the Camunda version
+// that the management binding of cluster publishes. A workload without a
+// version, a cluster without a binding, and a binding that names another
+// version return a failure with reason Progressing.
+func RunsPublishedVersion(workload *appsv1.StatefulSet, cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
+	running, failure := RunningVersion(workload)
+	if failure != nil {
+		return failure
+	}
+
+	var published string
+	if binding := cluster.Status.Management; binding != nil {
+		published = binding.Version
+	}
+	if running == published {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonProgressing,
+		Message: fmt.Sprintf(
+			"Zeebe of CamundaCluster %s/%s runs Camunda %s, but the cluster publishes %q",
+			cluster.Namespace, cluster.Name, running, published,
+		),
+	}
+}
+
 // RolledOut returns nil when every replica of workload runs its current pod
 // template and is ready. A workload that still rolls returns a failure with reason
 // Progressing. The pod template changes before the first pod restarts, so

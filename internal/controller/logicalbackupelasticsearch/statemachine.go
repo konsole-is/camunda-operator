@@ -657,7 +657,8 @@ func pinnedStorageMatches(backup *v1.LogicalBackupElasticsearch, storage *v1.Sec
 }
 
 // workloadUnchanged fails the step when the live Zeebe workload no longer
-// carries the config hash that the backup pinned at its start, or is gone.
+// carries the config hash or the Camunda version that the backup pinned at
+// its start, or is gone.
 // done reports that the caller must return result and err. A step
 // calls it after it reads the state of its part. A rollout writes the new
 // hash to the pod template before a broker restarts, so a rollout that
@@ -674,12 +675,25 @@ func (r *Reconciler) workloadUnchanged(
 		return ctrl.Result{}, true, err
 	}
 
-	var hash string
+	var hash, version string
 	if failure == nil {
 		hash, failure = camundacluster.RunningConfigHash(workload)
 	}
+	if failure == nil {
+		version, failure = camundacluster.RunningVersion(workload)
+	}
 	if failure != nil {
 		r.failStep(backup, step, part, errors.New(failure.Message))
+		return ctrl.Result{RequeueAfter: r.poll()}, true, nil
+	}
+
+	if version != backup.Status.Version {
+		r.failStep(backup, step, part, fmt.Errorf(
+			"the Zeebe workload of CamundaCluster %s/%s now runs Camunda %s, but the backup recorded %s "+
+				"at start. The set can hold parts of two versions, and a restore needs the one version "+
+				"that took every part",
+			cluster.Namespace, cluster.Name, version, backup.Status.Version,
+		))
 		return ctrl.Result{RequeueAfter: r.poll()}, true, nil
 	}
 

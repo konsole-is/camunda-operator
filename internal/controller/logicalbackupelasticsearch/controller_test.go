@@ -223,7 +223,11 @@ func (r *rig) startZeebeRollout(hash, endpoint string) {
 		err := k8sClient.Get(ctx, key, &workload)
 		if apierrors.IsNotFound(err) {
 			workload = appsv1.StatefulSet{
-				ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        key.Name,
+					Namespace:   key.Namespace,
+					Annotations: map[string]string{camundacluster.BrokerVersionAnnotation: "8.9.9"},
+				},
 				Spec: appsv1.StatefulSetSpec{
 					Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": key.Name}},
 					Template: corev1.PodTemplateSpec{
@@ -242,6 +246,18 @@ func (r *rig) startZeebeRollout(hash, endpoint string) {
 		g.Expect(err).NotTo(HaveOccurred())
 		workload.Spec.Template.Annotations[camundacluster.ConfigHashAnnotation] = hash
 		workload.Spec.Template.Spec.Containers = []corev1.Container{container}
+		g.Expect(k8sClient.Update(ctx, &workload)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// moveZeebeTo stamps version on the Zeebe workload and keeps its config
+// hash, the way the CamundaCluster controller applies a version change.
+func (r *rig) moveZeebeTo(version string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var workload appsv1.StatefulSet
+		g.Expect(k8sClient.Get(ctx, r.zeebeKey(), &workload)).To(Succeed())
+		workload.Annotations[camundacluster.BrokerVersionAnnotation] = version
 		g.Expect(k8sClient.Update(ctx, &workload)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }
@@ -764,6 +780,35 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		))
 		Expect(final.Status.Runtime.State).To(Equal(v1.BackupPartFailed))
 		Expect(r.management.Exporting()).To(Equal("running"))
+	})
+
+	It("fails, not completes, when Zeebe moved to another Camunda version while the runtime backup ran", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+		Expect(currentBackup(backup).Status.Version).To(Equal("8.9.9"))
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetHistoryState(id, "COMPLETED", "")
+		name := logicalbackup.RecordsSnapshotName(id)
+		Eventually(func() int {
+			return r.search.SnapshotCreates(r.repository, name)
+		}, timeout, interval).Should(Equal(1))
+		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
+		Eventually(func() int { return r.management.RuntimeStarts(id) }, timeout, interval).Should(Equal(1))
+
+		By("moving Zeebe to another version with the same config hash, then reporting the runtime backup done")
+		r.moveZeebeTo("8.9.10")
+		r.management.SetRuntimeState(id, "COMPLETED", "")
+
+		expectPhase(backup, v1.LogicalBackupFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.FailureMessage).To(SatisfyAll(
+			ContainSubstring("BackupRuntime"),
+			ContainSubstring("8.9.9"),
+			ContainSubstring("8.9.10"),
+		))
+		Expect(final.Status.Runtime.State).To(Equal(v1.BackupPartFailed))
 	})
 
 	It("gives up on resume at the deadline with ResumeFailed", func() {

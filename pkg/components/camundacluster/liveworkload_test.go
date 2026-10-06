@@ -65,6 +65,53 @@ func TestRunningConfigHashWaitsForATemplateWithoutAHash(t *testing.T) {
 	assert.Equal(t, "hash-1", hash)
 }
 
+func TestRunningVersionWaitsForAWorkloadWithoutAVersion(t *testing.T) {
+	workload := &appsv1.StatefulSet{}
+
+	_, failure := RunningVersion(workload)
+	require.NotNil(t, failure)
+	assert.Equal(t, v1.ReasonProgressing, failure.Reason)
+
+	workload.Annotations = map[string]string{BrokerVersionAnnotation: "8.9.9"}
+	version, failure := RunningVersion(workload)
+	assert.Nil(t, failure)
+	assert.Equal(t, "8.9.9", version)
+}
+
+func TestRunsPublishedVersionRequiresTheVersionOfTheBinding(t *testing.T) {
+	workload := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{
+		Annotations: map[string]string{BrokerVersionAnnotation: "8.9.9"},
+	}}
+	tests := []struct {
+		name    string
+		binding *v1.ManagementBinding
+		wait    string
+	}{
+		{name: "the binding publishes the running version", binding: &v1.ManagementBinding{Version: "8.9.9"}},
+		{
+			name:    "the binding publishes another version",
+			binding: &v1.ManagementBinding{Version: "8.9.10"},
+			wait:    "8.9.10",
+		},
+		{name: "the cluster publishes no binding", wait: `""`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cluster := &v1.CamundaCluster{Status: v1.CamundaClusterStatus{Management: tt.binding}}
+
+			failure := RunsPublishedVersion(workload, cluster)
+			if tt.wait == "" {
+				assert.Nil(t, failure)
+				return
+			}
+			require.NotNil(t, failure)
+			assert.Equal(t, v1.ReasonProgressing, failure.Reason)
+			assert.Contains(t, failure.Message, "8.9.9")
+			assert.Contains(t, failure.Message, tt.wait)
+		})
+	}
+}
+
 func TestRolledOutRequiresEveryReplicaOnTheCurrentTemplate(t *testing.T) {
 	rolledOut := func() *appsv1.StatefulSet {
 		replicas := int32(3)

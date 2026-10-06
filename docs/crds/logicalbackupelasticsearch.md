@@ -52,11 +52,13 @@ If the management API or Elasticsearch is unreachable during a step, the backup 
 
 ## Changes
 
-A backup on a cluster that is still rolling out waits in `Pending` with reason `Progressing` before it starts. It also waits while Zeebe runs another Elasticsearch endpoint or snapshot repository than the `SecondaryStorageConfig` of the cluster declares. The same applies to another bucket than the `ObjectStorageConfig` declares. The backup starts when Zeebe runs what the contracts declare.
+A backup on a cluster that is still rolling out waits in `Pending` with reason `Progressing` before it starts. It also waits while Zeebe runs another Elasticsearch endpoint or snapshot repository than the `SecondaryStorageConfig` of the cluster declares. The same applies to another bucket than the `ObjectStorageConfig` declares, and to another Camunda version than `status.management.version` of the cluster. The backup starts when Zeebe runs what the contracts and the cluster declare.
 
 Do not change the storage or the backup bucket of the cluster while a backup runs. The backup fails, and the message names the recorded and the current value.
 
 Do not change the configuration of Zeebe after the backup started. If Zeebe rolls to another configuration before the operator sees the backup of the Zeebe partitions complete, the step fails at once. The backup then ends as `Failed`, even if Camunda later reports that part as complete. The message names the recorded and the current config hash.
+
+Do not change the Camunda version of the cluster after the backup started. A version change can keep the config hash of Zeebe. If Zeebe moves to another version before the operator sees the backup of the Zeebe partitions complete, the step fails at once. The message names the version in `status.version` and the current version. A restore needs the one version that took every part of the backup.
 
 If you delete the cluster during the run, the backup ends as `Failed`. This is also the case when you create a new cluster under the same name. The backup does not touch the new cluster.
 

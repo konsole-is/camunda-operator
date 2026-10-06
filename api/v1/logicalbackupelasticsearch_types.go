@@ -178,7 +178,10 @@ type LogicalBackupElasticsearchStatus struct {
 	// as the management binding reported it. A restore compares it with the
 	// version of its target. An Elasticsearch backup restores only to the
 	// same version. A restore can read the version only here, because a
-	// suspended cluster has no management binding.
+	// suspended cluster has no management binding. The backup starts only
+	// when Zeebe runs this version. If a step finds Zeebe on another version
+	// before the runtime backup is final, the step fails at once with both
+	// versions in the message.
 	// +optional
 	Version string `json:"version,omitempty"`
 	// HistoryRequestedTime is when the operator decided to request the
