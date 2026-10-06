@@ -210,6 +210,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		// pre-check: the bucket resolution it depends on just failed, and a
 		// True left standing would assert a registration nobody can verify.
 		meta.RemoveStatusCondition(cluster.GetStatusConditions(), components.ConditionSnapshotRepository)
+		r.forgetSnapshotRepository(&cluster)
 		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
 
 		// Only an unwatched failure needs a timer; everything else the
