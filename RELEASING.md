@@ -9,6 +9,7 @@ A release has one version for everything it publishes. Release `0.2.0` publishes
 - The CLI image `ghcr.io/konsole-is/camunda-operator-cli:0.2.0`.
 - The chart `oci://ghcr.io/konsole-is/charts/camunda-operator` at version `0.2.0`.
 - The release assets `install.yaml`, `crds.yaml`, and `camunda-operator-0.2.0.tgz`.
+- The docs site at <https://konsole-is.github.io/camunda-operator/>, for a release that is not a prerelease.
 
 The tag is unprefixed SemVer, because a Helm chart version must be bare SemVer. The release workflow stops on a tag such as `v0.2.0`.
 
@@ -39,6 +40,8 @@ When you publish the release, `.github/workflows/release.yml` starts. It does th
 5. It signs the two images and the chart by digest with cosign.
 6. It attaches `install.yaml`, `crds.yaml`, and the packaged chart to the release.
 
+When these steps pass, a second job builds the docs site and deploys it to GitHub Pages. A prerelease does not change the docs site. The site therefore always shows the latest stable release.
+
 Users verify the signatures as [Verify the signatures](docs/installation.md#verify-the-signatures) shows.
 
 ## If the Release workflow fails
@@ -47,15 +50,17 @@ If the cause is outside the code, for example a registry outage, run the failed 
 
 If the cause is in the code, correct it on main. Then delete the release and its tag, and publish the release again at the new commit. A Go module tag that points at a different commit stops the workflow. If the Go tags exist, delete them too. Do this only if nobody fetched the module. The Go module proxy keeps a copy of each version that it receives.
 
-## After the first release
+## One-time setup
 
-Do these steps one time, after the first release publishes:
+Do these steps one time. Do steps 1 and 2 before the first release, and the other steps after it publishes:
 
-1. In the GHCR package settings of the organization, make these packages public:
+1. In the repository settings, under **Pages**, set the source to **GitHub Actions**.
+2. In the repository settings, under **Environments**, open `github-pages`. Add a deployment rule for tags with the pattern `*`. Without this rule, the docs job cannot deploy, because the release runs on a tag.
+3. In the GHCR package settings of the organization, make these packages public:
     - `camunda-operator`
     - `camunda-operator-cli`
     - `charts/camunda-operator`
-2. In the [Artifact Hub control panel](https://artifacthub.io/control-panel), add a Helm chart repository. Use the name `camunda-operator` and the URL `oci://ghcr.io/konsole-is/charts/camunda-operator`.
-3. Copy the repository ID from Artifact Hub into `repositoryID` in `.github/artifacthub-repo.yml`. Artifact Hub then shows the verified publisher badge after the next release.
+4. In the [Artifact Hub control panel](https://artifacthub.io/control-panel), add a Helm chart repository. Use the name `camunda-operator` and the URL `oci://ghcr.io/konsole-is/charts/camunda-operator`.
+5. Copy the repository ID from Artifact Hub into `repositoryID` in `.github/artifacthub-repo.yml`. Artifact Hub then shows the verified publisher badge after the next release.
 
 Artifact Hub reads `.github/artifacthub-repo.yml` again only when the chart repository changes. A change to that file therefore takes effect at the next release.
