@@ -109,16 +109,21 @@ type resolvedSpec struct {
 	archivePluginRoles []components.ArchivePluginRole
 	// clusterTaken says why a CloudNativePG cluster of the name the server
 	// derives is not this server's to write, and it is empty when the name is
-	// free or the cluster is the server's own. Every component reads it and
-	// withdraws what names that cluster, and ClusterReady reports
-	// ClusterTaken. The recovery decides the name, so this is filled in after
-	// the recovery and not by preCheck: see clusterTaken.
+	// free or the cluster is the server's own. Every component withdraws what
+	// names that cluster, the contract through contractWithdrawn, and
+	// ClusterReady reports ClusterTaken. The recovery decides the name, so
+	// this is filled in after the recovery and not by preCheck: see
+	// clusterTaken.
 	clusterTaken string
 	// clusterBlocked is why the cluster component must not apply the cluster of
 	// the name the server derives. It is clusterTaken while the name is held,
 	// and it also covers the cluster that a running rollback cut over to and
 	// that is gone: see clusterGuardReason.
 	clusterBlocked string
+	// contractWithdrawn is why the contract component withdraws the contract.
+	// It is clusterTaken, except while a rollback that cut over is unanswered:
+	// see contractWithdrawalReason.
+	contractWithdrawn string
 	// archiveOutage is the stop in the write-ahead log uploads that the server
 	// reports on, or nil when it reports on none. It blocks the archive
 	// component, it reports ArchiveFailing, and it marks the open archive
@@ -360,6 +365,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	resolved.clusterTaken = derived.taken
 	resolved.clusterBlocked = clusterGuardReason(&server, derived)
+	resolved.contractWithdrawn = contractWithdrawalReason(&server, derived)
 	resolved.archiveOutage = reportedArchiveOutage(derived.outage, resolved.merged)
 
 	built, err := r.buildComponents(&server, resolved, archiveStart)
@@ -496,7 +502,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 	built.archiveDestination = destination
 
 	built.contract, err = components.ContractComponent(
-		server, merged, resolved.clusterTaken, resolved.contractTaken, resolved.archiveTaken,
+		server, merged, resolved.contractWithdrawn, resolved.contractTaken, resolved.archiveTaken,
 	)
 	if err != nil {
 		return built, fmt.Errorf("building contract component: %w", err)
