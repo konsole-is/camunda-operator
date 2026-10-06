@@ -22,7 +22,7 @@ spec:
       containers:
         - name: mailpit
           # renovate: datasource=docker depName=axllent/mailpit
-          image: axllent/mailpit:v1.31.3
+          image: axllent/mailpit:v1.31.4
           ports:
             - containerPort: 1025
               name: smtp
