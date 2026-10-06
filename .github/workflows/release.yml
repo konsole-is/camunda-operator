@@ -15,14 +15,10 @@ jobs:
       id-token: write   # keyless cosign signing via OIDC
 
     env:
-      # Release tags are unprefixed SemVer (0.1.0), because Helm chart
-      # versions must be bare SemVer.
+      # The release tag (v0.1.0) is also the Go tag of the root module. The
+      # step "Derive the version from the tag" sets VERSION (0.1.0) for the
+      # chart and the images, because a Helm chart version must be bare SemVer.
       TAG: ${{ github.ref_name }}
-      IMG: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-      # The companion CLI image that the operator's Jobs run. The manager is
-      # told about it through --camunda-operator-cli-image, which the chart and
-      # install.yaml default to this exact tag.
-      CLI_IMG: ghcr.io/${{ github.repository }}-cli:${{ github.ref_name }}
       CHART_REGISTRY: oci://ghcr.io/konsole-is/charts
       CHART_REPO: ghcr.io/konsole-is/charts/camunda-operator
 
@@ -42,21 +38,31 @@ jobs:
           hack/ci-retry.sh go mod download
           hack/ci-retry.sh go -C api mod download
 
-      - name: Reject a v-prefixed tag
+      # CLI_IMG is the companion image that the Jobs of the operator run. The
+      # chart and install.yaml pass it to the manager through
+      # --camunda-operator-cli-image.
+      - name: Derive the version from the tag
         run: |
-          if [[ "${TAG}" == v* ]]; then
-            echo "Tag '${TAG}' is v-prefixed. Helm chart versions must be bare SemVer." >&2
+          num='(0|[1-9][0-9]*)'
+          pre="(${num}|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+          if [[ ! "${TAG}" =~ ^v${num}\.${num}\.${num}(-${pre}(\.${pre})*)?$ ]]; then
+            echo "Tag '${TAG}' is not a release tag such as v0.1.0 or v0.1.0-rc.1." >&2
             exit 1
           fi
+          version="${TAG#v}"
+          {
+            echo "VERSION=${version}"
+            echo "IMG=ghcr.io/${GITHUB_REPOSITORY}:${version}"
+            echo "CLI_IMG=ghcr.io/${GITHUB_REPOSITORY}-cli:${version}"
+          } >> "${GITHUB_ENV}"
 
-      # Go module versions need a v prefix, and the api module lives in a
-      # subdirectory, so its tag carries the directory as a prefix. Both tags
-      # point at the release commit. The root go.mod must already name the api
+      # The api module lives in a subdirectory, so its Go tag carries the
+      # directory as a prefix. The root go.mod must already name the api
       # version that this release publishes, because consumers of the root
       # module ignore its replace directive and fetch that version.
       - name: Check that the root go.mod pins the api module at this release
         run: |
-          want="v${TAG}"
+          want="${TAG}"
           have=$(go list -m -f '{{.Version}}' github.com/konsole-is/camunda-operator/api)
           if [[ "${have}" != "${want}" ]]; then
             echo "go.mod requires api module ${have}, release needs ${want}." >&2
@@ -64,20 +70,19 @@ jobs:
             exit 1
           fi
 
-      - name: Push the Go module tags
+      - name: Push the api module tag
         run: |
+          tag="api/${TAG}"
           head=$(git rev-parse HEAD)
-          for tag in "api/v${TAG}" "v${TAG}"; do
-            existing=$(git ls-remote --tags origin "refs/tags/${tag}" | cut -f1)
-            if [[ -n "${existing}" && "${existing}" != "${head}" ]]; then
-              echo "Tag '${tag}' exists and points at ${existing}, not at ${head}." >&2
-              exit 1
-            fi
-            if [[ -z "${existing}" ]]; then
-              git tag "${tag}" "${head}"
-              git push origin "refs/tags/${tag}"
-            fi
-          done
+          existing=$(git ls-remote --tags origin "refs/tags/${tag}" | cut -f1)
+          if [[ -n "${existing}" && "${existing}" != "${head}" ]]; then
+            echo "Tag '${tag}' exists and points at ${existing}, not at ${head}." >&2
+            exit 1
+          fi
+          if [[ -z "${existing}" ]]; then
+            git tag "${tag}" "${head}"
+            git push origin "refs/tags/${tag}"
+          fi
 
       # kubebuilder installs the version of .tool-versions.
       - name: Install kubebuilder
@@ -115,9 +120,9 @@ jobs:
 
       - name: Stamp the release version into Chart.yaml
         run: |
-          sed -i -e "s/^version: .*/version: ${TAG}/" dist/chart/Chart.yaml
-          sed -i -e "s/^appVersion: .*/appVersion: \"${TAG}\"/" dist/chart/Chart.yaml
-          sed -i -e "s|\(image: ghcr.io/konsole-is/camunda-operator\(-cli\)\{0,1\}\):.*|\1:${TAG}|" dist/chart/Chart.yaml
+          sed -i -e "s/^version: .*/version: ${VERSION}/" dist/chart/Chart.yaml
+          sed -i -e "s/^appVersion: .*/appVersion: \"${VERSION}\"/" dist/chart/Chart.yaml
+          sed -i -e "s|\(image: ghcr.io/konsole-is/camunda-operator\(-cli\)\{0,1\}\):.*|\1:${VERSION}|" dist/chart/Chart.yaml
           grep -E '^(version|appVersion):|image: ' dist/chart/Chart.yaml
 
       - name: Verify the chart
@@ -156,7 +161,7 @@ jobs:
           # sha256:...").
           set -o pipefail
           helm package dist/chart --destination dist
-          helm push "dist/camunda-operator-${TAG}.tgz" "${CHART_REGISTRY}" 2>&1 | tee push.log
+          helm push "dist/camunda-operator-${VERSION}.tgz" "${CHART_REGISTRY}" 2>&1 | tee push.log
           # Anchored to the literal "Digest:" line helm emits on success, so
           # a sha256 mentioned incidentally in an error message (digest
           # mismatch, failed manifest push, etc.) can't be mistaken for the
@@ -200,7 +205,7 @@ jobs:
           files: |
             dist/install.yaml
             dist/crds.yaml
-            dist/camunda-operator-${{ github.ref_name }}.tgz
+            dist/camunda-operator-${{ env.VERSION }}.tgz
 
   docs:
     name: Publish the docs site
