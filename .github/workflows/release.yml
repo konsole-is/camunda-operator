@@ -199,9 +199,9 @@ jobs:
       - name: Sign the chart
         run: cosign sign --yes "${CHART_REPO}@${{ steps.chart.outputs.digest }}"
 
-      # gh release upload calls only the asset API. softprops/action-gh-release
-      # also edits the release, and GitHub rejected that edit for v0.1.1 with
-      # "Resource not accessible by integration" (softprops/action-gh-release#836).
+      # gh release upload looks up the release and then uses the asset API.
+      # Unlike softprops/action-gh-release, it does not edit the release; GitHub
+      # rejected that edit for v0.1.1 (softprops/action-gh-release#836).
       - name: Upload release assets
         env:
           GH_TOKEN: ${{ github.token }}
