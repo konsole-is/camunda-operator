@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -2154,7 +2154,7 @@ You create a namespace and three resources: an <code>ElasticsearchCluster</code>
 <p>You need:</p>
 <ul>
 <li><code>kubectl</code> and <code>helm</code> 3.8 or later</li>
-<li>a Kubernetes cluster that meets the <a href="../installation/#requirements">requirements</a>, with a default StorageClass that can bind at least 2Gi</li>
+<li>a Kubernetes cluster that meets the <a href="../installation/#requirements">requirements</a>, with a default StorageClass that can bind two volumes of 16Gi each, 32Gi in total</li>
 <li>about 4 GB of free memory on the nodes</li>
 <li>nodes that can pull images from Docker Hub, <code>docker.elastic.co</code>, and <code>ghcr.io</code></li>
 </ul>
@@ -2192,7 +2192,7 @@ You create a namespace and three resources: an <code>ElasticsearchCluster</code>
 </span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"9.2.8"</span>
 </span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="nt">replicas</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">  </span><span class="nt">storageSize</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1Gi</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">  </span><span class="nt">storageSize</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16Gi</span>
 </span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">  </span><span class="nt">resources</span><span class="p">:</span>
 </span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="nt">requests</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> cpu</span><span class="p">:</span><span class="w"> </span><span class="nv">500m</span><span class="p p-Indicator">,</span><span class="nt"> memory</span><span class="p">:</span><span class="w"> </span><span class="nv">1Gi</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">  </span><span class="nt">secondaryStorageConfig</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-storage-config</span>
@@ -2223,13 +2223,14 @@ You create a namespace and three resources: an <code>ElasticsearchCluster</code>
 </span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">  </span><span class="nt">platformConfigRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-platform-config</span>
 </span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">  </span><span class="nt">storageRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-storage-config</span>
 </span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">  </span><span class="nt">zeebe</span><span class="p">:</span>
-</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="w">    </span><span class="nt">storageSize</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1Gi</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="w">    </span><span class="nt">storageSize</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16Gi</span>
 </span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="w">    </span><span class="nt">resources</span><span class="p">:</span>
 </span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="w">      </span><span class="nt">requests</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> cpu</span><span class="p">:</span><span class="w"> </span><span class="s">"1"</span><span class="p p-Indicator">,</span><span class="nt"> memory</span><span class="p">:</span><span class="w"> </span><span class="nv">1.5Gi</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">  </span><span class="nt">gateway</span><span class="p">:</span>
 </span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="w">    </span><span class="nt">resources</span><span class="p">:</span>
 </span><span id="__span-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="w">      </span><span class="nt">requests</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> cpu</span><span class="p">:</span><span class="w"> </span><span class="nv">500m</span><span class="p p-Indicator">,</span><span class="nt"> memory</span><span class="p">:</span><span class="w"> </span><span class="nv">512Mi</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span></code></pre></div>
+<p>By default, the Zeebe broker stops processing commands when its volume has less than 2GB free. Keep <code>zeebe.storageSize</code> well above that, also on kind. See <a href="https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/zeebe/operations/disk-space/">Disk space</a> in the Camunda docs.</p>
 <p>This cluster runs the default topology of a <code>CamundaCluster</code>: one Zeebe broker, and one gateway that also serves Operate, Tasklist, and Admin.</p>
 <p>In a shared environment, the sizing comes from a <code>CamundaClusterPreset</code>, the version from a <code>CamundaRelease</code>, and a cluster sets only <code>presetRef</code>, <code>releaseRef</code>, and its references. See the <a href="../guides/presets/">presets guide</a>.</p>
 <p>Wait until it is ready:</p>
