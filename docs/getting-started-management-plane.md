@@ -276,7 +276,7 @@ spec:
     method: basic
 ```
 
-Without a license key, Camunda runs under its Non-Production License. `CamundaPlatformConfig` is cluster-scoped. It has no namespace.
+This configuration sets no license key, because it has no `licenseSecretRef`. `CamundaPlatformConfig` is cluster-scoped. It has no namespace.
 
 Then create the management plane:
 
@@ -370,9 +370,11 @@ kubectl wait camundacluster/my-cluster -n my-cluster-ns \
   --for=condition=Ready --timeout=15m
 ```
 
-Then make sure that the management plane serves the cluster:
+Then wait until the management plane serves the cluster. It attaches the cluster a short time after the cluster is ready:
 
 ```bash
+kubectl wait camundamanagementcluster/my-management -n my-management-ns \
+  --for=jsonpath='{.status.clusters[?(@.name=="my-cluster")].attached}'=true --timeout=5m
 kubectl get camundamanagementcluster my-management -n my-management-ns \
   -o jsonpath='{range .status.clusters[*]}{.name}{"\t"}{.attached}{"\t"}{.reason}{"\n"}{end}'
 ```
@@ -381,7 +383,7 @@ kubectl get camundamanagementcluster my-management -n my-management-ns \
 my-cluster	true
 ```
 
-While the cluster starts, the line shows `false` and the reason `NotReady`. [Clusters](crds/camundamanagementcluster.md#clusters) lists the other reasons.
+If the wait ends without success, the line shows `false` and a reason. [Clusters](crds/camundamanagementcluster.md#clusters) lists the other reasons.
 
 ## 8. Sign in to Console
 
@@ -453,11 +455,12 @@ kubectl wait camundaoptimize/my-cluster-optimize -n my-cluster-ns \
 kubectl port-forward svc/my-cluster-optimize-webapp -n my-cluster-ns 8090:8090
 ```
 
-The management plane also registers the sign-in address of Optimize in Keycloak and gives `admin` the Optimize role. Until it has done so, the sign-in to Optimize fails. Wait for it:
+The management plane also registers the sign-in address of Optimize in Keycloak and gives `admin` the Optimize role. Until it has done so, the sign-in to Optimize fails. The condition `OptimizeCallbacksReady` reads `True` with the reason `NoCallbacks` before any Optimize exists, so wait for the reason `Healthy`:
 
 ```bash
 kubectl wait camundamanagementcluster/my-management -n my-management-ns \
-  --for=condition=OptimizeCallbacksReady --timeout=5m
+  --for=jsonpath='{.status.conditions[?(@.type=="OptimizeCallbacksReady")].reason}'=Healthy \
+  --timeout=5m
 ```
 
 Open <http://localhost:8090> and sign in as `admin`. The Keycloak port forward and the hosts file line of step 8 must stay in place. See [CamundaOptimize](crds/camundaoptimize.md) for the rest.
