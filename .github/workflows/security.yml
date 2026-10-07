@@ -75,8 +75,8 @@ jobs:
       # Artifact Hub scans the release images with Trivy, so CI uses the same
       # scanner. The report holds every finding, with a fix or not.
       #
-      # trivy-action is pinned to the commit of its tag, not to the tag. In
-      # March 2026 an attacker moved its tags to malicious commits.
+      # trivy-action is pinned to the commit of its tag, not to the tag, so a
+      # moved tag cannot change the code that runs with this token.
       - name: Write the Trivy report
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -106,29 +106,40 @@ jobs:
           exit-code: "1"
 
   release:
-    name: Scan the ${{ matrix.image }} image of the latest release
+    name: Scan the ${{ matrix.image }} image of the latest release (${{ matrix.arch }})
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: read           # pull from ghcr
       security-events: write   # upload SARIF to code scanning
+    # The release images are multi-platform. The arch list is the PLATFORMS
+    # of the Makefile, and the suffix is the one that release.yml gives the
+    # image name.
     strategy:
       fail-fast: false
       matrix:
+        image: [manager, cli]
+        arch: [amd64, arm64]
         include:
           - image: manager
-            repository: camunda-operator
+            suffix: ""
           - image: cli
-            repository: camunda-operator-cli
+            suffix: "-cli"
+    env:
+      TRIVY_PLATFORM: linux/${{ matrix.arch }}
     steps:
+      - name: Clone the code
+        uses: actions/checkout@v7
+
       # The release tag is v0.1.0. The images carry the version without the v.
       - name: Find the latest release
         env:
           GH_TOKEN: ${{ github.token }}
+          SUFFIX: ${{ matrix.suffix }}
         run: |
           tag=$(gh release view --repo "${GITHUB_REPOSITORY}" --json tagName --jq .tagName)
-          echo "REF=ghcr.io/${GITHUB_REPOSITORY_OWNER}/${{ matrix.repository }}:${tag#v}" >> "${GITHUB_ENV}"
+          echo "REF=ghcr.io/${GITHUB_REPOSITORY}${SUFFIX}:${tag#v}" >> "${GITHUB_ENV}"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
@@ -148,7 +159,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy.sarif
-          category: trivy-release-${{ matrix.image }}
+          category: trivy-release-${{ matrix.image }}-${{ matrix.arch }}
 
       - name: Fail on a HIGH or CRITICAL finding with a fix
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

@@ -205,10 +205,10 @@ lint-config: golangci-lint golangci-lint-schema ## Verify golangci-lint linter c
 lint-renovate: ## Verify renovate.json5 with the validator of RENOVATE_VERSION. Needs npx.
 	npx --yes --package renovate@$(RENOVATE_VERSION) renovate-config-validator --strict renovate.json5
 
-# govulncheck checks the stdlib of the Go that runs it, and it cannot load code
-# that needs a newer Go than the Go that built it. The golang builder image of
-# the Dockerfiles is newer than the go line of go.mod, and .tool-versions holds
-# the same Go release line, so run this target with the Go of .tool-versions.
+# govulncheck checks the stdlib of the Go that runs it. The golang builder image
+# of the Dockerfiles is newer than the go line of go.mod, and .tool-versions
+# holds the same Go release line, so run this target with the Go of
+# .tool-versions.
 .PHONY: vulncheck
 vulncheck: govulncheck ## Fail on a known vulnerability that the code of a module can reach.
 	@for m in $(MODULES); do (cd $$m && "$(GOVULNCHECK)" ./...) || exit 1; done
@@ -254,13 +254,16 @@ docker-push-cli: ## Push docker image with camunda-operator-cli.
 # - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
 # To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
 PLATFORMS ?= linux/amd64,linux/arm64
+# BUILDX_OUTPUT is where docker-buildx and docker-buildx-cli send the image. The release workflow sets it to
+# --load, with one platform in PLATFORMS, to scan the image of each platform before it pushes them.
+BUILDX_OUTPUT ?= --push
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name camunda-operator-builder
 	$(CONTAINER_TOOL) buildx use camunda-operator-builder
-	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
+	$(CONTAINER_TOOL) buildx build $(BUILDX_OUTPUT) --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm camunda-operator-builder
 	rm Dockerfile.cross
 
@@ -269,7 +272,7 @@ docker-buildx-cli: ## Build and push docker image for camunda-operator-cli for c
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile.cli > Dockerfile.cli.cross
 	- $(CONTAINER_TOOL) buildx create --name camunda-operator-builder
 	$(CONTAINER_TOOL) buildx use camunda-operator-builder
-	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${CLI_IMG} -f Dockerfile.cli.cross .
+	$(CONTAINER_TOOL) buildx build $(BUILDX_OUTPUT) --platform=$(PLATFORMS) --tag ${CLI_IMG} -f Dockerfile.cli.cross .
 	- $(CONTAINER_TOOL) buildx rm camunda-operator-builder
 	rm Dockerfile.cli.cross
 
@@ -322,7 +325,7 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
-GOVULNCHECK ?= $(LOCALBIN)/govulncheck
+GOVULNCHECK = $(LOCALBIN)/govulncheck
 # The JSON schema that `golangci-lint config verify` checks .golangci.yml against. golangci-lint fetches it itself
 # with a 2 s HTTP timeout and no retry, which fails CI on a slow CDN answer, so lint-config downloads it with
 # retries and passes it in. The file name carries the major.minor of GOLANGCI_LINT_VERSION (v2.8.0 -> v2.8).
@@ -379,10 +382,16 @@ envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest,$(ENVTEST_VERSION))
 
+# govulncheck cannot load code that needs a newer Go than the Go that built it, so a change of Go builds it again.
 .PHONY: govulncheck
-govulncheck: $(GOVULNCHECK) ## Download govulncheck locally if necessary.
-$(GOVULNCHECK): $(LOCALBIN)
-	$(call go-install-tool,$(GOVULNCHECK),golang.org/x/vuln/cmd/govulncheck,$(GOVULNCHECK_VERSION))
+govulncheck: | $(LOCALBIN) ## Download govulncheck locally if necessary.
+	@want="$(GOVULNCHECK_VERSION) $$(go env GOVERSION)"; \
+	[ -x "$(GOVULNCHECK)" ] && [ "$$(cat "$(GOVULNCHECK).stamp" 2>/dev/null)" = "$$want" ] || { \
+		set -e; \
+		echo "Downloading golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)"; \
+		GOBIN="$(LOCALBIN)" go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION); \
+		echo "$$want" > "$(GOVULNCHECK).stamp"; \
+	}
 
 .PHONY: golangci-lint-schema
 golangci-lint-schema: $(GOLANGCI_LINT_SCHEMA) ## Download the golangci-lint JSON schema locally if necessary.

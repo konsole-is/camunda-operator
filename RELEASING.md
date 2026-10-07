@@ -33,7 +33,7 @@ The Prepare release workflow pins the version of the api module in the root `go.
 
 When you publish the release, `.github/workflows/release.yml` starts. It does these steps:
 
-1. It builds the manager and CLI images for amd64 and scans them with Trivy. It stops on a HIGH or CRITICAL finding that has a fix.
+1. It builds the manager and CLI images for amd64 and arm64, and scans each image with Trivy. It stops on a HIGH or CRITICAL finding that has a fix. The next steps start only when every scan passes.
 2. It pushes the Go tag `api/vX.Y.Z` of the api module at the release commit.
 3. It builds the chart, sets the release version in it, and lints it.
 4. It builds the manager and CLI images for amd64 and arm64, and pushes them to GHCR.
@@ -64,10 +64,14 @@ If the cause is in the code, correct it on main. Then look for the api module ta
 
 The **Security** workflow scans the code and the images:
 
-- On each pull request and each push to main, it runs `govulncheck` on both Go modules and Trivy on the manager and CLI images that it builds.
-- Every Monday, and when you run it by hand, it also scans the images of the latest release.
+- On each pull request, on each push to main, every Monday, and when you run it by hand, it runs `govulncheck` on both Go modules and Trivy on the manager and CLI images that it builds.
+- Every Monday, and when you run it by hand, it also scans the amd64 and arm64 images of the latest release.
 
-Trivy fails a job on a HIGH or CRITICAL finding that has a fix. The **Security** tab of the repository shows all Trivy findings under code scanning. If the weekly scan of the latest release fails, fix the finding on main, then publish a patch release.
+`govulncheck` fails its job on a known vulnerability that the code can reach. Trivy fails a job on a HIGH or CRITICAL finding that has a fix. The **Security** tab of the repository shows all Trivy findings under code scanning. If the weekly scan of the latest release fails, fix the finding on main, then publish a patch release.
+
+Renovate opens a security pull request for a Go module only after the advisory is in the OSV database or in the GitHub Advisory Database. Until then, update the module yourself.
+
+If a HIGH or CRITICAL finding has a fix that the operator cannot use yet, add its ID to a file `.trivyignore` at the root of the repository. Write a comment above the ID that says why, and add an end date, for example `CVE-2026-12345 exp:2026-12-31`. Trivy reads this file in each scan of the Security and Release workflows, and reports the finding again after the end date.
 
 ## One-time setup
 
