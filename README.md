@@ -90,7 +90,7 @@ make helm-generate  # regenerate dist/chart/ from config/
 make docs-serve     # preview the documentation site
 ```
 
-`dist/chart/values.yaml` and `dist/chart/templates/` are generated. Change the defaults in `config/` and run `make helm-generate`.
+`dist/chart/values.yaml`, `dist/chart/values.schema.json`, and `dist/chart/templates/` are generated. Change the defaults in `config/` and run `make helm-generate`.
 
 Issues and pull requests are welcome at [github.com/konsole-is/camunda-operator](https://github.com/konsole-is/camunda-operator).
 

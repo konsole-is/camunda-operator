@@ -432,6 +432,7 @@ install-helm: ## Install the pinned version of Helm if it is missing.
 helm-generate: build-installer ## Regenerate the Helm chart from kustomize output. Specify images with IMG and CLI_IMG.
 	kubebuilder edit --plugins=helm/v2-alpha --force
 	go run ./hack/helmcli "$(HELM_CHART_DIR)"
+	go run ./hack/helmschema "$(HELM_CHART_DIR)"
 
 ## Maximum gzipped rendered chart size in bytes before helm-verify fails.
 ## The real bound is the gzipped Helm release Secret against etcd's ~1MB object
@@ -445,19 +446,27 @@ HELM_MAX_RENDER_GZIP_BYTES ?= 524288
 
 .PHONY: helm-verify
 helm-verify: install-helm ## Lint and render the Helm chart across value permutations. No cluster required.
-	@test -d "$(HELM_CHART_DIR)" || { \
-		echo "$(HELM_CHART_DIR) not found; run 'make helm-generate' first." >&2; exit 1; }
+	@test -f "$(HELM_CHART_DIR)/values.schema.json" || { \
+		echo "$(HELM_CHART_DIR)/values.schema.json not found; run 'make helm-generate' first." >&2; exit 1; }
 	$(HELM) lint "$(HELM_CHART_DIR)"
+	@# The schema must reject an unknown key and a value of the wrong type.
+	@for opts in "--set prometheus.enabeld=true" "--set prometheus.enabled=yes"; do \
+		err="$$($(HELM) template verify "$(HELM_CHART_DIR)" $$opts 2>&1 >/dev/null || true)"; \
+		case "$$err" in *"meet the specifications of the schema"*) ;; *) \
+			echo "ERROR: the values schema did not reject: helm template $$opts" >&2; exit 1 ;; \
+		esac; \
+		echo "  schema rejects: helm template $$opts"; \
+	done
 	@set -e; \
 	max=0; worst=""; \
 	for opts in \
 		"" \
-		"--set crd.enable=false" \
-		"--set rbacHelpers.enable=true" \
-		"--set prometheus.enable=true" \
-		"--set certManager.enable=true" \
-		"--set crd.enable=false --set rbacHelpers.enable=true --set prometheus.enable=true --set certManager.enable=true" \
-		"--set rbacHelpers.enable=true --set prometheus.enable=true --set certManager.enable=true" \
+		"--set crd.enabled=false" \
+		"--set rbac.helpers.enabled=true" \
+		"--set prometheus.enabled=true" \
+		"--set certManager.enabled=true" \
+		"--set crd.enabled=false --set rbac.helpers.enabled=true --set prometheus.enabled=true --set certManager.enabled=true" \
+		"--set rbac.helpers.enabled=true --set prometheus.enabled=true --set certManager.enabled=true" \
 	; do \
 		label="$${opts:-<defaults>}"; \
 		tmp="$$(mktemp)"; \
