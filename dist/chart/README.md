@@ -86,4 +86,4 @@ The chart sets some flags from its own values. The column "Set by the chart" nam
 | `--zap-log-level` | none | `debug` | no | The lowest level that the manager logs: `debug`, `info`, `error`, or `panic`. An integer above 0 also works: `1` is the same as `debug`. A larger integer logs more detail. The default follows `--zap-devel`. |
 | `--zap-encoder` | none | `console` | no | The log format: `json` or `console`. The default follows `--zap-devel`. |
 | `--zap-stacktrace-level` | none | `warn` | no | The lowest level that gets a stack trace: `info`, `error`, or `panic`. The default follows `--zap-devel`. The flag cannot set `warn`, so only `--zap-devel=true` gives stack traces from `warn`. |
-| `--zap-time-encoding` | none | `rfc3339` | no | The time format of a log line: `epoch`, `millis`, `nano`, `iso8601`, `rfc3339`, or `rfc3339nano`. |
+| `--zap-time-encoding` | none | `rfc3339` | no | The time format of a log line: `epoch`, `millis`, `nanos`, `iso8601`, `rfc3339`, or `rfc3339nano`. The help text of the flag says `nano`, but the manager accepts only `nanos`. |
