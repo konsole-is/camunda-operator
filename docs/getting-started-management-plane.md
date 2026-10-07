@@ -22,7 +22,7 @@ That directory is written for a real domain, so this page changes some values. T
 | `09-optimize.yaml` | An optional last step. `externalUrl` is `http://localhost:8090`. |
 | `config/example/presets` | The page sets 16Gi for the Zeebe broker and for Elasticsearch. Earlier versions of the presets set 1Gi. |
 
-To apply the directory in one command instead, clone the repository at your release tag. Replace the placeholders in `02-secrets.yaml`, and route each `camunda.example.com` URL to its Service. The [README of the directory](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-management-cluster/keycloak) lists these steps. Then run this command after step 3 of this page:
+To apply the directory in one command instead, clone the repository at your release tag. Replace the placeholders in `02-secrets.yaml`, and route each `camunda.example.com` URL to its Service. The [README of the directory](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-management-cluster/keycloak) lists these steps. If `config/example/presets` of your copy sets 1Gi for the Zeebe broker or for Elasticsearch, change both to 16Gi. Then run this command after step 3 of this page:
 
 ```bash
 kubectl apply -k config/example/camunda-management-cluster/keycloak
@@ -44,7 +44,12 @@ kind create cluster --name camunda
 kubectl version
 ```
 
-The server version must be 1.34 or later. See the [requirements](installation.md#requirements). If it is earlier, create the cluster again with a newer node image, for example `--image kindest/node:v1.34.0`.
+The server version must be 1.34 or later. See the [requirements](installation.md#requirements). If it is earlier, delete the cluster and create it again with a newer node image:
+
+```bash
+kind delete cluster --name camunda
+kind create cluster --name camunda --image kindest/node:v1.34.0
+```
 
 Elasticsearch needs `vm.max_map_count` of at least 262144 in the kernel that runs the kind node. On a Linux host, set it on the host:
 
@@ -126,7 +131,7 @@ helm install camunda-operator \
   --create-namespace
 ```
 
-Replace `<version>` with a released version. Make sure that the manager is running:
+Replace `<version>` with a released version without the `v`, for example `0.1.0` for the release `v0.1.0`. Make sure that the manager is running:
 
 ```bash
 kubectl get pods -n camunda-operator-system
@@ -134,7 +139,7 @@ kubectl get pods -n camunda-operator-system
 
 ## 4. Create the presets and the release
 
-A preset holds the sizes of a resource. A release holds the versions. Each resource in the next steps names one preset and the release, and sets only its own values. All four are cluster-scoped. The [presets guide](guides/presets.md) explains both kinds.
+A preset holds the sizes of a resource. A release holds the versions. The `DatabaseServer`, the `ElasticsearchCluster`, and the `CamundaCluster` in the next steps each name one preset and the release, and set only their own values. All four are cluster-scoped. The [presets guide](guides/presets.md) explains both kinds.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -368,10 +373,14 @@ Then make sure that the management plane serves the cluster:
 
 ```bash
 kubectl get camundamanagementcluster my-management -n my-management-ns \
-  -o jsonpath='{.status.clusters}'
+  -o jsonpath='{range .status.clusters[*]}{.name}{"\t"}{.attached}{"\t"}{.reason}{"\n"}{end}'
 ```
 
-The row of `my-cluster` reads `"attached":true`. While the cluster starts, the row reads `"attached":false` with the reason `NotReady`. [Clusters](crds/camundamanagementcluster.md#clusters) lists the other reasons.
+```
+my-cluster	true
+```
+
+While the cluster starts, the line shows `false` and the reason `NotReady`. [Clusters](crds/camundamanagementcluster.md#clusters) lists the other reasons.
 
 ## 8. Sign in to Console
 
@@ -382,7 +391,7 @@ kubectl get secret my-management-identity-admin -n my-management-ns \
   -o go-template='{{.data.password | base64decode}}'
 ```
 
-Your browser must reach Keycloak at its `externalUrl` from step 6. Add this line to the hosts file of your computer, `/etc/hosts` on Linux and macOS. The change needs administrator rights.
+Your browser must reach Keycloak at its `externalUrl` from step 6. Add this line to the hosts file of your computer. The file is `/etc/hosts` on Linux and macOS, and `C:\Windows\System32\drivers\etc\hosts` on Windows. Edit it as an administrator.
 
 ```
 127.0.0.1 my-management-keycloak-service.my-management-ns.svc
@@ -410,7 +419,12 @@ kubectl port-forward svc/my-cluster-gateway -n my-cluster-ns 8088:8080
 
 Open <http://localhost:8088/operate/>.
 
-Operate uses the basic authentication of the cluster, not Keycloak. The Secret `my-cluster-camunda-admin` holds its password.
+Operate uses the basic authentication of the cluster, not Keycloak. Its user and password are not the ones of Management Identity. The username is `admin`, and the Secret `my-cluster-camunda-admin` holds the password:
+
+```bash
+kubectl get secret my-cluster-camunda-admin -n my-cluster-ns \
+  -o go-template='{{.data.password | base64decode}}'
+```
 
 ## 9. Optional: add Optimize
 

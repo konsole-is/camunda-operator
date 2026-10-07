@@ -28,9 +28,11 @@ Console, and Web Modeler each carry a patch line of their own.
   Install the Keycloak Operator release that matches
   `spec.identityProvider.keycloak.version`.
 - Give the Kubernetes cluster a default StorageClass that can bind 40Gi in
-  total: 16Gi for the Zeebe broker, 16Gi for the Elasticsearch node, and 8Gi
-  for PostgreSQL. The
-  `ElasticsearchCluster` needs about 4 GB of free memory, and the management
+  total. The volumes are 16Gi for the Zeebe broker, 16Gi for the
+  Elasticsearch node, and 8Gi for PostgreSQL. The total assumes the 16Gi
+  presets. If [`config/example/presets`](../../presets) of your copy sets
+  1Gi for the Zeebe broker or for Elasticsearch, change both to 16Gi first.
+  The `ElasticsearchCluster` needs about 4 GB of free memory, and the management
   plane, the orchestration cluster, and Optimize need more on top of that.
 - On kind, raise the map count that Elasticsearch needs:
   `sudo sysctl -w vm.max_map_count=262144`.
