@@ -70,6 +70,34 @@ jobs:
             exit 1
           fi
 
+      # The scan runs before the first push of the release, the api module
+      # tag. An image with a HIGH or CRITICAL finding that has a fix then
+      # stops the release before it uses up the version. It scans a local
+      # amd64 build. The arm64 image has the same Go modules and the same
+      # base image. The Security workflow explains the pin of trivy-action.
+      - name: Build the images for the scan
+        run: |
+          make docker-build "IMG=${IMG}"
+          make docker-build-cli "CLI_IMG=${CLI_IMG}"
+
+      - name: Scan the operator image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMG }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Scan the CLI image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_SKIP_DB_UPDATE: "true"
+        with:
+          image-ref: ${{ env.CLI_IMG }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
       - name: Push the api module tag
         run: |
           tag="api/${TAG}"
