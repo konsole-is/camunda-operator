@@ -53,9 +53,7 @@ func TestConsoleRendersNothingWhileItIsDisabled(t *testing.T) {
 }
 
 // Console starts only after Management Identity is ready, in every identity
-// provider mode. In a Keycloak mode, Management Identity creates the realm on
-// its first start, and Console reads the OIDC configuration of that realm once,
-// at start.
+// provider mode.
 func TestConsoleWaitsForManagementIdentity(t *testing.T) {
 	t.Parallel()
 

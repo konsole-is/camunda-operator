@@ -103,9 +103,10 @@ func consoleComponents(in Input) (Built, error) {
 		WithConditionType(component.ConditionType(v1.ConditionConsoleReady)).
 		WithFeatureGate(gate).
 		// Console signs users in through Management Identity in every mode.
-		// It reads the OIDC configuration of its realm once, at start, and
-		// does not try again. In a Keycloak mode, Management Identity
-		// creates that realm when it first starts.
+		// In a Keycloak mode, Management Identity creates the realm on
+		// startup when the realm does not exist yet. When Console fails to
+		// read the OIDC configuration at start, it does not try again until
+		// it restarts.
 		WithPrerequisite(component.DependsOn(component.ConditionType(v1.ConditionIdentityReady))).
 		WithResource(workload, component.GatedBy(gate)).
 		WithResource(svc, component.GatedBy(gate)).
