@@ -17,9 +17,10 @@ That directory is written for a real domain, so this page changes some values. T
 | --- | --- |
 | `02-secrets.yaml` | Not used. The page sets no license key and runs no Web Modeler, so it needs neither Secret. |
 | `05-platform-config.yaml` | No `licenseSecretRef`. |
-| `06-management-cluster.yaml` | Every `externalUrl` is a `localhost` address of a port forward. No `webModeler` block. |
-| `08-camunda-cluster.yaml` | `externalUrl` is `http://localhost:8080`. |
+| `06-management-cluster.yaml` | The Keycloak `externalUrl` is the address of the Keycloak Service inside the cluster, `http://my-management-keycloak-service.my-management-ns.svc:8080/auth`. The `externalUrl` of Management Identity and of Console is a `localhost` address of a port forward. No `webModeler` block. |
+| `08-camunda-cluster.yaml` | `externalUrl` is `http://localhost:8088`. |
 | `09-optimize.yaml` | An optional last step. `externalUrl` is `http://localhost:8090`. |
+| `config/example/presets` | The page sets 16Gi for the Zeebe broker and for Elasticsearch. Earlier versions of the presets set 1Gi. |
 
 To apply the directory in one command instead, clone the repository at your release tag. Replace the placeholders in `02-secrets.yaml`, and route each `camunda.example.com` URL to its Service. The [README of the directory](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-management-cluster/keycloak) lists these steps. Then run this command after step 3 of this page:
 
@@ -32,7 +33,7 @@ kubectl apply -k config/example/camunda-management-cluster/keycloak
 You need:
 
 - `kubectl`, `helm` 3.8 or later, and `kind`
-- about 8 GB of free memory and 4 CPUs for the kind node
+- about 10 GB of free memory and 4 CPUs for the kind node. This is an estimate from the requests of the pods, not a measured value.
 - about 40Gi of free disk for the volumes: 16Gi for the Zeebe broker, 16Gi for Elasticsearch, and 8Gi for PostgreSQL
 - a node that can pull images from Docker Hub, `docker.elastic.co`, `ghcr.io`, and `quay.io`
 
@@ -50,6 +51,8 @@ Elasticsearch needs `vm.max_map_count` of at least 262144 on the host:
 ```bash
 sudo sysctl -w vm.max_map_count=262144
 ```
+
+Each step shows a manifest. Save it to a file and apply it with `kubectl apply -f <file>`.
 
 ## 1. Create the namespaces
 
@@ -277,7 +280,7 @@ spec:
   identityProvider:
     keycloak:
       version: "26.6.4"
-      externalUrl: "http://localhost:18080/auth"
+      externalUrl: "http://my-management-keycloak-service.my-management-ns.svc:8080/auth"
       databaseConfigRef: my-keycloak-db
   identity:
     version: "8.9.10"
@@ -291,7 +294,9 @@ spec:
     externalUrl: "http://localhost:8087"
 ```
 
-Each `externalUrl` is the address that your browser opens. Step 8 forwards each of these ports to its Service. The path of the Keycloak URL must be exactly `/auth`.
+Each `externalUrl` is the address that your browser opens. Step 8 forwards each of these ports to its Service.
+
+The Keycloak `externalUrl` is different. The pods of the management plane reach Keycloak at this address too, so it is the address of the Keycloak Service inside the cluster. Its path must be exactly `/auth`. Step 8 makes your browser reach the same address.
 
 `clusterSelector` selects the orchestration clusters that Console lists. This one selects every `CamundaCluster` with the label `environment: production`.
 
@@ -341,7 +346,7 @@ spec:
   releaseRef: camunda-8-9
   platformConfigRef: my-platform-config
   storageRef: my-storage-config
-  externalUrl: "http://localhost:8080"
+  externalUrl: "http://localhost:8088"
 ```
 
 Wait until it is ready. The cluster waits for Elasticsearch, and the first start pulls both images.
@@ -369,25 +374,33 @@ kubectl get secret my-management-identity-admin -n my-management-ns \
   -o go-template='{{.data.password | base64decode}}'
 ```
 
+Your browser must reach Keycloak at its `externalUrl` from step 6. Add this line to the hosts file of your computer, `/etc/hosts` on Linux and macOS. The change needs administrator rights.
+
+```
+127.0.0.1 my-management-keycloak-service.my-management-ns.svc
+```
+
 Forward the ports of Keycloak, Management Identity, and Console. Each command runs until you stop it, so run each one in a terminal of its own:
 
 ```bash
-kubectl port-forward svc/my-management-keycloak-service -n my-management-ns 18080:8080
+kubectl port-forward svc/my-management-keycloak-service -n my-management-ns 8080:8080
 kubectl port-forward svc/my-management-identity -n my-management-ns 8084:80
 kubectl port-forward svc/my-management-console -n my-management-ns 8087:80
 ```
 
-The local ports are the ports in the `externalUrl` fields of step 6. Camunda uses the same ports for Keycloak and Console in [Accessing components without Ingress](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/ingress/accessing-components-without-ingress/). If you change a local port, change its `externalUrl` too.
+The local ports are the ports in the `externalUrl` fields of step 6. If you change the local port of Management Identity or Console, change its `externalUrl` too. Keep Keycloak on local port 8080, because its `externalUrl` names that port.
 
 Open <http://localhost:8087>. Console sends you to the Keycloak sign-in page. Sign in as `admin` with the password above. Console lists `my-cluster`. Camunda marks the cluster list of Console as experimental in 8.9, under [experimental features](https://docs.camunda.io/docs/self-managed/components/console/configuration/#experimental-features).
 
 Management Identity is at <http://localhost:8084>. Sign in there with the same user.
 
-To open Operate on the cluster, forward the gateway port, as in [Getting started](getting-started.md#7-log-in):
+To open Operate on the cluster, forward the gateway port. Local port 8080 is in use by Keycloak, so this guide uses 8088, the port of the cluster `externalUrl` in step 7:
 
 ```bash
-kubectl port-forward svc/my-cluster-gateway -n my-cluster-ns 8080:8080
+kubectl port-forward svc/my-cluster-gateway -n my-cluster-ns 8088:8080
 ```
+
+Open <http://localhost:8088/operate/>.
 
 Operate uses the basic authentication of the cluster, not Keycloak. The Secret `my-cluster-camunda-admin` holds its password.
 
@@ -417,7 +430,9 @@ kubectl wait camundaoptimize/my-cluster-optimize -n my-cluster-ns \
 kubectl port-forward svc/my-cluster-optimize-webapp -n my-cluster-ns 8090:8090
 ```
 
-Open <http://localhost:8090> and sign in as `admin`. The Keycloak port forward of step 8 must still run. See [CamundaOptimize](crds/camundaoptimize.md) for the rest.
+Open <http://localhost:8090> and sign in as `admin`. The Keycloak port forward and the hosts file line of step 8 must stay in place. See [CamundaOptimize](crds/camundaoptimize.md) for the rest.
+
+This local setup has one limit for Optimize. The Optimize pod calls Management Identity at its `externalUrl`, `http://localhost:8084`, and that address does not answer inside the cluster. The parts of Optimize that read users or tenants from Management Identity can fail. The limit goes away when the `externalUrl` of Management Identity also answers inside the cluster, as a real domain usually does.
 
 Web Modeler needs an SMTP server, so this guide leaves it out. [Step 3d of the Management plane guide](guides/management-plane.md#step-3d-web-modeler) adds it.
 
