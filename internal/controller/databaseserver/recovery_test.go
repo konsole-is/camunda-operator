@@ -961,6 +961,21 @@ var _ = Describe("DatabaseServer recovery", func() {
 		)
 		Expect(blocked.Message).To(ContainSubstring("controlled by ConfigMap holder"))
 
+		// A reconcile that checked the owner before the takeover can still
+		// apply its subjects after it. The apply is forced and carries no
+		// resourceVersion, and the binding is Unowned, so no second controller
+		// reference makes the API server reject it. The reconciles of one
+		// server run one at a time, so once one of them reports the holder, no
+		// older one is still running, and the subjects written here stay.
+		Eventually(func(g Gomega) {
+			var binding rbacv1.RoleBinding
+			g.Expect(k8sClient.Get(ctx, key, &binding)).To(Succeed())
+			binding.Subjects = []rbacv1.Subject{{
+				Kind: rbacv1.ServiceAccountKind, Name: "someone", Namespace: server.Namespace,
+			}}
+			g.Expect(k8sClient.Update(ctx, &binding)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
 		Consistently(func(g Gomega) {
 			var binding rbacv1.RoleBinding
 			g.Expect(k8sClient.Get(ctx, key, &binding)).To(Succeed())
