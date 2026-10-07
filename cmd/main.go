@@ -80,8 +80,8 @@ const namespaceEnv = "CAMUNDA_OPERATOR_NAMESPACE"
 // in a cluster needs neither the flag nor the environment variable.
 const serviceAccountNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 
-// settings holds the values of the manager flags. Its fields are set when
-// the FlagSet that bindFlags registered them on is parsed.
+// settings holds the values of the manager flags. bindFlags sets each field
+// to its default, and the parse of the FlagSet then sets the flags it gets.
 type settings struct {
 	cliImage             string
 	namespace            string
