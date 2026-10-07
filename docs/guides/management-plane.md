@@ -379,11 +379,12 @@ kubectl get camundamanagementcluster my-management -n my-management-ns \
 
 `externalUrl` is the URL that a browser signs in at. Route it to the `my-cluster-optimize-webapp` Service, on port 8090.
 
-In the two Keycloak modes, the management plane registers the login callback of that URL in the realm. It also gives the `Optimize` role to the first administrator, so that person can open Optimize at once. Wait for the callback on the `CamundaManagementCluster`:
+In the two Keycloak modes, the management plane registers the login callback of that URL in the realm. It also gives the `Optimize` role to the first administrator, so that person can open Optimize at once. The condition `OptimizeCallbacksReady` reads `True` with the reason `NoCallbacks` before any Optimize exists, so wait for the reason `Healthy`:
 
 ```bash
-kubectl wait --for=condition=OptimizeCallbacksReady --timeout=5m \
-  camundamanagementcluster/my-management -n my-management-ns
+kubectl wait camundamanagementcluster/my-management -n my-management-ns \
+  --for=jsonpath='{.status.conditions[?(@.type=="OptimizeCallbacksReady")].reason}'=Healthy \
+  --timeout=5m
 ```
 
 In the `oidc` mode, `externalUrl` has no effect. Add `https://optimize.camunda.example.com/api/authentication/callback` to the Optimize application at your provider yourself.
