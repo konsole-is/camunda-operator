@@ -33,6 +33,7 @@ kubectl apply -k config/example/camunda-management-cluster/keycloak
 You need:
 
 - `kubectl`, `helm` 3.8 or later, and `kind`
+- Docker or Podman, which runs the kind node
 - about 10 GB of free memory and 4 CPUs for the kind node. This is an estimate from the requests of the pods, not a measured value.
 - about 40Gi of free disk for the volumes: 16Gi for the Zeebe broker, 16Gi for Elasticsearch, and 8Gi for PostgreSQL
 - a node that can pull images from Docker Hub, `docker.elastic.co`, `ghcr.io`, and `quay.io`
