@@ -2,7 +2,7 @@
 
 Console, Web Modeler, and Optimize are not part of an orchestration cluster. They sign in through Management Identity, which is a separate identity system. Camunda explains the split in [Management Identity](https://docs.camunda.io/docs/self-managed/components/management-identity/overview/).
 
-This guide brings one management plane up, from the databases to the first sign-in. The management plane is a [CamundaManagementCluster](../crds/camundamanagementcluster.md). It runs Management Identity, Console, and Web Modeler, and it writes the contract that Optimize reads. The [CamundaManagementCluster](../crds/camundamanagementcluster.md) page describes every field and condition. This page gives the order of the steps.
+This guide brings one management plane up, from the databases to the first sign-in. To try a management plane on a local kind cluster first, follow [Getting started with the management plane](../getting-started-management-plane.md). It takes one path, with port forwards instead of an Ingress. The management plane is a [CamundaManagementCluster](../crds/camundamanagementcluster.md). It runs Management Identity, Console, and Web Modeler, and it writes the contract that Optimize reads. The [CamundaManagementCluster](../crds/camundamanagementcluster.md) page describes every field and condition. This page gives the order of the steps.
 
 ## Before you start
 

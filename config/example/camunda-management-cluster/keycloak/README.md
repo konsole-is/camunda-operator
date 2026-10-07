@@ -27,7 +27,9 @@ Console, and Web Modeler each carry a patch line of their own.
   [Installation](https://konsole-is.github.io/camunda-operator/dev/installation/).
   Install the Keycloak Operator release that matches
   `spec.identityProvider.keycloak.version`.
-- Give the Kubernetes cluster a default StorageClass. The
+- Give the Kubernetes cluster a default StorageClass that can bind 40Gi in
+  total: 16Gi for the Zeebe broker, 16Gi for the Elasticsearch node, and 8Gi
+  for PostgreSQL. The
   `ElasticsearchCluster` needs about 4 GB of free memory, and the management
   plane, the orchestration cluster, and Optimize need more on top of that.
 - On kind, raise the map count that Elasticsearch needs:
@@ -136,6 +138,8 @@ them any more.
 
 ## Related
 
+- [Getting started with the management plane](https://konsole-is.github.io/camunda-operator/dev/getting-started-management-plane/):
+  this inventory on a local kind cluster, with port forwards.
 - [Presets](https://konsole-is.github.io/camunda-operator/dev/guides/presets/)
 - [CamundaRelease](https://konsole-is.github.io/camunda-operator/dev/crds/camundarelease/)
 - [Management plane](https://konsole-is.github.io/camunda-operator/dev/guides/management-plane/#step-3a-the-operator-runs-keycloak)

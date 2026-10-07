@@ -200,3 +200,4 @@ spec:
 - [Backup](guides/backup.md): write backups of the cluster to a bucket.
 - [Operations](guides/operations.md): read the status, suspend, grow storage, rotate passwords.
 - [CamundaCluster reference](crds/camundacluster.md): every field.
+- [Getting started with the management plane](getting-started-management-plane.md): add Console and sign in through Keycloak, on a kind cluster.
