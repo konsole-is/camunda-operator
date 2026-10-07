@@ -80,73 +80,45 @@ const namespaceEnv = "CAMUNDA_OPERATOR_NAMESPACE"
 // in a cluster needs neither the flag nor the environment variable.
 const serviceAccountNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 
+// settings holds the values of the manager flags. bindFlags sets each field
+// to its default, and the parse of the FlagSet then sets the flags it gets.
+type settings struct {
+	cliImage             string
+	namespace            string
+	metricsAddr          string
+	metricsCertPath      string
+	metricsCertName      string
+	metricsCertKey       string
+	webhookCertPath      string
+	webhookCertName      string
+	webhookCertKey       string
+	enableLeaderElection bool
+	probeAddr            string
+	secureMetrics        bool
+	enableHTTP2          bool
+	gracePeriods         grace.Periods
+	// checkGracePeriods returns the error of a grace period that the manager
+	// must not start with. Call it after the parse.
+	checkGracePeriods func() error
+	zapOptions        zap.Options
+}
+
 // nolint:gocyclo
 func main() {
-	var cliImage string
-	var operatorNamespace string
-	var metricsAddr string
-	var metricsCertPath, metricsCertName, metricsCertKey string
-	var webhookCertPath, webhookCertName, webhookCertKey string
-	var enableLeaderElection bool
-	var probeAddr string
-	var secureMetrics bool
-	var enableHTTP2 bool
-	var tlsOpts []func(*tls.Config)
-	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
-		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.BoolVar(
-		&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.",
-	)
-	flag.BoolVar(
-		&secureMetrics, "metrics-secure", true,
-		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.",
-	)
-	flag.StringVar(&webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
-	flag.StringVar(&webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
-	flag.StringVar(&webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
-	flag.StringVar(
-		&metricsCertPath, "metrics-cert-path", "",
-		"The directory that contains the metrics server certificate.",
-	)
-	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
-	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
-	flag.BoolVar(
-		&enableHTTP2, "enable-http2", false,
-		"If set, HTTP/2 will be enabled for the metrics and webhook servers",
-	)
-	flag.StringVar(
-		&cliImage, "camunda-operator-cli-image", os.Getenv(cliImageEnv),
-		"The camunda-operator-cli image that the backup Jobs run for their upload container. "+
-			"Required. Defaults to the "+cliImageEnv+" environment variable.",
-	)
-	flag.StringVar(
-		&operatorNamespace, "namespace", os.Getenv(namespaceEnv),
-		"The namespace that the operator runs in. It holds the Leases that serialize the "+
-			"cross-namespace claims: of a logical database, of a Keycloak realm, and of the "+
-			"secondary storage backend of a cluster. Defaults to the "+namespaceEnv+
-			" environment variable, and then to the namespace of the Pod.",
-	)
-	var gracePeriods grace.Periods
-	checkGracePeriods := gracePeriods.BindFlags(flag.CommandLine, os.Getenv)
-	opts := zap.Options{
-		Development: true,
-	}
-	opts.BindFlags(flag.CommandLine)
+	s := bindFlags(flag.CommandLine, os.Getenv)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&s.zapOptions)))
 
-	if err := checkGracePeriods(); err != nil {
+	if err := s.checkGracePeriods(); err != nil {
 		setupLog.Error(err, "Failed to read the grace periods")
 		os.Exit(1)
 	}
 
-	// The LogicalBackupRDBMS controller renders Jobs that run the CLI image.
-	// Without one it can only guess, so the manager refuses to start.
-	if cliImage == "" {
+	// The LogicalBackupRDBMS and LogicalRestoreRDBMS controllers render Jobs
+	// that run the CLI image. Without one they can only guess, so the manager
+	// refuses to start.
+	if s.cliImage == "" {
 		setupLog.Error(
 			nil,
 			"The camunda-operator-cli image is required: set --camunda-operator-cli-image "+
@@ -156,14 +128,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	if operatorNamespace == "" {
-		operatorNamespace = podNamespace()
+	if s.namespace == "" {
+		s.namespace = podNamespace()
 	}
 	// The Database and CamundaManagementCluster controllers serialize the
 	// claim of a logical database and of a Keycloak realm through Leases of
 	// this namespace. Without one they cannot tell two claimants apart, so
 	// the manager refuses to start.
-	if operatorNamespace == "" {
+	if s.namespace == "" {
 		setupLog.Error(
 			nil,
 			"The namespace of the operator is required: set --namespace or the "+
@@ -183,7 +155,8 @@ func main() {
 		c.NextProtos = []string{"http/1.1"}
 	}
 
-	if !enableHTTP2 {
+	var tlsOpts []func(*tls.Config)
+	if !s.enableHTTP2 {
 		tlsOpts = append(tlsOpts, disableHTTP2)
 	}
 
@@ -193,20 +166,20 @@ func main() {
 		TLSOpts: webhookTLSOpts,
 	}
 
-	if len(webhookCertPath) > 0 {
+	if len(s.webhookCertPath) > 0 {
 		setupLog.Info(
 			"Initializing webhook certificate watcher using provided certificates",
 			"webhook-cert-path",
-			webhookCertPath,
+			s.webhookCertPath,
 			"webhook-cert-name",
-			webhookCertName,
+			s.webhookCertName,
 			"webhook-cert-key",
-			webhookCertKey,
+			s.webhookCertKey,
 		)
 
-		webhookServerOptions.CertDir = webhookCertPath
-		webhookServerOptions.CertName = webhookCertName
-		webhookServerOptions.KeyName = webhookCertKey
+		webhookServerOptions.CertDir = s.webhookCertPath
+		webhookServerOptions.CertName = s.webhookCertName
+		webhookServerOptions.KeyName = s.webhookCertKey
 	}
 
 	webhookServer := webhook.NewServer(webhookServerOptions)
@@ -216,12 +189,12 @@ func main() {
 	// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.3/pkg/metrics/server
 	// - https://book.kubebuilder.io/reference/metrics.html
 	metricsServerOptions := metricsserver.Options{
-		BindAddress:   metricsAddr,
-		SecureServing: secureMetrics,
+		BindAddress:   s.metricsAddr,
+		SecureServing: s.secureMetrics,
 		TLSOpts:       tlsOpts,
 	}
 
-	if secureMetrics {
+	if s.secureMetrics {
 		// FilterProvider is used to protect the metrics endpoint with authn/authz.
 		// These configurations ensure that only authorized users and service accounts
 		// can access the metrics endpoint. The RBAC are configured in 'config/rbac/kustomization.yaml'. More info:
@@ -237,20 +210,20 @@ func main() {
 	// - [METRICS-WITH-CERTS] at config/default/kustomization.yaml to generate and use certificates
 	// managed by cert-manager for the metrics server.
 	// - [PROMETHEUS-WITH-CERTS] at config/prometheus/kustomization.yaml for TLS certification.
-	if len(metricsCertPath) > 0 {
+	if len(s.metricsCertPath) > 0 {
 		setupLog.Info(
 			"Initializing metrics certificate watcher using provided certificates",
 			"metrics-cert-path",
-			metricsCertPath,
+			s.metricsCertPath,
 			"metrics-cert-name",
-			metricsCertName,
+			s.metricsCertName,
 			"metrics-cert-key",
-			metricsCertKey,
+			s.metricsCertKey,
 		)
 
-		metricsServerOptions.CertDir = metricsCertPath
-		metricsServerOptions.CertName = metricsCertName
-		metricsServerOptions.KeyName = metricsCertKey
+		metricsServerOptions.CertDir = s.metricsCertPath
+		metricsServerOptions.CertName = s.metricsCertName
+		metricsServerOptions.KeyName = s.metricsCertKey
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
@@ -258,8 +231,8 @@ func main() {
 		Cache:                  manager.CacheOptions(),
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
+		HealthProbeBindAddress: s.probeAddr,
+		LeaderElection:         s.enableLeaderElection,
 		LeaderElectionID:       "3d8c383c.camunda.io",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
@@ -282,8 +255,8 @@ func main() {
 		Client:         mgr.GetClient(),
 		APIReader:      mgr.GetAPIReader(),
 		Scheme:         mgr.GetScheme(),
-		ClaimNamespace: operatorNamespace,
-		GracePeriods:   gracePeriods,
+		ClaimNamespace: s.namespace,
+		GracePeriods:   s.gracePeriods,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaCluster")
 		os.Exit(1)
@@ -300,7 +273,7 @@ func main() {
 		Client:       mgr.GetClient(),
 		APIReader:    mgr.GetAPIReader(),
 		Scheme:       mgr.GetScheme(),
-		GracePeriods: gracePeriods,
+		GracePeriods: s.gracePeriods,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ElasticsearchCluster")
 		os.Exit(1)
@@ -309,7 +282,7 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
-	}).SetupWithManager(mgr, logicalbackuprdbms.Options{CLIImage: cliImage}); err != nil {
+	}).SetupWithManager(mgr, logicalbackuprdbms.Options{CLIImage: s.cliImage}); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "LogicalBackupRDBMS")
 		os.Exit(1)
 	}
@@ -317,7 +290,7 @@ func main() {
 		Client:         mgr.GetClient(),
 		APIReader:      mgr.GetAPIReader(),
 		Scheme:         mgr.GetScheme(),
-		ClaimNamespace: operatorNamespace,
+		ClaimNamespace: s.namespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "Database")
 		os.Exit(1)
@@ -334,7 +307,7 @@ func main() {
 		Client:       mgr.GetClient(),
 		APIReader:    mgr.GetAPIReader(),
 		Scheme:       mgr.GetScheme(),
-		GracePeriods: gracePeriods,
+		GracePeriods: s.gracePeriods,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "DatabaseServer")
 		os.Exit(1)
@@ -370,7 +343,7 @@ func main() {
 		os.Exit(1)
 	}
 	pitrReconciler := pointintimerestore.New(
-		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), operatorNamespace,
+		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), s.namespace,
 		pointintimerestore.Options{},
 	)
 	if err := pitrReconciler.SetupWithManager(mgr); err != nil {
@@ -389,8 +362,8 @@ func main() {
 		Client:         mgr.GetClient(),
 		APIReader:      mgr.GetAPIReader(),
 		Scheme:         mgr.GetScheme(),
-		ClaimNamespace: operatorNamespace,
-		GracePeriods:   gracePeriods,
+		ClaimNamespace: s.namespace,
+		GracePeriods:   s.gracePeriods,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaOptimize")
 		os.Exit(1)
@@ -398,8 +371,8 @@ func main() {
 	managementCluster := camundamanagementcluster.New(
 		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(),
 	)
-	managementCluster.ClaimNamespace = operatorNamespace
-	managementCluster.GracePeriods = gracePeriods
+	managementCluster.ClaimNamespace = s.namespace
+	managementCluster.GracePeriods = s.gracePeriods
 	if err := managementCluster.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaManagementCluster")
 		os.Exit(1)
@@ -416,7 +389,7 @@ func main() {
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
 		mgr.GetScheme(),
-		logicalrestoreelasticsearch.Options{ClaimNamespace: operatorNamespace},
+		logicalrestoreelasticsearch.Options{ClaimNamespace: s.namespace},
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "LogicalRestoreElasticsearch")
 		os.Exit(1)
@@ -425,7 +398,7 @@ func main() {
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
 		mgr.GetScheme(),
-		logicalrestorerdbms.Options{CLIImage: cliImage, ClaimNamespace: operatorNamespace},
+		logicalrestorerdbms.Options{CLIImage: s.cliImage, ClaimNamespace: s.namespace},
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "LogicalRestoreRDBMS")
 		os.Exit(1)
@@ -446,6 +419,61 @@ func main() {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
 	}
+}
+
+// bindFlags registers on fs every flag that the manager defines, and reads
+// through getenv the environment variables that default some of them. The
+// table "Manager settings" of dist/chart/README.md lists these flags, and
+// TestManagerSettingsTable fails when the two differ.
+func bindFlags(fs *flag.FlagSet, getenv func(string) string) *settings {
+	s := &settings{
+		zapOptions: zap.Options{
+			Development: true,
+		},
+	}
+
+	fs.StringVar(&s.metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
+		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
+	fs.StringVar(&s.probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	fs.BoolVar(
+		&s.enableLeaderElection, "leader-elect", false,
+		"Enable leader election for controller manager. "+
+			"Enabling this will ensure there is only one active controller manager.",
+	)
+	fs.BoolVar(
+		&s.secureMetrics, "metrics-secure", true,
+		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.",
+	)
+	fs.StringVar(&s.webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
+	fs.StringVar(&s.webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
+	fs.StringVar(&s.webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
+	fs.StringVar(
+		&s.metricsCertPath, "metrics-cert-path", "",
+		"The directory that contains the metrics server certificate.",
+	)
+	fs.StringVar(&s.metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
+	fs.StringVar(&s.metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
+	fs.BoolVar(
+		&s.enableHTTP2, "enable-http2", false,
+		"If set, HTTP/2 will be enabled for the metrics and webhook servers",
+	)
+	fs.StringVar(
+		&s.cliImage, "camunda-operator-cli-image", getenv(cliImageEnv),
+		"The camunda-operator-cli image that the logical backup and restore Jobs "+
+			"of a PostgreSQL database run. "+
+			"Required. Defaults to the "+cliImageEnv+" environment variable.",
+	)
+	fs.StringVar(
+		&s.namespace, "namespace", getenv(namespaceEnv),
+		"The namespace that the operator runs in. It holds the Leases that serialize the "+
+			"cross-namespace claims: of a logical database, of a Keycloak realm, and of the "+
+			"secondary storage backend of a cluster. Defaults to the "+namespaceEnv+
+			" environment variable, and then to the namespace of the Pod.",
+	)
+	s.checkGracePeriods = s.gracePeriods.BindFlags(fs, getenv)
+	s.zapOptions.BindFlags(fs)
+
+	return s
 }
 
 // podNamespace reads the namespace of the Pod that the manager runs in. It

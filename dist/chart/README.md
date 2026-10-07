@@ -55,3 +55,45 @@ camunda-operator:
 Some values go to a Kubernetes field as a whole: `manager.resources`, `manager.podSecurityContext`, `manager.securityContext`, `manager.strategy`, and each value with an empty default, such as `manager.nodeSelector`. Helm accepts any key in these values. The Kubernetes API checks their content. If an image tag looks like a number, set it with `--set-string`, for example `--set-string manager.image.tag=8`. Helm reads `--set manager.image.tag=8` as a number, and the schema expects a string.
 
 `make helm-generate` writes `values.yaml` and `values.schema.json` from `config/`. Do not edit these files. Change the defaults in `config/`.
+
+## Manager settings
+
+The manager reads the flags and the environment variables in this table. A flag wins over its environment variable.
+
+To set a flag, give the full list in `manager.args`. Helm replaces the list, so keep `--leader-elect` in it:
+
+```bash
+helm upgrade camunda-operator \
+  oci://ghcr.io/konsole-is/charts/camunda-operator \
+  --version <version> \
+  --namespace camunda-operator-system \
+  --set 'manager.args={--leader-elect,--zap-log-level=info}'
+```
+
+To set an environment variable, use `manager.envOverrides.<NAME>=<value>`, for example `--set manager.envOverrides.CAMUNDA_OPERATOR_WORKLOAD_GRACE_PERIOD=60m`. The manager ignores a name that it does not know, and it gives no error. Copy the names from this table.
+
+The chart sets some flags from its own values. The column "Set by the chart" names the value to change. The chart puts `manager.args` after its own flags, so a flag in `manager.args` wins over the same flag from the chart. For `--health-probe-bind-address`, `--metrics-bind-address`, and `--metrics-secure`, change the chart value, not `manager.args`. The probes, the metrics Service, the `ServiceMonitor`, and the metrics RBAC use the value, so a different flag breaks them.
+
+| Flag | Environment variable | Default | Set by the chart | Description |
+|---|---|---|---|---|
+| `--camunda-operator-cli-image` | `CAMUNDA_OPERATOR_CLI_IMAGE` | none | `manager.cliImage` | The CLI image that the logical backup and restore Jobs of a PostgreSQL database run. The manager does not start without it. The chart always sets the flag, so the environment variable has no effect in a chart install. |
+| `--namespace` | `CAMUNDA_OPERATOR_NAMESPACE` | the namespace of the manager Pod | no | The namespace of the operator. It holds the Leases that make sure that only one resource claims a logical database, a Keycloak realm, or the secondary storage of a cluster. |
+| `--workload-grace-period` | `CAMUNDA_OPERATOR_WORKLOAD_GRACE_PERIOD` | `30m` | no | How long a Camunda, Optimize, Keycloak, or exporter workload can stay not ready before its condition reports `Degraded` or `Down`. See [Grace periods](https://github.com/konsole-is/camunda-operator/blob/main/docs/installation.md#grace-periods). |
+| `--datastore-grace-period` | `CAMUNDA_OPERATOR_DATASTORE_GRACE_PERIOD` | `30m` | no | How long an Elasticsearch or a PostgreSQL cluster can stay not ready before its condition reports `Degraded` or `Down`. See [Grace periods](https://github.com/konsole-is/camunda-operator/blob/main/docs/installation.md#grace-periods). |
+| `--leader-elect` | none | `false` | `manager.args` | Only one replica of the manager acts at a time. The default of `manager.args` turns it on. |
+| `--metrics-bind-address` | none | `0` | `metrics.enabled`, `metrics.port` | The address of the `/metrics` endpoint. `0` turns the endpoint off. The chart sets `:<metrics.port>`, or `0` when `metrics.enabled` is `false`. |
+| `--metrics-secure` | none | `true` | `metrics.secure` | Serve `/metrics` over HTTPS, and only to a caller that the Kubernetes RBAC allows. `false` serves plain HTTP to every caller. |
+| `--metrics-cert-path` | none | empty | no | The directory that holds the certificate of the metrics server. When it is empty and `--metrics-secure` is `true`, the manager makes a self-signed certificate. |
+| `--metrics-cert-name` | none | `tls.crt` | no | The file name of the certificate in `--metrics-cert-path`. |
+| `--metrics-cert-key` | none | `tls.key` | no | The file name of the key in `--metrics-cert-path`. |
+| `--kubeconfig` | `KUBECONFIG` | empty | no | The kubeconfig file that the manager uses to connect to Kubernetes. When both are empty, the manager uses its service account in its own cluster. Set it only to run the manager against a different cluster. |
+| `--health-probe-bind-address` | none | `:8081` | `manager.healthProbe.port` | The address of the `/healthz` and `/readyz` endpoints. |
+| `--enable-http2` | none | `false` | no | Allow HTTP/2 on the metrics and webhook servers. It is off because of the HTTP/2 Rapid Reset vulnerabilities. |
+| `--webhook-cert-path` | none | empty | no | The directory that holds the certificate of the webhook server. The operator has no webhooks, so this flag changes nothing. |
+| `--webhook-cert-name` | none | `tls.crt` | no | The file name of the webhook certificate. It changes nothing, as above. |
+| `--webhook-cert-key` | none | `tls.key` | no | The file name of the webhook key. It changes nothing, as above. |
+| `--zap-devel` | none | `true` | no | Development logging: console format, `debug` level, and stack traces from `warn`. `false` gives JSON format, `info` level, and stack traces from `error`. |
+| `--zap-log-level` | none | `debug` | no | The lowest level that the manager logs: `debug`, `info`, `error`, or `panic`. An integer above 0 also works: `1` is the same as `debug`. A larger integer logs more detail. The default follows `--zap-devel`. |
+| `--zap-encoder` | none | `console` | no | The log format: `json` or `console`. The default follows `--zap-devel`. |
+| `--zap-stacktrace-level` | none | `warn` | no | The lowest level that gets a stack trace: `info`, `error`, or `panic`. The default follows `--zap-devel`. The flag cannot set `warn`, so only `--zap-devel=true` gives stack traces from `warn`. |
+| `--zap-time-encoding` | none | `rfc3339` | no | The time format of a log line: `epoch`, `millis`, `nanos`, `iso8601`, `rfc3339`, or `rfc3339nano`. The help text of the flag says `nano`, but the manager accepts only `nanos`. |

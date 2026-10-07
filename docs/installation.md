@@ -123,6 +123,8 @@ helm install camunda-operator \
   --set manager.envOverrides.CAMUNDA_OPERATOR_DATASTORE_GRACE_PERIOD=45m
 ```
 
+The section [Manager settings](https://github.com/konsole-is/camunda-operator/blob/main/dist/chart/README.md#manager-settings) of the chart README lists every flag and environment variable of the manager.
+
 Without Helm, add the environment variables to the `manager` container of the Deployment `camunda-operator-controller-manager` in `install.yaml`, next to `CAMUNDA_OPERATOR_CLI_IMAGE`:
 
 ```yaml
