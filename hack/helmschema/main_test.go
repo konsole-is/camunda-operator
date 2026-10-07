@@ -43,6 +43,13 @@ manager:
     # tag: ""
     pullPolicy: IfNotPresent
 
+  ## camunda-operator-cli image that the operator's Jobs run, passed to the
+  ## manager as --camunda-operator-cli-image. Set at release time.
+  ##
+  cliImage:
+    repository: "ghcr.io/konsole-is/camunda-operator-cli"
+    tag: "8"
+
   ## Arguments
   ##
   args:
@@ -145,6 +152,17 @@ func TestGenerateTypesEachValueByItsDefault(t *testing.T) {
 	assert.Equal(t, "array", at(t, root, "manager.args").Type)
 	require.NotNil(t, at(t, root, "manager.args").Items)
 	assert.Equal(t, "string", at(t, root, "manager.args").Items.Type)
+}
+
+func TestGenerateTypesBothImageTagsAsStrings(t *testing.T) {
+	t.Parallel()
+
+	root := generateSchema(t)
+
+	// helmcli quotes the CLI image tag, so a numeric tag stays a string.
+	assert.Equal(t, "string", at(t, root, "manager.cliImage.tag").Type)
+	assert.Equal(t, "string", at(t, root, "manager.cliImage.repository").Type)
+	assert.Equal(t, []any{"string", "null"}, at(t, root, "manager.image.tag").Type)
 }
 
 func TestGenerateDescribesEachValueByItsComment(t *testing.T) {
