@@ -15,7 +15,7 @@ spec:
   # renovate: datasource=docker depName=docker.elastic.co/elasticsearch/elasticsearch
   version: "9.2.8"
   replicas: 1
-  storageSize: 1Gi
+  storageSize: 16Gi
   resources:
     requests:
       cpu: 500m

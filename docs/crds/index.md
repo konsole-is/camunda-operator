@@ -68,71 +68,163 @@ A contract is a resource that carries connection details and credential referenc
 
 ## How the kinds relate
 
-Solid arrows mean "creates". Dotted arrows mean "references".
+Each diagram below shows one concern: which kind needs which other kind.
+Solid arrows mean "creates". Dotted arrows mean "references", and the label names the field under `spec` that holds the reference.
+If one label stands for more than one field, a table under the diagram lists the fields.
+A kind that appears in more than one diagram, such as `CamundaCluster` or `SecondaryStorageConfig`, links those diagrams.
+
+### Cluster inputs
+
+A `CamundaCluster` reads its preset, its release, the platform settings, its secondary storage, and its buckets.
 
 ```mermaid
 graph LR
+    CC[CamundaCluster]
     CCP[CamundaClusterPreset]
     CR[CamundaRelease]
     PFC[CamundaPlatformConfig]
-    ESCP[ElasticsearchClusterPreset]
-    ESC[ElasticsearchCluster]
-    DBS[DatabaseServer]
-    DBSP[DatabaseServerPreset]
-    DB[Database]
-    DBSC[DatabaseServerConfig]
-    DBC[DatabaseConfig]
     SSC[SecondaryStorageConfig]
     OSC[ObjectStorageConfig]
-    CC[CamundaCluster]
-    LBE[LogicalBackupElasticsearch]
-    LBR[LogicalBackupRDBMS]
-    BS[BackupSchedule]
-    LRE[LogicalRestoreElasticsearch]
-    LRR[LogicalRestoreRDBMS]
-    MAC[ManagementAuthConfig]
-    OPT[CamundaOptimize]
-    MC[CamundaManagementCluster]
-    PITR[PointInTimeRestore]
-
-    ESC -.->|presetRef| ESCP
-    ESC -.->|releaseRef| CR
-    ESC -->|creates| SSC
-    ESC -.->|snapshotStorageRef| OSC
-    DBS -.->|presetRef| DBSP
-    DBS -.->|releaseRef| CR
-    DBS -.->|archive.objectStorageRef| OSC
-    DBS -.->|platformConfigRef| PFC
-    DBS -->|creates| DBSC
-    DB -->|creates| DBC
-    DB -->|"creates (optional)"| SSC
-    DB -.->|serverRef| DBSC
-    DBC -.->|serverRef| DBSC
-    SSC -.->|databaseConfigRef| DBC
 
     CC -.->|presetRef| CCP
     CC -.->|releaseRef| CR
     CC -.->|platformConfigRef| PFC
     CC -.->|storageRef| SSC
-    CC -.->|"backupStorageRef / documentStorageRef"| OSC
+    CC -.->|"backupStorageRef, documentStorageRef"| OSC
+```
 
+You can write the `SecondaryStorageConfig` by hand. An `ElasticsearchCluster` or a `Database` can also create it, as the next diagrams show.
+
+### Elasticsearch storage
+
+An `ElasticsearchCluster` creates the `SecondaryStorageConfig` that a `CamundaCluster` reads in `storageRef`.
+
+```mermaid
+graph LR
+    ESC[ElasticsearchCluster]
+    ESCP[ElasticsearchClusterPreset]
+    CR[CamundaRelease]
+    OSC[ObjectStorageConfig]
+    SSC[SecondaryStorageConfig]
+
+    ESC -.->|presetRef| ESCP
+    ESC -.->|releaseRef| CR
+    ESC -.->|snapshotStorageRef| OSC
+    ESC -->|creates| SSC
+```
+
+### PostgreSQL server
+
+A `DatabaseServer` creates the `DatabaseServerConfig` that each `Database` on the server reads.
+
+```mermaid
+graph LR
+    DBS[DatabaseServer]
+    DBSP[DatabaseServerPreset]
+    CR[CamundaRelease]
+    PFC[CamundaPlatformConfig]
+    OSC[ObjectStorageConfig]
+    DBSC[DatabaseServerConfig]
+
+    DBS -.->|presetRef| DBSP
+    DBS -.->|releaseRef| CR
+    DBS -.->|platformConfigRef| PFC
+    DBS -.->|archive.objectStorageRef| OSC
+    DBS -->|creates| DBSC
+```
+
+### PostgreSQL databases
+
+A `Database` creates the `DatabaseConfig` of one logical database. If you set `spec.secondaryStorageConfig`, it also creates a `SecondaryStorageConfig` that a `CamundaCluster` can read.
+
+```mermaid
+graph LR
+    DB[Database]
+    DBSC[DatabaseServerConfig]
+    DBC[DatabaseConfig]
+    SSC[SecondaryStorageConfig]
+
+    DB -.->|serverRef| DBSC
+    DB -->|creates| DBC
+    DB -->|"creates (optional)"| SSC
+    DBC -.->|serverRef| DBSC
+    SSC -.->|rdbms.databaseConfigRef| DBC
+```
+
+### Backups
+
+Each backup references the `CamundaCluster` that it backs up. A `BackupSchedule` creates the backup kind that matches the secondary storage of the cluster.
+
+```mermaid
+graph LR
+    BS[BackupSchedule]
+    LBE[LogicalBackupElasticsearch]
+    LBR[LogicalBackupRDBMS]
+    CC[CamundaCluster]
+
+    BS -->|creates| LBE
+    BS -->|creates| LBR
+    BS -.->|clusterRef| CC
     LBE -.->|clusterRef| CC
     LBR -.->|clusterRef| CC
+```
+
+### Restores
+
+A logical restore reads one backup and restores it into a target `CamundaCluster`. A `PointInTimeRestore` references only the cluster.
+
+```mermaid
+graph LR
+    LRE[LogicalRestoreElasticsearch]
+    PITR[PointInTimeRestore]
+    LRR[LogicalRestoreRDBMS]
+    LBE[LogicalBackupElasticsearch]
+    CC[CamundaCluster]
+    LBR[LogicalBackupRDBMS]
+
     LRE -.->|backupRef| LBE
     LRE -.->|targetClusterRef| CC
-    LRR -.->|backupRef| LBR
-    LRR -.->|targetClusterRef| CC
     PITR -.->|clusterRef| CC
+    LRR -.->|targetClusterRef| CC
+    LRR -.->|backupRef| LBR
+```
 
-    OPT -.->|clusterRef| CC
-    OPT -.->|managementAuthRef| MAC
+### Management plane
+
+A `CamundaManagementCluster` creates a `ManagementAuthConfig` for Optimize. It serves the clusters that match its `clusterSelector`.
+
+```mermaid
+graph LR
+    MC[CamundaManagementCluster]
+    PFC[CamundaPlatformConfig]
+    DBC[DatabaseConfig]
+    MAC[ManagementAuthConfig]
+    CC[CamundaCluster]
 
     MC -.->|platformConfigRef| PFC
     MC -.->|databaseConfigRef| DBC
-    MC -.->|clusterSelector| CC
     MC -->|creates| MAC
+    MC -.->|clusterSelector| CC
+```
 
-    BS -.->|clusterRef| CC
-    BS -->|creates| LBE
-    BS -->|creates| LBR
+The management plane reads one `DatabaseConfig` for each database that it runs:
+
+| Field | Database |
+| --- | --- |
+| `spec.identity.databaseConfigRef` | Management Identity |
+| `spec.identityProvider.keycloak.databaseConfigRef` | Keycloak, when the operator runs it |
+| `spec.webModeler.databaseConfigRef` | Web Modeler, when `spec.webModeler` is set |
+
+### Optimize
+
+A `CamundaOptimize` serves one `CamundaCluster`. It reads the `ManagementAuthConfig` that a `CamundaManagementCluster` creates.
+
+```mermaid
+graph LR
+    OPT[CamundaOptimize]
+    MAC[ManagementAuthConfig]
+    CC[CamundaCluster]
+
+    OPT -.->|managementAuthRef| MAC
+    OPT -.->|clusterRef| CC
 ```

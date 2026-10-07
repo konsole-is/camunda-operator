@@ -18,7 +18,9 @@ the one in [`camunda-cluster/rdbms`](../rdbms) to see the difference.
 
 - Install the ECK operator and the Camunda operator. See
   [Installation](https://konsole-is.github.io/camunda-operator/dev/installation/).
-- Give the cluster about 4 GB of free memory and a default StorageClass.
+- Give the cluster about 4 GB of free memory.
+- Give the cluster a default StorageClass that can bind two volumes of
+  16Gi each, 32Gi in total.
 - On kind, raise the map count that Elasticsearch needs:
   `sudo sysctl -w vm.max_map_count=262144`.
 

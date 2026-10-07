@@ -33,12 +33,13 @@ The Prepare release workflow pins the version of the api module in the root `go.
 
 When you publish the release, `.github/workflows/release.yml` starts. It does these steps:
 
-1. It pushes the Go tag `api/vX.Y.Z` of the api module at the release commit.
-2. It builds the chart, sets the release version in it, and lints it.
-3. It builds the manager and CLI images for amd64 and arm64, and pushes them to GHCR.
-4. It pushes the chart and the Artifact Hub metadata to GHCR.
-5. It signs the two images and the chart by digest with cosign.
-6. It attaches `install.yaml`, `crds.yaml`, and the packaged chart to the release.
+1. It builds the manager and CLI images for amd64 and arm64, and scans each image with Trivy. It stops on a HIGH or CRITICAL finding that has a fix. The next steps start only when every scan passes.
+2. It pushes the Go tag `api/vX.Y.Z` of the api module at the release commit.
+3. It builds the chart, sets the release version in it, and lints it.
+4. It builds the manager and CLI images for amd64 and arm64, and pushes them to GHCR.
+5. It pushes the chart and the Artifact Hub metadata to GHCR.
+6. It signs the two images and the chart by digest with cosign.
+7. It attaches `install.yaml`, `crds.yaml`, and the packaged chart to the release.
 
 When these steps pass, a second job deploys the docs version of the minor release, such as `0.2`, to the `gh-pages` branch. It moves the alias `latest` to that version, and the site root opens `latest`. A patch release replaces the docs of its minor. A prerelease does not change the docs site.
 
@@ -48,6 +49,8 @@ Users verify the signatures as [Verify the signatures](docs/installation.md#veri
 
 ## If the Release workflow fails
 
+If the image scan stops the workflow, the workflow has not pushed a tag or an image. The job log names each finding and the version that fixes it. Delete the release and its tag `vX.Y.Z`. Fix the finding on main. For a Go module, Renovate opens a security pull request. Then do the steps of [Publish a release](#publish-a-release) again from step 2.
+
 If the workflow stops because `go.mod` does not pin the api module at the release version, the api module tag does not exist yet. Delete the release and its tag `vX.Y.Z`, because the Prepare release workflow rejects a version whose tag exists. Then do the steps of [Publish a release](#publish-a-release) again from step 2.
 
 If the cause is outside the code, for example a registry outage, run the failed jobs again from the workflow run. A run again uses the same release commit. An api module tag that already points at that commit stays as it is. A push of an image or a chart replaces the earlier push.
@@ -56,6 +59,19 @@ If the cause is in the code, correct it on main. Then look for the api module ta
 
 - If the api module tag exists, the release tag `vX.Y.Z` is a published Go version too. Do not move or delete either tag. The Go checksum database can already hold the checksum of that version, and a moved tag then breaks `go get` for each user. Delete the failed GitHub release, but keep its tag. Then release a new version, for example `v0.2.1`.
 - If the api module tag does not exist, delete the release and its tag. Then publish the release again at the new commit.
+
+## Vulnerability scans
+
+The **Security** workflow scans the code and the images:
+
+- On each pull request, on each push to main, every Monday, and when you run it by hand, it runs `govulncheck` on both Go modules and Trivy on the manager and CLI images that it builds.
+- Every Monday, and when you run it by hand, it also scans the amd64 and arm64 images of the latest release.
+
+`govulncheck` fails its job on a known vulnerability that the code can reach. Trivy fails a job on a HIGH or CRITICAL finding that has a fix. The **Security** tab of the repository shows all Trivy findings under code scanning. If the weekly scan of the latest release fails, fix the finding on main, then publish a patch release.
+
+Renovate opens a security pull request for a Go module only after the advisory is in the OSV database or in the GitHub Advisory Database. Until then, update the module yourself.
+
+If a HIGH or CRITICAL finding has a fix that the operator cannot use yet, add its ID to a file `.trivyignore` at the root of the repository. Write a comment above the ID that says why, and add an end date, for example `CVE-2026-12345 exp:2026-12-31`. Trivy reads this file in each scan of the Security and Release workflows, and reports the finding again after the end date.
 
 ## One-time setup
 

@@ -40,7 +40,7 @@ This chain is ready to apply in [`config/example/camunda-cluster/elasticsearch`]
     spec:
       version: "9.2.4"
       replicas: 1
-      storageSize: "1Gi"
+      storageSize: "16Gi"
       resources:
         requests: { cpu: "500m", memory: "1Gi" }
       secondaryStorageConfig: "my-storage-config"

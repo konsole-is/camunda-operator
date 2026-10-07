@@ -129,6 +129,15 @@ func probedServer(namespace, secretName, host string) *v1.DatabaseServerConfig {
 func publishProbe(server *v1.DatabaseServerConfig) {
 	GinkgoHelper()
 
+	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), server)).To(Succeed())
+	publishProbeOf(server, server.Spec.Host)
+}
+
+// publishProbeOf is publishProbe for a probe that reached host, which can be
+// another host than the one the spec names.
+func publishProbeOf(server *v1.DatabaseServerConfig, host string) {
+	GinkgoHelper()
+
 	identifier := serverSystemIdentifier()
 
 	Eventually(func(g Gomega) {
@@ -136,7 +145,7 @@ func publishProbe(server *v1.DatabaseServerConfig) {
 		ref := server.Spec.AdminCredentialsSecretRef
 		server.Status.SystemIdentifier = identifier
 		server.Status.ProbedAt = &metav1.Time{Time: time.Now()}
-		server.Status.ProbedEndpoint = fmt.Sprintf("%s:%d", server.Spec.Host, server.Spec.Port)
+		server.Status.ProbedEndpoint = fmt.Sprintf("%s:%d", host, server.Spec.Port)
 		server.Status.ProbedSecretName = ref.Name
 		server.Status.ProbedSecretKeys = ref.UsernameKey + "/" + ref.PasswordKey
 		g.Expect(k8sClient.Status().Update(ctx, server)).To(Succeed())
@@ -518,11 +527,18 @@ var _ = Describe("Database controller", func() {
 		if host == previous {
 			previous = "localhost"
 		}
-		server := probedServer(namespace, createAdminSecret(namespace), previous)
+		server := unprobedServer(namespace, createAdminSecret(namespace), previous)
 
 		By("moving the endpoint of the contract with no probe of the new one")
 		server.Spec.Host = host
 		Expect(k8sClient.Update(ctx, server)).To(Succeed())
+		// The probe of the old endpoint is written after the move. The cache of
+		// the controller applies the writes to one object in order, so each
+		// copy of the contract that carries an identity names the new host. A
+		// probe written before the move lets a stale copy pair the old host with
+		// its identity, and the Database runs SQL on the old host, which reaches
+		// the same container in this suite.
+		publishProbeOf(server, previous)
 
 		db := databaseFor(server.Name, namespace)
 		createDatabase(db)

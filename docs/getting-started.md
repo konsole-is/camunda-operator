@@ -12,7 +12,7 @@ The same manifests are ready to apply in [`config/example/camunda-cluster/elasti
 You need:
 
 - `kubectl` and `helm` 3.8 or later
-- a Kubernetes cluster that meets the [requirements](installation.md#requirements), with a default StorageClass that can bind at least 2Gi
+- a Kubernetes cluster that meets the [requirements](installation.md#requirements), with a default StorageClass that can bind two volumes of 16Gi each, 32Gi in total
 - about 4 GB of free memory on the nodes
 - nodes that can pull images from Docker Hub, `docker.elastic.co`, and `ghcr.io`
 
@@ -72,7 +72,7 @@ metadata:
 spec:
   version: "9.2.8"
   replicas: 1
-  storageSize: 1Gi
+  storageSize: 16Gi
   resources:
     requests: { cpu: 500m, memory: 1Gi }
   secondaryStorageConfig: my-storage-config
@@ -114,13 +114,15 @@ spec:
   platformConfigRef: my-platform-config
   storageRef: my-storage-config
   zeebe:
-    storageSize: 1Gi
+    storageSize: 16Gi
     resources:
       requests: { cpu: "1", memory: 1.5Gi }
   gateway:
     resources:
       requests: { cpu: 500m, memory: 512Mi }
 ```
+
+By default, the Zeebe broker stops processing commands when its volume has less than 2GB free. Keep `zeebe.storageSize` well above that, also on kind. See [Disk space](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/zeebe/operations/disk-space/) in the Camunda docs.
 
 This cluster runs the default topology of a `CamundaCluster`: one Zeebe broker, and one gateway that also serves Operate, Tasklist, and Admin.
 
