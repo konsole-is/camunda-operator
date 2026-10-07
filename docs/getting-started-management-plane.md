@@ -51,13 +51,13 @@ kind delete cluster --name camunda
 kind create cluster --name camunda --image kindest/node:v1.34.0
 ```
 
-Elasticsearch needs `vm.max_map_count` of at least 262144 in the kernel that runs the kind node. On a Linux host, set it on the host:
+Elasticsearch needs `vm.max_map_count` of at least 262144 in the kernel that runs the kind node. If Docker or Podman runs directly on a Linux host, set it on the host:
 
 ```bash
 sudo sysctl -w vm.max_map_count=262144
 ```
 
-On macOS and Windows, Docker Desktop and Podman run the kind node in a virtual machine. Set the value in the node instead, and set it again after the virtual machine restarts:
+If your container runtime runs in a virtual machine, set the value in the kind node instead. Docker Desktop does so on every system, and so does a Podman machine. Set the value again after the virtual machine restarts:
 
 ```bash
 docker exec camunda-control-plane sysctl -w vm.max_map_count=262144
@@ -413,7 +413,7 @@ Open <http://localhost:8087>. Console sends you to the Keycloak sign-in page. Si
 
 Management Identity is at <http://localhost:8084>. Sign in there with the same user.
 
-To open Operate on the cluster, forward the gateway port. Local port 8080 is in use by Keycloak, so this guide uses 8088, the port of the cluster `externalUrl` in step 7:
+To open Operate on the cluster, forward the gateway port in another terminal. Local port 8080 is in use by Keycloak, so this guide uses 8088, the port of the cluster `externalUrl` in step 7:
 
 ```bash
 kubectl port-forward svc/my-cluster-gateway -n my-cluster-ns 8088:8080
@@ -446,12 +446,11 @@ spec:
     name: my-cluster
 ```
 
-`managementAuthRef` names the contract that `my-management` publishes. Wait until it is ready, then forward its port:
+`managementAuthRef` names the contract that `my-management` publishes. Wait until it is ready:
 
 ```bash
 kubectl wait camundaoptimize/my-cluster-optimize -n my-cluster-ns \
   --for=condition=Ready --timeout=15m
-kubectl port-forward svc/my-cluster-optimize-webapp -n my-cluster-ns 8090:8090
 ```
 
 The management plane also registers the sign-in address of Optimize in Keycloak and gives `admin` the Optimize role. Until it has done so, the sign-in to Optimize fails. The condition `OptimizeCallbacksReady` reads `True` with the reason `NoCallbacks` before any Optimize exists, so wait for the reason `Healthy`:
@@ -460,6 +459,12 @@ The management plane also registers the sign-in address of Optimize in Keycloak 
 kubectl wait camundamanagementcluster/my-management -n my-management-ns \
   --for=jsonpath='{.status.conditions[?(@.type=="OptimizeCallbacksReady")].reason}'=Healthy \
   --timeout=5m
+```
+
+Then forward the port of Optimize. The command runs until you stop it, so run it in a terminal of its own:
+
+```bash
+kubectl port-forward svc/my-cluster-optimize-webapp -n my-cluster-ns 8090:8090
 ```
 
 Open <http://localhost:8090> and sign in as `admin`. The Keycloak port forward and the hosts file line of step 8 must stay in place. See [CamundaOptimize](crds/camundaoptimize.md) for the rest.
