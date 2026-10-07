@@ -491,11 +491,13 @@ kubectl delete databaseserverpreset standard
 kubectl delete camundarelease camunda-8-9
 ```
 
-To remove everything at once, delete the kind cluster:
+To remove the whole Kubernetes cluster at once, delete the kind cluster instead:
 
 ```bash
 kind delete cluster --name camunda
 ```
+
+Neither way removes the line that you added to the hosts file in step 8. Remove the line with `my-management-keycloak-service.my-management-ns.svc` yourself. The file is `/etc/hosts` on Linux and macOS, and `C:\Windows\System32\drivers\etc\hosts` on Windows.
 
 ## Next steps
 
