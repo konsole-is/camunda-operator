@@ -205,6 +205,14 @@ lint-config: golangci-lint golangci-lint-schema ## Verify golangci-lint linter c
 lint-renovate: ## Verify renovate.json5 with the validator of RENOVATE_VERSION. Needs npx.
 	npx --yes --package renovate@$(RENOVATE_VERSION) renovate-config-validator --strict renovate.json5
 
+# govulncheck checks the stdlib of the Go that runs it, and it cannot load code
+# that needs a newer Go than the Go that built it. The golang builder image of
+# the Dockerfiles is newer than the go line of go.mod, and .tool-versions holds
+# the same Go release line, so run this target with the Go of .tool-versions.
+.PHONY: vulncheck
+vulncheck: govulncheck ## Fail on a known vulnerability that the code of a module can reach.
+	@for m in $(MODULES); do (cd $$m && "$(GOVULNCHECK)" ./...) || exit 1; done
+
 ##@ Build
 
 .PHONY: build
@@ -314,6 +322,7 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+GOVULNCHECK ?= $(LOCALBIN)/govulncheck
 # The JSON schema that `golangci-lint config verify` checks .golangci.yml against. golangci-lint fetches it itself
 # with a 2 s HTTP timeout and no retry, which fails CI on a slow CDN answer, so lint-config downloads it with
 # retries and passes it in. The file name carries the major.minor of GOLANGCI_LINT_VERSION (v2.8.0 -> v2.8).
@@ -340,6 +349,8 @@ GOLANGCI_LINT_VERSION ?= v2.8.0
 # against renovate.json5.
 # renovate: datasource=npm depName=renovate
 RENOVATE_VERSION ?= 44.140.0
+# renovate: datasource=go depName=golang.org/x/vuln
+GOVULNCHECK_VERSION ?= v1.8.0
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
 $(KUSTOMIZE): $(LOCALBIN)
@@ -367,6 +378,11 @@ setup-envtest: envtest ## Download the binaries required for ENVTEST in the loca
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest,$(ENVTEST_VERSION))
+
+.PHONY: govulncheck
+govulncheck: $(GOVULNCHECK) ## Download govulncheck locally if necessary.
+$(GOVULNCHECK): $(LOCALBIN)
+	$(call go-install-tool,$(GOVULNCHECK),golang.org/x/vuln/cmd/govulncheck,$(GOVULNCHECK_VERSION))
 
 .PHONY: golangci-lint-schema
 golangci-lint-schema: $(GOLANGCI_LINT_SCHEMA) ## Download the golangci-lint JSON schema locally if necessary.

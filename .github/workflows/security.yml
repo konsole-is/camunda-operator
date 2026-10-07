@@ -1,0 +1,161 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # A new vulnerability can be published after a release, with no code change.
+  # The weekly run scans main and the images of the latest release again.
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+# The event is part of the group, so a push to main does not cancel the
+# weekly run on main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v7
+
+      # govulncheck checks the stdlib of the Go that runs it. The golang
+      # builder image of the Dockerfiles is newer than the go line of go.mod,
+      # so that line gives stdlib findings that no image has. .tool-versions
+      # holds the Go release line of the builder image.
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: .tool-versions
+
+      # The Go module proxy sometimes drops a connection. The retry keeps
+      # one dropped download from failing the job.
+      - name: Download the Go modules and govulncheck
+        run: |
+          hack/ci-retry.sh go mod download
+          hack/ci-retry.sh go -C api mod download
+          hack/ci-retry.sh make govulncheck
+
+      - name: Run govulncheck on each module
+        run: make vulncheck
+
+  image:
+    name: Scan the ${{ matrix.image }} image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to code scanning
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: manager
+            target: docker-build
+            variable: IMG
+          - image: cli
+            target: docker-build-cli
+            variable: CLI_IMG
+    env:
+      REF: camunda-operator-${{ matrix.image }}:scan
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v7
+
+      - name: Build the image
+        run: make ${{ matrix.target }} "${{ matrix.variable }}=${REF}"
+
+      # Artifact Hub scans the release images with Trivy, so CI uses the same
+      # scanner. The report holds every finding, with a fix or not.
+      #
+      # trivy-action is pinned to the commit of its tag, not to the tag. In
+      # March 2026 an attacker moved its tags to malicious commits.
+      - name: Write the Trivy report
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.REF }}
+          format: sarif
+          output: trivy.sarif
+
+      # A pull request from a fork gets a read-only token, and the upload
+      # needs write access.
+      - name: Upload the report to code scanning
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy.sarif
+          category: trivy-${{ matrix.image }}
+
+      # A finding without a fix gives the pull request nothing to do, so only
+      # a HIGH or CRITICAL finding with a fix fails the job.
+      - name: Fail on a HIGH or CRITICAL finding with a fix
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_SKIP_DB_UPDATE: "true"
+        with:
+          image-ref: ${{ env.REF }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  release:
+    name: Scan the ${{ matrix.image }} image of the latest release
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read           # pull from ghcr
+      security-events: write   # upload SARIF to code scanning
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: manager
+            repository: camunda-operator
+          - image: cli
+            repository: camunda-operator-cli
+    steps:
+      # The release tag is v0.1.0. The images carry the version without the v.
+      - name: Find the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release view --repo "${GITHUB_REPOSITORY}" --json tagName --jq .tagName)
+          echo "REF=ghcr.io/${GITHUB_REPOSITORY_OWNER}/${{ matrix.repository }}:${tag#v}" >> "${GITHUB_ENV}"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Write the Trivy report
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.REF }}
+          format: sarif
+          output: trivy.sarif
+
+      - name: Upload the report to code scanning
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy.sarif
+          category: trivy-release-${{ matrix.image }}
+
+      - name: Fail on a HIGH or CRITICAL finding with a fix
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_SKIP_DB_UPDATE: "true"
+        with:
+          image-ref: ${{ env.REF }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
