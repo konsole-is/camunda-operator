@@ -199,13 +199,17 @@ jobs:
       - name: Sign the chart
         run: cosign sign --yes "${CHART_REPO}@${{ steps.chart.outputs.digest }}"
 
+      # gh release upload looks up the release and then uses the asset API.
+      # Unlike softprops/action-gh-release, it does not edit the release; GitHub
+      # rejected that edit for v0.1.1 (softprops/action-gh-release#836).
       - name: Upload release assets
-        uses: softprops/action-gh-release@v3
-        with:
-          files: |
-            dist/install.yaml
-            dist/crds.yaml
-            dist/camunda-operator-${{ env.VERSION }}.tgz
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${TAG}" --clobber \
+            dist/install.yaml \
+            dist/crds.yaml \
+            "dist/camunda-operator-${VERSION}.tgz"
 
   docs:
     name: Publish the docs site
