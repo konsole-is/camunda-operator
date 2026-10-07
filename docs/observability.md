@@ -27,7 +27,7 @@ The manager serves the namespace of a custom resource as the label `namespace`. 
 
 ## Install the dashboards and the alert rules
 
-The chart value `prometheus.enable=true` installs the `ServiceMonitor`. The dashboards and the alert rules are not part of the chart. Apply them into the namespace that your Prometheus Operator and your Grafana sidecar watch:
+The chart value `prometheus.enabled=true` installs the `ServiceMonitor`. The dashboards and the alert rules are not part of the chart. Apply them into the namespace that your Prometheus Operator and your Grafana sidecar watch:
 
 ```bash
 kubectl apply -n monitoring -k "https://github.com/konsole-is/camunda-operator//config/prometheus/observability?ref=<version>"
@@ -118,5 +118,5 @@ Both alerts fire per resource type of one controller, not per custom resource. T
 
 ## Related
 
-- [Installation](installation.md): the `prometheus.enable` value.
+- [Installation](installation.md): the `prometheus.enabled` value.
 - [Operations](guides/operations.md#monitor): the metrics of the Camunda clusters that the operator runs.

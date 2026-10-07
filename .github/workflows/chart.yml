@@ -89,7 +89,7 @@ jobs:
       # CRD upgrades are the most likely breakage as the API grows. Exercise
       # the upgrade path in CI rather than discovering it in a user's cluster.
       - name: Upgrade the chart
-        run: make helm-deploy IMG=controller:latest HELM_EXTRA_ARGS="--set rbacHelpers.enable=true"
+        run: make helm-deploy IMG=controller:latest HELM_EXTRA_ARGS="--set rbac.helpers.enabled=true"
 
       - name: Check upgrade revision
         run: |

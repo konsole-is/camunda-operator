@@ -34,17 +34,27 @@ The defaults are the values of a released chart.
 | `manager.affinity` | `{}` | Pod affinity. |
 | `manager.nodeSelector` | `{}` | Pod node selector. |
 | `manager.tolerations` | `[]` | Pod tolerations. |
-| `crd.enable` | `true` | Install the CRDs with the chart. Set `false` when you apply `crds.yaml` of the release yourself. |
+| `crd.enabled` | `true` | Install the CRDs with the chart. Set `false` when you apply `crds.yaml` of the release yourself. |
 | `crd.keep` | `true` | Annotate the CRDs with `helm.sh/resource-policy: keep`. Then `helm uninstall` keeps the CRDs and your custom resources. |
-| `rbacHelpers.enable` | `false` | Install admin, editor, and viewer `ClusterRole`s for each CRD. |
-| `metrics.enable` | `true` | Expose the RBAC-protected `/metrics` endpoint. |
+| `rbac.helpers.enabled` | `false` | Install admin, editor, and viewer `ClusterRole`s for each CRD. |
+| `metrics.enabled` | `true` | Expose the RBAC-protected `/metrics` endpoint. |
 | `metrics.port` | `8443` | Metrics server port. |
-| `certManager.enable` | `false` | Make the `ServiceMonitor` verify the metrics endpoint with the certificate in the Secret `metrics-server-cert`. The chart does not create that Secret. |
-| `prometheus.enable` | `false` | Install a `ServiceMonitor`. Needs the prometheus-operator CRDs. You apply the alert rules and dashboards yourself, see [Observability](https://github.com/konsole-is/camunda-operator/blob/main/docs/observability.md). |
+| `certManager.enabled` | `false` | Make the `ServiceMonitor` verify the metrics endpoint with the certificate in the Secret `metrics-server-cert`. The chart does not create that Secret. |
+| `prometheus.enabled` | `false` | Install a `ServiceMonitor`. Needs the prometheus-operator CRDs. You apply the alert rules and dashboards yourself, see [Observability](https://github.com/konsole-is/camunda-operator/blob/main/docs/observability.md). |
 | `nameOverride` | unset | Replace the chart name in the resource names and in the `app.kubernetes.io/name` label. |
 | `fullnameOverride` | unset | Replace the release and chart name at the start of each resource name. |
 
-`make helm-generate` writes `values.yaml` from `config/`. Do not edit `values.yaml`. Change the defaults in `config/`.
+The chart carries `values.schema.json`. Helm checks your values against it on `install`, `upgrade`, `lint`, and `template`. A key that the chart does not know, or a value of the wrong type, stops the command:
+
+```text
+Error: values don't meet the specifications of the schema(s) in the following chart(s):
+camunda-operator:
+- at '/prometheus': additional properties 'enabeld' not allowed
+```
+
+Some values go to a Kubernetes field as a whole: `manager.resources`, `manager.podSecurityContext`, `manager.securityContext`, `manager.strategy`, and each value with an empty default, such as `manager.nodeSelector`. Helm accepts any key in these values. The Kubernetes API checks their content. If an image tag looks like a number, set it with `--set-string`, for example `--set-string manager.image.tag=8`. Helm reads `--set manager.image.tag=8` as a number, and the schema expects a string.
+
+`make helm-generate` writes `values.yaml` and `values.schema.json` from `config/`. Do not edit these files. Change the defaults in `config/`.
 
 ## Manager settings
 

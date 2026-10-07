@@ -45,16 +45,16 @@ This installs the manager and every custom resource definition. Replace `<versio
 
 ### Values
 
-The [chart README](https://github.com/konsole-is/camunda-operator/blob/main/dist/chart/README.md) documents every value. The values you are most likely to set:
+The [chart README](https://github.com/konsole-is/camunda-operator/blob/main/dist/chart/README.md) documents every value. Helm stops with an error when you set a value that the chart does not know, or a value of the wrong type. The values you are most likely to set:
 
 | Value | Default | Effect |
 | --- | --- | --- |
 | `manager.replicas` | `1` | Number of manager replicas. Leader election is on. |
 | `manager.cliImage.repository`, `manager.cliImage.tag` | the CLI image of the release | The image that the Jobs of the operator run. Point it at your mirror when you mirror the manager image. |
-| `prometheus.enable` | `false` | Install a `ServiceMonitor` for the manager. Needs the prometheus-operator CRDs. The alert rules and dashboards are applied separately, see [Observability](observability.md). |
-| `rbacHelpers.enable` | `false` | Install admin, editor, and viewer `ClusterRole`s for every custom resource. |
-| `crd.enable` | `true` | Install the CRDs with the chart. Set `false` to manage them yourself (below). |
-| `certManager.enable` | `false` | Make the `ServiceMonitor` verify the metrics endpoint with the certificate in the Secret `metrics-server-cert`. The chart does not create that Secret. |
+| `prometheus.enabled` | `false` | Install a `ServiceMonitor` for the manager. Needs the prometheus-operator CRDs. The alert rules and dashboards are applied separately, see [Observability](observability.md). |
+| `rbac.helpers.enabled` | `false` | Install admin, editor, and viewer `ClusterRole`s for every custom resource. |
+| `crd.enabled` | `true` | Install the CRDs with the chart. Set `false` to manage them yourself (below). |
+| `certManager.enabled` | `false` | Make the `ServiceMonitor` verify the metrics endpoint with the certificate in the Secret `metrics-server-cert`. The chart does not create that Secret. |
 
 To pull from a mirror, set `manager.image.repository` and `manager.cliImage.repository`, and put the pull Secret in `manager.imagePullSecrets`. That Secret applies to the manager Pod only, not to the Jobs that run the CLI image. Those Jobs and the Camunda pods run under the ServiceAccount of their `CamundaCluster`. Add the pull Secret to the `imagePullSecrets` of that ServiceAccount, see [Workload identity](crds/camundacluster.md#workload-identity). The [chart README](https://github.com/konsole-is/camunda-operator/blob/main/dist/chart/README.md) lists these values.
 
@@ -66,7 +66,7 @@ helm install camunda-operator \
   --version <version> \
   --namespace camunda-operator-system --create-namespace \
   --set manager.replicas=2 \
-  --set prometheus.enable=true
+  --set prometheus.enabled=true
 ```
 
 ## Install without Helm
@@ -79,7 +79,7 @@ kubectl apply --server-side -f https://github.com/konsole-is/camunda-operator/re
 
 Use `--server-side`: the `CamundaCluster` CRD is larger than the annotation that client-side apply writes.
 
-The manifest differs from the chart defaults in two ways. It creates the namespace `camunda-operator-system`. And it includes the admin, editor, and viewer `ClusterRole`s for every custom resource, the same set the chart renders with `rbacHelpers.enable=true`.
+The manifest differs from the chart defaults in two ways. It creates the namespace `camunda-operator-system`. And it includes the admin, editor, and viewer `ClusterRole`s for every custom resource, the same set the chart renders with `rbac.helpers.enabled=true`.
 
 The manifest pins the CLI image in the manager's `CAMUNDA_OPERATOR_CLI_IMAGE` environment variable. To use a mirror, edit that value and the image of the manager Deployment before you apply.
 
@@ -94,10 +94,10 @@ helm install camunda-operator \
   oci://ghcr.io/konsole-is/charts/camunda-operator \
   --version <version> \
   --namespace camunda-operator-system --create-namespace \
-  --set crd.enable=false
+  --set crd.enabled=false
 ```
 
-With `crd.enable=false` you own the CRD lifecycle. Apply the new `crds.yaml` before you upgrade the chart.
+With `crd.enabled=false` you own the CRD lifecycle. Apply the new `crds.yaml` before you upgrade the chart.
 
 ## Grace periods
 
@@ -207,4 +207,4 @@ make helm-generate IMG=<registry>/camunda-operator:<tag> CLI_IMG=<registry>/camu
 make helm-deploy   IMG=<registry>/camunda-operator:<tag> CLI_IMG=<registry>/camunda-operator-cli:<tag>
 ```
 
-This needs Docker, Go, and the `kubebuilder` CLI. `make helm-generate` renders `dist/chart/values.yaml` and `dist/chart/templates/` from `config/`. The repository holds only `Chart.yaml` and `README.md` of the chart. `IMG` and `CLI_IMG` set the two images for `make deploy`, `make build-installer`, and `make helm-deploy` in the same way.
+This needs Docker, Go, and the `kubebuilder` CLI. `make helm-generate` renders `dist/chart/values.yaml`, `dist/chart/values.schema.json`, and `dist/chart/templates/` from `config/`. The repository holds only `Chart.yaml` and `README.md` of the chart. `IMG` and `CLI_IMG` set the two images for `make deploy`, `make build-installer`, and `make helm-deploy` in the same way.
