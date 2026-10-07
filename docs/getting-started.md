@@ -122,7 +122,7 @@ spec:
       requests: { cpu: 500m, memory: 512Mi }
 ```
 
-By default, the Zeebe broker stops processing commands when its volume has less than 2GB free. Keep `zeebe.storageSize` well above that, also on kind.
+By default, the Zeebe broker stops processing commands when its volume has less than 2GB free. Keep `zeebe.storageSize` well above that, also on kind. See [Disk space](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/zeebe/operations/disk-space/) in the Camunda docs.
 
 This cluster runs the default topology of a `CamundaCluster`: one Zeebe broker, and one gateway that also serves Operate, Tasklist, and Admin.
 
