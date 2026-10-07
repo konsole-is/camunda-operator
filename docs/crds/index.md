@@ -70,7 +70,8 @@ A contract is a resource that carries connection details and credential referenc
 
 Each diagram below shows one concern: which kind needs which other kind.
 Solid arrows mean "creates". Dotted arrows mean "references", and the label names the field under `spec` that holds the reference.
-A kind that appears in more than one diagram, such as `CamundaCluster` or `SecondaryStorageConfig`, joins the diagrams.
+If one label stands for more than one field, a table under the diagram lists the fields.
+A kind that appears in more than one diagram, such as `CamundaCluster` or `SecondaryStorageConfig`, links those diagrams.
 
 ### Cluster inputs
 
