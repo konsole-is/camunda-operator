@@ -46,11 +46,19 @@ kubectl version
 
 The server version must be 1.34 or later. See the [requirements](installation.md#requirements). If it is earlier, create the cluster again with a newer node image, for example `--image kindest/node:v1.34.0`.
 
-Elasticsearch needs `vm.max_map_count` of at least 262144 on the host:
+Elasticsearch needs `vm.max_map_count` of at least 262144 in the kernel that runs the kind node. On a Linux host, set it on the host:
 
 ```bash
 sudo sysctl -w vm.max_map_count=262144
 ```
+
+On macOS and Windows, Docker Desktop and Podman run the kind node in a virtual machine. Set the value in the node instead, and set it again after the virtual machine restarts:
+
+```bash
+docker exec camunda-control-plane sysctl -w vm.max_map_count=262144
+```
+
+With Podman, use `podman exec`.
 
 Each step shows a manifest. Save it to a file and apply it with `kubectl apply -f <file>`.
 
@@ -106,7 +114,7 @@ kubectl rollout status deployment/keycloak-operator -n my-management-ns
 
 The Keycloak Operator release must match the Keycloak `version` of step 6. With Camunda 8.9, keep that version below 26.7.0. [The operator runs Keycloak](crds/camundamanagementcluster.md#the-operator-runs-keycloak) gives the reason.
 
-Use `--server-side` for each manifest above. Each one carries a CRD that is larger than the annotation that client-side apply writes.
+Use `--server-side` for each file above. Some of these files carry a CRD that is larger than the annotation that client-side apply writes. Server-side apply works for every file.
 
 ## 3. Install the operator
 
@@ -190,7 +198,7 @@ spec:
     version: "17"
 ```
 
-The same manifests are in [`config/example/presets`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/presets) and [`config/example/releases`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/releases).
+[`config/example/releases`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/releases) holds the same release. [`config/example/presets`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/presets) holds the same presets, except in older versions, which set 1Gi for the Zeebe broker and for Elasticsearch. If your copy sets 1Gi, use the 16Gi on this page.
 
 ## 5. Create the databases
 
