@@ -76,7 +76,8 @@ const (
 )
 
 // consoleComponents renders Console: its Deployment and its Service, in one
-// component under the ConsoleReady condition.
+// component under the ConsoleReady condition. Console waits for Management
+// Identity to become ready, in every identity provider mode.
 //
 // The component is built while spec.console is unset too, gated off. A
 // management cluster that drops Console then has its workload deleted instead
@@ -101,6 +102,11 @@ func consoleComponents(in Input) (Built, error) {
 		WithName(ComponentConsole).
 		WithConditionType(component.ConditionType(v1.ConditionConsoleReady)).
 		WithFeatureGate(gate).
+		// Console signs users in through Management Identity in every mode.
+		// It reads the OIDC configuration of its realm once, at start, and
+		// does not try again. In a Keycloak mode, Management Identity
+		// creates that realm when it first starts.
+		WithPrerequisite(component.DependsOn(component.ConditionType(v1.ConditionIdentityReady))).
 		WithResource(workload, component.GatedBy(gate)).
 		WithResource(svc, component.GatedBy(gate)).
 		WithGracePeriod(in.GracePeriod).

@@ -297,6 +297,8 @@ spec:
   # ... the rest of your management cluster
 ```
 
+Console starts after Management Identity is ready. Until then, `ConsoleReady` reads `False` with the reason `PrerequisiteNotMet`.
+
 A cluster appears in Console after it reports to Console. The operator adds four entries to `spec.extraEnv` of every attached cluster, so you add nothing to a cluster yourself:
 
 ```yaml
@@ -628,6 +630,7 @@ status:
 | `KeycloakReady` | `PendingSuspension` | `spec.suspend` is `true` and the `Keycloak` resource does not ask for zero instances yet. | Wait. |
 | `IdentityReady` | `Healthy` | Every Management Identity replica is ready. | Nothing. |
 | `IdentityReady` | `PrerequisiteNotMet` | In the `keycloak` mode, Management Identity waits for Keycloak. | Read the `KeycloakReady` row. |
+| `ConsoleReady` | `PrerequisiteNotMet` | Console waits for Management Identity. | Read the `IdentityReady` rows. |
 | `ConsoleReady`, `WebModelerReady` | `Healthy` / `Disabled` | Every replica is ready, or the block is unset. | Nothing. |
 | `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Creating` / `Updating` / `Scaling` | The workload rolls out or scales. | Wait. If the reason does not change, read the pods of the Deployment. |
 | `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Degraded` / `Down` | The workload is still not ready at the end of the [grace period](../architecture.md#status-conventions), 30 minutes by default. `Degraded` means that every Deployment of the condition has a ready replica, but not all replicas are ready or a rollout is not finished. `Down` means that a Deployment of the condition has no ready replica. | Read the pods and events of the Deployment that the message names. |
