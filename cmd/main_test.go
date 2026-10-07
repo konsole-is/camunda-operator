@@ -32,9 +32,18 @@ import (
 // "Manager settings" is the list of manager flags that users read.
 const chartReadme = "../dist/chart/README.md"
 
+// importedEnv maps a flag that an imported package registers to the
+// environment variable that the package reads for the same setting. The
+// manager does not read these through getenv, so bindFlags cannot show them.
+var importedEnv = map[string]string{
+	// controller-runtime reads KUBECONFIG when --kubeconfig is empty.
+	"kubeconfig": "KUBECONFIG",
+}
+
 // TestManagerSettingsTable fails when the table "Manager settings" of the
-// chart README and the flags of the manager differ in either direction, or
-// when the table names an environment variable that the manager does not read.
+// chart README and the flags of the manager differ in either direction, when
+// the table and the manager differ on the environment variables, or when a
+// row names an environment variable that does not set the flag of that row.
 func TestManagerSettingsTable(t *testing.T) {
 	rows := readSettingsTable(t, chartReadme)
 
@@ -50,7 +59,8 @@ func TestManagerSettingsTable(t *testing.T) {
 	// The manager parses flag.CommandLine, so a flag that an imported package
 	// registers there in its init function is a manager flag too.
 	flag.CommandLine.VisitAll(func(f *flag.Flag) {
-		if !notOwned(f.Name) {
+		// go test registers the test.* flags. The manager binary has none.
+		if !strings.HasPrefix(f.Name, "test.") {
 			flags[f.Name] = true
 		}
 	})
@@ -62,33 +72,65 @@ func TestManagerSettingsTable(t *testing.T) {
 		"the flags of the manager and the flags in %s differ", chartReadme,
 	)
 
-	documented := map[string]bool{}
+	envs := slices.Collect(maps.Keys(read))
+	for name, env := range importedEnv {
+		envs = append(envs, env)
+		assert.Equal(t, env, rows[name], "the environment variable of --%s in %s", name, chartReadme)
+	}
+
+	var documented []string
 	for _, env := range rows {
 		if env != "" {
-			documented[env] = true
+			documented = append(documented, env)
 		}
 	}
 
 	assert.ElementsMatch(
 		t,
-		slices.Collect(maps.Keys(read)),
-		slices.Collect(maps.Keys(documented)),
-		"the environment variables that the manager reads and those in %s differ", chartReadme,
+		envs,
+		documented,
+		"the environment variables that the manager reads and those in %s differ, or one is on two rows",
+		chartReadme,
 	)
+
+	for name, env := range rows {
+		if env == "" || importedEnv[name] != "" {
+			continue
+		}
+
+		assert.True(
+			t,
+			envSetsFlag(name, env),
+			"%s lists %s for --%s, but that variable does not change the default of --%s",
+			chartReadme, env, name, name,
+		)
+	}
 }
 
-// notOwned reports whether a flag on flag.CommandLine is left out of the
-// table, because the manager does not own it.
-func notOwned(name string) bool {
-	// go test registers the test.* flags. The manager binary has none of them.
-	if strings.HasPrefix(name, "test.") {
-		return true
+// envSetsFlag reports whether the environment variable env changes the
+// default of the manager flag name.
+func envSetsFlag(name, env string) bool {
+	defaultWith := func(getenv func(string) string) string {
+		fs := flag.NewFlagSet("manager", flag.ContinueOnError)
+		bindFlags(fs, getenv)
+		if f := fs.Lookup(name); f != nil {
+			return f.DefValue
+		}
+
+		return ""
 	}
 
-	// controller-runtime registers --kubeconfig to reach a cluster from
-	// outside it. The chart runs the manager in the cluster, where the
-	// manager uses its service account.
-	return name == "kubeconfig"
+	// 1h parses as a string and as a duration, so it changes a flag of
+	// either kind.
+	set := defaultWith(func(n string) string {
+		if n == env {
+			return "1h"
+		}
+
+		return ""
+	})
+
+	return set != defaultWith(func(string) string { return "" })
 }
 
 // readSettingsTable returns the rows of the table under "## Manager settings"
@@ -109,7 +151,8 @@ func readSettingsTable(t *testing.T, path string) map[string]string {
 	rows := map[string]string{}
 	for line := range strings.SplitSeq(section, "\n") {
 		cells := strings.Split(line, "|")
-		if len(cells) < 3 || cells[1] == "---" || strings.TrimSpace(cells[1]) == "Flag" {
+		if len(cells) < 3 || strings.Trim(strings.TrimSpace(cells[1]), ":-") == "" ||
+			strings.TrimSpace(cells[1]) == "Flag" {
 			continue
 		}
 

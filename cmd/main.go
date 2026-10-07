@@ -115,8 +115,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	// The LogicalBackupRDBMS controller renders Jobs that run the CLI image.
-	// Without one it can only guess, so the manager refuses to start.
+	// The LogicalBackupRDBMS and LogicalRestoreRDBMS controllers render Jobs
+	// that run the CLI image. Without one they can only guess, so the manager
+	// refuses to start.
 	if s.cliImage == "" {
 		setupLog.Error(
 			nil,
@@ -420,9 +421,9 @@ func main() {
 	}
 }
 
-// bindFlags registers every flag of the manager on fs, and reads the
-// environment variables that default some of them through getenv. The
-// dist/chart/README.md table "Manager settings" lists the same flags, and
+// bindFlags registers on fs every flag that the manager defines, and reads
+// through getenv the environment variables that default some of them. The
+// table "Manager settings" of dist/chart/README.md lists these flags, and
 // TestManagerSettingsTable fails when the two differ.
 func bindFlags(fs *flag.FlagSet, getenv func(string) string) *settings {
 	s := &settings{
@@ -458,7 +459,8 @@ func bindFlags(fs *flag.FlagSet, getenv func(string) string) *settings {
 	)
 	fs.StringVar(
 		&s.cliImage, "camunda-operator-cli-image", getenv(cliImageEnv),
-		"The camunda-operator-cli image that the backup Jobs run for their upload container. "+
+		"The camunda-operator-cli image that the logical backup and restore Jobs "+
+			"of a PostgreSQL database run. "+
 			"Required. Defaults to the "+cliImageEnv+" environment variable.",
 	)
 	fs.StringVar(
