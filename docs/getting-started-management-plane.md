@@ -32,6 +32,7 @@ kubectl apply -k config/example/camunda-management-cluster/keycloak
 You need:
 
 - `kubectl`, `helm` 3.8 or later, and `kind`
+- a Bash shell. The commands on this page use Bash syntax. On Windows, use WSL or Git Bash.
 - Docker or Podman, which runs the kind node
 - about 10 GB of free memory and 4 CPUs for the kind node. This is an estimate from the requests of the pods, not a measured value.
 - about 40Gi of free disk for the volumes: 16Gi for the Zeebe broker, 16Gi for Elasticsearch, and 8Gi for PostgreSQL
@@ -409,7 +410,7 @@ kubectl port-forward svc/my-management-console -n my-management-ns 8087:80
 
 The local ports are the ports in the `externalUrl` fields of step 6. If you change the local port of Management Identity or Console, change its `externalUrl` too. Keep Keycloak on local port 8080, because its `externalUrl` names that port.
 
-Open <http://localhost:8087>. Console sends you to the Keycloak sign-in page. Sign in as `admin` with the password above. Console lists `my-cluster`. Camunda marks the cluster list of Console as experimental in 8.9, under [experimental features](https://docs.camunda.io/docs/self-managed/components/console/configuration/#experimental-features).
+Open <http://localhost:8087>. Console sends you to the Keycloak sign-in page. Sign in as `admin` with the password above. Console lists `my-cluster`. The cluster restarts its pods once after it attaches, and it reports to Console when it starts again. If the list is empty, wait one minute and reload the page. Camunda marks the cluster list of Console as experimental in 8.9, under [experimental features](https://docs.camunda.io/docs/self-managed/components/console/configuration/#experimental-features).
 
 Management Identity is at <http://localhost:8084>. Sign in there with the same user.
 
