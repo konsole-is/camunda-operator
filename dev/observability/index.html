@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -2151,7 +2151,7 @@
 </table>
 <p>The manager serves the namespace of a custom resource as the label <code>namespace</code>. A scrape through the <code>ServiceMonitor</code> stamps the namespace of the manager on every series as <code>namespace</code> too. Prometheus keeps the target label and renames the served one to <code>exported_namespace</code>, because the <code>ServiceMonitor</code> does not set <code>honorLabels</code>. Query <code>exported_namespace</code> for the namespace of a custom resource. The shipped dashboards and rules do the same.</p>
 <h2 id="install-the-dashboards-and-the-alert-rules">Install the dashboards and the alert rules<a class="headerlink" href="#install-the-dashboards-and-the-alert-rules" title="Permanent link">&para;</a></h2>
-<p>The chart value <code>prometheus.enable=true</code> installs the <code>ServiceMonitor</code>. The dashboards and the alert rules are not part of the chart. Apply them into the namespace that your Prometheus Operator and your Grafana sidecar watch:</p>
+<p>The chart value <code>prometheus.enabled=true</code> installs the <code>ServiceMonitor</code>. The dashboards and the alert rules are not part of the chart. Apply them into the namespace that your Prometheus Operator and your Grafana sidecar watch:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-n<span class="w"> </span>monitoring<span class="w"> </span>-k<span class="w"> </span><span class="s2">"https://github.com/konsole-is/camunda-operator//config/prometheus/observability?ref=&lt;version&gt;"</span>
 </span></code></pre></div>
 <p>Replace <code>&lt;version&gt;</code> with the version of your operator, for example <code>0.1.0</code>.</p>
@@ -2306,7 +2306,7 @@
 </table>
 <h2 id="related">Related<a class="headerlink" href="#related" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="../installation/">Installation</a>: the <code>prometheus.enable</code> value.</li>
+<li><a href="../installation/">Installation</a>: the <code>prometheus.enabled</code> value.</li>
 <li><a href="../guides/operations/#monitor">Operations</a>: the metrics of the Camunda clusters that the operator runs.</li>
 </ul>
 
