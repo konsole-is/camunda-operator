@@ -30,6 +30,15 @@
   // Without a tidy, a Go update leaves the replaced versions in go.sum, and
   // the tidy check of the Tests workflow fails.
   postUpdateOptions: ["gomodTidy"],
+  // Renovate checks each dependency against the OSV database and the
+  // Dependabot alerts of the repository. For a vulnerable version it opens a
+  // security pull request at once, outside the schedule below. This includes
+  // the indirect modules of go.mod, which get no other update.
+  osvVulnerabilityAlerts: true,
+  vulnerabilityAlerts: {
+    enabled: true,
+    labels: ["security"],
+  },
   customManagers: [
     {
       // A variable of an env file or of the Makefile: the marker, then
@@ -177,6 +186,18 @@
     },
     {
       matchDepNames: ["renovate"],
+      matchUpdateTypes: ["major", "minor"],
+      enabled: true,
+    },
+    {
+      // The govulncheck release behind `make vulncheck` is a tool, not an e2e
+      // image pin. It moves with the tools, and it takes a minor and a major.
+      matchDepNames: ["golang.org/x/vuln"],
+      separateMinorPatch: false,
+      groupName: "tool-versions",
+    },
+    {
+      matchDepNames: ["golang.org/x/vuln"],
       matchUpdateTypes: ["major", "minor"],
       enabled: true,
     },
