@@ -13,7 +13,7 @@ metadata:
 spec:
   cluster:
     replicas: 1
-    storageSize: 1Gi
+    storageSize: 16Gi
     resources:
       requests:
         cpu: 500m

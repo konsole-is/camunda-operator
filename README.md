@@ -84,6 +84,7 @@ The [documentation site](https://konsole-is.github.io/camunda-operator/) has a v
 ```bash
 make test           # unit and envtest suites (needs Docker for the PostgreSQL testcontainer)
 make lint           # golangci-lint, the line-split shape of calls, and the version pins of config/example
+make vulncheck      # known vulnerabilities that the code can reach (run it with the Go of .tool-versions)
 make all            # generate manifests and deepcopy, fmt, vet, build
 make test-e2e       # end-to-end suite on a new kind cluster (needs Docker and kind)
 make helm-generate  # regenerate dist/chart/ from config/

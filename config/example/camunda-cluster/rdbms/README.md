@@ -21,7 +21,8 @@ resource that names the release follows.
 
 - Install the CloudNativePG operator and the Camunda operator. See
   [Installation](https://konsole-is.github.io/camunda-operator/dev/installation/).
-- Give the cluster a default StorageClass.
+- Give the cluster a default StorageClass that can bind 24Gi in total.
+  The broker needs a 16Gi volume, and PostgreSQL needs an 8Gi volume.
 
 The `DatabaseServer` here has no `spec.archive`, so it needs neither the
 Barman Cloud plugin nor cert-manager. Point-in-time recovery needs both, and
