@@ -452,6 +452,13 @@ kubectl wait camundaoptimize/my-cluster-optimize -n my-cluster-ns \
 kubectl port-forward svc/my-cluster-optimize-webapp -n my-cluster-ns 8090:8090
 ```
 
+The management plane also registers the sign-in address of Optimize in Keycloak and gives `admin` the Optimize role. Until it has done so, the sign-in to Optimize fails. Wait for it:
+
+```bash
+kubectl wait camundamanagementcluster/my-management -n my-management-ns \
+  --for=condition=OptimizeCallbacksReady --timeout=5m
+```
+
 Open <http://localhost:8090> and sign in as `admin`. The Keycloak port forward and the hosts file line of step 8 must stay in place. See [CamundaOptimize](crds/camundaoptimize.md) for the rest.
 
 This local setup has one limit for Optimize. The Optimize pod calls Management Identity at its `externalUrl`, `http://localhost:8084`, and that address does not answer inside the cluster. The parts of Optimize that read users or tenants from Management Identity can fail. The limit goes away when the `externalUrl` of Management Identity also answers inside the cluster, as a real domain usually does.
