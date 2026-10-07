@@ -72,7 +72,7 @@ helm upgrade camunda-operator \
 
 To set an environment variable, use `manager.envOverrides.<NAME>=<value>`, for example `--set manager.envOverrides.CAMUNDA_OPERATOR_WORKLOAD_GRACE_PERIOD=60m`. The manager ignores a name that it does not know, and it gives no error. Copy the names from this table.
 
-The chart sets some flags from its own values. The column "Set by the chart" names the value to change. The chart puts `manager.args` after its own flags, so a flag in `manager.args` wins over the same flag from the chart. For `--health-probe-bind-address` and `--metrics-bind-address`, change the chart value, not `manager.args`. The probes and the metrics Service use the value, so a different flag breaks them.
+The chart sets some flags from its own values. The column "Set by the chart" names the value to change. The chart puts `manager.args` after its own flags, so a flag in `manager.args` wins over the same flag from the chart. For `--health-probe-bind-address`, `--metrics-bind-address`, and `--metrics-secure`, change the chart value, not `manager.args`. The probes, the metrics Service, the `ServiceMonitor`, and the metrics RBAC use the value, so a different flag breaks them.
 
 | Flag | Environment variable | Default | Set by the chart | Description |
 |---|---|---|---|---|
