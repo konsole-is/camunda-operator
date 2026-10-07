@@ -489,6 +489,9 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 		> "$$tmp/Chart.yaml"; \
 	$(HELM) template verify "$$tmp" --set global.example=true > /dev/null; \
 	echo "  renders as a subchart with global values"
+	@# helm-deploy passes the image tags like this, and a tag can be a number.
+	$(HELM) template verify "$(HELM_CHART_DIR)" \
+		--set-string manager.image.tag=8 --set-string manager.cliImage.tag=8 > /dev/null
 	@set -e; \
 	max=0; worst=""; \
 	for opts in \
@@ -522,10 +525,10 @@ helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify
 	$(HELM) upgrade --install $(HELM_RELEASE) $(HELM_CHART_DIR) \
 		--namespace $(HELM_NAMESPACE) \
 		--create-namespace \
-		--set manager.image.repository=$${IMG%:*} \
-		--set manager.image.tag=$${IMG##*:} \
-		--set manager.cliImage.repository=$${CLI_IMG%:*} \
-		--set manager.cliImage.tag=$${CLI_IMG##*:} \
+		--set-string manager.image.repository=$${IMG%:*} \
+		--set-string manager.image.tag=$${IMG##*:} \
+		--set-string manager.cliImage.repository=$${CLI_IMG%:*} \
+		--set-string manager.cliImage.tag=$${CLI_IMG##*:} \
 		--wait \
 		--timeout 5m \
 		$(HELM_EXTRA_ARGS)

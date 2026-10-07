@@ -83,8 +83,8 @@ type schema struct {
 	AdditionalProperties *bool              `json:"additionalProperties,omitempty"`
 	Items                *schema            `json:"items,omitempty"`
 
-	// intermediate marks an object that allow added for a path that a
-	// template reads below it.
+	// intermediate marks an object that the allow function added because a
+	// template reads a path below it.
 	intermediate bool
 }
 
