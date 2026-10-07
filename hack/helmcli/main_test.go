@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"sigs.k8s.io/yaml"
 )
 
 // generatedValues is the shape that the kubebuilder helm plugin (v4.13) writes
@@ -53,7 +54,7 @@ const generatedValues = `manager:
 
 const generatedTemplate = `      containers:
       - args:
-        {{- if .Values.metrics.enable }}
+        {{- if .Values.metrics.enabled }}
         - --metrics-bind-address=:{{ .Values.metrics.port }}
         {{- end }}
         - --health-probe-bind-address=:8081
@@ -73,11 +74,32 @@ func TestRewriteValuesExposesCLIImage(t *testing.T) {
 
 	assert.NotContains(t, out, "CAMUNDA_OPERATOR_CLI_IMAGE")
 	assert.Contains(t, out, "  env: []\n")
-	assert.Contains(t, out, "  cliImage:\n    repository: ghcr.io/konsole-is/camunda-operator-cli\n    tag: 0.4.0\n")
+	assert.Contains(
+		t,
+		out,
+		"  cliImage:\n    repository: \"ghcr.io/konsole-is/camunda-operator-cli\"\n    tag: \"0.4.0\"\n",
+	)
 
 	// The block sits with the image block, before args.
 	assert.Less(t, strings.Index(out, "cliImage:"), strings.Index(out, "args:"))
 	assert.Greater(t, strings.Index(out, "cliImage:"), strings.Index(out, "pullPolicy:"))
+}
+
+func TestRewriteValuesWritesANumericTagAsAString(t *testing.T) {
+	t.Parallel()
+
+	in := strings.Replace(generatedValues, "camunda-operator-cli:0.4.0", "camunda-operator-cli:8", 1)
+	out, _, err := rewriteValues(in)
+	require.NoError(t, err)
+
+	var values struct {
+		Manager struct {
+			CLIImage map[string]any `json:"cliImage"`
+		} `json:"manager"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(out), &values))
+	assert.Equal(t, "8", values.Manager.CLIImage["tag"])
+	assert.Equal(t, "ghcr.io/konsole-is/camunda-operator-cli", values.Manager.CLIImage["repository"])
 }
 
 func TestRewriteValuesKeepsOtherEnvEntries(t *testing.T) {

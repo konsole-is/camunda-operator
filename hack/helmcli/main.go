@@ -21,8 +21,8 @@ limitations under the License.
 //
 //	manager:
 //	  cliImage:
-//	    repository: ghcr.io/konsole-is/camunda-operator-cli
-//	    tag: 0.1.0
+//	    repository: "ghcr.io/konsole-is/camunda-operator-cli"
+//	    tag: "0.1.0"
 //
 // rendered as the --camunda-operator-cli-image argument of the manager, so
 // `--set manager.cliImage.tag=x` works exactly like `manager.image.tag`. It is
@@ -42,6 +42,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -138,8 +139,10 @@ func rewriteValues(values string) (string, string, error) {
 		"  ## manager as --camunda-operator-cli-image. Set at release time.",
 		"  ##",
 		"  cliImage:",
-		"    repository: " + repository,
-		"    tag: " + tag,
+		// Quoted, so that YAML reads a tag such as 8 or 1.10 as a string and
+		// the values schema types it as one.
+		"    repository: " + strconv.Quote(repository),
+		"    tag: " + strconv.Quote(tag),
 	}
 	lines = append(lines[:pull+1], append(block, lines[pull+1:]...)...)
 
