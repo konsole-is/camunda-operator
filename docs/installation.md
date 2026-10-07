@@ -112,6 +112,8 @@ A value is a Go duration, for example `20m` or `1h`. The flag wins over the envi
 
 Set a value that is longer than your slowest rollout. Keep the workload grace period at or above the datastore grace period. A cluster on Elasticsearch and its Optimize are not ready until that Elasticsearch is. A shorter workload period reports them `Down` while Elasticsearch still starts. A value that is too short reports `Degraded` or `Down` for a workload that starts slowly but correctly. A rolling update of many brokers, or the first start of a large Elasticsearch cluster, can take longer than the default.
 
+The section [Manager settings](https://github.com/konsole-is/camunda-operator/blob/main/dist/chart/README.md#manager-settings) of the chart README lists every flag and environment variable of the manager.
+
 With Helm, set the environment variables in `manager.envOverrides`:
 
 ```bash
