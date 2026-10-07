@@ -67,7 +67,7 @@ var _ = Describe("Console and the ping of the clusters it lists", func() {
 				"CAMUNDA_CONSOLE_PING_ENABLED":     "true",
 				"CAMUNDA_CONSOLE_PING_ENDPOINT":    components.ConsoleServiceURL(s.mc),
 				"CAMUNDA_CONSOLE_PING_CLUSTERNAME": cluster.Name,
-				"CAMUNDA_CONSOLE_PING_PINGPERIOD":  "1h",
+				"CAMUNDA_CONSOLE_PING_PINGPERIOD":  "1m",
 			}))
 			expectUserEnvKept(g, cluster)
 		}, timeout, interval).Should(Succeed())
@@ -115,7 +115,7 @@ var _ = Describe("Console and the ping of the clusters it lists", func() {
 				"CAMUNDA_CONSOLE_PING_ENABLED":     "true",
 				"CAMUNDA_CONSOLE_PING_ENDPOINT":    components.ConsoleServiceURL(s.mc),
 				"CAMUNDA_CONSOLE_PING_CLUSTERNAME": cluster.Name,
-				"CAMUNDA_CONSOLE_PING_PINGPERIOD":  "1h",
+				"CAMUNDA_CONSOLE_PING_PINGPERIOD":  "1m",
 			}))
 			expectUserEnvKept(g, cluster)
 		}, timeout, interval).Should(Succeed())
@@ -177,7 +177,7 @@ var _ = Describe("Console and the ping of the clusters it lists", func() {
 				"CAMUNDA_HUB_PING_ENABLED":     "true",
 				"CAMUNDA_HUB_PING_ENDPOINT":    components.ConsoleServiceURL(s.mc),
 				"CAMUNDA_HUB_PING_CLUSTERNAME": cluster.Name,
-				"CAMUNDA_HUB_PING_PINGPERIOD":  "1h",
+				"CAMUNDA_HUB_PING_PINGPERIOD":  "1m",
 			}))
 		}, timeout, interval).Should(Succeed())
 	})

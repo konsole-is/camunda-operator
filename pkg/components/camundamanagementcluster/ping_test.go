@@ -37,7 +37,7 @@ func TestPingEnvOfACamunda89Cluster(t *testing.T) {
 			{Name: "CAMUNDA_CONSOLE_PING_ENABLED", Value: "true"},
 			{Name: "CAMUNDA_CONSOLE_PING_ENDPOINT", Value: "http://my-management-console.camunda.svc:80"},
 			{Name: "CAMUNDA_CONSOLE_PING_CLUSTERNAME", Value: "production"},
-			{Name: "CAMUNDA_CONSOLE_PING_PINGPERIOD", Value: "1h"},
+			{Name: "CAMUNDA_CONSOLE_PING_PINGPERIOD", Value: "1m"},
 		}, env,
 	)
 }
@@ -58,7 +58,7 @@ func TestPingEnvOfACamunda810Cluster(t *testing.T) {
 					{Name: "CAMUNDA_HUB_PING_ENABLED", Value: "true"},
 					{Name: "CAMUNDA_HUB_PING_ENDPOINT", Value: "http://console.camunda.svc:80"},
 					{Name: "CAMUNDA_HUB_PING_CLUSTERNAME", Value: "production"},
-					{Name: "CAMUNDA_HUB_PING_PINGPERIOD", Value: "1h"},
+					{Name: "CAMUNDA_HUB_PING_PINGPERIOD", Value: "1m"},
 				}, env,
 			)
 		})

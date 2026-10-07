@@ -316,9 +316,11 @@ spec:
     - name: CAMUNDA_CONSOLE_PING_CLUSTERNAME
       value: my-cluster
     - name: CAMUNDA_CONSOLE_PING_PINGPERIOD
-      value: 1h
+      value: 1m
   # ... the rest of your cluster
 ```
+
+A cluster reports once a minute. Console keeps its list of clusters only in memory. After Console restarts, a cluster is missing from that list for up to one minute.
 
 The endpoint is the Console Service inside the Kubernetes cluster, so a cluster reports to Console without an Ingress. Camunda documents the entries in [Console ping configuration](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/zeebe/configuration/broker-config/#console-ping-configuration).
 

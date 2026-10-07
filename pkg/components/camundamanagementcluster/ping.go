@@ -49,10 +49,11 @@ const (
 	// hubPingVersionFloor is the first Camunda version that reads
 	// camunda.hub.ping.
 	hubPingVersionFloor = "8.10.0"
-	// pingPeriod is how often a cluster reports. It is the period of the
-	// Camunda documentation, and the ping carries nothing that a shorter one
-	// would keep fresher.
-	pingPeriod = "1h"
+	// pingPeriod is how often a cluster reports. Console keeps the clusters
+	// it discovered in memory only, so after a restart of Console a cluster
+	// is missing from it until its next ping. Each ping is one small request
+	// per pod.
+	pingPeriod = "1m"
 	// pingEnabled turns the ping on.
 	pingEnabled = "true"
 )
