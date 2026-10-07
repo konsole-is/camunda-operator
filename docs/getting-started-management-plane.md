@@ -20,9 +20,8 @@ That directory is written for a real domain, so this page changes some values. T
 | `06-management-cluster.yaml` | The Keycloak `externalUrl` is the address of the Keycloak Service inside the cluster, `http://my-management-keycloak-service.my-management-ns.svc:8080/auth`. The `externalUrl` of Management Identity and of Console is a `localhost` address of a port forward. No `webModeler` block. |
 | `08-camunda-cluster.yaml` | `externalUrl` is `http://localhost:8088`. |
 | `09-optimize.yaml` | An optional last step. `externalUrl` is `http://localhost:8090`. |
-| `config/example/presets` | The page sets 16Gi for the Zeebe broker and for Elasticsearch. Earlier versions of the presets set 1Gi. |
 
-To apply the directory in one command instead, clone the repository at your release tag. Replace the placeholders in `02-secrets.yaml`, and route each `camunda.example.com` URL to its Service. The [README of the directory](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-management-cluster/keycloak) lists these steps. If `config/example/presets` of your copy sets 1Gi for the Zeebe broker or for Elasticsearch, change both to 16Gi. Then run this command after step 3 of this page:
+To apply the directory in one command instead, clone the repository at your release tag. Replace the placeholders in `02-secrets.yaml`, and route each `camunda.example.com` URL to its Service. The [README of the directory](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-management-cluster/keycloak) lists these steps. Then run this command after step 3 of this page:
 
 ```bash
 kubectl apply -k config/example/camunda-management-cluster/keycloak
@@ -204,7 +203,7 @@ spec:
     version: "17"
 ```
 
-[`config/example/releases`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/releases) holds the same release. [`config/example/presets`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/presets) holds the same presets, except in older versions, which set 1Gi for the Zeebe broker and for Elasticsearch. If your copy sets 1Gi, use the 16Gi on this page.
+The same manifests are in [`config/example/presets`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/presets) and [`config/example/releases`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/releases).
 
 ## 5. Create the databases
 
