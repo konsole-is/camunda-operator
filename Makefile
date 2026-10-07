@@ -482,6 +482,13 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 		esac; \
 		echo "  schema rejects: helm template $$opts"; \
 	done
+	@# Helm passes global to a subchart, and the schema must accept it.
+	@tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
+	mkdir "$$tmp/charts"; cp -R "$(HELM_CHART_DIR)" "$$tmp/charts/camunda-operator"; \
+	printf 'apiVersion: v2\nname: parent\nversion: 0.0.0\ndependencies:\n  - name: camunda-operator\n    version: "*"\n' \
+		> "$$tmp/Chart.yaml"; \
+	$(HELM) template verify "$$tmp" --set global.example=true > /dev/null; \
+	echo "  renders as a subchart with global values"
 	@set -e; \
 	max=0; worst=""; \
 	for opts in \

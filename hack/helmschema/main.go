@@ -22,13 +22,17 @@ limitations under the License.
 //
 // The schema holds each key of values.yaml with the type of its default and
 // the comment above it as the description. It also holds the keys that
-// values.yaml shows only as a commented-out example, and every key that a
-// template reads. An object of the chart rejects an unknown key, so a typo
-// such as prometheus.enabeld fails. These objects accept any key:
+// values.yaml shows only as a commented-out example, which also accept null,
+// and each path that a template reads in the form .Values.a.b. A value that a
+// template reads relative to with or range is not seen, so its parent must be
+// in values.yaml or read in that form. An object of the chart rejects an
+// unknown key, so a typo such as prometheus.enabeld fails. These objects
+// accept any key:
 //
+//   - global, which Helm reserves and passes to each subchart.
 //   - An object whose default is empty, such as nodeSelector.
 //   - A Kubernetes type that the chart passes through, listed in openPaths.
-//   - The items of a list.
+//   - An object in a list.
 //
 // Usage: helmschema [chart-dir]
 //
@@ -73,11 +77,15 @@ var valuesRef = regexp.MustCompile(`\.Values((?:\.[A-Za-z_][A-Za-z0-9_]*)+)`)
 // order is the order of the keys in the file.
 type schema struct {
 	Schema               string             `json:"$schema,omitempty"`
-	Type                 string             `json:"type,omitempty"`
+	Type                 any                `json:"type,omitempty"`
 	Description          string             `json:"description,omitempty"`
 	Properties           map[string]*schema `json:"properties,omitempty"`
 	AdditionalProperties *bool              `json:"additionalProperties,omitempty"`
 	Items                *schema            `json:"items,omitempty"`
+
+	// intermediate marks an object that allow added for a path that a
+	// template reads below it.
+	intermediate bool
 }
 
 func main() {
@@ -92,14 +100,16 @@ func main() {
 }
 
 func run(dir string) error {
-	values, err := os.ReadFile(filepath.Join(dir, "values.yaml"))
+	valuesPath := filepath.Join(dir, "values.yaml")
+	values, err := os.ReadFile(valuesPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading %s: %w", valuesPath, err)
 	}
 
-	templates, err := readTemplates(filepath.Join(dir, "templates"))
+	templatesDir := filepath.Join(dir, "templates")
+	templates, err := readTemplates(templatesDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading the templates in %s: %w", templatesDir, err)
 	}
 
 	out, err := generate(string(values), templates)
@@ -109,7 +119,7 @@ func run(dir string) error {
 
 	path := filepath.Join(dir, "values.schema.json")
 	if err := os.WriteFile(path, out, 0o600); err != nil {
-		return err
+		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	fmt.Printf("helmschema: wrote %s\n", path)
 
@@ -141,16 +151,23 @@ func readTemplates(dir string) ([]string, error) {
 // mapping, when an uncommented example is not valid YAML, and when a path in
 // openPaths is not in values.
 func generate(values string, templates []string) ([]byte, error) {
+	uncommented, examples := uncommentExamples(values)
 	var doc yaml.Node
-	if err := yaml.Unmarshal([]byte(uncommentExamples(values)), &doc); err != nil {
+	if err := yaml.Unmarshal([]byte(uncommented), &doc); err != nil {
 		return nil, fmt.Errorf("parsing values.yaml with its examples uncommented: %w", err)
 	}
 	if len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
 		return nil, errors.New("values.yaml is not a mapping")
 	}
 
-	root := nodeSchema(doc.Content[0], "")
+	root := nodeSchema(doc.Content[0], "", examples)
 	root.Schema = schemaDraft
+	// Helm passes global to each subchart, also to a chart whose values.yaml
+	// does not have it.
+	root.Properties["global"] = &schema{
+		Type:        "object",
+		Description: "Values that a parent chart shares with its subcharts.",
+	}
 
 	for _, path := range openPaths {
 		if lookup(root, path) == nil {
@@ -173,17 +190,21 @@ func generate(values string, templates []string) ([]byte, error) {
 }
 
 // uncommentExamples returns values with each commented-out example made into
-// YAML. The kubebuilder helm plugin writes an optional value as a "##"
-// description, a "##" line, and then the value commented out with "# ":
+// YAML, and the numbers of the lines that it uncommented, counted from 1. The
+// kubebuilder helm plugin writes an optional value as a "##" description, a
+// "##" line, and then the value commented out with "# ":
 //
 //	## Priority class name
 //	##
 //	# priorityClassName: ""
 //
+// Each "#" line at the same indentation after the "##" line belongs to the
+// example, so a sentence such as "# Note: text" in that place becomes a key.
 // A "#" comment that does not follow a "##" line at the same indentation is a
 // description, such as "# Metrics server port", and stays a comment.
-func uncommentExamples(values string) string {
+func uncommentExamples(values string) (string, map[int]bool) {
 	lines := strings.Split(values, "\n")
+	uncommented := map[int]bool{}
 	example := -1 // the indentation of the example block, or -1 outside one
 	for i, line := range lines {
 		trimmed := strings.TrimLeft(line, " ")
@@ -191,6 +212,7 @@ func uncommentExamples(values string) string {
 
 		if example >= 0 && indent == example && (trimmed == "#" || strings.HasPrefix(trimmed, "# ")) {
 			lines[i] = line[:indent] + strings.TrimPrefix(strings.TrimPrefix(trimmed, "#"), " ")
+			uncommented[i+1] = true
 			continue
 		}
 		example = -1
@@ -199,12 +221,13 @@ func uncommentExamples(values string) string {
 		}
 	}
 
-	return strings.Join(lines, "\n")
+	return strings.Join(lines, "\n"), uncommented
 }
 
 // nodeSchema returns the schema of a value whose default is node. path is the
-// dotted path of the value, empty for the root.
-func nodeSchema(node *yaml.Node, path string) *schema {
+// dotted path of the value, empty for the root. A key on a line in examples
+// comes from a commented-out example and also accepts null.
+func nodeSchema(node *yaml.Node, path string, examples map[int]bool) *schema {
 	switch node.Kind {
 	case yaml.MappingNode:
 		s := &schema{Type: "object"}
@@ -215,16 +238,29 @@ func nodeSchema(node *yaml.Node, path string) *schema {
 		s.AdditionalProperties = new(false)
 		for i := 0; i+1 < len(node.Content); i += 2 {
 			key, value := node.Content[i], node.Content[i+1]
-			child := nodeSchema(value, strings.TrimPrefix(path+"."+key.Value, "."))
+			child := nodeSchema(value, strings.TrimPrefix(path+"."+key.Value, "."), examples)
 			child.Description = description(key.HeadComment)
+			if t, ok := child.Type.(string); ok && t != "" && examples[key.Line] {
+				child.Type = []string{t, "null"}
+			}
 			s.Properties[key.Value] = child
 		}
 
 		return s
 	case yaml.SequenceNode:
 		s := &schema{Type: "array"}
-		if len(node.Content) > 0 && node.Content[0].Kind == yaml.ScalarNode {
-			s.Items = nodeSchema(node.Content[0], path)
+		if len(node.Content) > 0 {
+			// An item that is a mapping or a list keeps its type and no more:
+			// its content is data of the user, such as an imagePullSecrets
+			// entry.
+			switch item := node.Content[0]; item.Kind {
+			case yaml.ScalarNode:
+				s.Items = nodeSchema(item, path, nil)
+			case yaml.MappingNode:
+				s.Items = &schema{Type: "object"}
+			case yaml.SequenceNode:
+				s.Items = &schema{Type: "array"}
+			}
 		}
 
 		return s
@@ -276,18 +312,29 @@ func lookup(s *schema, path string) *schema {
 	return s
 }
 
-// allow makes the schema accept the value at path. It adds the first missing
-// key of the path as a value of any type to an object that rejects unknown
-// keys.
+// allow makes the schema accept the value at path. A missing key before the
+// last becomes an object that rejects unknown keys, and the last key accepts
+// any value if it was missing or if allow added it as such an object. A path
+// below an object that accepts any key changes nothing.
 func allow(s *schema, path []string) {
-	for _, key := range path {
+	for i, key := range path {
 		if s.AdditionalProperties == nil || *s.AdditionalProperties {
 			return
 		}
 		child, ok := s.Properties[key]
-		if !ok {
+		last := i == len(path)-1
+		switch {
+		case last && (!ok || child.intermediate):
 			s.Properties[key] = &schema{}
 			return
+		case !ok:
+			child = &schema{
+				Type:                 "object",
+				Properties:           map[string]*schema{},
+				AdditionalProperties: new(false),
+				intermediate:         true,
+			}
+			s.Properties[key] = child
 		}
 		s = child
 	}

@@ -53,7 +53,7 @@ const generatedValues = `manager:
 
 const generatedTemplate = `      containers:
       - args:
-        {{- if .Values.metrics.enable }}
+        {{- if .Values.metrics.enabled }}
         - --metrics-bind-address=:{{ .Values.metrics.port }}
         {{- end }}
         - --health-probe-bind-address=:8081
