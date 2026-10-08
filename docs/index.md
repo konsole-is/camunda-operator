@@ -1,5 +1,7 @@
 # Camunda Operator
 
+![Camunda Operator: run Camunda 8 as a service on Kubernetes](assets/landing-hero.webp)
+
 A Kubernetes operator that runs [Camunda 8.9+](https://docs.camunda.io/) orchestration clusters.
 You describe a cluster in one resource. The operator creates the workloads, wires the storage, and keeps the cluster healthy.
 
