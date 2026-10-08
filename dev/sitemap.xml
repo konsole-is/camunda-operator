@@ -2,146 +2,150 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/architecture/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
+    </url>
+    <url>
+         <loc>https://konsole-is.github.io/camunda-operator/dev/getting-started-management-plane/</loc>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/getting-started/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/go-api/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/installation/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/observability/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/api-reference/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/backupschedule/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/camundacluster/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/camundaclusterpreset/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/camundamanagementcluster/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/camundaoptimize/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/camundaplatformconfig/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/camundarelease/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/database/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/databaseconfig/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/databaseserver/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/databaseserverconfig/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/databaseserverpreset/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/elasticsearchcluster/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/elasticsearchclusterpreset/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/logicalbackupelasticsearch/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/logicalbackuprdbms/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/logicalrestoreelasticsearch/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/logicalrestorerdbms/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/managementauthconfig/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/objectstorageconfig/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/pointintimerestore/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/secondarystorageconfig/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/guides/authentication/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/guides/backup/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/guides/management-plane/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/guides/operations/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/guides/presets/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/guides/secondary-storage/</loc>
-         <lastmod>2026-10-07</lastmod>
+         <lastmod>2026-10-08</lastmod>
     </url>
 </urlset>
