@@ -17,11 +17,22 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"context"
 	"testing"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta/testrestmapper"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/events"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 // A management cluster that does not deploy Console renders no object for it.
@@ -39,6 +50,95 @@ func TestConsoleRendersNothingWhileItIsDisabled(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Empty(t, objects)
+}
+
+// Console starts only after Management Identity is ready, in every identity
+// provider mode.
+func TestConsoleWaitsForManagementIdentity(t *testing.T) {
+	t.Parallel()
+
+	modes := map[string]func(t *testing.T) Input{
+		"oidc":             fixtureConsoleMinimal,
+		"keycloak":         func(t *testing.T) Input { return fixtureKeycloakRealistic(t, true) },
+		"externalKeycloak": func(t *testing.T) Input { return fixtureKeycloakRealistic(t, false) },
+	}
+
+	for mode, fixture := range modes {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("waits while Management Identity is not ready", func(t *testing.T) {
+				t.Parallel()
+
+				cond, deployed := reconcileConsole(t, fixture(t), metav1.ConditionFalse)
+
+				assert.Equal(t, metav1.ConditionFalse, cond.Status)
+				assert.Equal(t, string(component.PrerequisiteNotMet), cond.Reason)
+				assert.False(t, deployed, "the Console Deployment exists before Management Identity is ready")
+			})
+
+			t.Run("starts once Management Identity is ready", func(t *testing.T) {
+				t.Parallel()
+
+				cond, deployed := reconcileConsole(t, fixture(t), metav1.ConditionTrue)
+
+				assert.Equal(t, string(component.AliveCreating), cond.Reason)
+				assert.True(t, deployed, "the Console Deployment is missing after Management Identity is ready")
+			})
+		})
+	}
+}
+
+// A management cluster without Console reports Disabled, not a wait for
+// Management Identity, so Ready does not wait for a Console it does not run.
+func TestDisabledConsoleDoesNotWaitForManagementIdentity(t *testing.T) {
+	t.Parallel()
+
+	cond, deployed := reconcileConsole(t, fixtureMinimal(t), metav1.ConditionFalse)
+
+	assert.Equal(t, metav1.ConditionTrue, cond.Status)
+	assert.Equal(t, string(component.Disabled), cond.Reason)
+	assert.False(t, deployed)
+}
+
+// reconcileConsole reconciles the Console component once against a fake API
+// server, on an owner whose IdentityReady condition has the given status. It
+// returns the ConsoleReady condition and whether the Console Deployment exists.
+func reconcileConsole(t *testing.T, in Input, identity metav1.ConditionStatus) (component.Condition, bool) {
+	t.Helper()
+
+	built, err := consoleComponents(in)
+	require.NoError(t, err)
+	comp := builtComponent(t, built, ComponentConsole)
+
+	owner := in.Cluster.DeepCopy()
+	owner.Status.Conditions = []metav1.Condition{{
+		Type:               v1.ConditionIdentityReady,
+		Status:             identity,
+		Reason:             "Stamped",
+		LastTransitionTime: metav1.Now(),
+	}}
+
+	scheme := goldenScheme(t)
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRESTMapper(testrestmapper.TestOnlyStaticRESTMapper(scheme)).
+		Build()
+	require.NoError(t, comp.Reconcile(context.Background(), component.ReconcileContext{
+		Client:        c,
+		APIReader:     c,
+		Scheme:        scheme,
+		EventRecorder: events.NewFakeRecorder(100),
+		Owner:         owner,
+	}))
+
+	key := client.ObjectKey{Namespace: owner.Namespace, Name: ConsoleName(owner)}
+	err = c.Get(context.Background(), key, &appsv1.Deployment{})
+	if !apierrors.IsNotFound(err) {
+		require.NoError(t, err)
+	}
+
+	return comp.GetCondition(owner), err == nil
 }
 
 // The environment of Console in the oidc mode: the oidc profile, the Identity
