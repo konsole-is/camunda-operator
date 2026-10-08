@@ -1,5 +1,7 @@
 # Camunda Operator
 
+![Camunda Operator: run Camunda 8 as a service on Kubernetes](docs/assets/landing-hero.webp)
+
 [![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/camunda-operator)](https://artifacthub.io/packages/search?repo=camunda-operator)
 
 A Kubernetes operator for Camunda 8 Self-Managed as a platform. Use it to offer [Camunda 8.9+](https://docs.camunda.io/) as a service to the teams in your organization, on infrastructure that you run.
