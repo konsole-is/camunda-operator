@@ -195,7 +195,7 @@ kind: CamundaRelease
 metadata:
   name: camunda-8-9
 spec:
-  version: "8.9.22"
+  version: "8.9.23"
   connectors:
     version: "8.9.14"
   elasticsearch:
@@ -440,7 +440,7 @@ metadata:
   name: my-cluster-optimize
   namespace: my-cluster-ns
 spec:
-  version: "8.9.22"
+  version: "8.9.23"
   managementAuthRef: my-management
   externalUrl: "http://localhost:8090"
   clusterRef:
