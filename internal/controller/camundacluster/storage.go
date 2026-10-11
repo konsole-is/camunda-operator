@@ -81,7 +81,7 @@ func (r *CamundaClusterReconciler) readBrokerStorage(
 	}
 
 	// The cache serves the claims while the StatefulSet exists: there they
-	// only grow and report status. Without one they are the downgrade
+	// only grow and report status. Without one they are the version
 	// baseline of a cluster recreated on retained volumes, and a stale
 	// cache can miss the newest stamp, so they are read live.
 	reader := client.Reader(r.Client)
@@ -154,7 +154,7 @@ func (s brokerStorage) runningVersion() string {
 // stampBrokerVersion patches the broker version annotation onto every bound
 // broker claim whose stamp is absent, malformed, or below the version of the
 // applied StatefulSet. The stamp survives a delete of the cluster with
-// retained volumes, so the downgrade rule holds for the cluster that is
+// retained volumes, so the version rules hold for the cluster that is
 // recreated on them. It is never lowered: a sanctioned restore lowers the
 // StatefulSet before it erases the claims, and an abandoned restore must not
 // leave newer data under a lower stamp. The erased claim comes back

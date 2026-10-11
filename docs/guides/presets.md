@@ -194,6 +194,8 @@ The examples on this page use the second way.
 
 Every cluster whose brokers run a higher version refuses a lower one. Each one reports `Ready: False` with reason `VersionDowngradeRefused` and keeps the version its brokers run. To lower a fleet on purpose, lower the release first and let every cluster refuse. Then set the annotation `camunda.io/allow-version-downgrade` to the version of the release, on each cluster you want to move. Read the caution in [Downgrade on purpose](../crds/camundacluster.md#downgrade-on-purpose) first.
 
+Move a release one minor at a time. A cluster whose brokers run a version two or more minors below the release refuses the move. It reports `Ready: False` with reason `VersionSkipRefused` and keeps the version its brokers run. To recover, set the release to the next minor. Wait until every cluster runs the new minor before you raise the release again. [Upgrade](../crds/camundacluster.md#upgrade) says how long to wait.
+
 A `DatabaseServer` refuses a PostgreSQL major other than the one its data directory runs, higher or lower. It reports `Ready: False` with reason `VersionChangeRefused` and keeps the major it has. No annotation lets that change through. To run a later major, create a server on it and move the data over. The [DatabaseServer page](../crds/databaseserver.md#the-postgresql-version) states the rule.
 
 A resource that references a preset or a release that does not exist reports `Ready: False` with reason `InvalidReference` and keeps running as it is.

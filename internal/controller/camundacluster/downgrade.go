@@ -42,7 +42,14 @@ const msgVersionDowngradeRefused = "the effective version %s is below the runnin
 	"version itself, and it cannot start while this refusal stands. To downgrade on purpose over " +
 	"the data the brokers have, set the annotation %s=%q on the cluster"
 
-// refusalMemo remembers the downgrade refusal that the controller last
+// The message names the next minor, not a patch of it: the operator does not
+// know which patches exist.
+const msgVersionSkipRefused = "the effective version %s skips a minor: the brokers run %s. " +
+	"Camunda upgrades one minor at a time, and a broker that starts after a skipped minor " +
+	"marks itself unhealthy and applies no migration. Set the version to the latest patch of %s " +
+	"first, and move to %s once every broker runs it"
+
+// refusalMemo remembers the version refusal that the controller last
 // recorded an event for, one entry per cluster. The cluster that a reconcile
 // receives cannot answer that on its own. Its Ready condition comes from a
 // cache that can be older than the last status write.
@@ -90,6 +97,21 @@ func (r *CamundaClusterReconciler) consumeDowngradeSanction(
 	return nil
 }
 
+// refuseVersionChange returns the pre-check failure for an effective version
+// that the brokers cannot move to from the version they run, or nil when they
+// can. A downgrade and a skipped minor exclude each other.
+func refuseVersionChange(
+	cluster *v1.CamundaCluster,
+	in components.Input,
+	storage brokerStorage,
+) *conditions.PreCheckFailure {
+	if failure := refuseDowngrade(cluster, in, storage); failure != nil {
+		return failure
+	}
+
+	return refuseSkip(in, storage)
+}
+
 // refuseDowngrade returns the pre-check failure for an effective version
 // below the version that the brokers run, or nil when the move is not a
 // downgrade or the annotation sanctions it. The caller applies nothing on a
@@ -116,12 +138,31 @@ func refuseDowngrade(
 	}
 }
 
-// recordRefusedDowngrade records the Warning event for refused, unless this
+// refuseSkip returns the pre-check failure for an effective version more than
+// one minor above the version that the brokers run, or nil otherwise. No
+// annotation sanctions a skip, because Camunda refuses it on its own.
+func refuseSkip(in components.Input, storage brokerStorage) *conditions.PreCheckFailure {
+	effective := in.Effective.Version
+	running := storage.runningVersion()
+	if !components.VersionSkip(effective, running) {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonVersionSkipRefused,
+		Message: fmt.Sprintf(
+			msgVersionSkipRefused,
+			effective, running, components.NextMinor(running), effective,
+		),
+	}
+}
+
+// recordRefusedVersion records the Warning event for refused, unless this
 // controller already recorded that refusal for cluster. The memo of the
 // recorded refusals answers that for one process. The Ready condition of
 // cluster answers it for the first reconcile after a restart, which begins
 // with an empty memo.
-func (r *CamundaClusterReconciler) recordRefusedDowngrade(cluster *v1.CamundaCluster, refused metav1.Condition) {
+func (r *CamundaClusterReconciler) recordRefusedVersion(cluster *v1.CamundaCluster, refused metav1.Condition) {
 	recorded := r.refusals.recorded(cluster, refused.Message)
 
 	ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
@@ -135,7 +176,7 @@ func (r *CamundaClusterReconciler) recordRefusedDowngrade(cluster *v1.CamundaClu
 		cluster,
 		nil,
 		corev1.EventTypeWarning,
-		v1.ReasonVersionDowngradeRefused,
+		refused.Reason,
 		eventActionReconcile,
 		"%s",
 		refused.Message,

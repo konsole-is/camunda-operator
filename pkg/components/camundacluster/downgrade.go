@@ -16,7 +16,12 @@ limitations under the License.
 
 package camundacluster
 
-import corev1 "k8s.io/api/core/v1"
+import (
+	"math"
+	"strconv"
+
+	corev1 "k8s.io/api/core/v1"
+)
 
 // RetainedVersion returns the highest broker version that the
 // BrokerVersionAnnotation stamps on claims, or the empty string when no
@@ -60,4 +65,33 @@ func VersionDowngrade(effective, running string) bool {
 	}
 
 	return false
+}
+
+// VersionSkip reports whether effective is more than one minor above running
+// in the same major. Camunda upgrades one minor at a time. It reports false
+// when either value is not of the form x.y.z, as VersionDowngrade does. A
+// change of major is not a skip.
+func VersionSkip(effective, running string) bool {
+	want, err := parseVersion(effective)
+	if err != nil {
+		return false
+	}
+	have, err := parseVersion(running)
+	if err != nil {
+		return false
+	}
+
+	return want[0] == have[0] && want[1] > have[1] && want[1]-1 > have[1]
+}
+
+// NextMinor returns the minor after the one of version, as major.minor, or
+// the empty string when version is not of the form x.y.z or its minor is the
+// largest int.
+func NextMinor(version string) string {
+	parsed, err := parseVersion(version)
+	if err != nil || parsed[1] == math.MaxInt {
+		return ""
+	}
+
+	return strconv.Itoa(parsed[0]) + "." + strconv.Itoa(parsed[1]+1)
 }

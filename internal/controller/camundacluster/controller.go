@@ -107,7 +107,7 @@ type CamundaClusterReconciler struct {
 	// on its progress reason.
 	GracePeriods grace.Periods
 
-	// refusals remembers the downgrade refusal that the controller recorded
+	// refusals remembers the version refusal that the controller recorded
 	// for each cluster, so it records the Warning once and not once per
 	// reconcile.
 	refusals refusalMemo
@@ -256,12 +256,12 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	// A refused downgrade re-enqueues through the watches on the cluster, the
-	// preset, and the owned StatefulSet, so no timer is needed.
-	if failure := refuseDowngrade(&cluster, in, storage); failure != nil {
+	// A refused version change re-enqueues through the watches on the
+	// cluster, the preset, and the owned StatefulSet, so no timer is needed.
+	if failure := refuseVersionChange(&cluster, in, storage); failure != nil {
 		if !in.Effective.Suspend {
 			refused := conditions.Failed(&cluster, failure)
-			r.recordRefusedDowngrade(&cluster, refused)
+			r.recordRefusedVersion(&cluster, refused)
 			conditions.Stage(&cluster, refused)
 
 			// A refused cluster keeps running on the version and the backend
@@ -463,7 +463,7 @@ func (r *CamundaClusterReconciler) releaseWait(
 }
 
 // releaseRefusedWait gives back the storage claims of a cluster whose
-// downgrade was refused, and returns the wait for the ones held back. Such a
+// version change was refused, and returns the wait for the ones held back. Such a
 // cluster applies nothing, so the claim it took on this pass, taken, is not
 // the backend it writes. It keeps the claim its pods carry when they carry
 // one, and taken goes back with every other claim no pod of it writes, so a

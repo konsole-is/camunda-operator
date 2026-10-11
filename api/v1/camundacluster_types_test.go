@@ -74,6 +74,14 @@ func TestCamundaClusterSuspended(t *testing.T) {
 			}}}},
 			want: false,
 		},
+		"a refused skip keeps the cluster running": {
+			cluster: v1.CamundaCluster{Status: v1.CamundaClusterStatus{Conditions: []metav1.Condition{{
+				Type:   v1.ConditionReady,
+				Status: metav1.ConditionFalse,
+				Reason: v1.ReasonVersionSkipRefused,
+			}}}},
+			want: false,
+		},
 		"Ready carries another reason": {
 			cluster: v1.CamundaCluster{Status: v1.CamundaClusterStatus{Conditions: []metav1.Condition{{
 				Type:   v1.ConditionReady,

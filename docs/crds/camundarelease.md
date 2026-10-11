@@ -65,6 +65,7 @@ spec:
 When you edit a release, every resource that references it rolls to the new version. Each kind keeps its own rule about a version it refuses:
 
 - A cluster whose brokers run a higher version refuses the move and reports `Ready: False` with reason `VersionDowngradeRefused`. The [CamundaCluster page](camundacluster.md#version) states the rule and the annotation that sanctions a downgrade.
+- A cluster whose brokers run a version two or more minors below the release refuses the move and reports `Ready: False` with reason `VersionSkipRefused`. Move the release one minor at a time. The [CamundaCluster page](camundacluster.md#a-skipped-minor-is-refused) states the rule.
 - A server whose data directory runs another PostgreSQL major refuses the change and reports `Ready: False` with reason `VersionChangeRefused`. It keeps the major it has. The [DatabaseServer page](databaseserver.md#the-postgresql-version) states the rule.
 - Camunda 8.9 needs Elasticsearch 8.19 or later on major 8, or 9.2 or later on major 9. An `ElasticsearchCluster` on an earlier version reports `Ready: False` with reason `InvalidReference`.
 
