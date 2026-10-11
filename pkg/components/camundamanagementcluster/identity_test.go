@@ -114,6 +114,7 @@ func TestIdentityServesUnderThePathOfItsExternalURL(t *testing.T) {
 		{"oidc", newInput(t, withPath(fixtureIdentityPathURL)), "/identity"},
 		{"keycloak", newKeycloakInput(t, true, withPath(fixtureIdentityPathURL)), "/identity"},
 		{"a trailing slash", newInput(t, withPath(fixtureIdentityPathURL+"/")), "/identity"},
+		{"repeated trailing slashes", newInput(t, withPath(fixtureIdentityPathURL+"//")), "/identity"},
 		{
 			"two segments",
 			newKeycloakInput(t, true, withPath("https://camunda.example.com/platform/identity")),
