@@ -44,8 +44,11 @@ describe("eslint.config.mjs", { timeout: 60_000 }, () => {
     );
   });
 
-  it("refuses the Edge runtime on a route", async () => {
-    const code = `export const runtime = "edge";\n`;
+  it.each([
+    `export const runtime = "edge";\n`,
+    `export const runtime = "edge" as const;\n`,
+    `export const runtime = "edge" satisfies string;\n`,
+  ])("refuses the Edge runtime on a route: %s", async (code) => {
     expect(await ruleIds(code, "src/app/probe/route.ts")).toContain(
       "no-restricted-syntax",
     );

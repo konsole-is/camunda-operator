@@ -24,7 +24,7 @@ export default defineConfig([
         "error",
         {
           selector:
-            "ExportNamedDeclaration VariableDeclarator[id.name='runtime'][init.value='edge']",
+            "ExportNamedDeclaration VariableDeclarator[id.name='runtime'] Literal[value='edge']",
           message:
             'The fleet manager runs on the Node.js runtime only. Remove runtime = "edge".',
         },
