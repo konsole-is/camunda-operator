@@ -27,11 +27,17 @@ graph LR
 
 ## Merge rules
 
-`spec.cluster` of the preset is the baseline. The [CamundaRelease](camundarelease.md) of `releaseRef` merges over it, and the cluster spec merges over both. A field set on the `ElasticsearchCluster` replaces the value of the layer below for that field. A field left unset on the cluster comes from the layer below.
+`spec.cluster` of the preset is the baseline. The [CamundaRelease](camundarelease.md) of `releaseRef` merges over it, and the cluster spec merges over both. A field set on the `ElasticsearchCluster` replaces the value of the layer below for that field. A field left unset on the cluster comes from the layer below. Each field merges as the table says.
 
-Every object, list, and map is replaced as a whole, never merged field by field or key by key. This includes `resources`, `serviceAccount`, `scheduling`, `monitoring`, `persistentVolumeClaimRetentionPolicy`, `secureSettings`, `extraEnv`, `extraEnvFrom`, `podLabels`, and `podAnnotations`. A cluster that sets its own `scheduling` block drops every scheduling rule of the preset. A cluster that sets one pod label drops every pod label of the preset.
+| Field | Merge behavior |
+| --- | --- |
+| `replicas`, `storageSize`, `storageClassName`, `snapshotStorageRef` | The cluster value replaces the preset value. An unset cluster field inherits the preset value. |
+| `resources`, `serviceAccount`, `scheduling`, `monitoring`, `persistentVolumeClaimRetentionPolicy` | Replaced as a whole block, never merged field by field. A cluster that sets its own `scheduling` block drops every scheduling rule of the preset. |
+| `secureSettings`, `extraEnv`, `extraEnvFrom`, `podLabels`, `podAnnotations` | Replaced as a whole list or map, never merged entry by entry. A cluster that sets one pod label drops every pod label of the preset. An empty list or map (for example `extraEnv: []` or `podLabels: {}`) counts as unset and keeps the preset value. |
+| `presetRef`, `releaseRef`, `secondaryStorageConfig`, `suspend` | Instance-bound. They always come from the cluster and are rejected in a preset. |
+| `version` | Not part of a preset. It comes from `spec.elasticsearch.version` of the release, and a cluster value replaces it. A preset that sets it is rejected. |
 
-An empty list or map (for example `extraEnv: []` or `podLabels: {}`) counts as unset, so it does not remove the value of the preset. To remove it, set the value that you want on the cluster. Or reference a preset without that field.
+To remove a list or a map that the preset sets, set the value that you want on the cluster. Or reference a preset without that field.
 
 ## Fleet settings
 
