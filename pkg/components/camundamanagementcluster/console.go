@@ -185,7 +185,7 @@ func consoleEnv(in Input) []corev1.EnvVar {
 	env = append(
 		env,
 		corev1.EnvVar{Name: identityEnvType, Value: provider.Type},
-		corev1.EnvVar{Name: identityEnvBaseURL, Value: IdentityServiceURL(in.Cluster)},
+		corev1.EnvVar{Name: identityEnvBaseURL, Value: identityInternalURL(in.Cluster)},
 		corev1.EnvVar{Name: identityEnvIssuer, Value: provider.IssuerURL},
 		corev1.EnvVar{Name: identityEnvIssuerBackendURL, Value: provider.IssuerBackendURL},
 		corev1.EnvVar{Name: identityEnvClientID, Value: client.ID},

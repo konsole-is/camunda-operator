@@ -53,6 +53,9 @@ const (
 	// identityEnvURL is the URL of the Identity service itself. Identity
 	// registers it as the redirect URI of its own client.
 	identityEnvURL = "IDENTITY_URL"
+	// identityEnvBasePath is the path that Identity serves under. Identity
+	// needs an https IDENTITY_URL when it is set.
+	identityEnvBasePath = "IDENTITY_BASE_PATH"
 	// The database connection. Identity stores its authorizations, its
 	// tenants, and, under an external identity provider, its users in it.
 	identityEnvDatabaseHost     = "IDENTITY_DATABASE_HOST"
@@ -107,7 +110,8 @@ const (
 	identityTypeGeneric   = "GENERIC"
 	identityTypeMicrosoft = "MICROSOFT"
 	// identityHealthPath is the health endpoint on the management port. It is
-	// the probe path of the 8.9 Helm chart too.
+	// the probe path of the 8.9 Helm chart too. IDENTITY_BASE_PATH does not
+	// move it, because the management port has no context path.
 	identityHealthPath = "/actuator/health"
 	// identityContainer is the container of the Management Identity
 	// Deployment.
@@ -243,11 +247,16 @@ func identityContainerSpec(in Input) corev1.Container {
 }
 
 // identityEnv renders the environment of the Management Identity container:
-// the identity provider, the URL of Identity itself, its database, and the
-// license.
+// the identity provider, the URL of Identity itself and the path it serves
+// under, its database, and the license.
 func identityEnv(in Input) []corev1.EnvVar {
+	external := in.Cluster.Spec.Identity.ExternalURL
+
 	env := identityProviderEnv(in)
-	env = append(env, corev1.EnvVar{Name: identityEnvURL, Value: in.Cluster.Spec.Identity.ExternalURL})
+	env = append(env, corev1.EnvVar{Name: identityEnvURL, Value: external})
+	if path := externalPath(parseURL(external)); path != "" {
+		env = append(env, corev1.EnvVar{Name: identityEnvBasePath, Value: path})
+	}
 	env = append(env, identityDatabaseEnv(in.Databases.Identity)...)
 
 	if ref := in.Platform.LicenseSecretRef; ref != nil {
