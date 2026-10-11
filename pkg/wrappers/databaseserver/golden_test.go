@@ -25,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/utils/ptr"
 
 	apiv1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -41,8 +40,8 @@ func goldenServer() *apiv1.DatabaseServer {
 		ObjectMeta: metav1.ObjectMeta{Name: "orders-pg", Namespace: "team-a"},
 		Spec: apiv1.DatabaseServerSpec{
 			PresetRef:   "small",
-			Instances:   ptr.To[int32](2),
-			StorageSize: ptr.To(resource.MustParse("20Gi")),
+			Instances:   new(int32(2)),
+			StorageSize: new(resource.MustParse("20Gi")),
 		},
 	}
 }

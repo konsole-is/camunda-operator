@@ -25,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/utils/ptr"
 
 	apiv1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -41,8 +40,8 @@ func goldenCluster() *apiv1.ElasticsearchCluster {
 		ObjectMeta: metav1.ObjectMeta{Name: "orders-es", Namespace: "team-a"},
 		Spec: apiv1.ElasticsearchClusterSpec{
 			PresetRef:   "small",
-			Replicas:    ptr.To[int32](3),
-			StorageSize: ptr.To(resource.MustParse("50Gi")),
+			Replicas:    new(int32(3)),
+			StorageSize: new(resource.MustParse("50Gi")),
 		},
 	}
 }

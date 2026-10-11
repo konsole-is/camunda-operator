@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta/testrestmapper"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -64,7 +63,7 @@ func TestComponentReleasesTheDatabase(t *testing.T) {
 				Kind:       "CamundaCluster",
 				Name:       owner.Name,
 				UID:        owner.UID,
-				Controller: ptr.To(true),
+				Controller: new(true),
 			}}
 
 			res, err := NewBuilder(goldenDatabase()).Build()
