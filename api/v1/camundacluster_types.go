@@ -78,6 +78,14 @@ const ReasonRejected = "Rejected"
 // target version as its value, permits one such downgrade.
 const ReasonVersionDowngradeRefused = "VersionDowngradeRefused"
 
+// ReasonVersionSkipRefused on Ready means that the effective version of the
+// cluster is more than one minor above the version that its brokers run, in
+// the same major. Camunda upgrades one minor at a time and blocks the start
+// after a skipped minor. The operator applies nothing while this reason
+// stays. The message names the two versions and the minor to move to first.
+// No annotation permits the move.
+const ReasonVersionSkipRefused = "VersionSkipRefused"
+
 // ComponentMode says where a process of the unified binary runs.
 // +kubebuilder:validation:Enum=Standalone;Embedded
 type ComponentMode string
