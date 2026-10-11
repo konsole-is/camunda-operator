@@ -17,6 +17,8 @@ limitations under the License.
 package camundacluster
 
 import (
+	"fmt"
+
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -135,10 +137,15 @@ const (
 
 // The suffixes of the resources that are not named after a component.
 const (
-	adminSecretSuffix        = "-camunda-admin"
-	serviceAccountSuffix     = "-camunda"
-	zeebeClientServiceSuffix = "-zeebe-client"
+	adminSecretSuffix              = "-camunda-admin"
+	serviceAccountSuffix           = "-camunda"
+	zeebeClientServiceSuffix       = "-zeebe-client"
+	connectorsServiceAccountSuffix = "-connectors"
 )
+
+// defaultServiceAccountName is the account that Kubernetes creates in every
+// namespace.
+const defaultServiceAccountName = "default"
 
 // WorkloadName returns the name of the workload and Service of a component:
 // the cluster name and the component, joined by a dash. The Service is the
@@ -169,8 +176,8 @@ func AdminSecretName(cluster *v1.CamundaCluster) string {
 }
 
 // PodServiceAccountName returns the ServiceAccount that the pods of the
-// cluster run under, or the empty string when they run under the default
-// account of their namespace.
+// cluster run under, except the connectors, or the empty string when they
+// run under the default account of their namespace.
 //
 // The pods need a named account only when something binds one: the spec asks
 // for one, or a referenced bucket authenticates through workload identity.
@@ -204,4 +211,48 @@ func ServiceAccountName(cluster *v1.CamundaCluster, e Effective) string {
 	limit := validation.DNS1123SubdomainMaxLength - len(serviceAccountSuffix)
 
 	return labels.BoundedName(cluster.Name, limit) + serviceAccountSuffix
+}
+
+// PodConnectorsServiceAccountName returns the ServiceAccount that the
+// connectors pods run under, or the empty string when they run under the
+// default account of their namespace: connectors are not enabled, or
+// connectors.serviceAccount is unset.
+//
+// A consumer outside this package reads status.connectorsServiceAccountName.
+func PodConnectorsServiceAccountName(in Input) string {
+	if !in.Effective.ConnectorsEnabled() || in.Effective.ConnectorsServiceAccount() == nil {
+		return ""
+	}
+
+	return ConnectorsServiceAccountName(in.Cluster, in.Effective)
+}
+
+// ConnectorsServiceAccountName returns the name that the ServiceAccount of
+// the connectors carries: the name the spec sets, or <cluster>-connectors,
+// bounded like ServiceAccountName. It is the principal that a workload
+// identity without an annotation binds for the connectors.
+func ConnectorsServiceAccountName(cluster *v1.CamundaCluster, e Effective) string {
+	if account := e.ConnectorsServiceAccount(); account != nil && account.Name != "" {
+		return account.Name
+	}
+
+	limit := validation.DNS1123SubdomainMaxLength - len(connectorsServiceAccountSuffix)
+
+	return labels.BoundedName(cluster.Name, limit) + connectorsServiceAccountSuffix
+}
+
+// CheckConnectorsServiceAccount returns an error when the connectors would
+// run under the ServiceAccount name of the cluster, the derived one
+// included. Two owners of one account would fight over it, and the
+// connectors would get the cluster identity.
+func CheckConnectorsServiceAccount(in Input) error {
+	name := PodConnectorsServiceAccountName(in)
+	if name == "" || name != ServiceAccountName(in.Cluster, in.Effective) {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"connectors.serviceAccount.name %q is the ServiceAccount of the cluster. Give the connectors a ServiceAccount of their own",
+		name,
+	)
 }
