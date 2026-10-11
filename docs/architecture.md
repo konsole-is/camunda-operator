@@ -59,7 +59,7 @@ The Optimize pods carry the `camunda.io/cluster` label of their cluster. A selec
 
 A web application in `embedded` mode has no pods of its own, so a selector on its component value finds no pods. It runs in the `gateway` pods, or in the `zeebe` pods when the gateway is embedded too.
 
-A label value holds at most 63 characters. For a longer name, the value is the start of the name followed by a hash. A selector with the full name of such a resource finds nothing.
+A label value holds at most 63 characters. For a longer name, the value is the start of the name followed by a hash. Kubernetes rejects a selector with the full name of such a resource.
 
 A label that you set in a `podLabels` field never replaces a discovery label. Not every pod and volume claim carries `app.kubernetes.io/managed-by`. Select them by the discovery labels.
 
