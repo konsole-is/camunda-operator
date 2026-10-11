@@ -17,6 +17,7 @@ limitations under the License.
 package camundacluster
 
 import (
+	"math"
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
@@ -80,14 +81,15 @@ func VersionSkip(effective, running string) bool {
 		return false
 	}
 
-	return want[0] == have[0] && want[1] > have[1]+1
+	return want[0] == have[0] && want[1] > have[1] && want[1]-1 > have[1]
 }
 
 // NextMinor returns the minor after the one of version, as major.minor, or
-// the empty string when version is not of the form x.y.z.
+// the empty string when version is not of the form x.y.z or its minor is the
+// largest int.
 func NextMinor(version string) string {
 	parsed, err := parseVersion(version)
-	if err != nil {
+	if err != nil || parsed[1] == math.MaxInt {
 		return ""
 	}
 

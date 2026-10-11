@@ -17,6 +17,8 @@ limitations under the License.
 package camundacluster
 
 import (
+	"math"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -49,6 +51,8 @@ func TestVersionDowngrade(t *testing.T) {
 	}
 }
 
+var maxMinor = "8." + strconv.Itoa(math.MaxInt) + ".0"
+
 func TestVersionSkip(t *testing.T) {
 	t.Parallel()
 
@@ -68,6 +72,7 @@ func TestVersionSkip(t *testing.T) {
 		"running tag not x.y.z":        {"8.11.0", "latest", false},
 		"effective not x.y.z":          {"8.11", "8.9.9", false},
 		"numeric, not lexical":         {"8.10.0", "8.9.9", false},
+		"the largest minor, unchanged": {maxMinor, maxMinor, false},
 	}
 
 	for name, tc := range cases {
@@ -88,6 +93,7 @@ func TestNextMinor(t *testing.T) {
 		"the first of a minor": {"8.10.0", "8.11"},
 		"not x.y.z":            {"latest", ""},
 		"empty":                {"", ""},
+		"the largest minor":    {maxMinor, ""},
 	}
 
 	for name, tc := range cases {
