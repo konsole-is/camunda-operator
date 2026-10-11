@@ -285,6 +285,20 @@
       groupName: "type-definitions",
     },
     {
+      // The plugins inside eslint-config-next have peer ranges that stop at
+      // ESLint 9. Lift this when they accept ESLint 10.
+      matchFileNames: ["fleet-manager/package.json"],
+      matchPackageNames: ["eslint"],
+      allowedVersions: "<10.0.0",
+    },
+    {
+      // typescript-eslint has the peer range <6.1.0 for TypeScript. Lift this
+      // when its range accepts a newer release.
+      matchFileNames: ["fleet-manager/package.json"],
+      matchPackageNames: ["typescript"],
+      allowedVersions: "<6.1.0",
+    },
+    {
       // @types/node follows the Node.js major of the fleet manager.
       matchPackageNames: ["@types/node"],
       allowedVersions: "/^24\\./",
