@@ -5,6 +5,12 @@ IMG ?= controller:latest
 # build-installer and deploy stamp it into the manifests, helm-deploy into
 # the chart values.
 CLI_IMG ?= ghcr.io/konsole-is/camunda-operator-cli:latest
+# OPERATOR_VERSION is the version that the manager reports, without the v of
+# the tag. The release workflow sets it from the tag. Without it the manager
+# reports 0.0.0-dev.
+OPERATOR_VERSION ?= 0.0.0-dev
+VERSION_PACKAGE := github.com/konsole-is/camunda-operator/internal/version
+VERSION_LDFLAGS = -X $(VERSION_PACKAGE).version=$(OPERATOR_VERSION)
 # The namespace that the manager runs in. It holds the Lease that serializes
 # the claim of a logical database. A manager in a cluster reads it from its
 # own Pod, so only `make run` needs this default. `make run` creates the
@@ -218,7 +224,7 @@ vulncheck: govulncheck ## Fail on a known vulnerability that the code of a modul
 
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
-	go build -o bin/manager cmd/main.go
+	go build -ldflags "$(VERSION_LDFLAGS)" -o bin/manager cmd/main.go
 
 .PHONY: build-cli
 build-cli: fmt vet ## Build the camunda-operator-cli binary.
@@ -234,7 +240,7 @@ run: manifests generate fmt vet ## Run a controller from your host. The backup J
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG} .
+	$(CONTAINER_TOOL) build --build-arg OPERATOR_VERSION=$(OPERATOR_VERSION) -t ${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -264,7 +270,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name camunda-operator-builder
 	$(CONTAINER_TOOL) buildx use camunda-operator-builder
-	$(CONTAINER_TOOL) buildx build $(BUILDX_OUTPUT) --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
+	$(CONTAINER_TOOL) buildx build $(BUILDX_OUTPUT) --platform=$(PLATFORMS) --build-arg OPERATOR_VERSION=$(OPERATOR_VERSION) --tag ${IMG} -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm camunda-operator-builder
 	rm Dockerfile.cross
 
@@ -276,6 +282,20 @@ docker-buildx-cli: ## Build and push docker image for camunda-operator-cli for c
 	$(CONTAINER_TOOL) buildx build $(BUILDX_OUTPUT) --platform=$(PLATFORMS) --tag ${CLI_IMG} -f Dockerfile.cli.cross .
 	- $(CONTAINER_TOOL) buildx rm camunda-operator-builder
 	rm Dockerfile.cli.cross
+
+.PHONY: test-version-stamp
+test-version-stamp: OPERATOR_VERSION = 0.3.0
+test-version-stamp: ## Check that a build with OPERATOR_VERSION reports it, and that the image builds stamp it too.
+	WANT_OPERATOR_VERSION=$(OPERATOR_VERSION) go test -count=1 -ldflags "$(VERSION_LDFLAGS)" \
+		-run '^TestVersionReportsStampedTag$$' ./internal/version
+	@grep -qx 'ARG OPERATOR_VERSION=0.0.0-dev' Dockerfile && \
+		grep -qF -- '-X $(VERSION_PACKAGE).version=$${OPERATOR_VERSION}' Dockerfile || \
+		{ echo "Dockerfile does not stamp $(VERSION_PACKAGE).version from ARG OPERATOR_VERSION" >&2; exit 1; }
+	@for target in docker-build docker-buildx; do \
+		$(MAKE) -s -n $$target OPERATOR_VERSION=$(OPERATOR_VERSION) | \
+			grep -qF -- '--build-arg OPERATOR_VERSION=$(OPERATOR_VERSION)' || \
+			{ echo "make $$target does not pass OPERATOR_VERSION to the Dockerfile" >&2; exit 1; }; \
+	done
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.

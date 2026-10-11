@@ -184,7 +184,7 @@ jobs:
         run: make helm-verify
 
       - name: Build and push the operator image
-        run: make docker-buildx IMG=${IMG}
+        run: make docker-buildx IMG=${IMG} OPERATOR_VERSION=${VERSION}
 
       - name: Resolve the image digest
         id: image

@@ -54,6 +54,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/pointintimerestore"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/manager"
+	"github.com/konsole-is/camunda-operator/internal/version"
 	"github.com/konsole-is/camunda-operator/pkg/grace"
 	// +kubebuilder:scaffold:imports
 )
@@ -414,7 +415,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("Starting manager")
+	setupLog.Info("Starting manager", "version", version.Version())
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
