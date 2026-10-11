@@ -50,10 +50,10 @@ const (
 	failing
 )
 
-// failingReasons are the Ready reasons that ocf writes for a component that
-// stopped converging. Every other Ready=False reason, also a failed pre-check
-// such as InvalidReference or MissingSecret, is a state that the operator
-// still works on, so it converges until the grace period of the consumer ends.
+// failingReasons are the Ready reasons of a resource that stopped converging:
+// those of ocf, and ArchiveFailing, which a DatabaseServer reports after its
+// own grace period. The operator still works on each other Ready=False reason,
+// also a failed pre-check, so it converges until the consumer's grace ends.
 var failingReasons = map[string]struct{}{
 	string(component.AliveFailing):      {},
 	string(component.OperationFailing):  {},
@@ -61,13 +61,14 @@ var failingReasons = map[string]struct{}{
 	string(component.Down):              {},
 	string(component.Error):             {},
 	string(component.FeatureGateError):  {},
+	apiv1.ReasonArchiveFailing:          {},
 }
 
 // Converging maps the Ready condition to a convergence status. Ready=True is
-// Healthy, unless its reason is Suspended. A Ready of an older generation,
-// a missing Ready, and a Ready=False with a reason the operator still works
-// on are Creating on the first apply and Updating afterwards. Ready=False
-// with the reason Failing, Down, Degraded, or Error is Failing.
+// Healthy, unless its reason is Suspended. Ready=False with a reason that ends
+// convergence, such as Failing, Down, or ArchiveFailing, is Failing. Every
+// other state, also a Ready of an older generation, is Creating on the first
+// apply and Updating afterwards.
 func Converging(op concepts.ConvergingOperation, o Object) concepts.AliveStatusWithReason {
 	if stale := concepts.StaleGenerationStatus(op, o.ObservedGeneration, o.Generation, o.Kind); stale != nil {
 		return *stale
@@ -119,8 +120,8 @@ func read(o Object) (state, string) {
 }
 
 // Operational maps the Ready condition to an operational status, by the
-// rules of Converging: serving is Operational, Failing, Down, Degraded, and
-// Error are OperationFailing, and every other state is OperationPending.
+// rules of Converging: serving is Operational, Failing is OperationFailing,
+// and every other state is OperationPending.
 func Operational(o Object) concepts.OperationalStatusWithReason {
 	if o.ObservedGeneration < o.Generation {
 		return concepts.OperationalStatusWithReason{

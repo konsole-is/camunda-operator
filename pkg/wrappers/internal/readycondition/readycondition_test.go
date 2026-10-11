@@ -121,6 +121,12 @@ func TestConverging(t *testing.T) {
 			want:   concepts.AliveConvergingStatusFailing,
 		},
 		{
+			name:   "Ready=False with reason ArchiveFailing is Failing",
+			op:     concepts.ConvergingOperationUpdated,
+			object: objectWith(metav1.ConditionFalse, apiv1.ReasonArchiveFailing, ""),
+			want:   concepts.AliveConvergingStatusFailing,
+		},
+		{
 			name:           "suspended is not serving",
 			op:             concepts.ConvergingOperationUpdated,
 			object:         objectWith(metav1.ConditionTrue, string(component.Suspended), ""),
@@ -186,6 +192,11 @@ func TestOperational(t *testing.T) {
 		{
 			name:   "reason Degraded is failing",
 			object: objectWith(metav1.ConditionFalse, string(component.Degraded), ""),
+			want:   concepts.OperationalStatusFailing,
+		},
+		{
+			name:   "reason ArchiveFailing is failing",
+			object: objectWith(metav1.ConditionFalse, apiv1.ReasonArchiveFailing, ""),
 			want:   concepts.OperationalStatusFailing,
 		},
 		{

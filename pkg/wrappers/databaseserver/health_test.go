@@ -60,6 +60,11 @@ func TestDefaultConvergingStatusHandler(t *testing.T) {
 			want:   concepts.AliveConvergingStatusFailing,
 		},
 		{
+			name:   "Ready=False after the archive grace period is Failing",
+			server: serverWithReady(metav1.ConditionFalse, apiv1.ReasonArchiveFailing),
+			want:   concepts.AliveConvergingStatusFailing,
+		},
+		{
 			name:   "Ready=False while it starts is Creating",
 			server: serverWithReady(metav1.ConditionFalse, "Creating"),
 			want:   concepts.AliveConvergingStatusCreating,
