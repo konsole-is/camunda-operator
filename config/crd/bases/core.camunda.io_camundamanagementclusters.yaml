@@ -1123,8 +1123,9 @@ spec:
                       ExternalURL is the URL where browsers reach Management Identity.
                       Identity registers it as the redirect URI of its own client. Identity
                       serves under the path of this URL, so it can share one host with
-                      Keycloak, Console, and Web Modeler. A URL with a path must use https,
-                      because Camunda requires https for Identity under a path.
+                      Keycloak, Console, and Web Modeler. A URL with a path other than "/"
+                      must use https, because Camunda requires https for Identity under a
+                      path.
                     type: string
                     x-kubernetes-validations:
                     - message: externalUrl must be a valid http or https URL

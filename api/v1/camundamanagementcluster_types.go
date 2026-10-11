@@ -315,8 +315,9 @@ type IdentitySpec struct {
 	// ExternalURL is the URL where browsers reach Management Identity.
 	// Identity registers it as the redirect URI of its own client. Identity
 	// serves under the path of this URL, so it can share one host with
-	// Keycloak, Console, and Web Modeler. A URL with a path must use https,
-	// because Camunda requires https for Identity under a path.
+	// Keycloak, Console, and Web Modeler. A URL with a path other than "/"
+	// must use https, because Camunda requires https for Identity under a
+	// path.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	// +kubebuilder:validation:XValidation:rule="!isURL(self) || url(self).getScheme() != 'http' || url(self).getEscapedPath() in ['', '/']",message="externalUrl with a path needs https. Management Identity serves under a path only over https"
 	ExternalURL string `json:"externalUrl"`
