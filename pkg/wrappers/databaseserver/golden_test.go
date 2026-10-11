@@ -33,15 +33,15 @@ import (
 // go test ./pkg/wrappers/databaseserver/ -run Golden -update-golden
 var updateGolden = flag.Bool("update-golden", false, "update golden files")
 
-// goldenServer returns the DatabaseServer that a built-in adapter applies: a
-// preset, with an instance count and a storage size.
+// goldenServer returns the DatabaseServer that a built-in adapter applies.
 func goldenServer() *apiv1.DatabaseServer {
 	return &apiv1.DatabaseServer{
 		ObjectMeta: metav1.ObjectMeta{Name: "orders-pg", Namespace: "team-a"},
 		Spec: apiv1.DatabaseServerSpec{
-			PresetRef:   "small",
-			Instances:   new(int32(2)),
-			StorageSize: new(resource.MustParse("20Gi")),
+			PresetRef:            "small",
+			Instances:            new(int32(2)),
+			StorageSize:          new(resource.MustParse("20Gi")),
+			DatabaseServerConfig: "orders-pg",
 		},
 	}
 }

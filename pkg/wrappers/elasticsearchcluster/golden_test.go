@@ -34,14 +34,15 @@ import (
 var updateGolden = flag.Bool("update-golden", false, "update golden files")
 
 // goldenCluster returns the ElasticsearchCluster that a built-in adapter
-// applies: a preset, with a node count and a storage size.
+// applies.
 func goldenCluster() *apiv1.ElasticsearchCluster {
 	return &apiv1.ElasticsearchCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "orders-es", Namespace: "team-a"},
 		Spec: apiv1.ElasticsearchClusterSpec{
-			PresetRef:   "small",
-			Replicas:    new(int32(3)),
-			StorageSize: new(resource.MustParse("50Gi")),
+			PresetRef:              "small",
+			Replicas:               new(int32(3)),
+			StorageSize:            new(resource.MustParse("50Gi")),
+			SecondaryStorageConfig: "orders-es",
 		},
 	}
 }

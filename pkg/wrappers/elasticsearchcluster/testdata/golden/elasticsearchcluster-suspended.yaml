@@ -6,5 +6,6 @@ metadata:
 spec:
   presetRef: small
   replicas: 3
+  secondaryStorageConfig: orders-es
   storageSize: 50Gi
   suspend: true

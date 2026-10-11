@@ -51,7 +51,7 @@ func observed(esc *apiv1.ElasticsearchCluster) readycondition.Object {
 	}
 }
 
-// DefaultGraceStatusHandler grades a ElasticsearchCluster that is still not
+// DefaultGraceStatusHandler grades an ElasticsearchCluster that is still not
 // converged after the grace period: Ready=True is Healthy, Ready=False with
 // the reason Degraded is Degraded, and anything else is Down.
 func DefaultGraceStatusHandler(esc *apiv1.ElasticsearchCluster) (concepts.GraceStatusWithReason, error) {
