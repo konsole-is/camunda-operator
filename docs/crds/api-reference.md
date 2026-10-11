@@ -1873,7 +1873,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `version` _string_ | Version is the Management Identity version, as a full semantic version.<br />The operator supports 8.9.0 and later. |  | Pattern: `^\d+\.\d+\.\d+$` <br /> |
-| `externalUrl` _string_ | ExternalURL is the URL where browsers reach Management Identity.<br />Identity registers it as the redirect URI of its own client. |  |  |
+| `externalUrl` _string_ | ExternalURL is the URL where browsers reach Management Identity.<br />Identity registers it as the redirect URI of its own client. Identity<br />serves under the path of this URL, so it can share one host with<br />Keycloak, Console, and Web Modeler. A URL with a path must use https,<br />because Camunda requires https for Identity under a path. |  |  |
 | `databaseConfigRef` _string_ | DatabaseConfigRef names the DatabaseConfig of the Management Identity<br />database, in the namespace of this resource. Identity needs its own<br />PostgreSQL database. |  | MinLength: 1 <br /> |
 | `admin` _[IdentityAdminSpec](#identityadminspec)_ | Admin names the first administrator of the management plane. |  |  |
 | `replicas` _integer_ | Replicas is the number of pods of this process. Defaults to 1. On a<br />CamundaCluster it has no effect on an embedded web application. |  | Minimum: 0 <br />Optional: \{\} <br /> |
