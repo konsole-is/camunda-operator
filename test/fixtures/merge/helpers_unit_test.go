@@ -70,6 +70,7 @@ func TestParseMergeRulesRefusesAPageWithoutTheTable(t *testing.T) {
 		{"no section", "# Kind\n\n## Changes\n\n| a | b |\n| --- | --- |\n| `x` | y |\n"},
 		{"section without a table", "# Kind\n\n## Merge rules\n\nProse only.\n\n## Changes\n"},
 		{"table without rows", "# Kind\n\n## Merge rules\n\n| Field | Merge behavior |\n| --- | --- |\n\n## Changes\n"},
+		{"first column is not Field", "# Kind\n\n## Merge rules\n\n| Name | B |\n| --- | --- |\n| `a` | b |\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -136,6 +137,40 @@ func TestLoadFixturesRefusesAnUnknownTopLevelField(t *testing.T) {
 
 	_, err := loadFixtures(dir)
 	assert.ErrorContains(t, err, "a.json")
+}
+
+func TestCheckFixture(t *testing.T) {
+	t.Parallel()
+
+	valid := fixture{SchemaVersion: schemaVersion, Name: "n", Rule: "r", Spec: json.RawMessage(`{}`)}
+	withRelease := valid
+	withRelease.Release = json.RawMessage(`{"version": "8.9.4"}`)
+	tests := []struct {
+		name    string
+		kind    string
+		f       fixture
+		wantErr bool
+	}{
+		{"a valid case", "databaseserver", valid, false},
+		{"a camundacluster case with a release", "camundacluster", withRelease, false},
+		{"an elasticsearchcluster case with a release", "elasticsearchcluster", withRelease, true},
+		{"a databaseserver case with a release", "databaseserver", withRelease, true},
+		{"another schema version", "camundacluster", fixture{SchemaVersion: 2, Name: "n", Rule: "r"}, true},
+		{"no name", "camundacluster", fixture{SchemaVersion: schemaVersion, Rule: "r"}, true},
+		{"no rule", "camundacluster", fixture{SchemaVersion: schemaVersion, Name: "n"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := checkFixture(tt.f, tt.kind)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+		})
+	}
 }
 
 type testLayer struct {

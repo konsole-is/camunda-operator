@@ -39,6 +39,10 @@ const schemaVersion = 1
 // the merge rules.
 const mergeRulesHeading = "## Merge rules"
 
+// releaseKinds are the kinds whose cases can carry a release. The format
+// that the fleet manager reads allows a release for these kinds only.
+var releaseKinds = map[string]bool{"camundacluster": true}
+
 // fixture is one case under <kind>/: the layers of a merge and the spec that
 // the merge function of the kind returns for them. The field order is the
 // order that writeFixture writes.
@@ -79,6 +83,19 @@ func loadFixtures(dir string) ([]fixture, error) {
 	}
 
 	return fixtures, nil
+}
+
+func checkFixture(f fixture, kind string) error {
+	switch {
+	case f.SchemaVersion != schemaVersion:
+		return fmt.Errorf("schemaVersion is %d, not %d", f.SchemaVersion, schemaVersion)
+	case f.Name == "" || f.Rule == "":
+		return errors.New("a case needs a name and a rule")
+	case len(f.Release) > 0 && !releaseKinds[kind]:
+		return fmt.Errorf("a %s case must not have a release", kind)
+	}
+
+	return nil
 }
 
 // decodeLayer decodes one layer of a case with the field names of the API:
@@ -169,13 +186,24 @@ func parseMergeRules(markdown []byte) ([]string, error) {
 	if len(rows) < 3 {
 		return nil, fmt.Errorf("the %q section has no table with rows", mergeRulesHeading)
 	}
+	if header := firstCell(rows[0]); header != "Field" {
+		return nil, fmt.Errorf(
+			"the first column of the %q table is %q, not \"Field\"",
+			mergeRulesHeading,
+			header,
+		)
+	}
 
 	rules := make([]string, 0, len(rows)-2)
 	for _, row := range rows[2:] {
-		rules = append(rules, strings.TrimSpace(strings.Split(row, "|")[1]))
+		rules = append(rules, firstCell(row))
 	}
 
 	return rules, nil
+}
+
+func firstCell(row string) string {
+	return strings.TrimSpace(strings.Split(row, "|")[1])
 }
 
 // ruleCoverage compares the rows of a "Merge rules" table with the rule of

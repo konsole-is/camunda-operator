@@ -100,9 +100,7 @@ func runFixtures[S, P, R any](t *testing.T, kind string, merge func(S, *P, *R) S
 		t.Run(filepath.Base(f.Path), func(t *testing.T) {
 			t.Parallel()
 
-			require.Equal(t, schemaVersion, f.SchemaVersion)
-			require.NotEmpty(t, f.Name)
-			require.NotEmpty(t, f.Rule)
+			require.NoError(t, checkFixture(f, kind), f.Path)
 
 			spec, err := decodeLayer[S](f.Spec)
 			require.NoError(t, err, "decoding spec")
