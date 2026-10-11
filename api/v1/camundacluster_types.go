@@ -262,8 +262,9 @@ type ConnectorsSpec struct {
 	// label through podLabels yourself. A workload identity without an
 	// annotation binds the principal
 	// system:serviceaccount:<namespace>:<name>-connectors. name must differ
-	// from the name of the cluster ServiceAccount. A preset can set this
-	// block, except name.
+	// from the name of the cluster ServiceAccount. While connectors are not
+	// enabled, the operator does not create or check the account. A preset
+	// can set this block, except name.
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 	WorkloadSpec   `                    json:",inline"`

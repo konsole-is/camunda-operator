@@ -622,6 +622,8 @@ func deploymentComponent(in Input, p Process) (*component.Component, error) {
 		return nil, err
 	}
 
+	connectorsAccount := in.Effective.ConnectorsServiceAccount()
+
 	workload, err := deployment.NewBuilder(deploymentFor(in, p)).
 		WithMutation(deploymentMutations(in, p)...).
 		Build()
@@ -647,7 +649,7 @@ func deploymentComponent(in Input, p Process) (*component.Component, error) {
 		// pre-existing account is excluded, not gated, so the operator never
 		// deletes an account that it does not own.
 		IncludeWhen(
-			p.Component == ComponentConnectors && in.Effective.ConnectorsServiceAccount().Creates(),
+			p.Component == ComponentConnectors && connectorsAccount != nil && connectorsAccount.Creates(),
 			func() component.Resource { return account },
 			component.GatedBy(feature.NewBooleanGate(PodConnectorsServiceAccountName(in) != "")),
 		).

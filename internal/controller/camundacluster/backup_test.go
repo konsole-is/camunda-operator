@@ -25,7 +25,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -356,6 +355,24 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			}, timeout, interval).Should(Succeed())
 		})
 
+		// Without the block the operator names no connectors account, so an
+		// account with the derived name is not its own to delete.
+		It("leaves an account of the user with the derived name in place", func() {
+			ns := newNamespace()
+			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			cluster.Spec.Connectors = connectors()
+			key := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-connectors"}
+			Expect(k8sClient.Create(ctx, &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: key.Name},
+			})).To(Succeed())
+			createCluster(cluster)
+
+			expectDeploymentAccount(key, "default")
+			Consistently(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, key, &corev1.ServiceAccount{})).To(Succeed())
+			}, 2*time.Second, interval).Should(Succeed())
+		})
+
 		It("moves the connectors back to the default account when the block goes", func() {
 			ns := newNamespace()
 			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
@@ -373,10 +390,13 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 
 			expectPublishedConnectorsAccount(cluster, "")
 			expectDeploymentAccount(key, "default")
-			Eventually(func(g Gomega) {
-				err := k8sClient.Get(ctx, key, &corev1.ServiceAccount{})
-				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the owned account is still there")
-			}, timeout, interval).Should(Succeed())
+
+			// The account stays with the cluster and goes when the cluster
+			// goes.
+			var account corev1.ServiceAccount
+			Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+			Expect(metav1.GetControllerOf(&account)).NotTo(BeNil())
+			Expect(metav1.GetControllerOf(&account).Name).To(Equal(cluster.Name))
 		})
 	})
 
