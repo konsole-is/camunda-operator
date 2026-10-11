@@ -266,8 +266,9 @@ type TargetRef struct {
 	// run under.
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
-	// AdditionalServiceAccounts are more ServiceAccounts that the identity of
-	// the request trusts, for example those of the built-in storage.
+	// AdditionalServiceAccounts are the names of more ServiceAccounts that the
+	// identity of the request trusts, for example those of the built-in
+	// storage.
 	// +optional
 	AdditionalServiceAccounts []string `json:"additionalServiceAccounts,omitempty"`
 }
