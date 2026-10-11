@@ -49,8 +49,8 @@ function resolveModuleFile(base) {
   const ext = path.extname(base);
   const stem = base.slice(0, base.length - ext.length);
   const candidates = [
-    base,
     ...(SOURCE_EXTENSIONS.get(ext) ?? []).map((source) => stem + source),
+    base,
     ...EXTENSIONS.map((added) => base + added),
     ...EXTENSIONS.map((added) => path.join(base, `index${added}`)),
   ];

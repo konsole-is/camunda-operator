@@ -146,6 +146,13 @@ tester.run("no-server-only-in-client", rule, {
       errors: refused,
     },
     {
+      name: "a .js name of a .ts module when a same-stem .js file also exists",
+      filename,
+      options,
+      code: client(`import { twin } from "@/lib/twin.js";`),
+      errors: refused,
+    },
+    {
       name: "an import of a .cts module by its .cjs name",
       filename,
       options,
