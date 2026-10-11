@@ -153,7 +153,13 @@ const rule = {
         if (node.exportKind !== "type") check(node, node.source.value);
       },
       ImportExpression(node) {
-        if (node.source.type === "Literal") check(node, node.source.value);
+        const { source } = node;
+        if (source.type === "Literal") check(node, source.value);
+        else if (
+          source.type === "TemplateLiteral" &&
+          !source.expressions.length
+        )
+          check(node, source.quasis[0].value.cooked);
       },
     };
   },

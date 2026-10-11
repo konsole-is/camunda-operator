@@ -139,6 +139,13 @@ tester.run("no-server-only-in-client", rule, {
       errors: refused,
     },
     {
+      name: "a dynamic import with a template literal",
+      filename,
+      options,
+      code: client("export const load = () => import(`@/lib/secrets`);"),
+      errors: refused,
+    },
+    {
       name: "a single-quoted directive",
       filename,
       options,
