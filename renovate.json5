@@ -3,7 +3,8 @@
 // the 1st and the 15th, grouped so that one pull request carries what has to
 // land together, and a major update arrives when it is published. Go modules,
 // .tool-versions, GitHub Actions, the Dockerfiles, and requirements-docs.txt
-// go through the standard managers.
+// go through the standard managers. The fleet manager under fleet-manager/
+// goes through the npm, nodenv, and dockerfile managers.
 //
 // The image pins of the e2e suite are the env files under test/e2e/matrix/
 // (one per supported Camunda minor), Go constants, YAML image fields of the
@@ -253,6 +254,40 @@
       ],
       versioning: "semver",
       allowedVersions: "<8.10.0",
+    },
+    {
+      // The fleet manager pins one Node.js release in fleet-manager/.node-version,
+      // in engines of fleet-manager/package.json, in the build stage of
+      // fleet-manager/Dockerfile, and in .tool-versions. Each manager names the
+      // dependency node, so one pull request moves all of them. The runtime
+      // image of the Dockerfile names the major (distroless nodejs24), so a new
+      // major is a change by hand. The node-version datasource writes its
+      // versions with a leading v, the Docker tags do not.
+      matchFileNames: ["fleet-manager/**", ".tool-versions"],
+      matchDepNames: ["node"],
+      groupName: "fleet-manager-node",
+      allowedVersions: "/^v?24\\./",
+    },
+    {
+      // packageManager in fleet-manager/package.json pins pnpm, and corepack
+      // runs that release. A new major of pnpm is a change by hand.
+      matchFileNames: ["fleet-manager/package.json"],
+      matchDepNames: ["pnpm"],
+      allowedVersions: "/^10\\./",
+    },
+    {
+      // eslint-config-next carries the release number of next.
+      matchPackageNames: ["next", "react", "react-dom", "eslint-config-next"],
+      groupName: "next-and-react",
+    },
+    {
+      matchPackageNames: ["@types/**"],
+      groupName: "type-definitions",
+    },
+    {
+      // @types/node follows the Node.js major of the fleet manager.
+      matchPackageNames: ["@types/node"],
+      allowedVersions: "/^24\\./",
     },
   ],
 }
