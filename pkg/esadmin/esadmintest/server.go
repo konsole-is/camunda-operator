@@ -171,7 +171,8 @@ type Server struct {
 	repos     map[string]*Repository
 	snapshots map[string]*Snapshot
 
-	repositoryPuts map[string]int
+	repositoryPuts     map[string]int
+	repositoryAttempts map[string]int
 
 	snapshotCreates map[string]int
 	reloadCalls     int
@@ -227,14 +228,15 @@ func NewTLS() *Server {
 
 func newServer() *Server {
 	return &Server{
-		repos:           map[string]*Repository{},
-		repositoryPuts:  map[string]int{},
-		snapshots:       map[string]*Snapshot{},
-		snapshotCreates: map[string]int{},
-		indices:         map[string]struct{}{},
-		aliases:         map[string][]string{},
-		shards:          map[string][]Shard{},
-		nodeFS:          map[string]nodeFS{"node-0": {total: 100 << 30, used: 10 << 30}},
+		repos:              map[string]*Repository{},
+		repositoryPuts:     map[string]int{},
+		repositoryAttempts: map[string]int{},
+		snapshots:          map[string]*Snapshot{},
+		snapshotCreates:    map[string]int{},
+		indices:            map[string]struct{}{},
+		aliases:            map[string][]string{},
+		shards:             map[string][]Shard{},
+		nodeFS:             map[string]nodeFS{"node-0": {total: 100 << 30, used: 10 << 30}},
 	}
 }
 
@@ -257,6 +259,14 @@ func (s *Server) RepositoryPuts(name string) int {
 	s.Lock()
 	defer s.Unlock()
 	return s.repositoryPuts[name]
+}
+
+// RepositoryAttempts reports how often a registration of the repository name
+// reached the fake, dropped and failed ones included.
+func (s *Server) RepositoryAttempts(name string) int {
+	s.Lock()
+	defer s.Unlock()
+	return s.repositoryAttempts[name]
 }
 
 // SetSnapshotState sets the state of the snapshot repo/name, creating it
@@ -618,6 +628,7 @@ func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request, name s
 		})
 
 	case http.MethodPut:
+		s.repositoryAttempts[name]++
 		if s.Dropping(w, "repository") {
 			return
 		}
