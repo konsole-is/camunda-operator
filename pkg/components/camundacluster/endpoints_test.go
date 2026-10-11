@@ -45,7 +45,7 @@ func (tp topology) String() string {
 func everyTopology() []topology {
 	modes := []v1.ComponentMode{v1.ComponentModeStandalone, v1.ComponentModeEmbedded}
 
-	var all []topology
+	all := make([]topology, 0, 32)
 	for _, gateway := range modes {
 		for _, operate := range modes {
 			for _, tasklist := range modes {
@@ -113,14 +113,16 @@ func TestEndpointsOfTheDefaultTopology(t *testing.T) {
 	t.Parallel()
 
 	in := fixtureMinimal(t)
-	assert.Equal(t, []v1.Endpoint{
-		{Name: "admin", Service: "my-cluster-gateway", Port: 8080, PathPrefix: "/admin", Protocol: v1.EndpointProtocolHTTP},
-		{Name: "default", Service: "my-cluster-gateway", Port: 8080, PathPrefix: "/", Protocol: v1.EndpointProtocolHTTP},
-		{Name: "grpc", Service: "my-cluster-gateway", Port: 26500, Protocol: v1.EndpointProtocolGRPC},
-		{Name: "operate", Service: "my-cluster-gateway", Port: 8080, PathPrefix: "/operate", Protocol: v1.EndpointProtocolHTTP},
-		{Name: "rest", Service: "my-cluster-gateway", Port: 8080, PathPrefix: "/v2", Protocol: v1.EndpointProtocolHTTP},
-		{Name: "tasklist", Service: "my-cluster-gateway", Port: 8080, PathPrefix: "/tasklist", Protocol: v1.EndpointProtocolHTTP},
-	}, Endpoints(in.Cluster, in.Effective))
+	gateway, http := "my-cluster-gateway", v1.EndpointProtocolHTTP
+	want := []v1.Endpoint{
+		{Name: "admin", Service: gateway, Port: 8080, PathPrefix: "/admin", Protocol: http},
+		{Name: "default", Service: gateway, Port: 8080, PathPrefix: "/", Protocol: http},
+		{Name: "grpc", Service: gateway, Port: 26500, Protocol: v1.EndpointProtocolGRPC},
+		{Name: "operate", Service: gateway, Port: 8080, PathPrefix: "/operate", Protocol: http},
+		{Name: "rest", Service: gateway, Port: 8080, PathPrefix: "/v2", Protocol: http},
+		{Name: "tasklist", Service: gateway, Port: 8080, PathPrefix: "/tasklist", Protocol: http},
+	}
+	assert.Equal(t, want, Endpoints(in.Cluster, in.Effective))
 }
 
 // Every topology gets the full table, sorted by name. A standalone web

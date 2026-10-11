@@ -59,16 +59,16 @@ func createEmbeddedGatewayCluster() *v1.CamundaCluster {
 var _ = Describe("CamundaCluster endpoints", func() {
 	It("publishes a route for every path of a new cluster", func() {
 		cluster := createDefaultCluster()
-		gateway := cluster.Name + "-gateway"
+		gateway, http := cluster.Name+"-gateway", v1.EndpointProtocolHTTP
 
 		expectEndpoints(cluster, func(g Gomega, latest *v1.CamundaCluster) {
 			g.Expect(latest.Status.Endpoints).To(Equal([]v1.Endpoint{
-				{Name: "admin", Service: gateway, Port: 8080, PathPrefix: "/admin", Protocol: v1.EndpointProtocolHTTP},
-				{Name: "default", Service: gateway, Port: 8080, PathPrefix: "/", Protocol: v1.EndpointProtocolHTTP},
+				{Name: "admin", Service: gateway, Port: 8080, PathPrefix: "/admin", Protocol: http},
+				{Name: "default", Service: gateway, Port: 8080, PathPrefix: "/", Protocol: http},
 				{Name: "grpc", Service: gateway, Port: 26500, Protocol: v1.EndpointProtocolGRPC},
-				{Name: "operate", Service: gateway, Port: 8080, PathPrefix: "/operate", Protocol: v1.EndpointProtocolHTTP},
-				{Name: "rest", Service: gateway, Port: 8080, PathPrefix: "/v2", Protocol: v1.EndpointProtocolHTTP},
-				{Name: "tasklist", Service: gateway, Port: 8080, PathPrefix: "/tasklist", Protocol: v1.EndpointProtocolHTTP},
+				{Name: "operate", Service: gateway, Port: 8080, PathPrefix: "/operate", Protocol: http},
+				{Name: "rest", Service: gateway, Port: 8080, PathPrefix: "/v2", Protocol: http},
+				{Name: "tasklist", Service: gateway, Port: 8080, PathPrefix: "/tasklist", Protocol: http},
 			}))
 		})
 	})
@@ -124,7 +124,7 @@ var _ = Describe("CamundaCluster endpoints", func() {
 		Expect(k8sClient.Get(ctx, clientKey, &corev1.Service{})).To(Succeed(), "the routed Service stays")
 	})
 
-	It("routes an embedded gateway through the client Service, and deletes it when the gateway runs standalone", func() {
+	It("routes an embedded gateway through the client Service, and deletes it on a standalone gateway", func() {
 		cluster := createEmbeddedGatewayCluster()
 		clientKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-zeebe-client"}
 
