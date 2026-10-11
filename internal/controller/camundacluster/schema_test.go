@@ -272,6 +272,22 @@ var _ = Describe("CamundaCluster schema", func() {
 			"version",
 		),
 		Entry(
+			"rejects a connectors ServiceAccount with the name of the cluster ServiceAccount",
+			realisticCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-sa"}
+				o.Spec.Connectors.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-sa"}
+			},
+			"connectors.serviceAccount.name must differ from serviceAccount.name",
+		),
+		Entry(
+			"accepts a connectors ServiceAccount with a name of its own",
+			realisticCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-sa"}
+				o.Spec.Connectors.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-connectors"}
+			},
+			"",
+		),
+		Entry(
 			"rejects an unknown component mode",
 			realisticCamundaCluster, func(o *v1.CamundaCluster) {
 				o.Spec.Gateway = &v1.GatewaySpec{Mode: "Sideways"}
@@ -659,6 +675,29 @@ var _ = Describe("CamundaClusterPreset schema", func() {
 				o.Spec.Cluster.Connectors = &v1.ConnectorsSpec{Version: "8.9.7"}
 			},
 			"belong to a CamundaRelease",
+		),
+		Entry(
+			"accepts a connectors.serviceAccount block",
+			minimalPreset, func(o *v1.CamundaClusterPreset) {
+				o.Spec.Cluster.Connectors = &v1.ConnectorsSpec{
+					ServiceAccount: &v1.ServiceAccountSpec{
+						Create:      new(true),
+						Annotations: map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/connectors"},
+					},
+				}
+			},
+			"",
+		),
+		// One name for every cluster of a preset would make two clusters in
+		// one namespace claim one ServiceAccount.
+		Entry(
+			"rejects a connectors.serviceAccount.name",
+			minimalPreset, func(o *v1.CamundaClusterPreset) {
+				o.Spec.Cluster.Connectors = &v1.ConnectorsSpec{
+					ServiceAccount: &v1.ServiceAccountSpec{Name: "shared-connectors"},
+				}
+			},
+			instanceBound,
 		),
 		Entry(
 			"accepts more than 8 backup.dump extraEnvFrom sources",

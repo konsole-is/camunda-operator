@@ -52,8 +52,9 @@ spec:
                   Cluster is the configuration baseline that the clusters that reference
                   the preset get. It uses the CamundaCluster spec type. A preset must not
                   set the fields that belong to one cluster only: platformConfigRef,
-                  presetRef, releaseRef, externalUrl, serviceAccount, storageRef,
-                  backupStorageRef, documentStorageRef, monitoring, suspend, and pause.
+                  presetRef, releaseRef, externalUrl, serviceAccount,
+                  connectors.serviceAccount.name, storageRef, backupStorageRef,
+                  documentStorageRef, monitoring, suspend, and pause.
                   It must also not set the fields that belong to a CamundaRelease:
                   version and connectors.version. An explicit zero value, such as an
                   empty presetRef or suspend: false, counts as unset. Templated YAML
@@ -3088,6 +3089,57 @@ spec:
                               type: object
                             type: array
                         type: object
+                      serviceAccount:
+                        description: |-
+                          ServiceAccount configures the ServiceAccount of the connectors pods.
+                          When unset, the connectors run under the default ServiceAccount of the
+                          namespace. When set, they run under <name>-connectors, or under name.
+                          The connectors never run under the ServiceAccount of the cluster, and
+                          the identities of backupStorageRef and documentStorageRef never reach
+                          them. Only these annotations go on the account. When they carry
+                          azure.workload.identity/client-id, the connectors pods get the label
+                          azure.workload.identity/use: "true". With create false, the operator
+                          does not read the annotations of the existing account, so add that
+                          label through podLabels yourself. A workload identity without an
+                          annotation binds the principal
+                          system:serviceaccount:<namespace>:<name>-connectors. name must differ
+                          from the name of the cluster ServiceAccount. A preset can set this
+                          block, except name.
+                        properties:
+                          annotations:
+                            additionalProperties:
+                              type: string
+                            description: |-
+                              Annotations to set on the ServiceAccount that the operator creates.
+                              Usually these are workload-identity annotations (IRSA, GCP Workload
+                              Identity, and more) that give the pods access to cloud resources, such
+                              as the snapshot bucket for backups. When the doc of the field that
+                              holds this block says so, the operator also adds the identity
+                              annotation of each bucket contract that names an identity. An
+                              annotation set here wins over the operator annotation with the same
+                              key. With create false, the operator sets no annotation. Add them to
+                              the existing ServiceAccount yourself.
+                            type: object
+                          create:
+                            description: |-
+                              Create makes the operator create and own the ServiceAccount. Defaults
+                              to true. False names a ServiceAccount that already exists. The operator
+                              then does not create, annotate, or own it. If it does not exist, Ready
+                              reports InvalidReference, except on a suspended ElasticsearchCluster. The operator never takes ownership of a
+                              ServiceAccount that it did not create, because it deletes an owned one
+                              with the resource.
+                            type: boolean
+                          name:
+                            description: |-
+                              Name is the name of the ServiceAccount. When empty, the operator
+                              derives the name from the name of the resource, as the doc of each kind
+                              states. The cloud provider uses this name. A workload identity that
+                              needs no annotation, such as EKS Pod Identity, binds the principal
+                              system:serviceaccount:<namespace>:<name>.
+                            maxLength: 253
+                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                            type: string
+                        type: object
                       version:
                         description: |-
                           Version is the version of the connectors bundle image, as a full
@@ -5889,9 +5941,14 @@ spec:
                     type: object
                   serviceAccount:
                     description: |-
-                      ServiceAccount configures the ServiceAccount of every workload. The
+                      ServiceAccount configures the ServiceAccount of every workload except
+                      the connectors, which connectors.serviceAccount configures. The
                       workloads get access to the buckets of backupStorageRef and
-                      documentStorageRef through this identity.
+                      documentStorageRef through this identity: the operator adds the
+                      identity annotation of each bucket that names one. When the
+                      annotations carry azure.workload.identity/client-id, the pods of these
+                      workloads, the backup Jobs included, get the label
+                      azure.workload.identity/use: "true".
                     properties:
                       annotations:
                         additionalProperties:
@@ -5900,11 +5957,12 @@ spec:
                           Annotations to set on the ServiceAccount that the operator creates.
                           Usually these are workload-identity annotations (IRSA, GCP Workload
                           Identity, and more) that give the pods access to cloud resources, such
-                          as the snapshot bucket for backups. The operator also adds the identity
-                          annotation of each bucket contract that names an identity. An annotation
-                          set here wins over the operator annotation with the same key. With
-                          create false, the operator sets no annotation. Add them to the existing
-                          ServiceAccount yourself.
+                          as the snapshot bucket for backups. When the doc of the field that
+                          holds this block says so, the operator also adds the identity
+                          annotation of each bucket contract that names an identity. An
+                          annotation set here wins over the operator annotation with the same
+                          key. With create false, the operator sets no annotation. Add them to
+                          the existing ServiceAccount yourself.
                         type: object
                       create:
                         description: |-
@@ -7870,12 +7928,15 @@ spec:
                 type: object
                 x-kubernetes-validations:
                 - message: instance-bound fields (platformConfigRef, presetRef, releaseRef,
-                    externalUrl, serviceAccount, storageRef, backupStorageRef, documentStorageRef,
-                    monitoring, suspend, pause) must not be set in a preset
+                    externalUrl, serviceAccount, connectors.serviceAccount.name, storageRef,
+                    backupStorageRef, documentStorageRef, monitoring, suspend, pause)
+                    must not be set in a preset
                   rule: (!has(self.platformConfigRef) || self.platformConfigRef ==
                     '') && (!has(self.presetRef) || self.presetRef == '') && (!has(self.releaseRef)
                     || self.releaseRef == '') && (!has(self.externalUrl) || self.externalUrl
-                    == '') && !has(self.serviceAccount) && (!has(self.storageRef)
+                    == '') && !has(self.serviceAccount) && (!has(self.connectors)
+                    || !has(self.connectors.serviceAccount) || !has(self.connectors.serviceAccount.name)
+                    || self.connectors.serviceAccount.name == '') && (!has(self.storageRef)
                     || self.storageRef == '') && (!has(self.backupStorageRef) || self.backupStorageRef
                     == '') && (!has(self.documentStorageRef) || self.documentStorageRef
                     == '') && !has(self.monitoring) && (!has(self.suspend) || !self.suspend)

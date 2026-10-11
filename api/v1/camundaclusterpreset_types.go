@@ -25,15 +25,16 @@ type CamundaClusterPresetSpec struct {
 	// Cluster is the configuration baseline that the clusters that reference
 	// the preset get. It uses the CamundaCluster spec type. A preset must not
 	// set the fields that belong to one cluster only: platformConfigRef,
-	// presetRef, releaseRef, externalUrl, serviceAccount, storageRef,
-	// backupStorageRef, documentStorageRef, monitoring, suspend, and pause.
+	// presetRef, releaseRef, externalUrl, serviceAccount,
+	// connectors.serviceAccount.name, storageRef, backupStorageRef,
+	// documentStorageRef, monitoring, suspend, and pause.
 	// It must also not set the fields that belong to a CamundaRelease:
 	// version and connectors.version. An explicit zero value, such as an
 	// empty presetRef or suspend: false, counts as unset. Templated YAML
 	// often renders unset fields in this way. The CamundaCluster doc gives
 	// the details of each field. The CamundaClusterPreset doc gives the merge
 	// rules.
-	// +kubebuilder:validation:XValidation:rule="(!has(self.platformConfigRef) || self.platformConfigRef == '') && (!has(self.presetRef) || self.presetRef == '') && (!has(self.releaseRef) || self.releaseRef == '') && (!has(self.externalUrl) || self.externalUrl == '') && !has(self.serviceAccount) && (!has(self.storageRef) || self.storageRef == '') && (!has(self.backupStorageRef) || self.backupStorageRef == '') && (!has(self.documentStorageRef) || self.documentStorageRef == '') && !has(self.monitoring) && (!has(self.suspend) || !self.suspend) && (!has(self.pause) || !self.pause)",message="instance-bound fields (platformConfigRef, presetRef, releaseRef, externalUrl, serviceAccount, storageRef, backupStorageRef, documentStorageRef, monitoring, suspend, pause) must not be set in a preset"
+	// +kubebuilder:validation:XValidation:rule="(!has(self.platformConfigRef) || self.platformConfigRef == '') && (!has(self.presetRef) || self.presetRef == '') && (!has(self.releaseRef) || self.releaseRef == '') && (!has(self.externalUrl) || self.externalUrl == '') && !has(self.serviceAccount) && (!has(self.connectors) || !has(self.connectors.serviceAccount) || !has(self.connectors.serviceAccount.name) || self.connectors.serviceAccount.name == '') && (!has(self.storageRef) || self.storageRef == '') && (!has(self.backupStorageRef) || self.backupStorageRef == '') && (!has(self.documentStorageRef) || self.documentStorageRef == '') && !has(self.monitoring) && (!has(self.suspend) || !self.suspend) && (!has(self.pause) || !self.pause)",message="instance-bound fields (platformConfigRef, presetRef, releaseRef, externalUrl, serviceAccount, connectors.serviceAccount.name, storageRef, backupStorageRef, documentStorageRef, monitoring, suspend, pause) must not be set in a preset"
 	// +kubebuilder:validation:XValidation:rule="(!has(self.version) || self.version == '') && (!has(self.connectors) || !has(self.connectors.version) || self.connectors.version == '')",message="version and connectors.version belong to a CamundaRelease and must not be set in a preset"
 	// +required
 	Cluster CamundaClusterSpec `json:"cluster"`
