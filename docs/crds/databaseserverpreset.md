@@ -27,7 +27,7 @@ graph LR
 
 ## Merge rules
 
-`spec.server` of the preset is the baseline. The [CamundaRelease](camundarelease.md) of `releaseRef` merges over it, and the server spec merges over both. A field set on the `DatabaseServer` replaces the value of the layer below for that field. A field left unset on the server comes from the layer below. Each field merges as the table says.
+`spec.server` of the preset is the baseline. The [CamundaRelease](camundarelease.md) of `releaseRef` merges over it, and the server spec merges over both. The release supplies the version only. A field set on the `DatabaseServer` replaces the value of the layer below for that field. A field left unset on the server comes from the layer below. Each field merges as the table says.
 
 | Field | Merge behavior |
 | --- | --- |
