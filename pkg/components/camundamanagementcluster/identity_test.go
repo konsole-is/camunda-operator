@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 // The environment of Management Identity in the oidc mode is the table of the
@@ -93,6 +94,84 @@ func TestIdentityRendersTheLicenseOfThePlatformConfig(t *testing.T) {
 		"secretKeyRef:my-management-management-license/license",
 		renderedEnv(fixtureRealistic(t), ComponentIdentity)["CAMUNDA_LICENSE_KEY"],
 	)
+}
+
+// Management Identity serves under the path of its external URL, in every
+// identity provider mode. A URL at the root of its host renders no base path,
+// which is what the container does without the setting.
+func TestIdentityServesUnderThePathOfItsExternalURL(t *testing.T) {
+	t.Parallel()
+
+	withPath := func(external string) func(in *Input) {
+		return func(in *Input) { in.Cluster.Spec.Identity.ExternalURL = external }
+	}
+
+	for _, tc := range []struct {
+		name string
+		in   Input
+		want string
+	}{
+		{"oidc", newInput(t, withPath(fixtureIdentityPathURL)), "/identity"},
+		{"keycloak", newKeycloakInput(t, true, withPath(fixtureIdentityPathURL)), "/identity"},
+		{"a trailing slash", newInput(t, withPath(fixtureIdentityPathURL+"/")), "/identity"},
+		{
+			"two segments",
+			newKeycloakInput(t, true, withPath("https://camunda.example.com/platform/identity")),
+			"/platform/identity",
+		},
+	} {
+		env := renderedEnv(tc.in, ComponentIdentity)
+		assert.Equal(t, tc.want, env["IDENTITY_BASE_PATH"], tc.name)
+		assert.Equal(t, tc.in.Cluster.Spec.Identity.ExternalURL, env["IDENTITY_URL"], tc.name)
+	}
+
+	for name, in := range map[string]Input{
+		"no path":      fixtureMinimal(t),
+		"a bare slash": newInput(t, withPath("https://identity.example.com/")),
+		"keycloak":     newKeycloakInput(t, true, nil),
+	} {
+		assert.NotContains(t, renderedEnv(in, ComponentIdentity), "IDENTITY_BASE_PATH", name)
+	}
+}
+
+// The base path does not move the health endpoint: the probes stay on the
+// management port, at the root of that port.
+func TestIdentityProbesStayOnTheManagementPortUnderAPath(t *testing.T) {
+	t.Parallel()
+
+	built, err := identityComponents(fixtureOneHost(t))
+	require.NoError(t, err)
+
+	objects, err := built.Components[0].Preview()
+	require.NoError(t, err)
+
+	container := previewedDeployment(t, objects).Spec.Template.Spec.Containers[0]
+	for name, probe := range map[string]*corev1.Probe{
+		"startup":   container.StartupProbe,
+		"readiness": container.ReadinessProbe,
+	} {
+		require.NotNil(t, probe, name)
+		assert.Equal(t, intstr.FromString("management"), probe.HTTPGet.Port, name)
+		assert.Equal(t, "/actuator/health", probe.HTTPGet.Path, name)
+	}
+}
+
+// On one host, Identity serves under /identity and Console under /console.
+// Console and Web Modeler call Identity inside the cluster under its path too,
+// because Identity serves nothing at the root of its Service.
+func TestOneHostServesIdentityAndConsoleUnderTheirPaths(t *testing.T) {
+	t.Parallel()
+
+	in := fixtureOneHost(t)
+	identity := renderedEnv(in, ComponentIdentity)
+	console := renderedEnv(in, ComponentConsole)
+	restapi := renderedEnv(in, ComponentWebModelerRestapi)
+
+	assert.Equal(t, "/identity", identity["IDENTITY_BASE_PATH"])
+	assert.Equal(t, "/console", console["CAMUNDA_CONSOLE_CONTEXT_PATH"])
+	assert.Equal(t, "/modeler", restapi["SERVER_SERVLET_CONTEXTPATH"])
+	assert.Equal(t, "http://my-management-identity.camunda.svc:80/identity", console["CAMUNDA_IDENTITY_BASE_URL"])
+	assert.Equal(t, "http://my-management-identity.camunda.svc:80/identity", restapi["CAMUNDA_IDENTITY_BASEURL"])
 }
 
 // Management Identity reads the initial administrator claim on its first
