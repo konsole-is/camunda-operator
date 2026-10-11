@@ -71,15 +71,15 @@ The keys name the `ElasticsearchCluster` or the `DatabaseServer`, not the `Camun
 
 Other pages of these docs tell you to select on more `camunda.io/` labels. These labels are stable too, as each page describes them. A change to one of them is also a breaking change.
 
-| Label | Where you use it |
-| --- | --- |
-| `camunda.io/management-cluster` | [CamundaManagementCluster: What you get](crds/camundamanagementcluster.md#what-you-get), and [ManagementAuthConfig](crds/managementauthconfig.md#who-wrote-this-contract) |
-| `camunda.io/management-cluster-namespace` | [ManagementAuthConfig](crds/managementauthconfig.md#who-wrote-this-contract) |
-| `camunda.io/cluster-namespace`, with the component value `web-modeler-cluster-user` | [CamundaManagementCluster: Deploy to a cluster](crds/camundamanagementcluster.md#deploy-to-a-cluster) |
-| `camunda.io/storage-claim` | [CamundaCluster: Waiting for a handover](crds/camundacluster.md#waiting-for-a-handover) |
-| `camunda.io/writer-uid`, with the component value `storage-writer` | [CamundaCluster: A restore that is gone still holds the backend](crds/camundacluster.md#a-restore-that-is-gone-still-holds-the-backend) |
-| `camunda.io/backup-schedule` | [BackupSchedule: The backups that a schedule creates](crds/backupschedule.md#the-backups-that-a-schedule-creates). You can also put it on a backup that you create. |
-| `camunda.io/logical-restore-elasticsearch`, `camunda.io/logical-restore-rdbms`, and `camunda.io/point-in-time-restore`, with the component value `restore` | [Operations: Delete a restore](guides/operations.md#delete-a-restore) |
+| Labels | Objects | Where you use them |
+| --- | --- | --- |
+| `camunda.io/management-cluster` | The Deployments and Services of a `CamundaManagementCluster` | [CamundaManagementCluster: What you get](crds/camundamanagementcluster.md#what-you-get) |
+| `camunda.io/management-cluster`, `camunda.io/management-cluster-namespace` | A `ManagementAuthConfig` that a `CamundaManagementCluster` wrote | [ManagementAuthConfig](crds/managementauthconfig.md#who-wrote-this-contract) |
+| `camunda.io/cluster`, `camunda.io/cluster-namespace`, and `camunda.io/component: web-modeler-cluster-user` | The Web Modeler user Secrets | [CamundaManagementCluster: Deploy to a cluster](crds/camundamanagementcluster.md#deploy-to-a-cluster) |
+| `camunda.io/storage-claim` | The pods that write to a backend | [CamundaCluster: Waiting for a handover](crds/camundacluster.md#waiting-for-a-handover) |
+| `camunda.io/writer-uid`, `camunda.io/component: storage-writer`, and `app.kubernetes.io/managed-by` | The storage writer Leases | [CamundaCluster: A restore that is gone still holds the backend](crds/camundacluster.md#a-restore-that-is-gone-still-holds-the-backend) |
+| `camunda.io/backup-schedule`, `camunda.io/cluster` | The backups that a schedule creates. You can also put the schedule label on a backup that you create. | [BackupSchedule: The backups that a schedule creates](crds/backupschedule.md#the-backups-that-a-schedule-creates) |
+| `camunda.io/logical-restore-elasticsearch`, `camunda.io/logical-restore-rdbms`, or `camunda.io/point-in-time-restore`, with `camunda.io/cluster` and `camunda.io/component: restore` | The restore Jobs | [Operations: Delete a restore](guides/operations.md#delete-a-restore) |
 
 The operator also sets `camunda.io/` labels for its own use, for example `camunda.io/cluster-uid` and `camunda.io/optimize-uid`. A `camunda.io/` label that this page does not list is not part of the promise. It can change in a minor release.
 
