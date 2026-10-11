@@ -141,8 +141,9 @@ func Build(in Input) ([]ProcessComponent, error) {
 }
 
 // zeebeComponent builds the brokers: the optional ServiceAccount, the
-// StatefulSet, the headless Service, and the optional ServiceMonitor. It is
-// gated on p.Enabled like every process component.
+// StatefulSet, the headless Service, the client Service while the brokers
+// run the gateway, and the optional ServiceMonitor. It is gated on p.Enabled
+// like every process component.
 func zeebeComponent(in Input, p Process) (*component.Component, error) {
 	account, err := serviceaccount.NewBuilder(serviceAccountFor(in)).Build()
 	if err != nil {
@@ -157,6 +158,11 @@ func zeebeComponent(in Input, p Process) (*component.Component, error) {
 	}
 
 	svc, err := service.NewBuilder(serviceFor(in, p)).Build()
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := service.NewBuilder(clientServiceFor(in, p)).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +187,9 @@ func zeebeComponent(in Input, p Process) (*component.Component, error) {
 		).
 		WithResource(sts).
 		WithResource(svc).
+		// Gated, not excluded: a gateway that moves out of the brokers
+		// deletes the Service that routed to them.
+		WithResource(client, component.GatedBy(feature.NewBooleanGate(p.EmbeddedGateway))).
 		IncludeWhen(in.ServiceMonitorSupported, func() component.Resource { return monitor }, monitoringGate(in)).
 		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Effective.Suspend).
@@ -448,7 +457,7 @@ func serviceFor(in Input, p Process) *corev1.Service {
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: discoveryLabels(in.Cluster, p.Component),
-			Ports:    servicePorts(p),
+			Ports:    servicePorts(ports(p)),
 		},
 	}
 
@@ -460,8 +469,26 @@ func serviceFor(in Input, p Process) *corev1.Service {
 	return svc
 }
 
-func servicePorts(p Process) []corev1.ServicePort {
-	named := ports(p)
+// clientServiceFor renders the Service that routes reach the brokers through
+// when the brokers run the gateway. It has a cluster IP and lists only ready
+// brokers, unlike the headless broker Service. It carries the gRPC and HTTP
+// ports and no management port.
+func clientServiceFor(in Input, p Process) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ZeebeClientServiceName(in.Cluster),
+			Namespace: in.Cluster.Namespace,
+			Labels:    managedLabels(in.Cluster, p.Component),
+		},
+		Spec: corev1.ServiceSpec{
+			Type:     corev1.ServiceTypeClusterIP,
+			Selector: discoveryLabels(in.Cluster, p.Component),
+			Ports:    servicePorts([]namedPort{{portNameGRPC, PortGRPC}, {portNameHTTP, PortHTTP}}),
+		},
+	}
+}
+
+func servicePorts(named []namedPort) []corev1.ServicePort {
 	result := make([]corev1.ServicePort, 0, len(named))
 	for _, np := range named {
 		result = append(result, corev1.ServicePort{

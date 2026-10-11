@@ -40,6 +40,7 @@ func TestDerivedNamesOfAShortCluster(t *testing.T) {
 	assert.Equal(t, "my-cluster-camunda-admin", AdminSecretName(cluster))
 	assert.Equal(t, "my-cluster-camunda", ServiceAccountName(cluster, NewEffective(v1.CamundaClusterSpec{})))
 	assert.Equal(t, "my-cluster-camunda-license", MirroredSecretName(cluster, MirrorPurposeLicense))
+	assert.Equal(t, "my-cluster-zeebe-client", ZeebeClientServiceName(cluster))
 }
 
 // TestLongClusterNamesRenderValidObjects pins the bounds. A CamundaCluster
@@ -101,6 +102,22 @@ func TestLongClusterNamesRenderValidObjects(t *testing.T) {
 		// character that fits.
 		account := ServiceAccountName(in.Cluster, in.Effective)
 		assert.Empty(t, validation.IsDNS1123Subdomain(account), "%d: %s", length, account)
+	}
+}
+
+// The client Service is a DNS label like every Service, and a long cluster
+// name must not make it collide with the headless broker Service.
+func TestZeebeClientServiceNameIsBounded(t *testing.T) {
+	t.Parallel()
+
+	for _, length := range []int{63, 100, 253} {
+		cluster := &v1.CamundaCluster{}
+		cluster.Name = strings.Repeat("c", length)
+
+		name := ZeebeClientServiceName(cluster)
+		assert.Empty(t, validation.IsDNS1123Label(name), "%d: %s", length, name)
+		assert.True(t, strings.HasSuffix(name, "-zeebe-client"), "%d: %s", length, name)
+		assert.NotEqual(t, WorkloadName(cluster, ComponentZeebe), name, "%d", length)
 	}
 }
 

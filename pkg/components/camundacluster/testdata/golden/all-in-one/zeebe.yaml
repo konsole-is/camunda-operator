@@ -187,3 +187,29 @@ spec:
     camunda.io/component: zeebe
 status:
   loadBalancer: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: zeebe
+  name: my-cluster-zeebe-client
+  namespace: my-cluster-ns
+spec:
+  ports:
+  - name: grpc
+    port: 26500
+    protocol: TCP
+    targetPort: grpc
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: http
+  selector:
+    camunda.io/cluster: my-cluster
+    camunda.io/component: zeebe
+  type: ClusterIP
+status:
+  loadBalancer: {}
