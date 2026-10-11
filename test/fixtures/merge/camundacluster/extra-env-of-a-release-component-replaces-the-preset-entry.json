@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "name": "a release component entry replaces the preset entry with the same name",
+  "rule": "`extraEnv`",
+  "preset": {
+    "cluster": {
+      "zeebe": {
+        "extraEnv": [
+          {
+            "name": "JAVA_OPTS",
+            "value": "-Xmx4g"
+          }
+        ]
+      }
+    }
+  },
+  "release": {
+    "version": "8.9.4",
+    "zeebe": {
+      "extraEnv": [
+        {
+          "name": "JAVA_OPTS",
+          "value": "-Xmx8g"
+        }
+      ]
+    }
+  },
+  "spec": {},
+  "merged": {
+    "version": "8.9.4",
+    "zeebe": {
+      "extraEnv": [
+        {
+          "name": "JAVA_OPTS",
+          "value": "-Xmx8g"
+        }
+      ]
+    }
+  }
+}

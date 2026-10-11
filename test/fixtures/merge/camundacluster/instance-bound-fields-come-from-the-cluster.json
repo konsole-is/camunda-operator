@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "name": "the instance-bound fields come from the cluster",
+  "rule": "`platformConfigRef`, `presetRef`, `releaseRef`, `externalUrl`, `serviceAccount`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, `pause`",
+  "preset": {
+    "cluster": {
+      "indexReplicas": 1
+    }
+  },
+  "spec": {
+    "platformConfigRef": "my-platform-config",
+    "presetRef": "standard",
+    "releaseRef": "camunda-8-9",
+    "externalUrl": "https://camunda.example.com",
+    "serviceAccount": {
+      "name": "my-cluster"
+    },
+    "storageRef": "my-storage",
+    "backupStorageRef": "my-backups",
+    "documentStorageRef": "my-documents",
+    "monitoring": {
+      "serviceMonitor": {
+        "enabled": true
+      }
+    },
+    "suspend": true,
+    "pause": true
+  },
+  "merged": {
+    "platformConfigRef": "my-platform-config",
+    "presetRef": "standard",
+    "releaseRef": "camunda-8-9",
+    "externalUrl": "https://camunda.example.com",
+    "serviceAccount": {
+      "name": "my-cluster"
+    },
+    "storageRef": "my-storage",
+    "indexReplicas": 1,
+    "backupStorageRef": "my-backups",
+    "documentStorageRef": "my-documents",
+    "monitoring": {
+      "serviceMonitor": {
+        "enabled": true
+      }
+    },
+    "suspend": true,
+    "pause": true
+  }
+}

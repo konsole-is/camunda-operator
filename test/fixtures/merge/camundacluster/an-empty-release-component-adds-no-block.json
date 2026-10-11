@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "name": "an empty component block of a release adds no component block",
+  "rule": "`extraEnv`",
+  "preset": {
+    "cluster": {
+      "indexReplicas": 1
+    }
+  },
+  "release": {
+    "version": "8.9.4",
+    "operate": {}
+  },
+  "spec": {},
+  "merged": {
+    "version": "8.9.4",
+    "indexReplicas": 1
+  }
+}

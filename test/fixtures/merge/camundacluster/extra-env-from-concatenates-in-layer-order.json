@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "name": "extraEnvFrom concatenates preset, release, and cluster entries",
+  "rule": "`extraEnvFrom`",
+  "preset": {
+    "cluster": {
+      "extraEnvFrom": [
+        {
+          "configMapRef": {
+            "name": "preset-cm"
+          }
+        }
+      ]
+    }
+  },
+  "release": {
+    "version": "8.9.4",
+    "extraEnvFrom": [
+      {
+        "configMapRef": {
+          "name": "release-cm"
+        }
+      }
+    ]
+  },
+  "spec": {
+    "extraEnvFrom": [
+      {
+        "secretRef": {
+          "name": "cluster-secret"
+        }
+      }
+    ]
+  },
+  "merged": {
+    "version": "8.9.4",
+    "extraEnvFrom": [
+      {
+        "configMapRef": {
+          "name": "preset-cm"
+        }
+      },
+      {
+        "configMapRef": {
+          "name": "release-cm"
+        }
+      },
+      {
+        "secretRef": {
+          "name": "cluster-secret"
+        }
+      }
+    ]
+  }
+}

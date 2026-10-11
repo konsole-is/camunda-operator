@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "name": "a cluster version replaces the release version",
+  "rule": "`version`, `connectors.version`",
+  "preset": {
+    "cluster": {
+      "connectors": {
+        "enabled": true
+      }
+    }
+  },
+  "release": {
+    "version": "8.9.4",
+    "connectors": {
+      "version": "8.9.7"
+    }
+  },
+  "spec": {
+    "version": "8.9.5"
+  },
+  "merged": {
+    "version": "8.9.5",
+    "connectors": {
+      "enabled": true,
+      "version": "8.9.7"
+    }
+  }
+}

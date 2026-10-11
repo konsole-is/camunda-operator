@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "name": "a cluster basic block replaces the whole preset block",
+  "rule": "`auth.basic`",
+  "preset": {
+    "cluster": {
+      "auth": {
+        "basic": {
+          "adminEmail": "ops@example.com",
+          "passwordRotation": "2026-08"
+        }
+      }
+    }
+  },
+  "spec": {
+    "auth": {
+      "basic": {
+        "adminEmail": "me@example.com"
+      }
+    }
+  },
+  "merged": {
+    "auth": {
+      "basic": {
+        "adminEmail": "me@example.com"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "name": "a cluster scheduling block replaces the preset block at its level only",
+  "rule": "`scheduling` (top-level, per component, and `backup.dump.scheduling`)",
+  "preset": {
+    "cluster": {
+      "scheduling": {
+        "tolerations": [
+          {
+            "key": "preset"
+          }
+        ]
+      },
+      "zeebe": {
+        "scheduling": {
+          "tolerations": [
+            {
+              "key": "preset-zeebe"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "spec": {
+    "scheduling": {
+      "tolerations": [
+        {
+          "key": "cluster"
+        }
+      ]
+    }
+  },
+  "merged": {
+    "zeebe": {
+      "scheduling": {
+        "tolerations": [
+          {
+            "key": "preset-zeebe"
+          }
+        ]
+      }
+    },
+    "scheduling": {
+      "tolerations": [
+        {
+          "key": "cluster"
+        }
+      ]
+    }
+  }
+}
