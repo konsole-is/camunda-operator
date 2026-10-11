@@ -198,11 +198,10 @@ func TestWriteFixtureWritesStableBytes(t *testing.T) {
 	second, err := os.ReadFile(path)
 	require.NoError(t, err)
 
-	assert.Equal(t, string(first), string(second), "a second write changes nothing")
-	assert.Equal(t, `{
+	want := `{
   "schemaVersion": 1,
   "name": "a case",
-  "rule": "`+"`scheduling` (top-level, per component, and `backup.dump.scheduling`) <x>"+`",
+  "rule": "` + "`scheduling` (top-level, per component, and `backup.dump.scheduling`) <x>" + `",
   "spec": {
     "b": 1,
     "a": 2
@@ -211,5 +210,7 @@ func TestWriteFixtureWritesStableBytes(t *testing.T) {
     "a": 2
   }
 }
-`, string(first), "fixed order, two-space indent, no HTML escaping, final newline")
+`
+	assert.Equal(t, string(first), string(second), "a second write changes nothing")
+	assert.Equal(t, want, string(first), "fixed order, two-space indent, no HTML escaping, final newline")
 }
