@@ -162,7 +162,7 @@ type InputDecl struct {
 	Name string `json:"name"`
 	// From names the output that gives the value, in the form
 	// <section>/<output>.
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?/[A-Za-z][A-Za-z0-9]*$`
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/[A-Za-z][A-Za-z0-9]*$`
 	From string `json:"from"`
 	// Required refuses a selection of the option when the input has no value.
 	// +optional
@@ -175,8 +175,9 @@ type InputDecl struct {
 
 // OutputDecl declares a value that a plugin writes to the status of a request.
 type OutputDecl struct {
-	// Key is the key of the output in the status of the request.
-	// +kubebuilder:validation:MinLength=1
+	// Key is the key of the output in the status of the request. It starts
+	// with a letter and holds only letters and digits.
+	// +kubebuilder:validation:Pattern=`^[A-Za-z][A-Za-z0-9]*$`
 	Key string `json:"key"`
 	// Description says what the value is.
 	// +optional

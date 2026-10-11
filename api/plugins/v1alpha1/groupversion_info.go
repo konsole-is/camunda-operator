@@ -48,7 +48,7 @@ var (
 
 // Builder registers the Go types of this group version with a runtime.Scheme.
 // It is a small stand-in for the controller-runtime scheme builder, so this
-// module depends on apimachinery only.
+// module does not depend on controller-runtime.
 // +kubebuilder:object:generate=false
 type Builder struct {
 	runtime.SchemeBuilder
