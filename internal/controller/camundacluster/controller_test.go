@@ -42,10 +42,12 @@ import (
 )
 
 // lowerVersion is one patch below the version that newCluster sets, so a spec
-// can ask for a version that the brokers already run past.
+// can ask for a version that the brokers already run past. skippedVersion is
+// two minors above runningVersion, so it skips 8.10.
 const (
 	runningVersion = "8.9.9"
 	lowerVersion   = "8.9.8"
+	skippedVersion = "8.11.0"
 )
 
 // newNamespace creates a uniquely named Namespace and registers its deletion.
@@ -1088,7 +1090,7 @@ var _ = Describe("CamundaCluster controller", func() {
 		Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":" + runningVersion))
 
 		By("raising spec.version by two minors")
-		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Version = "8.11.0" })
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Version = skippedVersion })
 		expectReady(
 			cluster, metav1.ConditionFalse,
 			Equal(v1.ReasonVersionSkipRefused),
@@ -1139,7 +1141,7 @@ var _ = Describe("CamundaCluster controller", func() {
 
 		By("raising spec.version by two minors and setting spec.suspend in one edit")
 		updateCluster(cluster, func(c *v1.CamundaCluster) {
-			c.Spec.Version = "8.11.0"
+			c.Spec.Version = skippedVersion
 			c.Spec.Suspend = true
 		})
 		Eventually(func(g Gomega) {
@@ -1191,7 +1193,7 @@ var _ = Describe("CamundaCluster controller", func() {
 		By("recreating it under the same name two minors up")
 		recreated := newCluster(ns, cfg, binding)
 		recreated.Name = cluster.Name
-		recreated.Spec.Version = "8.11.0"
+		recreated.Spec.Version = skippedVersion
 		createCluster(recreated)
 		expectReady(
 			recreated, metav1.ConditionFalse,
