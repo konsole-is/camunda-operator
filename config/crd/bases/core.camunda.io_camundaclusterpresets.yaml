@@ -51,10 +51,10 @@ spec:
                 description: |-
                   Cluster is the configuration baseline that the clusters that reference
                   the preset get. It uses the CamundaCluster spec type. A preset must not
-                  set the fields that belong to one cluster only: platformConfigRef,
-                  presetRef, releaseRef, externalUrl, serviceAccount,
-                  connectors.serviceAccount.name, storageRef, backupStorageRef,
-                  documentStorageRef, monitoring, suspend, and pause.
+                  set the references of one cluster: platformConfigRef, presetRef,
+                  releaseRef, storageRef, backupStorageRef, and documentStorageRef. It
+                  must also not set externalUrl, serviceAccount,
+                  connectors.serviceAccount.name, monitoring, suspend, or pause.
                   It must also not set the fields that belong to a CamundaRelease:
                   version and connectors.version. An explicit zero value, such as an
                   empty presetRef or suspend: false, counts as unset. Templated YAML
@@ -3113,9 +3113,9 @@ spec:
                               Annotations to set on the ServiceAccount that the operator creates.
                               Usually these are workload-identity annotations (IRSA, GCP Workload
                               Identity, and more) that give the pods access to cloud resources, such
-                              as the snapshot bucket for backups. When the doc of the field that
-                              holds this block says so, the operator also adds the identity
-                              annotation of each bucket contract that names an identity. An
+                              as the snapshot bucket for backups. When the doc of the field says so,
+                              the operator also adds the identity annotation of each bucket contract
+                              that names an identity. An
                               annotation set here wins over the operator annotation with the same
                               key. With create false, the operator sets no annotation. Add them to
                               the existing ServiceAccount yourself.
@@ -5944,7 +5944,7 @@ spec:
                       ServiceAccount configures the ServiceAccount of every workload except
                       the connectors, which connectors.serviceAccount configures. The
                       workloads get access to the buckets of backupStorageRef and
-                      documentStorageRef through this identity: the operator adds the
+                      documentStorageRef through this identity. The operator adds the
                       identity annotation of each bucket that names one. When the
                       annotations carry azure.workload.identity/client-id, the pods of these
                       workloads, the backup Jobs included, get the label
@@ -5957,9 +5957,9 @@ spec:
                           Annotations to set on the ServiceAccount that the operator creates.
                           Usually these are workload-identity annotations (IRSA, GCP Workload
                           Identity, and more) that give the pods access to cloud resources, such
-                          as the snapshot bucket for backups. When the doc of the field that
-                          holds this block says so, the operator also adds the identity
-                          annotation of each bucket contract that names an identity. An
+                          as the snapshot bucket for backups. When the doc of the field says so,
+                          the operator also adds the identity annotation of each bucket contract
+                          that names an identity. An
                           annotation set here wins over the operator annotation with the same
                           key. With create false, the operator sets no annotation. Add them to
                           the existing ServiceAccount yourself.

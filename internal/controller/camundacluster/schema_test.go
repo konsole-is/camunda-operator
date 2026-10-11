@@ -681,8 +681,10 @@ var _ = Describe("CamundaClusterPreset schema", func() {
 			minimalPreset, func(o *v1.CamundaClusterPreset) {
 				o.Spec.Cluster.Connectors = &v1.ConnectorsSpec{
 					ServiceAccount: &v1.ServiceAccountSpec{
-						Create:      new(true),
-						Annotations: map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/connectors"},
+						Create: new(true),
+						Annotations: map[string]string{
+							v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/connectors",
+						},
 					},
 				}
 			},

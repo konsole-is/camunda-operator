@@ -39,7 +39,9 @@ func TestDerivedNamesOfAShortCluster(t *testing.T) {
 	assert.Equal(t, "my-cluster-zeebe", WorkloadName(cluster, ComponentZeebe))
 	assert.Equal(t, "my-cluster-camunda-admin", AdminSecretName(cluster))
 	assert.Equal(t, "my-cluster-camunda", ServiceAccountName(cluster, NewEffective(v1.CamundaClusterSpec{})))
-	assert.Equal(t, "my-cluster-connectors", ConnectorsServiceAccountName(cluster, NewEffective(v1.CamundaClusterSpec{})))
+	assert.Equal(
+		t, "my-cluster-connectors", ConnectorsServiceAccountName(cluster, NewEffective(v1.CamundaClusterSpec{})),
+	)
 	assert.Equal(t, "my-cluster-camunda-license", MirroredSecretName(cluster, MirrorPurposeLicense))
 	assert.Equal(t, "my-cluster-zeebe-client", ZeebeClientServiceName(cluster))
 }

@@ -252,7 +252,8 @@ func CheckConnectorsServiceAccount(in Input) error {
 	}
 
 	return fmt.Errorf(
-		"connectors.serviceAccount.name %q is the ServiceAccount of the cluster. Give the connectors a ServiceAccount of their own",
+		"connectors.serviceAccount.name %q is the ServiceAccount of the cluster. "+
+			"Give the connectors a ServiceAccount of their own",
 		name,
 	)
 }

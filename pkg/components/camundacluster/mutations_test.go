@@ -62,7 +62,7 @@ func TestMutationsAreGatedOffWithoutOverrides(t *testing.T) {
 		// that an apply moves them off an account they ran under before.
 		wantAccount := ""
 		if pc.Process.Component == ComponentConnectors {
-			wantAccount = "default"
+			wantAccount = defaultServiceAccountName
 		}
 		assert.Equal(t, wantAccount, template.Spec.ServiceAccountName, pc.Process.Component)
 		assert.Equal(

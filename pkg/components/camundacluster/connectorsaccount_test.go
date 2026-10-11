@@ -106,7 +106,7 @@ func TestConnectorsRunUnderTheDefaultAccountBesideAClusterIdentity(t *testing.T)
 	})
 
 	connectors := renderedObjects(t, in, ComponentConnectors)
-	assert.Equal(t, "default", previewedPodTemplate(t, connectors).Spec.ServiceAccountName)
+	assert.Equal(t, defaultServiceAccountName, previewedPodTemplate(t, connectors).Spec.ServiceAccountName)
 	assert.Nil(t, renderedAccount(connectors))
 
 	for _, process := range []string{ComponentZeebe, ComponentGateway} {

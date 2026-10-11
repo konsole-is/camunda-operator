@@ -266,7 +266,7 @@ type ConnectorsSpec struct {
 	// block, except name.
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
-	WorkloadSpec   `                   json:",inline"`
+	WorkloadSpec   `                    json:",inline"`
 }
 
 // ClusterAuthSpec holds the credentials of one cluster and the identities
@@ -446,7 +446,7 @@ type CamundaClusterSpec struct {
 	// ServiceAccount configures the ServiceAccount of every workload except
 	// the connectors, which connectors.serviceAccount configures. The
 	// workloads get access to the buckets of backupStorageRef and
-	// documentStorageRef through this identity: the operator adds the
+	// documentStorageRef through this identity. The operator adds the
 	// identity annotation of each bucket that names one. When the
 	// annotations carry azure.workload.identity/client-id, the pods of these
 	// workloads, the backup Jobs included, get the label

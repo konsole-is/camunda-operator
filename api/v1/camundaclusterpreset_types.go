@@ -24,10 +24,10 @@ import (
 type CamundaClusterPresetSpec struct {
 	// Cluster is the configuration baseline that the clusters that reference
 	// the preset get. It uses the CamundaCluster spec type. A preset must not
-	// set the fields that belong to one cluster only: platformConfigRef,
-	// presetRef, releaseRef, externalUrl, serviceAccount,
-	// connectors.serviceAccount.name, storageRef, backupStorageRef,
-	// documentStorageRef, monitoring, suspend, and pause.
+	// set the references of one cluster: platformConfigRef, presetRef,
+	// releaseRef, storageRef, backupStorageRef, and documentStorageRef. It
+	// must also not set externalUrl, serviceAccount,
+	// connectors.serviceAccount.name, monitoring, suspend, or pause.
 	// It must also not set the fields that belong to a CamundaRelease:
 	// version and connectors.version. An explicit zero value, such as an
 	// empty presetRef or suspend: false, counts as unset. Templated YAML

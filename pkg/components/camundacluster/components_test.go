@@ -449,7 +449,7 @@ func TestServiceAccount(t *testing.T) {
 		want := "my-cluster-camunda"
 		if pc.Process.Component == ComponentConnectors {
 			// The connectors never run under the account of the cluster.
-			want = "default"
+			want = defaultServiceAccountName
 		}
 		assert.Equal(
 			t, want, previewedPodTemplate(t, previewObjects(t, pc.Component)).Spec.ServiceAccountName,
@@ -466,7 +466,7 @@ func TestServiceAccount(t *testing.T) {
 		}
 		want := ""
 		if pc.Process.Component == ComponentConnectors {
-			want = "default"
+			want = defaultServiceAccountName
 		}
 		assert.Equal(
 			t, want, previewedPodTemplate(t, previewObjects(t, pc.Component)).Spec.ServiceAccountName,
