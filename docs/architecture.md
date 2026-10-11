@@ -31,11 +31,11 @@ The tables list the objects and the values that the promise covers. Other object
 
 | Label | Value | Objects that carry it |
 | --- | --- | --- |
-| `camunda.io/cluster` | The name of the `CamundaCluster`. | The pods, workloads, Services, ServiceMonitors, and broker volume claims of the cluster. The pods, Deployments, and Services of a `CamundaOptimize`, with the name in its `clusterRef`. |
+| `camunda.io/cluster` | The name of the `CamundaCluster`. | The pods, workloads, Services, Secrets, ServiceMonitors, and broker volume claims of the cluster. The pods, Deployments, Services, and Secrets of a `CamundaOptimize`, with the name in its `clusterRef`. |
 | `camunda.io/elasticsearch-cluster` | The name of the `ElasticsearchCluster`. | The ECK `Elasticsearch` resource, the Elasticsearch pods, and their data volume claims. The Deployment, pods, and Service of the metrics exporter. |
 | `camunda.io/database-server` | The name of the `DatabaseServer`. | The CloudNativePG `Cluster` resource, the PostgreSQL instance pods, their volume claims, and their Services. |
 | `camunda.io/database` | The name of the `Database`. | The Secrets, `DatabaseConfig` resources, and `SecondaryStorageConfig` resources that the `Database` publishes. A `Database` runs no pods. |
-| `camunda.io/component` | The role of the object inside its owner. The next table lists the values. | Every object in the rows above. |
+| `camunda.io/component` | The role of the object inside its owner. The next table lists the values. | Every object in the rows above. The component value of a Secret of a `CamundaCluster` or a `CamundaOptimize` is not part of the promise. |
 
 | Owner | Values of `camunda.io/component` |
 | --- | --- |
@@ -61,7 +61,7 @@ A web application in `embedded` mode has no pods of its own, so a selector on it
 
 A label value holds at most 63 characters. For a longer name, the value is the start of the name followed by a hash. A selector with the full name of such a resource finds nothing.
 
-A label that you set in a `podLabels` field never replaces a discovery label. The pods and volume claims in the table carry the discovery labels, but not `app.kubernetes.io/managed-by`. A selector on `app.kubernetes.io/managed-by` does not find them.
+A label that you set in a `podLabels` field never replaces a discovery label. The operator does not put `app.kubernetes.io/managed-by` on the pods and volume claims in the table. A selector on `app.kubernetes.io/managed-by` finds them only when you set that label in `podLabels` yourself.
 
 The operator does not create the Elasticsearch and PostgreSQL pods itself. ECK creates each Elasticsearch pod from the pod template of the node set, and copies its labels onto the pod. The data volume claims get the labels of the volume claim template. CloudNativePG copies the `inheritedMetadata` of its `Cluster` onto the instance pods, the volume claims, and the Services. The operator puts the discovery labels into both templates, so these objects carry them.
 
