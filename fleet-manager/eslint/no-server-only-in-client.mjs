@@ -3,6 +3,11 @@ import path from "node:path";
 
 const SERVER_ONLY_MARKER = /^import\s*(["'])server-only\1/;
 const EXTENSIONS = [".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs"];
+// TypeScript ESM code names "./x.js" for "./x.ts" and "./x.mjs" for "./x.mts".
+const SOURCE_EXTENSIONS = new Map([
+  [".js", [".ts", ".tsx"]],
+  [".mjs", [".mts"]],
+]);
 
 /** @type {Map<string, { mtimeMs: number, serverOnly: boolean }>} */
 const markerCache = new Map();
@@ -38,15 +43,28 @@ function startsWithServerOnly(file) {
 
 /** @param {string} base */
 function resolveModuleFile(base) {
-  // TypeScript ESM code names "./x.js" for "./x.ts" and "./x.mjs" for "./x.mts".
-  const stem = base.replace(/\.m?js$/, "");
+  const ext = path.extname(base);
+  const stem = base.slice(0, base.length - ext.length);
   const candidates = [
     base,
-    ...EXTENSIONS.map((ext) => stem + ext),
-    ...EXTENSIONS.map((ext) => path.join(base, `index${ext}`)),
+    ...(SOURCE_EXTENSIONS.get(ext) ?? []).map((source) => stem + source),
+    ...EXTENSIONS.map((added) => base + added),
+    ...EXTENSIONS.map((added) => path.join(base, `index${added}`)),
   ];
   return candidates.find(
     (file) => fs.existsSync(file) && fs.statSync(file).isFile(),
+  );
+}
+
+/**
+ * @param {any} node An import or export declaration of typescript-eslint.
+ * @param {"importKind" | "exportKind"} kind
+ */
+function isTypeOnly(node, kind) {
+  if (node[kind] === "type") return true;
+  return (
+    node.specifiers.length > 0 &&
+    node.specifiers.every((specifier) => specifier[kind] === "type")
   );
 }
 
@@ -125,10 +143,10 @@ const rule = {
 
     return {
       ImportDeclaration(node) {
-        if (node.importKind !== "type") check(node, node.source.value);
+        if (!isTypeOnly(node, "importKind")) check(node, node.source.value);
       },
       ExportNamedDeclaration(node) {
-        if (node.source && node.exportKind !== "type")
+        if (node.source && !isTypeOnly(node, "exportKind"))
           check(node, node.source.value);
       },
       ExportAllDeclaration(node) {

@@ -51,6 +51,24 @@ tester.run("no-server-only-in-client", rule, {
       code: client(`export type { SecretName } from "@/lib/secrets";`),
     },
     {
+      name: "a client file imports only inline type specifiers from a server-only module",
+      filename,
+      options,
+      code: client(`import { type SecretName } from "@/lib/secrets";`),
+    },
+    {
+      name: "a client file re-exports only inline type specifiers from a server-only module",
+      filename,
+      options,
+      code: client(`export { type SecretName } from "@/lib/secrets";`),
+    },
+    {
+      name: "a .js name of a .ts module that shares its stem with an .mts module",
+      filename,
+      options,
+      code: client(`import { collide } from "@/lib/collide.js";`),
+    },
+    {
       name: "a client file imports a package",
       filename,
       options,
@@ -153,6 +171,22 @@ tester.run("no-server-only-in-client", rule, {
       filename,
       options,
       code: client(`import { vault } from "@/lib/vault.mjs";`),
+      errors: refused,
+    },
+    {
+      name: "an .mjs name of an .mts module that shares its stem with a .ts module",
+      filename,
+      options,
+      code: client(`import { collide } from "@/lib/collide.mjs";`),
+      errors: refused,
+    },
+    {
+      name: "an import with inline type specifiers and a value",
+      filename,
+      options,
+      code: client(
+        `import { type SecretName, secretName } from "@/lib/secrets";`,
+      ),
       errors: refused,
     },
   ],
