@@ -168,8 +168,8 @@ func Grace(o Object) concepts.GraceStatusWithReason {
 	return concepts.GraceStatusWithReason{Status: concepts.GraceStatusDown, Reason: reason}
 }
 
-// Suspension reports the progress of a suspension that requested asks for
-// on the applied object. It is Pending until the object asks for it,
+// Suspension reports the progress of a suspension. requested says whether
+// the applied object asks for it. It is Pending until the object asks,
 // Suspending until the operator observed that generation and reports
 // Ready=True with the reason Suspended, and Suspended then.
 func Suspension(o Object, requested bool) concepts.SuspensionStatusWithReason {
