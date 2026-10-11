@@ -333,7 +333,7 @@ With `serviceAccount.create: false`, the operator does not create the ServiceAcc
 
 ### Connectors
 
-The connectors do not run under the ServiceAccount of the cluster, and the identities of the buckets never reach them. One case is the exception: when `spec.serviceAccount.name` is `default`, connectors without `spec.connectors.serviceAccount` share that account, so give them an account of their own. Process authors model the calls that the connectors make, so with the role of the cluster a process can read or delete backups. The connectors read documents through the REST API of the cluster, and Camunda says not to give them the document store role ([IAM Roles for Service Accounts](https://docs.camunda.io/docs/self-managed/deployment/helm/cloud-providers/amazon/amazon-eks/irsa/#document-store-s3)).
+The connectors never run under the ServiceAccount of the cluster, and the identities of the buckets never reach them. Process authors model the calls that the connectors make, so with the role of the cluster a process can read or delete backups. The connectors read documents through the REST API of the cluster, and Camunda says not to give them the document store role ([IAM Roles for Service Accounts](https://docs.camunda.io/docs/self-managed/deployment/helm/cloud-providers/amazon/amazon-eks/irsa/#document-store-s3)).
 
 Without `spec.connectors.serviceAccount`, the connectors run under the ServiceAccount `default` of the namespace. To give them a cloud role of their own, set the block:
 
@@ -357,7 +357,7 @@ The connectors then run under `my-cluster-connectors`, or under `spec.connectors
 
 When connectors are enabled and `create` is `false`, `Ready` is `False` with reason `InvalidReference` while the account does not exist. When you create the account, the operator finds it by itself, without an edit to the cluster.
 
-The connectors account must not have the name of the cluster account. The API server rejects a spec in which `spec.connectors.serviceAccount.name` equals `spec.serviceAccount.name`. A connectors account named `<name>-camunda` sets `Ready` to `False` with reason `InvalidReference`.
+The connectors account must not have the name of the cluster account. When `spec.serviceAccount.name` is `default`, enabled connectors need `spec.connectors.serviceAccount`, or `Ready` is `False` with reason `InvalidReference`. The API server rejects a spec in which `spec.connectors.serviceAccount.name` equals `spec.serviceAccount.name`. A connectors account named `<name>-camunda` sets `Ready` to `False` with reason `InvalidReference`.
 
 ### Azure Workload ID
 
@@ -545,7 +545,7 @@ Deleting the cluster removes every resource that the operator created for it, an
 | `Ready` | `Degraded` | A process is still not ready at the end of its grace period, but some of its replicas are ready. | Read the pods and events of the process that the message names. |
 | `Ready` | `Down` | A process is still not ready at the end of its grace period, and none of its replicas is ready. | Read the pods and events of the process that the message names. |
 | `Ready` | `Suspended` / `SuspensionHeld` / `StorageAlreadyAttached` / `WaitingForHandover` | Every workload is at zero. Only `Suspended` has `Ready: True`. | See [Why the cluster is at zero replicas](#why-the-cluster-is-at-zero-replicas). |
-| `Ready` | `InvalidReference` | A referenced resource does not exist, or the merged spec is invalid. Other causes are an absent ServiceAccount with `create: false`, two conflicting buckets, a shared Azure container, or a missing snapshot repository. A connectors ServiceAccount with the name of the cluster ServiceAccount is a cause too. A running cluster keeps its workloads. | Read the message. Create the missing resource or correct the named field. |
+| `Ready` | `InvalidReference` | A referenced resource does not exist, or the merged spec is invalid. Other causes are an absent ServiceAccount with `create: false`, two conflicting buckets, a shared Azure container, or a missing snapshot repository. A connectors ServiceAccount with the name of the cluster ServiceAccount is a cause too. So are connectors without their own ServiceAccount when the cluster ServiceAccount is `default`. A running cluster keeps its workloads. | Read the message. Create the missing resource or correct the named field. |
 | `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. A running cluster keeps its workloads. | Create the Secret with the named key. |
 | `Ready` | `VersionDowngradeRefused` | The effective version is below the version that the brokers run, and no annotation sanctions the move. The operator applies nothing. | Set the version forward again, or [downgrade on purpose](#downgrade-on-purpose). |
 | `Ready` | `VersionSkipRefused` | The effective version is more than one minor above the version that the brokers run. The operator applies nothing. | Move one minor at a time. Set the version to the latest patch of the next minor first, see [A skipped minor is refused](#a-skipped-minor-is-refused). |

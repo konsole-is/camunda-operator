@@ -278,6 +278,36 @@ func TestCheckConnectorsServiceAccountRefusesTheClusterAccount(t *testing.T) {
 	}
 }
 
+// A cluster account named default is the account that connectors without a
+// block run under, so they would share the cluster identity.
+func TestCheckConnectorsServiceAccountRefusesADefaultClusterAccount(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Effective = NewEffective(v1.CamundaClusterSpec{
+			ServiceAccount: &v1.ServiceAccountSpec{Name: "default", Create: new(false)},
+			Connectors:     &v1.ConnectorsSpec{Enabled: new(true)},
+		})
+	})
+
+	err := CheckConnectorsServiceAccount(in)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "connectors.serviceAccount")
+}
+
+// Connectors that are off run no pod, so a default cluster account is fine.
+func TestCheckConnectorsServiceAccountAcceptsADefaultClusterAccountWithoutConnectors(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Effective = NewEffective(v1.CamundaClusterSpec{
+			ServiceAccount: &v1.ServiceAccountSpec{Name: "default", Create: new(false)},
+		})
+	})
+
+	assert.NoError(t, CheckConnectorsServiceAccount(in))
+}
+
 func TestCheckConnectorsServiceAccountAcceptsAnAccountOfTheirOwn(t *testing.T) {
 	t.Parallel()
 

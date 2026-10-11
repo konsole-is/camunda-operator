@@ -169,7 +169,7 @@ To upgrade a manifest install, apply the `install.yaml` of the new release with 
 
 ### Connectors no longer use the cluster ServiceAccount
 
-From this release, the connectors of a `CamundaCluster` run under the default ServiceAccount of the namespace. Before, they ran under the ServiceAccount of the cluster and got its cloud role. If a connector of yours uses that role, set `spec.connectors.serviceAccount` right after you upgrade the operator. An AWS connector with the default credentials chain is an example. Give the connectors a role of their own, not the role of the cluster:
+From this release, the connectors of a `CamundaCluster` run under the default ServiceAccount of the namespace. Before, they ran under the ServiceAccount of the cluster and got its cloud role. If a connector of yours uses that role, set `spec.connectors.serviceAccount` right after you upgrade the operator. An AWS connector with the default credentials chain is an example. If `spec.serviceAccount.name` is `default`, enabled connectors need `spec.connectors.serviceAccount`, or the cluster reports `InvalidReference`. Give the connectors a role of their own, not the role of the cluster:
 
 ```yaml
 apiVersion: core.camunda.io/v1

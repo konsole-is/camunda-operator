@@ -242,10 +242,23 @@ func ConnectorsServiceAccountName(cluster *v1.CamundaCluster, e Effective) strin
 
 // CheckConnectorsServiceAccount returns an error when the connectors would
 // run under the ServiceAccount name of the cluster, the derived one
-// included. Two owners of one account would fight over it, and the
+// included, or under the default account while the cluster account is the
+// default account. Two owners of one account would fight over it, and the
 // connectors would get the cluster identity.
 func CheckConnectorsServiceAccount(in Input) error {
+	if !in.Effective.ConnectorsEnabled() {
+		return nil
+	}
+
 	name := PodConnectorsServiceAccountName(in)
+	if name == "" && PodServiceAccountName(in) == defaultServiceAccountName {
+		return fmt.Errorf(
+			"serviceAccount.name is %q, the account that the connectors run under without "+
+				"connectors.serviceAccount. Set connectors.serviceAccount to give the connectors a ServiceAccount "+
+				"of their own",
+			defaultServiceAccountName,
+		)
+	}
 	if name == "" || name != ServiceAccountName(in.Cluster, in.Effective) {
 		return nil
 	}

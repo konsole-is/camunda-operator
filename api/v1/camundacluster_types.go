@@ -253,9 +253,9 @@ type ConnectorsSpec struct {
 	// ServiceAccount configures the ServiceAccount of the connectors pods.
 	// When unset, the connectors run under the default ServiceAccount of the
 	// namespace. When set, they run under <name>-connectors, or under name.
-	// The connectors do not run under the ServiceAccount of the cluster,
-	// unless the cluster names the account default and this block is unset.
-	// The identities of backupStorageRef and documentStorageRef never reach
+	// The connectors never run under the ServiceAccount of the cluster. So
+	// when serviceAccount.name is default, connectors need this block, or
+	// Ready reports InvalidReference. The identities of backupStorageRef and documentStorageRef never reach
 	// them. Only the annotations of this block go on the account. When they carry
 	// azure.workload.identity/client-id, the connectors pods get the label
 	// azure.workload.identity/use: "true". With create false, the operator
