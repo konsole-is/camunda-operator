@@ -45,6 +45,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/konsole-is/camunda-operator/hack/internal/matrix"
 )
 
 // pin is one version field of the example inventories.
@@ -194,10 +196,10 @@ var pins = []pin{
 }
 
 func main() {
-	matrix := flag.String("matrix", "", "the matrix entry the example inventories mirror")
+	matrixFile := flag.String("matrix", "", "the matrix entry the example inventories mirror")
 	flag.Parse()
 
-	if *matrix == "" {
+	if *matrixFile == "" {
 		fmt.Fprintln(os.Stderr, "-matrix names the matrix entry to check against, for example test/e2e/matrix/8.9.env")
 		flag.Usage()
 		os.Exit(2)
@@ -208,7 +210,7 @@ func main() {
 		examples = flag.Arg(0)
 	}
 
-	problems, err := check(examples, *matrix, pins)
+	problems, err := check(examples, *matrixFile, pins)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
@@ -224,7 +226,7 @@ func main() {
 			"\n%d version pins of %s disagree with %s\n",
 			len(problems),
 			examples,
-			*matrix,
+			*matrixFile,
 		)
 		os.Exit(1)
 	}
@@ -234,7 +236,7 @@ func main() {
 // by file, then the entries of the table in order. It returns an error only
 // when it cannot read a file it has to read.
 func check(examples, matrixFile string, pins []pin) ([]string, error) {
-	matrix, err := readMatrix(matrixFile)
+	entry, err := matrix.Read(matrixFile)
 	if err != nil {
 		return nil, err
 	}
@@ -264,35 +266,10 @@ func check(examples, matrixFile string, pins []pin) ([]string, error) {
 			continue
 		}
 
-		problems = append(problems, comparePin(where, p, found[0], doc, matrix)...)
+		problems = append(problems, comparePin(where, p, found[0], doc, entry)...)
 	}
 
 	return problems, nil
-}
-
-// readMatrix reads the `NAME=value` lines of a matrix entry.
-func readMatrix(path string) (map[string]string, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading the matrix entry: %w", err)
-	}
-
-	values := map[string]string{}
-	for line := range strings.SplitSeq(string(raw), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		name, value, found := strings.Cut(line, "=")
-		if !found {
-			continue
-		}
-
-		values[strings.TrimSpace(name)] = strings.TrimSpace(value)
-	}
-
-	return values, nil
 }
 
 // readExamples parses every manifest and Markdown page below dir. The keys of
@@ -442,10 +419,10 @@ func unlistedVersions(examples string, docs map[string]document, pins []pin) []s
 	return problems
 }
 
-func comparePin(where string, p pin, found version, doc document, matrix map[string]string) []string {
+func comparePin(where string, p pin, found version, doc document, entry map[string]string) []string {
 	var problems []string
 
-	want, ok := matrix[p.env]
+	want, ok := entry[p.env]
 	switch {
 	case !ok:
 		problems = append(problems, fmt.Sprintf("%s:%d: the matrix entry holds no %s", where, found.line, p.env))
