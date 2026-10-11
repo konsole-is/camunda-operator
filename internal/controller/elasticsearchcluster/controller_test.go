@@ -34,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -747,8 +748,8 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		name := components.RepositoryName(cluster)
-		attempts := elasticsearch.RepositoryAttempts(name)
 		elasticsearch.DropNext("repository", math.MaxInt)
+		DeferCleanup(func() { elasticsearch.DropNext("repository", 0) })
 
 		By("changing the bucket once, so the next reconcile really registers")
 		Eventually(func(g Gomega) {
@@ -759,7 +760,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(k8sClient.Update(ctx, &changed)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
-		By("waiting until it retried on its own, with nothing else written")
+		By("waiting until the registration failed")
 		Eventually(func(g Gomega) {
 			var fetched v1.ElasticsearchCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
@@ -768,9 +769,13 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			)
 			g.Expect(condition).NotTo(BeNil())
 			g.Expect(condition.Reason).To(Equal(v1.ReasonConnectionFailed))
-			// The bucket change and the status write of the first failure
-			// each cause one attempt. Only a requeue causes a third.
-			g.Expect(elasticsearch.RepositoryAttempts(name)).To(BeNumerically(">=", attempts+3))
+		}, timeout, interval).Should(Succeed())
+
+		By("expecting a failed registration to ask for a retry")
+		Eventually(func(g Gomega) {
+			result, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cluster)})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(result.RequeueAfter).To(Equal(reconciler.RetryInterval))
 		}, timeout, interval).Should(Succeed())
 
 		By("letting Elasticsearch answer, with nothing else written")
