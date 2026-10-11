@@ -16,7 +16,8 @@ limitations under the License.
 
 // Package images resolves the container images that the operator pulls. Every
 // component asks this package instead of writing a repository of its own, so
-// the platform config governs all of them the same way.
+// the platform config governs all of them the same way. make generate writes
+// table.json from this package and test/e2e/matrix.
 package images
 
 import (
@@ -89,16 +90,23 @@ var hubRepositories = map[Image]string{
 // repository. A default repository can change with the version, so a caller
 // that resolves one image for two versions can get two repositories.
 func Resolve(p *v1.CamundaPlatformConfigSpec, img Image, version string) string {
-	tag := version
-	if img == Keycloak {
-		tag = keycloakTagPrefix + version
-	}
+	tag := TagPrefix(img) + version
 
 	if repo := strings.TrimRight(override(p, img), "/"); repo != "" {
 		return repo + ":" + tag
 	}
 
-	return defaultRepository(img, version) + ":" + tag
+	return DefaultRepository(img, version) + ":" + tag
+}
+
+// TagPrefix returns the text that Camunda puts in front of the version in the
+// tag of img: quay-optimized- for Keycloak, and empty for every other image.
+func TagPrefix(img Image) string {
+	if img == Keycloak {
+		return keycloakTagPrefix
+	}
+
+	return ""
 }
 
 // override returns the repository that spec.images renames img to, or empty
@@ -132,9 +140,9 @@ func override(p *v1.CamundaPlatformConfigSpec, img Image) string {
 	return ""
 }
 
-// defaultRepository returns the repository that Camunda publishes img under at
-// version.
-func defaultRepository(img Image, version string) string {
+// DefaultRepository returns the repository that Camunda publishes img under at
+// version, or empty for an image that is not a constant of this package.
+func DefaultRepository(img Image, version string) string {
 	if repo, ok := hubRepositories[img]; ok && atLeastMinor(version, 8, 10) {
 		return repo
 	}
