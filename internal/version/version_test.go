@@ -1,6 +1,7 @@
 package version
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,6 +10,17 @@ import (
 
 func TestVersionWithoutStampIsDev(t *testing.T) {
 	assert.Equal(t, "0.0.0-dev", Version())
+}
+
+// TestVersionReportsStampedTag runs only from make test-version-stamp, which
+// builds the test with the ldflags of a release build.
+func TestVersionReportsStampedTag(t *testing.T) {
+	want := os.Getenv("WANT_OPERATOR_VERSION")
+	if want == "" {
+		t.Skip("WANT_OPERATOR_VERSION is not set")
+	}
+
+	assert.Equal(t, want, Version())
 }
 
 func TestInRangeAcceptsEveryRangeOnADevBuild(t *testing.T) {
