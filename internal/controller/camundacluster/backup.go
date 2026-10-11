@@ -70,23 +70,43 @@ func (res *resolver) resolveObjectStorage(ctx context.Context, in *components.In
 	return res.checkServiceAccount(ctx, in)
 }
 
-// checkServiceAccount fails the pre-check when the spec names a pre-existing
-// ServiceAccount that does not exist. The operator never creates, annotates,
-// nor owns it, so an absent one would otherwise surface as unschedulable
-// pods. Nothing watches the ServiceAccount, so the failure is unwatched: the
-// reconcile comes back on a timer instead of an event.
+// checkServiceAccount fails the pre-check when the connectors would run under
+// the ServiceAccount of the cluster, and when the spec names a pre-existing
+// ServiceAccount, of the cluster or of the connectors, that does not exist.
+// The operator never creates, annotates, nor owns a pre-existing account, so
+// an absent one would otherwise surface as unschedulable pods. Nothing
+// watches it, so that failure is unwatched: the reconcile comes back on a
+// timer instead of an event.
 func (res *resolver) checkServiceAccount(ctx context.Context, in *components.Input) error {
-	if in.Effective.ServiceAccount.Creates() {
+	if err := components.CheckConnectorsServiceAccount(*in); err != nil {
+		return &conditions.PreCheckFailure{Reason: v1.ReasonInvalidReference, Message: err.Error()}
+	}
+
+	if !in.Effective.ServiceAccount.Creates() {
+		name := components.ServiceAccountName(res.cluster, in.Effective)
+		if err := res.requireServiceAccount(ctx, name, "serviceAccount.create"); err != nil {
+			return err
+		}
+	}
+
+	connectors := components.PodConnectorsServiceAccountName(*in)
+	if connectors == "" || in.Effective.ConnectorsServiceAccount().Creates() {
 		return nil
 	}
 
-	name := components.ServiceAccountName(res.cluster, in.Effective)
+	return res.requireServiceAccount(ctx, connectors, "connectors.serviceAccount.create")
+}
+
+// requireServiceAccount fails the pre-check, unwatched, when the
+// ServiceAccount name does not exist in the namespace of the cluster. flag is
+// the create field that made the account a reference, for the message.
+func (res *resolver) requireServiceAccount(ctx context.Context, name, flag string) error {
 	key := client.ObjectKey{Namespace: res.cluster.Namespace, Name: name}
 	if err := res.reader.Get(ctx, key, &corev1.ServiceAccount{}); err != nil {
 		if apierrors.IsNotFound(err) {
 			return conditions.NewUnwatchedFailure(
 				v1.ReasonInvalidReference,
-				fmt.Sprintf("ServiceAccount %s not found, and serviceAccount.create is false", key),
+				fmt.Sprintf("ServiceAccount %s not found, and %s is false", key, flag),
 			)
 		}
 
