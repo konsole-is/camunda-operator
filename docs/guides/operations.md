@@ -517,7 +517,7 @@ spec:
 
 ## Find the resources of a cluster
 
-Every resource that the operator creates carries labels that name its owner and its role:
+The resources that the operator creates for a cluster, its storage, and its databases carry labels that name their owner and their role:
 
 | Label | Value |
 | --- | --- |
