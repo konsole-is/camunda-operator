@@ -52,8 +52,8 @@ const (
 
 // failingReasons are the Ready reasons of a resource that stopped converging:
 // those of ocf, and ArchiveFailing, which a DatabaseServer reports after its
-// own grace period. The operator still works on each other Ready=False reason,
-// also a failed pre-check, so it converges until the consumer's grace ends.
+// own grace period. Every other Ready=False reason, also a failed pre-check,
+// stays converging until the grace period of the consumer ends.
 var failingReasons = map[string]struct{}{
 	string(component.AliveFailing):      {},
 	string(component.OperationFailing):  {},
@@ -71,6 +71,8 @@ var failingReasons = map[string]struct{}{
 // apply and Updating afterwards.
 func Converging(op concepts.ConvergingOperation, o Object) concepts.AliveStatusWithReason {
 	if stale := concepts.StaleGenerationStatus(op, o.ObservedGeneration, o.Generation, o.Kind); stale != nil {
+		stale.Reason = unobserved(o)
+
 		return *stale
 	}
 
@@ -88,6 +90,12 @@ func Converging(op concepts.ConvergingOperation, o Object) concepts.AliveStatusW
 	}
 
 	return concepts.AliveStatusWithReason{Status: status, Reason: reason}
+}
+
+// unobserved explains a Ready condition that is older than the spec.
+func unobserved(o Object) string {
+	return "The operator has not observed generation " + strconv.FormatInt(o.Generation, 10) +
+		" of the " + o.Kind + " yet"
 }
 
 // read gives the state of the Ready condition and a reason that names the
@@ -139,12 +147,6 @@ func Operational(o Object) concepts.OperationalStatusWithReason {
 	}
 
 	return concepts.OperationalStatusWithReason{Status: concepts.OperationalStatusPending, Reason: reason}
-}
-
-// unobserved explains a Ready condition that is older than the spec.
-func unobserved(o Object) string {
-	return "The operator has not observed generation " + strconv.FormatInt(o.Generation, 10) +
-		" of the " + o.Kind + " yet"
 }
 
 // Grace grades a resource that is not converged at the end of the grace

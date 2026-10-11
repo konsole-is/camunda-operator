@@ -134,10 +134,11 @@ func TestConverging(t *testing.T) {
 			reasonContains: "is suspended",
 		},
 		{
-			name:   "Ready of an older generation is Updating",
-			op:     concepts.ConvergingOperationUpdated,
-			object: stale,
-			want:   concepts.AliveConvergingStatusUpdating,
+			name:           "Ready of an older generation is Updating",
+			op:             concepts.ConvergingOperationUpdated,
+			object:         stale,
+			want:           concepts.AliveConvergingStatusUpdating,
+			reasonContains: "has not observed generation 2 of the ElasticsearchCluster",
 		},
 	}
 
