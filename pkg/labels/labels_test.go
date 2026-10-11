@@ -189,4 +189,6 @@ func TestKeysThatTheUserDocsSelectOnAreStable(t *testing.T) {
 	assert.Equal(t, "camunda.io/logical-restore-elasticsearch", LogicalRestoreElasticsearchKey)
 	assert.Equal(t, "camunda.io/logical-restore-rdbms", LogicalRestoreRDBMSKey)
 	assert.Equal(t, "camunda.io/point-in-time-restore", PointInTimeRestoreKey)
+	assert.Equal(t, "app.kubernetes.io/managed-by", ManagedByKey)
+	assert.Equal(t, "camunda-operator", ManagedBy)
 }

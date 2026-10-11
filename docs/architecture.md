@@ -61,7 +61,7 @@ A web application in `embedded` mode has no pods of its own, so a selector on it
 
 A label value holds at most 63 characters. For a longer name, the value is the start of the name followed by a hash. A selector with the full name of such a resource finds nothing.
 
-A label that you set in a `podLabels` field never replaces a discovery label. The operator does not put `app.kubernetes.io/managed-by` on the pods and volume claims in the table. A selector on `app.kubernetes.io/managed-by` finds them only when you set that label in `podLabels` yourself.
+A label that you set in a `podLabels` field never replaces a discovery label. The operator does not put `app.kubernetes.io/managed-by` on the pods and volume claims in the table. Select them by the discovery labels, not by `app.kubernetes.io/managed-by`.
 
 The operator does not create the Elasticsearch and PostgreSQL pods itself. ECK creates each Elasticsearch pod from the pod template of the node set, and copies its labels onto the pod. The data volume claims get the labels of the volume claim template. CloudNativePG copies the `inheritedMetadata` of its `Cluster` onto the instance pods, the volume claims, and the Services. The operator puts the discovery labels into both templates, so these objects carry them.
 
