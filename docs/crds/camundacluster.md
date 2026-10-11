@@ -65,7 +65,7 @@ With an embedded gateway, the operator also creates the Service `<name>-zeebe-cl
 
 `status.gateway` publishes the two client addresses, so you do not have to work out which Service runs the gateway. See [Status](#status).
 
-Every resource carries the labels `camunda.io/cluster` and `camunda.io/component`. The component is one of `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, and `connectors`. List the workloads of a cluster:
+Each workload, its pods, and its Service carry the labels `camunda.io/cluster` and `camunda.io/component`. The component is one of `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, and `connectors`. [Discovery labels](../architecture.md#discovery-labels) lists the labels that you can rely on. List the workloads of a cluster:
 
 ```bash
 kubectl get deploy,sts,svc -n my-cluster-ns -l camunda.io/cluster=my-cluster
