@@ -127,6 +127,10 @@ type JobInput struct {
 	// ServiceAccountName is the ServiceAccount of the pod. Empty means the
 	// default account of the namespace.
 	ServiceAccountName string
+	// AccountPodLabels are the labels that the identity of that
+	// ServiceAccount needs on the pod, see
+	// camundacluster.ClusterAccountPodLabels.
+	AccountPodLabels map[string]string
 	// ServerVersion is the major version of the target database server. The
 	// restore container runs client tools of that major.
 	ServerVersion string
@@ -193,7 +197,7 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 
 	// The workload-identity pod label is operator-required. Without it, the
 	// Azure webhook injects no token, whatever the ServiceAccount carries.
-	podManaged := labels.Merge(in.Bucket.WorkloadIdentityPodLabels(), managed)
+	podManaged := labels.Merge(in.Bucket.WorkloadIdentityPodLabels(), in.AccountPodLabels, managed)
 	podManaged[labels.StorageClaimKey] = labels.OwnerName(in.StorageClaim)
 	podLabels := labels.Merge(pod.PodLabels, podManaged)
 	// The pod carries no cluster UID. With the UID of the target, the handover

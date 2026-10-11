@@ -295,6 +295,21 @@ func TestBuildJobRunsUnderTheClusterServiceAccount(t *testing.T) {
 	assert.Equal(t, int32(3), *job.Spec.BackoffLimit)
 }
 
+// The Job runs under the cluster ServiceAccount, so it needs the pod labels
+// of that account's identity. A user label never removes them.
+func TestBuildJobCarriesTheAccountPodLabels(t *testing.T) {
+	t.Parallel()
+
+	in := input()
+	in.Pod = &v1.DumpPodSpec{PodLabels: map[string]string{v1.AzureWorkloadIdentityUseLabel: "false"}}
+	in.AccountPodLabels = map[string]string{v1.AzureWorkloadIdentityUseLabel: "true"}
+
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+
+	assert.Equal(t, "true", job.Spec.Template.Labels[v1.AzureWorkloadIdentityUseLabel])
+}
+
 func TestBuildJobRejectsAnEmptyCLIImage(t *testing.T) {
 	t.Parallel()
 

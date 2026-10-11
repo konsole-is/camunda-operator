@@ -96,6 +96,7 @@ func (r *Reconciler) restoreDatabase(
 		DBUsernameKey:      database.credentials.UsernameKey,
 		DBPasswordKey:      database.credentials.PasswordKey,
 		ServiceAccountName: resolved.cluster.Status.ServiceAccountName,
+		AccountPodLabels:   camundacluster.ClusterAccountPodLabels(resolved.cluster),
 		ServerVersion:      database.server.Status.ServerVersion,
 		Host:               database.server.Spec.Host,
 		Port:               database.server.Spec.Port,
