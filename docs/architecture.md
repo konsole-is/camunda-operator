@@ -18,7 +18,7 @@ The rule has three consequences that you can rely on:
 
 ## How a feature finds its workloads
 
-The operator labels the resources that it creates with their owner and their role. A resource that the operator applies itself also carries `app.kubernetes.io/managed-by: camunda-operator`.
+The operator labels the objects in [Discovery labels](#discovery-labels) with their owner and their role.
 
 A feature finds the workloads of a cluster through these labels, or it reads the cluster through `clusterRef`.
 To call the cluster, a feature reads the status of the `CamundaCluster`. `status.management` holds the address of the management API. `status.gateway` holds the gRPC and REST addresses of the client APIs. Both are empty while the cluster is suspended.
