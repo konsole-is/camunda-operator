@@ -1,0 +1,10 @@
+apiVersion: core.camunda.io/v1
+kind: Database
+metadata:
+  name: orders
+  namespace: team-a
+spec:
+  databaseConfig: orders
+  databaseName: camunda
+  secondaryStorageConfig: orders-pg
+  serverRef: orders-pg

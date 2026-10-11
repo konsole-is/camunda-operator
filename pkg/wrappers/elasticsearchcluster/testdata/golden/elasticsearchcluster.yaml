@@ -1,0 +1,10 @@
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchCluster
+metadata:
+  name: orders-es
+  namespace: team-a
+spec:
+  presetRef: small
+  replicas: 3
+  secondaryStorageConfig: orders-es
+  storageSize: 50Gi
