@@ -31,19 +31,22 @@ import (
 // The fixture identities. Every value is fixed, so the golden manifests stay
 // deterministic.
 const (
-	fixtureName           = "my-management"
-	fixtureNamespace      = "camunda"
-	fixturePlatform       = "my-platform"
-	fixtureVersion        = "8.9.4"
-	fixtureIssuer         = "https://login.example.com"
-	fixtureExternal       = "https://identity.example.com"
-	fixtureConsoleURL     = "https://console.example.com"
-	fixtureConsolePathURL = "https://camunda.example.com/console"
-	fixtureKeycloak       = "https://keycloak.example.com/auth"
-	fixtureOptimize       = "https://optimize.example.com"
-	fixtureOptimizeBlue   = "https://optimize.blue.example.com"
-	fixtureOptimizeGreen  = "https://optimize.green.example.com"
-	fixtureAdmin          = "platform-admin"
+	fixtureName              = "my-management"
+	fixtureNamespace         = "camunda"
+	fixturePlatform          = "my-platform"
+	fixtureVersion           = "8.9.4"
+	fixtureIssuer            = "https://login.example.com"
+	fixtureExternal          = "https://identity.example.com"
+	fixtureConsoleURL        = "https://console.example.com"
+	fixtureConsolePathURL    = "https://camunda.example.com/console"
+	fixtureIdentityPathURL   = "https://camunda.example.com/identity"
+	fixtureWebModelerPathURL = "https://camunda.example.com/modeler"
+	fixtureWebSocketsPathURL = "https://camunda.example.com/modeler-ws"
+	fixtureKeycloak          = "https://keycloak.example.com/auth"
+	fixtureOptimize          = "https://optimize.example.com"
+	fixtureOptimizeBlue      = "https://optimize.blue.example.com"
+	fixtureOptimizeGreen     = "https://optimize.green.example.com"
+	fixtureAdmin             = "platform-admin"
 )
 
 // newCluster returns the minimal CamundaManagementCluster in the oidc mode,
@@ -261,6 +264,27 @@ func withConsole(in *Input, externalURL string) {
 	}
 }
 
+// fixtureOneHost serves the whole management plane on one host, each app under
+// a path of its own, as the combined Ingress setup of Camunda does.
+func fixtureOneHost(t *testing.T) Input {
+	t.Helper()
+
+	return newInput(t, func(in *Input) {
+		in.Cluster.Spec.Identity.ExternalURL = fixtureIdentityPathURL
+		withConsole(in, fixtureConsolePathURL)
+
+		withWebModeler(in.Cluster)
+		in.Cluster.Spec.WebModeler.ExternalURL = fixtureWebModelerPathURL
+		in.Cluster.Spec.WebModeler.WebsocketsExternalURL = fixtureWebSocketsPathURL
+		withWebModelerClients(in.Platform)
+		in.Databases.WebModeler = webModelerDatabase()
+		in.Pusher = PusherCredentials{
+			Key:    credentials.Password{Value: fixturePusherKey},
+			Secret: credentials.Password{Value: fixturePusherSecret},
+		}
+	})
+}
+
 // newKeycloakCluster returns a CamundaManagementCluster in one of the two
 // Keycloak modes: an operator-run Keycloak when managed is true, and one that
 // the user runs when it is false.
@@ -420,6 +444,7 @@ func goldenFixtures(t *testing.T) map[string]Input {
 		"managed-keycloak/many-optimize": fixtureKeycloakManyOptimize(t),
 		"external-keycloak/minimal":      newKeycloakInput(t, false, nil),
 		"external-keycloak/realistic":    fixtureKeycloakRealistic(t, false),
+		"one-host/oidc":                  fixtureOneHost(t),
 	}
 }
 

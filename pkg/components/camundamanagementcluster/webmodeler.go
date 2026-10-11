@@ -410,7 +410,7 @@ func webModelerProviderEnv(in Input) []corev1.EnvVar {
 
 	env := []corev1.EnvVar{
 		{Name: webModelerEnvClientID, Value: provider.Clients.WebModeler.ID},
-		{Name: webModelerEnvIdentityBaseURL, Value: IdentityServiceURL(in.Cluster)},
+		{Name: webModelerEnvIdentityBaseURL, Value: identityInternalURL(in.Cluster)},
 		{Name: identityEnvType, Value: provider.Type},
 		{Name: webModelerEnvAudienceInternalAPI, Value: provider.Clients.WebModelerAPI.Audience},
 		{Name: webModelerEnvAudiencePublicAPI, Value: provider.Clients.WebModelerPublicAPIAudience},

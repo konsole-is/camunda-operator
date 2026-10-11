@@ -141,5 +141,5 @@ func parseURL(raw string) *url.URL {
 // slash. It is empty for a URL that serves the root of its host. A component
 // that runs under a path of its own has to be told that path.
 func externalPath(external *url.URL) string {
-	return strings.TrimSuffix(external.Path, "/")
+	return strings.TrimRight(external.Path, "/")
 }
