@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "minors": {
+    "8.9": {
+      "camunda": {
+        "repository": "camunda/camunda",
+        "version": "8.9.23"
+      },
+      "connectors": {
+        "repository": "camunda/connectors-bundle",
+        "version": "8.9.14"
+      },
+      "console": {
+        "repository": "camunda/console",
+        "version": "8.9.122"
+      },
+      "elasticsearch": {
+        "version": "9.2.8"
+      },
+      "identity": {
+        "repository": "camunda/identity",
+        "version": "8.9.10"
+      },
+      "keycloak": {
+        "repository": "camunda/keycloak",
+        "tagPrefix": "quay-optimized-",
+        "version": "26.6.4"
+      },
+      "optimize": {
+        "repository": "camunda/optimize",
+        "version": "8.9.23"
+      },
+      "postgres": {
+        "repository": "ghcr.io/cloudnative-pg/postgresql",
+        "version": "17"
+      },
+      "web-modeler-restapi": {
+        "repository": "camunda/web-modeler-restapi",
+        "version": "8.9.10"
+      },
+      "web-modeler-websockets": {
+        "repository": "camunda/web-modeler-websockets",
+        "version": "8.9.10"
+      }
+    }
+  }
+}

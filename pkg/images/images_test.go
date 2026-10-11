@@ -45,6 +45,42 @@ func TestResolveDefaults(t *testing.T) {
 	}
 }
 
+// TestResolveIsDefaultRepositoryTagPrefixAndVersion pins that the reference
+// the operator pulls is the one that table.json describes. The app joins the
+// repository, the tag prefix, and the version of a row, so a difference here
+// shows one image in the app and pulls another.
+func TestResolveIsDefaultRepositoryTagPrefixAndVersion(t *testing.T) {
+	all := []Image{
+		Camunda,
+		Connectors,
+		Optimize,
+		Identity,
+		Console,
+		WebModelerRestapi,
+		WebModelerWebsockets,
+		Keycloak,
+		Postgres,
+	}
+	for _, img := range all {
+		for _, version := range []string{"8.9.9", "8.10.0", "26.6.4", "17"} {
+			t.Run(string(img)+"@"+version, func(t *testing.T) {
+				want := DefaultRepository(img, version) + ":" + TagPrefix(img) + version
+				assert.Equal(t, want, Resolve(nil, img, version))
+			})
+		}
+	}
+}
+
+func TestTagPrefix(t *testing.T) {
+	assert.Equal(t, "quay-optimized-", TagPrefix(Keycloak))
+	assert.Empty(t, TagPrefix(Camunda))
+	assert.Empty(t, TagPrefix(Postgres))
+}
+
+func TestDefaultRepositoryOfAnUnknownImage(t *testing.T) {
+	assert.Empty(t, DefaultRepository(Image("tasklist"), "8.9.9"))
+}
+
 func TestResolveWebModelerRestapiByVersion(t *testing.T) {
 	tests := []struct {
 		name    string

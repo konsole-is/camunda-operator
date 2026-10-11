@@ -72,9 +72,10 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role webhook paths="./..."
 
 .PHONY: generate
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: controller-gen ## Generate the DeepCopy methods, and pkg/images/table.json from pkg/images and test/e2e/matrix.
 	cd api && "$(CONTROLLER_GEN)" object:headerFile="../hack/boilerplate.go.txt" paths="./..."
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	go run ./hack/imagestable -matrix test/e2e/matrix -out pkg/images/table.json
 
 .PHONY: observability
 observability: ## Render the dashboards and alert rules of the framework for the metric namespace of the operator.

@@ -49,6 +49,15 @@ jobs:
           make api-docs
           git diff --exit-code -- docs/crds/api-reference.md
 
+      # pkg/images/table.json is generated from pkg/images and the entries of
+      # test/e2e/matrix. A change to either must regenerate it in the same
+      # change.
+      - name: Check that the images table is generated
+        run: |
+          make generate
+          git add --intent-to-add pkg/images/table.json
+          git diff --exit-code -- pkg/images/table.json
+
       - name: Check the docs against the simple-english rules
         run: make docs-sentences
 
