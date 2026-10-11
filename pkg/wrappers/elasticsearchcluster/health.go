@@ -31,8 +31,8 @@ import (
 
 // DefaultConvergingStatusHandler maps the Ready condition of the
 // ElasticsearchCluster to the component convergence state. Ready=True is
-// Healthy, unless its reason is Suspended. Ready=False with the reason
-// Failing, Down, Degraded, or Error is Failing. Every other state, also a
+// Healthy, unless its reason is Suspended. Ready=False with a reason that
+// ends convergence, such as Failing, is Failing. Every other state, also a
 // Ready of an older generation, is Creating on the first apply and Updating
 // afterwards.
 func DefaultConvergingStatusHandler(

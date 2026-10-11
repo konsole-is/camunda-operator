@@ -30,10 +30,10 @@ import (
 // these implementations take their place.
 
 // DefaultOperationalStatusHandler maps the Ready condition of the Database
-// to the operational state. Ready=True is Operational. Ready=False with the
-// reason Failing, Down, Degraded, or Error is OperationFailing. Every other
-// state, also a Ready of an older generation and a failed pre-check such as
-// ServerIdentityUnknown, is OperationPending.
+// to the operational state. Ready=True is Operational. Ready=False with a
+// reason that ends convergence, such as Failing, is OperationFailing. Every
+// other state, also a Ready of an older generation and a failed pre-check
+// such as ServerIdentityUnknown, is OperationPending.
 func DefaultOperationalStatusHandler(
 	_ concepts.ConvergingOperation, db *apiv1.Database,
 ) (concepts.OperationalStatusWithReason, error) {
