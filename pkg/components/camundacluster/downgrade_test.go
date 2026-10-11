@@ -49,6 +49,55 @@ func TestVersionDowngrade(t *testing.T) {
 	}
 }
 
+func TestVersionSkip(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		effective, running string
+		want               bool
+	}{
+		"a patch move":                 {"8.9.10", "8.9.9", false},
+		"the same version":             {"8.9.9", "8.9.9", false},
+		"a one-minor move":             {"8.10.0", "8.9.9", false},
+		"a two-minor move":             {"8.11.0", "8.9.9", true},
+		"a three-minor move":           {"8.12.3", "8.9.0", true},
+		"a downgrade":                  {"8.8.0", "8.9.9", false},
+		"a change of major":            {"9.0.0", "8.9.9", false},
+		"a change of major, low minor": {"9.11.0", "8.9.9", false},
+		"no running version":           {"8.11.0", "", false},
+		"running tag not x.y.z":        {"8.11.0", "latest", false},
+		"effective not x.y.z":          {"8.11", "8.9.9", false},
+		"numeric, not lexical":         {"8.10.0", "8.9.9", false},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, VersionSkip(tc.effective, tc.running))
+		})
+	}
+}
+
+func TestNextMinor(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		version, want string
+	}{
+		"a patch of 8.9":       {"8.9.9", "8.10"},
+		"the first of a minor": {"8.10.0", "8.11"},
+		"not x.y.z":            {"latest", ""},
+		"empty":                {"", ""},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, NextMinor(tc.version))
+		})
+	}
+}
+
 // stampedClaims returns one claim per version, each carrying it as the
 // broker version annotation.
 func stampedClaims(versions ...string) []corev1.PersistentVolumeClaim {
