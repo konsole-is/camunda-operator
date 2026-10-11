@@ -120,7 +120,7 @@ The reasons that you see most often:
 | `InvalidReference` | A referenced resource does not exist, or the merged spec is not valid. The message names it. | Create the resource, or fix the field that the message names. |
 | `MissingSecret` | A referenced Secret or one of its keys does not exist. The message names it. | Create the Secret with the keys that the reference names. |
 
-`Ready` can also report `SuspensionHeld`, `StorageAlreadyAttached`, `WaitingForHandover`, or `VersionDowngradeRefused`. The [CamundaCluster](../crds/camundacluster.md#status) page lists every reason.
+`Ready` can also report `SuspensionHeld`, `StorageAlreadyAttached`, `WaitingForHandover`, `VersionDowngradeRefused`, or `VersionSkipRefused`. The [CamundaCluster](../crds/camundacluster.md#status) page lists every reason.
 
 `Disabled` shows on these conditions:
 

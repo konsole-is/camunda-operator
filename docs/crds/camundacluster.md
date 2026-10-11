@@ -93,7 +93,34 @@ The effective version is `spec.version`, or the version of the [CamundaRelease](
 
 To upgrade, raise `spec.version`, or raise the version of the release that `releaseRef` names. The operator rolls every workload to the new version, except Connectors, which follows `spec.connectors.version`. `kubectl get camundacluster` shows the new version at once, and `Ready` reads `Updating` until every process is healthy again.
 
-Move one minor at a time, and move to the latest patch of your minor first. Camunda blocks the start after a skipped minor, see [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/#required-upgrade-procedure). [Prepare for upgrade](https://docs.camunda.io/docs/self-managed/upgrade/prepare-for-upgrade/) lists what changes in each minor. An attached [CamundaOptimize](camundaoptimize.md#versions) reports `VersionMismatch` until you raise its version to the same minor.
+Move one minor at a time, and move to the latest patch of your minor first. Camunda blocks the start after a skipped minor, see [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/#required-upgrade-procedure). The operator refuses a version that skips a minor before it rolls a pod, see [A skipped minor is refused](#a-skipped-minor-is-refused). [Prepare for upgrade](https://docs.camunda.io/docs/self-managed/upgrade/prepare-for-upgrade/) lists what changes in each minor. An attached [CamundaOptimize](camundaoptimize.md#versions) reports `VersionMismatch` until you raise its version to the same minor.
+
+Wait between two minor upgrades in a row. Each broker must take a snapshot on the new minor before you move again. By default, a broker takes a snapshot every five minutes. A broker that finds a snapshot from two minors back refuses to start, see [Upgrade Zeebe](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/zeebe/operations/update-zeebe/#troubleshooting). The operator does not refuse this move. It compares the new version with the version that it last applied, not with the snapshots of the brokers.
+
+### A skipped minor is refused
+
+The operator refuses a version more than one minor above the version that the brokers run. The cluster reports `Ready: False` with reason `VersionSkipRefused` and records a Warning event with the same name. It applies no change of the spec, and the brokers keep the version they have.
+
+```yaml
+status:
+  observedGeneration: 5
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: VersionSkipRefused
+      message: 'the effective version 8.11.0 skips a minor: the brokers run 8.9.9.
+        Camunda upgrades one minor at a time, and a broker that starts after a skipped
+        minor marks itself unhealthy and applies no migration. Set the version to
+        the latest patch of 8.10 first, and move to 8.11.0 once every broker runs it'
+      observedGeneration: 5
+      lastTransitionTime: "2026-10-11T09:14:00Z"
+```
+
+To recover, set the version to the latest patch of the next minor. When `Ready` is `True` again, every broker runs it. Then wait for a snapshot, as [Upgrade](#upgrade) says, and set the version that you want. No annotation lets a skipped minor through. `camunda.io/allow-version-downgrade` applies to a lower version only.
+
+The rule reads the effective version and the running version, as the downgrade rule below does. A raised `spec.version`, a removed `spec.version` over a newer release, and a raised release all meet it. A cluster that you create again on retained volumes obeys the rule too. A change of major is not a skipped minor, and the operator does not refuse it. Camunda does not support a change of major, see [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/).
+
+A suspended cluster reports the refusal when it resumes. It then stays at zero until you set a version that the brokers can move to.
 
 ### A lower version is refused
 
@@ -419,6 +446,7 @@ The operator also holds a cluster at zero on its own. `spec.suspend` stays yours
 | `False` | `WaitingForHandover` | Something else still writes the backend. | Wait, or remove what the message names. See [Waiting for a handover](#waiting-for-a-handover). |
 | `False` | `InvalidReference` / `MissingSecret` | The suspension ended while a reference check fails. The message ends with `stay at zero until the reference check passes`. | Correct the reference that the message names. |
 | `False` | `VersionDowngradeRefused` | The cluster resumed on a version below the one that its brokers run. | Set the version forward, or [downgrade on purpose](#downgrade-on-purpose). |
+| `False` | `VersionSkipRefused` | The cluster resumed on a version that skips a minor of the one that its brokers run. | Set the version to the next minor first. See [A skipped minor is refused](#a-skipped-minor-is-refused). |
 
 ### Suspension holds
 
@@ -486,6 +514,7 @@ Deleting the cluster removes every resource that the operator created for it, an
 | `Ready` | `InvalidReference` | A referenced resource does not exist, or the merged spec is invalid. Other causes are an absent ServiceAccount with `create: false`, two conflicting buckets, a shared Azure container, or a missing snapshot repository. A running cluster keeps its workloads. | Read the message. Create the missing resource or correct the named field. |
 | `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. A running cluster keeps its workloads. | Create the Secret with the named key. |
 | `Ready` | `VersionDowngradeRefused` | The effective version is below the version that the brokers run, and no annotation sanctions the move. The operator applies nothing. | Set the version forward again, or [downgrade on purpose](#downgrade-on-purpose). |
+| `Ready` | `VersionSkipRefused` | The effective version is more than one minor above the version that the brokers run. The operator applies nothing. | Move one minor at a time. Set the version to the latest patch of the next minor first, see [A skipped minor is refused](#a-skipped-minor-is-refused). |
 
 When the operator cannot apply a workload of a cluster in `StorageAlreadyAttached` or `WaitingForHandover`, the message also carries the last apply error.
 
@@ -815,7 +844,7 @@ The operator checks these rules on the merged spec after the preset and the rele
 - `backup.primaryStorage.continuous` is not true with a `schedule` of `none`.
 - An `extraEnv` entry under `CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_` reads as `<role>_<type>_<n>` or `<role>_<type>`, with `USERS`, `CLIENTS`, `GROUPS`, `ROLES`, or `MAPPINGRULES` as the type. `MAPPING_RULES` and `MAPPING-RULES` also work. Camunda stops the identity initialization on any other form. The brokers alone run the identity initialization. So the rule covers the top level, `zeebe`, and each block that runs embedded on the brokers. [Authentication](../guides/authentication.md) shows the form that works.
 
-A separate rule refuses an effective version below the one that the brokers run, with reason `VersionDowngradeRefused`. [A lower version is refused](#a-lower-version-is-refused) states it.
+Two separate rules compare the effective version with the version that the brokers run. A lower version is refused with reason `VersionDowngradeRefused`, see [A lower version is refused](#a-lower-version-is-refused). A version that skips a minor is refused with reason `VersionSkipRefused`, see [A skipped minor is refused](#a-skipped-minor-is-refused).
 
 ### A production-shaped example
 

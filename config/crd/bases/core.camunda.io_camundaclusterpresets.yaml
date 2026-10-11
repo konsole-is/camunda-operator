@@ -6882,6 +6882,9 @@ spec:
                       version that the brokers run, with Ready reason VersionDowngradeRefused.
                       The annotation camunda.io/allow-version-downgrade on the CamundaCluster,
                       set to that version, permits it.
+                      The operator also refuses a version more than one minor above the
+                      version that the brokers run, in the same major, with Ready reason
+                      VersionSkipRefused. No annotation permits that move.
                     pattern: ^\d+\.\d+\.\d+$
                     type: string
                   zeebe:
