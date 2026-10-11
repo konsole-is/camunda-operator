@@ -1,0 +1,74 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// Package v1alpha1 contains API Schema definitions for the plugins v1alpha1
+// API group. The kinds of this group connect the claims of the fleet manager
+// to the plugin controllers that serve them.
+//
+// The v1alpha1 version has no compatibility promise. A later release can
+// change or remove any type, field, or value of this package.
+// +kubebuilder:object:generate=true
+// +groupName=plugins.camunda.io
+package v1alpha1
+
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+)
+
+var (
+	// SchemeGroupVersion is group version used to register these objects.
+	// Applyconfiguration generators, for example controller-gen, use this name.
+	SchemeGroupVersion = schema.GroupVersion{Group: "plugins.camunda.io", Version: "v1alpha1"}
+
+	// GroupVersion is an alias for SchemeGroupVersion, so that this group
+	// reads like api/v1.
+	GroupVersion = SchemeGroupVersion
+
+	// SchemeBuilder is used to add go types to the GroupVersionKind scheme.
+	SchemeBuilder = &Builder{}
+
+	// AddToScheme adds the types in this group-version to the given scheme.
+	AddToScheme = SchemeBuilder.AddToScheme
+)
+
+// Builder registers the Go types of this group version with a runtime.Scheme.
+// It is a small stand-in for the controller-runtime scheme builder, so this
+// module depends on apimachinery only.
+// +kubebuilder:object:generate=false
+type Builder struct {
+	runtime.SchemeBuilder
+}
+
+// Register adds objects to the builder under SchemeGroupVersion. Each type
+// file calls it from init, so the result is the full set of kinds of the group.
+func (b *Builder) Register(objects ...runtime.Object) *Builder {
+	b.SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(SchemeGroupVersion, objects...)
+		metav1.AddToGroupVersion(s, SchemeGroupVersion)
+		return nil
+	})
+
+	return b
+}
+
+// Build returns a new scheme that holds every registered type.
+func (b *Builder) Build() (*runtime.Scheme, error) {
+	s := runtime.NewScheme()
+
+	return s, b.AddToScheme(s)
+}
