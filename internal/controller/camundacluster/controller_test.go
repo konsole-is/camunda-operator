@@ -631,6 +631,7 @@ var _ = Describe("CamundaCluster controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
 			g.Expect(latest.Status.Gateway).NotTo(BeNil(), "a running cluster keeps publishing its endpoints")
 			g.Expect(latest.Status.Management).NotTo(BeNil())
+			g.Expect(latest.Status.Endpoints).NotTo(BeEmpty(), "a failed check keeps the last routes")
 		}, "3s", interval).Should(Succeed())
 
 		By("recreating the Secret")
