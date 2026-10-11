@@ -18,21 +18,68 @@ The rule has three consequences that you can rely on:
 
 ## How a feature finds its workloads
 
-The operator labels every resource that it creates with the owner, the component, and itself:
-
-| Label | Value |
-| --- | --- |
-| `camunda.io/<owner-kind>` | the name of the owning custom resource. The key names the kind, for example `camunda.io/cluster` for a `CamundaCluster`. |
-| `camunda.io/component` | the role of the resource, for example `zeebe`, `gateway`, `elasticsearch` |
-| `app.kubernetes.io/managed-by` | `camunda-operator` |
-
-The owner keys are `camunda.io/cluster`, `camunda.io/elasticsearch-cluster`, `camunda.io/database-server`, `camunda.io/database`, `camunda.io/management-cluster`, `camunda.io/backup-schedule`, `camunda.io/logical-backup-elasticsearch`, `camunda.io/logical-backup-rdbms`, `camunda.io/logical-restore-elasticsearch`, `camunda.io/logical-restore-rdbms`, and `camunda.io/point-in-time-restore`.
-A label value holds at most 63 characters. For a longer name, the value is the start of the name followed by a hash.
-
-ECK and CloudNativePG run pods and volumes from a template of this operator. These pods and volumes carry the owner and component labels, but not the `managed-by` label.
+The operator labels the resources that it creates with their owner and their role. A resource that the operator applies itself also carries `app.kubernetes.io/managed-by: camunda-operator`.
 
 A feature finds the workloads of a cluster through these labels, or it reads the cluster through `clusterRef`.
 To call the cluster, a feature reads the status of the `CamundaCluster`. `status.management` holds the address of the management API. `status.gateway` holds the gRPC and REST addresses of the client APIs. Both are empty while the cluster is suspended.
+
+### Discovery labels
+
+The labels in this section are a stable promise. Extensions, the fleet manager, and your own selectors can rely on them. A change to one of these keys or values is a breaking change, and the release notes name it.
+
+| Label | Value | Objects that carry it |
+| --- | --- | --- |
+| `camunda.io/cluster` | The name of the `CamundaCluster`. | The pods, workloads, Services, ServiceMonitors, and broker volume claims of the cluster. The pods, Deployments, and Services of a `CamundaOptimize`, with the name in its `clusterRef`. |
+| `camunda.io/elasticsearch-cluster` | The name of the `ElasticsearchCluster`. | The ECK `Elasticsearch` resource, the Elasticsearch pods, and their data volume claims. The Deployment, pods, and Service of the metrics exporter. |
+| `camunda.io/database-server` | The name of the `DatabaseServer`. | The CloudNativePG `Cluster` resource, the PostgreSQL instance pods, their volume claims, and their Services. |
+| `camunda.io/database` | The name of the `Database`. | The Secrets, `DatabaseConfig` resources, and `SecondaryStorageConfig` resources that the `Database` publishes. A `Database` runs no pods. |
+| `camunda.io/component` | The role of the object inside its owner. The next table lists the values. | Every object that carries one of the keys above. |
+
+| Owner | Values of `camunda.io/component` |
+| --- | --- |
+| `CamundaCluster` | `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, `connectors` |
+| `CamundaOptimize` | `optimize-webapp`, `optimize-importer` |
+| `ElasticsearchCluster` | `elasticsearch`, `elasticsearch-exporter` |
+| `DatabaseServer` | `postgres` |
+| `Database` | `database` |
+
+Select on the owner key, and add `camunda.io/component` to narrow the result to one role:
+
+```bash
+# The PostgreSQL instance pods of the DatabaseServer my-pg.
+kubectl get pod -n my-cluster-ns -l camunda.io/database-server=my-pg
+
+# The broker pods of a cluster, without its Optimize pods.
+kubectl get pod -n my-cluster-ns -l camunda.io/cluster=my-cluster,camunda.io/component=zeebe
+```
+
+The Optimize pods carry the `camunda.io/cluster` label of their cluster. A selector on `camunda.io/cluster` alone returns them together with the pods of the cluster. Their `camunda.io/component` value tells them apart.
+
+A web application in `embedded` mode has no pods of its own, so a selector on its component value finds no pods. It runs in the `gateway` pods, or in the `zeebe` pods when the gateway is embedded too.
+
+A label value holds at most 63 characters. For a longer name, the value is the start of the name followed by a hash. A selector with the full name of such a resource finds nothing.
+
+A label that you set in a `podLabels` field never replaces a discovery label. Pods and volume claims carry the discovery labels, but not `app.kubernetes.io/managed-by`. A selector on `app.kubernetes.io/managed-by` does not find them.
+
+The operator does not create the Elasticsearch and PostgreSQL pods itself. ECK creates each Elasticsearch pod from the pod template of the node set, and copies its labels onto the pod. The data volume claims get the labels of the volume claim template. CloudNativePG copies the `inheritedMetadata` of its `Cluster` onto the instance pods, the volume claims, and the Services. The operator puts the discovery labels into both templates, so these objects carry them.
+
+The keys name the `ElasticsearchCluster` or the `DatabaseServer`, not the `CamundaCluster` that uses it. To go from a cluster to its storage pods, find the storage resource that the cluster uses. Then select its pods by the key of that resource.
+
+### Other labels on the reference pages
+
+Other pages of these docs tell you to select on more `camunda.io/` labels. These labels are stable too, as each page describes them. A change to one of them is also a breaking change.
+
+| Label | Where you use it |
+| --- | --- |
+| `camunda.io/management-cluster` | [CamundaManagementCluster: What you get](crds/camundamanagementcluster.md#what-you-get), and [ManagementAuthConfig](crds/managementauthconfig.md#who-wrote-this-contract) |
+| `camunda.io/management-cluster-namespace` | [ManagementAuthConfig](crds/managementauthconfig.md#who-wrote-this-contract) |
+| `camunda.io/cluster-namespace`, with the component value `web-modeler-cluster-user` | [CamundaManagementCluster: Deploy to a cluster](crds/camundamanagementcluster.md#deploy-to-a-cluster) |
+| `camunda.io/storage-claim` | [CamundaCluster: Waiting for a handover](crds/camundacluster.md#waiting-for-a-handover) |
+| `camunda.io/writer-uid`, with the component value `storage-writer` | [CamundaCluster: A restore that is gone still holds the backend](crds/camundacluster.md#a-restore-that-is-gone-still-holds-the-backend) |
+| `camunda.io/backup-schedule` | [BackupSchedule: The backups that a schedule creates](crds/backupschedule.md#the-backups-that-a-schedule-creates). You can also put it on a backup that you create. |
+| `camunda.io/logical-restore-elasticsearch`, `camunda.io/logical-restore-rdbms`, and `camunda.io/point-in-time-restore`, with the component value `restore` | [Operations: Delete a restore](guides/operations.md#delete-a-restore) |
+
+The operator also sets `camunda.io/` labels for its own use, for example `camunda.io/cluster-uid` and `camunda.io/optimize-uid`. A `camunda.io/` label that this page does not list is not part of the promise. It can change in a minor release.
 
 ## How a feature acts on a cluster
 

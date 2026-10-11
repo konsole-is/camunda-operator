@@ -528,6 +528,8 @@ Every resource that the operator creates carries labels that name its owner and 
 | `camunda.io/component` | The role, for example `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, `connectors`, `elasticsearch`, `elasticsearch-exporter`, or `postgres`. |
 | `app.kubernetes.io/managed-by` | `camunda-operator`. The pods and volume claims carry the two labels above, not this one. |
 
+[Discovery labels](../architecture.md#discovery-labels) lists every value of these labels and the objects that carry them.
+
 Three examples:
 
 ```bash
