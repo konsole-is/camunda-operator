@@ -139,6 +139,13 @@ tester.run("no-server-only-in-client", rule, {
       errors: refused,
     },
     {
+      name: "an import of a .tsx module by its .jsx name",
+      filename,
+      options,
+      code: client(`import { widget } from "@/lib/widget.jsx";`),
+      errors: refused,
+    },
+    {
       name: "a dynamic import with a template literal",
       filename,
       options,
