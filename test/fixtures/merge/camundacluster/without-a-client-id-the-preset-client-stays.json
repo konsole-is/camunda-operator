@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "name": "without a client id the cluster keeps the preset client and overrides the audience",
+  "rule": "`auth.clientId`, `auth.audience`, `auth.clientSecretRef`",
+  "preset": {
+    "cluster": {
+      "auth": {
+        "clientId": "preset-client",
+        "audience": "preset-audience",
+        "clientSecretRef": {
+          "name": "preset-secret",
+          "key": "secret"
+        }
+      }
+    }
+  },
+  "spec": {
+    "auth": {
+      "audience": "my-audience"
+    }
+  },
+  "merged": {
+    "auth": {
+      "clientId": "preset-client",
+      "audience": "my-audience",
+      "clientSecretRef": {
+        "name": "preset-secret",
+        "key": "secret"
+      }
+    }
+  }
+}

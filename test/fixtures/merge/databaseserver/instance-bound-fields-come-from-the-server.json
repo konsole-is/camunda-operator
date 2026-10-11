@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "the instance-bound fields come from the server",
+  "rule": "`presetRef`, `releaseRef`, `databaseServerConfig`, `suspend`",
+  "preset": {
+    "server": {
+      "instances": 3
+    }
+  },
+  "spec": {
+    "presetRef": "standard",
+    "releaseRef": "camunda-8-9",
+    "databaseServerConfig": "my-cluster",
+    "suspend": true
+  },
+  "merged": {
+    "presetRef": "standard",
+    "releaseRef": "camunda-8-9",
+    "instances": 3,
+    "databaseServerConfig": "my-cluster",
+    "suspend": true
+  }
+}

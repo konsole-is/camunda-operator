@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "the instance-bound fields come from the cluster",
+  "rule": "`presetRef`, `releaseRef`, `secondaryStorageConfig`, `suspend`",
+  "preset": {
+    "cluster": {
+      "replicas": 3
+    }
+  },
+  "spec": {
+    "presetRef": "standard",
+    "releaseRef": "camunda-8-9",
+    "secondaryStorageConfig": "my-cluster",
+    "suspend": true
+  },
+  "merged": {
+    "presetRef": "standard",
+    "releaseRef": "camunda-8-9",
+    "replicas": 3,
+    "secondaryStorageConfig": "my-cluster",
+    "suspend": true
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "name": "extraEnv merges by name, preset first, then release, then cluster",
+  "rule": "`extraEnv`",
+  "preset": {
+    "cluster": {
+      "extraEnv": [
+        {
+          "name": "TZ",
+          "value": "UTC"
+        },
+        {
+          "name": "KEEP",
+          "value": "preset"
+        }
+      ]
+    }
+  },
+  "release": {
+    "version": "8.9.4",
+    "extraEnv": [
+      {
+        "name": "KEEP",
+        "value": "release"
+      },
+      {
+        "name": "RELEASE_ONLY",
+        "value": "release"
+      }
+    ]
+  },
+  "spec": {
+    "extraEnv": [
+      {
+        "name": "KEEP",
+        "value": "cluster"
+      },
+      {
+        "name": "MINE",
+        "value": "cluster"
+      }
+    ]
+  },
+  "merged": {
+    "version": "8.9.4",
+    "extraEnv": [
+      {
+        "name": "TZ",
+        "value": "UTC"
+      },
+      {
+        "name": "KEEP",
+        "value": "cluster"
+      },
+      {
+        "name": "RELEASE_ONLY",
+        "value": "release"
+      },
+      {
+        "name": "MINE",
+        "value": "cluster"
+      }
+    ]
+  }
+}

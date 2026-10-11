@@ -42,6 +42,14 @@ jobs:
           git add --intent-to-add config/prometheus/observability
           git diff --exit-code -- config/prometheus/observability
 
+      # The merged field of each case under test/fixtures/merge is the output
+      # of a merge function. A change to a merge must regenerate the cases in
+      # the same change.
+      - name: Check that the merge fixtures are generated
+        run: |
+          make merge-fixtures
+          git diff --exit-code -- test/fixtures/merge
+
       # docs/crds/api-reference.md is rendered from the GoDoc in api/v1. A
       # change to a type must re-render it in the same change.
       - name: Check that the API reference is rendered

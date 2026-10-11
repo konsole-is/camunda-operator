@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "name": "a cluster client id replaces the whole client of the preset",
+  "rule": "`auth.clientId`, `auth.audience`, `auth.clientSecretRef`",
+  "preset": {
+    "cluster": {
+      "auth": {
+        "clientId": "preset-client",
+        "audience": "preset-audience",
+        "clientSecretRef": {
+          "name": "preset-secret",
+          "key": "secret"
+        }
+      }
+    }
+  },
+  "spec": {
+    "auth": {
+      "clientId": "mine",
+      "clientSecretRef": {
+        "name": "my-secret",
+        "key": "secret"
+      }
+    }
+  },
+  "merged": {
+    "auth": {
+      "clientId": "mine",
+      "clientSecretRef": {
+        "name": "my-secret",
+        "key": "secret"
+      }
+    }
+  }
+}

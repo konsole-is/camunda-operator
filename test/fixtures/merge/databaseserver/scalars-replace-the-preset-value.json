@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "name": "a server scalar replaces the preset value, and an unset one inherits",
+  "rule": "`platformConfigRef`, `instances`, `storageSize`, `storageClassName`, `walStorageSize`",
+  "preset": {
+    "server": {
+      "platformConfigRef": "my-platform-config",
+      "instances": 3,
+      "storageSize": "20Gi",
+      "storageClassName": "ssd",
+      "walStorageSize": "5Gi"
+    }
+  },
+  "spec": {
+    "instances": 1,
+    "storageSize": "50Gi"
+  },
+  "merged": {
+    "platformConfigRef": "my-platform-config",
+    "instances": 1,
+    "storageSize": "50Gi",
+    "storageClassName": "ssd",
+    "walStorageSize": "5Gi"
+  }
+}
