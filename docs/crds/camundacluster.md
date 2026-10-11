@@ -335,7 +335,7 @@ With `serviceAccount.create: false`, the operator does not create the ServiceAcc
 
 The connectors never run under the ServiceAccount of the cluster, and the identities of the buckets never reach them. Process authors model the calls that the connectors make, so with the role of the cluster a process can read or delete backups. The connectors read documents through the REST API of the cluster, and Camunda says not to give them the document store role ([IAM Roles for Service Accounts](https://docs.camunda.io/docs/self-managed/deployment/helm/cloud-providers/amazon/amazon-eks/irsa/#document-store-s3)).
 
-Without `spec.connectors.serviceAccount`, the connectors run under the ServiceAccount `default` of the namespace. To give them a cloud role of their own, set the block:
+When neither the cluster nor its [preset](camundaclusterpreset.md#merge-rules) sets `connectors.serviceAccount`, the connectors run under the ServiceAccount `default` of the namespace. To give them a cloud role of their own, set the block:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -353,7 +353,7 @@ spec:
   # ... the rest of your cluster
 ```
 
-The connectors then run under `my-cluster-connectors`, or under `spec.connectors.serviceAccount.name`. That account carries only the annotations of the block. For an identity without an annotation, bind the principal `system:serviceaccount:<namespace>:<name>-connectors` on the cloud side. `status.connectorsServiceAccountName` shows the account. When you remove the block, the connectors go back to the ServiceAccount `default`. The account that the operator created stays until you delete the cluster.
+The connectors then run under `my-cluster-connectors`, or under `spec.connectors.serviceAccount.name`. That account carries only the annotations of the block. For an identity without an annotation, bind the principal `system:serviceaccount:<namespace>:<name>-connectors` on the cloud side. `status.connectorsServiceAccountName` shows the account. When the block is gone from the cluster and from its preset, the connectors go back to the ServiceAccount `default`. The account that the operator created stays until you delete the cluster.
 
 When connectors are enabled and `create` is `false`, `Ready` is `False` with reason `InvalidReference` while the account does not exist. When you create the account, the operator finds it by itself, without an edit to the cluster.
 
@@ -583,13 +583,13 @@ status:
 
 `status.serviceAccountName` is the ServiceAccount that the pods run under, except the connectors, or empty for the default account of the namespace. A backup Job runs under the same account.
 
-`status.connectorsServiceAccountName` is the ServiceAccount that the connectors run under. It is empty when `spec.connectors.serviceAccount` is not set, and when connectors are not enabled.
+`status.connectorsServiceAccountName` is the ServiceAccount that the connectors run under. It is empty when neither the cluster nor its preset sets `connectors.serviceAccount`, and when connectors are not enabled.
 
 ```yaml
 status:
   # Empty when the pods run under the default ServiceAccount of the namespace.
   serviceAccountName: my-cluster-camunda
-  # Set only with spec.connectors.serviceAccount, while connectors are enabled.
+  # Set only when the cluster or its preset sets connectors.serviceAccount, while connectors are enabled.
   connectorsServiceAccountName: my-cluster-connectors
 ```
 

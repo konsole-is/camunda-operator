@@ -373,6 +373,27 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			}, 2*time.Second, interval).Should(Succeed())
 		})
 
+		// Disabled connectors run no pod, so the operator names no account
+		// for them, also when the block is set.
+		It("leaves an account with the derived name in place while connectors are off", func() {
+			ns := newNamespace()
+			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			cluster.Spec.Connectors = &v1.ConnectorsSpec{
+				Enabled:        new(false),
+				ServiceAccount: &v1.ServiceAccountSpec{},
+			}
+			key := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-connectors"}
+			Expect(k8sClient.Create(ctx, &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: key.Name},
+			})).To(Succeed())
+			createCluster(cluster)
+
+			expectDeploymentAccount(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-gateway"}, "")
+			Consistently(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, key, &corev1.ServiceAccount{})).To(Succeed())
+			}, 2*time.Second, interval).Should(Succeed())
+		})
+
 		It("moves the connectors back to the default account when the block goes", func() {
 			ns := newNamespace()
 			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))

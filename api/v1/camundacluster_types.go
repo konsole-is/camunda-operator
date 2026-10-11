@@ -636,8 +636,8 @@ type CamundaClusterStatus struct {
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 	// ConnectorsServiceAccountName is the ServiceAccount that the connectors
-	// pods run under. It is empty when connectors.serviceAccount is unset, and
-	// when connectors are not enabled. The connectors then run under the
+	// pods run under. It is empty when neither the cluster nor its preset sets
+	// connectors.serviceAccount, and when connectors are not enabled. The connectors then run under the
 	// default account of the namespace, or run no pod.
 	// +optional
 	ConnectorsServiceAccountName string `json:"connectorsServiceAccountName,omitempty"`
