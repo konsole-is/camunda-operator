@@ -142,8 +142,8 @@ func Build(in Input) ([]ProcessComponent, error) {
 
 // zeebeComponent builds the brokers: the optional ServiceAccount, the
 // StatefulSet, the headless Service, the client Service while the brokers
-// run the gateway, and the optional ServiceMonitor. It is
-// gated on p.Enabled like every process component.
+// run the gateway, and the optional ServiceMonitor. It is gated on p.Enabled
+// like every process component.
 func zeebeComponent(in Input, p Process) (*component.Component, error) {
 	account, err := serviceaccount.NewBuilder(serviceAccountFor(in)).Build()
 	if err != nil {

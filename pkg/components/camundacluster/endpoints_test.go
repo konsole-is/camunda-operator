@@ -18,6 +18,7 @@ package camundacluster
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -25,6 +26,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // topology is one combination of the fields that decide the routes.
@@ -174,6 +177,53 @@ func TestEveryEndpointNamesARenderedServicePort(t *testing.T) {
 					t, rendered[endpoint.Service], endpoint.Port,
 					"%s names %s:%d, which the render does not produce", endpoint.Name, endpoint.Service, endpoint.Port,
 				)
+			}
+		})
+	}
+}
+
+// A web application answers only on the process that carries its profile,
+// so its route names the Service that selects that process.
+func TestEveryWebAppRouteSelectsTheProcessWithItsProfile(t *testing.T) {
+	t.Parallel()
+
+	profiles := map[string]string{
+		v1.EndpointOperate:  camundaconfig.ProfileOperate,
+		v1.EndpointTasklist: camundaconfig.ProfileTasklist,
+		v1.EndpointAdmin:    camundaconfig.ProfileAdmin,
+	}
+
+	for _, tp := range everyTopology() {
+		t.Run(tp.String(), func(t *testing.T) {
+			t.Parallel()
+
+			in := topologyInput(t, tp)
+			comps, err := Build(in)
+			require.NoError(t, err)
+
+			selects := map[string]string{}
+			for _, comp := range enabledComponents(comps) {
+				for _, obj := range previewObjects(t, comp) {
+					if svc, ok := obj.(*corev1.Service); ok {
+						selects[svc.Name] = svc.Spec.Selector[labels.ComponentKey]
+					}
+				}
+			}
+
+			for _, endpoint := range Endpoints(in.Cluster, in.Effective) {
+				profile, ok := profiles[endpoint.Name]
+				if !ok {
+					continue
+				}
+
+				var hosts []string
+				for _, p := range Resolve(in.Effective) {
+					if p.Enabled && slices.Contains(p.Profiles, profile) {
+						hosts = append(hosts, p.Component)
+					}
+				}
+				require.Len(t, hosts, 1, "%s runs on one process", endpoint.Name)
+				assert.Equal(t, hosts[0], selects[endpoint.Service], "%s names %s", endpoint.Name, endpoint.Service)
 			}
 		})
 	}

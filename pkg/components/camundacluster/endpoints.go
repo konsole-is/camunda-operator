@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 )
 
 // Endpoints returns the routes of a cluster for status.endpoints, sorted by
@@ -34,21 +35,29 @@ import (
 // The routes ignore spec.suspend. They describe Services, and the Services
 // stay while the pods are at zero.
 func Endpoints(cluster *v1.CamundaCluster, e Effective) []v1.Endpoint {
-	host := routeService(cluster, e)
-	webApp := func(component string, mode v1.ComponentMode) string {
-		if mode == v1.ComponentModeStandalone {
-			return WorkloadName(cluster, component)
+	processes := Resolve(e)
+	serving := func(serves func(Process) bool) string {
+		for _, p := range processes {
+			if p.Enabled && serves(p) {
+				return routeService(cluster, p)
+			}
 		}
-		return host
+		// Resolve gives the gateway and each web application to exactly one
+		// enabled process.
+		return ""
 	}
+	hosts := func(profile string) func(Process) bool {
+		return func(p Process) bool { return slices.Contains(p.Profiles, profile) }
+	}
+	gateway := serving(func(p Process) bool { return p.ServesGRPC })
 
 	endpoints := []v1.Endpoint{
-		httpEndpoint(v1.EndpointDefault, host, "/"),
-		httpEndpoint(v1.EndpointREST, host, "/v2"),
-		httpEndpoint(v1.EndpointOperate, webApp(ComponentOperate, e.OperateMode()), "/operate"),
-		httpEndpoint(v1.EndpointTasklist, webApp(ComponentTasklist, e.TasklistMode()), "/tasklist"),
-		httpEndpoint(v1.EndpointAdmin, webApp(ComponentAdmin, e.AdminMode()), "/admin"),
-		{Name: v1.EndpointGRPC, Service: host, Port: PortGRPC, Protocol: v1.EndpointProtocolGRPC},
+		httpEndpoint(v1.EndpointDefault, gateway, "/"),
+		httpEndpoint(v1.EndpointREST, gateway, "/v2"),
+		httpEndpoint(v1.EndpointOperate, serving(hosts(camundaconfig.ProfileOperate)), "/operate"),
+		httpEndpoint(v1.EndpointTasklist, serving(hosts(camundaconfig.ProfileTasklist)), "/tasklist"),
+		httpEndpoint(v1.EndpointAdmin, serving(hosts(camundaconfig.ProfileAdmin)), "/admin"),
+		{Name: v1.EndpointGRPC, Service: gateway, Port: PortGRPC, Protocol: v1.EndpointProtocolGRPC},
 	}
 	if e.ConnectorsEnabled() {
 		// The operator sets no context path on connectors, so Camunda serves
@@ -64,16 +73,15 @@ func Endpoints(cluster *v1.CamundaCluster, e Effective) []v1.Endpoint {
 	return endpoints
 }
 
-// routeService returns the Service that a route to the gateway names. With
-// an embedded gateway it is the client Service, not the headless broker
-// Service that GatewayHost names, because a route must reach ready brokers
-// only.
-func routeService(cluster *v1.CamundaCluster, e Effective) string {
-	if e.GatewayMode() == v1.ComponentModeEmbedded {
+// routeService returns the Service that a route to the process names. For
+// the brokers it is the client Service, not the headless broker Service that
+// GatewayHost names, because a route must reach ready brokers only.
+func routeService(cluster *v1.CamundaCluster, p Process) string {
+	if p.Kind == ProcessStatefulSet {
 		return ZeebeClientServiceName(cluster)
 	}
 
-	return WorkloadName(cluster, ComponentGateway)
+	return WorkloadName(cluster, p.Component)
 }
 
 // httpEndpoint returns an HTTP route on the HTTP port of a Service.
