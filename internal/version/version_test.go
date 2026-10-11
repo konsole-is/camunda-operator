@@ -71,8 +71,10 @@ func TestSatisfiesRefusesAMalformedRange(t *testing.T) {
 }
 
 func TestSatisfiesRefusesAVersionThatIsNotSemver(t *testing.T) {
-	_, err := Satisfies("main", ">=0.3.0")
+	for _, v := range []string{"main", "1", "0.3", "v0.3.0"} {
+		_, err := Satisfies(v, ">=0.3.0")
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `"main"`)
+		require.Error(t, err, v)
+		assert.Contains(t, err.Error(), `"`+v+`"`)
+	}
 }

@@ -41,7 +41,7 @@ func Satisfies(v, rangeExpr string) (bool, error) {
 		return true, nil
 	}
 
-	parsed, err := semver.NewVersion(v)
+	parsed, err := semver.StrictNewVersion(v)
 	if err != nil {
 		return false, fmt.Errorf("parsing operator version %q: %w", v, err)
 	}
