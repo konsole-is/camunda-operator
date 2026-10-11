@@ -61,6 +61,8 @@ spec:
 
 Each enabled process gets a workload and a Service named `<name>-<component>`. A standalone gateway serves on the Service `<name>-gateway`, with gRPC on port `26500` and HTTP on port `8080`. An embedded gateway serves the same ports on `<name>-zeebe`. HTTP serves the REST API under `/v2/` and the embedded web applications under `/operate/`, `/tasklist/`, and `/admin/`. A standalone web application serves on its own Service on port `8080`.
 
+With an embedded gateway, the operator also creates the Service `<name>-zeebe-client`. It carries only the ports `26500` and `8080`, and it sends traffic only to brokers that are ready. Route traffic from outside the cluster to this Service, not to `<name>-zeebe`. `status.endpoints` names the Service for each path. See [Routes](#routes).
+
 `status.gateway` publishes the two client addresses, so you do not have to work out which Service runs the gateway. See [Status](#status).
 
 Every resource carries the labels `camunda.io/cluster` and `camunda.io/component`. The component is one of `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, and `connectors`. List the workloads of a cluster:
@@ -382,7 +384,7 @@ status:
 
 ## Suspend and pause
 
-`spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` and `status.gateway` are empty. When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
+`spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` and `status.gateway` are empty. `status.endpoints` stays, see [Routes](#routes). When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
 
 `suspend` also stops the workloads while a reference check fails. You do not have to correct the reference first. `Ready` then reports the failure, and the message says why the workloads are at zero:
 
@@ -519,6 +521,60 @@ status:
 `status.serviceAccountName` is the ServiceAccount that the pods run under, or empty for the default account of the namespace. A backup Job runs under the same account.
 
 `status.volumes` lists every bound broker volume, sorted by name, with its `name` and its `capacity`. `status.observedGeneration` is the last generation the operator reconciled.
+
+### Routes
+
+`status.endpoints` lists the routes of the cluster, sorted by name. Each entry is a path on the external URL, with the Service and the port that serve it. Read this list to route traffic to the cluster. You do not have to work out from the mode fields which process serves a path. The cluster from [Topology](#topology), with Operate standalone and connectors enabled, publishes:
+
+```yaml
+status:
+  endpoints:
+  - name: admin
+    pathPrefix: /admin
+    port: 8080
+    protocol: HTTP
+    # Admin is embedded, so the process that runs the gateway serves it.
+    service: my-cluster-gateway
+  - name: connectors
+    # Only while spec.connectors.enabled is true.
+    pathPrefix: /inbound
+    port: 8080
+    protocol: HTTP
+    service: my-cluster-connectors
+  - name: default
+    # Every path that no other entry names, for example the login page.
+    pathPrefix: /
+    port: 8080
+    protocol: HTTP
+    service: my-cluster-gateway
+  - name: grpc
+    # No path prefix. gRPC needs a route of its own.
+    port: 26500
+    protocol: GRPC
+    service: my-cluster-gateway
+  - name: operate
+    pathPrefix: /operate
+    port: 8080
+    protocol: HTTP
+    # Operate is standalone, so it has its own Service.
+    service: my-cluster-operate
+  - name: rest
+    pathPrefix: /v2
+    port: 8080
+    protocol: HTTP
+    service: my-cluster-gateway
+  - name: tasklist
+    pathPrefix: /tasklist
+    port: 8080
+    protocol: HTTP
+    service: my-cluster-gateway
+```
+
+Match the longest `pathPrefix` first. Thus `/operate` goes to its own Service, and `/` takes the paths that are left. An embedded web application names the Service of the process that runs the gateway, as `admin` and `tasklist` do above. With an embedded gateway, every entry that names `my-cluster-gateway` above names `my-cluster-zeebe-client` instead.
+
+Camunda serves the inbound webhooks of connectors under `/inbound/<webhook ID>`. See [HTTP Webhook connector](https://docs.camunda.io/docs/components/connectors/protocol/http-webhook/#activate-the-http-webhook-connector-by-deploying-your-diagram).
+
+The entries stay while the cluster is suspended, and while a reference check fails. The Services stay too, so a route answers again when the cluster resumes. `status.gateway` and `status.management` are empty while the cluster is suspended.
 
 ## Spec reference
 

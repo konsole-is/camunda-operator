@@ -338,6 +338,9 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	cluster.Status.Volumes = storage.volumes()
 	cluster.Status.Management = managementBinding(&cluster, in)
 	cluster.Status.Gateway = gatewayBinding(&cluster, in)
+	// The routes describe Services, which outlive a suspension, so they
+	// stand while the two bindings are cleared.
+	cluster.Status.Endpoints = components.Endpoints(&cluster, in.Effective)
 	// The account outlives a suspension, so it stands while the management
 	// binding and the gateway binding are cleared.
 	cluster.Status.ServiceAccountName = components.PodServiceAccountName(in)
