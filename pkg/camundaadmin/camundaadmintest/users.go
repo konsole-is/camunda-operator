@@ -77,11 +77,11 @@ func NewUserAPI() *UserAPI {
 	return api
 }
 
-// RefuseNext makes the next n calls answer 400 with reason, the way the
-// cluster refuses a profile it does not accept. It is not an authentication
-// failure: the credentials are good and a retry with another password can
-// never help. It replaces the refusals that an earlier call left, so n of 0
-// ends them.
+// RefuseNext makes the next n calls to an endpoint of the fake that DropNext
+// does not drop answer 400 with reason, the way the cluster refuses a profile
+// it does not accept. It is not an authentication failure: the credentials
+// are good and a retry with another password can never help. It replaces the
+// refusals that an earlier call left, so n of 0 ends them.
 func (s *UserAPI) RefuseNext(n int, reason string) {
 	s.Lock()
 	defer s.Unlock()
