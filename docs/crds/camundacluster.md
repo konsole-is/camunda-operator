@@ -790,7 +790,7 @@ spec:
     version: "8.9.7"
     # object. Optional. ServiceAccount of the connectors pods. Without it, they run under the default ServiceAccount of the namespace. See Workload identity.
     serviceAccount:
-      # string. Optional, default when the block is set: <name>-connectors. Name of the ServiceAccount. Must differ from serviceAccount.name.
+      # string. Optional, default when the block is set: <name>-connectors. Name of the ServiceAccount. Must differ from serviceAccount.name. The name default needs create: false.
       name: "my-cluster-connectors"
       # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it.
       create: true
@@ -882,6 +882,7 @@ The API server enforces these rules at admission:
 - A new inline `spec.zeebe.storageSize` cannot be smaller than the inline value it replaces.
 - `spec.zeebe.replicationFactor` must not exceed `spec.zeebe.replicas`.
 - `spec.connectors.serviceAccount.name` must differ from `spec.serviceAccount.name`.
+- `spec.connectors.serviceAccount.name: default` requires `create: false`.
 - `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` is `Delete` or `Retain`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both.
 - `spec.auth.basic.adminEmail` is empty or an address with a dot in its domain.

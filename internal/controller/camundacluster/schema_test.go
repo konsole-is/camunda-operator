@@ -287,6 +287,22 @@ var _ = Describe("CamundaCluster schema", func() {
 			},
 			"",
 		),
+		// An owned account goes with the cluster, and the default account of
+		// the namespace serves other pods too.
+		Entry(
+			"rejects an owned connectors ServiceAccount named default",
+			realisticCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.Connectors.ServiceAccount = &v1.ServiceAccountSpec{Name: "default"}
+			},
+			"connectors.serviceAccount.name default requires create: false",
+		),
+		Entry(
+			"accepts the default ServiceAccount for the connectors with create false",
+			realisticCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.Connectors.ServiceAccount = &v1.ServiceAccountSpec{Name: "default", Create: new(false)}
+			},
+			"",
+		),
 		Entry(
 			"rejects an unknown component mode",
 			realisticCamundaCluster, func(o *v1.CamundaCluster) {

@@ -262,9 +262,11 @@ type ConnectorsSpec struct {
 	// label through podLabels yourself. A workload identity without an
 	// annotation binds the principal
 	// system:serviceaccount:<namespace>:<name>-connectors. name must differ
-	// from the name of the cluster ServiceAccount. While connectors are not
-	// enabled, the operator does not create or check the account. A preset
-	// can set this block, except name.
+	// from the name of the cluster ServiceAccount. The name default needs
+	// create false, so that the account of the namespace never goes with the
+	// cluster. While connectors are not enabled, the operator does not create
+	// or check the account. A preset can set this block, except name.
+	// +kubebuilder:validation:XValidation:rule="!has(self.name) || self.name != 'default' || (has(self.create) && !self.create)",message="connectors.serviceAccount.name default requires create: false"
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 	WorkloadSpec   `                    json:",inline"`

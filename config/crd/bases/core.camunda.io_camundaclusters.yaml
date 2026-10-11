@@ -3078,9 +3078,10 @@ spec:
                       label through podLabels yourself. A workload identity without an
                       annotation binds the principal
                       system:serviceaccount:<namespace>:<name>-connectors. name must differ
-                      from the name of the cluster ServiceAccount. While connectors are not
-                      enabled, the operator does not create or check the account. A preset
-                      can set this block, except name.
+                      from the name of the cluster ServiceAccount. The name default needs
+                      create false, so that the account of the namespace never goes with the
+                      cluster. While connectors are not enabled, the operator does not create
+                      or check the account. A preset can set this block, except name.
                     properties:
                       annotations:
                         additionalProperties:
@@ -3116,6 +3117,11 @@ spec:
                         pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
                     type: object
+                    x-kubernetes-validations:
+                    - message: 'connectors.serviceAccount.name default requires create:
+                        false'
+                      rule: '!has(self.name) || self.name != ''default'' || (has(self.create)
+                        && !self.create)'
                   version:
                     description: |-
                       Version is the version of the connectors bundle image, as a full
