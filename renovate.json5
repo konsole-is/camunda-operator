@@ -4,7 +4,7 @@
 // land together, and a major update arrives when it is published. Go modules,
 // .tool-versions, GitHub Actions, the Dockerfiles, and requirements-docs.txt
 // go through the standard managers. The fleet manager under fleet-manager/
-// goes through the npm, nodenv, and dockerfile managers.
+// goes through the npm and nodenv managers.
 //
 // The image pins of the e2e suite are the env files under test/e2e/matrix/
 // (one per supported Camunda minor), Go constants, YAML image fields of the
@@ -257,12 +257,10 @@
     },
     {
       // The fleet manager pins one Node.js release in fleet-manager/.node-version,
-      // in engines of fleet-manager/package.json, in the build stage of
-      // fleet-manager/Dockerfile, and in .tool-versions. Each manager names the
-      // dependency node, so one pull request moves all of them. The runtime
-      // image of the Dockerfile names the major (distroless nodejs24), so a new
-      // major is a change by hand. The node-version datasource writes its
-      // versions with a leading v, the Docker tags do not.
+      // in engines of fleet-manager/package.json, and in .tool-versions. Each
+      // manager names the dependency node, so one pull request moves all of
+      // them. A new major is a change by hand. The node-version datasource
+      // writes its versions with a leading v.
       matchFileNames: ["fleet-manager/**", ".tool-versions"],
       matchDepNames: ["node"],
       groupName: "fleet-manager-node",
