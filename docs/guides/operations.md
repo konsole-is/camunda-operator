@@ -526,7 +526,7 @@ The resources that the operator creates for a cluster, its storage, and its data
 | `camunda.io/database` | The name of the owning `Database`. |
 | `camunda.io/database-server` | The name of the owning `DatabaseServer`. |
 | `camunda.io/component` | The role, for example `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, `connectors`, `elasticsearch`, `elasticsearch-exporter`, or `postgres`. |
-| `app.kubernetes.io/managed-by` | `camunda-operator`. The pods and volume claims carry the two labels above, not this one. |
+| `app.kubernetes.io/managed-by` | `camunda-operator`. Not every pod and volume claim carries it, so select them by the labels above. |
 
 [Discovery labels](../architecture.md#discovery-labels) lists the stable values of these labels and the objects that the promise covers.
 
