@@ -254,20 +254,21 @@ type ConnectorsSpec struct {
 	// When unset, the connectors run under the default ServiceAccount of the
 	// namespace. When set, they run under <name>-connectors, or under name.
 	// The connectors never run under the ServiceAccount of the cluster. So
-	// when serviceAccount.name is default, connectors need this block, or
-	// Ready reports InvalidReference. The identities of backupStorageRef and documentStorageRef never reach
-	// them. Only the annotations of this block go on the account. When they carry
+	// when spec.serviceAccount.name is default, connectors need this block,
+	// or Ready reports InvalidReference. The identities of backupStorageRef
+	// and documentStorageRef never reach them. Only the annotations of this
+	// block go on the account. When they carry
 	// azure.workload.identity/client-id, the connectors pods get the label
 	// azure.workload.identity/use: "true". With create false, the operator
 	// does not read the annotations of the existing account, so add that
 	// label through podLabels yourself. A workload identity without an
 	// annotation binds the principal
 	// system:serviceaccount:<namespace>:<name>-connectors, or the name that
-	// you set. name must differ
-	// from the name of the cluster ServiceAccount. The name default needs
-	// create false, so that the account of the namespace never goes with the
-	// cluster. While connectors are not enabled, the operator does not create
-	// or check the account. A preset can set this block, except name.
+	// you set. name must differ from the name of the cluster ServiceAccount.
+	// The name default needs create false, so that the account of the
+	// namespace never goes with the cluster. While connectors are not
+	// enabled, the operator does not create or check the account. A preset
+	// can set this block, except name.
 	// +kubebuilder:validation:XValidation:rule="!has(self.name) || self.name != 'default' || (has(self.create) && !self.create)",message="connectors.serviceAccount.name default requires create: false"
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
