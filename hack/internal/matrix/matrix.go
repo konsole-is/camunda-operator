@@ -24,9 +24,9 @@ import (
 	"strings"
 )
 
-// Read returns the NAME=value lines of the matrix entry at path. It skips
-// blank lines, comments, and lines without an equals sign, and it trims the
-// spaces around a name and a value.
+// Read returns the NAME=value lines of the matrix entry at path. A line
+// without an equals sign is skipped, not an error. Names and values have no
+// surrounding whitespace.
 func Read(path string) (map[string]string, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {

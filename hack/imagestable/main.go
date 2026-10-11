@@ -83,8 +83,8 @@ var versionOnly = map[string]string{
 	"ELASTICSEARCH_VERSION": "elasticsearch",
 }
 
-// skipped is every variable that is not the version of a Camunda image: the
-// releases of the operators that the suite installs, and the flow filter.
+// skipped is every variable that the table does not hold: the releases of the
+// operators that the suite installs, and the flow filter.
 var skipped = []string{"CNPG_VERSION", "BARMAN_PLUGIN_VERSION", "E2E_LABELS"}
 
 // minorFile matches the name of a matrix entry and captures its minor.
