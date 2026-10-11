@@ -53,9 +53,9 @@ func TestDatabaseServerFixtures(t *testing.T) {
 	runFixtures(t, "databaseserver", databaseserver.MergeSpec)
 }
 
+// Not parallel: with -update, the fixture tests rewrite the files that this
+// test reads, and Go runs them only after every sequential test ends.
 func TestFixturesCoverEveryMergeRule(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		kind string
 		page string
