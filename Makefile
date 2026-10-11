@@ -284,11 +284,17 @@ docker-buildx-cli: ## Build and push docker image for camunda-operator-cli for c
 
 .PHONY: test-version-stamp
 test-version-stamp: OPERATOR_VERSION = 0.3.0
-test-version-stamp: ## Check that a build with OPERATOR_VERSION reports it, and that the Dockerfile stamps the same variable.
+test-version-stamp: ## Check that a build with OPERATOR_VERSION reports it, and that the image builds stamp it too.
 	WANT_OPERATOR_VERSION=$(OPERATOR_VERSION) go test -count=1 -ldflags "$(VERSION_LDFLAGS)" \
 		-run '^TestVersionReportsStampedTag$$' ./internal/version
-	@grep -qF -- '-X $(VERSION_PACKAGE).version=$${OPERATOR_VERSION}' Dockerfile || \
-		{ echo "Dockerfile does not stamp $(VERSION_PACKAGE).version from OPERATOR_VERSION" >&2; exit 1; }
+	@grep -qx 'ARG OPERATOR_VERSION=0.0.0-dev' Dockerfile && \
+		grep -qF -- '-X $(VERSION_PACKAGE).version=$${OPERATOR_VERSION}' Dockerfile || \
+		{ echo "Dockerfile does not stamp $(VERSION_PACKAGE).version from ARG OPERATOR_VERSION" >&2; exit 1; }
+	@for target in docker-build docker-buildx; do \
+		$(MAKE) -s -n $$target OPERATOR_VERSION=$(OPERATOR_VERSION) | \
+			grep -qF -- '--build-arg OPERATOR_VERSION=$(OPERATOR_VERSION)' || \
+			{ echo "make $$target does not pass OPERATOR_VERSION to the Dockerfile" >&2; exit 1; }; \
+	done
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
