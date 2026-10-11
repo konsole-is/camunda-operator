@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "name": "a server map replaces the whole preset map, and an empty one keeps it",
+  "rule": "`podLabels`, `podAnnotations`",
+  "preset": {
+    "server": {
+      "podLabels": {
+        "team": "preset",
+        "tier": "preset"
+      },
+      "podAnnotations": {
+        "note": "preset"
+      }
+    }
+  },
+  "spec": {
+    "podLabels": {
+      "team": "server"
+    },
+    "podAnnotations": {}
+  },
+  "merged": {
+    "podLabels": {
+      "team": "server"
+    },
+    "podAnnotations": {
+      "note": "preset"
+    }
+  }
+}

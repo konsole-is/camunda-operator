@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "a cluster scalar replaces the preset value, and an unset one inherits",
+  "rule": "`replicas`, `storageSize`, `storageClassName`, `snapshotStorageRef`",
+  "preset": {
+    "cluster": {
+      "replicas": 3,
+      "storageSize": "64Gi",
+      "storageClassName": "ssd",
+      "snapshotStorageRef": "fleet-snapshots"
+    }
+  },
+  "spec": {
+    "replicas": 5,
+    "storageClassName": "fast"
+  },
+  "merged": {
+    "replicas": 5,
+    "storageSize": "64Gi",
+    "storageClassName": "fast",
+    "snapshotStorageRef": "fleet-snapshots"
+  }
+}

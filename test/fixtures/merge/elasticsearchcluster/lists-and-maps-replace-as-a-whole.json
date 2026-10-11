@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "name": "a cluster list or map replaces the whole preset value",
+  "rule": "`secureSettings`, `extraEnv`, `extraEnvFrom`, `podLabels`, `podAnnotations`",
+  "preset": {
+    "cluster": {
+      "extraEnv": [
+        {
+          "name": "A",
+          "value": "preset"
+        }
+      ],
+      "podLabels": {
+        "team": "preset",
+        "tier": "preset"
+      },
+      "secureSettings": [
+        {
+          "secretName": "preset-settings"
+        }
+      ]
+    }
+  },
+  "spec": {
+    "extraEnv": [
+      {
+        "name": "B",
+        "value": "cluster"
+      }
+    ],
+    "podLabels": {
+      "team": "cluster"
+    }
+  },
+  "merged": {
+    "extraEnv": [
+      {
+        "name": "B",
+        "value": "cluster"
+      }
+    ],
+    "podLabels": {
+      "team": "cluster"
+    },
+    "secureSettings": [
+      {
+        "secretName": "preset-settings"
+      }
+    ]
+  }
+}

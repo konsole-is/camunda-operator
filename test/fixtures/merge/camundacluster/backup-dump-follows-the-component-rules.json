@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "name": "the backup dump merges like a component, and its scratch volume replaces as a block",
+  "rule": "`backup.dump`",
+  "preset": {
+    "cluster": {
+      "backup": {
+        "dump": {
+          "resources": {
+            "requests": {
+              "cpu": "500m",
+              "memory": "1Gi"
+            }
+          },
+          "extraEnv": [
+            {
+              "name": "A",
+              "value": "preset"
+            }
+          ],
+          "scratchVolume": {
+            "sizeLimit": "20Gi",
+            "storageClassName": "ssd"
+          },
+          "postgresImage": "postgres:17",
+          "activeDeadlineSeconds": 3600
+        }
+      }
+    }
+  },
+  "spec": {
+    "backup": {
+      "dump": {
+        "resources": {
+          "requests": {
+            "memory": "2Gi"
+          }
+        },
+        "extraEnv": [
+          {
+            "name": "B",
+            "value": "cluster"
+          }
+        ],
+        "scratchVolume": {
+          "sizeLimit": "50Gi"
+        },
+        "activeDeadlineSeconds": 7200
+      }
+    }
+  },
+  "merged": {
+    "backup": {
+      "dump": {
+        "resources": {
+          "requests": {
+            "cpu": "500m",
+            "memory": "2Gi"
+          }
+        },
+        "extraEnv": [
+          {
+            "name": "A",
+            "value": "preset"
+          },
+          {
+            "name": "B",
+            "value": "cluster"
+          }
+        ],
+        "scratchVolume": {
+          "sizeLimit": "50Gi"
+        },
+        "activeDeadlineSeconds": 7200,
+        "postgresImage": "postgres:17"
+      }
+    }
+  }
+}

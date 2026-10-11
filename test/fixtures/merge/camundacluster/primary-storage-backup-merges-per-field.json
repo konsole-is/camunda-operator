@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "name": "the primary storage backup merges per field",
+  "rule": "`backup.primaryStorage`",
+  "preset": {
+    "cluster": {
+      "backup": {
+        "primaryStorage": {
+          "schedule": "0 2 * * *",
+          "checkpointInterval": "PT15M",
+          "retention": {
+            "window": "P7D",
+            "cleanupSchedule": "PT1H"
+          }
+        }
+      }
+    }
+  },
+  "spec": {
+    "backup": {
+      "primaryStorage": {
+        "schedule": "0 */6 * * *",
+        "retention": {
+          "window": "P3D"
+        }
+      }
+    }
+  },
+  "merged": {
+    "backup": {
+      "primaryStorage": {
+        "schedule": "0 */6 * * *",
+        "checkpointInterval": "PT15M",
+        "retention": {
+          "window": "P3D",
+          "cleanupSchedule": "PT1H"
+        }
+      }
+    }
+  }
+}

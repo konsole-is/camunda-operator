@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "a cluster admin block replaces the whole preset block",
+  "rule": "`auth.admin`",
+  "preset": {
+    "cluster": {
+      "auth": {
+        "admin": {
+          "users": [
+            "root"
+          ],
+          "clients": [
+            "ci"
+          ]
+        }
+      }
+    }
+  },
+  "spec": {
+    "auth": {
+      "admin": {
+        "users": [
+          "alice"
+        ]
+      }
+    }
+  },
+  "merged": {
+    "auth": {
+      "admin": {
+        "users": [
+          "alice"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "name": "an empty list or map keeps the preset value",
+  "rule": "`secureSettings`, `extraEnv`, `extraEnvFrom`, `podLabels`, `podAnnotations`",
+  "preset": {
+    "cluster": {
+      "extraEnv": [
+        {
+          "name": "A",
+          "value": "preset"
+        }
+      ],
+      "podAnnotations": {
+        "note": "preset"
+      }
+    }
+  },
+  "spec": {
+    "extraEnv": [],
+    "podAnnotations": {}
+  },
+  "merged": {
+    "extraEnv": [
+      {
+        "name": "A",
+        "value": "preset"
+      }
+    ],
+    "podAnnotations": {
+      "note": "preset"
+    }
+  }
+}

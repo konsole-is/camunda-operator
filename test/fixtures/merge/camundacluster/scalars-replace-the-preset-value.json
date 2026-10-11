@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "name": "a cluster scalar replaces the preset value",
+  "rule": "per-component `mode`, `replicas`, `zeebe.partitions`, `zeebe.replicationFactor`, `zeebe.storageClassName`, `zeebe.storageSize`, `zeebe.persistentVolumeClaimRetentionPolicy`, `indexReplicas`, `connectors.enabled`",
+  "preset": {
+    "cluster": {
+      "indexReplicas": 1,
+      "zeebe": {
+        "replicas": 3,
+        "partitions": 3,
+        "replicationFactor": 3,
+        "storageClassName": "ssd",
+        "storageSize": "32Gi",
+        "persistentVolumeClaimRetentionPolicy": {
+          "whenDeleted": "Retain"
+        }
+      },
+      "gateway": {
+        "mode": "Standalone",
+        "replicas": 2
+      },
+      "connectors": {
+        "enabled": true
+      }
+    }
+  },
+  "spec": {
+    "indexReplicas": 2,
+    "zeebe": {
+      "replicas": 5,
+      "partitions": 6,
+      "replicationFactor": 2,
+      "storageClassName": "fast",
+      "storageSize": "64Gi",
+      "persistentVolumeClaimRetentionPolicy": {
+        "whenDeleted": "Delete"
+      }
+    },
+    "gateway": {
+      "mode": "Embedded",
+      "replicas": 1
+    },
+    "connectors": {
+      "enabled": false
+    }
+  },
+  "merged": {
+    "zeebe": {
+      "replicas": 5,
+      "partitions": 6,
+      "replicationFactor": 2,
+      "storageClassName": "fast",
+      "storageSize": "64Gi",
+      "persistentVolumeClaimRetentionPolicy": {
+        "whenDeleted": "Delete"
+      }
+    },
+    "gateway": {
+      "mode": "Embedded",
+      "replicas": 1
+    },
+    "connectors": {
+      "enabled": false
+    },
+    "indexReplicas": 2
+  }
+}

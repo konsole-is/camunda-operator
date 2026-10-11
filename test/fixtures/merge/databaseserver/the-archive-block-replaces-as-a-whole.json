@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "name": "a server archive block replaces the bucket and the retention of the preset",
+  "rule": "`resources`, `serviceAccount`, `scheduling`, `monitoring`, `archive`",
+  "preset": {
+    "server": {
+      "archive": {
+        "objectStorageRef": "fleet-archive",
+        "retentionPeriodDays": 30
+      }
+    }
+  },
+  "spec": {
+    "archive": {
+      "objectStorageRef": "my-archive",
+      "retentionPeriodDays": 7
+    }
+  },
+  "merged": {
+    "archive": {
+      "objectStorageRef": "my-archive",
+      "retentionPeriodDays": 7
+    }
+  }
+}

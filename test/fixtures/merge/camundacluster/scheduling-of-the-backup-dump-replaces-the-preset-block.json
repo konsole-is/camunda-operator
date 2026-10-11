@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "name": "a cluster backup.dump.scheduling block replaces the preset block",
+  "rule": "`scheduling` (top-level, per component, and `backup.dump.scheduling`)",
+  "preset": {
+    "cluster": {
+      "backup": {
+        "dump": {
+          "scheduling": {
+            "tolerations": [
+              {
+                "key": "preset-dump"
+              },
+              {
+                "key": "spot"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "spec": {
+    "backup": {
+      "dump": {
+        "scheduling": {
+          "tolerations": [
+            {
+              "key": "cluster-dump"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "merged": {
+    "backup": {
+      "dump": {
+        "scheduling": {
+          "tolerations": [
+            {
+              "key": "cluster-dump"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
