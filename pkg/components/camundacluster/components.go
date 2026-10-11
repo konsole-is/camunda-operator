@@ -120,7 +120,7 @@ type namedPort struct {
 // it is rendered when spec.serviceAccount is set or a referenced bucket
 // derives a workload-identity annotation. The connectors component carries
 // the ServiceAccount of the connectors when spec.connectors.serviceAccount
-// is set.
+// is set and create is not false.
 func Build(in Input) ([]ProcessComponent, error) {
 	processes := Resolve(in.Effective)
 	comps := make([]ProcessComponent, 0, len(processes))
@@ -363,7 +363,7 @@ func identityPodLabels(in Input, p Process) map[string]string {
 
 // azureUseLabel returns azure.workload.identity/use: "true" when annotations
 // carry an Azure client ID, else nil. Azure binds a pod only when the pod
-// carries the label as well as its account the client ID.
+// carries the label and its account carries the client ID.
 func azureUseLabel(annotations map[string]string) map[string]string {
 	if _, ok := annotations[v1.AzureClientIDAnnotation]; !ok {
 		return nil
@@ -612,8 +612,8 @@ func monitoringGate(in Input) component.ResourceOption {
 }
 
 // deploymentComponent builds a Deployment-backed process (the gateway, a web
-// application, or connectors): the ServiceAccount of the connectors when
-// they have one, the Deployment, its Service, and the optional
+// application, or connectors): the ServiceAccount that the operator creates
+// for the connectors, the Deployment, its Service, and the optional
 // ServiceMonitor. It is gated on p.Enabled, so an embedded or disabled
 // process deletes its resources.
 func deploymentComponent(in Input, p Process) (*component.Component, error) {

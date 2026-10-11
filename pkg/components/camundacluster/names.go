@@ -214,9 +214,8 @@ func ServiceAccountName(cluster *v1.CamundaCluster, e Effective) string {
 }
 
 // PodConnectorsServiceAccountName returns the ServiceAccount that the
-// connectors pods run under, or the empty string when they run under the
-// default account of their namespace: connectors are not enabled, or
-// connectors.serviceAccount is unset.
+// connectors pods run under, or the empty string when connectors are not
+// enabled or connectors.serviceAccount is unset.
 //
 // A consumer outside this package reads status.connectorsServiceAccountName.
 func PodConnectorsServiceAccountName(in Input) string {

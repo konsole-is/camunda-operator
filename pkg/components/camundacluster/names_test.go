@@ -215,6 +215,23 @@ func TestPodConnectorsServiceAccountNameWithTheBlock(t *testing.T) {
 	assert.Equal(t, "my-cluster-connectors", PodConnectorsServiceAccountName(in))
 }
 
+// A block that names the default account publishes that name: the status
+// is empty only without a block.
+func TestPodConnectorsServiceAccountNameNamesAnExplicitDefault(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Cluster.Spec.Connectors = &v1.ConnectorsSpec{
+			Enabled:        new(true),
+			Version:        "8.9.7",
+			ServiceAccount: &v1.ServiceAccountSpec{Name: "default", Create: new(false)},
+		}
+		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, nil, nil))
+	})
+
+	assert.Equal(t, "default", PodConnectorsServiceAccountName(in))
+}
+
 // Disabled connectors run no pod, so no account is named for them.
 func TestPodConnectorsServiceAccountNameIsEmptyWhileConnectorsAreOff(t *testing.T) {
 	t.Parallel()

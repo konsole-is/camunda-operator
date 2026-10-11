@@ -253,15 +253,17 @@ type ConnectorsSpec struct {
 	// ServiceAccount configures the ServiceAccount of the connectors pods.
 	// When unset, the connectors run under the default ServiceAccount of the
 	// namespace. When set, they run under <name>-connectors, or under name.
-	// The connectors never run under the ServiceAccount of the cluster, and
-	// the identities of backupStorageRef and documentStorageRef never reach
-	// them. Only these annotations go on the account. When they carry
+	// The connectors do not run under the ServiceAccount of the cluster,
+	// unless the cluster names the account default and this block is unset.
+	// The identities of backupStorageRef and documentStorageRef never reach
+	// them. Only the annotations of this block go on the account. When they carry
 	// azure.workload.identity/client-id, the connectors pods get the label
 	// azure.workload.identity/use: "true". With create false, the operator
 	// does not read the annotations of the existing account, so add that
 	// label through podLabels yourself. A workload identity without an
 	// annotation binds the principal
-	// system:serviceaccount:<namespace>:<name>-connectors. name must differ
+	// system:serviceaccount:<namespace>:<name>-connectors, or the name that
+	// you set. name must differ
 	// from the name of the cluster ServiceAccount. The name default needs
 	// create false, so that the account of the namespace never goes with the
 	// cluster. While connectors are not enabled, the operator does not create
@@ -449,8 +451,9 @@ type CamundaClusterSpec struct {
 	// ServiceAccount configures the ServiceAccount of every workload except
 	// the connectors, which connectors.serviceAccount configures. The
 	// workloads get access to the buckets of backupStorageRef and
-	// documentStorageRef through this identity. The operator adds the
-	// identity annotation of each bucket that names one. When the
+	// documentStorageRef through this identity. When the operator creates
+	// the account, it adds the identity annotation of each bucket that names
+	// one. When the
 	// annotations carry azure.workload.identity/client-id, the pods of these
 	// workloads, the backup Jobs included, get the label
 	// azure.workload.identity/use: "true".
@@ -633,8 +636,9 @@ type CamundaClusterStatus struct {
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 	// ConnectorsServiceAccountName is the ServiceAccount that the connectors
-	// pods run under. It is empty when they run under the default account of
-	// the namespace, and when connectors are not enabled.
+	// pods run under. It is empty when connectors.serviceAccount is unset, and
+	// when connectors are not enabled. The connectors then run under the
+	// default account of the namespace, or run no pod.
 	// +optional
 	ConnectorsServiceAccountName string `json:"connectorsServiceAccountName,omitempty"`
 	// Conditions represent the current state. Ready holds the reason of a

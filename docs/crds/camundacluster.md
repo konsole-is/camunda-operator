@@ -333,7 +333,7 @@ With `serviceAccount.create: false`, the operator does not create the ServiceAcc
 
 ### Connectors
 
-The connectors never run under the ServiceAccount of the cluster, and the identities of the buckets never reach them. Process authors model the calls that the connectors make, so with the role of the cluster a process can read or delete backups. The connectors read documents through the REST API of the cluster, and Camunda says not to give them the document store role ([IAM Roles for Service Accounts](https://docs.camunda.io/docs/self-managed/deployment/helm/cloud-providers/amazon/amazon-eks/irsa/#document-store-s3)).
+The connectors do not run under the ServiceAccount of the cluster, and the identities of the buckets never reach them. One case is the exception: when `spec.serviceAccount.name` is `default`, connectors without `spec.connectors.serviceAccount` share that account, so give them an account of their own. Process authors model the calls that the connectors make, so with the role of the cluster a process can read or delete backups. The connectors read documents through the REST API of the cluster, and Camunda says not to give them the document store role ([IAM Roles for Service Accounts](https://docs.camunda.io/docs/self-managed/deployment/helm/cloud-providers/amazon/amazon-eks/irsa/#document-store-s3)).
 
 Without `spec.connectors.serviceAccount`, the connectors run under the ServiceAccount `default` of the namespace. To give them a cloud role of their own, set the block:
 
@@ -583,13 +583,13 @@ status:
 
 `status.serviceAccountName` is the ServiceAccount that the pods run under, except the connectors, or empty for the default account of the namespace. A backup Job runs under the same account.
 
-`status.connectorsServiceAccountName` is the ServiceAccount that the connectors run under. It is empty for the default account of the namespace, and when connectors are not enabled.
+`status.connectorsServiceAccountName` is the ServiceAccount that the connectors run under. It is empty when `spec.connectors.serviceAccount` is not set, and when connectors are not enabled.
 
 ```yaml
 status:
   # Empty when the pods run under the default ServiceAccount of the namespace.
   serviceAccountName: my-cluster-camunda
-  # Set only with spec.connectors.serviceAccount. Empty when the connectors run under the default ServiceAccount.
+  # Set only with spec.connectors.serviceAccount, while connectors are enabled.
   connectorsServiceAccountName: my-cluster-connectors
 ```
 
