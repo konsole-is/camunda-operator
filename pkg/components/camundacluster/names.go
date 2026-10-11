@@ -135,8 +135,9 @@ const (
 
 // The suffixes of the resources that are not named after a component.
 const (
-	adminSecretSuffix    = "-camunda-admin"
-	serviceAccountSuffix = "-camunda"
+	adminSecretSuffix        = "-camunda-admin"
+	serviceAccountSuffix     = "-camunda"
+	zeebeClientServiceSuffix = "-zeebe-client"
 )
 
 // WorkloadName returns the name of the workload and Service of a component:
@@ -147,6 +148,16 @@ func WorkloadName(cluster *v1.CamundaCluster, component string) string {
 	suffix := "-" + component
 
 	return labels.BoundedName(cluster.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
+}
+
+// ZeebeClientServiceName returns the name of the Service that routes client
+// traffic to the ready brokers of a cluster whose gateway is embedded. Like
+// every Service name, a long cluster name truncates and keeps its identity in
+// a hash.
+func ZeebeClientServiceName(cluster *v1.CamundaCluster) string {
+	limit := validation.DNS1123LabelMaxLength - len(zeebeClientServiceSuffix)
+
+	return labels.BoundedName(cluster.Name, limit) + zeebeClientServiceSuffix
 }
 
 // AdminSecretName returns the name of the Secret that holds the admin
