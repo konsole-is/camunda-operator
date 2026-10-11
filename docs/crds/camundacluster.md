@@ -480,7 +480,7 @@ The operator also holds a cluster at zero on its own. `spec.suspend` stays yours
 | `False` | `WaitingForHandover` | Something else still writes the backend. | Wait, or remove what the message names. See [Waiting for a handover](#waiting-for-a-handover). |
 | `False` | `InvalidReference` / `MissingSecret` | The suspension ended while a reference check fails. The message ends with `stay at zero until the reference check passes`. | Correct the reference that the message names. |
 | `False` | `VersionDowngradeRefused` | The cluster resumed on a version below the one that its brokers run. | Set the version forward, or [downgrade on purpose](#downgrade-on-purpose). |
-| `False` | `VersionSkipRefused` | The cluster resumed on a version that skips a minor of the one that its brokers run. | Set the version to the next minor first. See [A skipped minor is refused](#a-skipped-minor-is-refused). |
+| `False` | `VersionSkipRefused` | The cluster resumed on a version more than one minor above the version that its brokers run. | Set the version to the next minor first. See [A skipped minor is refused](#a-skipped-minor-is-refused). |
 
 ### Suspension holds
 

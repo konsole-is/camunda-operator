@@ -3064,6 +3064,58 @@ spec:
                           type: object
                         type: array
                     type: object
+                  serviceAccount:
+                    description: |-
+                      ServiceAccount configures the ServiceAccount of the connectors pods.
+                      When unset, the connectors run under the default ServiceAccount of the
+                      namespace. When set, they run under <name>-connectors, or under name.
+                      The connectors never run under the ServiceAccount of the cluster, and
+                      the identities of backupStorageRef and documentStorageRef never reach
+                      them. Only these annotations go on the account. When they carry
+                      azure.workload.identity/client-id, the connectors pods get the label
+                      azure.workload.identity/use: "true". With create false, the operator
+                      does not read the annotations of the existing account, so add that
+                      label through podLabels yourself. A workload identity without an
+                      annotation binds the principal
+                      system:serviceaccount:<namespace>:<name>-connectors. name must differ
+                      from the name of the cluster ServiceAccount. While connectors are not
+                      enabled, the operator does not create or check the account. A preset
+                      can set this block, except name.
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Annotations to set on the ServiceAccount that the operator creates.
+                          Usually these are workload-identity annotations (IRSA, GCP Workload
+                          Identity, and more) that give the pods access to cloud resources, such
+                          as the snapshot bucket for backups. When the doc of the field says so,
+                          the operator also adds the identity annotation of each bucket contract
+                          that names an identity. An
+                          annotation set here wins over the operator annotation with the same
+                          key. With create false, the operator sets no annotation. Add them to
+                          the existing ServiceAccount yourself.
+                        type: object
+                      create:
+                        description: |-
+                          Create makes the operator create and own the ServiceAccount. Defaults
+                          to true. False names a ServiceAccount that already exists. The operator
+                          then does not create, annotate, or own it. If it does not exist, Ready
+                          reports InvalidReference, except on a suspended ElasticsearchCluster. The operator never takes ownership of a
+                          ServiceAccount that it did not create, because it deletes an owned one
+                          with the resource.
+                        type: boolean
+                      name:
+                        description: |-
+                          Name is the name of the ServiceAccount. When empty, the operator
+                          derives the name from the name of the resource, as the doc of each kind
+                          states. The cloud provider uses this name. A workload identity that
+                          needs no annotation, such as EKS Pod Identity, binds the principal
+                          system:serviceaccount:<namespace>:<name>.
+                        maxLength: 253
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                        type: string
+                    type: object
                   version:
                     description: |-
                       Version is the version of the connectors bundle image, as a full
@@ -5847,9 +5899,14 @@ spec:
                 type: object
               serviceAccount:
                 description: |-
-                  ServiceAccount configures the ServiceAccount of every workload. The
+                  ServiceAccount configures the ServiceAccount of every workload except
+                  the connectors, which connectors.serviceAccount configures. The
                   workloads get access to the buckets of backupStorageRef and
-                  documentStorageRef through this identity.
+                  documentStorageRef through this identity. The operator adds the
+                  identity annotation of each bucket that names one. When the
+                  annotations carry azure.workload.identity/client-id, the pods of these
+                  workloads, the backup Jobs included, get the label
+                  azure.workload.identity/use: "true".
                 properties:
                   annotations:
                     additionalProperties:
@@ -5858,11 +5915,12 @@ spec:
                       Annotations to set on the ServiceAccount that the operator creates.
                       Usually these are workload-identity annotations (IRSA, GCP Workload
                       Identity, and more) that give the pods access to cloud resources, such
-                      as the snapshot bucket for backups. The operator also adds the identity
-                      annotation of each bucket contract that names an identity. An annotation
-                      set here wins over the operator annotation with the same key. With
-                      create false, the operator sets no annotation. Add them to the existing
-                      ServiceAccount yourself.
+                      as the snapshot bucket for backups. When the doc of the field says so,
+                      the operator also adds the identity annotation of each bucket contract
+                      that names an identity. An
+                      annotation set here wins over the operator annotation with the same
+                      key. With create false, the operator sets no annotation. Add them to
+                      the existing ServiceAccount yourself.
                     type: object
                   create:
                     description: |-
@@ -7830,6 +7888,10 @@ spec:
             - message: zeebe.replicationFactor must not exceed zeebe.replicas
               rule: '!has(self.zeebe) || !has(self.zeebe.replicas) || !has(self.zeebe.replicationFactor)
                 || self.zeebe.replicationFactor <= self.zeebe.replicas'
+            - message: connectors.serviceAccount.name must differ from serviceAccount.name
+              rule: '!has(self.serviceAccount) || !has(self.serviceAccount.name) ||
+                !has(self.connectors) || !has(self.connectors.serviceAccount) || !has(self.connectors.serviceAccount.name)
+                || self.connectors.serviceAccount.name != self.serviceAccount.name'
           status:
             description: status defines the observed state of CamundaCluster
             properties:
@@ -7915,6 +7977,12 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              connectorsServiceAccountName:
+                description: |-
+                  ConnectorsServiceAccountName is the ServiceAccount that the connectors
+                  pods run under. It is empty when they run under the default account of
+                  the namespace, and when connectors are not enabled.
+                type: string
               endpoints:
                 description: |-
                   Endpoints lists the routes of this cluster, sorted by name: each path
@@ -8067,9 +8135,9 @@ spec:
               serviceAccountName:
                 description: |-
                   ServiceAccountName is the ServiceAccount that the pods of this cluster
-                  run under. It is empty when they run under the default account of the
-                  namespace. An extension that runs a pod for this cluster reads it and
-                  does not derive the name itself.
+                  run under, except the connectors. It is empty when they run under the
+                  default account of the namespace. An extension that runs a pod for
+                  this cluster reads it and does not derive the name itself.
                 type: string
               volumes:
                 description: |-
