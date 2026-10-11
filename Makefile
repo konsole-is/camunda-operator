@@ -549,6 +549,30 @@ helm-history: ## Show Helm release history.
 helm-rollback: ## Rollback to previous Helm release.
 	$(HELM) rollback $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
 
+##@ Fleet manager
+
+FLEET_DIR := fleet-manager
+# corepack reads packageManager from the package.json of the working
+# directory, so each recipe runs inside FLEET_DIR. Outside it, corepack runs
+# the latest pnpm, not the pinned one.
+FLEET_PNPM := cd $(FLEET_DIR) && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 NEXT_TELEMETRY_DISABLED=1 corepack pnpm
+
+.PHONY: fleet-install
+fleet-install: ## Install the fleet manager dependencies from the lockfile.
+	$(FLEET_PNPM) install --frozen-lockfile
+
+.PHONY: fleet-lint
+fleet-lint: fleet-install ## Run eslint, prettier --check, and tsc --noEmit on the fleet manager.
+	$(FLEET_PNPM) run lint
+
+.PHONY: fleet-test
+fleet-test: fleet-install ## Run the fleet manager tests with Vitest.
+	$(FLEET_PNPM) run test
+
+.PHONY: fleet-build
+fleet-build: fleet-install ## Build the fleet manager with next build.
+	$(FLEET_PNPM) run build
+
 ##@ Documentation
 
 .PHONY: docs-serve
