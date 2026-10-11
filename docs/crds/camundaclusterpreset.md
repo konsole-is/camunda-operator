@@ -178,7 +178,7 @@ spec:
       serviceAccount:
         # boolean. Optional, default: true. When false, the connectors ServiceAccount of each cluster must already exist.
         create: true
-        # map[string]string. Optional. Annotations on the ServiceAccount. Ignored when create is false.
+        # map[string]string. Optional. Annotations on the ServiceAccount. When create is false, the operator does not set them, but an Azure client ID among them still labels the connectors pods.
         annotations: {}
 ```
 

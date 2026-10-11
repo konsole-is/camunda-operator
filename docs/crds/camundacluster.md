@@ -585,6 +585,14 @@ status:
 
 `status.connectorsServiceAccountName` is the ServiceAccount that the connectors run under. It is empty for the default account of the namespace, and when connectors are not enabled.
 
+```yaml
+status:
+  # Empty when the pods run under the default ServiceAccount of the namespace.
+  serviceAccountName: my-cluster-camunda
+  # Set only with spec.connectors.serviceAccount. Empty when the connectors run under the default ServiceAccount.
+  connectorsServiceAccountName: my-cluster-connectors
+```
+
 `status.volumes` lists every bound broker volume, sorted by name, with its `name` and its `capacity`. `status.observedGeneration` is the last generation the operator reconciled.
 
 ### Routes
@@ -668,7 +676,7 @@ spec:
     name: "camunda-prod"
     # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it.
     create: true
-    # map[string]string. Optional. Annotations on the ServiceAccount. Ignored when create is false.
+    # map[string]string. Optional. Annotations on the ServiceAccount. When create is false, the operator does not set them, but an Azure client ID among them still labels the pods.
     annotations:
       eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-cluster-role"
   # object. Optional. OIDC client of this cluster and its administrators. Overrides the platform config and the preset.
@@ -786,7 +794,7 @@ spec:
       name: "my-cluster-connectors"
       # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it.
       create: true
-      # map[string]string. Optional. Annotations on the ServiceAccount. Ignored when create is false. The identities of the buckets are never added.
+      # map[string]string. Optional. Annotations on the ServiceAccount. When create is false, the operator does not set them, but an Azure client ID among them still labels the pods. The identities of the buckets are never added.
       annotations: {}
   # []EnvVar. Optional. Extra environment variables of every workload. A per-component entry with the same name wins.
   extraEnv: []
