@@ -29,4 +29,5 @@ func TestComponentValuesAreStable(t *testing.T) {
 
 	assert.Equal(t, "optimize-webapp", ComponentWebapp)
 	assert.Equal(t, "optimize-importer", ComponentImporter)
+	assert.Equal(t, "optimize-secrets", mirroredComponentName)
 }

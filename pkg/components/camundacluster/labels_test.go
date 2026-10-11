@@ -33,4 +33,6 @@ func TestComponentValuesAreStable(t *testing.T) {
 	assert.Equal(t, "tasklist", ComponentTasklist)
 	assert.Equal(t, "admin", ComponentAdmin)
 	assert.Equal(t, "connectors", ComponentConnectors)
+	assert.Equal(t, "admin-secret", adminComponentName)
+	assert.Equal(t, "mirrored-secrets", mirroredComponentName)
 }

@@ -39,8 +39,8 @@ The tables list the objects and the values that the promise covers. Other object
 
 | Owner | Values of `camunda.io/component` |
 | --- | --- |
-| `CamundaCluster` | `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, `connectors` |
-| `CamundaOptimize` | `optimize-webapp`, `optimize-importer` |
+| `CamundaCluster` | `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, `connectors`. On its Secrets: `admin-secret`, `mirrored-secrets` |
+| `CamundaOptimize` | `optimize-webapp`, `optimize-importer`. On its Secrets: `optimize-secrets` |
 | `ElasticsearchCluster` | `elasticsearch`, `elasticsearch-exporter` |
 | `DatabaseServer` | `postgres` |
 | `Database` | `database` |
