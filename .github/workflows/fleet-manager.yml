@@ -1,0 +1,38 @@
+name: Fleet manager
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - fleet-manager/**
+      - .github/workflows/fleet-manager.yml
+  pull_request:
+    paths:
+      - fleet-manager/**
+      - .github/workflows/fleet-manager.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fleet-manager:
+    name: Run on Ubuntu
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v7
+
+      # The engines field of fleet-manager/package.json pins the same version,
+      # and pnpm refuses to install with any other.
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: fleet-manager/.node-version
+
+      - name: Run the fleet manager linters
+        run: make fleet-lint
+      - name: Run the fleet manager tests
+        run: make fleet-test
+      - name: Build the fleet manager
+        run: make fleet-build
