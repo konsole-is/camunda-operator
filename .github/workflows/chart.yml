@@ -106,11 +106,12 @@ jobs:
         run: make helm-uninstall
 
       # crd.keep defaults to true, so CRDs must survive uninstall. The
-      # expected count is derived from the CRD bases in the checkout, so a
-      # PR that adds or removes a kind carries its own expectation.
+      # expected count is the number of CRD bases that the install
+      # kustomization lists, so a PR that installs a kind carries its own
+      # expectation. A CRD base that is not installed yet is not counted.
       - name: Verify CRDs survived uninstall
         run: |
-          expected=$(ls config/crd/bases/*.yaml | wc -l)
-          count=$(kubectl get crd -o name | grep -c 'core\.camunda\.io' || true)
+          expected=$(grep -c '^- bases/' config/crd/kustomization.yaml)
+          count=$(kubectl get crd -o name | grep -c '\.camunda\.io$' || true)
           echo "CRDs remaining: $count (expected $expected)"
           [ "$count" -eq "$expected" ] || { echo "expected $expected CRDs to be kept, found $count"; exit 1; }
