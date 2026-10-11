@@ -146,6 +146,13 @@ tester.run("no-server-only-in-client", rule, {
       errors: refused,
     },
     {
+      name: "an import of a .cts module by its .cjs name",
+      filename,
+      options,
+      code: client(`import { ledger } from "@/lib/ledger.cjs";`),
+      errors: refused,
+    },
+    {
       name: "an import of a .tsx module by its .jsx name",
       filename,
       options,

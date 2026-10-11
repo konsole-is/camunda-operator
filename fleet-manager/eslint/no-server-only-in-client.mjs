@@ -9,6 +9,7 @@ const SOURCE_EXTENSIONS = new Map([
   [".js", [".ts", ".tsx"]],
   [".jsx", [".tsx"]],
   [".mjs", [".mts"]],
+  [".cjs", [".cts"]],
 ]);
 
 /** @type {Map<string, { mtimeMs: number, serverOnly: boolean }>} */
