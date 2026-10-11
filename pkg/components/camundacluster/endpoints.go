@@ -29,7 +29,7 @@ import (
 // that runs the gateway: the gateway Service, or the client Service of the
 // brokers when the gateway is embedded. A web application names its own
 // Service when it runs standalone, otherwise the same Service. The
-// connectors entry is present only while connectors run.
+// connectors entry is present only while connectors are enabled.
 //
 // The routes ignore spec.suspend. They describe Services, and the Services
 // stay while the pods are at zero.

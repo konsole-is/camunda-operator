@@ -179,6 +179,7 @@ The Services stay stable, so clients find the cluster this way:
 | Service | Ports | Serves |
 | --- | --- | --- |
 | `<name>-gateway`, or `<name>-zeebe` when the gateway is `Embedded` | `26500` gRPC, `8080` HTTP | The gRPC API, the REST API under `/v2/`, and the embedded web applications under `/operate/`, `/tasklist/`, and `/admin/`. |
+| `<name>-zeebe-client`, only when the gateway is `Embedded` | `26500` gRPC, `8080` HTTP | The same APIs as `<name>-zeebe`, from ready brokers only. Route traffic from outside the cluster to this Service. |
 | `<name>-operate`, `<name>-tasklist`, `<name>-admin` | `8080` | The standalone web application. |
 | `<name>-connectors` | `8080` | The connectors runtime. |
 | Every Service of a unified process | `9600` | The management API: health, metrics, and backups. |

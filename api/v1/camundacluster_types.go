@@ -107,7 +107,7 @@ const (
 	// EndpointGRPC routes the gRPC API of the gateway.
 	EndpointGRPC = "grpc"
 	// EndpointConnectors routes the inbound webhooks of connectors under
-	// /inbound. It is present only while connectors run.
+	// /inbound. It is present only while spec.connectors.enabled is true.
 	EndpointConnectors = "connectors"
 )
 
