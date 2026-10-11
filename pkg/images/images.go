@@ -140,8 +140,8 @@ func override(p *v1.CamundaPlatformConfigSpec, img Image) string {
 	return ""
 }
 
-// DefaultRepository returns the repository that Camunda publishes img under at
-// version, or empty for an image that is not a constant of this package.
+// DefaultRepository returns the repository of img at version when spec.images
+// renames nothing, or empty for an image that is not a constant of this package.
 func DefaultRepository(img Image, version string) string {
 	if repo, ok := hubRepositories[img]; ok && atLeastMinor(version, 8, 10) {
 		return repo
