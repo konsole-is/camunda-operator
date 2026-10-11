@@ -325,11 +325,45 @@ On the RDBMS path, the backup credentials of the `DatabaseConfig` feed the dump 
 
 ## Workload identity
 
-The pods run under the default ServiceAccount of the namespace, unless the cluster needs an account of its own. The cluster gets one when `spec.serviceAccount` is set, or when a referenced bucket has no credentials Secret and authenticates through workload identity. That account is `<name>-camunda`, or `spec.serviceAccount.name`. `status.serviceAccountName` shows the account that the pods use.
+The pods of the cluster, except the connectors, run under the default ServiceAccount of the namespace, unless the cluster needs an account of its own. The cluster gets one when `spec.serviceAccount` is set, or when a referenced bucket has no credentials Secret and authenticates through workload identity. That account is `<name>-camunda`, or `spec.serviceAccount.name`. `status.serviceAccountName` shows the account that the pods use.
 
 When a referenced bucket names a workload identity, the operator puts the matching annotation on the ServiceAccount. [ObjectStorageConfig](objectstorageconfig.md#authentication) lists the annotations. An annotation in `spec.serviceAccount.annotations` wins over the derived one. A bucket without an identity block adds no annotation, and you bind the principal `system:serviceaccount:<namespace>:<name>-camunda` on the cloud side. Two buckets that name different identities of one cloud report `InvalidReference`.
 
 With `serviceAccount.create: false`, the operator does not create the ServiceAccount. It reports `InvalidReference` while the ServiceAccount does not exist.
+
+### Connectors
+
+The connectors never run under the ServiceAccount of the cluster, and the identities of the buckets never reach them. Process authors model the calls that the connectors make, so with the role of the cluster a process can read or delete backups. The connectors read documents through the REST API of the cluster, and Camunda says not to give them the document store role ([IAM Roles for Service Accounts](https://docs.camunda.io/docs/self-managed/deployment/helm/cloud-providers/amazon/amazon-eks/irsa/#document-store-s3)).
+
+Without `spec.connectors.serviceAccount`, the connectors run under the ServiceAccount `default` of the namespace. To give them a cloud role of their own, set the block:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  connectors:
+    enabled: true
+    version: "8.9.7"
+    serviceAccount:
+      annotations:
+        eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-cluster-connectors"
+  # ... the rest of your cluster
+```
+
+The connectors then run under `my-cluster-connectors`, or under `spec.connectors.serviceAccount.name`. That account carries only the annotations of the block. For an identity without an annotation, bind the principal `system:serviceaccount:<namespace>:<name>-connectors` on the cloud side. `status.connectorsServiceAccountName` shows the account.
+
+With `create: false`, `Ready` is `False` with reason `InvalidReference` while the account does not exist. When you create the account, the operator finds it by itself, without an edit to the cluster.
+
+The connectors account must not have the name of the cluster account. The API server rejects a spec in which `spec.connectors.serviceAccount.name` equals `spec.serviceAccount.name`. A connectors account named `<name>-camunda` sets `Ready` to `False` with reason `InvalidReference`.
+
+### Azure Workload ID
+
+On Azure, a pod needs the label `azure.workload.identity/use: "true"` as well as the annotation `azure.workload.identity/client-id` on its account. When `spec.serviceAccount.annotations` carry the client ID, the operator adds the label to every pod that runs under the cluster account, the backup Jobs included. When `spec.connectors.serviceAccount.annotations` carry it, the operator adds the label to the connectors pods only.
+
+The operator reads the annotations of the spec, not of the account. With `create: false`, the operator does not read the existing account. If that account carries the client ID, add the label `azure.workload.identity/use: "true"` through `podLabels` or `connectors.podLabels` yourself.
 
 ## Environment and JVM
 
@@ -511,7 +545,7 @@ Deleting the cluster removes every resource that the operator created for it, an
 | `Ready` | `Degraded` | A process is still not ready at the end of its grace period, but some of its replicas are ready. | Read the pods and events of the process that the message names. |
 | `Ready` | `Down` | A process is still not ready at the end of its grace period, and none of its replicas is ready. | Read the pods and events of the process that the message names. |
 | `Ready` | `Suspended` / `SuspensionHeld` / `StorageAlreadyAttached` / `WaitingForHandover` | Every workload is at zero. Only `Suspended` has `Ready: True`. | See [Why the cluster is at zero replicas](#why-the-cluster-is-at-zero-replicas). |
-| `Ready` | `InvalidReference` | A referenced resource does not exist, or the merged spec is invalid. Other causes are an absent ServiceAccount with `create: false`, two conflicting buckets, a shared Azure container, or a missing snapshot repository. A running cluster keeps its workloads. | Read the message. Create the missing resource or correct the named field. |
+| `Ready` | `InvalidReference` | A referenced resource does not exist, or the merged spec is invalid. Other causes are an absent ServiceAccount with `create: false`, two conflicting buckets, a shared Azure container, or a missing snapshot repository. A connectors ServiceAccount with the name of the cluster ServiceAccount is a cause too. A running cluster keeps its workloads. | Read the message. Create the missing resource or correct the named field. |
 | `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. A running cluster keeps its workloads. | Create the Secret with the named key. |
 | `Ready` | `VersionDowngradeRefused` | The effective version is below the version that the brokers run, and no annotation sanctions the move. The operator applies nothing. | Set the version forward again, or [downgrade on purpose](#downgrade-on-purpose). |
 | `Ready` | `VersionSkipRefused` | The effective version is more than one minor above the version that the brokers run. The operator applies nothing. | Move one minor at a time. Set the version to the latest patch of the next minor first, see [A skipped minor is refused](#a-skipped-minor-is-refused). |
@@ -547,7 +581,9 @@ status:
 
 `status.adminPassword.rotation` is the last `passwordRotation` value that the operator applied, after the preset merge. A rotation is in progress while the effective value is not empty and differs from it. A cluster that inherits the value from its preset has none in its own spec, so compare the preset value with the status.
 
-`status.serviceAccountName` is the ServiceAccount that the pods run under, or empty for the default account of the namespace. A backup Job runs under the same account.
+`status.serviceAccountName` is the ServiceAccount that the pods run under, except the connectors, or empty for the default account of the namespace. A backup Job runs under the same account.
+
+`status.connectorsServiceAccountName` is the ServiceAccount that the connectors run under. It is empty for the default account of the namespace, and when connectors are not enabled.
 
 `status.volumes` lists every bound broker volume, sorted by name, with its `name` and its `capacity`. `status.observedGeneration` is the last generation the operator reconciled.
 
@@ -626,7 +662,7 @@ spec:
   version: "8.9.0"
   # string. Optional. External base URL of the cluster, for OIDC redirect URLs and web application links.
   externalUrl: "https://my-cluster.camunda.example.com"
-  # object. Optional. ServiceAccount of every workload pod. See Workload identity.
+  # object. Optional. ServiceAccount of every workload pod except the connectors. See Workload identity.
   serviceAccount:
     # string. Optional, default: <name>-camunda. Name of the ServiceAccount.
     name: "camunda-prod"
@@ -744,6 +780,14 @@ spec:
     enabled: true
     # string. Required when enabled, unless the release provides it. Version of the connectors bundle image as x.y.z.
     version: "8.9.7"
+    # object. Optional. ServiceAccount of the connectors pods. Without it, they run under the default ServiceAccount of the namespace. See Workload identity.
+    serviceAccount:
+      # string. Optional, default when the block is set: <name>-connectors. Name of the ServiceAccount. Must differ from serviceAccount.name.
+      name: "my-cluster-connectors"
+      # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it.
+      create: true
+      # map[string]string. Optional. Annotations on the ServiceAccount. Ignored when create is false. The identities of the buckets are never added.
+      annotations: {}
   # []EnvVar. Optional. Extra environment variables of every workload. A per-component entry with the same name wins.
   extraEnv: []
   # []EnvFromSource. Optional. Extra environment sources of every workload.
@@ -829,6 +873,7 @@ The API server enforces these rules at admission:
 - `spec.zeebe.storageClassName` is immutable.
 - A new inline `spec.zeebe.storageSize` cannot be smaller than the inline value it replaces.
 - `spec.zeebe.replicationFactor` must not exceed `spec.zeebe.replicas`.
+- `spec.connectors.serviceAccount.name` must differ from `spec.serviceAccount.name`.
 - `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` is `Delete` or `Retain`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both.
 - `spec.auth.basic.adminEmail` is empty or an address with a dot in its domain.

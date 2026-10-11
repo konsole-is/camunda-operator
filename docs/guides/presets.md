@@ -56,7 +56,7 @@ spec:
 
 The broker count, the partitions, the volumes, the connectors, the backup policy, and the administrators all come from the preset `medium`. The versions come from the release `camunda-8-9-4`. The authentication method and the identity provider come from the platform config `production`.
 
-A cluster sets the fields that belong to it alone: the references, the URL, the ServiceAccount, monitoring, `suspend`, and `pause`. The API server rejects a preset that sets one of them, or that sets `version` or `connectors.version`. The [validation rules](../crds/camundaclusterpreset.md#validation-rules) list them.
+A cluster sets the fields that belong to it alone: the references, the URL, the ServiceAccount, monitoring, `suspend`, and `pause`. The name of the connectors ServiceAccount also belongs to the cluster alone. The API server rejects a preset that sets one of them, or that sets `version` or `connectors.version`. The [validation rules](../crds/camundaclusterpreset.md#validation-rules) list them. A preset can set the annotations of `connectors.serviceAccount`, so every cluster on it gives its connectors the same role settings.
 
 An `ElasticsearchCluster` works the same way. The instance-bound fields are `presetRef`, `releaseRef`, `secondaryStorageConfig`, and `suspend`:
 

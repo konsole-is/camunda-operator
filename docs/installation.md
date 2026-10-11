@@ -56,7 +56,7 @@ The [chart README](https://github.com/konsole-is/camunda-operator/blob/main/dist
 | `crd.enabled` | `true` | Install the CRDs with the chart. Set `false` to manage them yourself (below). |
 | `certManager.enabled` | `false` | Make the `ServiceMonitor` verify the metrics endpoint with the certificate in the Secret `metrics-server-cert`. The chart does not create that Secret. |
 
-To pull from a mirror, set `manager.image.repository` and `manager.cliImage.repository`, and put the pull Secret in `manager.imagePullSecrets`. That Secret applies to the manager Pod only, not to the Jobs that run the CLI image. Those Jobs and the Camunda pods run under the ServiceAccount of their `CamundaCluster`. Add the pull Secret to the `imagePullSecrets` of that ServiceAccount, see [Workload identity](crds/camundacluster.md#workload-identity). The [chart README](https://github.com/konsole-is/camunda-operator/blob/main/dist/chart/README.md) lists these values.
+To pull from a mirror, set `manager.image.repository` and `manager.cliImage.repository`, and put the pull Secret in `manager.imagePullSecrets`. That Secret applies to the manager Pod only, not to the Jobs that run the CLI image. Those Jobs and the Camunda pods run under the ServiceAccount of their `CamundaCluster`. The connectors run under their own ServiceAccount, or under the ServiceAccount `default` of the namespace. Add the pull Secret to the `imagePullSecrets` of each of these ServiceAccounts, see [Workload identity](crds/camundacluster.md#workload-identity). The [chart README](https://github.com/konsole-is/camunda-operator/blob/main/dist/chart/README.md) lists these values.
 
 Example:
 
@@ -166,6 +166,26 @@ Without `--set` or `-f`, Helm keeps the values of the last release. If you pass 
 The CRDs carry the annotation `helm.sh/resource-policy: keep`. Helm updates them in place and never deletes them.
 
 To upgrade a manifest install, apply the `install.yaml` of the new release with `--server-side`, as in [Install without Helm](#install-without-helm). Make the same mirror edits again before you apply.
+
+### Connectors no longer use the cluster ServiceAccount
+
+From this release, the connectors of a `CamundaCluster` run under the default ServiceAccount of the namespace. Before, they ran under the ServiceAccount of the cluster and got its cloud role. If a connector of yours uses that role, set `spec.connectors.serviceAccount` right after you upgrade the operator. An AWS connector with the default credentials chain is an example. Give the connectors a role of their own, not the role of the cluster:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  connectors:
+    serviceAccount:
+      annotations:
+        eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-cluster-connectors"
+  # ... the rest of your cluster
+```
+
+The connectors pods restart once after the upgrade, and again when you set the block. For an identity without an annotation, such as EKS Pod Identity, bind the new principal `system:serviceaccount:my-cluster-ns:my-cluster-connectors` on the cloud side. See [Workload identity](crds/camundacluster.md#workload-identity).
 
 ## Uninstall
 
