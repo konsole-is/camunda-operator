@@ -139,6 +139,13 @@ tester.run("no-server-only-in-client", rule, {
       errors: refused,
     },
     {
+      name: "an extensionless import that Next.js resolves to .tsx before a same-stem .ts",
+      filename,
+      options,
+      code: client(`import { order } from "@/lib/order";`),
+      errors: refused,
+    },
+    {
       name: "an import of a .tsx module by its .jsx name",
       filename,
       options,

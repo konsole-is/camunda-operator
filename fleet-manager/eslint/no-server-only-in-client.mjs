@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 const SERVER_ONLY_MARKER = /^import\s*(["'])server-only\1/;
-const EXTENSIONS = [".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs"];
+// The order in which Next.js tries extensions, then .mts.
+const EXTENSIONS = [".tsx", ".ts", ".jsx", ".js", ".mjs", ".mts"];
 // TypeScript ESM code names a source file by the extension it compiles to.
 const SOURCE_EXTENSIONS = new Map([
   [".js", [".ts", ".tsx"]],
