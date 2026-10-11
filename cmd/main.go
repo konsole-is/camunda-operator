@@ -489,3 +489,5 @@ func podNamespace() string {
 
 	return strings.TrimSpace(string(content))
 }
+
+// path filter probe
