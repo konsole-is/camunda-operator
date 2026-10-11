@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const SERVER_ONLY_MARKER = /^import\s*(["'])server-only\1/;
-const EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs"];
+const EXTENSIONS = [".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs"];
 
 /** @type {Map<string, { mtimeMs: number, serverOnly: boolean }>} */
 const markerCache = new Map();
@@ -38,8 +38,8 @@ function startsWithServerOnly(file) {
 
 /** @param {string} base */
 function resolveModuleFile(base) {
-  // TypeScript ESM code can name "./x.js" for the source file "./x.ts".
-  const stem = base.replace(/\.js$/, "");
+  // TypeScript ESM code names "./x.js" for "./x.ts" and "./x.mjs" for "./x.mts".
+  const stem = base.replace(/\.m?js$/, "");
   const candidates = [
     base,
     ...EXTENSIONS.map((ext) => stem + ext),
@@ -99,7 +99,7 @@ const rule = {
   create(context) {
     if (!isClientFile(context.sourceCode.ast)) return {};
     const { srcDir } = context.options[0];
-    const libDir = path.join(srcDir, "lib") + path.sep;
+    const libDir = path.join(srcDir, "lib");
     const fromDir = path.dirname(context.filename);
 
     /**
@@ -111,7 +111,8 @@ const rule = {
       let base;
       if (source.startsWith("@/")) base = path.join(srcDir, source.slice(2));
       else if (source.startsWith(".")) base = path.resolve(fromDir, source);
-      if (!base?.startsWith(libDir)) return;
+      if (!base) return;
+      if (base !== libDir && !base.startsWith(libDir + path.sep)) return;
       const file = resolveModuleFile(base);
       if (file && startsWithServerOnly(file)) {
         context.report({

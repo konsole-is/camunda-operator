@@ -127,5 +127,33 @@ tester.run("no-server-only-in-client", rule, {
       code: `'use client';\nimport { secretName } from "@/lib/secrets";\n`,
       errors: refused,
     },
+    {
+      name: "an alias import of the src/lib index",
+      filename,
+      options,
+      code: client(`import { secretName } from "@/lib";`),
+      errors: refused,
+    },
+    {
+      name: "a relative import of the src/lib index",
+      filename,
+      options,
+      code: client(`import { secretName } from "../lib";`),
+      errors: refused,
+    },
+    {
+      name: "an import of an .mts module without an extension",
+      filename,
+      options,
+      code: client(`import { vault } from "@/lib/vault";`),
+      errors: refused,
+    },
+    {
+      name: "an import of an .mts module by its .mjs name",
+      filename,
+      options,
+      code: client(`import { vault } from "@/lib/vault.mjs";`),
+      errors: refused,
+    },
   ],
 });
