@@ -781,7 +781,8 @@ func TestBackupEnvOmitsTheRegionWithoutAnEndpointOrARegion(t *testing.T) {
 // The pods of a cluster run under a named ServiceAccount only when something
 // binds one: the spec names an account, or a referenced bucket authenticates
 // through workload identity. PodServiceAccountName is the one answer to that
-// question, and every rendered pod carries exactly that answer.
+// question, and every rendered pod except the connectors carries exactly that
+// answer.
 func TestPodServiceAccountName(t *testing.T) {
 	tests := []struct {
 		name string
@@ -849,6 +850,10 @@ func TestPodServiceAccountName(t *testing.T) {
 			comps, err := Build(in)
 			require.NoError(t, err)
 			for _, pc := range comps {
+				if pc.Process.Component == ComponentConnectors {
+					// The connectors run under an account of their own.
+					continue
+				}
 				assert.Equal(
 					t,
 					tt.want,

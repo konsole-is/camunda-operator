@@ -43,8 +43,9 @@ const (
 	// MutationPodMetadata adds the user pod labels and annotations of the
 	// cluster and the component block; a discovery label always wins.
 	MutationPodMetadata = "PodMetadata"
-	// MutationServiceAccount names the ServiceAccount of the cluster on the
-	// pods when spec.serviceAccount is set.
+	// MutationServiceAccount names the ServiceAccount of the pods: the
+	// account of the cluster, or the account of the connectors for the
+	// connectors process.
 	MutationServiceAccount = "ServiceAccount"
 	// MutationVolumeRetention keeps the broker volumes on deletion when
 	// spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted is Retain.
@@ -101,6 +102,7 @@ func workloadMutations(in Input, p Process) []workloadMutation {
 
 	userLabels := labels.Merge(e.PodLabels, workload.PodLabels)
 	userAnnotations := labels.Merge(e.PodAnnotations, workload.PodAnnotations)
+	account := podServiceAccountName(in, p)
 
 	return []workloadMutation{
 		{
@@ -147,10 +149,10 @@ func workloadMutations(in Input, p Process) []workloadMutation {
 		},
 		{
 			Name:    MutationServiceAccount,
-			Feature: feature.NewBooleanGate(usesServiceAccount(in)),
+			Feature: feature.NewBooleanGate(account != ""),
 			Mutate: func(m primitives.WorkloadMutator) error {
 				m.EditPodSpec(func(spec *editors.PodSpecEditor) error {
-					spec.SetServiceAccountName(ServiceAccountName(in.Cluster, in.Effective))
+					spec.SetServiceAccountName(account)
 					return nil
 				})
 				return nil
@@ -158,6 +160,16 @@ func workloadMutations(in Input, p Process) []workloadMutation {
 		},
 		trustStoreMutation(in, p),
 	}
+}
+
+// podServiceAccountName returns the ServiceAccount that the pods of p run
+// under, or the empty string for the default account of the namespace.
+func podServiceAccountName(in Input, p Process) string {
+	if p.Component == ComponentConnectors {
+		return PodConnectorsServiceAccountName(in)
+	}
+
+	return PodServiceAccountName(in)
 }
 
 // deploymentMutations returns the workload mutations of a Deployment-backed

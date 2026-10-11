@@ -58,7 +58,13 @@ func TestMutationsAreGatedOffWithoutOverrides(t *testing.T) {
 		assert.Empty(t, template.Spec.Containers[0].Resources, pc.Process.Component)
 		assert.Nil(t, template.Spec.Affinity, pc.Process.Component)
 		assert.Empty(t, template.Spec.Tolerations, pc.Process.Component)
-		assert.Empty(t, template.Spec.ServiceAccountName, pc.Process.Component)
+		// The connectors name the default account in the base workload, so
+		// that an apply moves them off an account they ran under before.
+		wantAccount := ""
+		if pc.Process.Component == ComponentConnectors {
+			wantAccount = "default"
+		}
+		assert.Equal(t, wantAccount, template.Spec.ServiceAccountName, pc.Process.Component)
 		assert.Equal(
 			t,
 			labels.Merge(
