@@ -75,3 +75,30 @@ type VolumeStatus struct {
 	// Capacity is the storage capacity that the bound claim reports.
 	Capacity resource.Quantity `json:"capacity"`
 }
+
+// Endpoint is one route that a resource needs: a path on the external URL
+// and the Service and port that serve it.
+type Endpoint struct {
+	// Name identifies the route, for example operate or grpc.
+	Name string `json:"name"`
+	// Service is the name of a Service in the namespace of the resource.
+	Service string `json:"service"`
+	// Port is the port of the Service.
+	Port int32 `json:"port"`
+	// PathPrefix is the path that the route matches. It is empty for gRPC.
+	// +optional
+	PathPrefix string `json:"pathPrefix,omitempty"`
+	// Protocol is HTTP or GRPC.
+	Protocol EndpointProtocol `json:"protocol"`
+}
+
+// EndpointProtocol is the protocol of a route.
+// +kubebuilder:validation:Enum=HTTP;GRPC
+type EndpointProtocol string
+
+const (
+	// EndpointProtocolHTTP is a route for HTTP traffic, matched by path prefix.
+	EndpointProtocolHTTP EndpointProtocol = "HTTP"
+	// EndpointProtocolGRPC is a route for gRPC traffic. It has no path prefix.
+	EndpointProtocolGRPC EndpointProtocol = "GRPC"
+)

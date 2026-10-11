@@ -547,6 +547,7 @@ _Appears in:_
 | `volumes` _[VolumeStatus](#volumestatus) array_ | Volumes lists the bound broker PersistentVolumeClaims and the capacity<br />that each one reports, sorted by name. |  | Optional: \{\} <br /> |
 | `management` _[ManagementBinding](#managementbinding)_ | Management is the published address of the management API of this<br />cluster. Extensions read it and do not derive the Service name, the<br />port, and the authentication themselves. It is unset while the cluster<br />is suspended, so a consumer does not use an old endpoint. |  | Optional: \{\} <br /> |
 | `gateway` _[GatewayBinding](#gatewaybinding)_ | Gateway is the published address of the client APIs of this cluster.<br />Extensions read it and do not derive the Service name and the ports<br />themselves. It is unset while the cluster is suspended, so a consumer<br />does not use an old endpoint. |  | Optional: \{\} <br /> |
+| `endpoints` _[Endpoint](#endpoint) array_ | Endpoints lists the routes of this cluster, sorted by name: each path<br />on the external URL, with the Service and the port that serve it. An<br />access extension reads it and does not derive a Service from the mode<br />fields. The longest matching path prefix wins, and default takes every<br />path that no other entry names. The entries stay while the cluster is<br />suspended, because the Services stay. |  | Optional: \{\} <br /> |
 | `adminPassword` _[AdminPasswordStatus](#adminpasswordstatus)_ | AdminPassword is the state of the admin credential of a basic-auth<br />cluster. It is unset under OIDC. |  | Optional: \{\} <br /> |
 | `serviceAccountName` _string_ | ServiceAccountName is the ServiceAccount that the pods of this cluster<br />run under. It is empty when they run under the default account of the<br />namespace. An extension that runs a pod for this cluster reads it and<br />does not derive the name itself. |  | Optional: \{\} <br /> |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions represent the current state. Ready holds the reason of a<br />failed pre-check, or it follows the conditions of the components that<br />the cluster needs. The per-process conditions (ZeebeReady, GatewayReady,<br />OperateReady, TasklistReady, AdminReady, ConnectorsReady) also appear<br />here. |  | Optional: \{\} <br /> |
@@ -1650,6 +1651,45 @@ _Appears in:_
 | `caSecretRef` _[LocalSecretKeyRef](#localsecretkeyref)_ | CASecretRef names the CA bundle that consumers use to verify the TLS<br />certificate of the endpoint. Set it when a well-known CA did not sign<br />the certificate of the endpoint. An example is the self-signed<br />certificate of a cluster that ECK runs. Omit it for an endpoint with a<br />publicly trusted certificate. It is valid only with an https endpoint. |  | Optional: \{\} <br /> |
 | `snapshotRepository` _string_ | SnapshotRepository names the snapshot repository in this Elasticsearch<br />cluster that backups write to. An ElasticsearchCluster with a<br />snapshotStorageRef registers the repository and sets this field in the<br />contract that it publishes. For an Elasticsearch cluster that this<br />operator does not manage, register the repository yourself and then<br />set this field. A cluster that takes backups needs it. Without it, the<br />backup components have no place to write. The name is part of a URL<br />path of the Elasticsearch API, so it permits only a small set of<br />characters. |  | MaxLength: 253 <br />Pattern: `^[a-zA-Z0-9][a-zA-Z0-9._-]*$` <br />Optional: \{\} <br /> |
 | `nodeCount` _integer_ | NodeCount is the number of data nodes of the Elasticsearch cluster. An<br />ElasticsearchCluster sets it in the contract that it publishes. For an<br />Elasticsearch cluster that this operator does not manage, set it<br />yourself.<br />A consumer that sets no index replica count of its own gets 0 replicas<br />on one node and 1 replica on two or more nodes. Without a node count,<br />the consumer keeps the default of the Camunda application. |  | Minimum: 1 <br />Optional: \{\} <br /> |
+
+
+#### Endpoint
+
+
+
+Endpoint is one route that a resource needs: a path on the external URL
+and the Service and port that serve it.
+
+
+
+_Appears in:_
+- [CamundaClusterStatus](#camundaclusterstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name identifies the route, for example operate or grpc. |  |  |
+| `service` _string_ | Service is the name of a Service in the namespace of the resource. |  |  |
+| `port` _integer_ | Port is the port of the Service. |  |  |
+| `pathPrefix` _string_ | PathPrefix is the path that the route matches. It is empty for gRPC. |  | Optional: \{\} <br /> |
+| `protocol` _[EndpointProtocol](#endpointprotocol)_ | Protocol is HTTP or GRPC. |  | Enum: [HTTP GRPC] <br /> |
+
+
+#### EndpointProtocol
+
+_Underlying type:_ _string_
+
+EndpointProtocol is the protocol of a route.
+
+_Validation:_
+- Enum: [HTTP GRPC]
+
+_Appears in:_
+- [Endpoint](#endpoint)
+
+| Field | Description |
+| --- | --- |
+| `HTTP` | EndpointProtocolHTTP is a route for HTTP traffic, matched by path prefix.<br /> |
+| `GRPC` | EndpointProtocolGRPC is a route for gRPC traffic. It has no path prefix.<br /> |
 
 
 #### ExporterSpec

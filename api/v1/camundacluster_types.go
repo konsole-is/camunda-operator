@@ -91,6 +91,26 @@ const (
 	ComponentModeEmbedded ComponentMode = "Embedded"
 )
 
+// The names of the entries of status.endpoints of a CamundaCluster.
+const (
+	// EndpointDefault routes every path that no other entry names, for
+	// example the login and the OIDC callback.
+	EndpointDefault = "default"
+	// EndpointREST routes the orchestration cluster REST API under /v2.
+	EndpointREST = "rest"
+	// EndpointOperate routes Operate under /operate.
+	EndpointOperate = "operate"
+	// EndpointTasklist routes Tasklist under /tasklist.
+	EndpointTasklist = "tasklist"
+	// EndpointAdmin routes Admin under /admin.
+	EndpointAdmin = "admin"
+	// EndpointGRPC routes the gRPC API of the gateway.
+	EndpointGRPC = "grpc"
+	// EndpointConnectors routes the inbound webhooks of connectors under
+	// /inbound. It is present only while connectors run.
+	EndpointConnectors = "connectors"
+)
+
 // WorkloadSpec holds the settings of one process: the size, the environment,
 // the pod metadata, and the scheduling. Every component block of a
 // CamundaCluster uses it, and so does each workload of a CamundaOptimize.
@@ -557,6 +577,16 @@ type CamundaClusterStatus struct {
 	// does not use an old endpoint.
 	// +optional
 	Gateway *GatewayBinding `json:"gateway,omitempty"`
+	// Endpoints lists the routes of this cluster, sorted by name: each path
+	// on the external URL, with the Service and the port that serve it. An
+	// access extension reads it and does not derive a Service from the mode
+	// fields. The longest matching path prefix wins, and default takes every
+	// path that no other entry names. The entries stay while the cluster is
+	// suspended, because the Services stay.
+	// +listType=map
+	// +listMapKey=name
+	// +optional
+	Endpoints []Endpoint `json:"endpoints,omitempty"`
 	// AdminPassword is the state of the admin credential of a basic-auth
 	// cluster. It is unset under OIDC.
 	// +optional
