@@ -220,4 +220,43 @@ var _ = Describe("CamundaCluster ServiceAccount release", func() {
 			g.Expect(account.ResourceVersion).To(Equal(created.ResourceVersion))
 		}, 2*time.Second, interval).Should(Succeed())
 	})
+
+	// The derived name belongs to the operator, which deletes an account of
+	// that name while the cluster uses none. Connectors that name it as an
+	// account of the user lose it, so the cluster refuses them before it
+	// applies anything.
+	DescribeTable(
+		"refuses connectors that name the reserved cluster account",
+		func(enabled bool) {
+			ns := newNamespace()
+			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			key := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-camunda"}
+			Expect(k8sClient.Create(ctx, &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: key.Name},
+			})).To(Succeed())
+			var created corev1.ServiceAccount
+			Expect(k8sClient.Get(ctx, key, &created)).To(Succeed())
+
+			cluster.Spec.Connectors = &v1.ConnectorsSpec{
+				Enabled:        new(enabled),
+				Version:        "8.9.7",
+				ServiceAccount: &v1.ServiceAccountSpec{Name: key.Name, Create: new(false)},
+			}
+			createCluster(cluster)
+			expectReady(
+				cluster,
+				metav1.ConditionFalse,
+				Equal(v1.ReasonInvalidReference),
+				ContainSubstring("reserved"),
+			)
+
+			Consistently(func(g Gomega) {
+				var account corev1.ServiceAccount
+				g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+				g.Expect(account.UID).To(Equal(created.UID))
+			}, 2*time.Second, interval).Should(Succeed())
+		},
+		Entry("with connectors enabled", true),
+		Entry("with connectors disabled", false),
+	)
 })
