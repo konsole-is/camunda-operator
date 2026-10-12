@@ -470,6 +470,8 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				gateway:       deploymentAccountHash(gateway),
 				connectorsKey: deploymentAccountHash(connectorsKey),
 			}
+			var connectorsBefore appsv1.Deployment
+			Expect(k8sClient.Get(ctx, connectorsKey, &connectorsBefore)).To(Succeed())
 
 			updateCluster(cluster, func(c *v1.CamundaCluster) {
 				c.Spec.ServiceAccount.Annotations[v1.IRSARoleARNAnnotation] = "arn:aws:iam::123456789012:role/new"
@@ -496,7 +498,11 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				v1.IRSARoleARNAnnotation, "arn:aws:iam::123456789012:role/new",
 			))
 
-			Expect(deploymentAccountHash(connectorsKey)).To(Equal(before[connectorsKey]))
+			Consistently(func(g Gomega) {
+				var connectorsNow appsv1.Deployment
+				g.Expect(k8sClient.Get(ctx, connectorsKey, &connectorsNow)).To(Succeed())
+				g.Expect(connectorsNow.Spec.Template).To(Equal(connectorsBefore.Spec.Template))
+			}, 2*time.Second, interval).Should(Succeed())
 		})
 	})
 

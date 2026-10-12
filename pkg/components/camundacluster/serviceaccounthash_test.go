@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -40,6 +41,17 @@ func accountHashes(t *testing.T, in Input) map[string]string {
 		hashes[process] = template.Annotations[ServiceAccountHashAnnotation]
 	}
 	return hashes
+}
+
+// podTemplates returns the pod template of each process, keyed by process.
+func podTemplates(t *testing.T, in Input) map[string]corev1.PodTemplateSpec {
+	t.Helper()
+
+	templates := map[string]corev1.PodTemplateSpec{}
+	for _, process := range append([]string{ComponentConnectors}, clusterProcesses...) {
+		templates[process] = previewedPodTemplate(t, renderedObjects(t, in, process))
+	}
+	return templates
 }
 
 // separatedInput is connectorsInput with each web application in a
@@ -75,15 +87,20 @@ func TestClusterAccountAnnotationChangeRollsTheClusterPods(t *testing.T) {
 
 	connectors := map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/connectors"}
 	old := map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/old"}
-	updated := map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/new"}
-	before := accountHashes(t, annotatedAccounts(t, old, connectors))
-	after := accountHashes(t, annotatedAccounts(t, updated, connectors))
+	updated := map[string]string{v1.AzureClientIDAnnotation: "cluster-client"}
+	before := podTemplates(t, annotatedAccounts(t, old, connectors))
+	after := podTemplates(t, annotatedAccounts(t, updated, connectors))
 
 	for _, process := range clusterProcesses {
-		require.NotEmpty(t, before[process], process)
-		assert.NotEqual(t, before[process], after[process], process)
+		require.NotEmpty(t, before[process].Annotations[ServiceAccountHashAnnotation], process)
+		assert.NotEqual(
+			t,
+			before[process].Annotations[ServiceAccountHashAnnotation],
+			after[process].Annotations[ServiceAccountHashAnnotation],
+			process,
+		)
 	}
-	assert.Equal(t, before[ComponentConnectors], after[ComponentConnectors])
+	assert.Equal(t, before[ComponentConnectors], after[ComponentConnectors], "the connectors must not roll")
 }
 
 // A bucket that changes the identity it derives changes the cluster account
@@ -108,14 +125,18 @@ func TestConnectorsAccountAnnotationChangeRollsTheConnectorsOnly(t *testing.T) {
 
 	cluster := map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/camunda"}
 	old := map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/old"}
-	updated := map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/new"}
-	before := accountHashes(t, annotatedAccounts(t, cluster, old))
-	after := accountHashes(t, annotatedAccounts(t, cluster, updated))
+	updated := map[string]string{v1.AzureClientIDAnnotation: "connectors-client"}
+	before := podTemplates(t, annotatedAccounts(t, cluster, old))
+	after := podTemplates(t, annotatedAccounts(t, cluster, updated))
 
-	require.NotEmpty(t, before[ComponentConnectors])
-	assert.NotEqual(t, before[ComponentConnectors], after[ComponentConnectors])
+	require.NotEmpty(t, before[ComponentConnectors].Annotations[ServiceAccountHashAnnotation])
+	assert.NotEqual(
+		t,
+		before[ComponentConnectors].Annotations[ServiceAccountHashAnnotation],
+		after[ComponentConnectors].Annotations[ServiceAccountHashAnnotation],
+	)
 	for _, process := range clusterProcesses {
-		assert.Equal(t, before[process], after[process], process)
+		assert.Equal(t, before[process], after[process], "%s must not roll", process)
 	}
 }
 
@@ -130,9 +151,9 @@ func TestServiceAccountHashIsStable(t *testing.T) {
 	}
 	in := annotatedAccounts(t, annotations, annotations)
 
-	first := accountHashes(t, in)
+	first := podTemplates(t, in)
 	for range 20 {
-		assert.Equal(t, first, accountHashes(t, in))
+		assert.Equal(t, first, podTemplates(t, in))
 	}
 }
 
