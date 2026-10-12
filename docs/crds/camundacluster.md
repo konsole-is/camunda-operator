@@ -854,7 +854,7 @@ spec:
       extraEnvFrom: []
       # map[string]string. Optional. Extra labels of the dump pod.
       podLabels: {}
-      # map[string]string. Optional. Extra annotations of the dump pod. Turn a service-mesh sidecar off here, or the Job never completes. The keys `camunda.io/config-hash` and `camunda.io/service-account-hash` belong to the operator, and a value for them does not reach the pods.
+      # map[string]string. Optional. Extra annotations of the dump pod. Turn a service-mesh sidecar off here, or the Job never completes.
       podAnnotations:
         sidecar.istio.io/inject: "false"
       # object. Optional. Scheduling constraints of the dump pod. Replaces the preset block entirely.
@@ -873,7 +873,7 @@ spec:
       enabled: true
       # map[string]string. Optional. Extra labels of every ServiceMonitor.
       labels: {}
-      # map[string]string. Optional. Extra annotations of every ServiceMonitor. The keys `camunda.io/config-hash` and `camunda.io/service-account-hash` belong to the operator, and a value for them does not reach the pods.
+      # map[string]string. Optional. Extra annotations of every ServiceMonitor.
       annotations: {}
   # boolean. Optional, default: false. Scales every workload to zero and keeps the data.
   suspend: false
