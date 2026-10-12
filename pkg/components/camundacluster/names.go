@@ -251,10 +251,9 @@ func ConnectorsServiceAccountName(cluster *v1.CamundaCluster, e Effective) strin
 // default account. Two owners of one account would fight over it, and the
 // connectors would get the cluster identity.
 //
-// It also returns an error, with connectors on or off, when
+// It also returns an error, connectors on or off, when
 // connectors.serviceAccount names the derived cluster account with create
-// false while PodServiceAccountName is empty. That name is reserved for the
-// operator: without this error, the reconcile deletes the account.
+// false and PodServiceAccountName is empty. The operator reserves that name.
 func CheckConnectorsServiceAccount(in Input) error {
 	account := in.Effective.ConnectorsServiceAccount()
 	if account != nil && !account.Creates() && PodServiceAccountName(in) == "" &&
