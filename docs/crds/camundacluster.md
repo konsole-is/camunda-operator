@@ -327,7 +327,7 @@ On the RDBMS path, the backup credentials of the `DatabaseConfig` feed the dump 
 
 The pods of the cluster, except the connectors, run under the default ServiceAccount of the namespace, unless the cluster needs an account of its own. The cluster gets one when `spec.serviceAccount` is set, or when a referenced bucket has no credentials Secret and authenticates through workload identity. That account is `<name>-camunda`, or `spec.serviceAccount.name`. `status.serviceAccountName` shows the account that the pods use.
 
-The name `<name>-camunda` belongs to the operator. While neither the cluster nor its preset sets `spec.serviceAccount` and no referenced bucket uses workload identity, the operator deletes a ServiceAccount of that name. It deletes one that you created too. Give an account of your own another name.
+The name `<name>-camunda` belongs to the operator. While neither the cluster nor its preset sets `spec.serviceAccount` and no referenced bucket uses workload identity, the operator deletes a ServiceAccount of that name. It deletes one that you created too. Give an account of your own another name. Connectors that name the account with `create: false` are refused, and the account stays, see [Connectors](#connectors).
 
 When a referenced bucket names a workload identity, the operator puts the matching annotation on the ServiceAccount. [ObjectStorageConfig](objectstorageconfig.md#authentication) lists the annotations. An annotation in `spec.serviceAccount.annotations` wins over the derived one. A bucket without an identity block adds no annotation, and you bind the principal `system:serviceaccount:<namespace>:<name>-camunda` on the cloud side. Two buckets that name different identities of one cloud report `InvalidReference`.
 

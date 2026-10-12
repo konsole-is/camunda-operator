@@ -254,15 +254,15 @@ func ConnectorsServiceAccountName(cluster *v1.CamundaCluster, e Effective) strin
 // It also returns an error, with connectors on or off, when
 // connectors.serviceAccount names the derived cluster account with create
 // false while PodServiceAccountName is empty. That name is reserved for the
-// operator, which then deletes an account of that name.
+// operator: without this error, the reconcile deletes the account.
 func CheckConnectorsServiceAccount(in Input) error {
 	account := in.Effective.ConnectorsServiceAccount()
 	if account != nil && !account.Creates() && PodServiceAccountName(in) == "" &&
 		ConnectorsServiceAccountName(in.Cluster, in.Effective) == ServiceAccountName(in.Cluster, in.Effective) {
 		return fmt.Errorf(
 			"connectors.serviceAccount.name %q is reserved for the ServiceAccount that the operator "+
-				"creates for the cluster, and the operator deletes it while the cluster has no "+
-				"ServiceAccount of its own. Give the connectors a ServiceAccount of another name",
+				"creates for the cluster. The operator keeps the account and applies nothing until "+
+				"you give the connectors a ServiceAccount of another name",
 			account.Name,
 		)
 	}

@@ -458,7 +458,8 @@ type CamundaClusterSpec struct {
 	// belongs to the operator. While neither the cluster nor its preset sets
 	// this block and no referenced bucket uses workload identity, the
 	// operator deletes an account of that name. It deletes one that it did
-	// not create too.
+	// not create too, except while connectors.serviceAccount names it with
+	// create false: Ready then reports InvalidReference.
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 	// Auth holds the credentials of this cluster and the identities that get
