@@ -80,9 +80,9 @@ const versionFloor = "8.9.0"
 // with the same name replaces it. ExtraEnvFrom concatenates, lower layer
 // first. PodLabels and podAnnotations merge by key with the higher layer
 // winning. Connectors.serviceAccount merges the same way: create overrides
-// individually, and its annotations merge by key. Scheduling never merges: a block set on the cluster replaces the
-// block of the preset at that level (top-level, per component, or under
-// backup.dump) entirely. Auth.admin and auth.basic never merge either, and
+// individually, and its annotations merge by key. Scheduling never merges: a
+// block set on the cluster replaces the block of the preset at that level
+// (top-level, per component, or under backup.dump) entirely. Auth.admin and auth.basic never merge either, and
 // they exist at the top level only: a block set on the cluster replaces the
 // whole block of the preset. The backup block merges per field: the
 // primary-storage schedule, checkpoint interval, and retention each override

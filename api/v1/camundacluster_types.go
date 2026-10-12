@@ -445,9 +445,8 @@ type CamundaClusterSpec struct {
 	// workloads get access to the buckets of backupStorageRef and
 	// documentStorageRef through this identity. When the operator creates
 	// the account, it adds the identity annotation of each bucket that names
-	// one. When the
-	// annotations carry azure.workload.identity/client-id, the pods of these
-	// workloads, the backup Jobs included, get the label
+	// one. When the annotations carry azure.workload.identity/client-id, the
+	// pods of these workloads, the backup Jobs included, get the label
 	// azure.workload.identity/use: "true".
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`

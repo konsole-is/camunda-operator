@@ -81,7 +81,7 @@ func VersionSkip(effective, running string) bool {
 		return false
 	}
 
-	return want[0] == have[0] && want[1] > have[1] && want[1]-1 > have[1]
+	return want[0] == have[0] && want[1]-1 > have[1]
 }
 
 // NextMinor returns the minor after the one of version, as major.minor, or
