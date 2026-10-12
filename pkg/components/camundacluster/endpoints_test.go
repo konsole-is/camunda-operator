@@ -76,8 +76,8 @@ func topologyInput(t *testing.T, tp topology) Input {
 	})
 }
 
-// wantEndpoints spells out the table of #575 for one topology of my-cluster,
-// in the sorted order that a reader of status.endpoints sees.
+// wantEndpoints spells out the routes of Endpoints for one topology of
+// my-cluster, in the sorted order that a reader of status.endpoints sees.
 func wantEndpoints(tp topology) []v1.Endpoint {
 	host := "my-cluster-gateway"
 	if tp.gateway == v1.ComponentModeEmbedded {

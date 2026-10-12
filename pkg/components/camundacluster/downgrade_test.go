@@ -73,6 +73,7 @@ func TestVersionSkip(t *testing.T) {
 		"effective not x.y.z":          {"8.11", "8.9.9", false},
 		"numeric, not lexical":         {"8.10.0", "8.9.9", false},
 		"the largest minor, unchanged": {maxMinor, maxMinor, false},
+		"the smallest minor":           {"8." + strconv.Itoa(math.MinInt) + ".0", "8.9.9", false},
 	}
 
 	for name, tc := range cases {
