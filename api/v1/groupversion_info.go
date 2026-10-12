@@ -34,26 +34,33 @@ var (
 	GroupVersion = SchemeGroupVersion
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme.
-	SchemeBuilder = &Builder{}
+	SchemeBuilder = NewBuilder(SchemeGroupVersion)
 
 	// AddToScheme adds the types in this group-version to the given scheme.
 	AddToScheme = SchemeBuilder.AddToScheme
 )
 
-// Builder registers the Go types of this group version with a runtime.Scheme.
+// Builder registers the Go types of one group version with a runtime.Scheme.
 // It is a small stand-in for the controller-runtime scheme builder, so this
 // module does not depend on controller-runtime.
 // +kubebuilder:object:generate=false
 type Builder struct {
 	runtime.SchemeBuilder
+
+	groupVersion schema.GroupVersion
 }
 
-// Register adds objects to the builder under SchemeGroupVersion. Each type
+// NewBuilder returns a Builder that registers types under gv.
+func NewBuilder(gv schema.GroupVersion) *Builder {
+	return &Builder{groupVersion: gv}
+}
+
+// Register adds objects to the builder under its group version. Each type
 // file calls it from init, so the result is the full set of kinds of the group.
 func (b *Builder) Register(objects ...runtime.Object) *Builder {
 	b.SchemeBuilder.Register(func(s *runtime.Scheme) error {
-		s.AddKnownTypes(SchemeGroupVersion, objects...)
-		metav1.AddToGroupVersion(s, SchemeGroupVersion)
+		s.AddKnownTypes(b.groupVersion, objects...)
+		metav1.AddToGroupVersion(s, b.groupVersion)
 		return nil
 	})
 
