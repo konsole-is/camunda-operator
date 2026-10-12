@@ -646,9 +646,12 @@ func deploymentComponent(in Input, p Process) (*component.Component, error) {
 		WithName(p.Component).
 		WithConditionType(component.ConditionType(p.ConditionType)).
 		WithFeatureGate(feature.NewBooleanGate(p.Enabled)).
-		// Only the connectors run under an account of their own.
+		// Only the connectors run under an account of their own. With create
+		// false the account is released also while connectors are off, as
+		// one edit can turn them off and switch create.
 		IncludeWhen(
-			p.Component == ComponentConnectors && PodConnectorsServiceAccountName(in) != "",
+			p.Component == ComponentConnectors &&
+				(PodConnectorsServiceAccountName(in) != "" || !in.Effective.ConnectorsServiceAccount().Creates()),
 			func() component.Resource { return account },
 			accountOptions(in.Effective.ConnectorsServiceAccount())...,
 		).

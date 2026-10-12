@@ -163,6 +163,33 @@ var _ = Describe("CamundaCluster ServiceAccount release", func() {
 		expectAccountOwned(key, cluster, roleLater)
 	})
 
+	// Disabled connectors run no pod, but the account that the operator
+	// created for them is still the user's once create is false.
+	It("releases the connectors account when connectors are disabled in the same edit", func() {
+		ns := newNamespace()
+		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+		cluster.Spec.Connectors = &v1.ConnectorsSpec{
+			Enabled: new(true),
+			Version: "8.9.7",
+			ServiceAccount: &v1.ServiceAccountSpec{
+				Annotations: map[string]string{v1.IRSARoleARNAnnotation: roleCamunda},
+			},
+		}
+		createCluster(cluster)
+		key := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-connectors"}
+		expectAccountOwned(key, cluster, roleCamunda)
+
+		updateCluster(cluster, func(c *v1.CamundaCluster) {
+			c.Spec.Connectors.Enabled = new(false)
+			c.Spec.Connectors.ServiceAccount.Create = new(false)
+		})
+		Eventually(func(g Gomega) {
+			var account corev1.ServiceAccount
+			g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+			g.Expect(ownedByCluster(&account, cluster.Name)).To(BeFalse())
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// The operator reads an account of the user to see that it exists, and
 	// never writes it.
 	It("does not write an account that it never created", func() {
