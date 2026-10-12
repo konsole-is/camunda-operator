@@ -532,7 +532,7 @@ CAUTION: Do not remove the hold of a restore that still runs. If `spec.suspend` 
 
 ## Deletion
 
-Deleting the cluster removes every resource that the operator created for it, and it releases the backend that the cluster held. Another cluster on that backend starts when the pods of the deleted one are gone. The broker volumes follow `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` (see [Storage](#storage)). The `ElasticsearchCluster`, the `Database`, and the contracts are separate resources and stay.
+Deleting the cluster removes every resource that the operator created for it, and it releases the backend that the cluster held. Another cluster on that backend starts when the pods of the deleted one are gone. The broker volumes follow `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` (see [Storage](#storage)). The `ElasticsearchCluster`, the `Database`, and the contracts are separate resources and stay. A ServiceAccount with `create: false` stays too, also when the operator created it before the switch.
 
 ## Status
 

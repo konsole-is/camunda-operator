@@ -122,7 +122,7 @@ With `spec.suspend: true`, the operator deletes the ECK resource and keeps the d
 
 ## Deletion
 
-Deletion removes everything the operator created: the ECK resource, the Secrets, the `SecondaryStorageConfig`, and the exporter. The data volumes obey `spec.persistentVolumeClaimRetentionPolicy.whenDeleted`. With `Delete`, ECK removes them with the cluster. With `Retain`, the volumes stay and a later cluster with the same name reattaches them.
+Deletion removes everything the operator created: the ECK resource, the Secrets, the `SecondaryStorageConfig`, the exporter, and the ServiceAccount. A ServiceAccount with `create: false` stays, also when the operator created it before the switch. The data volumes obey `spec.persistentVolumeClaimRetentionPolicy.whenDeleted`. With `Delete`, ECK removes them with the cluster. With `Retain`, the volumes stay and a later cluster with the same name reattaches them.
 
 ## Status
 
@@ -200,7 +200,7 @@ spec:
   serviceAccount:
     # string. Optional, default: <name>-es. Name of the ServiceAccount. A workload identity without an annotation binds the principal system:serviceaccount:<namespace>:<name>.
     name: "my-cluster-es"
-    # boolean. Optional, default: true. With false, you manage the ServiceAccount. The operator does not create, annotate, or own it, and a missing one fails Ready.
+    # boolean. Optional, default: true. With false, you manage the ServiceAccount. The operator does not create, annotate, or own it, and a missing one fails Ready. A switch to false removes the owner reference from the account that the operator created, so it stays when you delete the cluster. A switch back to true owns and annotates it again.
     create: true
     # map[string]string. Optional. Annotations for workload identity (IRSA, GCP Workload Identity). A value set here wins over the one the operator derives from the bucket.
     annotations:

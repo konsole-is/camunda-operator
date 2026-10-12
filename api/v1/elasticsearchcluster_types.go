@@ -38,10 +38,10 @@ type ServiceAccountSpec struct {
 	// then does not create, annotate, or own it. If it does not exist, Ready
 	// reports InvalidReference, except on a suspended ElasticsearchCluster.
 	// The operator never takes ownership of a ServiceAccount that it did not
-	// create, because it deletes an owned one with the resource. On a
-	// CamundaCluster, a switch to false removes the owner reference from the
-	// account that the operator created. The account then stays when the
-	// cluster is deleted. A switch back to true owns and annotates it again.
+	// create, because it deletes an owned one with the resource. A switch to
+	// false removes the owner reference from the account that the operator
+	// created. The account then stays when the resource is deleted. A switch
+	// back to true owns and annotates it again.
 	// +optional
 	Create *bool `json:"create,omitempty"`
 	// Annotations to set on the ServiceAccount that the operator creates.
