@@ -3084,10 +3084,10 @@ spec:
                           Annotations to set on the ServiceAccount that the operator creates.
                           Usually these are workload-identity annotations (IRSA, GCP Workload
                           Identity, and more) that give the pods access to cloud resources, such
-                          as the snapshot bucket for backups. On the spec.serviceAccount of a
-                          CamundaCluster, the operator also adds the identity annotation of each
-                          bucket contract that names an identity. An annotation set here wins
-                          over it. With create false, the operator sets no annotation. Add them
+                          as the snapshot bucket for backups. Except on connectors.serviceAccount
+                          of a CamundaCluster, the operator also adds the identity annotation of
+                          each referenced bucket that names an identity. An annotation set here
+                          wins over it. With create false, the operator sets no annotation. Add them
                           to the existing ServiceAccount yourself.
                         type: object
                       create:
@@ -5915,10 +5915,10 @@ spec:
                       Annotations to set on the ServiceAccount that the operator creates.
                       Usually these are workload-identity annotations (IRSA, GCP Workload
                       Identity, and more) that give the pods access to cloud resources, such
-                      as the snapshot bucket for backups. On the spec.serviceAccount of a
-                      CamundaCluster, the operator also adds the identity annotation of each
-                      bucket contract that names an identity. An annotation set here wins
-                      over it. With create false, the operator sets no annotation. Add them
+                      as the snapshot bucket for backups. Except on connectors.serviceAccount
+                      of a CamundaCluster, the operator also adds the identity annotation of
+                      each referenced bucket that names an identity. An annotation set here
+                      wins over it. With create false, the operator sets no annotation. Add them
                       to the existing ServiceAccount yourself.
                     type: object
                   create:

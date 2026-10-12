@@ -169,7 +169,7 @@ To upgrade a manifest install, apply the `install.yaml` of the new release with 
 
 ### Connectors no longer use the cluster ServiceAccount
 
-From this release, the connectors of a `CamundaCluster` run under the default ServiceAccount of the namespace. Before, they ran under the ServiceAccount of the cluster and got its cloud role. If a connector of yours uses that role, set `spec.connectors.serviceAccount` right after you upgrade the operator. An AWS connector with the default credentials chain is an example. If `spec.serviceAccount.name` is `default`, enabled connectors need `spec.connectors.serviceAccount`, or the cluster reports `InvalidReference`. Give the connectors a role of their own, not the role of the cluster:
+From this release, the connectors of a `CamundaCluster` run under the default ServiceAccount of the namespace. Before, they ran under the ServiceAccount of the cluster and got its cloud role. If a connector of yours uses that role, set `spec.connectors.serviceAccount` right after you upgrade the operator. An AWS connector with the default credentials chain is an example. Give the connectors a role of their own, not the role of the cluster:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -185,9 +185,9 @@ spec:
   # ... the rest of your cluster
 ```
 
-The connectors pods restart once after the upgrade, and again when you set the block. A pre-check of the cluster can fail right after the upgrade, for example with `InvalidReference` for a cluster account named `default`. Then the connectors stay on the cluster account until a reconcile passes.
+The connectors pods restart once after the upgrade, and again when you set the block. If `spec.serviceAccount.name` is `default` and connectors are enabled, the cluster reports `InvalidReference`, and the connectors keep the cluster account until you set `spec.connectors.serviceAccount`. For an identity without an annotation, such as EKS Pod Identity, bind the new principal `system:serviceaccount:my-cluster-ns:my-cluster-connectors` on the cloud side.
 
-If you pull images from a mirror, the connectors need the pull Secret on their new ServiceAccount: `default`, or the account of `spec.connectors.serviceAccount`. The operator sets no pull Secret on any ServiceAccount. Add it to the `imagePullSecrets` of that account. The operator keeps a pull Secret that you add to an account that it creates. For an identity without an annotation, such as EKS Pod Identity, bind the new principal `system:serviceaccount:my-cluster-ns:my-cluster-connectors` on the cloud side. See [Workload identity](crds/camundacluster.md#workload-identity).
+If you pull images from a mirror, the connectors need the pull Secret on their new ServiceAccount: `default`, or the account of `spec.connectors.serviceAccount`. The operator sets no pull Secret on any ServiceAccount. Add it to the `imagePullSecrets` of that account. The operator keeps a pull Secret that you add to an account that it creates. See [Workload identity](crds/camundacluster.md#workload-identity).
 
 ## Uninstall
 
