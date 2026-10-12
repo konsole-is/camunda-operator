@@ -331,7 +331,13 @@ When a referenced bucket names a workload identity, the operator puts the matchi
 
 The cloud reads the annotations of the ServiceAccount when a pod starts. So when the annotations that the operator puts on the ServiceAccount change, the pods that run under it restart. These are the brokers, the gateway, and the web applications, not the connectors. This holds for an edit of `spec.serviceAccount.annotations` and for a referenced bucket that names another identity. A backup Job that starts after the change runs with the new annotations.
 
-With `serviceAccount.create: false`, the operator does not create the ServiceAccount and does not read it. It reports `InvalidReference` while the ServiceAccount does not exist. A change to the annotations of that account restarts no pod. After such a change, restart the pods yourself, for example with `kubectl rollout restart`.
+With `serviceAccount.create: false`, the operator does not create or change the ServiceAccount, and it does not read its annotations. It reports `InvalidReference` while the ServiceAccount does not exist. A change to the annotations of that account restarts no pod. After such a change, restart the pods yourself:
+
+```bash
+kubectl rollout restart statefulset/my-cluster-zeebe deployment/my-cluster-gateway -n my-cluster-ns
+```
+
+Add the Deployment of each web application that runs on its own, such as `deployment/my-cluster-operate`.
 
 ### Connectors
 
@@ -357,7 +363,7 @@ spec:
 
 The connectors then run under `my-cluster-connectors`, or under `spec.connectors.serviceAccount.name`. That account carries only the annotations of the block. A change of these annotations restarts the connectors pods, and no other pod. For an identity without an annotation, bind the principal `system:serviceaccount:<namespace>:<name>-connectors` on the cloud side. `status.connectorsServiceAccountName` shows the account. When the block is gone from the cluster and from its preset, the connectors go back to the ServiceAccount `default`. The account that the operator created stays until you delete the cluster.
 
-While connectors are not enabled, the operator creates no connectors account. When connectors are enabled and `create` is `false`, `Ready` is `False` with reason `InvalidReference` while the account does not exist. When you create the account, the operator finds it by itself, without an edit to the cluster. After a change to the annotations of that account, restart the connectors pods yourself.
+While connectors are not enabled, the operator creates no connectors account. When connectors are enabled and `create` is `false`, `Ready` is `False` with reason `InvalidReference` while the account does not exist. When you create the account, the operator finds it by itself, without an edit to the cluster. After a change to the annotations of that account, restart the connectors pods yourself, with `kubectl rollout restart deployment/my-cluster-connectors -n my-cluster-ns`.
 
 The connectors account must not have the name of the cluster account. When `spec.serviceAccount.name` is `default`, enabled connectors need `spec.connectors.serviceAccount`, or `Ready` is `False` with reason `InvalidReference`. The API server rejects a spec in which `spec.connectors.serviceAccount.name` equals `spec.serviceAccount.name`. When only one of the two names is set and it equals the derived name of the other account, `Ready` is `False` with reason `InvalidReference`.
 
