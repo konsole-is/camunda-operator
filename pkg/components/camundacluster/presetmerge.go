@@ -91,11 +91,11 @@ const versionFloor = "8.9.0"
 // whole block. A release carries only versions, images, and environment, so
 // it takes part in the version and the environment rules alone. The
 // instance-bound fields (platformConfigRef, presetRef, releaseRef,
-// externalUrl, serviceAccount, connectors.serviceAccount.name, storageRef,
-// backupStorageRef, documentStorageRef, monitoring, suspend, pause) always
-// come from spec. A nil preset or release is an empty layer. The result
-// shares no memory with spec, preset, or release, so callers can mutate it
-// freely.
+// externalUrl, serviceAccount, storageRef, backupStorageRef,
+// documentStorageRef, monitoring, suspend, pause) come from spec, and a
+// preset cannot set connectors.serviceAccount.name. A nil preset or release
+// is an empty layer. The result shares no memory with spec, preset, or
+// release, so callers can mutate it freely.
 func MergeSpec(
 	spec v1.CamundaClusterSpec,
 	preset *v1.CamundaClusterPresetSpec,
