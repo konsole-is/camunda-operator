@@ -26,8 +26,8 @@ import (
 )
 
 // clusterProcesses are the processes that run under the cluster account in
-// the default topology with connectors enabled.
-var clusterProcesses = []string{ComponentZeebe, ComponentGateway}
+// the topology of separatedInput.
+var clusterProcesses = []string{ComponentZeebe, ComponentGateway, ComponentOperate, ComponentTasklist, ComponentAdmin}
 
 // accountHashes returns the ServiceAccount hash on the pod template of each
 // process, keyed by process. A missing annotation maps to "".
@@ -42,12 +42,27 @@ func accountHashes(t *testing.T, in Input) map[string]string {
 	return hashes
 }
 
-// annotatedAccounts returns a cluster with connectors in which both accounts
-// carry the given annotations.
+// separatedInput is connectorsInput with each web application in a
+// Deployment of its own.
+func separatedInput(t *testing.T, bucket *v1.ObjectStorageConfig, mutate func(*v1.CamundaClusterSpec)) Input {
+	t.Helper()
+
+	return connectorsInput(t, bucket, func(spec *v1.CamundaClusterSpec) {
+		spec.Operate = &v1.WebAppSpec{Mode: v1.ComponentModeStandalone}
+		spec.Tasklist = &v1.WebAppSpec{Mode: v1.ComponentModeStandalone}
+		spec.Admin = &v1.WebAppSpec{Mode: v1.ComponentModeStandalone}
+		if mutate != nil {
+			mutate(spec)
+		}
+	})
+}
+
+// annotatedAccounts returns a separatedInput in which both accounts carry the
+// given annotations.
 func annotatedAccounts(t *testing.T, cluster, connectors map[string]string) Input {
 	t.Helper()
 
-	return connectorsInput(t, nil, func(spec *v1.CamundaClusterSpec) {
+	return separatedInput(t, nil, func(spec *v1.CamundaClusterSpec) {
 		spec.ServiceAccount = &v1.ServiceAccountSpec{Annotations: cluster}
 		spec.Connectors.ServiceAccount = &v1.ServiceAccountSpec{Annotations: connectors}
 	})
@@ -76,7 +91,7 @@ func TestClusterAccountAnnotationChangeRollsTheClusterPods(t *testing.T) {
 func TestDerivedAnnotationChangeRollsTheClusterPods(t *testing.T) {
 	t.Parallel()
 
-	in := connectorsInput(t, s3Bucket(), nil)
+	in := separatedInput(t, s3Bucket(), nil)
 	before := accountHashes(t, in)
 
 	in.ServiceAccountAnnotations = map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/moved"}
@@ -151,25 +166,50 @@ func TestNoServiceAccountHashWithoutRenderedAnnotations(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			for process, hash := range accountHashes(t, connectorsInput(t, nil, tt.mutate)) {
+			for process, hash := range accountHashes(t, separatedInput(t, nil, tt.mutate)) {
 				assert.Empty(t, hash, process)
 			}
 		})
 	}
 }
 
-// A user pod annotation must not pin the hash, or an annotation change would
-// stop rolling the pods.
-func TestServiceAccountHashWinsOverAUserPodAnnotation(t *testing.T) {
+// Two sets of annotations that differ must give different hashes, also when
+// a value holds the characters that separate the entries.
+func TestServiceAccountHashTellsAnnotationSetsApart(t *testing.T) {
 	t.Parallel()
 
-	in := annotatedAccounts(t, map[string]string{"example.com/team": "platform"}, nil)
-	in.Cluster.Spec.PodAnnotations = map[string]string{ServiceAccountHashAnnotation: "pinned"}
-	in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, nil, nil))
+	joined := accountHashes(t, annotatedAccounts(t, map[string]string{"a": "x\nb=y"}, nil))
+	split := accountHashes(t, annotatedAccounts(t, map[string]string{"a": "x", "b": "y"}, nil))
 
-	hashes := accountHashes(t, in)
 	for _, process := range clusterProcesses {
-		assert.NotEqual(t, "pinned", hashes[process], process)
-		assert.NotEmpty(t, hashes[process], process)
+		assert.NotEqual(t, joined[process], split[process], process)
+	}
+}
+
+// A user pod annotation must not pin the hash, or removing the last
+// annotation of the account would not roll the pods.
+func TestUserPodAnnotationCannotSetTheServiceAccountHash(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		annotations map[string]string
+	}{
+		{name: "an account with annotations", annotations: map[string]string{"example.com/team": "platform"}},
+		{name: "an account without annotations", annotations: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			in := annotatedAccounts(t, tt.annotations, nil)
+			in.Cluster.Spec.PodAnnotations = map[string]string{ServiceAccountHashAnnotation: "pinned"}
+			in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, nil, nil))
+
+			for process, hash := range accountHashes(t, in) {
+				assert.NotEqual(t, "pinned", hash, process)
+			}
+		})
 	}
 }

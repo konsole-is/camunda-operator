@@ -107,6 +107,9 @@ func workloadMutations(in Input, p Process) []workloadMutation {
 
 	userLabels := labels.Merge(e.PodLabels, workload.PodLabels)
 	userAnnotations := labels.Merge(e.PodAnnotations, workload.PodAnnotations)
+	// A user value would keep an old hash on the template when the
+	// ServiceAccountHash mutation is off, and the pods would not roll.
+	delete(userAnnotations, ServiceAccountHashAnnotation)
 	account := podServiceAccountName(in, p)
 	accountHash := serviceAccountHash(in, p)
 

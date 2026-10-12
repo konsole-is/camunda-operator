@@ -21,7 +21,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 
@@ -125,13 +124,10 @@ func annotationsHash(annotations map[string]string) string {
 		return ""
 	}
 
-	keys := slices.Sorted(maps.Keys(annotations))
-	var b strings.Builder
-	for _, key := range keys {
-		b.WriteString(key + "=" + annotations[key] + "\n")
-	}
-
-	sum := sha256.Sum256([]byte(b.String()))
+	// encoding/json writes the keys sorted and quotes every string, so two
+	// different sets never encode the same. A map of strings always encodes.
+	encoded, _ := json.Marshal(annotations)
+	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])[:configHashLength]
 }
 
