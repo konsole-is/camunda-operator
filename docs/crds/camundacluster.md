@@ -329,7 +329,7 @@ The pods of the cluster, except the connectors, run under the default ServiceAcc
 
 When a referenced bucket names a workload identity, the operator puts the matching annotation on the ServiceAccount. [ObjectStorageConfig](objectstorageconfig.md#authentication) lists the annotations. An annotation in `spec.serviceAccount.annotations` wins over the derived one. A bucket without an identity block adds no annotation, and you bind the principal `system:serviceaccount:<namespace>:<name>-camunda` on the cloud side. Two buckets that name different identities of one cloud report `InvalidReference`.
 
-The cloud reads the annotations of the ServiceAccount when a pod starts. So when the annotations that the operator puts on the ServiceAccount change, the pods that run under it restart. These are the brokers, the gateway, and the web applications. This holds for an edit of `spec.serviceAccount.annotations` and for a referenced bucket that names another identity. An edit of `spec.serviceAccount.annotations` does not restart the connectors. A change to a bucket restarts every pod, see [Changes and referenced Secrets](#changes-and-referenced-secrets). A backup Job that starts after the change runs with the new annotations.
+The cloud reads the annotations of the ServiceAccount when a pod starts. So when the annotations that the operator puts on the ServiceAccount change, the pods that run under it restart. These are the brokers, the gateway, and the web applications. This holds for an edit of `spec.serviceAccount.annotations` and for a referenced bucket that names another identity. These changes do not restart the connectors. Any other change to a referenced bucket restarts the same pods, see [Changes and referenced Secrets](#changes-and-referenced-secrets). A backup Job that starts after the change runs with the new annotations.
 
 With `serviceAccount.create: false`, the operator does not create or change the ServiceAccount, and it does not read its annotations. It reports `InvalidReference` while the ServiceAccount does not exist. A change to the annotations of that account restarts no pod. After such a change, restart the pods yourself:
 
@@ -438,6 +438,8 @@ spec:
 ## Changes and referenced Secrets
 
 A change to the cluster or to a referenced resource rolls out to the pods on its own. So does a change to a key that the cluster reads from a referenced Secret. A change to the labels or annotations of a Secret, or to a key that the cluster does not read, rolls nothing. The [CamundaPlatformConfig](camundaplatformconfig.md) is cluster-scoped, so the operator copies the Secrets it names in another namespace into the namespace of the cluster. Each copy follows its source.
+
+A change to a referenced ObjectStorageConfig, or to its credentials Secret, restarts the brokers, the gateway, and the web applications. Each web application in a Deployment of its own restarts too. The connectors keep running, because they do not use the buckets.
 
 The API server accepts a cluster that names something you did not create yet, so you can create the resources in any order. A missing `CamundaPlatformConfig`, `CamundaClusterPreset`, `CamundaRelease`, `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` sets `Ready` to `False` with reason `InvalidReference`. A missing Secret or key sets reason `MissingSecret`.
 

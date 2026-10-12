@@ -86,6 +86,25 @@ func TestConfigHashAdminPassword(t *testing.T) {
 	assert.Equal(t, ConfigHash(rotated, connectors), ConfigHash(same, connectors), "same password, same hash")
 }
 
+// The connectors run under an account of their own and read nothing of a
+// bucket, so a bucket change must not restart them.
+func TestBucketChangeRollsTheClusterPodsOnly(t *testing.T) {
+	t.Parallel()
+
+	inputs := func(generation string) Input {
+		in := separatedInput(t, s3Bucket(), nil)
+		in.BucketHashInputs = []string{"ObjectStorageConfig/my-cluster-ns/my-backup-config=" + generation}
+		return in
+	}
+	before := podTemplates(t, inputs("1"))
+	after := podTemplates(t, inputs("2"))
+
+	for _, process := range clusterProcesses {
+		assert.NotEqual(t, before[process], after[process], "%s must roll", process)
+	}
+	assert.Equal(t, before[ComponentConnectors], after[ComponentConnectors], "the connectors must not roll")
+}
+
 // PasswordHash never returns the password itself, and equal passwords hash
 // equal so the config hash stays stable across reconciles.
 func TestPasswordHash(t *testing.T) {
