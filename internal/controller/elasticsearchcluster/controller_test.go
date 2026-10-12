@@ -18,6 +18,7 @@ package elasticsearchcluster
 
 import (
 	"maps"
+	"math"
 	"slices"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -734,7 +736,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		createECKSecrets(cluster)
 		createElasticsearchCluster(cluster)
 
-		By("waiting until registration converged and every watch is quiet")
+		By("waiting until registration converged")
 		Eventually(func(g Gomega) {
 			var fetched v1.ElasticsearchCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
@@ -745,10 +747,9 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
 		}, timeout, interval).Should(Succeed())
 
-		// Four attempts fail. That outlasts the reconciles that the
-		// controller's own status write triggers: the second failure writes
-		// the same condition, so nothing enqueues the cluster again.
-		elasticsearch.DropNext("repository", 4)
+		name := components.RepositoryName(cluster)
+		elasticsearch.DropNext("repository", math.MaxInt)
+		DeferCleanup(func() { elasticsearch.DropNext("repository", 0) })
 
 		By("changing the bucket once, so the next reconcile really registers")
 		Eventually(func(g Gomega) {
@@ -759,7 +760,26 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(k8sClient.Update(ctx, &changed)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
-		By("waiting for it to register on its own, with nothing else written")
+		By("waiting until the registration failed")
+		Eventually(func(g Gomega) {
+			var fetched v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
+			condition := meta.FindStatusCondition(
+				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+			)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Reason).To(Equal(v1.ReasonConnectionFailed))
+		}, timeout, interval).Should(Succeed())
+
+		By("expecting a failed registration to ask for a retry")
+		Eventually(func(g Gomega) {
+			result, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cluster)})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(result.RequeueAfter).To(Equal(reconciler.RetryInterval))
+		}, timeout, interval).Should(Succeed())
+
+		By("letting Elasticsearch answer, with nothing else written")
+		elasticsearch.DropNext("repository", 0)
 		Eventually(func(g Gomega) {
 			var fetched v1.ElasticsearchCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
@@ -770,7 +790,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
 			g.Expect(condition.Reason).To(Equal(v1.ReasonHealthy))
 
-			registered := elasticsearch.Repository(components.RepositoryName(cluster))
+			registered := elasticsearch.Repository(name)
 			g.Expect(registered).NotTo(BeNil())
 			g.Expect(registered.Settings).To(
 				HaveKeyWithValue("endpoint", "http://minio.minio.svc:9000"),

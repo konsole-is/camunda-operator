@@ -17,6 +17,7 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"math"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -228,7 +229,7 @@ var _ = Describe("Web Modeler", func() {
 		// No watch reports that the user API of a cluster is back, so the
 		// controller comes back on its own after a while.
 		api := newClusterUserAPI()
-		api.RefuseNext(4, "not yet")
+		api.RefuseNext(math.MaxInt, "not yet")
 
 		s := newScenario(withWebModeler, withSelector(map[string]string{}))
 		cluster := createBasicCluster(s, api.URL())
@@ -236,8 +237,13 @@ var _ = Describe("Web Modeler", func() {
 		Eventually(func(g Gomega) {
 			row := rowOf(g, s.mc, cluster)
 			g.Expect(row.Reason).To(Equal(v1.ReasonBasicAuthUserFailed))
+			// Three refused calls outlast the reconciles that the new cluster
+			// and the first refusal cause, so the call after the lift comes
+			// from a requeue.
+			g.Expect(api.RefusedCalls()).To(BeNumerically(">=", 3))
 		}, timeout, interval).Should(Succeed())
 
+		api.RefuseNext(0, "")
 		Eventually(func(g Gomega) {
 			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeTrue())
 			row := rowOf(g, s.mc, cluster)
