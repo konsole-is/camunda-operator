@@ -341,7 +341,7 @@ kubectl rollout restart deployment -n my-cluster-ns \
 
 The second command restarts the gateway and each web application that runs in a Deployment of its own. When all of them run in the brokers, it finds no Deployment, and the first command is enough.
 
-When you switch `create` from true to false, the operator removes its owner reference from the ServiceAccount that it created. The account stays as it is, and it stays when you delete the cluster. The operator no longer sets its labels or annotations, so you can change them. When you switch back to `create: true`, the operator owns the account again and sets the annotations of the spec.
+When you switch `create` from true to false, the operator removes its owner reference from the ServiceAccount that it created. That is its last change to the account. The labels and annotations stay, and the account stays when you delete the cluster. The operator no longer sets its labels or annotations, so you can change them. When you switch back to `create: true`, the operator owns the account again and sets the annotations of the spec.
 
 ### Connectors
 
