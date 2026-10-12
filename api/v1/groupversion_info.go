@@ -56,8 +56,8 @@ func NewBuilder(gv schema.GroupVersion) *Builder {
 }
 
 // Register adds objects to the builder under its group version, or under
-// SchemeGroupVersion for a zero Builder. Each type file calls it from init,
-// so the result is the full set of kinds of the group.
+// SchemeGroupVersion when that group version is empty. Each type file calls
+// it from init, so the result is the full set of kinds of the group.
 func (b *Builder) Register(objects ...runtime.Object) *Builder {
 	gv := b.groupVersion
 	if gv.Empty() {
