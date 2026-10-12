@@ -83,7 +83,8 @@ type resolver struct {
 // references the copy, so the renderer only ever names Secrets of the
 // cluster namespace. HashInputs carry a digest of the keys read from every
 // Secret and the generation of every CR read, sorted, so a change to any of
-// them rolls the pods. A failed check returns a
+// them rolls the pods. The inputs of the buckets go to BucketHashInputs
+// instead. A failed check returns a
 // *conditions.PreCheckFailure: InvalidReference for a dangling reference or
 // an invalid effective spec, MissingSecret for a missing Secret or key. Any
 // other error is a transient API failure.
