@@ -47,7 +47,8 @@ and are scaffolded with
 Fix three things by hand after each `kubebuilder create api`:
 
 1. The scheme. The `api` module never imports controller-runtime. Each
-   group's `groupversion_info.go` uses the `Builder` of
+   group's `groupversion_info.go` sets
+   `SchemeBuilder = v1.NewBuilder(SchemeGroupVersion)` with the `Builder` of
    `api/v1/groupversion_info.go`, and `kubebuilder create api` keeps an
    existing file. In the new types file, change `init` to
    `SchemeBuilder.Register(&<Kind>{}, &<Kind>List{})`.

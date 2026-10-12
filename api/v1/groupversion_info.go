@@ -20,6 +20,8 @@ limitations under the License.
 package v1
 
 import (
+	"errors"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -34,26 +36,42 @@ var (
 	GroupVersion = SchemeGroupVersion
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme.
-	SchemeBuilder = &Builder{}
+	SchemeBuilder = NewBuilder(SchemeGroupVersion)
 
 	// AddToScheme adds the types in this group-version to the given scheme.
 	AddToScheme = SchemeBuilder.AddToScheme
+
+	errNoGroupVersion = errors.New("the scheme builder has no group version: create it with NewBuilder")
 )
 
-// Builder registers the Go types of this group version with a runtime.Scheme.
+// Builder registers the Go types of one group version with a runtime.Scheme.
 // It is a small stand-in for the controller-runtime scheme builder, so this
 // module does not depend on controller-runtime.
 // +kubebuilder:object:generate=false
 type Builder struct {
 	runtime.SchemeBuilder
+
+	groupVersion schema.GroupVersion
 }
 
-// Register adds objects to the builder under SchemeGroupVersion. Each type
+// NewBuilder returns a Builder that registers types under gv.
+func NewBuilder(gv schema.GroupVersion) *Builder {
+	return &Builder{groupVersion: gv}
+}
+
+// Register adds objects to the builder under its group version. Each type
 // file calls it from init, so the result is the full set of kinds of the group.
+// Build the Builder with NewBuilder and a group version that is not empty:
+// AddToScheme and Build return an error for the objects that Register adds to
+// a Builder with no group version.
 func (b *Builder) Register(objects ...runtime.Object) *Builder {
 	b.SchemeBuilder.Register(func(s *runtime.Scheme) error {
-		s.AddKnownTypes(SchemeGroupVersion, objects...)
-		metav1.AddToGroupVersion(s, SchemeGroupVersion)
+		if b.groupVersion.Empty() {
+			return errNoGroupVersion
+		}
+
+		s.AddKnownTypes(b.groupVersion, objects...)
+		metav1.AddToGroupVersion(s, b.groupVersion)
 		return nil
 	})
 

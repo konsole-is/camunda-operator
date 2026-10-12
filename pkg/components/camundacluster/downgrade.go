@@ -81,6 +81,7 @@ func VersionSkip(effective, running string) bool {
 		return false
 	}
 
+	// want[1] > have[1] stops want[1]-1 from wrapping at math.MinInt.
 	return want[0] == have[0] && want[1] > have[1] && want[1]-1 > have[1]
 }
 

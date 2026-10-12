@@ -25,9 +25,9 @@ limitations under the License.
 package v1alpha1
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 var (
@@ -40,35 +40,8 @@ var (
 	GroupVersion = SchemeGroupVersion
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme.
-	SchemeBuilder = &Builder{}
+	SchemeBuilder = v1.NewBuilder(SchemeGroupVersion)
 
 	// AddToScheme adds the types in this group-version to the given scheme.
 	AddToScheme = SchemeBuilder.AddToScheme
 )
-
-// Builder registers the Go types of this group version with a runtime.Scheme.
-// It is a small stand-in for the controller-runtime scheme builder, so this
-// module does not depend on controller-runtime.
-// +kubebuilder:object:generate=false
-type Builder struct {
-	runtime.SchemeBuilder
-}
-
-// Register adds objects to the builder under SchemeGroupVersion. Each type
-// file calls it from init, so the result is the full set of kinds of the group.
-func (b *Builder) Register(objects ...runtime.Object) *Builder {
-	b.SchemeBuilder.Register(func(s *runtime.Scheme) error {
-		s.AddKnownTypes(SchemeGroupVersion, objects...)
-		metav1.AddToGroupVersion(s, SchemeGroupVersion)
-		return nil
-	})
-
-	return b
-}
-
-// Build returns a new scheme that holds every registered type.
-func (b *Builder) Build() (*runtime.Scheme, error) {
-	s := runtime.NewScheme()
-
-	return s, b.AddToScheme(s)
-}
