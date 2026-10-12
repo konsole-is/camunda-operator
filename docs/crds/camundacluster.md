@@ -341,6 +341,8 @@ kubectl rollout restart deployment -n my-cluster-ns \
 
 The second command restarts the gateway and each web application that runs in a Deployment of its own. When all of them run in the brokers, it finds no Deployment, and the first command is enough.
 
+When you switch `create` from true to false, the operator removes its owner reference from the ServiceAccount that it created. The account stays as it is, and it stays when you delete the cluster. The operator no longer sets its labels or annotations, so you can change them. When you switch back to `create: true`, the operator owns the account again and sets the annotations of the spec.
+
 ### Connectors
 
 The connectors never run under the ServiceAccount of the cluster, and the identities of the buckets never reach them. Process authors model the calls that the connectors make, so with the role of the cluster a process can read or delete backups. The connectors read documents through the REST API of the cluster, and Camunda says not to give them the document store role ([IAM Roles for Service Accounts](https://docs.camunda.io/docs/self-managed/deployment/helm/cloud-providers/amazon/amazon-eks/irsa/#document-store-s3)).
@@ -365,7 +367,7 @@ spec:
 
 The connectors then run under `my-cluster-connectors`, or under `spec.connectors.serviceAccount.name`. That account carries only the annotations of the block. A change of these annotations restarts the connectors pods, and no other pod. For an identity without an annotation, bind the principal `system:serviceaccount:<namespace>:<name>-connectors` on the cloud side. `status.connectorsServiceAccountName` shows the account. When the block is gone from the cluster and from its preset, the connectors go back to the ServiceAccount `default`. The account that the operator created stays until you delete the cluster.
 
-While connectors are not enabled, the operator creates no connectors account. When connectors are enabled and `create` is `false`, `Ready` is `False` with reason `InvalidReference` while the account does not exist. When you create the account, the operator finds it by itself, without an edit to the cluster. After a change to the annotations of that account, restart the connectors pods yourself, with `kubectl rollout restart deployment/my-cluster-connectors -n my-cluster-ns`.
+While connectors are not enabled, the operator creates no connectors account. When connectors are enabled and `create` is `false`, `Ready` is `False` with reason `InvalidReference` while the account does not exist. When you create the account, the operator finds it by itself, without an edit to the cluster. After a change to the annotations of that account, restart the connectors pods yourself, with `kubectl rollout restart deployment/my-cluster-connectors -n my-cluster-ns`. A switch of `spec.connectors.serviceAccount.create` releases and adopts the connectors account in the same way as the cluster account.
 
 The connectors account must not have the name of the cluster account. When `spec.serviceAccount.name` is `default`, enabled connectors need `spec.connectors.serviceAccount`, or `Ready` is `False` with reason `InvalidReference`. The API server rejects a spec in which `spec.connectors.serviceAccount.name` equals `spec.serviceAccount.name`. When only one of the two names is set and it equals the derived name of the other account, `Ready` is `False` with reason `InvalidReference`.
 
@@ -373,7 +375,7 @@ The connectors account must not have the name of the cluster account. When `spec
 
 On Azure, a pod needs the label `azure.workload.identity/use: "true"` as well as the annotation `azure.workload.identity/client-id` on its account. When `spec.serviceAccount.annotations` carry the client ID, the operator adds the label to every pod that runs under the cluster account, the backup Jobs included. When `spec.connectors.serviceAccount.annotations` carry it, the operator adds the label to the connectors pods only.
 
-The operator reads the annotations of the spec, not of the account. With `create: false`, the operator does not read the existing account. If that account carries the client ID, add the label `azure.workload.identity/use: "true"` through `podLabels` or `connectors.podLabels` yourself.
+The operator reads the annotations of the spec, not of the account. With `create: false`, the operator does not read the annotations of the existing account. If that account carries the client ID, add the label `azure.workload.identity/use: "true"` through `podLabels` or `connectors.podLabels` yourself.
 
 ## Environment and JVM
 
@@ -684,7 +686,7 @@ spec:
   serviceAccount:
     # string. Optional, default: <name>-camunda. Name of the ServiceAccount.
     name: "camunda-prod"
-    # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it.
+    # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it. A switch to false releases an account that the operator created, see Workload identity.
     create: true
     # map[string]string. Optional. Annotations on the ServiceAccount. When create is false, the operator does not set them, but an Azure client ID among them still labels the pods.
     annotations:
@@ -802,7 +804,7 @@ spec:
     serviceAccount:
       # string. Optional, default when the block is set: <name>-connectors. Name of the ServiceAccount. Must differ from serviceAccount.name. The name default needs create: false.
       name: "my-cluster-connectors"
-      # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it.
+      # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it. A switch to false releases an account that the operator created, see Workload identity.
       create: true
       # map[string]string. Optional. Annotations on the ServiceAccount. When create is false, the operator does not set them, but an Azure client ID among them still labels the pods. The identities of the buckets are never added.
       annotations: {}
