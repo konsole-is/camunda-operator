@@ -334,10 +334,12 @@ The cloud reads the annotations of the ServiceAccount when a pod starts. So when
 With `serviceAccount.create: false`, the operator does not create or change the ServiceAccount, and it does not read its annotations. It reports `InvalidReference` while the ServiceAccount does not exist. A change to the annotations of that account restarts no pod. After such a change, restart the pods yourself:
 
 ```bash
-kubectl rollout restart statefulset/my-cluster-zeebe deployment/my-cluster-gateway -n my-cluster-ns
+kubectl rollout restart statefulset/my-cluster-zeebe -n my-cluster-ns
+kubectl rollout restart deployment -n my-cluster-ns \
+  -l 'camunda.io/cluster=my-cluster,camunda.io/component in (gateway,operate,tasklist,admin)'
 ```
 
-Add the Deployment of each web application that runs on its own, such as `deployment/my-cluster-operate`.
+The second command restarts the gateway and each web application that runs in a Deployment of its own. When all of them run in the brokers, it finds no Deployment, and the first command is enough.
 
 ### Connectors
 
