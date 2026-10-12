@@ -552,13 +552,17 @@ helm-rollback: ## Rollback to previous Helm release.
 ##@ Fleet manager
 
 FLEET_DIR := fleet-manager
-# corepack reads packageManager from the package.json of the working
-# directory, so each recipe runs inside FLEET_DIR. Outside it, corepack runs
-# the latest pnpm, not the pinned one.
-FLEET_PNPM := cd $(FLEET_DIR) && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 NEXT_TELEMETRY_DISABLED=1 corepack pnpm
+# packageManager in the package.json of FLEET_DIR is the only pin of pnpm.
+# Node.js 26 has no corepack, so npm installs that release into LOCALBIN.
+FLEET_PNPM_VERSION := $(shell sed -n 's/.*"packageManager": *"pnpm@\([^"]*\)".*/\1/p' $(FLEET_DIR)/package.json)
+FLEET_PNPM_BIN := $(LOCALBIN)/pnpm-$(FLEET_PNPM_VERSION)/bin/pnpm
+FLEET_PNPM := cd $(FLEET_DIR) && NEXT_TELEMETRY_DISABLED=1 "$(FLEET_PNPM_BIN)"
+
+$(FLEET_PNPM_BIN): | $(LOCALBIN)
+	npm install --global --allow-scripts=pnpm --prefix "$(LOCALBIN)/pnpm-$(FLEET_PNPM_VERSION)" pnpm@$(FLEET_PNPM_VERSION)
 
 .PHONY: fleet-install
-fleet-install: ## Install the fleet manager dependencies from the lockfile.
+fleet-install: $(FLEET_PNPM_BIN) ## Install the fleet manager dependencies from the lockfile.
 	$(FLEET_PNPM) install --frozen-lockfile
 
 .PHONY: fleet-lint
