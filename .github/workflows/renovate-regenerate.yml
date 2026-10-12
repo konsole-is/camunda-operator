@@ -16,15 +16,15 @@ permissions:
   contents: read
 
 jobs:
+  # This job runs code of the branch, so its token can only read.
   regenerate:
     name: Run on Ubuntu
     # A branch deletion also sends a push event, and its run checks out the
     # default branch.
     if: ${{ !github.event.deleted }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      actions: write
+    outputs:
+      changed: ${{ steps.changes.outputs.changed }}
     steps:
       - name: Clone the code
         uses: actions/checkout@v7
@@ -45,14 +45,8 @@ jobs:
       - name: Run the generators
         run: make observability merge-fixtures api-docs generate
 
-      # The ruleset of main requires signed commits. GitHub signs a commit of
-      # this GraphQL mutation, and it does not sign a git push from here.
-      # expectedHeadOid makes the mutation fail when Renovate pushed again
-      # after the checkout. The run of that newer push then regenerates.
-      - name: Commit the generated files
-        id: commit
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Collect the changed files
+        id: changes
         run: |
           paths=(config/prometheus/observability test/fixtures/merge docs/crds/api-reference.md pkg/images/table.json)
           git add --all -- "${paths[@]}"
@@ -60,20 +54,63 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          mkdir "$RUNNER_TEMP/changes"
           git diff --cached --name-only --no-renames --diff-filter=d -z |
             while IFS= read -r -d '' f; do
               jq -n --arg path "$f" --rawfile contents <(base64 -w0 -- "$f") '{$path, $contents}'
-            done > "$RUNNER_TEMP/additions.json"
+            done > "$RUNNER_TEMP/changes/additions.json"
           git diff --cached --name-only --no-renames --diff-filter=D -z |
             while IFS= read -r -d '' f; do
               jq -n --arg path "$f" '{$path}'
-            done > "$RUNNER_TEMP/deletions.json"
+            done > "$RUNNER_TEMP/changes/deletions.json"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the changed files
+        if: steps.changes.outputs.changed == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: changes
+          path: ${{ runner.temp }}/changes
+          retention-days: 1
+
+  # This job can write to the branch, so it runs no code of the branch.
+  commit:
+    name: Commit and run the checks
+    needs: regenerate
+    if: needs.regenerate.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Download the changed files
+        uses: actions/download-artifact@v8
+        with:
+          name: changes
+          path: ${{ runner.temp }}/changes
+
+      # The ruleset of main requires signed commits. GitHub signs a commit of
+      # this GraphQL mutation, and it does not sign a git push from a runner.
+      # expectedHeadOid makes the mutation fail when Renovate pushed again
+      # after the checkout. The run of that newer push then regenerates.
+      - name: Commit the generated files
+        working-directory: ${{ runner.temp }}/changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The files come from a job that ran code of the branch, so only
+          # the paths of the drift checks can land.
+          jq -s -e 'all(.[].path;
+            (test("^(config/prometheus/observability|test/fixtures/merge)/")
+              or . == "docs/crds/api-reference.md"
+              or . == "pkg/images/table.json")
+            and (contains("..") | not))' additions.json deletions.json > /dev/null
           jq -n \
             --arg repo "$GITHUB_REPOSITORY" \
             --arg branch "$GITHUB_REF_NAME" \
             --arg head "$GITHUB_SHA" \
-            --slurpfile additions "$RUNNER_TEMP/additions.json" \
-            --slurpfile deletions "$RUNNER_TEMP/deletions.json" \
+            --slurpfile additions additions.json \
+            --slurpfile deletions deletions.json \
             '{
               query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
               variables: {input: {
@@ -84,14 +121,12 @@ jobs:
               }}
             }' > "$RUNNER_TEMP/commit.json"
           gh api graphql --input "$RUNNER_TEMP/commit.json"
-          echo "changed=true" >> "$GITHUB_OUTPUT"
 
       # A commit of GITHUB_TOKEN starts no push run, and its pull_request runs
       # wait for a maintainer to approve them. A workflow_dispatch run starts
       # at once, and its check runs attach to the head commit of the branch,
       # which is the commit above.
       - name: Run the checks on the new commit
-        if: steps.commit.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
