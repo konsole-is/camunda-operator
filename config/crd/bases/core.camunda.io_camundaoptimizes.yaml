@@ -351,8 +351,11 @@ spec:
                   podAnnotations:
                     additionalProperties:
                       type: string
-                    description: PodAnnotations are extra annotations of the pods
-                      of this process.
+                    description: |-
+                      PodAnnotations are extra annotations of the pods of this process. In a
+                      CamundaCluster, the keys camunda.io/config-hash and
+                      camunda.io/service-account-hash belong to the operator, and a value for
+                      them does not reach the pods.
                     type: object
                   podLabels:
                     additionalProperties:
@@ -1331,8 +1334,11 @@ spec:
                   podAnnotations:
                     additionalProperties:
                       type: string
-                    description: PodAnnotations are extra annotations of the pods
-                      of this process.
+                    description: |-
+                      PodAnnotations are extra annotations of the pods of this process. In a
+                      CamundaCluster, the keys camunda.io/config-hash and
+                      camunda.io/service-account-hash belong to the operator, and a value for
+                      them does not reach the pods.
                     type: object
                   podLabels:
                     additionalProperties:

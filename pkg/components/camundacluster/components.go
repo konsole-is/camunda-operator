@@ -647,8 +647,7 @@ func deploymentComponent(in Input, p Process) (*component.Component, error) {
 		// pre-existing account is excluded, not gated, so the operator never
 		// deletes an account that it does not own.
 		IncludeWhen(
-			p.Component == ComponentConnectors && PodConnectorsServiceAccountName(in) != "" &&
-				in.Effective.ConnectorsServiceAccount().Creates(),
+			p.Component == ComponentConnectors && rendersConnectorsServiceAccount(in),
 			func() component.Resource { return account },
 		).
 		WithResource(workload).
@@ -719,4 +718,11 @@ func bucketUsesWorkloadIdentity(bucket *v1.ObjectStorageConfig) bool {
 // than gated off, so it is never a deletion target.
 func rendersServiceAccount(in Input) bool {
 	return in.Effective.ServiceAccount.Creates() && usesServiceAccount(in)
+}
+
+// rendersConnectorsServiceAccount reports whether the operator renders the
+// ServiceAccount the connectors pods use: they run under a named account, and
+// connectors.serviceAccount.create is not false.
+func rendersConnectorsServiceAccount(in Input) bool {
+	return PodConnectorsServiceAccountName(in) != "" && in.Effective.ConnectorsServiceAccount().Creates()
 }

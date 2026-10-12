@@ -329,7 +329,17 @@ The pods of the cluster, except the connectors, run under the default ServiceAcc
 
 When a referenced bucket names a workload identity, the operator puts the matching annotation on the ServiceAccount. [ObjectStorageConfig](objectstorageconfig.md#authentication) lists the annotations. An annotation in `spec.serviceAccount.annotations` wins over the derived one. A bucket without an identity block adds no annotation, and you bind the principal `system:serviceaccount:<namespace>:<name>-camunda` on the cloud side. Two buckets that name different identities of one cloud report `InvalidReference`.
 
-With `serviceAccount.create: false`, the operator does not create the ServiceAccount. It reports `InvalidReference` while the ServiceAccount does not exist.
+The cloud reads the annotations of the ServiceAccount when a pod starts. So when the annotations that the operator puts on the ServiceAccount change, the pods that run under it restart. These are the brokers, the gateway, and the web applications. This holds for an edit of `spec.serviceAccount.annotations` and for a referenced bucket that names another identity. An edit of `spec.serviceAccount.annotations` does not restart the connectors. A change to a bucket restarts every pod, see [Changes and referenced Secrets](#changes-and-referenced-secrets). A backup Job that starts after the change runs with the new annotations.
+
+With `serviceAccount.create: false`, the operator does not create or change the ServiceAccount, and it does not read its annotations. It reports `InvalidReference` while the ServiceAccount does not exist. A change to the annotations of that account restarts no pod. After such a change, restart the pods yourself:
+
+```bash
+kubectl rollout restart statefulset/my-cluster-zeebe -n my-cluster-ns
+kubectl rollout restart deployment -n my-cluster-ns \
+  -l 'camunda.io/cluster=my-cluster,camunda.io/component in (gateway,operate,tasklist,admin)'
+```
+
+The second command restarts the gateway and each web application that runs in a Deployment of its own. When all of them run in the brokers, it finds no Deployment, and the first command is enough.
 
 ### Connectors
 
@@ -353,9 +363,9 @@ spec:
   # ... the rest of your cluster
 ```
 
-The connectors then run under `my-cluster-connectors`, or under `spec.connectors.serviceAccount.name`. That account carries only the annotations of the block. For an identity without an annotation, bind the principal `system:serviceaccount:<namespace>:<name>-connectors` on the cloud side. `status.connectorsServiceAccountName` shows the account. When the block is gone from the cluster and from its preset, the connectors go back to the ServiceAccount `default`. The account that the operator created stays until you delete the cluster.
+The connectors then run under `my-cluster-connectors`, or under `spec.connectors.serviceAccount.name`. That account carries only the annotations of the block. A change of these annotations restarts the connectors pods, and no other pod. For an identity without an annotation, bind the principal `system:serviceaccount:<namespace>:<name>-connectors` on the cloud side. `status.connectorsServiceAccountName` shows the account. When the block is gone from the cluster and from its preset, the connectors go back to the ServiceAccount `default`. The account that the operator created stays until you delete the cluster.
 
-While connectors are not enabled, the operator creates no connectors account. When connectors are enabled and `create` is `false`, `Ready` is `False` with reason `InvalidReference` while the account does not exist. When you create the account, the operator finds it by itself, without an edit to the cluster.
+While connectors are not enabled, the operator creates no connectors account. When connectors are enabled and `create` is `false`, `Ready` is `False` with reason `InvalidReference` while the account does not exist. When you create the account, the operator finds it by itself, without an edit to the cluster. After a change to the annotations of that account, restart the connectors pods yourself, with `kubectl rollout restart deployment/my-cluster-connectors -n my-cluster-ns`.
 
 The connectors account must not have the name of the cluster account. When `spec.serviceAccount.name` is `default`, enabled connectors need `spec.connectors.serviceAccount`, or `Ready` is `False` with reason `InvalidReference`. The API server rejects a spec in which `spec.connectors.serviceAccount.name` equals `spec.serviceAccount.name`. When only one of the two names is set and it equals the derived name of the other account, `Ready` is `False` with reason `InvalidReference`.
 
@@ -742,7 +752,7 @@ spec:
           name: "zeebe-overrides"
     # map[string]string. Optional. Extra labels of the broker pods.
     podLabels: {}
-    # map[string]string. Optional. Extra annotations of the broker pods.
+    # map[string]string. Optional. Extra annotations of the broker pods. The keys `camunda.io/config-hash` and `camunda.io/service-account-hash` belong to the operator, and a value for them does not reach the pods.
     podAnnotations: {}
     # object. Optional. Scheduling constraints of the broker pods. Replaces the top-level block and the preset block entirely.
     scheduling:
@@ -802,7 +812,7 @@ spec:
   extraEnvFrom: []
   # map[string]string. Optional. Extra labels of every workload pod.
   podLabels: {}
-  # map[string]string. Optional. Extra annotations of every workload pod.
+  # map[string]string. Optional. Extra annotations of every workload pod. The keys `camunda.io/config-hash` and `camunda.io/service-account-hash` belong to the operator, and a value for them does not reach the pods.
   podAnnotations: {}
   # object. Optional. Scheduling constraints of every workload, unless a component sets its own. Replaces the preset block entirely.
   scheduling: {}

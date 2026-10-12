@@ -140,3 +140,33 @@ func TestPresetFingerprintIgnoresThePasswordRotation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, first, withEmail, "an admin email may not roll the workloads either")
 }
+
+// The connectors account of a preset reaches the connectors pods through
+// their own ServiceAccount hash, so a change to it must not roll the other
+// processes through the fingerprint.
+func TestPresetFingerprintIgnoresTheConnectorsAccount(t *testing.T) {
+	t.Parallel()
+
+	none := v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{Version: "8.9.9"}}
+	annotated := *none.DeepCopy()
+	annotated.Cluster.Connectors = &v1.ConnectorsSpec{ServiceAccount: &v1.ServiceAccountSpec{
+		Annotations: map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/connectors"},
+	}}
+	enabled := *annotated.DeepCopy()
+	enabled.Cluster.Connectors.Enabled = new(true)
+	enabledOnly := *none.DeepCopy()
+	enabledOnly.Cluster.Connectors = &v1.ConnectorsSpec{Enabled: new(true)}
+
+	bare, err := PresetFingerprint(none)
+	require.NoError(t, err)
+	withAccount, err := PresetFingerprint(annotated)
+	require.NoError(t, err)
+	assert.Equal(t, bare, withAccount, "the first connectors account of a preset may not roll the workloads")
+
+	withEnabled, err := PresetFingerprint(enabled)
+	require.NoError(t, err)
+	onlyEnabled, err := PresetFingerprint(enabledOnly)
+	require.NoError(t, err)
+	assert.Equal(t, onlyEnabled, withEnabled)
+	assert.NotEqual(t, bare, onlyEnabled, "every other connectors change still rolls the workloads")
+}
