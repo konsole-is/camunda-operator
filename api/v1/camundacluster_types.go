@@ -249,8 +249,21 @@ type ConnectorsSpec struct {
 	// unless the resolved release provides it. Forbidden in a preset.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	// +optional
-	Version      string `json:"version,omitempty"`
-	WorkloadSpec `       json:",inline"`
+	Version string `json:"version,omitempty"`
+	// ServiceAccount configures the ServiceAccount of the connectors pods.
+	// When unset, they run under the default ServiceAccount of the namespace.
+	// When set, they run under <cluster name>-connectors, or under name. Only
+	// the annotations of this block go on the account, never the identities
+	// of the buckets. When they carry azure.workload.identity/client-id, the
+	// connectors pods get the label azure.workload.identity/use: "true". The
+	// connectors never run under the cluster ServiceAccount: name must differ
+	// from it, and a spec.serviceAccount.name of default needs this block, or
+	// Ready reports InvalidReference. The name default needs create false. A
+	// preset can set this block, except name.
+	// +kubebuilder:validation:XValidation:rule="!has(self.name) || self.name != 'default' || (has(self.create) && !self.create)",message="connectors.serviceAccount.name default requires create: false"
+	// +optional
+	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
+	WorkloadSpec   `                    json:",inline"`
 }
 
 // ClusterAuthSpec holds the credentials of one cluster and the identities
@@ -427,9 +440,15 @@ type CamundaClusterSpec struct {
 	// Ingress.
 	// +optional
 	ExternalURL string `json:"externalUrl,omitempty"`
-	// ServiceAccount configures the ServiceAccount of every workload. The
+	// ServiceAccount configures the ServiceAccount of every workload except
+	// the connectors, which connectors.serviceAccount configures. The
 	// workloads get access to the buckets of backupStorageRef and
-	// documentStorageRef through this identity.
+	// documentStorageRef through this identity. When the operator creates
+	// the account, it adds the identity annotation of each bucket that names
+	// one. When the
+	// annotations carry azure.workload.identity/client-id, the pods of these
+	// workloads, the backup Jobs included, get the label
+	// azure.workload.identity/use: "true".
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 	// Auth holds the credentials of this cluster and the identities that get
@@ -603,11 +622,16 @@ type CamundaClusterStatus struct {
 	// +optional
 	AdminPassword *AdminPasswordStatus `json:"adminPassword,omitempty"`
 	// ServiceAccountName is the ServiceAccount that the pods of this cluster
-	// run under. It is empty when they run under the default account of the
-	// namespace. An extension that runs a pod for this cluster reads it and
-	// does not derive the name itself.
+	// run under, except the connectors. It is empty when they run under the
+	// default account of the namespace. An extension that runs a pod for
+	// this cluster reads it and does not derive the name itself.
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+	// ConnectorsServiceAccountName is the ServiceAccount that the connectors
+	// pods run under. It is empty when neither the cluster nor its preset
+	// sets connectors.serviceAccount, and when connectors are not enabled.
+	// +optional
+	ConnectorsServiceAccountName string `json:"connectorsServiceAccountName,omitempty"`
 	// Conditions represent the current state. Ready holds the reason of a
 	// failed pre-check, or it follows the conditions of the components that
 	// the cluster needs. The per-process conditions (ZeebeReady, GatewayReady,
@@ -644,6 +668,7 @@ type CamundaCluster struct {
 	// +kubebuilder:validation:XValidation:rule="!has(oldSelf.zeebe) || !has(oldSelf.zeebe.storageClassName) || (has(self.zeebe) && has(self.zeebe.storageClassName) && self.zeebe.storageClassName == oldSelf.zeebe.storageClassName)",message="zeebe.storageClassName is immutable"
 	// +kubebuilder:validation:XValidation:rule="!has(oldSelf.zeebe) || !has(oldSelf.zeebe.storageSize) || !has(self.zeebe) || !has(self.zeebe.storageSize) || !quantity(string(self.zeebe.storageSize)).isLessThan(quantity(string(oldSelf.zeebe.storageSize)))",message="zeebe.storageSize cannot be shrunk"
 	// +kubebuilder:validation:XValidation:rule="!has(self.zeebe) || !has(self.zeebe.replicas) || !has(self.zeebe.replicationFactor) || self.zeebe.replicationFactor <= self.zeebe.replicas",message="zeebe.replicationFactor must not exceed zeebe.replicas"
+	// +kubebuilder:validation:XValidation:rule="!has(self.serviceAccount) || !has(self.serviceAccount.name) || !has(self.connectors) || !has(self.connectors.serviceAccount) || !has(self.connectors.serviceAccount.name) || self.connectors.serviceAccount.name != self.serviceAccount.name",message="connectors.serviceAccount.name must differ from serviceAccount.name"
 	// +required
 	Spec CamundaClusterSpec `json:"spec"`
 

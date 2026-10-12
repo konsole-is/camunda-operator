@@ -139,7 +139,7 @@ The other status fields in the example above:
 - `volumes` lists every bound broker volume with its name and capacity.
 - `observedGeneration` is the last generation of the spec that the operator processed. If it is lower than `metadata.generation`, the operator has not processed your last edit yet.
 
-When you set `spec.serviceAccount`, or a bucket uses workload identity, `serviceAccountName` names the ServiceAccount that the pods run under.
+When you set `spec.serviceAccount`, or a bucket uses workload identity, `serviceAccountName` names the ServiceAccount that the pods run under, except the connectors. When you set `spec.connectors.serviceAccount`, `connectorsServiceAccountName` names the ServiceAccount of the connectors.
 
 An `ElasticsearchCluster` uses the same reason vocabulary. Read the [ElasticsearchCluster](../crds/elasticsearchcluster.md) page for its condition types.
 

@@ -341,9 +341,10 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// The routes describe Services, which outlive a suspension, so they
 	// stand while the two bindings are cleared.
 	cluster.Status.Endpoints = components.Endpoints(&cluster, in.Effective)
-	// The account outlives a suspension, so it stands while the management
+	// The accounts outlive a suspension, so they stand while the management
 	// binding and the gateway binding are cleared.
 	cluster.Status.ServiceAccountName = components.PodServiceAccountName(in)
+	cluster.Status.ConnectorsServiceAccountName = components.PodConnectorsServiceAccountName(in)
 	cred.recordRotation(&cluster)
 
 	if reconcileErr != nil {

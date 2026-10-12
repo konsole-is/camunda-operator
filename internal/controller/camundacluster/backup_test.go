@@ -125,6 +125,29 @@ func expectPublishedAccount(cluster *v1.CamundaCluster, name string) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// expectPublishedConnectorsAccount polls until the cluster publishes name as
+// the ServiceAccount its connectors run under. An empty name is the default
+// account of the namespace.
+func expectPublishedConnectorsAccount(cluster *v1.CamundaCluster, name string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var latest v1.CamundaCluster
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+		g.Expect(latest.Status.ConnectorsServiceAccountName).To(Equal(name))
+	}, timeout, interval).Should(Succeed())
+}
+
+// expectDeploymentAccount polls until the Deployment named key runs its pods
+// under account.
+func expectDeploymentAccount(key client.ObjectKey, account string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var deployment appsv1.Deployment
+		g.Expect(k8sClient.Get(ctx, key, &deployment)).To(Succeed())
+		g.Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(account))
+	}, timeout, interval).Should(Succeed())
+}
+
 var _ = Describe("CamundaCluster backup wiring", func() {
 	Describe("the published management binding", func() {
 		// The default topology runs a standalone gateway, which hosts the web
@@ -220,6 +243,181 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				g.Expect(published).NotTo(BeNil())
 				g.Expect(published.BackupRepository).To(Equal("repository-of-this-contract"))
 			})
+		})
+	})
+
+	Describe("the connectors ServiceAccount", func() {
+		connectors := func() *v1.ConnectorsSpec {
+			return &v1.ConnectorsSpec{Enabled: new(true), Version: "8.9.7"}
+		}
+
+		It("keeps the connectors off the account of the cluster", func() {
+			ns := newNamespace()
+			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-sa"}
+			cluster.Spec.Connectors = connectors()
+			createCluster(cluster)
+
+			expectPublishedAccount(cluster, "platform-sa")
+			expectPublishedConnectorsAccount(cluster, "")
+			expectDeploymentAccount(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-gateway"}, "platform-sa")
+			expectDeploymentAccount(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-connectors"}, "default")
+		})
+
+		// A pre-existing account is a reference: its absence fails fast
+		// instead of leaving the connectors pods unschedulable.
+		It("requires a pre-existing connectors account to exist", func() {
+			ns := newNamespace()
+			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			cluster.Spec.Connectors = connectors()
+			cluster.Spec.Connectors.ServiceAccount = &v1.ServiceAccountSpec{
+				Name:   "platform-connectors",
+				Create: new(false),
+			}
+			createCluster(cluster)
+
+			expectReady(
+				cluster,
+				metav1.ConditionFalse,
+				Equal(v1.ReasonInvalidReference),
+				And(
+					ContainSubstring("platform-connectors"),
+					ContainSubstring("connectors.serviceAccount.create is false"),
+				),
+			)
+
+			Expect(k8sClient.Create(ctx, &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "platform-connectors"},
+			})).To(Succeed())
+
+			// Nothing watches the foreign account, and a failed pre-check
+			// publishes no account, so the published name proves that the
+			// pre-check came back on its own and passed.
+			expectPublishedConnectorsAccount(cluster, "platform-connectors")
+			expectDeploymentAccount(
+				client.ObjectKey{Namespace: ns, Name: cluster.Name + "-connectors"},
+				"platform-connectors",
+			)
+
+			var account corev1.ServiceAccount
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: "platform-connectors"}, &account)).
+				To(Succeed())
+			Expect(account.OwnerReferences).To(BeEmpty())
+		})
+
+		// The schema refuses two equal names of the spec, so only the derived
+		// name of the cluster account reaches the pre-check.
+		It("refuses a connectors account that is the cluster account", func() {
+			ns := newNamespace()
+			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{}
+			cluster.Spec.Connectors = connectors()
+			cluster.Spec.Connectors.ServiceAccount = &v1.ServiceAccountSpec{Name: cluster.Name + "-camunda"}
+			createCluster(cluster)
+
+			expectReady(
+				cluster,
+				metav1.ConditionFalse,
+				Equal(v1.ReasonInvalidReference),
+				ContainSubstring("connectors.serviceAccount.name"),
+			)
+		})
+
+		It("merges the connectors account annotations of the preset", func() {
+			ns := newNamespace()
+			preset := minimalPreset()
+			preset.Spec.Cluster.Connectors = &v1.ConnectorsSpec{
+				ServiceAccount: &v1.ServiceAccountSpec{Annotations: map[string]string{
+					v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/preset-connectors",
+					"example.com/team":       "preset",
+				}},
+			}
+			Expect(k8sClient.Create(ctx, preset)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
+
+			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			cluster.Spec.PresetRef = preset.Name
+			cluster.Spec.Connectors = connectors()
+			cluster.Spec.Connectors.ServiceAccount = &v1.ServiceAccountSpec{Annotations: map[string]string{
+				"example.com/team": "cluster",
+			}}
+			createCluster(cluster)
+
+			expectPublishedConnectorsAccount(cluster, cluster.Name+"-connectors")
+			Eventually(func(g Gomega) {
+				var account corev1.ServiceAccount
+				key := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-connectors"}
+				g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+				g.Expect(account.Annotations).To(HaveKeyWithValue(
+					v1.IRSARoleARNAnnotation, "arn:aws:iam::123456789012:role/preset-connectors",
+				))
+				g.Expect(account.Annotations).To(HaveKeyWithValue("example.com/team", "cluster"))
+			}, timeout, interval).Should(Succeed())
+		})
+
+		// Without the block the operator names no connectors account, so an
+		// account with the derived name is not its own to delete.
+		It("leaves an account of the user with the derived name in place", func() {
+			ns := newNamespace()
+			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			cluster.Spec.Connectors = connectors()
+			key := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-connectors"}
+			Expect(k8sClient.Create(ctx, &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: key.Name},
+			})).To(Succeed())
+			createCluster(cluster)
+
+			expectDeploymentAccount(key, "default")
+			Consistently(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, key, &corev1.ServiceAccount{})).To(Succeed())
+			}, 2*time.Second, interval).Should(Succeed())
+		})
+
+		// Disabled connectors run no pod, so the operator names no account
+		// for them, also when the block is set.
+		It("leaves an account with the derived name in place while connectors are off", func() {
+			ns := newNamespace()
+			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			cluster.Spec.Connectors = &v1.ConnectorsSpec{
+				Enabled:        new(false),
+				ServiceAccount: &v1.ServiceAccountSpec{},
+			}
+			key := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-connectors"}
+			Expect(k8sClient.Create(ctx, &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: key.Name},
+			})).To(Succeed())
+			createCluster(cluster)
+
+			expectDeploymentAccount(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-gateway"}, "")
+			Consistently(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, key, &corev1.ServiceAccount{})).To(Succeed())
+			}, 2*time.Second, interval).Should(Succeed())
+		})
+
+		It("moves the connectors back to the default account when the block goes", func() {
+			ns := newNamespace()
+			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			cluster.Spec.Connectors = connectors()
+			cluster.Spec.Connectors.ServiceAccount = &v1.ServiceAccountSpec{}
+			createCluster(cluster)
+
+			key := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-connectors"}
+			expectDeploymentAccount(key, cluster.Name+"-connectors")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, key, &corev1.ServiceAccount{})).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Connectors.ServiceAccount = nil })
+
+			expectPublishedConnectorsAccount(cluster, "")
+			expectDeploymentAccount(key, "default")
+
+			// The account stays with the cluster and goes when the cluster
+			// goes.
+			var account corev1.ServiceAccount
+			Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+			Expect(metav1.GetControllerOf(&account)).NotTo(BeNil())
+			Expect(metav1.GetControllerOf(&account).Name).To(Equal(cluster.Name))
 		})
 	})
 

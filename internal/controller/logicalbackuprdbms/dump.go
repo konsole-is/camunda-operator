@@ -131,6 +131,7 @@ func (r *LogicalBackupRDBMSReconciler) createJob(
 		DBUsernameKey:      creds.UsernameKey,
 		DBPasswordKey:      creds.PasswordKey,
 		ServiceAccountName: res.account,
+		AccountPodLabels:   res.accountLabels,
 		ServerVersion:      res.server.Status.ServerVersion,
 		Host:               res.server.Spec.Host,
 		Port:               res.server.Spec.Port,
