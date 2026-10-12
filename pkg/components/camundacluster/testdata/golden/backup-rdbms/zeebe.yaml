@@ -37,6 +37,7 @@ spec:
     metadata:
       annotations:
         camunda.io/config-hash: 3bd990fe3ceca5d7
+        camunda.io/service-account-hash: 3061d1c29c73cf84
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/cluster-uid: my-cluster-uid

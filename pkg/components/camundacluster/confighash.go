@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -114,6 +115,23 @@ func PasswordHash(value string) string {
 	}
 
 	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])[:configHashLength]
+}
+
+// annotationsHash hashes a set of annotations independently of the map
+// order. An empty set returns "".
+func annotationsHash(annotations map[string]string) string {
+	if len(annotations) == 0 {
+		return ""
+	}
+
+	keys := slices.Sorted(maps.Keys(annotations))
+	var b strings.Builder
+	for _, key := range keys {
+		b.WriteString(key + "=" + annotations[key] + "\n")
+	}
+
+	sum := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(sum[:])[:configHashLength]
 }
 
