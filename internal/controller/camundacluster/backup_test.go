@@ -996,6 +996,72 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				ContainSubstring("absent-keys"),
 			)
 		})
+
+		// The connectors run under an account of their own and read nothing
+		// of the bucket, so an edit of the bucket must not restart them.
+		It("rolls the processes of the cluster account and not the connectors when the bucket changes", func() {
+			ns := newNamespace()
+			binding := createBinding(ns, true)
+			setSnapshotRepository(binding, "my-repository")
+			createSecret(ns, "minio-keys", map[string]string{
+				"accessKeyId": "minio", "secretAccessKey": "minio123",
+			})
+			bucket := createStaticBucket(ns, "minio-keys")
+
+			cluster := newCluster(ns, createPlatformConfig(), binding)
+			cluster.Spec.BackupStorageRef = bucket.Name
+			cluster.Spec.Connectors = &v1.ConnectorsSpec{Enabled: new(true), Version: "8.9.7"}
+			cluster.Spec.Operate = &v1.WebAppSpec{Mode: v1.ComponentModeStandalone}
+			cluster.Spec.Tasklist = &v1.WebAppSpec{Mode: v1.ComponentModeStandalone}
+			cluster.Spec.Admin = &v1.WebAppSpec{Mode: v1.ComponentModeStandalone}
+			createCluster(cluster)
+
+			zeebe := client.ObjectKey{Namespace: ns, Name: components.WorkloadName(cluster, components.ComponentZeebe)}
+			deployments := map[string]client.ObjectKey{}
+			for _, comp := range []string{
+				components.ComponentGateway,
+				components.ComponentOperate,
+				components.ComponentTasklist,
+				components.ComponentAdmin,
+			} {
+				deployments[comp] = client.ObjectKey{Namespace: ns, Name: components.WorkloadName(cluster, comp)}
+			}
+			connectorsKey := client.ObjectKey{
+				Namespace: ns,
+				Name:      components.WorkloadName(cluster, components.ComponentConnectors),
+			}
+
+			zeebeBefore := fetchStatefulSet(zeebe).Spec.Template
+			before := map[string]corev1.PodTemplateSpec{}
+			for comp, key := range deployments {
+				before[comp] = fetchDeployment(key).Spec.Template
+			}
+			connectorsBefore := fetchDeployment(connectorsKey).Spec.Template
+
+			Eventually(func(g Gomega) {
+				var latest v1.ObjectStorageConfig
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(bucket), &latest)).To(Succeed())
+				latest.Spec.S3.ForcePathStyle = true
+				g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				var sts appsv1.StatefulSet
+				g.Expect(k8sClient.Get(ctx, zeebe, &sts)).To(Succeed())
+				g.Expect(sts.Spec.Template).NotTo(Equal(zeebeBefore))
+				for comp, key := range deployments {
+					var deployment appsv1.Deployment
+					g.Expect(k8sClient.Get(ctx, key, &deployment)).To(Succeed())
+					g.Expect(deployment.Spec.Template).NotTo(Equal(before[comp]), comp)
+				}
+			}, timeout, interval).Should(Succeed())
+
+			Consistently(func(g Gomega) {
+				var connectorsNow appsv1.Deployment
+				g.Expect(k8sClient.Get(ctx, connectorsKey, &connectorsNow)).To(Succeed())
+				g.Expect(connectorsNow.Spec.Template).To(Equal(connectorsBefore))
+			}, 2*time.Second, interval).Should(Succeed())
+		})
 	})
 })
 

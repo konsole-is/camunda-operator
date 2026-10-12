@@ -40,6 +40,11 @@ const configHashLength = 16
 // input, so the pods of a process roll only when a value rendered for that
 // process or a referenced object changes.
 //
+// The hash of every process except connectors also takes in.BucketHashInputs.
+// These processes carry the identity of the buckets, and the brokers write
+// the backups. Connectors run under an account of their own and read nothing
+// of a bucket, so a bucket change does not restart them.
+//
 // The hash of connectors also takes in.AdminPasswordHash, the digest of the
 // admin password that the admin Secret publishes. Connectors authenticate
 // every call with that password at runtime, so they must restart when it
@@ -61,6 +66,9 @@ func configHash(in Input, p Process, r rendered) string {
 	}
 
 	inputs := slices.Clone(in.HashInputs)
+	if p.Component != ComponentConnectors {
+		inputs = append(inputs, in.BucketHashInputs...)
+	}
 	slices.Sort(inputs)
 	for _, input := range inputs {
 		b.WriteString("input=" + input + "\n")

@@ -19,6 +19,7 @@ package camundacluster
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -37,7 +38,12 @@ import (
 // An Elasticsearch cluster that takes backups also needs the snapshot
 // repository of its storage contract: without it the web applications have
 // nowhere to write, so the reference is incomplete.
+//
+// The hash inputs of the buckets go to in.BucketHashInputs, not to the shared
+// inputs, so a bucket change rolls only the processes that ConfigHash gives
+// them to.
 func (res *resolver) resolveObjectStorage(ctx context.Context, in *components.Input) error {
+	shared := len(res.inputs)
 	backup, err := res.objectStorage(ctx, res.cluster.Spec.BackupStorageRef)
 	if err != nil {
 		return err
@@ -66,6 +72,8 @@ func (res *resolver) resolveObjectStorage(ctx context.Context, in *components.In
 			return err
 		}
 	}
+	in.BucketHashInputs = slices.Clone(res.inputs[shared:])
+	res.inputs = res.inputs[:shared]
 
 	return res.checkServiceAccount(ctx, in)
 }
