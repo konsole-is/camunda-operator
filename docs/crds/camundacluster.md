@@ -690,7 +690,7 @@ spec:
   serviceAccount:
     # string. Optional, default: <name>-camunda. Name of the ServiceAccount.
     name: "camunda-prod"
-    # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it. A switch to false releases an account that the operator created, see Workload identity.
+    # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it. A switch to false removes the owner reference of the operator from an account that it created, see Workload identity.
     create: true
     # map[string]string. Optional. Annotations on the ServiceAccount. When create is false, the operator does not set them, but an Azure client ID among them still labels the pods.
     annotations:
@@ -808,7 +808,7 @@ spec:
     serviceAccount:
       # string. Optional, default when the block is set: <name>-connectors. Name of the ServiceAccount. Must differ from serviceAccount.name. The name default needs create: false. With create: false, the name <name>-camunda is refused while neither the cluster nor its preset sets serviceAccount and no referenced bucket uses workload identity.
       name: "my-cluster-connectors"
-      # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it. A switch to false releases an account that the operator created, see Workload identity.
+      # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it. A switch to false removes the owner reference of the operator from an account that it created, see Workload identity.
       create: true
       # map[string]string. Optional. Annotations on the ServiceAccount. When create is false, the operator does not set them, but an Azure client ID among them still labels the pods. The identities of the buckets are never added.
       annotations: {}

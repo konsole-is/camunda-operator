@@ -167,8 +167,6 @@ The CRDs carry the annotation `helm.sh/resource-policy: keep`. Helm updates them
 
 To upgrade a manifest install, apply the `install.yaml` of the new release with `--server-side`, as in [Install without Helm](#install-without-helm). Make the same mirror edits again before you apply.
 
-When the operator puts annotations on the ServiceAccount of `CamundaCluster` pods, these pods restart once after the upgrade. From this release, a change to these annotations restarts the pods that run under that account.
-
 ### Connectors no longer use the cluster ServiceAccount
 
 From this release, the connectors of a `CamundaCluster` run under the default ServiceAccount of the namespace. Before, they ran under the ServiceAccount of the cluster and got its cloud role. If a connector of yours uses that role, set `spec.connectors.serviceAccount` right after you upgrade the operator. An AWS connector with the default credentials chain is an example. Give the connectors a role of their own, not the role of the cluster:
@@ -190,6 +188,10 @@ spec:
 The connectors pods restart once after the upgrade, and again when you set the block. If `spec.serviceAccount.name` is `default` and connectors are enabled, the cluster reports `InvalidReference`, and the connectors keep the cluster account until you set `spec.connectors.serviceAccount`. For an identity without an annotation, such as EKS Pod Identity, bind the new principal `system:serviceaccount:my-cluster-ns:my-cluster-connectors` on the cloud side.
 
 If you pull images from a mirror, the connectors need the pull Secret on their new ServiceAccount: `default`, or the account of `spec.connectors.serviceAccount`. The operator sets no pull Secret on any ServiceAccount. Add it to the `imagePullSecrets` of that account. The operator keeps a pull Secret that you add to an account that it creates. See [Workload identity](crds/camundacluster.md#workload-identity).
+
+### Pods under an annotated ServiceAccount restart once
+
+From this release, a change to the annotations that the operator puts on a ServiceAccount restarts the `CamundaCluster` pods that run under it. When the operator puts annotations on the ServiceAccount of `CamundaCluster` pods, these pods restart once after you upgrade to this release.
 
 ## Uninstall
 
