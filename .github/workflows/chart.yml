@@ -4,10 +4,15 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The Renovate commit workflow starts this one on the commit it pushes.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   test-chart:
