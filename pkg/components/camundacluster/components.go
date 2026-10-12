@@ -120,7 +120,8 @@ type namedPort struct {
 // it is rendered when spec.serviceAccount is set or a referenced bucket
 // derives a workload-identity annotation. The connectors component carries
 // the ServiceAccount of the connectors when spec.connectors.serviceAccount
-// is set and create is not false.
+// is set. With create false, neither component renders its account. It
+// only releases an account that it created before.
 func Build(in Input) ([]ProcessComponent, error) {
 	processes := Resolve(in.Effective)
 	comps := make([]ProcessComponent, 0, len(processes))
@@ -178,15 +179,7 @@ func zeebeComponent(in Input, p Process) (*component.Component, error) {
 		WithName(p.Component).
 		WithConditionType(component.ConditionType(p.ConditionType)).
 		WithFeatureGate(feature.NewBooleanGate(p.Enabled)).
-		// A pre-existing ServiceAccount is excluded, not gated: a gated-off
-		// resource is a deletion target, and the operator must never delete
-		// an account it does not own. With create true the gate cleans up
-		// the owned account when nothing uses one anymore.
-		IncludeWhen(
-			in.Effective.ServiceAccount.Creates(),
-			func() component.Resource { return account },
-			component.GatedBy(feature.NewBooleanGate(usesServiceAccount(in))),
-		).
+		WithResource(account, clusterAccountOption(in)).
 		WithResource(sts).
 		WithResource(svc).
 		// Gated, not excluded: a gateway that moves out of the brokers
@@ -196,6 +189,16 @@ func zeebeComponent(in Input, p Process) (*component.Component, error) {
 		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Effective.Suspend).
 		Build()
+}
+
+// clusterAccountOption registers the cluster ServiceAccount. With create true
+// the operator owns it, and deletes it when nothing uses one anymore. With
+// create false the account is the user's, see accountOptions.
+func clusterAccountOption(in Input) component.ResourceOption {
+	if !in.Effective.ServiceAccount.Creates() {
+		return component.OrphanWhen(true)
+	}
+	return component.GatedBy(feature.NewBooleanGate(usesServiceAccount(in)))
 }
 
 // serviceAccountFor renders the ServiceAccount of every workload pod except
@@ -643,12 +646,11 @@ func deploymentComponent(in Input, p Process) (*component.Component, error) {
 		WithName(p.Component).
 		WithConditionType(component.ConditionType(p.ConditionType)).
 		WithFeatureGate(feature.NewBooleanGate(p.Enabled)).
-		// Only the connectors run under an account of their own. A
-		// pre-existing account is excluded, not gated, so the operator never
-		// deletes an account that it does not own.
+		// Only the connectors run under an account of their own.
 		IncludeWhen(
-			p.Component == ComponentConnectors && rendersConnectorsServiceAccount(in),
+			p.Component == ComponentConnectors && registersConnectorsServiceAccount(in),
 			func() component.Resource { return account },
+			accountOptions(in.Effective.ConnectorsServiceAccount())...,
 		).
 		WithResource(workload).
 		WithResource(svc).
@@ -656,6 +658,33 @@ func deploymentComponent(in Input, p Process) (*component.Component, error) {
 		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Effective.Suspend).
 		Build()
+}
+
+// registersConnectorsServiceAccount reports whether the connectors component
+// registers the connectors ServiceAccount: while the connectors run under it,
+// and with create false also while connectors are off, as one edit can turn
+// them off and switch create. While connectors are off, no check keeps the
+// connectors account apart from the cluster account, so an account with the
+// name of the cluster account is not registered: its release would remove the
+// owner reference that the cluster component sets.
+func registersConnectorsServiceAccount(in Input) bool {
+	if PodConnectorsServiceAccountName(in) != "" {
+		return true
+	}
+
+	return !in.Effective.ConnectorsServiceAccount().Creates() &&
+		ConnectorsServiceAccountName(in.Cluster, in.Effective) != ServiceAccountName(in.Cluster, in.Effective)
+}
+
+// accountOptions registers a ServiceAccount that the spec block account
+// configures. With create false the account is the user's: the operator never
+// applies or deletes it, and removes its owner reference from an account that
+// it created before, so the account outlives the cluster.
+func accountOptions(account *v1.ServiceAccountSpec) []component.ResourceOption {
+	if !account.Creates() {
+		return []component.ResourceOption{component.OrphanWhen(true)}
+	}
+	return nil
 }
 
 // connectorsServiceAccountFor renders the ServiceAccount of the connectors.
@@ -714,8 +743,7 @@ func bucketUsesWorkloadIdentity(bucket *v1.ObjectStorageConfig) bool {
 
 // rendersServiceAccount reports whether the operator renders the
 // ServiceAccount the pods use: it is used at all, and the spec does not name
-// a foreign one. A foreign account is excluded from the component rather
-// than gated off, so it is never a deletion target.
+// a foreign one.
 func rendersServiceAccount(in Input) bool {
 	return in.Effective.ServiceAccount.Creates() && usesServiceAccount(in)
 }

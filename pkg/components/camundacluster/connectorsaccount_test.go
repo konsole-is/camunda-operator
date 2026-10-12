@@ -263,3 +263,49 @@ func TestClusterAccountPodLabels(t *testing.T) {
 		})
 	}
 }
+
+// connectorsComponent returns the component of the connectors process.
+func connectorsComponent(t *testing.T, in Input) ProcessComponent {
+	t.Helper()
+
+	comps, err := Build(in)
+	require.NoError(t, err)
+	for _, pc := range comps {
+		if pc.Process.Component == ComponentConnectors {
+			return pc
+		}
+	}
+	require.Fail(t, "no connectors component")
+	return ProcessComponent{}
+}
+
+// Disabled connectors skip the check that keeps the two accounts apart. A
+// connectors block that names the cluster account must then not release the
+// account that the cluster component owns.
+func TestDisabledConnectorsReleaseOnlyAnAccountOfTheirOwn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		account    string
+		registered bool
+	}{
+		{name: "the name of the cluster account", account: "my-cluster-camunda", registered: false},
+		{name: "a name of their own", account: "my-cluster-connectors", registered: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			in := connectorsInput(t, nil, func(spec *v1.CamundaClusterSpec) {
+				spec.ServiceAccount = &v1.ServiceAccountSpec{}
+				spec.Connectors.Enabled = new(false)
+				spec.Connectors.ServiceAccount = &v1.ServiceAccountSpec{Name: tt.account, Create: new(false)}
+			})
+
+			_, ok := connectorsComponent(t, in).Component.Resource("v1/ServiceAccount/my-cluster-ns/" + tt.account)
+			assert.Equal(t, tt.registered, ok)
+		})
+	}
+}

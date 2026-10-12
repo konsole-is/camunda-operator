@@ -306,19 +306,23 @@ func ElasticsearchComponent(
 	return component.NewComponentBuilder().
 		WithName("elasticsearch").
 		WithConditionType(ConditionElasticsearch).
-		// A pre-existing ServiceAccount is excluded, not gated: a gated-off
-		// resource is a deletion target, and the operator must never delete
-		// an account it does not own. With create true the gate cleans up
-		// the owned account when nothing uses one anymore.
-		IncludeWhen(
-			merged.ServiceAccount.Creates(),
-			func() component.Resource { return account },
-			component.GatedBy(feature.NewBooleanGate(usesServiceAccount(merged, storage))),
-		).
+		WithResource(account, serviceAccountOption(merged, storage)).
 		WithResource(elasticsearch).
 		WithGracePeriod(gracePeriod).
 		Suspend(merged.Suspend).
 		Build()
+}
+
+// serviceAccountOption registers the ServiceAccount of the pods. With create
+// true the operator owns it, and deletes it when nothing uses one anymore.
+// With create false the account is the user's: the operator never applies or
+// deletes it, and removes its owner reference from an account that it created
+// before, so the account outlives the cluster.
+func serviceAccountOption(merged v1.ElasticsearchClusterSpec, storage *SnapshotStorage) component.ResourceOption {
+	if !merged.ServiceAccount.Creates() {
+		return component.OrphanWhen(true)
+	}
+	return component.GatedBy(feature.NewBooleanGate(usesServiceAccount(merged, storage)))
 }
 
 // serviceAccount renders the ServiceAccount of the pods. Its annotations are
