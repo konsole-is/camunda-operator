@@ -198,7 +198,7 @@ spec:
   snapshotStorageRef: "my-backup-bucket"
   # object. Optional. ServiceAccount of the Elasticsearch pods. The operator creates one when this block is set, or when the snapshot bucket uses workload identity.
   serviceAccount:
-    # string. Optional, default: <name>-es. Name of the ServiceAccount. A workload identity without an annotation binds the principal system:serviceaccount:<namespace>:<name>.
+    # string. Optional, default: <name>-es. Name of the ServiceAccount. A workload identity without an annotation binds the principal system:serviceaccount:<namespace>:<name>. The name <name>-es belongs to the operator. While the pods run under the default ServiceAccount, the operator deletes an account of that name, also one that you created.
     name: "my-cluster-es"
     # boolean. Optional, default: true. With false, you manage the ServiceAccount. The operator does not create, annotate, or own it, and a missing one fails Ready. A switch to false removes the owner reference from the account that the operator created, so it stays when you delete the cluster. A switch back to true owns and annotates it again.
     create: true

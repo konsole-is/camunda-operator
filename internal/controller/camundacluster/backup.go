@@ -79,7 +79,8 @@ func (res *resolver) resolveObjectStorage(ctx context.Context, in *components.In
 }
 
 // checkServiceAccount fails the pre-check when the connectors would run under
-// the ServiceAccount of the cluster, and when the spec names a pre-existing
+// the ServiceAccount of the cluster or name its reserved account, see
+// components.CheckConnectorsServiceAccount, and when the spec names a pre-existing
 // ServiceAccount, of the cluster or of the connectors, that does not exist.
 // The operator never creates, annotates, nor owns a pre-existing account, so
 // an absent one would otherwise surface as unschedulable pods. Nothing
