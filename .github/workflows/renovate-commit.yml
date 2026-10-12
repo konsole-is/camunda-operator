@@ -39,7 +39,7 @@ jobs:
         id: artifact
         run: |
           count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" \
-            --jq '[.artifacts[] | select(.name == "changes")] | length')
+            --jq '[.artifacts[] | select(.name == "changes" and (.expired | not))] | length')
           echo "found=$([ "$count" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
       - name: Download the changed files
