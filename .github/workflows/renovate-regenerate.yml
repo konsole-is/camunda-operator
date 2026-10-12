@@ -99,9 +99,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # The files come from a job that ran code of the branch, so only
-          # the paths of the drift checks can land.
+          # the files that the generators write can land.
           jq -s -e 'all(.[].path;
-            (test("^(config/prometheus/observability|test/fixtures/merge)/")
+            (startswith("config/prometheus/observability/")
+              or test("^test/fixtures/merge/.+\\.json$")
               or . == "docs/crds/api-reference.md"
               or . == "pkg/images/table.json")
             and (contains("..") | not))' additions.json deletions.json > /dev/null
