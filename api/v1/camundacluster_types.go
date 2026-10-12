@@ -505,7 +505,10 @@ type CamundaClusterSpec struct {
 	// PodLabels are extra labels of every workload pod.
 	// +optional
 	PodLabels map[string]string `json:"podLabels,omitempty"`
-	// PodAnnotations are extra annotations of every workload pod.
+	// PodAnnotations are extra annotations of every workload pod. The keys
+	// camunda.io/config-hash and camunda.io/service-account-hash belong to the
+	// operator. A value for them here, or in the podAnnotations of a process,
+	// does not reach the pods.
 	// +optional
 	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
 	// Scheduling holds the scheduling constraints of every workload that does
