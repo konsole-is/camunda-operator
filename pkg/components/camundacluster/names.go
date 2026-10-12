@@ -253,17 +253,16 @@ func ConnectorsServiceAccountName(cluster *v1.CamundaCluster, e Effective) strin
 //
 // It also returns an error, with connectors on or off, when
 // connectors.serviceAccount names the derived cluster account with create
-// false while the cluster uses no account. That name is reserved for the
-// operator, which deletes an account of that name that the cluster does not
-// use.
+// false while PodServiceAccountName is empty. That name is reserved for the
+// operator, which then deletes an account of that name.
 func CheckConnectorsServiceAccount(in Input) error {
 	account := in.Effective.ConnectorsServiceAccount()
 	if account != nil && !account.Creates() && PodServiceAccountName(in) == "" &&
 		ConnectorsServiceAccountName(in.Cluster, in.Effective) == ServiceAccountName(in.Cluster, in.Effective) {
 		return fmt.Errorf(
 			"connectors.serviceAccount.name %q is reserved for the ServiceAccount that the operator "+
-				"creates for the cluster, and the operator deletes it while the cluster uses no ServiceAccount. "+
-				"Give the connectors a ServiceAccount of another name",
+				"creates for the cluster, and the operator deletes it while the cluster has no "+
+				"ServiceAccount of its own. Give the connectors a ServiceAccount of another name",
 			account.Name,
 		)
 	}

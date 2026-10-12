@@ -262,10 +262,10 @@ type ConnectorsSpec struct {
 	// connectors never run under the cluster ServiceAccount: name must differ
 	// from it, and a spec.serviceAccount.name of default needs this block, or
 	// Ready reports InvalidReference. The name default needs create false.
-	// With create false, name must not be <cluster name>-camunda while the
-	// other workloads use the default ServiceAccount, or Ready reports
-	// InvalidReference. This also holds while connectors are off. A preset
-	// can set this block, except name.
+	// With create false, name must not be <cluster name>-camunda while
+	// spec.serviceAccount is unset and no referenced bucket uses workload
+	// identity. Ready then reports InvalidReference, also while connectors
+	// are off. A preset can set this block, except name.
 	// +kubebuilder:validation:XValidation:rule="!has(self.name) || self.name != 'default' || (has(self.create) && !self.create)",message="connectors.serviceAccount.name default requires create: false"
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
@@ -454,9 +454,9 @@ type CamundaClusterSpec struct {
 	// one. When the annotations carry azure.workload.identity/client-id, the
 	// pods of these workloads, the backup Jobs included, get the label
 	// azure.workload.identity/use: "true". The name <cluster name>-camunda
-	// belongs to the operator. While the workloads use the default
-	// ServiceAccount, the operator deletes an account of that name, also one
-	// that it did not create.
+	// belongs to the operator. While this block is unset and no referenced
+	// bucket uses workload identity, the operator deletes an account of that
+	// name. It deletes one that it did not create too.
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 	// Auth holds the credentials of this cluster and the identities that get
