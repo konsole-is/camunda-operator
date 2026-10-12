@@ -193,6 +193,10 @@ If you pull images from a mirror, the connectors need the pull Secret on their n
 
 From this release, a change to the annotations that the operator puts on a ServiceAccount restarts the `CamundaCluster` pods that run under it. When the operator puts annotations on the ServiceAccount of `CamundaCluster` pods, these pods restart once after you upgrade to this release.
 
+### Elasticsearch pods under an annotated ServiceAccount restart once
+
+From this release, a change to the annotations that the operator puts on the ServiceAccount of an `ElasticsearchCluster` restarts its Elasticsearch pods. An `ElasticsearchCluster` whose operator-created account has annotations restarts its pods once after you upgrade to this release. The annotations come from `spec.serviceAccount.annotations` or from the workload identity of the snapshot bucket. See [ServiceAccount](crds/elasticsearchcluster.md#serviceaccount).
+
 ## Uninstall
 
 ```bash
