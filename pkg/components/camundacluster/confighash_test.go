@@ -18,6 +18,7 @@ package camundacluster
 
 import (
 	"regexp"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -103,6 +104,30 @@ func TestBucketChangeRollsTheClusterPodsOnly(t *testing.T) {
 		assert.NotEqual(t, before[process], after[process], "%s must roll", process)
 	}
 	assert.Equal(t, before[ComponentConnectors], after[ComponentConnectors], "the connectors must not roll")
+}
+
+// Before the bucket inputs had a field of their own, they sat in HashInputs.
+// The processes of the cluster account must keep that hash, or every pod of
+// a cluster with a bucket restarts on the operator upgrade.
+func TestBucketHashInputsKeepTheHashOfTheClusterProcesses(t *testing.T) {
+	t.Parallel()
+
+	bucketInputs := []string{
+		"ObjectStorageConfig/my-cluster-ns/my-backup-config=3",
+		"Secret/my-cluster-ns/minio-keys=0123456789abcdef",
+	}
+	scoped := separatedInput(t, s3Bucket(), nil)
+	scoped.HashInputs = []string{"Secret/my-cluster-ns/es-user=12", "SecondaryStorageConfig/my-cluster-ns/es=1"}
+	scoped.BucketHashInputs = bucketInputs
+	shared := separatedInput(t, s3Bucket(), nil)
+	shared.HashInputs = append(slices.Clone(scoped.HashInputs), bucketInputs...)
+
+	for _, p := range Resolve(scoped.Effective) {
+		if p.Component == ComponentConnectors {
+			continue
+		}
+		assert.Equal(t, ConfigHash(shared, p), ConfigHash(scoped, p), p.Component)
+	}
 }
 
 // PasswordHash never returns the password itself, and equal passwords hash
