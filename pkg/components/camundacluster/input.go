@@ -142,8 +142,8 @@ type Input struct {
 	HashInputs []string
 	// BucketHashInputs are the hash inputs of the referenced buckets: the
 	// generation of each ObjectStorageConfig and the data digest of its
-	// credentials Secret, in the format of HashInputs. Only the processes that
-	// run under the cluster account consume them; see ConfigHash.
+	// credentials Secret, in the format of HashInputs. The hash of every
+	// process except the connectors takes them; see ConfigHash.
 	BucketHashInputs []string
 	// AdminPasswordHash is PasswordHash of the admin password that the admin
 	// Secret of a basic-auth cluster publishes, or "" under OIDC. It is the

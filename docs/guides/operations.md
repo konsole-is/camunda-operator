@@ -550,7 +550,7 @@ kubectl get pod,pvc -n my-cluster-ns -l camunda.io/cluster=my-cluster,camunda.io
 kubectl delete camundacluster my-cluster -n my-cluster-ns
 ```
 
-Kubernetes garbage-collects everything that the cluster owns: the workloads, the Services, the admin Secret, the copied Secrets, and the ServiceMonitors. A ServiceAccount that the operator created goes too. The broker volumes follow the retention policy of the cluster. With `Delete`, the default, they go with the cluster. With `Retain`, they stay, and a later cluster with the same name attaches them again. Set the policy before you delete:
+Kubernetes garbage-collects everything that the cluster owns: the workloads, the Services, the admin Secret, the copied Secrets, and the ServiceMonitors. A ServiceAccount that the operator created goes too, unless you switched its `create` to `false`. The broker volumes follow the retention policy of the cluster. With `Delete`, the default, they go with the cluster. With `Retain`, they stay, and a later cluster with the same name attaches them again. Set the policy before you delete:
 
 ```yaml
 apiVersion: core.camunda.io/v1
