@@ -14,8 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package accounthash restarts pods when the annotations of their
-// ServiceAccount change. Workload identity reads those annotations when a pod
+// Package accounthash hashes the annotations of a ServiceAccount into the
+// value of a pod template annotation, so that a change of the annotations
+// rolls the pods. Workload identity reads those annotations when a pod
 // starts, so a pod that started before a change keeps the old identity.
 package accounthash
 

@@ -99,6 +99,20 @@ func TestBucketIdentityChangeRollsTheNodes(t *testing.T) {
 	assert.NotEqual(t, before.Annotations[accounthash.Annotation], after.Annotations[accounthash.Annotation])
 }
 
+// A value in spec.serviceAccount.annotations wins over the bucket identity on
+// the same key, so a bucket change under it leaves the account as it is.
+func TestBucketIdentityChangeUnderASpecAnnotationKeepsTheNodes(t *testing.T) {
+	t.Parallel()
+
+	cluster := annotatedCluster(map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/spec"})
+	cluster.Spec.SnapshotStorageRef = goldenBucketName
+	before := nodePodTemplate(t, cluster, identityBucket("arn:aws:iam::123456789012:role/old"))
+	after := nodePodTemplate(t, cluster, identityBucket("arn:aws:iam::123456789012:role/moved"))
+
+	require.NotEmpty(t, before.Annotations[accounthash.Annotation])
+	assert.Equal(t, before, after)
+}
+
 // Only a change of the account annotations may move the hash. An edit
 // outside the pod template keeps the whole template, and an edit of the pod
 // metadata keeps the hash.

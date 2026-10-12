@@ -95,7 +95,7 @@ For an `AzureBlob` bucket, the endpoint must have the form `https://<account>.bl
 
 ## ServiceAccount
 
-The Elasticsearch pods run under the ServiceAccount `<name>-es`, or under `spec.serviceAccount.name`. Unless `spec.serviceAccount.create` is `false`, the operator creates this account when `spec.serviceAccount` is set, or when the snapshot bucket uses workload identity. The account carries the annotations of the bucket identity, see [ObjectStorageConfig](objectstorageconfig.md#authentication). An annotation in `spec.serviceAccount.annotations` wins over the derived one.
+When `spec.serviceAccount` is set, or when the snapshot bucket uses workload identity, the Elasticsearch pods run under the ServiceAccount `spec.serviceAccount.name`, or `<name>-es` by default. Otherwise they run under the ServiceAccount `default` of the namespace. Unless `spec.serviceAccount.create` is `false`, the operator creates the named account. The account carries the annotations of the bucket identity, see [ObjectStorageConfig](objectstorageconfig.md#authentication). An annotation in `spec.serviceAccount.annotations` wins over the derived one.
 
 ```yaml
 apiVersion: core.camunda.io/v1
