@@ -20,6 +20,8 @@ limitations under the License.
 package v1
 
 import (
+	"errors"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -38,6 +40,8 @@ var (
 
 	// AddToScheme adds the types in this group-version to the given scheme.
 	AddToScheme = SchemeBuilder.AddToScheme
+
+	errNoGroupVersion = errors.New("the scheme builder has no group version: create it with NewBuilder")
 )
 
 // Builder registers the Go types of one group version with a runtime.Scheme.
@@ -55,18 +59,19 @@ func NewBuilder(gv schema.GroupVersion) *Builder {
 	return &Builder{groupVersion: gv}
 }
 
-// Register adds objects to the builder under its group version, or under
-// SchemeGroupVersion when that group version is empty. Each type file calls
-// it from init, so the result is the full set of kinds of the group.
+// Register adds objects to the builder under its group version. Each type
+// file calls it from init, so the result is the full set of kinds of the group.
+// Build the Builder with NewBuilder and a group version that is not empty:
+// AddToScheme and Build return an error for the objects that Register adds to
+// a Builder with no group version.
 func (b *Builder) Register(objects ...runtime.Object) *Builder {
-	gv := b.groupVersion
-	if gv.Empty() {
-		gv = SchemeGroupVersion
-	}
-
 	b.SchemeBuilder.Register(func(s *runtime.Scheme) error {
-		s.AddKnownTypes(gv, objects...)
-		metav1.AddToGroupVersion(s, gv)
+		if b.groupVersion.Empty() {
+			return errNoGroupVersion
+		}
+
+		s.AddKnownTypes(b.groupVersion, objects...)
+		metav1.AddToGroupVersion(s, b.groupVersion)
 		return nil
 	})
 

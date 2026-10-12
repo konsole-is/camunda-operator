@@ -21,16 +21,16 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-func TestZeroBuilderRegistersUnderCoreGroup(t *testing.T) {
-	s, err := (&v1.Builder{}).Register(&v1.CamundaCluster{}).Build()
-	require.NoError(t, err)
+func TestZeroBuilderRefusesToAddToScheme(t *testing.T) {
+	s := runtime.NewScheme()
 
-	kinds, _, err := s.ObjectKinds(&v1.CamundaCluster{})
-	require.NoError(t, err)
-	assert.Equal(t, []schema.GroupVersionKind{v1.GroupVersion.WithKind("CamundaCluster")}, kinds)
+	err := (&v1.Builder{}).Register(&v1.CamundaCluster{}).AddToScheme(s)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "group version")
+	assert.False(t, s.Recognizes(v1.GroupVersion.WithKind("CamundaCluster")))
 }
