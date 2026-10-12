@@ -646,12 +646,9 @@ func deploymentComponent(in Input, p Process) (*component.Component, error) {
 		WithName(p.Component).
 		WithConditionType(component.ConditionType(p.ConditionType)).
 		WithFeatureGate(feature.NewBooleanGate(p.Enabled)).
-		// Only the connectors run under an account of their own. With create
-		// false the account is released also while connectors are off, as
-		// one edit can turn them off and switch create.
+		// Only the connectors run under an account of their own.
 		IncludeWhen(
-			p.Component == ComponentConnectors &&
-				(PodConnectorsServiceAccountName(in) != "" || !in.Effective.ConnectorsServiceAccount().Creates()),
+			p.Component == ComponentConnectors && registersConnectorsServiceAccount(in),
 			func() component.Resource { return account },
 			accountOptions(in.Effective.ConnectorsServiceAccount())...,
 		).
@@ -661,6 +658,22 @@ func deploymentComponent(in Input, p Process) (*component.Component, error) {
 		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Effective.Suspend).
 		Build()
+}
+
+// registersConnectorsServiceAccount reports whether the connectors component
+// registers the connectors ServiceAccount: while the connectors run under it,
+// and with create false also while connectors are off, as one edit can turn
+// them off and switch create. While connectors are off, no check keeps the
+// connectors account apart from the cluster account, so an account with the
+// name of the cluster account is not registered: its release would remove the
+// owner reference that the cluster component sets.
+func registersConnectorsServiceAccount(in Input) bool {
+	if PodConnectorsServiceAccountName(in) != "" {
+		return true
+	}
+
+	return !in.Effective.ConnectorsServiceAccount().Creates() &&
+		ConnectorsServiceAccountName(in.Cluster, in.Effective) != ServiceAccountName(in.Cluster, in.Effective)
 }
 
 // accountOptions registers a ServiceAccount that the spec block account
