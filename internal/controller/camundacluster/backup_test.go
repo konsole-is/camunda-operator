@@ -465,11 +465,9 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			zeebe := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"}
 			gateway := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-gateway"}
 			connectorsKey := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-connectors"}
-			before := map[client.ObjectKey]string{
-				zeebe:         statefulSetAccountHash(zeebe),
-				gateway:       deploymentAccountHash(gateway),
-				connectorsKey: deploymentAccountHash(connectorsKey),
-			}
+			zeebeHash := statefulSetAccountHash(zeebe)
+			gatewayHash := deploymentAccountHash(gateway)
+			deploymentAccountHash(connectorsKey)
 			var connectorsBefore appsv1.Deployment
 			Expect(k8sClient.Get(ctx, connectorsKey, &connectorsBefore)).To(Succeed())
 
@@ -481,11 +479,11 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				var sts appsv1.StatefulSet
 				g.Expect(k8sClient.Get(ctx, zeebe, &sts)).To(Succeed())
 				g.Expect(sts.Spec.Template.Annotations[components.ServiceAccountHashAnnotation]).
-					NotTo(Equal(before[zeebe]))
+					NotTo(Equal(zeebeHash))
 				var deployment appsv1.Deployment
 				g.Expect(k8sClient.Get(ctx, gateway, &deployment)).To(Succeed())
 				g.Expect(deployment.Spec.Template.Annotations[components.ServiceAccountHashAnnotation]).
-					NotTo(Equal(before[gateway]))
+					NotTo(Equal(gatewayHash))
 			}, timeout, interval).Should(Succeed())
 
 			// A backup Job starts its pod under the published account, which
@@ -502,6 +500,51 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				var connectorsNow appsv1.Deployment
 				g.Expect(k8sClient.Get(ctx, connectorsKey, &connectorsNow)).To(Succeed())
 				g.Expect(connectorsNow.Spec.Template).To(Equal(connectorsBefore.Spec.Template))
+			}, 2*time.Second, interval).Should(Succeed())
+		})
+
+		It("rolls only the connectors when their account annotations change", func() {
+			ns := newNamespace()
+			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Annotations: map[string]string{
+				v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/camunda",
+			}}
+			cluster.Spec.Connectors = connectors()
+			cluster.Spec.Connectors.ServiceAccount = &v1.ServiceAccountSpec{Annotations: map[string]string{
+				v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/old",
+			}}
+			createCluster(cluster)
+
+			zeebe := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"}
+			gateway := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-gateway"}
+			connectorsKey := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-connectors"}
+			statefulSetAccountHash(zeebe)
+			deploymentAccountHash(gateway)
+			connectorsHash := deploymentAccountHash(connectorsKey)
+			var zeebeBefore appsv1.StatefulSet
+			Expect(k8sClient.Get(ctx, zeebe, &zeebeBefore)).To(Succeed())
+			var gatewayBefore appsv1.Deployment
+			Expect(k8sClient.Get(ctx, gateway, &gatewayBefore)).To(Succeed())
+
+			updateCluster(cluster, func(c *v1.CamundaCluster) {
+				c.Spec.Connectors.ServiceAccount.Annotations[v1.IRSARoleARNAnnotation] =
+					"arn:aws:iam::123456789012:role/new"
+			})
+
+			Eventually(func(g Gomega) {
+				var deployment appsv1.Deployment
+				g.Expect(k8sClient.Get(ctx, connectorsKey, &deployment)).To(Succeed())
+				g.Expect(deployment.Spec.Template.Annotations[components.ServiceAccountHashAnnotation]).
+					NotTo(Equal(connectorsHash))
+			}, timeout, interval).Should(Succeed())
+
+			Consistently(func(g Gomega) {
+				var sts appsv1.StatefulSet
+				g.Expect(k8sClient.Get(ctx, zeebe, &sts)).To(Succeed())
+				g.Expect(sts.Spec.Template).To(Equal(zeebeBefore.Spec.Template))
+				var deployment appsv1.Deployment
+				g.Expect(k8sClient.Get(ctx, gateway, &deployment)).To(Succeed())
+				g.Expect(deployment.Spec.Template).To(Equal(gatewayBefore.Spec.Template))
 			}, 2*time.Second, interval).Should(Succeed())
 		})
 	})
