@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The Renovate regenerate workflow starts this one on the commit it pushes.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
