@@ -388,8 +388,10 @@ spec:
                   podAnnotations:
                     additionalProperties:
                       type: string
-                    description: PodAnnotations are extra annotations applied to the
-                      Elasticsearch pods.
+                    description: |-
+                      PodAnnotations are extra annotations applied to the Elasticsearch pods.
+                      The key camunda.io/service-account-hash belongs to the operator, and a
+                      value for it does not reach the pods.
                     type: object
                   podLabels:
                     additionalProperties:

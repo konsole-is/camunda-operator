@@ -42,6 +42,8 @@ spec:
     name: default
     podTemplate:
       metadata:
+        annotations:
+          camunda.io/service-account-hash: 84cb29a11d220634
         labels:
           azure.workload.identity/use: "true"
           camunda.io/component: elasticsearch

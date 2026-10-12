@@ -126,20 +126,6 @@ func PasswordHash(value string) string {
 	return hex.EncodeToString(sum[:])[:configHashLength]
 }
 
-// annotationsHash hashes a set of annotations independently of the map
-// order. An empty set returns "".
-func annotationsHash(annotations map[string]string) string {
-	if len(annotations) == 0 {
-		return ""
-	}
-
-	// encoding/json writes the keys sorted and quotes every string, so two
-	// different sets never encode the same. A map of strings always encodes.
-	encoded, _ := json.Marshal(annotations)
-	sum := sha256.Sum256(encoded)
-	return hex.EncodeToString(sum[:])[:configHashLength]
-}
-
 // PresetFingerprint is the hash input that stands for a CamundaClusterPreset:
 // a digest of its spec with the fields that no process renders removed. The
 // controller records it instead of the generation of the preset, because the
